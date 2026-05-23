@@ -1,7 +1,12 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { verifySession, SESSION_COOKIE } from "@/lib/session";
 
-const PUBLIC_PATHS = ["/login", "/api/intake", "/embed.js", "/api/health", "/api/logout", "/api/login"];
+const PUBLIC_PATHS = [
+  "/login", "/api/intake", "/embed.js", "/api/health", "/api/logout", "/api/login",
+  // PWA assets — must be reachable without auth so phones can install before login
+  "/manifest.webmanifest", "/sw.js",
+  "/icon", "/apple-icon", "/icon-192.png", "/icon-512.png", "/icon-maskable-512.png", "/og-image.png",
+];
 
 export async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
