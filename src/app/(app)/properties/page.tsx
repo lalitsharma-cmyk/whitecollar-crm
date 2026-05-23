@@ -27,8 +27,11 @@ export default async function PropertiesPage() {
           const configs = [...new Set(p.units.map(u => u.configuration))].join(" / ");
           return (
             <div key={p.id} className="card overflow-hidden">
-              <div className={`h-32 bg-gradient-to-r ${p.heroColor ?? "from-slate-700 to-slate-400"} flex items-end p-3 text-white`}>
-                <div>
+              <div
+                className={`h-32 bg-gradient-to-r ${p.heroColor ?? "from-slate-700 to-slate-400"} flex items-end p-3 text-white relative overflow-hidden`}
+                style={p.imageUrl ? { backgroundImage: `linear-gradient(180deg, rgba(11,26,51,.2) 0%, rgba(11,26,51,.85) 100%), url(${p.imageUrl})`, backgroundSize: "cover", backgroundPosition: "center" } : undefined}
+              >
+                <div className="relative z-10">
                   <div className="text-xs opacity-80">{p.area ?? p.city}</div>
                   <div className="font-bold text-lg">{p.name}</div>
                 </div>

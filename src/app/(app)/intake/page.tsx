@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import CsvUploader from "@/components/CsvUploader";
+import GoogleSheetImporter from "@/components/GoogleSheetImporter";
 
 export const dynamic = "force-dynamic";
 
@@ -38,6 +39,12 @@ Meta webhook verify token: ${process.env.WHATSAPP_VERIFY_TOKEN ?? "wcr-dev-verif
           <div className="flex items-center gap-2 mb-2"><span className="chip src-csv">CSV</span><b>Bulk upload</b></div>
           <p className="text-sm text-gray-600">For events, expos, partner lists. Auto-dedupe by phone + email.</p>
           <div className="mt-3"><CsvUploader /></div>
+        </div>
+
+        <div className="card p-5">
+          <div className="flex items-center gap-2 mb-2"><span className="chip src">📑 Google Sheets</span><b>Direct import</b></div>
+          <p className="text-sm text-gray-600">Paste any Google Sheets URL — the CRM pulls it and creates leads (auto-dedup + auto-assign).</p>
+          <div className="mt-3"><GoogleSheetImporter /></div>
         </div>
 
         <div className="card p-5">

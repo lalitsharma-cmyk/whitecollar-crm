@@ -36,14 +36,9 @@ export default function Sidebar({
   const roleLabel = user.role === "ADMIN" ? "Administrator" : user.role === "MANAGER" ? "Manager" : "Sales Agent";
   return (
     <aside className="sidebar w-64 flex-none text-white flex flex-col h-screen sticky top-0">
-      <div className="px-5 py-5 border-b border-white/10">
-        <div className="flex items-center gap-2">
-          <div className="w-9 h-9 rounded-lg bg-[#c9a24b] flex items-center justify-center font-extrabold text-[#0b1a33]">W</div>
-          <div>
-            <div className="font-bold leading-tight">White Collar</div>
-            <div className="text-[11px] tracking-widest text-white/60">REALTY · CRM</div>
-          </div>
-        </div>
+      <div className="px-5 py-5 border-b border-white/10 flex items-center justify-center">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/brand/wcr-logo.png" alt="White Collar Realty" className="h-12 w-auto object-contain" />
       </div>
       <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
         {nav.map((group) => (

@@ -197,6 +197,7 @@ enum ProjectStatus {
 
 model Project {
   id            String         @id @default(cuid())
+  slug          String?        @unique  // stable key for auto-sync from marketing site
   name          String
   developer     String?
   city          String
@@ -206,8 +207,12 @@ model Project {
   handoverDate  DateTime?
   description   String?
   brochureUrl   String?
+  imageUrl      String?        // hero image scraped from marketing site
   heroColor     String?        // "from-[#0b1a33] to-[#c9a24b]" tailwind gradient
   rera          String?
+  category      String?        // "residential" | "commercial"
+  source        String?        // "manual" | "wcr-website" — provenance
+  syncedAt      DateTime?      // last time auto-sync touched this row
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
 
