@@ -1,8 +1,8 @@
-import "server-only";
 import { prisma } from "@/lib/prisma";
 import { LeadSource, LeadStatus, ActivityType, ActivityStatus } from "@prisma/client";
 import { pickRoundRobinAgent, fingerprintFor } from "@/lib/assignment";
 import { defaultCurrencyForLocation } from "@/lib/money";
+import { notify, notifyRoles } from "@/lib/notify";
 
 export interface RawLeadInput {
   name: string;
@@ -17,41 +17,79 @@ export interface RawLeadInput {
   budgetMax?: number;
   notesShort?: string;
   tags?: string;
-  team?: string; // for distribution
+  team?: string;
 }
 
+const FIRST_CALL_SLA_MIN = 15;
+
 /**
- * Idempotent lead creation: dedupes by phone+email fingerprint.
- * Returns { lead, deduped: boolean }.
- * Auto-assigns to a round-robin agent if no owner provided.
+ * Idempotent lead creation:
+ *   • Dedupes by phone+email fingerprint.
+ *   • If duplicate: bumps duplicateCount, notifies Admin + the existing owner.
+ *   • If new: leaves ownerId NULL so Admin gets a chance to manually assign
+ *     within 5 minutes (after which the reconciler auto-assigns).
+ *
+ * NOTE: behavior change — new leads are NOT auto-assigned on intake anymore,
+ * so Admin can route them. The reconciler handles unattended leads.
  */
 export async function ingestLead(input: RawLeadInput) {
   const fp = fingerprintFor(input.phone, input.email);
 
-  // Dedupe
+  // ── Duplicate path ──
   if (fp) {
-    const existing = await prisma.lead.findUnique({ where: { fingerprint: fp } });
+    const existing = await prisma.lead.findUnique({
+      where: { fingerprint: fp },
+      include: { owner: true },
+    });
     if (existing) {
+      const now = new Date();
+      await prisma.lead.update({
+        where: { id: existing.id },
+        data: {
+          duplicateCount: { increment: 1 },
+          lastDuplicateAt: now,
+          lastTouchedAt: now,
+        },
+      });
       await prisma.activity.create({
         data: {
           leadId: existing.id,
+          userId: existing.ownerId,
           type: ActivityType.NOTE,
           status: ActivityStatus.DONE,
           title: `Duplicate intake from ${input.source}`,
           description: input.notesShort,
-          completedAt: new Date(),
+          completedAt: now,
         },
       });
+
+      // Notify Admin/Manager AND the current owner (if any)
+      await notifyRoles(["ADMIN", "MANAGER"], {
+        kind: "LEAD_DUPLICATE",
+        severity: "WARNING",
+        title: `🔁 ${existing.name} contacted us again (${(existing.duplicateCount ?? 0) + 1}x)`,
+        body: `New ${input.source} hit on existing lead. Current owner: ${existing.owner?.name ?? "Unassigned"}. ${input.notesShort ?? ""}`.trim(),
+        linkUrl: `/leads/${existing.id}`,
+        leadId: existing.id,
+      });
+      if (existing.ownerId) {
+        await notify({
+          userId: existing.ownerId,
+          kind: "LEAD_DUPLICATE",
+          severity: "WARNING",
+          title: `Your lead ${existing.name} reached out again`,
+          body: `Source: ${input.source}. ${input.notesShort ?? ""}`.trim(),
+          linkUrl: `/leads/${existing.id}`,
+          leadId: existing.id,
+        });
+      }
       return { lead: existing, deduped: true as const };
     }
   }
 
-  // Currency from city/country (Dubai → AED, India → INR)
+  // ── New lead path ── (no immediate auto-assign — Admin gets 5 min)
   const currency = defaultCurrencyForLocation(input.city, input.country);
   const team = input.team ?? (currency === "INR" ? "India" : "Dubai");
-
-  // Assign via round-robin (prefer matching team)
-  const agent = (await pickRoundRobinAgent({ team, source: input.source })) ?? (await pickRoundRobinAgent({ source: input.source }));
 
   const lead = await prisma.lead.create({
     data: {
@@ -70,19 +108,13 @@ export async function ingestLead(input: RawLeadInput) {
       forwardedTeam: team,
       notesShort: input.notesShort,
       tags: input.tags,
-      ownerId: agent?.id,
       fingerprint: fp,
       lastTouchedAt: new Date(),
     },
   });
-
-  if (agent) {
-    await prisma.assignment.create({ data: { leadId: lead.id, userId: agent.id, reason: "round-robin" } });
-  }
   await prisma.activity.create({
     data: {
       leadId: lead.id,
-      userId: agent?.id,
       type: ActivityType.LEAD_CREATED,
       status: ActivityStatus.DONE,
       title: `Lead created from ${input.source}`,
@@ -90,6 +122,44 @@ export async function ingestLead(input: RawLeadInput) {
       completedAt: new Date(),
     },
   });
-
+  // Admin alert — they have 5 minutes to assign manually
+  await notifyRoles(["ADMIN", "MANAGER"], {
+    kind: "LEAD_ASSIGNED",
+    severity: "INFO",
+    title: `New ${input.source} lead: ${lead.name}`,
+    body: `Assign within 5 minutes or it will be auto-routed to ${team} round-robin.`,
+    linkUrl: `/leads/${lead.id}`,
+    leadId: lead.id,
+  });
   return { lead, deduped: false as const };
+}
+
+/**
+ * Reassign a lead to a specific user (manual or system-triggered).
+ * Sets SLA clock and notifies the new owner.
+ */
+export async function assignLeadTo(leadId: string, userId: string, reason: string) {
+  const now = new Date();
+  const slaFirstCallBy = new Date(now.getTime() + FIRST_CALL_SLA_MIN * 60 * 1000);
+
+  const [lead, agent] = await Promise.all([
+    prisma.lead.findUnique({ where: { id: leadId } }),
+    prisma.user.findUnique({ where: { id: userId } }),
+  ]);
+  if (!lead || !agent) throw new Error("Lead or user not found");
+
+  await prisma.lead.update({
+    where: { id: leadId },
+    data: { ownerId: userId, assignedAt: now, slaFirstCallBy, slaEscalated: false },
+  });
+  await prisma.assignment.create({ data: { leadId, userId, reason } });
+  await notify({
+    userId,
+    kind: "LEAD_ASSIGNED",
+    severity: "INFO",
+    title: `📩 New lead: ${lead.name}`,
+    body: `Source: ${lead.source}. Call within ${FIRST_CALL_SLA_MIN} minutes — ${reason}.`,
+    linkUrl: `/leads/${leadId}`,
+    leadId,
+  });
 }

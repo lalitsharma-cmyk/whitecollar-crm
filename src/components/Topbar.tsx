@@ -1,6 +1,7 @@
 "use client";
-import { Search, Bell, Plus, Sparkles } from "lucide-react";
+import { Search, Plus, Sparkles } from "lucide-react";
 import Link from "next/link";
+import NotifBell from "./NotifBell";
 
 export default function Topbar({ user }: { user: { name: string; avatarColor: string } }) {
   const initials = user.name.split(" ").map(s => s[0]).slice(0, 2).join("");
@@ -15,10 +16,7 @@ export default function Topbar({ user }: { user: { name: string; avatarColor: st
       </div>
       <Link href="/leads/new" className="btn btn-ghost"><Plus className="w-[18px] h-[18px]" /> New Lead</Link>
       <Link href="/ai" className="btn btn-gold"><Sparkles className="w-[18px] h-[18px]" /> Ask AI</Link>
-      <div className="relative">
-        <Bell className="w-[20px] h-[20px] text-gray-500" />
-        <span className="absolute -top-1 -right-2 bg-[#ef4444] text-white text-[10px] font-bold rounded-full px-1.5">7</span>
-      </div>
+      <NotifBell />
       <div className={`avatar ${user.avatarColor}`}>{initials}</div>
     </header>
   );

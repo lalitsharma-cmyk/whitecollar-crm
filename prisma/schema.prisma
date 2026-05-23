@@ -39,6 +39,7 @@ model User {
   callLogs      CallLog[]
   notes         Note[]
   auditLogs     AuditLog[]
+  notifications Notification[]
 }
 
 // =====================================================
@@ -163,8 +164,14 @@ model Lead {
   ownerId         String?
   owner           User?       @relation("LeadOwner", fields: [ownerId], references: [id])
   forwardedTeam   String?     // "Dubai" / "India" — for assignment
+  assignedAt      DateTime?   // when ownerId was last set — for 15-min SLA
+  // SLA reconciler
+  slaFirstCallBy  DateTime?   // ownerId-set + 15 min — escalate if no call by then
+  slaEscalated    Boolean     @default(false)  // already notified admin
   // dedupe
   fingerprint     String?     @unique  // phone||email hash for dedupe
+  duplicateCount  Int         @default(0)  // times this client has re-contacted us
+  lastDuplicateAt DateTime?
   // timestamps
   lastTouchedAt   DateTime?
   createdAt       DateTime    @default(now())
@@ -442,4 +449,39 @@ model IntakeKey {
 model Setting {
   key   String @id
   value String
+}
+
+// =====================================================
+// NOTIFICATIONS — in-app bell + per-user inbox
+// =====================================================
+
+enum NotifKind {
+  LEAD_ASSIGNED       // your lead arrived
+  LEAD_DUPLICATE      // an existing lead re-contacted
+  CALL_SLA_BREACH     // 15 min passed, no call logged
+  AUTO_ASSIGN_FIRED   // 5 min, admin didn't assign — auto-assigned
+  REMINDER            // generic follow-up reminder
+  SYSTEM              // info / settings change
+}
+
+enum NotifSeverity {
+  INFO
+  WARNING
+  CRITICAL
+}
+
+model Notification {
+  id        String        @id @default(cuid())
+  userId    String        // recipient
+  user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  kind      NotifKind
+  severity  NotifSeverity @default(INFO)
+  title     String
+  body      String?
+  linkUrl   String?       // where clicking it takes you (e.g. /leads/abc)
+  leadId    String?       // optional related lead
+  readAt    DateTime?     // null = unread
+  createdAt DateTime      @default(now())
+  @@index([userId, readAt])
+  @@index([createdAt])
 }

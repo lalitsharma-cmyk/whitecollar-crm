@@ -4,10 +4,13 @@ import { formatDistanceToNow, startOfDay } from "date-fns";
 import LeadsTrendChart from "@/components/charts/LeadsTrendChart";
 import SourceMixChart from "@/components/charts/SourceMixChart";
 import { fmtMoney, fmtMoneyDual } from "@/lib/money";
+import { runReconciler } from "@/lib/reconciler";
 
 export const dynamic = "force-dynamic";
 
 export default async function DashboardPage() {
+  // Fire & forget — keeps SLAs ticking
+  runReconciler().catch(() => {});
   const todayStart = startOfDay(new Date());
 
   const [

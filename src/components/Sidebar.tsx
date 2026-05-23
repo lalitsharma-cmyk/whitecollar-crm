@@ -3,7 +3,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   LayoutDashboard, Users, KanbanSquare, Building2, CalendarDays,
-  PhoneCall, BarChart3, Sparkles, Upload, UserCog, Settings as SettingsIcon, LogOut
+  PhoneCall, BarChart3, Sparkles, Upload, UserCog, Settings as SettingsIcon, LogOut, Bell
 } from "lucide-react";
 
 const nav = [
@@ -16,6 +16,7 @@ const nav = [
     { href: "/calls",      label: "Call Records",Icon: PhoneCall },
     { href: "/reports",    label: "Reports",     Icon: BarChart3 },
     { href: "/ai",         label: "AI Assistant",Icon: Sparkles, tag: "NEW" },
+    { href: "/notifications", label: "Notifications", Icon: Bell },
   ]},
   { section: "SETUP", items: [
     { href: "/intake",   label: "Lead Intake",   Icon: Upload },
