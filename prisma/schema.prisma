@@ -1,0 +1,440 @@
+// White Collar Realty CRM — Database schema
+// Dev: SQLite (file-based, no setup). Prod: switch provider to "postgresql".
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// =====================================================
+// USERS, ROLES, TEAMS, AUTH
+// =====================================================
+
+enum Role {
+  ADMIN
+  MANAGER
+  AGENT
+}
+
+model User {
+  id            String     @id @default(cuid())
+  email         String     @unique
+  name          String
+  passwordHash  String
+  role          Role       @default(AGENT)
+  team          String?    // "Dubai" / "India" / "HQ"
+  phone         String?
+  avatarColor   String?    // tailwind class e.g. "bg-indigo-500"
+  active        Boolean    @default(true)
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  ownedLeads    Lead[]     @relation("LeadOwner")
+  assignments   Assignment[]
+  activities    Activity[]
+  callLogs      CallLog[]
+  notes         Note[]
+  auditLogs     AuditLog[]
+}
+
+// =====================================================
+// LEAD SOURCES, STATUSES
+// =====================================================
+
+enum LeadSource {
+  WEBSITE
+  WHATSAPP
+  CSV_IMPORT
+  EVENT
+  REFERRAL
+  INBOUND_CALL
+  FACEBOOK_ADS
+  GOOGLE_ADS
+  PORTAL_99ACRES
+  PORTAL_MAGICBRICKS
+  PORTAL_HOUSING
+  OTHER
+}
+
+enum LeadStatus {
+  NEW
+  CONTACTED
+  QUALIFIED
+  SITE_VISIT
+  NEGOTIATION
+  BOOKING_DONE
+  WON
+  LOST
+}
+
+enum AIScore {
+  HOT
+  WARM
+  COLD
+}
+
+// Qualification depth — matches Lalit's Dubai-sheet workflow
+enum Potential {
+  HIGH
+  MEDIUM
+  LOW
+  UNKNOWN
+}
+
+enum FundReadiness {
+  CASH_READY
+  BANK_APPROVED
+  FINANCING_NEEDED
+  NOT_DISCUSSED
+}
+
+enum MoodStatus {
+  EXCITED
+  INTERESTED
+  NEUTRAL
+  HESITANT
+  COLD
+  CONFUSED
+  ANGRY
+}
+
+enum InvestTimeline {
+  IMMEDIATE     // this week
+  THIRTY_DAYS
+  THREE_MONTHS
+  SIX_PLUS_MONTHS
+  WINDOW_SHOPPING
+  UNKNOWN
+}
+
+// =====================================================
+// LEAD — the core entity
+// =====================================================
+
+model Lead {
+  id              String      @id @default(cuid())
+  // contact info
+  name            String
+  phone           String?
+  email           String?
+  company         String?     // where the client works — matters for HNI profiling
+  city            String?
+  country         String?
+  address         String?     // client's physical address (residence)
+  // funnel
+  source          LeadSource  @default(WEBSITE)
+  sourceDetail    String?     // "marina-may-26" campaign code
+  status          LeadStatus  @default(NEW)        // = Stage (funnel position)
+  currentStatus   String?     // = Status (current state: "Not reached", "Callback today", etc.)
+  // requirements
+  budgetMin       Float?      // AED for Dubai team
+  budgetMax       Float?
+  budgetCurrency  String      @default("AED")
+  configuration   String?     // "2BHK" / "Penthouse" / "Plot"
+  notesShort      String?     // one-liner requirement (legacy)
+  remarks         String?     // long remarks (matches sheet's Remarks column)
+  tags            String?     // comma-separated for SQLite ("NRI,Investor")
+  categorization  String?     // NRI / Resident / Investor / End-user
+  language        String?     // "English,Hindi"
+  // DEPTH FIELDS (from Dubai sheet — Lalit's priority)
+  whoIsClient     String?     // FULL client situation, not keywords
+  whenCanInvest   InvestTimeline?
+  potential       Potential?
+  fundReadiness   FundReadiness?
+  moodStatus      MoodStatus?
+  detailShared    String?     // what brochures / details we've sent
+  photoUrls       String?     // JSON-stringified URLs of uploaded photos
+  // scheduling
+  meetingDate     DateTime?   // upcoming/last meeting
+  siteVisitDate   DateTime?   // upcoming/last site visit
+  followupDate    DateTime?   // next follow-up commitment
+  todoNext        String?     // free-text "To Do" — what's the next action
+  // AI
+  aiScore         AIScore?
+  aiScoreValue    Int?        // 0-100
+  aiSummary       String?     // long-form auto summary
+  aiNextAction    String?     // recommended next step
+  aiUpdatedAt     DateTime?
+  // ownership
+  ownerId         String?
+  owner           User?       @relation("LeadOwner", fields: [ownerId], references: [id])
+  forwardedTeam   String?     // "Dubai" / "India" — for assignment
+  // dedupe
+  fingerprint     String?     @unique  // phone||email hash for dedupe
+  // timestamps
+  lastTouchedAt   DateTime?
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  // relations
+  interestedUnits LeadProperty[]
+  activities      Activity[]
+  callLogs        CallLog[]
+  notes           Note[]
+  assignments     Assignment[]
+  waMessages      WhatsAppMessage[]
+
+  @@index([status])
+  @@index([source])
+  @@index([ownerId])
+  @@index([createdAt])
+}
+
+// =====================================================
+// PROPERTIES — Project → Unit → Pricing
+// =====================================================
+
+enum ProjectStatus {
+  OFF_PLAN
+  UNDER_CONSTRUCTION
+  READY
+  SOLD_OUT
+}
+
+model Project {
+  id            String         @id @default(cuid())
+  name          String
+  developer     String?
+  city          String
+  area          String?        // "Dubai Marina" / "Sector 42"
+  country       String         @default("UAE")
+  status        ProjectStatus  @default(OFF_PLAN)
+  handoverDate  DateTime?
+  description   String?
+  brochureUrl   String?
+  heroColor     String?        // "from-[#0b1a33] to-[#c9a24b]" tailwind gradient
+  rera          String?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  units         Unit[]
+
+  @@index([city])
+  @@index([status])
+}
+
+enum UnitStatus {
+  AVAILABLE
+  HOLD
+  BOOKED
+  SOLD
+}
+
+model Unit {
+  id              String      @id @default(cuid())
+  projectId       String
+  project         Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  code            String      // "T-B-1804" tower-block-flat
+  configuration   String      // "2BHK" / "Studio" / "PH"
+  carpetArea      Float?      // sqft
+  builtUpArea     Float?
+  floor           Int?
+  view            String?
+  priceBase       Float
+  priceFinal      Float?
+  status          UnitStatus  @default(AVAILABLE)
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  interestedBy    LeadProperty[]
+
+  @@unique([projectId, code])
+  @@index([status])
+}
+
+enum LeadInterestType {
+  PRIMARY
+  COMPARE
+  RULED_OUT
+}
+
+model LeadProperty {
+  id        String           @id @default(cuid())
+  leadId    String
+  unitId    String
+  type      LeadInterestType @default(PRIMARY)
+  notes     String?
+  createdAt DateTime         @default(now())
+
+  lead      Lead             @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  unit      Unit             @relation(fields: [unitId], references: [id], onDelete: Cascade)
+
+  @@unique([leadId, unitId])
+}
+
+// =====================================================
+// ACTIVITIES, CALLS, NOTES, WA MESSAGES
+// =====================================================
+
+enum ActivityType {
+  CALL
+  WHATSAPP
+  EMAIL
+  SITE_VISIT
+  MEETING
+  TASK
+  NOTE
+  STATUS_CHANGE
+  ASSIGNMENT
+  LEAD_CREATED
+  BROCHURE_SENT
+}
+
+enum ActivityStatus {
+  PLANNED
+  DONE
+  OVERDUE
+  CANCELLED
+}
+
+model Activity {
+  id          String         @id @default(cuid())
+  leadId      String
+  lead        Lead           @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  userId      String?
+  user        User?          @relation(fields: [userId], references: [id])
+  type        ActivityType
+  status      ActivityStatus @default(PLANNED)
+  title       String
+  description String?
+  scheduledAt DateTime?
+  completedAt DateTime?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  @@index([leadId])
+  @@index([scheduledAt])
+  @@index([status])
+}
+
+enum CallDirection {
+  INBOUND
+  OUTBOUND
+}
+
+enum CallOutcome {
+  CONNECTED
+  NOT_PICKED
+  CALLBACK
+  WRONG_NUMBER
+  BUSY
+  SWITCHED_OFF
+  INTERESTED
+  NOT_INTERESTED
+}
+
+model CallLog {
+  id           String         @id @default(cuid())
+  leadId       String?
+  lead         Lead?          @relation(fields: [leadId], references: [id])
+  userId       String
+  user         User           @relation(fields: [userId], references: [id])
+  direction    CallDirection  @default(OUTBOUND)
+  phoneNumber  String
+  durationSec  Int?
+  outcome      CallOutcome
+  notes        String?
+  // IVR-ready fields
+  ivrProvider  String?        // "exotel" / "knowlarity" / "myoperator" / null for manual
+  ivrCallId    String?        @unique
+  recordingUrl String?
+  startedAt    DateTime       @default(now())
+  endedAt      DateTime?
+  createdAt    DateTime       @default(now())
+
+  @@index([leadId])
+  @@index([userId])
+  @@index([startedAt])
+}
+
+model Note {
+  id        String   @id @default(cuid())
+  leadId    String
+  lead      Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id])
+  body      String
+  createdAt DateTime @default(now())
+
+  @@index([leadId])
+}
+
+enum WAMessageDirection {
+  INBOUND
+  OUTBOUND
+}
+
+model WhatsAppMessage {
+  id          String              @id @default(cuid())
+  leadId      String?
+  lead        Lead?               @relation(fields: [leadId], references: [id])
+  phoneNumber String
+  direction   WAMessageDirection
+  body        String
+  templateId  String?
+  providerMsgId String?           @unique
+  receivedAt  DateTime            @default(now())
+
+  @@index([phoneNumber])
+  @@index([leadId])
+}
+
+// =====================================================
+// ASSIGNMENT HISTORY (for distribution audit)
+// =====================================================
+
+model Assignment {
+  id         String   @id @default(cuid())
+  leadId     String
+  lead       Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  userId     String
+  user       User     @relation(fields: [userId], references: [id])
+  reason     String?  // "round-robin" / "manual" / "rule:dubai"
+  assignedAt DateTime @default(now())
+  @@index([leadId])
+  @@index([userId])
+}
+
+// =====================================================
+// AUDIT LOG
+// =====================================================
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id])
+  action    String   // "lead.create", "lead.assign", "user.invite"
+  entity    String   // "Lead" / "User" / ...
+  entityId  String?
+  meta      String?  // JSON-stringified extras (SQLite has no JSON type)
+  createdAt DateTime @default(now())
+  @@index([entity, entityId])
+  @@index([createdAt])
+}
+
+// =====================================================
+// INTAKE API KEYS (for website + WhatsApp webhooks)
+// =====================================================
+
+model IntakeKey {
+  id        String     @id @default(cuid())
+  label     String
+  key       String     @unique
+  source    LeadSource
+  active    Boolean    @default(true)
+  createdAt DateTime   @default(now())
+  lastUsed  DateTime?
+}
+
+// =====================================================
+// SETTINGS (singleton key-value)
+// =====================================================
+
+model Setting {
+  key   String @id
+  value String
+}
