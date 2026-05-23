@@ -1,10 +1,16 @@
 import { prisma } from "@/lib/prisma";
-import { LeadSource, LeadStatus, AIScore } from "@prisma/client";
+import { LeadSource, LeadStatus, AIScore, Prisma } from "@prisma/client";
 import { formatDistanceToNow } from "date-fns";
 import Link from "next/link";
 import { fmtMoney } from "@/lib/money";
+import { requireUser } from "@/lib/auth";
+import LeadFilters from "@/components/LeadFilters";
+import LeadsListClient from "@/components/LeadsListClient";
+import { runReconciler } from "@/lib/reconciler";
 
 export const dynamic = "force-dynamic";
+
+const PAGE_SIZE = 50;
 
 const srcChip: Record<LeadSource, string> = {
   WEBSITE: "src-web", WHATSAPP: "src-wa", CSV_IMPORT: "src-csv", EVENT: "src-event",
@@ -21,73 +27,107 @@ const statusChip: Record<LeadStatus, string> = {
   NEW: "chip-new", CONTACTED: "chip-warm", QUALIFIED: "chip-warm", SITE_VISIT: "chip-warm",
   NEGOTIATION: "chip-warm", BOOKING_DONE: "chip-won", WON: "chip-won", LOST: "chip-lost",
 };
-const aiChip = (s: AIScore | null) => s === "HOT" ? "chip-hot" : s === "WARM" ? "chip-warm" : "chip-cold";
 
-export default async function LeadsPage() {
-  const [leads, total, hot, newToday] = await Promise.all([
+export default async function LeadsPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
+  const me = await requireUser();
+  runReconciler().catch(() => {});
+  const sp = await searchParams;
+
+  // Build where clause from filters
+  const where: Prisma.LeadWhereInput = {};
+  if (sp.q) {
+    where.OR = [
+      { name: { contains: sp.q, mode: "insensitive" } },
+      { phone: { contains: sp.q } },
+      { email: { contains: sp.q, mode: "insensitive" } },
+      { company: { contains: sp.q, mode: "insensitive" } },
+    ];
+  }
+  if (sp.source) where.source = sp.source as LeadSource;
+  if (sp.status) where.status = sp.status as LeadStatus;
+  if (sp.ai) where.aiScore = sp.ai as AIScore;
+  if (sp.team) where.forwardedTeam = sp.team;
+  if (sp.owner === "unassigned") where.ownerId = null;
+  else if (sp.owner) where.ownerId = sp.owner;
+  if (sp.when === "24h") where.createdAt = { gte: new Date(Date.now() - 24 * 3600 * 1000) };
+  else if (sp.when === "7d") where.createdAt = { gte: new Date(Date.now() - 7 * 24 * 3600 * 1000) };
+  else if (sp.when === "30d") where.createdAt = { gte: new Date(Date.now() - 30 * 24 * 3600 * 1000) };
+  else if (sp.when === "overdue") where.lastTouchedAt = { lt: new Date(Date.now() - 5 * 24 * 3600 * 1000) };
+
+  // Sort
+  let orderBy: Prisma.LeadOrderByWithRelationInput = { createdAt: "desc" };
+  if (sp.sort === "created_asc") orderBy = { createdAt: "asc" };
+  else if (sp.sort === "score_desc") orderBy = { aiScoreValue: "desc" };
+  else if (sp.sort === "touched_asc") orderBy = { lastTouchedAt: "asc" };
+  else if (sp.sort === "touched_desc") orderBy = { lastTouchedAt: "desc" };
+  else if (sp.sort === "name_asc") orderBy = { name: "asc" };
+
+  const page = Math.max(1, parseInt(sp.page ?? "1") || 1);
+  const skip = (page - 1) * PAGE_SIZE;
+
+  const [leads, total, hot, newToday, totalAll, agents] = await Promise.all([
     prisma.lead.findMany({
-      orderBy: { createdAt: "desc" },
-      take: 50,
+      where, orderBy, skip, take: PAGE_SIZE,
       include: { owner: true, interestedUnits: { include: { unit: { include: { project: true } } }, take: 1 } },
     }),
-    prisma.lead.count(),
+    prisma.lead.count({ where }),
     prisma.lead.count({ where: { aiScore: AIScore.HOT } }),
     prisma.lead.count({ where: { createdAt: { gte: new Date(Date.now() - 24 * 3600 * 1000) } } }),
+    prisma.lead.count(),
+    prisma.user.findMany({ where: { active: true, role: { in: ["AGENT", "MANAGER"] } }, orderBy: { name: "asc" } }),
   ]);
+
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const canBulk = me.role === "ADMIN" || me.role === "MANAGER";
 
   return (
     <>
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">Leads</h1>
-          <p className="text-sm text-gray-500">{total} total · {newToday} new in last 24h · {hot} hot</p>
+          <p className="text-sm text-gray-500">{totalAll} total · {newToday} new in last 24h · {hot} hot · showing {total} matching</p>
         </div>
         <div className="flex gap-2">
           <Link href="/intake" className="btn btn-ghost">Import / Intake</Link>
-          <button className="btn btn-ghost">Export CSV</button>
-          <button className="btn btn-primary">+ New Lead</button>
+          <a href="/api/reports/export?type=leads" className="btn btn-ghost">Export CSV</a>
+          <Link href="/leads/new" className="btn btn-primary">+ New Lead</Link>
         </div>
       </div>
 
-      <div className="card p-4 flex flex-wrap gap-2 items-center">
-        <select className="border border-[#e5e7eb] rounded-lg px-3 py-2 text-sm"><option>All sources</option>{Object.values(LeadSource).map(s => <option key={s}>{srcLabel[s]}</option>)}</select>
-        <select className="border border-[#e5e7eb] rounded-lg px-3 py-2 text-sm"><option>All statuses</option>{Object.values(LeadStatus).map(s => <option key={s}>{s.replaceAll("_", " ")}</option>)}</select>
-        <select className="border border-[#e5e7eb] rounded-lg px-3 py-2 text-sm"><option>AI score: any</option><option>Hot</option><option>Warm</option><option>Cold</option></select>
-        <input type="search" placeholder="Search name / phone / email" className="border border-[#e5e7eb] rounded-lg px-3 py-2 text-sm flex-1 min-w-[180px]" />
-      </div>
+      <LeadFilters
+        agents={agents.map((a) => ({ id: a.id, name: a.name }))}
+        sources={Object.values(LeadSource)}
+        statuses={Object.values(LeadStatus)}
+      />
 
-      <div className="card overflow-hidden">
-        <table className="tbl">
-          <thead><tr>
-            <th></th><th>Lead</th><th>Team</th><th>Source</th><th>Budget</th><th>Stage</th><th>AI Score</th><th>Owner</th><th>Last touch</th><th></th>
-          </tr></thead>
-          <tbody>
-            {leads.map((l) => {
-              const interest = l.interestedUnits[0];
-              const teamChipClass = l.forwardedTeam === "India" ? "src-csv" : "src-wa";
-              return (
-                <tr key={l.id}>
-                  <td><input type="checkbox" /></td>
-                  <td>
-                    <Link href={`/leads/${l.id}`} className="font-semibold text-[#0b1a33] hover:underline">{l.name}</Link>
-                    <div className="text-xs text-gray-500">{l.phone}{l.email ? ` · ${l.email}` : ""}</div>
-                    {interest && <div className="text-[11px] text-gray-500">→ {interest.unit.project.name} {interest.unit.configuration}</div>}
-                  </td>
-                  <td><span className={`chip ${teamChipClass}`}>{l.forwardedTeam ?? "—"}</span></td>
-                  <td><span className={`chip ${srcChip[l.source]}`}>{srcLabel[l.source]}</span></td>
-                  <td className="text-sm font-semibold">{l.budgetMin ? fmtMoney(l.budgetMin, l.budgetCurrency) : <span className="text-gray-400 font-normal">—</span>}</td>
-                  <td><span className={`chip ${statusChip[l.status]}`}>{l.status.replaceAll("_", " ")}</span></td>
-                  <td>{l.aiScore ? <span className={`chip ${aiChip(l.aiScore)}`}>{l.aiScore} · {l.aiScoreValue}</span> : <span className="text-gray-400">—</span>}</td>
-                  <td>{l.owner ? <div className={`avatar ${l.owner.avatarColor ?? "bg-slate-500"}`}>{l.owner.name.split(" ").map(s=>s[0]).slice(0,2).join("")}</div> : <span className="text-gray-400">—</span>}</td>
-                  <td className="text-xs text-gray-500">{l.lastTouchedAt ? formatDistanceToNow(l.lastTouchedAt, { addSuffix: true }) : "—"}</td>
-                  <td>⋯</td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-        <div className="flex items-center justify-between p-3 text-xs text-gray-500">
-          <div>Showing 1–{leads.length} of {total}</div>
+      <LeadsListClient
+        canBulk={canBulk}
+        agents={agents.map((a) => ({ id: a.id, name: a.name, team: a.team }))}
+        leads={leads.map((l) => ({
+          id: l.id, name: l.name, phone: l.phone, email: l.email,
+          source: l.source, statusName: l.status,
+          srcChip: srcChip[l.source], srcLabel: srcLabel[l.source],
+          statusChip: statusChip[l.status],
+          aiScore: l.aiScore, aiScoreValue: l.aiScoreValue,
+          team: l.forwardedTeam,
+          owner: l.owner ? { name: l.owner.name, avatarColor: l.owner.avatarColor ?? "bg-slate-500" } : null,
+          budget: l.budgetMin ? fmtMoney(l.budgetMin, l.budgetCurrency) : null,
+          interest: l.interestedUnits[0] ? `${l.interestedUnits[0].unit.project.name} ${l.interestedUnits[0].unit.configuration}` : null,
+          lastTouched: l.lastTouchedAt ? formatDistanceToNow(l.lastTouchedAt, { addSuffix: true }) : "—",
+        }))}
+      />
+
+      {/* Pagination */}
+      <div className="flex items-center justify-between text-sm">
+        <div className="text-gray-500">Showing {skip + 1}–{Math.min(skip + PAGE_SIZE, total)} of {total}</div>
+        <div className="flex gap-2">
+          {page > 1 && (
+            <Link href={`?${new URLSearchParams({ ...sp as Record<string,string>, page: String(page - 1) }).toString()}`} className="btn btn-ghost">‹ Prev</Link>
+          )}
+          <span className="px-3 py-2 text-xs text-gray-500">Page {page} of {totalPages}</span>
+          {page < totalPages && (
+            <Link href={`?${new URLSearchParams({ ...sp as Record<string,string>, page: String(page + 1) }).toString()}`} className="btn btn-ghost">Next ›</Link>
+          )}
         </div>
       </div>
     </>

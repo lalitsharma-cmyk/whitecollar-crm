@@ -14,21 +14,18 @@ export default async function LoginPage({ searchParams }: { searchParams?: Promi
         <form action="/api/login" method="post" className="space-y-3">
           <div>
             <label className="text-xs font-semibold text-gray-600">Email</label>
-            <input name="email" type="email" required defaultValue="lalit@whitecollarrealty.com"
+            <input name="email" type="email" required placeholder="you@whitecollarrealty.com"
               className="w-full mt-1 border border-[#e5e7eb] rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#c9a24b]" />
           </div>
           <div>
             <label className="text-xs font-semibold text-gray-600">Password</label>
-            <input name="password" type="password" required defaultValue="demo1234"
+            <input name="password" type="password" required placeholder="Your password"
               className="w-full mt-1 border border-[#e5e7eb] rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#c9a24b]" />
           </div>
           <button className="btn btn-primary w-full justify-center mt-2">Sign in</button>
         </form>
-        <div className="mt-5 text-xs text-gray-500 space-y-1">
-          <div className="font-semibold text-gray-700">Demo accounts (password: <code>demo1234</code>):</div>
-          <div>• <b>lalit@whitecollarrealty.com</b> — Admin</div>
-          <div>• <b>neha@whitecollarrealty.com</b> — Manager</div>
-          <div>• <b>rahul@whitecollarrealty.com</b> — Agent</div>
+        <div className="mt-5 text-[11px] text-gray-500 text-center">
+          Forgot password? Ask your admin to reset it.
         </div>
       </div>
     </div>

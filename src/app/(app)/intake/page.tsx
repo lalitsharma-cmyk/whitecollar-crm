@@ -48,6 +48,49 @@ Meta webhook verify token: ${process.env.WHATSAPP_VERIFY_TOKEN ?? "wcr-dev-verif
         </div>
 
         <div className="card p-5">
+          <div className="flex items-center gap-2 mb-2"><span className="chip src">📝 Google Forms</span><b>Auto-push (FREE)</b></div>
+          <p className="text-sm text-gray-600">Every Google Form submission becomes a CRM lead in 30 seconds. Free Apps Script — no API account needed.</p>
+          <details className="mt-3">
+            <summary className="text-xs font-semibold text-[#0b1a33] cursor-pointer">Show setup script ↓</summary>
+            <pre className="bg-[#0b1a33] text-[#e7c97a] text-[10px] rounded-lg p-3 mt-2 overflow-x-auto leading-snug">{`// In Google Form → ⋮ → Script editor → paste:
+const CRM_URL = "${base}/api/intake/website";
+const CRM_KEY = "${websiteKey}";
+
+function onFormSubmit(e) {
+  const items = e.response.getItemResponses();
+  const data = { project: e.source.getTitle() };
+  items.forEach(it => {
+    const q = it.getItem().getTitle().toLowerCase().trim();
+    const v = it.getResponse();
+    if (q.includes("name")) data.name = v;
+    else if (q.includes("phone") || q.includes("mobile")) data.phone = v;
+    else if (q.includes("email")) data.email = v;
+    else if (q.includes("city")) data.city = v;
+    else if (q.includes("budget")) data.budgetMin = parseFloat(String(v).replace(/[^\\d.]/g,""));
+    else if (q.includes("bhk") || q.includes("config")) data.configuration = v;
+    else data.message = (data.message ? data.message + " · " : "") + q + ": " + v;
+  });
+  if (!data.name && !data.phone && !data.email) return;
+  UrlFetchApp.fetch(CRM_URL, {
+    method: "post", contentType: "application/json",
+    headers: { "X-WCR-Key": CRM_KEY },
+    payload: JSON.stringify(data),
+    muteHttpExceptions: true,
+  });
+}
+
+// Then: 🕐 Triggers → + Add Trigger → onFormSubmit / From form / On form submit
+// Allow permissions → done. Test by submitting your form.`}</pre>
+          </details>
+        </div>
+
+        <div className="card p-5">
+          <div className="flex items-center gap-2 mb-2"><span className="chip src">✉ Email</span><b>Auto-create from inbound emails</b></div>
+          <p className="text-sm text-gray-600">Forward 99acres / MagicBricks / Housing / website-contact emails to a dedicated address → CRM parses + creates lead. Setup via Cloudflare Email Routing (FREE).</p>
+          <div className="mt-3 text-xs text-gray-500">📑 Step-by-step in <code>EMAIL_TO_LEAD_SETUP.md</code></div>
+        </div>
+
+        <div className="card p-5">
           <div className="flex items-center gap-2 mb-2"><span className="chip src-call">Calls / IVR</span><b>Coming soon</b></div>
           <p className="text-sm text-gray-600">Schema and timeline are already IVR-ready. When you pick a provider (Exotel / Knowlarity / MyOperator), we wire it in one step.</p>
         </div>

@@ -7,6 +7,7 @@ import { prisma } from "@/lib/prisma";
 import { notify } from "@/lib/notify";
 import { ActivityType, ActivityStatus, AIScore } from "@prisma/client";
 import { syncProjectsFromMarketingSite } from "@/lib/syncProjects";
+import { sendReportToManagers, windowsForToday } from "@/lib/reports";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -79,10 +80,21 @@ export async function GET(req: NextRequest) {
     }).catch(() => {});  // skip if leadId required
   }
 
-  // Opportunistic: resync projects from whitecollarrealty.com (best-effort, never fails the cron)
+  // Opportunistic: resync projects from whitecollarrealty.com (best-effort)
   let projectSync: { upserted?: number; total?: number; error?: string } = {};
   try { projectSync = await syncProjectsFromMarketingSite(); }
   catch (e) { projectSync = { error: String(e) }; }
 
-  return NextResponse.json({ ok: true, agentsNotified: notified, window: { startUTC, endUTC }, projectSync });
+  // Auto-email reports to managers: daily always, weekly on Mondays, monthly on 1st
+  const w = windowsForToday();
+  const reports: Record<string, unknown> = {};
+  try { reports.daily = await sendReportToManagers(w.daily); } catch (e) { reports.daily = { error: String(e) }; }
+  if (w.isMonday) {
+    try { reports.weekly = await sendReportToManagers(w.weekly); } catch (e) { reports.weekly = { error: String(e) }; }
+  }
+  if (w.isFirstOfMonth) {
+    try { reports.monthly = await sendReportToManagers(w.monthly); } catch (e) { reports.monthly = { error: String(e) }; }
+  }
+
+  return NextResponse.json({ ok: true, agentsNotified: notified, window: { startUTC, endUTC }, projectSync, reports });
 }
