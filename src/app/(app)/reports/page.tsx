@@ -25,10 +25,10 @@ export default async function ReportsPage() {
     }),
 
     prisma.$queryRaw<Array<{ d: string; total: number; connected: number }>>`
-      SELECT date(startedAt) as d,
-             COUNT(*) as total,
-             SUM(CASE WHEN outcome = ${CallOutcome.CONNECTED} THEN 1 ELSE 0 END) as connected
-      FROM CallLog WHERE startedAt >= date('now','-13 days') GROUP BY date(startedAt) ORDER BY d ASC`,
+      SELECT to_char("startedAt"::date, 'YYYY-MM-DD') as d,
+             COUNT(*)::int as total,
+             SUM(CASE WHEN outcome::text = ${CallOutcome.CONNECTED} THEN 1 ELSE 0 END)::int as connected
+      FROM "CallLog" WHERE "startedAt" >= (CURRENT_DATE - INTERVAL '13 days') GROUP BY "startedAt"::date ORDER BY "startedAt"::date ASC`,
 
     Promise.all([
       prisma.lead.count(),

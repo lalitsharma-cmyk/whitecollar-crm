@@ -3,23 +3,17 @@ import { LeadStatus, LeadSource, AIScore, CallOutcome, ActivityStatus } from "@p
 import { formatDistanceToNow, startOfDay } from "date-fns";
 import LeadsTrendChart from "@/components/charts/LeadsTrendChart";
 import SourceMixChart from "@/components/charts/SourceMixChart";
+import { fmtMoney, fmtMoneyDual } from "@/lib/money";
 
 export const dynamic = "force-dynamic";
-
-function fmtAED(v: number) {
-  if (v >= 1e9) return `AED ${(v / 1e9).toFixed(2)} B`;
-  if (v >= 1e6) return `AED ${(v / 1e6).toFixed(1)} M`;
-  if (v >= 1e3) return `AED ${(v / 1e3).toFixed(0)} K`;
-  return `AED ${v.toLocaleString()}`;
-}
-const fmtINR = fmtAED; // alias to avoid breaking other call sites in this file
 
 export default async function DashboardPage() {
   const todayStart = startOfDay(new Date());
 
   const [
     totalLeads, newToday, hotLeads, callsToday, connectedCallsToday,
-    leadsBySource, recentActivities, upcoming, leadsLast14, sourceMix, leaderboard, pipelineValue,
+    leadsBySource, recentActivities, upcoming, leadsLast14, sourceMix, leaderboard,
+    pipelineDubai, pipelineIndia,
   ] = await Promise.all([
     prisma.lead.count(),
     prisma.lead.count({ where: { createdAt: { gte: todayStart } } }),
@@ -29,18 +23,22 @@ export default async function DashboardPage() {
     prisma.lead.groupBy({ by: ["source"], _count: { _all: true }, where: { createdAt: { gte: todayStart } } }),
     prisma.activity.findMany({ orderBy: { createdAt: "desc" }, take: 6, include: { lead: true, user: true } }),
     prisma.activity.findMany({ where: { status: ActivityStatus.PLANNED, scheduledAt: { gte: new Date() } }, orderBy: { scheduledAt: "asc" }, take: 5, include: { lead: true } }),
-    prisma.$queryRaw<Array<{ d: string; n: number }>>`SELECT date(createdAt) as d, COUNT(*) as n FROM Lead WHERE createdAt >= date('now','-13 days') GROUP BY date(createdAt) ORDER BY d ASC`,
+    prisma.$queryRaw<Array<{ d: string; n: number }>>`SELECT to_char("createdAt"::date, 'YYYY-MM-DD') as d, COUNT(*)::int as n FROM "Lead" WHERE "createdAt" >= (CURRENT_DATE - INTERVAL '13 days') GROUP BY "createdAt"::date ORDER BY "createdAt"::date ASC`,
     prisma.lead.groupBy({ by: ["source"], _count: { _all: true } }),
     prisma.user.findMany({
       where: { active: true, role: { not: "ADMIN" } },
       include: { _count: { select: { callLogs: { where: { startedAt: { gte: todayStart } } }, ownedLeads: true } } },
       take: 5,
     }),
-    prisma.lead.aggregate({ _sum: { budgetMin: true }, where: { status: { in: [LeadStatus.QUALIFIED, LeadStatus.SITE_VISIT, LeadStatus.NEGOTIATION] } } }),
+    // Pipeline value split by currency
+    prisma.lead.aggregate({ _sum: { budgetMin: true }, where: { budgetCurrency: "AED", status: { in: [LeadStatus.QUALIFIED, LeadStatus.SITE_VISIT, LeadStatus.NEGOTIATION] } } }),
+    prisma.lead.aggregate({ _sum: { budgetMin: true }, where: { budgetCurrency: "INR", status: { in: [LeadStatus.QUALIFIED, LeadStatus.SITE_VISIT, LeadStatus.NEGOTIATION] } } }),
   ]);
 
   const connectRate = callsToday ? Math.round((connectedCallsToday / callsToday) * 100) : 0;
   const sortedLb = [...leaderboard].sort((a, b) => b._count.callLogs - a._count.callLogs);
+  const aedSum = pipelineDubai._sum.budgetMin ?? 0;
+  const inrSum = pipelineIndia._sum.budgetMin ?? 0;
 
   // Lead-by-source map for today
   const srcMap = new Map(leadsBySource.map((r) => [r.source, r._count._all]));
@@ -51,7 +49,7 @@ export default async function DashboardPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">Sales Command Center</h1>
-          <p className="text-sm text-gray-500">{new Date().toLocaleDateString("en-US", { weekday: "long", day: "numeric", month: "long", year: "numeric" })} · Live data</p>
+          <p className="text-sm text-gray-500">{new Date().toLocaleDateString("en-US", { weekday: "long", day: "numeric", month: "long", year: "numeric" })} · Live data · Dubai (AED) + India (₹)</p>
         </div>
         <div className="seg">
           <button className="on">Today</button>
@@ -80,7 +78,10 @@ export default async function DashboardPage() {
         </div>
         <div className="card kpi grad-card">
           <div className="text-xs text-white/70">Pipeline Value</div>
-          <div className="text-3xl font-bold mt-1">{fmtINR(pipelineValue._sum.budgetMin ?? 0)}</div>
+          <div className="text-sm font-bold mt-1 leading-tight">
+            <div>{fmtMoney(aedSum, "AED")} <span className="text-[10px] text-white/60 font-normal">· Dubai</span></div>
+            <div>{fmtMoney(inrSum, "INR")} <span className="text-[10px] text-white/60 font-normal">· India</span></div>
+          </div>
           <div className="mt-2 text-xs text-white/70">Qualified → Negotiation</div>
         </div>
       </div>
@@ -112,7 +113,7 @@ export default async function DashboardPage() {
           <ul className="space-y-3 text-sm">
             <li className="flex gap-3"><span className="dot bg-[#ef4444]"></span><div><b>{hotLeads} hot leads</b> in your pipeline. Prioritise the {Math.min(3, hotLeads)} idle for &gt;48h.</div></li>
             <li className="flex gap-3"><span className="dot bg-[#c9a24b]"></span><div><b>Today's connect rate is {connectRate}%</b> across {callsToday} calls.</div></li>
-            <li className="flex gap-3"><span className="dot bg-[#16a34a]"></span><div><b>Pipeline value:</b> {fmtINR(pipelineValue._sum.budgetMin ?? 0)} of open deals in Qualified → Negotiation.</div></li>
+            <li className="flex gap-3"><span className="dot bg-[#16a34a]"></span><div><b>Pipeline:</b> {fmtMoneyDual({ aed: aedSum, inr: inrSum })} of open deals in Qualified → Negotiation.</div></li>
             <li className="flex gap-3"><span className="dot bg-[#3b82f6]"></span><div><b>Connect with your AI provider</b> (Settings → AI) to enable smarter insights and lead summaries.</div></li>
           </ul>
         </div>
@@ -124,7 +125,7 @@ export default async function DashboardPage() {
                 <div className={`avatar ${u.avatarColor ?? "bg-slate-500"}`}>{u.name.split(" ").map((s) => s[0]).slice(0, 2).join("")}</div>
                 <div className="flex-1">
                   <div className="text-sm font-semibold">{u.name}</div>
-                  <div className="text-xs text-gray-500">{u._count.callLogs} calls today · {u._count.ownedLeads} leads</div>
+                  <div className="text-xs text-gray-500">{u.team ?? "—"} · {u._count.callLogs} calls today · {u._count.ownedLeads} leads</div>
                 </div>
                 <div className="text-sm font-bold">{u._count.callLogs}</div>
               </div>

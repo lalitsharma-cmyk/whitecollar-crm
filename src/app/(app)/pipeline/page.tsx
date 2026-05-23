@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { LeadStatus, AIScore } from "@prisma/client";
 import Link from "next/link";
+import { fmtMoney, fmtMoneyDual } from "@/lib/money";
 
 export const dynamic = "force-dynamic";
 
@@ -22,16 +23,16 @@ export default async function PipelinePage() {
     include: { owner: true, interestedUnits: { include: { unit: { include: { project: true } } }, take: 1 } },
   });
 
-  const totalOpen = leads
-    .filter(l => ["QUALIFIED", "SITE_VISIT", "NEGOTIATION"].includes(l.status))
-    .reduce((s, l) => s + (l.budgetMin ?? 0), 0);
+  const open = leads.filter(l => ["QUALIFIED", "SITE_VISIT", "NEGOTIATION"].includes(l.status));
+  const aedOpen = open.filter(l => l.budgetCurrency === "AED").reduce((s, l) => s + (l.budgetMin ?? 0), 0);
+  const inrOpen = open.filter(l => l.budgetCurrency === "INR").reduce((s, l) => s + (l.budgetMin ?? 0), 0);
 
   return (
     <>
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">Sales Pipeline</h1>
-          <p className="text-sm text-gray-500">{leads.length} leads in pipeline · ₹{(totalOpen/1e7).toFixed(1)} Cr open</p>
+          <p className="text-sm text-gray-500">{leads.length} leads in pipeline · open value {fmtMoneyDual({ aed: aedOpen, inr: inrOpen })}</p>
         </div>
         <div className="seg">
           <button className="on">Kanban</button>
@@ -42,12 +43,13 @@ export default async function PipelinePage() {
       <div className="grid grid-cols-6 gap-3">
         {stages.map((stage) => {
           const items = leads.filter(l => l.status === stage.key);
-          const value = items.reduce((s,l) => s + (l.budgetMin ?? 0), 0);
+          const aedSum = items.filter(l => l.budgetCurrency === "AED").reduce((s,l) => s + (l.budgetMin ?? 0), 0);
+          const inrSum = items.filter(l => l.budgetCurrency === "INR").reduce((s,l) => s + (l.budgetMin ?? 0), 0);
           return (
             <div key={stage.key} className="col">
               <div className="flex items-center justify-between mb-2">
                 <div className="font-semibold text-sm">{stage.label} <span className="text-gray-500 font-normal">· {items.length}</span></div>
-                <span className="text-xs text-gray-500">{value > 0 ? `₹${(value/1e7).toFixed(1)}Cr` : "—"}</span>
+                <span className="text-[10px] text-gray-500">{(aedSum + inrSum) > 0 ? fmtMoneyDual({ aed: aedSum, inr: inrSum }) : "—"}</span>
               </div>
               {items.slice(0, 12).map(l => {
                 const proj = l.interestedUnits[0]?.unit;
@@ -56,7 +58,7 @@ export default async function PipelinePage() {
                     <div className="font-semibold text-sm">{l.name}</div>
                     <div className="text-xs text-gray-500 truncate">
                       {proj ? `${proj.project.name} ${proj.configuration}` : l.configuration ?? "—"}
-                      {l.budgetMin ? ` · ₹${(l.budgetMin/1e7).toFixed(1)}Cr` : ""}
+                      {l.budgetMin ? ` · ${fmtMoney(l.budgetMin, l.budgetCurrency)}` : ""}
                     </div>
                     <div className="flex items-center justify-between mt-2">
                       {l.aiScore && <span className={`chip ${aiClass(l.aiScore)}`}>{l.aiScore} · {l.aiScoreValue}</span>}

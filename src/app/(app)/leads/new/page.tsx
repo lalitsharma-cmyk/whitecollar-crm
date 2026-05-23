@@ -3,6 +3,7 @@ import { ingestLead } from "@/lib/leadIngest";
 import { LeadSource, Potential, FundReadiness, MoodStatus, InvestTimeline } from "@prisma/client";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { defaultCurrencyForTeam } from "@/lib/money";
 
 async function createLeadAction(formData: FormData) {
   "use server";
@@ -30,6 +31,10 @@ async function createLeadAction(formData: FormData) {
   };
 
   const update: Record<string, unknown> = {};
+  const currency = String(formData.get("budgetCurrency") ?? "");
+  if (currency === "AED" || currency === "INR") update.budgetCurrency = currency;
+  const team = String(formData.get("forwardedTeam") ?? "");
+  if (team) update.forwardedTeam = team;
   const company = opt<string>(formData.get("company")); if (company) update.company = company;
   const address = opt<string>(formData.get("address")); if (address) update.address = address;
   const whoIsClient = opt<string>(formData.get("whoIsClient")); if (whoIsClient) update.whoIsClient = whoIsClient;
@@ -52,7 +57,9 @@ const input = "w-full mt-1 border border-[#e5e7eb] rounded-lg px-3 py-2 text-sm"
 const label = "text-xs font-semibold text-gray-600";
 
 export default async function NewLeadPage() {
-  await requireUser();
+  const me = await requireUser();
+  const defaultCurrency = defaultCurrencyForTeam(me.team);
+  const defaultTeam = me.team && (me.team === "Dubai" || me.team === "India") ? me.team : (defaultCurrency === "INR" ? "India" : "Dubai");
   return (
     <>
       <h1 className="text-2xl font-bold">New Lead</h1>
@@ -76,8 +83,16 @@ export default async function NewLeadPage() {
           <div className="text-xs font-bold tracking-widest text-[#c9a24b] mb-3">REQUIREMENT</div>
           <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
             <div><label className={label}>Configuration</label><input name="configuration" placeholder="2BR / Penthouse / Villa" className={input} /></div>
-            <div><label className={label}>💰 Budget min (AED)</label><input name="budgetMin" type="number" placeholder="e.g. 2500000" className={input} /></div>
-            <div><label className={label}>💰 Budget max (AED)</label><input name="budgetMax" type="number" className={input} /></div>
+            <div>
+              <label className={label}>Team / Currency</label>
+              <select name="forwardedTeam" defaultValue={defaultTeam} className={input}>
+                <option value="Dubai">Dubai (AED)</option>
+                <option value="India">India (₹)</option>
+              </select>
+              <input type="hidden" name="budgetCurrency" defaultValue={defaultCurrency} />
+            </div>
+            <div><label className={label}>💰 Budget min</label><input name="budgetMin" type="number" placeholder={defaultCurrency === "AED" ? "e.g. 2500000 AED" : "e.g. 30000000 INR"} className={input} /></div>
+            <div><label className={label}>💰 Budget max</label><input name="budgetMax" type="number" className={input} /></div>
             <div>
               <label className={label}>Categorization</label>
               <select name="categorization" className={input}>

@@ -5,12 +5,8 @@ import Link from "next/link";
 
 export const dynamic = "force-dynamic";
 
-function aedFmt(v?: number | null) {
-  if (!v) return "—";
-  if (v >= 1e6) return `AED ${(v / 1e6).toFixed(2)}M`;
-  if (v >= 1e3) return `AED ${(v / 1e3).toFixed(0)}K`;
-  return `AED ${v.toLocaleString()}`;
-}
+import { fmtMoney } from "@/lib/money";
+const aedFmt = fmtMoney;
 
 const moodClass: Record<string, string> = {
   EXCITED: "chip-won", INTERESTED: "chip-warm", NEUTRAL: "chip-new",
@@ -97,7 +93,7 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
             </div>
             <div>
               <div className="text-xs text-gray-500">Budget</div>
-              <div className="font-semibold">{lead.budgetMin ? `${aedFmt(lead.budgetMin)} – ${aedFmt(lead.budgetMax ?? lead.budgetMin)}` : "—"}</div>
+              <div className="font-semibold">{lead.budgetMin ? `${aedFmt(lead.budgetMin, lead.budgetCurrency)} – ${aedFmt(lead.budgetMax ?? lead.budgetMin, lead.budgetCurrency)}` : "—"}</div>
             </div>
             <div>
               <div className="text-xs text-gray-500">Configuration</div>
@@ -211,7 +207,7 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
               <div key={p.id} className="flex items-center justify-between border border-[#e5e7eb] rounded-lg p-2">
                 <div>
                   <div className="font-semibold">{p.unit.project.name} {p.unit.configuration}</div>
-                  <div className="text-xs text-gray-500">{p.unit.code} · {aedFmt(p.unit.priceBase)}</div>
+                  <div className="text-xs text-gray-500">{p.unit.code} · {aedFmt(p.unit.priceBase, p.unit.project.country === "India" ? "INR" : "AED")}</div>
                 </div>
                 <span className={`chip ${p.type === "PRIMARY" ? "chip-hot" : p.type === "COMPARE" ? "chip-warm" : "chip-lost"}`}>{p.type}</span>
               </div>

@@ -2,6 +2,7 @@ import "server-only";
 import { prisma } from "@/lib/prisma";
 import { LeadSource, LeadStatus, ActivityType, ActivityStatus } from "@prisma/client";
 import { pickRoundRobinAgent, fingerprintFor } from "@/lib/assignment";
+import { defaultCurrencyForLocation } from "@/lib/money";
 
 export interface RawLeadInput {
   name: string;
@@ -45,8 +46,12 @@ export async function ingestLead(input: RawLeadInput) {
     }
   }
 
-  // Assign via round-robin
-  const agent = await pickRoundRobinAgent({ team: input.team, source: input.source });
+  // Currency from city/country (Dubai → AED, India → INR)
+  const currency = defaultCurrencyForLocation(input.city, input.country);
+  const team = input.team ?? (currency === "INR" ? "India" : "Dubai");
+
+  // Assign via round-robin (prefer matching team)
+  const agent = (await pickRoundRobinAgent({ team, source: input.source })) ?? (await pickRoundRobinAgent({ source: input.source }));
 
   const lead = await prisma.lead.create({
     data: {
@@ -61,6 +66,8 @@ export async function ingestLead(input: RawLeadInput) {
       configuration: input.configuration,
       budgetMin: input.budgetMin,
       budgetMax: input.budgetMax,
+      budgetCurrency: currency,
+      forwardedTeam: team,
       notesShort: input.notesShort,
       tags: input.tags,
       ownerId: agent?.id,

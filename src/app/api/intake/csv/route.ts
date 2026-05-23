@@ -194,6 +194,19 @@ export async function POST(req: NextRequest) {
       if (team) update.forwardedTeam = team;
       const remarks = pick(row, "remarks");
       if (remarks) update.remarks = remarks;
+      // Currency: explicit column wins, else infer from header (Budget (AED) vs Budget (INR))
+      const explicitCcy = pick(row, "currency", "budgetcurrency");
+      if (explicitCcy) {
+        const c = explicitCcy.toUpperCase();
+        if (c === "AED" || c === "INR") update.budgetCurrency = c;
+      } else {
+        // Sniff the header text for AED/INR/₹/Rs
+        const budgetHeader = Object.keys(row).find(k => /budget/i.test(k));
+        if (budgetHeader) {
+          if (/aed/i.test(budgetHeader)) update.budgetCurrency = "AED";
+          else if (/inr|₹|rs/i.test(budgetHeader)) update.budgetCurrency = "INR";
+        }
+      }
 
       if (Object.keys(update).length > 0) {
         await prisma.lead.update({ where: { id: r.lead.id }, data: update });

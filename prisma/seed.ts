@@ -110,7 +110,14 @@ async function main() {
     const scoreVal = aiScore === AIScore.HOT ? randInt(80, 96) : aiScore === AIScore.WARM ? randInt(50, 79) : randInt(15, 49);
     const city = rand(cities);
     const cfg = rand(cfgs);
-    const budgetMin = randInt(8, 90) * 100000; // AED hundreds of thousands → millions
+    // City decides team + currency
+    const isIndia = ['Mumbai','Delhi','Bangalore','Gurgaon','Hyderabad','Pune'].includes(city);
+    const team = isIndia ? 'India' : 'Dubai';
+    const currency = isIndia ? 'INR' : 'AED';
+    // Realistic budgets per currency
+    const budgetMin = isIndia
+      ? randInt(50, 1500) * 100000    // ₹50 L – ₹15 Cr
+      : randInt(5, 150) * 100000;     // AED 500K – AED 15M
     const ageMin = randInt(0, 60 * 24 * 14);
     const created = new Date(Date.now() - ageMin * 60 * 1000);
     const lastTouched = new Date(Date.now() - randInt(0, 60 * 24 * 5) * 60 * 1000);
@@ -133,7 +140,7 @@ async function main() {
         currentStatus: rand(callStatuses),
         budgetMin,
         budgetMax: budgetMin * 1.25,
-        budgetCurrency: 'AED',
+        budgetCurrency: currency,
         configuration: cfg,
         categorization: rand(categorizations),
         tags: rand(['NRI', 'Investor', 'End-user', 'HNI', 'Golden Visa']),
@@ -152,11 +159,11 @@ async function main() {
         // AI
         aiScore,
         aiScoreValue: scoreVal,
-        aiSummary: aiScore === AIScore.HOT ? `High-intent ${city} buyer · ${cfg} · AED ${(budgetMin/1e6).toFixed(1)}M budget · 60-80% booking probability within 14 days.` : aiScore === AIScore.WARM ? `Moderate interest; needs nurturing. Budget aligns with mid-tier inventory.` : `Low engagement; nurture or de-prioritize.`,
+        aiSummary: aiScore === AIScore.HOT ? `High-intent ${city} buyer · ${cfg} · ${currency === 'INR' ? '₹'+(budgetMin/1e7).toFixed(1)+' Cr' : 'AED '+(budgetMin/1e6).toFixed(1)+'M'} budget · 60-80% booking probability within 14 days.` : aiScore === AIScore.WARM ? `Moderate interest; needs nurturing. Budget aligns with mid-tier inventory.` : `Low engagement; nurture or de-prioritize.`,
         aiNextAction: aiScore === AIScore.HOT ? 'Book a site visit this week and send the latest brochure.' : 'Send a personalised WhatsApp follow-up.',
         aiUpdatedAt: new Date(),
         ownerId: owner.id,
-        forwardedTeam: ['Dubai','Abu Dhabi','Sharjah'].includes(city) ? 'Dubai' : 'India',
+        forwardedTeam: team,
         lastTouchedAt: lastTouched,
         createdAt: created,
       },

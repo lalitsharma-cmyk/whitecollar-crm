@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { LeadSource, LeadStatus, AIScore } from "@prisma/client";
 import { formatDistanceToNow } from "date-fns";
 import Link from "next/link";
+import { fmtMoney } from "@/lib/money";
 
 export const dynamic = "force-dynamic";
 
@@ -58,25 +59,27 @@ export default async function LeadsPage() {
       <div className="card overflow-hidden">
         <table className="tbl">
           <thead><tr>
-            <th></th><th>Lead</th><th>Source</th><th>Interested in</th><th>Stage</th><th>AI Score</th><th>Owner</th><th>Last touch</th><th>Created</th><th></th>
+            <th></th><th>Lead</th><th>Team</th><th>Source</th><th>Budget</th><th>Stage</th><th>AI Score</th><th>Owner</th><th>Last touch</th><th></th>
           </tr></thead>
           <tbody>
             {leads.map((l) => {
               const interest = l.interestedUnits[0];
+              const teamChipClass = l.forwardedTeam === "India" ? "src-csv" : "src-wa";
               return (
                 <tr key={l.id}>
                   <td><input type="checkbox" /></td>
                   <td>
                     <Link href={`/leads/${l.id}`} className="font-semibold text-[#0b1a33] hover:underline">{l.name}</Link>
                     <div className="text-xs text-gray-500">{l.phone}{l.email ? ` · ${l.email}` : ""}</div>
+                    {interest && <div className="text-[11px] text-gray-500">→ {interest.unit.project.name} {interest.unit.configuration}</div>}
                   </td>
+                  <td><span className={`chip ${teamChipClass}`}>{l.forwardedTeam ?? "—"}</span></td>
                   <td><span className={`chip ${srcChip[l.source]}`}>{srcLabel[l.source]}</span></td>
-                  <td className="text-sm">{interest ? `${interest.unit.project.name} ${interest.unit.configuration}` : <span className="text-gray-400">—</span>}</td>
+                  <td className="text-sm font-semibold">{l.budgetMin ? fmtMoney(l.budgetMin, l.budgetCurrency) : <span className="text-gray-400 font-normal">—</span>}</td>
                   <td><span className={`chip ${statusChip[l.status]}`}>{l.status.replaceAll("_", " ")}</span></td>
                   <td>{l.aiScore ? <span className={`chip ${aiChip(l.aiScore)}`}>{l.aiScore} · {l.aiScoreValue}</span> : <span className="text-gray-400">—</span>}</td>
                   <td>{l.owner ? <div className={`avatar ${l.owner.avatarColor ?? "bg-slate-500"}`}>{l.owner.name.split(" ").map(s=>s[0]).slice(0,2).join("")}</div> : <span className="text-gray-400">—</span>}</td>
                   <td className="text-xs text-gray-500">{l.lastTouchedAt ? formatDistanceToNow(l.lastTouchedAt, { addSuffix: true }) : "—"}</td>
-                  <td className="text-xs text-gray-500">{formatDistanceToNow(l.createdAt, { addSuffix: true })}</td>
                   <td>⋯</td>
                 </tr>
               );
