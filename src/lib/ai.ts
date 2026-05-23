@@ -33,6 +33,7 @@ export interface LeadForAI {
   moodStatus?: string | null;
   categorization?: string | null;
   remarks?: string | null;
+  todoNext?: string | null;
   // signals
   tags?: string | null;
   daysOld: number;
