@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Phone, MessageCircle, Mail, PhoneOff, PhoneForwarded, AlertCircle } from "lucide-react";
+import { Phone, MessageCircle, Mail, AlertCircle, Sparkles } from "lucide-react";
 
 const OUTCOMES = [
   { v: "CONNECTED",        label: "✅ Connected" },
@@ -23,8 +23,9 @@ interface Props {
   currentOwnerId: string | null;
   canReassign: boolean;
   agents: Agent[];
-  // computed by parent: masked display
   phoneMasked: string | null;
+  leadName: string;
+  agentName: string;
 }
 
 /** Build a tel: URL — strips spaces but keeps + and digits */
@@ -35,7 +36,9 @@ function waUrl(p: string | null) {
   return `https://wa.me/${digits}`;
 }
 
-export default function LeadActionsClient({ leadId, phone, email, currentOwnerId, canReassign, agents, phoneMasked }: Props) {
+export default function LeadActionsClient({ leadId, phone, email, currentOwnerId, canReassign, agents, phoneMasked, leadName, agentName }: Props) {
+  const waGreeting = `Hi ${leadName}, this is ${agentName} from White Collar Realty. I'll be your dedicated property advisor. May I know a convenient time to call you today?`;
+  const waUrlWithDraft = (p: string | null) => p ? `https://wa.me/${p.replace(/\D/g, "")}?text=${encodeURIComponent(waGreeting)}` : "";
   const router = useRouter();
   const [showCall, setShowCall] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -90,7 +93,10 @@ export default function LeadActionsClient({ leadId, phone, email, currentOwnerId
           <a href={telUrl(phone)} className="btn btn-ghost"><Phone className="w-[16px] h-[16px]" /> Call</a>
         )}
         {phone && (
-          <a href={waUrl(phone)} target="_blank" rel="noopener noreferrer" className="btn btn-ghost"><MessageCircle className="w-[16px] h-[16px]" /> WhatsApp</a>
+          <>
+            <a href={waUrl(phone)} target="_blank" rel="noopener noreferrer" className="btn btn-ghost"><MessageCircle className="w-[16px] h-[16px]" /> WhatsApp</a>
+            <a href={waUrlWithDraft(phone)} target="_blank" rel="noopener noreferrer" className="btn btn-ghost" title="Opens WhatsApp with a pre-typed greeting — you just tap Send"><Sparkles className="w-[16px] h-[16px]" /> WA Greeting</a>
+          </>
         )}
         {email && (
           <a href={`mailto:${email}`} className="btn btn-ghost"><Mail className="w-[16px] h-[16px]" /> Email</a>

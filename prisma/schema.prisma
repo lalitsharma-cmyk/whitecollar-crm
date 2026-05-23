@@ -179,6 +179,7 @@ model Lead {
 
   // relations
   interestedUnits LeadProperty[]
+  discussed       LeadProject[]
   activities      Activity[]
   callLogs        CallLog[]
   notes           Note[]
@@ -224,9 +225,32 @@ model Project {
   updatedAt     DateTime       @updatedAt
 
   units         Unit[]
+  discussedBy   LeadProject[]
 
   @@index([city])
   @@index([status])
+}
+
+// Projects DISCUSSED with a lead (different from interestedUnits which pins specific units)
+enum LeadProjectStatus {
+  DISCUSSED       // mentioned/sent brochure
+  SHORTLISTED     // serious interest
+  SITE_VISITED
+  RULED_OUT
+}
+
+model LeadProject {
+  id        String            @id @default(cuid())
+  leadId    String
+  projectId String
+  status    LeadProjectStatus @default(DISCUSSED)
+  notes     String?
+  discussedAt DateTime        @default(now())
+  lead      Lead              @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  project   Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  @@unique([leadId, projectId])
+  @@index([leadId])
+  @@index([projectId])
 }
 
 enum UnitStatus {
@@ -287,13 +311,17 @@ enum ActivityType {
   WHATSAPP
   EMAIL
   SITE_VISIT
-  MEETING
+  OFFICE_MEETING
+  VIRTUAL_MEETING
+  MEETING            // legacy — kept for backwards compatibility
   TASK
   NOTE
   STATUS_CHANGE
   ASSIGNMENT
   LEAD_CREATED
   BROCHURE_SENT
+  PROJECT_DISCUSSED
+  REMINDER_FIRED
 }
 
 enum ActivityStatus {
@@ -484,4 +512,19 @@ model Notification {
   createdAt DateTime      @default(now())
   @@index([userId, readAt])
   @@index([createdAt])
+}
+
+// =====================================================
+// WEB PUSH — browser push notifications to phone / desktop
+// =====================================================
+
+model PushSubscription {
+  id        String   @id @default(cuid())
+  userId    String   // who is subscribed
+  endpoint  String   @unique  // browser-issued URL
+  p256dh    String   // encryption pubkey
+  authKey   String   // auth secret
+  userAgent String?  // for debugging which device
+  createdAt DateTime @default(now())
+  @@index([userId])
 }

@@ -5,6 +5,8 @@ import Link from "next/link";
 import { fmtMoney } from "@/lib/money";
 import { requireUser } from "@/lib/auth";
 import LeadActionsClient from "@/components/LeadActionsClient";
+import LeadProjectsClient from "@/components/LeadProjectsClient";
+import LeadMeetingClient from "@/components/LeadMeetingClient";
 import { runReconciler } from "@/lib/reconciler";
 
 export const dynamic = "force-dynamic";
@@ -39,6 +41,7 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
     include: {
       owner: true,
       interestedUnits: { include: { unit: { include: { project: true } } } },
+      discussed:       { include: { project: true }, orderBy: { discussedAt: "desc" } },
       activities: { orderBy: { createdAt: "desc" }, take: 25, include: { user: true } },
       callLogs:   { orderBy: { startedAt: "desc" }, take: 10, include: { user: true } },
       notes:      { orderBy: { createdAt: "desc" }, take: 10, include: { user: true } },
@@ -46,6 +49,24 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
     },
   });
   if (!lead) notFound();
+
+  // Meeting counters from activities
+  const meetingActs = await prisma.activity.findMany({
+    where: { leadId: id, type: { in: ["OFFICE_MEETING", "VIRTUAL_MEETING", "SITE_VISIT"] } },
+    orderBy: { createdAt: "desc" },
+  });
+  const lastBy = (t: string) => meetingActs.find(a => a.type === t)?.completedAt ?? meetingActs.find(a => a.type === t)?.scheduledAt ?? null;
+  const meetingCounts = {
+    officeMeetings:  { count: meetingActs.filter(a => a.type === "OFFICE_MEETING").length,  lastAt: lastBy("OFFICE_MEETING") },
+    virtualMeetings: { count: meetingActs.filter(a => a.type === "VIRTUAL_MEETING").length, lastAt: lastBy("VIRTUAL_MEETING") },
+    siteVisits:      { count: meetingActs.filter(a => a.type === "SITE_VISIT").length,      lastAt: lastBy("SITE_VISIT") },
+  };
+
+  // All projects for the project-discussion dropdown
+  const allProjects = await prisma.project.findMany({
+    select: { id: true, name: true, city: true },
+    orderBy: { name: "asc" },
+  });
 
   const aiClass = lead.aiScore === "HOT" ? "chip-hot" : lead.aiScore === "WARM" ? "chip-warm" : "chip-cold";
   const canReassign = me.role === "ADMIN" || me.role === "MANAGER";
@@ -111,6 +132,8 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
                 canReassign={canReassign}
                 agents={agents.map(a => ({ id: a.id, name: a.name, role: a.role, team: a.team, avatarColor: a.avatarColor }))}
                 phoneMasked={maskPhone(lead.phone)}
+                leadName={lead.name}
+                agentName={me.name}
               />
             </div>
           </div>
@@ -188,7 +211,24 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
           <div className="card p-5"><div className="font-semibold mb-2">📍 Address</div><p className="text-sm text-gray-700">{lead.address}</p></div>
         )}
         <div className="card p-5">
-          <div className="font-semibold mb-2">Interested properties</div>
+          <LeadMeetingClient leadId={lead.id} counts={meetingCounts} />
+        </div>
+
+        <div className="card p-5">
+          <LeadProjectsClient
+            leadId={lead.id}
+            initial={lead.discussed.map(d => ({
+              projectId: d.projectId,
+              status: d.status,
+              discussedAt: d.discussedAt.toISOString(),
+              project: { name: d.project.name, city: d.project.city },
+            }))}
+            allProjects={allProjects}
+          />
+        </div>
+
+        <div className="card p-5">
+          <div className="font-semibold mb-2">Interested properties (unit-level)</div>
           {lead.interestedUnits.length === 0 && <div className="text-sm text-gray-500">None attached yet.</div>}
           <div className="space-y-2 text-sm">
             {lead.interestedUnits.map((p) => (

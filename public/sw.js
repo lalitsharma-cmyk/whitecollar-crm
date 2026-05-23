@@ -1,10 +1,10 @@
-// White Collar CRM — minimal service worker.
-// Purpose:
-//   1) Make the app installable as a PWA (Android, iOS, Desktop).
-//   2) Cache the app shell so first paint is instant on repeat visits.
-//   3) Network-first for data routes so users always get fresh leads/dashboard.
+// White Collar CRM service worker
+//   1. Make the app installable as a PWA
+//   2. Cache the app shell so first paint is instant on repeat visits
+//   3. Network-first for data routes so users always get fresh leads/dashboard
+//   4. Receive WEB PUSH notifications (FREE — uses browser/OS push servers)
 
-const CACHE = "wcr-shell-v1";
+const CACHE = "wcr-shell-v2";
 const SHELL = ["/login", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", (event) => {
@@ -30,7 +30,6 @@ self.addEventListener("fetch", (event) => {
   const url = new URL(req.url);
   if (url.origin !== self.location.origin) return;
 
-  // Network-first for API and dynamic pages — never serve stale lead data
   if (url.pathname.startsWith("/api/") || url.pathname.startsWith("/dashboard") || url.pathname.startsWith("/leads") || url.pathname.startsWith("/pipeline") || url.pathname.startsWith("/reports")) {
     event.respondWith(
       fetch(req).catch(() => caches.match(req).then((r) => r ?? new Response("Offline", { status: 503 })))
@@ -38,18 +37,50 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // Cache-first for static assets
   event.respondWith(
     caches.match(req).then((cached) => {
       if (cached) return cached;
       return fetch(req).then((res) => {
-        // Cache successful same-origin GETs for the shell
         if (res.ok && (url.pathname.endsWith(".png") || url.pathname.endsWith(".svg") || url.pathname.endsWith(".webmanifest") || url.pathname === "/login")) {
           const copy = res.clone();
           caches.open(CACHE).then((c) => c.put(req, copy));
         }
         return res;
       }).catch(() => caches.match("/login"));
+    })
+  );
+});
+
+// ─── WEB PUSH ────────────────────────────────────────────────────────
+self.addEventListener("push", (event) => {
+  if (!event.data) return;
+  let payload;
+  try { payload = event.data.json(); } catch { payload = { title: "WCR CRM", body: event.data.text() }; }
+  const title = payload.title || "WCR CRM";
+  const sev = payload.severity ?? "INFO";
+  const options = {
+    body: payload.body ?? "",
+    icon: "/icon-192.png",
+    badge: "/icon-192.png",
+    tag: payload.tag,
+    data: { url: payload.url ?? "/dashboard" },
+    requireInteraction: sev === "CRITICAL",
+    silent: false,
+    vibrate: sev === "CRITICAL" ? [200, 100, 200, 100, 200] : [100, 50, 100],
+  };
+  event.waitUntil(self.registration.showNotification(title, options));
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const url = (event.notification.data && event.notification.data.url) || "/dashboard";
+  event.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((list) => {
+      // Reuse open tab if there is one
+      for (const client of list) {
+        if (client.url.endsWith(url) && "focus" in client) return client.focus();
+      }
+      if (self.clients.openWindow) return self.clients.openWindow(url);
     })
   );
 });

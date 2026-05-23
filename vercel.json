@@ -4,8 +4,12 @@
   "installCommand": "npm install",
   "crons": [
     {
-      "path": "/api/cron/sync-projects",
-      "schedule": "0 3 * * *"
+      "path": "/api/cron/morning-reminder",
+      "schedule": "30 4 * * *"
+    },
+    {
+      "path": "/api/cron/evening-reminder",
+      "schedule": "30 12 * * *"
     }
   ]
 }
