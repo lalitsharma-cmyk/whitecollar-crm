@@ -10,6 +10,7 @@ import LeadMeetingClient from "@/components/LeadMeetingClient";
 import { runReconciler } from "@/lib/reconciler";
 import { aggregateCalls, callBreakdownString } from "@/lib/callStats";
 import { activityVisual } from "@/lib/activityIcon";
+import InlineEdit from "@/components/InlineEdit";
 
 export const dynamic = "force-dynamic";
 
@@ -152,37 +153,79 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
           </div>
         </div>
 
-        {lead.whoIsClient && (
-          <div className="card p-5 border-l-4 border-[#c9a24b]">
-            <div className="flex items-center gap-2 mb-2">
-              <span className="ai-tag">WHO IS THE CLIENT</span>
-              <span className="text-xs text-gray-500">— full situation, not keywords</span>
-            </div>
-            <p className="text-sm text-gray-800 leading-relaxed whitespace-pre-wrap">{lead.whoIsClient}</p>
+        <div className="card p-5 border-l-4 border-[#c9a24b]">
+          <div className="flex items-center gap-2 mb-2">
+            <span className="ai-tag">WHO IS THE CLIENT</span>
+            <span className="text-xs text-gray-500">— full situation, not keywords · click to edit</span>
           </div>
-        )}
-
-        <div className="card p-5">
-          <div className="font-semibold mb-3">Qualification</div>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-            <div><div className="text-xs text-gray-500">Potential</div>{lead.potential ? <span className={`chip ${potClass[lead.potential]} mt-1`}>{lead.potential}</span> : <span className="text-gray-400">—</span>}</div>
-            <div><div className="text-xs text-gray-500">Fund Readiness</div>{lead.fundReadiness ? <span className={`chip ${fundClass[lead.fundReadiness]} mt-1`}>{lead.fundReadiness.replaceAll("_"," ")}</span> : <span className="text-gray-400">—</span>}</div>
-            <div><div className="text-xs text-gray-500">When can invest</div><div className="font-semibold">{lead.whenCanInvest ? lead.whenCanInvest.replaceAll("_"," ").toLowerCase() : "—"}</div></div>
-            <div><div className="text-xs text-gray-500">Categorization</div><div className="font-semibold">{lead.categorization ?? "—"}</div></div>
-            <div><div className="text-xs text-gray-500">Budget</div><div className="font-semibold">{lead.budgetMin ? `${aedFmt(lead.budgetMin, lead.budgetCurrency)} – ${aedFmt(lead.budgetMax ?? lead.budgetMin, lead.budgetCurrency)}` : "—"}</div></div>
-            <div><div className="text-xs text-gray-500">Configuration</div><div className="font-semibold">{lead.configuration ?? "—"}</div></div>
-            <div><div className="text-xs text-gray-500">Source</div><div className="font-semibold">{lead.source.replaceAll("_"," ")}</div></div>
-            <div><div className="text-xs text-gray-500">Owner</div><div className="font-semibold">{lead.owner?.name ?? "—"}</div></div>
+          <div className="text-sm text-gray-800 leading-relaxed">
+            <InlineEdit leadId={lead.id} field="whoIsClient" type="textarea" value={lead.whoIsClient ?? ""}
+              placeholder="e.g. NRI from Mumbai based in Dubai. Senior Director at consulting firm. Husband already owns at Burj Vista. Looking for parents who'll relocate next year. Wife is decision maker." />
           </div>
         </div>
 
         <div className="card p-5">
-          <div className="font-semibold mb-3">Scheduling & next action</div>
+          <div className="font-semibold mb-3">Qualification <span className="text-[10px] text-gray-400 font-normal">(click any value to edit)</span></div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+            <div>
+              <div className="text-xs text-gray-500">Potential</div>
+              <InlineEdit leadId={lead.id} field="potential" type="select" value={lead.potential ?? ""}
+                options={[{value:"HIGH",label:"High"},{value:"MEDIUM",label:"Medium"},{value:"LOW",label:"Low"},{value:"UNKNOWN",label:"Unknown"}]} />
+            </div>
+            <div>
+              <div className="text-xs text-gray-500">Fund Readiness</div>
+              <InlineEdit leadId={lead.id} field="fundReadiness" type="select" value={lead.fundReadiness ?? ""}
+                options={[{value:"CASH_READY",label:"Cash Ready"},{value:"BANK_APPROVED",label:"Bank Approved"},{value:"FINANCING_NEEDED",label:"Financing Needed"},{value:"NOT_DISCUSSED",label:"Not Discussed"}]} />
+            </div>
+            <div>
+              <div className="text-xs text-gray-500">When can invest</div>
+              <InlineEdit leadId={lead.id} field="whenCanInvest" type="select" value={lead.whenCanInvest ?? ""}
+                options={[{value:"IMMEDIATE",label:"Immediate"},{value:"THIRTY_DAYS",label:"30 days"},{value:"THREE_MONTHS",label:"3 months"},{value:"SIX_PLUS_MONTHS",label:"6+ months"},{value:"WINDOW_SHOPPING",label:"Just browsing"},{value:"UNKNOWN",label:"Unknown"}]} />
+            </div>
+            <div>
+              <div className="text-xs text-gray-500">Mood</div>
+              <InlineEdit leadId={lead.id} field="moodStatus" type="select" value={lead.moodStatus ?? ""}
+                options={[{value:"EXCITED",label:"😀 Excited"},{value:"INTERESTED",label:"🙂 Interested"},{value:"NEUTRAL",label:"😐 Neutral"},{value:"HESITANT",label:"🤔 Hesitant"},{value:"COLD",label:"🧊 Cold"},{value:"CONFUSED",label:"😵 Confused"},{value:"ANGRY",label:"😠 Angry"}]} />
+            </div>
+            <div>
+              <div className="text-xs text-gray-500">Categorization</div>
+              <InlineEdit leadId={lead.id} field="categorization" value={lead.categorization ?? ""} />
+            </div>
+            <div>
+              <div className="text-xs text-gray-500">Configuration</div>
+              <InlineEdit leadId={lead.id} field="configuration" value={lead.configuration ?? ""} placeholder="2BR / Villa / PH" />
+            </div>
+            <div>
+              <div className="text-xs text-gray-500">Budget min</div>
+              <InlineEdit leadId={lead.id} field="budgetMin" type="number" value={lead.budgetMin ?? ""} placeholder="e.g. 2500000" />
+            </div>
+            <div>
+              <div className="text-xs text-gray-500">Stage</div>
+              <InlineEdit leadId={lead.id} field="status" type="select" value={lead.status}
+                options={[{value:"NEW",label:"New"},{value:"CONTACTED",label:"Contacted"},{value:"QUALIFIED",label:"Qualified"},{value:"SITE_VISIT",label:"Site Visit"},{value:"NEGOTIATION",label:"Negotiation"},{value:"BOOKING_DONE",label:"Booking Done"},{value:"WON",label:"Won"},{value:"LOST",label:"Lost"}]} />
+            </div>
+          </div>
+        </div>
+
+        <div className="card p-5">
+          <div className="font-semibold mb-3">Scheduling & next action <span className="text-[10px] text-gray-400 font-normal">(click to edit)</span></div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
-            <div className="p-3 border border-[#e5e7eb] rounded-lg"><div className="text-xs text-gray-500">📅 Meeting</div><div className="font-semibold">{lead.meetingDate ? format(lead.meetingDate, "PPp") : "Not scheduled"}</div></div>
-            <div className="p-3 border border-[#e5e7eb] rounded-lg"><div className="text-xs text-gray-500">🏢 Site Visit</div><div className="font-semibold">{lead.siteVisitDate ? format(lead.siteVisitDate, "PPp") : "Not scheduled"}</div></div>
-            <div className="p-3 border border-[#e5e7eb] rounded-lg"><div className="text-xs text-gray-500">🔁 Follow-up</div><div className="font-semibold">{lead.followupDate ? format(lead.followupDate, "PPp") : "Not scheduled"}</div></div>
-            <div className="p-3 border border-[#e5e7eb] rounded-lg bg-amber-50 border-amber-200"><div className="text-xs text-amber-700">✅ To Do</div><div className="font-semibold">{lead.todoNext ?? "Decide what's next"}</div></div>
+            <div className="p-3 border border-[#e5e7eb] rounded-lg">
+              <div className="text-xs text-gray-500">📅 Meeting</div>
+              <InlineEdit leadId={lead.id} field="meetingDate" type="date" value={lead.meetingDate ? lead.meetingDate.toISOString().slice(0,16) : ""} placeholder="Not scheduled" />
+            </div>
+            <div className="p-3 border border-[#e5e7eb] rounded-lg">
+              <div className="text-xs text-gray-500">🏢 Site Visit</div>
+              <InlineEdit leadId={lead.id} field="siteVisitDate" type="date" value={lead.siteVisitDate ? lead.siteVisitDate.toISOString().slice(0,16) : ""} placeholder="Not scheduled" />
+            </div>
+            <div className="p-3 border border-[#e5e7eb] rounded-lg">
+              <div className="text-xs text-gray-500">🔁 Follow-up</div>
+              <InlineEdit leadId={lead.id} field="followupDate" type="date" value={lead.followupDate ? lead.followupDate.toISOString().slice(0,16) : ""} placeholder="Not scheduled" />
+            </div>
+            <div className="p-3 border border-[#e5e7eb] rounded-lg bg-amber-50 border-amber-200">
+              <div className="text-xs text-amber-700">✅ To Do</div>
+              <InlineEdit leadId={lead.id} field="todoNext" value={lead.todoNext ?? ""} placeholder="Decide what's next" />
+            </div>
           </div>
         </div>
 

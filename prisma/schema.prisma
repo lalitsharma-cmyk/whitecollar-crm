@@ -532,3 +532,87 @@ model PushSubscription {
   createdAt DateTime @default(now())
   @@index([userId])
 }
+
+// =====================================================
+// CUSTOM FIELDS — admin can add new fields per entity, no code
+// =====================================================
+
+enum CustomFieldKind {
+  TEXT
+  TEXTAREA
+  NUMBER
+  DATE
+  SELECT
+  CHECKBOX
+}
+
+enum CustomFieldEntity {
+  LEAD
+  PROJECT
+}
+
+model CustomField {
+  id         String            @id @default(cuid())
+  entity     CustomFieldEntity
+  key        String
+  label      String
+  kind       CustomFieldKind   @default(TEXT)
+  options    String?
+  required   Boolean           @default(false)
+  position   Int               @default(0)
+  active     Boolean           @default(true)
+  createdAt  DateTime          @default(now())
+  values     CustomFieldValue[]
+  @@unique([entity, key])
+}
+
+model CustomFieldValue {
+  id        String      @id @default(cuid())
+  fieldId   String
+  field     CustomField @relation(fields: [fieldId], references: [id], onDelete: Cascade)
+  entityId  String
+  value     String
+  @@unique([fieldId, entityId])
+  @@index([entityId])
+}
+
+// =====================================================
+// AGENT TARGETS — daily call/meeting/booking targets
+// =====================================================
+
+enum TargetMetric {
+  CALLS
+  CONNECTED_CALLS
+  SITE_VISITS
+  MEETINGS
+  BOOKINGS
+  REVENUE_AED
+  REVENUE_INR
+}
+
+model Target {
+  id        String       @id @default(cuid())
+  userId    String?
+  team      String?
+  metric    TargetMetric
+  value     Float
+  period    String       @default("DAILY")
+  startDate DateTime     @default(now())
+  endDate   DateTime?
+  @@index([userId, metric, period])
+  @@index([team, metric, period])
+}
+
+// =====================================================
+// AGENT ATTENDANCE — login/logout tracking
+// =====================================================
+
+model AttendanceLog {
+  id        String   @id @default(cuid())
+  userId    String
+  loginAt   DateTime @default(now())
+  logoutAt  DateTime?
+  ip        String?
+  userAgent String?
+  @@index([userId, loginAt])
+}
