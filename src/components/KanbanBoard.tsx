@@ -88,7 +88,7 @@ export default function KanbanBoard({ stages, leadsByStage, agents }: Props) {
         <span className="text-xs text-gray-500 ml-auto">Open value: {fmtMoneyDual({ aed: aedOpen, inr: inrOpen })}</span>
       </div>
 
-      <div className="grid grid-cols-6 gap-3">
+      <div className="overflow-x-auto -mx-3 lg:mx-0 px-3 lg:px-0"><div className="grid grid-cols-6 gap-3 min-w-[1080px] lg:min-w-0">
         {stages.map((stage) => {
           const items = leadsByStage[stage.key] ?? [];
           const aedSum = items.filter(l => l.budgetCurrency === "AED").reduce((s,l) => s + (l.budgetMin ?? 0), 0);
@@ -135,7 +135,7 @@ export default function KanbanBoard({ stages, leadsByStage, agents }: Props) {
             </div>
           );
         })}
-      </div>
+      </div></div>
     </>
   );
 }

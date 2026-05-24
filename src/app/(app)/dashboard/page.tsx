@@ -103,7 +103,7 @@ export default async function DashboardPage() {
       {/* 8 KPI tiles matching your dashboard exactly */}
       <div>
         <div className="text-xs font-bold tracking-widest text-gray-500 mb-2">TODAY AT A GLANCE</div>
-        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-4 gap-2 lg:gap-3">
           <KPI title="Calls Dialed Today" value={callsToday} sub="logged across all leads" />
           <KPI title="Calls Connected Today" value={connectedToday} sub={`${connectRate}% connect rate`} />
           <KPI title="Follow-ups Due Today" value={followupsDueToday} sub="scheduled for today" />
@@ -128,9 +128,9 @@ export default async function DashboardPage() {
       </div>
 
       {/* By Salesperson table */}
-      <div className="card p-5">
+      <div className="card p-3 lg:p-5 overflow-x-auto">
         <div className="text-xs font-bold tracking-widest text-gray-500 mb-3">BY SALESPERSON</div>
-        <table className="tbl w-full">
+        <table className="tbl w-full min-w-[640px]">
           <thead><tr>
             <th>Salesperson</th><th>Team</th><th className="text-center">Calls Today</th><th className="text-center">Connected</th><th className="text-center">Due Today</th><th className="text-center">Overdue</th><th className="text-center">Closeable</th><th className="text-center">Needs Lalit</th><th className="text-center">Clients</th>
           </tr></thead>
@@ -209,10 +209,10 @@ export default async function DashboardPage() {
 
 function KPI({ title, value, sub, highlight }: { title: string; value: number; sub: string; highlight?: boolean }) {
   return (
-    <div className={`card kpi ${highlight ? "border-amber-500 border-2 bg-amber-50" : ""}`}>
-      <div className="text-3xl font-bold">{value}</div>
-      <div className="text-[10px] tracking-widest text-gray-500 uppercase mt-1">{title}</div>
-      <div className="text-xs text-gray-500 mt-1">{sub}</div>
+    <div className={`card p-3 lg:p-4 ${highlight ? "border-amber-500 border-2 bg-amber-50" : ""}`}>
+      <div className="text-2xl lg:text-3xl font-bold">{value}</div>
+      <div className="text-[9px] lg:text-[10px] tracking-widest text-gray-500 uppercase mt-0.5 lg:mt-1 leading-tight">{title}</div>
+      <div className="text-[10px] lg:text-xs text-gray-500 mt-0.5 lg:mt-1 leading-tight">{sub}</div>
     </div>
   );
 }

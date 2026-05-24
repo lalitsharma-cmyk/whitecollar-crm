@@ -33,15 +33,20 @@ export default function LeadFilters({ agents, sources, statuses }: Props) {
     router.replace(`${pathname}?${p.toString()}`);
   }
 
+  const [showFilters, setShowFilters] = useState(false);
   return (
-    <div className="card p-4 flex flex-wrap gap-2 items-center">
+    <div className="card p-3 lg:p-4 space-y-2 lg:space-y-0 lg:flex lg:flex-wrap lg:gap-2 lg:items-center">
       <input
         type="search"
-        placeholder="Search name / phone / email / company"
+        placeholder="Search name / phone / email"
         value={q}
         onChange={(e) => setQ(e.target.value)}
-        className="border border-[#e5e7eb] rounded-lg px-3 py-2 text-sm flex-1 min-w-[200px]"
+        className="border border-[#e5e7eb] rounded-lg px-3 py-2 text-sm w-full lg:flex-1 lg:min-w-[200px]"
       />
+      <button onClick={() => setShowFilters((s) => !s)} className="lg:hidden btn btn-ghost text-xs w-full justify-center">
+        {showFilters ? "Hide filters ▴" : "Show filters ▾"}
+      </button>
+      <div className={`${showFilters ? "block" : "hidden"} lg:flex lg:flex-wrap lg:gap-2 lg:items-center grid grid-cols-2 gap-2 mt-2 lg:mt-0`}>
       <select value={sp.get("source") ?? ""} onChange={(e) => update("source", e.target.value)} className="border border-[#e5e7eb] rounded-lg px-3 py-2 text-sm">
         <option value="">All sources</option>
         {sources.map(s => <option key={s} value={s}>{s.replaceAll("_", " ")}</option>)}
@@ -81,9 +86,10 @@ export default function LeadFilters({ agents, sources, statuses }: Props) {
         <option value="touched_desc">Recently touched</option>
         <option value="name_asc">Name A-Z</option>
       </select>
-      {Array.from(sp.entries()).length > 0 && (
-        <button onClick={() => router.replace(pathname)} className="text-xs text-gray-500 hover:text-[#0b1a33]">Clear all</button>
-      )}
+        {Array.from(sp.entries()).length > 0 && (
+          <button onClick={() => router.replace(pathname)} className="col-span-2 lg:col-span-1 text-xs text-gray-500 hover:text-[#0b1a33] underline">Clear all filters</button>
+        )}
+      </div>
     </div>
   );
 }
