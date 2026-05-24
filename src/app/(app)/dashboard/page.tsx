@@ -22,7 +22,7 @@ export default async function DashboardPage() {
     callsToday, connectedToday, waToday,
     followupsDueToday, followupsOverdue, readyToClose, needsYou,
     leadsBySource, recentActivities, upcoming, leadsLast14, sourceMix,
-    salespersons, leadsByTeam, forecastLeads,
+    leadsByTeam, forecastLeads,
   ] = await Promise.all([
     prisma.lead.count(),
     prisma.lead.count({ where: { status: LeadStatus.NEW } }),
@@ -40,18 +40,6 @@ export default async function DashboardPage() {
     prisma.activity.findMany({ where: { status: ActivityStatus.PLANNED, scheduledAt: { gte: new Date() } }, orderBy: { scheduledAt: "asc" }, take: 5, include: { lead: true } }),
     prisma.$queryRaw<Array<{ d: string; n: number }>>`SELECT to_char("createdAt"::date, 'YYYY-MM-DD') as d, COUNT(*)::int as n FROM "Lead" WHERE "createdAt" >= (CURRENT_DATE - INTERVAL '13 days') GROUP BY "createdAt"::date ORDER BY "createdAt"::date ASC`,
     prisma.lead.groupBy({ by: ["source"], _count: { _all: true } }),
-    // Per-salesperson stats today
-    prisma.user.findMany({
-      where: { active: true, role: { in: ["AGENT", "MANAGER"] } },
-      include: {
-        _count: {
-          select: {
-            callLogs: { where: { startedAt: { gte: todayStart } } },
-            ownedLeads: true,
-          },
-        },
-      },
-    }),
     // By-team breakdown
     prisma.lead.groupBy({ by: ["forwardedTeam"], _count: { _all: true } }),
     // Forecast: all open deals with budgetMin
@@ -75,20 +63,28 @@ export default async function DashboardPage() {
   }
   const fcTotal = (cur: "aed" | "inr") => forecast[cur].closing + forecast[cur].meeting + forecast[cur].moving + forecast[cur].early;
 
-  // Per-salesperson with closeable + needsYou counts
-  const spStats = await Promise.all(
-    salespersons.map(async (u) => {
-      const [connected, dueToday, overdue, closeable, needs] = await Promise.all([
-        prisma.callLog.count({ where: { userId: u.id, startedAt: { gte: todayStart }, outcome: CallOutcome.CONNECTED } }),
-        prisma.activity.count({ where: { userId: u.id, status: ActivityStatus.PLANNED, scheduledAt: { gte: todayStart, lt: new Date(todayStart.getTime() + 24 * 3600 * 1000) } } }),
-        prisma.activity.count({ where: { userId: u.id, status: ActivityStatus.PLANNED, scheduledAt: { lt: todayStart } } }),
-        prisma.lead.count({ where: { ownerId: u.id, status: { in: [LeadStatus.NEGOTIATION, LeadStatus.SITE_VISIT] } } }),
-        prisma.lead.count({ where: { ownerId: u.id, needsManagerReview: true } }),
-      ]);
-      return { id: u.id, name: u.name, team: u.team, calls: u._count.callLogs, connected, dueToday, overdue, closeable, needs, clients: u._count.ownedLeads };
-    })
-  );
-  spStats.sort((a, b) => b.calls - a.calls);
+  // ⚡ PERFORMANCE: was 30 sequential queries (5 per agent × 6 agents). Now 1.
+  const tomorrow = new Date(todayStart.getTime() + 24 * 3600_000);
+  type SpRow = { id: string; name: string; team: string | null; calls: bigint; connected: bigint; due_today: bigint; overdue: bigint; closeable: bigint; needs: bigint; clients: bigint };
+  const spStatsRaw = await prisma.$queryRaw<SpRow[]>`
+    SELECT u.id, u.name, u.team,
+      COALESCE((SELECT COUNT(*) FROM "CallLog" c WHERE c."userId" = u.id AND c."startedAt" >= ${todayStart}), 0) as calls,
+      COALESCE((SELECT COUNT(*) FROM "CallLog" c WHERE c."userId" = u.id AND c."startedAt" >= ${todayStart} AND c.outcome::text = 'CONNECTED'), 0) as connected,
+      COALESCE((SELECT COUNT(*) FROM "Activity" a WHERE a."userId" = u.id AND a.status::text = 'PLANNED' AND a."scheduledAt" >= ${todayStart} AND a."scheduledAt" < ${tomorrow}), 0) as due_today,
+      COALESCE((SELECT COUNT(*) FROM "Activity" a WHERE a."userId" = u.id AND a.status::text = 'PLANNED' AND a."scheduledAt" < ${todayStart}), 0) as overdue,
+      COALESCE((SELECT COUNT(*) FROM "Lead" l WHERE l."ownerId" = u.id AND l.status::text IN ('NEGOTIATION','SITE_VISIT')), 0) as closeable,
+      COALESCE((SELECT COUNT(*) FROM "Lead" l WHERE l."ownerId" = u.id AND l."needsManagerReview" = true), 0) as needs,
+      COALESCE((SELECT COUNT(*) FROM "Lead" l WHERE l."ownerId" = u.id), 0) as clients
+    FROM "User" u
+    WHERE u.active = true AND u.role::text IN ('AGENT','MANAGER')
+    ORDER BY calls DESC
+  `;
+  const spStats = spStatsRaw.map(r => ({
+    id: r.id, name: r.name, team: r.team,
+    calls: Number(r.calls), connected: Number(r.connected),
+    dueToday: Number(r.due_today), overdue: Number(r.overdue),
+    closeable: Number(r.closeable), needs: Number(r.needs), clients: Number(r.clients),
+  }));
 
   return (
     <>
