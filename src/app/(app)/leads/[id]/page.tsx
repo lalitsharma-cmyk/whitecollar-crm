@@ -39,37 +39,37 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
   // Run reconciler in the background — non-blocking
   runReconciler().catch(() => {});
 
-  const lead = await prisma.lead.findUnique({
-    where: { id },
-    include: {
-      owner: true,
-      interestedUnits: { include: { unit: { include: { project: true } } } },
-      discussed:       { include: { project: true }, orderBy: { discussedAt: "desc" } },
-      activities: { orderBy: { createdAt: "desc" }, take: 25, include: { user: true } },
-      callLogs:   { orderBy: { startedAt: "desc" }, take: 50, include: { user: true } },
-      notes:      { orderBy: { createdAt: "desc" }, take: 10, include: { user: true } },
-      assignments:{ orderBy: { assignedAt: "desc" }, take: 5, include: { user: true } },
-    },
-  });
+  // ⚡ Parallelize all queries — was 3 sequential, now 1 round-trip via Promise.all
+  const [lead, meetingActs, allProjects] = await Promise.all([
+    prisma.lead.findUnique({
+      where: { id },
+      include: {
+        owner: true,
+        interestedUnits: { include: { unit: { include: { project: true } } } },
+        discussed:       { include: { project: true }, orderBy: { discussedAt: "desc" } },
+        activities: { orderBy: { createdAt: "desc" }, take: 25, include: { user: true } },
+        callLogs:   { orderBy: { startedAt: "desc" }, take: 50, include: { user: true } },
+        notes:      { orderBy: { createdAt: "desc" }, take: 10, include: { user: true } },
+        assignments:{ orderBy: { assignedAt: "desc" }, take: 5, include: { user: true } },
+      },
+    }),
+    prisma.activity.findMany({
+      where: { leadId: id, type: { in: ["OFFICE_MEETING", "VIRTUAL_MEETING", "SITE_VISIT"] } },
+      orderBy: { createdAt: "desc" },
+    }),
+    prisma.project.findMany({
+      select: { id: true, name: true, city: true },
+      orderBy: { name: "asc" },
+    }),
+  ]);
   if (!lead) notFound();
 
-  // Meeting counters from activities
-  const meetingActs = await prisma.activity.findMany({
-    where: { leadId: id, type: { in: ["OFFICE_MEETING", "VIRTUAL_MEETING", "SITE_VISIT"] } },
-    orderBy: { createdAt: "desc" },
-  });
   const lastBy = (t: string) => meetingActs.find(a => a.type === t)?.completedAt ?? meetingActs.find(a => a.type === t)?.scheduledAt ?? null;
   const meetingCounts = {
     officeMeetings:  { count: meetingActs.filter(a => a.type === "OFFICE_MEETING").length,  lastAt: lastBy("OFFICE_MEETING") },
     virtualMeetings: { count: meetingActs.filter(a => a.type === "VIRTUAL_MEETING").length, lastAt: lastBy("VIRTUAL_MEETING") },
     siteVisits:      { count: meetingActs.filter(a => a.type === "SITE_VISIT").length,      lastAt: lastBy("SITE_VISIT") },
   };
-
-  // All projects for the project-discussion dropdown
-  const allProjects = await prisma.project.findMany({
-    select: { id: true, name: true, city: true },
-    orderBy: { name: "asc" },
-  });
 
   // Call stats aggregate (dialed / connected / not-picked etc.)
   const callStats = aggregateCalls(lead.callLogs);
