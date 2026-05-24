@@ -168,6 +168,10 @@ model Lead {
   // SLA reconciler
   slaFirstCallBy  DateTime?   // ownerId-set + 15 min — escalate if no call by then
   slaEscalated    Boolean     @default(false)  // already notified admin
+  // Manager intervention
+  needsManagerReview Boolean  @default(false)  // auto-flagged when manager push could help
+  managerReviewReason String?                  // why flagged (e.g. "3 not-picked attempts")
+  flaggedAt       DateTime?
   // dedupe
   fingerprint     String?     @unique  // phone||email hash for dedupe
   duplicateCount  Int         @default(0)  // times this client has re-contacted us

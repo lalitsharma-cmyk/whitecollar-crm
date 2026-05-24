@@ -8,9 +8,10 @@ import {
 
 const nav = [
   { section: "WORKSPACE", items: [
-    { href: "/dashboard",  label: "Dashboard",   Icon: LayoutDashboard },
-    { href: "/leads",      label: "Leads",       Icon: Users, badge: true },
-    { href: "/pipeline",   label: "Pipeline",    Icon: KanbanSquare },
+    { href: "/dashboard",   label: "Dashboard",   Icon: LayoutDashboard },
+    { href: "/action-list", label: "Action List", Icon: Sparkles, tag: "HOT" },
+    { href: "/leads",       label: "Leads",       Icon: Users, badge: true },
+    { href: "/pipeline",    label: "Pipeline",    Icon: KanbanSquare },
     { href: "/properties", label: "Properties",  Icon: Building2 },
     { href: "/activities", label: "Activities",  Icon: CalendarDays },
     { href: "/calls",      label: "Call Records",Icon: PhoneCall },

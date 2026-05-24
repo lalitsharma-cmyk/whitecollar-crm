@@ -8,6 +8,7 @@ import LeadActionsClient from "@/components/LeadActionsClient";
 import LeadProjectsClient from "@/components/LeadProjectsClient";
 import LeadMeetingClient from "@/components/LeadMeetingClient";
 import { runReconciler } from "@/lib/reconciler";
+import { aggregateCalls, callBreakdownString } from "@/lib/callStats";
 
 export const dynamic = "force-dynamic";
 
@@ -43,7 +44,7 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
       interestedUnits: { include: { unit: { include: { project: true } } } },
       discussed:       { include: { project: true }, orderBy: { discussedAt: "desc" } },
       activities: { orderBy: { createdAt: "desc" }, take: 25, include: { user: true } },
-      callLogs:   { orderBy: { startedAt: "desc" }, take: 10, include: { user: true } },
+      callLogs:   { orderBy: { startedAt: "desc" }, take: 50, include: { user: true } },
       notes:      { orderBy: { createdAt: "desc" }, take: 10, include: { user: true } },
       assignments:{ orderBy: { assignedAt: "desc" }, take: 5, include: { user: true } },
     },
@@ -68,6 +69,9 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
     orderBy: { name: "asc" },
   });
 
+  // Call stats aggregate (dialed / connected / not-picked etc.)
+  const callStats = aggregateCalls(lead.callLogs);
+
   const aiClass = lead.aiScore === "HOT" ? "chip-hot" : lead.aiScore === "WARM" ? "chip-warm" : "chip-cold";
   const canReassign = me.role === "ADMIN" || me.role === "MANAGER";
 
@@ -87,6 +91,14 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
       <div className="lg:col-span-2 space-y-4">
+        {/* NEEDS YOU BANNER */}
+        {lead.needsManagerReview && (
+          <div className="card p-4 border-l-4 border-amber-500 bg-amber-50">
+            <div className="font-semibold text-amber-900">🚩 Needs manager attention</div>
+            <div className="text-sm text-amber-800 mt-1">{lead.managerReviewReason ?? "Flagged for review"}{lead.flaggedAt && ` · since ${formatDistanceToNow(lead.flaggedAt, { addSuffix: true })}`}</div>
+          </div>
+        )}
+
         {/* DUPLICATE BANNER */}
         {(lead.duplicateCount ?? 0) > 0 && (
           <div className="card p-4 border-l-4 border-amber-500 bg-amber-50">
@@ -257,16 +269,47 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
         </div>
 
         <div className="card p-5">
-          <div className="font-semibold mb-2">Recent calls</div>
-          <div className="space-y-2 text-sm">
+          <div className="flex items-center justify-between mb-2">
+            <div className="font-semibold">📞 Call history</div>
+            <div className="text-[10px] text-gray-500">{callStats.total} total</div>
+          </div>
+          {/* Breakdown badges */}
+          <div className="grid grid-cols-4 gap-1 text-center text-xs mb-3">
+            <div className="p-1.5 rounded bg-blue-50 border border-blue-200">
+              <div className="text-base font-bold text-blue-700">{callStats.total}</div>
+              <div className="text-[10px] text-gray-600">Dialed</div>
+            </div>
+            <div className="p-1.5 rounded bg-emerald-50 border border-emerald-200">
+              <div className="text-base font-bold text-emerald-700">{callStats.connected}</div>
+              <div className="text-[10px] text-gray-600">Connected</div>
+            </div>
+            <div className="p-1.5 rounded bg-red-50 border border-red-200">
+              <div className="text-base font-bold text-red-700">{callStats.notPicked}</div>
+              <div className="text-[10px] text-gray-600">Not picked</div>
+            </div>
+            <div className="p-1.5 rounded bg-amber-50 border border-amber-200">
+              <div className="text-base font-bold text-amber-700">{callStats.callback}</div>
+              <div className="text-[10px] text-gray-600">Callback</div>
+            </div>
+          </div>
+          {callStats.notPickedStreak >= 2 && (
+            <div className="text-xs bg-amber-50 border border-amber-300 rounded p-2 mb-3 text-amber-800">
+              ⚠ <b>{callStats.notPickedStreak} not-picked in a row</b> — try different time slot or WhatsApp
+            </div>
+          )}
+          {/* Chronological log — date · agent · outcome · remark */}
+          <div className="space-y-2 text-sm max-h-[420px] overflow-y-auto pr-1">
             {lead.callLogs.map((c) => (
-              <div key={c.id}>
-                <div className="font-semibold">{c.outcome.replaceAll("_"," ")}</div>
-                <div className="text-xs text-gray-500">{c.user.name} · {format(c.startedAt, "PP p")}{c.durationSec ? ` · ${Math.floor(c.durationSec/60)}m ${c.durationSec%60}s` : ""}</div>
-                {c.notes && <div className="text-xs mt-1 text-gray-700 whitespace-pre-wrap">{c.notes}</div>}
+              <div key={c.id} className="border-l-2 border-[#e5e7eb] pl-3 py-1">
+                <div className="text-[11px] text-gray-500">
+                  <b>{c.user.name}</b> · {format(c.startedAt, "d MMM yyyy (HH:mm)")}
+                  {c.durationSec ? ` · ${Math.floor(c.durationSec/60)}m ${c.durationSec%60}s` : ""}
+                </div>
+                <div className="text-xs font-semibold">{c.outcome.replaceAll("_"," ")}</div>
+                {c.notes && <div className="text-xs mt-0.5 text-gray-700 whitespace-pre-wrap">{c.notes}</div>}
               </div>
             ))}
-            {lead.callLogs.length === 0 && <div className="text-gray-500">No calls yet.</div>}
+            {lead.callLogs.length === 0 && <div className="text-gray-500 text-xs">No calls yet.</div>}
           </div>
         </div>
 

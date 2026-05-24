@@ -19,6 +19,7 @@ const MIN_RERUN_GAP_MS = 30_000; // throttle to once per 30s
 export interface ReconcileResult {
   autoAssigned: number;
   slaEscalated: number;
+  flagged?: number;
   skipped: boolean;
 }
 
@@ -26,7 +27,7 @@ export async function runReconciler(): Promise<ReconcileResult> {
   // Throttle — multiple page loads within 30s share one result
   const now = Date.now();
   if (now - lastRunAt < MIN_RERUN_GAP_MS) {
-    return { autoAssigned: 0, slaEscalated: 0, skipped: true };
+    return { autoAssigned: 0, slaEscalated: 0, flagged: 0, skipped: true };
   }
   lastRunAt = now;
 
@@ -118,5 +119,48 @@ export async function runReconciler(): Promise<ReconcileResult> {
     slaEscalated++;
   }
 
-  return { autoAssigned, slaEscalated, skipped: false };
+  // ── 3) "Needs You" flag — leads where manager push could help ──
+  // Conditions: closing-stage + no contact 24h, OR 3+ consecutive not-picked attempts
+  const closingLeads = await prisma.lead.findMany({
+    where: {
+      status: { in: ["NEGOTIATION", "SITE_VISIT", "QUALIFIED"] },
+      needsManagerReview: false,
+      OR: [
+        { lastTouchedAt: { lt: new Date(Date.now() - 24 * 3600 * 1000) } },
+      ],
+    },
+    include: { callLogs: { orderBy: { startedAt: "desc" }, take: 10 } },
+    take: 100,
+  });
+  let flagged = 0;
+  for (const lead of closingLeads) {
+    let reason = "";
+    if (lead.lastTouchedAt && lead.lastTouchedAt < new Date(Date.now() - 24 * 3600 * 1000)) {
+      reason = `${lead.status} stage idle >24h — manager push may close`;
+    }
+    // Not-picked streak detection
+    let streak = 0;
+    for (const c of lead.callLogs) {
+      if (c.outcome === "NOT_PICKED" || c.outcome === "SWITCHED_OFF" || c.outcome === "BUSY") streak++;
+      else break;
+    }
+    if (streak >= 3) reason = `${streak} consecutive not-picked — try a different number / time slot`;
+    if (!reason) continue;
+    await prisma.lead.update({
+      where: { id: lead.id },
+      data: { needsManagerReview: true, managerReviewReason: reason, flaggedAt: new Date() },
+    });
+    // Notify admin/manager
+    await notifyRoles(["ADMIN", "MANAGER"], {
+      kind: "REMINDER",
+      severity: "WARNING",
+      title: `🚩 ${lead.name} needs your attention`,
+      body: reason,
+      linkUrl: `/leads/${lead.id}`,
+      leadId: lead.id,
+    });
+    flagged++;
+  }
+
+  return { autoAssigned, slaEscalated, flagged, skipped: false };
 }
