@@ -28,6 +28,9 @@ model User {
   role          Role       @default(AGENT)
   team          String?    // "Dubai" / "India" / "HQ"
   phone         String?
+  // Acefone agent ID — required for click-to-call (Acefone rings this number first,
+  // then dials the lead once the agent picks up). Configure in /team page.
+  acefoneAgentId String?
   avatarColor   String?    // tailwind class e.g. "bg-indigo-500"
   active        Boolean    @default(true)
   createdAt     DateTime   @default(now())

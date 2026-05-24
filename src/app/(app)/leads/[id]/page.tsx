@@ -11,6 +11,7 @@ import { runReconciler } from "@/lib/reconciler";
 import { aggregateCalls, callBreakdownString } from "@/lib/callStats";
 import { activityVisual } from "@/lib/activityIcon";
 import InlineEdit from "@/components/InlineEdit";
+import { acefoneEnabled } from "@/lib/acefone";
 
 export const dynamic = "force-dynamic";
 
@@ -148,6 +149,8 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
                 phoneMasked={maskPhone(lead.phone)}
                 leadName={lead.name}
                 agentName={me.name}
+                acefoneEnabled={acefoneEnabled()}
+                acefoneMappedForUser={!!me.acefoneAgentId}
               />
             </div>
           </div>
@@ -353,9 +356,16 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
                 <div className="text-[11px] text-gray-500">
                   <b>{c.user.name}</b> · {format(c.startedAt, "d MMM yyyy (HH:mm)")}
                   {c.durationSec ? ` · ${Math.floor(c.durationSec/60)}m ${c.durationSec%60}s` : ""}
+                  {c.ivrProvider && <span className="ml-1 chip src text-[9px]">{c.ivrProvider}</span>}
                 </div>
                 <div className="text-xs font-semibold">{c.outcome.replaceAll("_"," ")}</div>
                 {c.notes && <div className="text-xs mt-0.5 text-gray-700 whitespace-pre-wrap">{c.notes}</div>}
+                {c.recordingUrl && (
+                  <div className="mt-1.5">
+                    <audio controls preload="none" src={c.recordingUrl} className="w-full h-8" />
+                    <a href={c.recordingUrl} target="_blank" rel="noopener noreferrer" className="text-[10px] text-[#0b1a33] underline">Open recording in new tab ↗</a>
+                  </div>
+                )}
               </div>
             ))}
             {lead.callLogs.length === 0 && <div className="text-gray-500 text-xs">No calls yet.</div>}

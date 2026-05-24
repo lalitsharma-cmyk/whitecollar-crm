@@ -26,6 +26,8 @@ interface Props {
   phoneMasked: string | null;
   leadName: string;
   agentName: string;
+  acefoneEnabled?: boolean;        // server flag — hide button if false
+  acefoneMappedForUser?: boolean;  // current user has acefoneAgentId set
 }
 
 /** Build a tel: URL — strips spaces but keeps + and digits */
@@ -36,7 +38,7 @@ function waUrl(p: string | null) {
   return `https://wa.me/${digits}`;
 }
 
-export default function LeadActionsClient({ leadId, phone, email, currentOwnerId, canReassign, agents, phoneMasked, leadName, agentName }: Props) {
+export default function LeadActionsClient({ leadId, phone, email, currentOwnerId, canReassign, agents, phoneMasked, leadName, agentName, acefoneEnabled, acefoneMappedForUser }: Props) {
   const waGreeting = `Hi ${leadName}, this is ${agentName} from White Collar Realty. I'll be your dedicated property advisor. May I know a convenient time to call you today?`;
   const waUrlWithDraft = (p: string | null) => p ? `https://wa.me/${p.replace(/\D/g, "")}?text=${encodeURIComponent(waGreeting)}` : "";
   const router = useRouter();
@@ -47,6 +49,25 @@ export default function LeadActionsClient({ leadId, phone, email, currentOwnerId
   const [duration, setDuration] = useState("");
   const [err, setErr] = useState<string | null>(null);
   const [assignBusy, setAssignBusy] = useState(false);
+  const [acefoneBusy, setAcefoneBusy] = useState(false);
+  const [acefoneMsg, setAcefoneMsg] = useState<string | null>(null);
+
+  async function callViaAcefone() {
+    if (acefoneBusy) return;
+    setAcefoneBusy(true); setAcefoneMsg(null);
+    try {
+      const r = await fetch(`/api/acefone/click-to-call`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ leadId }),
+      });
+      const j = await r.json();
+      if (!r.ok) { setAcefoneMsg(j.error ?? "Failed"); return; }
+      setAcefoneMsg(`📞 Your phone will ring in a few seconds. Answer it — the lead is then dialled automatically.`);
+    } catch (e) {
+      setAcefoneMsg(`Network error: ${String(e).slice(0, 80)}`);
+    } finally { setAcefoneBusy(false); }
+  }
 
   async function submitCall() {
     setErr(null);
@@ -112,6 +133,22 @@ export default function LeadActionsClient({ leadId, phone, email, currentOwnerId
         <a href={waUrlWithDraft(phone)} target="_blank" rel="noopener noreferrer" className="flex items-center justify-center gap-2 mt-2 py-2 rounded-xl bg-emerald-50 border border-emerald-300 text-emerald-900 text-sm font-semibold hover:bg-emerald-100 transition">
           <Sparkles className="w-4 h-4" /> Send WhatsApp with pre-typed greeting
         </a>
+      )}
+
+      {/* Acefone click-to-call — rings agent first, then dials lead. Hidden when not configured. */}
+      {phone && acefoneEnabled && (
+        <button
+          onClick={callViaAcefone}
+          disabled={acefoneBusy || !acefoneMappedForUser}
+          title={acefoneMappedForUser ? "Acefone will call your phone, then connect the lead automatically" : "Ask admin to set your Acefone agent id in Team & Roles"}
+          className="w-full flex items-center justify-center gap-2 mt-2 py-2 rounded-xl bg-[#0b1a33] text-white text-sm font-semibold hover:bg-[#0f2347] transition disabled:opacity-50 min-h-11"
+        >
+          <Phone className="w-4 h-4" />
+          {acefoneBusy ? "Connecting…" : acefoneMappedForUser ? "📞 Call via Acefone (auto-record)" : "📞 Acefone — admin needs to map your agent id"}
+        </button>
+      )}
+      {acefoneMsg && (
+        <div className={`mt-2 text-xs p-2 rounded-lg ${acefoneMsg.startsWith("📞") ? "bg-emerald-50 text-emerald-800 border border-emerald-200" : "bg-red-50 text-red-700 border border-red-200"}`}>{acefoneMsg}</div>
       )}
       {canReassign && (
         <div className="mt-3 flex items-center gap-2 border border-[#e5e7eb] rounded-lg px-3 py-2 text-sm">
