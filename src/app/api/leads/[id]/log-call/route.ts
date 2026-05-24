@@ -52,8 +52,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     where: { id },
     data: {
       lastTouchedAt: now,
-      // Clear the SLA flag — call has been made
-      slaEscalated: true,
+      // Clear the SLA flag — call has been made, so future breaches can re-notify
+      slaEscalated: false,
     },
   });
   return NextResponse.json({ ok: true });

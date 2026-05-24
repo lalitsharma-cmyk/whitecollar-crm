@@ -57,14 +57,14 @@ export default async function ReportsPage() {
 
   return (
     <>
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold">Reports</h1>
-          <p className="text-sm text-gray-500">Live · auto-refresh on every page load</p>
+          <h1 className="text-xl sm:text-2xl font-bold">Reports</h1>
+          <p className="text-xs sm:text-sm text-gray-500">Live · auto-refresh on every page load</p>
         </div>
-        <div className="flex gap-2">
-          <a href="/api/reports/export?type=leads" className="btn btn-ghost">Export Leads CSV</a>
-          <a href="/api/reports/export?type=calls" className="btn btn-primary">Export Calls CSV</a>
+        <div className="flex flex-wrap gap-2">
+          <a href="/api/reports/export?type=leads" className="btn btn-ghost flex-1 sm:flex-none justify-center">Leads CSV</a>
+          <a href="/api/reports/export?type=calls" className="btn btn-primary flex-1 sm:flex-none justify-center">Calls CSV</a>
         </div>
       </div>
 

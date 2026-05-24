@@ -22,22 +22,30 @@ export default function InlineEdit({ leadId, field, label, value, type = "text",
   const [editing, setEditing] = useState(false);
   const [v, setV] = useState<string>(value == null ? "" : String(value));
   const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
 
   async function save() {
     if (busy) return;
-    setBusy(true);
+    setBusy(true); setErr(null);
     try {
-      await fetch(`/api/leads/${leadId}/update`, {
+      const r = await fetch(`/api/leads/${leadId}/update`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ [field]: v }),
       });
+      if (!r.ok) {
+        const j = await r.json().catch(() => ({}));
+        setErr(j.error ?? `Save failed (${r.status})`);
+        return;
+      }
       setEditing(false);
       router.refresh();
+    } catch (e) {
+      setErr(`Network error: ${String(e).slice(0, 80)}`);
     } finally { setBusy(false); }
   }
 
-  function cancel() { setV(value == null ? "" : String(value)); setEditing(false); }
+  function cancel() { setV(value == null ? "" : String(value)); setEditing(false); setErr(null); }
 
   if (!editing) {
     return (
@@ -56,15 +64,20 @@ export default function InlineEdit({ leadId, field, label, value, type = "text",
 
   const inputCls = "border border-[#c9a24b] rounded px-2 py-1 text-sm w-full";
 
+  const errLine = err ? <div className="text-[11px] text-red-600 mt-1">⚠ {err}</div> : null;
+
   if (type === "select" && options) {
     return (
-      <div className="inline-flex items-center gap-1">
-        <select value={v} onChange={(e) => setV(e.target.value)} className={inputCls} autoFocus>
-          <option value="">—</option>
-          {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-        </select>
-        <button onClick={save} disabled={busy} className="text-emerald-600 hover:bg-emerald-50 rounded p-1 text-xs">✓</button>
-        <button onClick={cancel} className="text-red-600 hover:bg-red-50 rounded p-1 text-xs">✕</button>
+      <div className="inline-flex flex-col">
+        <div className="inline-flex items-center gap-1">
+          <select value={v} onChange={(e) => setV(e.target.value)} className={inputCls} autoFocus>
+            <option value="">—</option>
+            {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </select>
+          <button onClick={save} disabled={busy} className="text-emerald-600 hover:bg-emerald-50 rounded p-1 text-xs">✓</button>
+          <button onClick={cancel} className="text-red-600 hover:bg-red-50 rounded p-1 text-xs">✕</button>
+        </div>
+        {errLine}
       </div>
     );
   }
@@ -77,22 +90,26 @@ export default function InlineEdit({ leadId, field, label, value, type = "text",
           <button onClick={save} disabled={busy} className="btn btn-primary text-xs py-1">{busy ? "..." : "Save"}</button>
           <button onClick={cancel} className="text-xs text-gray-500">Cancel</button>
         </div>
+        {errLine}
       </div>
     );
   }
 
   return (
-    <span className="inline-flex items-center gap-1">
-      <input
-        type={type === "number" ? "number" : type === "date" ? "datetime-local" : "text"}
-        value={v}
-        onChange={(e) => setV(e.target.value)}
-        onKeyDown={(e) => { if (e.key === "Enter") save(); if (e.key === "Escape") cancel(); }}
-        className={inputCls}
-        autoFocus
-      />
-      <button onClick={save} disabled={busy} className="text-emerald-600 hover:bg-emerald-50 rounded p-1 text-xs">✓</button>
-      <button onClick={cancel} className="text-red-600 hover:bg-red-50 rounded p-1 text-xs">✕</button>
+    <span className="inline-flex flex-col">
+      <span className="inline-flex items-center gap-1">
+        <input
+          type={type === "number" ? "number" : type === "date" ? "datetime-local" : "text"}
+          value={v}
+          onChange={(e) => setV(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") save(); if (e.key === "Escape") cancel(); }}
+          className={inputCls}
+          autoFocus
+        />
+        <button onClick={save} disabled={busy} className="text-emerald-600 hover:bg-emerald-50 rounded p-1 text-xs">✓</button>
+        <button onClick={cancel} className="text-red-600 hover:bg-red-50 rounded p-1 text-xs">✕</button>
+      </span>
+      {errLine}
     </span>
   );
 }

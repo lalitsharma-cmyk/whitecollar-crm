@@ -25,6 +25,10 @@ export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   maximumScale: 5,
+  // viewportFit: "cover" is required for env(safe-area-inset-*) to return real values
+  // on notched iPhones in standalone PWA mode — otherwise header/nav get hidden under
+  // the status bar and home indicator.
+  viewportFit: "cover",
   themeColor: [
     { media: "(prefers-color-scheme: light)", color: "#0b1a33" },
     { media: "(prefers-color-scheme: dark)",  color: "#0b1a33" },

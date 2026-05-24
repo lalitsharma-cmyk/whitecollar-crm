@@ -53,15 +53,20 @@ export default async function DashboardPage() {
 
   // Forecast computation — weighted by stage
   const forecast = { aed: { closing: 0, meeting: 0, moving: 0, early: 0 }, inr: { closing: 0, meeting: 0, moving: 0, early: 0 } };
+  // Live counts per bucket — used for the sub-labels under each card so they
+  // reflect reality instead of hard-coded text.
+  const fcCounts = { closing: 0, meeting: 0, moving: 0, early: 0 };
   for (const l of forecastLeads) {
     const v = l.budgetMin ?? 0;
     const cur = l.budgetCurrency === "INR" ? "inr" : "aed";
-    if (l.status === "NEGOTIATION") forecast[cur].closing += v * WEIGHTS.NEGOTIATION;
-    else if (l.status === "SITE_VISIT") forecast[cur].meeting += v * WEIGHTS.SITE_VISIT;
-    else if (l.status === "QUALIFIED") forecast[cur].moving += v * WEIGHTS.QUALIFIED;
-    else forecast[cur].early += v * (l.status === "CONTACTED" ? WEIGHTS.CONTACTED : WEIGHTS.NEW);
+    if (l.status === "NEGOTIATION") { forecast[cur].closing += v * WEIGHTS.NEGOTIATION; fcCounts.closing++; }
+    else if (l.status === "SITE_VISIT") { forecast[cur].meeting += v * WEIGHTS.SITE_VISIT; fcCounts.meeting++; }
+    else if (l.status === "QUALIFIED") { forecast[cur].moving += v * WEIGHTS.QUALIFIED; fcCounts.moving++; }
+    else { forecast[cur].early += v * (l.status === "CONTACTED" ? WEIGHTS.CONTACTED : WEIGHTS.NEW); fcCounts.early++; }
   }
   const fcTotal = (cur: "aed" | "inr") => forecast[cur].closing + forecast[cur].meeting + forecast[cur].moving + forecast[cur].early;
+  const fcTotalCount = fcCounts.closing + fcCounts.meeting + fcCounts.moving + fcCounts.early;
+  const pluralDeals = (n: number) => `${n} deal${n === 1 ? "" : "s"}`;
 
   // ⚡ PERFORMANCE: was 30 sequential queries (5 per agent × 6 agents). Now 1.
   const tomorrow = new Date(todayStart.getTime() + 24 * 3600_000);
@@ -88,12 +93,12 @@ export default async function DashboardPage() {
 
   return (
     <>
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold">Sales Command Center</h1>
-          <p className="text-sm text-gray-500">{new Date().toLocaleDateString("en-US", { weekday: "long", day: "numeric", month: "long", year: "numeric" })} · Live data</p>
+          <h1 className="text-xl sm:text-2xl font-bold">Sales Command Center</h1>
+          <p className="text-xs sm:text-sm text-gray-500">{new Date().toLocaleDateString("en-US", { weekday: "long", day: "numeric", month: "long", year: "numeric" })} · Live data</p>
         </div>
-        <Link href="/action-list" className="btn btn-gold">📋 Open Action List</Link>
+        <Link href="/action-list" className="btn btn-gold self-start sm:self-auto justify-center">📋 Open Action List</Link>
       </div>
 
       {/* 8 KPI tiles matching your dashboard exactly */}
@@ -115,10 +120,10 @@ export default async function DashboardPage() {
       <div>
         <div className="text-xs font-bold tracking-widest text-gray-500 mb-2">SALES FORECAST (WEIGHTED)</div>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
-          <ForecastCard label="EXPECTED THIS MONTH" sub="2 deals at closing stage" aed={forecast.aed.closing} inr={forecast.inr.closing} color="border-emerald-500" />
-          <ForecastCard label="EXPECTED IN 1-3 MONTHS" sub="deals actively moving" aed={forecast.aed.meeting + forecast.aed.moving} inr={forecast.inr.meeting + forecast.inr.moving} color="border-amber-500" />
-          <ForecastCard label="LONGER-TERM POTENTIAL" sub="early or cold leads" aed={forecast.aed.early} inr={forecast.inr.early} color="border-blue-500" />
-          <ForecastCard label="TOTAL WEIGHTED FORECAST" sub="all stages combined" aed={fcTotal("aed")} inr={fcTotal("inr")} color="border-[#c9a24b]" />
+          <ForecastCard label="EXPECTED THIS MONTH" sub={`${pluralDeals(fcCounts.closing)} at closing stage`} aed={forecast.aed.closing} inr={forecast.inr.closing} color="border-emerald-500" />
+          <ForecastCard label="EXPECTED IN 1-3 MONTHS" sub={`${pluralDeals(fcCounts.meeting + fcCounts.moving)} actively moving`} aed={forecast.aed.meeting + forecast.aed.moving} inr={forecast.inr.meeting + forecast.inr.moving} color="border-amber-500" />
+          <ForecastCard label="LONGER-TERM POTENTIAL" sub={`${pluralDeals(fcCounts.early)} early / cold`} aed={forecast.aed.early} inr={forecast.inr.early} color="border-blue-500" />
+          <ForecastCard label="TOTAL WEIGHTED FORECAST" sub={`${pluralDeals(fcTotalCount)} across all stages`} aed={fcTotal("aed")} inr={fcTotal("inr")} color="border-[#c9a24b]" />
         </div>
         <p className="text-xs text-gray-500 mt-2">Each deal is weighted by likelihood: closing 55%, meeting 30%, actively moving 10%, early/cold 2%. Adjust in <code>WEIGHTS</code> if needed.</p>
       </div>

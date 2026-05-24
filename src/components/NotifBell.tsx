@@ -67,7 +67,8 @@ export default function NotifBell() {
       {open && (
         <>
           <div className="fixed inset-0 z-30" onClick={() => setOpen(false)} />
-          <div className="absolute right-0 mt-2 w-96 max-h-[70vh] overflow-y-auto bg-white border border-[#e5e7eb] rounded-xl shadow-2xl z-40">
+          {/* On mobile: full-viewport panel anchored to header. On desktop: classic 384px dropdown. */}
+          <div className="fixed sm:absolute left-2 right-2 sm:left-auto sm:right-0 top-14 sm:top-auto sm:mt-2 sm:w-96 max-h-[70vh] overflow-y-auto bg-white border border-[#e5e7eb] rounded-xl shadow-2xl z-40">
             <div className="flex items-center justify-between p-3 border-b border-[#e5e7eb]">
               <div className="font-semibold text-sm">Notifications</div>
               <div className="flex gap-2">

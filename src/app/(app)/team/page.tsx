@@ -11,12 +11,12 @@ export default async function TeamPage() {
   });
   return (
     <>
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Team & Roles</h1>
-        <button className="btn btn-primary">+ Invite User</button>
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <h1 className="text-xl sm:text-2xl font-bold">Team & Roles</h1>
+        <button className="btn btn-primary self-start sm:self-auto justify-center">+ Invite User</button>
       </div>
-      <div className="card overflow-hidden">
-        <table className="tbl">
+      <div className="card overflow-x-auto">
+        <table className="tbl min-w-[640px]">
           <thead><tr><th>User</th><th>Role</th><th>Team</th><th>Active leads</th><th>Total calls</th></tr></thead>
           <tbody>
             {users.map(u => (

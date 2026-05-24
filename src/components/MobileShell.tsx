@@ -90,15 +90,19 @@ export default function MobileShell({ children, user }: Props) {
       </aside>
 
       {/* ─────────────────── MOBILE HEADER (lg- only) ─────────────────── */}
-      <header className="lg:hidden sticky top-0 z-20 bg-[#0b1a33] text-white flex items-center px-3 py-2 gap-2 shadow">
-        <button onClick={() => setOpen(true)} className="p-2 rounded hover:bg-white/10">
+      {/* pt-[safe-area] keeps the bar below the iPhone status notch in PWA mode. */}
+      <header
+        className="lg:hidden sticky top-0 z-20 bg-[#0b1a33] text-white flex items-center px-3 py-2 gap-2 shadow"
+        style={{ paddingTop: "calc(0.5rem + env(safe-area-inset-top))" }}
+      >
+        <button onClick={() => setOpen(true)} aria-label="Open menu" className="p-2 rounded hover:bg-white/10 min-w-11 min-h-11 flex items-center justify-center">
           <Menu className="w-6 h-6" />
         </button>
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src="/brand/wcr-logo.png" alt="WCR" className="h-7 w-auto object-contain" />
         <div className="flex-1" />
         <NotifBell />
-        <Link href="/leads/new" className="p-2 rounded hover:bg-white/10">
+        <Link href="/leads/new" aria-label="New lead" className="p-2 rounded hover:bg-white/10 min-w-11 min-h-11 flex items-center justify-center">
           <span className="text-xl font-bold leading-none">+</span>
         </Link>
         <div className={`avatar ${user.avatarColor} w-7 h-7 text-[10px]`}>{initials}</div>
@@ -108,7 +112,13 @@ export default function MobileShell({ children, user }: Props) {
       {open && (
         <>
           <div className="fixed inset-0 bg-black/60 z-40 lg:hidden" onClick={() => setOpen(false)} />
-          <aside className="sidebar fixed left-0 top-0 bottom-0 w-72 z-50 text-white flex flex-col lg:hidden">
+          <aside
+            className="sidebar fixed left-0 top-0 bottom-0 w-72 z-50 text-white flex flex-col lg:hidden"
+            style={{
+              paddingTop: "env(safe-area-inset-top)",
+              paddingBottom: "env(safe-area-inset-bottom)",
+            }}
+          >
             <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src="/brand/wcr-logo.png" alt="WCR" className="h-9 w-auto object-contain" />
@@ -151,7 +161,11 @@ export default function MobileShell({ children, user }: Props) {
       )}
 
       {/* ─────────────────── MAIN CONTENT ─────────────────── */}
-      <main className="lg:ml-64 min-h-screen pb-16 lg:pb-0">
+      {/* pb adds bottom-nav height (4rem) + iPhone home-indicator safe area */}
+      <main
+        className="lg:ml-64 min-h-screen lg:pb-0"
+        style={{ paddingBottom: "calc(4rem + env(safe-area-inset-bottom))" }}
+      >
         {/* Desktop topbar (search bar) */}
         <header className="hidden lg:flex bg-white border-b border-[#e5e7eb] px-6 py-3 items-center gap-4 sticky top-0 z-10">
           <div className="relative flex-1 max-w-xl">
@@ -169,11 +183,19 @@ export default function MobileShell({ children, user }: Props) {
       </main>
 
       {/* ─────────────────── MOBILE BOTTOM NAV ─────────────────── */}
-      <nav className="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-[#e5e7eb] flex z-30 shadow-[0_-2px_8px_rgba(0,0,0,0.04)]">
+      {/* pb adds iPhone home-indicator safe area so the nav doesn't hide behind it */}
+      <nav
+        className="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-[#e5e7eb] flex z-30 shadow-[0_-2px_8px_rgba(0,0,0,0.04)]"
+        style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
+      >
         {bottomNav.map(({ href, label, Icon }) => {
           const active = pathname === href || (href !== "/dashboard" && pathname?.startsWith(href));
           return (
-            <Link key={href} href={href} className={`flex-1 flex flex-col items-center justify-center py-2 text-[10px] font-semibold ${active ? "text-[#c9a24b]" : "text-gray-500"}`}>
+            <Link
+              key={href}
+              href={href}
+              className={`flex-1 flex flex-col items-center justify-center py-2 min-h-12 text-[10px] font-semibold ${active ? "text-[#c9a24b]" : "text-gray-500"}`}
+            >
               <Icon className="w-5 h-5 mb-0.5" strokeWidth={active ? 2.5 : 2} />
               {label}
             </Link>

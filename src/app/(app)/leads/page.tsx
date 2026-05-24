@@ -82,15 +82,15 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
 
   return (
     <>
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold">Leads</h1>
-          <p className="text-sm text-gray-500">{totalAll} total · {newToday} new in last 24h · {hot} hot · showing {total} matching</p>
+          <h1 className="text-xl sm:text-2xl font-bold">Leads</h1>
+          <p className="text-xs sm:text-sm text-gray-500">{totalAll} total · {newToday} new in last 24h · {hot} hot · showing {total} matching</p>
         </div>
-        <div className="flex gap-2">
-          <Link href="/intake" className="btn btn-ghost">Import / Intake</Link>
-          <a href="/api/reports/export?type=leads" className="btn btn-ghost">Export CSV</a>
-          <Link href="/leads/new" className="btn btn-primary">+ New Lead</Link>
+        <div className="flex flex-wrap gap-2">
+          <Link href="/intake" className="btn btn-ghost flex-1 sm:flex-none justify-center">Import</Link>
+          <a href="/api/reports/export?type=leads" className="btn btn-ghost flex-1 sm:flex-none justify-center">Export</a>
+          <Link href="/leads/new" className="btn btn-primary flex-1 sm:flex-none justify-center">+ New Lead</Link>
         </div>
       </div>
 

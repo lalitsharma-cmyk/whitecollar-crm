@@ -41,11 +41,9 @@ export default async function ActivitiesPage() {
 
   return (
     <>
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">Activities & Follow-ups</h1>
-          <p className="text-sm text-gray-500">{format(new Date(), "PPP")} · {today.length} planned today · {overdue.length} overdue</p>
-        </div>
+      <div>
+        <h1 className="text-xl sm:text-2xl font-bold">Activities & Follow-ups</h1>
+        <p className="text-xs sm:text-sm text-gray-500">{format(new Date(), "PPP")} · {today.length} planned today · {overdue.length} overdue</p>
       </div>
 
       {overdue.length > 0 && (

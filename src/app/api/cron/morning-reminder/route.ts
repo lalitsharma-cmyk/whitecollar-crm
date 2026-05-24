@@ -5,7 +5,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { notify } from "@/lib/notify";
-import { ActivityType, ActivityStatus, AIScore } from "@prisma/client";
+import { ActivityStatus, AIScore } from "@prisma/client";
 import { syncProjectsFromMarketingSite } from "@/lib/syncProjects";
 import { sendReportToManagers, windowsForToday } from "@/lib/reports";
 
@@ -66,18 +66,8 @@ export async function GET(req: NextRequest) {
       email: true,
     });
     notified++;
-
-    await prisma.activity.create({
-      data: {
-        leadId: undefined as unknown as string,  // not lead-scoped — system reminder
-        userId: u.id,
-        type: ActivityType.REMINDER_FIRED,
-        status: ActivityStatus.DONE,
-        title: "Morning briefing sent",
-        description: body,
-        completedAt: new Date(),
-      },
-    }).catch(() => {});  // skip if leadId required
+    // Note: We don't create an Activity here because Activity.leadId is required.
+    // The notify() call above already records the reminder in Notification table.
   }
 
   // Opportunistic: resync projects from whitecollarrealty.com (best-effort)

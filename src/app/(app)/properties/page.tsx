@@ -13,12 +13,12 @@ export default async function PropertiesPage() {
 
   return (
     <>
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold">Properties</h1>
-          <p className="text-sm text-gray-500">{projects.length} projects · {totalUnits} units · {available} available</p>
+          <h1 className="text-xl sm:text-2xl font-bold">Properties</h1>
+          <p className="text-xs sm:text-sm text-gray-500">{projects.length} projects · {totalUnits} units · {available} available</p>
         </div>
-        <button className="btn btn-primary">+ New Project</button>
+        <button className="btn btn-primary self-start sm:self-auto justify-center">+ New Project</button>
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {projects.map((p) => {

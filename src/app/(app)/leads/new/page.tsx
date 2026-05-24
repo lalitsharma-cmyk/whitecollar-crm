@@ -62,13 +62,13 @@ export default async function NewLeadPage() {
   const defaultTeam = me.team && (me.team === "Dubai" || me.team === "India") ? me.team : (defaultCurrency === "INR" ? "India" : "Dubai");
   return (
     <>
-      <h1 className="text-2xl font-bold">New Lead</h1>
-      <p className="text-sm text-gray-500">Mirror of your Dubai team sheet — capture the FULL situation, not keywords.</p>
-      <form action={createLeadAction} className="card p-6 max-w-4xl space-y-6">
+      <h1 className="text-xl sm:text-2xl font-bold">New Lead</h1>
+      <p className="text-xs sm:text-sm text-gray-500">Mirror of your Dubai team sheet — capture the FULL situation, not keywords.</p>
+      <form action={createLeadAction} className="card p-4 sm:p-6 max-w-4xl space-y-5 sm:space-y-6">
         {/* Identity */}
         <section>
           <div className="text-xs font-bold tracking-widest text-[#c9a24b] mb-3">IDENTITY</div>
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 sm:gap-4">
             <div><label className={label}>👤 Customer name *</label><input name="name" required className={input} /></div>
             <div><label className={label}>📞 Mobile</label><input name="phone" type="tel" placeholder="+971 50 ..." className={input} /></div>
             <div><label className={label}>✉ E-mail</label><input name="email" type="email" className={input} /></div>
@@ -81,7 +81,7 @@ export default async function NewLeadPage() {
         {/* Requirement */}
         <section>
           <div className="text-xs font-bold tracking-widest text-[#c9a24b] mb-3">REQUIREMENT</div>
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 sm:gap-4">
             <div><label className={label}>Configuration</label><input name="configuration" placeholder="2BR / Penthouse / Villa" className={input} /></div>
             <div>
               <label className={label}>Team / Currency</label>
@@ -112,7 +112,7 @@ export default async function NewLeadPage() {
         {/* Qualification — Dubai depth fields */}
         <section>
           <div className="text-xs font-bold tracking-widest text-[#c9a24b] mb-3">QUALIFICATION</div>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
             <div>
               <label className={label}>Potential</label>
               <select name="potential" className={input}>
@@ -164,7 +164,7 @@ export default async function NewLeadPage() {
         {/* Action / scheduling */}
         <section>
           <div className="text-xs font-bold tracking-widest text-[#c9a24b] mb-3">ACTION & SCHEDULING</div>
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 sm:gap-4">
             <div><label className={label}>🔁 Follow-up date</label><input name="followupDate" type="datetime-local" className={input} /></div>
             <div className="md:col-span-2"><label className={label}>✅ To Do — next action</label><input name="todoNext" placeholder="e.g. Send AED brochure & payment plan" className={input} /></div>
             <div className="md:col-span-3"><label className={label}>📤 Detail shared with client</label><input name="detailShared" placeholder="e.g. Brochure v3 + payment plan + RERA note" className={input} /></div>
@@ -172,9 +172,9 @@ export default async function NewLeadPage() {
           </div>
         </section>
 
-        <div className="flex gap-2 justify-end">
-          <a href="/leads" className="btn btn-ghost">Cancel</a>
-          <button className="btn btn-primary">Create Lead</button>
+        <div className="flex flex-col-reverse sm:flex-row gap-2 sm:justify-end">
+          <a href="/leads" className="btn btn-ghost justify-center">Cancel</a>
+          <button className="btn btn-primary justify-center">Create Lead</button>
         </div>
       </form>
     </>

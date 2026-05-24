@@ -48,12 +48,14 @@ export default async function PipelinePage({ searchParams }: { searchParams: Pro
 
   return (
     <>
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold">Sales Pipeline</h1>
-          <p className="text-sm text-gray-500">{leads.length} leads in pipeline · drag a card to change its stage</p>
+          <h1 className="text-xl sm:text-2xl font-bold">Sales Pipeline</h1>
+          <p className="text-xs sm:text-sm text-gray-500">
+            {leads.length} leads · <span className="hidden sm:inline">drag a card to change its stage</span><span className="sm:hidden">tap a lead to open it (use desktop to drag)</span>
+          </p>
         </div>
-        <div className="seg">
+        <div className="seg self-start">
           <button className="on">Kanban</button>
           <Link href="/leads">List</Link>
         </div>
