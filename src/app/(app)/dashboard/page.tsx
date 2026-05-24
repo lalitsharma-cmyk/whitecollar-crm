@@ -5,6 +5,7 @@ import LeadsTrendChart from "@/components/charts/LeadsTrendChart";
 import SourceMixChart from "@/components/charts/SourceMixChart";
 import { fmtMoney, fmtMoneyDual } from "@/lib/money";
 import { runReconciler } from "@/lib/reconciler";
+import { activityVisual } from "@/lib/activityIcon";
 import Link from "next/link";
 
 export const dynamic = "force-dynamic";
@@ -167,17 +168,22 @@ export default async function DashboardPage() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <div className="card p-5">
           <div className="font-semibold mb-3">Recent activity</div>
-          <div className="tl-line space-y-3">
-            {recentActivities.map((a) => (
-              <div key={a.id} className="relative">
-                <span className="tl-dot"></span>
-                <div className="text-sm">
-                  <b>{a.user?.name ?? "System"}</b> · {a.title}
-                  {a.lead && <> on <Link href={`/leads/${a.lead.id}`} className="text-[#0b1a33] font-semibold hover:underline">{a.lead.name}</Link></>}
+          <div className="space-y-3">
+            {recentActivities.map((a) => {
+              const v = activityVisual(a.type);
+              return (
+                <div key={a.id} className="flex gap-3 items-start">
+                  <div className={`w-7 h-7 rounded-full ${v.dot} text-white flex items-center justify-center text-xs flex-none shadow-sm`}>{v.icon}</div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm">
+                      <b>{a.user?.name ?? "System"}</b> · {a.title}
+                      {a.lead && <> on <Link href={`/leads/${a.lead.id}`} className="text-[#0b1a33] font-semibold hover:underline">{a.lead.name}</Link></>}
+                    </div>
+                    <div className="text-xs text-gray-500">{v.label} · {formatDistanceToNow(a.createdAt, { addSuffix: true })}</div>
+                  </div>
                 </div>
-                <div className="text-xs text-gray-500">{formatDistanceToNow(a.createdAt, { addSuffix: true })}</div>
-              </div>
-            ))}
+              );
+            })}
             {recentActivities.length === 0 && <div className="text-sm text-gray-500">No activity yet.</div>}
           </div>
         </div>
