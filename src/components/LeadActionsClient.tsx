@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Phone, MessageCircle, Mail, AlertCircle, Sparkles } from "lucide-react";
+import { whatsappLink, telLink } from "@/lib/phone";
 
 const OUTCOMES = [
   { v: "CONNECTED",        label: "✅ Connected" },
@@ -30,17 +31,13 @@ interface Props {
   acefoneMappedForUser?: boolean;  // current user has acefoneAgentId set
 }
 
-/** Build a tel: URL — strips spaces but keeps + and digits */
-function telUrl(p: string | null) { return p ? `tel:${p.replace(/[^\d+]/g, "")}` : ""; }
-function waUrl(p: string | null) {
-  if (!p) return "";
-  const digits = p.replace(/\D/g, "");
-  return `https://wa.me/${digits}`;
-}
+// Phone helpers — now in src/lib/phone.ts. Kept as thin wrappers for compatibility.
+const telUrl = (p: string | null) => telLink(p);
+const waUrl = (p: string | null) => whatsappLink(p);
 
 export default function LeadActionsClient({ leadId, phone, email, currentOwnerId, canReassign, agents, phoneMasked, leadName, agentName, acefoneEnabled, acefoneMappedForUser }: Props) {
   const waGreeting = `Hi ${leadName}, this is ${agentName} from White Collar Realty. I'll be your dedicated property advisor. May I know a convenient time to call you today?`;
-  const waUrlWithDraft = (p: string | null) => p ? `https://wa.me/${p.replace(/\D/g, "")}?text=${encodeURIComponent(waGreeting)}` : "";
+  const waUrlWithDraft = (p: string | null) => whatsappLink(p, waGreeting);
   const router = useRouter();
   const [showCall, setShowCall] = useState(false);
   const [busy, setBusy] = useState(false);

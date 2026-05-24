@@ -4,15 +4,18 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   LayoutDashboard, Users, KanbanSquare, Sparkles, Menu, X, Bell,
-  Building2, CalendarDays, PhoneCall, BarChart3, Upload, UserCog, Settings as SettingsIcon, LogOut
+  Building2, CalendarDays, PhoneCall, BarChart3, Upload, UserCog, Settings as SettingsIcon, LogOut,
+  Snowflake,
 } from "lucide-react";
 import NotifBell from "./NotifBell";
+import WhatsAppPanel from "./WhatsAppPanel";
 
 const fullNav = [
   { section: "WORKSPACE", items: [
     { href: "/dashboard",   label: "Dashboard",   Icon: LayoutDashboard },
     { href: "/action-list", label: "Action List", Icon: Sparkles, tag: "HOT" },
     { href: "/leads",       label: "Leads",       Icon: Users },
+    { href: "/cold-calls",  label: "Cold Calls",  Icon: Snowflake },
     { href: "/pipeline",    label: "Pipeline",    Icon: KanbanSquare },
     { href: "/properties",  label: "Properties",  Icon: Building2 },
     { href: "/activities",  label: "Activities",  Icon: CalendarDays },
@@ -101,6 +104,7 @@ export default function MobileShell({ children, user }: Props) {
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src="/brand/wcr-logo.png" alt="WCR" className="h-7 w-auto object-contain" />
         <div className="flex-1" />
+        <WhatsAppPanel />
         <NotifBell />
         <Link href="/leads/new" aria-label="New lead" className="p-2 rounded hover:bg-white/10 min-w-11 min-h-11 flex items-center justify-center">
           <span className="text-xl font-bold leading-none">+</span>
@@ -176,6 +180,7 @@ export default function MobileShell({ children, user }: Props) {
           </div>
           <Link href="/leads/new" className="btn btn-ghost">+ New Lead</Link>
           <Link href="/ai" className="btn btn-gold"><Sparkles className="w-[18px] h-[18px]" /> Ask AI</Link>
+          <WhatsAppPanel />
           <NotifBell />
           <div className={`avatar ${user.avatarColor}`}>{initials}</div>
         </header>

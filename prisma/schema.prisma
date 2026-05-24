@@ -115,6 +115,14 @@ enum InvestTimeline {
   UNKNOWN
 }
 
+// BANT qualification verdict — applied AFTER discovery call.
+// Budget · Authority · Need · Timeline → Qualifies / Not qualified / Under review.
+enum BantStatus {
+  UNDER_REVIEW
+  QUALIFIES
+  NOT_QUALIFIED
+}
+
 // =====================================================
 // LEAD — the core entity
 // =====================================================
@@ -150,6 +158,9 @@ model Lead {
   potential       Potential?
   fundReadiness   FundReadiness?
   moodStatus      MoodStatus?
+  // BANT verdict — set after qualification call. Drives the "Qualifies/Not qualified" chip.
+  bantStatus      BantStatus  @default(UNDER_REVIEW)
+  bantReason      String?     // optional one-liner explaining the verdict
   detailShared    String?     // what brochures / details we've sent
   photoUrls       String?     // JSON-stringified URLs of uploaded photos
   // scheduling
@@ -175,6 +186,11 @@ model Lead {
   needsManagerReview Boolean  @default(false)  // auto-flagged when manager push could help
   managerReviewReason String?                  // why flagged (e.g. "3 not-picked attempts")
   flaggedAt       DateTime?
+  // Cold-call bucket — separates outbound cold prospects from real warm leads.
+  // Lead lands here when: BANT=NOT_QUALIFIED, OR no contact in 30+ days,
+  // OR manager toggles it explicitly. Hides from main /leads list by default.
+  isColdCall      Boolean     @default(false)
+  coldCallReason  String?
   // dedupe
   fingerprint     String?     @unique  // phone||email hash for dedupe
   duplicateCount  Int         @default(0)  // times this client has re-contacted us

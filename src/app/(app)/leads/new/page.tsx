@@ -4,6 +4,8 @@ import { LeadSource, Potential, FundReadiness, MoodStatus, InvestTimeline } from
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { defaultCurrencyForTeam } from "@/lib/money";
+import { defaultDialForTeam, toE164 } from "@/lib/phone";
+import PhoneInput from "@/components/PhoneInput";
 
 async function createLeadAction(formData: FormData) {
   "use server";
@@ -12,9 +14,13 @@ async function createLeadAction(formData: FormData) {
   const source = (Object.values(LeadSource) as string[]).includes(sourceRaw)
     ? (sourceRaw as LeadSource) : LeadSource.OTHER;
 
+  // PhoneInput posts already-E164'd value; normalise anyway as defence
+  const rawPhone = String(formData.get("phone") ?? "").trim();
+  const phone = toE164(rawPhone) ?? undefined;
+
   const { lead } = await ingestLead({
     name: String(formData.get("name") ?? "").trim(),
-    phone: String(formData.get("phone") ?? "").trim() || undefined,
+    phone,
     email: String(formData.get("email") ?? "").trim() || undefined,
     city: String(formData.get("city") ?? "").trim() || undefined,
     configuration: String(formData.get("configuration") ?? "").trim() || undefined,
@@ -70,7 +76,13 @@ export default async function NewLeadPage() {
           <div className="text-xs font-bold tracking-widest text-[#c9a24b] mb-3">IDENTITY</div>
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 sm:gap-4">
             <div><label className={label}>👤 Customer name *</label><input name="name" required className={input} /></div>
-            <div><label className={label}>📞 Mobile</label><input name="phone" type="tel" placeholder="+971 50 ..." className={input} /></div>
+            <div>
+              <label className={label}>📞 Mobile</label>
+              <div className="mt-1">
+                <PhoneInput name="phone" defaultDial={defaultDialForTeam(me.team)} placeholder="50 123 4567" />
+              </div>
+              <p className="text-[10px] text-gray-500 mt-0.5">Pick country flag · WhatsApp/Call buttons stop working without the right code</p>
+            </div>
             <div><label className={label}>✉ E-mail</label><input name="email" type="email" className={input} /></div>
             <div><label className={label}>Company</label><input name="company" placeholder="e.g. Emirates NBD" className={input} /></div>
             <div><label className={label}>City</label><input name="city" className={input} /></div>

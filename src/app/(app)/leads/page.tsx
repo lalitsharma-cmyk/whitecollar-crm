@@ -34,7 +34,9 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
   const sp = await searchParams;
 
   // Build where clause from filters
-  const where: Prisma.LeadWhereInput = {};
+  // By default, hide cold-call leads (they live in /cold-calls). User can opt-in
+  // by adding ?showCold=1 to the URL.
+  const where: Prisma.LeadWhereInput = sp.showCold === "1" ? {} : { isColdCall: false };
   if (sp.q) {
     where.OR = [
       { name: { contains: sp.q, mode: "insensitive" } },

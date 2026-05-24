@@ -3,6 +3,7 @@ import { LeadSource, LeadStatus, ActivityType, ActivityStatus } from "@prisma/cl
 import { pickRoundRobinAgent, fingerprintFor } from "@/lib/assignment";
 import { defaultCurrencyForLocation } from "@/lib/money";
 import { notify, notifyRoles } from "@/lib/notify";
+import { toE164 } from "@/lib/phone";
 
 export interface RawLeadInput {
   name: string;
@@ -33,6 +34,17 @@ const FIRST_CALL_SLA_MIN = 15;
  * so Admin can route them. The reconciler handles unattended leads.
  */
 export async function ingestLead(input: RawLeadInput) {
+  // Normalize phone to E.164 up-front so dedupe fingerprint is consistent and
+  // every wa.me / tel: link downstream gets a valid number.
+  const fallbackDial = input.country === "India" ? "+91"
+    : input.country === "UAE" ? "+971"
+    : input.team === "India" ? "+91"
+    : input.team === "Dubai" ? "+971"
+    : undefined;
+  if (input.phone) {
+    const normalized = toE164(input.phone, fallbackDial);
+    if (normalized) input.phone = normalized;
+  }
   const fp = fingerprintFor(input.phone, input.email);
 
   // ── Duplicate path ──

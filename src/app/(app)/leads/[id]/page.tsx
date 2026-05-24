@@ -167,6 +167,29 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
           </div>
         </div>
 
+        {/* BANT verdict — prominent, decision-driving */}
+        <div className={`card p-4 border-l-4 ${
+          lead.bantStatus === "QUALIFIES" ? "border-emerald-500 bg-emerald-50" :
+          lead.bantStatus === "NOT_QUALIFIED" ? "border-red-500 bg-red-50" :
+          "border-amber-400 bg-amber-50"
+        }`}>
+          <div className="flex items-center gap-2 mb-2">
+            <span className="text-xs font-bold tracking-widest text-gray-600">BANT VERDICT</span>
+            <span className="text-[10px] text-gray-500">Budget · Authority · Need · Timeline</span>
+          </div>
+          <div className="flex items-center gap-3 flex-wrap">
+            <InlineEdit leadId={lead.id} field="bantStatus" type="select" value={lead.bantStatus}
+              options={[
+                {value:"UNDER_REVIEW",label:"🤔 Under review"},
+                {value:"QUALIFIES",label:"✅ Qualifies"},
+                {value:"NOT_QUALIFIED",label:"❌ Not qualified"},
+              ]} />
+            <div className="text-xs text-gray-600 flex-1 min-w-[200px]">
+              Why: <InlineEdit leadId={lead.id} field="bantReason" value={lead.bantReason ?? ""} placeholder="One-line reason (e.g. 'budget too low for any of our inventory')" />
+            </div>
+          </div>
+        </div>
+
         <div className="card p-5">
           <div className="font-semibold mb-3">Qualification <span className="text-[10px] text-gray-400 font-normal">(click any value to edit)</span></div>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">

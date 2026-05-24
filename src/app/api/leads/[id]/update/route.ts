@@ -6,7 +6,7 @@ import { ActivityType, ActivityStatus, LeadStatus, AIScore, Potential, FundReadi
 // Inline-edit endpoint — accepts one or more field updates and logs an Activity
 // for status/stage changes. Only allows whitelisted fields.
 
-const ALLOWED: Record<string, "string" | "date" | "number" | "enum"> = {
+const ALLOWED: Record<string, "string" | "date" | "number" | "enum" | "bool"> = {
   name: "string", phone: "string", email: "string", company: "string",
   city: "string", country: "string", address: "string",
   configuration: "string", currentStatus: "string", categorization: "string",
@@ -16,6 +16,8 @@ const ALLOWED: Record<string, "string" | "date" | "number" | "enum"> = {
   followupDate: "date", meetingDate: "date", siteVisitDate: "date",
   status: "enum", potential: "enum", fundReadiness: "enum",
   moodStatus: "enum", whenCanInvest: "enum",
+  bantStatus: "enum", bantReason: "string",
+  isColdCall: "bool", coldCallReason: "string",
 };
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -38,6 +40,11 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     if (kind === "string") { updates[key] = String(raw); activityNotes.push(`${key} set`); }
     else if (kind === "number") { const n = Number(raw); if (!isNaN(n)) { updates[key] = n; activityNotes.push(`${key} set to ${n}`); } }
     else if (kind === "date") { const d = new Date(String(raw)); if (!isNaN(d.getTime())) { updates[key] = d; activityNotes.push(`${key} → ${d.toISOString().slice(0,10)}`); } }
+    else if (kind === "bool") {
+      const b = raw === true || raw === "true" || raw === "1" || raw === 1;
+      updates[key] = b;
+      activityNotes.push(`${key} → ${b}`);
+    }
     else if (kind === "enum") {
       updates[key] = raw;
       activityNotes.push(`${key} → ${raw}`);
