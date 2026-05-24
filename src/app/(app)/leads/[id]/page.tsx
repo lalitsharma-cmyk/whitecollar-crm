@@ -9,6 +9,7 @@ import LeadProjectsClient from "@/components/LeadProjectsClient";
 import LeadMeetingClient from "@/components/LeadMeetingClient";
 import { runReconciler } from "@/lib/reconciler";
 import { aggregateCalls, callBreakdownString } from "@/lib/callStats";
+import { activityVisual } from "@/lib/activityIcon";
 
 export const dynamic = "force-dynamic";
 
@@ -203,15 +204,20 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
 
         <div className="card p-5">
           <div className="font-semibold mb-3">Timeline</div>
-          <div className="tl-line space-y-4">
-            {lead.activities.map((a) => (
-              <div key={a.id} className="relative">
-                <span className="tl-dot" />
-                <div className="text-sm"><b>{a.title}</b> · <span className="pill">{a.type}</span></div>
-                <div className="text-xs text-gray-500">{a.user?.name ?? "System"} · {format(a.createdAt, "PPp")}</div>
-                {a.description && <div className="text-sm mt-1 text-gray-700 whitespace-pre-wrap">{a.description}</div>}
-              </div>
-            ))}
+          <div className="space-y-3">
+            {lead.activities.map((a) => {
+              const v = activityVisual(a.type);
+              return (
+                <div key={a.id} className="flex gap-3 items-start">
+                  <div className={`w-8 h-8 rounded-full ${v.dot} text-white flex items-center justify-center text-sm flex-none shadow-sm`}>{v.icon}</div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm"><b>{a.title}</b> <span className="text-[10px] text-gray-400 ml-1">· {v.label}</span></div>
+                    <div className="text-xs text-gray-500">{a.user?.name ?? "System"} · {format(a.createdAt, "d MMM yyyy, HH:mm")}</div>
+                    {a.description && <div className="text-sm mt-1 text-gray-700 whitespace-pre-wrap">{a.description}</div>}
+                  </div>
+                </div>
+              );
+            })}
             {lead.activities.length === 0 && <div className="text-sm text-gray-500">No activity yet.</div>}
           </div>
         </div>

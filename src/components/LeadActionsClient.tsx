@@ -88,37 +88,47 @@ export default function LeadActionsClient({ leadId, phone, email, currentOwnerId
         </div>
       )}
 
-      <div className="flex flex-wrap gap-2 mt-3">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-4">
         {phone && (
-          <a href={telUrl(phone)} className="btn btn-ghost"><Phone className="w-[16px] h-[16px]" /> Call</a>
+          <a href={telUrl(phone)} className="flex flex-col items-center justify-center py-3 rounded-xl bg-emerald-600 text-white font-semibold hover:bg-emerald-700 transition shadow-sm">
+            <Phone className="w-5 h-5 mb-1" /> Call
+          </a>
         )}
         {phone && (
-          <>
-            <a href={waUrl(phone)} target="_blank" rel="noopener noreferrer" className="btn btn-ghost"><MessageCircle className="w-[16px] h-[16px]" /> WhatsApp</a>
-            <a href={waUrlWithDraft(phone)} target="_blank" rel="noopener noreferrer" className="btn btn-ghost" title="Opens WhatsApp with a pre-typed greeting — you just tap Send"><Sparkles className="w-[16px] h-[16px]" /> WA Greeting</a>
-          </>
+          <a href={waUrl(phone)} target="_blank" rel="noopener noreferrer" className="flex flex-col items-center justify-center py-3 rounded-xl bg-[#25D366] text-white font-semibold hover:opacity-90 transition shadow-sm">
+            <MessageCircle className="w-5 h-5 mb-1" /> WhatsApp
+          </a>
         )}
         {email && (
-          <a href={`mailto:${email}`} className="btn btn-ghost"><Mail className="w-[16px] h-[16px]" /> Email</a>
+          <a href={`mailto:${email}`} className="flex flex-col items-center justify-center py-3 rounded-xl bg-sky-600 text-white font-semibold hover:bg-sky-700 transition shadow-sm">
+            <Mail className="w-5 h-5 mb-1" /> Email
+          </a>
         )}
-        <button onClick={() => setShowCall(true)} className="btn btn-gold">📝 Log Call</button>
-        {canReassign && (
-          <div className="inline-flex items-center gap-2 border border-[#e5e7eb] rounded-lg px-2 py-1 text-sm">
-            <span className="text-xs text-gray-500">Assign to:</span>
-            <select
-              defaultValue={currentOwnerId ?? ""}
-              disabled={assignBusy}
-              onChange={(e) => onReassign(e.target.value)}
-              className="text-sm border-0 bg-transparent outline-none"
-            >
-              <option value="">— pick —</option>
-              {agents.map((a) => (
-                <option key={a.id} value={a.id}>{a.name} ({a.team ?? "—"})</option>
-              ))}
-            </select>
-          </div>
-        )}
+        <button onClick={() => setShowCall(true)} className="flex flex-col items-center justify-center py-3 rounded-xl bg-[#c9a24b] text-[#0b1a33] font-semibold hover:bg-[#e7c97a] transition shadow-sm">
+          <span className="text-base mb-1">📝</span> Log Call
+        </button>
       </div>
+      {phone && (
+        <a href={waUrlWithDraft(phone)} target="_blank" rel="noopener noreferrer" className="flex items-center justify-center gap-2 mt-2 py-2 rounded-xl bg-emerald-50 border border-emerald-300 text-emerald-900 text-sm font-semibold hover:bg-emerald-100 transition">
+          <Sparkles className="w-4 h-4" /> Send WhatsApp with pre-typed greeting
+        </a>
+      )}
+      {canReassign && (
+        <div className="mt-3 flex items-center gap-2 border border-[#e5e7eb] rounded-lg px-3 py-2 text-sm">
+          <span className="text-xs text-gray-500 font-semibold">REASSIGN TO:</span>
+          <select
+            defaultValue={currentOwnerId ?? ""}
+            disabled={assignBusy}
+            onChange={(e) => onReassign(e.target.value)}
+            className="text-sm border-0 bg-transparent outline-none flex-1"
+          >
+            <option value="">— pick agent —</option>
+            {agents.map((a) => (
+              <option key={a.id} value={a.id}>{a.name} ({a.team ?? "—"})</option>
+            ))}
+          </select>
+        </div>
+      )}
 
       {showCall && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={() => setShowCall(false)}>
