@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { notFound, redirect } from "next/navigation";
 import { format, formatDistanceToNow } from "date-fns";
-import { fmtIST, fmtISTParen, toISTLocalInput } from "@/lib/datetime";
+import { fmtIST, toISTLocalInput } from "@/lib/datetime";
 import Link from "next/link";
 import { fmtMoney } from "@/lib/money";
 import { requireUser } from "@/lib/auth";
@@ -12,7 +12,6 @@ import SiteVisitTracker from "@/components/SiteVisitTracker";
 import AdvancedActivityLogger from "@/components/AdvancedActivityLogger";
 import { getTravelRatePerKmInr } from "@/lib/settings";
 import { runReconciler } from "@/lib/reconciler";
-import { aggregateCalls, callBreakdownString } from "@/lib/callStats";
 import { activityVisual } from "@/lib/activityIcon";
 import InlineEdit from "@/components/InlineEdit";
 import { acefoneEnabled } from "@/lib/acefone";
@@ -20,6 +19,7 @@ import { canTouchLead } from "@/lib/leadScope";
 import SuggestedUnitsCard from "@/components/SuggestedUnitsCard";
 import { bestUnitsForLead } from "@/lib/inventoryMatch";
 import RemarksCard from "@/components/RemarksCard";
+import CallHistoryCard from "@/components/CallHistoryCard";
 
 export const dynamic = "force-dynamic";
 
@@ -94,9 +94,6 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
   const activeVisit = meetingActs.find(
     (a) => a.attendedByUserId === me.id && a.startedAt && !a.endedAt && a.status !== "DONE"
   );
-
-  // Call stats aggregate (dialed / connected / not-picked etc.)
-  const callStats = aggregateCalls(lead.callLogs);
 
   const aiClass = lead.aiScore === "HOT" ? "chip-hot" : lead.aiScore === "WARM" ? "chip-warm" : "chip-cold";
   const canReassign = me.role === "ADMIN" || me.role === "MANAGER";
@@ -207,6 +204,11 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
             The raw text uses runs of `,,,,` between call entries (MIS sheet
             convention); InlineEdit's textarea read-view splits those into
             paragraph breaks for readability. */}
+        {/* CALL HISTORY — first card under the header so agents read past notes
+            BEFORE dialling. Outranks remarks because outcomes + recordings are
+            actionable (outcome buckets, no-pick streak, callback times). */}
+        <CallHistoryCard callLogs={lead.callLogs} />
+
         <RemarksCard leadId={lead.id} remarks={lead.remarks} />
 
         <div className="card p-5 border-l-4 border-[#c9a24b]">
@@ -483,57 +485,9 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
           </div>
         )}
 
-        <div className="card p-5">
-          <div className="flex items-center justify-between mb-2">
-            <div className="font-semibold">📞 Call history</div>
-            <div className="text-[10px] text-gray-500">{callStats.total} total</div>
-          </div>
-          {/* Breakdown badges */}
-          <div className="grid grid-cols-4 gap-1 text-center text-xs mb-3">
-            <div className="p-1.5 rounded bg-blue-50 border border-blue-200">
-              <div className="text-base font-bold text-blue-700">{callStats.total}</div>
-              <div className="text-[10px] text-gray-600">Dialed</div>
-            </div>
-            <div className="p-1.5 rounded bg-emerald-50 border border-emerald-200">
-              <div className="text-base font-bold text-emerald-700">{callStats.connected}</div>
-              <div className="text-[10px] text-gray-600">Connected</div>
-            </div>
-            <div className="p-1.5 rounded bg-red-50 border border-red-200">
-              <div className="text-base font-bold text-red-700">{callStats.notPicked}</div>
-              <div className="text-[10px] text-gray-600">Not picked</div>
-            </div>
-            <div className="p-1.5 rounded bg-amber-50 border border-amber-200">
-              <div className="text-base font-bold text-amber-700">{callStats.callback}</div>
-              <div className="text-[10px] text-gray-600">Callback</div>
-            </div>
-          </div>
-          {callStats.notPickedStreak >= 2 && (
-            <div className="text-xs bg-amber-50 border border-amber-300 rounded p-2 mb-3 text-amber-800">
-              ⚠ <b>{callStats.notPickedStreak} not-picked in a row</b> — try different time slot or WhatsApp
-            </div>
-          )}
-          {/* Chronological log — date · agent · outcome · remark */}
-          <div className="space-y-2 text-sm max-h-[420px] overflow-y-auto pr-1">
-            {lead.callLogs.map((c) => (
-              <div key={c.id} className="border-l-2 border-[#e5e7eb] pl-3 py-1">
-                <div className="text-[11px] text-gray-500">
-                  <b>{c.user.name}</b> · {fmtISTParen(c.startedAt)} IST
-                  {c.durationSec ? ` · ${Math.floor(c.durationSec/60)}m ${c.durationSec%60}s` : ""}
-                  {c.ivrProvider && <span className="ml-1 chip src text-[9px]">{c.ivrProvider}</span>}
-                </div>
-                <div className="text-xs font-semibold">{c.outcome.replaceAll("_"," ")}</div>
-                {c.notes && <div className="text-xs mt-0.5 text-gray-700 whitespace-pre-wrap">{c.notes}</div>}
-                {c.recordingUrl && (
-                  <div className="mt-1.5">
-                    <audio controls preload="none" src={c.recordingUrl} className="w-full h-8" />
-                    <a href={c.recordingUrl} target="_blank" rel="noopener noreferrer" className="text-[10px] text-[#0b1a33] underline">Open recording in new tab ↗</a>
-                  </div>
-                )}
-              </div>
-            ))}
-            {lead.callLogs.length === 0 && <div className="text-gray-500 text-xs">No calls yet.</div>}
-          </div>
-        </div>
+        {/* Call history MOVED to the top of the left column (right under the header).
+            Lalit asked for it up there so agents can read all past notes BEFORE
+            dialling. The right rail now holds the secondary cards only. */}
 
         <Link href="/leads" className="text-xs text-[#0b1a33] font-semibold inline-block">← Back to leads</Link>
       </div>
