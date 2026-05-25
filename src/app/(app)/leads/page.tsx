@@ -51,7 +51,10 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
       { company: { contains: sp.q, mode: "insensitive" } },
     ];
   }
-  if (sp.source) where.source = sp.source as LeadSource;
+  // Agents never see source — they can't filter by it either, even by hand-crafting
+  // the ?source= URL. Without this guard an agent could probe the source distribution
+  // by setting the param and watching the result count, defeating the privacy policy.
+  if (sp.source && me.role !== "AGENT") where.source = sp.source as LeadSource;
   if (sp.status) where.status = sp.status as LeadStatus;
   if (sp.ai) where.aiScore = sp.ai as AIScore;
   if (sp.team) where.forwardedTeam = sp.team;

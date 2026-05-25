@@ -174,7 +174,11 @@ export async function ingestLead(input: RawLeadInput) {
   }
 
   // ── Workflow engine: fire any LEAD_CREATED rules ──
-  fireWorkflowTrigger("LEAD_CREATED", lead.id, { source: input.source }).catch(() => {});
+  // Testing-mode kill-switch: also skip — workflow actions can send WhatsApp/email
+  // to real client numbers, which would defeat the purpose of testing mode.
+  if (!testingMode) {
+    fireWorkflowTrigger("LEAD_CREATED", lead.id, { source: input.source }).catch(() => {});
+  }
 
   return { lead, deduped: false as const };
 }

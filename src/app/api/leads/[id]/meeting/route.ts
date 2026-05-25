@@ -54,6 +54,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         scheduledAt: when,
         description: `${remarks}\n\n[Rescheduled from ${existing.scheduledAt?.toISOString().slice(0,16) ?? "earlier"}]`,
         rescheduledCount: { increment: 1 },
+        // Re-arm the 30-min pre-meeting reminder for the NEW time. Without this,
+        // a meeting rescheduled from 3pm → 5pm would silently never get its push,
+        // because the dedupe flag was set when the original 3pm reminder fired.
+        reminderSentAt: null,
       },
     });
   } else {

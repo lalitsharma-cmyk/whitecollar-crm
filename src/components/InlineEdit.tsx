@@ -91,8 +91,8 @@ export default function InlineEdit({ leadId, field, label, value, type = "text",
             <option value="">—</option>
             {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
-          <button onClick={save} disabled={busy} className="text-emerald-600 hover:bg-emerald-50 rounded p-1 text-xs">✓</button>
-          <button onClick={cancel} className="text-red-600 hover:bg-red-50 rounded p-1 text-xs">✕</button>
+          <button onClick={save} disabled={busy} aria-label="Save" className="text-emerald-600 hover:bg-emerald-50 rounded p-2 text-base min-w-11 min-h-11 flex items-center justify-center">✓</button>
+          <button onClick={cancel} aria-label="Cancel" className="text-red-600 hover:bg-red-50 rounded p-2 text-base min-w-11 min-h-11 flex items-center justify-center">✕</button>
         </div>
         {errLine}
       </div>

@@ -85,7 +85,7 @@ export default function LeadProjectsClient({ leadId, initial, allProjects }: { l
                 value={it.status}
                 onChange={(e) => changeStatus(it.projectId, e.target.value)}
                 disabled={busy}
-                className={`chip ${statusChip[it.status]} border-0 outline-none text-[10px] flex-1 sm:flex-none min-h-9 sm:min-h-0`}
+                className={`chip ${statusChip[it.status]} border-0 outline-none text-[10px] flex-1 sm:flex-none min-h-11 sm:min-h-0`}
               >
                 <option value="DISCUSSED">Discussed</option>
                 <option value="SHORTLISTED">Shortlisted</option>

@@ -4,6 +4,7 @@ import { ActivityType, ActivityStatus, LeadStatus, AIScore, Potential, FundReadi
 import { loadOwnedLead } from "@/lib/leadScope";
 import { rescoreLead } from "@/lib/leadRescorer";
 import { fireWorkflowTrigger } from "@/lib/workflowEngine";
+import { getTestingModeEnabled } from "@/lib/settings";
 
 // Inline-edit endpoint — accepts one or more field updates and logs an Activity
 // for status/stage changes. Only allows whitelisted fields.
@@ -82,12 +83,17 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if ("bantStatus" in updates || "status" in updates) {
     rescoreLead(id).catch(() => {});
   }
-  // Workflow engine — BANT changes are a common trigger ("auto-task when Qualifies").
-  if ("bantStatus" in updates) {
-    fireWorkflowTrigger("BANT_CHANGED", id, { newBant: updates.bantStatus }).catch(() => {});
-  }
-  if ("status" in updates) {
-    fireWorkflowTrigger("STATUS_CHANGED", id, { newStatus: updates.status }).catch(() => {});
+  // Workflow engine — BANT/status changes are common triggers that can send
+  // WhatsApp/email via workflow actions. Gate behind testing-mode so we don't
+  // ping real client numbers during go-live data testing.
+  const testingMode = await getTestingModeEnabled();
+  if (!testingMode) {
+    if ("bantStatus" in updates) {
+      fireWorkflowTrigger("BANT_CHANGED", id, { newBant: updates.bantStatus }).catch(() => {});
+    }
+    if ("status" in updates) {
+      fireWorkflowTrigger("STATUS_CHANGED", id, { newStatus: updates.status }).catch(() => {});
+    }
   }
 
   return NextResponse.json({ ok: true, updated: Object.keys(updates).length - 1 });

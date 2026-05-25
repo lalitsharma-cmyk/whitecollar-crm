@@ -23,14 +23,28 @@ export const dynamic = "force-dynamic";
 
 interface TrackPoint { ts: string; lat: number; lng: number }
 
+function isValidCoord(n: unknown): n is number {
+  return typeof n === "number" && Number.isFinite(n) && n >= -180 && n <= 180;
+}
+
 function parseTrack(s: string | null): TrackPoint[] {
   if (!s) return [];
-  try { const j = JSON.parse(s); return Array.isArray(j) ? j : []; } catch { return []; }
+  try {
+    const j = JSON.parse(s);
+    if (!Array.isArray(j)) return [];
+    // Filter out any corrupt entries — a single bad row in locationTrack used to
+    // crash the entire admin page when .toFixed() ran on a string/null/NaN lat.
+    return j.filter((p): p is TrackPoint =>
+      p != null && typeof p === "object" &&
+      isValidCoord(p.lat) && isValidCoord(p.lng) &&
+      typeof p.ts === "string"
+    );
+  } catch { return []; }
 }
 
 /** Single-point Google Maps pin */
 function pinLink(lat: number | null, lng: number | null): string | null {
-  if (lat == null || lng == null) return null;
+  if (!isValidCoord(lat) || !isValidCoord(lng)) return null;
   return `https://www.google.com/maps?q=${lat},${lng}`;
 }
 
