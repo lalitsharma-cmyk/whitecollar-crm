@@ -100,8 +100,14 @@ export default async function ActionListPage() {
   return (
     <>
       <div>
-        <h1 className="text-2xl font-bold">{me.role === "AGENT" ? "Your Action List" : `${me.name.split(" ")[0]}'s Action List`}</h1>
-        <p className="text-sm text-gray-500">Curated cards for fastest impact. Each card has next-step, why-you-and-not-the-agent, and a one-tap WhatsApp.</p>
+        <h1 className="text-xl sm:text-2xl font-bold">
+          {me.role === "AGENT" ? "📋 Your Action List" : `📋 ${me.name.split(" ")[0]}'s Action List (${me.role === "ADMIN" ? "Admin view — all teams" : "Manager view"})`}
+        </h1>
+        <p className="text-xs sm:text-sm text-gray-500">
+          {me.role === "AGENT"
+            ? "Your top priorities right now — close these first. Cards are filtered to YOUR leads only."
+            : "Team-wide priority cards. Each agent sees the same view filtered to their own leads when they log in."}
+        </p>
       </div>
 
       {sections.map((sec) => (

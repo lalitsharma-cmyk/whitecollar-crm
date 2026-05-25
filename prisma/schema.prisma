@@ -31,6 +31,11 @@ model User {
   // Acefone agent ID — required for click-to-call (Acefone rings this number first,
   // then dials the lead once the agent picks up). Configure in /team page.
   acefoneAgentId String?
+  // Company-assigned WhatsApp Business number for this agent (e.g. "+918XXXXXXX").
+  // Used for: (1) outbound WA links open with this number visible to client,
+  // (2) when Meta Cloud API is configured, the CRM can poll messages for this
+  // number's wa_id and auto-log conversations as Activity rows.
+  companyWhatsAppNumber String?
   avatarColor   String?    // tailwind class e.g. "bg-indigo-500"
   active        Boolean    @default(true)
   createdAt     DateTime   @default(now())
@@ -175,6 +180,9 @@ model Lead {
   // Profile depth
   profession      Profession?
   linkedInUrl     String?     // full https://linkedin.com/in/... URL
+  // Purchase history — captured at intake for cold data or filled after qualification
+  alreadyBought   String?     // comma-separated project names client already owns
+  alreadyBoughtBy String?     // who they bought it through (broker name or "direct from Emaar")
   detailShared    String?     // what brochures / details we've sent
   photoUrls       String?     // JSON-stringified URLs of uploaded photos
   // scheduling
@@ -350,7 +358,10 @@ enum ActivityType {
   SITE_VISIT
   OFFICE_MEETING
   VIRTUAL_MEETING
-  MEETING            // legacy — kept for backwards compatibility
+  HOME_VISIT          // India team — agent visits client at home
+  EXPO_MEETING        // Dubai team — meets prospect at a developer Expo (held in IN cities)
+  COLD_TO_LEAD        // Logged when agent promotes a cold-data row to a real lead
+  MEETING             // legacy — kept for backwards compatibility
   TASK
   NOTE
   STATUS_CHANGE
@@ -398,6 +409,19 @@ model Activity {
   endedLng           Float?
   /// JSON-stringified [{ts, lat, lng}, …] — polled every 60s between Start and End
   locationTrack      String?
+  // ── Expo meeting fields (Dubai team — meets prospects at developer expos in IN cities) ──
+  expoCity            String?    // "Gurgaon", "Delhi", "Mumbai", "Bangalore"
+  expoHotel           String?    // venue name
+  expoDeveloper       String?    // which developer hosted (Emaar / Sobha / DLF…)
+  expoDeveloperContact String?   // developer's salesperson name we coordinated with
+  expoAgentAttended   Boolean   @default(false) // did our agent travel + attend in person?
+  // ── Dubai site-visit fields (we don't have an office in Dubai, so coordination matters) ──
+  dubaiDeveloperSalesperson String?
+  cabScheduled       Boolean    @default(false)
+  decisionInOffice   Boolean    @default(false) // did client decide on the spot at developer office
+  // ── India travel reimbursement (auto-calculated from distanceKm * per-km rate) ──
+  distanceKm           Float?
+  reimbursementAmount  Float?    // INR, computed at log time using Setting.travelPerKmInr
   createdAt   DateTime       @default(now())
   updatedAt   DateTime       @updatedAt
 
@@ -633,13 +657,17 @@ model CustomFieldValue {
 // =====================================================
 
 enum TargetMetric {
-  CALLS
+  CALLS             // total dial-outs
   CONNECTED_CALLS
   SITE_VISITS
-  MEETINGS
-  BOOKINGS
-  REVENUE_AED
+  MEETINGS          // legacy — kept for back-compat
+  VIRTUAL_MEETINGS
+  F2F_MEETINGS      // office + site combined (in-person)
+  FRESH_CLIENTS     // new leads created (or cold→lead promotions)
+  DEALS_CLOSED      // count of WON
+  REVENUE_AED       // sum of won deals in AED
   REVENUE_INR
+  BOOKINGS
 }
 
 model Target {

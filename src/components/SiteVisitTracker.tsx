@@ -9,12 +9,14 @@ interface Props {
   /** Currently active visit (server-rendered) — if present, we resume tracking. */
   activeVisit?: {
     activityId: string;
-    type: "OFFICE_MEETING" | "VIRTUAL_MEETING" | "SITE_VISIT";
+    type: "OFFICE_MEETING" | "SITE_VISIT";
     startedAt: string;
   } | null;
 }
 
-type VisitType = "OFFICE_MEETING" | "VIRTUAL_MEETING" | "SITE_VISIT";
+// Virtual meetings DON'T appear here — they're not a physical visit that needs
+// GPS start/end. Log them via the "Log Meeting" button on lead detail instead.
+type VisitType = "OFFICE_MEETING" | "SITE_VISIT";
 
 const TRACK_INTERVAL_MS = 60_000; // push a GPS point every 60s during a site visit
 
@@ -178,7 +180,6 @@ export default function SiteVisitTracker({ leadId, leadName, activeVisit }: Prop
           <select value={type} onChange={(e) => setType(e.target.value as VisitType)} className="border border-[#e5e7eb] rounded-lg px-2 py-2 text-xs flex-1 min-w-[140px]">
             <option value="SITE_VISIT">🚗 Site visit (GPS required)</option>
             <option value="OFFICE_MEETING">🏢 Office meeting</option>
-            <option value="VIRTUAL_MEETING">💻 Virtual meeting</option>
           </select>
           <button onClick={start} disabled={busy} className="btn btn-primary text-xs">
             {busy ? "Starting…" : "▶ Start"}

@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
 import { acefoneEnabled } from "@/lib/acefone";
 import AcefoneAgentIdEdit from "@/components/AcefoneAgentIdEdit";
+import WhatsAppNumberEdit from "@/components/WhatsAppNumberEdit";
 
 export const dynamic = "force-dynamic";
 
@@ -55,10 +56,11 @@ export default async function TeamPage() {
       </div>
 
       <div className="card overflow-x-auto">
-        <table className="tbl min-w-[760px]">
+        <table className="tbl min-w-[880px]">
           <thead><tr>
             <th>User</th><th>Role</th><th>Team</th>
             <th>Acefone agent id</th>
+            <th>Company WhatsApp #</th>
             <th>Active leads</th><th>Total calls</th>
           </tr></thead>
           <tbody>
@@ -74,6 +76,9 @@ export default async function TeamPage() {
                 <td>{u.team ?? "—"}</td>
                 <td>
                   <AcefoneAgentIdEdit userId={u.id} initial={u.acefoneAgentId} canEdit={canEditAcefone} />
+                </td>
+                <td>
+                  <WhatsAppNumberEdit userId={u.id} initial={u.companyWhatsAppNumber} canEdit={canEditAcefone} />
                 </td>
                 <td>{u._count.ownedLeads}</td>
                 <td>{u._count.callLogs}</td>

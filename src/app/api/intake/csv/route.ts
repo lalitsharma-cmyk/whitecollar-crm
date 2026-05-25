@@ -151,6 +151,10 @@ export async function POST(req: NextRequest) {
   const fd = await req.formData();
   const file = fd.get("file");
   const campaign = (fd.get("campaign")?.toString() ?? "").trim() || undefined;
+  // When the admin imports through /cold-calls "Import cold data", isColdCall=true
+  // is set as a form field. Every newly created lead gets isColdCall=true + left
+  // unassigned (ownerId=null) so admin can bulk-assign afterwards.
+  const importAsColdData = String(fd.get("isColdCall") ?? "") === "true";
   if (!(file instanceof File)) return NextResponse.json({ error: "No file uploaded" }, { status: 400 });
   if (file.size === 0) return NextResponse.json({ error: "File is empty (0 bytes)" }, { status: 400 });
 
@@ -242,6 +246,16 @@ export async function POST(req: NextRequest) {
       if (team) update.forwardedTeam = team;
       const remarks = pick(row, "remarks", "remark");
       if (remarks) update.remarks = remarks;
+      // Cold-data specific columns — what they already own + via whom
+      const alreadyBought = pick(row, "alreadybought", "alreadyowns", "owns", "purchased");
+      if (alreadyBought) update.alreadyBought = alreadyBought;
+      const alreadyBoughtBy = pick(row, "alreadyboughtby", "boughtvia", "via", "broker", "boughtfrom");
+      if (alreadyBoughtBy) update.alreadyBoughtBy = alreadyBoughtBy;
+      // When importing a cold-data batch: flag every new row + leave ownerId null
+      if (importAsColdData && !r.deduped) {
+        update.isColdCall = true;
+        update.ownerId = null;
+      }
       const explicitCcy = pick(row, "currency", "budgetcurrency");
       if (explicitCcy) {
         const c = explicitCcy.toUpperCase();

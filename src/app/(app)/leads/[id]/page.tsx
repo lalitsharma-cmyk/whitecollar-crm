@@ -8,6 +8,8 @@ import LeadActionsClient from "@/components/LeadActionsClient";
 import LeadProjectsClient from "@/components/LeadProjectsClient";
 import LeadMeetingClient from "@/components/LeadMeetingClient";
 import SiteVisitTracker from "@/components/SiteVisitTracker";
+import AdvancedActivityLogger from "@/components/AdvancedActivityLogger";
+import { getTravelRatePerKmInr } from "@/lib/settings";
 import { runReconciler } from "@/lib/reconciler";
 import { aggregateCalls, callBreakdownString } from "@/lib/callStats";
 import { activityVisual } from "@/lib/activityIcon";
@@ -166,11 +168,18 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
                 <SiteVisitTracker
                   leadId={lead.id}
                   leadName={lead.name}
-                  activeVisit={activeVisit && activeVisit.startedAt ? {
+                  activeVisit={activeVisit && activeVisit.startedAt && (activeVisit.type === "OFFICE_MEETING" || activeVisit.type === "SITE_VISIT") ? {
                     activityId: activeVisit.id,
-                    type: activeVisit.type as "OFFICE_MEETING" | "VIRTUAL_MEETING" | "SITE_VISIT",
+                    type: activeVisit.type,
                     startedAt: activeVisit.startedAt.toISOString(),
                   } : null}
+                />
+              </div>
+              <div className="mt-2">
+                <AdvancedActivityLogger
+                  leadId={lead.id}
+                  team={(lead.forwardedTeam === "Dubai" || lead.forwardedTeam === "India") ? lead.forwardedTeam : null}
+                  travelRatePerKm={await getTravelRatePerKmInr()}
                 />
               </div>
             </div>

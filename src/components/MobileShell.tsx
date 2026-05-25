@@ -15,7 +15,7 @@ const fullNav = [
     { href: "/dashboard",   label: "Dashboard",   Icon: LayoutDashboard },
     { href: "/action-list", label: "Action List", Icon: Sparkles, tag: "HOT" },
     { href: "/leads",       label: "Leads",       Icon: Users },
-    { href: "/cold-calls",  label: "Cold Calls",  Icon: Snowflake },
+    { href: "/cold-calls",  label: "Cold Data",   Icon: Snowflake },
     { href: "/pipeline",    label: "Pipeline",    Icon: KanbanSquare },
     { href: "/properties",  label: "Properties",  Icon: Building2 },
     { href: "/activities",  label: "Activities",  Icon: CalendarDays },

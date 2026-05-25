@@ -40,6 +40,8 @@ export async function runReconciler(): Promise<ReconcileResult> {
       ownerId: null,
       createdAt: { lte: cutoffAssign },
       status: { notIn: [LeadStatus.WON, LeadStatus.LOST] },
+      // Cold-data imports are admin-assigned only — skip them in the 5-min auto-sweep.
+      isColdCall: false,
     },
     take: 50,
   });

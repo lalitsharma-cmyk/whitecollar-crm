@@ -61,23 +61,44 @@ export default async function ReportsPage() {
 
   return (
     <>
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-        <div>
-          <h1 className="text-xl sm:text-2xl font-bold">Reports</h1>
-          <p className="text-xs sm:text-sm text-gray-500">Live · auto-refresh on every page load</p>
-        </div>
-        <div className="flex flex-wrap gap-2 items-center">
-          <Link href="/reports/sla" className="btn btn-ghost flex-1 sm:flex-none justify-center">📊 SLA report</Link>
-          {isAdmin ? (
-            <>
-              <a href="/api/reports/export?type=leads" className="btn btn-ghost flex-1 sm:flex-none justify-center">Leads CSV</a>
-              <a href="/api/reports/export?type=calls" className="btn btn-primary flex-1 sm:flex-none justify-center">Calls CSV</a>
-            </>
-          ) : (
-            <div className="text-[11px] text-gray-500 italic max-w-[200px] text-right">CSV export is Admin-only · contact Lalit</div>
-          )}
+      <div>
+        <h1 className="text-xl sm:text-2xl font-bold">Reports</h1>
+        <p className="text-xs sm:text-sm text-gray-500">Live · auto-refresh on every page load</p>
+      </div>
+
+      {/* Primary report navigation — these are the everyday reports */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <Link href="/reports/daily" className="card p-4 border-l-4 border-emerald-500 hover:shadow-md transition">
+          <div className="text-2xl">📅</div>
+          <div className="font-bold text-sm mt-1">Daily Report</div>
+          <div className="text-[10px] text-gray-500 mt-0.5">Target vs Achieved vs Pending — per agent, per day</div>
+        </Link>
+        <Link href="/reports/sla" className="card p-4 border-l-4 border-amber-500 hover:shadow-md transition">
+          <div className="text-2xl">📊</div>
+          <div className="font-bold text-sm mt-1">SLA & Meetings</div>
+          <div className="text-[10px] text-gray-500 mt-0.5">Site/Office/Virtual: scheduled, rescheduled, no-show</div>
+        </Link>
+        <Link href="/reports/travel" className="card p-4 border-l-4 border-sky-500 hover:shadow-md transition">
+          <div className="text-2xl">🚗</div>
+          <div className="font-bold text-sm mt-1">Travel Reimbursement</div>
+          <div className="text-[10px] text-gray-500 mt-0.5">Km × per-km rate, monthly per agent</div>
+        </Link>
+        <div className="card p-4 border-l-4 border-[#c9a24b]">
+          <div className="text-2xl">📈</div>
+          <div className="font-bold text-sm mt-1">Pipeline overview</div>
+          <div className="text-[10px] text-gray-500 mt-0.5">Funnel, source mix, agent performance · below ↓</div>
         </div>
       </div>
+
+      {isAdmin ? (
+        <div className="flex flex-wrap gap-2 items-center">
+          <span className="text-xs text-gray-500">CSV exports (admin-only):</span>
+          <a href="/api/reports/export?type=leads" className="btn btn-ghost text-xs">Leads CSV</a>
+          <a href="/api/reports/export?type=calls" className="btn btn-ghost text-xs">Calls CSV</a>
+        </div>
+      ) : (
+        <div className="text-[11px] text-gray-500 italic">CSV export is Admin-only · contact Lalit for a watermarked extract</div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <div className="card p-5">

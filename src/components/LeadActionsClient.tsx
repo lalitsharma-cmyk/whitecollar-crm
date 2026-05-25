@@ -38,6 +38,17 @@ const waUrl = (p: string | null) => whatsappLink(p);
 export default function LeadActionsClient({ leadId, phone, email, currentOwnerId, canReassign, agents, phoneMasked, leadName, agentName, acefoneEnabled, acefoneMappedForUser }: Props) {
   const waGreeting = `Hi ${leadName}, this is ${agentName} from White Collar Realty. I'll be your dedicated property advisor. May I know a convenient time to call you today?`;
   const waUrlWithDraft = (p: string | null) => whatsappLink(p, waGreeting);
+
+  // Fire-and-forget — log every WhatsApp link click so admin sees it in the
+  // lead timeline + the daily report counts it under "WhatsApp touches".
+  function logWaClick(kind: "click" | "send", message?: string) {
+    fetch("/api/whatsapp/log", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      keepalive: true, // survives even if the new tab steals focus
+      body: JSON.stringify({ leadId, kind, message }),
+    }).catch(() => {});
+  }
   const router = useRouter();
   const [showCall, setShowCall] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -113,7 +124,7 @@ export default function LeadActionsClient({ leadId, phone, email, currentOwnerId
           </a>
         )}
         {phone && (
-          <a href={waUrl(phone)} target="_blank" rel="noopener noreferrer" className="flex flex-col items-center justify-center py-3 rounded-xl bg-[#25D366] text-white font-semibold hover:opacity-90 transition shadow-sm">
+          <a href={waUrl(phone)} onClick={() => logWaClick("click")} target="_blank" rel="noopener noreferrer" className="flex flex-col items-center justify-center py-3 rounded-xl bg-[#25D366] text-white font-semibold hover:opacity-90 transition shadow-sm">
             <MessageCircle className="w-5 h-5 mb-1" /> WhatsApp
           </a>
         )}
@@ -127,7 +138,7 @@ export default function LeadActionsClient({ leadId, phone, email, currentOwnerId
         </button>
       </div>
       {phone && (
-        <a href={waUrlWithDraft(phone)} target="_blank" rel="noopener noreferrer" className="flex items-center justify-center gap-2 mt-2 py-2 rounded-xl bg-emerald-50 border border-emerald-300 text-emerald-900 text-sm font-semibold hover:bg-emerald-100 transition">
+        <a href={waUrlWithDraft(phone)} onClick={() => logWaClick("send", waGreeting)} target="_blank" rel="noopener noreferrer" className="flex items-center justify-center gap-2 mt-2 py-2 rounded-xl bg-emerald-50 border border-emerald-300 text-emerald-900 text-sm font-semibold hover:bg-emerald-100 transition">
           <Sparkles className="w-4 h-4" /> Send WhatsApp with pre-typed greeting
         </a>
       )}

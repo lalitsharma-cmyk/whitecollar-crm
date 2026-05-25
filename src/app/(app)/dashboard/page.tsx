@@ -1,11 +1,12 @@
 import { prisma } from "@/lib/prisma";
-import { LeadStatus, LeadSource, AIScore, CallOutcome, ActivityStatus } from "@prisma/client";
+import { LeadStatus, LeadSource, AIScore, CallOutcome, ActivityStatus, ActivityType, Prisma } from "@prisma/client";
 import { formatDistanceToNow, startOfDay } from "date-fns";
 import LeadsTrendChart from "@/components/charts/LeadsTrendChart";
 import SourceMixChart from "@/components/charts/SourceMixChart";
 import { fmtMoney, fmtMoneyDual } from "@/lib/money";
 import { runReconciler } from "@/lib/reconciler";
 import { activityVisual } from "@/lib/activityIcon";
+import { requireUser } from "@/lib/auth";
 import Link from "next/link";
 
 export const dynamic = "force-dynamic";
@@ -13,9 +14,27 @@ export const dynamic = "force-dynamic";
 // Sales forecast weights (matches your dashboard)
 const WEIGHTS = { NEGOTIATION: 0.55, SITE_VISIT: 0.30, QUALIFIED: 0.10, CONTACTED: 0.02, NEW: 0.02 };
 
-export default async function DashboardPage() {
+export default async function DashboardPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
+  const me = await requireUser();
+  const sp = await searchParams;
   runReconciler().catch(() => {});
   const todayStart = startOfDay(new Date());
+
+  // ── Team-scoped view ───────────────────────────────────────────────
+  // Admin/Manager → default to their own team, can toggle via ?team=Dubai / India / all
+  // Agent         → locked to their team (no toggle)
+  const isAdminOrMgr = me.role === "ADMIN" || me.role === "MANAGER";
+  const view =
+    !isAdminOrMgr ? (me.team === "India" ? "India" : "Dubai") :
+    sp.team === "India" ? "India" :
+    sp.team === "Dubai" ? "Dubai" :
+    sp.team === "all" ? "all" :
+    (me.team === "India" ? "India" : me.team === "Dubai" ? "Dubai" : "all");
+
+  const teamScope: Prisma.LeadWhereInput = view === "all" ? {} : { forwardedTeam: view };
+  // For activity / call queries we need to scope through lead.forwardedTeam
+  const teamActWhere: Prisma.ActivityWhereInput = view === "all" ? {} : { lead: { forwardedTeam: view } };
+  const teamCallWhere: Prisma.CallLogWhereInput = view === "all" ? {} : { lead: { forwardedTeam: view } };
 
   const [
     totalClients, totalNotContacted, newToday, hotLeads,
@@ -23,30 +42,41 @@ export default async function DashboardPage() {
     followupsDueToday, followupsOverdue, readyToClose, needsYou,
     leadsBySource, recentActivities, upcoming, leadsLast14, sourceMix,
     leadsByTeam, forecastLeads,
+    // Team-specific KPIs
+    expoMeetingsThisMonth, homeVisitsThisMonth, virtualThisMonth, officeThisMonth, siteVisitsThisMonth,
+    coldPromotedToday,
   ] = await Promise.all([
-    prisma.lead.count(),
-    prisma.lead.count({ where: { status: LeadStatus.NEW } }),
-    prisma.lead.count({ where: { createdAt: { gte: todayStart } } }),
-    prisma.lead.count({ where: { aiScore: AIScore.HOT } }),
-    prisma.callLog.count({ where: { startedAt: { gte: todayStart } } }),
-    prisma.callLog.count({ where: { startedAt: { gte: todayStart }, outcome: CallOutcome.CONNECTED } }),
+    prisma.lead.count({ where: teamScope }),
+    prisma.lead.count({ where: { ...teamScope, status: LeadStatus.NEW } }),
+    prisma.lead.count({ where: { ...teamScope, createdAt: { gte: todayStart } } }),
+    prisma.lead.count({ where: { ...teamScope, aiScore: AIScore.HOT } }),
+    prisma.callLog.count({ where: { ...teamCallWhere, startedAt: { gte: todayStart } } }),
+    prisma.callLog.count({ where: { ...teamCallWhere, startedAt: { gte: todayStart }, outcome: CallOutcome.CONNECTED } }),
     prisma.whatsAppMessage.count({ where: { receivedAt: { gte: todayStart } } }),
-    prisma.activity.count({ where: { status: ActivityStatus.PLANNED, type: "CALL", scheduledAt: { gte: todayStart, lt: new Date(todayStart.getTime() + 24 * 3600 * 1000) } } }),
-    prisma.activity.count({ where: { status: ActivityStatus.PLANNED, scheduledAt: { lt: todayStart } } }),
-    prisma.lead.count({ where: { status: { in: [LeadStatus.NEGOTIATION, LeadStatus.SITE_VISIT] } } }),
-    prisma.lead.count({ where: { needsManagerReview: true, status: { notIn: [LeadStatus.WON, LeadStatus.LOST] } } }),
-    prisma.lead.groupBy({ by: ["source"], _count: { _all: true }, where: { createdAt: { gte: todayStart } } }),
-    prisma.activity.findMany({ orderBy: { createdAt: "desc" }, take: 6, include: { lead: true, user: true } }),
-    prisma.activity.findMany({ where: { status: ActivityStatus.PLANNED, scheduledAt: { gte: new Date() } }, orderBy: { scheduledAt: "asc" }, take: 5, include: { lead: true } }),
-    prisma.$queryRaw<Array<{ d: string; n: number }>>`SELECT to_char("createdAt"::date, 'YYYY-MM-DD') as d, COUNT(*)::int as n FROM "Lead" WHERE "createdAt" >= (CURRENT_DATE - INTERVAL '13 days') GROUP BY "createdAt"::date ORDER BY "createdAt"::date ASC`,
-    prisma.lead.groupBy({ by: ["source"], _count: { _all: true } }),
-    // By-team breakdown
+    prisma.activity.count({ where: { ...teamActWhere, status: ActivityStatus.PLANNED, type: "CALL", scheduledAt: { gte: todayStart, lt: new Date(todayStart.getTime() + 24 * 3600 * 1000) } } }),
+    prisma.activity.count({ where: { ...teamActWhere, status: ActivityStatus.PLANNED, scheduledAt: { lt: todayStart } } }),
+    prisma.lead.count({ where: { ...teamScope, status: { in: [LeadStatus.NEGOTIATION, LeadStatus.SITE_VISIT] } } }),
+    prisma.lead.count({ where: { ...teamScope, needsManagerReview: true, status: { notIn: [LeadStatus.WON, LeadStatus.LOST] } } }),
+    prisma.lead.groupBy({ by: ["source"], _count: { _all: true }, where: { ...teamScope, createdAt: { gte: todayStart } } }),
+    prisma.activity.findMany({ where: teamActWhere, orderBy: { createdAt: "desc" }, take: 6, include: { lead: true, user: true } }),
+    prisma.activity.findMany({ where: { ...teamActWhere, status: ActivityStatus.PLANNED, scheduledAt: { gte: new Date() } }, orderBy: { scheduledAt: "asc" }, take: 5, include: { lead: true } }),
+    view === "all"
+      ? prisma.$queryRaw<Array<{ d: string; n: number }>>`SELECT to_char("createdAt"::date, 'YYYY-MM-DD') as d, COUNT(*)::int as n FROM "Lead" WHERE "createdAt" >= (CURRENT_DATE - INTERVAL '13 days') GROUP BY "createdAt"::date ORDER BY "createdAt"::date ASC`
+      : prisma.$queryRaw<Array<{ d: string; n: number }>>`SELECT to_char("createdAt"::date, 'YYYY-MM-DD') as d, COUNT(*)::int as n FROM "Lead" WHERE "createdAt" >= (CURRENT_DATE - INTERVAL '13 days') AND "forwardedTeam" = ${view} GROUP BY "createdAt"::date ORDER BY "createdAt"::date ASC`,
+    prisma.lead.groupBy({ by: ["source"], _count: { _all: true }, where: teamScope }),
     prisma.lead.groupBy({ by: ["forwardedTeam"], _count: { _all: true } }),
-    // Forecast: all open deals with budgetMin
     prisma.lead.findMany({
-      where: { status: { in: [LeadStatus.NEW, LeadStatus.CONTACTED, LeadStatus.QUALIFIED, LeadStatus.SITE_VISIT, LeadStatus.NEGOTIATION] }, budgetMin: { not: null } },
+      where: { ...teamScope, status: { in: [LeadStatus.NEW, LeadStatus.CONTACTED, LeadStatus.QUALIFIED, LeadStatus.SITE_VISIT, LeadStatus.NEGOTIATION] }, budgetMin: { not: null } },
       select: { status: true, budgetMin: true, budgetMax: true, budgetCurrency: true },
     }),
+    // Team-specific activity counts (this month)
+    prisma.activity.count({ where: { ...teamActWhere, type: ActivityType.EXPO_MEETING, completedAt: { gte: new Date(todayStart.getFullYear(), todayStart.getMonth(), 1) } } }),
+    prisma.activity.count({ where: { ...teamActWhere, type: ActivityType.HOME_VISIT, completedAt: { gte: new Date(todayStart.getFullYear(), todayStart.getMonth(), 1) } } }),
+    prisma.activity.count({ where: { ...teamActWhere, type: ActivityType.VIRTUAL_MEETING, completedAt: { gte: new Date(todayStart.getFullYear(), todayStart.getMonth(), 1) } } }),
+    prisma.activity.count({ where: { ...teamActWhere, type: ActivityType.OFFICE_MEETING, completedAt: { gte: new Date(todayStart.getFullYear(), todayStart.getMonth(), 1) } } }),
+    prisma.activity.count({ where: { ...teamActWhere, type: ActivityType.SITE_VISIT, completedAt: { gte: new Date(todayStart.getFullYear(), todayStart.getMonth(), 1) } } }),
+    // Cold→Lead conversions today (team-scoped)
+    prisma.activity.count({ where: { ...teamActWhere, type: ActivityType.COLD_TO_LEAD, completedAt: { gte: todayStart } } }),
   ]);
 
   const connectRate = callsToday ? Math.round((connectedToday / callsToday) * 100) : 0;
@@ -95,10 +125,23 @@ export default async function DashboardPage() {
     <>
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
-          <h1 className="text-xl sm:text-2xl font-bold">Sales Command Center</h1>
+          <h1 className="text-xl sm:text-2xl font-bold">
+            {view === "Dubai" ? "🇦🇪 Dubai team — Sales Command Center" :
+             view === "India" ? "🇮🇳 India team — Sales Command Center" :
+             "Sales Command Center (all teams)"}
+          </h1>
           <p className="text-xs sm:text-sm text-gray-500">{new Date().toLocaleDateString("en-US", { weekday: "long", day: "numeric", month: "long", year: "numeric" })} · Live data</p>
         </div>
-        <Link href="/action-list" className="btn btn-gold self-start sm:self-auto justify-center">📋 Open Action List</Link>
+        <div className="flex gap-2 flex-wrap items-center self-start sm:self-auto">
+          {isAdminOrMgr && (
+            <div className="seg">
+              <Link href="/dashboard?team=Dubai" className={view === "Dubai" ? "on" : ""}>🇦🇪 Dubai</Link>
+              <Link href="/dashboard?team=India" className={view === "India" ? "on" : ""}>🇮🇳 India</Link>
+              <Link href="/dashboard?team=all" className={view === "all" ? "on" : ""}>All</Link>
+            </div>
+          )}
+          <Link href="/action-list" className="btn btn-gold justify-center">📋 Action List</Link>
+        </div>
       </div>
 
       {/* 8 KPI tiles matching your dashboard exactly */}
@@ -115,6 +158,34 @@ export default async function DashboardPage() {
           <KPI title="Total Clients" value={totalClients} sub={`${totalNotContacted} not yet contacted`} />
         </div>
       </div>
+
+      {/* Team-specific funnel KPIs (this month) */}
+      {view !== "all" && (
+        <div>
+          <div className="text-xs font-bold tracking-widest text-gray-500 mb-2">
+            {view === "Dubai" ? "DUBAI TEAM · THIS MONTH" : "INDIA TEAM · THIS MONTH"}
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 lg:gap-3">
+            {view === "Dubai" ? (
+              <>
+                <KPI title="📞 Calls (mo)" value={callsToday} sub="today" />
+                <KPI title="💻 Virtual meets" value={virtualThisMonth} sub="this month" />
+                <KPI title="🏢 Office meets" value={officeThisMonth} sub="this month" />
+                <KPI title="🎪 Expo meets" value={expoMeetingsThisMonth} sub="developer expos in IN" />
+                <KPI title="🚗 Dubai site visits" value={siteVisitsThisMonth} sub="with developer's sales" />
+              </>
+            ) : (
+              <>
+                <KPI title="📞 Calls (mo)" value={callsToday} sub="today" />
+                <KPI title="🚗 Site visits" value={siteVisitsThisMonth} sub="this month" />
+                <KPI title="🏠 Home visits" value={homeVisitsThisMonth} sub="this month" />
+                <KPI title="🏢 Office meets" value={officeThisMonth} sub="this month" />
+                <KPI title="❄→🔥 Cold→Lead" value={coldPromotedToday} sub="conversions today" highlight={coldPromotedToday > 0} />
+              </>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Weighted Sales Forecast */}
       <div>
