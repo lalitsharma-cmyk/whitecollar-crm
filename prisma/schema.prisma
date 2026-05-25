@@ -480,6 +480,13 @@ model CallLog {
   durationSec  Int?
   outcome      CallOutcome
   notes        String?
+  // When a CallLog was created from a MIS-import remark cell, the actual person
+  // who made the call is in the remark text (e.g. "Nitisha: on 16 May..."). The
+  // importer-as-user (often the admin) is wrong for display. Set this column
+  // to the parsed agent name so the call history shows WHO actually called
+  // rather than who imported the sheet.
+  // Null when an agent logs a call live in the UI (user.name is correct then).
+  attributedAgentName String?
   // IVR-ready fields
   ivrProvider  String?        // "exotel" / "knowlarity" / "myoperator" / null for manual
   ivrCallId    String?        @unique

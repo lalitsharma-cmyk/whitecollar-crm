@@ -60,7 +60,11 @@ export function parseRemarks(cell: string): ParsedRemark[] {
   const text = cell.replace(/,{2,}/g, "\n").replace(/\s+\n/g, "\n");
 
   const results: ParsedRemark[] = [];
-  const re = /(?:([A-Z][A-Za-z]{2,15})\s*:\s*)?[oO]n\s+([\dA-Za-z]+(?:\s+[\dA-Za-z]+){1,3})\s*\(([^)]+)\)\s*([^]*?)(?=(?:[A-Z][A-Za-z]{2,15}\s*:\s*[oO]n\s+)|(?:[oO]n\s+\d)|$)/g;
+  // Agent name: 1-3 CamelCase words ("Lalit", "Lalit Sharma", "Dr Gagan Jain").
+  // Previously only matched the LAST CamelCase word — "Lalit Sharma:" parsed as
+  // just "Sharma" (because the regex skipped "Lalit " trying to anchor `\s*:\s*`
+  // and the colon was after "Sharma"). Now greedy on the whole multi-word run.
+  const re = /(?:([A-Z][A-Za-z]{1,15}(?:\s+[A-Z][A-Za-z]{1,15}){0,2})\s*:\s*)?[oO]n\s+([\dA-Za-z]+(?:\s+[\dA-Za-z]+){1,3})\s*\(([^)]+)\)\s*([^]*?)(?=(?:[A-Z][A-Za-z]{1,15}(?:\s+[A-Z][A-Za-z]{1,15}){0,2}\s*:\s*[oO]n\s+)|(?:[oO]n\s+\d)|$)/g;
 
   let currentAgent = "Unknown";
   let m;

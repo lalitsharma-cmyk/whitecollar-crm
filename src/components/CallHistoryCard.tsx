@@ -8,7 +8,7 @@
 // first thing an agent sees before dialling. The right rail used to hide it
 // below 4 other cards on mobile.
 
-import { fmtISTParen } from "@/lib/datetime";
+import { fmtISTParen, fmtISTDate } from "@/lib/datetime";
 import { aggregateCalls } from "@/lib/callStats";
 import type { CallLog } from "@prisma/client";
 
@@ -18,6 +18,66 @@ type CallLogWithUser = CallLog & { user: { name: string } };
 
 interface Props {
   callLogs: CallLogWithUser[];
+}
+
+// Outcomes that mean "couldn't reach the client" — these are the ones we collapse
+// when they happen back-to-back.
+const NO_ANSWER_OUTCOMES = new Set(["NOT_PICKED", "SWITCHED_OFF", "BUSY"]);
+
+type Group =
+  | { kind: "single"; call: CallLogWithUser }
+  | {
+      kind: "no-answer-streak";
+      attempts: CallLogWithUser[];   // 2+ consecutive no-answer calls
+      firstAt: Date;
+      lastAt: Date;
+      displayName: string;
+    };
+
+/**
+ * Walk the (newest-first) call list and collapse consecutive no-answer attempts
+ * by the same agent into a single grouped row. Connected / Interested / Callback
+ * always render as separate entries — those are the useful conversations.
+ *
+ * Lalit's request: "if there are many call not picked comments, they can be
+ * summarised in group in Call history as call not pick (From 21st to 26 april)".
+ */
+function groupCalls(callLogs: CallLogWithUser[]): Group[] {
+  const out: Group[] = [];
+  let i = 0;
+  while (i < callLogs.length) {
+    const c = callLogs[i];
+    const isNoAnswer = NO_ANSWER_OUTCOMES.has(c.outcome);
+    if (!isNoAnswer) {
+      out.push({ kind: "single", call: c });
+      i++;
+      continue;
+    }
+    // Look ahead: extend the streak while the next entry is also a no-answer
+    // by the SAME displayed agent (so collapsing doesn't muddy who tried).
+    const displayName = c.attributedAgentName ?? c.user.name;
+    const streak: CallLogWithUser[] = [c];
+    let j = i + 1;
+    while (j < callLogs.length) {
+      const n = callLogs[j];
+      const nName = n.attributedAgentName ?? n.user.name;
+      if (NO_ANSWER_OUTCOMES.has(n.outcome) && nName === displayName) {
+        streak.push(n);
+        j++;
+      } else break;
+    }
+    if (streak.length >= 2) {
+      // newest first → first attempt is the LAST in array; last attempt is the FIRST
+      const firstAt = streak[streak.length - 1].startedAt;
+      const lastAt = streak[0].startedAt;
+      out.push({ kind: "no-answer-streak", attempts: streak, firstAt, lastAt, displayName });
+      i = j;
+    } else {
+      out.push({ kind: "single", call: c });
+      i++;
+    }
+  }
+  return out;
 }
 
 export default function CallHistoryCard({ callLogs }: Props) {
@@ -62,30 +122,74 @@ export default function CallHistoryCard({ callLogs }: Props) {
 
       {/* Chronological log — date · agent · outcome · remark.
           Max-height + scroll keeps the card from pushing the rest of the page down
-          when there are 50+ entries. */}
+          when there are 50+ entries. Consecutive no-answer attempts by the same
+          agent collapse into a single grouped row (Lalit's request — wall of
+          "Not picked" lines was hard to scan past). */}
       <div className="space-y-2 text-sm max-h-[480px] overflow-y-auto pr-1">
         {callLogs.length === 0 && (
           <div className="text-gray-500 text-xs text-center py-4">
             No calls logged yet. Use the 📝 Log Call button above to record the first one.
           </div>
         )}
-        {callLogs.map((c) => (
-          <div key={c.id} className="border-l-2 border-[#e5e7eb] pl-3 py-1.5">
-            <div className="text-[11px] text-gray-500">
-              <b>{c.user.name}</b> · {fmtISTParen(c.startedAt)} IST
-              {c.durationSec ? ` · ${Math.floor(c.durationSec / 60)}m ${c.durationSec % 60}s` : ""}
-              {c.ivrProvider && <span className="ml-1 chip src text-[9px]">{c.ivrProvider}</span>}
-            </div>
-            <div className="text-xs font-semibold mt-0.5">{c.outcome.replaceAll("_", " ")}</div>
-            {c.notes && <div className="text-xs mt-1 text-gray-700 whitespace-pre-wrap">{c.notes}</div>}
-            {c.recordingUrl && (
-              <div className="mt-1.5">
-                <audio controls preload="none" src={c.recordingUrl} className="w-full h-8" />
-                <a href={c.recordingUrl} target="_blank" rel="noopener noreferrer" className="text-[10px] text-[#0b1a33] underline">Open recording in new tab ↗</a>
+        {groupCalls(callLogs).map((g, idx) => {
+          if (g.kind === "no-answer-streak") {
+            const sameDay = g.firstAt.toDateString() === g.lastAt.toDateString();
+            const range = sameDay
+              ? `${fmtISTDate(g.firstAt)}`
+              : `${fmtISTDate(g.firstAt)} → ${fmtISTDate(g.lastAt)}`;
+            return (
+              <details key={`grp-${idx}`} className="border-l-2 border-amber-300 pl-3 py-1.5 group">
+                <summary className="cursor-pointer list-none">
+                  <div className="text-[11px] text-gray-500">
+                    <b>{g.displayName}</b> · {range} IST
+                  </div>
+                  <div className="text-xs font-semibold mt-0.5 text-amber-800">
+                    📵 Not picked × {g.attempts.length}
+                    <span className="text-[10px] text-gray-500 font-normal ml-1.5 group-open:hidden">— click to expand</span>
+                    <span className="text-[10px] text-gray-500 font-normal ml-1.5 hidden group-open:inline">— click to collapse</span>
+                  </div>
+                </summary>
+                <div className="mt-2 space-y-1.5 pl-2 border-l border-amber-200">
+                  {g.attempts.map((c) => {
+                    const notesClean = c.notes
+                      ? c.notes.replace(new RegExp(`^${g.displayName.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\$&")}\\s*:\\s*`, "i"), "")
+                      : null;
+                    return (
+                      <div key={c.id} className="text-[11px]">
+                        <span className="text-gray-500">{fmtISTParen(c.startedAt)} IST</span>
+                        <span className="ml-2 font-semibold">{c.outcome.replaceAll("_", " ")}</span>
+                        {notesClean && <div className="text-xs text-gray-700 whitespace-pre-wrap mt-0.5">{notesClean}</div>}
+                      </div>
+                    );
+                  })}
+                </div>
+              </details>
+            );
+          }
+          // Single entry
+          const c = g.call;
+          const displayName = c.attributedAgentName ?? c.user.name;
+          const notesClean = c.notes
+            ? c.notes.replace(/^[A-Z][A-Za-z]{1,15}(?:\s+[A-Z][A-Za-z]{1,15}){0,2}\s*:\s*/, "")
+            : null;
+          return (
+            <div key={c.id} className="border-l-2 border-[#e5e7eb] pl-3 py-1.5">
+              <div className="text-[11px] text-gray-500">
+                <b>{displayName}</b> · {fmtISTParen(c.startedAt)} IST
+                {c.durationSec ? ` · ${Math.floor(c.durationSec / 60)}m ${c.durationSec % 60}s` : ""}
+                {c.ivrProvider && <span className="ml-1 chip src text-[9px]">{c.ivrProvider}</span>}
               </div>
-            )}
-          </div>
-        ))}
+              <div className="text-xs font-semibold mt-0.5">{c.outcome.replaceAll("_", " ")}</div>
+              {notesClean && <div className="text-xs mt-1 text-gray-700 whitespace-pre-wrap">{notesClean}</div>}
+              {c.recordingUrl && (
+                <div className="mt-1.5">
+                  <audio controls preload="none" src={c.recordingUrl} className="w-full h-8" />
+                  <a href={c.recordingUrl} target="_blank" rel="noopener noreferrer" className="text-[10px] text-[#0b1a33] underline">Open recording in new tab ↗</a>
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
     </div>
   );

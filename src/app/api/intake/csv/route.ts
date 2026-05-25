@@ -407,7 +407,11 @@ export async function POST(req: NextRequest) {
           await prisma.callLog.create({
             data: {
               leadId: r.lead.id,
-              userId: me.id, // attribute to the importer (Lalit)
+              userId: me.id, // bookkeeping — who ran the import (typically admin)
+              // The actual person who made the call lives in p.agentName (parsed
+              // from the remark prefix). Surface it on the call history card
+              // instead of attributing every imported call to the importer.
+              attributedAgentName: p.agentName,
               direction: CallDirection.OUTBOUND,
               phoneNumber: phone ?? "(imported)",
               outcome: p.outcome,
