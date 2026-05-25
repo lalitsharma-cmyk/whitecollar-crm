@@ -155,6 +155,10 @@ export async function POST(req: NextRequest) {
   // is set as a form field. Every newly created lead gets isColdCall=true + left
   // unassigned (ownerId=null) so admin can bulk-assign afterwards.
   const importAsColdData = String(fd.get("isColdCall") ?? "") === "true";
+  // When admin imports an agent's existing-client MIS (e.g. "Mehak MIS.xlsx"),
+  // pre-assign every row to that agent. Source treated as CSV_IMPORT, status
+  // bumped to CONTACTED (these aren't fresh leads). NEVER round-robin's them.
+  const assignToUserId = String(fd.get("assignToUserId") ?? "").trim() || null;
   if (!(file instanceof File)) return NextResponse.json({ error: "No file uploaded" }, { status: 400 });
   if (file.size === 0) return NextResponse.json({ error: "File is empty (0 bytes)" }, { status: 400 });
 
@@ -255,6 +259,15 @@ export async function POST(req: NextRequest) {
       if (importAsColdData && !r.deduped) {
         update.isColdCall = true;
         update.ownerId = null;
+      }
+      // Pre-assigned import (Mehak MIS, etc.) — every NEW row goes to picked agent
+      // and is NOT cold (these are already the agent's existing clients).
+      if (assignToUserId && !r.deduped) {
+        update.ownerId = assignToUserId;
+        update.assignedAt = new Date();
+        update.isColdCall = false;
+        // Bump status from NEW to CONTACTED — they're existing relationships
+        update.status = "CONTACTED";
       }
       const explicitCcy = pick(row, "currency", "budgetcurrency");
       if (explicitCcy) {

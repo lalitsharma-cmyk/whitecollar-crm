@@ -1,14 +1,23 @@
 import { prisma } from "@/lib/prisma";
 import CsvUploader from "@/components/CsvUploader";
 import GoogleSheetImporter from "@/components/GoogleSheetImporter";
+import PreAssignedImporter from "@/components/PreAssignedImporter";
+import { requireUser } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
 export default async function IntakePage() {
-  const keys = await prisma.intakeKey.findMany({ orderBy: { createdAt: "asc" } });
+  const me = await requireUser();
+  const [keys, agents] = await Promise.all([
+    prisma.intakeKey.findMany({ orderBy: { createdAt: "asc" } }),
+    me.role === "ADMIN" || me.role === "MANAGER"
+      ? prisma.user.findMany({ where: { active: true, role: { in: ["AGENT", "MANAGER"] } }, orderBy: { name: "asc" } })
+      : Promise.resolve([]),
+  ]);
   const websiteKey = keys.find(k => k.source === "WEBSITE")?.key ?? "wcr_live_••••••";
   const waKey = keys.find(k => k.source === "WHATSAPP")?.key ?? "wcr_live_wa_••••••";
   const base = process.env.NEXTAUTH_URL ?? "http://localhost:3000";
+  const isAdminOrMgr = me.role === "ADMIN" || me.role === "MANAGER";
 
   return (
     <>
@@ -37,9 +46,17 @@ Meta webhook verify token: ${process.env.WHATSAPP_VERIFY_TOKEN ?? "wcr-dev-verif
 
         <div className="card p-5">
           <div className="flex items-center gap-2 mb-2"><span className="chip src-csv">CSV</span><b>Bulk upload</b></div>
-          <p className="text-sm text-gray-600">For events, expos, partner lists. Auto-dedupe by phone + email.</p>
+          <p className="text-sm text-gray-600">For events, expos, partner lists. Auto-dedupe by phone + email. Goes through round-robin like any new lead.</p>
           <div className="mt-3"><CsvUploader /></div>
         </div>
+
+        {isAdminOrMgr && (
+          <div className="card p-5 border-l-4 border-amber-500 bg-amber-50/30">
+            <div className="flex items-center gap-2 mb-2"><span className="chip chip-warm">Agent MIS</span><b>Pre-assigned import (admin only)</b></div>
+            <p className="text-sm text-gray-600">Use when an agent already owns these clients (e.g. "Mehak MIS.xlsx"). Every row goes <b>directly</b> to the picked agent — skips round-robin, marked as existing relationship (not cold data).</p>
+            <div className="mt-3"><PreAssignedImporter agents={agents.map(a => ({ id: a.id, name: a.name, team: a.team }))} /></div>
+          </div>
+        )}
 
         <div className="card p-5">
           <div className="flex items-center gap-2 mb-2"><span className="chip src">📑 Google Sheets</span><b>Direct import</b></div>

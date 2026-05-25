@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { loginWithCredentials } from "@/lib/auth";
 import { isRateLimited, clearRateLimit } from "@/lib/rateLimit";
 import { audit, reqMeta } from "@/lib/audit";
+import { autoMarkAttendanceOnLogin } from "@/lib/attendance";
 
 export async function POST(req: NextRequest) {
   let email = "", password = "";
@@ -47,6 +48,9 @@ export async function POST(req: NextRequest) {
     entityId: r.user.id,
     request: reqMeta(req),
   });
+  // Auto-mark daily attendance — PRESENT before 10:30am IST, LATE after.
+  // Idempotent: no-op if already marked today (admin overrides preserved).
+  autoMarkAttendanceOnLogin(r.user.id).catch(() => {});
 
   if (ct.includes("application/json")) return NextResponse.json({ ok: true });
   return NextResponse.redirect(new URL("/dashboard", req.url), { status: 303 });

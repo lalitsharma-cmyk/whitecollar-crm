@@ -32,9 +32,10 @@ const fullNav = [
   ]},
   // ADMIN-only section — filtered out in render below
   { section: "ADMIN", adminOnly: true, items: [
-    { href: "/admin/audit",      label: "Audit Log",   Icon: ShieldCheck, tag: undefined as string | undefined },
+    { href: "/admin/attendance", label: "Attendance",  Icon: CalendarDays, tag: undefined as string | undefined },
+    { href: "/admin/audit",      label: "Audit Log",   Icon: ShieldCheck,  tag: undefined as string | undefined },
     { href: "/admin/targets",    label: "Daily Targets", Icon: Sparkles,   tag: undefined as string | undefined },
-    { href: "/admin/team-mood",  label: "Team Mood",   Icon: Sparkles,    tag: undefined as string | undefined },
+    { href: "/admin/team-mood",  label: "Team Mood",   Icon: Sparkles,     tag: undefined as string | undefined },
   ]},
 ];
 

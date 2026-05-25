@@ -4,6 +4,8 @@ import { pickRoundRobinAgent, fingerprintFor } from "@/lib/assignment";
 import { defaultCurrencyForLocation } from "@/lib/money";
 import { notify, notifyRoles } from "@/lib/notify";
 import { toE164 } from "@/lib/phone";
+import { currentWindow } from "@/lib/assignmentWindow";
+import { sendAfterHoursWelcome } from "@/lib/whatsappOutbound";
 
 export interface RawLeadInput {
   name: string;
@@ -134,12 +136,25 @@ export async function ingestLead(input: RawLeadInput) {
       completedAt: new Date(),
     },
   });
+  // Overnight (10pm-10am IST) — fire auto-WhatsApp welcome from company number.
+  // Best-effort: stub mode just logs to AuditLog + WhatsAppMessage; real send
+  // happens once admin sets WA_BUSINESS_TOKEN.
+  const window = currentWindow();
+  if (window.kind === "OVERNIGHT_QUEUE" && lead.phone) {
+    sendAfterHoursWelcome(lead.id, lead.phone, lead.name).catch(() => {});
+  }
+
   // Admin alert — they have 5 minutes to assign manually
+  const adminBody = window.kind === "OFFICE_RR"
+    ? `Assign within 5 minutes or it will be auto-routed to ${team} round-robin (present agents only).`
+    : window.kind === "EVENING_LALIT"
+      ? `After-hours lead — will auto-assign to Lalit if you don't pick it up.`
+      : `Overnight lead — queued for your 10am morning window. Auto-WA welcome has been triggered.`;
   await notifyRoles(["ADMIN", "MANAGER"], {
     kind: "LEAD_ASSIGNED",
-    severity: "INFO",
+    severity: window.kind === "OVERNIGHT_QUEUE" ? "WARNING" : "INFO",
     title: `New ${input.source} lead: ${lead.name}`,
-    body: `Assign within 5 minutes or it will be auto-routed to ${team} round-robin.`,
+    body: adminBody,
     linkUrl: `/leads/${lead.id}`,
     leadId: lead.id,
   });

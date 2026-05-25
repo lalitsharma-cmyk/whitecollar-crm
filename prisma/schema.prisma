@@ -722,3 +722,25 @@ model AttendanceLog {
   userAgent String?
   @@index([userId, loginAt])
 }
+
+// Daily attendance — drives round-robin (only PRESENT/LATE agents get leads).
+// One row per agent per day. Auto-set on first login (PRESENT if before 10:30am,
+// LATE after), can be admin-overridden.
+enum AttendanceStatus {
+  PRESENT     // logged in by 10:30am
+  LATE        // logged in 10:30am-7pm
+  ABSENT      // never logged in (or admin marked)
+  ON_LEAVE    // admin marked — planned leave
+}
+
+model Attendance {
+  id        String           @id @default(cuid())
+  userId    String
+  date      DateTime         @db.Date
+  status    AttendanceStatus @default(PRESENT)
+  markedAt  DateTime         @default(now())
+  markedBy  String?          // null = self-mark / auto, else admin userId
+  notes     String?
+  @@unique([userId, date])
+  @@index([date])
+}

@@ -9,6 +9,8 @@ import { activityVisual } from "@/lib/activityIcon";
 import { requireUser } from "@/lib/auth";
 import Link from "next/link";
 import MoodCheckIn from "@/components/MoodCheckIn";
+import AttendanceBadge from "@/components/AttendanceBadge";
+import { todayIST } from "@/lib/attendance";
 
 export const dynamic = "force-dynamic";
 
@@ -85,6 +87,26 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     where: { userId_date: { userId: me.id, date: todayStart } },
   });
 
+  // Today's attendance for THIS user
+  const myAttendanceToday = await prisma.attendance.findUnique({
+    where: { userId_date: { userId: me.id, date: todayIST() } },
+  });
+
+  // ADMIN-only morning-window widget: overnight leads waiting for assign
+  let morningQueueCount = 0;
+  let morningQueueLeads: Array<{ id: string; name: string; phone: string | null; createdAt: Date; forwardedTeam: string | null }> = [];
+  if (me.role === "ADMIN") {
+    // Created after 10pm yesterday IST AND still unassigned today
+    const cutoff = new Date(Date.now() - 14 * 3600 * 1000); // last 14 hours
+    morningQueueLeads = await prisma.lead.findMany({
+      where: { ownerId: null, isColdCall: false, createdAt: { gte: cutoff }, status: { notIn: [LeadStatus.WON, LeadStatus.LOST] } },
+      select: { id: true, name: true, phone: true, createdAt: true, forwardedTeam: true },
+      orderBy: { createdAt: "desc" },
+      take: 20,
+    });
+    morningQueueCount = morningQueueLeads.length;
+  }
+
   const connectRate = callsToday ? Math.round((connectedToday / callsToday) * 100) : 0;
 
   // Forecast computation — weighted by stage
@@ -149,6 +171,29 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
           <Link href="/action-list" className="btn btn-gold justify-center">📋 Action List</Link>
         </div>
       </div>
+
+      {/* Attendance badge — auto-marked on login, shown next to mood */}
+      <div className="flex flex-wrap gap-3 items-start">
+        <AttendanceBadge today={myAttendanceToday ? { status: myAttendanceToday.status, markedAt: myAttendanceToday.markedAt.toISOString() } : null} />
+      </div>
+
+      {/* Admin-only: leads waiting for morning assignment (15-min window) */}
+      {me.role === "ADMIN" && morningQueueCount > 0 && (
+        <div className="card p-4 border-l-4 border-red-500 bg-red-50">
+          <div className="flex items-center justify-between mb-2">
+            <div className="font-bold text-red-900">⏰ {morningQueueCount} lead{morningQueueCount === 1 ? "" : "s"} waiting for your assign</div>
+            <div className="text-[10px] text-red-700">After 5 min the system auto-assigns to present agents (round-robin)</div>
+          </div>
+          <div className="space-y-1">
+            {morningQueueLeads.map((l) => (
+              <Link key={l.id} href={`/leads/${l.id}`} className="block text-xs p-2 rounded bg-white border border-red-200 hover:border-red-400">
+                <b>{l.name}</b> {l.phone && <span className="text-gray-500">· {l.phone}</span>}
+                <span className="text-gray-400 ml-2">{l.forwardedTeam ?? "—"} · {formatDistanceToNow(l.createdAt, { addSuffix: true })}</span>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Optional end-of-day mood check-in (renders for all logged-in users) */}
       <MoodCheckIn existing={myMoodToday ? { mood: myMoodToday.mood, comment: myMoodToday.comment } : null} />

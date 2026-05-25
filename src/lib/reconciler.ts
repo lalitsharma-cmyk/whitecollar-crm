@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { notify, notifyRoles } from "@/lib/notify";
-import { pickRoundRobinAgent } from "@/lib/assignment";
 import { LeadStatus } from "@prisma/client";
+import { chooseOwnerForNewLead } from "@/lib/assignmentWindow";
 
 // The reconciler runs on every dashboard/leads page load (cheap, deduped).
 // It enforces two SLAs without needing a separate cron service:
@@ -47,8 +47,15 @@ export async function runReconciler(): Promise<ReconcileResult> {
   });
 
   for (const lead of orphans) {
-    const team = lead.forwardedTeam ?? undefined;
-    const agent = (await pickRoundRobinAgent({ team })) ?? (await pickRoundRobinAgent({}));
+    const team = lead.forwardedTeam ?? null;
+    // Use time-window-aware chooser: 10am-7pm round-robin among present,
+    // 7-10pm → Lalit, 10pm-10am → null (skip, keep in admin's morning queue).
+    const choice = await chooseOwnerForNewLead(team);
+    if (!choice.userId) {
+      // Overnight window — leave unassigned for morning admin handling
+      continue;
+    }
+    const agent = await prisma.user.findUnique({ where: { id: choice.userId } });
     if (!agent) continue;
     const now = new Date();
     await prisma.lead.update({
@@ -60,13 +67,16 @@ export async function runReconciler(): Promise<ReconcileResult> {
         slaEscalated: false,
       },
     });
-    await prisma.assignment.create({ data: { leadId: lead.id, userId: agent.id, reason: "5-min auto-assign" } });
+    const reason = choice.window.kind === "EVENING_LALIT"
+      ? "Evening (7-10pm) — escalated to Lalit"
+      : choice.fallbackReason ?? "10am-7pm round-robin among present agents";
+    await prisma.assignment.create({ data: { leadId: lead.id, userId: agent.id, reason } });
     await notify({
       userId: agent.id,
       kind: "LEAD_ASSIGNED",
       severity: "WARNING",
       title: `New lead auto-assigned: ${lead.name}`,
-      body: `Admin didn't assign within ${AUTO_ASSIGN_AFTER_MIN}m, so the system assigned this to you. Call within ${FIRST_CALL_SLA_MIN}m.`,
+      body: `${reason}. Call within ${FIRST_CALL_SLA_MIN}m.`,
       linkUrl: `/leads/${lead.id}`,
       leadId: lead.id,
     });
@@ -74,7 +84,7 @@ export async function runReconciler(): Promise<ReconcileResult> {
       kind: "AUTO_ASSIGN_FIRED",
       severity: "INFO",
       title: `Auto-assigned ${lead.name} → ${agent.name}`,
-      body: `Lead waited ${AUTO_ASSIGN_AFTER_MIN}m unassigned. System routed it via round-robin.`,
+      body: reason,
       linkUrl: `/leads/${lead.id}`,
       leadId: lead.id,
     });
