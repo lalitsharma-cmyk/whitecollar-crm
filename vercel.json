@@ -11,6 +11,10 @@
     {
       "path": "/api/cron/evening-reminder",
       "schedule": "30 12 * * *"
+    },
+    {
+      "path": "/api/cron/rescore-all",
+      "schedule": "0 3 * * *"
     }
   ]
 }

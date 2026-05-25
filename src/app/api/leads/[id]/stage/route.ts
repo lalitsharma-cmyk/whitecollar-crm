@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { LeadStatus, ActivityType, ActivityStatus } from "@prisma/client";
 import { loadOwnedLead } from "@/lib/leadScope";
+import { rescoreLead } from "@/lib/leadRescorer";
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -27,5 +28,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       completedAt: new Date(),
     },
   });
+  // Fire-and-forget behavioural re-score
+  rescoreLead(id).catch(() => {});
   return NextResponse.json({ ok: true });
 }

@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 
 const DEFAULTS = {
   "travel.perKmInr": "10",     // ₹10 per km — admin can change in /settings
+  "speedToLead.enabled": "true", // auto-WA + email on every new lead (admin kill-switch)
 };
 
 export async function getSetting(key: string): Promise<string> {
@@ -26,4 +27,10 @@ export async function getTravelRatePerKmInr(): Promise<number> {
   const raw = await getSetting("travel.perKmInr");
   const n = Number(raw);
   return isNaN(n) || n < 0 ? 10 : n;
+}
+
+export async function getSpeedToLeadEnabled(): Promise<boolean> {
+  const raw = await getSetting("speedToLead.enabled");
+  if (!raw) return true; // default ON
+  return raw.toLowerCase() !== "false";
 }

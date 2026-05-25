@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { ingestLead } from "@/lib/leadIngest";
 import { LeadSource, WAMessageDirection } from "@prisma/client";
+import { rescoreLead } from "@/lib/leadRescorer";
 
 // Meta Cloud API webhook verification (GET handshake)
 export async function GET(req: NextRequest) {
@@ -73,6 +74,9 @@ export async function POST(req: NextRequest) {
         providerMsgId: m.id,
       },
     });
+
+    // Fire-and-forget behavioural re-score (inbound WA reply is a positive signal).
+    rescoreLead(lead.id).catch(() => {});
 
     results.push({ from: phone, leadId: lead.id, deduped });
   }

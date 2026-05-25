@@ -1,12 +1,16 @@
 import { requireUser } from "@/lib/auth";
-import { getTravelRatePerKmInr } from "@/lib/settings";
+import { getTravelRatePerKmInr, getSpeedToLeadEnabled } from "@/lib/settings";
 import TravelRateEditor from "@/components/TravelRateEditor";
+import SpeedToLeadToggle from "@/components/SpeedToLeadToggle";
 
 export const dynamic = "force-dynamic";
 
 export default async function SettingsPage() {
   const me = await requireUser();
-  const travelRate = await getTravelRatePerKmInr();
+  const [travelRate, speedToLeadOn] = await Promise.all([
+    getTravelRatePerKmInr(),
+    getSpeedToLeadEnabled(),
+  ]);
   const isAdmin = me.role === "ADMIN";
   return (
     <>
@@ -20,6 +24,17 @@ export default async function SettingsPage() {
           Update when petrol prices change.
         </p>
         <TravelRateEditor initial={travelRate} canEdit={isAdmin} />
+      </div>
+
+      {/* Speed-to-lead auto-response (admin-only) */}
+      <div className="card p-5 max-w-2xl">
+        <div className="font-semibold flex items-center gap-2">🚀 Speed-to-lead auto-response</div>
+        <p className="text-xs text-gray-500 mt-1">
+          When ON, every brand-new lead automatically receives the active FIRST_QUERY WhatsApp + email
+          templates within seconds of intake. Skips during overnight 10pm-10am IST (after-hours welcome handles that).
+          Logged to the lead timeline so the agent can see what was sent.
+        </p>
+        <SpeedToLeadToggle initial={speedToLeadOn} canEdit={isAdmin} />
       </div>
 
       {/* Read-only info cards */}

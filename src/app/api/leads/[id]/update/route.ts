@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { ActivityType, ActivityStatus, LeadStatus, AIScore, Potential, FundReadiness, MoodStatus, InvestTimeline } from "@prisma/client";
 import { loadOwnedLead } from "@/lib/leadScope";
+import { rescoreLead } from "@/lib/leadRescorer";
 
 // Inline-edit endpoint — accepts one or more field updates and logs an Activity
 // for status/stage changes. Only allows whitelisted fields.
@@ -71,6 +72,12 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         completedAt: new Date(),
       },
     });
+  }
+
+  // Fire-and-forget behavioural re-score when signals likely shifted (BANT or stage change).
+  // Other inline edits don't influence the rescorer's inputs so we skip them for noise control.
+  if ("bantStatus" in updates || "status" in updates) {
+    rescoreLead(id).catch(() => {});
   }
 
   return NextResponse.json({ ok: true, updated: Object.keys(updates).length - 1 });

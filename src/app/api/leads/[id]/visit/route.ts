@@ -11,6 +11,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { ActivityType, ActivityStatus } from "@prisma/client";
 import { loadOwnedLead } from "@/lib/leadScope";
+import { rescoreLead } from "@/lib/leadRescorer";
 
 type VisitType = "OFFICE_MEETING" | "VIRTUAL_MEETING" | "SITE_VISIT";
 
@@ -137,6 +138,9 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       ...(act.type === "SITE_VISIT" ? { siteVisitDate: act.startedAt } : { meetingDate: act.startedAt }),
     },
   });
+  // Fire-and-forget behavioural re-score now that the visit is DONE
+  // (rescorer awards +15 for any completed SITE_VISIT).
+  rescoreLead(id).catch(() => {});
   return NextResponse.json({ ok: true });
 }
 

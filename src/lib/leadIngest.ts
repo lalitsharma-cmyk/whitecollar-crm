@@ -6,6 +6,7 @@ import { notify, notifyRoles } from "@/lib/notify";
 import { toE164 } from "@/lib/phone";
 import { currentWindow } from "@/lib/assignmentWindow";
 import { sendAfterHoursWelcome } from "@/lib/whatsappOutbound";
+import { sendSpeedToLeadResponses } from "@/lib/speedToLead";
 
 export interface RawLeadInput {
   name: string;
@@ -158,6 +159,12 @@ export async function ingestLead(input: RawLeadInput) {
     linkUrl: `/leads/${lead.id}`,
     leadId: lead.id,
   });
+
+  // ── Speed-to-lead auto-response: fire-and-forget WA + email under 60s ──
+  // Runs after the after-hours welcome trigger so the WA-dedupe check inside
+  // sees the just-created WhatsAppMessage row and skips the duplicate send.
+  sendSpeedToLeadResponses(lead.id).catch(() => {});
+
   return { lead, deduped: false as const };
 }
 

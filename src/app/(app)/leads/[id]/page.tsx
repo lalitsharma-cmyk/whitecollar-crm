@@ -16,6 +16,8 @@ import { activityVisual } from "@/lib/activityIcon";
 import InlineEdit from "@/components/InlineEdit";
 import { acefoneEnabled } from "@/lib/acefone";
 import { canTouchLead } from "@/lib/leadScope";
+import SuggestedUnitsCard from "@/components/SuggestedUnitsCard";
+import { bestUnitsForLead } from "@/lib/inventoryMatch";
 
 export const dynamic = "force-dynamic";
 
@@ -73,6 +75,10 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
   // returns HTTP 200 — confusing for auditors. Redirect is cleaner UX too:
   // agent lands back on their own list rather than a dead end.
   if (!(await canTouchLead(me, lead))) redirect("/leads");
+
+  // Inventory matching — top 3 best-fit AVAILABLE units. Empty array if the
+  // lead is missing budget/team or nothing matches; card hides itself in that case.
+  const suggestedUnits = await bestUnitsForLead(id, 3);
 
   const lastBy = (t: string) => meetingActs.find(a => a.type === t)?.completedAt ?? meetingActs.find(a => a.type === t)?.scheduledAt ?? null;
   const meetingCounts = {
@@ -366,6 +372,31 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
             allProjects={allProjects}
           />
         </div>
+
+        {suggestedUnits.length > 0 && (
+          <SuggestedUnitsCard
+            leadId={lead.id}
+            units={suggestedUnits.map((u) => ({
+              id: u.id,
+              code: u.code,
+              configuration: u.configuration,
+              carpetArea: u.carpetArea,
+              floor: u.floor,
+              view: u.view,
+              priceBase: u.priceBase,
+              score: u.score,
+              project: {
+                id: u.project.id,
+                name: u.project.name,
+                city: u.project.city,
+                country: u.project.country,
+                area: u.project.area,
+                heroColor: u.project.heroColor,
+              },
+            }))}
+            alreadyAddedUnitIds={lead.interestedUnits.map((p) => p.unitId)}
+          />
+        )}
 
         <div className="card p-5">
           <div className="font-semibold mb-2">Interested properties (unit-level)</div>
