@@ -2,7 +2,8 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Calendar, AlertCircle, X } from "lucide-react";
-import { nowISTLocalInput, fromISTLocalInput } from "@/lib/datetime";
+import { fromISTLocalInput } from "@/lib/datetime";
+import DateTimeIST from "./DateTimeIST";
 
 type AdvancedType = "EXPO_MEETING" | "HOME_VISIT" | "DUBAI_SITE_VISIT";
 
@@ -112,14 +113,10 @@ export default function AdvancedActivityLogger({ leadId, team, travelRatePerKm }
               )}
             </select>
 
-            <label className="text-xs font-semibold text-gray-600">When (IST)</label>
-            <input
-              type="datetime-local"
-              value={form.when}
-              onChange={(e) => update("when", e.target.value)}
-              min={nowISTLocalInput()}
-              className="w-full mt-1 mb-3 border border-[#e5e7eb] rounded-lg px-3 py-2 text-sm"
-            />
+            <label className="text-xs font-semibold text-gray-600 block mb-1.5">When</label>
+            <div className="mb-3">
+              <DateTimeIST value={form.when} onChange={(v) => update("when", v)} futureOnly />
+            </div>
 
             {type === "EXPO_MEETING" && (
               <>
@@ -166,7 +163,7 @@ export default function AdvancedActivityLogger({ leadId, team, travelRatePerKm }
             {(type === "HOME_VISIT" || (type === "DUBAI_SITE_VISIT" && team === "India")) && (
               <>
                 <label className="text-xs font-semibold text-gray-600">Distance travelled (km)</label>
-                <input type="number" min="0" step="1" value={form.distanceKm} onChange={(e) => update("distanceKm", e.target.value)} placeholder="e.g. 32" className="w-full mt-1 mb-1 border border-[#e5e7eb] rounded-lg px-3 py-2 text-sm" />
+                <input type="number" min={0} step="1" inputMode="numeric" value={form.distanceKm} onChange={(e) => update("distanceKm", e.target.value.replace(/^-/, ""))} placeholder="e.g. 32" className="w-full mt-1 mb-1 border border-[#e5e7eb] rounded-lg px-3 py-2 text-sm min-h-11" />
                 <div className="text-[11px] text-gray-600 mb-3">
                   Reimbursement: <b>₹{reimbursementPreview.toFixed(0)}</b> ({km.toFixed(1)} km × ₹{travelRatePerKm}/km).
                   Rate is set by admin in /settings.

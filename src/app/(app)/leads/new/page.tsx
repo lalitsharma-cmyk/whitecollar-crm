@@ -7,6 +7,7 @@ import { defaultCurrencyForTeam } from "@/lib/money";
 import { defaultDialForTeam, toE164 } from "@/lib/phone";
 import PhoneInput from "@/components/PhoneInput";
 import { nowISTLocalInput, fromISTLocalInput } from "@/lib/datetime";
+import BudgetInput from "@/components/BudgetInput";
 
 async function createLeadAction(formData: FormData) {
   "use server";
@@ -135,32 +136,14 @@ export default async function NewLeadPage() {
             </div>
             <div>
               <label className={label}>💰 Budget min</label>
-              <div className="flex items-stretch mt-1 border border-[#e5e7eb] rounded-lg overflow-hidden">
-                <span className="bg-[#f5f6fa] border-r border-[#e5e7eb] px-3 py-2 text-xs font-mono text-gray-600 flex items-center">{defaultCurrency}</span>
-                <input
-                  name="budgetMin"
-                  type="number"
-                  min="0"
-                  step="1000"
-                  inputMode="numeric"
-                  placeholder={defaultCurrency === "AED" ? "2500000" : "30000000"}
-                  className="flex-1 min-w-0 px-3 py-2 text-sm outline-none"
-                />
+              <div className="mt-1">
+                <BudgetInput name="budgetMin" currency={defaultCurrency as "AED" | "INR"} />
               </div>
-              <p className="text-[10px] text-gray-500 mt-0.5">Numbers only · {defaultCurrency === "AED" ? "AED 2,500,000 = 2.5M" : "₹3,00,00,000 = 3 Cr"}</p>
             </div>
             <div>
               <label className={label}>💰 Budget max</label>
-              <div className="flex items-stretch mt-1 border border-[#e5e7eb] rounded-lg overflow-hidden">
-                <span className="bg-[#f5f6fa] border-r border-[#e5e7eb] px-3 py-2 text-xs font-mono text-gray-600 flex items-center">{defaultCurrency}</span>
-                <input
-                  name="budgetMax"
-                  type="number"
-                  min="0"
-                  step="1000"
-                  inputMode="numeric"
-                  className="flex-1 min-w-0 px-3 py-2 text-sm outline-none"
-                />
+              <div className="mt-1">
+                <BudgetInput name="budgetMax" currency={defaultCurrency as "AED" | "INR"} />
               </div>
             </div>
             <div>

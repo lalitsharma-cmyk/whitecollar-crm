@@ -148,10 +148,11 @@ export default function InlineEdit({ leadId, field, label, value, type = "text",
         <input
           type={type === "number" ? "number" : type === "date" ? "datetime-local" : "text"}
           value={v}
-          onChange={(e) => setV(e.target.value)}
+          onChange={(e) => setV(type === "number" ? e.target.value.replace(/^-/, "") : e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter") save(); if (e.key === "Escape") cancel(); }}
           className={inputCls}
           {...(type === "date" ? { min: nowISTLocalInput() } : {})}
+          {...(type === "number" ? { min: 0, inputMode: "numeric" as const } : {})}
           autoFocus
         />
         <button onClick={save} disabled={busy} className="text-emerald-600 hover:bg-emerald-50 rounded p-1 text-xs">✓</button>

@@ -4,7 +4,8 @@ import { useRouter } from "next/navigation";
 import { Phone, MessageCircle, Mail, AlertCircle, Sparkles } from "lucide-react";
 import { whatsappLink, telLink } from "@/lib/phone";
 import TemplatePickerButton from "./TemplatePickerButton";
-import { nowISTLocalInput, fromISTLocalInput } from "@/lib/datetime";
+import { fromISTLocalInput } from "@/lib/datetime";
+import DateTimeIST from "./DateTimeIST";
 
 const OUTCOMES = [
   { v: "CONNECTED",        label: "✅ Connected" },
@@ -225,7 +226,16 @@ export default function LeadActionsClient({ leadId, phone, altPhone, email, curr
               {OUTCOMES.map(o => <option key={o.v} value={o.v}>{o.label}</option>)}
             </select>
             <label className="text-xs font-semibold text-gray-600">Duration (seconds, optional)</label>
-            <input type="number" value={duration} onChange={(e) => setDuration(e.target.value)} placeholder="e.g. 240" className="w-full mt-1 mb-3 border border-[#e5e7eb] rounded-lg px-3 py-2 text-sm" />
+            <input
+              type="number"
+              value={duration}
+              onChange={(e) => setDuration(e.target.value.replace(/^-/, ""))}  // strip leading minus client-side
+              min={0}
+              step={1}
+              inputMode="numeric"
+              placeholder="e.g. 240"
+              className="w-full mt-1 mb-3 border border-[#e5e7eb] rounded-lg px-3 py-2 text-sm min-h-11"
+            />
 
             {/* Callback scheduler — shows only when the outcome implies "ring back later".
                 Required when the client asked for a specific time. Saved as
@@ -233,17 +243,11 @@ export default function LeadActionsClient({ leadId, phone, altPhone, email, curr
                 and it shows in the morning dashboard's callback count. */}
             {needsCallback && (
               <div className="mb-3 p-3 rounded-lg border-2 border-amber-300 bg-amber-50">
-                <label className="text-xs font-semibold text-amber-900 flex items-center gap-1">
-                  ⏰ When should you call back? <span className="text-[10px] text-amber-700 font-normal">(IST · required for scheduled callback)</span>
+                <label className="text-xs font-semibold text-amber-900 flex items-center gap-1 mb-2">
+                  ⏰ When should you call back? <span className="text-[10px] text-amber-700 font-normal">(required for scheduled callback)</span>
                 </label>
-                <input
-                  type="datetime-local"
-                  value={callbackAt}
-                  onChange={(e) => setCallbackAt(e.target.value)}
-                  min={nowISTLocalInput()}
-                  className="w-full mt-1.5 border border-amber-400 rounded-lg px-3 py-2 text-sm bg-white min-h-11"
-                />
-                <p className="text-[10px] text-amber-800 mt-1">
+                <DateTimeIST value={callbackAt} onChange={setCallbackAt} futureOnly />
+                <p className="text-[10px] text-amber-800 mt-2">
                   You&apos;ll get a push notification 10 min before this time, and it will appear in your morning briefing.
                 </p>
               </div>

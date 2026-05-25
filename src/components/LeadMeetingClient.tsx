@@ -1,7 +1,8 @@
 "use client";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { nowISTLocalInput, fromISTLocalInput } from "@/lib/datetime";
+import { fromISTLocalInput } from "@/lib/datetime";
+import DateTimeIST from "./DateTimeIST";
 
 interface Counts {
   officeMeetings: { count: number; lastAt: Date | null };
@@ -89,16 +90,21 @@ export default function LeadMeetingClient({ leadId, counts }: { leadId: string; 
             <select value={type} onChange={(e) => setType(e.target.value)} className="w-full mt-1 mb-3 border border-[#e5e7eb] rounded-lg px-3 py-2 text-sm">
               {TYPES.map((t) => <option key={t.v} value={t.v}>{t.label}</option>)}
             </select>
-            <label className="text-xs font-semibold text-gray-600">When (IST · leave empty for now)</label>
-            <input
-              type="datetime-local"
-              value={when}
-              onChange={(e) => setWhen(e.target.value)}
-              min={nowISTLocalInput()}
-              className="w-full mt-1 mb-3 border border-[#e5e7eb] rounded-lg px-3 py-2 text-sm"
-            />
+            <label className="text-xs font-semibold text-gray-600 block mb-1.5">When (leave both empty for now)</label>
+            <div className="mb-3">
+              <DateTimeIST value={when} onChange={setWhen} futureOnly={false} />
+            </div>
             <label className="text-xs font-semibold text-gray-600">Duration (minutes, optional)</label>
-            <input type="number" value={duration} onChange={(e) => setDuration(e.target.value)} placeholder="e.g. 45" className="w-full mt-1 mb-3 border border-[#e5e7eb] rounded-lg px-3 py-2 text-sm" />
+            <input
+              type="number"
+              value={duration}
+              onChange={(e) => setDuration(e.target.value.replace(/^-/, ""))}
+              min={0}
+              step={1}
+              inputMode="numeric"
+              placeholder="e.g. 45"
+              className="w-full mt-1 mb-3 border border-[#e5e7eb] rounded-lg px-3 py-2 text-sm min-h-11"
+            />
             <label className="text-xs font-semibold text-gray-600">What happened? *</label>
             <textarea value={remarks} onChange={(e) => setRemarks(e.target.value)} rows={4}
               placeholder="What did client say? Which projects did you discuss? What's the next step?"
