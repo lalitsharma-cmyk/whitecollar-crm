@@ -1,24 +1,27 @@
 "use client";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Sparkles, Wand2, X, CheckCircle2 } from "lucide-react";
+import { Wand2, X, CheckCircle2 } from "lucide-react";
 
 interface Props {
   leadId: string;
   /** True when this lead has any remarks worth parsing — hides buttons otherwise. */
   hasRemarks: boolean;
+  /** When true, also show the paid 🧠 Deep AI button. Default false — Lalit asked
+      "Apply all free" so the Anthropic-billed button is hidden until they ask
+      to enable it. The /api/leads/[id]/deep-analyze endpoint is still live, so
+      flipping this flag from a future settings toggle re-exposes it instantly. */
+  showDeepAI?: boolean;
 }
 
 /**
- * Two manual AI actions on the lead detail page:
- *  • 🪄 Auto-fill from remarks — runs the regex extractor + shows a preview modal
- *    of what fields would change, so the agent can confirm before applying.
- *    Free (no API call).
- *  • 🧠 Deep AI analysis — calls Anthropic with the FULL lead context
- *    (remarks + call logs + activities + qualification fields) and overwrites
- *    aiSummary + aiScore. Costs ~$0.01-0.05 per click.
+ * Manual AI actions on the lead detail page:
+ *  • 🪄 Auto-fill from remarks (FREE) — regex extractor with preview-before-apply.
+ *  • 🧠 Deep AI analysis (PAID, hidden by default) — calls Anthropic with the
+ *    FULL lead context (remarks + call logs + activities + qualification fields)
+ *    and overwrites aiSummary + aiScore. ~₹2-4 per click. Pass showDeepAI to show.
  */
-export default function LeadAIActions({ leadId, hasRemarks }: Props) {
+export default function LeadAIActions({ leadId, hasRemarks, showDeepAI = false }: Props) {
   const router = useRouter();
   const [busy, setBusy] = useState<"autofill" | "deep" | null>(null);
   const [preview, setPreview] = useState<Record<string, unknown> | null>(null);
@@ -90,14 +93,16 @@ export default function LeadAIActions({ leadId, hasRemarks }: Props) {
         >
           <Wand2 className="w-3.5 h-3.5" /> {busy === "autofill" ? "Scanning…" : "🪄 Auto-fill from remarks"}
         </button>
-        <button
-          onClick={deepAnalyze}
-          disabled={!!busy}
-          className="btn btn-ghost text-xs flex items-center gap-1.5 min-h-10 bg-amber-50 border-amber-300"
-          title="Run a full Anthropic analysis on the lead's remarks + call history + activities"
-        >
-          <Sparkles className="w-3.5 h-3.5 text-amber-600" /> {busy === "deep" ? "Analyzing…" : "🧠 Deep AI analysis"}
-        </button>
+        {showDeepAI && (
+          <button
+            onClick={deepAnalyze}
+            disabled={!!busy}
+            className="btn btn-ghost text-xs flex items-center gap-1.5 min-h-10 bg-amber-50 border-amber-300"
+            title="Run a full Anthropic analysis on the lead's remarks + call history + activities"
+          >
+            🧠 {busy === "deep" ? "Analyzing…" : "Deep AI analysis"}
+          </button>
+        )}
       </div>
       {msg && (
         <div className={`mt-2 text-xs p-2 rounded-lg ${msg.kind === "ok" ? "bg-emerald-50 text-emerald-800 border border-emerald-200" : "bg-red-50 text-red-700 border border-red-200"}`}>
