@@ -373,6 +373,21 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
           />
         </div>
 
+        {/* Smart CMA — branded PDF with units + payment plan + ROI for the client */}
+        <div className="card p-3 border-l-4 border-[#c9a24b] bg-amber-50/40">
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <div className="min-w-0">
+              <div className="font-semibold text-sm">📄 Smart CMA · client-ready PDF</div>
+              <div className="text-[11px] text-gray-600">Cover · requirements · top-3 units · comparison · payment plan</div>
+            </div>
+            <a
+              href={`/api/leads/${lead.id}/cma`}
+              className="btn btn-primary text-xs flex-shrink-0"
+              download
+            >⬇ Download PDF</a>
+          </div>
+        </div>
+
         {suggestedUnits.length > 0 && (
           <SuggestedUnitsCard
             leadId={lead.id}
