@@ -76,13 +76,17 @@ export default function InlineEdit({ leadId, field, label, value, type = "text",
         .replace(/(\s*,\s*){2,}/g, "\n\n")      // 2+ commas → blank line
         .replace(/\n{3,}/g, "\n\n")              // collapse triple+ newlines
         .replace(/^[\s,]+|[\s,]+$/g, "");        // trim leading/trailing junk
+      // QA caught: if remarks is just whitespace/commas, `pretty` becomes empty
+      // but `raw === ""` is false, so the placeholder didn't fire — card looked
+      // visually blank. Show the placeholder whenever pretty is empty.
+      const isEffectivelyEmpty = pretty.trim() === "";
       return (
         <div
           onClick={() => setEditing(true)}
           className={`cursor-pointer hover:bg-amber-50 rounded p-1 -mx-1 whitespace-pre-wrap leading-relaxed ${className ?? ""}`}
           title="Click to edit"
         >
-          {raw === ""
+          {isEffectivelyEmpty
             ? <span className="text-gray-400 italic">{placeholder ?? "click to set"}</span>
             : <>{prefix}{pretty}</>}
           <span className="text-[10px] text-gray-400 ml-1">✎</span>
