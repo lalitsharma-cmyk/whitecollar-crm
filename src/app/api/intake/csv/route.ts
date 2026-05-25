@@ -6,6 +6,7 @@ import { LeadSource, Potential, FundReadiness, MoodStatus, InvestTimeline, LeadS
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { parseRemarks } from "@/lib/remarkParser";
+import { extractFromRemarks, mergeSuggestions } from "@/lib/remarkAutofill";
 
 type Row = Record<string, string>;
 
@@ -190,9 +191,13 @@ export async function POST(req: NextRequest) {
     }, { status: 422 });
   }
 
-  let created = 0, deduped = 0, enriched = 0, callLogsCreated = 0;
+  let created = 0, deduped = 0, enriched = 0, callLogsCreated = 0, autofilled = 0;
   const errors: string[] = [];
   const detectedColumns = Object.keys(rows[0] ?? {});
+
+  // Load all known project names once — used by remark autofill to spot
+  // project mentions in free-text ("interested in Azizi Venice" → sourceDetail).
+  const knownProjects = (await prisma.project.findMany({ select: { name: true } })).map((p) => p.name);
 
   for (const [i, row] of rows.entries()) {
     const name = pick(row, "customer", "name", "fullname", "leadname", "customername");
@@ -296,6 +301,31 @@ export async function POST(req: NextRequest) {
         enriched++;
       }
 
+      // Auto-fill structured fields from remarks (only for brand-new rows, only
+      // for empty fields — never overwrites what the sheet explicitly set).
+      if (remarks && !r.deduped) {
+        const suggestions = extractFromRemarks(remarks, knownProjects);
+        // Build the "existing" snapshot AFTER all the explicit column writes above
+        const existing = {
+          budgetMin: (update.budgetMin ?? r.lead.budgetMin) as number | null,
+          budgetMax: (update.budgetMax ?? r.lead.budgetMax) as number | null,
+          budgetCurrency: (update.budgetCurrency ?? r.lead.budgetCurrency) as string | null,
+          configuration: (update.configuration ?? r.lead.configuration) as string | null,
+          city: (update.city ?? r.lead.city) as string | null,
+          potential: (update.potential ?? r.lead.potential) as Potential | null,
+          fundReadiness: (update.fundReadiness ?? r.lead.fundReadiness) as FundReadiness | null,
+          whenCanInvest: (update.whenCanInvest ?? r.lead.whenCanInvest) as InvestTimeline | null,
+          company: (update.company ?? r.lead.company) as string | null,
+          sourceDetail: (update.sourceDetail ?? r.lead.sourceDetail) as string | null,
+          forwardedTeam: (update.forwardedTeam ?? r.lead.forwardedTeam) as string | null,
+        };
+        const toApply = mergeSuggestions(existing as never, suggestions, false);
+        if (Object.keys(toApply).length > 0) {
+          await prisma.lead.update({ where: { id: r.lead.id }, data: toApply as never });
+          autofilled++;
+        }
+      }
+
       // PARSE multi-line remarks into per-date CallLog rows
       if (remarks && !r.deduped) {
         const parsed = parseRemarks(remarks);
@@ -326,7 +356,7 @@ export async function POST(req: NextRequest) {
     detectedHeaderRow: parseInfo.detectedHeaderRow,
     allSheets: parseInfo.allSheets,
     rowsProcessed: rows.length,
-    created, deduped, enriched, callLogsCreated,
+    created, deduped, enriched, callLogsCreated, autofilled,
     detectedColumns,
     errors: errors.slice(0, 10),
   });

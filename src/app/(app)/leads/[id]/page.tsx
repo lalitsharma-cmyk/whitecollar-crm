@@ -19,6 +19,7 @@ import { acefoneEnabled } from "@/lib/acefone";
 import { canTouchLead } from "@/lib/leadScope";
 import SuggestedUnitsCard from "@/components/SuggestedUnitsCard";
 import { bestUnitsForLead } from "@/lib/inventoryMatch";
+import LeadAIActions from "@/components/LeadAIActions";
 
 export const dynamic = "force-dynamic";
 
@@ -220,6 +221,8 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
             <div className="text-sm text-gray-800 leading-relaxed">
               <InlineEdit leadId={lead.id} field="remarks" type="textarea" value={lead.remarks} placeholder="—" />
             </div>
+            {/* Two AI helpers — autofill structured fields (free) + deep Anthropic re-analysis (paid). */}
+            <LeadAIActions leadId={lead.id} hasRemarks={!!lead.remarks} />
           </div>
         )}
 
@@ -249,6 +252,10 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
         <div className="card p-5">
           <div className="font-semibold mb-3">Qualification <span className="text-[10px] text-gray-400 font-normal">(click any value to edit)</span></div>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+            <div>
+              <div className="text-xs text-gray-500">🏢 Company</div>
+              <InlineEdit leadId={lead.id} field="company" value={lead.company ?? ""} placeholder="e.g. Emirates NBD, TCS" />
+            </div>
             <div>
               <div className="text-xs text-gray-500">Potential</div>
               <InlineEdit leadId={lead.id} field="potential" type="select" value={lead.potential ?? ""}
@@ -446,18 +453,22 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
           </div>
         </div>
 
-        <div className="card p-5">
-          <div className="font-semibold mb-2">Assignment history</div>
-          <div className="space-y-2 text-sm">
-            {lead.assignments.length === 0 && <div className="text-gray-500">Not assigned yet.</div>}
-            {lead.assignments.map(a => (
-              <div key={a.id} className="text-xs">
-                <b>{a.user.name}</b> · {a.reason ?? "—"}
-                <div className="text-gray-500">{fmtIST(a.assignedAt)} IST</div>
-              </div>
-            ))}
+        {/* Assignment history — admin/manager only. Agents shouldn't see who else
+            owned the lead before them (avoids inter-agent friction + cherry-picking). */}
+        {(me.role === "ADMIN" || me.role === "MANAGER") && (
+          <div className="card p-5">
+            <div className="font-semibold mb-2">Assignment history</div>
+            <div className="space-y-2 text-sm">
+              {lead.assignments.length === 0 && <div className="text-gray-500">Not assigned yet.</div>}
+              {lead.assignments.map(a => (
+                <div key={a.id} className="text-xs">
+                  <b>{a.user.name}</b> · {a.reason ?? "—"}
+                  <div className="text-gray-500">{fmtIST(a.assignedAt)} IST</div>
+                </div>
+              ))}
+            </div>
           </div>
-        </div>
+        )}
 
         <div className="card p-5">
           <div className="flex items-center justify-between mb-2">

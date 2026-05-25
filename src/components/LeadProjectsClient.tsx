@@ -72,33 +72,75 @@ export default function LeadProjectsClient({ leadId, initial, allProjects }: { l
       {items.length === 0 && <div className="text-sm text-gray-500 mb-2">None yet — add a project once it's mentioned.</div>}
       <div className="space-y-2">
         {items.map((it) => (
-          <div key={it.projectId} className="flex items-center gap-2 p-2 border border-[#e5e7eb] rounded-lg text-sm">
-            <div className="flex-1">
-              <div className="font-semibold">{it.project.name}</div>
-              <div className="text-xs text-gray-500">{it.project.city}</div>
+          // Mobile-friendly row: stacks vertically on small screens so the project
+          // name + status chip + delete don't get squashed together (the old single-row
+          // layout broke on phones — name truncated, chip+x overlapped).
+          <div key={it.projectId} className="flex flex-col sm:flex-row sm:items-center gap-2 p-2.5 border border-[#e5e7eb] rounded-lg text-sm">
+            <div className="flex-1 min-w-0">
+              <div className="font-semibold truncate">{it.project.name}</div>
+              <div className="text-xs text-gray-500 truncate">{it.project.city}</div>
             </div>
-            <select value={it.status} onChange={(e) => changeStatus(it.projectId, e.target.value)} disabled={busy}
-              className={`chip ${statusChip[it.status]} border-0 outline-none text-[10px]`}>
-              <option value="DISCUSSED">Discussed</option>
-              <option value="SHORTLISTED">Shortlisted</option>
-              <option value="SITE_VISITED">Site visited</option>
-              <option value="RULED_OUT">Ruled out</option>
-            </select>
-            <button onClick={() => removeProject(it.projectId)} disabled={busy} className="text-gray-400 hover:text-red-500"><X className="w-4 h-4" /></button>
+            <div className="flex items-center gap-2 flex-none">
+              <select
+                value={it.status}
+                onChange={(e) => changeStatus(it.projectId, e.target.value)}
+                disabled={busy}
+                className={`chip ${statusChip[it.status]} border-0 outline-none text-[10px] flex-1 sm:flex-none min-h-9 sm:min-h-0`}
+              >
+                <option value="DISCUSSED">Discussed</option>
+                <option value="SHORTLISTED">Shortlisted</option>
+                <option value="SITE_VISITED">Site visited</option>
+                <option value="RULED_OUT">Ruled out</option>
+              </select>
+              <button
+                onClick={() => removeProject(it.projectId)}
+                disabled={busy}
+                aria-label="Remove project"
+                className="text-gray-400 hover:text-red-500 p-2 -m-2 flex-none min-w-11 min-h-11 flex items-center justify-center"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
           </div>
         ))}
       </div>
       {!picking && remaining.length > 0 && (
-        <button onClick={() => setPicking(true)} className="text-xs text-[#0b1a33] font-semibold mt-3 flex items-center gap-1"><Plus className="w-3 h-3" /> Add project</button>
+        <button
+          onClick={() => setPicking(true)}
+          className="text-sm text-[#0b1a33] font-semibold mt-3 flex items-center gap-1.5 min-h-11 px-1"
+        >
+          <Plus className="w-4 h-4" /> Add project
+        </button>
       )}
       {picking && (
-        <div className="mt-3 flex items-center gap-2">
-          <select value={picked} onChange={(e) => setPicked(e.target.value)} className="flex-1 border border-[#e5e7eb] rounded-lg px-2 py-1 text-sm">
+        // Mobile-friendly picker: full-width select on its own row, then Add/Cancel
+        // side-by-side beneath. Previously the three controls were forced into one
+        // row and the picker got clipped off-screen on phones.
+        <div className="mt-3 flex flex-col gap-2">
+          <select
+            value={picked}
+            onChange={(e) => setPicked(e.target.value)}
+            className="w-full border border-[#e5e7eb] rounded-lg px-3 py-2.5 text-sm min-h-11"
+            autoFocus
+          >
             <option value="">— pick a project —</option>
             {remaining.map((p) => <option key={p.id} value={p.id}>{p.name} ({p.city})</option>)}
           </select>
-          <button onClick={addProject} disabled={!picked || busy} className="btn btn-primary text-xs">Add</button>
-          <button onClick={() => { setPicking(false); setPicked(""); }} className="text-xs text-gray-500">Cancel</button>
+          <div className="flex gap-2">
+            <button
+              onClick={addProject}
+              disabled={!picked || busy}
+              className="btn btn-primary text-sm flex-1 justify-center min-h-11"
+            >
+              {busy ? "Adding…" : "Add"}
+            </button>
+            <button
+              onClick={() => { setPicking(false); setPicked(""); }}
+              className="btn btn-ghost text-sm flex-1 justify-center min-h-11"
+            >
+              Cancel
+            </button>
+          </div>
         </div>
       )}
     </div>

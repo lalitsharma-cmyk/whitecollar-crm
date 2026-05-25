@@ -60,6 +60,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if (Object.keys(updates).length === 0) return NextResponse.json({ error: "Nothing to update" }, { status: 400 });
 
   updates.lastTouchedAt = new Date();
+  // If followupDate moved, re-arm the 10-min-before reminder so the new time gets pushed.
+  if ("followupDate" in updates) updates.followupReminderSentAt = null;
   await prisma.lead.update({ where: { id }, data: updates as never });
 
   if (activityNotes.length) {

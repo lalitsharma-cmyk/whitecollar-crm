@@ -8,6 +8,7 @@ import { notify } from "@/lib/notify";
 import { ActivityStatus, AIScore } from "@prisma/client";
 import { syncProjectsFromMarketingSite } from "@/lib/syncProjects";
 import { sendReportToManagers, windowsForToday } from "@/lib/reports";
+import { quoteOneLine } from "@/lib/salesQuotes";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -36,8 +37,12 @@ export async function GET(req: NextRequest) {
   const agents = await prisma.user.findMany({ where: { active: true, role: { in: ["AGENT", "MANAGER", "ADMIN"] } } });
   let notified = 0;
 
+  // One quote for everyone today (deterministic by day-of-year)
+  const motivation = quoteOneLine();
+
   for (const u of agents) {
-    const [followups, hot] = await Promise.all([
+    const [followups, hot, newOvernight, callbacks] = await Promise.all([
+      // ALL scheduled today (meetings + site visits + manual followups)
       prisma.activity.count({
         where: {
           userId: u.id,
@@ -45,24 +50,59 @@ export async function GET(req: NextRequest) {
           scheduledAt: { gte: startUTC, lte: endUTC },
         },
       }),
+      // Hot leads needing attention
       prisma.lead.count({
         where: { ownerId: u.id, aiScore: AIScore.HOT, status: { notIn: ["WON", "LOST"] } },
       }),
+      // New leads assigned overnight (since the previous morning cron, i.e. last 24h)
+      prisma.lead.count({
+        where: {
+          ownerId: u.id,
+          createdAt: { gte: new Date(Date.now() - 24 * 3600_000) },
+        },
+      }),
+      // Leads with followupDate set for TODAY — these are the "client asked me to call
+      // back at this time" reminders Lalit asked for. Plus the 10-min-before push from
+      // the new pre-meeting cron will catch the exact-time alert.
+      prisma.lead.count({
+        where: {
+          ownerId: u.id,
+          followupDate: { gte: startUTC, lte: endUTC },
+          status: { notIn: ["WON", "LOST"] },
+        },
+      }),
     ]);
-    if (followups === 0 && hot === 0) continue;
+    // Skip only when there is truly nothing — but always send the motivation line,
+    // because nudging the agent into the app sets the tone for the day.
+    if (followups === 0 && hot === 0 && newOvernight === 0 && callbacks === 0) {
+      // Still send a thin "all clear" message so quote of the day reaches them.
+      await notify({
+        userId: u.id,
+        kind: "REMINDER",
+        severity: "INFO",
+        title: `🌅 Good morning ${u.name.split(" ")[0]}`,
+        body: `All clear — no follow-ups, no overnight leads. ${motivation}`,
+        linkUrl: "/dashboard",
+        email: false,  // skip email when there's no work to surface
+      });
+      notified++;
+      continue;
+    }
 
     const body = [
+      newOvernight > 0 ? `🆕 ${newOvernight} new lead${newOvernight === 1 ? "" : "s"} since yesterday` : null,
       followups > 0 ? `📅 ${followups} follow-up${followups === 1 ? "" : "s"} due today` : null,
+      callbacks > 0 ? `☎ ${callbacks} client callback${callbacks === 1 ? "" : "s"} scheduled` : null,
       hot > 0 ? `🔥 ${hot} hot lead${hot === 1 ? "" : "s"} need attention` : null,
     ].filter(Boolean).join(" · ");
 
     await notify({
       userId: u.id,
       kind: "REMINDER",
-      severity: hot > 5 ? "WARNING" : "INFO",
+      severity: hot > 5 || newOvernight > 5 ? "WARNING" : "INFO",
       title: `🌅 Good morning ${u.name.split(" ")[0]} — your day`,
-      body,
-      linkUrl: "/activities",
+      body: `${body}\n\n${motivation}`,
+      linkUrl: "/action-list",
       email: true,
     });
     notified++;

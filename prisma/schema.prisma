@@ -225,6 +225,10 @@ model Lead {
   fingerprint     String?     @unique  // phone||email hash for dedupe
   duplicateCount  Int         @default(0)  // times this client has re-contacted us
   lastDuplicateAt DateTime?
+  // Set when the per-lead callback reminder (~10 min before Lead.followupDate) has
+  // already fired — prevents the 5-min pre-meeting cron from re-notifying. Cleared
+  // when followupDate is edited (handled by the inline-update endpoint).
+  followupReminderSentAt DateTime?
   // timestamps
   lastTouchedAt   DateTime?
   createdAt       DateTime    @default(now())
@@ -417,6 +421,8 @@ model Activity {
   endedLng           Float?
   /// JSON-stringified [{ts, lat, lng}, …] — polled every 60s between Start and End
   locationTrack      String?
+  /// When the 30-min-before pre-meeting reminder fired (dedupe for the 5-min cron)
+  reminderSentAt     DateTime?
   // ── Expo meeting fields (Dubai team — meets prospects at developer expos in IN cities) ──
   expoCity            String?    // "Gurgaon", "Delhi", "Mumbai", "Bangalore"
   expoHotel           String?    // venue name

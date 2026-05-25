@@ -12,6 +12,7 @@ import Link from "next/link";
 import MoodCheckIn from "@/components/MoodCheckIn";
 import AttendanceBadge from "@/components/AttendanceBadge";
 import { todayIST } from "@/lib/attendance";
+import { quoteOfTheDay } from "@/lib/salesQuotes";
 
 export const dynamic = "force-dynamic";
 
@@ -152,6 +153,31 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
 
   const testingModeOn = await getTestingModeEnabled();
 
+  // ── Per-agent morning briefing (also shown to admins) ──
+  // What landed since yesterday + what's on the agent's plate today. Mirrors
+  // the morning-reminder cron notification but always visible on dashboard so
+  // an agent logging in at 10am sees their day at a glance.
+  const since24h = new Date(Date.now() - 24 * 3600_000);
+  const [myNewOvernight, myFollowupsToday, myCallbacksToday] = await Promise.all([
+    prisma.lead.count({ where: { ownerId: me.id, createdAt: { gte: since24h } } }),
+    prisma.activity.count({
+      where: {
+        userId: me.id,
+        status: ActivityStatus.PLANNED,
+        scheduledAt: { gte: todayStart, lt: new Date(todayStart.getTime() + 24 * 3600_000) },
+      },
+    }),
+    prisma.lead.count({
+      where: {
+        ownerId: me.id,
+        followupDate: { gte: todayStart, lt: new Date(todayStart.getTime() + 24 * 3600_000) },
+        status: { notIn: ["WON", "LOST"] },
+      },
+    }),
+  ]);
+  const dailyQuote = quoteOfTheDay();
+  const hasMorningWork = myNewOvernight > 0 || myFollowupsToday > 0 || myCallbacksToday > 0;
+
   return (
     <>
       {testingModeOn && (
@@ -187,6 +213,42 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
       {/* Attendance badge — auto-marked on login, shown next to mood */}
       <div className="flex flex-wrap gap-3 items-start">
         <AttendanceBadge today={myAttendanceToday ? { status: myAttendanceToday.status, markedAt: myAttendanceToday.markedAt.toISOString() } : null} />
+      </div>
+
+      {/* Morning briefing — per-agent "your day at a glance". Always visible (not
+          just on a single cron tick) so agents logging in at 10am or any time
+          after can see what landed overnight + what they have today. */}
+      <div className="card p-4 border-l-4 border-[#c9a24b] bg-amber-50/30">
+        <div className="flex items-start justify-between gap-3 flex-wrap">
+          <div className="flex-1 min-w-0">
+            <div className="text-xs tracking-widest text-gray-500 uppercase">🌅 Your day, {me.name.split(" ")[0]}</div>
+            {hasMorningWork ? (
+              <div className="flex flex-wrap gap-2 mt-2 text-sm">
+                {myNewOvernight > 0 && (
+                  <Link href="/leads?when=24h" className="px-3 py-1.5 rounded-full bg-emerald-100 text-emerald-900 border border-emerald-300 font-semibold hover:bg-emerald-200 min-h-9 flex items-center gap-1">
+                    🆕 {myNewOvernight} new lead{myNewOvernight === 1 ? "" : "s"} since yesterday
+                  </Link>
+                )}
+                {myCallbacksToday > 0 && (
+                  <Link href="/action-list" className="px-3 py-1.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300 font-semibold hover:bg-amber-200 min-h-9 flex items-center gap-1">
+                    ☎ {myCallbacksToday} client callback{myCallbacksToday === 1 ? "" : "s"} today
+                  </Link>
+                )}
+                {myFollowupsToday > 0 && (
+                  <Link href="/activities" className="px-3 py-1.5 rounded-full bg-blue-100 text-blue-900 border border-blue-300 font-semibold hover:bg-blue-200 min-h-9 flex items-center gap-1">
+                    📅 {myFollowupsToday} follow-up{myFollowupsToday === 1 ? "" : "s"} to do
+                  </Link>
+                )}
+              </div>
+            ) : (
+              <div className="text-sm text-gray-600 mt-1.5">All clear — no new leads or callbacks today.</div>
+            )}
+            <blockquote className="text-[12px] text-gray-700 italic mt-3 border-l-2 border-[#c9a24b] pl-3 leading-relaxed">
+              💡 {dailyQuote.text}
+              <div className="text-[10px] text-gray-500 not-italic mt-0.5">— {dailyQuote.author}</div>
+            </blockquote>
+          </div>
+        </div>
       </div>
 
       {/* Admin-only: leads waiting for morning assignment (15-min window) */}
