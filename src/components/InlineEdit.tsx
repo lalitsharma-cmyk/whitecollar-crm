@@ -1,7 +1,8 @@
 "use client";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { nowISTLocalInput, isPastISTLocalInput } from "@/lib/datetime";
+import { isPastISTLocalInput } from "@/lib/datetime";
+import DateTimeIST from "./DateTimeIST";
 
 type FieldType = "text" | "textarea" | "number" | "date" | "select";
 
@@ -146,21 +147,49 @@ export default function InlineEdit({ leadId, field, label, value, type = "text",
     );
   }
 
+  // Date type uses the split DateTimeIST picker (visible time portion on mobile).
+  // Lalit reported "time anywhere is not clickable" — the combined datetime-local
+  // hides the time on Android. DateTimeIST renders two side-by-side inputs.
+  if (type === "date") {
+    return (
+      <div className="flex flex-col gap-2">
+        <DateTimeIST value={v} onChange={setV} futureOnly />
+        <div className="flex gap-2">
+          <button
+            onClick={save}
+            disabled={busy}
+            aria-label="Save"
+            className="btn btn-primary text-xs flex-1 justify-center min-h-11"
+          >
+            {busy ? "Saving…" : "Save"}
+          </button>
+          <button
+            onClick={cancel}
+            aria-label="Cancel"
+            className="btn btn-ghost text-xs flex-1 justify-center min-h-11"
+          >
+            Cancel
+          </button>
+        </div>
+        {errLine}
+      </div>
+    );
+  }
+
   return (
     <span className="inline-flex flex-col">
       <span className="inline-flex items-center gap-1">
         <input
-          type={type === "number" ? "number" : type === "date" ? "datetime-local" : "text"}
+          type={type === "number" ? "number" : "text"}
           value={v}
           onChange={(e) => setV(type === "number" ? e.target.value.replace(/^-/, "") : e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter") save(); if (e.key === "Escape") cancel(); }}
           className={inputCls}
-          {...(type === "date" ? { min: nowISTLocalInput() } : {})}
           {...(type === "number" ? { min: 0, inputMode: "numeric" as const } : {})}
           autoFocus
         />
-        <button onClick={save} disabled={busy} className="text-emerald-600 hover:bg-emerald-50 rounded p-1 text-xs">✓</button>
-        <button onClick={cancel} className="text-red-600 hover:bg-red-50 rounded p-1 text-xs">✕</button>
+        <button onClick={save} disabled={busy} aria-label="Save" className="text-emerald-600 hover:bg-emerald-50 rounded p-2 text-base min-w-11 min-h-11 flex items-center justify-center">✓</button>
+        <button onClick={cancel} aria-label="Cancel" className="text-red-600 hover:bg-red-50 rounded p-2 text-base min-w-11 min-h-11 flex items-center justify-center">✕</button>
       </span>
       {errLine}
     </span>

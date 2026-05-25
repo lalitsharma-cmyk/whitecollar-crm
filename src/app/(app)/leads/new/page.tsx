@@ -6,8 +6,9 @@ import { prisma } from "@/lib/prisma";
 import { defaultCurrencyForTeam } from "@/lib/money";
 import { defaultDialForTeam, toE164 } from "@/lib/phone";
 import PhoneInput from "@/components/PhoneInput";
-import { nowISTLocalInput, fromISTLocalInput } from "@/lib/datetime";
+import { fromISTLocalInput } from "@/lib/datetime";
 import BudgetInput from "@/components/BudgetInput";
+import FormDateTimeIST from "@/components/FormDateTimeIST";
 
 async function createLeadAction(formData: FormData) {
   "use server";
@@ -218,7 +219,10 @@ export default async function NewLeadPage() {
         <section>
           <div className="text-xs font-bold tracking-widest text-[#c9a24b] mb-3">ACTION & SCHEDULING</div>
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 sm:gap-4">
-            <div><label className={label}>🔁 Follow-up date (IST)</label><input name="followupDate" type="datetime-local" min={nowISTLocalInput()} className={input} /></div>
+            <div className="md:col-span-2">
+              <label className={label}>🔁 Follow-up date</label>
+              <div className="mt-1"><FormDateTimeIST name="followupDate" futureOnly /></div>
+            </div>
             <div className="md:col-span-2"><label className={label}>✅ To Do — next action</label><input name="todoNext" placeholder="e.g. Send AED brochure & payment plan" className={input} /></div>
             <div className="md:col-span-3"><label className={label}>📤 Detail shared with client</label><input name="detailShared" placeholder="e.g. Brochure v3 + payment plan + RERA note" className={input} /></div>
             <div className="md:col-span-3"><label className={label}>📝 Remarks</label><textarea name="remarks" rows={3} className={input}></textarea></div>

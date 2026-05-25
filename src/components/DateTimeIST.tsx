@@ -57,7 +57,6 @@ export default function DateTimeIST({ value, onChange, futureOnly = true, name, 
           value={date}
           onChange={(e) => setDate(e.target.value)}
           min={minDate}
-          name={name ? `${name}_date` : undefined}
           disabled={disabled}
           className="w-full border border-[#e5e7eb] rounded-lg px-3 py-2.5 text-sm min-h-11"
         />
@@ -69,12 +68,16 @@ export default function DateTimeIST({ value, onChange, futureOnly = true, name, 
           value={time}
           onChange={(e) => setTime(e.target.value)}
           min={minTime}
-          name={name ? `${name}_time` : undefined}
           disabled={disabled || !date}
           className="w-full border border-[#e5e7eb] rounded-lg px-3 py-2.5 text-sm min-h-11 disabled:bg-gray-100 disabled:text-gray-400"
           placeholder="Pick a date first"
         />
       </div>
+      {/* Hidden combined field — when `name` is passed (server-action form usage)
+          we emit the combined "YYYY-MM-DDTHH:mm" wall-clock so the server can
+          parse it with fromISTLocalInput. The visible date+time inputs are
+          unnamed; only this hidden field is submitted with the form. */}
+      {name && <input type="hidden" name={name} value={value} />}
     </div>
   );
 }
