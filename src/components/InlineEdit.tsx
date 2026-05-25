@@ -51,16 +51,28 @@ export default function InlineEdit({ leadId, field, label, value, type = "text",
     // Textarea fields (remarks, whoIsClient, etc.) preserve line breaks + multi-line
     // formatting in the read-only view — otherwise multi-line imported text from
     // Google Sheets collapses to one visual line.
+    //
+    // Special-case: Lalit's MIS remarks cells use runs of `,,,,` as visual
+    // separators instead of newlines. The full conversation history IS in the
+    // string (e.g. 1664 chars / 9 call entries for Shivam) but renders as one
+    // unreadable comma-blob. Pretty-print here: collapse runs of 2+ commas
+    // (optionally surrounded by whitespace) to a paragraph break. Doesn't
+    // mutate the stored value — purely for display.
     if (type === "textarea") {
+      const raw = value == null ? "" : String(value);
+      const pretty = raw
+        .replace(/(\s*,\s*){2,}/g, "\n\n")      // 2+ commas → blank line
+        .replace(/\n{3,}/g, "\n\n")              // collapse triple+ newlines
+        .replace(/^[\s,]+|[\s,]+$/g, "");        // trim leading/trailing junk
       return (
         <div
           onClick={() => setEditing(true)}
-          className={`cursor-pointer hover:bg-amber-50 rounded p-1 -mx-1 whitespace-pre-wrap ${className ?? ""}`}
+          className={`cursor-pointer hover:bg-amber-50 rounded p-1 -mx-1 whitespace-pre-wrap leading-relaxed ${className ?? ""}`}
           title="Click to edit"
         >
-          {value == null || value === ""
+          {raw === ""
             ? <span className="text-gray-400 italic">{placeholder ?? "click to set"}</span>
-            : <>{prefix}{String(value)}</>}
+            : <>{prefix}{pretty}</>}
           <span className="text-[10px] text-gray-400 ml-1">✎</span>
         </div>
       );
@@ -100,9 +112,15 @@ export default function InlineEdit({ leadId, field, label, value, type = "text",
   }
 
   if (type === "textarea") {
+    // For long imported remarks (which can be 1500+ chars / 9 call entries),
+    // 4 rows was way too short — agents thought entries were missing because
+    // they couldn't see past the scroll. Auto-size between 10 and 24 rows based
+    // on the current text length.
+    const lines = (v.match(/\n/g)?.length ?? 0) + Math.ceil(v.length / 80);
+    const rows = Math.min(24, Math.max(10, lines));
     return (
       <div>
-        <textarea value={v} onChange={(e) => setV(e.target.value)} rows={4} className={inputCls + " min-h-[80px]"} autoFocus onKeyDown={(e) => { if (e.key === "Escape") cancel(); }} />
+        <textarea value={v} onChange={(e) => setV(e.target.value)} rows={rows} className={inputCls + " min-h-[200px] font-mono text-[12px] leading-relaxed"} autoFocus onKeyDown={(e) => { if (e.key === "Escape") cancel(); }} />
         <div className="flex gap-2 mt-1">
           <button onClick={save} disabled={busy} className="btn btn-primary text-xs py-1">{busy ? "..." : "Save"}</button>
           <button onClick={cancel} className="text-xs text-gray-500">Cancel</button>

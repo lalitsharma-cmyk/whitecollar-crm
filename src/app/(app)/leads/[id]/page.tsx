@@ -210,23 +210,32 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
           </div>
         </div>
 
-        {/* Remarks — verbatim from Google Sheet / CSV import. Multi-line, no parsing.
-            Lalit asked: "Remarks section should came as it is from google sheet for each lead."
-            We store the raw remarks cell on Lead.remarks and render it whitespace-pre-wrap
-            here so every line break + comma + agent annotation stays exactly as imported.
-            The auto-parsed per-date entries still appear in Call history below. */}
-        {lead.remarks && (
+        {/* Remarks — full conversation history from the import sheet. The raw text
+            uses runs of `,,,,` between entries (MIS convention); InlineEdit splits
+            those into paragraph breaks for readability. Count of detected entries
+            shown so Lalit can confirm the FULL history landed (he reported "only
+            latest comments coming in some leads" — the entries were there, just
+            visually jumbled). Sample lead "Shivam" = 9 entries, 1664 chars. */}
+        {lead.remarks && (() => {
+          const entryCount = (lead.remarks.match(/[oO]n\s+\d{1,2}\s+[A-Za-z]{3,9}\s+\d{4}/g) ?? []).length;
+          const charCount = lead.remarks.length;
+          return (
           <div className="card p-5 border-l-4 border-[#0b1a33]">
-            <div className="flex items-center justify-between gap-2 mb-2">
-              <div className="font-semibold flex items-center gap-2">📝 Remarks <span className="text-[10px] text-gray-500 font-normal">— exact text from import sheet, click to edit</span></div>
+            <div className="flex items-center justify-between gap-2 mb-2 flex-wrap">
+              <div className="font-semibold flex items-center gap-2">📝 Remarks <span className="text-[10px] text-gray-500 font-normal">— full history from import sheet, click to edit</span></div>
+              <div className="text-[10px] text-gray-500 font-mono flex items-center gap-2">
+                {entryCount > 0 && <span className="px-1.5 py-0.5 rounded bg-blue-50 border border-blue-200 text-blue-800">📅 {entryCount} call entr{entryCount === 1 ? "y" : "ies"}</span>}
+                <span>{charCount.toLocaleString()} chars</span>
+              </div>
             </div>
-            <div className="text-sm text-gray-800 leading-relaxed">
+            <div className="text-sm text-gray-800 leading-relaxed max-h-[600px] overflow-y-auto border border-[#e5e7eb] rounded-lg p-3 bg-[#fafafa]">
               <InlineEdit leadId={lead.id} field="remarks" type="textarea" value={lead.remarks} placeholder="—" />
             </div>
             {/* Two AI helpers — autofill structured fields (free) + deep Anthropic re-analysis (paid). */}
             <LeadAIActions leadId={lead.id} hasRemarks={!!lead.remarks} />
           </div>
-        )}
+          );
+        })()}
 
         {/* BANT verdict — prominent, decision-driving */}
         <div className={`card p-4 border-l-4 ${
