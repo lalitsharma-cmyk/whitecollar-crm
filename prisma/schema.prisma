@@ -653,6 +653,99 @@ model SavedFilter {
   @@index([isShared, sortOrder])
 }
 
+// ──────────────────────────────────────────────────────────
+// WORKFLOW ENGINE — Zoho-style rules + drip campaigns.
+//
+// A Workflow has one TRIGGER + an ordered list of ACTIONS. When the trigger
+// fires for a lead, the engine queues every action (some immediate, some
+// delayed). A delayed action waits until its `runAt` time, then a cron sweep
+// dispatches it. WorkflowRun rows track which workflow×lead pairs have already
+// fired (idempotency) plus pending vs done state for delayed actions.
+// ──────────────────────────────────────────────────────────
+enum WorkflowTrigger {
+  LEAD_CREATED         // new lead intake
+  STATUS_CHANGED       // lead.status moved
+  BANT_CHANGED         // BANT verdict set (Qualifies / Not qualified)
+  STAGE_TIME           // X minutes in a specific stage
+  NO_CONTACT_DAYS      // No call/WA/email in N days
+  NOT_PICKED_STREAK    // N consecutive NOT_PICKED outcomes
+  COLD_PROMOTED        // Cold-data → Lead promotion
+}
+
+enum WorkflowActionType {
+  SEND_WA              // Send WhatsApp template (config.templateId)
+  SEND_EMAIL           // Send email template (config.templateId)
+  CREATE_TASK          // Create planned Activity for the owner (config: title, dueInMinutes)
+  NOTIFY_ADMIN         // In-app + email notification to Admin/Manager
+  NOTIFY_OWNER         // In-app notification to lead's owner
+  SET_FIELD            // Set Lead field (config: field, value)
+  ADD_TAG              // Append to Lead.tags (config: tag)
+}
+
+enum WorkflowRunStatus {
+  PENDING              // queued, waiting for runAt
+  RUNNING
+  DONE
+  FAILED
+  SKIPPED              // condition no longer met when dispatcher ran
+}
+
+model Workflow {
+  id            String           @id @default(cuid())
+  name          String
+  description   String?
+  trigger       WorkflowTrigger
+  triggerConfig String?          @db.Text  // JSON — { status?: "NEW", days?: 7, etc. }
+  /// "Only fire if lead matches this query string" — e.g. "team=Dubai&ai=HOT"
+  /// Empty = applies to every lead.
+  filterQuery   String?
+  active        Boolean          @default(true)
+  createdById   String?
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  actions       WorkflowAction[]
+  runs          WorkflowRun[]
+
+  @@index([trigger, active])
+}
+
+model WorkflowAction {
+  id           String             @id @default(cuid())
+  workflowId   String
+  workflow     Workflow           @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  sequenceOrder Int               @default(0)
+  type         WorkflowActionType
+  config       String             @db.Text  // JSON
+  /// 0 = run immediately. >0 = schedule for runAt = trigger time + delayMinutes.
+  delayMinutes Int                @default(0)
+
+  runs         WorkflowRun[]
+
+  @@index([workflowId, sequenceOrder])
+}
+
+model WorkflowRun {
+  id           String             @id @default(cuid())
+  workflowId   String
+  workflow     Workflow           @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  actionId     String?            // null = the "trigger fired" master row (one per workflow+lead+triggerEvent)
+  action       WorkflowAction?    @relation(fields: [actionId], references: [id], onDelete: Cascade)
+  leadId       String
+  status       WorkflowRunStatus  @default(PENDING)
+  runAt        DateTime           // when to dispatch this action (now() for immediate, future for delayed)
+  startedAt    DateTime?
+  finishedAt   DateTime?
+  error        String?            @db.Text
+  /// Idempotency dedupe key — same trigger+lead+actionId should never fire twice.
+  /// Built like "<workflowId>:<leadId>:<actionId>:<eventTs>" for delays, or "<workflowId>:<leadId>" for once-only.
+  dedupeKey    String             @unique
+  createdAt    DateTime           @default(now())
+
+  @@index([status, runAt])
+  @@index([leadId])
+}
+
 // =====================================================
 // NOTIFICATIONS — in-app bell + per-user inbox
 // =====================================================

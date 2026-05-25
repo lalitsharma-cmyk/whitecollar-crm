@@ -7,6 +7,7 @@ import { toE164 } from "@/lib/phone";
 import { currentWindow } from "@/lib/assignmentWindow";
 import { sendAfterHoursWelcome } from "@/lib/whatsappOutbound";
 import { sendSpeedToLeadResponses } from "@/lib/speedToLead";
+import { fireWorkflowTrigger } from "@/lib/workflowEngine";
 
 export interface RawLeadInput {
   name: string;
@@ -164,6 +165,9 @@ export async function ingestLead(input: RawLeadInput) {
   // Runs after the after-hours welcome trigger so the WA-dedupe check inside
   // sees the just-created WhatsAppMessage row and skips the duplicate send.
   sendSpeedToLeadResponses(lead.id).catch(() => {});
+
+  // ── Workflow engine: fire any LEAD_CREATED rules ──
+  fireWorkflowTrigger("LEAD_CREATED", lead.id, { source: input.source }).catch(() => {});
 
   return { lead, deduped: false as const };
 }

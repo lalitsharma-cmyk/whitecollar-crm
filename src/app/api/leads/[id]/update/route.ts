@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { ActivityType, ActivityStatus, LeadStatus, AIScore, Potential, FundReadiness, MoodStatus, InvestTimeline } from "@prisma/client";
 import { loadOwnedLead } from "@/lib/leadScope";
 import { rescoreLead } from "@/lib/leadRescorer";
+import { fireWorkflowTrigger } from "@/lib/workflowEngine";
 
 // Inline-edit endpoint — accepts one or more field updates and logs an Activity
 // for status/stage changes. Only allows whitelisted fields.
@@ -78,6 +79,13 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   // Other inline edits don't influence the rescorer's inputs so we skip them for noise control.
   if ("bantStatus" in updates || "status" in updates) {
     rescoreLead(id).catch(() => {});
+  }
+  // Workflow engine — BANT changes are a common trigger ("auto-task when Qualifies").
+  if ("bantStatus" in updates) {
+    fireWorkflowTrigger("BANT_CHANGED", id, { newBant: updates.bantStatus }).catch(() => {});
+  }
+  if ("status" in updates) {
+    fireWorkflowTrigger("STATUS_CHANGED", id, { newStatus: updates.status }).catch(() => {});
   }
 
   return NextResponse.json({ ok: true, updated: Object.keys(updates).length - 1 });

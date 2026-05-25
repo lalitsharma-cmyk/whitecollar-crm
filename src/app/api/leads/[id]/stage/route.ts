@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { LeadStatus, ActivityType, ActivityStatus } from "@prisma/client";
 import { loadOwnedLead } from "@/lib/leadScope";
 import { rescoreLead } from "@/lib/leadRescorer";
+import { fireWorkflowTrigger } from "@/lib/workflowEngine";
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -30,5 +31,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   });
   // Fire-and-forget behavioural re-score
   rescoreLead(id).catch(() => {});
+  // Workflow engine: STATUS_CHANGED rules can fire WA/email/tasks etc.
+  fireWorkflowTrigger("STATUS_CHANGED", id, { newStatus, previousStatus: lead.status }).catch(() => {});
   return NextResponse.json({ ok: true });
 }

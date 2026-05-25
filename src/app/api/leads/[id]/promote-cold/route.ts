@@ -6,6 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { loadOwnedLead } from "@/lib/leadScope";
 import { ActivityType, ActivityStatus, LeadStatus } from "@prisma/client";
 import { audit, reqMeta } from "@/lib/audit";
+import { fireWorkflowTrigger } from "@/lib/workflowEngine";
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -45,5 +46,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     userId: me.id, action: "cold.promote", entity: "Lead", entityId: id,
     meta: { leadName: lead.name }, request: reqMeta(req),
   });
+  // Workflow engine: fire any COLD_PROMOTED rules (e.g. auto-create welcome task)
+  fireWorkflowTrigger("COLD_PROMOTED", id).catch(() => {});
   return NextResponse.json({ ok: true });
 }
