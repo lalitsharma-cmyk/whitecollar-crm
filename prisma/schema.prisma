@@ -36,6 +36,9 @@ model User {
   // (2) when Meta Cloud API is configured, the CRM can poll messages for this
   // number's wa_id and auto-log conversations as Activity rows.
   companyWhatsAppNumber String?
+  // Profile photo — stored as base64 dataURL (kept small, no S3 needed for ~10 users).
+  // Empty string ("" or null) → fall back to initials avatar.
+  photoUrl              String?
   avatarColor   String?    // tailwind class e.g. "bg-indigo-500"
   active        Boolean    @default(true)
   createdAt     DateTime   @default(now())
@@ -522,6 +525,29 @@ model Assignment {
 // =====================================================
 // AUDIT LOG
 // =====================================================
+
+// ──────────────────────────────────────────────────────────
+// DAILY MOOD — end-of-day check-in (optional, max one per agent per day)
+// Drives: team-mood widget for admin + culture trend over time.
+// ──────────────────────────────────────────────────────────
+enum Mood {
+  FRUSTRATING   // 😣
+  NOT_GREAT     // 🙁
+  MIXED         // 😐
+  LOOKS_GOOD    // 🙂
+  AWESOME       // 😍
+}
+
+model DailyMood {
+  id        String   @id @default(cuid())
+  userId    String
+  date      DateTime @db.Date     // truncated to day
+  mood      Mood
+  comment   String?               // optional follow-up answer
+  createdAt DateTime @default(now())
+  @@unique([userId, date])
+  @@index([date])
+}
 
 model AuditLog {
   id        String   @id @default(cuid())

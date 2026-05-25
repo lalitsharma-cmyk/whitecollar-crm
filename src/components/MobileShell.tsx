@@ -25,13 +25,16 @@ const fullNav = [
     { href: "/notifications", label: "Notifications", Icon: Bell },
   ]},
   { section: "SETUP", items: [
+    { href: "/profile",  label: "My Profile",    Icon: UserCog },
     { href: "/intake",   label: "Lead Intake",   Icon: Upload },
     { href: "/team",     label: "Team & Roles",  Icon: UserCog },
     { href: "/settings", label: "Settings",      Icon: SettingsIcon },
   ]},
   // ADMIN-only section — filtered out in render below
   { section: "ADMIN", adminOnly: true, items: [
-    { href: "/admin/audit", label: "Audit Log",  Icon: ShieldCheck, tag: undefined as string | undefined },
+    { href: "/admin/audit",      label: "Audit Log",   Icon: ShieldCheck, tag: undefined as string | undefined },
+    { href: "/admin/targets",    label: "Daily Targets", Icon: Sparkles,   tag: undefined as string | undefined },
+    { href: "/admin/team-mood",  label: "Team Mood",   Icon: Sparkles,    tag: undefined as string | undefined },
   ]},
 ];
 
@@ -46,7 +49,16 @@ const bottomNav = [
 
 interface Props {
   children: React.ReactNode;
-  user: { name: string; role: string; avatarColor: string };
+  user: { name: string; role: string; avatarColor: string; photoUrl?: string | null };
+}
+
+/** Inline avatar — uses uploaded photo if present, falls back to colored initials. */
+function Avatar({ user, initials, size }: { user: Props["user"]; initials: string; size: string }) {
+  if (user.photoUrl) {
+    // eslint-disable-next-line @next/next/no-img-element
+    return <img src={user.photoUrl} alt={user.name} className={`${size} rounded-full object-cover`} />;
+  }
+  return <div className={`avatar ${user.avatarColor} ${size}`}>{initials}</div>;
 }
 
 export default function MobileShell({ children, user }: Props) {
@@ -81,7 +93,7 @@ export default function MobileShell({ children, user }: Props) {
         </nav>
         <div className="p-3 border-t border-white/10 space-y-2">
           <div className="flex items-center gap-3 px-2 py-2 rounded-lg bg-white/5">
-            <div className={`avatar ${user.avatarColor}`}>{initials}</div>
+            <Avatar user={user} initials={initials} size="w-[30px] h-[30px]" />
             <div className="text-xs leading-tight flex-1 min-w-0">
               <div className="font-semibold truncate">{user.name}</div>
               <div className="text-white/60 truncate">{user.role === "ADMIN" ? "Administrator" : user.role === "MANAGER" ? "Manager" : "Sales Agent"}</div>
@@ -113,7 +125,9 @@ export default function MobileShell({ children, user }: Props) {
         <Link href="/leads/new" aria-label="New lead" className="p-2 rounded hover:bg-white/10 min-w-11 min-h-11 flex items-center justify-center">
           <span className="text-xl font-bold leading-none">+</span>
         </Link>
-        <div className={`avatar ${user.avatarColor} w-7 h-7 text-[10px]`}>{initials}</div>
+        <Link href="/profile" className="block">
+          <Avatar user={user} initials={initials} size="w-7 h-7 text-[10px]" />
+        </Link>
       </header>
 
       {/* ─────────────────── MOBILE DRAWER (slide-out) ─────────────────── */}
@@ -151,7 +165,7 @@ export default function MobileShell({ children, user }: Props) {
             </nav>
             <div className="p-3 border-t border-white/10 space-y-2">
               <div className="flex items-center gap-3 px-2 py-2 rounded-lg bg-white/5">
-                <div className={`avatar ${user.avatarColor}`}>{initials}</div>
+                <Avatar user={user} initials={initials} size="w-[30px] h-[30px]" />
                 <div className="text-xs leading-tight flex-1 min-w-0">
                   <div className="font-semibold truncate">{user.name}</div>
                   <div className="text-white/60 truncate">{user.role}</div>
@@ -186,7 +200,7 @@ export default function MobileShell({ children, user }: Props) {
           <Link href="/ai" className="btn btn-gold"><Sparkles className="w-[18px] h-[18px]" /> Ask AI</Link>
           <WhatsAppPanel />
           <NotifBell />
-          <div className={`avatar ${user.avatarColor}`}>{initials}</div>
+          <Avatar user={user} initials={initials} size="w-[30px] h-[30px]" />
         </header>
         <section className="p-3 lg:p-6 space-y-4 lg:space-y-6">{children}</section>
       </main>

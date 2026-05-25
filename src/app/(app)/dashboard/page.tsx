@@ -8,6 +8,7 @@ import { runReconciler } from "@/lib/reconciler";
 import { activityVisual } from "@/lib/activityIcon";
 import { requireUser } from "@/lib/auth";
 import Link from "next/link";
+import MoodCheckIn from "@/components/MoodCheckIn";
 
 export const dynamic = "force-dynamic";
 
@@ -79,6 +80,11 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     prisma.activity.count({ where: { ...teamActWhere, type: ActivityType.COLD_TO_LEAD, completedAt: { gte: todayStart } } }),
   ]);
 
+  // Today's mood check-in for THIS user (drives the dashboard card)
+  const myMoodToday = await prisma.dailyMood.findUnique({
+    where: { userId_date: { userId: me.id, date: todayStart } },
+  });
+
   const connectRate = callsToday ? Math.round((connectedToday / callsToday) * 100) : 0;
 
   // Forecast computation — weighted by stage
@@ -143,6 +149,9 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
           <Link href="/action-list" className="btn btn-gold justify-center">📋 Action List</Link>
         </div>
       </div>
+
+      {/* Optional end-of-day mood check-in (renders for all logged-in users) */}
+      <MoodCheckIn existing={myMoodToday ? { mood: myMoodToday.mood, comment: myMoodToday.comment } : null} />
 
       {/* 8 KPI tiles matching your dashboard exactly */}
       <div>
