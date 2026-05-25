@@ -21,11 +21,13 @@ interface Agent { id: string; name: string; role: string; team: string | null; a
 interface Props {
   leadId: string;
   phone: string | null;
+  altPhone: string | null;
   email: string | null;
   currentOwnerId: string | null;
   canReassign: boolean;
   agents: Agent[];
   phoneMasked: string | null;
+  altPhoneMasked: string | null;
   leadName: string;
   agentName: string;
   acefoneEnabled?: boolean;        // server flag — hide button if false
@@ -36,7 +38,7 @@ interface Props {
 const telUrl = (p: string | null) => telLink(p);
 const waUrl = (p: string | null) => whatsappLink(p);
 
-export default function LeadActionsClient({ leadId, phone, email, currentOwnerId, canReassign, agents, phoneMasked, leadName, agentName, acefoneEnabled, acefoneMappedForUser }: Props) {
+export default function LeadActionsClient({ leadId, phone, altPhone, email, currentOwnerId, canReassign, agents, phoneMasked, altPhoneMasked, leadName, agentName, acefoneEnabled, acefoneMappedForUser }: Props) {
   const waGreeting = `Hi ${leadName}, this is ${agentName} from White Collar Realty. I'll be your dedicated property advisor. May I know a convenient time to call you today?`;
   const waUrlWithDraft = (p: string | null) => whatsappLink(p, waGreeting);
 
@@ -115,6 +117,25 @@ export default function LeadActionsClient({ leadId, phone, email, currentOwnerId
         <div className="text-sm text-gray-500 mt-1">
           📞 <code className="text-[#0b1a33]">{phoneMasked}</code>
           <span className="text-[10px] text-gray-400 ml-2">(real number used when you tap Call)</span>
+        </div>
+      )}
+      {/* Alt-phone (second number from the MIS sheet). Same masking convention.
+          Lalit's MIS often had two numbers per client comma-separated in one cell;
+          the second one now stores here and gets its own Call + WhatsApp buttons. */}
+      {altPhone && (
+        <div className="text-sm text-gray-500 mt-1 flex flex-wrap items-center gap-2">
+          <span>📱 alt: <code className="text-[#0b1a33]">{altPhoneMasked}</code></span>
+          <a href={telUrl(altPhone)} className="text-[11px] px-2 py-1 rounded bg-emerald-50 border border-emerald-300 text-emerald-800 font-semibold hover:bg-emerald-100 min-h-9 inline-flex items-center gap-1">
+            <Phone className="w-3 h-3" /> Call
+          </a>
+          <a
+            href={waUrl(altPhone)}
+            onClick={() => logWaClick("click")}
+            target="_blank" rel="noopener noreferrer"
+            className="text-[11px] px-2 py-1 rounded bg-[#25D366]/15 border border-[#25D366] text-[#0b6a35] font-semibold hover:bg-[#25D366]/25 min-h-9 inline-flex items-center gap-1"
+          >
+            <MessageCircle className="w-3 h-3" /> WhatsApp
+          </a>
         </div>
       )}
 

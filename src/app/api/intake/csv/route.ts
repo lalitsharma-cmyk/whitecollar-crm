@@ -2,11 +2,34 @@ import { NextResponse, type NextRequest } from "next/server";
 import Papa from "papaparse";
 import * as XLSX from "xlsx";
 import { ingestLead } from "@/lib/leadIngest";
-import { LeadSource, Potential, FundReadiness, MoodStatus, InvestTimeline, LeadStatus, CallDirection } from "@prisma/client";
+import { LeadSource, Potential, FundReadiness, MoodStatus, InvestTimeline, LeadStatus, CallDirection, AIScore } from "@prisma/client";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { parseRemarks } from "@/lib/remarkParser";
 import { extractFromRemarks, mergeSuggestions } from "@/lib/remarkAutofill";
+import { splitPhones } from "@/lib/phone";
+
+// Map the MIS "Categorization" / "Status" column to the CRM's AIScore bucket.
+// Lalit's policy: when the agent has already written something like "Highly
+// Responsive – picks calls/messages regularly" in the sheet, that's the truth.
+// Don't let the AI override it.
+function aiScoreFromCategorization(s?: string): { score: AIScore; value: number } | null {
+  if (!s) return null;
+  const n = s.toLowerCase();
+  // HOT signals
+  if (/highly responsive|hot|excited|ready to (book|buy|close)|booked|signed|paid|interested in booking/i.test(n))
+    return { score: AIScore.HOT, value: 85 };
+  // WARM signals
+  if (/responsive|warm|interested|positive|considering|will visit|meeting scheduled/i.test(n))
+    return { score: AIScore.WARM, value: 60 };
+  // COLD signals
+  if (/cold|not responsive|not picking|switched off|low interest|just browsing|window shopping|future plan/i.test(n))
+    return { score: AIScore.COLD, value: 25 };
+  // Explicit "not interested" / "dropped"
+  if (/not interested|drop my query|cancel|wrong number|do not call|stale/i.test(n))
+    return { score: AIScore.COLD, value: 10 };
+  return null;
+}
 
 type Row = Record<string, string>;
 
@@ -160,6 +183,13 @@ export async function POST(req: NextRequest) {
   // pre-assign every row to that agent. Source treated as CSV_IMPORT, status
   // bumped to CONTACTED (these aren't fresh leads). NEVER round-robin's them.
   const assignToUserId = String(fd.get("assignToUserId") ?? "").trim() || null;
+  // Force-team-override — admin picks "Dubai" or "India" in the upload UI so the
+  // entire import goes into one bucket. Without this, mixed sheets land split
+  // between teams (a row mentioning "Dubai Marina" went to Dubai, the next row
+  // mentioning "Gurgaon" went to India — same sheet, two buckets). Now: if admin
+  // picked a team, every row in this import respects that choice.
+  const forceTeamRaw = String(fd.get("forceTeam") ?? "").trim();
+  const forceTeam = forceTeamRaw === "Dubai" || forceTeamRaw === "India" ? forceTeamRaw : null;
   if (!(file instanceof File)) return NextResponse.json({ error: "No file uploaded" }, { status: 400 });
   if (file.size === 0) return NextResponse.json({ error: "File is empty (0 bytes)" }, { status: 400 });
 
@@ -200,10 +230,31 @@ export async function POST(req: NextRequest) {
   const knownProjects = (await prisma.project.findMany({ select: { name: true } })).map((p) => p.name);
 
   for (const [i, row] of rows.entries()) {
-    const name = pick(row, "customer", "name", "fullname", "leadname", "customername");
-    const phone = pick(row, "mobile", "phone", "contact", "phonenumber", "whatsapp");
+    const nameRaw = pick(row, "customer", "name", "fullname", "leadname", "customername");
+    const phoneRaw = pick(row, "mobile", "phone", "contact", "phonenumber", "whatsapp");
+    const altPhoneRaw = pick(row, "altnumber", "altphone", "alternatephone", "alternatenumber", "phone2", "secondarynumber", "secondaryphone");
     const email = pick(row, "email", "emailid", "mail");
-    if (!name && !phone && !email) continue;
+    if (!nameRaw && !phoneRaw && !email) continue;
+
+    // Split the customer cell — MIS rows like "Soumya, Ayush Gupta" with two phone
+    // numbers represent a joint inquiry (family/friend buying together). One lead,
+    // both names. First name → name, rest → altName.
+    const nameParts = (nameRaw ?? "").split(/[,;|]+|\s+(?:and|&)\s+/i)
+      .map((s) => s.trim()).filter(Boolean);
+    const name = nameParts[0] ?? "";
+    const altName = nameParts.slice(1).join(" & ") || undefined;
+
+    // Split the primary phone cell — "+919146449146, 7779990838" → first to phone,
+    // second to altPhone. Without splitting, both get concatenated into one
+    // 22-digit fake number.
+    // Fallback country: India for now (most affected sheets). If we later need
+    // per-team defaults this can read from the row's `forwardedTeam` / source.
+    const phones = splitPhones(phoneRaw, "+91");
+    const altPhones = splitPhones(altPhoneRaw, "+91");
+    const phone = phones[0];
+    // Pick the next available phone for altPhone: rest of primary cell, then
+    // any from the Alt-Number column. Cap at one for now.
+    const altPhone = phones[1] ?? altPhones.find((p) => p !== phone);
 
     try {
       const r = await ingestLead({
@@ -221,6 +272,8 @@ export async function POST(req: NextRequest) {
       if (r.deduped) deduped++; else created++;
 
       const update: Record<string, unknown> = {};
+      if (altPhone) update.altPhone = altPhone;
+      if (altName) update.altName = altName;
       const company = pick(row, "company"); if (company) update.company = company;
       const address = pick(row, "address"); if (address) update.address = address;
       const whoIsClient = pick(row, "whoisclient", "client", "clientinfo", "about");
@@ -251,8 +304,29 @@ export async function POST(req: NextRequest) {
       if (mood) update.moodStatus = mood;
       const when = parseInvestTimeline(pick(row, "whencaninvest", "timeline", "invest"));
       if (when) update.whenCanInvest = when;
-      const team = pick(row, "forwardedteam", "team");
-      if (team) update.forwardedTeam = team;
+      // Team: admin-picked override wins over per-row column. Lalit's testing
+      // sheets had rows split across India + Dubai despite all being one team's
+      // pipeline — forceTeam fixes that at import time.
+      if (forceTeam) {
+        update.forwardedTeam = forceTeam;
+        // Currency follows team automatically (AED for Dubai, INR for India)
+        if (!update.budgetCurrency) update.budgetCurrency = forceTeam === "Dubai" ? "AED" : "INR";
+      } else {
+        const team = pick(row, "forwardedteam", "team");
+        if (team) update.forwardedTeam = team;
+      }
+      // AI score from the MIS "Categorization" / "Status" column — sheet writes win
+      // over the AI rule-engine. "Highly Responsive – picks calls regularly" → HOT,
+      // "Cold / not picking" → COLD, etc.
+      const categoColumn = pick(row, "categorization", "category");
+      const callStatusColumn = pick(row, "status", "callstatus");
+      const aiFromSheet = aiScoreFromCategorization(categoColumn) ?? aiScoreFromCategorization(callStatusColumn);
+      if (aiFromSheet) {
+        update.aiScore = aiFromSheet.score;
+        update.aiScoreValue = aiFromSheet.value;
+        update.aiSummary = `From sheet "Categorization": ${categoColumn ?? callStatusColumn}`;
+        update.aiUpdatedAt = new Date();
+      }
       const remarks = pick(row, "remarks", "remark");
       if (remarks) update.remarks = remarks;
       // Historic lead date — every MIS sheet's first column is "Date" (the day

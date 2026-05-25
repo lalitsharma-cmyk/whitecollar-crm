@@ -10,7 +10,7 @@ import { getTestingModeEnabled } from "@/lib/settings";
 // for status/stage changes. Only allows whitelisted fields.
 
 const ALLOWED: Record<string, "string" | "date" | "number" | "enum" | "bool"> = {
-  name: "string", phone: "string", email: "string", company: "string",
+  name: "string", altName: "string", phone: "string", altPhone: "string", email: "string", company: "string",
   city: "string", country: "string", address: "string",
   configuration: "string", currentStatus: "string", categorization: "string",
   tags: "string", notesShort: "string", remarks: "string",

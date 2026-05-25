@@ -155,7 +155,15 @@ model Lead {
   id              String      @id @default(cuid())
   // contact info
   name            String
+  // Second person on the same row — e.g. MIS cell "Soumya, Ayush Gupta" with two
+  // phone numbers means family/joint buyer. Both belong to ONE lead (joint inquiry),
+  // second name lives here, second phone in altPhone. Lead detail shows both.
+  altName         String?
   phone           String?
+  // Second number. Many MIS sheets put "+919146449146, 7779990838" into one cell —
+  // the importer now splits on `,`/`;`/`/`/newline and stores the extra number here.
+  // Lead detail renders separate Call + WhatsApp buttons for it.
+  altPhone        String?
   email           String?
   company         String?     // where the client works — matters for HNI profiling
   city            String?

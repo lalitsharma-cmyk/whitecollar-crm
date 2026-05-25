@@ -61,7 +61,12 @@ export default function LeadsListClient({ leads, canBulk, agents, showSource = t
                     <div className="font-bold text-sm truncate">{l.name}</div>
                     {l.aiScore && <span className={`chip ${aiChip(l.aiScore)} text-[9px] flex-none`}>{l.aiScore}</span>}
                   </div>
-                  <div className="text-[11px] text-gray-500 truncate">{l.phone}{l.email ? ` · ${l.email}` : ""}</div>
+                  {/* Phone gets its own line — email moved to lead detail page only.
+                      Lalit asked: "no need to show email id here" and "number should
+                      be shown under number field". */}
+                  {l.phone && (
+                    <div className="text-[11px] text-gray-600 truncate mt-0.5">📞 {l.phone}</div>
+                  )}
                   <div className="flex items-center gap-1 mt-1 flex-wrap">
                     <span className={`chip ${l.statusChip} text-[9px]`}>{l.statusName.replaceAll("_", " ")}</span>
                     {showSource && <span className={`chip ${l.srcChip} text-[9px]`}>{l.srcLabel}</span>}
@@ -110,7 +115,8 @@ export default function LeadsListClient({ leads, canBulk, agents, showSource = t
                   <td>{canBulk && <input type="checkbox" checked={selected.has(l.id)} onChange={() => toggle(l.id)} />}</td>
                   <td>
                     <Link href={`/leads/${l.id}`} className="font-semibold text-[#0b1a33] hover:underline">{l.name}</Link>
-                    <div className="text-xs text-gray-500">{l.phone}{l.email ? ` · ${l.email}` : ""}</div>
+                    {/* Phone on its own line (no email). Email is on the lead detail page only. */}
+                    {l.phone && <div className="text-xs text-gray-500">📞 {l.phone}</div>}
                     {l.interest && <div className="text-[11px] text-gray-500">→ {l.interest}</div>}
                   </td>
                   <td>{l.team ? <span className={`chip ${teamChip}`}>{l.team}</span> : <span className="text-gray-400">—</span>}</td>

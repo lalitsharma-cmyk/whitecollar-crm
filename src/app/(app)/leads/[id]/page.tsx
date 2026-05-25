@@ -150,7 +150,7 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
           <div className="flex items-start justify-between flex-wrap gap-3">
             <div>
               <div className="flex flex-wrap items-center gap-2">
-                <h2 className="text-xl font-bold">{lead.name}</h2>
+                <h2 className="text-xl font-bold">{lead.name}{lead.altName && <span className="text-base font-medium text-gray-600"> & {lead.altName}</span>}</h2>
                 {lead.aiScore && <span className={`chip ${aiClass}`}>{lead.aiScore} · {lead.aiScoreValue}</span>}
                 <span className="chip chip-warm">{lead.status.replaceAll("_"," ")}</span>
                 {lead.currentStatus && <span className="chip src">{lead.currentStatus}</span>}
@@ -165,11 +165,13 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
               <LeadActionsClient
                 leadId={lead.id}
                 phone={lead.phone}
+                altPhone={lead.altPhone}
                 email={lead.email}
                 currentOwnerId={lead.ownerId}
                 canReassign={canReassign}
                 agents={agents.map(a => ({ id: a.id, name: a.name, role: a.role, team: a.team, avatarColor: a.avatarColor }))}
                 phoneMasked={maskPhone(lead.phone)}
+                altPhoneMasked={maskPhone(lead.altPhone)}
                 leadName={lead.name}
                 agentName={me.name}
                 acefoneEnabled={acefoneEnabled()}
@@ -257,6 +259,10 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
               <InlineEdit leadId={lead.id} field="company" value={lead.company ?? ""} placeholder="e.g. Emirates NBD, TCS" />
             </div>
             <div>
+              <div className="text-xs text-gray-500">📱 Alt phone</div>
+              <InlineEdit leadId={lead.id} field="altPhone" value={lead.altPhone ?? ""} placeholder="+91…" />
+            </div>
+            <div>
               <div className="text-xs text-gray-500">Potential</div>
               <InlineEdit leadId={lead.id} field="potential" type="select" value={lead.potential ?? ""}
                 options={[{value:"HIGH",label:"High"},{value:"MEDIUM",label:"Medium"},{value:"LOW",label:"Low"},{value:"UNKNOWN",label:"Unknown"}]} />
@@ -278,7 +284,22 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
             </div>
             <div>
               <div className="text-xs text-gray-500">Categorization</div>
-              <InlineEdit leadId={lead.id} field="categorization" value={lead.categorization ?? ""} />
+              {/* Dropdown with the values Lalit's team actually uses in the MIS sheet.
+                  Free-text still allowed via the import path; UI nudges agents toward
+                  the canonical set so the Categorization → AI-score mapping works. */}
+              <InlineEdit leadId={lead.id} field="categorization" type="select" value={lead.categorization ?? ""}
+                options={[
+                  {value:"🔥 Highly Responsive — picks calls regularly",label:"🔥 Highly Responsive"},
+                  {value:"🙂 Responsive",label:"🙂 Responsive"},
+                  {value:"🤔 Sometimes responsive",label:"🤔 Sometimes responsive"},
+                  {value:"🧊 Cold / not picking",label:"🧊 Cold / not picking"},
+                  {value:"📵 Switched off / wrong number",label:"📵 Switched off / wrong number"},
+                  {value:"❌ Not interested / dropped",label:"❌ Not interested / dropped"},
+                  {value:"NRI Investor",label:"NRI Investor"},
+                  {value:"NRI End-user",label:"NRI End-user"},
+                  {value:"UAE Resident",label:"UAE Resident"},
+                  {value:"First-time buyer",label:"First-time buyer"},
+                ]} />
             </div>
             <div>
               <div className="text-xs text-gray-500">💼 Profession</div>

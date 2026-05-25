@@ -6,21 +6,31 @@ export default function CsvUploader() {
   const router = useRouter();
   const [file, setFile] = useState<File | null>(null);
   const [campaign, setCampaign] = useState("");
+  // Team override — admin picks which team this whole import belongs to.
+  // Lalit reported same sheet landing as both India + Dubai when auto-detection
+  // mis-guessed per row. "ask" forces the picker to be deliberate (no default).
+  const [forceTeam, setForceTeam] = useState<"ask" | "Dubai" | "India">("ask");
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<{
     fileType?: string; sheetName?: string; allSheets?: string[];
     rowsProcessed?: number; created: number; deduped: number; enriched: number; callLogsCreated?: number;
+    autofilled?: number;
     detectedColumns?: string[]; errors?: string[];
   } | null>(null);
   const [err, setErr] = useState<{ msg: string; hint?: string } | null>(null);
 
   async function upload() {
     if (!file) return;
+    if (forceTeam === "ask") {
+      setErr({ msg: "Pick a team for this import first (Dubai or India)." });
+      return;
+    }
     setBusy(true); setErr(null); setResult(null);
     try {
       const fd = new FormData();
       fd.append("file", file);
       if (campaign) fd.append("campaign", campaign);
+      fd.append("forceTeam", forceTeam);
       const res = await fetch("/api/intake/csv", { method: "POST", body: fd });
       const json = await res.json().catch(() => ({ error: "Server returned invalid response" }));
       if (!res.ok) {
@@ -36,6 +46,27 @@ export default function CsvUploader() {
 
   return (
     <div>
+      {/* MANDATORY team picker — must be set before upload button enables */}
+      <div className={`mb-3 p-3 rounded-lg border-2 ${forceTeam === "ask" ? "border-amber-400 bg-amber-50" : "border-emerald-300 bg-emerald-50"}`}>
+        <div className="text-xs font-bold uppercase tracking-widest text-gray-700 mb-1.5">
+          Which team are these leads for? <span className="text-red-600">*</span>
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <label className={`flex items-center gap-2 p-2.5 rounded-lg border cursor-pointer min-h-11 ${forceTeam === "Dubai" ? "border-emerald-500 bg-white" : "border-[#e5e7eb] bg-white/50"}`}>
+            <input type="radio" name="forceTeam" value="Dubai" checked={forceTeam === "Dubai"} onChange={() => setForceTeam("Dubai")} />
+            <span className="text-sm font-semibold">🇦🇪 Dubai team</span>
+            <span className="text-[10px] text-gray-500">· AED</span>
+          </label>
+          <label className={`flex items-center gap-2 p-2.5 rounded-lg border cursor-pointer min-h-11 ${forceTeam === "India" ? "border-emerald-500 bg-white" : "border-[#e5e7eb] bg-white/50"}`}>
+            <input type="radio" name="forceTeam" value="India" checked={forceTeam === "India"} onChange={() => setForceTeam("India")} />
+            <span className="text-sm font-semibold">🇮🇳 India team</span>
+            <span className="text-[10px] text-gray-500">· ₹</span>
+          </label>
+        </div>
+        <p className="text-[11px] text-gray-600 mt-1.5">
+          Every row in this file goes to the picked team. Currency follows automatically.
+        </p>
+      </div>
       <input
         type="text"
         placeholder="Campaign (optional, e.g. Dubai Expo 2026)"

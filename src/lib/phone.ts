@@ -84,6 +84,45 @@ export function toE164(raw: string | null | undefined, fallbackDial?: string): s
   return "+" + dialDigits + s;
 }
 
+/**
+ * Splits a raw phone cell that may contain MULTIPLE numbers and normalises each.
+ *
+ * MIS / Excel cells frequently look like:
+ *   "+919146449146, 7779990838"        ← India primary + alt
+ *   "+91 98765 43210 / 9123456789"     ← slash separator
+ *   "+971501234567;+971559876543"      ← semicolon
+ *   "+91 98765 43210\n+91 91234 56789" ← newline inside cell
+ *
+ * Without splitting, `toE164` strips every non-digit and concatenates both into
+ * one impossibly-long fake number (the original bug Lalit spotted: a 22-digit
+ * "phone" got stored when two real numbers were comma-separated).
+ *
+ * Returns an array of E.164-normalised strings, de-duplicated, in input order.
+ * Empty array if nothing usable.
+ */
+export function splitPhones(raw: string | null | undefined, fallbackDial?: string): string[] {
+  if (!raw) return [];
+  // Split on common separators. A bare space is intentionally NOT a separator
+  // because numbers like "+91 98765 43210" use spaces internally.
+  // Heuristic for "+ followed by digits with spaces" sticks together; comma/
+  // semicolon/slash/newline/pipe split. " and " / " & " also split.
+  const parts = String(raw)
+    .split(/[,;|/\n\r]+|\s+(?:and|&)\s+/i)
+    .map((p) => p.trim())
+    .filter((p) => p.length > 0);
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const p of parts) {
+    const e = toE164(p, fallbackDial);
+    if (!e) continue;
+    // De-dupe (same number written two ways in the same cell)
+    if (seen.has(e)) continue;
+    seen.add(e);
+    out.push(e);
+  }
+  return out;
+}
+
 /** Extracts just the WhatsApp-ready digits (no leading +, no spaces). */
 export function whatsappDigits(e164OrAny: string | null | undefined, fallbackDial?: string): string | null {
   const e = toE164(e164OrAny, fallbackDial);
