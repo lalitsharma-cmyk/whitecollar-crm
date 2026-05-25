@@ -633,6 +633,26 @@ model Template {
   @@index([trigger])
 }
 
+// ──────────────────────────────────────────────────────────
+// SAVED FILTERS — named views on /leads. Store the URL query string
+// (e.g. "ai=HOT&team=Dubai") and re-apply with one click. Shared filters
+// visible to whole team; private ones only to the creator.
+// ──────────────────────────────────────────────────────────
+model SavedFilter {
+  id          String   @id @default(cuid())
+  name        String
+  queryString String   @db.Text   // e.g. "ai=HOT&team=Dubai&sort=touched_asc"
+  icon        String?              // emoji, e.g. "🔥"
+  createdById String?              // null = system seed (visible to all, only admin can delete)
+  isShared    Boolean  @default(true) // visible to whole team if true
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([createdById])
+  @@index([isShared, sortOrder])
+}
+
 // =====================================================
 // NOTIFICATIONS — in-app bell + per-user inbox
 // =====================================================

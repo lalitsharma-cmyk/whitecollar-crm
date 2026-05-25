@@ -5,6 +5,7 @@ import Link from "next/link";
 import { fmtMoney } from "@/lib/money";
 import { requireUser } from "@/lib/auth";
 import LeadFilters from "@/components/LeadFilters";
+import SavedFiltersBar from "@/components/SavedFiltersBar";
 import LeadsListClient from "@/components/LeadsListClient";
 import { runReconciler } from "@/lib/reconciler";
 import { leadScopeWhere } from "@/lib/leadScope";
@@ -102,6 +103,8 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
           <Link href="/leads/new" className="btn btn-primary flex-1 sm:flex-none justify-center">+ New Lead</Link>
         </div>
       </div>
+
+      <SavedFiltersBar />
 
       <LeadFilters
         agents={agents.map((a) => ({ id: a.id, name: a.name }))}
