@@ -8,6 +8,7 @@ import { currentWindow } from "@/lib/assignmentWindow";
 import { sendAfterHoursWelcome } from "@/lib/whatsappOutbound";
 import { sendSpeedToLeadResponses } from "@/lib/speedToLead";
 import { fireWorkflowTrigger } from "@/lib/workflowEngine";
+import { getTestingModeEnabled } from "@/lib/settings";
 
 export interface RawLeadInput {
   name: string;
@@ -141,8 +142,11 @@ export async function ingestLead(input: RawLeadInput) {
   // Overnight (10pm-10am IST) — fire auto-WhatsApp welcome from company number.
   // Best-effort: stub mode just logs to AuditLog + WhatsAppMessage; real send
   // happens once admin sets WA_BUSINESS_TOKEN.
+  // Testing-mode kill-switch: skip — Lalit doesn't want overnight auto-WA going
+  // to real client numbers while he's importing existing-client data for testing.
   const window = currentWindow();
-  if (window.kind === "OVERNIGHT_QUEUE" && lead.phone) {
+  const testingMode = await getTestingModeEnabled();
+  if (window.kind === "OVERNIGHT_QUEUE" && lead.phone && !testingMode) {
     sendAfterHoursWelcome(lead.id, lead.phone, lead.name).catch(() => {});
   }
 
@@ -164,7 +168,10 @@ export async function ingestLead(input: RawLeadInput) {
   // ── Speed-to-lead auto-response: fire-and-forget WA + email under 60s ──
   // Runs after the after-hours welcome trigger so the WA-dedupe check inside
   // sees the just-created WhatsAppMessage row and skips the duplicate send.
-  sendSpeedToLeadResponses(lead.id).catch(() => {});
+  // Testing-mode kill-switch: skip (speedToLead.enabled also independently gates this).
+  if (!testingMode) {
+    sendSpeedToLeadResponses(lead.id).catch(() => {});
+  }
 
   // ── Workflow engine: fire any LEAD_CREATED rules ──
   fireWorkflowTrigger("LEAD_CREATED", lead.id, { source: input.source }).catch(() => {});

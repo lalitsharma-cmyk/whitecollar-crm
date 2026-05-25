@@ -10,6 +10,17 @@ const DEFAULTS = {
   // every orphan — every new lead stays unassigned until admin manually routes.
   // Flip OFF before bulk imports of existing-client data.
   "roundRobin.enabled": "true",
+  // MASTER TESTING-MODE KILL-SWITCH. When ON, every automated outbound action
+  // and every nagging escalation pauses — for using the CRM with real client
+  // data without spamming them or filling everyone's bell with fake SLA breaches.
+  // Specifically suppresses:
+  //   • 15-min call SLA escalation (reconciler section 2)
+  //   • "Needs You" auto-flagging (reconciler section 3)
+  //   • Overnight auto-WA welcome (leadIngest)
+  //   • Speed-to-lead first-touch WA + email (speedToLead)
+  //   • Round-robin auto-assign (reconciler section 1)
+  // Default OFF — only Lalit flips this ON during go-live testing.
+  "testingMode.enabled": "false",
 };
 
 export async function getSetting(key: string): Promise<string> {
@@ -43,4 +54,10 @@ export async function getRoundRobinEnabled(): Promise<boolean> {
   const raw = await getSetting("roundRobin.enabled");
   if (!raw) return true; // default ON
   return raw.toLowerCase() !== "false";
+}
+
+export async function getTestingModeEnabled(): Promise<boolean> {
+  const raw = await getSetting("testingMode.enabled");
+  if (!raw) return false; // default OFF
+  return raw.toLowerCase() === "true";
 }

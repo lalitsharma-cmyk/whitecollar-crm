@@ -1,26 +1,48 @@
 import { requireUser } from "@/lib/auth";
-import { getTravelRatePerKmInr, getSpeedToLeadEnabled, getRoundRobinEnabled } from "@/lib/settings";
+import { getTravelRatePerKmInr, getSpeedToLeadEnabled, getRoundRobinEnabled, getTestingModeEnabled } from "@/lib/settings";
 import TravelRateEditor from "@/components/TravelRateEditor";
 import SpeedToLeadToggle from "@/components/SpeedToLeadToggle";
 import RoundRobinToggle from "@/components/RoundRobinToggle";
+import TestingModeToggle from "@/components/TestingModeToggle";
 
 export const dynamic = "force-dynamic";
 
 export default async function SettingsPage() {
   const me = await requireUser();
-  const [travelRate, speedToLeadOn, roundRobinOn] = await Promise.all([
+  const [travelRate, speedToLeadOn, roundRobinOn, testingModeOn] = await Promise.all([
     getTravelRatePerKmInr(),
     getSpeedToLeadEnabled(),
     getRoundRobinEnabled(),
+    getTestingModeEnabled(),
   ]);
   const isAdmin = me.role === "ADMIN";
   return (
     <>
       <h1 className="text-xl sm:text-2xl font-bold">Settings</h1>
 
-      {/* Round-robin kill-switch — most important during bulk imports */}
-      <div className={`card p-5 max-w-2xl border-l-4 ${roundRobinOn ? "border-emerald-500" : "border-amber-500 bg-amber-50"}`}>
-        <div className="font-semibold flex items-center gap-2">🔁 Round-robin auto-assign</div>
+      {/* MASTER kill-switch — pauses every auto-action. Top of page, loudest banner. */}
+      <div className={`card p-5 max-w-2xl border-l-4 ${testingModeOn ? "border-amber-500 bg-amber-50" : "border-emerald-500"}`}>
+        <div className="font-semibold flex items-center gap-2 text-base">🧪 Testing mode (master switch)</div>
+        <p className="text-xs text-gray-600 mt-1">
+          Flip ON while loading real client data so nothing leaks out or nags the team.
+          <b className="text-amber-800"> One toggle pauses ALL of these at once:</b>
+        </p>
+        <ul className="text-xs text-gray-700 mt-2 list-disc list-inside space-y-0.5">
+          <li>🔁 Round-robin auto-assign (5-min orphan sweep)</li>
+          <li>⏱ 15-min call SLA escalation (no admin/agent alerts)</li>
+          <li>🚩 "Needs You" auto-flagging (no banners on stale leads)</li>
+          <li>🌙 Overnight auto-WhatsApp welcome (10pm-10am IST)</li>
+          <li>🚀 Speed-to-lead first-touch WA + email</li>
+        </ul>
+        <p className="text-[11px] text-gray-500 mt-2">
+          Manual actions (logging calls, clicking Call/WhatsApp/Email buttons) still work normally. Flip OFF for go-live.
+        </p>
+        <TestingModeToggle initial={testingModeOn} canEdit={isAdmin} />
+      </div>
+
+      {/* Round-robin kill-switch — individual control (also gated by testing-mode above) */}
+      <div className={`card p-5 max-w-2xl border-l-4 ${roundRobinOn && !testingModeOn ? "border-emerald-500" : "border-amber-500 bg-amber-50"}`}>
+        <div className="font-semibold flex items-center gap-2">🔁 Round-robin auto-assign {testingModeOn && <span className="text-[10px] text-amber-700">(also paused by testing mode)</span>}</div>
         <p className="text-xs text-gray-500 mt-1">
           When ON, every unassigned lead older than 5 min gets routed to a present agent automatically.
           <b className="text-amber-700"> Switch OFF before bulk-uploading existing-client lists</b> so they don't get
@@ -41,7 +63,7 @@ export default async function SettingsPage() {
 
       {/* Speed-to-lead auto-response (admin-only) */}
       <div className="card p-5 max-w-2xl">
-        <div className="font-semibold flex items-center gap-2">🚀 Speed-to-lead auto-response</div>
+        <div className="font-semibold flex items-center gap-2">🚀 Speed-to-lead auto-response {testingModeOn && <span className="text-[10px] text-amber-700">(also paused by testing mode)</span>}</div>
         <p className="text-xs text-gray-500 mt-1">
           When ON, every brand-new lead automatically receives the active FIRST_QUERY WhatsApp + email
           templates within seconds of intake. Skips during overnight 10pm-10am IST (after-hours welcome handles that).

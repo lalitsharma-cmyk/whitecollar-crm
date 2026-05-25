@@ -2,7 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { notify, notifyRoles } from "@/lib/notify";
 import { LeadStatus } from "@prisma/client";
 import { chooseOwnerForNewLead } from "@/lib/assignmentWindow";
-import { getRoundRobinEnabled } from "@/lib/settings";
+import { getRoundRobinEnabled, getTestingModeEnabled } from "@/lib/settings";
 
 // The reconciler runs on every dashboard/leads page load (cheap, deduped).
 // It enforces two SLAs without needing a separate cron service:
@@ -34,12 +34,18 @@ export async function runReconciler(): Promise<ReconcileResult> {
 
   let autoAssigned = 0, slaEscalated = 0;
 
+  // MASTER TESTING-MODE switch — when ON, every auto-action in this reconciler
+  // is paused (orphan sweep, SLA escalation, needs-you flagging). Lalit flips it
+  // while loading real client data so nothing nags the team or leaks to clients.
+  const testingMode = await getTestingModeEnabled();
+
   // ── 1) Auto-assign anything unowned >5 minutes ──────────────────────
   // Admin kill-switch: when OFF, skip just the orphan sweep (SLA escalation
   // and "needs you" flagging in sections 2-3 still run). Used during bulk
   // imports of existing-client data so nothing gets stolen by round-robin
   // before admin manually routes.
-  const roundRobinOn = await getRoundRobinEnabled();
+  // Testing mode also suppresses the orphan sweep.
+  const roundRobinOn = !testingMode && await getRoundRobinEnabled();
   const cutoffAssign = new Date(Date.now() - AUTO_ASSIGN_AFTER_MIN * 60 * 1000);
   const orphans = roundRobinOn ? await prisma.lead.findMany({
     where: {
@@ -98,7 +104,9 @@ export async function runReconciler(): Promise<ReconcileResult> {
   }
 
   // ── 2) Escalate 15-min call SLA breaches ───────────────────────────
-  const overdue = await prisma.lead.findMany({
+  // Testing mode: skip — Lalit doesn't want fake "missed SLA" pings to clutter
+  // the bell while he's importing real client data and not actually calling.
+  const overdue = testingMode ? [] : await prisma.lead.findMany({
     where: {
       slaFirstCallBy: { lte: new Date() },
       slaEscalated: false,
@@ -139,7 +147,8 @@ export async function runReconciler(): Promise<ReconcileResult> {
 
   // ── 3) "Needs You" flag — leads where manager push could help ──
   // Conditions: closing-stage + no contact 24h, OR 3+ consecutive not-picked attempts
-  const closingLeads = await prisma.lead.findMany({
+  // Testing mode: skip auto-flagging — admin sees raw data without nagging banners.
+  const closingLeads = testingMode ? [] : await prisma.lead.findMany({
     where: {
       status: { in: ["NEGOTIATION", "SITE_VISIT", "QUALIFIED"] },
       needsManagerReview: false,

@@ -6,6 +6,7 @@ import LeadsTrendChart from "@/components/charts/LeadsTrendChart";
 import SourceMixChart from "@/components/charts/SourceMixChart";
 import { fmtMoney, fmtMoneyDual } from "@/lib/money";
 import { runReconciler } from "@/lib/reconciler";
+import { getTestingModeEnabled } from "@/lib/settings";
 import { activityVisual } from "@/lib/activityIcon";
 import { requireUser } from "@/lib/auth";
 import Link from "next/link";
@@ -150,8 +151,19 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     closeable: Number(r.closeable), needs: Number(r.needs), clients: Number(r.clients),
   }));
 
+  const testingModeOn = await getTestingModeEnabled();
+
   return (
     <>
+      {testingModeOn && (
+        <div className="card p-3 border-l-4 border-amber-500 bg-amber-50 mb-3">
+          <div className="text-sm font-semibold text-amber-900">🧪 Testing mode is ON — every auto-action paused</div>
+          <div className="text-xs text-amber-800 mt-0.5">
+            Round-robin, SLA escalation, "Needs You" flagging, overnight WhatsApp, and speed-to-lead are all suppressed.
+            Manual calls/WA still work. <Link href="/settings" className="underline font-semibold">Switch to live mode →</Link>
+          </div>
+        </div>
+      )}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
           <h1 className="text-xl sm:text-2xl font-bold">
