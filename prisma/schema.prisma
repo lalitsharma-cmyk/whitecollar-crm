@@ -39,6 +39,11 @@ model User {
   // Profile photo — stored as base64 dataURL (kept small, no S3 needed for ~10 users).
   // Empty string ("" or null) → fall back to initials avatar.
   photoUrl              String?
+  // Reporting line — Managers see leads owned by their direct reports.
+  // Self-ref FK. Set in /team page (admin only).
+  managerId     String?
+  manager       User?      @relation("Reports", fields: [managerId], references: [id])
+  reports       User[]     @relation("Reports")
   avatarColor   String?    // tailwind class e.g. "bg-indigo-500"
   active        Boolean    @default(true)
   createdAt     DateTime   @default(now())
@@ -583,6 +588,49 @@ model IntakeKey {
 model Setting {
   key   String @id
   value String
+}
+
+// ──────────────────────────────────────────────────────────
+// MESSAGE TEMPLATES — WhatsApp + Email library with placeholders.
+// Placeholders auto-substituted at send time:
+//   {{name}}      → lead first name
+//   {{fullname}}  → lead full name
+//   {{agent}}     → sender's first name
+//   {{project}}   → first interested project name (if any)
+//   {{budget}}    → formatted budget min (e.g. "AED 2.5M")
+//   {{phone}}     → lead phone (E.164)
+// Trigger lets the picker auto-suggest the right template for the stage.
+// ──────────────────────────────────────────────────────────
+enum TemplateKind {
+  WHATSAPP
+  EMAIL
+}
+
+enum TemplateTrigger {
+  FIRST_QUERY        // brand-new lead, first ever contact
+  AFTER_CALL         // just had a call, sending follow-up
+  AFTER_NOT_PICKED   // 1+ missed-call attempts, re-engage
+  SCHEDULE_VISIT     // book a site visit
+  POST_VISIT         // after the site visit
+  NEGOTIATION        // discussing price / payment plan
+  REENGAGE_COLD      // dormant for weeks, fresh nudge
+  GENERIC            // catch-all
+}
+
+model Template {
+  id          String          @id @default(cuid())
+  kind        TemplateKind
+  name        String
+  trigger     TemplateTrigger @default(GENERIC)
+  subject     String?         // only used for EMAIL
+  body        String          @db.Text
+  active      Boolean         @default(true)
+  createdById String?
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  @@index([kind, active])
+  @@index([trigger])
 }
 
 // =====================================================

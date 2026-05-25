@@ -3,6 +3,7 @@ import { requireUser } from "@/lib/auth";
 import { acefoneEnabled } from "@/lib/acefone";
 import AcefoneAgentIdEdit from "@/components/AcefoneAgentIdEdit";
 import WhatsAppNumberEdit from "@/components/WhatsAppNumberEdit";
+import ManagerPicker from "@/components/ManagerPicker";
 
 export const dynamic = "force-dynamic";
 
@@ -56,9 +57,10 @@ export default async function TeamPage() {
       </div>
 
       <div className="card overflow-x-auto">
-        <table className="tbl min-w-[880px]">
+        <table className="tbl min-w-[980px]">
           <thead><tr>
             <th>User</th><th>Role</th><th>Team</th>
+            <th>Manager</th>
             <th>Acefone agent id</th>
             <th>Company WhatsApp #</th>
             <th>Active leads</th><th>Total calls</th>
@@ -74,6 +76,14 @@ export default async function TeamPage() {
                 </td>
                 <td><span className={`chip ${roleChip[u.role]}`}>{u.role}</span></td>
                 <td>{u.team ?? "—"}</td>
+                <td>
+                  <ManagerPicker
+                    userId={u.id}
+                    initial={u.managerId}
+                    candidates={users.map(c => ({ id: c.id, name: c.name }))}
+                    canEdit={canEditAcefone}
+                  />
+                </td>
                 <td>
                   <AcefoneAgentIdEdit userId={u.id} initial={u.acefoneAgentId} canEdit={canEditAcefone} />
                 </td>

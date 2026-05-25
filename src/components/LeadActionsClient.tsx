@@ -3,6 +3,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Phone, MessageCircle, Mail, AlertCircle, Sparkles } from "lucide-react";
 import { whatsappLink, telLink } from "@/lib/phone";
+import TemplatePickerButton from "./TemplatePickerButton";
 
 const OUTCOMES = [
   { v: "CONNECTED",        label: "✅ Connected" },
@@ -123,16 +124,9 @@ export default function LeadActionsClient({ leadId, phone, email, currentOwnerId
             <Phone className="w-5 h-5 mb-1" /> Call
           </a>
         )}
-        {phone && (
-          <a href={waUrl(phone)} onClick={() => logWaClick("click")} target="_blank" rel="noopener noreferrer" className="flex flex-col items-center justify-center py-3 rounded-xl bg-[#25D366] text-white font-semibold hover:opacity-90 transition shadow-sm">
-            <MessageCircle className="w-5 h-5 mb-1" /> WhatsApp
-          </a>
-        )}
-        {email && (
-          <a href={`mailto:${email}`} className="flex flex-col items-center justify-center py-3 rounded-xl bg-sky-600 text-white font-semibold hover:bg-sky-700 transition shadow-sm">
-            <Mail className="w-5 h-5 mb-1" /> Email
-          </a>
-        )}
+        {/* TemplatePicker replaces the bare WA + Email buttons — opens a chooser so the agent picks a template, placeholders filled per-lead. */}
+        <TemplatePickerButton lead={{ id: leadId, name: leadName, phone, email }} kind="WHATSAPP" />
+        <TemplatePickerButton lead={{ id: leadId, name: leadName, phone, email }} kind="EMAIL" />
         <button onClick={() => setShowCall(true)} className="flex flex-col items-center justify-center py-3 rounded-xl bg-[#c9a24b] text-[#0b1a33] font-semibold hover:bg-[#e7c97a] transition shadow-sm">
           <span className="text-base mb-1">📝</span> Log Call
         </button>

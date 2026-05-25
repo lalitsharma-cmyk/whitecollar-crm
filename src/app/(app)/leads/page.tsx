@@ -38,7 +38,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
   // 1. Agents only see leads they own — leadScopeWhere applies the ownerId filter.
   // 2. By default, hide cold-call leads (they live in /cold-calls). User can opt-in
   //    by adding ?showCold=1 to the URL.
-  const scope = leadScopeWhere(me);
+  const scope = await leadScopeWhere(me);
   const where: Prisma.LeadWhereInput = sp.showCold === "1"
     ? { ...scope }
     : { ...scope, isColdCall: false };

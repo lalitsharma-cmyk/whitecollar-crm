@@ -72,7 +72,7 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
   // notFound() because Next.js app-router notFound() renders the 404 UI but
   // returns HTTP 200 — confusing for auditors. Redirect is cleaner UX too:
   // agent lands back on their own list rather than a dead end.
-  if (!canTouchLead(me, lead)) redirect("/leads");
+  if (!(await canTouchLead(me, lead))) redirect("/leads");
 
   const lastBy = (t: string) => meetingActs.find(a => a.type === t)?.completedAt ?? meetingActs.find(a => a.type === t)?.scheduledAt ?? null;
   const meetingCounts = {
