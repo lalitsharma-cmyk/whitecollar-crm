@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { LeadStatus, LeadSource, AIScore, CallOutcome, ActivityStatus, ActivityType, Prisma } from "@prisma/client";
 import { formatDistanceToNow, startOfDay } from "date-fns";
+import { fmtIST } from "@/lib/datetime";
 import LeadsTrendChart from "@/components/charts/LeadsTrendChart";
 import SourceMixChart from "@/components/charts/SourceMixChart";
 import { fmtMoney, fmtMoneyDual } from "@/lib/money";
@@ -158,7 +159,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
              view === "India" ? "🇮🇳 India team — Sales Command Center" :
              "Sales Command Center (all teams)"}
           </h1>
-          <p className="text-xs sm:text-sm text-gray-500">{new Date().toLocaleDateString("en-US", { weekday: "long", day: "numeric", month: "long", year: "numeric" })} · Live data</p>
+          <p className="text-xs sm:text-sm text-gray-500">{new Date().toLocaleDateString("en-US", { weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: "Asia/Kolkata" })} · {new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Kolkata" })} IST · Live data</p>
         </div>
         <div className="flex gap-2 flex-wrap items-center self-start sm:self-auto">
           {isAdminOrMgr && (
@@ -320,7 +321,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
               <Link key={a.id} href={a.lead ? `/leads/${a.lead.id}` : "#"} className="flex items-center justify-between p-3 rounded-lg border border-[#e5e7eb] hover:border-[#c9a24b]">
                 <div>
                   <div className="text-sm font-semibold">{a.title}{a.lead && ` · ${a.lead.name}`}</div>
-                  <div className="text-xs text-gray-500">{a.scheduledAt && new Date(a.scheduledAt).toLocaleString()}</div>
+                  <div className="text-xs text-gray-500">{a.scheduledAt && `${fmtIST(a.scheduledAt)} IST`}</div>
                 </div>
                 <span className="chip chip-new">{a.type}</span>
               </Link>

@@ -48,6 +48,23 @@ export default function InlineEdit({ leadId, field, label, value, type = "text",
   function cancel() { setV(value == null ? "" : String(value)); setEditing(false); setErr(null); }
 
   if (!editing) {
+    // Textarea fields (remarks, whoIsClient, etc.) preserve line breaks + multi-line
+    // formatting in the read-only view — otherwise multi-line imported text from
+    // Google Sheets collapses to one visual line.
+    if (type === "textarea") {
+      return (
+        <div
+          onClick={() => setEditing(true)}
+          className={`cursor-pointer hover:bg-amber-50 rounded p-1 -mx-1 whitespace-pre-wrap ${className ?? ""}`}
+          title="Click to edit"
+        >
+          {value == null || value === ""
+            ? <span className="text-gray-400 italic">{placeholder ?? "click to set"}</span>
+            : <>{prefix}{String(value)}</>}
+          <span className="text-[10px] text-gray-400 ml-1">✎</span>
+        </div>
+      );
+    }
     return (
       <span
         onClick={() => setEditing(true)}

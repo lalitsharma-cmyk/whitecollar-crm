@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { notFound, redirect } from "next/navigation";
 import { format, formatDistanceToNow } from "date-fns";
+import { fmtIST, fmtISTParen } from "@/lib/datetime";
 import Link from "next/link";
 import { fmtMoney } from "@/lib/money";
 import { requireUser } from "@/lib/auth";
@@ -206,6 +207,22 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
           </div>
         </div>
 
+        {/* Remarks — verbatim from Google Sheet / CSV import. Multi-line, no parsing.
+            Lalit asked: "Remarks section should came as it is from google sheet for each lead."
+            We store the raw remarks cell on Lead.remarks and render it whitespace-pre-wrap
+            here so every line break + comma + agent annotation stays exactly as imported.
+            The auto-parsed per-date entries still appear in Call history below. */}
+        {lead.remarks && (
+          <div className="card p-5 border-l-4 border-[#0b1a33]">
+            <div className="flex items-center justify-between gap-2 mb-2">
+              <div className="font-semibold flex items-center gap-2">📝 Remarks <span className="text-[10px] text-gray-500 font-normal">— exact text from import sheet, click to edit</span></div>
+            </div>
+            <div className="text-sm text-gray-800 leading-relaxed">
+              <InlineEdit leadId={lead.id} field="remarks" type="textarea" value={lead.remarks} placeholder="—" />
+            </div>
+          </div>
+        )}
+
         {/* BANT verdict — prominent, decision-driving */}
         <div className={`card p-4 border-l-4 ${
           lead.bantStatus === "QUALIFIES" ? "border-emerald-500 bg-emerald-50" :
@@ -340,7 +357,7 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
                   <div className={`w-8 h-8 rounded-full ${v.dot} text-white flex items-center justify-center text-sm flex-none shadow-sm`}>{v.icon}</div>
                   <div className="flex-1 min-w-0">
                     <div className="text-sm"><b>{a.title}</b> <span className="text-[10px] text-gray-400 ml-1">· {v.label}</span></div>
-                    <div className="text-xs text-gray-500">{a.user?.name ?? "System"} · {format(a.createdAt, "d MMM yyyy, HH:mm")}</div>
+                    <div className="text-xs text-gray-500">{a.user?.name ?? "System"} · {fmtIST(a.createdAt)} IST</div>
                     {a.description && <div className="text-sm mt-1 text-gray-700 whitespace-pre-wrap">{a.description}</div>}
                   </div>
                 </div>
@@ -436,7 +453,7 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
             {lead.assignments.map(a => (
               <div key={a.id} className="text-xs">
                 <b>{a.user.name}</b> · {a.reason ?? "—"}
-                <div className="text-gray-500">{format(a.assignedAt, "PP p")}</div>
+                <div className="text-gray-500">{fmtIST(a.assignedAt)} IST</div>
               </div>
             ))}
           </div>
@@ -476,7 +493,7 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
             {lead.callLogs.map((c) => (
               <div key={c.id} className="border-l-2 border-[#e5e7eb] pl-3 py-1">
                 <div className="text-[11px] text-gray-500">
-                  <b>{c.user.name}</b> · {format(c.startedAt, "d MMM yyyy (HH:mm)")}
+                  <b>{c.user.name}</b> · {fmtISTParen(c.startedAt)} IST
                   {c.durationSec ? ` · ${Math.floor(c.durationSec/60)}m ${c.durationSec%60}s` : ""}
                   {c.ivrProvider && <span className="ml-1 chip src text-[9px]">{c.ivrProvider}</span>}
                 </div>
