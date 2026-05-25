@@ -4,7 +4,10 @@
 //   3. Network-first for data routes so users always get fresh leads/dashboard
 //   4. Receive WEB PUSH notifications (FREE — uses browser/OS push servers)
 
-const CACHE = "wcr-shell-v2";
+// Bump this version when shipping a UI fix that PWA users might otherwise
+// miss because their old SW kept serving the stale shell. The activate
+// handler below already deletes every old `wcr-shell-*` cache on swap.
+const CACHE = "wcr-shell-v3";
 const SHELL = ["/login", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", (event) => {

@@ -41,8 +41,12 @@ export function parseBudget(raw: string | number | null | undefined): number | n
   if (typeof raw === "number") return isFinite(raw) && raw >= 0 ? raw : null;
   const s = String(raw).trim();
   if (!s) return null;
-  // Strip commas, currency symbols, currency words. Keep digits + dot + suffix letters.
-  const clean = s.replace(/[,\sAEDinr$₹]/gi, "");
+  // Strip currency words (whole tokens — not individual letters or we'd eat the
+  // 'a' out of "Lakh", 'r' out of "Cr", etc.), then strip commas + whitespace.
+  // Order matters: words first, then chars.
+  const clean = s
+    .replace(/\b(?:AED|INR|USD|Rs\.?|Rupees?)\b/gi, "")
+    .replace(/[,\s$₹]/g, "");
   // Split into "<number><suffix>". Suffix is letters at the end.
   const m = clean.match(/^(\d+(?:\.\d+)?)([a-zA-Z]*)$/);
   if (!m) return null;

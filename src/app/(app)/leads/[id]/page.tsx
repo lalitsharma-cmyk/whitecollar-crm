@@ -20,6 +20,7 @@ import { canTouchLead } from "@/lib/leadScope";
 import SuggestedUnitsCard from "@/components/SuggestedUnitsCard";
 import { bestUnitsForLead } from "@/lib/inventoryMatch";
 import LeadAIActions from "@/components/LeadAIActions";
+import RemarksCard from "@/components/RemarksCard";
 
 export const dynamic = "force-dynamic";
 
@@ -199,6 +200,16 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
           </div>
         </div>
 
+        {/* REMARKS — full conversation history from import sheet.
+            Moved to the top of the left column + ALWAYS rendered (even when
+            remarks is null/empty) so Lalit can't miss it. Compute the entry
+            count + char count outside the JSX (the previous IIFE pattern was
+            valid but obscured what was happening).
+            The raw text uses runs of `,,,,` between call entries (MIS sheet
+            convention); InlineEdit's textarea read-view splits those into
+            paragraph breaks for readability. */}
+        <RemarksCard leadId={lead.id} remarks={lead.remarks} />
+
         <div className="card p-5 border-l-4 border-[#c9a24b]">
           <div className="flex items-center gap-2 mb-2">
             <span className="ai-tag">WHO IS THE CLIENT</span>
@@ -209,33 +220,6 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
               placeholder="e.g. NRI from Mumbai based in Dubai. Senior Director at consulting firm. Husband already owns at Burj Vista. Looking for parents who'll relocate next year. Wife is decision maker." />
           </div>
         </div>
-
-        {/* Remarks — full conversation history from the import sheet. The raw text
-            uses runs of `,,,,` between entries (MIS convention); InlineEdit splits
-            those into paragraph breaks for readability. Count of detected entries
-            shown so Lalit can confirm the FULL history landed (he reported "only
-            latest comments coming in some leads" — the entries were there, just
-            visually jumbled). Sample lead "Shivam" = 9 entries, 1664 chars. */}
-        {lead.remarks && (() => {
-          const entryCount = (lead.remarks.match(/[oO]n\s+\d{1,2}\s+[A-Za-z]{3,9}\s+\d{4}/g) ?? []).length;
-          const charCount = lead.remarks.length;
-          return (
-          <div className="card p-5 border-l-4 border-[#0b1a33]">
-            <div className="flex items-center justify-between gap-2 mb-2 flex-wrap">
-              <div className="font-semibold flex items-center gap-2">📝 Remarks <span className="text-[10px] text-gray-500 font-normal">— full history from import sheet, click to edit</span></div>
-              <div className="text-[10px] text-gray-500 font-mono flex items-center gap-2">
-                {entryCount > 0 && <span className="px-1.5 py-0.5 rounded bg-blue-50 border border-blue-200 text-blue-800">📅 {entryCount} call entr{entryCount === 1 ? "y" : "ies"}</span>}
-                <span>{charCount.toLocaleString()} chars</span>
-              </div>
-            </div>
-            <div className="text-sm text-gray-800 leading-relaxed max-h-[600px] overflow-y-auto border border-[#e5e7eb] rounded-lg p-3 bg-[#fafafa]">
-              <InlineEdit leadId={lead.id} field="remarks" type="textarea" value={lead.remarks} placeholder="—" />
-            </div>
-            {/* Two AI helpers — autofill structured fields (free) + deep Anthropic re-analysis (paid). */}
-            <LeadAIActions leadId={lead.id} hasRemarks={!!lead.remarks} />
-          </div>
-          );
-        })()}
 
         {/* BANT verdict — prominent, decision-driving */}
         <div className={`card p-4 border-l-4 ${
