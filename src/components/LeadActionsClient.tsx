@@ -131,10 +131,16 @@ export default function LeadActionsClient({ leadId, phone, email, currentOwnerId
           <span className="text-base mb-1">📝</span> Log Call
         </button>
       </div>
+      {/* Lalit asked: "Send whatsapp with pre typed greeting — Here options should be
+          there to select according to which template to choose from." The WhatsApp
+          button above already opens a template picker (greetings, brochure, follow-up,
+          etc., all with placeholders filled). Hint at it explicitly below so agents
+          notice it's a chooser, not a single hardcoded greeting. */}
       {phone && (
-        <a href={waUrlWithDraft(phone)} onClick={() => logWaClick("send", waGreeting)} target="_blank" rel="noopener noreferrer" className="flex items-center justify-center gap-2 mt-2 py-2 rounded-xl bg-emerald-50 border border-emerald-300 text-emerald-900 text-sm font-semibold hover:bg-emerald-100 transition">
-          <Sparkles className="w-4 h-4" /> Send WhatsApp with pre-typed greeting
-        </a>
+        <div className="mt-2 text-[11px] text-gray-500 flex items-center justify-center gap-1.5 py-1.5">
+          <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
+          <span>Tap <b className="text-emerald-700">WhatsApp</b> above to pick a greeting / brochure / follow-up template</span>
+        </div>
       )}
 
       {/* Acefone click-to-call — rings agent first, then dials lead. Hidden when not configured. */}

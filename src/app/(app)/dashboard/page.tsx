@@ -3,7 +3,6 @@ import { LeadStatus, LeadSource, AIScore, CallOutcome, ActivityStatus, ActivityT
 import { formatDistanceToNow, startOfDay } from "date-fns";
 import { fmtIST } from "@/lib/datetime";
 import LeadsTrendChart from "@/components/charts/LeadsTrendChart";
-import SourceMixChart from "@/components/charts/SourceMixChart";
 import { fmtMoney, fmtMoneyDual } from "@/lib/money";
 import { runReconciler } from "@/lib/reconciler";
 import { getTestingModeEnabled } from "@/lib/settings";
@@ -45,7 +44,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     totalClients, totalNotContacted, newToday, hotLeads,
     callsToday, connectedToday, waToday,
     followupsDueToday, followupsOverdue, readyToClose, needsYou,
-    leadsBySource, recentActivities, upcoming, leadsLast14, sourceMix,
+    leadsBySource, recentActivities, upcoming, leadsLast14, _sourceMix,
     leadsByTeam, forecastLeads,
     // Team-specific KPIs
     expoMeetingsThisMonth, homeVisitsThisMonth, virtualThisMonth, officeThisMonth, siteVisitsThisMonth,
@@ -291,16 +290,11 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         </table>
       </div>
 
-      {/* Charts */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <div className="card p-5 lg:col-span-2">
-          <div className="font-semibold mb-3">Leads over time · Last 14 days</div>
-          <LeadsTrendChart data={leadsLast14.map((r) => ({ d: r.d, n: Number(r.n) }))} />
-        </div>
-        <div className="card p-5">
-          <div className="font-semibold mb-3">Source Mix</div>
-          <SourceMixChart data={sourceMix.map((r) => ({ source: r.source, n: r._count._all }))} />
-        </div>
+      {/* Charts — Source Mix removed per Lalit's request ("don't want lead intake on
+          dashboard"). Leads-over-time stays so we can still see daily intake volume. */}
+      <div className="card p-5">
+        <div className="font-semibold mb-3">Leads over time · Last 14 days</div>
+        <LeadsTrendChart data={leadsLast14.map((r) => ({ d: r.d, n: Number(r.n) }))} />
       </div>
 
       {/* Recent activity + Upcoming */}

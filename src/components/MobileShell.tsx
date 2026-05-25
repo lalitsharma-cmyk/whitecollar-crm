@@ -26,18 +26,19 @@ const fullNav = [
   ]},
   { section: "SETUP", items: [
     { href: "/profile",  label: "My Profile",    Icon: UserCog },
-    { href: "/intake",   label: "Lead Intake",   Icon: Upload },
     { href: "/team",     label: "Team & Roles",  Icon: UserCog },
     { href: "/settings", label: "Settings",      Icon: SettingsIcon },
   ]},
   // ADMIN-only section — filtered out in render below
   { section: "ADMIN", adminOnly: true, items: [
-    { href: "/admin/attendance", label: "Attendance",    Icon: CalendarDays, tag: undefined as string | undefined },
-    { href: "/admin/workflows",  label: "Workflows",     Icon: Sparkles,     tag: "AUTO" as string | undefined },
-    { href: "/admin/templates",  label: "Templates",     Icon: Sparkles,     tag: undefined as string | undefined },
-    { href: "/admin/audit",      label: "Audit Log",     Icon: ShieldCheck,  tag: undefined as string | undefined },
-    { href: "/admin/targets",    label: "Daily Targets", Icon: Sparkles,     tag: undefined as string | undefined },
-    { href: "/admin/team-mood",  label: "Team Mood",     Icon: Sparkles,     tag: undefined as string | undefined },
+    { href: "/intake",            label: "Lead Intake",   Icon: Upload,       tag: undefined as string | undefined },
+    { href: "/admin/site-visits", label: "Site Visits",   Icon: CalendarDays, tag: "LIVE" as string | undefined },
+    { href: "/admin/attendance",  label: "Attendance",    Icon: CalendarDays, tag: undefined as string | undefined },
+    { href: "/admin/workflows",   label: "Workflows",     Icon: Sparkles,     tag: "AUTO" as string | undefined },
+    { href: "/admin/templates",   label: "Templates",     Icon: Sparkles,     tag: undefined as string | undefined },
+    { href: "/admin/audit",       label: "Audit Log",     Icon: ShieldCheck,  tag: undefined as string | undefined },
+    { href: "/admin/targets",     label: "Daily Targets", Icon: Sparkles,     tag: undefined as string | undefined },
+    { href: "/admin/team-mood",   label: "Team Mood",     Icon: Sparkles,     tag: undefined as string | undefined },
   ]},
 ];
 

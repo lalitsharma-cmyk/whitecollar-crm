@@ -5,13 +5,16 @@ import Link from "next/link";
 
 export const dynamic = "force-dynamic";
 
+// Active-pipeline-only — Lalit asked to remove Won + Lost columns. Won deals
+// stop being tracked here (they move to reports); Lost ones drop off entirely.
+// The enum values still exist on Lead.status so any historical data is preserved.
 const stages = [
-  { key: LeadStatus.NEW,         label: "New" },
-  { key: LeadStatus.CONTACTED,   label: "Contacted" },
-  { key: LeadStatus.QUALIFIED,   label: "Qualified" },
-  { key: LeadStatus.SITE_VISIT,  label: "Site Visit" },
-  { key: LeadStatus.NEGOTIATION, label: "Negotiation" },
-  { key: LeadStatus.WON,         label: "Won" },
+  { key: LeadStatus.NEW,          label: "New" },
+  { key: LeadStatus.CONTACTED,    label: "Contacted" },
+  { key: LeadStatus.QUALIFIED,    label: "Qualified" },
+  { key: LeadStatus.SITE_VISIT,   label: "Site Visit" },
+  { key: LeadStatus.NEGOTIATION,  label: "Negotiation" },
+  { key: LeadStatus.BOOKING_DONE, label: "Booking Done" },
 ];
 
 export default async function PipelinePage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {

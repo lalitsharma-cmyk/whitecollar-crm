@@ -24,7 +24,10 @@ interface Row {
 
 const aiChip = (s: string | null) => s === "HOT" ? "chip-hot" : s === "WARM" ? "chip-warm" : s === "COLD" ? "chip-cold" : "chip-lost";
 
-export default function LeadsListClient({ leads, canBulk, agents }: { leads: Row[]; canBulk: boolean; agents: { id: string; name: string; team: string | null }[]; }) {
+export default function LeadsListClient({ leads, canBulk, agents, showSource = true }: { leads: Row[]; canBulk: boolean; agents: { id: string; name: string; team: string | null }[]; showSource?: boolean; }) {
+  // showSource = false → hide the source column + chip from agents.
+  // Lalit's policy: agents shouldn't see where each lead came from (avoids them
+  // cherry-picking high-converting sources or gaming the round-robin pool).
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
   function toggle(id: string) {
@@ -61,7 +64,7 @@ export default function LeadsListClient({ leads, canBulk, agents }: { leads: Row
                   <div className="text-[11px] text-gray-500 truncate">{l.phone}{l.email ? ` · ${l.email}` : ""}</div>
                   <div className="flex items-center gap-1 mt-1 flex-wrap">
                     <span className={`chip ${l.statusChip} text-[9px]`}>{l.statusName.replaceAll("_", " ")}</span>
-                    <span className={`chip ${l.srcChip} text-[9px]`}>{l.srcLabel}</span>
+                    {showSource && <span className={`chip ${l.srcChip} text-[9px]`}>{l.srcLabel}</span>}
                     {l.team && <span className={`chip ${teamChip} text-[9px]`}>{l.team}</span>}
                   </div>
                   <div className="flex items-center justify-between mt-1.5 text-[11px]">
@@ -87,7 +90,7 @@ export default function LeadsListClient({ leads, canBulk, agents }: { leads: Row
               <th>{canBulk && <input type="checkbox" checked={allChecked} onChange={toggleAll} />}</th>
               <th>Lead</th>
               <th>Team</th>
-              <th>Source</th>
+              {showSource && <th>Source</th>}
               <th>Budget</th>
               <th>Stage</th>
               <th>AI</th>
@@ -98,7 +101,7 @@ export default function LeadsListClient({ leads, canBulk, agents }: { leads: Row
           </thead>
           <tbody>
             {leads.length === 0 && (
-              <tr><td colSpan={10} className="text-center py-8 text-gray-500">No leads match these filters. Try clearing some.</td></tr>
+              <tr><td colSpan={showSource ? 10 : 9} className="text-center py-8 text-gray-500">No leads match these filters. Try clearing some.</td></tr>
             )}
             {leads.map((l) => {
               const teamChip = l.team === "India" ? "src-csv" : "src-wa";
@@ -111,7 +114,7 @@ export default function LeadsListClient({ leads, canBulk, agents }: { leads: Row
                     {l.interest && <div className="text-[11px] text-gray-500">→ {l.interest}</div>}
                   </td>
                   <td>{l.team ? <span className={`chip ${teamChip}`}>{l.team}</span> : <span className="text-gray-400">—</span>}</td>
-                  <td><span className={`chip ${l.srcChip}`}>{l.srcLabel}</span></td>
+                  {showSource && <td><span className={`chip ${l.srcChip}`}>{l.srcLabel}</span></td>}
                   <td className="text-sm font-semibold">{l.budget ?? <span className="text-gray-400 font-normal">—</span>}</td>
                   <td><span className={`chip ${l.statusChip}`}>{l.statusName.replaceAll("_", " ")}</span></td>
                   <td>{l.aiScore ? <span className={`chip ${aiChip(l.aiScore)}`}>{l.aiScore} · {l.aiScoreValue}</span> : <span className="text-gray-400">—</span>}</td>

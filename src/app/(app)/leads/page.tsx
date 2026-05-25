@@ -110,10 +110,12 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
         agents={agents.map((a) => ({ id: a.id, name: a.name }))}
         sources={Object.values(LeadSource)}
         statuses={Object.values(LeadStatus)}
+        showSource={me.role !== "AGENT"}
       />
 
       <LeadsListClient
         canBulk={canBulk}
+        showSource={me.role !== "AGENT"}
         agents={agents.map((a) => ({ id: a.id, name: a.name, team: a.team }))}
         leads={leads.map((l) => ({
           id: l.id, name: l.name, phone: l.phone, email: l.email,

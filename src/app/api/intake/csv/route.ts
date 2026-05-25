@@ -250,6 +250,17 @@ export async function POST(req: NextRequest) {
       if (team) update.forwardedTeam = team;
       const remarks = pick(row, "remarks", "remark");
       if (remarks) update.remarks = remarks;
+      // Historic lead date — every MIS sheet's first column is "Date" (the day
+      // the lead actually came in). Without this override every imported row
+      // gets today's createdAt, which destroys the historic timeline + breaks
+      // every "leads created this week" report retroactively. Lalit explicitly
+      // asked for "Date in mis will be date when this lead was generated".
+      const historicDate = parseDate(pick(row, "date", "leaddate", "createdon", "createddate", "entrydate"));
+      if (historicDate && !r.deduped) {
+        update.createdAt = historicDate;
+        // also backdate lastTouchedAt so "idle 24h" flags don't fire on import day
+        update.lastTouchedAt = historicDate;
+      }
       // Cold-data specific columns — what they already own + via whom
       const alreadyBought = pick(row, "alreadybought", "alreadyowns", "owns", "purchased");
       if (alreadyBought) update.alreadyBought = alreadyBought;

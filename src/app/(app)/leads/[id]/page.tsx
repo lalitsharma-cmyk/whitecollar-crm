@@ -304,7 +304,7 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
             <div>
               <div className="text-xs text-gray-500">Stage</div>
               <InlineEdit leadId={lead.id} field="status" type="select" value={lead.status}
-                options={[{value:"NEW",label:"New"},{value:"CONTACTED",label:"Contacted"},{value:"QUALIFIED",label:"Qualified"},{value:"SITE_VISIT",label:"Site Visit"},{value:"NEGOTIATION",label:"Negotiation"},{value:"BOOKING_DONE",label:"Booking Done"},{value:"WON",label:"Won"},{value:"LOST",label:"Lost"}]} />
+                options={[{value:"NEW",label:"New"},{value:"CONTACTED",label:"Contacted"},{value:"QUALIFIED",label:"Qualified"},{value:"SITE_VISIT",label:"Site Visit"},{value:"NEGOTIATION",label:"Negotiation"},{value:"BOOKING_DONE",label:"Booking Done"}]} />
             </div>
           </div>
         </div>

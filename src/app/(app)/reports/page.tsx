@@ -49,7 +49,7 @@ export default async function ReportsPage() {
     }),
   ]);
 
-  const [tot, contacted, qualified, visit, neg, won] = funnel;
+  const [tot, contacted, qualified, visit, neg] = funnel;
 
   const projectStats = topProjects.map(p => {
     const leadIds = new Set<string>();
@@ -83,11 +83,13 @@ export default async function ReportsPage() {
           <div className="font-bold text-sm mt-1">Travel Reimbursement</div>
           <div className="text-[10px] text-gray-500 mt-0.5">Km × per-km rate, monthly per agent</div>
         </Link>
-        <div className="card p-4 border-l-4 border-[#c9a24b]">
+        {/* Pipeline overview — used to be a static <div> which is why tapping it on
+            mobile did nothing. Now it's an anchor that scrolls down to the charts. */}
+        <a href="#pipeline-overview" className="card p-4 border-l-4 border-[#c9a24b] hover:shadow-md transition active:bg-amber-50 block">
           <div className="text-2xl">📈</div>
           <div className="font-bold text-sm mt-1">Pipeline overview</div>
           <div className="text-[10px] text-gray-500 mt-0.5">Funnel, source mix, agent performance · below ↓</div>
-        </div>
+        </a>
       </div>
 
       {isAdmin ? (
@@ -100,7 +102,7 @@ export default async function ReportsPage() {
         <div className="text-[11px] text-gray-500 italic">CSV export is Admin-only · contact Lalit for a watermarked extract</div>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      <div id="pipeline-overview" className="grid grid-cols-1 lg:grid-cols-3 gap-4 scroll-mt-20">
         <div className="card p-5">
           <div className="text-xs text-gray-500 tracking-widest">DAILY · TODAY</div>
           <div className="font-semibold mt-1">Lead intake by source</div>
@@ -128,7 +130,6 @@ export default async function ReportsPage() {
             { stage: "Qualified", n: qualified },
             { stage: "Site Visit", n: visit },
             { stage: "Negotiation", n: neg },
-            { stage: "Won", n: won },
           ]} />
         </div>
         <div className="card p-5">

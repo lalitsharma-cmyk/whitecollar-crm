@@ -6,9 +6,11 @@ interface Props {
   agents: { id: string; name: string }[];
   sources: string[];
   statuses: string[];
+  /** Hide the Source filter dropdown — agents should not see where leads came from. */
+  showSource?: boolean;
 }
 
-export default function LeadFilters({ agents, sources, statuses }: Props) {
+export default function LeadFilters({ agents, sources, statuses, showSource = true }: Props) {
   const router = useRouter();
   const pathname = usePathname();
   const sp = useSearchParams();
@@ -47,13 +49,15 @@ export default function LeadFilters({ agents, sources, statuses }: Props) {
         {showFilters ? "Hide filters ▴" : "Show filters ▾"}
       </button>
       <div className={`${showFilters ? "block" : "hidden"} lg:flex lg:flex-wrap lg:gap-2 lg:items-center grid grid-cols-2 gap-2 mt-2 lg:mt-0`}>
-      <select value={sp.get("source") ?? ""} onChange={(e) => update("source", e.target.value)} className="border border-[#e5e7eb] rounded-lg px-3 py-2 text-sm">
-        <option value="">All sources</option>
-        {sources.map(s => <option key={s} value={s}>{s.replaceAll("_", " ")}</option>)}
-      </select>
+      {showSource && (
+        <select value={sp.get("source") ?? ""} onChange={(e) => update("source", e.target.value)} className="border border-[#e5e7eb] rounded-lg px-3 py-2 text-sm">
+          <option value="">All sources</option>
+          {sources.map(s => <option key={s} value={s}>{s.replaceAll("_", " ")}</option>)}
+        </select>
+      )}
       <select value={sp.get("status") ?? ""} onChange={(e) => update("status", e.target.value)} className="border border-[#e5e7eb] rounded-lg px-3 py-2 text-sm">
         <option value="">All stages</option>
-        {statuses.map(s => <option key={s} value={s}>{s.replaceAll("_", " ")}</option>)}
+        {statuses.filter(s => s !== "WON" && s !== "LOST").map(s => <option key={s} value={s}>{s.replaceAll("_", " ")}</option>)}
       </select>
       <select value={sp.get("ai") ?? ""} onChange={(e) => update("ai", e.target.value)} className="border border-[#e5e7eb] rounded-lg px-3 py-2 text-sm">
         <option value="">AI: any</option>
