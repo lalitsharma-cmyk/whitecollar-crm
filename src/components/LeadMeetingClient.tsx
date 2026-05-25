@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { nowISTLocalInput, fromISTLocalInput } from "@/lib/datetime";
 
 interface Counts {
   officeMeetings: { count: number; lastAt: Date | null };
@@ -39,12 +40,15 @@ export default function LeadMeetingClient({ leadId, counts }: { leadId: string; 
 
   async function save() {
     if (remarks.trim().length < 3) { setErr("Remarks required (min 3 chars)."); return; }
+    // Convert IST wall-clock input → unambiguous ISO before sending. Empty input
+    // = log as "now" (handled server-side).
+    const whenISO = when ? fromISTLocalInput(when)?.toISOString() ?? "" : "";
     setErr(null); setBusy(true);
     try {
       const r = await fetch(`/api/leads/${leadId}/meeting`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ type, when, durationMin: Number(duration) || 0, remarks }),
+        body: JSON.stringify({ type, when: whenISO, durationMin: Number(duration) || 0, remarks }),
       });
       const j = await r.json();
       if (!r.ok) { setErr(j.error ?? "Failed"); return; }
@@ -85,8 +89,14 @@ export default function LeadMeetingClient({ leadId, counts }: { leadId: string; 
             <select value={type} onChange={(e) => setType(e.target.value)} className="w-full mt-1 mb-3 border border-[#e5e7eb] rounded-lg px-3 py-2 text-sm">
               {TYPES.map((t) => <option key={t.v} value={t.v}>{t.label}</option>)}
             </select>
-            <label className="text-xs font-semibold text-gray-600">When (leave empty for now)</label>
-            <input type="datetime-local" value={when} onChange={(e) => setWhen(e.target.value)} className="w-full mt-1 mb-3 border border-[#e5e7eb] rounded-lg px-3 py-2 text-sm" />
+            <label className="text-xs font-semibold text-gray-600">When (IST · leave empty for now)</label>
+            <input
+              type="datetime-local"
+              value={when}
+              onChange={(e) => setWhen(e.target.value)}
+              min={nowISTLocalInput()}
+              className="w-full mt-1 mb-3 border border-[#e5e7eb] rounded-lg px-3 py-2 text-sm"
+            />
             <label className="text-xs font-semibold text-gray-600">Duration (minutes, optional)</label>
             <input type="number" value={duration} onChange={(e) => setDuration(e.target.value)} placeholder="e.g. 45" className="w-full mt-1 mb-3 border border-[#e5e7eb] rounded-lg px-3 py-2 text-sm" />
             <label className="text-xs font-semibold text-gray-600">What happened? *</label>

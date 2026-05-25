@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { Phone, MessageCircle, Mail, AlertCircle, Sparkles } from "lucide-react";
 import { whatsappLink, telLink } from "@/lib/phone";
 import TemplatePickerButton from "./TemplatePickerButton";
+import { nowISTLocalInput, fromISTLocalInput } from "@/lib/datetime";
 
 const OUTCOMES = [
   { v: "CONNECTED",        label: "✅ Connected" },
@@ -58,6 +59,13 @@ export default function LeadActionsClient({ leadId, phone, altPhone, email, curr
   const [outcome, setOutcome] = useState("CONNECTED");
   const [remarks, setRemarks] = useState("");
   const [duration, setDuration] = useState("");
+  // When the agent picks "🔁 Callback" or "⏳ Busy", they need to schedule a
+  // specific time to call back. This datetime-local input (IST, future-only)
+  // posts to log-call → server sets Lead.followupDate, which triggers the
+  // 10-min-before push from the pre-meeting cron and shows up on the morning
+  // dashboard's "☎ N client callbacks today" tile.
+  const [callbackAt, setCallbackAt] = useState("");
+  const needsCallback = outcome === "CALLBACK" || outcome === "BUSY" || outcome === "SWITCHED_OFF" || outcome === "NOT_PICKED";
   const [err, setErr] = useState<string | null>(null);
   const [assignBusy, setAssignBusy] = useState(false);
   const [acefoneBusy, setAcefoneBusy] = useState(false);
@@ -83,16 +91,28 @@ export default function LeadActionsClient({ leadId, phone, altPhone, email, curr
   async function submitCall() {
     setErr(null);
     if (remarks.trim().length < 3) { setErr("Please write what happened in the call (min 3 chars)."); return; }
+    // Convert IST wall-clock callback time → ISO. Server picks it up and writes
+    // Lead.followupDate so the pre-call reminder cron fires 10 min before.
+    let callbackAtISO: string | undefined;
+    if (needsCallback && callbackAt) {
+      const d = fromISTLocalInput(callbackAt);
+      if (!d) { setErr("Invalid callback time."); return; }
+      if (d.getTime() <= Date.now()) {
+        setErr("Callback time must be in the future (IST).");
+        return;
+      }
+      callbackAtISO = d.toISOString();
+    }
     setBusy(true);
     try {
       const r = await fetch(`/api/leads/${leadId}/log-call`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ outcome, remarks, durationSec: Number(duration) || 0 }),
+        body: JSON.stringify({ outcome, remarks, durationSec: Number(duration) || 0, callbackAt: callbackAtISO }),
       });
       const j = await r.json();
       if (!r.ok) { setErr(j.error ?? "Failed"); return; }
-      setShowCall(false); setRemarks(""); setDuration("");
+      setShowCall(false); setRemarks(""); setDuration(""); setCallbackAt("");
       router.refresh();
     } finally { setBusy(false); }
   }
@@ -206,6 +226,29 @@ export default function LeadActionsClient({ leadId, phone, altPhone, email, curr
             </select>
             <label className="text-xs font-semibold text-gray-600">Duration (seconds, optional)</label>
             <input type="number" value={duration} onChange={(e) => setDuration(e.target.value)} placeholder="e.g. 240" className="w-full mt-1 mb-3 border border-[#e5e7eb] rounded-lg px-3 py-2 text-sm" />
+
+            {/* Callback scheduler — shows only when the outcome implies "ring back later".
+                Required when the client asked for a specific time. Saved as
+                Lead.followupDate so the pre-meeting cron sends a 10-min-before push
+                and it shows in the morning dashboard's callback count. */}
+            {needsCallback && (
+              <div className="mb-3 p-3 rounded-lg border-2 border-amber-300 bg-amber-50">
+                <label className="text-xs font-semibold text-amber-900 flex items-center gap-1">
+                  ⏰ When should you call back? <span className="text-[10px] text-amber-700 font-normal">(IST · required for scheduled callback)</span>
+                </label>
+                <input
+                  type="datetime-local"
+                  value={callbackAt}
+                  onChange={(e) => setCallbackAt(e.target.value)}
+                  min={nowISTLocalInput()}
+                  className="w-full mt-1.5 border border-amber-400 rounded-lg px-3 py-2 text-sm bg-white min-h-11"
+                />
+                <p className="text-[10px] text-amber-800 mt-1">
+                  You&apos;ll get a push notification 10 min before this time, and it will appear in your morning briefing.
+                </p>
+              </div>
+            )}
+
             <label className="text-xs font-semibold text-gray-600">Remarks * <span className="text-gray-400 font-normal">(what did the client say?)</span></label>
             <textarea value={remarks} onChange={(e) => setRemarks(e.target.value)} rows={4}
               placeholder="Be specific: client's exact concern, budget mentioned, next step agreed…"

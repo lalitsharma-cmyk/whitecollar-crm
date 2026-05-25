@@ -6,6 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { defaultCurrencyForTeam } from "@/lib/money";
 import { defaultDialForTeam, toE164 } from "@/lib/phone";
 import PhoneInput from "@/components/PhoneInput";
+import { nowISTLocalInput, fromISTLocalInput } from "@/lib/datetime";
 
 async function createLeadAction(formData: FormData) {
   "use server";
@@ -58,8 +59,14 @@ async function createLeadAction(formData: FormData) {
   const todoNext = opt<string>(formData.get("todoNext")); if (todoNext) update.todoNext = todoNext;
   const remarks = opt<string>(formData.get("remarks")); if (remarks) update.remarks = remarks;
   const detailShared = opt<string>(formData.get("detailShared")); if (detailShared) update.detailShared = detailShared;
+  // Parse follow-up datetime-local input as IST wall-clock (the picker is IST-labelled).
+  // Without explicit IST offset, `new Date("2026-05-26T18:00")` on Vercel (UTC) becomes
+  // 18:00 UTC = 23:30 IST — 5.5 hours off what the agent typed.
   const followupRaw = formData.get("followupDate")?.toString();
-  if (followupRaw) update.followupDate = new Date(followupRaw);
+  if (followupRaw) {
+    const d = fromISTLocalInput(followupRaw);
+    if (d && d.getTime() > Date.now()) update.followupDate = d;
+  }
   if (Object.keys(update).length) await prisma.lead.update({ where: { id: lead.id }, data: update });
 
   redirect(`/leads/${lead.id}`);
@@ -228,7 +235,7 @@ export default async function NewLeadPage() {
         <section>
           <div className="text-xs font-bold tracking-widest text-[#c9a24b] mb-3">ACTION & SCHEDULING</div>
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 sm:gap-4">
-            <div><label className={label}>🔁 Follow-up date</label><input name="followupDate" type="datetime-local" className={input} /></div>
+            <div><label className={label}>🔁 Follow-up date (IST)</label><input name="followupDate" type="datetime-local" min={nowISTLocalInput()} className={input} /></div>
             <div className="md:col-span-2"><label className={label}>✅ To Do — next action</label><input name="todoNext" placeholder="e.g. Send AED brochure & payment plan" className={input} /></div>
             <div className="md:col-span-3"><label className={label}>📤 Detail shared with client</label><input name="detailShared" placeholder="e.g. Brochure v3 + payment plan + RERA note" className={input} /></div>
             <div className="md:col-span-3"><label className={label}>📝 Remarks</label><textarea name="remarks" rows={3} className={input}></textarea></div>

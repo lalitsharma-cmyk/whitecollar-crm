@@ -15,6 +15,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const remarks = String(body.remarks ?? "").trim();
   const durationSec = Number(body.durationSec ?? 0);
   const direction = (body.direction as CallDirection) ?? CallDirection.OUTBOUND;
+  // Optional scheduled callback time (ISO string from the IST picker on the UI).
+  // When set, we update Lead.followupDate so the pre-meeting cron's
+  // 10-min-before push fires and it shows on the morning briefing card.
+  const callbackAtRaw = body.callbackAt ? String(body.callbackAt) : "";
+  const callbackAt = callbackAtRaw ? new Date(callbackAtRaw) : null;
+  if (callbackAtRaw && (!callbackAt || isNaN(callbackAt.getTime()) || callbackAt.getTime() <= Date.now())) {
+    return NextResponse.json({ error: "Callback time must be a valid future ISO datetime" }, { status: 400 });
+  }
 
   if (!outcome || !Object.values(CallOutcome).includes(outcome)) {
     return NextResponse.json({ error: "Outcome is required" }, { status: 400 });
@@ -57,6 +65,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       lastTouchedAt: now,
       // Clear the SLA flag — call has been made, so future breaches can re-notify
       slaEscalated: false,
+      // If the agent scheduled a specific callback time, write it to followupDate
+      // so the pre-meeting cron picks it up. Also reset the dedupe flag so the
+      // 10-min push fires for this new time even if the previous followupDate
+      // already had a reminder sent.
+      ...(callbackAt ? {
+        followupDate: callbackAt,
+        followupReminderSentAt: null,
+      } : {}),
     },
   });
   // Fire-and-forget behavioural re-score. Never block / fail the user action.

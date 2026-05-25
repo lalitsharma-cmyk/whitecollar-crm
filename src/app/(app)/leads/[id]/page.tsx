@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { notFound, redirect } from "next/navigation";
 import { format, formatDistanceToNow } from "date-fns";
-import { fmtIST, fmtISTParen } from "@/lib/datetime";
+import { fmtIST, fmtISTParen, toISTLocalInput } from "@/lib/datetime";
 import Link from "next/link";
 import { fmtMoney } from "@/lib/money";
 import { requireUser } from "@/lib/auth";
@@ -351,15 +351,15 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
             <div className="p-3 border border-[#e5e7eb] rounded-lg">
               <div className="text-xs text-gray-500">📅 Meeting</div>
-              <InlineEdit leadId={lead.id} field="meetingDate" type="date" value={lead.meetingDate ? lead.meetingDate.toISOString().slice(0,16) : ""} placeholder="Not scheduled" />
+              <InlineEdit leadId={lead.id} field="meetingDate" type="date" value={toISTLocalInput(lead.meetingDate)} placeholder="Not scheduled" />
             </div>
             <div className="p-3 border border-[#e5e7eb] rounded-lg">
               <div className="text-xs text-gray-500">🏢 Site Visit</div>
-              <InlineEdit leadId={lead.id} field="siteVisitDate" type="date" value={lead.siteVisitDate ? lead.siteVisitDate.toISOString().slice(0,16) : ""} placeholder="Not scheduled" />
+              <InlineEdit leadId={lead.id} field="siteVisitDate" type="date" value={toISTLocalInput(lead.siteVisitDate)} placeholder="Not scheduled" />
             </div>
             <div className="p-3 border border-[#e5e7eb] rounded-lg">
               <div className="text-xs text-gray-500">🔁 Follow-up</div>
-              <InlineEdit leadId={lead.id} field="followupDate" type="date" value={lead.followupDate ? lead.followupDate.toISOString().slice(0,16) : ""} placeholder="Not scheduled" />
+              <InlineEdit leadId={lead.id} field="followupDate" type="date" value={toISTLocalInput(lead.followupDate)} placeholder="Not scheduled" />
             </div>
             <div className="p-3 border border-[#e5e7eb] rounded-lg bg-amber-50 border-amber-200">
               <div className="text-xs text-amber-700">✅ To Do</div>

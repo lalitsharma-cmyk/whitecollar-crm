@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { nowISTLocalInput, isPastISTLocalInput } from "@/lib/datetime";
 
 type FieldType = "text" | "textarea" | "number" | "date" | "select";
 
@@ -26,12 +27,23 @@ export default function InlineEdit({ leadId, field, label, value, type = "text",
 
   async function save() {
     if (busy) return;
+    // Client-side guard for date pickers: reject past IST dates before hitting
+    // the server. Belt-and-braces — the input also has min={nowISTLocalInput()}.
+    if (type === "date" && v && isPastISTLocalInput(v)) {
+      setErr("Pick a future date/time (IST). Past dates aren't allowed for scheduling.");
+      return;
+    }
     setBusy(true); setErr(null);
     try {
+      // For datetime fields, append explicit IST offset so the server parses
+      // the user's IST wall-clock as the correct UTC instant. Without this,
+      // "2026-05-26T18:00" gets parsed in Vercel's UTC and saved as 18:00 UTC
+      // (= 11:30pm IST — 5.5 hours off).
+      const payload = type === "date" && v ? `${v}:00+05:30` : v;
       const r = await fetch(`/api/leads/${leadId}/update`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ [field]: v }),
+        body: JSON.stringify({ [field]: payload }),
       });
       if (!r.ok) {
         const j = await r.json().catch(() => ({}));
@@ -139,6 +151,7 @@ export default function InlineEdit({ leadId, field, label, value, type = "text",
           onChange={(e) => setV(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter") save(); if (e.key === "Escape") cancel(); }}
           className={inputCls}
+          {...(type === "date" ? { min: nowISTLocalInput() } : {})}
           autoFocus
         />
         <button onClick={save} disabled={busy} className="text-emerald-600 hover:bg-emerald-50 rounded p-1 text-xs">✓</button>

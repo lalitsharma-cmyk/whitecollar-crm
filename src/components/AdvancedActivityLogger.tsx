@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Calendar, AlertCircle, X } from "lucide-react";
+import { nowISTLocalInput, fromISTLocalInput } from "@/lib/datetime";
 
 type AdvancedType = "EXPO_MEETING" | "HOME_VISIT" | "DUBAI_SITE_VISIT";
 
@@ -59,7 +60,8 @@ export default function AdvancedActivityLogger({ leadId, team, travelRatePerKm }
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           type,
-          when: form.when || new Date().toISOString(),
+          // IST wall-clock → unambiguous ISO. Empty = now.
+          when: form.when ? (fromISTLocalInput(form.when)?.toISOString() ?? new Date().toISOString()) : new Date().toISOString(),
           notes: form.notes,
           ...(type === "EXPO_MEETING" && {
             expoCity: form.expoCity,
@@ -110,8 +112,14 @@ export default function AdvancedActivityLogger({ leadId, team, travelRatePerKm }
               )}
             </select>
 
-            <label className="text-xs font-semibold text-gray-600">When</label>
-            <input type="datetime-local" value={form.when} onChange={(e) => update("when", e.target.value)} className="w-full mt-1 mb-3 border border-[#e5e7eb] rounded-lg px-3 py-2 text-sm" />
+            <label className="text-xs font-semibold text-gray-600">When (IST)</label>
+            <input
+              type="datetime-local"
+              value={form.when}
+              onChange={(e) => update("when", e.target.value)}
+              min={nowISTLocalInput()}
+              className="w-full mt-1 mb-3 border border-[#e5e7eb] rounded-lg px-3 py-2 text-sm"
+            />
 
             {type === "EXPO_MEETING" && (
               <>
