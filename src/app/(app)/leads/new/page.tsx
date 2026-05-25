@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { ingestLead } from "@/lib/leadIngest";
-import { LeadSource, Potential, FundReadiness, MoodStatus, InvestTimeline } from "@prisma/client";
+import { LeadSource, Potential, FundReadiness, MoodStatus, InvestTimeline, Profession } from "@prisma/client";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { defaultCurrencyForTeam } from "@/lib/money";
@@ -49,6 +49,12 @@ async function createLeadAction(formData: FormData) {
   const fundReadiness = opt<FundReadiness>(formData.get("fundReadiness")); if (fundReadiness) update.fundReadiness = fundReadiness;
   const moodStatus = opt<MoodStatus>(formData.get("moodStatus")); if (moodStatus) update.moodStatus = moodStatus;
   const whenCanInvest = opt<InvestTimeline>(formData.get("whenCanInvest")); if (whenCanInvest) update.whenCanInvest = whenCanInvest;
+  const profession = opt<Profession>(formData.get("profession")); if (profession) update.profession = profession;
+  const linkedInUrl = opt<string>(formData.get("linkedInUrl"));
+  if (linkedInUrl) {
+    // Basic URL validation — reject anything not http(s)
+    if (/^https?:\/\//i.test(linkedInUrl)) update.linkedInUrl = linkedInUrl;
+  }
   const todoNext = opt<string>(formData.get("todoNext")); if (todoNext) update.todoNext = todoNext;
   const remarks = opt<string>(formData.get("remarks")); if (remarks) update.remarks = remarks;
   const detailShared = opt<string>(formData.get("detailShared")); if (detailShared) update.detailShared = detailShared;
@@ -84,7 +90,24 @@ export default async function NewLeadPage() {
               <p className="text-[10px] text-gray-500 mt-0.5">Pick country flag · WhatsApp/Call buttons stop working without the right code</p>
             </div>
             <div><label className={label}>✉ E-mail</label><input name="email" type="email" className={input} /></div>
-            <div><label className={label}>Company</label><input name="company" placeholder="e.g. Emirates NBD" className={input} /></div>
+            <div><label className={label}>🏢 Company</label><input name="company" placeholder="e.g. Emirates NBD, TCS" className={input} /></div>
+            <div>
+              <label className={label}>💼 Profession</label>
+              <select name="profession" className={input} defaultValue="">
+                <option value="">—</option>
+                <option value="JOB">Job (salaried)</option>
+                <option value="SELF_EMPLOYED">Self-employed</option>
+                <option value="BUSINESS_OWNER">Business owner</option>
+                <option value="INVESTOR">Investor</option>
+                <option value="RETIRED">Retired</option>
+                <option value="STUDENT">Student</option>
+                <option value="OTHER">Other</option>
+              </select>
+            </div>
+            <div>
+              <label className={label}>🔗 LinkedIn URL</label>
+              <input name="linkedInUrl" type="url" placeholder="https://linkedin.com/in/…" className={input} />
+            </div>
             <div><label className={label}>City</label><input name="city" className={input} /></div>
             <div><label className={label}>Address</label><input name="address" className={input} /></div>
           </div>
@@ -103,8 +126,36 @@ export default async function NewLeadPage() {
               </select>
               <input type="hidden" name="budgetCurrency" defaultValue={defaultCurrency} />
             </div>
-            <div><label className={label}>💰 Budget min</label><input name="budgetMin" type="number" placeholder={defaultCurrency === "AED" ? "e.g. 2500000 AED" : "e.g. 30000000 INR"} className={input} /></div>
-            <div><label className={label}>💰 Budget max</label><input name="budgetMax" type="number" className={input} /></div>
+            <div>
+              <label className={label}>💰 Budget min</label>
+              <div className="flex items-stretch mt-1 border border-[#e5e7eb] rounded-lg overflow-hidden">
+                <span className="bg-[#f5f6fa] border-r border-[#e5e7eb] px-3 py-2 text-xs font-mono text-gray-600 flex items-center">{defaultCurrency}</span>
+                <input
+                  name="budgetMin"
+                  type="number"
+                  min="0"
+                  step="1000"
+                  inputMode="numeric"
+                  placeholder={defaultCurrency === "AED" ? "2500000" : "30000000"}
+                  className="flex-1 min-w-0 px-3 py-2 text-sm outline-none"
+                />
+              </div>
+              <p className="text-[10px] text-gray-500 mt-0.5">Numbers only · {defaultCurrency === "AED" ? "AED 2,500,000 = 2.5M" : "₹3,00,00,000 = 3 Cr"}</p>
+            </div>
+            <div>
+              <label className={label}>💰 Budget max</label>
+              <div className="flex items-stretch mt-1 border border-[#e5e7eb] rounded-lg overflow-hidden">
+                <span className="bg-[#f5f6fa] border-r border-[#e5e7eb] px-3 py-2 text-xs font-mono text-gray-600 flex items-center">{defaultCurrency}</span>
+                <input
+                  name="budgetMax"
+                  type="number"
+                  min="0"
+                  step="1000"
+                  inputMode="numeric"
+                  className="flex-1 min-w-0 px-3 py-2 text-sm outline-none"
+                />
+              </div>
+            </div>
             <div>
               <label className={label}>Categorization</label>
               <select name="categorization" className={input}>

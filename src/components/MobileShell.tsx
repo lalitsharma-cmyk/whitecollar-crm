@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import {
   LayoutDashboard, Users, KanbanSquare, Sparkles, Menu, X, Bell,
   Building2, CalendarDays, PhoneCall, BarChart3, Upload, UserCog, Settings as SettingsIcon, LogOut,
-  Snowflake,
+  Snowflake, ShieldCheck,
 } from "lucide-react";
 import NotifBell from "./NotifBell";
 import WhatsAppPanel from "./WhatsAppPanel";
@@ -28,6 +28,10 @@ const fullNav = [
     { href: "/intake",   label: "Lead Intake",   Icon: Upload },
     { href: "/team",     label: "Team & Roles",  Icon: UserCog },
     { href: "/settings", label: "Settings",      Icon: SettingsIcon },
+  ]},
+  // ADMIN-only section — filtered out in render below
+  { section: "ADMIN", adminOnly: true, items: [
+    { href: "/admin/audit", label: "Audit Log",  Icon: ShieldCheck, tag: undefined as string | undefined },
   ]},
 ];
 
@@ -59,7 +63,7 @@ export default function MobileShell({ children, user }: Props) {
           <img src="/brand/wcr-logo.png" alt="White Collar Realty" className="h-12 w-auto object-contain" />
         </div>
         <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
-          {fullNav.map((group) => (
+          {fullNav.filter((g) => !g.adminOnly || user.role === "ADMIN").map((group) => (
             <div key={group.section}>
               <div className="text-[10px] uppercase tracking-widest text-white/40 px-3 mb-1 mt-3 first:mt-0">{group.section}</div>
               {group.items.map(({ href, label, Icon, tag }) => {

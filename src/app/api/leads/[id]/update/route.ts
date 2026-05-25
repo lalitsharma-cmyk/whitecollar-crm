@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireUser } from "@/lib/auth";
 import { ActivityType, ActivityStatus, LeadStatus, AIScore, Potential, FundReadiness, MoodStatus, InvestTimeline } from "@prisma/client";
+import { loadOwnedLead } from "@/lib/leadScope";
 
 // Inline-edit endpoint — accepts one or more field updates and logs an Activity
 // for status/stage changes. Only allows whitelisted fields.
@@ -18,11 +18,15 @@ const ALLOWED: Record<string, "string" | "date" | "number" | "enum" | "bool"> = 
   moodStatus: "enum", whenCanInvest: "enum",
   bantStatus: "enum", bantReason: "string",
   isColdCall: "bool", coldCallReason: "string",
+  profession: "enum", linkedInUrl: "string",
 };
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const me = await requireUser();
   const { id } = await params;
+  // Ownership check: agents can only mutate leads they own; admins/managers any.
+  const scoped = await loadOwnedLead(id);
+  if (scoped.error) return scoped.error;
+  const { me } = scoped;
   const body = await req.json().catch(() => ({}));
   if (!body || typeof body !== "object") return NextResponse.json({ error: "Invalid body" }, { status: 400 });
 

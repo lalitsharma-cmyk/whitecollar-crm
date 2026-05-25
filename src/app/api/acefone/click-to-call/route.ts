@@ -3,25 +3,26 @@
 // fires the click-to-call. Returns immediately — the actual call lifecycle
 // arrives later via /api/acefone/webhook.
 import { NextResponse, type NextRequest } from "next/server";
-import { prisma } from "@/lib/prisma";
-import { requireUser } from "@/lib/auth";
 import { acefoneEnabled, clickToCall } from "@/lib/acefone";
+import { loadOwnedLead } from "@/lib/leadScope";
 
 export async function POST(req: NextRequest) {
-  const me = await requireUser();
   if (!acefoneEnabled()) {
     return NextResponse.json({ error: "Acefone is not configured. Ask admin to set ACEFONE_API_KEY + ACEFONE_DID_NUMBER." }, { status: 503 });
-  }
-  if (!me.acefoneAgentId) {
-    return NextResponse.json({ error: "Your account isn't mapped to an Acefone agent id. Ask admin to set it in Team & Roles." }, { status: 400 });
   }
 
   const body = await req.json().catch(() => ({}));
   const leadId = String(body.leadId ?? "");
   if (!leadId) return NextResponse.json({ error: "leadId required" }, { status: 400 });
 
-  const lead = await prisma.lead.findUnique({ where: { id: leadId }, select: { id: true, phone: true, name: true } });
-  if (!lead) return NextResponse.json({ error: "Lead not found" }, { status: 404 });
+  // Ownership check — agents can only click-to-call their own leads
+  const scoped = await loadOwnedLead(leadId);
+  if (scoped.error) return scoped.error;
+  const { me, lead } = scoped;
+
+  if (!me.acefoneAgentId) {
+    return NextResponse.json({ error: "Your account isn't mapped to an Acefone agent id. Ask admin to set it in Team & Roles." }, { status: 400 });
+  }
   if (!lead.phone) return NextResponse.json({ error: "Lead has no phone number" }, { status: 400 });
 
   const result = await clickToCall({

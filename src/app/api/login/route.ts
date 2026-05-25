@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { loginWithCredentials } from "@/lib/auth";
 import { isRateLimited, clearRateLimit } from "@/lib/rateLimit";
+import { audit, reqMeta } from "@/lib/audit";
 
 export async function POST(req: NextRequest) {
   let email = "", password = "";
@@ -29,10 +30,23 @@ export async function POST(req: NextRequest) {
 
   const r = await loginWithCredentials(email, password);
   if (!r.ok) {
+    await audit({
+      action: "auth.login.fail",
+      entity: "User",
+      meta: { email },
+      request: reqMeta(req),
+    });
     return NextResponse.json({ error: r.error }, { status: 401 });
   }
 
   clearRateLimit(rlKey); // success resets counter
+  await audit({
+    userId: r.user.id,
+    action: "auth.login.success",
+    entity: "User",
+    entityId: r.user.id,
+    request: reqMeta(req),
+  });
 
   if (ct.includes("application/json")) return NextResponse.json({ ok: true });
   return NextResponse.redirect(new URL("/dashboard", req.url), { status: 303 });

@@ -123,6 +123,17 @@ enum BantStatus {
   NOT_QUALIFIED
 }
 
+// Client's earning source — drives messaging tone + EMI eligibility.
+enum Profession {
+  JOB
+  SELF_EMPLOYED
+  BUSINESS_OWNER
+  INVESTOR
+  RETIRED
+  STUDENT
+  OTHER
+}
+
 // =====================================================
 // LEAD — the core entity
 // =====================================================
@@ -161,6 +172,9 @@ model Lead {
   // BANT verdict — set after qualification call. Drives the "Qualifies/Not qualified" chip.
   bantStatus      BantStatus  @default(UNDER_REVIEW)
   bantReason      String?     // optional one-liner explaining the verdict
+  // Profile depth
+  profession      Profession?
+  linkedInUrl     String?     // full https://linkedin.com/in/... URL
   detailShared    String?     // what brochures / details we've sent
   photoUrls       String?     // JSON-stringified URLs of uploaded photos
   // scheduling
@@ -366,12 +380,31 @@ model Activity {
   description String?
   scheduledAt DateTime?
   completedAt DateTime?
+  // ── Visit/meeting attendance + live-tracking (SITE_VISIT, OFFICE_MEETING, VIRTUAL_MEETING) ──
+  /// Who actually attended (may differ from `userId`/owner — e.g. agent sent a colleague)
+  attendedByUserId   String?
+  /// Comma-separated user ids of co-attendees (joint visits)
+  additionalAttendees String?
+  /// Number of times this activity was rescheduled (incremented when scheduledAt changes pre-completion)
+  rescheduledCount   Int       @default(0)
+  /// True if nobody showed up (used in SLA report)
+  isNoShow           Boolean   @default(false)
+  /// Live-tracking — captured when agent taps "Start Site Visit"
+  startedAt          DateTime?
+  startedLat         Float?
+  startedLng         Float?
+  endedAt            DateTime?
+  endedLat           Float?
+  endedLng           Float?
+  /// JSON-stringified [{ts, lat, lng}, …] — polled every 60s between Start and End
+  locationTrack      String?
   createdAt   DateTime       @default(now())
   updatedAt   DateTime       @updatedAt
 
   @@index([leadId])
   @@index([scheduledAt])
   @@index([status])
+  @@index([type, completedAt])
 }
 
 enum CallDirection {

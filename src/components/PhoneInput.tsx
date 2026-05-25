@@ -32,10 +32,12 @@ export default function PhoneInput({ name, defaultValue, defaultDial, required, 
         value={dialState}
         onChange={(e) => setDialState(e.target.value)}
         aria-label="Country code"
-        className="bg-[#f5f6fa] border-r border-[#e5e7eb] px-2 text-xs font-mono outline-none min-w-[88px]"
+        title="Country code"
+        className="bg-[#f5f6fa] border-r border-[#e5e7eb] px-2 py-2 text-xs font-mono outline-none flex-none w-[78px] appearance-none"
       >
+        {/* Compact label: flag + dial code only. Country name is in the title attr below */}
         {COUNTRIES.map((c) => (
-          <option key={c.iso} value={c.dial}>{c.flag} {c.dial} {c.name}</option>
+          <option key={c.iso} value={c.dial} title={c.name}>{c.flag} {c.dial}</option>
         ))}
       </select>
       <input
@@ -45,7 +47,7 @@ export default function PhoneInput({ name, defaultValue, defaultDial, required, 
         value={localState}
         onChange={(e) => setLocalState(e.target.value)}
         placeholder={placeholder ?? "50 123 4567"}
-        className="flex-1 px-3 py-2 text-sm outline-none"
+        className="flex-1 min-w-0 px-3 py-2 text-sm outline-none"
         required={required}
       />
       {/* Hidden field — what the server reads */}

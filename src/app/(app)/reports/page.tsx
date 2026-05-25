@@ -5,10 +5,14 @@ import SourceBarChart from "@/components/charts/SourceBarChart";
 import AgentBarChart from "@/components/charts/AgentBarChart";
 import ConnectRateChart from "@/components/charts/ConnectRateChart";
 import FunnelChart from "@/components/charts/FunnelChart";
+import { requireUser } from "@/lib/auth";
+import Link from "next/link";
 
 export const dynamic = "force-dynamic";
 
 export default async function ReportsPage() {
+  const me = await requireUser();
+  const isAdmin = me.role === "ADMIN";
   const today = startOfDay(new Date());
 
   const [bySource, agentPerf, callsByDay, funnel, topProjects] = await Promise.all([
@@ -62,9 +66,16 @@ export default async function ReportsPage() {
           <h1 className="text-xl sm:text-2xl font-bold">Reports</h1>
           <p className="text-xs sm:text-sm text-gray-500">Live · auto-refresh on every page load</p>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <a href="/api/reports/export?type=leads" className="btn btn-ghost flex-1 sm:flex-none justify-center">Leads CSV</a>
-          <a href="/api/reports/export?type=calls" className="btn btn-primary flex-1 sm:flex-none justify-center">Calls CSV</a>
+        <div className="flex flex-wrap gap-2 items-center">
+          <Link href="/reports/sla" className="btn btn-ghost flex-1 sm:flex-none justify-center">📊 SLA report</Link>
+          {isAdmin ? (
+            <>
+              <a href="/api/reports/export?type=leads" className="btn btn-ghost flex-1 sm:flex-none justify-center">Leads CSV</a>
+              <a href="/api/reports/export?type=calls" className="btn btn-primary flex-1 sm:flex-none justify-center">Calls CSV</a>
+            </>
+          ) : (
+            <div className="text-[11px] text-gray-500 italic max-w-[200px] text-right">CSV export is Admin-only · contact Lalit</div>
+          )}
         </div>
       </div>
 

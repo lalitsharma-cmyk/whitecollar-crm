@@ -7,11 +7,13 @@ import { requireUser } from "@/lib/auth";
 import LeadActionsClient from "@/components/LeadActionsClient";
 import LeadProjectsClient from "@/components/LeadProjectsClient";
 import LeadMeetingClient from "@/components/LeadMeetingClient";
+import SiteVisitTracker from "@/components/SiteVisitTracker";
 import { runReconciler } from "@/lib/reconciler";
 import { aggregateCalls, callBreakdownString } from "@/lib/callStats";
 import { activityVisual } from "@/lib/activityIcon";
 import InlineEdit from "@/components/InlineEdit";
 import { acefoneEnabled } from "@/lib/acefone";
+import { canTouchLead } from "@/lib/leadScope";
 
 export const dynamic = "force-dynamic";
 
@@ -64,6 +66,8 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
     }),
   ]);
   if (!lead) notFound();
+  // Agents can only see leads they own — 404 to avoid leaking existence.
+  if (!canTouchLead(me, lead)) notFound();
 
   const lastBy = (t: string) => meetingActs.find(a => a.type === t)?.completedAt ?? meetingActs.find(a => a.type === t)?.scheduledAt ?? null;
   const meetingCounts = {
@@ -71,6 +75,12 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
     virtualMeetings: { count: meetingActs.filter(a => a.type === "VIRTUAL_MEETING").length, lastAt: lastBy("VIRTUAL_MEETING") },
     siteVisits:      { count: meetingActs.filter(a => a.type === "SITE_VISIT").length,      lastAt: lastBy("SITE_VISIT") },
   };
+
+  // Find an in-progress visit (started but not ended) attended by me — so the
+  // tracker resumes if the agent navigates away and back.
+  const activeVisit = meetingActs.find(
+    (a) => a.attendedByUserId === me.id && a.startedAt && !a.endedAt && a.status !== "DONE"
+  );
 
   // Call stats aggregate (dialed / connected / not-picked etc.)
   const callStats = aggregateCalls(lead.callLogs);
@@ -152,6 +162,17 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
                 acefoneEnabled={acefoneEnabled()}
                 acefoneMappedForUser={!!me.acefoneAgentId}
               />
+              <div className="mt-3">
+                <SiteVisitTracker
+                  leadId={lead.id}
+                  leadName={lead.name}
+                  activeVisit={activeVisit && activeVisit.startedAt ? {
+                    activityId: activeVisit.id,
+                    type: activeVisit.type as "OFFICE_MEETING" | "VIRTUAL_MEETING" | "SITE_VISIT",
+                    startedAt: activeVisit.startedAt.toISOString(),
+                  } : null}
+                />
+              </div>
             </div>
           </div>
         </div>
@@ -216,6 +237,26 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
             <div>
               <div className="text-xs text-gray-500">Categorization</div>
               <InlineEdit leadId={lead.id} field="categorization" value={lead.categorization ?? ""} />
+            </div>
+            <div>
+              <div className="text-xs text-gray-500">💼 Profession</div>
+              <InlineEdit leadId={lead.id} field="profession" type="select" value={lead.profession ?? ""}
+                options={[
+                  {value:"JOB",label:"Job (salaried)"},
+                  {value:"SELF_EMPLOYED",label:"Self-employed"},
+                  {value:"BUSINESS_OWNER",label:"Business owner"},
+                  {value:"INVESTOR",label:"Investor"},
+                  {value:"RETIRED",label:"Retired"},
+                  {value:"STUDENT",label:"Student"},
+                  {value:"OTHER",label:"Other"},
+                ]} />
+            </div>
+            <div>
+              <div className="text-xs text-gray-500">🔗 LinkedIn</div>
+              {lead.linkedInUrl && (
+                <a href={lead.linkedInUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-[#0b1a33] underline block truncate">View profile ↗</a>
+              )}
+              <InlineEdit leadId={lead.id} field="linkedInUrl" value={lead.linkedInUrl ?? ""} placeholder="https://linkedin.com/in/…" />
             </div>
             <div>
               <div className="text-xs text-gray-500">Configuration</div>

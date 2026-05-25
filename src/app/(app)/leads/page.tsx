@@ -7,6 +7,7 @@ import { requireUser } from "@/lib/auth";
 import LeadFilters from "@/components/LeadFilters";
 import LeadsListClient from "@/components/LeadsListClient";
 import { runReconciler } from "@/lib/reconciler";
+import { leadScopeWhere } from "@/lib/leadScope";
 
 export const dynamic = "force-dynamic";
 
@@ -34,9 +35,13 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
   const sp = await searchParams;
 
   // Build where clause from filters
-  // By default, hide cold-call leads (they live in /cold-calls). User can opt-in
-  // by adding ?showCold=1 to the URL.
-  const where: Prisma.LeadWhereInput = sp.showCold === "1" ? {} : { isColdCall: false };
+  // 1. Agents only see leads they own — leadScopeWhere applies the ownerId filter.
+  // 2. By default, hide cold-call leads (they live in /cold-calls). User can opt-in
+  //    by adding ?showCold=1 to the URL.
+  const scope = leadScopeWhere(me);
+  const where: Prisma.LeadWhereInput = sp.showCold === "1"
+    ? { ...scope }
+    : { ...scope, isColdCall: false };
   if (sp.q) {
     where.OR = [
       { name: { contains: sp.q, mode: "insensitive" } },
@@ -91,7 +96,9 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
         </div>
         <div className="flex flex-wrap gap-2">
           <Link href="/intake" className="btn btn-ghost flex-1 sm:flex-none justify-center">Import</Link>
-          <a href="/api/reports/export?type=leads" className="btn btn-ghost flex-1 sm:flex-none justify-center">Export</a>
+          {me.role === "ADMIN" && (
+            <a href="/api/reports/export?type=leads" className="btn btn-ghost flex-1 sm:flex-none justify-center">Export</a>
+          )}
           <Link href="/leads/new" className="btn btn-primary flex-1 sm:flex-none justify-center">+ New Lead</Link>
         </div>
       </div>

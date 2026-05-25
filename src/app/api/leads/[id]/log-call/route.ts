@@ -1,11 +1,13 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireUser } from "@/lib/auth";
 import { CallDirection, CallOutcome, ActivityType, ActivityStatus } from "@prisma/client";
+import { loadOwnedLead } from "@/lib/leadScope";
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const me = await requireUser();
   const { id } = await params;
+  const scoped = await loadOwnedLead(id);
+  if (scoped.error) return scoped.error;
+  const { me } = scoped;
   const body = await req.json().catch(() => ({}));
 
   const outcome = body.outcome as CallOutcome;
