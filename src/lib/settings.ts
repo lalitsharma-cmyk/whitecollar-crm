@@ -6,6 +6,10 @@ import { prisma } from "@/lib/prisma";
 const DEFAULTS = {
   "travel.perKmInr": "10",     // ₹10 per km — admin can change in /settings
   "speedToLead.enabled": "true", // auto-WA + email on every new lead (admin kill-switch)
+  // Round-robin auto-assign kill-switch. When OFF, the 5-min reconciler skips
+  // every orphan — every new lead stays unassigned until admin manually routes.
+  // Flip OFF before bulk imports of existing-client data.
+  "roundRobin.enabled": "true",
 };
 
 export async function getSetting(key: string): Promise<string> {
@@ -31,6 +35,12 @@ export async function getTravelRatePerKmInr(): Promise<number> {
 
 export async function getSpeedToLeadEnabled(): Promise<boolean> {
   const raw = await getSetting("speedToLead.enabled");
+  if (!raw) return true; // default ON
+  return raw.toLowerCase() !== "false";
+}
+
+export async function getRoundRobinEnabled(): Promise<boolean> {
+  const raw = await getSetting("roundRobin.enabled");
   if (!raw) return true; // default ON
   return raw.toLowerCase() !== "false";
 }

@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { notify, notifyRoles } from "@/lib/notify";
 import { LeadStatus } from "@prisma/client";
 import { chooseOwnerForNewLead } from "@/lib/assignmentWindow";
+import { getRoundRobinEnabled } from "@/lib/settings";
 
 // The reconciler runs on every dashboard/leads page load (cheap, deduped).
 // It enforces two SLAs without needing a separate cron service:
@@ -34,8 +35,13 @@ export async function runReconciler(): Promise<ReconcileResult> {
   let autoAssigned = 0, slaEscalated = 0;
 
   // ── 1) Auto-assign anything unowned >5 minutes ──────────────────────
+  // Admin kill-switch: when OFF, skip just the orphan sweep (SLA escalation
+  // and "needs you" flagging in sections 2-3 still run). Used during bulk
+  // imports of existing-client data so nothing gets stolen by round-robin
+  // before admin manually routes.
+  const roundRobinOn = await getRoundRobinEnabled();
   const cutoffAssign = new Date(Date.now() - AUTO_ASSIGN_AFTER_MIN * 60 * 1000);
-  const orphans = await prisma.lead.findMany({
+  const orphans = roundRobinOn ? await prisma.lead.findMany({
     where: {
       ownerId: null,
       createdAt: { lte: cutoffAssign },
@@ -44,7 +50,7 @@ export async function runReconciler(): Promise<ReconcileResult> {
       isColdCall: false,
     },
     take: 50,
-  });
+  }) : [];
 
   for (const lead of orphans) {
     const team = lead.forwardedTeam ?? null;

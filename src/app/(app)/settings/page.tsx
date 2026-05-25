@@ -1,20 +1,33 @@
 import { requireUser } from "@/lib/auth";
-import { getTravelRatePerKmInr, getSpeedToLeadEnabled } from "@/lib/settings";
+import { getTravelRatePerKmInr, getSpeedToLeadEnabled, getRoundRobinEnabled } from "@/lib/settings";
 import TravelRateEditor from "@/components/TravelRateEditor";
 import SpeedToLeadToggle from "@/components/SpeedToLeadToggle";
+import RoundRobinToggle from "@/components/RoundRobinToggle";
 
 export const dynamic = "force-dynamic";
 
 export default async function SettingsPage() {
   const me = await requireUser();
-  const [travelRate, speedToLeadOn] = await Promise.all([
+  const [travelRate, speedToLeadOn, roundRobinOn] = await Promise.all([
     getTravelRatePerKmInr(),
     getSpeedToLeadEnabled(),
+    getRoundRobinEnabled(),
   ]);
   const isAdmin = me.role === "ADMIN";
   return (
     <>
       <h1 className="text-xl sm:text-2xl font-bold">Settings</h1>
+
+      {/* Round-robin kill-switch — most important during bulk imports */}
+      <div className={`card p-5 max-w-2xl border-l-4 ${roundRobinOn ? "border-emerald-500" : "border-amber-500 bg-amber-50"}`}>
+        <div className="font-semibold flex items-center gap-2">🔁 Round-robin auto-assign</div>
+        <p className="text-xs text-gray-500 mt-1">
+          When ON, every unassigned lead older than 5 min gets routed to a present agent automatically.
+          <b className="text-amber-700"> Switch OFF before bulk-uploading existing-client lists</b> so they don't get
+          stolen by round-robin while you're routing them manually. Switch back ON when done.
+        </p>
+        <RoundRobinToggle initial={roundRobinOn} canEdit={isAdmin} />
+      </div>
 
       {/* Editable card — travel reimbursement (admin-only) */}
       <div className="card p-5 max-w-2xl">
