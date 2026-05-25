@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { format, formatDistanceToNow } from "date-fns";
 import Link from "next/link";
 import { fmtMoney } from "@/lib/money";
@@ -68,8 +68,11 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
     }),
   ]);
   if (!lead) notFound();
-  // Agents can only see leads they own — 404 to avoid leaking existence.
-  if (!canTouchLead(me, lead)) notFound();
+  // Agents can only see leads they own. Redirect (307) to /leads instead of
+  // notFound() because Next.js app-router notFound() renders the 404 UI but
+  // returns HTTP 200 — confusing for auditors. Redirect is cleaner UX too:
+  // agent lands back on their own list rather than a dead end.
+  if (!canTouchLead(me, lead)) redirect("/leads");
 
   const lastBy = (t: string) => meetingActs.find(a => a.type === t)?.completedAt ?? meetingActs.find(a => a.type === t)?.scheduledAt ?? null;
   const meetingCounts = {
