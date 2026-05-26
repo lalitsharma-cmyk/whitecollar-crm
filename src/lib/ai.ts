@@ -14,7 +14,11 @@ import Anthropic from "@anthropic-ai/sdk";
 // ─────────────────────────────────────────────────────────────────────────────
 
 const ANTHROPIC_MODEL = process.env.AI_MODEL ?? "claude-haiku-4-5";
-const GEMINI_MODEL = process.env.GEMINI_MODEL ?? "gemini-2.0-flash-exp";
+// Use the GA Gemini 2.0 Flash model (not the -exp preview which Google
+// deprecated when 2.0 went stable). Override via GEMINI_MODEL env var if
+// you want to try gemini-2.0-flash-lite (cheaper) or gemini-1.5-pro
+// (smarter but slower).
+const GEMINI_MODEL = process.env.GEMINI_MODEL ?? "gemini-2.0-flash";
 
 type Provider = "gemini" | "anthropic" | null;
 
