@@ -196,7 +196,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
              view === "India" ? "🇮🇳 India team — Sales Command Center" :
              "Sales Command Center (all teams)"}
           </h1>
-          <p className="text-xs sm:text-sm text-gray-500">{new Date().toLocaleDateString("en-US", { weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: "Asia/Kolkata" })} · {new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Kolkata" })} IST · Live data</p>
+          <p className="text-xs sm:text-sm text-gray-500">{new Date().toLocaleDateString("en-US", { weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: "Asia/Kolkata" })} · {new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Kolkata" })} IST · Live data · <span className="text-[10px] text-gray-400">v.{(process.env.VERCEL_GIT_COMMIT_SHA ?? "local").slice(0, 7)}</span></p>
         </div>
         <div className="flex gap-2 flex-wrap items-center self-start sm:self-auto">
           {isAdminOrMgr && (

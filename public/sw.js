@@ -7,7 +7,7 @@
 // Bump this version when shipping a UI fix that PWA users might otherwise
 // miss because their old SW kept serving the stale shell. The activate
 // handler below already deletes every old `wcr-shell-*` cache on swap.
-const CACHE = "wcr-shell-v3";
+const CACHE = "wcr-shell-v4";
 const SHELL = ["/login", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", (event) => {
