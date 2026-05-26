@@ -97,7 +97,8 @@ export default function LeadActionsClient({ leadId, phone, altPhone, email, curr
 
   async function submitCall() {
     setErr(null);
-    if (remarks.trim().length < 3) { setErr("Please write what happened in the call (min 3 chars)."); return; }
+    // Remarks are OPTIONAL on every outcome — Lalit asked: "remarks on all outcome
+    // should not be mandatory". Just don't send the field if it's empty.
     // Convert IST wall-clock callback time → ISO. Server picks it up and writes
     // Lead.followupDate so the pre-call reminder cron fires 10 min before.
     let callbackAtISO: string | undefined;

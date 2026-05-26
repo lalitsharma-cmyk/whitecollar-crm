@@ -30,9 +30,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   if (!outcome || !Object.values(CallOutcome).includes(outcome)) {
     return NextResponse.json({ error: "Outcome is required" }, { status: 400 });
   }
-  if (!remarks || remarks.length < 3) {
-    return NextResponse.json({ error: "Remarks required (minimum 3 characters)" }, { status: 400 });
-  }
+  // Remarks are OPTIONAL on every outcome (Lalit's policy). Agent can save a
+  // bare outcome like "not picked" without writing anything.
 
   const lead = await prisma.lead.findUnique({ where: { id } });
   if (!lead) return NextResponse.json({ error: "Lead not found" }, { status: 404 });
@@ -47,7 +46,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       phoneNumber: lead.phone ?? "(no number)",
       durationSec: durationSec > 0 ? durationSec : undefined,
       outcome,
-      notes: remarks,
+      notes: remarks || undefined,  // empty remarks → null in DB (cleaner than empty string)
       startedAt: now,
     },
   });
@@ -58,7 +57,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       type: ActivityType.CALL,
       status: ActivityStatus.DONE,
       title: `Call · ${outcome.replaceAll("_", " ")}`,
-      description: remarks,
+      description: remarks || undefined,
       completedAt: now,
     },
   });
