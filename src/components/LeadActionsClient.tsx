@@ -66,7 +66,13 @@ export default function LeadActionsClient({ leadId, phone, altPhone, email, curr
   // 10-min-before push from the pre-meeting cron and shows up on the morning
   // dashboard's "☎ N client callbacks today" tile.
   const [callbackAt, setCallbackAt] = useState("");
+  // Three categories of outcome:
+  //   • "need callback"  → callback time REQUIRED (couldn't reach them; must reschedule)
+  //   • "show optional"  → callback time OPTIONAL (call connected; next followup is good practice)
+  //   • "hide"           → no callback field (wrong number / not interested — no point)
   const needsCallback = outcome === "CALLBACK" || outcome === "BUSY" || outcome === "SWITCHED_OFF" || outcome === "NOT_PICKED";
+  const showOptionalCallback = outcome === "CONNECTED" || outcome === "INTERESTED";
+  const showCallbackField = needsCallback || showOptionalCallback;
   const [err, setErr] = useState<string | null>(null);
   const [assignBusy, setAssignBusy] = useState(false);
   const [acefoneBusy, setAcefoneBusy] = useState(false);
@@ -95,11 +101,11 @@ export default function LeadActionsClient({ leadId, phone, altPhone, email, curr
     // Convert IST wall-clock callback time → ISO. Server picks it up and writes
     // Lead.followupDate so the pre-call reminder cron fires 10 min before.
     let callbackAtISO: string | undefined;
-    if (needsCallback && callbackAt) {
+    if (showCallbackField && callbackAt) {
       const d = fromISTLocalInput(callbackAt);
-      if (!d) { setErr("Invalid callback time."); return; }
+      if (!d) { setErr("Invalid follow-up time."); return; }
       if (d.getTime() <= Date.now()) {
-        setErr("Callback time must be in the future (IST).");
+        setErr("Follow-up time must be in the future (IST).");
         return;
       }
       callbackAtISO = d.toISOString();
@@ -241,13 +247,16 @@ export default function LeadActionsClient({ leadId, phone, altPhone, email, curr
                 Required when the client asked for a specific time. Saved as
                 Lead.followupDate so the pre-meeting cron sends a 10-min-before push
                 and it shows in the morning dashboard's callback count. */}
-            {needsCallback && (
-              <div className="mb-3 p-3 rounded-lg border-2 border-amber-300 bg-amber-50">
-                <label className="text-xs font-semibold text-amber-900 flex items-center gap-1 mb-2">
-                  ⏰ When should you call back? <span className="text-[10px] text-amber-700 font-normal">(required for scheduled callback)</span>
+            {showCallbackField && (
+              <div className={`mb-3 p-3 rounded-lg border-2 ${needsCallback ? "border-amber-300 bg-amber-50" : "border-emerald-300 bg-emerald-50"}`}>
+                <label className={`text-xs font-semibold flex items-center gap-1 mb-2 ${needsCallback ? "text-amber-900" : "text-emerald-900"}`}>
+                  ⏰ {needsCallback ? "When should you call back?" : "Next follow-up date"}
+                  <span className={`text-[10px] font-normal ${needsCallback ? "text-amber-700" : "text-emerald-700"}`}>
+                    {needsCallback ? "(required for scheduled callback)" : "(optional — schedule the next touchpoint)"}
+                  </span>
                 </label>
                 <DateTimeIST value={callbackAt} onChange={setCallbackAt} futureOnly />
-                <p className="text-[10px] text-amber-800 mt-2">
+                <p className={`text-[10px] mt-2 ${needsCallback ? "text-amber-800" : "text-emerald-800"}`}>
                   You&apos;ll get a push notification 10 min before this time, and it will appear in your morning briefing.
                 </p>
               </div>
