@@ -204,11 +204,38 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
             The raw text uses runs of `,,,,` between call entries (MIS sheet
             convention); InlineEdit's textarea read-view splits those into
             paragraph breaks for readability. */}
-        {/* CALL HISTORY — first card under the header so agents read past notes
-            BEFORE dialling. Outranks remarks because outcomes + recordings are
-            actionable (outcome buckets, no-pick streak, callback times).
-            RemarksCard MOVED to the bottom of this left column per Lalit's ask:
-            "Move remarks to last". */}
+        {/* AI Summary — TLDR of all conversations so the agent doesn't have
+            to scroll the full Call History to remember what's going on. Lalit:
+            "All important information and conversation should be in Summary."
+            Always rendered (with placeholder when blank) so it can't be missed. */}
+        <div className="card p-5 border-l-4 border-[#c9a24b] bg-amber-50/30">
+          <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
+            <div className="font-semibold flex items-center gap-2 text-base">
+              📋 Client Summary
+              <span className="ai-tag">AI</span>
+            </div>
+            {lead.aiUpdatedAt && (
+              <span className="text-[10px] text-gray-500">Updated {formatDistanceToNow(lead.aiUpdatedAt, { addSuffix: true })}</span>
+            )}
+          </div>
+          {lead.aiSummary ? (
+            <p className="text-sm text-gray-800 leading-relaxed whitespace-pre-wrap">{lead.aiSummary}</p>
+          ) : (
+            <p className="text-xs text-gray-500 italic">
+              No AI summary yet. Use the 🪄 Auto-fill / 🧠 Deep AI buttons below to generate one from the call history + remarks.
+            </p>
+          )}
+          {lead.aiNextAction && (
+            <div className="mt-3 flex items-start gap-2 text-sm bg-amber-100/70 border border-amber-300 rounded-lg p-3">
+              <span>⚡</span>
+              <div><b>Next best action:</b> {lead.aiNextAction}</div>
+            </div>
+          )}
+        </div>
+
+        {/* CALL HISTORY — second card so agents can scan structured calls after
+            reading the Summary. Outcomes + recordings are actionable per-row
+            (outcome buckets, no-pick streak, callback times). */}
         <CallHistoryCard callLogs={lead.callLogs} />
 
         <div className="card p-5 border-l-4 border-[#c9a24b]">
@@ -222,26 +249,13 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
           </div>
         </div>
 
+        {/* AI Summary MOVED to the top of the left column (right after Call
+            History). Lalit's ask: "all call records have not to be seen by
+            agent all time. All important information and conversation should
+            be in Summary." */}
         {/* BANT verdict + Qualification card BOTH MOVED to the right column —
             Lalit's ask: "Qualification and expo/site visit all move to right
-            side." See the right rail below.
-            Scheduling MOVED to right column previously per the same ask. */}
-
-        {lead.aiSummary && (
-          <div className="card p-5">
-            <div className="flex items-center justify-between mb-2">
-              <div className="font-semibold flex items-center gap-2">AI Summary <span className="ai-tag">AI</span></div>
-              <span className="text-xs text-gray-500">Updated {lead.aiUpdatedAt ? formatDistanceToNow(lead.aiUpdatedAt, { addSuffix: true }) : "—"}</span>
-            </div>
-            <p className="text-sm text-gray-700">{lead.aiSummary}</p>
-            {lead.aiNextAction && (
-              <div className="mt-3 flex items-start gap-2 text-sm bg-amber-50 border border-amber-200 rounded-lg p-3">
-                <span>⚡</span>
-                <div><b>Next best action:</b> {lead.aiNextAction}</div>
-              </div>
-            )}
-          </div>
-        )}
+            side." Scheduling MOVED to right column previously per the same ask. */}
 
         <div className="card p-5">
           <div className="font-semibold mb-3">Timeline</div>

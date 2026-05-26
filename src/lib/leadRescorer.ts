@@ -1,14 +1,24 @@
-// Behavioural lead re-scoring.
+// Behavioural lead re-scoring — STATELESS.
 //
-// Unlike src/lib/ai.ts (which scores ONCE at intake from the static profile),
-// this module recomputes the aiScore based on what the lead has actually DONE
-// since they entered the pipeline: WhatsApp replies, picked-up calls, completed
-// site visits, BANT verdicts, contact recency, etc.
+// Bug fix (May 26): the previous version read lead.aiScoreValue as the BASE
+// and applied +/- deltas on top of it each run. That meant penalties stacked
+// indefinitely — a HOT 85 lead with a not-picked streak lost 12 every nightly
+// pass (85 → 73 → 61 → 49 → 37 → COLD) even when nothing about the lead
+// actually changed. Lalit: "AI rescore does not work correct — HOT lead shows
+// as COLD or vice versa". Now the rescorer is stateless: it always computes
+// from scratch using the lead's current profile + recent behavior, so the same
+// data always yields the same score.
+//
+// Conceptually:
+//   1. SEED the score from the lead's classification (categorization column
+//      from the MIS sheet — "Highly Responsive" / "Cold" / etc.) or default 50.
+//   2. CLAMP via BANT verdict (definitive QUALIFIES / NOT_QUALIFIED).
+//   3. BOOST for fresh positive behavior (WA reply, connected call, site visit).
+//   4. PENALIZE for negative behavior (consecutive not-picked, idle decay).
+//   5. CLAMP 0..100, map to bucket via thresholds.
 //
 // Called fire-and-forget from API routes after the user action persists, plus
-// nightly via /api/cron/rescore-all for leads that no one has touched today.
-//
-// Returns a small diff so the caller can log / react if needed.
+// nightly via /api/cron/rescore-all for leads no one touched today.
 
 import "server-only";
 import { prisma } from "@/lib/prisma";
@@ -21,19 +31,13 @@ import {
   BantStatus,
 } from "@prisma/client";
 
-// Update threshold — avoid logging activity / bumping aiUpdatedAt for tiny moves.
 const NOISE_THRESHOLD = 3;
 
 export interface RescoreResult {
-  /** Previous numeric score (0-100). Null = no change applied (sub-threshold or lead missing). */
   from: number | null;
-  /** New numeric score (0-100). Null = no change applied. */
   to: number | null;
-  /** Signed delta (to - from). 0 means no change applied. */
   changedBy: number;
-  /** Set when a lead was scored but the delta was below NOISE_THRESHOLD. */
   skippedBelowThreshold?: boolean;
-  /** Set when the leadId was not found. */
   notFound?: boolean;
 }
 
@@ -41,6 +45,92 @@ function bucketFor(score: number): AIScore {
   if (score >= 70) return AIScore.HOT;
   if (score >= 40) return AIScore.WARM;
   return AIScore.COLD;
+}
+
+/**
+ * Stateless score computation. Does NOT depend on the lead's previous score —
+ * always derives the new score from current profile + recent activity.
+ */
+function computeScore(args: {
+  categorization: string | null;
+  bantStatus: BantStatus | null;
+  fundReadiness: string | null;
+  potential: string | null;
+  budgetMin: number | null;
+  budgetMax: number | null;
+  callLogs: Array<{ outcome: CallOutcome; startedAt: Date }>;
+  waMessages: Array<{ direction: WAMessageDirection; receivedAt: Date }>;
+  activities: Array<{ type: ActivityType; status: ActivityStatus }>;
+  lastTouchedAt: Date;
+}): number {
+  const now = Date.now();
+  const DAY = 24 * 60 * 60 * 1000;
+
+  // 1. SEED from MIS categorization. Lalit's team writes this manually in the
+  // sheet; respect what they typed. Default 50 (neutral) when blank/unknown.
+  const cat = (args.categorization ?? "").toLowerCase();
+  let score = 50;
+  if (/highly responsive|🔥|hot|excited|ready to (book|buy|close)|booked|signed|paid/i.test(cat)) {
+    score = 80;
+  } else if (/responsive|warm|interested|positive|considering|will visit|meeting scheduled|🙂/i.test(cat)) {
+    score = 60;
+  } else if (/sometimes responsive|🤔/i.test(cat)) {
+    score = 45;
+  } else if (/not interested|dropped|do not call|wrong number|stale|❌/i.test(cat)) {
+    score = 15;
+  } else if (/cold|not picking|switched off|low interest|just browsing|window shopping|future plan|🧊|📵/i.test(cat)) {
+    score = 25;
+  }
+
+  // 2. BANT verdict — definitive overrides. QUALIFIES floors at WARM-high,
+  // NOT_QUALIFIED caps at low-WARM.
+  if (args.bantStatus === BantStatus.QUALIFIES) score = Math.max(score, 70);
+  if (args.bantStatus === BantStatus.NOT_QUALIFIED) score = Math.min(score, 25);
+
+  // 3. Profile signals (small, one-shot, additive)
+  const ccyMul = args.budgetMin && args.budgetMin > 1_000_000 ? 5 : 0;
+  score += ccyMul;
+  if (args.fundReadiness === "CASH_READY") score += 8;
+  else if (args.fundReadiness === "BANK_APPROVED") score += 4;
+  if (args.potential === "HIGH") score += 5;
+  else if (args.potential === "LOW") score -= 5;
+
+  // 4. Behavioural BOOSTS (fresh evidence of engagement)
+  const sevenDaysAgo = now - 7 * DAY;
+  const fourteenDaysAgo = now - 14 * DAY;
+  const repliedRecentlyOnWA = args.waMessages.some(
+    (m) => m.direction === WAMessageDirection.INBOUND && m.receivedAt.getTime() >= sevenDaysAgo
+  );
+  if (repliedRecentlyOnWA) score += 12;
+
+  const recentConnectedCall = args.callLogs.some(
+    (c) => c.outcome === CallOutcome.CONNECTED && c.startedAt.getTime() >= fourteenDaysAgo
+  );
+  if (recentConnectedCall) score += 10;
+
+  const completedSiteVisitEver = args.activities.some(
+    (a) => a.type === ActivityType.SITE_VISIT && a.status === ActivityStatus.DONE
+  );
+  if (completedSiteVisitEver) score += 15;
+
+  // 5. Behavioural PENALTIES
+  // Consecutive not-picked at the head of the call list — capped, NOT cumulative.
+  let consecutiveNotPicked = 0;
+  for (const c of args.callLogs) {
+    if (c.outcome === CallOutcome.NOT_PICKED || c.outcome === CallOutcome.SWITCHED_OFF || c.outcome === CallOutcome.BUSY) {
+      consecutiveNotPicked++;
+    } else break;
+  }
+  if (consecutiveNotPicked >= 7) score -= 20;
+  else if (consecutiveNotPicked >= 5) score -= 15;
+  else if (consecutiveNotPicked >= 3) score -= 10;
+
+  // Idle decay — one-shot bracket, not per-rescore accumulator.
+  const daysSinceTouch = (now - args.lastTouchedAt.getTime()) / DAY;
+  if (daysSinceTouch >= 60) score -= 15;
+  else if (daysSinceTouch >= 30) score -= 8;
+
+  return Math.max(0, Math.min(100, Math.round(score)));
 }
 
 export async function rescoreLead(leadId: string): Promise<RescoreResult> {
@@ -54,66 +144,30 @@ export async function rescoreLead(leadId: string): Promise<RescoreResult> {
   });
   if (!lead) return { from: null, to: null, changedBy: 0, notFound: true };
 
-  const now = Date.now();
-  const DAY = 24 * 60 * 60 * 1000;
+  const previousScore = typeof lead.aiScoreValue === "number" ? lead.aiScoreValue : null;
 
-  const base = typeof lead.aiScoreValue === "number" ? lead.aiScoreValue : 50;
-  let score = base;
+  const score = computeScore({
+    categorization: lead.categorization,
+    bantStatus: lead.bantStatus,
+    fundReadiness: lead.fundReadiness as string | null,
+    potential: lead.potential as string | null,
+    budgetMin: lead.budgetMin,
+    budgetMax: lead.budgetMax,
+    callLogs: lead.callLogs.map((c) => ({ outcome: c.outcome, startedAt: c.startedAt })),
+    waMessages: lead.waMessages.map((m) => ({ direction: m.direction, receivedAt: m.receivedAt })),
+    activities: lead.activities.map((a) => ({ type: a.type, status: a.status })),
+    lastTouchedAt: lead.lastTouchedAt ?? lead.createdAt,
+  });
 
-  // ── Positive signals ───────────────────────────────────────────────────────
-  // 1) Lead replied to WA in last 7 days (+10)
-  const sevenDaysAgo = now - 7 * DAY;
-  const repliedRecentlyOnWA = lead.waMessages.some(
-    (m) => m.direction === WAMessageDirection.INBOUND && m.receivedAt.getTime() >= sevenDaysAgo
-  );
-  if (repliedRecentlyOnWA) score += 10;
-
-  // 2) Call CONNECTED in last 14 days (+8)
-  const fourteenDaysAgo = now - 14 * DAY;
-  const recentConnectedCall = lead.callLogs.some(
-    (c) => c.outcome === CallOutcome.CONNECTED && c.startedAt.getTime() >= fourteenDaysAgo
-  );
-  if (recentConnectedCall) score += 8;
-
-  // 3) Site visit COMPLETED ever (+15) — DONE SITE_VISIT activity
-  const completedSiteVisitEver = lead.activities.some(
-    (a) => a.type === ActivityType.SITE_VISIT && a.status === ActivityStatus.DONE
-  );
-  if (completedSiteVisitEver) score += 15;
-
-  // 4) Budget set + over 1M (+5) — min OR max greater than 1,000,000
-  const hasBudgetOver1M =
-    (lead.budgetMin != null && lead.budgetMin > 1_000_000) ||
-    (lead.budgetMax != null && lead.budgetMax > 1_000_000);
-  if (hasBudgetOver1M) score += 5;
-
-  // ── Negative signals ───────────────────────────────────────────────────────
-  // 5) 3+ consecutive NOT_PICKED at the head of call history (-12)
-  let consecutiveNotPicked = 0;
-  for (const c of lead.callLogs) {
-    if (c.outcome === CallOutcome.NOT_PICKED) consecutiveNotPicked++;
-    else break;
-  }
-  if (consecutiveNotPicked >= 3) score -= 12;
-
-  // 6) No contact in 30+ days (-15) — based on lastTouchedAt (falls back to createdAt)
-  const lastTouch = lead.lastTouchedAt ?? lead.createdAt;
-  const daysSinceTouch = (now - lastTouch.getTime()) / DAY;
-  if (daysSinceTouch >= 30) score -= 15;
-
-  // 7) BANT NOT_QUALIFIED (-20)
-  if (lead.bantStatus === BantStatus.NOT_QUALIFIED) score -= 20;
-
-  // Clamp 0-100, map to bucket
-  score = Math.max(0, Math.min(100, Math.round(score)));
   const newBucket = bucketFor(score);
-  const oldBucket = lead.aiScore ?? bucketFor(base);
+  const oldBucket = lead.aiScore;
+  const delta = previousScore != null ? score - previousScore : score;
 
-  const delta = score - base;
-
-  // Only persist if the value moved by ≥ NOISE_THRESHOLD (avoid timeline spam)
-  if (Math.abs(delta) < NOISE_THRESHOLD) {
-    return { from: base, to: base, changedBy: 0, skippedBelowThreshold: true };
+  // Skip persistence + activity log when the move is below noise threshold AND
+  // the bucket didn't change. A bucket flip (WARM→HOT) always gets logged even
+  // if the raw delta is small — that's a meaningful UX change.
+  if (previousScore != null && Math.abs(delta) < NOISE_THRESHOLD && newBucket === oldBucket) {
+    return { from: previousScore, to: previousScore, changedBy: 0, skippedBelowThreshold: true };
   }
 
   const updatedAt = new Date();
@@ -126,18 +180,15 @@ export async function rescoreLead(leadId: string): Promise<RescoreResult> {
     },
   });
 
-  // Log a STATUS_CHANGE activity so the timeline shows the score movement.
-  // The lead detail page detects this via the "🤖 AI re-score:" title prefix.
   await prisma.activity.create({
     data: {
       leadId,
-      // userId omitted — system-generated activity has no user
       type: ActivityType.STATUS_CHANGE,
       status: ActivityStatus.DONE,
-      title: `🤖 AI re-score: ${base} → ${score} (${oldBucket} → ${newBucket})`,
+      title: `🤖 AI re-score: ${previousScore ?? "—"} → ${score} (${oldBucket ?? "—"} → ${newBucket})`,
       completedAt: updatedAt,
     },
   });
 
-  return { from: base, to: score, changedBy: delta };
+  return { from: previousScore, to: score, changedBy: delta };
 }

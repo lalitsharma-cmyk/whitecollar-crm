@@ -65,6 +65,28 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
   else if (sp.when === "30d") where.createdAt = { gte: new Date(Date.now() - 30 * 24 * 3600 * 1000) };
   else if (sp.when === "overdue") where.lastTouchedAt = { lt: new Date(Date.now() - 5 * 24 * 3600 * 1000) };
 
+  // Quick filter: ?notPicked=N  → leads where (a) at least one no-answer call
+  // has happened in the last N days AND (b) no CONNECTED / INTERESTED call has
+  // happened in that window. Lalit asked: "If client is not picking calls from
+  // 3 Days, there should be a tag added so filtration can be easy."
+  // Allowed values: 2, 3, 5, 7, 14. Anything else → ignored.
+  const notPickedDays = sp.notPicked ? parseInt(sp.notPicked) : null;
+  if (notPickedDays && [2, 3, 5, 7, 14].includes(notPickedDays)) {
+    const sinceMs = Date.now() - notPickedDays * 24 * 3600 * 1000;
+    const since = new Date(sinceMs);
+    // Subquery via Prisma's some/none filters on the callLogs relation.
+    where.callLogs = {
+      some: {
+        outcome: { in: ["NOT_PICKED", "SWITCHED_OFF", "BUSY"] },
+        startedAt: { gte: since },
+      },
+      none: {
+        outcome: { in: ["CONNECTED", "INTERESTED"] },
+        startedAt: { gte: since },
+      },
+    };
+  }
+
   // Quick filter: ?followup=today  → leads whose followupDate falls within today IST.
   // Lalit asked: "Agent is unable to track what are today's follow up... make it
   // filter in leads for agent today's followups."
@@ -169,6 +191,22 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
           className={`px-3 py-2 rounded-full text-xs font-semibold border min-h-9 inline-flex items-center gap-1 ${sp.followup === "week" ? "bg-blue-600 text-white border-blue-600" : "bg-blue-50 border-blue-300 text-blue-800"}`}
         >
           📆 Next 7 days
+        </Link>
+
+        {/* Not-picked filter chips — Lalit's ask: "If client is not picking
+            calls from 3 Days, there should be a tag added so filtration can be
+            easy. Call not pick form 2, 3, 4, 5,6 7, days type of tag." */}
+        <Link
+          href="/leads?notPicked=3"
+          className={`px-3 py-2 rounded-full text-xs font-semibold border min-h-9 inline-flex items-center gap-1 ${sp.notPicked === "3" ? "bg-amber-600 text-white border-amber-600" : "bg-amber-50 border-amber-300 text-amber-800"}`}
+        >
+          📵 Not picked 3+ days
+        </Link>
+        <Link
+          href="/leads?notPicked=7"
+          className={`px-3 py-2 rounded-full text-xs font-semibold border min-h-9 inline-flex items-center gap-1 ${sp.notPicked === "7" ? "bg-red-600 text-white border-red-600" : "bg-red-50 border-red-300 text-red-800"}`}
+        >
+          📵 Not picked 7+ days
         </Link>
       </div>
 
