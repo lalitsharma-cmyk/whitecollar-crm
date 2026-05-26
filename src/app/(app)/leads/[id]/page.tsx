@@ -122,7 +122,10 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
   const slaActive = lead.ownerId && callsCount === 0 && slaMs !== null && slaMs > -3600_000;
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+    /* pb-24 reserves space at the bottom of the page on mobile so the
+       sticky action bar (Call / WA / Email / Log) inside LeadActionsClient
+       doesn't cover the last card. Removed on lg+ where the bar is in flow. */
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 pb-24 lg:pb-0">
       <div className="lg:col-span-2 space-y-4">
         {/* NEEDS YOU BANNER */}
         {lead.needsManagerReview && (
@@ -324,7 +327,10 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
         {/* Qualification — TOP of right column (paired with BANT above). */}
         <div className="card p-5">
           <div className="font-semibold mb-3">Qualification <span className="text-[10px] text-gray-400 font-normal">(click any value to edit)</span></div>
-          <div className="grid grid-cols-2 gap-4 text-sm">
+          {/* Single column on phones (some option values are long — "🔥 Highly
+              Responsive — picks calls regularly" — and overflowed in 2-col).
+              Goes back to 2-col on sm+ for a denser desktop view. */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
             <div>
               <div className="text-xs text-gray-500">🏢 Company</div>
               <InlineEdit leadId={lead.id} field="company" value={lead.company ?? ""} placeholder="e.g. Emirates NBD, TCS" />

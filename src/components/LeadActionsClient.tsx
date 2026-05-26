@@ -175,10 +175,16 @@ export default function LeadActionsClient({ leadId, phone, altPhone, email, curr
         </div>
       )}
 
-      {/* Compact horizontal action bar — Lalit's ask: "make buttons calls,
-          whatsapp on lead detail page smaller" + mobile redesign. 4-col grid
-          on every viewport (phones fit fine since buttons are smaller now). */}
-      <div className="grid grid-cols-4 gap-1.5 mt-3">
+      {/* Action bar — sticky to the BOTTOM of the screen on mobile (always
+          one tap away while scrolling Call History, BANT, etc.); in-flow on
+          desktop (lg+) where the whole page fits on screen.
+          Page-level pb-24 lg:pb-0 (added in leads/[id]/page.tsx) reserves
+          space so content isn't hidden behind the sticky bar on phones. */}
+      <div className="grid grid-cols-4 gap-1.5 mt-3
+                      lg:relative lg:bg-transparent lg:shadow-none lg:border-0 lg:p-0
+                      fixed bottom-0 left-0 right-0 z-30 bg-white shadow-2xl border-t border-[#e5e7eb] px-3 py-2.5"
+        style={{ paddingBottom: "calc(0.625rem + env(safe-area-inset-bottom))" }}
+      >
         {phone && (
           <a href={telUrl(phone)} className="flex items-center justify-center gap-1 py-2 rounded-lg bg-emerald-600 text-white text-xs font-semibold hover:bg-emerald-700 transition shadow-sm min-h-10">
             <Phone className="w-3.5 h-3.5" /> Call
