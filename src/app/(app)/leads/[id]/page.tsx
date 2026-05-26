@@ -276,16 +276,9 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
        nav (~56px + safe-area). The per-lead action bar is now in-flow inside
        the header card so no extra reservation needed for it. */
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 pb-24 lg:pb-0">
-      {/* Mobile back link — Lalit's ask: "in mobile app, i can not come back
-          to previous page". A hardware back goes to the browser history
-          which may be empty (PWA opened from home screen). This always
-          returns to /leads. Hidden on lg+ where the sidebar gives nav. */}
-      <Link
-        href="/leads"
-        className="lg:hidden col-span-full inline-flex items-center gap-1.5 text-sm text-[#0b1a33] font-semibold py-2 -mb-2"
-      >
-        ← Back to leads
-      </Link>
+      {/* Mobile back link removed — MobileShell now renders a global back
+          button in the mobile header (chevron-left next to hamburger) so
+          every non-root page has it, not just lead detail. */}
       <div className="lg:col-span-2 space-y-4">
         {/* NEEDS YOU BANNER */}
         {lead.needsManagerReview && (

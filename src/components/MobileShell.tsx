@@ -1,11 +1,11 @@
 "use client";
 import { useState } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   LayoutDashboard, Users, KanbanSquare, Sparkles, Menu, X, Bell,
   Building2, CalendarDays, PhoneCall, BarChart3, Upload, UserCog, Settings as SettingsIcon, LogOut,
-  Snowflake, ShieldCheck,
+  Snowflake, ShieldCheck, ChevronLeft,
 } from "lucide-react";
 import NotifBell from "./NotifBell";
 import WhatsAppPanel from "./WhatsAppPanel";
@@ -67,8 +67,31 @@ function Avatar({ user, initials, size }: { user: Props["user"]; initials: strin
 
 export default function MobileShell({ children, user }: Props) {
   const pathname = usePathname();
+  const router = useRouter();
   const [open, setOpen] = useState(false);
   const initials = user.name.split(" ").map((s) => s[0]).slice(0, 2).join("");
+
+  // Root pages = the 5 bottom-nav destinations + profile. On these, the
+  // hamburger menu is the primary nav so no back button needed. On any
+  // OTHER page (lead detail, project detail, reports/daily, /intake, /team,
+  // admin pages, etc.) show a back button so the user can return.
+  // Lalit: "All pages should have back buttons".
+  const rootPaths = new Set(["/dashboard", "/action-list", "/leads", "/pipeline", "/notifications", "/profile"]);
+  const showBack = pathname != null && !rootPaths.has(pathname);
+
+  // Back fallback: if browser history is empty (PWA opened from home screen,
+  // or page opened in a new tab), router.back() does nothing. Fall back to
+  // the parent route: strip the last URL segment.
+  function goBack() {
+    if (typeof window !== "undefined" && window.history.length > 1) {
+      router.back();
+    } else if (pathname) {
+      const parent = pathname.replace(/\/[^/]+\/?$/, "") || "/dashboard";
+      router.push(parent);
+    } else {
+      router.push("/dashboard");
+    }
+  }
 
   return (
     <div className="min-h-screen">
@@ -121,6 +144,18 @@ export default function MobileShell({ children, user }: Props) {
         <button onClick={() => setOpen(true)} aria-label="Open menu" className="p-2 rounded hover:bg-white/10 min-w-11 min-h-11 flex items-center justify-center">
           <Menu className="w-6 h-6" />
         </button>
+        {/* Global mobile back button — shows on every non-root page so the
+            agent can always return to the previous screen. Uses router.back()
+            with a parent-route fallback when history is empty. */}
+        {showBack && (
+          <button
+            onClick={goBack}
+            aria-label="Back"
+            className="p-2 rounded hover:bg-white/10 min-w-11 min-h-11 flex items-center justify-center -ml-1"
+          >
+            <ChevronLeft className="w-6 h-6" />
+          </button>
+        )}
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src="/brand/wcr-logo.png" alt="WCR" className="h-7 w-auto object-contain" />
         <div className="flex-1" />

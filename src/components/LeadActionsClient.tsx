@@ -156,12 +156,33 @@ export default function LeadActionsClient({ leadId, phone, altPhone, email, curr
           action lives in the action grid below — the masked-number line was
           duplicative noise. Real number is still used when the agent taps Call. */}
 
-      {/* Alt-phone (2nd number from MIS). Lalit's ask: "Alternative number
-          dialer there is no option" — agents weren't noticing the previous
-          tiny inline pill. Now it's a full parallel action bar in alt-flavour
-          colours that mirror the main Call / WA bar, so it's impossible to
-          miss when a lead has a second number. */}
-      {altPhone && (
+      {/* Primary action bar — in-flow grid under the chips + email/company
+          sub-line in the lead-detail header card, both on mobile and desktop.
+          Channel buttons are OMITTED entirely (not faded/disabled) when the
+          channel is unavailable. */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-3">
+        {phone && (
+          <a href={telUrl(phone)} className="flex items-center justify-center gap-1.5 py-2.5 rounded-lg bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700 transition shadow-sm min-h-11">
+            <Phone className="w-4 h-4" /> Call
+          </a>
+        )}
+        {phone && (
+          <TemplatePickerButton lead={{ id: leadId, name: leadName, phone, email }} kind="WHATSAPP" compact />
+        )}
+        {email && (
+          <TemplatePickerButton lead={{ id: leadId, name: leadName, phone, email }} kind="EMAIL" compact />
+        )}
+        <button onClick={() => setShowCall(true)} className="flex items-center justify-center gap-1.5 py-2.5 rounded-lg bg-[#c9a24b] text-[#0b1a33] text-sm font-semibold hover:bg-[#e7c97a] transition shadow-sm min-h-11">
+          📝 Log Call
+        </button>
+      </div>
+
+      {/* Alt-phone (2nd number from MIS). Lalit's ask: "WA alt, call alt
+          should only display after primary ones, and only when there are 2
+          entries". So: render AFTER the primary bar, and only when BOTH
+          primary + alt phones exist (a lone alt with no primary makes no
+          sense — it'd just BE the primary). */}
+      {phone && altPhone && (
         <div className="mt-2">
           <div className="text-[10px] uppercase tracking-widest text-gray-500 font-semibold mb-1.5">
             📱 Alternate number
@@ -184,31 +205,6 @@ export default function LeadActionsClient({ leadId, phone, altPhone, email, curr
           </div>
         </div>
       )}
-
-      {/* Action bar — simple in-flow grid. Renders DIRECTLY under the chips +
-          email/company sub-line in the lead-detail header card, both on mobile
-          and desktop. Previously this was `fixed` on mobile + `lg:relative`
-          for desktop with an inline `bottom` style — but the inline style
-          ignored media queries so on desktop it pulled the bar 4rem UP into
-          the header chips, causing the overlap Lalit screenshotted. Keeping
-          it simple now: in-flow on both, single column count, channel buttons
-          omitted when their channel is unavailable (no fake "disabled" pills). */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-3">
-        {phone && (
-          <a href={telUrl(phone)} className="flex items-center justify-center gap-1.5 py-2.5 rounded-lg bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700 transition shadow-sm min-h-11">
-            <Phone className="w-4 h-4" /> Call
-          </a>
-        )}
-        {phone && (
-          <TemplatePickerButton lead={{ id: leadId, name: leadName, phone, email }} kind="WHATSAPP" compact />
-        )}
-        {email && (
-          <TemplatePickerButton lead={{ id: leadId, name: leadName, phone, email }} kind="EMAIL" compact />
-        )}
-        <button onClick={() => setShowCall(true)} className="flex items-center justify-center gap-1.5 py-2.5 rounded-lg bg-[#c9a24b] text-[#0b1a33] text-sm font-semibold hover:bg-[#e7c97a] transition shadow-sm min-h-11">
-          📝 Log Call
-        </button>
-      </div>
 
       {/* Acefone click-to-call — rings agent first, then dials lead. Hidden when not configured. */}
       {phone && acefoneEnabled && (
