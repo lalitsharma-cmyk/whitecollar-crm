@@ -91,7 +91,10 @@ export default function TemplatePickerButton({ lead, kind, suggestedTrigger, com
   });
 
   const Icon = kind === "WHATSAPP" ? MessageCircle : Mail;
-  const labelColor = kind === "WHATSAPP" ? "bg-[#25D366]" : "bg-sky-600";
+  // Email switched from sky-blue → indigo-600 per Lalit's "Change colour of
+  // email" ask. Distinct from the WhatsApp green AND from any blue used
+  // elsewhere in the action grid.
+  const labelColor = kind === "WHATSAPP" ? "bg-[#25D366]" : "bg-indigo-600";
   const isDisabled = kind === "WHATSAPP" ? !lead.phone : !lead.email;
 
   return (
