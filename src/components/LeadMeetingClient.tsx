@@ -98,7 +98,9 @@ export default function LeadMeetingClient({ leadId, counts }: { leadId: string; 
             <input
               type="number"
               value={duration}
-              onChange={(e) => setDuration(e.target.value.replace(/^-/, ""))}
+              onChange={(e) => setDuration(e.target.value.replace(/[^\d]/g, ""))}
+              onKeyDown={(e) => { if (["-", "e", "E", "+", "."].includes(e.key)) e.preventDefault(); }}
+              onBlur={(e) => { const n = Number(e.target.value); if (!isFinite(n) || n < 0) setDuration(""); }}
               min={0}
               step={1}
               inputMode="numeric"

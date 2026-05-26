@@ -163,7 +163,18 @@ export default function AdvancedActivityLogger({ leadId, team, travelRatePerKm }
             {(type === "HOME_VISIT" || (type === "DUBAI_SITE_VISIT" && team === "India")) && (
               <>
                 <label className="text-xs font-semibold text-gray-600">Distance travelled (km)</label>
-                <input type="number" min={0} step="1" inputMode="numeric" value={form.distanceKm} onChange={(e) => update("distanceKm", e.target.value.replace(/^-/, ""))} placeholder="e.g. 32" className="w-full mt-1 mb-1 border border-[#e5e7eb] rounded-lg px-3 py-2 text-sm min-h-11" />
+                <input
+                  type="number"
+                  min={0}
+                  step="1"
+                  inputMode="numeric"
+                  value={form.distanceKm}
+                  onChange={(e) => update("distanceKm", e.target.value.replace(/[^\d]/g, ""))}
+                  onKeyDown={(e) => { if (["-", "e", "E", "+", "."].includes(e.key)) e.preventDefault(); }}
+                  onBlur={(e) => { const n = Number(e.target.value); if (!isFinite(n) || n < 0) update("distanceKm", ""); }}
+                  placeholder="e.g. 32"
+                  className="w-full mt-1 mb-1 border border-[#e5e7eb] rounded-lg px-3 py-2 text-sm min-h-11"
+                />
                 <div className="text-[11px] text-gray-600 mb-3">
                   Reimbursement: <b>₹{reimbursementPreview.toFixed(0)}</b> ({km.toFixed(1)} km × ₹{travelRatePerKm}/km).
                   Rate is set by admin in /settings.

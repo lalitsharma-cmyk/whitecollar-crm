@@ -13,7 +13,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   const outcome = body.outcome as CallOutcome;
   const remarks = String(body.remarks ?? "").trim();
-  const durationSec = Number(body.durationSec ?? 0);
+  // Duration must be a non-negative integer. Belt-and-braces against any client
+  // that bypasses the UI's min={0} (manual API call, browser quirk, paste of "-30").
+  const durationRaw = Number(body.durationSec ?? 0);
+  const durationSec = !isFinite(durationRaw) || durationRaw < 0 ? 0 : Math.floor(durationRaw);
   const direction = (body.direction as CallDirection) ?? CallDirection.OUTBOUND;
   // Optional scheduled callback time (ISO string from the IST picker on the UI).
   // When set, we update Lead.followupDate so the pre-meeting cron's

@@ -235,7 +235,22 @@ export default function LeadActionsClient({ leadId, phone, altPhone, email, curr
             <input
               type="number"
               value={duration}
-              onChange={(e) => setDuration(e.target.value.replace(/^-/, ""))}  // strip leading minus client-side
+              onChange={(e) => {
+                // Strip ALL non-digit characters (handles paste of "-30", "-", "1e-3" etc.)
+                const cleaned = e.target.value.replace(/[^\d]/g, "");
+                setDuration(cleaned);
+              }}
+              onKeyDown={(e) => {
+                // Block keys that can introduce a negative or non-integer value
+                if (e.key === "-" || e.key === "e" || e.key === "E" || e.key === "+" || e.key === ".") {
+                  e.preventDefault();
+                }
+              }}
+              onBlur={(e) => {
+                // Final clamp on blur — if somehow a negative slipped through, normalise to 0
+                const n = Number(e.target.value);
+                if (!isFinite(n) || n < 0) setDuration("");
+              }}
               min={0}
               step={1}
               inputMode="numeric"

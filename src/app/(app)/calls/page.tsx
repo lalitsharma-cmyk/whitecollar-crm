@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { format } from "date-fns";
+import { fmtIST } from "@/lib/datetime";
 
 export const dynamic = "force-dynamic";
 
@@ -30,7 +30,7 @@ export default async function CallsPage() {
             <div className="flex items-start justify-between gap-2">
               <div className="min-w-0 flex-1">
                 <div className="font-bold text-sm truncate">{c.lead?.name ?? c.phoneNumber}</div>
-                <div className="text-[11px] text-gray-500">{c.user.name} · {format(c.startedAt, "PP p")}</div>
+                <div className="text-[11px] text-gray-500">{c.user.name} · {fmtIST(c.startedAt)} IST</div>
               </div>
               <span className={`chip ${oc[c.outcome] ?? "src"} text-[9px] flex-none`}>{c.outcome.replaceAll("_"," ")}</span>
             </div>
@@ -50,7 +50,7 @@ export default async function CallsPage() {
           <tbody>
             {calls.map(c => (
               <tr key={c.id}>
-                <td className="text-sm">{format(c.startedAt, "PP p")}</td>
+                <td className="text-sm">{fmtIST(c.startedAt)} IST</td>
                 <td>{c.lead?.name ?? c.phoneNumber}</td>
                 <td>{c.user.name}</td>
                 <td><span className="chip src">{c.direction}</span></td>
