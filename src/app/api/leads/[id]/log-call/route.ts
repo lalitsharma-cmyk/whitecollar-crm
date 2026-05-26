@@ -78,18 +78,22 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       } : {}),
     },
   });
-  // Fire-and-forget behavioural re-score. Never block / fail the user action.
+  // Fire-and-forget behavioural re-score — small, cheap, OK to drop on teardown.
   rescoreLead(id).catch(() => {});
 
-  // Fire-and-forget AI summary refresh — Lalit's ask: "Next Step and whatsapp
-  // draft are senseless, They should be according to client real call
-  // conversations, not anytime on its own". Re-asks the AI to summarise the
-  // lead based on the FULL call history (including this fresh entry) so the
-  // Summary card + Next Best Action always reflect what was actually said.
-  // Skipped silently when no AI provider is configured (GEMINI_API_KEY or
-  // ANTHROPIC_API_KEY) so the page works without burning quota.
+  // AI summary refresh — AWAITED so Vercel's serverless function teardown
+  // can't kill it mid-flight (the previous fire-and-forget was silently dying
+  // after NextResponse returned, which is why Lalit reported "Ai also does not
+  // update"). Adds ~1-3s to the log-call response but the call action is
+  // already a user wait state ("Saving…") so an extra second is acceptable
+  // in exchange for actually working. Wrapped in try/catch so a Gemini error
+  // never blocks the call from being recorded.
   if (aiEnabled()) {
-    refreshAiSummary(id).catch(() => {});
+    try {
+      await refreshAiSummary(id);
+    } catch (e) {
+      console.error("refreshAiSummary failed", e);
+    }
   }
 
   return NextResponse.json({ ok: true });

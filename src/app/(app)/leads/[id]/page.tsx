@@ -20,7 +20,9 @@ import SuggestedUnitsCard from "@/components/SuggestedUnitsCard";
 import { bestUnitsForLead } from "@/lib/inventoryMatch";
 import CallHistoryCard from "@/components/CallHistoryCard";
 import LeadReassignClient from "@/components/LeadReassignClient";
+import RegenerateSummaryButton from "@/components/RegenerateSummaryButton";
 import { formatBudget } from "@/lib/budgetParse";
+import { aiEnabled } from "@/lib/ai";
 
 export const dynamic = "force-dynamic";
 
@@ -377,15 +379,22 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
               📋 Client Summary
               <span className="ai-tag">AI</span>
             </div>
-            {lead.aiUpdatedAt && (
-              <span className="text-[10px] text-gray-500">Updated {formatDistanceToNow(lead.aiUpdatedAt, { addSuffix: true })}</span>
-            )}
+            <div className="flex items-center gap-2">
+              {lead.aiUpdatedAt && (
+                <span className="text-[10px] text-gray-500">Updated {formatDistanceToNow(lead.aiUpdatedAt, { addSuffix: true })}</span>
+              )}
+              {aiEnabled() && <RegenerateSummaryButton leadId={lead.id} />}
+            </div>
           </div>
           {lead.aiSummary ? (
             <p className="text-sm text-gray-800 leading-relaxed whitespace-pre-wrap">{lead.aiSummary}</p>
-          ) : (
+          ) : aiEnabled() ? (
             <p className="text-xs text-gray-500 italic">
-              No AI summary yet. Use the 🪄 Auto-fill / 🧠 Deep AI buttons below to generate one from the call history + remarks.
+              No AI summary yet. Click <b>Regenerate</b> above to ask the AI to summarise the call history + remarks for this lead.
+            </p>
+          ) : (
+            <p className="text-xs text-amber-700 italic">
+              No AI provider configured. Set <code>GEMINI_API_KEY</code> (free) or <code>ANTHROPIC_API_KEY</code> in Vercel env vars and redeploy. Diagnostic: <code>/api/ai/health</code>.
             </p>
           )}
           {lead.aiNextAction && (
