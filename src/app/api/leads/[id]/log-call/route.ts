@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { CallDirection, CallOutcome, ActivityType, ActivityStatus } from "@prisma/client";
 import { loadOwnedLead } from "@/lib/leadScope";
 import { rescoreLead } from "@/lib/leadRescorer";
+import { generateConversationSummary, aiEnabled } from "@/lib/ai";
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -79,5 +80,57 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   });
   // Fire-and-forget behavioural re-score. Never block / fail the user action.
   rescoreLead(id).catch(() => {});
+
+  // Fire-and-forget AI summary refresh — Lalit's ask: "Next Step and whatsapp
+  // draft are senseless, They should be according to client real call
+  // conversations, not anytime on its own". Re-asks the AI to summarise the
+  // lead based on the FULL call history (including this fresh entry) so the
+  // Summary card + Next Best Action always reflect what was actually said.
+  // Skipped silently when no AI provider is configured (GEMINI_API_KEY or
+  // ANTHROPIC_API_KEY) so the page works without burning quota.
+  if (aiEnabled()) {
+    refreshAiSummary(id).catch(() => {});
+  }
+
   return NextResponse.json({ ok: true });
+}
+
+async function refreshAiSummary(leadId: string) {
+  const lead = await prisma.lead.findUnique({
+    where: { id: leadId },
+    include: { callLogs: { orderBy: { startedAt: "desc" }, take: 10 } },
+  });
+  if (!lead) return;
+  const result = await generateConversationSummary(
+    {
+      name: lead.name,
+      company: lead.company,
+      city: lead.city,
+      configuration: lead.configuration,
+      budgetMin: lead.budgetMin,
+      budgetCurrency: lead.budgetCurrency,
+      whoIsClient: lead.whoIsClient,
+      categorization: lead.categorization,
+      fundReadiness: lead.fundReadiness,
+      whenCanInvest: lead.whenCanInvest,
+      status: lead.status,
+      remarks: lead.remarks,
+    },
+    lead.callLogs.map((c) => ({
+      startedAt: c.startedAt,
+      outcome: c.outcome,
+      durationSec: c.durationSec,
+      notes: c.notes,
+      attributedAgentName: c.attributedAgentName,
+    })),
+  );
+  if (!result) return;
+  await prisma.lead.update({
+    where: { id: leadId },
+    data: {
+      aiSummary: result.summary || lead.aiSummary,
+      aiNextAction: result.nextAction || lead.aiNextAction,
+      aiUpdatedAt: new Date(),
+    },
+  });
 }
