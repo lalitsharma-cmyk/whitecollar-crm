@@ -2,7 +2,6 @@ import { prisma } from "@/lib/prisma";
 import { LeadStatus, LeadSource, AIScore, CallOutcome, ActivityStatus, ActivityType, Prisma } from "@prisma/client";
 import { formatDistanceToNow, startOfDay } from "date-fns";
 import { fmtIST } from "@/lib/datetime";
-import LeadsTrendChart from "@/components/charts/LeadsTrendChart";
 import { fmtMoney, fmtMoneyDual } from "@/lib/money";
 import { runReconciler } from "@/lib/reconciler";
 import { getTestingModeEnabled } from "@/lib/settings";
@@ -45,7 +44,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     totalClients, totalNotContacted, newToday, hotLeads,
     callsToday, connectedToday, waToday,
     followupsDueToday, followupsOverdue, readyToClose, needsYou,
-    leadsBySource, recentActivities, upcoming, leadsLast14, _sourceMix,
+    leadsBySource, recentActivities, upcoming, _sourceMix,
     leadsByTeam, forecastLeads,
     // Team-specific KPIs
     expoMeetingsThisMonth, homeVisitsThisMonth, virtualThisMonth, officeThisMonth, siteVisitsThisMonth,
@@ -65,9 +64,6 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     prisma.lead.groupBy({ by: ["source"], _count: { _all: true }, where: { ...teamScope, createdAt: { gte: todayStart } } }),
     prisma.activity.findMany({ where: teamActWhere, orderBy: { createdAt: "desc" }, take: 6, include: { lead: true, user: true } }),
     prisma.activity.findMany({ where: { ...teamActWhere, status: ActivityStatus.PLANNED, scheduledAt: { gte: new Date() } }, orderBy: { scheduledAt: "asc" }, take: 5, include: { lead: true } }),
-    view === "all"
-      ? prisma.$queryRaw<Array<{ d: string; n: number }>>`SELECT to_char("createdAt"::date, 'YYYY-MM-DD') as d, COUNT(*)::int as n FROM "Lead" WHERE "createdAt" >= (CURRENT_DATE - INTERVAL '13 days') GROUP BY "createdAt"::date ORDER BY "createdAt"::date ASC`
-      : prisma.$queryRaw<Array<{ d: string; n: number }>>`SELECT to_char("createdAt"::date, 'YYYY-MM-DD') as d, COUNT(*)::int as n FROM "Lead" WHERE "createdAt" >= (CURRENT_DATE - INTERVAL '13 days') AND "forwardedTeam" = ${view} GROUP BY "createdAt"::date ORDER BY "createdAt"::date ASC`,
     prisma.lead.groupBy({ by: ["source"], _count: { _all: true }, where: teamScope }),
     prisma.lead.groupBy({ by: ["forwardedTeam"], _count: { _all: true } }),
     prisma.lead.findMany({
@@ -352,12 +348,9 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         </table>
       </div>
 
-      {/* Charts — Source Mix removed per Lalit's request ("don't want lead intake on
-          dashboard"). Leads-over-time stays so we can still see daily intake volume. */}
-      <div className="card p-5">
-        <div className="font-semibold mb-3">Leads over time · Last 14 days</div>
-        <LeadsTrendChart data={leadsLast14.map((r) => ({ d: r.d, n: Number(r.n) }))} />
-      </div>
+      {/* Charts — Leads-over-time chart removed per Lalit's "remove leads
+          over time from dashboard". The daily intake number is already in
+          the KPI tile row above so the chart was redundant. */}
 
       {/* Recent activity + Upcoming */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
