@@ -124,10 +124,17 @@ export default function CallHistoryCard({ callLogs }: Props) {
   // that are going stale despite repeated attempts, without screaming about
   // brand-new cold leads that have only had one attempt.
   const notPickedDays = computeNotPickedDays(callLogs);
+  // First & Last call dates — Lalit's ask. callLogs comes in newest-first
+  // (orderBy: { startedAt: "desc" }), so head = most recent, tail = oldest.
+  const lastCallAt = callLogs[0]?.startedAt ?? null;
+  const firstCallAt = callLogs[callLogs.length - 1]?.startedAt ?? null;
+  const spanDays = firstCallAt && lastCallAt
+    ? Math.max(0, Math.floor((lastCallAt.getTime() - firstCallAt.getTime()) / 86_400_000))
+    : 0;
 
   return (
     <div className="card p-5 border-l-4 border-emerald-500 bg-emerald-50/30">
-      <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+      <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
         <div className="font-semibold flex items-center gap-2 text-base">
           📞 Call history
           <span className="text-[10px] text-gray-500 font-normal">— read this before calling</span>
@@ -143,6 +150,18 @@ export default function CallHistoryCard({ callLogs }: Props) {
           <div className="text-[10px] text-gray-500">{callStats.total} total</div>
         </div>
       </div>
+
+      {/* First / last call dates — derived from call history. Lalit's ask:
+          "Show First call date and last call date somewhere on lead details
+          page from Call history". One-line summary so agent sees activity
+          span without scrolling the full history. */}
+      {firstCallAt && lastCallAt && (
+        <div className="flex items-center gap-x-4 gap-y-1 flex-wrap text-[11px] text-gray-700 mb-3 px-2 py-1.5 rounded bg-white border border-emerald-200">
+          <span><b className="text-gray-500 font-semibold mr-1">First call:</b>{fmtISTDate(firstCallAt)}</span>
+          <span><b className="text-gray-500 font-semibold mr-1">Last call:</b>{fmtISTDate(lastCallAt)}</span>
+          {spanDays > 0 && <span className="text-gray-500">· spanning {spanDays} day{spanDays === 1 ? "" : "s"}</span>}
+        </div>
+      )}
 
       {/* Breakdown badges — the agent should scan these first */}
       <div className="grid grid-cols-4 gap-1.5 text-center text-xs mb-3">
