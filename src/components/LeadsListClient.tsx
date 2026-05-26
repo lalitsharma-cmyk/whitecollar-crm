@@ -1,7 +1,9 @@
 "use client";
 import { useState } from "react";
 import Link from "next/link";
+import { Phone, MessageCircle } from "lucide-react";
 import LeadBulkActions from "./LeadBulkActions";
+import { telLink, whatsappLink } from "@/lib/phone";
 
 interface Row {
   id: string;
@@ -51,12 +53,12 @@ export default function LeadsListClient({ leads, canBulk, agents, showSource = t
         {leads.map((l) => {
           const teamChip = l.team === "India" ? "src-csv" : "src-wa";
           return (
-            <Link key={l.id} href={`/leads/${l.id}`} className="card block p-3 active:bg-amber-50">
+            <div key={l.id} className="card p-3 active:bg-amber-50">
               <div className="flex items-start gap-2">
                 {canBulk && (
-                  <input type="checkbox" checked={selected.has(l.id)} onClick={(e) => { e.stopPropagation(); e.preventDefault(); toggle(l.id); }} onChange={() => {}} className="mt-1" />
+                  <input type="checkbox" checked={selected.has(l.id)} onChange={() => toggle(l.id)} className="mt-1" />
                 )}
-                <div className="flex-1 min-w-0">
+                <Link href={`/leads/${l.id}`} className="flex-1 min-w-0 block">
                   <div className="flex items-center justify-between gap-1">
                     <div className="font-bold text-sm truncate">{l.name}</div>
                     {l.aiScore && <span className={`chip ${aiChip(l.aiScore)} text-[9px] flex-none`}>{l.aiScore}</span>}
@@ -80,9 +82,33 @@ export default function LeadsListClient({ leads, canBulk, agents, showSource = t
                     </span>
                   </div>
                   {l.interest && <div className="text-[10px] text-gray-500 mt-1 truncate">→ {l.interest}</div>}
-                </div>
+                </Link>
+                {/* Direct-action icons on the right edge of each mobile lead
+                    card. One-tap call or WhatsApp without having to drill into
+                    the lead detail page. Lalit's ask: "Mobile call, whatsapp
+                    icon". stopPropagation isn't needed — these are siblings of
+                    the Link now, not nested inside it. */}
+                {l.phone && (
+                  <div className="flex flex-col gap-1.5 flex-none">
+                    <a
+                      href={telLink(l.phone) || "#"}
+                      aria-label={`Call ${l.name}`}
+                      className="w-10 h-10 rounded-full bg-emerald-600 text-white flex items-center justify-center shadow-sm active:bg-emerald-700"
+                    >
+                      <Phone className="w-4 h-4" />
+                    </a>
+                    <a
+                      href={whatsappLink(l.phone) || "#"}
+                      target="_blank" rel="noopener noreferrer"
+                      aria-label={`WhatsApp ${l.name}`}
+                      className="w-10 h-10 rounded-full bg-[#25D366] text-white flex items-center justify-center shadow-sm active:bg-[#1ea953]"
+                    >
+                      <MessageCircle className="w-4 h-4" />
+                    </a>
+                  </div>
+                )}
               </div>
-            </Link>
+            </div>
           );
         })}
       </div>
