@@ -2,7 +2,9 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 
-export default function CsvUploader() {
+interface Agent { id: string; name: string; team: string | null; }
+
+export default function CsvUploader({ agents = [] }: { agents?: Agent[] }) {
   const router = useRouter();
   const [file, setFile] = useState<File | null>(null);
   const [campaign, setCampaign] = useState("");
@@ -10,6 +12,11 @@ export default function CsvUploader() {
   // Lalit reported same sheet landing as both India + Dubai when auto-detection
   // mis-guessed per row. "ask" forces the picker to be deliberate (no default).
   const [forceTeam, setForceTeam] = useState<"ask" | "Dubai" | "India">("ask");
+  // Sheet-owner picker. If admin is importing Mehak's MIS, they pick "Mehak"
+  // here. Every new lead becomes Mehak's lead AND every unattributed remark
+  // entry ("on 3 May (12:36) …" without a name prefix) gets credited to Mehak
+  // in the Call History card — instead of showing as "Admin" (the importer).
+  const [assignToUserId, setAssignToUserId] = useState("");
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<{
     fileType?: string; sheetName?: string; allSheets?: string[];
@@ -31,6 +38,7 @@ export default function CsvUploader() {
       fd.append("file", file);
       if (campaign) fd.append("campaign", campaign);
       fd.append("forceTeam", forceTeam);
+      if (assignToUserId) fd.append("assignToUserId", assignToUserId);
       const res = await fetch("/api/intake/csv", { method: "POST", body: fd });
       const json = await res.json().catch(() => ({ error: "Server returned invalid response" }));
       if (!res.ok) {
@@ -67,6 +75,31 @@ export default function CsvUploader() {
           Every row in this file goes to the picked team. Currency follows automatically.
         </p>
       </div>
+
+      {/* Optional: pre-assign every lead to one agent (Mehak's sheet, Nitisha's
+          sheet, etc.). Doubles as the attribution fallback — any remark entry
+          without a name prefix shows as that agent in Call History, not "Admin". */}
+      {agents.length > 0 && (
+        <div className={`mb-3 p-3 rounded-lg border ${assignToUserId ? "border-emerald-300 bg-emerald-50" : "border-[#e5e7eb] bg-[#f7f8fa]"}`}>
+          <div className="text-xs font-bold uppercase tracking-widest text-gray-700 mb-1.5">
+            Whose sheet is this? <span className="text-gray-400 font-normal">(optional — sets owner + Call History name)</span>
+          </div>
+          <select
+            value={assignToUserId}
+            onChange={(e) => setAssignToUserId(e.target.value)}
+            className="w-full border border-[#e5e7eb] rounded-lg px-3 py-2 text-sm bg-white min-h-11"
+          >
+            <option value="">— Cold data (no owner, no attribution) —</option>
+            {agents.map((a) => (
+              <option key={a.id} value={a.id}>{a.name}{a.team ? ` · ${a.team}` : ""}</option>
+            ))}
+          </select>
+          <p className="text-[11px] text-gray-600 mt-1.5">
+            Pick the agent whose MIS sheet this is. Every new lead becomes theirs (status → CONTACTED) and any imported call entry without a name prefix is credited to them in Call History.
+          </p>
+        </div>
+      )}
+
       <input
         type="text"
         placeholder="Campaign (optional, e.g. Dubai Expo 2026)"

@@ -17,9 +17,21 @@ interface Props {
   multiline?: boolean;
   prefix?: string;     // displayed before value when read-only (e.g. "₹ ")
   className?: string;
+  // Optional formatted-display override. When set, the read-only view shows
+  // this string instead of the raw value. Used for budget cells so the
+  // qualification card shows "12M AED" / "1.2 Cr" — never "12000000".
+  // Edit mode still operates on the raw `value` so the user can type new
+  // numbers (or K/M/L/Cr shorthand if `parseInput` is also provided).
+  display?: string;
+  // Optional input transformer for save. Lets the user type "2.5M" or "30L"
+  // and converts to the numeric raw value before PATCHing. Returns null →
+  // shows an inline parse error instead of saving.
+  parseInput?: (raw: string) => number | string | null;
+  // Hint shown below the input in edit mode (e.g. "type 30L · 3Cr · 500K").
+  editHint?: string;
 }
 
-export default function InlineEdit({ leadId, field, label, value, type = "text", options, placeholder, prefix, className }: Props) {
+export default function InlineEdit({ leadId, field, label, value, type = "text", options, placeholder, prefix, className, display, parseInput, editHint }: Props) {
   const router = useRouter();
   const [editing, setEditing] = useState(false);
   const [v, setV] = useState<string>(value == null ? "" : String(value));
@@ -40,7 +52,18 @@ export default function InlineEdit({ leadId, field, label, value, type = "text",
       // the user's IST wall-clock as the correct UTC instant. Without this,
       // "2026-05-26T18:00" gets parsed in Vercel's UTC and saved as 18:00 UTC
       // (= 11:30pm IST — 5.5 hours off).
-      const payload = type === "date" && v ? `${v}:00+05:30` : v;
+      let payload: string | number | null = type === "date" && v ? `${v}:00+05:30` : v;
+      // Optional shorthand → numeric. Used by budget cells so the agent can
+      // type "2.5M" / "30L" / "3Cr" and we save the parsed number.
+      if (parseInput && v) {
+        const parsed = parseInput(v);
+        if (parsed == null) {
+          setErr("Couldn't parse — try 2.5M, 30L, 3Cr, or just digits.");
+          setBusy(false);
+          return;
+        }
+        payload = parsed;
+      }
       const r = await fetch(`/api/leads/${leadId}/update`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -102,7 +125,7 @@ export default function InlineEdit({ leadId, field, label, value, type = "text",
       >
         {value == null || value === ""
           ? <span className="text-gray-400 italic">{placeholder ?? "click to set"}</span>
-          : <>{prefix}{String(value)}</>}
+          : <>{prefix}{display ?? String(value)}</>}
         <span className="text-[10px] text-gray-400 ml-1">✎</span>
       </span>
     );
@@ -176,21 +199,25 @@ export default function InlineEdit({ leadId, field, label, value, type = "text",
     );
   }
 
+  // If parseInput is provided (e.g. budget cells accepting "2.5M"), use a text
+  // input even when type="number" so K/M/L/Cr letters can be typed.
+  const useTextInput = parseInput || type !== "number";
   return (
     <span className="inline-flex flex-col">
       <span className="inline-flex items-center gap-1">
         <input
-          type={type === "number" ? "number" : "text"}
+          type={useTextInput ? "text" : "number"}
           value={v}
-          onChange={(e) => setV(type === "number" ? e.target.value.replace(/^-/, "") : e.target.value)}
+          onChange={(e) => setV(useTextInput ? e.target.value : e.target.value.replace(/^-/, ""))}
           onKeyDown={(e) => { if (e.key === "Enter") save(); if (e.key === "Escape") cancel(); }}
           className={inputCls}
-          {...(type === "number" ? { min: 0, inputMode: "numeric" as const } : {})}
+          {...(useTextInput ? {} : { min: 0, inputMode: "numeric" as const })}
           autoFocus
         />
         <button onClick={save} disabled={busy} aria-label="Save" className="text-emerald-600 hover:bg-emerald-50 rounded p-2 text-base min-w-11 min-h-11 flex items-center justify-center">✓</button>
         <button onClick={cancel} aria-label="Cancel" className="text-red-600 hover:bg-red-50 rounded p-2 text-base min-w-11 min-h-11 flex items-center justify-center">✕</button>
       </span>
+      {editHint && <span className="text-[10px] text-gray-500 mt-0.5">{editHint}</span>}
       {errLine}
     </span>
   );

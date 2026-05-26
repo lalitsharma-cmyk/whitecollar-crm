@@ -47,7 +47,7 @@ Meta webhook verify token: ${process.env.WHATSAPP_VERIFY_TOKEN ?? "wcr-dev-verif
         <div className="card p-5">
           <div className="flex items-center gap-2 mb-2"><span className="chip src-csv">CSV</span><b>Bulk upload</b></div>
           <p className="text-sm text-gray-600">For events, expos, partner lists. Auto-dedupe by phone + email. Goes through round-robin like any new lead.</p>
-          <div className="mt-3"><CsvUploader /></div>
+          <div className="mt-3"><CsvUploader agents={agents.map(a => ({ id: a.id, name: a.name, team: a.team }))} /></div>
         </div>
 
         {isAdminOrMgr && (

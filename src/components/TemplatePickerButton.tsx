@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { MessageCircle, Mail, X, Sparkles } from "lucide-react";
+import { MessageCircle, Mail, X, Sparkles, PenLine } from "lucide-react";
 import { whatsappLink } from "@/lib/phone";
 
 interface Lead { id: string; name: string; phone: string | null; email: string | null; }
@@ -28,6 +28,13 @@ export default function TemplatePickerButton({ lead, kind, suggestedTrigger }: P
   const [open, setOpen] = useState(false);
   const [tpls, setTpls] = useState<Tpl[]>([]);
   const [loaded, setLoaded] = useState(false);
+  // "Type your own" free-text mode. Lalit asked: "There should be both option
+  // to Type or choose template, if agent choose template then show him options
+  // of templates." The picker now opens with two big choices at the top —
+  // "✍ Type your own" or pick from the saved templates below.
+  const [typing, setTyping] = useState(false);
+  const [freeText, setFreeText] = useState("");
+  const [freeSubject, setFreeSubject] = useState("");
 
   useEffect(() => {
     if (!open || loaded) return;
@@ -42,21 +49,33 @@ export default function TemplatePickerButton({ lead, kind, suggestedTrigger }: P
   }, [open, loaded, lead.id, kind]);
 
   function pick(t: Tpl) {
+    sendMessage(t.rendered.body, t.rendered.subject ?? "", t.id);
+  }
+
+  function sendFreeText() {
+    const body = freeText.trim();
+    if (!body) return;
+    sendMessage(body, freeSubject.trim(), undefined);
+  }
+
+  function sendMessage(body: string, subject: string, templateId: string | undefined) {
     if (kind === "WHATSAPP" && lead.phone) {
-      const url = whatsappLink(lead.phone, t.rendered.body);
+      const url = whatsappLink(lead.phone, body);
       window.open(url, "_blank", "noopener,noreferrer");
-      // Log the click for tracking
       fetch("/api/whatsapp/log", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ leadId: lead.id, kind: "send", message: t.rendered.body, templateId: t.id }),
+        body: JSON.stringify({ leadId: lead.id, kind: "send", message: body, templateId }),
       }).catch(() => {});
     } else if (kind === "EMAIL" && lead.email) {
-      const subject = encodeURIComponent(t.rendered.subject ?? "");
-      const body = encodeURIComponent(t.rendered.body);
-      window.location.href = `mailto:${lead.email}?subject=${subject}&body=${body}`;
+      const s = encodeURIComponent(subject);
+      const b = encodeURIComponent(body);
+      window.location.href = `mailto:${lead.email}?subject=${s}&body=${b}`;
     }
     setOpen(false);
+    setTyping(false);
+    setFreeText("");
+    setFreeSubject("");
   }
 
   // Sort: suggested trigger first, then by trigger name
@@ -95,13 +114,61 @@ export default function TemplatePickerButton({ lead, kind, suggestedTrigger }: P
               <button onClick={() => setOpen(false)} className="text-gray-400 hover:text-gray-700"><X className="w-5 h-5" /></button>
             </div>
             <div className="overflow-y-auto p-3 space-y-2">
-              {!loaded && <div className="text-sm text-gray-500 text-center py-4">Loading templates…</div>}
-              {loaded && sorted.length === 0 && (
+              {/* Free-type mode — typed message goes through the same logging
+                  pipeline as templates so admin still sees the touch on the
+                  timeline + daily report. */}
+              {typing ? (
+                <div className="border-2 border-emerald-400 rounded-lg p-3 bg-emerald-50 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div className="font-semibold text-sm flex items-center gap-2"><PenLine className="w-4 h-4" /> Type your message</div>
+                    <button onClick={() => setTyping(false)} className="text-xs text-gray-500 underline">← back to templates</button>
+                  </div>
+                  {kind === "EMAIL" && (
+                    <input
+                      type="text"
+                      value={freeSubject}
+                      onChange={(e) => setFreeSubject(e.target.value)}
+                      placeholder="Subject"
+                      className="w-full border border-[#e5e7eb] rounded-lg px-3 py-2 text-sm bg-white"
+                    />
+                  )}
+                  <textarea
+                    value={freeText}
+                    onChange={(e) => setFreeText(e.target.value)}
+                    placeholder={kind === "WHATSAPP" ? `Hi ${lead.name}, …` : "Type your email body…"}
+                    rows={6}
+                    autoFocus
+                    className="w-full border border-[#e5e7eb] rounded-lg px-3 py-2 text-sm bg-white font-mono text-[13px]"
+                  />
+                  <button
+                    onClick={sendFreeText}
+                    disabled={!freeText.trim()}
+                    className="btn btn-primary w-full justify-center text-sm bg-emerald-600 hover:bg-emerald-700"
+                  >
+                    {kind === "WHATSAPP" ? "💬 Send WhatsApp" : "✉ Send Email"}
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={() => setTyping(true)}
+                  className="w-full text-left p-3 border-2 border-dashed border-emerald-300 rounded-lg hover:border-emerald-500 hover:bg-emerald-50 transition flex items-center gap-2"
+                >
+                  <PenLine className="w-4 h-4 text-emerald-700" />
+                  <div className="flex-1">
+                    <div className="font-semibold text-sm text-emerald-800">✍ Type your own message</div>
+                    <div className="text-xs text-emerald-700">Skip templates — write a one-off message right here.</div>
+                  </div>
+                </button>
+              )}
+
+              {!typing && <div className="text-[10px] uppercase font-bold tracking-widest text-gray-500 pt-2 pb-1">Or pick a template</div>}
+              {!typing && !loaded && <div className="text-sm text-gray-500 text-center py-4">Loading templates…</div>}
+              {!typing && loaded && sorted.length === 0 && (
                 <div className="text-sm text-gray-500 text-center py-6">
                   No templates yet. <a href="/admin/templates" className="underline">Create some →</a>
                 </div>
               )}
-              {sorted.map(t => (
+              {!typing && sorted.map(t => (
                 <button
                   key={t.id}
                   onClick={() => pick(t)}

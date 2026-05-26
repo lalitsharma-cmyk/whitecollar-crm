@@ -20,6 +20,14 @@ const MONTHS: Record<string, number> = {
   january:0,february:1,march:2,april:3,june:5,july:6,august:7,september:8,october:9,november:10,december:11,
 };
 
+// Lalit's whole team sits in India — every time written in the MIS sheets
+// ("on 3 May 2026 (12:36)") is the IST wall-clock time. Vercel servers run in
+// UTC, so `new Date(yr, mon, day)` + `setHours` would interpret 12:36 as UTC,
+// store it as UTC 12:36, and then fmtIST() would render it as 18:06 IST —
+// the +5:30 mismatch Lalit screenshotted. Build the Date by treating the
+// h/m as IST and subtracting the IST offset to get the equivalent UTC instant.
+const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
+
 function parseDateTime(dateStr: string, timeStr?: string): Date | null {
   const m = dateStr.match(/(\d{1,2})\s+(\w+)\s+(\d{4})/);
   if (!m) return null;
@@ -27,19 +35,21 @@ function parseDateTime(dateStr: string, timeStr?: string): Date | null {
   const mon = MONTHS[m[2].toLowerCase().slice(0, 4)] ?? MONTHS[m[2].toLowerCase()];
   if (mon === undefined) return null;
   const yr = parseInt(m[3]);
-  const d = new Date(yr, mon, day);
+  // Default to noon IST when no time is given — keeps the displayed date stable
+  // regardless of TZ (midnight would slip backwards a day when rendered in UTC).
+  let h = 12, mins = 0;
   if (timeStr) {
     const tm = timeStr.match(/(\d{1,2}):?(\d{0,2})\s*(am|pm)?/i);
     if (tm) {
-      let h = parseInt(tm[1]);
-      const mins = parseInt(tm[2] || "0");
+      h = parseInt(tm[1]);
+      mins = parseInt(tm[2] || "0");
       const ampm = (tm[3] ?? "").toLowerCase();
       if (ampm === "pm" && h < 12) h += 12;
       if (ampm === "am" && h === 12) h = 0;
-      d.setHours(h, mins);
     }
   }
-  return d;
+  // Treat (yr, mon, day, h, mins) as IST wall-clock, return the matching UTC instant.
+  return new Date(Date.UTC(yr, mon, day, h, mins) - IST_OFFSET_MS);
 }
 
 function guessOutcome(text: string): CallOutcome {

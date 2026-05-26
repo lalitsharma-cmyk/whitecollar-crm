@@ -34,13 +34,17 @@ interface Props {
   agentName: string;
   acefoneEnabled?: boolean;        // server flag — hide button if false
   acefoneMappedForUser?: boolean;  // current user has acefoneAgentId set
+  // When true, suppress the inline reassign dropdown — the page renders a
+  // standalone <LeadReassignClient> on the right column instead (Lalit's ask:
+  // "Reassignment move to Right side").
+  hideReassign?: boolean;
 }
 
 // Phone helpers — now in src/lib/phone.ts. Kept as thin wrappers for compatibility.
 const telUrl = (p: string | null) => telLink(p);
 const waUrl = (p: string | null) => whatsappLink(p);
 
-export default function LeadActionsClient({ leadId, phone, altPhone, email, currentOwnerId, canReassign, agents, phoneMasked, altPhoneMasked, leadName, agentName, acefoneEnabled, acefoneMappedForUser }: Props) {
+export default function LeadActionsClient({ leadId, phone, altPhone, email, currentOwnerId, canReassign, agents, phoneMasked, altPhoneMasked, leadName, agentName, acefoneEnabled, acefoneMappedForUser, hideReassign }: Props) {
   const waGreeting = `Hi ${leadName}, this is ${agentName} from White Collar Realty. I'll be your dedicated property advisor. May I know a convenient time to call you today?`;
   const waUrlWithDraft = (p: string | null) => whatsappLink(p, waGreeting);
 
@@ -207,7 +211,7 @@ export default function LeadActionsClient({ leadId, phone, altPhone, email, curr
       {acefoneMsg && (
         <div className={`mt-2 text-xs p-2 rounded-lg ${acefoneMsg.startsWith("📞") ? "bg-emerald-50 text-emerald-800 border border-emerald-200" : "bg-red-50 text-red-700 border border-red-200"}`}>{acefoneMsg}</div>
       )}
-      {canReassign && (
+      {canReassign && !hideReassign && (
         <div className="mt-3 flex items-center gap-2 border border-[#e5e7eb] rounded-lg px-3 py-2 text-sm">
           <span className="text-xs text-gray-500 font-semibold">REASSIGN TO:</span>
           <select

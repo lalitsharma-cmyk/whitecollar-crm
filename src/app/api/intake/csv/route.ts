@@ -229,6 +229,17 @@ export async function POST(req: NextRequest) {
   // project mentions in free-text ("interested in Azizi Venice" → sourceDetail).
   const knownProjects = (await prisma.project.findMany({ select: { name: true } })).map((p) => p.name);
 
+  // Sheet-owner attribution fallback. When admin imports Mehak's MIS sheet via
+  // the agent picker, every remark entry that DIDN'T name an agent ("on 3 May…")
+  // gets attributed to Mehak — not to "Unknown" or the importer (which used to
+  // show as "Admin"). Named remarks ("Lalit: on 3 May…") still keep their named
+  // agent — only unattributed entries fall back to the sheet owner.
+  let sheetOwnerName: string | null = null;
+  if (assignToUserId) {
+    const u = await prisma.user.findUnique({ where: { id: assignToUserId }, select: { name: true } });
+    sheetOwnerName = u?.name ?? null;
+  }
+
   for (const [i, row] of rows.entries()) {
     const nameRaw = pick(row, "customer", "name", "fullname", "leadname", "customername");
     const phoneRaw = pick(row, "mobile", "phone", "contact", "phonenumber", "whatsapp");
@@ -404,18 +415,26 @@ export async function POST(req: NextRequest) {
       if (remarks && !r.deduped) {
         const parsed = parseRemarks(remarks);
         for (const p of parsed) {
+          // If the remark line had no name prefix (parser returned "Unknown")
+          // AND the import was filed under a specific agent (Mehak's sheet,
+          // Nitisha's sheet, etc.), credit her — not the literal string
+          // "Unknown" or the importing admin.
+          const attributedName = p.agentName === "Unknown" && sheetOwnerName
+            ? sheetOwnerName
+            : p.agentName;
           await prisma.callLog.create({
             data: {
               leadId: r.lead.id,
               userId: me.id, // bookkeeping — who ran the import (typically admin)
-              // The actual person who made the call lives in p.agentName (parsed
-              // from the remark prefix). Surface it on the call history card
-              // instead of attributing every imported call to the importer.
-              attributedAgentName: p.agentName,
+              // The actual person who made the call lives in attributedName
+              // (parsed from the remark prefix, or the sheet owner when blank).
+              // Surface it on the call history card instead of attributing every
+              // imported call to the importer.
+              attributedAgentName: attributedName,
               direction: CallDirection.OUTBOUND,
               phoneNumber: phone ?? "(imported)",
               outcome: p.outcome,
-              notes: `${p.agentName}: ${p.text}`,
+              notes: `${attributedName}: ${p.text}`,
               startedAt: p.when,
             },
           });
