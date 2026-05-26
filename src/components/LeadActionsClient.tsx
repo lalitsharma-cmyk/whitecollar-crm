@@ -175,15 +175,16 @@ export default function LeadActionsClient({ leadId, phone, altPhone, email, curr
         </div>
       )}
 
-      {/* Action bar — sticky to the BOTTOM of the screen on mobile (always
-          one tap away while scrolling Call History, BANT, etc.); in-flow on
-          desktop (lg+) where the whole page fits on screen.
-          Page-level pb-24 lg:pb-0 (added in leads/[id]/page.tsx) reserves
-          space so content isn't hidden behind the sticky bar on phones. */}
+      {/* Action bar — sticky on mobile, in-flow on desktop.
+          Mobile gotcha: the app already has a global bottom nav (Dashboard /
+          Leads / etc. in MobileShell) at bottom-0. If we also use bottom-0
+          our bar disappears behind it. Set bottom to (nav height + safe area)
+          so we float just above the global nav. Page-level pb-36 lg:pb-0
+          reserves space for both bars combined.  */}
       <div className="grid grid-cols-4 gap-1.5 mt-3
                       lg:relative lg:bg-transparent lg:shadow-none lg:border-0 lg:p-0
-                      fixed bottom-0 left-0 right-0 z-30 bg-white shadow-2xl border-t border-[#e5e7eb] px-3 py-2.5"
-        style={{ paddingBottom: "calc(0.625rem + env(safe-area-inset-bottom))" }}
+                      fixed left-0 right-0 z-40 bg-white shadow-2xl border-t border-[#e5e7eb] px-3 py-2.5"
+        style={{ bottom: "calc(3rem + env(safe-area-inset-bottom))" }}
       >
         {phone && (
           <a href={telUrl(phone)} className="flex items-center justify-center gap-1 py-2 rounded-lg bg-emerald-600 text-white text-xs font-semibold hover:bg-emerald-700 transition shadow-sm min-h-10">

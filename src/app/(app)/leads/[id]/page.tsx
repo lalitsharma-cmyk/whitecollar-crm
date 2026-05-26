@@ -122,10 +122,11 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
   const slaActive = lead.ownerId && callsCount === 0 && slaMs !== null && slaMs > -3600_000;
 
   return (
-    /* pb-24 reserves space at the bottom of the page on mobile so the
-       sticky action bar (Call / WA / Email / Log) inside LeadActionsClient
-       doesn't cover the last card. Removed on lg+ where the bar is in flow. */
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 pb-24 lg:pb-0">
+    /* pb-36 reserves space at the bottom on mobile for TWO stacked bars:
+       (a) the lead-detail action bar (~52px) at bottom = nav-height + safe-area
+       (b) the global mobile bottom nav (~56px + safe-area) at bottom-0
+       Removed on lg+ where both bars are in flow. */
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 pb-36 lg:pb-0">
       <div className="lg:col-span-2 space-y-4">
         {/* NEEDS YOU BANNER */}
         {lead.needsManagerReview && (
