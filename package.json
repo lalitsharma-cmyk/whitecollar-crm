@@ -9,7 +9,9 @@
     "postinstall": "prisma generate",
     "lint": "eslint",
     "db:seed": "tsx prisma/seed.ts",
-    "db:reset": "prisma migrate reset --force"
+    "db:reset": "prisma migrate reset --force",
+    "deploy": "bash scripts/deploy.sh",
+    "push": "git push origin main && bash scripts/deploy.sh"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
