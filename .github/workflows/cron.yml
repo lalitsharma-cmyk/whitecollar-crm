@@ -1,0 +1,75 @@
+# External cron runner for endpoints we can't keep in vercel.json.
+#
+# Why: Vercel Hobby plan caps at 2 crons per project AND requires a
+# daily-or-less-frequent schedule. Our app has 5 crons total, and 2 of
+# them must run sub-daily (workflows every few min, pre-meeting every
+# 5 min). When vercel.json violates these limits, Vercel SILENTLY drops
+# the entire deployment — no row appears in the dashboard at all. That
+# bug bit us for 18+ hours.
+#
+# Fix: keep the 2 daily reminders in vercel.json, run the other 3 here
+# on GitHub Actions (free, 2000 min/month on free tier, plenty).
+#
+# Caveats:
+#   - GitHub Actions scheduled minimum is 5 min (we wanted 1 min for
+#     workflows — accepting up to 5-min lag on drip campaign dispatch).
+#   - Scheduled workflows can be delayed under GitHub load (rarely
+#     >15 min). Vercel crons were more punctual but the trade is worth
+#     it to unblock all deployments permanently.
+#
+# One-time setup (do once, then forget):
+#   1. In Vercel dashboard → Project → Settings → Environment Variables,
+#      add CRON_SECRET (any long random string, e.g. `openssl rand -hex 32`)
+#      for Production environment.
+#   2. In GitHub repo → Settings → Secrets and variables → Actions → New
+#      repository secret, add the SAME CRON_SECRET value.
+#   3. That's it. Re-deploy once so Vercel picks up the env var.
+
+name: External crons
+
+on:
+  schedule:
+    # Workflows dispatcher — every 5 min (was every minute on Vercel)
+    - cron: "*/5 * * * *"
+    # Pre-meeting & follow-up reminders — every 5 min
+    # (same schedule as above; we filter which job runs by the cron string)
+    # Nightly rescore — daily at 03:00 UTC = 08:30 IST
+    - cron: "0 3 * * *"
+  # Allow manual trigger from the Actions tab for debugging
+  workflow_dispatch:
+
+# Don't pile up runs if a previous one is still going
+concurrency:
+  group: external-crons
+  cancel-in-progress: false
+
+jobs:
+  workflows-and-meetings:
+    # Run on the 5-min schedule (and on manual dispatch)
+    if: github.event.schedule == '*/5 * * * *' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch due workflow actions
+        run: |
+          curl -sf --max-time 60 \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            https://crm.whitecollarrealty.com/api/cron/workflows \
+            || echo "::warning::workflows cron failed"
+      - name: Pre-meeting & follow-up reminders
+        run: |
+          curl -sf --max-time 60 \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            https://crm.whitecollarrealty.com/api/cron/pre-meeting-reminder \
+            || echo "::warning::pre-meeting-reminder cron failed"
+
+  nightly-rescore:
+    # Run on the daily 03:00 UTC schedule (and on manual dispatch)
+    if: github.event.schedule == '0 3 * * *' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Behavioural rescore — all open leads
+        run: |
+          curl -sf --max-time 300 \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            https://crm.whitecollarrealty.com/api/cron/rescore-all \
+            || echo "::warning::rescore-all cron failed"
