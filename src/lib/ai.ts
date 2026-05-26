@@ -14,11 +14,14 @@ import Anthropic from "@anthropic-ai/sdk";
 // ─────────────────────────────────────────────────────────────────────────────
 
 const ANTHROPIC_MODEL = process.env.AI_MODEL ?? "claude-haiku-4-5";
-// Use the GA Gemini 2.0 Flash model (not the -exp preview which Google
-// deprecated when 2.0 went stable). Override via GEMINI_MODEL env var if
-// you want to try gemini-2.0-flash-lite (cheaper) or gemini-1.5-pro
-// (smarter but slower).
-const GEMINI_MODEL = process.env.GEMINI_MODEL ?? "gemini-2.0-flash";
+// gemini-1.5-flash is the safest free-tier default in 2026 — Google removed
+// gemini-2.0-flash from the no-billing free tier (returns RESOURCE_EXHAUSTED
+// with "limit: 0" for accounts without billing enabled). 1.5-flash is still
+// generously free (15 req/min, 1500 req/day) and excellent for lead
+// summarisation — that's what we actually need.
+// Override via GEMINI_MODEL env var when billing is enabled and you want the
+// smarter models: "gemini-2.0-flash", "gemini-2.5-flash", "gemini-1.5-pro".
+const GEMINI_MODEL = process.env.GEMINI_MODEL ?? "gemini-1.5-flash";
 
 type Provider = "gemini" | "anthropic" | null;
 
