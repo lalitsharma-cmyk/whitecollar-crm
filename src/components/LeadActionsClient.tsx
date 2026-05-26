@@ -185,26 +185,28 @@ export default function LeadActionsClient({ leadId, phone, altPhone, email, curr
         </div>
       )}
 
-      {/* Action bar — sticky on mobile, in-flow on desktop.
-          Mobile gotcha: the app already has a global bottom nav (Dashboard /
-          Leads / etc. in MobileShell) at bottom-0. If we also use bottom-0
-          our bar disappears behind it. Set bottom to (nav height + safe area)
-          so we float just above the global nav. Page-level pb-36 lg:pb-0
-          reserves space for both bars combined.  */}
-      <div className="grid grid-cols-4 gap-1.5 mt-3
-                      lg:relative lg:bg-transparent lg:shadow-none lg:border-0 lg:p-0
-                      fixed left-0 right-0 z-40 bg-white shadow-2xl border-t border-[#e5e7eb] px-3 py-2.5"
-        style={{ bottom: "calc(3rem + env(safe-area-inset-bottom))" }}
-      >
+      {/* Action bar — simple in-flow grid. Renders DIRECTLY under the chips +
+          email/company sub-line in the lead-detail header card, both on mobile
+          and desktop. Previously this was `fixed` on mobile + `lg:relative`
+          for desktop with an inline `bottom` style — but the inline style
+          ignored media queries so on desktop it pulled the bar 4rem UP into
+          the header chips, causing the overlap Lalit screenshotted. Keeping
+          it simple now: in-flow on both, single column count, channel buttons
+          omitted when their channel is unavailable (no fake "disabled" pills). */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-3">
         {phone && (
-          <a href={telUrl(phone)} className="flex items-center justify-center gap-1 py-2 rounded-lg bg-emerald-600 text-white text-xs font-semibold hover:bg-emerald-700 transition shadow-sm min-h-10">
-            <Phone className="w-3.5 h-3.5" /> Call
+          <a href={telUrl(phone)} className="flex items-center justify-center gap-1.5 py-2.5 rounded-lg bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700 transition shadow-sm min-h-11">
+            <Phone className="w-4 h-4" /> Call
           </a>
         )}
-        <TemplatePickerButton lead={{ id: leadId, name: leadName, phone, email }} kind="WHATSAPP" compact />
-        <TemplatePickerButton lead={{ id: leadId, name: leadName, phone, email }} kind="EMAIL" compact />
-        <button onClick={() => setShowCall(true)} className="flex items-center justify-center gap-1 py-2 rounded-lg bg-[#c9a24b] text-[#0b1a33] text-xs font-semibold hover:bg-[#e7c97a] transition shadow-sm min-h-10">
-          📝 Log
+        {phone && (
+          <TemplatePickerButton lead={{ id: leadId, name: leadName, phone, email }} kind="WHATSAPP" compact />
+        )}
+        {email && (
+          <TemplatePickerButton lead={{ id: leadId, name: leadName, phone, email }} kind="EMAIL" compact />
+        )}
+        <button onClick={() => setShowCall(true)} className="flex items-center justify-center gap-1.5 py-2.5 rounded-lg bg-[#c9a24b] text-[#0b1a33] text-sm font-semibold hover:bg-[#e7c97a] transition shadow-sm min-h-11">
+          📝 Log Call
         </button>
       </div>
 

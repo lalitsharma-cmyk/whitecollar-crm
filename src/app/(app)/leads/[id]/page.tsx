@@ -272,11 +272,10 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
   );
 
   return (
-    /* pb-36 reserves space at the bottom on mobile for TWO stacked bars:
-       (a) the lead-detail action bar (~52px) at bottom = nav-height + safe-area
-       (b) the global mobile bottom nav (~56px + safe-area) at bottom-0
-       Removed on lg+ where both bars are in flow. */
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 pb-36 lg:pb-0">
+    /* pb-24 reserves space at the bottom on mobile only for the GLOBAL bottom
+       nav (~56px + safe-area). The per-lead action bar is now in-flow inside
+       the header card so no extra reservation needed for it. */
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 pb-24 lg:pb-0">
       {/* Mobile back link — Lalit's ask: "in mobile app, i can not come back
           to previous page". A hardware back goes to the browser history
           which may be empty (PWA opened from home screen). This always
