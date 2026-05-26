@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Phone, MessageCircle, Mail, AlertCircle, Sparkles } from "lucide-react";
+import { Phone, MessageCircle, Mail, AlertCircle, Sparkles, PhoneCall } from "lucide-react";
 import { whatsappLink, telLink } from "@/lib/phone";
 import TemplatePickerButton from "./TemplatePickerButton";
 import { fromISTLocalInput } from "@/lib/datetime";
@@ -61,6 +61,7 @@ export default function LeadActionsClient({ leadId, phone, altPhone, email, curr
   const router = useRouter();
   const [showCall, setShowCall] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [waCallBusy, setWaCallBusy] = useState(false);
   const [outcome, setOutcome] = useState("CONNECTED");
   const [remarks, setRemarks] = useState("");
   const [duration, setDuration] = useState("");
@@ -77,10 +78,44 @@ export default function LeadActionsClient({ leadId, phone, altPhone, email, curr
   const needsCallback = outcome === "CALLBACK" || outcome === "BUSY" || outcome === "SWITCHED_OFF" || outcome === "NOT_PICKED";
   const showOptionalCallback = outcome === "CONNECTED" || outcome === "INTERESTED";
   const showCallbackField = needsCallback || showOptionalCallback;
+  // Duration is only meaningful when the call actually connected. Hide it for
+  // not-picked / switched-off / busy / wrong-number — Lalit's ask: "Duration
+  // should not get display for not picked, obviously there is no point of
+  // duration to be entered".
+  const showDurationField = outcome === "CONNECTED" || outcome === "INTERESTED" || outcome === "NOT_INTERESTED" || outcome === "CALLBACK";
   const [err, setErr] = useState<string | null>(null);
   const [assignBusy, setAssignBusy] = useState(false);
   const [acefoneBusy, setAcefoneBusy] = useState(false);
   const [acefoneMsg, setAcefoneMsg] = useState<string | null>(null);
+
+  // WhatsApp Call — opens the WA chat (where the agent taps the phone/video
+  // icon inside WA to start the audio call), AND logs a CallLog row so the
+  // attempt is recorded in Call History + counts toward "Calls dialed" in the
+  // daily report. WhatsApp has no documented call deep-link, so opening the
+  // chat + logging the intent is the closest we can get without WA Business API.
+  async function whatsappCall() {
+    if (!phone || waCallBusy) return;
+    setWaCallBusy(true);
+    try {
+      // Open the WA chat — agent taps 📞 inside WhatsApp to start the audio call
+      const chatUrl = whatsappLink(phone);
+      if (chatUrl) window.open(chatUrl, "_blank", "noopener,noreferrer");
+      // Record the attempt as a CallLog (CALLBACK outcome — agent can update
+      // after the call finishes via the Log Call modal if needed). The notes
+      // marker lets CallHistoryCard show a 💬 WhatsApp badge later.
+      await fetch(`/api/leads/${leadId}/log-call`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          outcome: "CALLBACK",
+          remarks: "📞 WhatsApp call initiated by agent",
+          durationSec: 0,
+          via: "WHATSAPP",
+        }),
+      });
+      router.refresh();
+    } finally { setWaCallBusy(false); }
+  }
 
   async function callViaAcefone() {
     if (acefoneBusy) return;
@@ -117,10 +152,13 @@ export default function LeadActionsClient({ leadId, phone, altPhone, email, curr
     }
     setBusy(true);
     try {
+      // Duration only matters for connected-style outcomes; hide-field outcomes
+      // send 0 so the server doesn't store a stale value the agent never saw.
+      const durationToSend = showDurationField ? (Number(duration) || 0) : 0;
       const r = await fetch(`/api/leads/${leadId}/log-call`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ outcome, remarks, durationSec: Number(duration) || 0, callbackAt: callbackAtISO }),
+        body: JSON.stringify({ outcome, remarks, durationSec: durationToSend, callbackAt: callbackAtISO }),
       });
       const j = await r.json();
       if (!r.ok) { setErr(j.error ?? "Failed"); return; }
@@ -171,11 +209,25 @@ export default function LeadActionsClient({ leadId, phone, altPhone, email, curr
         </div>
       )}
 
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-4">
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 mt-4">
         {phone && (
           <a href={telUrl(phone)} className="flex flex-col items-center justify-center py-3 rounded-xl bg-emerald-600 text-white font-semibold hover:bg-emerald-700 transition shadow-sm">
             <Phone className="w-5 h-5 mb-1" /> Call
           </a>
+        )}
+        {/* WhatsApp Call — opens WA chat where agent taps phone icon to start
+            audio call. Auto-logs the attempt to Call History. Lalit's ask:
+            "Whatsapp call option can be there on lead detail page and it
+            should also be recorded." */}
+        {phone && (
+          <button
+            onClick={whatsappCall}
+            disabled={waCallBusy}
+            title="Open WhatsApp chat → tap 📞 inside WhatsApp to start the audio call. Logged automatically."
+            className="flex flex-col items-center justify-center py-3 rounded-xl bg-[#128C7E] text-white font-semibold hover:bg-[#0e6f63] transition shadow-sm disabled:opacity-50"
+          >
+            <PhoneCall className="w-5 h-5 mb-1" /> {waCallBusy ? "…" : "WA Call"}
+          </button>
         )}
         {/* TemplatePicker replaces the bare WA + Email buttons — opens a chooser so the agent picks a template, placeholders filled per-lead. */}
         <TemplatePickerButton lead={{ id: leadId, name: leadName, phone, email }} kind="WHATSAPP" />
@@ -236,32 +288,37 @@ export default function LeadActionsClient({ leadId, phone, altPhone, email, curr
             <select value={outcome} onChange={(e) => setOutcome(e.target.value)} className="w-full mt-1 mb-3 border border-[#e5e7eb] rounded-lg px-3 py-2 text-sm">
               {OUTCOMES.map(o => <option key={o.v} value={o.v}>{o.label}</option>)}
             </select>
-            <label className="text-xs font-semibold text-gray-600">Duration (seconds, optional)</label>
-            <input
-              type="number"
-              value={duration}
-              onChange={(e) => {
-                // Strip ALL non-digit characters (handles paste of "-30", "-", "1e-3" etc.)
-                const cleaned = e.target.value.replace(/[^\d]/g, "");
-                setDuration(cleaned);
-              }}
-              onKeyDown={(e) => {
-                // Block keys that can introduce a negative or non-integer value
-                if (e.key === "-" || e.key === "e" || e.key === "E" || e.key === "+" || e.key === ".") {
-                  e.preventDefault();
-                }
-              }}
-              onBlur={(e) => {
-                // Final clamp on blur — if somehow a negative slipped through, normalise to 0
-                const n = Number(e.target.value);
-                if (!isFinite(n) || n < 0) setDuration("");
-              }}
-              min={0}
-              step={1}
-              inputMode="numeric"
-              placeholder="e.g. 240"
-              className="w-full mt-1 mb-3 border border-[#e5e7eb] rounded-lg px-3 py-2 text-sm min-h-11"
-            />
+            {/* Duration only shown when the call could have lasted measurable
+                time — connected, interested, not-interested (heard them out),
+                or a callback agreement. Hidden for not-picked / switched-off /
+                busy / wrong-number where duration is always 0. */}
+            {showDurationField && (
+              <>
+                <label className="text-xs font-semibold text-gray-600">Duration (seconds, optional)</label>
+                <input
+                  type="number"
+                  value={duration}
+                  onChange={(e) => {
+                    const cleaned = e.target.value.replace(/[^\d]/g, "");
+                    setDuration(cleaned);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "-" || e.key === "e" || e.key === "E" || e.key === "+" || e.key === ".") {
+                      e.preventDefault();
+                    }
+                  }}
+                  onBlur={(e) => {
+                    const n = Number(e.target.value);
+                    if (!isFinite(n) || n < 0) setDuration("");
+                  }}
+                  min={0}
+                  step={1}
+                  inputMode="numeric"
+                  placeholder="e.g. 240"
+                  className="w-full mt-1 mb-3 border border-[#e5e7eb] rounded-lg px-3 py-2 text-sm min-h-11"
+                />
+              </>
+            )}
 
             {/* Callback scheduler — shows only when the outcome implies "ring back later".
                 Required when the client asked for a specific time. Saved as

@@ -26,6 +26,29 @@ function timeOnly(date: Date): string {
   }).format(date);
 }
 
+/**
+ * "5.30 pm" — 12-hour with a period separator, matching how Lalit's team
+ * writes times in the MIS sheets (e.g. "on 3 May 2026 (5.30 PM)"). Use on the
+ * lead-detail page (Call History, Timeline, Scheduling) so on-screen times
+ * read the same way agents already think.
+ *
+ * Examples (IST):
+ *   17:30 → "5.30 pm"
+ *   09:05 → "9.05 am"
+ *   12:00 → "12.00 pm"   (noon)
+ *   00:15 → "12.15 am"   (just past midnight)
+ */
+function time12Only(date: Date): string {
+  // en-US with hour12 + 2-digit minute → "5:30 PM". Swap colon → dot and lower-case.
+  const raw = new Intl.DateTimeFormat("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+    timeZone: IST,
+  }).format(date);
+  return raw.replace(":", ".").replace(" AM", " am").replace(" PM", " pm");
+}
+
 /** "5 Apr 2026, 14:30" — for timeline rows / activity logs */
 export function fmtIST(d: Date | string | number): string {
   const date = d instanceof Date ? d : new Date(d);
@@ -44,10 +67,28 @@ export function fmtISTDate(d: Date | string | number): string {
   return dateOnly(date);
 }
 
-/** "14:30" — time only */
+/** "14:30" — time only (24-hour) */
 export function fmtISTTime(d: Date | string | number): string {
   const date = d instanceof Date ? d : new Date(d);
   return timeOnly(date);
+}
+
+/** "5 Apr 2026, 5.30 pm" — 12-hour with period separator, matching MIS-sheet style. */
+export function fmtIST12(d: Date | string | number): string {
+  const date = d instanceof Date ? d : new Date(d);
+  return `${dateOnly(date)}, ${time12Only(date)}`;
+}
+
+/** "5 Apr 2026 (5.30 pm)" — 12-hour parenthetical form, MIS-sheet style. */
+export function fmtIST12Paren(d: Date | string | number): string {
+  const date = d instanceof Date ? d : new Date(d);
+  return `${dateOnly(date)} (${time12Only(date)})`;
+}
+
+/** "5.30 pm" — time only, 12-hour with period separator. */
+export function fmtISTTime12(d: Date | string | number): string {
+  const date = d instanceof Date ? d : new Date(d);
+  return time12Only(date);
 }
 
 /** "5 Apr 2026, 14:30 IST" — when we want to be unambiguous about the zone */

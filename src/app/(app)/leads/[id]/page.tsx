@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { notFound, redirect } from "next/navigation";
 import { format, formatDistanceToNow } from "date-fns";
-import { fmtIST, toISTLocalInput } from "@/lib/datetime";
+import { fmtIST12, toISTLocalInput } from "@/lib/datetime";
 import Link from "next/link";
 import { fmtMoney } from "@/lib/money";
 import { requireUser } from "@/lib/auth";
@@ -18,7 +18,6 @@ import { acefoneEnabled } from "@/lib/acefone";
 import { canTouchLead } from "@/lib/leadScope";
 import SuggestedUnitsCard from "@/components/SuggestedUnitsCard";
 import { bestUnitsForLead } from "@/lib/inventoryMatch";
-import RemarksCard from "@/components/RemarksCard";
 import CallHistoryCard from "@/components/CallHistoryCard";
 import LeadReassignClient from "@/components/LeadReassignClient";
 import { parseBudget, formatBudget } from "@/lib/budgetParse";
@@ -165,10 +164,14 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
                 {lead.moodStatus && <span className={`chip ${moodClass[lead.moodStatus] ?? "src"}`}>😊 {lead.moodStatus}</span>}
                 <span className={`chip ${lead.forwardedTeam === "India" ? "src-csv" : "src-wa"}`}>{lead.forwardedTeam ?? "—"}</span>
               </div>
+              {/* Header sub-line — email + company only. City/country now live
+                  EXCLUSIVELY in the 📍 Address card on the right rail (Lalit's
+                  ask: "2 places location gets display in lead detail. no use.")
+                  and the trailing ", null" when country was missing is also
+                  killed as a side effect ("What is null here?"). */}
               <div className="text-sm text-gray-500 mt-1">
                 {lead.email && `${lead.email}`}
                 {lead.company && ` · ${lead.company}`}
-                {lead.city && ` · ${lead.city}, ${lead.country}`}
               </div>
               <LeadActionsClient
                 leadId={lead.id}
@@ -250,7 +253,7 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
                   <div className={`w-8 h-8 rounded-full ${v.dot} text-white flex items-center justify-center text-sm flex-none shadow-sm`}>{v.icon}</div>
                   <div className="flex-1 min-w-0">
                     <div className="text-sm"><b>{a.title}</b> <span className="text-[10px] text-gray-400 ml-1">· {v.label}</span></div>
-                    <div className="text-xs text-gray-500">{a.user?.name ?? "System"} · {fmtIST(a.createdAt)} IST</div>
+                    <div className="text-xs text-gray-500">{a.user?.name ?? "System"} · {fmtIST12(a.createdAt)} IST</div>
                     {a.description && <div className="text-sm mt-1 text-gray-700 whitespace-pre-wrap">{a.description}</div>}
                   </div>
                 </div>
@@ -260,10 +263,12 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
           </div>
         </div>
 
-        {/* REMARKS — moved to bottom of left column per Lalit's ask ("Move
-            remarks to last"). Full conversation history from the import sheet,
-            always rendered (even when null) so it can never be missed. */}
-        <RemarksCard leadId={lead.id} remarks={lead.remarks} />
+        {/* REMARKS card REMOVED per Lalit: "Is Remarks and Call history all
+            details same?" — yes, Call History already shows the parsed,
+            structured per-call rows from this same data. The raw text dump was
+            duplicative + harder to scan. The Lead.remarks field still stores
+            the original import data (used by Smart CMA + AI summary); the agent
+            just doesn't see two cards saying the same thing. */}
       </div>
 
       {/* Right rail
@@ -277,8 +282,19 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
             ... rest unchanged
       */}
       <div className="space-y-4">
-        {lead.address && (
-          <div className="card p-5"><div className="font-semibold mb-2">📍 Address</div><p className="text-sm text-gray-700">{lead.address}</p></div>
+        {/* 📍 Address — the SINGLE place location appears on this page now.
+            Combines lead.city / lead.country / lead.address. Card hides itself
+            only when literally nothing is set. */}
+        {(lead.address || lead.city || lead.country) && (
+          <div className="card p-5">
+            <div className="font-semibold mb-2">📍 Location</div>
+            {lead.address && <p className="text-sm text-gray-700">{lead.address}</p>}
+            {(lead.city || lead.country) && (
+              <p className="text-xs text-gray-500 mt-1">
+                {[lead.city, lead.country].filter(Boolean).join(", ")}
+              </p>
+            )}
+          </div>
         )}
         <div className="card p-5">
           <LeadMeetingClient leadId={lead.id} counts={meetingCounts} />
@@ -295,10 +311,20 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
           } : null}
         />
 
-        {/* Scheduling & next action — moved from left column */}
+        {/* Scheduling & next action — Followup + To-Do FIRST per Lalit's ask
+            ("Followup and to do should be on top") since those are the daily
+            agent actions. Meeting + Site Visit are second-row reference dates. */}
         <div className="card p-5">
           <div className="font-semibold mb-3">📅 Scheduling & next action <span className="text-[10px] text-gray-400 font-normal">(click to edit)</span></div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+            <div className="p-3 border border-emerald-200 rounded-lg bg-emerald-50">
+              <div className="text-xs text-emerald-700 font-semibold">🔁 Follow-up</div>
+              <InlineEdit leadId={lead.id} field="followupDate" type="date" value={toISTLocalInput(lead.followupDate)} placeholder="Not scheduled" />
+            </div>
+            <div className="p-3 border border-amber-200 rounded-lg bg-amber-50">
+              <div className="text-xs text-amber-700 font-semibold">✅ To Do</div>
+              <InlineEdit leadId={lead.id} field="todoNext" value={lead.todoNext ?? ""} placeholder="Decide what's next" />
+            </div>
             <div className="p-3 border border-[#e5e7eb] rounded-lg">
               <div className="text-xs text-gray-500">📅 Meeting</div>
               <InlineEdit leadId={lead.id} field="meetingDate" type="date" value={toISTLocalInput(lead.meetingDate)} placeholder="Not scheduled" />
@@ -306,14 +332,6 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
             <div className="p-3 border border-[#e5e7eb] rounded-lg">
               <div className="text-xs text-gray-500">🏢 Site Visit</div>
               <InlineEdit leadId={lead.id} field="siteVisitDate" type="date" value={toISTLocalInput(lead.siteVisitDate)} placeholder="Not scheduled" />
-            </div>
-            <div className="p-3 border border-[#e5e7eb] rounded-lg">
-              <div className="text-xs text-gray-500">🔁 Follow-up</div>
-              <InlineEdit leadId={lead.id} field="followupDate" type="date" value={toISTLocalInput(lead.followupDate)} placeholder="Not scheduled" />
-            </div>
-            <div className="p-3 border border-[#e5e7eb] rounded-lg bg-amber-50 border-amber-200">
-              <div className="text-xs text-amber-700">✅ To Do</div>
-              <InlineEdit leadId={lead.id} field="todoNext" value={lead.todoNext ?? ""} placeholder="Decide what's next" />
             </div>
           </div>
         </div>
@@ -397,7 +415,7 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
               {lead.assignments.map(a => (
                 <div key={a.id} className="text-xs">
                   <b>{a.user.name}</b> · {a.reason ?? "—"}
-                  <div className="text-gray-500">{fmtIST(a.assignedAt)} IST</div>
+                  <div className="text-gray-500">{fmtIST12(a.assignedAt)} IST</div>
                 </div>
               ))}
             </div>
