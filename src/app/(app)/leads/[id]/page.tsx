@@ -174,17 +174,10 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
                 acefoneEnabled={acefoneEnabled()}
                 acefoneMappedForUser={!!me.acefoneAgentId}
               />
-              <div className="mt-3">
-                <SiteVisitTracker
-                  leadId={lead.id}
-                  leadName={lead.name}
-                  activeVisit={activeVisit && activeVisit.startedAt && (activeVisit.type === "OFFICE_MEETING" || activeVisit.type === "SITE_VISIT") ? {
-                    activityId: activeVisit.id,
-                    type: activeVisit.type,
-                    startedAt: activeVisit.startedAt.toISOString(),
-                  } : null}
-                />
-              </div>
+              {/* SiteVisitTracker MOVED to the right column (below Meeting Counts)
+                  per Lalit's request: "Start a visit should be at last". The
+                  AdvancedActivityLogger stays inside Header since it's a tiny
+                  inline button + modal for expo/home visits with reimbursement. */}
               <div className="mt-2">
                 <AdvancedActivityLogger
                   leadId={lead.id}
@@ -331,27 +324,7 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
           </div>
         </div>
 
-        <div className="card p-5">
-          <div className="font-semibold mb-3">Scheduling & next action <span className="text-[10px] text-gray-400 font-normal">(click to edit)</span></div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
-            <div className="p-3 border border-[#e5e7eb] rounded-lg">
-              <div className="text-xs text-gray-500">📅 Meeting</div>
-              <InlineEdit leadId={lead.id} field="meetingDate" type="date" value={toISTLocalInput(lead.meetingDate)} placeholder="Not scheduled" />
-            </div>
-            <div className="p-3 border border-[#e5e7eb] rounded-lg">
-              <div className="text-xs text-gray-500">🏢 Site Visit</div>
-              <InlineEdit leadId={lead.id} field="siteVisitDate" type="date" value={toISTLocalInput(lead.siteVisitDate)} placeholder="Not scheduled" />
-            </div>
-            <div className="p-3 border border-[#e5e7eb] rounded-lg">
-              <div className="text-xs text-gray-500">🔁 Follow-up</div>
-              <InlineEdit leadId={lead.id} field="followupDate" type="date" value={toISTLocalInput(lead.followupDate)} placeholder="Not scheduled" />
-            </div>
-            <div className="p-3 border border-[#e5e7eb] rounded-lg bg-amber-50 border-amber-200">
-              <div className="text-xs text-amber-700">✅ To Do</div>
-              <InlineEdit leadId={lead.id} field="todoNext" value={lead.todoNext ?? ""} placeholder="Decide what's next" />
-            </div>
-          </div>
-        </div>
+        {/* Scheduling MOVED to right column per Lalit's request — see below right rail */}
 
         {lead.aiSummary && (
           <div className="card p-5">
@@ -390,13 +363,56 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
         </div>
       </div>
 
-      {/* Right rail */}
+      {/* Right rail
+          Order per Lalit's layout request:
+            1. Address
+            2. Meeting counts (LeadMeetingClient)
+            3. Start a Site Visit (SiteVisitTracker) — "below meeting counts, at last"
+            4. Scheduling & next action — moved from left column
+            5. Projects discussed
+            6. Smart CMA
+            ... rest unchanged
+      */}
       <div className="space-y-4">
         {lead.address && (
           <div className="card p-5"><div className="font-semibold mb-2">📍 Address</div><p className="text-sm text-gray-700">{lead.address}</p></div>
         )}
         <div className="card p-5">
           <LeadMeetingClient leadId={lead.id} counts={meetingCounts} />
+        </div>
+
+        {/* Start a Site Visit — moved from header to right under meeting counts */}
+        <SiteVisitTracker
+          leadId={lead.id}
+          leadName={lead.name}
+          activeVisit={activeVisit && activeVisit.startedAt && (activeVisit.type === "OFFICE_MEETING" || activeVisit.type === "SITE_VISIT") ? {
+            activityId: activeVisit.id,
+            type: activeVisit.type,
+            startedAt: activeVisit.startedAt.toISOString(),
+          } : null}
+        />
+
+        {/* Scheduling & next action — moved from left column */}
+        <div className="card p-5">
+          <div className="font-semibold mb-3">📅 Scheduling & next action <span className="text-[10px] text-gray-400 font-normal">(click to edit)</span></div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+            <div className="p-3 border border-[#e5e7eb] rounded-lg">
+              <div className="text-xs text-gray-500">📅 Meeting</div>
+              <InlineEdit leadId={lead.id} field="meetingDate" type="date" value={toISTLocalInput(lead.meetingDate)} placeholder="Not scheduled" />
+            </div>
+            <div className="p-3 border border-[#e5e7eb] rounded-lg">
+              <div className="text-xs text-gray-500">🏢 Site Visit</div>
+              <InlineEdit leadId={lead.id} field="siteVisitDate" type="date" value={toISTLocalInput(lead.siteVisitDate)} placeholder="Not scheduled" />
+            </div>
+            <div className="p-3 border border-[#e5e7eb] rounded-lg">
+              <div className="text-xs text-gray-500">🔁 Follow-up</div>
+              <InlineEdit leadId={lead.id} field="followupDate" type="date" value={toISTLocalInput(lead.followupDate)} placeholder="Not scheduled" />
+            </div>
+            <div className="p-3 border border-[#e5e7eb] rounded-lg bg-amber-50 border-amber-200">
+              <div className="text-xs text-amber-700">✅ To Do</div>
+              <InlineEdit leadId={lead.id} field="todoNext" value={lead.todoNext ?? ""} placeholder="Decide what's next" />
+            </div>
+          </div>
         </div>
 
         <div className="card p-5">

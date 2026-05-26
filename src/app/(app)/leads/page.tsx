@@ -65,6 +65,27 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
   else if (sp.when === "30d") where.createdAt = { gte: new Date(Date.now() - 30 * 24 * 3600 * 1000) };
   else if (sp.when === "overdue") where.lastTouchedAt = { lt: new Date(Date.now() - 5 * 24 * 3600 * 1000) };
 
+  // Quick filter: ?followup=today  → leads whose followupDate falls within today IST.
+  // Lalit asked: "Agent is unable to track what are today's follow up... make it
+  // filter in leads for agent today's followups."
+  if (sp.followup === "today") {
+    // Today in IST as a UTC window: 00:00 IST = 18:30 UTC the previous day.
+    const istOffsetMs = 330 * 60 * 1000;
+    const nowIST = new Date(Date.now() + istOffsetMs);
+    const startIST = new Date(nowIST); startIST.setUTCHours(0, 0, 0, 0);
+    const endIST = new Date(startIST); endIST.setUTCDate(endIST.getUTCDate() + 1);
+    where.followupDate = {
+      gte: new Date(startIST.getTime() - istOffsetMs),
+      lt: new Date(endIST.getTime() - istOffsetMs),
+    };
+  } else if (sp.followup === "overdue") {
+    // Past-due followups (older than now) — agent missed them
+    where.followupDate = { lt: new Date(), not: null };
+  } else if (sp.followup === "week") {
+    // Next 7 days
+    where.followupDate = { gte: new Date(), lte: new Date(Date.now() + 7 * 24 * 3600 * 1000) };
+  }
+
   // Sort
   let orderBy: Prisma.LeadOrderByWithRelationInput = { createdAt: "desc" };
   if (sp.sort === "created_asc") orderBy = { createdAt: "asc" };
@@ -76,16 +97,31 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
   const page = Math.max(1, parseInt(sp.page ?? "1") || 1);
   const skip = (page - 1) * PAGE_SIZE;
 
-  const [leads, total, hot, newToday, totalAll, agents] = await Promise.all([
+  // Today-IST window for the followup quick chip counts (scoped to the visible
+  // leads — agents see counts for their own pipeline, admin sees the whole org)
+  const istOffsetMs = 330 * 60 * 1000;
+  const nowIST = new Date(Date.now() + istOffsetMs);
+  const startToday = new Date(nowIST); startToday.setUTCHours(0, 0, 0, 0);
+  const endToday = new Date(startToday); endToday.setUTCDate(endToday.getUTCDate() + 1);
+  const todayWindow = {
+    gte: new Date(startToday.getTime() - istOffsetMs),
+    lt: new Date(endToday.getTime() - istOffsetMs),
+  };
+
+  const [leads, total, hot, newToday, totalAll, agents, followupToday, followupOverdue] = await Promise.all([
     prisma.lead.findMany({
       where, orderBy, skip, take: PAGE_SIZE,
       include: { owner: true, interestedUnits: { include: { unit: { include: { project: true } } }, take: 1 } },
     }),
     prisma.lead.count({ where }),
-    prisma.lead.count({ where: { aiScore: AIScore.HOT } }),
-    prisma.lead.count({ where: { createdAt: { gte: new Date(Date.now() - 24 * 3600 * 1000) } } }),
-    prisma.lead.count(),
+    prisma.lead.count({ where: { ...scope, aiScore: AIScore.HOT } }),
+    prisma.lead.count({ where: { ...scope, createdAt: { gte: new Date(Date.now() - 24 * 3600 * 1000) } } }),
+    prisma.lead.count({ where: scope }),
     prisma.user.findMany({ where: { active: true, role: { in: ["AGENT", "MANAGER"] } }, orderBy: { name: "asc" } }),
+    // Today's followups in the agent's pipeline (or all for admin)
+    prisma.lead.count({ where: { ...scope, followupDate: todayWindow, status: { notIn: ["WON", "LOST"] } } }),
+    // Overdue followups (set in the past)
+    prisma.lead.count({ where: { ...scope, followupDate: { lt: new Date(), not: null }, status: { notIn: ["WON", "LOST"] } } }),
   ]);
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
@@ -105,6 +141,35 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
           )}
           <Link href="/leads/new" className="btn btn-primary flex-1 sm:flex-none justify-center">+ New Lead</Link>
         </div>
+      </div>
+
+      {/* Quick filter chips — Lalit asked for prominent today's-followups visibility.
+          Counts are scoped to the user's pipeline (agent sees their own; admin sees all). */}
+      <div className="flex flex-wrap gap-2">
+        <Link
+          href="/leads"
+          className={`px-3 py-2 rounded-full text-xs font-semibold border min-h-9 inline-flex items-center gap-1 ${!sp.followup ? "bg-[#0b1a33] text-white border-[#0b1a33]" : "bg-white border-[#e5e7eb] text-gray-700"}`}
+        >
+          All leads
+        </Link>
+        <Link
+          href="/leads?followup=today"
+          className={`px-3 py-2 rounded-full text-xs font-semibold border min-h-9 inline-flex items-center gap-1 ${sp.followup === "today" ? "bg-emerald-600 text-white border-emerald-600" : "bg-emerald-50 border-emerald-300 text-emerald-800"}`}
+        >
+          📅 Today&apos;s follow-ups {followupToday > 0 && <span className="bg-white/20 px-1.5 rounded">{followupToday}</span>}
+        </Link>
+        <Link
+          href="/leads?followup=overdue"
+          className={`px-3 py-2 rounded-full text-xs font-semibold border min-h-9 inline-flex items-center gap-1 ${sp.followup === "overdue" ? "bg-red-600 text-white border-red-600" : "bg-red-50 border-red-300 text-red-800"}`}
+        >
+          ⏰ Overdue {followupOverdue > 0 && <span className="bg-white/20 px-1.5 rounded">{followupOverdue}</span>}
+        </Link>
+        <Link
+          href="/leads?followup=week"
+          className={`px-3 py-2 rounded-full text-xs font-semibold border min-h-9 inline-flex items-center gap-1 ${sp.followup === "week" ? "bg-blue-600 text-white border-blue-600" : "bg-blue-50 border-blue-300 text-blue-800"}`}
+        >
+          📆 Next 7 days
+        </Link>
       </div>
 
       <SavedFiltersBar />
