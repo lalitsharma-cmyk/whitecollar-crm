@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { MessageCircle, Mail, X, Sparkles, PenLine } from "lucide-react";
 import { whatsappLink } from "@/lib/phone";
+import { useBodyScrollLock } from "@/hooks/useBodyScrollLock";
 
 interface Lead { id: string; name: string; phone: string | null; email: string | null; }
 interface Tpl {
@@ -31,6 +32,7 @@ export default function TemplatePickerButton({ lead, kind, suggestedTrigger, com
   const [open, setOpen] = useState(false);
   const [tpls, setTpls] = useState<Tpl[]>([]);
   const [loaded, setLoaded] = useState(false);
+  useBodyScrollLock(open);
   // "Type your own" free-text mode. Lalit asked: "There should be both option
   // to Type or choose template, if agent choose template then show him options
   // of templates." The picker now opens with two big choices at the top —
@@ -117,8 +119,9 @@ export default function TemplatePickerButton({ lead, kind, suggestedTrigger, com
       </button>
 
       {open && (
-        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={() => setOpen(false)}>
-          <div className="bg-white rounded-xl max-w-lg w-full max-h-[90vh] flex flex-col shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-end sm:items-center justify-center sm:p-4" onClick={() => setOpen(false)}>
+          {/* Bottom-sheet on mobile, centred dialog on desktop. */}
+          <div className="bg-white sm:rounded-xl rounded-t-2xl max-w-lg w-full max-h-[90vh] flex flex-col shadow-2xl safe-bottom" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between p-4 border-b border-[#e5e7eb]">
               <div>
                 <div className="font-semibold text-lg">Pick a {kind === "WHATSAPP" ? "WhatsApp" : "Email"} template</div>

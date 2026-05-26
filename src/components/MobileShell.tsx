@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import NotifBell from "./NotifBell";
 import WhatsAppPanel from "./WhatsAppPanel";
+import { useBodyScrollLock } from "@/hooks/useBodyScrollLock";
 
 const fullNav = [
   { section: "WORKSPACE", items: [
@@ -78,6 +79,12 @@ export default function MobileShell({ children, user }: Props) {
   // Lalit: "All pages should have back buttons".
   const rootPaths = new Set(["/dashboard", "/action-list", "/leads", "/pipeline", "/notifications", "/profile"]);
   const showBack = pathname != null && !rootPaths.has(pathname);
+
+  // Lock background scroll while the slide-out drawer is open so the page
+  // behind it can't shift around — Lalit reported "popups/dropdowns distort
+  // the form when they open on mobile". This + the global modal-open CSS
+  // covers the shell drawer; other modals opt in via the same hook.
+  useBodyScrollLock(open);
 
   // Back fallback: if browser history is empty (PWA opened from home screen,
   // or page opened in a new tab), router.back() does nothing. Fall back to

@@ -83,3 +83,49 @@ html, body { background: var(--color-bg); color: var(--color-ink); font-family: 
 .seg button, .seg a { padding:.35rem .8rem; border-radius:.45rem; font-size:.82rem; font-weight:600; color:#4b5563; text-decoration: none; }
 .seg button.on, .seg a.on { background:#fff; color:#0b1a33; box-shadow:0 1px 2px rgba(0,0,0,.06); }
 .ai-tag { font-size:.7rem; color:#c9a24b; font-weight:700; letter-spacing:.08em; text-transform:uppercase; }
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   MOBILE FORM HARDENING
+   Lalit: "Some popups, selection, dropdown open in mobile, forms UI gets
+   distorted. Test it and fix them."
+   ─────────────────────────────────────────────────────────────────────────── */
+
+/* iOS auto-zoom prevention.
+   When an <input>/<select>/<textarea> has font-size < 16px, iOS Safari zooms
+   the viewport in on focus. The zoom then PERSISTS, leaving the form / modal
+   shifted off-screen until the user manually pinches back out — which looks
+   like "distorted UI". Force min 16px on all form controls below the lg
+   breakpoint. Tailwind text-* utilities still apply on lg+. */
+@media (max-width: 1023.98px) {
+  input[type="text"],
+  input[type="email"],
+  input[type="tel"],
+  input[type="number"],
+  input[type="password"],
+  input[type="search"],
+  input[type="url"],
+  input[type="date"],
+  input[type="time"],
+  input[type="datetime-local"],
+  input:not([type]),
+  textarea,
+  select {
+    font-size: 16px !important;
+  }
+}
+
+/* Body scroll-lock helper. When a modal opens it should add this class to
+   <body> via useBodyScrollLock() so the background page can't scroll under
+   the modal. Without this, the page jumps when the modal mounts (especially
+   on iOS where momentum scroll keeps going), which reads as "distorted".
+   The fixed+top trick preserves the scroll position so it doesn't jump back
+   to 0 on close. */
+body.modal-open {
+  overflow: hidden !important;
+  touch-action: none;
+}
+
+/* All modal/sheet wrappers should respect the iPhone home-indicator safe
+   area. Use these utility classes in fixed bottom sheets / modals. */
+.safe-bottom { padding-bottom: env(safe-area-inset-bottom); }
+.safe-top    { padding-top:    env(safe-area-inset-top); }

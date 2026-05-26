@@ -4,6 +4,7 @@ import Link from "next/link";
 import { fmtIST12, fmtISTDate } from "@/lib/datetime";
 import { Phone, MessageCircle, X, ChevronRight } from "lucide-react";
 import { telLink, whatsappLink } from "@/lib/phone";
+import { useBodyScrollLock } from "@/hooks/useBodyScrollLock";
 
 const oc: Record<string, string> = {
   CONNECTED: "chip-won", NOT_PICKED: "chip-lost", CALLBACK: "chip-warm",
@@ -62,8 +63,14 @@ export interface LeadSummary {
  */
 export default function CallsClient({ calls }: { calls: CallRowData[] }) {
   const [selectedId, setSelectedId] = useState<string | null>(calls[0]?.id ?? null);
+  // Mobile bottom-sheet open state is separate from selectedId — on desktop the
+  // panel is always visible (sticky right rail), on mobile we only open it
+  // explicitly when the user taps a row. Lock body scroll only while the
+  // mobile sheet is up; desktop sticky panel never needs the lock.
+  const [mobileSheetOpen, setMobileSheetOpen] = useState(false);
   const selected = calls.find((c) => c.id === selectedId) ?? null;
   const lead = selected?.lead ?? null;
+  useBodyScrollLock(mobileSheetOpen);
 
   return (
     <>
@@ -71,20 +78,20 @@ export default function CallsClient({ calls }: { calls: CallRowData[] }) {
       <div className="lg:hidden space-y-2">
         {calls.length === 0 && <div className="card p-6 text-center text-gray-500 text-sm">No calls logged yet.</div>}
         {calls.map((c) => (
-          <CallCard key={c.id} c={c} onTap={() => setSelectedId(c.id)} />
+          <CallCard key={c.id} c={c} onTap={() => { setSelectedId(c.id); setMobileSheetOpen(true); }} />
         ))}
-        {/* Mobile bottom-sheet summary */}
-        {selected && lead && (
-          <div className="fixed inset-0 z-50 lg:hidden" onClick={() => setSelectedId(null)}>
+        {/* Mobile bottom-sheet summary — explicit open state so the sheet only
+            appears when the user taps a row, not as soon as a row is selected. */}
+        {mobileSheetOpen && selected && lead && (
+          <div className="fixed inset-0 z-50 lg:hidden" onClick={() => setMobileSheetOpen(false)}>
             <div className="absolute inset-0 bg-black/40" />
             <div
-              className="absolute bottom-0 left-0 right-0 bg-white rounded-t-2xl shadow-2xl max-h-[85vh] overflow-y-auto"
-              style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
+              className="absolute bottom-0 left-0 right-0 bg-white rounded-t-2xl shadow-2xl max-h-[85vh] overflow-y-auto safe-bottom"
               onClick={(e) => e.stopPropagation()}
             >
               <div className="sticky top-0 bg-white flex items-center justify-between px-4 py-3 border-b border-[#e5e7eb]">
                 <div className="font-semibold text-base">Client Summary</div>
-                <button onClick={() => setSelectedId(null)} className="p-2 -mr-2"><X className="w-5 h-5" /></button>
+                <button onClick={() => setMobileSheetOpen(false)} className="p-2 -mr-2"><X className="w-5 h-5" /></button>
               </div>
               <div className="p-4">
                 <SummaryPanel lead={lead} call={selected} />

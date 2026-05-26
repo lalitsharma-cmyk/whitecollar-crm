@@ -6,6 +6,7 @@ import { whatsappLink, telLink } from "@/lib/phone";
 import TemplatePickerButton from "./TemplatePickerButton";
 import { fromISTLocalInput } from "@/lib/datetime";
 import DateTimeIST from "./DateTimeIST";
+import { useBodyScrollLock } from "@/hooks/useBodyScrollLock";
 
 const OUTCOMES = [
   { v: "CONNECTED",        label: "✅ Connected" },
@@ -60,6 +61,9 @@ export default function LeadActionsClient({ leadId, phone, altPhone, email, curr
   }
   const router = useRouter();
   const [showCall, setShowCall] = useState(false);
+  // Lock background scroll while the Log Call modal is open — prevents the
+  // underlying lead-detail form from jumping/shifting when the modal mounts.
+  useBodyScrollLock(showCall);
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState("CONNECTED");
   const [remarks, setRemarks] = useState("");
@@ -239,8 +243,15 @@ export default function LeadActionsClient({ leadId, phone, altPhone, email, curr
       )}
 
       {showCall && (
-        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={() => setShowCall(false)}>
-          <div className="bg-white rounded-xl max-w-md w-full p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-end sm:items-center justify-center sm:p-4" onClick={() => setShowCall(false)}>
+          {/* Mobile: bottom-sheet (full-width, slides up from bottom, scrollable).
+              Desktop: centered card. Both cap height at 90vh so the form scrolls
+              internally instead of overflowing off-screen when the keyboard / a
+              long form pushes content. */}
+          <div
+            className="bg-white sm:rounded-xl rounded-t-2xl max-w-md w-full p-5 shadow-2xl max-h-[90vh] overflow-y-auto safe-bottom"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="font-semibold mb-3 text-lg">Log Call</div>
             <label className="text-xs font-semibold text-gray-600">Outcome *</label>
             <select value={outcome} onChange={(e) => setOutcome(e.target.value)} className="w-full mt-1 mb-3 border border-[#e5e7eb] rounded-lg px-3 py-2 text-sm">

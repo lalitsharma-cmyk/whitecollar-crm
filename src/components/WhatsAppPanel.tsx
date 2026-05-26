@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { MessageCircle, X, ExternalLink } from "lucide-react";
+import { useBodyScrollLock } from "@/hooks/useBodyScrollLock";
 
 interface WALead {
   id: string;
@@ -30,6 +31,7 @@ export default function WhatsAppPanel() {
   const [open, setOpen] = useState(false);
   const [leads, setLeads] = useState<WALead[]>([]);
   const [loaded, setLoaded] = useState(false);
+  useBodyScrollLock(open);
 
   async function load() {
     try {
