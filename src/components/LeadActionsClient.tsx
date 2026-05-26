@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Phone, MessageCircle, Mail, AlertCircle, Sparkles, PhoneCall } from "lucide-react";
+import { Phone, MessageCircle, AlertCircle } from "lucide-react";
 import { whatsappLink, telLink } from "@/lib/phone";
 import TemplatePickerButton from "./TemplatePickerButton";
 import { fromISTLocalInput } from "@/lib/datetime";
@@ -61,7 +61,6 @@ export default function LeadActionsClient({ leadId, phone, altPhone, email, curr
   const router = useRouter();
   const [showCall, setShowCall] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [waCallBusy, setWaCallBusy] = useState(false);
   const [outcome, setOutcome] = useState("CONNECTED");
   const [remarks, setRemarks] = useState("");
   const [duration, setDuration] = useState("");
@@ -87,35 +86,6 @@ export default function LeadActionsClient({ leadId, phone, altPhone, email, curr
   const [assignBusy, setAssignBusy] = useState(false);
   const [acefoneBusy, setAcefoneBusy] = useState(false);
   const [acefoneMsg, setAcefoneMsg] = useState<string | null>(null);
-
-  // WhatsApp Call — opens the WA chat (where the agent taps the phone/video
-  // icon inside WA to start the audio call), AND logs a CallLog row so the
-  // attempt is recorded in Call History + counts toward "Calls dialed" in the
-  // daily report. WhatsApp has no documented call deep-link, so opening the
-  // chat + logging the intent is the closest we can get without WA Business API.
-  async function whatsappCall() {
-    if (!phone || waCallBusy) return;
-    setWaCallBusy(true);
-    try {
-      // Open the WA chat — agent taps 📞 inside WhatsApp to start the audio call
-      const chatUrl = whatsappLink(phone);
-      if (chatUrl) window.open(chatUrl, "_blank", "noopener,noreferrer");
-      // Record the attempt as a CallLog (CALLBACK outcome — agent can update
-      // after the call finishes via the Log Call modal if needed). The notes
-      // marker lets CallHistoryCard show a 💬 WhatsApp badge later.
-      await fetch(`/api/leads/${leadId}/log-call`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          outcome: "CALLBACK",
-          remarks: "📞 WhatsApp call initiated by agent",
-          durationSec: 0,
-          via: "WHATSAPP",
-        }),
-      });
-      router.refresh();
-    } finally { setWaCallBusy(false); }
-  }
 
   async function callViaAcefone() {
     if (acefoneBusy) return;
@@ -182,71 +152,44 @@ export default function LeadActionsClient({ leadId, phone, altPhone, email, curr
 
   return (
     <>
-      {/* Phone shown masked, but tap-to-call uses real number */}
-      {phone && (
-        <div className="text-sm text-gray-500 mt-1">
-          📞 <code className="text-[#0b1a33]">{phoneMasked}</code>
-          <span className="text-[10px] text-gray-400 ml-2">(real number used when you tap Call)</span>
-        </div>
-      )}
-      {/* Alt-phone (second number from the MIS sheet). Same masking convention.
-          Lalit's MIS often had two numbers per client comma-separated in one cell;
-          the second one now stores here and gets its own Call + WhatsApp buttons. */}
+      {/* Primary phone masked display REMOVED per Lalit's ask. The tap-to-call
+          action lives in the action grid below — the masked-number line was
+          duplicative noise. Real number is still used when the agent taps Call. */}
+
+      {/* Alt-phone (second number from the MIS sheet). Compact inline display
+          + tap-to-call/WhatsApp on the same row. Hidden when no alt phone. */}
       {altPhone && (
-        <div className="text-sm text-gray-500 mt-1 flex flex-wrap items-center gap-2">
-          <span>📱 alt: <code className="text-[#0b1a33]">{altPhoneMasked}</code></span>
-          <a href={telUrl(altPhone)} className="text-[11px] px-2 py-1 rounded bg-emerald-50 border border-emerald-300 text-emerald-800 font-semibold hover:bg-emerald-100 min-h-9 inline-flex items-center gap-1">
+        <div className="text-xs text-gray-500 mt-1 flex flex-wrap items-center gap-1.5">
+          <span>📱 alt:</span>
+          <a href={telUrl(altPhone)} className="text-[11px] px-2 py-1 rounded bg-emerald-50 border border-emerald-300 text-emerald-800 font-semibold hover:bg-emerald-100 inline-flex items-center gap-1">
             <Phone className="w-3 h-3" /> Call
           </a>
           <a
             href={waUrl(altPhone)}
             onClick={() => logWaClick("click")}
             target="_blank" rel="noopener noreferrer"
-            className="text-[11px] px-2 py-1 rounded bg-[#25D366]/15 border border-[#25D366] text-[#0b6a35] font-semibold hover:bg-[#25D366]/25 min-h-9 inline-flex items-center gap-1"
+            className="text-[11px] px-2 py-1 rounded bg-[#25D366]/15 border border-[#25D366] text-[#0b6a35] font-semibold hover:bg-[#25D366]/25 inline-flex items-center gap-1"
           >
-            <MessageCircle className="w-3 h-3" /> WhatsApp
+            <MessageCircle className="w-3 h-3" /> WA
           </a>
         </div>
       )}
 
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 mt-4">
+      {/* Compact horizontal action bar — Lalit's ask: "make buttons calls,
+          whatsapp on lead detail page smaller" + mobile redesign. 4-col grid
+          on every viewport (phones fit fine since buttons are smaller now). */}
+      <div className="grid grid-cols-4 gap-1.5 mt-3">
         {phone && (
-          <a href={telUrl(phone)} className="flex flex-col items-center justify-center py-3 rounded-xl bg-emerald-600 text-white font-semibold hover:bg-emerald-700 transition shadow-sm">
-            <Phone className="w-5 h-5 mb-1" /> Call
+          <a href={telUrl(phone)} className="flex items-center justify-center gap-1 py-2 rounded-lg bg-emerald-600 text-white text-xs font-semibold hover:bg-emerald-700 transition shadow-sm min-h-10">
+            <Phone className="w-3.5 h-3.5" /> Call
           </a>
         )}
-        {/* WhatsApp Call — opens WA chat where agent taps phone icon to start
-            audio call. Auto-logs the attempt to Call History. Lalit's ask:
-            "Whatsapp call option can be there on lead detail page and it
-            should also be recorded." */}
-        {phone && (
-          <button
-            onClick={whatsappCall}
-            disabled={waCallBusy}
-            title="Open WhatsApp chat → tap 📞 inside WhatsApp to start the audio call. Logged automatically."
-            className="flex flex-col items-center justify-center py-3 rounded-xl bg-[#128C7E] text-white font-semibold hover:bg-[#0e6f63] transition shadow-sm disabled:opacity-50"
-          >
-            <PhoneCall className="w-5 h-5 mb-1" /> {waCallBusy ? "…" : "WA Call"}
-          </button>
-        )}
-        {/* TemplatePicker replaces the bare WA + Email buttons — opens a chooser so the agent picks a template, placeholders filled per-lead. */}
-        <TemplatePickerButton lead={{ id: leadId, name: leadName, phone, email }} kind="WHATSAPP" />
-        <TemplatePickerButton lead={{ id: leadId, name: leadName, phone, email }} kind="EMAIL" />
-        <button onClick={() => setShowCall(true)} className="flex flex-col items-center justify-center py-3 rounded-xl bg-[#c9a24b] text-[#0b1a33] font-semibold hover:bg-[#e7c97a] transition shadow-sm">
-          <span className="text-base mb-1">📝</span> Log Call
+        <TemplatePickerButton lead={{ id: leadId, name: leadName, phone, email }} kind="WHATSAPP" compact />
+        <TemplatePickerButton lead={{ id: leadId, name: leadName, phone, email }} kind="EMAIL" compact />
+        <button onClick={() => setShowCall(true)} className="flex items-center justify-center gap-1 py-2 rounded-lg bg-[#c9a24b] text-[#0b1a33] text-xs font-semibold hover:bg-[#e7c97a] transition shadow-sm min-h-10">
+          📝 Log
         </button>
       </div>
-      {/* Lalit asked: "Send whatsapp with pre typed greeting — Here options should be
-          there to select according to which template to choose from." The WhatsApp
-          button above already opens a template picker (greetings, brochure, follow-up,
-          etc., all with placeholders filled). Hint at it explicitly below so agents
-          notice it's a chooser, not a single hardcoded greeting. */}
-      {phone && (
-        <div className="mt-2 text-[11px] text-gray-500 flex items-center justify-center gap-1.5 py-1.5">
-          <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
-          <span>Tap <b className="text-emerald-700">WhatsApp</b> above to pick a greeting / brochure / follow-up template</span>
-        </div>
-      )}
 
       {/* Acefone click-to-call — rings agent first, then dials lead. Hidden when not configured. */}
       {phone && acefoneEnabled && (

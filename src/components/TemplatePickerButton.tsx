@@ -16,6 +16,9 @@ interface Props {
   kind: "WHATSAPP" | "EMAIL";
   /** Pre-suggested trigger (e.g. "POST_VISIT" if lead just had a visit). Optional. */
   suggestedTrigger?: string;
+  /** When true, render a horizontal compact button matching the new
+   *  lead-detail action bar (smaller padding, inline icon+label, mobile-first). */
+  compact?: boolean;
 }
 
 /**
@@ -24,7 +27,7 @@ interface Props {
  * pinned at the top. Selecting one opens wa.me / mailto with the rendered
  * message body. Logs the click as an Activity via /api/whatsapp/log (for WA).
  */
-export default function TemplatePickerButton({ lead, kind, suggestedTrigger }: Props) {
+export default function TemplatePickerButton({ lead, kind, suggestedTrigger, compact }: Props) {
   const [open, setOpen] = useState(false);
   const [tpls, setTpls] = useState<Tpl[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -97,10 +100,17 @@ export default function TemplatePickerButton({ lead, kind, suggestedTrigger }: P
         onClick={() => setOpen(true)}
         disabled={isDisabled}
         title={isDisabled ? (kind === "WHATSAPP" ? "No phone number" : "No email") : "Pick a template"}
-        className={`flex flex-col items-center justify-center py-3 rounded-xl ${labelColor} text-white font-semibold hover:opacity-90 disabled:opacity-30 transition shadow-sm`}
+        className={
+          compact
+            // Compact variant: horizontal icon+label, smaller padding, fits the
+            // mobile-first action bar on /leads/[id].
+            ? `flex items-center justify-center gap-1 py-2 rounded-lg ${labelColor} text-white text-xs font-semibold hover:opacity-90 disabled:opacity-30 transition shadow-sm min-h-10`
+            // Default: full-size vertical card (used elsewhere in the app).
+            : `flex flex-col items-center justify-center py-3 rounded-xl ${labelColor} text-white font-semibold hover:opacity-90 disabled:opacity-30 transition shadow-sm`
+        }
       >
-        <Icon className="w-5 h-5 mb-1" />
-        {kind === "WHATSAPP" ? "WhatsApp" : "Email"}
+        <Icon className={compact ? "w-3.5 h-3.5" : "w-5 h-5 mb-1"} />
+        {compact ? (kind === "WHATSAPP" ? "WA" : "Email") : (kind === "WHATSAPP" ? "WhatsApp" : "Email")}
       </button>
 
       {open && (
