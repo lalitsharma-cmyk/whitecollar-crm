@@ -3,7 +3,6 @@ import { prisma } from "@/lib/prisma";
 import { CallDirection, CallOutcome, ActivityType, ActivityStatus } from "@prisma/client";
 import { loadOwnedLead } from "@/lib/leadScope";
 import { rescoreLead } from "@/lib/leadRescorer";
-import { generateConversationSummary, aiEnabled } from "@/lib/ai";
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -78,63 +77,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       } : {}),
     },
   });
-  // Fire-and-forget behavioural re-score — small, cheap, OK to drop on teardown.
+  // Fire-and-forget behavioural re-score — rule-based, doesn't need AI.
   rescoreLead(id).catch(() => {});
 
-  // AI summary refresh — AWAITED so Vercel's serverless function teardown
-  // can't kill it mid-flight (the previous fire-and-forget was silently dying
-  // after NextResponse returned, which is why Lalit reported "Ai also does not
-  // update"). Adds ~1-3s to the log-call response but the call action is
-  // already a user wait state ("Saving…") so an extra second is acceptable
-  // in exchange for actually working. Wrapped in try/catch so a Gemini error
-  // never blocks the call from being recorded.
-  if (aiEnabled()) {
-    try {
-      await refreshAiSummary(id);
-    } catch (e) {
-      console.error("refreshAiSummary failed", e);
-    }
-  }
+  // AI auto-summary refresh REMOVED — Lalit gave up on Gemini after the free
+  // tier returned NOT_FOUND for every model variant. Re-wire here if/when a
+  // working AI provider is added (or billing is enabled on Google Cloud).
+  // The generateConversationSummary helper still lives in src/lib/ai.ts.
 
   return NextResponse.json({ ok: true });
-}
-
-async function refreshAiSummary(leadId: string) {
-  const lead = await prisma.lead.findUnique({
-    where: { id: leadId },
-    include: { callLogs: { orderBy: { startedAt: "desc" }, take: 10 } },
-  });
-  if (!lead) return;
-  const result = await generateConversationSummary(
-    {
-      name: lead.name,
-      company: lead.company,
-      city: lead.city,
-      configuration: lead.configuration,
-      budgetMin: lead.budgetMin,
-      budgetCurrency: lead.budgetCurrency,
-      whoIsClient: lead.whoIsClient,
-      categorization: lead.categorization,
-      fundReadiness: lead.fundReadiness,
-      whenCanInvest: lead.whenCanInvest,
-      status: lead.status,
-      remarks: lead.remarks,
-    },
-    lead.callLogs.map((c) => ({
-      startedAt: c.startedAt,
-      outcome: c.outcome,
-      durationSec: c.durationSec,
-      notes: c.notes,
-      attributedAgentName: c.attributedAgentName,
-    })),
-  );
-  if (!result) return;
-  await prisma.lead.update({
-    where: { id: leadId },
-    data: {
-      aiSummary: result.summary || lead.aiSummary,
-      aiNextAction: result.nextAction || lead.aiNextAction,
-      aiUpdatedAt: new Date(),
-    },
-  });
 }
