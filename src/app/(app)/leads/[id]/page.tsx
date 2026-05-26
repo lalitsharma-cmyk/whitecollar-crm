@@ -296,6 +296,125 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
             ... rest unchanged
       */}
       <div className="space-y-4">
+        {/* BANT verdict — TOP of right column per Lalit's ask: "Qualification
+            card move above in right side". Decision-driving info above the
+            secondary reference cards (Location, meetings, scheduling, etc.). */}
+        <div className={`card p-4 border-l-4 ${
+          lead.bantStatus === "QUALIFIES" ? "border-emerald-500 bg-emerald-50" :
+          lead.bantStatus === "NOT_QUALIFIED" ? "border-red-500 bg-red-50" :
+          "border-amber-400 bg-amber-50"
+        }`}>
+          <div className="flex items-center gap-2 mb-2">
+            <span className="text-xs font-bold tracking-widest text-gray-600">BANT VERDICT</span>
+            <span className="text-[10px] text-gray-500">Budget · Authority · Need · Timeline</span>
+          </div>
+          <div className="flex items-center gap-3 flex-wrap">
+            <InlineEdit leadId={lead.id} field="bantStatus" type="select" value={lead.bantStatus}
+              options={[
+                {value:"UNDER_REVIEW",label:"🤔 Under review"},
+                {value:"QUALIFIES",label:"✅ Qualifies"},
+                {value:"NOT_QUALIFIED",label:"❌ Not qualified"},
+              ]} />
+            <div className="text-xs text-gray-600 flex-1 min-w-[200px]">
+              Why: <InlineEdit leadId={lead.id} field="bantReason" value={lead.bantReason ?? ""} placeholder="One-line reason (e.g. 'budget too low for any of our inventory')" />
+            </div>
+          </div>
+        </div>
+
+        {/* Qualification — TOP of right column (paired with BANT above). */}
+        <div className="card p-5">
+          <div className="font-semibold mb-3">Qualification <span className="text-[10px] text-gray-400 font-normal">(click any value to edit)</span></div>
+          <div className="grid grid-cols-2 gap-4 text-sm">
+            <div>
+              <div className="text-xs text-gray-500">🏢 Company</div>
+              <InlineEdit leadId={lead.id} field="company" value={lead.company ?? ""} placeholder="e.g. Emirates NBD, TCS" />
+            </div>
+            <div>
+              <div className="text-xs text-gray-500">📱 Alt phone</div>
+              <InlineEdit leadId={lead.id} field="altPhone" value={lead.altPhone ?? ""} placeholder="+91…" />
+            </div>
+            <div>
+              <div className="text-xs text-gray-500">Potential</div>
+              <InlineEdit leadId={lead.id} field="potential" type="select" value={lead.potential ?? ""}
+                options={[{value:"HIGH",label:"High"},{value:"MEDIUM",label:"Medium"},{value:"LOW",label:"Low"},{value:"UNKNOWN",label:"Unknown"}]} />
+            </div>
+            <div>
+              <div className="text-xs text-gray-500">Fund Readiness</div>
+              <InlineEdit leadId={lead.id} field="fundReadiness" type="select" value={lead.fundReadiness ?? ""}
+                options={[{value:"CASH_READY",label:"Cash Ready"},{value:"BANK_APPROVED",label:"Bank Approved"},{value:"FINANCING_NEEDED",label:"Financing Needed"},{value:"NOT_DISCUSSED",label:"Not Discussed"}]} />
+            </div>
+            <div>
+              <div className="text-xs text-gray-500">When can invest</div>
+              <InlineEdit leadId={lead.id} field="whenCanInvest" type="select" value={lead.whenCanInvest ?? ""}
+                options={[{value:"IMMEDIATE",label:"Immediate"},{value:"THIRTY_DAYS",label:"30 days"},{value:"THREE_MONTHS",label:"3 months"},{value:"SIX_PLUS_MONTHS",label:"6+ months"},{value:"WINDOW_SHOPPING",label:"Just browsing"},{value:"UNKNOWN",label:"Unknown"}]} />
+            </div>
+            <div>
+              <div className="text-xs text-gray-500">Mood</div>
+              <InlineEdit leadId={lead.id} field="moodStatus" type="select" value={lead.moodStatus ?? ""}
+                options={[{value:"EXCITED",label:"😀 Excited"},{value:"INTERESTED",label:"🙂 Interested"},{value:"NEUTRAL",label:"😐 Neutral"},{value:"HESITANT",label:"🤔 Hesitant"},{value:"COLD",label:"🧊 Cold"},{value:"CONFUSED",label:"😵 Confused"},{value:"ANGRY",label:"😠 Angry"}]} />
+            </div>
+            <div>
+              <div className="text-xs text-gray-500">Categorization</div>
+              <InlineEdit leadId={lead.id} field="categorization" type="select" value={lead.categorization ?? ""}
+                options={[
+                  {value:"🔥 Highly Responsive — picks calls regularly",label:"🔥 Highly Responsive"},
+                  {value:"🙂 Responsive",label:"🙂 Responsive"},
+                  {value:"🤔 Sometimes responsive",label:"🤔 Sometimes responsive"},
+                  {value:"🧊 Cold / not picking",label:"🧊 Cold / not picking"},
+                  {value:"📵 Switched off / wrong number",label:"📵 Switched off / wrong number"},
+                  {value:"❌ Not interested / dropped",label:"❌ Not interested / dropped"},
+                  {value:"NRI Investor",label:"NRI Investor"},
+                  {value:"NRI End-user",label:"NRI End-user"},
+                  {value:"UAE Resident",label:"UAE Resident"},
+                  {value:"First-time buyer",label:"First-time buyer"},
+                ]} />
+            </div>
+            <div>
+              <div className="text-xs text-gray-500">💼 Profession</div>
+              <InlineEdit leadId={lead.id} field="profession" type="select" value={lead.profession ?? ""}
+                options={[
+                  {value:"JOB",label:"Job (salaried)"},
+                  {value:"SELF_EMPLOYED",label:"Self-employed"},
+                  {value:"BUSINESS_OWNER",label:"Business owner"},
+                  {value:"INVESTOR",label:"Investor"},
+                  {value:"RETIRED",label:"Retired"},
+                  {value:"STUDENT",label:"Student"},
+                  {value:"OTHER",label:"Other"},
+                ]} />
+            </div>
+            <div>
+              <div className="text-xs text-gray-500">🔗 LinkedIn</div>
+              {lead.linkedInUrl && (
+                <a href={lead.linkedInUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-[#0b1a33] underline block truncate">View profile ↗</a>
+              )}
+              <InlineEdit leadId={lead.id} field="linkedInUrl" value={lead.linkedInUrl ?? ""} placeholder="https://linkedin.com/in/…" />
+            </div>
+            <div>
+              <div className="text-xs text-gray-500">Configuration</div>
+              <InlineEdit leadId={lead.id} field="configuration" value={lead.configuration ?? ""} placeholder="2BR / Villa / PH" />
+            </div>
+            <div>
+              <div className="text-xs text-gray-500">💰 Budget ({budgetCcy})</div>
+              {/* Display formatted ("12M AED" / "1.2 Cr") — never raw "12000000".
+                  Edit accepts K/M/L/Cr shorthand via parseAs="budget". */}
+              <InlineEdit
+                leadId={lead.id}
+                field="budgetMin"
+                value={lead.budgetMin ?? ""}
+                display={lead.budgetMin ? formatBudget(lead.budgetMin, budgetCcy) : undefined}
+                parseAs="budget"
+                editHint={budgetCcy === "INR" ? "type 30L · 3Cr · 500K · or digits" : "type 2.5M · 500K · or digits"}
+                placeholder={budgetCcy === "INR" ? "e.g. 3 Cr" : "e.g. 2.5M"}
+              />
+            </div>
+            <div>
+              <div className="text-xs text-gray-500">Stage</div>
+              <InlineEdit leadId={lead.id} field="status" type="select" value={lead.status}
+                options={[{value:"NEW",label:"New"},{value:"CONTACTED",label:"Contacted"},{value:"QUALIFIED",label:"Qualified"},{value:"SITE_VISIT",label:"Site Visit"},{value:"NEGOTIATION",label:"Negotiation"},{value:"BOOKING_DONE",label:"Booking Done"}]} />
+            </div>
+          </div>
+        </div>
+
         {/* 📍 Address — the SINGLE place location appears on this page now.
             Combines lead.city / lead.country / lead.address. Card hides itself
             only when literally nothing is set. */}
@@ -440,122 +559,9 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
             Lalit asked for it up there so agents can read all past notes BEFORE
             dialling. The right rail now holds the secondary cards only. */}
 
-        {/* BANT verdict — moved from left column per Lalit's ask. */}
-        <div className={`card p-4 border-l-4 ${
-          lead.bantStatus === "QUALIFIES" ? "border-emerald-500 bg-emerald-50" :
-          lead.bantStatus === "NOT_QUALIFIED" ? "border-red-500 bg-red-50" :
-          "border-amber-400 bg-amber-50"
-        }`}>
-          <div className="flex items-center gap-2 mb-2">
-            <span className="text-xs font-bold tracking-widest text-gray-600">BANT VERDICT</span>
-            <span className="text-[10px] text-gray-500">Budget · Authority · Need · Timeline</span>
-          </div>
-          <div className="flex items-center gap-3 flex-wrap">
-            <InlineEdit leadId={lead.id} field="bantStatus" type="select" value={lead.bantStatus}
-              options={[
-                {value:"UNDER_REVIEW",label:"🤔 Under review"},
-                {value:"QUALIFIES",label:"✅ Qualifies"},
-                {value:"NOT_QUALIFIED",label:"❌ Not qualified"},
-              ]} />
-            <div className="text-xs text-gray-600 flex-1 min-w-[200px]">
-              Why: <InlineEdit leadId={lead.id} field="bantReason" value={lead.bantReason ?? ""} placeholder="One-line reason (e.g. 'budget too low for any of our inventory')" />
-            </div>
-          </div>
-        </div>
-
-        {/* Qualification — moved from left column per Lalit's ask. */}
-        <div className="card p-5">
-          <div className="font-semibold mb-3">Qualification <span className="text-[10px] text-gray-400 font-normal">(click any value to edit)</span></div>
-          <div className="grid grid-cols-2 gap-4 text-sm">
-            <div>
-              <div className="text-xs text-gray-500">🏢 Company</div>
-              <InlineEdit leadId={lead.id} field="company" value={lead.company ?? ""} placeholder="e.g. Emirates NBD, TCS" />
-            </div>
-            <div>
-              <div className="text-xs text-gray-500">📱 Alt phone</div>
-              <InlineEdit leadId={lead.id} field="altPhone" value={lead.altPhone ?? ""} placeholder="+91…" />
-            </div>
-            <div>
-              <div className="text-xs text-gray-500">Potential</div>
-              <InlineEdit leadId={lead.id} field="potential" type="select" value={lead.potential ?? ""}
-                options={[{value:"HIGH",label:"High"},{value:"MEDIUM",label:"Medium"},{value:"LOW",label:"Low"},{value:"UNKNOWN",label:"Unknown"}]} />
-            </div>
-            <div>
-              <div className="text-xs text-gray-500">Fund Readiness</div>
-              <InlineEdit leadId={lead.id} field="fundReadiness" type="select" value={lead.fundReadiness ?? ""}
-                options={[{value:"CASH_READY",label:"Cash Ready"},{value:"BANK_APPROVED",label:"Bank Approved"},{value:"FINANCING_NEEDED",label:"Financing Needed"},{value:"NOT_DISCUSSED",label:"Not Discussed"}]} />
-            </div>
-            <div>
-              <div className="text-xs text-gray-500">When can invest</div>
-              <InlineEdit leadId={lead.id} field="whenCanInvest" type="select" value={lead.whenCanInvest ?? ""}
-                options={[{value:"IMMEDIATE",label:"Immediate"},{value:"THIRTY_DAYS",label:"30 days"},{value:"THREE_MONTHS",label:"3 months"},{value:"SIX_PLUS_MONTHS",label:"6+ months"},{value:"WINDOW_SHOPPING",label:"Just browsing"},{value:"UNKNOWN",label:"Unknown"}]} />
-            </div>
-            <div>
-              <div className="text-xs text-gray-500">Mood</div>
-              <InlineEdit leadId={lead.id} field="moodStatus" type="select" value={lead.moodStatus ?? ""}
-                options={[{value:"EXCITED",label:"😀 Excited"},{value:"INTERESTED",label:"🙂 Interested"},{value:"NEUTRAL",label:"😐 Neutral"},{value:"HESITANT",label:"🤔 Hesitant"},{value:"COLD",label:"🧊 Cold"},{value:"CONFUSED",label:"😵 Confused"},{value:"ANGRY",label:"😠 Angry"}]} />
-            </div>
-            <div>
-              <div className="text-xs text-gray-500">Categorization</div>
-              <InlineEdit leadId={lead.id} field="categorization" type="select" value={lead.categorization ?? ""}
-                options={[
-                  {value:"🔥 Highly Responsive — picks calls regularly",label:"🔥 Highly Responsive"},
-                  {value:"🙂 Responsive",label:"🙂 Responsive"},
-                  {value:"🤔 Sometimes responsive",label:"🤔 Sometimes responsive"},
-                  {value:"🧊 Cold / not picking",label:"🧊 Cold / not picking"},
-                  {value:"📵 Switched off / wrong number",label:"📵 Switched off / wrong number"},
-                  {value:"❌ Not interested / dropped",label:"❌ Not interested / dropped"},
-                  {value:"NRI Investor",label:"NRI Investor"},
-                  {value:"NRI End-user",label:"NRI End-user"},
-                  {value:"UAE Resident",label:"UAE Resident"},
-                  {value:"First-time buyer",label:"First-time buyer"},
-                ]} />
-            </div>
-            <div>
-              <div className="text-xs text-gray-500">💼 Profession</div>
-              <InlineEdit leadId={lead.id} field="profession" type="select" value={lead.profession ?? ""}
-                options={[
-                  {value:"JOB",label:"Job (salaried)"},
-                  {value:"SELF_EMPLOYED",label:"Self-employed"},
-                  {value:"BUSINESS_OWNER",label:"Business owner"},
-                  {value:"INVESTOR",label:"Investor"},
-                  {value:"RETIRED",label:"Retired"},
-                  {value:"STUDENT",label:"Student"},
-                  {value:"OTHER",label:"Other"},
-                ]} />
-            </div>
-            <div>
-              <div className="text-xs text-gray-500">🔗 LinkedIn</div>
-              {lead.linkedInUrl && (
-                <a href={lead.linkedInUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-[#0b1a33] underline block truncate">View profile ↗</a>
-              )}
-              <InlineEdit leadId={lead.id} field="linkedInUrl" value={lead.linkedInUrl ?? ""} placeholder="https://linkedin.com/in/…" />
-            </div>
-            <div>
-              <div className="text-xs text-gray-500">Configuration</div>
-              <InlineEdit leadId={lead.id} field="configuration" value={lead.configuration ?? ""} placeholder="2BR / Villa / PH" />
-            </div>
-            <div>
-              <div className="text-xs text-gray-500">💰 Budget ({budgetCcy})</div>
-              {/* Display formatted ("12M AED" / "1.2 Cr") — never raw "12000000".
-                  Edit accepts K/M/L/Cr shorthand via parseBudget(). */}
-              <InlineEdit
-                leadId={lead.id}
-                field="budgetMin"
-                value={lead.budgetMin ?? ""}
-                display={lead.budgetMin ? formatBudget(lead.budgetMin, budgetCcy) : undefined}
-                parseAs="budget"
-                editHint={budgetCcy === "INR" ? "type 30L · 3Cr · 500K · or digits" : "type 2.5M · 500K · or digits"}
-                placeholder={budgetCcy === "INR" ? "e.g. 3 Cr" : "e.g. 2.5M"}
-              />
-            </div>
-            <div>
-              <div className="text-xs text-gray-500">Stage</div>
-              <InlineEdit leadId={lead.id} field="status" type="select" value={lead.status}
-                options={[{value:"NEW",label:"New"},{value:"CONTACTED",label:"Contacted"},{value:"QUALIFIED",label:"Qualified"},{value:"SITE_VISIT",label:"Site Visit"},{value:"NEGOTIATION",label:"Negotiation"},{value:"BOOKING_DONE",label:"Booking Done"}]} />
-            </div>
-          </div>
-        </div>
+        {/* BANT + Qualification cards MOVED to TOP of the right column per
+            Lalit's ask: "Qualification card move above in right side". See the
+            top of the right rail (just inside the opening div above). */}
 
         {/* Reassign — extracted from header to right column per Lalit's ask. */}
         {canReassign && (
