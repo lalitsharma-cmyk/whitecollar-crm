@@ -20,7 +20,7 @@ import SuggestedUnitsCard from "@/components/SuggestedUnitsCard";
 import { bestUnitsForLead } from "@/lib/inventoryMatch";
 import CallHistoryCard from "@/components/CallHistoryCard";
 import LeadReassignClient from "@/components/LeadReassignClient";
-import { parseBudget, formatBudget } from "@/lib/budgetParse";
+import { formatBudget } from "@/lib/budgetParse";
 
 export const dynamic = "force-dynamic";
 
@@ -43,39 +43,7 @@ function maskPhone(p?: string | null): string | null {
   return `+${first} ··· ${last4}`;
 }
 
-// Temporary diagnostic wrapper — Next.js masks production server-component
-// errors so the real exception is invisible. This try/catch captures it
-// directly and renders the message inline. Remove once the root cause is
-// found.
-export default async function LeadDetail(props: { params: Promise<{ id: string }> }) {
-  try {
-    return await renderLeadDetail(props);
-  } catch (e) {
-    // Don't swallow Next's auth/redirect mechanisms — they look like exceptions
-    // but must propagate (NEXT_REDIRECT, NEXT_NOT_FOUND).
-    if (e && typeof e === "object" && "digest" in e && typeof (e as { digest?: string }).digest === "string" && ((e as { digest: string }).digest.startsWith("NEXT_REDIRECT") || (e as { digest: string }).digest === "NEXT_NOT_FOUND")) {
-      throw e;
-    }
-    const msg = e instanceof Error ? e.message : String(e);
-    const stack = e instanceof Error ? e.stack : "";
-    return (
-      <div className="card p-6 m-4 border-l-4 border-red-500 bg-red-50">
-        <div className="font-bold text-red-900 text-lg mb-2">⚠ Lead detail render failed (diagnostic)</div>
-        <div className="text-xs font-mono bg-white border border-red-200 rounded p-3 whitespace-pre-wrap break-all">
-          <div className="mb-2"><b>Message:</b> {msg}</div>
-          {stack && (
-            <details>
-              <summary className="cursor-pointer text-red-700">Stack trace ↓</summary>
-              <pre className="text-[10px] mt-2 overflow-x-auto">{stack}</pre>
-            </details>
-          )}
-        </div>
-      </div>
-    );
-  }
-}
-
-async function renderLeadDetail({ params }: { params: Promise<{ id: string }> }) {
+export default async function LeadDetail({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const me = await requireUser();
   // Run reconciler in the background — non-blocking
@@ -576,7 +544,7 @@ async function renderLeadDetail({ params }: { params: Promise<{ id: string }> })
                 field="budgetMin"
                 value={lead.budgetMin ?? ""}
                 display={lead.budgetMin ? formatBudget(lead.budgetMin, budgetCcy) : undefined}
-                parseInput={(raw) => parseBudget(raw)}
+                parseAs="budget"
                 editHint={budgetCcy === "INR" ? "type 30L · 3Cr · 500K · or digits" : "type 2.5M · 500K · or digits"}
                 placeholder={budgetCcy === "INR" ? "e.g. 3 Cr" : "e.g. 2.5M"}
               />

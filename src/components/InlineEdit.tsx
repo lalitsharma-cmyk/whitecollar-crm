@@ -3,6 +3,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { isPastISTLocalInput } from "@/lib/datetime";
 import DateTimeIST from "./DateTimeIST";
+import { parseBudget } from "@/lib/budgetParse";
 
 type FieldType = "text" | "textarea" | "number" | "date" | "select";
 
@@ -21,17 +22,18 @@ interface Props {
   // this string instead of the raw value. Used for budget cells so the
   // qualification card shows "12M AED" / "1.2 Cr" — never "12000000".
   // Edit mode still operates on the raw `value` so the user can type new
-  // numbers (or K/M/L/Cr shorthand if `parseInput` is also provided).
+  // numbers (or K/M/L/Cr shorthand if `parseAs="budget"` is also set).
   display?: string;
-  // Optional input transformer for save. Lets the user type "2.5M" or "30L"
-  // and converts to the numeric raw value before PATCHing. Returns null →
-  // shows an inline parse error instead of saving.
-  parseInput?: (raw: string) => number | string | null;
+  // Optional shorthand parser. String values only — functions can't cross
+  // the RSC server→client boundary. "budget" → parseBudget() runs locally
+  // inside this client component on save, converting "2.5M"/"30L"/"3Cr" to
+  // the numeric value before PATCHing the API.
+  parseAs?: "budget";
   // Hint shown below the input in edit mode (e.g. "type 30L · 3Cr · 500K").
   editHint?: string;
 }
 
-export default function InlineEdit({ leadId, field, label, value, type = "text", options, placeholder, prefix, className, display, parseInput, editHint }: Props) {
+export default function InlineEdit({ leadId, field, label, value, type = "text", options, placeholder, prefix, className, display, parseAs, editHint }: Props) {
   const router = useRouter();
   const [editing, setEditing] = useState(false);
   const [v, setV] = useState<string>(value == null ? "" : String(value));
@@ -54,9 +56,11 @@ export default function InlineEdit({ leadId, field, label, value, type = "text",
       // (= 11:30pm IST — 5.5 hours off).
       let payload: string | number | null = type === "date" && v ? `${v}:00+05:30` : v;
       // Optional shorthand → numeric. Used by budget cells so the agent can
-      // type "2.5M" / "30L" / "3Cr" and we save the parsed number.
-      if (parseInput && v) {
-        const parsed = parseInput(v);
+      // type "2.5M" / "30L" / "3Cr" and we save the parsed number. The parser
+      // lives in this client file (imported above) because functions can't be
+      // passed as props from a Server Component.
+      if (parseAs === "budget" && v) {
+        const parsed = parseBudget(v);
         if (parsed == null) {
           setErr("Couldn't parse — try 2.5M, 30L, 3Cr, or just digits.");
           setBusy(false);
@@ -199,9 +203,9 @@ export default function InlineEdit({ leadId, field, label, value, type = "text",
     );
   }
 
-  // If parseInput is provided (e.g. budget cells accepting "2.5M"), use a text
+  // If parseAs is set (e.g. budget cells accepting "2.5M"), use a text
   // input even when type="number" so K/M/L/Cr letters can be typed.
-  const useTextInput = parseInput || type !== "number";
+  const useTextInput = !!parseAs || type !== "number";
   return (
     <span className="inline-flex flex-col">
       <span className="inline-flex items-center gap-1">
