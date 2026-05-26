@@ -156,22 +156,32 @@ export default function LeadActionsClient({ leadId, phone, altPhone, email, curr
           action lives in the action grid below — the masked-number line was
           duplicative noise. Real number is still used when the agent taps Call. */}
 
-      {/* Alt-phone (second number from the MIS sheet). Compact inline display
-          + tap-to-call/WhatsApp on the same row. Hidden when no alt phone. */}
+      {/* Alt-phone (2nd number from MIS). Lalit's ask: "Alternative number
+          dialer there is no option" — agents weren't noticing the previous
+          tiny inline pill. Now it's a full parallel action bar in alt-flavour
+          colours that mirror the main Call / WA bar, so it's impossible to
+          miss when a lead has a second number. */}
       {altPhone && (
-        <div className="text-xs text-gray-500 mt-1 flex flex-wrap items-center gap-1.5">
-          <span>📱 alt:</span>
-          <a href={telUrl(altPhone)} className="text-[11px] px-2 py-1 rounded bg-emerald-50 border border-emerald-300 text-emerald-800 font-semibold hover:bg-emerald-100 inline-flex items-center gap-1">
-            <Phone className="w-3 h-3" /> Call
-          </a>
-          <a
-            href={waUrl(altPhone)}
-            onClick={() => logWaClick("click")}
-            target="_blank" rel="noopener noreferrer"
-            className="text-[11px] px-2 py-1 rounded bg-[#25D366]/15 border border-[#25D366] text-[#0b6a35] font-semibold hover:bg-[#25D366]/25 inline-flex items-center gap-1"
-          >
-            <MessageCircle className="w-3 h-3" /> WA
-          </a>
+        <div className="mt-2">
+          <div className="text-[10px] uppercase tracking-widest text-gray-500 font-semibold mb-1.5">
+            📱 Alternate number
+          </div>
+          <div className="grid grid-cols-2 gap-1.5">
+            <a
+              href={telUrl(altPhone)}
+              className="flex items-center justify-center gap-1 py-2 rounded-lg bg-emerald-50 border border-emerald-300 text-emerald-800 text-xs font-semibold hover:bg-emerald-100 min-h-10"
+            >
+              <Phone className="w-3.5 h-3.5" /> Call alt
+            </a>
+            <a
+              href={waUrl(altPhone)}
+              onClick={() => logWaClick("click")}
+              target="_blank" rel="noopener noreferrer"
+              className="flex items-center justify-center gap-1 py-2 rounded-lg bg-[#25D366]/15 border border-[#25D366] text-[#0b6a35] text-xs font-semibold hover:bg-[#25D366]/25 min-h-10"
+            >
+              <MessageCircle className="w-3.5 h-3.5" /> WA alt
+            </a>
+          </div>
         </div>
       )}
 
