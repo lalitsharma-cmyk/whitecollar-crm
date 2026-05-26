@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/auth";
 import { formatDistanceToNow } from "date-fns";
-import { fmtIST } from "@/lib/datetime";
+import { fmtIST12 } from "@/lib/datetime";
 import Link from "next/link";
 import AuditUserFilter from "@/components/AuditUserFilter";
 
@@ -115,7 +115,7 @@ export default async function AuditLogPage({ searchParams }: { searchParams: Pro
               return (
                 <tr key={e.id}>
                   <td className="text-xs whitespace-nowrap">
-                    {fmtIST(e.createdAt)} IST
+                    {fmtIST12(e.createdAt)} IST
                     <div className="text-[10px] text-gray-500">{formatDistanceToNow(e.createdAt, { addSuffix: true })}</div>
                   </td>
                   <td className="text-xs">{e.user?.name ?? <span className="text-gray-400">anonymous</span>}</td>

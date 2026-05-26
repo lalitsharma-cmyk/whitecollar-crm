@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { LeadStatus, LeadSource, AIScore, CallOutcome, ActivityStatus, ActivityType, Prisma } from "@prisma/client";
 import { formatDistanceToNow, startOfDay } from "date-fns";
-import { fmtIST } from "@/lib/datetime";
+import { fmtIST12 } from "@/lib/datetime";
 import { fmtMoney, fmtMoneyDual } from "@/lib/money";
 import { runReconciler } from "@/lib/reconciler";
 import { getTestingModeEnabled } from "@/lib/settings";
@@ -382,7 +382,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
               <Link key={a.id} href={a.lead ? `/leads/${a.lead.id}` : "#"} className="flex items-center justify-between p-3 rounded-lg border border-[#e5e7eb] hover:border-[#c9a24b]">
                 <div>
                   <div className="text-sm font-semibold">{a.title}{a.lead && ` · ${a.lead.name}`}</div>
-                  <div className="text-xs text-gray-500">{a.scheduledAt && `${fmtIST(a.scheduledAt)} IST`}</div>
+                  <div className="text-xs text-gray-500">{a.scheduledAt && `${fmtIST12(a.scheduledAt)} IST`}</div>
                 </div>
                 <span className="chip chip-new">{a.type}</span>
               </Link>

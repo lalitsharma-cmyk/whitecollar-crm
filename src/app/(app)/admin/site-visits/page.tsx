@@ -16,7 +16,7 @@
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/auth";
 import Link from "next/link";
-import { fmtIST } from "@/lib/datetime";
+import { fmtIST12 } from "@/lib/datetime";
 import LiveVisitsAutoRefresh from "@/components/LiveVisitsAutoRefresh";
 
 export const dynamic = "force-dynamic";
@@ -113,7 +113,7 @@ export default async function AdminSiteVisitsPage() {
             Click any 📍 to open the location in Google Maps.
           </p>
         </div>
-        <div className="text-[11px] text-gray-500">Auto-refreshing every 30s · {fmtIST(new Date())} IST</div>
+        <div className="text-[11px] text-gray-500">Auto-refreshing every 30s · {fmtIST12(new Date())} IST</div>
       </div>
 
       {/* ── LIVE ──────────────────────────────────────────────────── */}
@@ -151,7 +151,7 @@ export default async function AdminSiteVisitsPage() {
                       <span className="chip src text-[9px]">{v.lead?.forwardedTeam ?? v.user?.team ?? "—"}</span>
                     </div>
                     <div className="text-[11px] text-gray-600 mt-1">
-                      Started {v.startedAt && fmtIST(v.startedAt)} IST · {v.startedAt && elapsedSince(v.startedAt)} elapsed · {track.length} GPS point{track.length === 1 ? "" : "s"}
+                      Started {v.startedAt && fmtIST12(v.startedAt)} IST · {v.startedAt && elapsedSince(v.startedAt)} elapsed · {track.length} GPS point{track.length === 1 ? "" : "s"}
                       {v.lead?.phone && <> · 📞 {v.lead.phone}</>}
                     </div>
                   </div>
@@ -204,7 +204,7 @@ export default async function AdminSiteVisitsPage() {
                       {v.isNoShow && <span className="chip chip-lost text-[9px]">NO-SHOW</span>}
                     </div>
                     <div className="text-[11px] text-gray-500 mt-1">
-                      {v.startedAt && fmtIST(v.startedAt)} → {v.endedAt && fmtIST(v.endedAt)} IST · {mins}m · {track.length} GPS point{track.length === 1 ? "" : "s"}
+                      {v.startedAt && fmtIST12(v.startedAt)} → {v.endedAt && fmtIST12(v.endedAt)} IST · {mins}m · {track.length} GPS point{track.length === 1 ? "" : "s"}
                     </div>
                     {v.description && (
                       <div className="text-xs text-gray-700 mt-1 whitespace-pre-wrap line-clamp-2">{v.description}</div>

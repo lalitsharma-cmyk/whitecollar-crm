@@ -20,7 +20,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { notify } from "@/lib/notify";
 import { ActivityStatus } from "@prisma/client";
-import { fmtISTTime } from "@/lib/datetime";
+import { fmtISTTime12 } from "@/lib/datetime";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -67,7 +67,7 @@ export async function GET(req: NextRequest) {
       m.type === "VIRTUAL_MEETING" ? "💻 Virtual meeting" :
       m.type === "EXPO_MEETING" ? "🎪 Expo meeting" :
       "🏠 Home visit";
-    const when = fmtISTTime(m.scheduledAt);
+    const when = fmtISTTime12(m.scheduledAt);
     await notify({
       userId: m.userId,
       kind: "REMINDER",
@@ -104,7 +104,7 @@ export async function GET(req: NextRequest) {
       kind: "REMINDER",
       severity: "WARNING",
       title: `☎ Call ${l.name} in 10 min`,
-      body: `They asked you to ring at ${fmtISTTime(l.followupDate)} IST.${l.phone ? ` ${l.phone}` : ""}`,
+      body: `They asked you to ring at ${fmtISTTime12(l.followupDate)} IST.${l.phone ? ` ${l.phone}` : ""}`,
       linkUrl: `/leads/${l.id}`,
       leadId: l.id,
     });
