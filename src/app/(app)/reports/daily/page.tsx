@@ -137,15 +137,17 @@ export default async function DailyReportPage({ searchParams }: { searchParams: 
             <Link
               key={a.id}
               href={`/reports/daily?date=${dayStr}&agent=${a.id}`}
-              className={`chip text-[10px] ${a.id === targetUserId ? "chip-warm" : "chip-lost"}`}
+              className={`chip text-xs min-h-9 px-2.5 ${a.id === targetUserId ? "chip-warm" : "chip-lost"}`}
             >{a.name}</Link>
           ))}
         </div>
       )}
 
-      {/* The main report table — matches your manual sheet */}
+      {/* The main report table — matches your manual sheet.
+          min-w bumped down from 600px to 460px so it fits a 360px phone
+          with a small horizontal scroll instead of being far off-screen. */}
       <div className="card overflow-x-auto">
-        <table className="tbl min-w-[600px]">
+        <table className="tbl min-w-[460px]">
           <thead>
             <tr className="bg-amber-100">
               <th colSpan={5} className="text-center text-sm font-bold py-2">{format(day, "dd-MMM-yy")}</th>

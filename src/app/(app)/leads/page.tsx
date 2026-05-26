@@ -170,25 +170,25 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
       <div className="flex flex-wrap gap-2">
         <Link
           href="/leads"
-          className={`px-3 py-2 rounded-full text-xs font-semibold border min-h-9 inline-flex items-center gap-1 ${!sp.followup ? "bg-[#0b1a33] text-white border-[#0b1a33]" : "bg-white border-[#e5e7eb] text-gray-700"}`}
+          className={`px-3 py-2 rounded-full text-xs font-semibold border min-h-11 inline-flex items-center gap-1 ${!sp.followup ? "bg-[#0b1a33] text-white border-[#0b1a33]" : "bg-white border-[#e5e7eb] text-gray-700"}`}
         >
           All leads
         </Link>
         <Link
           href="/leads?followup=today"
-          className={`px-3 py-2 rounded-full text-xs font-semibold border min-h-9 inline-flex items-center gap-1 ${sp.followup === "today" ? "bg-emerald-600 text-white border-emerald-600" : "bg-emerald-50 border-emerald-300 text-emerald-800"}`}
+          className={`px-3 py-2 rounded-full text-xs font-semibold border min-h-11 inline-flex items-center gap-1 ${sp.followup === "today" ? "bg-emerald-600 text-white border-emerald-600" : "bg-emerald-50 border-emerald-300 text-emerald-800"}`}
         >
           📅 Today&apos;s follow-ups {followupToday > 0 && <span className="bg-white/20 px-1.5 rounded">{followupToday}</span>}
         </Link>
         <Link
           href="/leads?followup=overdue"
-          className={`px-3 py-2 rounded-full text-xs font-semibold border min-h-9 inline-flex items-center gap-1 ${sp.followup === "overdue" ? "bg-red-600 text-white border-red-600" : "bg-red-50 border-red-300 text-red-800"}`}
+          className={`px-3 py-2 rounded-full text-xs font-semibold border min-h-11 inline-flex items-center gap-1 ${sp.followup === "overdue" ? "bg-red-600 text-white border-red-600" : "bg-red-50 border-red-300 text-red-800"}`}
         >
           ⏰ Overdue {followupOverdue > 0 && <span className="bg-white/20 px-1.5 rounded">{followupOverdue}</span>}
         </Link>
         <Link
           href="/leads?followup=week"
-          className={`px-3 py-2 rounded-full text-xs font-semibold border min-h-9 inline-flex items-center gap-1 ${sp.followup === "week" ? "bg-blue-600 text-white border-blue-600" : "bg-blue-50 border-blue-300 text-blue-800"}`}
+          className={`px-3 py-2 rounded-full text-xs font-semibold border min-h-11 inline-flex items-center gap-1 ${sp.followup === "week" ? "bg-blue-600 text-white border-blue-600" : "bg-blue-50 border-blue-300 text-blue-800"}`}
         >
           📆 Next 7 days
         </Link>
@@ -198,13 +198,13 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
             easy. Call not pick form 2, 3, 4, 5,6 7, days type of tag." */}
         <Link
           href="/leads?notPicked=3"
-          className={`px-3 py-2 rounded-full text-xs font-semibold border min-h-9 inline-flex items-center gap-1 ${sp.notPicked === "3" ? "bg-amber-600 text-white border-amber-600" : "bg-amber-50 border-amber-300 text-amber-800"}`}
+          className={`px-3 py-2 rounded-full text-xs font-semibold border min-h-11 inline-flex items-center gap-1 ${sp.notPicked === "3" ? "bg-amber-600 text-white border-amber-600" : "bg-amber-50 border-amber-300 text-amber-800"}`}
         >
           📵 Not picked 3+ days
         </Link>
         <Link
           href="/leads?notPicked=7"
-          className={`px-3 py-2 rounded-full text-xs font-semibold border min-h-9 inline-flex items-center gap-1 ${sp.notPicked === "7" ? "bg-red-600 text-white border-red-600" : "bg-red-50 border-red-300 text-red-800"}`}
+          className={`px-3 py-2 rounded-full text-xs font-semibold border min-h-11 inline-flex items-center gap-1 ${sp.notPicked === "7" ? "bg-red-600 text-white border-red-600" : "bg-red-50 border-red-300 text-red-800"}`}
         >
           📵 Not picked 7+ days
         </Link>

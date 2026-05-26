@@ -326,7 +326,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
       {/* By Salesperson table */}
       <div className="card p-3 lg:p-5 overflow-x-auto">
         <div className="text-xs font-bold tracking-widest text-gray-500 mb-3">BY SALESPERSON</div>
-        <table className="tbl w-full min-w-[640px]">
+        <table className="tbl w-full min-w-[520px]">
           <thead><tr>
             <th>Salesperson</th><th>Team</th><th className="text-center">Calls Today</th><th className="text-center">Connected</th><th className="text-center">Due Today</th><th className="text-center">Overdue</th><th className="text-center">Closeable</th><th className="text-center">Needs Lalit</th><th className="text-center">Clients</th>
           </tr></thead>
@@ -399,8 +399,8 @@ function KPI({ title, value, sub, highlight }: { title: string; value: number; s
   return (
     <div className={`card p-3 lg:p-4 ${highlight ? "border-amber-500 border-2 bg-amber-50" : ""}`}>
       <div className="text-2xl lg:text-3xl font-bold">{value}</div>
-      <div className="text-[9px] lg:text-[10px] tracking-widest text-gray-500 uppercase mt-0.5 lg:mt-1 leading-tight">{title}</div>
-      <div className="text-[10px] lg:text-xs text-gray-500 mt-0.5 lg:mt-1 leading-tight">{sub}</div>
+      <div className="text-[10px] lg:text-[11px] tracking-widest text-gray-500 uppercase mt-0.5 lg:mt-1 leading-tight">{title}</div>
+      <div className="text-[11px] lg:text-xs text-gray-500 mt-0.5 lg:mt-1 leading-tight">{sub}</div>
     </div>
   );
 }
