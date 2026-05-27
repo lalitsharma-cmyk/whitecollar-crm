@@ -7,6 +7,7 @@ import TemplatePickerButton from "./TemplatePickerButton";
 import { fromISTLocalInput } from "@/lib/datetime";
 import DateTimeIST from "./DateTimeIST";
 import { useBodyScrollLock } from "@/hooks/useBodyScrollLock";
+import { showXpToast } from "./XPToast";
 
 const OUTCOMES = [
   { v: "CONNECTED",        label: "✅ Connected" },
@@ -159,6 +160,17 @@ export default function LeadActionsClient({ leadId, phone, altPhone, email, curr
       if (!r.ok) { setErr(j.error ?? "Failed"); return; }
       setShowCall(false); setRemarks(""); setDuration(""); setCallbackAt("");
       setLogChannel("PHONE"); setLogDirection("OUTBOUND");
+      // Gamification — show toast if the server credited XP for this call.
+      // Pattern: read `awardedXp` from the JSON response, fire the toast,
+      // then refresh. Never blocks UI — toast is fire-and-forget.
+      if (j.awardedXp) {
+        showXpToast({
+          amount: j.awardedXp.amount,
+          label: j.awardedXp.label,
+          leveledUp: !!j.awardedXp.leveledUp,
+          newLevel: j.awardedXp.newLevel,
+        });
+      }
       router.refresh();
     } finally { setBusy(false); }
   }

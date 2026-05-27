@@ -7,6 +7,7 @@ import { loadOwnedLead } from "@/lib/leadScope";
 import { ActivityType, ActivityStatus, LeadStatus } from "@prisma/client";
 import { audit, reqMeta } from "@/lib/audit";
 import { fireWorkflowTrigger } from "@/lib/workflowEngine";
+import { awardXp, type AwardResult } from "@/lib/gamification.server";
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -48,5 +49,21 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   });
   // Workflow engine: fire any COLD_PROMOTED rules (e.g. auto-create welcome task)
   fireWorkflowTrigger("COLD_PROMOTED", id).catch(() => {});
-  return NextResponse.json({ ok: true });
+
+  // ── Gamification: cold-to-lead is a meaningful conversion, awarded here.
+  let awarded: AwardResult | null = null;
+  try { awarded = await awardXp(me.id, "COLD_TO_LEAD"); } catch { /* never block */ }
+
+  return NextResponse.json({
+    ok: true,
+    awardedXp: awarded
+      ? {
+          amount: awarded.awarded,
+          label: awarded.label,
+          newXp: awarded.newXp,
+          leveledUp: awarded.leveledUp,
+          newLevel: awarded.leveledUp ? awarded.newLevel : null,
+        }
+      : null,
+  });
 }
