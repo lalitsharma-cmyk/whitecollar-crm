@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Check, AlertTriangle, Clock, ShieldCheck, ChevronRight } from "lucide-react";
 import { fmtIST12 } from "@/lib/datetime";
+import { showCelebration } from "./DealCelebration";
 
 // ── EOI / Booking workflow card ──
 //
@@ -62,6 +63,9 @@ export interface EOILead {
 
 interface Props {
   lead: EOILead;
+  // Optional display name used by the booking-done celebration. Safe to
+  // omit — falls back to a generic message.
+  leadName?: string;
 }
 
 const stageIndex = (s: string | null): number => {
@@ -90,7 +94,7 @@ const fmt = (d: Date | string | null): string | null => (d ? `${fmtIST12(d)} IST
 const fieldLabel = "text-[11px] uppercase tracking-wider text-gray-500 font-semibold";
 const inputCls = "w-full border border-[color:var(--border,#e5e7eb)] rounded-lg px-3 py-2 text-sm bg-white text-gray-900 dark:bg-[#0b1a33]/40 dark:text-gray-100 dark:border-white/10";
 
-export default function EOIWorkflowCard({ lead }: Props) {
+export default function EOIWorkflowCard({ lead, leadName }: Props) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -154,7 +158,18 @@ export default function EOIWorkflowCard({ lead }: Props) {
       setErr("Approval required before advancing. Ask a manager to sign off.");
       return;
     }
-    await patch({ eoiStage: next.key });
+    // Fire the big celebration when the agent advances INTO booking_done —
+    // this is the milestone Lalit wants to feel rewarding. We trigger from
+    // the successAction callback so it only plays after the PATCH succeeds.
+    const isBookingDone = next.key === "BOOKING_DONE";
+    await patch({ eoiStage: next.key }, () => {
+      if (isBookingDone) {
+        showCelebration({
+          kind: "booking_done",
+          message: `Booking done — ${leadName ?? "client confirmed"}`,
+        });
+      }
+    });
   }
 
   async function toggleApproval(value: boolean) {

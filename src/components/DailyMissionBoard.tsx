@@ -25,6 +25,9 @@ interface Mission {
 export default async function DailyMissionBoard({ userId }: { userId: string }) {
   const todayStart = startOfDay(new Date());
 
+  const u = await prisma.user.findUnique({ where: { id: userId }, select: { dailyCallTarget: true } });
+  const callTarget = u?.dailyCallTarget ?? 30;
+
   const [callsCount, followupsCount, coldConvCount, meetingsCount] = await Promise.all([
     prisma.callLog.count({
       where: { userId, startedAt: { gte: todayStart } },
@@ -55,7 +58,7 @@ export default async function DailyMissionBoard({ userId }: { userId: string }) 
   ]);
 
   const missions: Mission[] = [
-    { emoji: "📞", label: "Make 30 calls today", count: callsCount, target: 30, xp: 30 },
+    { emoji: "📞", label: `Make ${callTarget} calls today`, count: callsCount, target: callTarget, xp: 30 },
     { emoji: "✅", label: "Complete 5 follow-ups today", count: followupsCount, target: 5, xp: 50 },
     { emoji: "🧊", label: "Convert 2 cold leads", count: coldConvCount, target: 2, xp: 100 },
     { emoji: "🤝", label: "Book 1 meeting", count: meetingsCount, target: 1, xp: 75 },

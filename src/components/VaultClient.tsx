@@ -4,7 +4,7 @@
 // session user. All reads/writes go through /api/vault and /api/vault/[id].
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Heart, Wind, Trophy, MessageSquare, X, Trash2, Plus, Sparkles } from "lucide-react";
+import { Heart, Wind, Trophy, MessageSquare, X, Trash2, Plus, Sparkles, BookOpen } from "lucide-react";
 import { fmtIST12 } from "@/lib/datetime";
 import { useBodyScrollLock } from "@/hooks/useBodyScrollLock";
 
@@ -48,20 +48,59 @@ const MOTIVATION_LINES = [
 ];
 
 const KIND_LABEL: Record<string, string> = {
-  JOURNAL:   "Journal",
-  VENT:      "Vent",
-  WIN:       "Win",
-  LESSON:    "Lesson",
-  GRATITUDE: "Gratitude",
+  JOURNAL:    "Journal",
+  VENT:       "Vent",
+  WIN:        "Win",
+  LESSON:     "Lesson",
+  GRATITUDE:  "Gratitude",
+  deal_story: "Deal story",
 };
 
 const KIND_CHIP: Record<string, string> = {
-  JOURNAL:   "bg-blue-100 text-blue-800",
-  VENT:      "bg-rose-100 text-rose-800",
-  WIN:       "bg-emerald-100 text-emerald-800",
-  LESSON:    "bg-amber-100 text-amber-800",
-  GRATITUDE: "bg-purple-100 text-purple-800",
+  JOURNAL:    "bg-blue-100 text-blue-800",
+  VENT:       "bg-rose-100 text-rose-800",
+  WIN:        "bg-emerald-100 text-emerald-800",
+  LESSON:     "bg-amber-100 text-amber-800",
+  GRATITUDE:  "bg-purple-100 text-purple-800",
+  deal_story: "bg-indigo-100 text-indigo-800",
 };
+
+// ─── Deal-story helpers ──────────────────────────────────────────────────
+type DealStoryFields = {
+  project: string;
+  clientType: string;
+  whatWorked: string;
+  lessons: string;
+};
+
+function formatDealStory(f: DealStoryFields): string {
+  return [
+    `**Project:** ${f.project.trim()}`,
+    `**Client type:** ${f.clientType.trim()}`,
+    `**What worked:** ${f.whatWorked.trim()}`,
+    `**Lessons:** ${f.lessons.trim()}`,
+  ].join("\n");
+}
+
+function parseDealStory(content: string): DealStoryFields | null {
+  // Match each section. Each label runs until the next **Label:** or end-of-string.
+  const grab = (label: string) => {
+    const re = new RegExp(
+      `\\*\\*${label}:\\*\\*\\s*([\\s\\S]*?)(?=\\n\\*\\*[A-Za-z][^*]*:\\*\\*|$)`,
+      "i"
+    );
+    const m = content.match(re);
+    return m ? m[1].trim() : "";
+  };
+  const project = grab("Project");
+  const clientType = grab("Client type");
+  const whatWorked = grab("What worked");
+  const lessons = grab("Lessons");
+  if (!project && !clientType && !whatWorked && !lessons) return null;
+  return { project, clientType, whatWorked, lessons };
+}
+
+type EntryFilter = "ALL" | "deal_story";
 
 // ─── Component ───────────────────────────────────────────────────────────
 export default function VaultClient({ initialEntries }: Props) {
@@ -75,11 +114,29 @@ export default function VaultClient({ initialEntries }: Props) {
   const [showAddWin, setShowAddWin] = useState(false);
   const [winText, setWinText] = useState("");
   const [showReset, setShowReset] = useState(false);
+  const [showAddStory, setShowAddStory] = useState(false);
+  const [storyFields, setStoryFields] = useState<DealStoryFields>({
+    project: "",
+    clientType: "",
+    whatWorked: "",
+    lessons: "",
+  });
+  const [entryFilter, setEntryFilter] = useState<EntryFilter>("ALL");
   const [busy, setBusy] = useState(false);
   const [, startTransition] = useTransition();
 
   const wins = useMemo(() => entries.filter((e) => e.kind === "WIN"), [entries]);
   const recentWins = useMemo(() => wins.slice(0, 3), [wins]);
+  const dealStoryCount = useMemo(
+    () => entries.filter((e) => e.kind === "deal_story").length,
+    [entries]
+  );
+  const filteredEntries = useMemo(() => {
+    if (entryFilter === "deal_story") {
+      return entries.filter((e) => e.kind === "deal_story");
+    }
+    return entries;
+  }, [entries, entryFilter]);
 
   async function postEntry(payload: {
     kind: string;
@@ -148,6 +205,27 @@ export default function VaultClient({ initialEntries }: Props) {
     if (ok) {
       setWinText("");
       setShowAddWin(false);
+    }
+  }
+
+  async function saveStory() {
+    const { project, clientType, whatWorked, lessons } = storyFields;
+    // Require at least one field with content
+    if (
+      !project.trim() &&
+      !clientType.trim() &&
+      !whatWorked.trim() &&
+      !lessons.trim()
+    ) {
+      return;
+    }
+    const ok = await postEntry({
+      kind: "deal_story",
+      content: formatDealStory(storyFields),
+    });
+    if (ok) {
+      setStoryFields({ project: "", clientType: "", whatWorked: "", lessons: "" });
+      setShowAddStory(false);
     }
   }
 
@@ -231,8 +309,8 @@ export default function VaultClient({ initialEntries }: Props) {
         )}
       </section>
 
-      {/* ─── (b) + (d) action row: Quick Vent + Reset Mode ─── */}
-      <section className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+      {/* ─── (b) + (d) action row: Quick Vent + Reset Mode + Deal story ─── */}
+      <section className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <button
           onClick={() => setShowVent((v) => !v)}
           className="card p-4 text-left hover:border-rose-300 transition border-2 border-transparent min-h-24"
@@ -258,7 +336,112 @@ export default function VaultClient({ initialEntries }: Props) {
             Breathe. Remember why you're doing this. 60 seconds.
           </div>
         </button>
+
+        <button
+          onClick={() => setShowAddStory((v) => !v)}
+          className="card p-4 text-left hover:border-indigo-300 transition border-2 border-transparent min-h-24 bg-gradient-to-br from-indigo-50 to-purple-50"
+        >
+          <div className="flex items-center gap-2 mb-1">
+            <BookOpen className="w-5 h-5 text-indigo-600" />
+            <div className="font-semibold text-sm">📖 Deal story</div>
+          </div>
+          <div className="text-xs text-gray-600">
+            Capture what worked + lessons from a deal.
+          </div>
+        </button>
       </section>
+
+      {showAddStory && (
+        <section className="card p-4 border-l-4 border-indigo-400">
+          <div className="font-semibold text-sm mb-3 flex items-center gap-2">
+            <BookOpen className="w-4 h-4 text-indigo-600" />
+            New deal story
+          </div>
+          <div className="space-y-3">
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">
+                Project
+              </label>
+              <input
+                type="text"
+                value={storyFields.project}
+                onChange={(e) =>
+                  setStoryFields((f) => ({ ...f, project: e.target.value }))
+                }
+                placeholder="e.g. Damac Lagoons, Sobha Hartland"
+                className="w-full border border-[#e5e7eb] rounded-lg px-3 py-2 text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">
+                Client type
+              </label>
+              <input
+                type="text"
+                value={storyFields.clientType}
+                onChange={(e) =>
+                  setStoryFields((f) => ({ ...f, clientType: e.target.value }))
+                }
+                placeholder="e.g. NRI from Bangalore, Dubai resident upgrading"
+                className="w-full border border-[#e5e7eb] rounded-lg px-3 py-2 text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">
+                What worked / why we won
+              </label>
+              <textarea
+                value={storyFields.whatWorked}
+                onChange={(e) =>
+                  setStoryFields((f) => ({ ...f, whatWorked: e.target.value }))
+                }
+                rows={3}
+                placeholder="The pitch angle, the timing, the trust moment…"
+                className="w-full border border-[#e5e7eb] rounded-lg px-3 py-2 text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">
+                Lessons / do differently next time
+              </label>
+              <textarea
+                value={storyFields.lessons}
+                onChange={(e) =>
+                  setStoryFields((f) => ({ ...f, lessons: e.target.value }))
+                }
+                rows={3}
+                placeholder="What you'd change, what almost killed the deal…"
+                className="w-full border border-[#e5e7eb] rounded-lg px-3 py-2 text-sm"
+              />
+            </div>
+          </div>
+          <div className="flex justify-end gap-2 mt-3">
+            <button
+              onClick={() => {
+                setShowAddStory(false);
+                setStoryFields({ project: "", clientType: "", whatWorked: "", lessons: "" });
+              }}
+              disabled={busy}
+              className="btn btn-ghost text-xs min-h-11"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={saveStory}
+              disabled={
+                busy ||
+                (!storyFields.project.trim() &&
+                  !storyFields.clientType.trim() &&
+                  !storyFields.whatWorked.trim() &&
+                  !storyFields.lessons.trim())
+              }
+              className="btn btn-primary text-xs min-h-11"
+            >
+              {busy ? "Saving…" : "Save story"}
+            </button>
+          </div>
+        </section>
+      )}
 
       {showVent && (
         <section className="card p-4 border-l-4 border-rose-400">
@@ -363,47 +546,117 @@ export default function VaultClient({ initialEntries }: Props) {
           <div className="flex items-center gap-2 mb-3">
             <Sparkles className="w-5 h-5 text-[#c9a24b]" />
             <h2 className="font-semibold text-sm">Recent Entries</h2>
-            <span className="ml-auto text-[11px] text-gray-500">Last {entries.length}</span>
+            <span className="ml-auto text-[11px] text-gray-500">
+              {entryFilter === "deal_story"
+                ? `${filteredEntries.length} deal ${filteredEntries.length === 1 ? "story" : "stories"}`
+                : `Last ${entries.length}`}
+            </span>
           </div>
-          {entries.length === 0 ? (
+
+          {/* Tab strip */}
+          <div className="flex gap-2 mb-3 flex-wrap">
+            <button
+              onClick={() => setEntryFilter("ALL")}
+              className={`text-xs px-3 py-1.5 rounded-full border transition ${
+                entryFilter === "ALL"
+                  ? "bg-[#0b1a33] text-white border-[#0b1a33]"
+                  : "bg-white text-gray-700 border-gray-200 hover:border-gray-300"
+              }`}
+            >
+              All
+            </button>
+            <button
+              onClick={() => setEntryFilter("deal_story")}
+              className={`text-xs px-3 py-1.5 rounded-full border transition ${
+                entryFilter === "deal_story"
+                  ? "bg-indigo-600 text-white border-indigo-600"
+                  : "bg-white text-gray-700 border-gray-200 hover:border-indigo-300"
+              }`}
+            >
+              📖 Deal stories {dealStoryCount > 0 && `(${dealStoryCount})`}
+            </button>
+          </div>
+
+          {filteredEntries.length === 0 ? (
             <div className="text-sm text-gray-500 py-6 text-center">
-              Nothing yet. Start with a mood check-in above.
+              {entryFilter === "deal_story"
+                ? "No deal stories yet. Capture one after your next close."
+                : "Nothing yet. Start with a mood check-in above."}
             </div>
           ) : (
             <ul className="space-y-2 max-h-[60vh] overflow-y-auto pr-1">
-              {entries.map((e) => (
-                <li key={e.id} className="rounded-lg border border-[#e5e7eb] bg-white/60 px-3 py-2">
-                  <div className="flex items-center gap-2 mb-1">
-                    {e.mood && <span className="text-base leading-none">{MOOD_EMOJI[e.mood] ?? "·"}</span>}
-                    <span className={`chip ${KIND_CHIP[e.kind] ?? "bg-gray-100 text-gray-700"}`}>
-                      {KIND_LABEL[e.kind] ?? e.kind}
-                    </span>
-                    <span className="text-[11px] text-gray-500 ml-1">{fmtIST12(e.createdAt)}</span>
-                    <button
-                      onClick={() => deleteEntry(e.id)}
-                      disabled={busy}
-                      className="ml-auto text-gray-400 hover:text-rose-600 p-1"
-                      aria-label="Delete entry"
-                      title="Delete"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                  <div className="text-sm whitespace-pre-wrap">{e.content}</div>
-                  {e.tags && (
-                    <div className="mt-1 flex flex-wrap gap-1">
-                      {e.tags.split(",").map((t) => t.trim()).filter(Boolean).map((t) => (
-                        <span key={t} className="pill text-[10px]">#{t}</span>
-                      ))}
+              {filteredEntries.map((e) => {
+                const story = e.kind === "deal_story" ? parseDealStory(e.content) : null;
+                return (
+                  <li
+                    key={e.id}
+                    className={`rounded-lg border px-3 py-2 ${
+                      story
+                        ? "border-indigo-200 bg-indigo-50/40"
+                        : "border-[#e5e7eb] bg-white/60"
+                    }`}
+                  >
+                    <div className="flex items-center gap-2 mb-1">
+                      {e.mood && <span className="text-base leading-none">{MOOD_EMOJI[e.mood] ?? "·"}</span>}
+                      <span className={`chip ${KIND_CHIP[e.kind] ?? "bg-gray-100 text-gray-700"}`}>
+                        {KIND_LABEL[e.kind] ?? e.kind}
+                      </span>
+                      <span className="text-[11px] text-gray-500 ml-1">{fmtIST12(e.createdAt)}</span>
+                      <button
+                        onClick={() => deleteEntry(e.id)}
+                        disabled={busy}
+                        className="ml-auto text-gray-400 hover:text-rose-600 p-1"
+                        aria-label="Delete entry"
+                        title="Delete"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
                     </div>
-                  )}
-                  {e.expiresAt && (
-                    <div className="mt-1 text-[10px] text-rose-600">
-                      Auto-deletes {fmtIST12(e.expiresAt)}
-                    </div>
-                  )}
-                </li>
-              ))}
+                    {story ? (
+                      <div className="text-sm space-y-1.5">
+                        {story.project && (
+                          <div>
+                            <span className="font-semibold text-indigo-900">Project: </span>
+                            <span className="whitespace-pre-wrap">{story.project}</span>
+                          </div>
+                        )}
+                        {story.clientType && (
+                          <div>
+                            <span className="font-semibold text-indigo-900">Client type: </span>
+                            <span className="whitespace-pre-wrap">{story.clientType}</span>
+                          </div>
+                        )}
+                        {story.whatWorked && (
+                          <div>
+                            <div className="font-semibold text-indigo-900">What worked</div>
+                            <div className="whitespace-pre-wrap text-gray-800">{story.whatWorked}</div>
+                          </div>
+                        )}
+                        {story.lessons && (
+                          <div>
+                            <div className="font-semibold text-indigo-900">Lessons</div>
+                            <div className="whitespace-pre-wrap text-gray-800">{story.lessons}</div>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="text-sm whitespace-pre-wrap">{e.content}</div>
+                    )}
+                    {e.tags && (
+                      <div className="mt-1 flex flex-wrap gap-1">
+                        {e.tags.split(",").map((t) => t.trim()).filter(Boolean).map((t) => (
+                          <span key={t} className="pill text-[10px]">#{t}</span>
+                        ))}
+                      </div>
+                    )}
+                    {e.expiresAt && (
+                      <div className="mt-1 text-[10px] text-rose-600">
+                        Auto-deletes {fmtIST12(e.expiresAt)}
+                      </div>
+                    )}
+                  </li>
+                );
+              })}
             </ul>
           )}
         </div>

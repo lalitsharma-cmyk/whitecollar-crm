@@ -23,6 +23,7 @@ interface Row {
   budget: string | null;
   interest: string | null;
   lastTouched: string;
+  lastTouchedAt?: string | Date | null;
 }
 
 const aiChip = (s: string | null) => s === "HOT" ? "chip-hot" : s === "WARM" ? "chip-warm" : s === "COLD" ? "chip-cold" : "chip-lost";
@@ -54,8 +55,9 @@ export default function LeadsListClient({ leads, canBulk, agents, showSource = t
         {leads.length === 0 && <div className="card p-6 text-center text-gray-500 text-sm">No leads match these filters.</div>}
         {leads.map((l) => {
           const teamChip = l.team === "India" ? "src-csv" : "src-wa";
+          const isFreshHot = l.aiScore === "HOT" && (!l.lastTouchedAt || new Date(l.lastTouchedAt).getTime() > Date.now() - 6 * 3600_000);
           return (
-            <div key={l.id} className="card p-3 active:bg-amber-50">
+            <div key={l.id} className={`card p-3 active:bg-amber-50 ${isFreshHot ? "wcr-fresh-hot-pulse" : ""}`}>
               <div className="flex items-start gap-2">
                 {canBulk && (
                   <input type="checkbox" checked={selected.has(l.id)} onChange={() => toggle(l.id)} className="mt-1" />
@@ -63,7 +65,14 @@ export default function LeadsListClient({ leads, canBulk, agents, showSource = t
                 <Link href={`/leads/${l.id}`} className="flex-1 min-w-0 block">
                   <div className="flex items-center justify-between gap-1">
                     <div className="font-bold text-sm truncate">{l.name}</div>
-                    {l.aiScore && <span className={`chip ${aiChip(l.aiScore)} text-[9px] flex-none`}>{l.aiScore}</span>}
+                    <div className="flex items-center gap-1 flex-none">
+                      {isFreshHot && (
+                        <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-red-50 text-red-700 border border-red-200 inline-flex items-center gap-0.5">
+                          <span aria-hidden>🚨</span>Untouched
+                        </span>
+                      )}
+                      {l.aiScore && <span className={`chip ${aiChip(l.aiScore)} text-[9px]`}>{l.aiScore}</span>}
+                    </div>
                   </div>
                   {/* Phone gets its own line — email moved to lead detail page only.
                       Lalit asked: "no need to show email id here" and "number should
@@ -138,6 +147,7 @@ export default function LeadsListClient({ leads, canBulk, agents, showSource = t
             )}
             {leads.map((l) => {
               const teamChip = l.team === "India" ? "src-csv" : "src-wa";
+              const isFreshHot = l.aiScore === "HOT" && (!l.lastTouchedAt || new Date(l.lastTouchedAt).getTime() > Date.now() - 6 * 3600_000);
               // Whole row navigates to the lead detail. Lalit: "client open
               // on click on client name, it should open on full selection
               // anywhere." Implemented as onClick on <tr> (table rows can't
@@ -148,7 +158,7 @@ export default function LeadsListClient({ leads, canBulk, agents, showSource = t
                 <tr
                   key={l.id}
                   onClick={openLead}
-                  className={`cursor-pointer transition hover:bg-amber-50/40 ${selected.has(l.id) ? "bg-blue-50/50" : ""}`}
+                  className={`cursor-pointer transition hover:bg-amber-50/40 ${selected.has(l.id) ? "bg-blue-50/50" : ""} ${isFreshHot ? "wcr-fresh-hot-pulse" : ""}`}
                 >
                   <td onClick={(e) => e.stopPropagation()}>
                     {canBulk && <input type="checkbox" checked={selected.has(l.id)} onChange={() => toggle(l.id)} />}
@@ -174,6 +184,17 @@ export default function LeadsListClient({ leads, canBulk, agents, showSource = t
         </table>
       </div>
       {canBulk && <LeadBulkActions selectedIds={Array.from(selected)} agents={agents} onClear={() => setSelected(new Set())} />}
+      {/* §12.3 Hot Lead Alert — subtle red pulse on HOT leads that haven't been
+          touched yet (or were touched within the last 6h). Keyframes inlined
+          because this is a "use client" island and we don't want to bloat the
+          global Tailwind layer for a single component. */}
+      <style dangerouslySetInnerHTML={{ __html: `
+@keyframes wcr-fresh-hot-pulse-kf {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(239,68,68,0.30), inset 0 0 0 1px rgba(239,68,68,0.0); }
+  50%      { box-shadow: 0 0 0 4px rgba(239,68,68,0.10), inset 0 0 0 1px rgba(239,68,68,0.25); }
+}
+.wcr-fresh-hot-pulse { animation: wcr-fresh-hot-pulse-kf 2.4s ease-in-out infinite; }
+` }} />
     </>
   );
 }

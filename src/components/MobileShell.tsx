@@ -13,6 +13,7 @@ import ThemeToggle from "./ThemeToggle";
 import FestiveBanner from "./FestiveBanner";
 import AccentPainter from "./AccentPainter";
 import XPToastHost from "./XPToast";
+import DealCelebrationHost from "./DealCelebration";
 import { useBodyScrollLock } from "@/hooks/useBodyScrollLock";
 
 const fullNav = [
@@ -287,6 +288,10 @@ export default function MobileShell({ children, user }: Props) {
       {/* Gamification XP toasts — mounted once at the shell so any client
           component (Log Call, status update, etc.) can call showXpToast(). */}
       <XPToastHost />
+      {/* Deal celebrations — premium milestone animations (booking_done is
+          the big one). Mounted alongside XPToastHost so any client component
+          can fire showCelebration() from anywhere. */}
+      <DealCelebrationHost />
     </div>
   );
 }
