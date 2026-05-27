@@ -15,6 +15,7 @@ import AccentPainter from "./AccentPainter";
 import XPToastHost from "./XPToast";
 import DealCelebrationHost from "./DealCelebration";
 import QuickSearch from "./QuickSearch";
+import KeyboardShortcutsHelp from "./KeyboardShortcutsHelp";
 import { useBodyScrollLock } from "@/hooks/useBodyScrollLock";
 
 const fullNav = [
@@ -289,6 +290,9 @@ export default function MobileShell({ children, user }: Props) {
       {/* Global Ctrl/Cmd+K quick-search palette — mounted at shell so the
           shortcut works on every page. */}
       <QuickSearch />
+      {/* Global `?` keyboard-shortcuts cheatsheet — also handles the `g X`
+          2-key navigation sequences. */}
+      <KeyboardShortcutsHelp />
       {/* Gamification XP toasts — mounted once at the shell so any client
           component (Log Call, status update, etc.) can call showXpToast(). */}
       <XPToastHost />

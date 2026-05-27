@@ -35,6 +35,8 @@ on:
     # (same schedule as above; we filter which job runs by the cron string)
     # Nightly rescore — daily at 03:00 UTC = 08:30 IST
     - cron: "0 3 * * *"
+    # Daily DB backup — daily at 22:00 UTC = 03:30 IST (off-hours for both teams)
+    - cron: "0 22 * * *"
   # Allow manual trigger from the Actions tab for debugging
   workflow_dispatch:
 
@@ -73,3 +75,32 @@ jobs:
             -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
             https://crm.whitecollarrealty.com/api/cron/rescore-all \
             || echo "::warning::rescore-all cron failed"
+
+  db_backup:
+    # Daily JSON snapshot — uploads to Actions artifacts (free, 90d retention,
+    # downloadable from the Actions tab). Zero new vendor accounts.
+    # Runs on 22:00 UTC schedule + manual dispatch from the Actions tab.
+    if: github.event.schedule == '0 22 * * *' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    # Don't crash the other manually-dispatched jobs if the backup hiccups.
+    continue-on-error: true
+    steps:
+      - name: Compute backup filename
+        id: meta
+        run: echo "filename=backup-$(date -u +%Y-%m-%d).json" >> "$GITHUB_OUTPUT"
+      - name: Download DB backup
+        run: |
+          curl -sSf --max-time 60 \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            -o "${{ steps.meta.outputs.filename }}" \
+            https://crm.whitecollarrealty.com/api/cron/db-backup
+          # Sanity check — fail fast if the file is empty or tiny (would mean
+          # the endpoint returned an auth error JSON instead of a real dump).
+          test "$(wc -c < "${{ steps.meta.outputs.filename }}")" -gt 1024
+      - name: Upload backup artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: wcr-db-backup-${{ github.run_id }}
+          path: ${{ steps.meta.outputs.filename }}
+          retention-days: 90
+          if-no-files-found: error

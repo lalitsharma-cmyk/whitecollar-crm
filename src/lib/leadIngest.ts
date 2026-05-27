@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { LeadSource, LeadStatus, ActivityType, ActivityStatus } from "@prisma/client";
+import { LeadSource, LeadStatus, ActivityType, ActivityStatus, AIScore } from "@prisma/client";
 import { pickRoundRobinAgent, fingerprintFor } from "@/lib/assignment";
 import { defaultCurrencyForLocation } from "@/lib/money";
 import { notify, notifyRoles } from "@/lib/notify";
@@ -9,6 +9,7 @@ import { sendAfterHoursWelcome } from "@/lib/whatsappOutbound";
 import { sendSpeedToLeadResponses } from "@/lib/speedToLead";
 import { fireWorkflowTrigger } from "@/lib/workflowEngine";
 import { getTestingModeEnabled } from "@/lib/settings";
+import { notifyHotLead } from "@/lib/push";
 
 export interface RawLeadInput {
   name: string;
@@ -99,6 +100,19 @@ export async function ingestLead(input: RawLeadInput) {
           linkUrl: `/leads/${existing.id}`,
           leadId: existing.id,
         });
+      }
+      // Hot-lead Web Push (spec §12.3) — if the dup is an already-HOT owned
+      // lead, the owner deserves a push when they're not on the screen. Guarded
+      // 1×/24h per lead inside notifyHotLead.
+      if (existing.aiScore === AIScore.HOT && existing.ownerId) {
+        notifyHotLead({
+          id: existing.id,
+          name: existing.name,
+          ownerId: existing.ownerId,
+          budgetMin: existing.budgetMin,
+          budgetMax: existing.budgetMax,
+          budgetCurrency: existing.budgetCurrency,
+        }).catch(() => {});
       }
       return { lead: existing, deduped: true as const };
     }
@@ -229,4 +243,17 @@ export async function assignLeadTo(leadId: string, userId: string, reason: strin
     linkUrl: `/leads/${leadId}`,
     leadId,
   });
+  // Hot-lead Web Push (spec §12.3) — if a HOT lead just got an owner, the
+  // agent should be alerted even when they're not on the screen. Guarded
+  // 1×/24h per lead inside notifyHotLead.
+  if (lead.aiScore === AIScore.HOT) {
+    notifyHotLead({
+      id: lead.id,
+      name: lead.name,
+      ownerId: userId,
+      budgetMin: lead.budgetMin,
+      budgetMax: lead.budgetMax,
+      budgetCurrency: lead.budgetCurrency,
+    }).catch(() => {});
+  }
 }

@@ -249,9 +249,27 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
         </div>
         <div className="flex flex-wrap gap-2">
           <Link href="/intake" className="btn btn-ghost flex-1 sm:flex-none justify-center">Import</Link>
-          {me.role === "ADMIN" && (
-            <a href="/api/reports/export?type=leads" className="btn btn-ghost flex-1 sm:flex-none justify-center">Export</a>
-          )}
+          {me.role === "ADMIN" && (() => {
+            // Forward the page's current filter params so the export matches
+            // exactly what the admin is looking at. We strip undefined/empty
+            // values so the URL stays clean and the audit log doesn't record
+            // noise (e.g. `tag=` with no value).
+            const params = new URLSearchParams({ type: "leads" });
+            for (const [k, v] of Object.entries(sp)) {
+              if (v != null && v !== "") params.set(k, String(v));
+            }
+            // Force the type param last-wins to "leads" in case URL had ?type=calls.
+            params.set("type", "leads");
+            return (
+              <a
+                href={`/api/reports/export?${params.toString()}`}
+                className="btn btn-ghost flex-1 sm:flex-none justify-center"
+                title="Export the currently filtered leads to CSV"
+              >
+                ⬇ Export CSV (filtered)
+              </a>
+            );
+          })()}
           <Link href="/leads/new" className="btn btn-primary flex-1 sm:flex-none justify-center">+ New Lead</Link>
         </div>
       </div>

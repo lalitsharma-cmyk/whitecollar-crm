@@ -30,6 +30,7 @@ import {
   WAMessageDirection,
   BantStatus,
 } from "@prisma/client";
+import { notifyHotLead } from "@/lib/push";
 
 const NOISE_THRESHOLD = 3;
 
@@ -189,6 +190,20 @@ export async function rescoreLead(leadId: string): Promise<RescoreResult> {
       completedAt: updatedAt,
     },
   });
+
+  // Hot-lead Web Push (spec §12.3) — fire only on the WARM/COLD/null → HOT
+  // transition so we don't re-ping the owner every rescore on an already-HOT
+  // lead. notifyHotLead has its own 1×/24h guard as a second line of defense.
+  if (newBucket === AIScore.HOT && oldBucket !== AIScore.HOT && lead.ownerId) {
+    notifyHotLead({
+      id: lead.id,
+      name: lead.name,
+      ownerId: lead.ownerId,
+      budgetMin: lead.budgetMin,
+      budgetMax: lead.budgetMax,
+      budgetCurrency: lead.budgetCurrency,
+    }).catch(() => {});
+  }
 
   return { from: previousScore, to: score, changedBy: delta };
 }
