@@ -49,6 +49,21 @@ model User {
   createdAt     DateTime   @default(now())
   updatedAt     DateTime   @updatedAt
 
+  // ── Gamification (Phase 2 of CRM master spec) ──
+  // Cumulative XP earned across all actions (calls, conversions, bookings).
+  // Level derived from XP via tiers in src/lib/gamification.ts. Streaks track
+  // consecutive days the agent met their minimum activity threshold.
+  xp                Int       @default(0)
+  dailyStreak       Int       @default(0)
+  followupStreak    Int       @default(0)
+  coldCallStreak    Int       @default(0)
+  // Last day (YYYY-MM-DD IST) the streak was incremented — used to detect
+  // gaps so the streak resets after a missed day.
+  lastStreakDay     String?
+  // Comma-separated badge IDs earned. Defined in src/lib/gamification.ts.
+  // Cheap-to-query string instead of a join table since badges are append-only.
+  badges            String    @default("")
+
   ownedLeads    Lead[]     @relation("LeadOwner")
   assignments   Assignment[]
   activities    Activity[]
@@ -56,6 +71,7 @@ model User {
   notes         Note[]
   auditLogs     AuditLog[]
   notifications Notification[]
+  vaultEntries  VaultEntry[]
 }
 
 // =====================================================
@@ -237,6 +253,37 @@ model Lead {
   // already fired — prevents the 5-min pre-meeting cron from re-notifying. Cleared
   // when followupDate is edited (handled by the inline-update endpoint).
   followupReminderSentAt DateTime?
+
+  // ── EOI / Booking workflow (Phase 6 of CRM master spec §13) ──
+  // Stage in the booking funnel — populated once a Lead enters NEGOTIATION
+  // or beyond. Pipeline UI shows EOI sub-stages once eoiStage is set.
+  eoiStage                  String?     // "EOI_DISCUSSED" / "EOI_COLLECTED" / "KYC_PENDING" / "BOOKING_FORM_SENT" / "BOOKING_FORM_SIGNED" / "PAYMENT_PROOF_RECEIVED" / "DEVELOPER_CONFIRMATION" / "BOOKING_DONE"
+  eoiAmount                 Int?        // smallest currency unit (paisa / fils)
+  eoiCurrency               String?     // "AED" / "INR"
+  eoiPaymentMethod          String?     // "BANK_TRANSFER" / "CARD" / "CHEQUE" / "CASH"
+  eoiCollectedAt            DateTime?
+  kycStatus                 String?     // "PENDING" / "DOCS_RECEIVED" / "VERIFIED" / "REJECTED"
+  kycReceivedAt             DateTime?
+  bookingFormStatus         String?     // "NOT_SENT" / "SENT" / "SIGNED" / "REJECTED"
+  bookingFormSentAt         DateTime?
+  bookingFormSignedAt       DateTime?
+  paymentProofStatus        String?     // "PENDING" / "RECEIVED" / "VERIFIED"
+  paymentProofReceivedAt    DateTime?
+  developerConfirmationStatus String?   // "PENDING" / "CONFIRMED"
+  developerConfirmedAt      DateTime?
+  bookingDoneAt             DateTime?
+  // Commission (post-booking).
+  commissionAmount          Int?        // smallest currency unit
+  commissionCurrency        String?
+  commissionStatus          String?     // "PENDING" / "INVOICED" / "RECEIVED"
+  commissionReceivedAt      DateTime?
+  // Free-text note about discounts / waivers discussed during EOI.
+  eoiNotes                  String?
+  // Requires manager / admin sign-off before moving forward.
+  eoiApprovalRequired       Boolean     @default(false)
+  eoiApprovedById           String?
+  eoiApprovedAt             DateTime?
+
   // timestamps
   lastTouchedAt   DateTime?
   createdAt       DateTime    @default(now())
@@ -255,6 +302,41 @@ model Lead {
   @@index([source])
   @@index([ownerId])
   @@index([createdAt])
+  @@index([eoiStage])
+}
+
+// =====================================================
+// VAULT — Private agent journal + mood + wins (Phase 3 of CRM master spec §10)
+// PRIVACY: entries are visible ONLY to the owning user. Admin sees aggregate
+// mood/stress counts via a dedicated query that strips text. Never expose
+// `content` to non-owners in any API route or UI.
+// =====================================================
+model VaultEntry {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // Type of entry — separate sections in the UI:
+  //   JOURNAL   — daily reflection / general thoughts
+  //   VENT      — frustration / blow-off (can auto-expire if expiresAt set)
+  //   WIN       — celebration / closing / good moment
+  //   LESSON    — insight from a deal / mistake
+  //   GRATITUDE — what they're grateful for today
+  kind       String
+  // Optional mood tag — one of:
+  //   "GREAT" | "OK" | "STRESSED" | "OVERWHELMED" | "ANGRY" | "SAD"
+  mood       String?
+  // Free text. NEVER expose to anyone but the owner.
+  content    String
+  // Optional comma-separated tags (e.g. "client,negotiation,Mehak")
+  tags       String?
+  // Optional self-destruct for vents (NULL = persists forever).
+  expiresAt  DateTime?
+  // AI reflection generated for this entry (cached so the UI doesn't re-prompt).
+  aiReflection String?
+  createdAt  DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@index([userId, kind])
 }
 
 // =====================================================
