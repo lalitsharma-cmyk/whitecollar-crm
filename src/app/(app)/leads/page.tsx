@@ -172,6 +172,17 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
     where.AND = where.AND ? [...(Array.isArray(where.AND) ? where.AND : [where.AND]), ...smartAnd] : smartAnd;
   }
 
+  // Tag filter — composes with the existing AND chain via `contains`. Tags is
+  // a comma-separated string column ("NRI,Investor,HNI"), so substring match
+  // is good enough; the dropdown options come from a DISTINCT query over the
+  // actual data so we never offer a tag nobody has.
+  if (sp.tag) {
+    const tagFilter: Prisma.LeadWhereInput = { tags: { contains: sp.tag } };
+    where.AND = where.AND
+      ? [...(Array.isArray(where.AND) ? where.AND : [where.AND]), tagFilter]
+      : [tagFilter];
+  }
+
   // Sort
   let orderBy: Prisma.LeadOrderByWithRelationInput = { createdAt: "desc" };
   if (sp.sort === "created_asc") orderBy = { createdAt: "asc" };
@@ -191,7 +202,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
   const monthWindow    = { gte: new Date(), lte: new Date(Date.now() + 30 * 24 * 3600 * 1000) };
   const activeScope    = { ...scope, status: { notIn: [LeadStatus.WON, LeadStatus.LOST] } };
 
-  const [leads, total, hot, newToday, totalAll, agents, followupToday, followupTomorrow, followupWeek, followupMonth, followupOverdue] = await Promise.all([
+  const [leads, total, hot, newToday, totalAll, agents, followupToday, followupTomorrow, followupWeek, followupMonth, followupOverdue, allTagRows] = await Promise.all([
     prisma.lead.findMany({
       where, orderBy, skip, take: PAGE_SIZE,
       include: { owner: true, interestedUnits: { include: { unit: { include: { project: true } } }, take: 1 } },
@@ -206,7 +217,25 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
     prisma.lead.count({ where: { ...activeScope, followupDate: weekWindow } }),
     prisma.lead.count({ where: { ...activeScope, followupDate: monthWindow } }),
     prisma.lead.count({ where: { ...activeScope, followupDate: { lt: new Date(), not: null } } }),
+    // DISTINCT tag list — Lead.tags is a comma-separated string, so split it
+    // server-side (Postgres) with string_to_array + unnest, trim each tag,
+    // drop empties, and dedupe. Drives the tag-filter <select> below so we
+    // only ever offer tags that actually exist in the dataset.
+    prisma.$queryRaw<Array<{ tag: string }>>`
+      SELECT DISTINCT TRIM(t) AS tag
+      FROM (
+        SELECT UNNEST(string_to_array(tags, ',')) AS t
+        FROM "Lead"
+        WHERE tags IS NOT NULL AND tags <> ''
+      ) AS s
+      WHERE TRIM(t) <> ''
+      ORDER BY tag ASC
+    `,
   ]);
+
+  const distinctTags: string[] = allTagRows
+    .map((r) => r.tag)
+    .filter((t): t is string => typeof t === "string" && t.length > 0);
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const canBulk = me.role === "ADMIN" || me.role === "MANAGER";
@@ -260,6 +289,48 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
           >
             💎 High budget
           </Link>
+          {/* Tag-filter dropdown — populated from DISTINCT tags actually in
+              the dataset (server-side via $queryRaw above). Sits inline with
+              the smart-filter chips so agents can slice by NRI/Investor/HNI
+              without leaving the keyboard-flow of the chip row. Submits a
+              plain GET form so it composes with whatever other filters are in
+              the URL — picking a tag does NOT clear ?followup, ?status, etc. */}
+          {distinctTags.length > 0 && (
+            <form method="GET" action="/leads" className="inline-flex items-center gap-1">
+              <label htmlFor="tag-filter" className="text-[10px] uppercase tracking-widest text-gray-500 font-semibold pl-1">
+                🏷 Tag
+              </label>
+              {/* Server-rendered <select> — no onChange (would force the whole
+                  page to be a client component). Agent picks a tag then taps
+                  Apply; the form GETs /leads?tag=X and the server re-renders. */}
+              <select
+                id="tag-filter"
+                name="tag"
+                defaultValue={sp.tag ?? ""}
+                className={`px-2 py-2 rounded-full text-xs font-semibold border min-h-11 ${sp.tag ? "bg-fuchsia-600 text-white border-fuchsia-600" : "bg-white border-[#e5e7eb] text-gray-700"}`}
+              >
+                <option value="">All tags</option>
+                {distinctTags.map((t) => (
+                  <option key={t} value={t}>{t}</option>
+                ))}
+              </select>
+              <button
+                type="submit"
+                className="px-3 py-2 rounded-full text-xs font-semibold border min-h-11 bg-white border-[#e5e7eb] text-gray-700 hover:bg-gray-50"
+              >
+                Apply
+              </button>
+              {sp.tag && (
+                <Link
+                  href="/leads"
+                  className="px-2 py-2 text-[11px] text-gray-500 hover:text-gray-800"
+                  title="Clear tag filter"
+                >
+                  ✕
+                </Link>
+              )}
+            </form>
+          )}
         </div>
       </div>
 

@@ -216,9 +216,17 @@ export default async function ColdDataPage({ searchParams }: { searchParams: Pro
             🎯 {convertedTodayCount} promoted to Lead today {isAdminOrMgr ? "(team)" : "(you)"}
           </div>
         </div>
-        {isAdminOrMgr && (
-          <ColdDataAdminControls agents={agents.map((a) => ({ id: a.id, name: a.name, team: a.team }))} />
-        )}
+        <div className="flex flex-wrap items-center gap-2">
+          <Link
+            href="/cold-calls/session"
+            className="btn bg-orange-600 text-white text-sm font-bold shadow hover:bg-orange-700"
+          >
+            🎯 Start session (20 leads)
+          </Link>
+          {isAdminOrMgr && (
+            <ColdDataAdminControls agents={agents.map((a) => ({ id: a.id, name: a.name, team: a.team }))} />
+          )}
+        </div>
       </div>
 
       {/* ───────── DAILY MISSION (full width) ───────── */}

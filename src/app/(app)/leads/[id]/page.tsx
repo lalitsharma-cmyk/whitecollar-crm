@@ -24,6 +24,7 @@ import BuyingSignalsCard from "@/components/BuyingSignalsCard";
 import LeadReassignClient from "@/components/LeadReassignClient";
 import RejectLeadClient from "@/components/RejectLeadClient";
 import LeadMobileTabs from "@/components/LeadMobileTabs";
+import LeadTagsEditor from "@/components/LeadTagsEditor";
 import { formatBudget } from "@/lib/budgetParse";
 
 export const dynamic = "force-dynamic";
@@ -346,6 +347,13 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
               <div className="text-sm text-gray-500 mt-1">
                 {lead.email && `${lead.email}`}
                 {lead.company && ` · ${lead.company}`}
+              </div>
+              {/* Tags — comma-separated free-form labels (NRI, Investor, HNI,
+                  …) editable inline. Chips are coloured by stable hash so the
+                  same tag always looks the same on every lead. */}
+              <div className="text-sm mt-2 flex items-start flex-wrap gap-2">
+                <span className="text-xs text-gray-500 font-semibold pt-0.5">Tags:</span>
+                <LeadTagsEditor leadId={lead.id} initialTags={lead.tags} />
               </div>
               <LeadActionsClient
                 leadId={lead.id}

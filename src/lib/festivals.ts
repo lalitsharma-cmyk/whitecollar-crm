@@ -130,9 +130,52 @@ export const FESTIVALS: Festival[] = [
   },
 ];
 
-/** Get the festival that should be displayed today (IST), if any. */
+/**
+ * localStorage key for the admin manual override.
+ * Values: festival id (e.g. "diwali-2026") → force-show that festival
+ *         "none"                            → suppress all festival theming
+ *         (key absent / null)               → auto / follow calendar
+ */
+export const OVERRIDE_KEY = "wcr-festival-override";
+
+/** Read the current admin override, if any. SSR-safe (returns null on server). */
+export function getFestivalOverride(): string | null {
+  if (typeof window === "undefined") return null;
+  try {
+    return window.localStorage.getItem(OVERRIDE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+/** Write/clear the admin override. Pass `null` to clear and fall back to calendar. */
+export function setFestivalOverride(id: string | null): void {
+  if (typeof window === "undefined") return;
+  try {
+    if (id === null) {
+      window.localStorage.removeItem(OVERRIDE_KEY);
+    } else {
+      window.localStorage.setItem(OVERRIDE_KEY, id);
+    }
+  } catch {
+    /* ignore quota / disabled-storage errors */
+  }
+}
+
+/** Get the festival that should be displayed today (IST), if any.
+ *  Admin override (localStorage) takes precedence over the calendar so Lalit
+ *  can preview / force a festival theme outside its date window. */
 export function getActiveFestival(now: Date = new Date()): Festival | null {
-  // Convert to IST date-only string to compare cleanly.
+  // 1) Admin override wins.
+  const override = getFestivalOverride();
+  if (override === "none") return null;
+  if (override) {
+    const forced = FESTIVALS.find((f) => f.id === override);
+    if (forced) return forced;
+    // Unknown id (e.g. removed from calendar) — fall through to date logic.
+  }
+
+  // 2) Date-based: convert to IST date-only string to compare cleanly.
   const istOffsetMs = 330 * 60 * 1000;
   const istToday = new Date(now.getTime() + istOffsetMs).toISOString().slice(0, 10);
   for (const f of FESTIVALS) {

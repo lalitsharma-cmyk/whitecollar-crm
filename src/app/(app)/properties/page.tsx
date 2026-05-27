@@ -92,7 +92,7 @@ export default async function PropertiesPage({ searchParams }: { searchParams: P
               >
                 <div className="relative z-10">
                   <div className="text-xs opacity-80">{p.area ?? p.city}{p.country ? ` · ${p.country}` : ""}</div>
-                  <div className="font-bold text-lg">{p.name}</div>
+                  <Link href={`/properties/${p.id}`} className="font-bold text-lg hover:underline">{p.name}</Link>
                 </div>
               </div>
               <div className="p-4">

@@ -5,6 +5,7 @@ import TravelRateEditor from "@/components/TravelRateEditor";
 import SpeedToLeadToggle from "@/components/SpeedToLeadToggle";
 import RoundRobinToggle from "@/components/RoundRobinToggle";
 import TestingModeToggle from "@/components/TestingModeToggle";
+import FestivalAdminPanel from "@/components/FestivalAdminPanel";
 
 export const dynamic = "force-dynamic";
 
@@ -84,6 +85,21 @@ export default async function SettingsPage() {
         </p>
         <SpeedToLeadToggle initial={speedToLeadOn} canEdit={isAdmin} />
       </div>
+
+      {/* Festival theme — admin manual override for festive mode (spec §12.1) */}
+      {isAdmin && (
+        <div className="card p-5 max-w-2xl">
+          <div className="font-semibold flex items-center gap-2">🎉 Festival theme</div>
+          <p className="text-xs text-gray-500 mt-1">
+            Force a festive theme on outside its calendar window — useful for previewing
+            an upcoming look, or marking an occasion the auto-calendar doesn't cover.
+            Affects the accent colour and the festive banner for everyone using this browser.
+          </p>
+          <div className="mt-3">
+            <FestivalAdminPanel />
+          </div>
+        </div>
+      )}
 
       {/* Calendar subscription — personal ICS feed for Google / Apple Calendar */}
       <div className="card p-5 max-w-2xl">
