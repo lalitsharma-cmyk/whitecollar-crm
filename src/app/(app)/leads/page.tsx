@@ -65,6 +65,20 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
   else if (sp.when === "30d") where.createdAt = { gte: new Date(Date.now() - 30 * 24 * 3600 * 1000) };
   else if (sp.when === "overdue") where.lastTouchedAt = { lt: new Date(Date.now() - 5 * 24 * 3600 * 1000) };
 
+  // EOI / booking-funnel filters — driven by the dashboard's EOI Pipeline tiles
+  // (admin/manager view). Surfaces leads at specific points in the booking funnel:
+  //   active           → anyone with eoiStage set (mid-funnel)
+  //   kyc_pending      → KYC docs still outstanding
+  //   approval_needed  → eoiApprovalRequired === true (manager sign-off)
+  //   stuck            → EOI collected > 7 days ago but booking not yet done
+  if (sp.eoi === "active") where.eoiStage = { not: null };
+  else if (sp.eoi === "kyc_pending") where.kycStatus = "PENDING";
+  else if (sp.eoi === "approval_needed") where.eoiApprovalRequired = true;
+  else if (sp.eoi === "stuck") {
+    where.bookingDoneAt = null;
+    where.eoiCollectedAt = { lt: new Date(Date.now() - 7 * 24 * 3600 * 1000), not: null };
+  }
+
   // Quick filter: ?notPicked=N  → leads where (a) at least one no-answer call
   // has happened in the last N days AND (b) no CONNECTED / INTERESTED call has
   // happened in that window. Lalit asked: "If client is not picking calls from
@@ -109,7 +123,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
   // ?followup=all. Other filters (search, source, owner, etc.) bypass this
   // default — if any non-followup filter is in the URL, treat as a targeted
   // search and show all matching, not just today's.
-  const hasOtherFilter = !!(sp.q || sp.source || sp.status || sp.owner || sp.team || sp.score || sp.notPicked);
+  const hasOtherFilter = !!(sp.q || sp.source || sp.status || sp.owner || sp.team || sp.score || sp.notPicked || sp.eoi);
   const effectiveFollowup = sp.followup ?? (hasOtherFilter ? "all" : "today");
 
   if (effectiveFollowup === "today") {
