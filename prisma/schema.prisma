@@ -254,6 +254,17 @@ model Lead {
   // when followupDate is edited (handled by the inline-update endpoint).
   followupReminderSentAt DateTime?
 
+  // ── Rejection / Lost-lead capture ──
+  // When agent rejects a lead (status → LOST), capture the reason from a
+  // fixed dropdown plus optional free-text. Used in /reports/sla and the
+  // Pipeline funnel-leakage analysis to understand WHY deals die.
+  // rejectionReason one of: FUND_ISSUE / WAR_FEAR / LOW_BUDGET /
+  //   LOOK_AFTER_2_YEARS / WAITING_FOR_PROPERTY_SALE / OTHER
+  rejectionReason String?
+  rejectionNote   String?   // free-text — required when rejectionReason = OTHER
+  rejectedAt      DateTime?
+  rejectedById    String?
+
   // ── EOI / Booking workflow (Phase 6 of CRM master spec §13) ──
   // Stage in the booking funnel — populated once a Lead enters NEGOTIATION
   // or beyond. Pipeline UI shows EOI sub-stages once eoiStage is set.

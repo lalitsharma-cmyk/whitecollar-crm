@@ -20,6 +20,7 @@ import SuggestedUnitsCard from "@/components/SuggestedUnitsCard";
 import { bestUnitsForLead } from "@/lib/inventoryMatch";
 import CallHistoryCard from "@/components/CallHistoryCard";
 import LeadReassignClient from "@/components/LeadReassignClient";
+import RejectLeadClient from "@/components/RejectLeadClient";
 import { formatBudget } from "@/lib/budgetParse";
 
 export const dynamic = "force-dynamic";
@@ -595,6 +596,17 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
             agents={agents.map(a => ({ id: a.id, name: a.name, role: a.role, team: a.team }))}
           />
         )}
+
+        {/* Reject lead — Lalit's ask: "There is no option to reject a lead.
+            Rejection reasons also should be specified in dropdown…". Captures
+            structured reason so /reports/sla can analyse funnel leakage.
+            Shows the rejected state read-only once status = LOST. */}
+        <RejectLeadClient
+          leadId={lead.id}
+          leadName={lead.name}
+          alreadyRejected={lead.status === "LOST"}
+          currentReason={lead.rejectionReason}
+        />
 
         {/* Expo / Dubai-site-visit logger — Lalit's ask: "Move this button down"
             → put it at the absolute bottom of the right column. */}
