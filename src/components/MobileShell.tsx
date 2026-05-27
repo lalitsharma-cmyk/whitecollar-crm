@@ -5,7 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import {
   LayoutDashboard, Users, KanbanSquare, Sparkles, Menu, X, Bell,
   Building2, CalendarDays, PhoneCall, BarChart3, Upload, UserCog, Settings as SettingsIcon, LogOut,
-  Snowflake, ShieldCheck, ChevronLeft, Heart,
+  ShieldCheck, ChevronLeft, Heart, Gem,
 } from "lucide-react";
 import NotifBell from "./NotifBell";
 import WhatsAppPanel from "./WhatsAppPanel";
@@ -20,7 +20,7 @@ const fullNav = [
     { href: "/dashboard",   label: "Dashboard",   Icon: LayoutDashboard },
     { href: "/action-list", label: "Action List", Icon: Sparkles, tag: "HOT" },
     { href: "/leads",       label: "Leads",       Icon: Users },
-    { href: "/cold-calls",  label: "Cold Data",   Icon: Snowflake },
+    { href: "/cold-calls",  label: "Revival Engine", Icon: Gem },
     { href: "/pipeline",    label: "Pipeline",    Icon: KanbanSquare },
     { href: "/properties",  label: "Properties",  Icon: Building2 },
     { href: "/activities",  label: "Activities",  Icon: CalendarDays },
