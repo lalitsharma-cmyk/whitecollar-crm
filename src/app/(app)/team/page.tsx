@@ -4,6 +4,7 @@ import { acefoneEnabled } from "@/lib/acefone";
 import AcefoneAgentIdEdit from "@/components/AcefoneAgentIdEdit";
 import WhatsAppNumberEdit from "@/components/WhatsAppNumberEdit";
 import ManagerPicker from "@/components/ManagerPicker";
+import UserSpecializationEditor from "@/components/UserSpecializationEditor";
 
 export const dynamic = "force-dynamic";
 
@@ -17,6 +18,7 @@ export default async function TeamPage() {
     orderBy: [{ team: "asc" }, { name: "asc" }],
   });
   const canEditAcefone = me.role === "ADMIN";
+  const canEditProfile = me.role === "ADMIN" || me.role === "MANAGER";
   const ace = acefoneEnabled();
 
   return (
@@ -57,10 +59,11 @@ export default async function TeamPage() {
       </div>
 
       <div className="card overflow-x-auto">
-        <table className="tbl min-w-[980px]">
+        <table className="tbl min-w-[1180px]">
           <thead><tr>
             <th>User</th><th>Role</th><th>Team</th>
             <th>Manager</th>
+            <th>Specializations & target</th>
             <th>Acefone agent id</th>
             <th>Company WhatsApp #</th>
             <th>Active leads</th><th>Total calls</th>
@@ -82,6 +85,14 @@ export default async function TeamPage() {
                     initial={u.managerId}
                     candidates={users.map(c => ({ id: c.id, name: c.name }))}
                     canEdit={canEditAcefone}
+                  />
+                </td>
+                <td>
+                  <UserSpecializationEditor
+                    userId={u.id}
+                    initialSpecializations={u.specializations}
+                    initialDailyCallTarget={u.dailyCallTarget}
+                    canEdit={canEditProfile}
                   />
                 </td>
                 <td>

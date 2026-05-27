@@ -29,7 +29,12 @@ export async function POST(req: NextRequest) {
   const description = body.description ? String(body.description).trim() : null;
   const trigger = String(body.trigger ?? "");
   const triggerConfig = body.triggerConfig ? JSON.stringify(body.triggerConfig) : null;
-  const filterQuery = body.filterQuery ? String(body.filterQuery) : null;
+  // "conditions" is the spec name for IF clauses; persisted as filterQuery.
+  const filterQuery = body.conditions
+    ? String(body.conditions)
+    : body.filterQuery
+      ? String(body.filterQuery)
+      : null;
   const actions: ActionPayload[] = Array.isArray(body.actions) ? body.actions : [];
 
   if (!name) return NextResponse.json({ error: "Name required" }, { status: 400 });
@@ -43,6 +48,8 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  // Create workflow + child actions in one transaction (Prisma nested create
+  // already runs as a single transaction, so this is atomic).
   const wf = await prisma.workflow.create({
     data: {
       name, description,

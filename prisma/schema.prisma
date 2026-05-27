@@ -64,6 +64,16 @@ model User {
   // Cheap-to-query string instead of a join table since badges are append-only.
   badges            String    @default("")
 
+  // ── Agent profile (spec §9.13) ──
+  // Comma-separated specialization tags from a fixed vocab. Examples:
+  // "Dubai investor", "Gurgaon luxury", "Villa closer", "Commercial", "NRI",
+  // "First-time buyer", "Negotiation support". NULL = no specialization yet.
+  // Used by lead-routing hints + manager triage.
+  specializations   String?
+  // Per-agent daily call target. Surfaced in DailyMissionBoard so the agent
+  // knows their personal goal for the day. Editable by ADMIN/MANAGER on /team.
+  dailyCallTarget   Int       @default(30)
+
   ownedLeads    Lead[]     @relation("LeadOwner")
   assignments   Assignment[]
   activities    Activity[]

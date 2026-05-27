@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { UnitStatus, ProjectStatus, Prisma } from "@prisma/client";
 import { requireUser } from "@/lib/auth";
+import { bestLeadsForProject, type SuggestedLead } from "@/lib/leadsForProject";
 import Link from "next/link";
 
 export const dynamic = "force-dynamic";
@@ -30,6 +31,23 @@ export default async function PropertiesPage({ searchParams }: { searchParams: P
   });
   const totalUnits = projects.reduce((s, p) => s + p.units.length, 0);
   const available = projects.reduce((s, p) => s + p.units.filter(u => u.status === UnitStatus.AVAILABLE).length, 0);
+
+  // §9.8 — for each project, find pipeline leads worth pitching this to.
+  // Done in parallel so we don't add round-trip latency per card.
+  const matchesByProject = new Map<string, SuggestedLead[]>(
+    await Promise.all(
+      projects.map(async (p): Promise<[string, SuggestedLead[]]> => [
+        p.id,
+        await bestLeadsForProject(p.id, 5),
+      ]),
+    ),
+  );
+
+  const fmtBudget = (amount: number, currency: string, indiaTeam: boolean): string => {
+    if (!amount || amount <= 0) return "—";
+    if (indiaTeam || currency === "INR") return `₹${(amount / 1e7).toFixed(1)} Cr`;
+    return `${currency || "AED"} ${(amount / 1e6).toFixed(1)}M`;
+  };
 
   return (
     <>
@@ -89,6 +107,47 @@ export default async function PropertiesPage({ searchParams }: { searchParams: P
                   <div><div className="text-xs text-gray-500">From</div><div className="font-semibold">{fromPrice ? (isIndia ? `₹${(fromPrice/1e7).toFixed(1)} Cr` : `AED ${(fromPrice/1e6).toFixed(1)}M`) : "—"}</div></div>
                 </div>
                 {configs && <div className="text-xs text-gray-500 mt-3">Configs: {configs}</div>}
+                {(() => {
+                  const matches = matchesByProject.get(p.id) ?? [];
+                  if (matches.length === 0) return null;
+                  const top = matches[0];
+                  return (
+                    <details className="mt-3 group">
+                      <summary className="cursor-pointer text-xs text-amber-700 hover:text-amber-900 list-none">
+                        <span className="font-semibold">💎 {matches.length} matching lead{matches.length === 1 ? "" : "s"}</span>
+                        <span className="text-gray-600"> — top: </span>
+                        <Link
+                          href={`/leads/${top.leadId}`}
+                          className="underline hover:no-underline"
+                        >
+                          {top.leadName}
+                        </Link>
+                        <span className="text-gray-500"> ({fmtBudget(top.budget, top.currency, isIndia)})</span>
+                        <span className="ml-1 text-gray-400 group-open:hidden">▸</span>
+                        <span className="ml-1 text-gray-400 hidden group-open:inline">▾</span>
+                      </summary>
+                      <ul className="mt-2 space-y-1 text-xs">
+                        {matches.map((m) => (
+                          <li key={m.leadId} className="flex items-center justify-between gap-2">
+                            <Link href={`/leads/${m.leadId}`} className="text-gray-800 hover:text-amber-700 truncate">
+                              {m.leadName}
+                            </Link>
+                            <span className="flex items-center gap-2 shrink-0">
+                              {m.aiScore && (
+                                <span className={`chip ${m.aiScore === "HOT" ? "src-wa" : m.aiScore === "WARM" ? "src" : "src-csv"} text-[10px]`}>
+                                  {m.aiScore}
+                                </span>
+                              )}
+                              <span className="text-gray-500">{fmtBudget(m.budget, m.currency, isIndia)}</span>
+                              <span className="text-gray-400">·</span>
+                              <span className="text-amber-700 font-medium">{m.score}</span>
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    </details>
+                  );
+                })()}
               </div>
             </div>
           );
