@@ -193,11 +193,20 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
       <div className="space-y-2">
         <div className="text-[10px] uppercase tracking-widest text-gray-500 font-semibold flex items-center gap-2">
           <span>📅 Follow-ups</span>
-          <span className="text-[9px] font-normal text-gray-400 normal-case tracking-normal">
+          <span className="text-[9px] font-normal text-gray-400 normal-case tracking-normal hidden sm:inline">
             (default view shows today's — tap All to see everything)
           </span>
         </div>
-        <div className="flex flex-wrap gap-2">
+        {/* Mobile: chips scroll horizontally so they stay on ONE line, not
+            3 wrapping lines. Lalit: "Filters on Lead page takes so much space
+            that user has to scroll down to see the lead in mobile." Desktop
+            keeps flex-wrap so they all show at once.
+            -mx-3 + px-3 lets the scroll extend edge-to-edge inside p-3 page padding. */}
+        <div className="flex gap-2 overflow-x-auto lg:flex-wrap pb-1 -mx-3 px-3 lg:mx-0 lg:px-0 scrollbar-thin">
+          <style>{`
+            .scrollbar-thin::-webkit-scrollbar { height: 4px; }
+            .scrollbar-thin::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.15); border-radius: 2px; }
+          `}</style>
           <Link
             href="/leads?followup=all"
             className={`px-3 py-2 rounded-full text-xs font-semibold border min-h-11 inline-flex items-center gap-1 ${effectiveFollowup === "all" ? "bg-[#0b1a33] text-white border-[#0b1a33]" : "bg-white border-[#e5e7eb] text-gray-700"}`}
@@ -237,7 +246,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
         </div>
       </div>
 
-      <div className="flex flex-wrap gap-2">
+      <div className="flex gap-2 overflow-x-auto lg:flex-wrap pb-1 -mx-3 px-3 lg:mx-0 lg:px-0 scrollbar-thin">
         {/* Not-picked filter chips — Lalit's ask: "If client is not picking
             calls from 3 Days, there should be a tag added so filtration can be
             easy. Call not pick form 2, 3, 4, 5,6 7, days type of tag." */}

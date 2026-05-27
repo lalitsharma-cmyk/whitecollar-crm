@@ -61,7 +61,12 @@ export default function PWARegister() {
     window.addEventListener("beforeinstallprompt", onPrompt);
     window.addEventListener("appinstalled", onInstalled);
     if (window.matchMedia?.("(display-mode: standalone)").matches) setInstalled(true);
-    if (sessionStorage.getItem("wcr-install-dismissed")) setHidden(true);
+    // Persistent dismiss — used to be sessionStorage which came back on
+    // every reopen. localStorage stays until the user explicitly resets.
+    if (
+      (typeof localStorage !== "undefined" && localStorage.getItem("wcr-install-dismissed"))
+      || (typeof sessionStorage !== "undefined" && sessionStorage.getItem("wcr-install-dismissed"))
+    ) setHidden(true);
     return () => {
       window.removeEventListener("beforeinstallprompt", onPrompt);
       window.removeEventListener("appinstalled", onInstalled);
@@ -72,18 +77,34 @@ export default function PWARegister() {
     setPushStatus("requesting…");
     const r = await registerSWAndPush();
     setPushStatus(r);
+    // Persist success so we never re-prompt on future visits, even across
+    // device restarts. sessionStorage (old behaviour) cleared on close →
+    // Lalit reported "If push alerts is enabled once, it keeps on asking
+    // again and again for it." Same flag also written on permission denial
+    // so we don't pester after a "no".
+    if (r === "granted" || r === "denied") {
+      try { localStorage.setItem("wcr-push-prompted", r); } catch {}
+    }
   }
 
   if (installed && !pushStatus) {
-    // Already installed — offer push opt-in if not yet asked
-    if (typeof Notification !== "undefined" && Notification.permission === "default" && !sessionStorage.getItem("wcr-push-dismissed")) {
+    // Already installed — offer push opt-in if not yet asked or dismissed
+    const everPrompted = (typeof localStorage !== "undefined" && localStorage.getItem("wcr-push-prompted"))
+                      || (typeof sessionStorage !== "undefined" && sessionStorage.getItem("wcr-push-dismissed"))
+                      || (typeof localStorage !== "undefined" && localStorage.getItem("wcr-push-dismissed"));
+    const browserPerm = typeof Notification !== "undefined" ? Notification.permission : "denied";
+    // Skip the banner if:
+    //   • Browser already says granted or denied (we have an answer)
+    //   • User previously dismissed (persisted in localStorage now, not session)
+    //   • We've previously prompted and got an answer
+    if (browserPerm === "default" && !everPrompted) {
       return (
         <div className="fixed bottom-4 right-4 z-50 max-w-xs bg-white border border-[#c9a24b] shadow-2xl rounded-xl p-4">
           <div className="font-bold text-[#0b1a33]">Get push alerts</div>
           <p className="text-xs text-gray-600 mt-1">New leads, SLA reminders, follow-ups — pushed to your phone home screen.</p>
           <div className="flex gap-2 mt-3">
             <button onClick={enablePush} className="btn btn-gold text-xs">Enable</button>
-            <button onClick={() => { sessionStorage.setItem("wcr-push-dismissed", "1"); setHidden(true); }} className="btn btn-ghost text-xs">Not now</button>
+            <button onClick={() => { try { localStorage.setItem("wcr-push-dismissed", "1"); } catch {}; setHidden(true); }} className="btn btn-ghost text-xs">Not now</button>
           </div>
         </div>
       );
@@ -122,7 +143,7 @@ export default function PWARegister() {
               >Install</button>
             )}
             <button
-              onClick={() => { sessionStorage.setItem("wcr-install-dismissed", "1"); setHidden(true); }}
+              onClick={() => { try { localStorage.setItem("wcr-install-dismissed", "1"); } catch {}; setHidden(true); }}
               className="btn btn-ghost text-xs"
             >Not now</button>
           </div>
