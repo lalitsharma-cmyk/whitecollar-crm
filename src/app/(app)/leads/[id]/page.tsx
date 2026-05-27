@@ -22,6 +22,7 @@ import { bestUnitsForLead } from "@/lib/inventoryMatch";
 import CallHistoryCard from "@/components/CallHistoryCard";
 import LeadReassignClient from "@/components/LeadReassignClient";
 import RejectLeadClient from "@/components/RejectLeadClient";
+import LeadMobileTabs from "@/components/LeadMobileTabs";
 import { formatBudget } from "@/lib/budgetParse";
 
 export const dynamic = "force-dynamic";
@@ -135,7 +136,7 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
   // Each ref renders an independent React tree per call site, so the
   // InlineEdit components inside have their own state — safe to render twice.
   const bantCard = (
-    <div className={`card p-4 border-l-4 ${
+    <div data-lead-section="overview" className={`card p-4 border-l-4 ${
       lead.bantStatus === "QUALIFIES" ? "border-emerald-500 bg-emerald-50" :
       lead.bantStatus === "NOT_QUALIFIED" ? "border-red-500 bg-red-50" :
       "border-amber-400 bg-amber-50"
@@ -159,7 +160,7 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
   );
 
   const qualificationCard = (
-    <div className="card p-5">
+    <div data-lead-section="overview" className="card p-5">
       <div className="font-semibold mb-3">Qualification <span className="text-[10px] text-gray-400 font-normal">(click any value to edit)</span></div>
       {/* `min-w-0` on every grid cell so long values (LinkedIn URLs, long
           categorization labels) truncate within their column instead of
@@ -256,7 +257,7 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
   );
 
   const timelineCard = (
-    <div className="card p-5">
+    <div data-lead-section="timeline" className="card p-5">
       <div className="font-semibold mb-3">Timeline</div>
       <div className="space-y-3">
         {lead.activities.map((a) => {
@@ -281,6 +282,12 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
     /* pb-24 reserves space at the bottom on mobile only for the GLOBAL bottom
        nav (~56px + safe-area). The per-lead action bar is now in-flow inside
        the header card so no extra reservation needed for it. */
+    <>
+      {/* §9.4 — sticky mobile-only tab bar. Renders Overview / Timeline /
+          Actions / Projects / Admin chips. Sets body[data-lead-tab] so
+          globals.css can hide non-matching [data-lead-section] cards on
+          phones. Desktop ignores this entirely. */}
+      <LeadMobileTabs />
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 pb-24 lg:pb-0">
       {/* Mobile back link removed — MobileShell now renders a global back
           button in the mobile header (chevron-left next to hamburger) so
@@ -288,7 +295,7 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
       <div className="lg:col-span-2 space-y-4">
         {/* NEEDS YOU BANNER */}
         {lead.needsManagerReview && (
-          <div className="card p-4 border-l-4 border-amber-500 bg-amber-50">
+          <div data-lead-section="overview" className="card p-4 border-l-4 border-amber-500 bg-amber-50">
             <div className="font-semibold text-amber-900">🚩 Needs manager attention</div>
             <div className="text-sm text-amber-800 mt-1">{lead.managerReviewReason ?? "Flagged for review"}{lead.flaggedAt && ` · since ${formatDistanceToNow(lead.flaggedAt, { addSuffix: true })}`}</div>
           </div>
@@ -296,7 +303,7 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
 
         {/* DUPLICATE BANNER */}
         {(lead.duplicateCount ?? 0) > 0 && (
-          <div className="card p-4 border-l-4 border-amber-500 bg-amber-50">
+          <div data-lead-section="overview" className="card p-4 border-l-4 border-amber-500 bg-amber-50">
             <div className="font-semibold text-amber-900">🔁 This client has contacted us {lead.duplicateCount} extra {lead.duplicateCount === 1 ? "time" : "times"}</div>
             <div className="text-sm text-amber-800 mt-1">Last duplicate hit: {lead.lastDuplicateAt ? formatDistanceToNow(lead.lastDuplicateAt, { addSuffix: true }) : "—"}. Treat as high intent — they keep coming back.</div>
           </div>
@@ -304,7 +311,7 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
 
         {/* SLA TIMER */}
         {slaActive && (
-          <div className={`card p-4 border-l-4 ${slaMs > 5 * 60_000 ? "border-emerald-500 bg-emerald-50" : slaMs > 0 ? "border-amber-500 bg-amber-50" : "border-red-500 bg-red-50"}`}>
+          <div data-lead-section="overview" className={`card p-4 border-l-4 ${slaMs > 5 * 60_000 ? "border-emerald-500 bg-emerald-50" : slaMs > 0 ? "border-amber-500 bg-amber-50" : "border-red-500 bg-red-50"}`}>
             <div className="text-sm font-semibold">
               {slaMs > 0
                 ? `⏱  Call within ${Math.max(0, Math.floor(slaMs / 60_000))}m ${Math.max(0, Math.floor((slaMs % 60_000) / 1000))}s`
@@ -314,7 +321,11 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
           </div>
         )}
 
-        {/* Header */}
+        {/* Header — special-case: visible on EVERY tab so the lead name +
+            primary action bar (call / WhatsApp) is always reachable. We use
+            multiple section values; the CSS hide rule uses ":not(...=)" with
+            an exact match, so the trick is to give the header NO data
+            attribute — that exempts it from the hide rules entirely. */}
         <div className="card p-5">
           <div className="flex items-start justify-between flex-wrap gap-3">
             <div>
@@ -382,13 +393,16 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
         {/* CALL HISTORY — second card so agents can scan structured calls after
             reading the Summary. Outcomes + recordings are actionable per-row
             (outcome buckets, no-pick streak, callback times). */}
-        <CallHistoryCard callLogs={lead.callLogs} />
+        <div data-lead-section="timeline">
+          <CallHistoryCard callLogs={lead.callLogs} />
+        </div>
 
         {/* EOI / Booking workflow — wide card on the LEFT column for
             negotiation-stage leads. Lalit: "EOI one should be in middle
             section — not in right corner". Surfaces only when status
             reaches NEGOTIATION, BOOKING_DONE, or WON. */}
         {(lead.status === "NEGOTIATION" || lead.status === "BOOKING_DONE" || lead.status === "WON") && (
+          <div data-lead-section="actions">
           <EOIWorkflowCard
             lead={{
               id: lead.id,
@@ -417,9 +431,10 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
               eoiApprovedAt: lead.eoiApprovedAt,
             }}
           />
+          </div>
         )}
 
-        <div className="card p-5 border-l-4 border-[#c9a24b]">
+        <div data-lead-section="overview" className="card p-5 border-l-4 border-[#c9a24b]">
           <div className="flex items-center gap-2 mb-2">
             <span className="ai-tag">WHO IS THE CLIENT</span>
             <span className="text-xs text-gray-500">— full situation, not keywords · click to edit</span>
@@ -446,7 +461,7 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
         {/* DESKTOP-ONLY Timeline — on mobile, Timeline moves to the very
             bottom of the page (Lalit: "move timeline at below"). The mobile
             instance is rendered after the right column closes. */}
-        <div className="hidden lg:block">
+        <div data-lead-section="timeline" className="hidden lg:block">
           {timelineCard}
         </div>
 
@@ -482,7 +497,7 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
             bottom so admins/managers can find them without scrolling. Reject
             is FIRST (the more decisive action), Reassign second. */}
         {(canReassign || lead.status !== "LOST") && (
-          <div className="card p-4 space-y-3">
+          <div data-lead-section="admin" className="card p-4 space-y-3">
             <div className="text-[10px] uppercase tracking-widest text-gray-500 font-semibold">🛠 Lead admin</div>
             <RejectLeadClient
               leadId={lead.id}
@@ -504,7 +519,7 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
             Combines lead.city / lead.country / lead.address. Card hides itself
             only when literally nothing is set. */}
         {(lead.address || lead.city || lead.country) && (
-          <div className="card p-5">
+          <div data-lead-section="overview" className="card p-5">
             <div className="font-semibold mb-2">📍 Location</div>
             {lead.address && <p className="text-sm text-gray-700">{lead.address}</p>}
             {(lead.city || lead.country) && (
@@ -514,11 +529,12 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
             )}
           </div>
         )}
-        <div className="card p-5">
+        <div data-lead-section="overview" className="card p-5">
           <LeadMeetingClient leadId={lead.id} counts={meetingCounts} />
         </div>
 
         {/* Start a Site Visit — moved from header to right under meeting counts */}
+        <div data-lead-section="actions">
         <SiteVisitTracker
           leadId={lead.id}
           leadName={lead.name}
@@ -528,6 +544,7 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
             startedAt: activeVisit.startedAt.toISOString(),
           } : null}
         />
+        </div>
 
         {/* EOI / Booking workflow MOVED to the LEFT / middle column —
             Lalit's ask: "EOI one should be in middle section — not in
@@ -537,7 +554,7 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
         {/* Scheduling & next action — Followup + To-Do FIRST per Lalit's ask
             ("Followup and to do should be on top") since those are the daily
             agent actions. Meeting + Site Visit are second-row reference dates. */}
-        <div className="card p-5">
+        <div data-lead-section="actions" className="card p-5">
           <div className="font-semibold mb-3">📅 Scheduling & next action <span className="text-[10px] text-gray-400 font-normal">(click to edit)</span></div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
             <div className="p-3 border border-emerald-200 rounded-lg bg-emerald-50">
@@ -559,7 +576,7 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
           </div>
         </div>
 
-        <div className="card p-5">
+        <div data-lead-section="projects" className="card p-5">
           <LeadProjectsClient
             leadId={lead.id}
             initial={lead.discussed.map(d => ({
@@ -573,7 +590,7 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
         </div>
 
         {/* Smart CMA — branded PDF with units + payment plan + ROI for the client */}
-        <div className="card p-3 border-l-4 border-[#c9a24b] bg-amber-50/40">
+        <div data-lead-section="projects" className="card p-3 border-l-4 border-[#c9a24b] bg-amber-50/40">
           <div className="flex items-center justify-between gap-2 flex-wrap">
             <div className="min-w-0">
               <div className="font-semibold text-sm">📄 Smart CMA · client-ready PDF</div>
@@ -588,6 +605,7 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
         </div>
 
         {suggestedUnits.length > 0 && (
+          <div data-lead-section="projects">
           <SuggestedUnitsCard
             leadId={lead.id}
             units={suggestedUnits.map((u) => ({
@@ -610,9 +628,10 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
             }))}
             alreadyAddedUnitIds={lead.interestedUnits.map((p) => p.unitId)}
           />
+          </div>
         )}
 
-        <div className="card p-5">
+        <div data-lead-section="projects" className="card p-5">
           <div className="font-semibold mb-2">Interested properties (unit-level)</div>
           {lead.interestedUnits.length === 0 && <div className="text-sm text-gray-500">None attached yet.</div>}
           <div className="space-y-2 text-sm">
@@ -631,7 +650,7 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
         {/* Assignment history — admin/manager only. Agents shouldn't see who else
             owned the lead before them (avoids inter-agent friction + cherry-picking). */}
         {(me.role === "ADMIN" || me.role === "MANAGER") && (
-          <div className="card p-5">
+          <div data-lead-section="admin" className="card p-5">
             <div className="font-semibold mb-2">Assignment history</div>
             <div className="space-y-2 text-sm">
               {lead.assignments.length === 0 && <div className="text-gray-500">Not assigned yet.</div>}
@@ -659,7 +678,7 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
 
         {/* Expo / Dubai-site-visit logger — Lalit's ask: "Move this button down"
             → put it at the absolute bottom of the right column. */}
-        <div className="card p-4">
+        <div data-lead-section="actions" className="card p-4">
           <div className="text-xs font-semibold text-gray-600 mb-2">Log Expo / Site visit / Home visit</div>
           <AdvancedActivityLogger
             leadId={lead.id}
@@ -674,9 +693,10 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
       {/* MOBILE-ONLY Timeline at the very bottom (Lalit: "move timeline at
           below"). Spans the full grid width so it's just one tall card under
           everything else. Desktop instance lives in the left column above. */}
-      <div className="lg:hidden lg:col-span-3">
+      <div data-lead-section="timeline" className="lg:hidden lg:col-span-3">
         {timelineCard}
       </div>
     </div>
+    </>
   );
 }
