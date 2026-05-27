@@ -108,6 +108,23 @@ export async function ingestLead(input: RawLeadInput) {
   const currency = defaultCurrencyForLocation(input.city, input.country);
   const team = input.team ?? (currency === "INR" ? "India" : "Dubai");
 
+  // Default follow-up = TODAY at 7:00pm IST (close of business). Lalit's ask:
+  // "Any new lead received today should automatically have today's followup
+  // date and should be shown in it." So /leads default "Today" view captures
+  // every fresh lead the moment it arrives. The agent can later edit this
+  // datetime on the lead-detail page if they need a different time.
+  // CSV import path passes its own followupDate later (parsed from sheet) →
+  // that overwrites this default in the post-create update.
+  function todayEodIST(): Date {
+    const istOffsetMs = 330 * 60 * 1000;
+    const nowIST = new Date(Date.now() + istOffsetMs);
+    const eodIST = new Date(nowIST);
+    eodIST.setUTCHours(19, 0, 0, 0);    // 7:00pm IST
+    // If we're already past 7pm IST, schedule for end of day still — agent
+    // will see it in "Today" + "Overdue" both (overdue takes priority in UI).
+    return new Date(eodIST.getTime() - istOffsetMs);
+  }
+
   const lead = await prisma.lead.create({
     data: {
       name: input.name?.trim() || "Unknown",
@@ -127,6 +144,7 @@ export async function ingestLead(input: RawLeadInput) {
       tags: input.tags,
       fingerprint: fp,
       lastTouchedAt: new Date(),
+      followupDate: todayEodIST(),
     },
   });
   await prisma.activity.create({

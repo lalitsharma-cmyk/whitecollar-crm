@@ -103,22 +103,32 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
     };
   };
 
-  if (sp.followup === "today") {
+  // DEFAULT view = "Today's follow-ups" (Lalit's ask: "By default on leads
+  // page Today's follow ups should show"). The agent opens /leads and lands
+  // on their priority list for the day. Explicit "show everything" via
+  // ?followup=all. Other filters (search, source, owner, etc.) bypass this
+  // default — if any non-followup filter is in the URL, treat as a targeted
+  // search and show all matching, not just today's.
+  const hasOtherFilter = !!(sp.q || sp.source || sp.status || sp.owner || sp.team || sp.score || sp.notPicked);
+  const effectiveFollowup = sp.followup ?? (hasOtherFilter ? "all" : "today");
+
+  if (effectiveFollowup === "today") {
     // Today in IST as a UTC window: 00:00 IST = 18:30 UTC the previous day.
     where.followupDate = istWindow(0);
-  } else if (sp.followup === "tomorrow") {
+  } else if (effectiveFollowup === "tomorrow") {
     // Tomorrow in IST — same window logic, shifted +1 day.
     where.followupDate = istWindow(1);
-  } else if (sp.followup === "overdue") {
+  } else if (effectiveFollowup === "overdue") {
     // Past-due followups (older than now) — agent missed them.
     where.followupDate = { lt: new Date(), not: null };
-  } else if (sp.followup === "week") {
+  } else if (effectiveFollowup === "week") {
     // Next 7 days from now (inclusive of today).
     where.followupDate = { gte: new Date(), lte: new Date(Date.now() + 7 * 24 * 3600 * 1000) };
-  } else if (sp.followup === "month") {
+  } else if (effectiveFollowup === "month") {
     // Next 30 days from now (inclusive of today).
     where.followupDate = { gte: new Date(), lte: new Date(Date.now() + 30 * 24 * 3600 * 1000) };
   }
+  // effectiveFollowup === "all" → no followupDate filter applied.
 
   // Sort
   let orderBy: Prisma.LeadOrderByWithRelationInput = { createdAt: "desc" };
@@ -181,43 +191,48 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
           full timeline of upcoming follow-ups at a glance.
           Counts are scoped to the agent's own pipeline (admin sees all). */}
       <div className="space-y-2">
-        <div className="text-[10px] uppercase tracking-widest text-gray-500 font-semibold">📅 Follow-ups</div>
+        <div className="text-[10px] uppercase tracking-widest text-gray-500 font-semibold flex items-center gap-2">
+          <span>📅 Follow-ups</span>
+          <span className="text-[9px] font-normal text-gray-400 normal-case tracking-normal">
+            (default view shows today's — tap All to see everything)
+          </span>
+        </div>
         <div className="flex flex-wrap gap-2">
           <Link
-            href="/leads"
-            className={`px-3 py-2 rounded-full text-xs font-semibold border min-h-11 inline-flex items-center gap-1 ${!sp.followup && !sp.notPicked ? "bg-[#0b1a33] text-white border-[#0b1a33]" : "bg-white border-[#e5e7eb] text-gray-700"}`}
+            href="/leads?followup=all"
+            className={`px-3 py-2 rounded-full text-xs font-semibold border min-h-11 inline-flex items-center gap-1 ${effectiveFollowup === "all" ? "bg-[#0b1a33] text-white border-[#0b1a33]" : "bg-white border-[#e5e7eb] text-gray-700"}`}
           >
             All leads
           </Link>
           <Link
             href="/leads?followup=overdue"
-            className={`px-3 py-2 rounded-full text-xs font-semibold border min-h-11 inline-flex items-center gap-1 ${sp.followup === "overdue" ? "bg-red-600 text-white border-red-600" : "bg-red-50 border-red-300 text-red-800"}`}
+            className={`px-3 py-2 rounded-full text-xs font-semibold border min-h-11 inline-flex items-center gap-1 ${effectiveFollowup === "overdue" ? "bg-red-600 text-white border-red-600" : "bg-red-50 border-red-300 text-red-800"}`}
           >
-            ⏰ Overdue {followupOverdue > 0 && <span className={`px-1.5 rounded ${sp.followup === "overdue" ? "bg-white/20" : "bg-red-200/60"}`}>{followupOverdue}</span>}
+            ⏰ Overdue {followupOverdue > 0 && <span className={`px-1.5 rounded ${effectiveFollowup === "overdue" ? "bg-white/20" : "bg-red-200/60"}`}>{followupOverdue}</span>}
           </Link>
           <Link
             href="/leads?followup=today"
-            className={`px-3 py-2 rounded-full text-xs font-semibold border min-h-11 inline-flex items-center gap-1 ${sp.followup === "today" ? "bg-emerald-600 text-white border-emerald-600" : "bg-emerald-50 border-emerald-300 text-emerald-800"}`}
+            className={`px-3 py-2 rounded-full text-xs font-semibold border min-h-11 inline-flex items-center gap-1 ${effectiveFollowup === "today" ? "bg-emerald-600 text-white border-emerald-600" : "bg-emerald-50 border-emerald-300 text-emerald-800"}`}
           >
-            Today {followupToday > 0 && <span className={`px-1.5 rounded ${sp.followup === "today" ? "bg-white/20" : "bg-emerald-200/60"}`}>{followupToday}</span>}
+            Today {followupToday > 0 && <span className={`px-1.5 rounded ${effectiveFollowup === "today" ? "bg-white/20" : "bg-emerald-200/60"}`}>{followupToday}</span>}
           </Link>
           <Link
             href="/leads?followup=tomorrow"
-            className={`px-3 py-2 rounded-full text-xs font-semibold border min-h-11 inline-flex items-center gap-1 ${sp.followup === "tomorrow" ? "bg-teal-600 text-white border-teal-600" : "bg-teal-50 border-teal-300 text-teal-800"}`}
+            className={`px-3 py-2 rounded-full text-xs font-semibold border min-h-11 inline-flex items-center gap-1 ${effectiveFollowup === "tomorrow" ? "bg-teal-600 text-white border-teal-600" : "bg-teal-50 border-teal-300 text-teal-800"}`}
           >
-            Tomorrow {followupTomorrow > 0 && <span className={`px-1.5 rounded ${sp.followup === "tomorrow" ? "bg-white/20" : "bg-teal-200/60"}`}>{followupTomorrow}</span>}
+            Tomorrow {followupTomorrow > 0 && <span className={`px-1.5 rounded ${effectiveFollowup === "tomorrow" ? "bg-white/20" : "bg-teal-200/60"}`}>{followupTomorrow}</span>}
           </Link>
           <Link
             href="/leads?followup=week"
-            className={`px-3 py-2 rounded-full text-xs font-semibold border min-h-11 inline-flex items-center gap-1 ${sp.followup === "week" ? "bg-blue-600 text-white border-blue-600" : "bg-blue-50 border-blue-300 text-blue-800"}`}
+            className={`px-3 py-2 rounded-full text-xs font-semibold border min-h-11 inline-flex items-center gap-1 ${effectiveFollowup === "week" ? "bg-blue-600 text-white border-blue-600" : "bg-blue-50 border-blue-300 text-blue-800"}`}
           >
-            This week {followupWeek > 0 && <span className={`px-1.5 rounded ${sp.followup === "week" ? "bg-white/20" : "bg-blue-200/60"}`}>{followupWeek}</span>}
+            This week {followupWeek > 0 && <span className={`px-1.5 rounded ${effectiveFollowup === "week" ? "bg-white/20" : "bg-blue-200/60"}`}>{followupWeek}</span>}
           </Link>
           <Link
             href="/leads?followup=month"
-            className={`px-3 py-2 rounded-full text-xs font-semibold border min-h-11 inline-flex items-center gap-1 ${sp.followup === "month" ? "bg-indigo-600 text-white border-indigo-600" : "bg-indigo-50 border-indigo-300 text-indigo-800"}`}
+            className={`px-3 py-2 rounded-full text-xs font-semibold border min-h-11 inline-flex items-center gap-1 ${effectiveFollowup === "month" ? "bg-indigo-600 text-white border-indigo-600" : "bg-indigo-50 border-indigo-300 text-indigo-800"}`}
           >
-            This month {followupMonth > 0 && <span className={`px-1.5 rounded ${sp.followup === "month" ? "bg-white/20" : "bg-indigo-200/60"}`}>{followupMonth}</span>}
+            This month {followupMonth > 0 && <span className={`px-1.5 rounded ${effectiveFollowup === "month" ? "bg-white/20" : "bg-indigo-200/60"}`}>{followupMonth}</span>}
           </Link>
         </div>
       </div>
