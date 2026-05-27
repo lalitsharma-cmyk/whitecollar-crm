@@ -43,10 +43,14 @@ export const COUNTRIES: CountryDial[] = [
   { iso: "CN", name: "China",          dial: "+86",  flag: "🇨🇳" },
 ];
 
-/** Default country for an agent's team — used to pre-select the dial picker. */
+/** Default country for an agent's team — used to pre-select the dial picker.
+ *  Lalit: "In number, IN should be by default selected." Most of the team
+ *  works the India pipeline so +91 is the safer global default. Dubai team's
+ *  PhoneInput still gets +971 when an explicit defaultDial="+971" is passed in
+ *  by the parent (e.g. on the Dubai-team intake form). */
 export function defaultDialForTeam(team?: string | null): string {
-  if (team === "India") return "+91";
-  return "+971"; // Dubai default
+  if (team === "Dubai" || team === "UAE") return "+971";
+  return "+91"; // India default for everything else
 }
 
 /**

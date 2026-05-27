@@ -66,6 +66,12 @@ export default function LeadActionsClient({ leadId, phone, altPhone, email, curr
   useBodyScrollLock(showCall);
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState("CONNECTED");
+  // Channel + direction for Log Call modal. Lalit's ask: "From where should I
+  // log a whatsapp message client sent me remarks to get it recorded in call?"
+  // — answer: in the same Log Call modal, toggle channel = WhatsApp and
+  // direction = Inbound. Defaults to Phone + Outbound (most common).
+  const [logChannel, setLogChannel] = useState<"PHONE" | "WHATSAPP">("PHONE");
+  const [logDirection, setLogDirection] = useState<"OUTBOUND" | "INBOUND">("OUTBOUND");
   const [remarks, setRemarks] = useState("");
   const [duration, setDuration] = useState("");
   // When the agent picks "🔁 Callback" or "⏳ Busy", they need to schedule a
@@ -126,17 +132,33 @@ export default function LeadActionsClient({ leadId, phone, altPhone, email, curr
     }
     setBusy(true);
     try {
-      // Duration only matters for connected-style outcomes; hide-field outcomes
-      // send 0 so the server doesn't store a stale value the agent never saw.
-      const durationToSend = showDurationField ? (Number(duration) || 0) : 0;
+      // Duration only matters for connected-style outcomes on PHONE calls.
+      // WhatsApp text exchanges don't have a measurable duration → always 0.
+      const durationToSend = logChannel === "WHATSAPP" ? 0
+                          : (showDurationField ? (Number(duration) || 0) : 0);
+      // Prefix the remarks so Call History can show the right icon + the
+      // channel/direction context. Backend stores everything in notes.
+      const remarksPrefix = logChannel === "WHATSAPP"
+        ? (logDirection === "INBOUND" ? "💬 WA in — " : "💬 WA out — ")
+        : (logDirection === "INBOUND" ? "📞 They called — " : "");
+      const finalRemarks = remarksPrefix
+        ? (remarks ? `${remarksPrefix}${remarks}` : remarksPrefix.replace(/ — $/, ""))
+        : remarks;
       const r = await fetch(`/api/leads/${leadId}/log-call`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ outcome, remarks, durationSec: durationToSend, callbackAt: callbackAtISO }),
+        body: JSON.stringify({
+          outcome,
+          remarks: finalRemarks,
+          durationSec: durationToSend,
+          callbackAt: callbackAtISO,
+          direction: logDirection,
+        }),
       });
       const j = await r.json();
       if (!r.ok) { setErr(j.error ?? "Failed"); return; }
       setShowCall(false); setRemarks(""); setDuration(""); setCallbackAt("");
+      setLogChannel("PHONE"); setLogDirection("OUTBOUND");
       router.refresh();
     } finally { setBusy(false); }
   }
@@ -252,7 +274,43 @@ export default function LeadActionsClient({ leadId, phone, altPhone, email, curr
             className="bg-white sm:rounded-xl rounded-t-2xl max-w-md w-full p-5 shadow-2xl max-h-[90vh] overflow-y-auto safe-bottom"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="font-semibold mb-3 text-lg">Log Call</div>
+            <div className="font-semibold mb-3 text-lg">Log conversation</div>
+
+            {/* Channel + direction toggles — agent picks BOTH then writes
+                what happened in Remarks. Use for:
+                  • Phone call you made   → Phone + Outbound (default)
+                  • Phone call they made  → Phone + Inbound
+                  • WhatsApp you sent     → WhatsApp + Outbound
+                  • WhatsApp they sent    → WhatsApp + Inbound (Lalit's ask) */}
+            <div className="grid grid-cols-2 gap-2 mb-3">
+              <div>
+                <label className="text-[10px] font-semibold text-gray-600 uppercase tracking-widest">Channel</label>
+                <div className="grid grid-cols-2 gap-1 mt-1 border border-[#e5e7eb] rounded-lg p-1">
+                  <button type="button" onClick={() => setLogChannel("PHONE")}
+                    className={`py-1.5 rounded text-xs font-semibold transition ${logChannel === "PHONE" ? "bg-[#0b1a33] text-white" : "text-gray-600 hover:bg-gray-50"}`}>
+                    📞 Phone
+                  </button>
+                  <button type="button" onClick={() => setLogChannel("WHATSAPP")}
+                    className={`py-1.5 rounded text-xs font-semibold transition ${logChannel === "WHATSAPP" ? "bg-emerald-600 text-white" : "text-gray-600 hover:bg-gray-50"}`}>
+                    💬 WhatsApp
+                  </button>
+                </div>
+              </div>
+              <div>
+                <label className="text-[10px] font-semibold text-gray-600 uppercase tracking-widest">Direction</label>
+                <div className="grid grid-cols-2 gap-1 mt-1 border border-[#e5e7eb] rounded-lg p-1">
+                  <button type="button" onClick={() => setLogDirection("OUTBOUND")}
+                    className={`py-1.5 rounded text-xs font-semibold transition ${logDirection === "OUTBOUND" ? "bg-[#0b1a33] text-white" : "text-gray-600 hover:bg-gray-50"}`}>
+                    ↗ I sent
+                  </button>
+                  <button type="button" onClick={() => setLogDirection("INBOUND")}
+                    className={`py-1.5 rounded text-xs font-semibold transition ${logDirection === "INBOUND" ? "bg-[#0b1a33] text-white" : "text-gray-600 hover:bg-gray-50"}`}>
+                    ↙ They sent
+                  </button>
+                </div>
+              </div>
+            </div>
+
             <label className="text-xs font-semibold text-gray-600">Outcome *</label>
             <select value={outcome} onChange={(e) => setOutcome(e.target.value)} className="w-full mt-1 mb-3 border border-[#e5e7eb] rounded-lg px-3 py-2 text-sm">
               {OUTCOMES.map(o => <option key={o.v} value={o.v}>{o.label}</option>)}
