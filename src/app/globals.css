@@ -290,3 +290,103 @@ body.modal-open {
   body[data-lead-tab="projects"] [data-lead-section]:not([data-lead-section="projects"]) { display: none !important; }
   body[data-lead-tab="admin"]    [data-lead-section]:not([data-lead-section="admin"])    { display: none !important; }
 }
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   PRINT STYLES — Lead detail "Client briefing" view
+   When an agent hits Cmd/Ctrl+P or the 🖨 Print button on /leads/[id], we
+   want a clean one-page handout: no nav, no sticky bars, no modals, no
+   buttons — just the lead cards laid out top-to-bottom in black on white.
+   All other pages inherit the same nav/button suppression which is fine —
+   the lead-detail page is the only one currently expected to be printed.
+   ─────────────────────────────────────────────────────────────────────── */
+@media print {
+  /* Strip the app chrome: global sidebar/topbar, mobile shell header + bottom
+     nav, modals, every sticky element, every "stuck-to-bottom" floating bar,
+     and every <button> (they're action triggers, useless on paper). */
+  nav,
+  .mobile-shell-header,
+  .mobile-shell-bottom-nav,
+  [class*="sticky"],
+  [class*="bottom-0"],
+  [class*="fixed"],
+  button,
+  .print\:hidden {
+    display: none !important;
+  }
+
+  /* Body lock helper used by modals must not blank the page when printing
+     (some browsers fire print() while modal-open is still set). */
+  body.modal-open {
+    overflow: visible !important;
+    touch-action: auto;
+  }
+
+  /* Force a print-friendly canvas: white background, black ink, full width,
+     no theme-dependent surface colours bleeding through. */
+  html, body {
+    background: #ffffff !important;
+    color: #000000 !important;
+    font-size: 11pt;
+  }
+  body {
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  /* Show ALL lead cards regardless of the active mobile tab — the mobile
+     tab CSS above hides non-matching [data-lead-section] cards via
+     display:none, which print would otherwise inherit. Override here so
+     Overview + Timeline + Actions + Projects + Admin all print together. */
+  [data-lead-section] {
+    display: block !important;
+  }
+
+  /* Keep cards together — avoid splitting a single card across two pages.
+     `break-inside: avoid` is the modern spelling, `page-break-inside: avoid`
+     is the legacy one — both ship for browser coverage. */
+  .card {
+    page-break-inside: avoid;
+    break-inside: avoid;
+    border: 1px solid #cccccc !important;
+    background: #ffffff !important;
+    box-shadow: none !important;
+    margin-bottom: 0.5rem !important;
+  }
+
+  /* Collapse the 2-column grid into a single stacked column so cards print
+     in natural reading order (left column then right column). */
+  .grid {
+    display: block !important;
+  }
+
+  /* Make sure links print as plain text — no underline noise on every
+     phone/email span. The URL itself stays in the DOM if needed. */
+  a {
+    color: #000000 !important;
+    text-decoration: none !important;
+  }
+
+  /* Print header — branded one-line banner at the top of page 1. Plain
+     content string (no attr() dependency) so it renders reliably across
+     Chromium, Firefox, and WebKit print engines. */
+  body::before {
+    content: "White Collar Realty — Client briefing";
+    display: block;
+    font-size: 9pt;
+    font-weight: 700;
+    color: #0b1a33 !important;
+    border-bottom: 2px solid #c9a24b;
+    padding-bottom: 4px;
+    margin-bottom: 10px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+
+  /* Standard A4 margins — leaves room for the printer's hard edge plus a
+     bit of breathing space around the briefing. */
+  @page {
+    size: A4;
+    margin: 12mm;
+  }
+}

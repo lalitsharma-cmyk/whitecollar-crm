@@ -11,6 +11,7 @@ import Link from "next/link";
 import MoodCheckIn from "@/components/MoodCheckIn";
 import AttendanceBadge from "@/components/AttendanceBadge";
 import DailyMissionBoard from "@/components/DailyMissionBoard";
+import PersonalScoreboard from "@/components/PersonalScoreboard";
 import { todayIST } from "@/lib/attendance";
 import { quoteOfTheDay } from "@/lib/salesQuotes";
 
@@ -480,6 +481,12 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
           </div>
         </div>
       </div>
+
+      {/* "Your scoreboard" — personal gamification snapshot (level + XP +
+          streaks + leaderboard ranks + badges). Mounts immediately after the
+          Daily Opening Experience card so the agent sees their standing as
+          part of the morning view. */}
+      <PersonalScoreboard userId={me.id} />
 
       {/* §11.5 Daily Missions board — agent-facing gamified daily targets.
           Mounts immediately after the Daily Opening Experience card so the

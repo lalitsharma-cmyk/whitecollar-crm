@@ -9,6 +9,7 @@ import LeadActionsClient from "@/components/LeadActionsClient";
 import LeadProjectsClient from "@/components/LeadProjectsClient";
 import LeadMeetingClient from "@/components/LeadMeetingClient";
 import SiteVisitTracker from "@/components/SiteVisitTracker";
+import SiteVisitChecklist from "@/components/SiteVisitChecklist";
 import EOIWorkflowCard from "@/components/EOIWorkflowCard";
 import AdvancedActivityLogger from "@/components/AdvancedActivityLogger";
 import { getTravelRatePerKmInr } from "@/lib/settings";
@@ -27,6 +28,7 @@ import LeadReassignClient from "@/components/LeadReassignClient";
 import RejectLeadClient from "@/components/RejectLeadClient";
 import LeadMobileTabs from "@/components/LeadMobileTabs";
 import LeadTagsEditor from "@/components/LeadTagsEditor";
+import PrintButton from "@/components/PrintButton";
 import { formatBudget } from "@/lib/budgetParse";
 
 export const dynamic = "force-dynamic";
@@ -373,6 +375,12 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
                 acefoneMappedForUser={!!me.acefoneAgentId}
                 hideReassign={true}
               />
+              {/* 🖨 Print — collapses sticky UI / modals / nav and lays out
+                  all [data-lead-section] cards as a clean briefing for the
+                  client. Print rules live in globals.css under @media print. */}
+              <div className="mt-2 print:hidden">
+                <PrintButton />
+              </div>
               {/* Expo / Dubai-site-visit button MOVED to the very bottom of the
                   right column (was here in the header). Reassign dropdown also
                   moved — now rendered standalone on the right rail. */}
@@ -579,6 +587,17 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
         <div data-lead-section="overview" className="card p-5">
           <LeadMeetingClient leadId={lead.id} counts={meetingCounts} leadName={lead.name} />
         </div>
+
+        {/* Site Visit Checklist — only renders when the lead is in SITE_VISIT
+            stage OR there's a site visit booked in the future. Pure client-side
+            with per-lead localStorage; no schema dependency. Lives directly
+            above the Tracker so the prep flow reads top-to-bottom. */}
+        {(lead.status === "SITE_VISIT" ||
+          (lead.siteVisitDate && lead.siteVisitDate.getTime() > Date.now())) && (
+          <div data-lead-section="actions">
+            <SiteVisitChecklist leadId={lead.id} />
+          </div>
+        )}
 
         {/* Start a Site Visit — moved from header to right under meeting counts */}
         <div data-lead-section="actions">
