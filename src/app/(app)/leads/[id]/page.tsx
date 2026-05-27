@@ -441,6 +441,30 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
           {qualificationCard}
         </div>
 
+        {/* 🛠 Lead admin — Reject + Reassign in ONE compact card, near the
+            top of the right column. Lalit's ask: "Pur Reject lead option
+            above. Right side corner is too clumsy" — moved up from the
+            bottom so admins/managers can find them without scrolling. Reject
+            is FIRST (the more decisive action), Reassign second. */}
+        {(canReassign || lead.status !== "LOST") && (
+          <div className="card p-4 space-y-3">
+            <div className="text-[10px] uppercase tracking-widest text-gray-500 font-semibold">🛠 Lead admin</div>
+            <RejectLeadClient
+              leadId={lead.id}
+              leadName={lead.name}
+              alreadyRejected={lead.status === "LOST"}
+              currentReason={lead.rejectionReason}
+            />
+            {canReassign && (
+              <LeadReassignClient
+                leadId={lead.id}
+                currentOwnerId={lead.ownerId}
+                agents={agents.map(a => ({ id: a.id, name: a.name, role: a.role, team: a.team }))}
+              />
+            )}
+          </div>
+        )}
+
         {/* 📍 Address — the SINGLE place location appears on this page now.
             Combines lead.city / lead.country / lead.address. Card hides itself
             only when literally nothing is set. */}
@@ -623,25 +647,9 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
             Lalit's ask: "Qualification card move above in right side". See the
             top of the right rail (just inside the opening div above). */}
 
-        {/* Reassign — extracted from header to right column per Lalit's ask. */}
-        {canReassign && (
-          <LeadReassignClient
-            leadId={lead.id}
-            currentOwnerId={lead.ownerId}
-            agents={agents.map(a => ({ id: a.id, name: a.name, role: a.role, team: a.team }))}
-          />
-        )}
-
-        {/* Reject lead — Lalit's ask: "There is no option to reject a lead.
-            Rejection reasons also should be specified in dropdown…". Captures
-            structured reason so /reports/sla can analyse funnel leakage.
-            Shows the rejected state read-only once status = LOST. */}
-        <RejectLeadClient
-          leadId={lead.id}
-          leadName={lead.name}
-          alreadyRejected={lead.status === "LOST"}
-          currentReason={lead.rejectionReason}
-        />
+        {/* Reassign + Reject moved UP into the "Lead admin" card at the top
+            of this right column (just below Qualification). Was here at the
+            bottom — too far to scroll. */}
 
         {/* Expo / Dubai-site-visit logger — Lalit's ask: "Move this button down"
             → put it at the absolute bottom of the right column. */}
