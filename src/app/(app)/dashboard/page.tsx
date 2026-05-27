@@ -80,6 +80,46 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     prisma.activity.count({ where: { ...teamActWhere, type: ActivityType.COLD_TO_LEAD, completedAt: { gte: todayStart } } }),
   ]);
 
+  // ── "Today's situation" Command Center hero strip (master spec §9.1) ──
+  // Action-first tiles answering: what needs attention RIGHT NOW?
+  const sixHoursAgo = new Date(Date.now() - 6 * 3600 * 1000);
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 3600 * 1000);
+  const [hotUntouched, overdueFollowups, closableDeals, coldRevivalOps, salesFloorFeed] = await Promise.all([
+    prisma.lead.count({
+      where: {
+        ...teamScope, aiScore: AIScore.HOT,
+        status: { notIn: [LeadStatus.WON, LeadStatus.LOST] },
+        OR: [{ lastTouchedAt: { lt: sixHoursAgo } }, { lastTouchedAt: null }],
+      },
+    }),
+    prisma.lead.count({
+      where: {
+        ...teamScope, followupDate: { lt: new Date(), not: null },
+        status: { notIn: [LeadStatus.WON, LeadStatus.LOST] },
+      },
+    }),
+    prisma.lead.count({
+      where: { ...teamScope, status: LeadStatus.NEGOTIATION, eoiStage: { not: null } },
+    }),
+    prisma.lead.count({
+      where: {
+        ...teamScope, isColdCall: true,
+        status: { notIn: [LeadStatus.WON, LeadStatus.LOST] },
+        lastTouchedAt: { lt: thirtyDaysAgo },
+        OR: [{ budgetMin: { gt: 5_000_000 } }, { aiScore: AIScore.HOT }],
+      },
+    }),
+    // Sales Floor Live Feed — last 20 team actions (§ 12.2). Each row: agent,
+    // verb, lead name, timestamp. Pulled from Activity table (covers CALL,
+    // MEETING, SITE_VISIT, COLD_TO_LEAD, NOTE) — already team-scoped.
+    prisma.activity.findMany({
+      where: { ...teamActWhere, type: { in: [ActivityType.CALL, ActivityType.OFFICE_MEETING, ActivityType.VIRTUAL_MEETING, ActivityType.SITE_VISIT, ActivityType.HOME_VISIT, ActivityType.EXPO_MEETING, ActivityType.COLD_TO_LEAD, ActivityType.LEAD_CREATED, ActivityType.NOTE] } },
+      orderBy: { createdAt: "desc" },
+      take: 20,
+      include: { user: { select: { name: true, avatarColor: true } }, lead: { select: { id: true, name: true } } },
+    }),
+  ]);
+
   // Today's mood check-in for THIS user (drives the dashboard card)
   const myMoodToday = await prisma.dailyMood.findUnique({
     where: { userId_date: { userId: me.id, date: todayStart } },
@@ -227,6 +267,63 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
           <Link href="/action-list" className="btn btn-gold justify-center">📋 Action List</Link>
         </div>
       </div>
+
+      {/* ─── Today's Situation — Sales Command Center hero (§9.1) ───
+          Action-first tiles answering: what needs attention RIGHT NOW?
+          Each card is a clickable link to the filtered Leads/Pipeline view. */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <Link href="/leads?ai=HOT&when=overdue" className="card p-4 border-l-4 border-red-500 hover:shadow-lg transition active:bg-red-50">
+          <div className="text-3xl font-extrabold text-red-700">{hotUntouched}</div>
+          <div className="text-xs font-semibold text-red-900 mt-1">🔥 Hot leads untouched</div>
+          <div className="text-[10px] text-red-700/70 mt-0.5">No agent activity in 6+ hours</div>
+        </Link>
+        <Link href="/leads?followup=overdue" className="card p-4 border-l-4 border-orange-500 hover:shadow-lg transition active:bg-orange-50">
+          <div className="text-3xl font-extrabold text-orange-700">{overdueFollowups}</div>
+          <div className="text-xs font-semibold text-orange-900 mt-1">⏰ Overdue follow-ups</div>
+          <div className="text-[10px] text-orange-700/70 mt-0.5">Follow-up date in the past</div>
+        </Link>
+        <Link href="/pipeline" className="card p-4 border-l-4 border-emerald-500 hover:shadow-lg transition active:bg-emerald-50">
+          <div className="text-3xl font-extrabold text-emerald-700">{closableDeals}</div>
+          <div className="text-xs font-semibold text-emerald-900 mt-1">💎 Closable deals</div>
+          <div className="text-[10px] text-emerald-700/70 mt-0.5">Negotiation + EOI in progress</div>
+        </Link>
+        <Link href="/cold-calls" className="card p-4 border-l-4 border-blue-500 hover:shadow-lg transition active:bg-blue-50">
+          <div className="text-3xl font-extrabold text-blue-700">{coldRevivalOps}</div>
+          <div className="text-xs font-semibold text-blue-900 mt-1">🧊 Cold revival opportunities</div>
+          <div className="text-[10px] text-blue-700/70 mt-0.5">High-value dormant 30+ days</div>
+        </Link>
+      </div>
+
+      {/* ─── Sales Floor Live Feed (§ 12.2) ───
+          Real-time view of what the team is doing — gives the floor energy. */}
+      {salesFloorFeed.length > 0 && (
+        <div className="card p-4 border-l-4 border-emerald-500">
+          <div className="flex items-center gap-2 mb-3">
+            <span className="relative flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+            </span>
+            <div className="font-semibold text-sm">Sales Floor — live</div>
+            <span className="text-[10px] text-gray-500">Last {salesFloorFeed.length} actions</span>
+          </div>
+          <div className="space-y-1.5 max-h-[260px] overflow-y-auto">
+            {salesFloorFeed.map((a) => {
+              const v = activityVisual(a.type);
+              return (
+                <div key={a.id} className="flex items-center gap-2 text-xs">
+                  <div className={`w-6 h-6 rounded-full ${v.dot} text-white text-[10px] flex items-center justify-center flex-none`}>{v.icon}</div>
+                  <div className="min-w-0 flex-1">
+                    <span className="font-semibold text-[#0b1a33]">{a.user?.name ?? "System"}</span>
+                    <span className="text-gray-600"> · {v.label.toLowerCase()}</span>
+                    {a.lead && <> · <Link href={`/leads/${a.lead.id}`} className="text-[#0b1a33] underline">{a.lead.name}</Link></>}
+                  </div>
+                  <span className="text-[10px] text-gray-400 flex-none">{formatDistanceToNow(a.createdAt, { addSuffix: true })}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Attendance badge — auto-marked on login, shown next to mood */}
       <div className="flex flex-wrap gap-3 items-start">
