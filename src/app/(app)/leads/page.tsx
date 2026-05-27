@@ -90,22 +90,34 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
   // Quick filter: ?followup=today  → leads whose followupDate falls within today IST.
   // Lalit asked: "Agent is unable to track what are today's follow up... make it
   // filter in leads for agent today's followups."
+  // Compute today's IST midnight bounds once — re-used by today/tomorrow chips.
+  const istOffsetMs = 330 * 60 * 1000;
+  const nowISTBoundary = new Date(Date.now() + istOffsetMs);
+  const istMidnight = new Date(nowISTBoundary); istMidnight.setUTCHours(0, 0, 0, 0);
+  const istWindow = (offsetDays: number) => {
+    const start = new Date(istMidnight); start.setUTCDate(start.getUTCDate() + offsetDays);
+    const end = new Date(start); end.setUTCDate(end.getUTCDate() + 1);
+    return {
+      gte: new Date(start.getTime() - istOffsetMs),
+      lt:  new Date(end.getTime()   - istOffsetMs),
+    };
+  };
+
   if (sp.followup === "today") {
     // Today in IST as a UTC window: 00:00 IST = 18:30 UTC the previous day.
-    const istOffsetMs = 330 * 60 * 1000;
-    const nowIST = new Date(Date.now() + istOffsetMs);
-    const startIST = new Date(nowIST); startIST.setUTCHours(0, 0, 0, 0);
-    const endIST = new Date(startIST); endIST.setUTCDate(endIST.getUTCDate() + 1);
-    where.followupDate = {
-      gte: new Date(startIST.getTime() - istOffsetMs),
-      lt: new Date(endIST.getTime() - istOffsetMs),
-    };
+    where.followupDate = istWindow(0);
+  } else if (sp.followup === "tomorrow") {
+    // Tomorrow in IST — same window logic, shifted +1 day.
+    where.followupDate = istWindow(1);
   } else if (sp.followup === "overdue") {
-    // Past-due followups (older than now) — agent missed them
+    // Past-due followups (older than now) — agent missed them.
     where.followupDate = { lt: new Date(), not: null };
   } else if (sp.followup === "week") {
-    // Next 7 days
+    // Next 7 days from now (inclusive of today).
     where.followupDate = { gte: new Date(), lte: new Date(Date.now() + 7 * 24 * 3600 * 1000) };
+  } else if (sp.followup === "month") {
+    // Next 30 days from now (inclusive of today).
+    where.followupDate = { gte: new Date(), lte: new Date(Date.now() + 30 * 24 * 3600 * 1000) };
   }
 
   // Sort
@@ -119,18 +131,15 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
   const page = Math.max(1, parseInt(sp.page ?? "1") || 1);
   const skip = (page - 1) * PAGE_SIZE;
 
-  // Today-IST window for the followup quick chip counts (scoped to the visible
-  // leads — agents see counts for their own pipeline, admin sees the whole org)
-  const istOffsetMs = 330 * 60 * 1000;
-  const nowIST = new Date(Date.now() + istOffsetMs);
-  const startToday = new Date(nowIST); startToday.setUTCHours(0, 0, 0, 0);
-  const endToday = new Date(startToday); endToday.setUTCDate(endToday.getUTCDate() + 1);
-  const todayWindow = {
-    gte: new Date(startToday.getTime() - istOffsetMs),
-    lt: new Date(endToday.getTime() - istOffsetMs),
-  };
+  // Followup windows for chip counts (scoped to visible leads — agents see
+  // their own pipeline, admin sees all). Re-use istWindow() defined above.
+  const todayWindow    = istWindow(0);
+  const tomorrowWindow = istWindow(1);
+  const weekWindow     = { gte: new Date(), lte: new Date(Date.now() + 7  * 24 * 3600 * 1000) };
+  const monthWindow    = { gte: new Date(), lte: new Date(Date.now() + 30 * 24 * 3600 * 1000) };
+  const activeScope    = { ...scope, status: { notIn: [LeadStatus.WON, LeadStatus.LOST] } };
 
-  const [leads, total, hot, newToday, totalAll, agents, followupToday, followupOverdue] = await Promise.all([
+  const [leads, total, hot, newToday, totalAll, agents, followupToday, followupTomorrow, followupWeek, followupMonth, followupOverdue] = await Promise.all([
     prisma.lead.findMany({
       where, orderBy, skip, take: PAGE_SIZE,
       include: { owner: true, interestedUnits: { include: { unit: { include: { project: true } } }, take: 1 } },
@@ -140,10 +149,11 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
     prisma.lead.count({ where: { ...scope, createdAt: { gte: new Date(Date.now() - 24 * 3600 * 1000) } } }),
     prisma.lead.count({ where: scope }),
     prisma.user.findMany({ where: { active: true, role: { in: ["AGENT", "MANAGER"] } }, orderBy: { name: "asc" } }),
-    // Today's followups in the agent's pipeline (or all for admin)
-    prisma.lead.count({ where: { ...scope, followupDate: todayWindow, status: { notIn: ["WON", "LOST"] } } }),
-    // Overdue followups (set in the past)
-    prisma.lead.count({ where: { ...scope, followupDate: { lt: new Date(), not: null }, status: { notIn: ["WON", "LOST"] } } }),
+    prisma.lead.count({ where: { ...activeScope, followupDate: todayWindow } }),
+    prisma.lead.count({ where: { ...activeScope, followupDate: tomorrowWindow } }),
+    prisma.lead.count({ where: { ...activeScope, followupDate: weekWindow } }),
+    prisma.lead.count({ where: { ...activeScope, followupDate: monthWindow } }),
+    prisma.lead.count({ where: { ...activeScope, followupDate: { lt: new Date(), not: null } } }),
   ]);
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
@@ -165,34 +175,54 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
         </div>
       </div>
 
-      {/* Quick filter chips — Lalit asked for prominent today's-followups visibility.
-          Counts are scoped to the user's pipeline (agent sees their own; admin sees all). */}
-      <div className="flex flex-wrap gap-2">
-        <Link
-          href="/leads"
-          className={`px-3 py-2 rounded-full text-xs font-semibold border min-h-11 inline-flex items-center gap-1 ${!sp.followup ? "bg-[#0b1a33] text-white border-[#0b1a33]" : "bg-white border-[#e5e7eb] text-gray-700"}`}
-        >
-          All leads
-        </Link>
-        <Link
-          href="/leads?followup=today"
-          className={`px-3 py-2 rounded-full text-xs font-semibold border min-h-11 inline-flex items-center gap-1 ${sp.followup === "today" ? "bg-emerald-600 text-white border-emerald-600" : "bg-emerald-50 border-emerald-300 text-emerald-800"}`}
-        >
-          📅 Today&apos;s follow-ups {followupToday > 0 && <span className="bg-white/20 px-1.5 rounded">{followupToday}</span>}
-        </Link>
-        <Link
-          href="/leads?followup=overdue"
-          className={`px-3 py-2 rounded-full text-xs font-semibold border min-h-11 inline-flex items-center gap-1 ${sp.followup === "overdue" ? "bg-red-600 text-white border-red-600" : "bg-red-50 border-red-300 text-red-800"}`}
-        >
-          ⏰ Overdue {followupOverdue > 0 && <span className="bg-white/20 px-1.5 rounded">{followupOverdue}</span>}
-        </Link>
-        <Link
-          href="/leads?followup=week"
-          className={`px-3 py-2 rounded-full text-xs font-semibold border min-h-11 inline-flex items-center gap-1 ${sp.followup === "week" ? "bg-blue-600 text-white border-blue-600" : "bg-blue-50 border-blue-300 text-blue-800"}`}
-        >
-          📆 Next 7 days
-        </Link>
+      {/* ─── FOLLOW-UPS section ─────────────────────────────────────────
+          Lalit's ask: "Make section, filter for Followup — today, tomorrow,
+          week, month". Grouped under a labelled header so agents see the
+          full timeline of upcoming follow-ups at a glance.
+          Counts are scoped to the agent's own pipeline (admin sees all). */}
+      <div className="space-y-2">
+        <div className="text-[10px] uppercase tracking-widest text-gray-500 font-semibold">📅 Follow-ups</div>
+        <div className="flex flex-wrap gap-2">
+          <Link
+            href="/leads"
+            className={`px-3 py-2 rounded-full text-xs font-semibold border min-h-11 inline-flex items-center gap-1 ${!sp.followup && !sp.notPicked ? "bg-[#0b1a33] text-white border-[#0b1a33]" : "bg-white border-[#e5e7eb] text-gray-700"}`}
+          >
+            All leads
+          </Link>
+          <Link
+            href="/leads?followup=overdue"
+            className={`px-3 py-2 rounded-full text-xs font-semibold border min-h-11 inline-flex items-center gap-1 ${sp.followup === "overdue" ? "bg-red-600 text-white border-red-600" : "bg-red-50 border-red-300 text-red-800"}`}
+          >
+            ⏰ Overdue {followupOverdue > 0 && <span className={`px-1.5 rounded ${sp.followup === "overdue" ? "bg-white/20" : "bg-red-200/60"}`}>{followupOverdue}</span>}
+          </Link>
+          <Link
+            href="/leads?followup=today"
+            className={`px-3 py-2 rounded-full text-xs font-semibold border min-h-11 inline-flex items-center gap-1 ${sp.followup === "today" ? "bg-emerald-600 text-white border-emerald-600" : "bg-emerald-50 border-emerald-300 text-emerald-800"}`}
+          >
+            Today {followupToday > 0 && <span className={`px-1.5 rounded ${sp.followup === "today" ? "bg-white/20" : "bg-emerald-200/60"}`}>{followupToday}</span>}
+          </Link>
+          <Link
+            href="/leads?followup=tomorrow"
+            className={`px-3 py-2 rounded-full text-xs font-semibold border min-h-11 inline-flex items-center gap-1 ${sp.followup === "tomorrow" ? "bg-teal-600 text-white border-teal-600" : "bg-teal-50 border-teal-300 text-teal-800"}`}
+          >
+            Tomorrow {followupTomorrow > 0 && <span className={`px-1.5 rounded ${sp.followup === "tomorrow" ? "bg-white/20" : "bg-teal-200/60"}`}>{followupTomorrow}</span>}
+          </Link>
+          <Link
+            href="/leads?followup=week"
+            className={`px-3 py-2 rounded-full text-xs font-semibold border min-h-11 inline-flex items-center gap-1 ${sp.followup === "week" ? "bg-blue-600 text-white border-blue-600" : "bg-blue-50 border-blue-300 text-blue-800"}`}
+          >
+            This week {followupWeek > 0 && <span className={`px-1.5 rounded ${sp.followup === "week" ? "bg-white/20" : "bg-blue-200/60"}`}>{followupWeek}</span>}
+          </Link>
+          <Link
+            href="/leads?followup=month"
+            className={`px-3 py-2 rounded-full text-xs font-semibold border min-h-11 inline-flex items-center gap-1 ${sp.followup === "month" ? "bg-indigo-600 text-white border-indigo-600" : "bg-indigo-50 border-indigo-300 text-indigo-800"}`}
+          >
+            This month {followupMonth > 0 && <span className={`px-1.5 rounded ${sp.followup === "month" ? "bg-white/20" : "bg-indigo-200/60"}`}>{followupMonth}</span>}
+          </Link>
+        </div>
+      </div>
 
+      <div className="flex flex-wrap gap-2">
         {/* Not-picked filter chips — Lalit's ask: "If client is not picking
             calls from 3 Days, there should be a tag added so filtration can be
             easy. Call not pick form 2, 3, 4, 5,6 7, days type of tag." */}
