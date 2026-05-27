@@ -159,7 +159,11 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
   const qualificationCard = (
     <div className="card p-5">
       <div className="font-semibold mb-3">Qualification <span className="text-[10px] text-gray-400 font-normal">(click any value to edit)</span></div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+      {/* `min-w-0` on every grid cell so long values (LinkedIn URLs, long
+          categorization labels) truncate within their column instead of
+          overflowing into the neighbour. Lalit screenshot showed the
+          LinkedIn URL bleeding into the Configuration column on mobile. */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm [&>div]:min-w-0 [&>div]:overflow-hidden">
         <div>
           <div className="text-xs text-gray-500">🏢 Company</div>
           <InlineEdit leadId={lead.id} field="company" value={lead.company ?? ""} placeholder="e.g. Emirates NBD, TCS" />
