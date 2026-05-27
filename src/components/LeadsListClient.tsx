@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Phone, MessageCircle } from "lucide-react";
 import LeadBulkActions from "./LeadBulkActions";
 import { telLink, whatsappLink } from "@/lib/phone";
@@ -30,6 +31,7 @@ export default function LeadsListClient({ leads, canBulk, agents, showSource = t
   // showSource = false → hide the source column + chip from agents.
   // Lalit's policy: agents shouldn't see where each lead came from (avoids them
   // cherry-picking high-converting sources or gaming the round-robin pool).
+  const router = useRouter();
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
   function toggle(id: string) {
@@ -136,11 +138,23 @@ export default function LeadsListClient({ leads, canBulk, agents, showSource = t
             )}
             {leads.map((l) => {
               const teamChip = l.team === "India" ? "src-csv" : "src-wa";
+              // Whole row navigates to the lead detail. Lalit: "client open
+              // on click on client name, it should open on full selection
+              // anywhere." Implemented as onClick on <tr> (table rows can't
+              // wrap a Link cleanly without breaking layout). The checkbox td
+              // stops propagation so bulk-select still works.
+              const openLead = () => router.push(`/leads/${l.id}`);
               return (
-                <tr key={l.id} className={selected.has(l.id) ? "bg-blue-50/50" : ""}>
-                  <td>{canBulk && <input type="checkbox" checked={selected.has(l.id)} onChange={() => toggle(l.id)} />}</td>
+                <tr
+                  key={l.id}
+                  onClick={openLead}
+                  className={`cursor-pointer transition hover:bg-amber-50/40 ${selected.has(l.id) ? "bg-blue-50/50" : ""}`}
+                >
+                  <td onClick={(e) => e.stopPropagation()}>
+                    {canBulk && <input type="checkbox" checked={selected.has(l.id)} onChange={() => toggle(l.id)} />}
+                  </td>
                   <td>
-                    <Link href={`/leads/${l.id}`} className="font-semibold text-[#0b1a33] hover:underline">{l.name}</Link>
+                    <span className="font-semibold text-[#0b1a33]">{l.name}</span>
                     {/* Phone on its own line (no email). Email is on the lead detail page only. */}
                     {l.phone && <div className="text-xs text-gray-500">📞 {l.phone}</div>}
                     {l.interest && <div className="text-[11px] text-gray-500">→ {l.interest}</div>}
