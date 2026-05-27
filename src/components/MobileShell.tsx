@@ -9,6 +9,8 @@ import {
 } from "lucide-react";
 import NotifBell from "./NotifBell";
 import WhatsAppPanel from "./WhatsAppPanel";
+import ThemeToggle from "./ThemeToggle";
+import FestiveBanner from "./FestiveBanner";
 import { useBodyScrollLock } from "@/hooks/useBodyScrollLock";
 
 const fullNav = [
@@ -167,6 +169,7 @@ export default function MobileShell({ children, user }: Props) {
         <img src="/brand/wcr-logo.png" alt="WCR" className="h-7 w-auto object-contain" />
         <div className="flex-1" />
         <WhatsAppPanel />
+        <ThemeToggle />
         <NotifBell />
         <Link href="/leads/new" aria-label="New lead" className="p-2 rounded hover:bg-white/10 min-w-11 min-h-11 flex items-center justify-center">
           <span className="text-xl font-bold leading-none">+</span>
@@ -245,9 +248,13 @@ export default function MobileShell({ children, user }: Props) {
           <Link href="/leads/new" className="btn btn-ghost">+ New Lead</Link>
           <Link href="/ai" className="btn btn-gold"><Sparkles className="w-[18px] h-[18px]" /> Ask AI</Link>
           <WhatsAppPanel />
+          <ThemeToggle />
           <NotifBell />
           <Avatar user={user} initials={initials} size="w-[30px] h-[30px]" />
         </header>
+        {/* Festive banner (auto-detected from calendar in src/lib/festivals.ts).
+            Shows above ALL page content. Per-festival dismiss respected. */}
+        <FestiveBanner />
         <section className="p-3 lg:p-6 space-y-4 lg:space-y-6">{children}</section>
       </main>
 

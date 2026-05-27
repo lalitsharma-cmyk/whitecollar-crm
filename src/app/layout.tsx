@@ -35,9 +35,31 @@ export const viewport: Viewport = {
   ],
 };
 
+/**
+ * FOUC prevention — runs synchronously BEFORE first paint so the user never
+ * sees a flash of light theme when their preference is dark. Reads the same
+ * localStorage key (wcr.theme) that ThemeToggle writes. "auto" mode falls
+ * back to the OS preference via prefers-color-scheme.
+ */
+const themeBootScript = `
+(function() {
+  try {
+    var pref = localStorage.getItem("wcr.theme") || "auto";
+    var effective = pref;
+    if (pref === "auto") {
+      effective = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+    }
+    document.documentElement.setAttribute("data-theme", effective);
+  } catch (e) {}
+})();
+`;
+
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en" className={`${inter.variable} h-full antialiased`}>
+    <html lang="en" className={`${inter.variable} h-full antialiased`} suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: themeBootScript }} />
+      </head>
       <body className="min-h-full">
         {children}
         <PWARegister />

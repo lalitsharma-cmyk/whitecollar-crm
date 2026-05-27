@@ -16,7 +16,43 @@
   --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
 }
 
-html, body { background: var(--color-bg); color: var(--color-ink); font-family: var(--font-sans); }
+/* ─── Theme tokens — Light (default) ─── */
+:root {
+  --bg-app:     #f5f6fa;
+  --bg-card:    #ffffff;
+  --bg-muted:   #f7f8fa;
+  --text-base:  #0b1a33;
+  --text-muted: #6b7280;
+  --border:     #e5e7eb;
+}
+
+/* ─── Theme tokens — Dark.
+   Applied via data-theme="dark" on <html>. The inline script in
+   src/app/layout.tsx sets this BEFORE first paint to avoid a flash of
+   light theme. Lalit's ask: "Set user can choose day mode or light mode."
+   First pass touches the app shell + cards + base text — Tailwind utility
+   colours (bg-white, text-gray-X) on specific components still need
+   per-component dark: variants for full coverage. */
+[data-theme="dark"] {
+  --bg-app:     #0b1220;
+  --bg-card:    #131b2d;
+  --bg-muted:   #1a2438;
+  --text-base:  #e5e7eb;
+  --text-muted: #94a3b8;
+  --border:     #2a3550;
+}
+
+html, body { background: var(--bg-app); color: var(--text-base); font-family: var(--font-sans); }
+
+/* Cards + key surfaces follow the theme tokens automatically. */
+[data-theme="dark"] .card { background: var(--bg-card); border-color: var(--border); color: var(--text-base); }
+[data-theme="dark"] .bg-white { background-color: var(--bg-card) !important; }
+[data-theme="dark"] .border-\[\#e5e7eb\] { border-color: var(--border) !important; }
+[data-theme="dark"] .text-gray-500, [data-theme="dark"] .text-gray-600 { color: var(--text-muted); }
+[data-theme="dark"] .text-gray-700, [data-theme="dark"] .text-gray-800, [data-theme="dark"] .text-\[\#0b1a33\] { color: var(--text-base); }
+[data-theme="dark"] .bg-\[\#f5f6fa\], [data-theme="dark"] .bg-\[\#f7f8fa\] { background-color: var(--bg-muted) !important; }
+[data-theme="dark"] table.tbl td { border-bottom-color: var(--border); }
+[data-theme="dark"] table.tbl th { border-bottom-color: var(--border); color: var(--text-muted); }
 
 /* Sidebar */
 .sidebar { background: linear-gradient(180deg, #0b1a33 0%, #0f2347 100%); }
