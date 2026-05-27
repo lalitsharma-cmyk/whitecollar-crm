@@ -31,6 +31,7 @@ import LeadTagsEditor from "@/components/LeadTagsEditor";
 import PrintButton from "@/components/PrintButton";
 import BestCallTimeChip from "@/components/BestCallTimeChip";
 import { formatBudget } from "@/lib/budgetParse";
+import LinkedContactsCard from "@/components/LinkedContactsCard";
 
 export const dynamic = "force-dynamic";
 
@@ -592,6 +593,22 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
             )}
           </div>
         )}
+
+        {/* 🔗 Linked contacts — alt contact on file + other Leads sharing the
+            last 8 digits of phone/altPhone (likely spouse / parent / sibling /
+            same handset) + decision-maker hint when BANT QUALIFIES. Card hides
+            itself if there's nothing to show. */}
+        <div data-lead-section="overview">
+          <LinkedContactsCard
+            leadId={lead.id}
+            leadName={lead.name}
+            phone={lead.phone}
+            altPhone={lead.altPhone}
+            altName={lead.altName}
+            bantStatus={lead.bantStatus}
+          />
+        </div>
+
         <div data-lead-section="overview" className="card p-5">
           <LeadMeetingClient leadId={lead.id} counts={meetingCounts} leadName={lead.name} />
         </div>

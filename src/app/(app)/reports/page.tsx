@@ -332,7 +332,7 @@ export default async function ReportsPage() {
       )}
 
       {/* Primary report navigation — these are the everyday reports */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
         <Link href="/reports/daily" className="card p-4 border-l-4 border-emerald-500 hover:shadow-md transition">
           <div className="text-2xl">📅</div>
           <div className="font-bold text-sm mt-1">Daily Report</div>
@@ -354,6 +354,19 @@ export default async function ReportsPage() {
           <div className="text-2xl">🎯</div>
           <div className="font-bold text-sm mt-1">Lead Sources</div>
           <div className="text-[10px] text-gray-500 mt-0.5">Per-source funnel, conversion %, first-call latency</div>
+        </Link>
+        {/* Cooling Leads — HOT leads that just downgraded to WARM/COLD. Save-the-deal list. */}
+        <Link href="/reports/cooling" className="card p-4 border-l-4 border-rose-500 hover:shadow-md transition">
+          <div className="text-2xl">🌡</div>
+          <div className="font-bold text-sm mt-1">Cooling leads</div>
+          <div className="text-[10px] text-gray-500 mt-0.5">HOT → WARM/COLD in the last 14 days — re-engage now</div>
+        </Link>
+        {/* Team comparison — Dubai vs India head-to-head over a chosen window.
+            Admin/Manager only (RBAC enforced on the destination page). */}
+        <Link href="/reports/team-comparison" className="card p-4 border-l-4 border-indigo-500 hover:shadow-md transition">
+          <div className="text-2xl">🏆</div>
+          <div className="font-bold text-sm mt-1">Team comparison</div>
+          <div className="text-[10px] text-gray-500 mt-0.5">Dubai vs India side-by-side · weighted winner</div>
         </Link>
         <a href="#pipeline-overview" className="card p-4 border-l-4 border-[#c9a24b] hover:shadow-md transition active:bg-amber-50 block">
           <div className="text-2xl">📈</div>

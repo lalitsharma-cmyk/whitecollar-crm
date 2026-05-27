@@ -37,6 +37,8 @@ on:
     - cron: "0 3 * * *"
     # Daily DB backup — daily at 22:00 UTC = 03:30 IST (off-hours for both teams)
     - cron: "0 22 * * *"
+    # Weekly leaderboard digest — Sunday 14:00 UTC = Sunday 19:30 IST / 18:00 GST
+    - cron: "0 14 * * 0"
   # Allow manual trigger from the Actions tab for debugging
   workflow_dispatch:
 
@@ -75,6 +77,18 @@ jobs:
             -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
             https://crm.whitecollarrealty.com/api/cron/rescore-all \
             || echo "::warning::rescore-all cron failed"
+
+  weekly_digest:
+    # Sunday-night leaderboard email to admins + managers.
+    if: github.event.schedule == '0 14 * * 0' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send weekly leaderboard digest
+        run: |
+          curl -sf --max-time 120 \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            https://crm.whitecollarrealty.com/api/cron/weekly-digest \
+            || echo "::warning::weekly-digest cron failed"
 
   db_backup:
     # Daily JSON snapshot — uploads to Actions artifacts (free, 90d retention,
