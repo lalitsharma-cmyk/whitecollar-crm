@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { LeadStatus, AIScore, Prisma } from "@prisma/client";
+import { LeadStatus, AIScore, ActivityType, Prisma } from "@prisma/client";
 import KanbanBoard from "@/components/KanbanBoard";
 import Link from "next/link";
 
@@ -17,6 +17,16 @@ const stages = [
   { key: LeadStatus.BOOKING_DONE, label: "Booking Done" },
 ];
 
+// §9.7 Momentum/risk thresholds — calibrated to the team's rhythm.
+//   Healthy   ≤ 3 days in stage
+//   Slowing   ≤ 7 days
+//   Stuck     > 7 days
+// "Untouched since entering stage" is a separate red flag — if a lead has
+// been in NEGOTIATION for 4 days but the agent has zero activity, that's
+// worse than a lead that's been in NEGOTIATION for 6 days with daily calls.
+const DAYS_HEALTHY = 3;
+const DAYS_STUCK   = 7;
+
 export default async function PipelinePage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const sp = await searchParams;
   const where: Prisma.LeadWhereInput = { status: { in: stages.map(s => s.key) } };
@@ -29,14 +39,61 @@ export default async function PipelinePage({ searchParams }: { searchParams: Pro
     prisma.lead.findMany({
       where,
       orderBy: { updatedAt: "desc" },
-      include: { owner: true, interestedUnits: { include: { unit: { include: { project: true } } }, take: 1 } },
+      include: {
+        owner: true,
+        interestedUnits: { include: { unit: { include: { project: true } } }, take: 1 },
+        // Pull the most recent STATUS_CHANGE so we know when this lead
+        // entered its current stage. Falls back to lead.updatedAt if there's
+        // never been a change (eg. brand-new lead in NEW). One row per lead
+        // is plenty — newest first via the relation's natural orderBy.
+        activities: {
+          where: { type: ActivityType.STATUS_CHANGE },
+          orderBy: { createdAt: "desc" },
+          take: 1,
+          select: { createdAt: true, title: true },
+        },
+      },
     }),
     prisma.user.findMany({ where: { active: true, role: { in: ["AGENT", "MANAGER"] } }, orderBy: { name: "asc" } }),
   ]);
 
+  const now = Date.now();
   const leadsByStage: Record<string, any[]> = {};
   for (const s of stages) leadsByStage[s.key] = [];
+
   for (const l of leads) {
+    // Time in current stage — prefer the most recent STATUS_CHANGE timestamp,
+    // fall back to createdAt (a brand-new NEW lead that's never moved).
+    const enteredStageAt = l.activities[0]?.createdAt ?? l.createdAt;
+    const daysInStage = Math.max(0, Math.floor((now - enteredStageAt.getTime()) / 86_400_000));
+
+    // Momentum bucket — used for both color + sorting later if we wanted.
+    const momentum: "healthy" | "slowing" | "stuck" =
+      daysInStage <= DAYS_HEALTHY ? "healthy" :
+      daysInStage <= DAYS_STUCK   ? "slowing" : "stuck";
+
+    // Risk flags — small array of human-readable warnings, surfaced as tiny
+    // chips on the card. Card is "at risk" if any of these are non-empty.
+    const risks: string[] = [];
+    if (momentum === "stuck") {
+      risks.push(`Stuck ${daysInStage}d in ${l.status.replaceAll("_", " ")}`);
+    }
+    // Untouched since entering this stage — even worse than the above.
+    if (
+      (l.status === LeadStatus.NEGOTIATION || l.status === LeadStatus.SITE_VISIT || l.status === LeadStatus.QUALIFIED) &&
+      (!l.lastTouchedAt || l.lastTouchedAt < enteredStageAt)
+    ) {
+      risks.push("No activity since stage change");
+    }
+    // Hot + stuck = highest priority red flag
+    if (l.aiScore === AIScore.HOT && momentum === "stuck") {
+      risks.push("HOT lead going cold");
+    }
+    // Manager flag still pending = visible risk
+    if (l.needsManagerReview) {
+      risks.push("Awaiting manager review");
+    }
+
     const card = {
       id: l.id, name: l.name,
       configuration: l.configuration,
@@ -45,8 +102,22 @@ export default async function PipelinePage({ searchParams }: { searchParams: Pro
       team: l.forwardedTeam,
       aiScore: l.aiScore, aiScoreValue: l.aiScoreValue,
       projectName: l.interestedUnits[0]?.unit.project.name ?? null,
+      // §9.7 additions
+      daysInStage,
+      momentum,
+      risks,
     };
     if (leadsByStage[l.status]) leadsByStage[l.status].push(card);
+  }
+
+  // Sort each stage so risky/stuck cards float to the TOP — the spec is clear
+  // that the pipeline should be action-first, not creation-date-first.
+  const riskScore = (c: any) =>
+    (c.risks?.length ?? 0) * 100 +
+    (c.momentum === "stuck" ? 50 : c.momentum === "slowing" ? 20 : 0) +
+    Math.min(c.daysInStage ?? 0, 30);
+  for (const key of Object.keys(leadsByStage)) {
+    leadsByStage[key].sort((a, b) => riskScore(b) - riskScore(a));
   }
 
   return (
@@ -55,7 +126,7 @@ export default async function PipelinePage({ searchParams }: { searchParams: Pro
         <div>
           <h1 className="text-xl sm:text-2xl font-bold">Sales Pipeline</h1>
           <p className="text-xs sm:text-sm text-gray-500">
-            {leads.length} leads · <span className="hidden sm:inline">drag a card to change its stage</span><span className="sm:hidden">tap a lead to open it (use desktop to drag)</span>
+            {leads.length} leads · <span className="hidden sm:inline">drag a card to change its stage — you'll be asked what changed</span><span className="sm:hidden">tap a lead to open it (use desktop to drag)</span>
           </p>
         </div>
         <div className="seg self-start">
