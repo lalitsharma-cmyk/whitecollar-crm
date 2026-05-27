@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { CallDirection, CallOutcome, ActivityType, ActivityStatus } from "@prisma/client";
 import { loadOwnedLead } from "@/lib/leadScope";
 import { rescoreLead } from "@/lib/leadRescorer";
+import { awardXp, bumpStreak, type AwardResult } from "@/lib/gamification.server";
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -85,5 +86,39 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   // working AI provider is added (or billing is enabled on Google Cloud).
   // The generateConversationSummary helper still lives in src/lib/ai.ts.
 
-  return NextResponse.json({ ok: true });
+  // ── Gamification: award XP + bump streaks.
+  // Connected/Interested also count as a connected-call bonus. Order matters:
+  // we await the FIRST award so we can return its result for the client toast,
+  // then fire-and-forget the bonus. Streaks update in the background.
+  let awarded: AwardResult | null = null;
+  try {
+    awarded = await awardXp(me.id, "CALL_LOGGED");
+    if (outcome === CallOutcome.CONNECTED || outcome === CallOutcome.INTERESTED) {
+      // For toast UX, prefer the larger CALL_CONNECTED reward as the headline
+      // award. Both still credit XP — the agent sees the bigger number.
+      const connected = await awardXp(me.id, "CALL_CONNECTED");
+      if (connected) awarded = connected;
+    }
+    bumpStreak(me.id, "daily").catch(() => {});
+    // Cold-call streak only ticks if THIS call was on a cold-data lead.
+    if (lead.phone) {
+      const isCold = await prisma.lead.findUnique({ where: { id }, select: { isColdCall: true } });
+      if (isCold?.isColdCall) bumpStreak(me.id, "coldCall").catch(() => {});
+    }
+  } catch {
+    // Never let gamification break the call save.
+  }
+
+  return NextResponse.json({
+    ok: true,
+    awardedXp: awarded
+      ? {
+          amount: awarded.awarded,
+          label: awarded.label,
+          newXp: awarded.newXp,
+          leveledUp: awarded.leveledUp,
+          newLevel: awarded.leveledUp ? awarded.newLevel : null,
+        }
+      : null,
+  });
 }

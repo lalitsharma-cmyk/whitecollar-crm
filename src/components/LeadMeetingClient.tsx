@@ -3,6 +3,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { fromISTLocalInput } from "@/lib/datetime";
 import DateTimeIST from "./DateTimeIST";
+import { showXpToast } from "./XPToast";
 
 interface Counts {
   officeMeetings: { count: number; lastAt: Date | null };
@@ -54,6 +55,14 @@ export default function LeadMeetingClient({ leadId, counts }: { leadId: string; 
       const j = await r.json();
       if (!r.ok) { setErr(j.error ?? "Failed"); return; }
       setOpen(false); setWhen(""); setDuration(""); setRemarks("");
+      if (j.awardedXp) {
+        showXpToast({
+          amount: j.awardedXp.amount,
+          label: j.awardedXp.label,
+          leveledUp: !!j.awardedXp.leveledUp,
+          newLevel: j.awardedXp.newLevel,
+        });
+      }
       router.refresh();
     } finally { setBusy(false); }
   }

@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { TrendingUp } from "lucide-react";
+import { showXpToast } from "./XPToast";
 
 interface Props { leadId: string; leadName: string; }
 
@@ -20,10 +21,18 @@ export default function ColdDataPromoteButton({ leadId, leadName }: Props) {
     setBusy(true); setErr(null);
     try {
       const r = await fetch(`/api/leads/${leadId}/promote-cold`, { method: "POST" });
+      const j = await r.json().catch(() => ({}));
       if (!r.ok) {
-        const j = await r.json().catch(() => ({}));
         setErr(j.error ?? `Failed (${r.status})`);
         return;
+      }
+      if (j.awardedXp) {
+        showXpToast({
+          amount: j.awardedXp.amount,
+          label: j.awardedXp.label,
+          leveledUp: !!j.awardedXp.leveledUp,
+          newLevel: j.awardedXp.newLevel,
+        });
       }
       router.refresh();
     } catch (e) {

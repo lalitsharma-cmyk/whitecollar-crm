@@ -12,6 +12,7 @@ import { prisma } from "@/lib/prisma";
 import { ActivityType, ActivityStatus } from "@prisma/client";
 import { loadOwnedLead } from "@/lib/leadScope";
 import { rescoreLead } from "@/lib/leadRescorer";
+import { awardXp, type AwardResult, type XpReason } from "@/lib/gamification.server";
 
 type VisitType = "OFFICE_MEETING" | "VIRTUAL_MEETING" | "SITE_VISIT";
 
@@ -141,7 +142,30 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   // Fire-and-forget behavioural re-score now that the visit is DONE
   // (rescorer awards +15 for any completed SITE_VISIT).
   rescoreLead(id).catch(() => {});
-  return NextResponse.json({ ok: true });
+
+  // ── Gamification: a no-show site visit doesn't award the full tier —
+  // the agent did the legwork, but it's a meeting-tier achievement.
+  let awarded: AwardResult | null = null;
+  if (!isNoShow) {
+    let reason: XpReason | null = null;
+    if (act.type === "SITE_VISIT") reason = "SITE_VISIT_COMPLETED";
+    else if (act.type === "OFFICE_MEETING" || act.type === "VIRTUAL_MEETING") reason = "MEETING_BOOKED";
+    if (reason) {
+      try { awarded = await awardXp(me.id, reason); } catch { /* never block */ }
+    }
+  }
+  return NextResponse.json({
+    ok: true,
+    awardedXp: awarded
+      ? {
+          amount: awarded.awarded,
+          label: awarded.label,
+          newXp: awarded.newXp,
+          leveledUp: awarded.leveledUp,
+          newLevel: awarded.leveledUp ? awarded.newLevel : null,
+        }
+      : null,
+  });
 }
 
 function numOrNull(v: unknown): number | null {

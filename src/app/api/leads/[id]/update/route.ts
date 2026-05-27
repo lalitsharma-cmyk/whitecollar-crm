@@ -5,6 +5,7 @@ import { loadOwnedLead } from "@/lib/leadScope";
 import { rescoreLead } from "@/lib/leadRescorer";
 import { fireWorkflowTrigger } from "@/lib/workflowEngine";
 import { getTestingModeEnabled } from "@/lib/settings";
+import { awardXp, type AwardResult, type XpReason } from "@/lib/gamification.server";
 
 // Inline-edit endpoint — accepts one or more field updates and logs an Activity
 // for status/stage changes. Only allows whitelisted fields.
@@ -63,6 +64,11 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   updates.lastTouchedAt = new Date();
   // If followupDate moved, re-arm the 10-min-before reminder so the new time gets pushed.
   if ("followupDate" in updates) updates.followupReminderSentAt = null;
+  // Capture the BEFORE-status so a status change to NEGOTIATION/BOOKING_DONE/WON
+  // only awards XP on the actual transition, not on a no-op re-save.
+  const prevStatus = "status" in updates
+    ? (await prisma.lead.findUnique({ where: { id }, select: { status: true } }))?.status ?? null
+    : null;
   await prisma.lead.update({ where: { id }, data: updates as never });
 
   if (activityNotes.length) {
@@ -96,5 +102,29 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     }
   }
 
-  return NextResponse.json({ ok: true, updated: Object.keys(updates).length - 1 });
+  // ── Gamification: status-change XP on real transitions only.
+  // Mapping: NEGOTIATION → 250, BOOKING_DONE → 500, WON → 500 (same tier).
+  let awarded: AwardResult | null = null;
+  if ("status" in updates && updates.status !== prevStatus) {
+    let reason: XpReason | null = null;
+    if (updates.status === LeadStatus.NEGOTIATION) reason = "NEGOTIATION_STARTED";
+    else if (updates.status === LeadStatus.BOOKING_DONE || updates.status === LeadStatus.WON) reason = "BOOKING_DONE";
+    if (reason) {
+      try { awarded = await awardXp(me.id, reason); } catch { /* never block save */ }
+    }
+  }
+
+  return NextResponse.json({
+    ok: true,
+    updated: Object.keys(updates).length - 1,
+    awardedXp: awarded
+      ? {
+          amount: awarded.awarded,
+          label: awarded.label,
+          newXp: awarded.newXp,
+          leveledUp: awarded.leveledUp,
+          newLevel: awarded.leveledUp ? awarded.newLevel : null,
+        }
+      : null,
+  });
 }

@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { ActivityType, ActivityStatus } from "@prisma/client";
 import { loadOwnedLead } from "@/lib/leadScope";
+import { awardXp, bumpStreak, type AwardResult, type XpReason } from "@/lib/gamification.server";
 
 type MeetingType = "OFFICE_MEETING" | "VIRTUAL_MEETING" | "SITE_VISIT";
 
@@ -81,5 +82,32 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   if (type === "OFFICE_MEETING" || type === "VIRTUAL_MEETING") leadUpdate.meetingDate = when;
   await prisma.lead.update({ where: { id }, data: leadUpdate });
 
-  return NextResponse.json({ ok: true, rescheduled: !!(existing && isFuture) });
+  // ── Gamification: meetings = booked (planned for the future), site visits
+  // happening NOW (or in the past, i.e. being logged after the fact) award
+  // the bigger SITE_VISIT_COMPLETED tier. A rescheduled meeting doesn't
+  // re-award XP — we only credit the original booking.
+  let awarded: AwardResult | null = null;
+  if (!existing) {
+    let reason: XpReason | null = null;
+    if (type === "SITE_VISIT" && !isFuture) reason = "SITE_VISIT_COMPLETED";
+    else if (type === "SITE_VISIT" || type === "OFFICE_MEETING" || type === "VIRTUAL_MEETING") reason = "MEETING_BOOKED";
+    if (reason) {
+      try { awarded = await awardXp(me.id, reason); } catch { /* never block save */ }
+    }
+    bumpStreak(me.id, "followup").catch(() => {});
+  }
+
+  return NextResponse.json({
+    ok: true,
+    rescheduled: !!(existing && isFuture),
+    awardedXp: awarded
+      ? {
+          amount: awarded.awarded,
+          label: awarded.label,
+          newXp: awarded.newXp,
+          leveledUp: awarded.leveledUp,
+          newLevel: awarded.leveledUp ? awarded.newLevel : null,
+        }
+      : null,
+  });
 }

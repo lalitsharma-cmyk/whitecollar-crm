@@ -2,7 +2,9 @@ import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import ProfilePhotoEditor from "@/components/ProfilePhotoEditor";
 import ProfilePasswordChange from "@/components/ProfilePasswordChange";
+import XPBar from "@/components/XPBar";
 import { format } from "date-fns";
+import { BADGES, parseBadgeIds, levelForXp } from "@/lib/gamification";
 
 export const dynamic = "force-dynamic";
 
@@ -17,11 +19,25 @@ export default async function ProfilePage() {
     prisma.auditLog.findFirst({ where: { userId: me.id, action: "auth.login.success" }, orderBy: { createdAt: "desc" }, skip: 1 }),
   ]);
 
+  // Gamification snapshot — parse the comma-string badge column once.
+  const earnedIds = parseBadgeIds(me.badges);
+  const earnedSet = new Set<string>(earnedIds);
+  const levelInfo = levelForXp(me.xp ?? 0);
+
   return (
     <>
       <div>
         <h1 className="text-xl sm:text-2xl font-bold">👤 My Profile</h1>
         <p className="text-xs sm:text-sm text-gray-500">Personal details visible to teammates inside the CRM.</p>
+      </div>
+
+      {/* ── Gamification: level + XP progress, then streaks row ────────── */}
+      <XPBar xp={me.xp ?? 0} badgeIds={earnedIds} />
+
+      <div className="grid grid-cols-3 gap-2 sm:gap-3">
+        <StreakTile emoji="🔥" label="Daily streak"     value={me.dailyStreak ?? 0} />
+        <StreakTile emoji="📅" label="Follow-up streak" value={me.followupStreak ?? 0} />
+        <StreakTile emoji="📞" label="Cold-call streak" value={me.coldCallStreak ?? 0} />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
@@ -68,6 +84,37 @@ export default async function ProfilePage() {
         </div>
       </div>
 
+      {/* Achievements — full grid of badges, locked ones dimmed with tooltip. */}
+      <div>
+        <div className="text-xs font-bold tracking-widest text-gray-500 mb-2">ACHIEVEMENTS</div>
+        <div className="card p-4">
+          <div className="grid grid-cols-3 sm:grid-cols-5 gap-2 sm:gap-3">
+            {BADGES.map((b) => {
+              const earned = earnedSet.has(b.id);
+              return (
+                <div
+                  key={b.id}
+                  title={`${b.name} — ${b.desc}${earned ? "" : " (locked)"}`}
+                  className={`flex flex-col items-center text-center gap-1 p-2 rounded-lg border transition ${
+                    earned
+                      ? "bg-[#fdf6e3] border-[#e7c97a]"
+                      : "bg-gray-50 border-[#e5e7eb] opacity-50 grayscale"
+                  }`}
+                >
+                  <div className="text-2xl leading-none">{b.emoji}</div>
+                  <div className="text-[10px] font-semibold text-[#0b1a33] leading-tight">{b.name}</div>
+                  <div className="text-[9px] text-gray-500 leading-tight line-clamp-2">{b.desc}</div>
+                </div>
+              );
+            })}
+          </div>
+          <div className="text-[10px] text-gray-500 mt-3">
+            {earnedIds.length} of {BADGES.length} earned · current level{" "}
+            <b className="text-[#0b1a33]">{levelInfo.level.name}</b>
+          </div>
+        </div>
+      </div>
+
       {/* Password change */}
       <div className="card p-5">
         <div className="font-semibold mb-3">🔒 Change password</div>
@@ -82,6 +129,16 @@ function Row({ label, value, chip }: { label: string; value: string; chip?: bool
     <div className="flex items-baseline justify-between gap-3 text-sm">
       <div className="text-xs text-gray-500 font-semibold uppercase tracking-wide">{label}</div>
       {chip ? <span className="chip chip-warm">{value}</span> : <div className="text-right break-all">{value}</div>}
+    </div>
+  );
+}
+
+function StreakTile({ emoji, label, value }: { emoji: string; label: string; value: number }) {
+  return (
+    <div className="card p-3 text-center">
+      <div className="text-xl sm:text-2xl">{emoji}</div>
+      <div className="text-lg sm:text-2xl font-bold text-[#0b1a33] mt-0.5">{value}</div>
+      <div className="text-[10px] uppercase tracking-widest text-gray-500 mt-1">{label}</div>
     </div>
   );
 }
