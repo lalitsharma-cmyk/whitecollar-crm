@@ -215,8 +215,15 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   // What landed since yesterday + what's on the agent's plate today. Mirrors
   // the morning-reminder cron notification but always visible on dashboard so
   // an agent logging in at 10am sees their day at a glance.
+  //
+  // §12.4 Daily Opening Experience adds:
+  //   • Today's mission — the SINGLE most-impactful lead for the agent right
+  //     now (priority: hottest untouched > biggest closeable > oldest overdue).
+  //   • Time-aware greeting (good morning / afternoon / evening in IST).
+  //   • Streak nudge so the daily login + follow-up streak feel rewarded.
   const since24h = new Date(Date.now() - 24 * 3600_000);
-  const [myNewOvernight, myFollowupsToday, myCallbacksToday] = await Promise.all([
+  const sixHoursAgoIst = new Date(Date.now() - 6 * 3600_000);
+  const [myNewOvernight, myFollowupsToday, myCallbacksToday, todaysMission] = await Promise.all([
     prisma.lead.count({ where: { ownerId: me.id, createdAt: { gte: since24h } } }),
     prisma.activity.count({
       where: {
@@ -232,9 +239,69 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         status: { notIn: ["WON", "LOST"] },
       },
     }),
+    // Today's mission — single highest-impact lead for the agent. We pick
+    // by status priority via three sequential cheap finds, taking the first
+    // that matches: NEGOTIATION first (close-able money on the table), then
+    // hot untouched, then oldest overdue. Each is a one-row .findFirst with
+    // an index hit, so cumulative cost is negligible.
+    (async () => {
+      const candidates = await Promise.all([
+        prisma.lead.findFirst({
+          where: { ownerId: me.id, status: LeadStatus.NEGOTIATION, eoiStage: { not: null } },
+          orderBy: { lastTouchedAt: "desc" },
+          select: { id: true, name: true, status: true, budgetMin: true, budgetCurrency: true, lastTouchedAt: true, eoiStage: true },
+        }),
+        prisma.lead.findFirst({
+          where: {
+            ownerId: me.id,
+            aiScore: AIScore.HOT,
+            status: { notIn: [LeadStatus.WON, LeadStatus.LOST] },
+            OR: [{ lastTouchedAt: { lt: sixHoursAgoIst } }, { lastTouchedAt: null }],
+          },
+          orderBy: { createdAt: "desc" },
+          select: { id: true, name: true, status: true, budgetMin: true, budgetCurrency: true, lastTouchedAt: true, eoiStage: true },
+        }),
+        prisma.lead.findFirst({
+          where: {
+            ownerId: me.id,
+            followupDate: { lt: todayStart },
+            status: { notIn: [LeadStatus.WON, LeadStatus.LOST] },
+          },
+          orderBy: { followupDate: "asc" },
+          select: { id: true, name: true, status: true, budgetMin: true, budgetCurrency: true, lastTouchedAt: true, eoiStage: true },
+        }),
+      ]);
+      // Tag each candidate with the reason so the UI can show "Why this?"
+      const reasons = ["close_eoi", "hot_untouched", "oldest_overdue"] as const;
+      for (let i = 0; i < candidates.length; i++) {
+        if (candidates[i]) return { ...candidates[i]!, reason: reasons[i] };
+      }
+      return null;
+    })(),
   ]);
   const dailyQuote = quoteOfTheDay();
   const hasMorningWork = myNewOvernight > 0 || myFollowupsToday > 0 || myCallbacksToday > 0;
+
+  // Time-aware greeting — uses IST hour to pick morning/afternoon/evening.
+  // Worth noting: server runs in UTC on Vercel, so we convert explicitly
+  // rather than relying on local time on the box.
+  const istNow = new Date(Date.now() + 5.5 * 3600_000);
+  const istHour = istNow.getUTCHours();
+  const greeting =
+    istHour < 12 ? "Good morning" :
+    istHour < 17 ? "Good afternoon" :
+    istHour < 21 ? "Good evening" : "Working late";
+  const energyEmoji =
+    istHour < 12 ? "☀️" :
+    istHour < 17 ? "⚡" :
+    istHour < 21 ? "🌇" : "🌙";
+
+  // Streak nudge — surface a quick callout if the agent has a meaningful streak.
+  // Cap displayed values at 999 so the chip doesn't blow out on long-running
+  // accounts. lastStreakDay==today means they've already touched the streak
+  // today (no warning needed); blank/old means they're about to break it.
+  const dailyStreak = me.dailyStreak ?? 0;
+  const followupStreak = me.followupStreak ?? 0;
 
   return (
     <>
@@ -330,15 +397,63 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         <AttendanceBadge today={myAttendanceToday ? { status: myAttendanceToday.status, markedAt: myAttendanceToday.markedAt.toISOString() } : null} />
       </div>
 
-      {/* Morning briefing — per-agent "your day at a glance". Always visible (not
-          just on a single cron tick) so agents logging in at 10am or any time
-          after can see what landed overnight + what they have today. */}
-      <div className="card p-4 border-l-4 border-[#c9a24b] bg-amber-50/30">
+      {/* §12.4 Daily Opening Experience
+          Premium morning greeting + single "today's mission" CTA + streak
+          nudge + the existing chips + the daily quote. Sits above the Hero
+          strip so logging in feels like a sales pep-talk, not a wall of
+          numbers. Always visible (not just on cron tick). */}
+      <div className="card p-4 border-l-4 border-[#c9a24b] bg-gradient-to-br from-amber-50/60 to-white">
         <div className="flex items-start justify-between gap-3 flex-wrap">
           <div className="flex-1 min-w-0">
-            <div className="text-xs tracking-widest text-gray-500 uppercase">🌅 Your day, {me.name.split(" ")[0]}</div>
-            {hasMorningWork ? (
-              <div className="flex flex-wrap gap-2 mt-2 text-sm">
+            <div className="flex items-baseline gap-2 flex-wrap">
+              <h2 className="text-base sm:text-lg font-bold text-[#0b1a33]">
+                {energyEmoji} {greeting}, {me.name.split(" ")[0]}
+              </h2>
+              {dailyStreak >= 3 && (
+                <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-300">
+                  🔥 {dailyStreak}-day streak
+                </span>
+              )}
+              {followupStreak >= 3 && (
+                <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300">
+                  🎯 {followupStreak}-day follow-up streak
+                </span>
+              )}
+            </div>
+
+            {/* TODAY'S MISSION — single highest-impact card, the spec's flagship
+                idea for the daily opener. Picks NEGOTIATION-with-EOI first,
+                then hot-untouched, then oldest overdue. */}
+            {todaysMission ? (
+              <Link
+                href={`/leads/${todaysMission.id}`}
+                className="block mt-3 rounded-xl border-2 border-[#c9a24b] bg-white px-4 py-3 hover:shadow-lg transition group"
+              >
+                <div className="text-[10px] uppercase tracking-widest text-[#c9a24b] font-bold">
+                  🎯 Today's mission
+                </div>
+                <div className="mt-1 text-sm sm:text-base font-bold text-[#0b1a33] group-hover:underline">
+                  {todaysMission.reason === "close_eoi" && "Close this EOI: "}
+                  {todaysMission.reason === "hot_untouched" && "Call this hot lead NOW: "}
+                  {todaysMission.reason === "oldest_overdue" && "Win back: "}
+                  {todaysMission.name}
+                </div>
+                <div className="text-[11px] text-gray-600 mt-0.5">
+                  {todaysMission.reason === "close_eoi" && `In NEGOTIATION · EOI stage: ${todaysMission.eoiStage ?? "—"} · push for booking`}
+                  {todaysMission.reason === "hot_untouched" && `HOT score · ${todaysMission.lastTouchedAt ? `last touched ${formatDistanceToNow(todaysMission.lastTouchedAt, { addSuffix: true })}` : "never touched"} — every hour costs you`}
+                  {todaysMission.reason === "oldest_overdue" && `Follow-up overdue — win back trust by reaching out today`}
+                  {todaysMission.budgetMin && ` · ${fmtMoney(todaysMission.budgetMin, todaysMission.budgetCurrency === "INR" ? "INR" : "AED")}`}
+                </div>
+              </Link>
+            ) : hasMorningWork ? null : (
+              <div className="mt-3 rounded-xl border-2 border-dashed border-gray-200 px-4 py-3 text-sm text-gray-600">
+                ✨ Inbox zero — no urgent missions right now. Great time to
+                revive a cold lead or push a stalled deal forward.
+              </div>
+            )}
+
+            {hasMorningWork && (
+              <div className="flex flex-wrap gap-2 mt-3 text-sm">
                 {myNewOvernight > 0 && (
                   <Link href="/leads?when=24h" className="px-3 py-1.5 rounded-full bg-emerald-100 text-emerald-900 border border-emerald-300 font-semibold hover:bg-emerald-200 min-h-9 flex items-center gap-1">
                     🆕 {myNewOvernight} new lead{myNewOvernight === 1 ? "" : "s"} since yesterday
@@ -355,9 +470,8 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
                   </Link>
                 )}
               </div>
-            ) : (
-              <div className="text-sm text-gray-600 mt-1.5">All clear — no new leads or callbacks today.</div>
             )}
+
             <blockquote className="text-[12px] text-gray-700 italic mt-3 border-l-2 border-[#c9a24b] pl-3 leading-relaxed">
               💡 {dailyQuote.text}
               <div className="text-[10px] text-gray-500 not-italic mt-0.5">— {dailyQuote.author}</div>
