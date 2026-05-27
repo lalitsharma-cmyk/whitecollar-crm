@@ -167,6 +167,35 @@ export default async function SettingsPage() {
         )}
       </div>
 
+      {/* Onboarding tour reset — clears the localStorage flag set by
+          OnboardingTour so the 4-step welcome tour shows again on next load. */}
+      <div className="card p-5 max-w-2xl">
+        <div className="font-semibold flex items-center gap-2">🔁 Onboarding tour</div>
+        <p className="text-xs text-gray-500 mt-1">
+          See the 4-step welcome tour again next time you load any page.
+        </p>
+        <button
+          type="button"
+          data-restart-tour
+          className="mt-3 px-3 py-1.5 text-xs font-medium bg-[#c9a24b] hover:bg-[#b8902f] text-[#0b1a33] rounded"
+        >
+          🔁 Restart onboarding tour
+        </button>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){
+              var btn = document.querySelector('[data-restart-tour]');
+              if (!btn || btn.dataset.bound) return;
+              btn.dataset.bound = '1';
+              btn.addEventListener('click', function(){
+                try { localStorage.removeItem('wcr-tour-done-v1'); } catch(e) {}
+                location.reload();
+              });
+            })();`,
+          }}
+        />
+      </div>
+
       {/* Read-only info cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         <div className="card p-5"><div className="font-semibold">Company</div><div className="text-sm text-gray-500 mt-1">White Collar Realty · crm.whitecollarrealty.com</div></div>

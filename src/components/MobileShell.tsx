@@ -5,7 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import {
   LayoutDashboard, Users, KanbanSquare, Sparkles, Menu, X, Bell,
   Building2, CalendarDays, PhoneCall, BarChart3, Upload, UserCog, Settings as SettingsIcon, LogOut,
-  ShieldCheck, ChevronLeft, Heart, Gem, Trophy, HelpCircle,
+  ShieldCheck, ChevronLeft, Heart, Gem, Trophy, HelpCircle, Activity, Copy,
 } from "lucide-react";
 import NotifBell from "./NotifBell";
 import WhatsAppPanel from "./WhatsAppPanel";
@@ -16,6 +16,7 @@ import XPToastHost from "./XPToast";
 import DealCelebrationHost from "./DealCelebration";
 import QuickSearch from "./QuickSearch";
 import KeyboardShortcutsHelp from "./KeyboardShortcutsHelp";
+import OnboardingTour from "./OnboardingTour";
 import { useBodyScrollLock } from "@/hooks/useBodyScrollLock";
 
 const fullNav = [
@@ -50,6 +51,8 @@ const fullNav = [
     { href: "/admin/audit",       label: "Audit Log",     Icon: ShieldCheck,  tag: undefined as string | undefined },
     { href: "/admin/targets",     label: "Daily Targets", Icon: Sparkles,     tag: undefined as string | undefined },
     { href: "/admin/team-mood",   label: "Team Mood",     Icon: Sparkles,     tag: undefined as string | undefined },
+    { href: "/admin/duplicates",  label: "🔁 Duplicates", Icon: Copy,         tag: undefined as string | undefined },
+    { href: "/admin/health",      label: "💚 System health", Icon: Activity,  tag: undefined as string | undefined },
   ]},
 ];
 
@@ -301,6 +304,10 @@ export default function MobileShell({ children, user }: Props) {
           the big one). Mounted alongside XPToastHost so any client component
           can fire showCelebration() from anywhere. */}
       <DealCelebrationHost />
+      {/* First-run 4-step onboarding tour. Checks a localStorage flag so it
+          only ever shows once per device; can be re-triggered from
+          /settings → "Restart onboarding tour". */}
+      <OnboardingTour />
     </div>
   );
 }

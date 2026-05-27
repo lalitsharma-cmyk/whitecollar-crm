@@ -537,6 +537,24 @@ export default function WorkflowBuilderPanel({ workflows, templates }: PanelProp
   const [starterSeed, setStarterSeed] = useState<WorkflowFormSeed | null>(null);
   const [showStarters, setShowStarters] = useState(true);
   const [testingId, setTestingId] = useState<string | null>(null);
+  const [seeding, setSeeding] = useState(false);
+
+  async function seedAll() {
+    if (!confirm("Create all 9 starter workflows? Existing same-named workflows will be skipped.")) return;
+    setSeeding(true);
+    try {
+      const r = await fetch("/api/admin/workflows/seed", { method: "POST" });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        alert(`Seed failed: ${j.error ?? `HTTP ${r.status}`}`);
+        return;
+      }
+      alert(`Created ${j.created ?? 0}, skipped ${j.skipped ?? 0}`);
+      router.refresh();
+    } finally {
+      setSeeding(false);
+    }
+  }
 
   function useStarter(t: WorkflowTemplate) {
     setStarterSeed(templateToSeed(t));
@@ -642,7 +660,15 @@ export default function WorkflowBuilderPanel({ workflows, templates }: PanelProp
       )}
 
       {!creating && !editingId && (
-        <div className="flex justify-end">
+        <div className="flex justify-end gap-2">
+          <button
+            onClick={seedAll}
+            disabled={seeding}
+            className="btn btn-ghost text-sm"
+            title="Bulk-create every starter template that isn't already in the list"
+          >
+            🌱 {seeding ? "Seeding…" : "Seed starter workflows"}
+          </button>
           <button onClick={() => { setStarterSeed(null); setCreating(true); }} className="btn btn-primary text-sm">
             <Plus className="w-4 h-4" /> New workflow
           </button>
