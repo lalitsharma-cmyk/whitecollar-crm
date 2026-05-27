@@ -24,6 +24,7 @@
 
 import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { startCronRun, finishCronRun } from "@/lib/cronRun";
 
 export const dynamic = "force-dynamic";
 // Hobby plan: 30s ceiling for non-Pro accounts. Stay under it.
@@ -43,6 +44,8 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  const runId = await startCronRun("db-backup");
+  try {
   const url = new URL(req.url);
   const daysParam = url.searchParams.get("days");
   // Default 90d for append-only tables. `days=0` means "no cutoff".
@@ -148,6 +151,13 @@ export async function GET(req: NextRequest) {
 
   const body = JSON.stringify(payload);
 
+  await finishCronRun(runId, "OK", undefined, {
+    userCount: users.length,
+    leadCount: leads.length,
+    activityCount: activities.length,
+    callLogCount: callLogs.length,
+    bytes: body.length,
+  });
   return new NextResponse(body, {
     status: 200,
     headers: {
@@ -156,4 +166,8 @@ export async function GET(req: NextRequest) {
       "cache-control": "no-store",
     },
   });
+  } catch (e) {
+    await finishCronRun(runId, "ERROR", String(e));
+    throw e;
+  }
 }

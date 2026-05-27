@@ -21,6 +21,7 @@ import { prisma } from "@/lib/prisma";
 import { notify } from "@/lib/notify";
 import { ActivityStatus } from "@prisma/client";
 import { fmtISTTime12 } from "@/lib/datetime";
+import { startCronRun, finishCronRun } from "@/lib/cronRun";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -33,6 +34,8 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  const runId = await startCronRun("pre-meeting-reminder");
+  try {
   const now = new Date();
   // 30-min window: [+27.5 min, +32.5 min]  ← catches one 5-min tick
   const meetingFrom = new Date(now.getTime() + 27.5 * MIN);
@@ -115,6 +118,7 @@ export async function GET(req: NextRequest) {
     callbacksNotified++;
   }
 
+  await finishCronRun(runId, "OK", undefined, { meetingsNotified, callbacksNotified });
   return NextResponse.json({
     ok: true,
     now: now.toISOString(),
@@ -125,4 +129,8 @@ export async function GET(req: NextRequest) {
       callback: { from: callbackFrom.toISOString(), to: callbackTo.toISOString() },
     },
   });
+  } catch (e) {
+    await finishCronRun(runId, "ERROR", String(e));
+    throw e;
+  }
 }

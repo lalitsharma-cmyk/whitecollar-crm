@@ -536,6 +536,7 @@ export default function WorkflowBuilderPanel({ workflows, templates }: PanelProp
   const [busyId, setBusyId] = useState<string | null>(null);
   const [starterSeed, setStarterSeed] = useState<WorkflowFormSeed | null>(null);
   const [showStarters, setShowStarters] = useState(true);
+  const [testingId, setTestingId] = useState<string | null>(null);
 
   function useStarter(t: WorkflowTemplate) {
     setStarterSeed(templateToSeed(t));
@@ -719,20 +720,37 @@ export default function WorkflowBuilderPanel({ workflows, templates }: PanelProp
                 {!wf.active && <span className="chip chip-lost text-[10px]">PAUSED</span>}
               </div>
 
-              <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
                 <div className="text-[10px] text-gray-400">
                   {wf.lastRunAt
                     ? `Last run: ${wf.lastRunAt.toLocaleString()}`
                     : "Never run yet"}
                 </div>
-                <Link
-                  href={`/admin/workflows/${wf.id}/runs`}
-                  className="text-[10px] text-gray-500 hover:text-[#c9a24b] hover:underline whitespace-nowrap"
-                  title="View run history"
-                >
-                  🕓 View runs
-                </Link>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setTestingId(testingId === wf.id ? null : wf.id)}
+                    className="text-[10px] text-gray-500 hover:text-[#c9a24b] hover:underline whitespace-nowrap inline-flex items-center gap-0.5"
+                    title="Dry-run this workflow against a specific lead"
+                  >
+                    🧪 Test
+                  </button>
+                  <Link
+                    href={`/admin/workflows/${wf.id}/runs`}
+                    className="text-[10px] text-gray-500 hover:text-[#c9a24b] hover:underline whitespace-nowrap"
+                    title="View run history"
+                  >
+                    🕓 View runs
+                  </Link>
+                </div>
               </div>
+
+              {testingId === wf.id && (
+                <TestFirePanel
+                  workflowId={wf.id}
+                  workflowName={wf.name}
+                  onClose={() => setTestingId(null)}
+                />
+              )}
             </div>
           );
         })}
@@ -744,6 +762,196 @@ export default function WorkflowBuilderPanel({ workflows, templates }: PanelProp
           <p className="text-xs text-gray-500 max-w-md mx-auto">
             Click "+ New workflow" above to build your first IF/THEN automation.
           </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// 🧪 Test fire panel — inline form on a workflow card.
+//
+// Lets an admin pick a lead (via the global /api/quick-search endpoint),
+// choose dry-run vs wet-run, and inspect what every action of THIS workflow
+// would (or did) do against that lead.
+
+interface LeadHit { id: string; name: string; phone: string | null; }
+
+interface TestStep {
+  sequenceOrder: number;
+  action: string;
+  delayMinutes: number;
+  willDo: boolean;
+  reason: string;
+}
+
+interface TestResult {
+  dryRun: boolean;
+  steps?: TestStep[];
+  queued?: Array<{ actionId: string; runAt: string; immediate: boolean }>;
+  dispatched?: { dispatched: number; failed: number };
+  error?: string;
+}
+
+interface TestFirePanelProps {
+  workflowId: string;
+  workflowName: string;
+  onClose: () => void;
+}
+
+function TestFirePanel({ workflowId, workflowName, onClose }: TestFirePanelProps) {
+  const [query, setQuery] = useState("");
+  const [hits, setHits] = useState<LeadHit[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [selected, setSelected] = useState<LeadHit | null>(null);
+  const [dryRun, setDryRun] = useState(true);
+  const [running, setRunning] = useState(false);
+  const [result, setResult] = useState<TestResult | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function search(q: string) {
+    setQuery(q);
+    if (q.trim().length < 2) { setHits([]); return; }
+    setSearching(true);
+    try {
+      const r = await fetch(`/api/quick-search?q=${encodeURIComponent(q.trim())}`);
+      if (r.ok) {
+        const j = await r.json();
+        setHits(Array.isArray(j.leads) ? j.leads : []);
+      }
+    } finally {
+      setSearching(false);
+    }
+  }
+
+  async function runTest() {
+    if (!selected) { setError("Pick a lead first."); return; }
+    setError(null);
+    setResult(null);
+    setRunning(true);
+    try {
+      const r = await fetch(`/api/admin/workflows/${workflowId}/test-fire`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ leadId: selected.id, dryRun }),
+      });
+      const j = (await r.json().catch(() => ({}))) as TestResult;
+      if (!r.ok) {
+        setError(String(j.error ?? `Failed (HTTP ${r.status})`));
+        return;
+      }
+      setResult(j);
+    } finally {
+      setRunning(false);
+    }
+  }
+
+  return (
+    <div className="mt-3 border-t border-dashed border-gray-200 pt-3 space-y-2">
+      <div className="flex items-center justify-between gap-2">
+        <div className="text-[11px] font-semibold text-gray-700">
+          🧪 Test fire: <span className="text-gray-500 font-normal">{workflowName}</span>
+        </div>
+        <button onClick={onClose} className="text-gray-400 hover:text-gray-700" title="Close">
+          <X className="w-3 h-3" />
+        </button>
+      </div>
+
+      {/* Lead picker */}
+      <div className="relative">
+        <input
+          value={selected ? selected.name : query}
+          onChange={(e) => { setSelected(null); search(e.target.value); }}
+          placeholder="Search lead by name / phone / email…"
+          className="w-full border border-gray-300 rounded px-2 py-1 text-xs"
+        />
+        {!selected && query.trim().length >= 2 && (
+          <div className="absolute z-10 left-0 right-0 mt-1 bg-white border border-gray-200 rounded shadow max-h-40 overflow-auto">
+            {searching && <div className="px-2 py-1 text-[11px] text-gray-400">Searching…</div>}
+            {!searching && hits.length === 0 && (
+              <div className="px-2 py-1 text-[11px] text-gray-400">No matches.</div>
+            )}
+            {hits.map((h) => (
+              <button
+                key={h.id}
+                onClick={() => { setSelected(h); setHits([]); }}
+                className="block w-full text-left px-2 py-1 text-[11px] hover:bg-gray-100"
+              >
+                <span className="font-medium">{h.name}</span>
+                {h.phone && <span className="text-gray-500"> · {h.phone}</span>}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <label className="text-[11px] text-gray-600 inline-flex items-center gap-1">
+          <input
+            type="checkbox"
+            checked={dryRun}
+            onChange={(e) => setDryRun(e.target.checked)}
+            className="rounded"
+          />
+          Dry-run (don't actually send / mutate)
+        </label>
+        <div className="flex items-center gap-2">
+          <button onClick={onClose} className="btn btn-ghost text-[11px]" disabled={running}>
+            Close
+          </button>
+          <button
+            onClick={runTest}
+            disabled={running || !selected}
+            className="btn btn-primary text-[11px]"
+          >
+            {running ? "Running…" : "Run test"}
+          </button>
+        </div>
+      </div>
+
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-700 text-[11px] p-1.5 rounded">{error}</div>
+      )}
+
+      {result && result.dryRun && Array.isArray(result.steps) && (
+        <div className="space-y-1">
+          <div className="text-[10px] text-gray-500 uppercase tracking-wide">
+            Dry-run plan ({result.steps.length} step{result.steps.length === 1 ? "" : "s"})
+          </div>
+          {result.steps.length === 0 && (
+            <div className="text-[11px] text-gray-400 italic">No actions on this workflow.</div>
+          )}
+          {result.steps.map((s, i) => (
+            <div
+              key={i}
+              className={`text-[11px] rounded border p-1.5 flex items-start gap-1.5 ${
+                s.willDo ? "bg-emerald-50 border-emerald-200" : "bg-gray-50 border-gray-200"
+              }`}
+            >
+              <span>{s.willDo ? "✅" : "❌"}</span>
+              <div className="flex-1 min-w-0">
+                <div className="font-medium">
+                  {i + 1}. {s.action}
+                  {s.delayMinutes > 0 && (
+                    <span className="text-gray-500 font-normal"> (+{s.delayMinutes} min)</span>
+                  )}
+                </div>
+                <div className="text-gray-600">{s.reason}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {result && !result.dryRun && (
+        <div className="bg-amber-50 border border-amber-200 rounded p-1.5 text-[11px] text-amber-800">
+          ⚠️ Wet-run dispatched.{" "}
+          {result.dispatched
+            ? `${result.dispatched.dispatched} immediate action${
+                result.dispatched.dispatched === 1 ? "" : "s"
+              } executed, ${result.dispatched.failed} failed.`
+            : ""}{" "}
+          Check 🕓 View runs for full details.
         </div>
       )}
     </div>

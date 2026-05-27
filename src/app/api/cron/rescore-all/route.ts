@@ -12,6 +12,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { rescoreLead } from "@/lib/leadRescorer";
 import { LeadStatus } from "@prisma/client";
+import { startCronRun, finishCronRun } from "@/lib/cronRun";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -22,6 +23,8 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  const runId = await startCronRun("rescore-all");
+  try {
   // Process ids only — avoids loading whole rows just to discard them.
   const leads = await prisma.lead.findMany({
     where: { status: { notIn: [LeadStatus.WON, LeadStatus.LOST] } },
@@ -46,6 +49,7 @@ export async function GET(req: NextRequest) {
     }
   }
 
+  await finishCronRun(runId, "OK", undefined, { scanned, changed, belowThreshold, errored });
   return NextResponse.json({
     ok: true,
     scanned,
@@ -53,4 +57,8 @@ export async function GET(req: NextRequest) {
     belowThreshold,
     errored,
   });
+  } catch (e) {
+    await finishCronRun(runId, "ERROR", String(e));
+    throw e;
+  }
 }

@@ -6,6 +6,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { notify, notifyRoles } from "@/lib/notify";
 import { ActivityStatus, AIScore } from "@prisma/client";
+import { startCronRun, finishCronRun } from "@/lib/cronRun";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -26,6 +27,8 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  const runId = await startCronRun("evening-reminder");
+  try {
   const { startUTC, now } = todayWindowIST();
   const agents = await prisma.user.findMany({ where: { active: true, role: { in: ["AGENT", "MANAGER"] } } });
   let notified = 0;
@@ -80,5 +83,10 @@ export async function GET(req: NextRequest) {
     });
   }
 
+  await finishCronRun(runId, "OK", undefined, { agentsNotified: notified });
   return NextResponse.json({ ok: true, agentsNotified: notified, breakdown: missesByAgent });
+  } catch (e) {
+    await finishCronRun(runId, "ERROR", String(e));
+    throw e;
+  }
 }

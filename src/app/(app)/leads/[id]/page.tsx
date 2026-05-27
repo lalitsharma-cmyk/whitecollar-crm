@@ -21,6 +21,7 @@ import SuggestedUnitsCard from "@/components/SuggestedUnitsCard";
 import { bestUnitsForLead } from "@/lib/inventoryMatch";
 import CallHistoryCard from "@/components/CallHistoryCard";
 import BuyingSignalsCard from "@/components/BuyingSignalsCard";
+import NextBestActionCard from "@/components/NextBestActionCard";
 import LeadNotesCard from "@/components/LeadNotesCard";
 import LeadReassignClient from "@/components/LeadReassignClient";
 import RejectLeadClient from "@/components/RejectLeadClient";
@@ -377,6 +378,15 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
                   moved — now rendered standalone on the right rail. */}
             </div>
           </div>
+        </div>
+
+        {/* ⭐ NEXT BEST ACTION — single most important card on the page.
+            Pure rules-based recommendation derived from status, eoiStage,
+            siteVisitDate, last call outcome, and lastTouchedAt. Renders first
+            (immediately after the header) so agents see THE action to take
+            before any other context. No AI — synchronous, server-friendly. */}
+        <div data-lead-section="overview">
+          <NextBestActionCard lead={lead} />
         </div>
 
         {/* REMARKS — full conversation history from import sheet.

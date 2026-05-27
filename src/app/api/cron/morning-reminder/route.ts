@@ -9,6 +9,7 @@ import { ActivityStatus, AIScore } from "@prisma/client";
 import { syncProjectsFromMarketingSite } from "@/lib/syncProjects";
 import { sendReportToManagers, windowsForToday } from "@/lib/reports";
 import { quoteOneLine } from "@/lib/salesQuotes";
+import { startCronRun, finishCronRun } from "@/lib/cronRun";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -31,6 +32,8 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  const runId = await startCronRun("morning-reminder");
+  try {
   const { startUTC, endUTC } = todayWindowIST();
 
   // Per active agent: today's followups + hot leads that need attention
@@ -126,5 +129,10 @@ export async function GET(req: NextRequest) {
     try { reports.monthly = await sendReportToManagers(w.monthly); } catch (e) { reports.monthly = { error: String(e) }; }
   }
 
+  await finishCronRun(runId, "OK", undefined, { agentsNotified: notified });
   return NextResponse.json({ ok: true, agentsNotified: notified, window: { startUTC, endUTC }, projectSync, reports });
+  } catch (e) {
+    await finishCronRun(runId, "ERROR", String(e));
+    throw e;
+  }
 }

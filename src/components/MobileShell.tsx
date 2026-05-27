@@ -5,7 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import {
   LayoutDashboard, Users, KanbanSquare, Sparkles, Menu, X, Bell,
   Building2, CalendarDays, PhoneCall, BarChart3, Upload, UserCog, Settings as SettingsIcon, LogOut,
-  ShieldCheck, ChevronLeft, Heart, Gem, Trophy,
+  ShieldCheck, ChevronLeft, Heart, Gem, Trophy, HelpCircle,
 } from "lucide-react";
 import NotifBell from "./NotifBell";
 import WhatsAppPanel from "./WhatsAppPanel";
@@ -38,6 +38,7 @@ const fullNav = [
     { href: "/profile",  label: "My Profile",    Icon: UserCog },
     { href: "/team",     label: "Team & Roles",  Icon: UserCog },
     { href: "/settings", label: "Settings",      Icon: SettingsIcon },
+    { href: "/help",     label: "Help",          Icon: HelpCircle },
   ]},
   // ADMIN-only section — filtered out in render below
   { section: "ADMIN", adminOnly: true, items: [

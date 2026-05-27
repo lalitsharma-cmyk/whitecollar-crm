@@ -5,15 +5,19 @@
 
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { startCronRun, finishCronRun } from "@/lib/cronRun";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
+  const runId = await startCronRun("warm");
   try {
     // Trivial query just to keep the connection pool warm
     const t = await prisma.$queryRaw<Array<{ now: Date }>>`SELECT NOW() as now`;
+    await finishCronRun(runId, "OK");
     return NextResponse.json({ ok: true, now: t[0]?.now ?? new Date() });
   } catch (e) {
+    await finishCronRun(runId, "ERROR", String(e));
     return NextResponse.json({ ok: false, error: String(e) }, { status: 500 });
   }
 }

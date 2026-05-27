@@ -1033,3 +1033,19 @@ model Attendance {
   @@unique([userId, date])
   @@index([date])
 }
+
+// =====================================================
+// CRON RUN — per-execution health log for /api/cron/* jobs
+// Lets admins (and Lalit's helpers) verify each scheduled job ran
+// today on the /admin/cron-health page.
+// =====================================================
+model CronRun {
+  id         String    @id @default(cuid())
+  name       String    // e.g. "morning-reminder"
+  startedAt  DateTime  @default(now())
+  finishedAt DateTime?
+  status     String    // "OK" | "ERROR" | "RUNNING"
+  error      String?
+  meta       String?   // JSON string for extra context
+  @@index([name, startedAt])
+}
