@@ -20,6 +20,10 @@ export type FestiveTheme = {
   emoji: string;
   /** Subtle decorative pattern (background image, optional). */
   pattern?: string;
+  /** Hex accent — replaces --accent-primary across the UI during this
+   *  festival's window. Use a strong, brand-readable colour (think CTA
+   *  buttons, chips, highlights). */
+  accentHex: string;
 };
 
 export interface Festival {
@@ -51,6 +55,7 @@ export const FESTIVALS: Festival[] = [
       gradient: "from-emerald-700 via-emerald-600 to-amber-500",
       textColor: "text-white",
       emoji: "🌙",
+      accentHex: "#10b981",   // emerald-500 — Eid green
     },
   },
   {
@@ -64,6 +69,7 @@ export const FESTIVALS: Festival[] = [
       gradient: "from-orange-500 via-white to-emerald-600",
       textColor: "text-[#0b1a33]",
       emoji: "🇮🇳",
+      accentHex: "#f97316",   // orange-500
     },
   },
   {
@@ -77,6 +83,7 @@ export const FESTIVALS: Festival[] = [
       gradient: "from-amber-600 via-orange-500 to-pink-600",
       textColor: "text-white",
       emoji: "🪔",
+      accentHex: "#ec4899",   // pink-500 — Diwali festive
     },
   },
   {
@@ -90,6 +97,7 @@ export const FESTIVALS: Festival[] = [
       gradient: "from-red-600 via-green-700 to-black",
       textColor: "text-white",
       emoji: "🇦🇪",
+      accentHex: "#dc2626",   // red-600
     },
   },
   {
@@ -103,6 +111,7 @@ export const FESTIVALS: Festival[] = [
       gradient: "from-red-700 via-red-600 to-green-700",
       textColor: "text-white",
       emoji: "🎄",
+      accentHex: "#16a34a",   // green-600 — tree green
     },
   },
   {
@@ -116,6 +125,7 @@ export const FESTIVALS: Festival[] = [
       gradient: "from-indigo-800 via-purple-700 to-pink-600",
       textColor: "text-white",
       emoji: "🎆",
+      accentHex: "#7c3aed",   // violet-600
     },
   },
 ];

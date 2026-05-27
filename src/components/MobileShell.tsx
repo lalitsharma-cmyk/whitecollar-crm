@@ -11,6 +11,7 @@ import NotifBell from "./NotifBell";
 import WhatsAppPanel from "./WhatsAppPanel";
 import ThemeToggle from "./ThemeToggle";
 import FestiveBanner from "./FestiveBanner";
+import AccentPainter from "./AccentPainter";
 import { useBodyScrollLock } from "@/hooks/useBodyScrollLock";
 
 const fullNav = [
@@ -254,6 +255,7 @@ export default function MobileShell({ children, user }: Props) {
         </header>
         {/* Festive banner (auto-detected from calendar in src/lib/festivals.ts).
             Shows above ALL page content. Per-festival dismiss respected. */}
+        <AccentPainter />
         <FestiveBanner />
         <section className="p-3 lg:p-6 space-y-4 lg:space-y-6">{children}</section>
       </main>

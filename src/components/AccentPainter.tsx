@@ -1,0 +1,63 @@
+"use client";
+import { useEffect } from "react";
+import { getActiveFestival } from "@/lib/festivals";
+
+/**
+ * Sets the global --accent-primary CSS variable based on (in priority order):
+ *   1. User-picked custom accent in localStorage (`wcr.accent`)
+ *   2. Active festival's accentHex (auto-applied during festival week)
+ *   3. Default brand gold (#c9a24b — set in globals.css :root)
+ *
+ * Runs once on mount. No-op during SSR (purely visual).
+ *
+ * Lalit's ask: "Set user can choose day mode or light mode... festive
+ * mode — Like tomorrow is EID so EID festive vibe should be on it... Add
+ * all" (themes: festive Eid + Diwali auto-apply + custom accent picker).
+ */
+export default function AccentPainter() {
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const root = document.documentElement;
+
+    // Helper — slightly lighten a hex by 22% for the hover/2nd-shade variant.
+    function lighten(hex: string, amount = 0.22): string {
+      const m = hex.replace("#", "").match(/^([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i);
+      if (!m) return hex;
+      const lift = (h: string) => {
+        const n = parseInt(h, 16);
+        const next = Math.round(n + (255 - n) * amount);
+        return Math.min(255, Math.max(0, next)).toString(16).padStart(2, "0");
+      };
+      return `#${lift(m[1])}${lift(m[2])}${lift(m[3])}`;
+    }
+
+    function apply(hex: string | null) {
+      if (!hex) {
+        root.style.removeProperty("--accent-primary");
+        root.style.removeProperty("--accent-primary-2");
+        return;
+      }
+      root.style.setProperty("--accent-primary", hex);
+      root.style.setProperty("--accent-primary-2", lighten(hex));
+    }
+
+    // 1) User pick wins
+    const userPick = localStorage.getItem("wcr.accent");
+    if (userPick && /^#[0-9a-f]{6}$/i.test(userPick)) {
+      apply(userPick);
+      return;
+    }
+
+    // 2) Festival accent (auto)
+    const festival = getActiveFestival();
+    if (festival && localStorage.getItem("wcr.festiveModeEnabled") !== "false") {
+      apply(festival.theme.accentHex);
+      return;
+    }
+
+    // 3) Default — clear overrides so globals.css :root values apply
+    apply(null);
+  }, []);
+
+  return null;
+}

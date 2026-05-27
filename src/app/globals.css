@@ -24,7 +24,25 @@
   --text-base:  #0b1a33;
   --text-muted: #6b7280;
   --border:     #e5e7eb;
+  /* Accent — defaults to brand gold. Overridden by:
+   *   • Festive theme — auto-swapped during festival weeks (emerald for Eid,
+   *     pink for Diwali, etc.) by AccentPainter component.
+   *   • User picker — manager can pick a custom hex in Theme menu, persisted
+   *     to localStorage as wcr.accent.
+   */
+  --accent-primary: #c9a24b;
+  --accent-primary-2: #e7c97a;
 }
+
+/* When the accent is active, paint the brand gold backgrounds with it.
+   .btn-gold + the gold borders on PWA banners follow automatically. */
+.btn-gold        { background: var(--accent-primary) !important; color: #0b1a33; }
+.btn-gold:hover  { background: var(--accent-primary-2) !important; }
+.bg-\[\#c9a24b\] { background-color: var(--accent-primary) !important; }
+.text-\[\#c9a24b\] { color: var(--accent-primary) !important; }
+.border-\[\#c9a24b\] { border-color: var(--accent-primary) !important; }
+.hover\:bg-\[\#e7c97a\]:hover { background-color: var(--accent-primary-2) !important; }
+.ai-tag          { color: var(--accent-primary); }
 
 /* ─── Theme tokens — Dark.
    Applied via data-theme="dark" on <html>. The inline script in
