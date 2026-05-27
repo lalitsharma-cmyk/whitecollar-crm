@@ -431,7 +431,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
         </Link>
       </div>
 
-      <SavedFiltersBar />
+      <SavedFiltersBar isAdmin={me.role === "ADMIN"} />
 
       <LeadFilters
         agents={agents.map((a) => ({ id: a.id, name: a.name }))}

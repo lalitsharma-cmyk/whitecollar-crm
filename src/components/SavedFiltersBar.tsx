@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
-import { Bookmark, BookmarkPlus, X, Trash2, Pencil } from "lucide-react";
+import { Bookmark, BookmarkPlus, X, Trash2, Pencil, Sprout } from "lucide-react";
 import { canonicalizeQuery, queriesMatch } from "@/lib/savedFilters";
 
 interface SavedFilter {
@@ -17,14 +17,19 @@ interface SavedFilter {
  *
  * Lives above LeadFilters because it's the "quick-pick" layer; LeadFilters
  * is the "construct one" layer.
+ *
+ * `isAdmin` exposes a "🌱 Seed defaults" button — admin-only one-tap that
+ * inserts the starter Smart Lists from src/lib/savedFilterSeeds.ts. Idempotent
+ * on the server, so it's safe to click again after we add new presets.
  */
-export default function SavedFiltersBar() {
+export default function SavedFiltersBar({ isAdmin = false }: { isAdmin?: boolean }) {
   const router = useRouter();
   const pathname = usePathname();
   const sp = useSearchParams();
   const [filters, setFilters] = useState<SavedFilter[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [seeding, setSeeding] = useState(false);
   const [showSaveDialog, setShowSaveDialog] = useState(false);
   const [saveName, setSaveName] = useState("");
   const [saveIcon, setSaveIcon] = useState("⭐");
@@ -77,6 +82,25 @@ export default function SavedFiltersBar() {
     if (r.ok) await load();
   }
 
+  // Admin-only: POST to /api/admin/saved-filters/seed to insert any starter
+  // Smart Lists that don't yet exist as system seeds. Server is idempotent.
+  async function seedDefaults() {
+    if (seeding) return;
+    if (!confirm("Seed default Smart Lists for the whole team? Existing seeds are skipped.")) return;
+    setSeeding(true);
+    try {
+      const r = await fetch("/api/admin/saved-filters/seed", { method: "POST" });
+      if (r.ok) {
+        const j = await r.json().catch(() => ({}));
+        alert(`Seeded: ${j.created ?? 0} created, ${j.skipped ?? 0} skipped.`);
+        await load();
+        router.refresh();
+      } else {
+        alert("Failed to seed defaults.");
+      }
+    } finally { setSeeding(false); }
+  }
+
   const hasCurrentFilters = currentQuery.length > 0;
   // Match by canonical query strings — order of keys doesn't matter
   const activeFilter = filters.find((f) => queriesMatch(f.queryString, currentQuery));
@@ -126,6 +150,17 @@ export default function SavedFiltersBar() {
             title="Save current filter combination as a new Smart List"
           >
             <BookmarkPlus className="w-3 h-3" /> Save current
+          </button>
+        )}
+
+        {isAdmin && (
+          <button
+            onClick={seedDefaults}
+            disabled={seeding}
+            className="text-xs px-2.5 py-1 rounded-full font-semibold whitespace-nowrap bg-amber-50 text-amber-800 border border-amber-300 hover:bg-amber-100 inline-flex items-center gap-1 disabled:opacity-50"
+            title="Insert the starter pack of team Smart Lists (idempotent — safe to re-run)"
+          >
+            <Sprout className="w-3 h-3" /> {seeding ? "Seeding…" : "🌱 Seed defaults"}
           </button>
         )}
       </div>

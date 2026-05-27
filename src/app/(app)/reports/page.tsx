@@ -261,7 +261,7 @@ export default async function ReportsPage() {
       )}
 
       {/* Primary report navigation — these are the everyday reports */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
         <Link href="/reports/daily" className="card p-4 border-l-4 border-emerald-500 hover:shadow-md transition">
           <div className="text-2xl">📅</div>
           <div className="font-bold text-sm mt-1">Daily Report</div>
@@ -276,6 +276,13 @@ export default async function ReportsPage() {
           <div className="text-2xl">🚗</div>
           <div className="font-bold text-sm mt-1">Travel Reimbursement</div>
           <div className="text-[10px] text-gray-500 mt-0.5">Km × per-km rate, monthly per agent</div>
+        </Link>
+        {/* Lead Source Breakdown — which sources are actually closing,
+            with full funnel + first-call latency per source. Admin/Manager only. */}
+        <Link href="/reports/sources" className="card p-4 border-l-4 border-violet-500 hover:shadow-md transition">
+          <div className="text-2xl">🎯</div>
+          <div className="font-bold text-sm mt-1">Lead Sources</div>
+          <div className="text-[10px] text-gray-500 mt-0.5">Per-source funnel, conversion %, first-call latency</div>
         </Link>
         <a href="#pipeline-overview" className="card p-4 border-l-4 border-[#c9a24b] hover:shadow-md transition active:bg-amber-50 block">
           <div className="text-2xl">📈</div>

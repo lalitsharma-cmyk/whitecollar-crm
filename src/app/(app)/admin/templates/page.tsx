@@ -2,6 +2,19 @@ import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/auth";
 import { triggerLabel } from "@/lib/templates";
 import TemplateEditor from "@/components/TemplateEditor";
+import TemplatePreview from "@/components/TemplatePreview";
+
+/** Pulls the unique `{{tokens}}` out of a template body (and subject). */
+function extractPlaceholders(...sources: (string | null | undefined)[]): string[] {
+  const tokens = new Set<string>();
+  const re = /\{\{\s*(\w+)\s*\}\}/g;
+  for (const src of sources) {
+    if (!src) continue;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(src)) !== null) tokens.add(m[1].toLowerCase());
+  }
+  return Array.from(tokens);
+}
 
 export const dynamic = "force-dynamic";
 
@@ -227,6 +240,17 @@ export default async function TemplatesPage() {
               <div className="mt-2 flex justify-end">
                 <TemplateEditor mode="edit" template={{ id: t.id, kind: t.kind, trigger: t.trigger, name: t.name, subject: t.subject, body: t.body }} />
               </div>
+              <details className="mt-2 group">
+                <summary className="cursor-pointer list-none text-[11px] text-indigo-600 hover:text-indigo-800 select-none">
+                  <span className="group-open:hidden">🔍 Preview with a lead</span>
+                  <span className="hidden group-open:inline">▾ Hide preview</span>
+                </summary>
+                <TemplatePreview
+                  templateId={t.id}
+                  templateBody={t.body}
+                  templatePlaceholders={extractPlaceholders(t.body, t.subject)}
+                />
+              </details>
             </div>
           ))}
         </div>
@@ -250,6 +274,17 @@ export default async function TemplatesPage() {
               <div className="mt-2 flex justify-end">
                 <TemplateEditor mode="edit" template={{ id: t.id, kind: t.kind, trigger: t.trigger, name: t.name, subject: t.subject, body: t.body }} />
               </div>
+              <details className="mt-2 group">
+                <summary className="cursor-pointer list-none text-[11px] text-indigo-600 hover:text-indigo-800 select-none">
+                  <span className="group-open:hidden">🔍 Preview with a lead</span>
+                  <span className="hidden group-open:inline">▾ Hide preview</span>
+                </summary>
+                <TemplatePreview
+                  templateId={t.id}
+                  templateBody={t.body}
+                  templatePlaceholders={extractPlaceholders(t.body, t.subject)}
+                />
+              </details>
             </div>
           ))}
         </div>

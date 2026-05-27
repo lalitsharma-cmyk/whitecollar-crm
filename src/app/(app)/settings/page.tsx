@@ -1,11 +1,13 @@
 import { createHmac } from "node:crypto";
 import { requireUser } from "@/lib/auth";
+import { prisma } from "@/lib/prisma";
 import { getTravelRatePerKmInr, getSpeedToLeadEnabled, getRoundRobinEnabled, getTestingModeEnabled } from "@/lib/settings";
 import TravelRateEditor from "@/components/TravelRateEditor";
 import SpeedToLeadToggle from "@/components/SpeedToLeadToggle";
 import RoundRobinToggle from "@/components/RoundRobinToggle";
 import TestingModeToggle from "@/components/TestingModeToggle";
 import FestivalAdminPanel from "@/components/FestivalAdminPanel";
+import TestPushButton from "@/components/TestPushButton";
 
 export const dynamic = "force-dynamic";
 
@@ -22,11 +24,12 @@ function buildIcsUrl(userId: string): string {
 
 export default async function SettingsPage() {
   const me = await requireUser();
-  const [travelRate, speedToLeadOn, roundRobinOn, testingModeOn] = await Promise.all([
+  const [travelRate, speedToLeadOn, roundRobinOn, testingModeOn, pushSubCount] = await Promise.all([
     getTravelRatePerKmInr(),
     getSpeedToLeadEnabled(),
     getRoundRobinEnabled(),
     getTestingModeEnabled(),
+    prisma.pushSubscription.count({ where: { userId: me.id } }),
   ]);
   const isAdmin = me.role === "ADMIN";
   const icsUrl = buildIcsUrl(me.id);
@@ -165,6 +168,31 @@ export default async function SettingsPage() {
             Calendar subscription unavailable — NEXTAUTH_SECRET is not configured on the server.
           </p>
         )}
+      </div>
+
+      {/* Push notifications — fire a self-test so users can verify their
+          browser subscription actually delivers (silent no-op is the #1 push bug). */}
+      <div className="card p-5 max-w-2xl">
+        <div className="font-semibold flex items-center gap-2">🔔 Push notifications</div>
+        <p className="text-xs text-gray-500 mt-1">
+          Send yourself a test push to confirm hot-lead alerts will actually reach this device.
+        </p>
+        <p className="text-xs mt-2">
+          Subscription status:{" "}
+          {pushSubCount > 0 ? (
+            <span className="text-emerald-700 font-medium">
+              ✅ {pushSubCount} active device{pushSubCount === 1 ? "" : "s"}
+            </span>
+          ) : (
+            <span className="text-amber-700 font-medium">
+              ⚠️ Not subscribed on any device — enable from the bell icon first
+            </span>
+          )}
+        </p>
+        <TestPushButton />
+        <p className="text-[11px] text-gray-500 mt-2">
+          If no notification arrives, check your browser permissions and re-enable push from the bell icon.
+        </p>
       </div>
 
       {/* Onboarding tour reset — clears the localStorage flag set by
