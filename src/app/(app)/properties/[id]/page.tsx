@@ -5,12 +5,14 @@ import { UnitStatus, LeadStatus } from "@prisma/client";
 import { requireUser } from "@/lib/auth";
 import { bestLeadsForProject } from "@/lib/leadsForProject";
 import { fmtMoney } from "@/lib/money";
+import UnitsCsvImport from "@/components/UnitsCsvImport";
 
 export const dynamic = "force-dynamic";
 
 export default async function PropertyDetail({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  await requireUser();
+  const me = await requireUser();
+  const canImportUnits = me.role === "ADMIN" || me.role === "MANAGER";
 
   const project = await prisma.project.findUnique({
     where: { id },
@@ -84,6 +86,9 @@ export default async function PropertyDetail({ params }: { params: Promise<{ id:
           </Link>
         </div>
       </div>
+
+      {/* Bulk import — admin/manager only, sits just above the Inventory table */}
+      {canImportUnits && <UnitsCsvImport projectId={id} />}
 
       {/* Section: Inventory */}
       <section className="card p-4 mt-4">

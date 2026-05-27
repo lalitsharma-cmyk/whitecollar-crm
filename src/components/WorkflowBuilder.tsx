@@ -13,6 +13,7 @@
 // (or PATCH /api/admin/workflows/[id] when editing an existing workflow).
 
 import { useMemo, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Plus, Trash2, Save, X, Pause, Play, Sparkles } from "lucide-react";
 import { WORKFLOW_TEMPLATES, type WorkflowTemplate } from "@/lib/workflowTemplates";
@@ -718,10 +719,19 @@ export default function WorkflowBuilderPanel({ workflows, templates }: PanelProp
                 {!wf.active && <span className="chip chip-lost text-[10px]">PAUSED</span>}
               </div>
 
-              <div className="text-[10px] text-gray-400">
-                {wf.lastRunAt
-                  ? `Last run: ${wf.lastRunAt.toLocaleString()}`
-                  : "Never run yet"}
+              <div className="flex items-center justify-between gap-2">
+                <div className="text-[10px] text-gray-400">
+                  {wf.lastRunAt
+                    ? `Last run: ${wf.lastRunAt.toLocaleString()}`
+                    : "Never run yet"}
+                </div>
+                <Link
+                  href={`/admin/workflows/${wf.id}/runs`}
+                  className="text-[10px] text-gray-500 hover:text-[#c9a24b] hover:underline whitespace-nowrap"
+                  title="View run history"
+                >
+                  🕓 View runs
+                </Link>
               </div>
             </div>
           );

@@ -2,7 +2,7 @@
 // Vault — private reflection / journal / wins UI.
 // Privacy: this component never sends a userId; the server forces it to the
 // session user. All reads/writes go through /api/vault and /api/vault/[id].
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Heart, Wind, Trophy, MessageSquare, X, Trash2, Plus, Sparkles, BookOpen } from "lucide-react";
 import { fmtIST12 } from "@/lib/datetime";
@@ -54,6 +54,7 @@ const KIND_LABEL: Record<string, string> = {
   LESSON:     "Lesson",
   GRATITUDE:  "Gratitude",
   deal_story: "Deal story",
+  reset:      "Reset",
 };
 
 const KIND_CHIP: Record<string, string> = {
@@ -63,7 +64,16 @@ const KIND_CHIP: Record<string, string> = {
   LESSON:     "bg-amber-100 text-amber-800",
   GRATITUDE:  "bg-purple-100 text-purple-800",
   deal_story: "bg-indigo-100 text-indigo-800",
+  reset:      "bg-sky-100 text-sky-800",
 };
+
+const RESET_MOTIVATION_LINES = [
+  "Every 'no' brings you closer to the next 'yes'",
+  "Your best closer move is your calm presence",
+  "One real conversation beats ten rushed ones",
+  "The deal you didn't push? It's still there tomorrow.",
+  "Reset. Refocus. The phone will ring.",
+];
 
 // ─── Deal-story helpers ──────────────────────────────────────────────────
 type DealStoryFields = {
@@ -123,6 +133,7 @@ export default function VaultClient({ initialEntries }: Props) {
   });
   const [entryFilter, setEntryFilter] = useState<EntryFilter>("ALL");
   const [busy, setBusy] = useState(false);
+  const [resetToast, setResetToast] = useState(false);
   const [, startTransition] = useTransition();
 
   const wins = useMemo(() => entries.filter((e) => e.kind === "WIN"), [entries]);
@@ -326,14 +337,14 @@ export default function VaultClient({ initialEntries }: Props) {
 
         <button
           onClick={() => setShowReset(true)}
-          className="card p-4 text-left hover:border-sky-300 transition border-2 border-transparent min-h-24 bg-gradient-to-br from-sky-50 to-indigo-50"
+          className="card p-4 text-left hover:border-sky-300 transition border-2 border-transparent min-h-24 bg-gradient-to-br from-amber-50 to-indigo-50"
         >
           <div className="flex items-center gap-2 mb-1">
             <Wind className="w-5 h-5 text-sky-600" />
-            <div className="font-semibold text-sm">Reset Mode</div>
+            <div className="font-semibold text-sm">🧘 Reset Mode (5 min)</div>
           </div>
           <div className="text-xs text-gray-600">
-            Breathe. Remember why you're doing this. 60 seconds.
+            Breathe. Remember why you're doing this. 5 minutes.
           </div>
         </button>
 
@@ -664,83 +675,205 @@ export default function VaultClient({ initialEntries }: Props) {
 
       {/* ─── (d) Reset modal ─── */}
       {showReset && (
-        <ResetMode wins={recentWins} onClose={() => setShowReset(false)} />
+        <ResetMode
+          wins={recentWins}
+          onClose={() => setShowReset(false)}
+          onComplete={async () => {
+            await postEntry({
+              kind: "reset",
+              mood: "NEUTRAL",
+              content: "Completed a 5-minute reset",
+            });
+            setResetToast(true);
+            window.setTimeout(() => setResetToast(false), 4000);
+          }}
+        />
+      )}
+
+      {/* ─── Reset-complete toast ─── */}
+      {resetToast && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 rounded-full bg-[#0b1a33] text-white px-5 py-2.5 text-sm shadow-lg border border-[#c9a24b]/60"
+        >
+          ✨ Reset complete
+        </div>
       )}
     </div>
   );
 }
 
 // ─── Reset Mode modal ────────────────────────────────────────────────────
-function ResetMode({ wins, onClose }: { wins: VaultEntryDTO[]; onClose: () => void }) {
+// 5-minute guided breathing reset. On natural completion, auto-saves a
+// VaultEntry { kind: "reset" } and lets the parent show a toast.
+function ResetMode({
+  wins,
+  onClose,
+  onComplete,
+}: {
+  wins: VaultEntryDTO[];
+  onClose: () => void;
+  onComplete: () => void | Promise<void>;
+}) {
   useBodyScrollLock(true);
-  // Pick 3 random motivational lines per open for variety.
+
+  const TOTAL_SECONDS = 5 * 60; // 5 minutes
+  const BREATH_PHASE_SECONDS = 4; // inhale 4, hold 4, exhale 4 (12s cycle)
+  const LINE_ROTATE_SECONDS = 60; // rotate motivational line every 60s
+
+  const [secondsLeft, setSecondsLeft] = useState(TOTAL_SECONDS);
+  const [elapsed, setElapsed] = useState(0);
+  const completedRef = useRef(false);
+  const completeCbRef = useRef(onComplete);
+  completeCbRef.current = onComplete;
+
+  // Shuffle the motivational lines once so rotation order varies per open.
   const lines = useMemo(() => {
-    const shuffled = [...MOTIVATION_LINES].sort(() => Math.random() - 0.5);
-    return shuffled.slice(0, 4);
+    return [...RESET_MOTIVATION_LINES].sort(() => Math.random() - 0.5);
   }, []);
 
+  // ── Countdown timer ────────────────────────────────────────────────
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      setElapsed((e) => e + 1);
+      setSecondsLeft((s) => {
+        if (s <= 1) {
+          window.clearInterval(id);
+          if (!completedRef.current) {
+            completedRef.current = true;
+            // Fire-and-forget; parent handles toast + router.refresh.
+            void Promise.resolve(completeCbRef.current()).finally(() => {
+              onClose();
+            });
+          }
+          return 0;
+        }
+        return s - 1;
+      });
+    }, 1000);
+    return () => window.clearInterval(id);
+  }, [onClose]);
+
+  // ── Web Audio: very soft 528Hz sine ping at the start of each
+  //    inhale phase (every 12s). Best-effort — silently skipped if the
+  //    browser blocks audio.
+  useEffect(() => {
+    let ctx: AudioContext | null = null;
+    type AudioCtor = typeof AudioContext;
+    const w = window as unknown as { AudioContext?: AudioCtor; webkitAudioContext?: AudioCtor };
+    const Ctor: AudioCtor | undefined = w.AudioContext ?? w.webkitAudioContext;
+    if (!Ctor) return;
+    try {
+      ctx = new Ctor();
+    } catch {
+      return;
+    }
+    const playTone = () => {
+      if (!ctx) return;
+      try {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = "sine";
+        osc.frequency.value = 528;
+        gain.gain.value = 0.05;
+        osc.connect(gain).connect(ctx.destination);
+        const now = ctx.currentTime;
+        // Soft attack + release to avoid clicks
+        gain.gain.setValueAtTime(0.0, now);
+        gain.gain.linearRampToValueAtTime(0.05, now + 0.02);
+        gain.gain.linearRampToValueAtTime(0.0, now + 0.2);
+        osc.start(now);
+        osc.stop(now + 0.22);
+      } catch {
+        // ignore
+      }
+    };
+    // Play immediately on open, then every 12s (one full breath cycle).
+    playTone();
+    const id = window.setInterval(playTone, BREATH_PHASE_SECONDS * 3 * 1000);
+    return () => {
+      window.clearInterval(id);
+      if (ctx) {
+        try { void ctx.close(); } catch { /* ignore */ }
+      }
+    };
+  }, []);
+
+  // ── Derived: breath phase + rotating motivational line ─────────────
+  const phaseIndex = Math.floor(elapsed / BREATH_PHASE_SECONDS) % 3;
+  const phaseLabel = phaseIndex === 0 ? "Breathe in…" : phaseIndex === 1 ? "Hold…" : "Breathe out…";
+  const currentLine = lines[Math.floor(elapsed / LINE_ROTATE_SECONDS) % lines.length];
+
+  const mm = String(Math.floor(secondsLeft / 60)).padStart(2, "0");
+  const ss = String(secondsLeft % 60).padStart(2, "0");
+
   return (
-    <div className="fixed inset-0 z-50 bg-gradient-to-br from-sky-900 via-indigo-900 to-purple-900 text-white overflow-y-auto">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto text-white"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Reset Mode"
+    >
+      {/* Soft gold → navy gradient, dimmed */}
+      <div
+        aria-hidden
+        className="absolute inset-0 bg-gradient-to-br from-[#c9a24b] via-[#3a3470] to-[#0b1a33]"
+      />
+      <div aria-hidden className="absolute inset-0 bg-black/40" />
+
       <style>{`
-        @keyframes vault-breathe {
-          0%   { transform: scale(0.7); opacity: .6; }
-          33%  { transform: scale(1.15); opacity: 1; }
-          66%  { transform: scale(1.15); opacity: 1; }
-          100% { transform: scale(0.7); opacity: .6; }
+        @keyframes vault-breathe-5 {
+          0%   { transform: scale(1.0); }
+          50%  { transform: scale(1.4); }
+          100% { transform: scale(1.0); }
         }
-        .vault-breathe-circle {
-          animation: vault-breathe 12s ease-in-out infinite;
-        }
-        @keyframes vault-breathe-label {
-          0%   { content: "Breathe in"; }
-          33%  { content: "Hold"; }
-          66%  { content: "Breathe out"; }
-          100% { content: "Breathe in"; }
+        .vault-breathe-circle-5 {
+          animation: vault-breathe-5 8s ease-in-out infinite;
         }
       `}</style>
 
-      <div className="min-h-full flex flex-col items-center justify-center px-6 py-10 max-w-xl mx-auto text-center">
-        <button
-          onClick={onClose}
-          className="absolute top-4 right-4 p-2 rounded-full hover:bg-white/10 min-w-11 min-h-11 flex items-center justify-center"
-          aria-label="Close reset mode"
-        >
-          <X className="w-6 h-6" />
-        </button>
+      {/* Countdown — top-right corner */}
+      <div className="absolute top-4 right-4 z-10 font-mono text-sm sm:text-base bg-black/30 backdrop-blur-sm rounded-full px-3 py-1.5 border border-white/20 tabular-nums">
+        {mm}:{ss}
+      </div>
 
-        <div className="relative w-48 h-48 sm:w-56 sm:h-56 flex items-center justify-center mb-6">
-          <div className="vault-breathe-circle absolute inset-0 rounded-full bg-gradient-to-br from-sky-300/60 to-purple-400/60 blur-xl" />
-          <div className="vault-breathe-circle absolute inset-4 rounded-full bg-white/20 backdrop-blur-sm border border-white/30" />
+      <div className="relative z-10 w-full max-w-xl mx-auto px-6 py-10 flex flex-col items-center justify-center text-center min-h-full">
+        {/* Phase label */}
+        <div
+          key={phaseIndex}
+          className="text-lg sm:text-xl font-medium text-white/90 mb-6 tracking-wide"
+        >
+          {phaseLabel}
+        </div>
+
+        {/* Breathing circle */}
+        <div className="relative w-48 h-48 sm:w-56 sm:h-56 flex items-center justify-center mb-10">
+          <div className="vault-breathe-circle-5 absolute inset-0 rounded-full bg-gradient-to-br from-amber-200/40 to-indigo-300/40 blur-xl" />
+          <div className="vault-breathe-circle-5 absolute inset-4 rounded-full bg-white/15 backdrop-blur-sm border border-white/30" />
           <Wind className="w-10 h-10 text-white/80 relative z-10" />
         </div>
 
-        <div className="text-xs uppercase tracking-widest text-white/70 mb-1">
-          4 seconds in · 4 hold · 4 out
+        {/* Rotating motivational line */}
+        <div
+          key={currentLine}
+          className="text-base sm:text-lg italic text-white/95 max-w-md leading-relaxed mb-10 min-h-[3rem]"
+        >
+          “{currentLine}”
         </div>
-        <div className="text-lg font-semibold mb-6">Follow the circle. Just for a minute.</div>
 
-        <ul className="space-y-2 mb-8">
-          {lines.map((l, i) => (
-            <li key={i} className="text-sm sm:text-base text-white/90 italic leading-relaxed">
-              "{l}"
-            </li>
-          ))}
-        </ul>
-
+        {/* Recent wins reminder (optional context) */}
         {wins.length > 0 && (
-          <div className="w-full mb-8">
-            <div className="text-xs uppercase tracking-widest text-white/70 mb-2 flex items-center justify-center gap-2">
-              <Trophy className="w-4 h-4" /> Remember these wins
+          <div className="w-full mb-10">
+            <div className="text-[10px] uppercase tracking-widest text-white/60 mb-2 flex items-center justify-center gap-2">
+              <Trophy className="w-3.5 h-3.5" /> Remember these wins
             </div>
             <div className="grid grid-cols-1 gap-2">
-              {wins.map((w) => (
+              {wins.slice(0, 2).map((w) => (
                 <div
                   key={w.id}
-                  className="rounded-xl bg-white/10 backdrop-blur-sm border border-white/20 px-4 py-3 text-sm text-left whitespace-pre-wrap"
+                  className="rounded-xl bg-white/10 backdrop-blur-sm border border-white/20 px-4 py-2.5 text-xs sm:text-sm text-left whitespace-pre-wrap"
                 >
-                  <div className="text-[10px] uppercase tracking-wider text-white/60 mb-1">
-                    {fmtIST12(w.createdAt)}
-                  </div>
                   {w.content}
                 </div>
               ))}
@@ -748,11 +881,12 @@ function ResetMode({ wins, onClose }: { wins: VaultEntryDTO[]; onClose: () => vo
           </div>
         )}
 
+        {/* End Reset button */}
         <button
           onClick={onClose}
-          className="px-6 py-3 rounded-full bg-white text-[#0b1a33] font-semibold text-sm min-h-12"
+          className="px-6 py-3 rounded-full bg-white/90 hover:bg-white text-[#0b1a33] font-semibold text-sm min-h-12 inline-flex items-center gap-2"
         >
-          Done — back to work
+          <X className="w-4 h-4" /> End Reset
         </button>
       </div>
     </div>
