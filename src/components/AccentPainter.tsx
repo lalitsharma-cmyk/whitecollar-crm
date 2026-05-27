@@ -19,26 +19,37 @@ export default function AccentPainter() {
     if (typeof document === "undefined") return;
     const root = document.documentElement;
 
-    // Helper — slightly lighten a hex by 22% for the hover/2nd-shade variant.
+    // Helper — shift a hex toward white (positive amount) or black (negative).
+    // amount=0.22 → 22% lighter; amount=-0.18 → 18% darker.
     function lighten(hex: string, amount = 0.22): string {
       const m = hex.replace("#", "").match(/^([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i);
       if (!m) return hex;
-      const lift = (h: string) => {
+      const shift = (h: string) => {
         const n = parseInt(h, 16);
-        const next = Math.round(n + (255 - n) * amount);
+        const target = amount >= 0 ? 255 : 0;
+        const next = Math.round(n + (target - n) * Math.abs(amount));
         return Math.min(255, Math.max(0, next)).toString(16).padStart(2, "0");
       };
-      return `#${lift(m[1])}${lift(m[2])}${lift(m[3])}`;
+      return `#${shift(m[1])}${shift(m[2])}${shift(m[3])}`;
     }
 
     function apply(hex: string | null) {
       if (!hex) {
         root.style.removeProperty("--accent-primary");
         root.style.removeProperty("--accent-primary-2");
+        root.style.removeProperty("--cta-primary");
+        root.style.removeProperty("--cta-primary-2");
         return;
       }
       root.style.setProperty("--accent-primary", hex);
-      root.style.setProperty("--accent-primary-2", lighten(hex));
+      root.style.setProperty("--accent-primary-2", lighten(hex, 0.22));
+      // CTA primary (Save buttons etc.) also follows the accent — Lalit
+      // expects the whole UI's primary actions to match the festive vibe,
+      // not just the gold elements. CTA is the DEEPER shade (darken 18%)
+      // so white text stays readable on top.
+      const darker = lighten(hex, -0.18);   // -ve = darken
+      root.style.setProperty("--cta-primary", darker);
+      root.style.setProperty("--cta-primary-2", hex);   // hover = the base accent
     }
 
     // 1) User pick wins

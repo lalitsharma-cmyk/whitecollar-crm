@@ -42,20 +42,26 @@ function applyAccent(hex: string | null) {
   if (!hex) {
     root.style.removeProperty("--accent-primary");
     root.style.removeProperty("--accent-primary-2");
+    root.style.removeProperty("--cta-primary");
+    root.style.removeProperty("--cta-primary-2");
     localStorage.removeItem("wcr.accent");
     return;
   }
   root.style.setProperty("--accent-primary", hex);
-  // Lazy lighten — same logic as AccentPainter.lighten()
-  const m = hex.replace("#", "").match(/^([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i);
-  if (m) {
-    const lift = (h: string) => {
-      const n = parseInt(h, 16);
-      const next = Math.round(n + (255 - n) * 0.22);
+  const shift = (h: string, amount: number) => {
+    const m = h.replace("#", "").match(/^([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i);
+    if (!m) return h;
+    const t = amount >= 0 ? 255 : 0;
+    const each = (g: string) => {
+      const n = parseInt(g, 16);
+      const next = Math.round(n + (t - n) * Math.abs(amount));
       return Math.min(255, Math.max(0, next)).toString(16).padStart(2, "0");
     };
-    root.style.setProperty("--accent-primary-2", `#${lift(m[1])}${lift(m[2])}${lift(m[3])}`);
-  }
+    return `#${each(m[1])}${each(m[2])}${each(m[3])}`;
+  };
+  root.style.setProperty("--accent-primary-2", shift(hex, 0.22));   // lighter for hover
+  root.style.setProperty("--cta-primary", shift(hex, -0.18));        // darker for Save buttons
+  root.style.setProperty("--cta-primary-2", hex);                    // hover = the base accent
   localStorage.setItem("wcr.accent", hex);
 }
 

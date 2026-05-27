@@ -29,19 +29,32 @@
    *     pink for Diwali, etc.) by AccentPainter component.
    *   • User picker — manager can pick a custom hex in Theme menu, persisted
    *     to localStorage as wcr.accent.
+   *
+   * --cta-primary = the "Save / primary action" button colour. Defaults to
+   * brand navy (#0b1a33) but follows the accent during festive mode + when
+   * user picks a custom accent. So Save buttons turn Eid green during Eid,
+   * Diwali pink during Diwali, etc. — matches Lalit's expectation that the
+   * accent should affect the whole UI, not just gold elements.
    */
   --accent-primary: #c9a24b;
   --accent-primary-2: #e7c97a;
+  --cta-primary: #0b1a33;
+  --cta-primary-2: #0f2347;
 }
 
-/* When the accent is active, paint the brand gold backgrounds with it.
-   .btn-gold + the gold borders on PWA banners follow automatically. */
+/* Paint the brand gold AND primary CTA backgrounds with the accent vars.
+   When AccentPainter sets the override, both follow. .btn-primary uses
+   var(--cta-primary) (defaults navy, festive shifts to accent). */
 .btn-gold        { background: var(--accent-primary) !important; color: #0b1a33; }
 .btn-gold:hover  { background: var(--accent-primary-2) !important; }
+.btn-primary     { background: var(--cta-primary) !important; color: #fff; }
+.btn-primary:hover { background: var(--cta-primary-2) !important; }
 .bg-\[\#c9a24b\] { background-color: var(--accent-primary) !important; }
 .text-\[\#c9a24b\] { color: var(--accent-primary) !important; }
 .border-\[\#c9a24b\] { border-color: var(--accent-primary) !important; }
 .hover\:bg-\[\#e7c97a\]:hover { background-color: var(--accent-primary-2) !important; }
+.bg-\[\#0b1a33\] { background-color: var(--cta-primary) !important; }
+.hover\:bg-\[\#0f2347\]:hover { background-color: var(--cta-primary-2) !important; }
 .ai-tag          { color: var(--accent-primary); }
 
 /* ─── Theme tokens — Dark.
