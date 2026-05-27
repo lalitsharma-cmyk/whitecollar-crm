@@ -33,6 +33,19 @@ interface Props {
 const aiClass = (s: string | null) => s === "HOT" ? "chip-hot" : s === "WARM" ? "chip-warm" : "chip-cold";
 const initialsOf = (n: string) => n.split(" ").map(s => s[0]).slice(0, 2).join("");
 
+// §9.7 preset reasons — the 7 most common "why did this stage change?"
+// answers per the master spec. Chip click appends to the free-text note
+// (with a · separator) so the agent can combine multiple reasons.
+const REASON_PRESETS = [
+  "Budget confirmed",
+  "Site visit done",
+  "Family involved",
+  "Payment issue",
+  "Negotiation started",
+  "Client delayed",
+  "Competitor involved",
+];
+
 // §9.7 momentum chip — tiny, color-coded, sits on each card. Same vocab
 // as the server (healthy / slowing / stuck) so the meaning is consistent
 // across the page and the AI nudges.
@@ -183,6 +196,13 @@ export default function KanbanBoard({ stages, leadsByStage, agents }: Props) {
                       {l.projectName ? l.projectName : l.configuration ?? "—"}
                       {l.budgetMin ? ` · ${fmtMoney(l.budgetMin, l.budgetCurrency)}` : ""}
                     </div>
+                    {l.budgetMin != null && (
+                      // §9.7 — tiny commission hint at 2% of budgetMin. Lets
+                      // the agent eyeball deal value without opening the lead.
+                      <div className="text-[10px] text-[#c9a24b] font-semibold">
+                        ~{fmtMoney(l.budgetMin * 0.02, l.budgetCurrency)} (2%)
+                      </div>
+                    )}
                     {atRisk && (
                       // Top risk only — tooltip on the card carries the rest.
                       // Avoids stacking 3 chips inside a 220-wide column on
@@ -235,6 +255,33 @@ export default function KanbanBoard({ stages, leadsByStage, agents }: Props) {
               What changed?
               <span className="text-gray-400 font-normal"> (optional, helps the manager)</span>
             </label>
+
+            {/* §9.7 — preset reason chips. Click appends to the textarea
+                with a · separator. Multiple selections allowed; agent can
+                still type freely below. */}
+            <div className="mt-2">
+              <div className="text-[10px] uppercase tracking-wider text-gray-500 font-semibold mb-1">
+                Common reasons
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {REASON_PRESETS.map((preset) => (
+                  <button
+                    key={preset}
+                    type="button"
+                    disabled={busy}
+                    onClick={() =>
+                      setNoteDraft((prev) =>
+                        prev.trim() ? `${prev.trim()} · ${preset}` : preset
+                      )
+                    }
+                    className="text-[11px] px-2 py-1 rounded-full bg-gray-100 text-gray-700 hover:bg-amber-100 hover:text-amber-900 transition-colors disabled:opacity-50"
+                  >
+                    {preset}
+                  </button>
+                ))}
+              </div>
+            </div>
+
             <textarea
               autoFocus
               value={noteDraft}
@@ -242,7 +289,7 @@ export default function KanbanBoard({ stages, leadsByStage, agents }: Props) {
               rows={3}
               maxLength={500}
               placeholder="e.g. Client confirmed budget · agreed to site visit Saturday · waiting on bank pre-approval"
-              className="mt-1 w-full border rounded-lg p-2 text-sm"
+              className="mt-2 w-full border rounded-lg p-2 text-sm"
               disabled={busy}
             />
             <div className="text-[10px] text-gray-400 mt-1 text-right">{noteDraft.length}/500</div>

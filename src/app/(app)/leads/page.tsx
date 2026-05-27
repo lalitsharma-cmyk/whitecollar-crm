@@ -144,6 +144,34 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
   }
   // effectiveFollowup === "all" → no followupDate filter applied.
 
+  // Smart-filter preset chips — spec §9.3. Composes via AND so it does not
+  // replace existing followup / status / source filters. Each preset is a
+  // named, opinionated combination of conditions surfaced as a top-row chip.
+  const smartAnd: Prisma.LeadWhereInput[] = [];
+  if (sp.smart === "hot_today") {
+    // 🔥 Hot today — AI flagged HOT and created since midnight IST today.
+    smartAnd.push({ aiScore: AIScore.HOT });
+    smartAnd.push({ createdAt: { gte: istWindow(0).gte } });
+  } else if (sp.smart === "ghosting") {
+    // 👻 Ghosting — no touch in 7+ days and still in-pipeline.
+    smartAnd.push({ lastTouchedAt: { lt: new Date(Date.now() - 7 * 24 * 3600 * 1000) } });
+    smartAnd.push({ status: { notIn: [LeadStatus.WON, LeadStatus.LOST] } });
+  } else if (sp.smart === "visit_potential") {
+    // 🏢 Site-visit potential — qualified or already scheduled for a visit.
+    smartAnd.push({ status: { in: [LeadStatus.QUALIFIED, LeadStatus.SITE_VISIT] } });
+  } else if (sp.smart === "high_budget") {
+    // 💎 High budget — ≥ 5M AED or ≥ 3 Cr INR. Currency-aware OR.
+    smartAnd.push({
+      OR: [
+        { budgetCurrency: "AED", budgetMin: { gte: 5_000_000 } },
+        { budgetCurrency: "INR", budgetMin: { gte: 30_000_000 } },
+      ],
+    });
+  }
+  if (smartAnd.length > 0) {
+    where.AND = where.AND ? [...(Array.isArray(where.AND) ? where.AND : [where.AND]), ...smartAnd] : smartAnd;
+  }
+
   // Sort
   let orderBy: Prisma.LeadOrderByWithRelationInput = { createdAt: "desc" };
   if (sp.sort === "created_asc") orderBy = { createdAt: "asc" };
@@ -196,6 +224,42 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
             <a href="/api/reports/export?type=leads" className="btn btn-ghost flex-1 sm:flex-none justify-center">Export</a>
           )}
           <Link href="/leads/new" className="btn btn-primary flex-1 sm:flex-none justify-center">+ New Lead</Link>
+        </div>
+      </div>
+
+      {/* ─── SMART FILTER PRESETS (spec §9.3) ───────────────────────────
+          Named one-tap presets that compose with the existing followup /
+          status / source filters via AND. Sits above the follow-up row so
+          the agent's eye lands on these high-signal slices first. */}
+      <div className="space-y-2">
+        <div className="text-[10px] uppercase tracking-widest text-gray-500 font-semibold">
+          ⚡ Smart filters
+        </div>
+        <div className="flex gap-2 overflow-x-auto lg:flex-wrap pb-1 -mx-3 px-3 lg:mx-0 lg:px-0 scrollbar-thin">
+          <Link
+            href="/leads?smart=hot_today"
+            className={`px-3 py-2 rounded-full text-xs font-semibold border min-h-11 inline-flex items-center gap-1 ${sp.smart === "hot_today" ? "bg-orange-600 text-white border-orange-600" : "bg-orange-50 border-orange-300 text-orange-800"}`}
+          >
+            🔥 Hot today
+          </Link>
+          <Link
+            href="/leads?smart=ghosting"
+            className={`px-3 py-2 rounded-full text-xs font-semibold border min-h-11 inline-flex items-center gap-1 ${sp.smart === "ghosting" ? "bg-purple-600 text-white border-purple-600" : "bg-purple-50 border-purple-300 text-purple-800"}`}
+          >
+            👻 Ghosting
+          </Link>
+          <Link
+            href="/leads?smart=visit_potential"
+            className={`px-3 py-2 rounded-full text-xs font-semibold border min-h-11 inline-flex items-center gap-1 ${sp.smart === "visit_potential" ? "bg-teal-600 text-white border-teal-600" : "bg-teal-50 border-teal-300 text-teal-800"}`}
+          >
+            🏢 Site visit potential
+          </Link>
+          <Link
+            href="/leads?smart=high_budget"
+            className={`px-3 py-2 rounded-full text-xs font-semibold border min-h-11 inline-flex items-center gap-1 ${sp.smart === "high_budget" ? "bg-amber-600 text-white border-amber-600" : "bg-amber-50 border-amber-300 text-amber-800"}`}
+          >
+            💎 High budget
+          </Link>
         </div>
       </div>
 

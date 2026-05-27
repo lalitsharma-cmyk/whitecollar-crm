@@ -5,7 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import {
   LayoutDashboard, Users, KanbanSquare, Sparkles, Menu, X, Bell,
   Building2, CalendarDays, PhoneCall, BarChart3, Upload, UserCog, Settings as SettingsIcon, LogOut,
-  ShieldCheck, ChevronLeft, Heart, Gem,
+  ShieldCheck, ChevronLeft, Heart, Gem, Trophy,
 } from "lucide-react";
 import NotifBell from "./NotifBell";
 import WhatsAppPanel from "./WhatsAppPanel";
@@ -24,6 +24,7 @@ const fullNav = [
     { href: "/pipeline",    label: "Pipeline",    Icon: KanbanSquare },
     { href: "/properties",  label: "Properties",  Icon: Building2 },
     { href: "/activities",  label: "Activities",  Icon: CalendarDays },
+    { href: "/leaderboards", label: "Leaderboards", Icon: Trophy },
     { href: "/calls",       label: "Call Records",Icon: PhoneCall },
     { href: "/reports",     label: "Reports",     Icon: BarChart3 },
     { href: "/ai",          label: "AI Assistant",Icon: Sparkles, tag: "AI" },

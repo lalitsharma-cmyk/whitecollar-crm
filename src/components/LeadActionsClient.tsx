@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { Phone, MessageCircle, AlertCircle } from "lucide-react";
 import { whatsappLink, telLink } from "@/lib/phone";
@@ -97,6 +97,80 @@ export default function LeadActionsClient({ leadId, phone, altPhone, email, curr
   const [assignBusy, setAssignBusy] = useState(false);
   const [acefoneBusy, setAcefoneBusy] = useState(false);
   const [acefoneMsg, setAcefoneMsg] = useState<string | null>(null);
+
+  // Voice dictation for the Remarks field (spec §9.2 + §14 "reduce typing on
+  // mobile"). Uses the browser-native Web Speech API — no npm package, no
+  // external dependency. Hidden entirely when the browser doesn't support it
+  // (most desktop Safari + some Android browsers). Indian English locale since
+  // the team operates out of Dubai + India.
+  const [speechSupported, setSpeechSupported] = useState(false);
+  const [listening, setListening] = useState(false);
+  const recognitionRef = useRef<unknown>(null);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const SR =
+      (window as unknown as { SpeechRecognition?: unknown }).SpeechRecognition ||
+      (window as unknown as { webkitSpeechRecognition?: unknown }).webkitSpeechRecognition;
+    if (SR) setSpeechSupported(true);
+  }, []);
+
+  function stopDictation() {
+    const rec = recognitionRef.current as { stop?: () => void } | null;
+    if (rec && typeof rec.stop === "function") {
+      try { rec.stop(); } catch { /* already stopped */ }
+    }
+    recognitionRef.current = null;
+    setListening(false);
+  }
+
+  function toggleDictation() {
+    if (listening) { stopDictation(); return; }
+    if (typeof window === "undefined") return;
+    const SR =
+      (window as unknown as { SpeechRecognition?: new () => unknown }).SpeechRecognition ||
+      (window as unknown as { webkitSpeechRecognition?: new () => unknown }).webkitSpeechRecognition;
+    if (!SR) return;
+    const rec = new SR() as {
+      lang: string;
+      continuous: boolean;
+      interimResults: boolean;
+      onresult: (e: { results: ArrayLike<ArrayLike<{ transcript: string }>>; resultIndex: number }) => void;
+      onerror: () => void;
+      onend: () => void;
+      start: () => void;
+      stop: () => void;
+    };
+    rec.lang = "en-IN";
+    rec.continuous = true;
+    rec.interimResults = false;
+    rec.onresult = (event) => {
+      let chunk = "";
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        chunk += event.results[i][0].transcript;
+      }
+      const piece = chunk.trim();
+      if (!piece) return;
+      setRemarks((prev) => (prev ? `${prev} ${piece}` : piece));
+    };
+    rec.onerror = () => { stopDictation(); };
+    rec.onend = () => { setListening(false); recognitionRef.current = null; };
+    recognitionRef.current = rec;
+    try {
+      rec.start();
+      setListening(true);
+    } catch {
+      recognitionRef.current = null;
+      setListening(false);
+    }
+  }
+
+  // Stop dictation whenever the Log Call modal closes — prevents the mic
+  // staying hot after the user cancels or saves.
+  useEffect(() => {
+    if (!showCall && listening) stopDictation();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showCall]);
 
   async function callViaAcefone() {
     if (acefoneBusy) return;
@@ -378,7 +452,19 @@ export default function LeadActionsClient({ leadId, phone, altPhone, email, curr
               </div>
             )}
 
-            <label className="text-xs font-semibold text-gray-600">Remarks * <span className="text-gray-400 font-normal">(what did the client say?)</span></label>
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-semibold text-gray-600">Remarks * <span className="text-gray-400 font-normal">(what did the client say?)</span></label>
+              {speechSupported && (
+                <button
+                  type="button"
+                  onClick={toggleDictation}
+                  title="Click to dictate"
+                  className={`btn btn-ghost text-xs ${listening ? "animate-pulse text-red-600" : ""}`}
+                >
+                  {listening ? "🔴" : "🎙"}
+                </button>
+              )}
+            </div>
             <textarea value={remarks} onChange={(e) => setRemarks(e.target.value)} rows={4}
               placeholder="Be specific: client's exact concern, budget mentioned, next step agreed…"
               className="w-full mt-1 border border-[#e5e7eb] rounded-lg px-3 py-2 text-sm font-mono text-[13px]" />

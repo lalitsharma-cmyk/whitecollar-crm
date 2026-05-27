@@ -10,6 +10,7 @@ import { requireUser } from "@/lib/auth";
 import Link from "next/link";
 import MoodCheckIn from "@/components/MoodCheckIn";
 import AttendanceBadge from "@/components/AttendanceBadge";
+import DailyMissionBoard from "@/components/DailyMissionBoard";
 import { todayIST } from "@/lib/attendance";
 import { quoteOfTheDay } from "@/lib/salesQuotes";
 
@@ -479,6 +480,11 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
           </div>
         </div>
       </div>
+
+      {/* §11.5 Daily Missions board — agent-facing gamified daily targets.
+          Mounts immediately after the Daily Opening Experience card so the
+          morning view flows: greeting + mission CTA → mission progress bars. */}
+      <DailyMissionBoard userId={me.id} />
 
       {/* Admin-only: leads waiting for morning assignment (15-min window) */}
       {me.role === "ADMIN" && morningQueueCount > 0 && (
