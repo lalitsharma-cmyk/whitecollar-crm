@@ -8,6 +8,24 @@ import RoundRobinToggle from "@/components/RoundRobinToggle";
 import TestingModeToggle from "@/components/TestingModeToggle";
 import FestivalAdminPanel from "@/components/FestivalAdminPanel";
 import TestPushButton from "@/components/TestPushButton";
+import NotifPrefsEditor from "@/components/NotifPrefsEditor";
+
+// Parse User.notifPrefs (JSON-stringified `{ kind: boolean }` map). Bad JSON or
+// non-object payloads fall back to {} so the editor seeds every toggle ON.
+function parseNotifPrefs(raw: string | null | undefined): Record<string, boolean> {
+  if (!raw) return {};
+  try {
+    const v = JSON.parse(raw);
+    if (v && typeof v === "object" && !Array.isArray(v)) {
+      const out: Record<string, boolean> = {};
+      for (const [k, val] of Object.entries(v)) {
+        if (typeof val === "boolean") out[k] = val;
+      }
+      return out;
+    }
+  } catch { /* ignore — fall through to default */ }
+  return {};
+}
 
 export const dynamic = "force-dynamic";
 
@@ -33,6 +51,7 @@ export default async function SettingsPage() {
   ]);
   const isAdmin = me.role === "ADMIN";
   const icsUrl = buildIcsUrl(me.id);
+  const notifPrefs = parseNotifPrefs((me as { notifPrefs?: string | null }).notifPrefs);
   return (
     <>
       <h1 className="text-xl sm:text-2xl font-bold">Settings</h1>
@@ -193,6 +212,17 @@ export default async function SettingsPage() {
         <p className="text-[11px] text-gray-500 mt-2">
           If no notification arrives, check your browser permissions and re-enable push from the bell icon.
         </p>
+      </div>
+
+      {/* Per-user notification preferences — mute specific kinds + toggle sound.
+          Persistence only; cron/push code will respect these later. */}
+      <div className="card p-5 max-w-2xl">
+        <div className="font-semibold flex items-center gap-2">🔕 Notification preferences</div>
+        <p className="text-xs text-gray-500 mt-1">
+          Mute the alerts you don't want and turn in-app sound effects on or off.
+          Changes save automatically.
+        </p>
+        <NotifPrefsEditor initialPrefs={notifPrefs} />
       </div>
 
       {/* Onboarding tour reset — clears the localStorage flag set by

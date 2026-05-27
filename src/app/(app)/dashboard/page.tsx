@@ -12,6 +12,7 @@ import MoodCheckIn from "@/components/MoodCheckIn";
 import AttendanceBadge from "@/components/AttendanceBadge";
 import DailyMissionBoard from "@/components/DailyMissionBoard";
 import PersonalScoreboard from "@/components/PersonalScoreboard";
+import TeamDailyTargetTile from "@/components/TeamDailyTargetTile";
 import { todayIST } from "@/lib/attendance";
 import { quoteOfTheDay } from "@/lib/salesQuotes";
 
@@ -336,6 +337,11 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
           <Link href="/action-list" className="btn btn-gold justify-center">📋 Action List</Link>
         </div>
       </div>
+
+      {/* Team daily target — rolling progress vs sum of agent targets.
+          Sits above the 4-tile hero strip so the team sees their collective
+          goal first, then the action-first tiles below. Hidden for "all". */}
+      <TeamDailyTargetTile team={view} todayStart={todayStart} />
 
       {/* ─── Today's Situation — Sales Command Center hero (§9.1) ───
           Action-first tiles answering: what needs attention RIGHT NOW?

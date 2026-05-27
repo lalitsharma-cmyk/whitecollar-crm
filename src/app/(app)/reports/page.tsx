@@ -37,9 +37,17 @@ export default async function ReportsPage() {
   const isAdmin = me.role === "ADMIN";
   const today = startOfDay(new Date());
 
+  // §9.12 Best-time-to-call heatmap — role-scoped raw query.
+  // We pass userId as a Prisma parameter rather than string-interpolating
+  // (SQL injection + Prisma's parameter binding gives us proper type
+  // handling). For ADMIN/MANAGER, pass null and the WHERE-clause OR-branch
+  // short-circuits via "$1 IS NULL". DOW is 0=Sun..6=Sat from Postgres.
+  const scopedUserId: string | null =
+    me.role === "AGENT" ? me.id : null;
+
   const [
     bySource, agentPerf, callsByDay, funnel, topProjects,
-    activeLeadsForForecast, stalledRaw,
+    activeLeadsForForecast, stalledRaw, heatmapRaw,
   ] = await Promise.all([
     prisma.lead.groupBy({ by: ["source"], _count: { _all: true }, where: { createdAt: { gte: today } } }),
 
@@ -108,6 +116,22 @@ export default async function ReportsPage() {
       WHERE l."status" IN ('QUALIFIED','SITE_VISIT','NEGOTIATION')
         AND COALESCE(lc."createdAt", l."createdAt") < NOW() - (${STALLED_DAYS} * INTERVAL '1 day')
     `,
+
+    // ── Best time to call heatmap (last 30 days, IST tz).
+    // Role-scoped: AGENT sees own calls only; ADMIN/MANAGER see all.
+    // We pass scopedUserId as a parameter — when it's null the OR-clause
+    // matches every row regardless of "userId".
+    prisma.$queryRaw<Array<{ dow: number; hour: number; total: number; connected: number }>>`
+      SELECT
+        EXTRACT(DOW FROM "startedAt" AT TIME ZONE 'Asia/Kolkata')::int as dow,
+        EXTRACT(HOUR FROM "startedAt" AT TIME ZONE 'Asia/Kolkata')::int as hour,
+        COUNT(*)::int as total,
+        SUM(CASE WHEN outcome::text = 'CONNECTED' THEN 1 ELSE 0 END)::int as connected
+      FROM "CallLog"
+      WHERE "startedAt" >= NOW() - INTERVAL '30 days'
+        AND (${scopedUserId}::text IS NULL OR "userId" = ${scopedUserId})
+      GROUP BY dow, hour
+    `,
   ]);
 
   const [tot, contacted, qualified, visit, neg] = funnel;
@@ -158,6 +182,53 @@ export default async function ReportsPage() {
   const stalledTotal = Object.values(stalledByStage).reduce((s, x) => s + x.count, 0);
   const stalledMoneyAed = Object.values(stalledByStage).reduce((s, x) => s + x.aed, 0);
   const stalledMoneyInr = Object.values(stalledByStage).reduce((s, x) => s + x.inr, 0);
+
+  // ── Heatmap data prep ──────────────────────────────────────────────
+  // Build a sparse 7x24 grid (Sun=0..Sat=6, hour 0..23). Cells with no
+  // call data render as a faint placeholder. Connect-rate drives the
+  // saturation; we also track totals for the tooltip.
+  type HeatCell = { total: number; connected: number };
+  const heatGrid: HeatCell[][] = Array.from({ length: 7 }, () =>
+    Array.from({ length: 24 }, () => ({ total: 0, connected: 0 }))
+  );
+  for (const r of heatmapRaw) {
+    if (r.dow < 0 || r.dow > 6 || r.hour < 0 || r.hour > 23) continue;
+    heatGrid[r.dow][r.hour] = { total: Number(r.total), connected: Number(r.connected) };
+  }
+
+  // Best slot = highest connect-rate among cells with ≥3 calls (avoid
+  // a single lucky pickup looking like a 100% slot).
+  const MIN_CALLS_FOR_BEST = 3;
+  let bestSlot: { dow: number; hour: number; rate: number; total: number } | null = null;
+  for (let d = 0; d < 7; d++) {
+    for (let h = 0; h < 24; h++) {
+      const c = heatGrid[d][h];
+      if (c.total < MIN_CALLS_FOR_BEST) continue;
+      const rate = c.connected / c.total;
+      if (!bestSlot || rate > bestSlot.rate) {
+        bestSlot = { dow: d, hour: h, rate, total: c.total };
+      }
+    }
+  }
+
+  const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  const fmtHour = (h: number) => {
+    if (h === 0) return "12a";
+    if (h === 12) return "12p";
+    if (h < 12) return `${h}a`;
+    return `${h - 12}p`;
+  };
+  const fmtHourTooltip = (h: number) => `${String(h).padStart(2, "0")}:00`;
+  // Tailwind needs static class names; pre-pick emerald shades by bucket.
+  const cellClass = (rate: number, total: number): string => {
+    if (total === 0) return "bg-gray-50 text-gray-300";
+    if (rate >= 0.75) return "bg-emerald-600 text-white";
+    if (rate >= 0.55) return "bg-emerald-500 text-white";
+    if (rate >= 0.40) return "bg-emerald-400 text-emerald-950";
+    if (rate >= 0.25) return "bg-emerald-300 text-emerald-950";
+    if (rate >= 0.10) return "bg-emerald-200 text-emerald-900";
+    return "bg-emerald-100 text-emerald-900";
+  };
 
   const projectStats = topProjects.map(p => {
     const leadIds = new Set<string>();
@@ -357,6 +428,81 @@ export default async function ReportsPage() {
             </tbody>
           </table>
         </div>
+      </div>
+
+      {/* §9.12 Best time to call — DOW × hour-of-day heatmap (IST, 30d).
+          Connect-rate drives the color so Lalit can see at-a-glance when
+          his pickups happen. AGENTS see their own calls; ADMIN/MANAGER
+          see the whole team. */}
+      <div className="card p-4 sm:p-5">
+        <div className="flex items-baseline justify-between gap-3 flex-wrap">
+          <div>
+            <div className="text-xs text-gray-500 tracking-widest">LAST 30 DAYS · IST</div>
+            <div className="font-semibold mt-1">🕓 Best time to call</div>
+          </div>
+          <div className="text-[10px] text-gray-500">
+            {scopedUserId ? "Your calls only" : "All agents · team-wide"}
+          </div>
+        </div>
+
+        <div className="mt-3 overflow-x-auto">
+          <div className="inline-block min-w-full">
+            {/* Hour header row: empty corner + 24 hour labels */}
+            <div className="grid grid-cols-[36px_repeat(24,minmax(22px,1fr))] gap-px text-[9px] text-gray-500 mb-1">
+              <div></div>
+              {Array.from({ length: 24 }, (_, h) => (
+                <div key={h} className="text-center font-medium">{fmtHour(h)}</div>
+              ))}
+            </div>
+            {/* 7 day rows */}
+            {DAY_LABELS.map((dayLabel, d) => (
+              <div key={d} className="grid grid-cols-[36px_repeat(24,minmax(22px,1fr))] gap-px mb-px">
+                <div className="text-[10px] text-gray-600 font-semibold flex items-center justify-end pr-1.5">
+                  {dayLabel}
+                </div>
+                {Array.from({ length: 24 }, (_, h) => {
+                  const cell = heatGrid[d][h];
+                  const rate = cell.total > 0 ? cell.connected / cell.total : 0;
+                  const pct = Math.round(rate * 100);
+                  const title = cell.total === 0
+                    ? `${dayLabel} ${fmtHourTooltip(h)} IST · no calls`
+                    : `${dayLabel} ${fmtHourTooltip(h)} IST · ${cell.total} call${cell.total === 1 ? "" : "s"} · ${pct}% connected`;
+                  return (
+                    <div
+                      key={h}
+                      title={title}
+                      className={`h-7 rounded-sm text-[9px] font-semibold flex items-center justify-center ${cellClass(rate, cell.total)}`}
+                    >
+                      {cell.total > 0 ? `${pct}` : ""}
+                    </div>
+                  );
+                })}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="mt-3 flex items-center gap-2 text-[11px] text-gray-500 flex-wrap">
+          <span>Less</span>
+          <span className="inline-block w-3 h-3 rounded-sm bg-gray-50 border border-gray-200" />
+          <span className="inline-block w-3 h-3 rounded-sm bg-emerald-100" />
+          <span className="inline-block w-3 h-3 rounded-sm bg-emerald-300" />
+          <span className="inline-block w-3 h-3 rounded-sm bg-emerald-500" />
+          <span className="inline-block w-3 h-3 rounded-sm bg-emerald-600" />
+          <span>More connects</span>
+          <span className="ml-auto">Cells show connect %. Needs ≥{MIN_CALLS_FOR_BEST} calls to be a "best slot".</span>
+        </div>
+
+        {bestSlot ? (
+          <div className="mt-2 text-sm font-medium text-emerald-800">
+            💡 Best slot: {DAY_LABELS[bestSlot.dow]} {fmtHour(bestSlot.hour).replace(/a$/, "am").replace(/p$/, "pm")} IST
+            ({Math.round(bestSlot.rate * 100)}% connect · {bestSlot.total} calls)
+          </div>
+        ) : (
+          <div className="mt-2 text-xs text-gray-500 italic">
+            Not enough call data yet — log at least {MIN_CALLS_FOR_BEST} calls in any DOW/hour slot to unlock a recommendation.
+          </div>
+        )}
       </div>
     </>
   );

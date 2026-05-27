@@ -74,6 +74,15 @@ model User {
   // knows their personal goal for the day. Editable by ADMIN/MANAGER on /team.
   dailyCallTarget   Int       @default(30)
 
+  // ── Per-user notification preferences ──
+  // JSON-stringified object of `{ kind: boolean }` toggles plus a "sound" key
+  // for in-app sound effects. Keys map to notification kinds shown in the
+  // /settings → "🔕 Notification preferences" card. Example:
+  //   {"hot_lead":true,"followup":true,"sla":true,"daily_report":false,"sound":true}
+  // NULL = defaults (everything on). Filtering at send-time is wired up later;
+  // for now this column only persists the user's choices.
+  notifPrefs        String?
+
   ownedLeads    Lead[]     @relation("LeadOwner")
   assignments   Assignment[]
   activities    Activity[]
