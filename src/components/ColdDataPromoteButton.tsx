@@ -3,6 +3,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { TrendingUp } from "lucide-react";
 import { showXpToast } from "./XPToast";
+import { showCelebration } from "@/components/DealCelebration";
 
 interface Props { leadId: string; leadName: string; }
 
@@ -34,6 +35,7 @@ export default function ColdDataPromoteButton({ leadId, leadName }: Props) {
           newLevel: j.awardedXp.newLevel,
         });
       }
+      showCelebration({ kind: "cold_to_lead", message: `Cold lead promoted — ${leadName}` });
       router.refresh();
     } catch (e) {
       setErr(`Network error: ${String(e).slice(0, 60)}`);

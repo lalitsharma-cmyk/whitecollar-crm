@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
 import { acefoneEnabled } from "@/lib/acefone";
+import { fmtMoneyDual } from "@/lib/money";
 import AcefoneAgentIdEdit from "@/components/AcefoneAgentIdEdit";
 import WhatsAppNumberEdit from "@/components/WhatsAppNumberEdit";
 import ManagerPicker from "@/components/ManagerPicker";
@@ -10,13 +11,76 @@ export const dynamic = "force-dynamic";
 
 const roleChip: Record<string,string> = { ADMIN: "chip-hot", MANAGER: "chip-warm", AGENT: "chip-new" };
 
+type PipelineRow = { ownerId: string; currency: string; total: number };
+type ResponseRow = { ownerId: string; avgMinutes: number | null };
+
 export default async function TeamPage() {
   const me = await requireUser();
-  const users = await prisma.user.findMany({
-    where: { active: true },
-    include: { _count: { select: { ownedLeads: true, callLogs: true } } },
-    orderBy: [{ team: "asc" }, { name: "asc" }],
-  });
+  const now = new Date();
+  const ninetyDaysAgo = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+  const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+  const [users, activeLeadCounts, pipelineRows, responseRows] = await Promise.all([
+    prisma.user.findMany({
+      where: { active: true },
+      include: { _count: { select: { ownedLeads: true, callLogs: true } } },
+      orderBy: [{ team: "asc" }, { name: "asc" }],
+    }),
+    prisma.lead.groupBy({
+      by: ["ownerId"],
+      where: {
+        ownerId: { not: null },
+        status: { notIn: ["WON", "LOST"] },
+      },
+      _count: { _all: true },
+    }),
+    prisma.$queryRaw<PipelineRow[]>`
+      SELECT "ownerId", COALESCE("budgetCurrency", 'AED') AS currency, SUM("budgetMin")::float AS total
+      FROM "Lead"
+      WHERE "ownerId" IS NOT NULL
+        AND "status"::text IN ('NEW','CONTACTED','QUALIFIED','SITE_VISIT','NEGOTIATION')
+        AND "budgetMin" IS NOT NULL
+        AND "updatedAt" >= ${ninetyDaysAgo}
+      GROUP BY "ownerId", COALESCE("budgetCurrency", 'AED')
+    `,
+    prisma.$queryRaw<ResponseRow[]>`
+      WITH first_calls AS (
+        SELECT DISTINCT ON (cl."leadId") cl."leadId", cl."startedAt"
+        FROM "CallLog" cl
+        ORDER BY cl."leadId", cl."startedAt" ASC
+      )
+      SELECT l."ownerId" AS "ownerId",
+             AVG(EXTRACT(EPOCH FROM (fc."startedAt" - l."createdAt")) / 60.0) AS "avgMinutes"
+      FROM "Lead" l
+      JOIN first_calls fc ON fc."leadId" = l."id"
+      WHERE l."ownerId" IS NOT NULL
+        AND l."createdAt" >= ${thirtyDaysAgo}
+        AND fc."startedAt" >= l."createdAt"
+      GROUP BY l."ownerId"
+    `,
+  ]);
+
+  const activeCountByOwner = new Map<string, number>();
+  for (const row of activeLeadCounts) {
+    if (row.ownerId) activeCountByOwner.set(row.ownerId, row._count._all);
+  }
+
+  const pipelineByOwner = new Map<string, { aed: number; inr: number }>();
+  for (const row of pipelineRows) {
+    if (!row.ownerId) continue;
+    const cur = pipelineByOwner.get(row.ownerId) ?? { aed: 0, inr: 0 };
+    const total = Number(row.total) || 0;
+    if ((row.currency || "AED").toUpperCase() === "INR") cur.inr += total;
+    else cur.aed += total;
+    pipelineByOwner.set(row.ownerId, cur);
+  }
+
+  const responseByOwner = new Map<string, number | null>();
+  for (const row of responseRows) {
+    if (!row.ownerId) continue;
+    responseByOwner.set(row.ownerId, row.avgMinutes == null ? null : Number(row.avgMinutes));
+  }
+
   const canEditAcefone = me.role === "ADMIN";
   const canEditProfile = me.role === "ADMIN" || me.role === "MANAGER";
   const ace = acefoneEnabled();
@@ -59,7 +123,7 @@ export default async function TeamPage() {
       </div>
 
       <div className="card overflow-x-auto">
-        <table className="tbl min-w-[1180px]">
+        <table className="tbl min-w-[1500px]">
           <thead><tr>
             <th>User</th><th>Role</th><th>Team</th>
             <th>Manager</th>
@@ -67,44 +131,74 @@ export default async function TeamPage() {
             <th>Acefone agent id</th>
             <th>Company WhatsApp #</th>
             <th>Active leads</th><th>Total calls</th>
+            <th>Workload</th>
+            <th>Pipeline value (90d)</th>
+            <th>Avg response</th>
           </tr></thead>
           <tbody>
-            {users.map(u => (
-              <tr key={u.id}>
-                <td>
-                  <div className="flex items-center gap-2">
-                    <div className={`avatar ${u.avatarColor ?? "bg-slate-500"}`}>{u.name.split(" ").map(s=>s[0]).slice(0,2).join("")}</div>
-                    <div><div className="font-semibold">{u.name}</div><div className="text-xs text-gray-500">{u.email}</div></div>
-                  </div>
-                </td>
-                <td><span className={`chip ${roleChip[u.role]}`}>{u.role}</span></td>
-                <td>{u.team ?? "—"}</td>
-                <td>
-                  <ManagerPicker
-                    userId={u.id}
-                    initial={u.managerId}
-                    candidates={users.map(c => ({ id: c.id, name: c.name }))}
-                    canEdit={canEditAcefone}
-                  />
-                </td>
-                <td>
-                  <UserSpecializationEditor
-                    userId={u.id}
-                    initialSpecializations={u.specializations}
-                    initialDailyCallTarget={u.dailyCallTarget}
-                    canEdit={canEditProfile}
-                  />
-                </td>
-                <td>
-                  <AcefoneAgentIdEdit userId={u.id} initial={u.acefoneAgentId} canEdit={canEditAcefone} />
-                </td>
-                <td>
-                  <WhatsAppNumberEdit userId={u.id} initial={u.companyWhatsAppNumber} canEdit={canEditAcefone} />
-                </td>
-                <td>{u._count.ownedLeads}</td>
-                <td>{u._count.callLogs}</td>
-              </tr>
-            ))}
+            {users.map(u => {
+              const workload = activeCountByOwner.get(u.id) ?? 0;
+              const workloadColor =
+                workload >= 50 ? "text-red-700 bg-red-50 border-red-200"
+                : workload >= 20 ? "text-amber-700 bg-amber-50 border-amber-200"
+                : "text-emerald-700 bg-emerald-50 border-emerald-200";
+
+              const pipeline = pipelineByOwner.get(u.id) ?? { aed: 0, inr: 0 };
+              const pipelineLabel = fmtMoneyDual(pipeline);
+
+              const avg = responseByOwner.get(u.id);
+              const avgMins = avg == null ? null : Math.round(avg);
+              const avgLabel = avgMins == null ? "—" : `${avgMins}m`;
+              const avgColor =
+                avgMins == null ? "text-gray-500"
+                : avgMins < 15 ? "text-emerald-700"
+                : avgMins <= 60 ? "text-amber-700"
+                : "text-red-700";
+
+              return (
+                <tr key={u.id}>
+                  <td>
+                    <div className="flex items-center gap-2">
+                      <div className={`avatar ${u.avatarColor ?? "bg-slate-500"}`}>{u.name.split(" ").map(s=>s[0]).slice(0,2).join("")}</div>
+                      <div><div className="font-semibold">{u.name}</div><div className="text-xs text-gray-500">{u.email}</div></div>
+                    </div>
+                  </td>
+                  <td><span className={`chip ${roleChip[u.role]}`}>{u.role}</span></td>
+                  <td>{u.team ?? "—"}</td>
+                  <td>
+                    <ManagerPicker
+                      userId={u.id}
+                      initial={u.managerId}
+                      candidates={users.map(c => ({ id: c.id, name: c.name }))}
+                      canEdit={canEditAcefone}
+                    />
+                  </td>
+                  <td>
+                    <UserSpecializationEditor
+                      userId={u.id}
+                      initialSpecializations={u.specializations}
+                      initialDailyCallTarget={u.dailyCallTarget}
+                      canEdit={canEditProfile}
+                    />
+                  </td>
+                  <td>
+                    <AcefoneAgentIdEdit userId={u.id} initial={u.acefoneAgentId} canEdit={canEditAcefone} />
+                  </td>
+                  <td>
+                    <WhatsAppNumberEdit userId={u.id} initial={u.companyWhatsAppNumber} canEdit={canEditAcefone} />
+                  </td>
+                  <td>{u._count.ownedLeads}</td>
+                  <td>{u._count.callLogs}</td>
+                  <td>
+                    <span className={`inline-flex items-center justify-center min-w-[2.5rem] px-2 py-0.5 rounded-full border text-xs font-semibold ${workloadColor}`}>
+                      {workload}
+                    </span>
+                  </td>
+                  <td className="text-xs font-medium whitespace-nowrap">{pipelineLabel}</td>
+                  <td className={`text-sm font-semibold ${avgColor}`}>{avgLabel}</td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>

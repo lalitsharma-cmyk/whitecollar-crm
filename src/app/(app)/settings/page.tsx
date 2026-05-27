@@ -1,3 +1,4 @@
+import { createHmac } from "node:crypto";
 import { requireUser } from "@/lib/auth";
 import { getTravelRatePerKmInr, getSpeedToLeadEnabled, getRoundRobinEnabled, getTestingModeEnabled } from "@/lib/settings";
 import TravelRateEditor from "@/components/TravelRateEditor";
@@ -6,6 +7,17 @@ import RoundRobinToggle from "@/components/RoundRobinToggle";
 import TestingModeToggle from "@/components/TestingModeToggle";
 
 export const dynamic = "force-dynamic";
+
+// Build the per-user ICS subscription URL. The HMAC is computed here on the
+// server using NEXTAUTH_SECRET so the secret never reaches the client; only
+// the resulting userId.signature token is rendered into the page.
+function buildIcsUrl(userId: string): string {
+  const base = process.env.NEXTAUTH_URL ?? "https://crm.whitecollarrealty.com";
+  const secret = process.env.NEXTAUTH_SECRET;
+  if (!secret) return "";
+  const sig = createHmac("sha256", secret).update(userId).digest("hex");
+  return `${base}/api/calendar.ics?token=${userId}.${sig}`;
+}
 
 export default async function SettingsPage() {
   const me = await requireUser();
@@ -16,6 +28,7 @@ export default async function SettingsPage() {
     getTestingModeEnabled(),
   ]);
   const isAdmin = me.role === "ADMIN";
+  const icsUrl = buildIcsUrl(me.id);
   return (
     <>
       <h1 className="text-xl sm:text-2xl font-bold">Settings</h1>
@@ -70,6 +83,72 @@ export default async function SettingsPage() {
           Logged to the lead timeline so the agent can see what was sent.
         </p>
         <SpeedToLeadToggle initial={speedToLeadOn} canEdit={isAdmin} />
+      </div>
+
+      {/* Calendar subscription — personal ICS feed for Google / Apple Calendar */}
+      <div className="card p-5 max-w-2xl">
+        <div className="font-semibold flex items-center gap-2">📅 Calendar subscription</div>
+        <p className="text-xs text-gray-500 mt-1">
+          Subscribe to your follow-ups + scheduled meetings in Google Calendar, Apple Calendar,
+          or Outlook. Refreshes automatically every 15–60 min (set by your calendar app).
+          <b className="text-amber-700"> This URL is personal — treat it like a password.</b>
+        </p>
+        {icsUrl ? (
+          <>
+            <div className="mt-3 flex gap-2 items-stretch">
+              <input
+                id="wcr-ics-url"
+                type="text"
+                readOnly
+                defaultValue={icsUrl}
+                className="flex-1 text-xs font-mono px-2 py-1.5 border border-gray-300 rounded bg-gray-50 truncate"
+              />
+              <button
+                type="button"
+                data-copy-target="wcr-ics-url"
+                className="px-3 py-1.5 text-xs font-medium bg-emerald-600 text-white rounded hover:bg-emerald-700 whitespace-nowrap"
+              >
+                Copy URL
+              </button>
+            </div>
+            <p className="text-[11px] text-gray-500 mt-2">
+              <b>Google Calendar:</b> Other calendars → + → From URL · paste above.
+              <br />
+              <b>Apple Calendar:</b> File → New Calendar Subscription · paste above.
+            </p>
+            {/* Tiny inline island for the copy button — avoids a new component file. */}
+            <script
+              dangerouslySetInnerHTML={{
+                __html: `(function(){
+                  document.querySelectorAll('[data-copy-target]').forEach(function(btn){
+                    if (btn.dataset.bound) return;
+                    btn.dataset.bound = '1';
+                    btn.addEventListener('click', function(){
+                      var id = btn.getAttribute('data-copy-target');
+                      var el = document.getElementById(id);
+                      if (!el) return;
+                      el.select && el.select();
+                      try {
+                        if (navigator.clipboard && navigator.clipboard.writeText) {
+                          navigator.clipboard.writeText(el.value);
+                        } else {
+                          document.execCommand('copy');
+                        }
+                        var prev = btn.textContent;
+                        btn.textContent = 'Copied!';
+                        setTimeout(function(){ btn.textContent = prev; }, 1500);
+                      } catch(e) {}
+                    });
+                  });
+                })();`,
+              }}
+            />
+          </>
+        ) : (
+          <p className="text-xs text-amber-700 mt-2">
+            Calendar subscription unavailable — NEXTAUTH_SECRET is not configured on the server.
+          </p>
+        )}
       </div>
 
       {/* Read-only info cards */}

@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { fromISTLocalInput } from "@/lib/datetime";
 import DateTimeIST from "./DateTimeIST";
 import { showXpToast } from "./XPToast";
+import { showCelebration } from "@/components/DealCelebration";
 
 interface Counts {
   officeMeetings: { count: number; lastAt: Date | null };
@@ -30,7 +31,7 @@ function ago(d: Date | null) {
   return `${Math.floor(days / 30)}mo ago`;
 }
 
-export default function LeadMeetingClient({ leadId, counts }: { leadId: string; counts: Counts }) {
+export default function LeadMeetingClient({ leadId, counts, leadName }: { leadId: string; counts: Counts; leadName?: string }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [type, setType] = useState("OFFICE_MEETING");
@@ -63,6 +64,7 @@ export default function LeadMeetingClient({ leadId, counts }: { leadId: string; 
           newLevel: j.awardedXp.newLevel,
         });
       }
+      showCelebration({ kind: "meeting_booked", message: `Meeting booked — ${leadName ?? "client"}` });
       router.refresh();
     } finally { setBusy(false); }
   }

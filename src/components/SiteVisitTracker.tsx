@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { MapPin, AlertCircle, CheckCircle2, X } from "lucide-react";
+import { showCelebration } from "@/components/DealCelebration";
 
 interface Props {
   leadId: string;
@@ -158,6 +159,7 @@ export default function SiteVisitTracker({ leadId, leadName, activeVisit }: Prop
       setShowEndModal(false);
       setEndNotes("");
       setIsNoShow(false);
+      showCelebration({ kind: "site_visit_done", message: `Site visit done — ${leadName}` });
       router.refresh();
     } catch (e) {
       setErr(String((e as Error).message ?? e));

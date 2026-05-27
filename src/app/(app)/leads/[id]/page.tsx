@@ -530,7 +530,7 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
           </div>
         )}
         <div data-lead-section="overview" className="card p-5">
-          <LeadMeetingClient leadId={lead.id} counts={meetingCounts} />
+          <LeadMeetingClient leadId={lead.id} counts={meetingCounts} leadName={lead.name} />
         </div>
 
         {/* Start a Site Visit — moved from header to right under meeting counts */}
