@@ -14,7 +14,8 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, Trash2, Save, X, Pause, Play } from "lucide-react";
+import { Plus, Trash2, Save, X, Pause, Play, Sparkles } from "lucide-react";
+import { WORKFLOW_TEMPLATES, type WorkflowTemplate } from "@/lib/workflowTemplates";
 
 // ── Types mirrored from prisma enums (kept manual to stay a client comp) ──
 type TriggerType =
@@ -512,11 +513,39 @@ interface PanelProps {
   templates: Template[];
 }
 
+function templateToSeed(t: WorkflowTemplate): WorkflowFormSeed {
+  return {
+    name: t.name,
+    description: t.description,
+    trigger: t.trigger as TriggerType,
+    triggerConfig: t.triggerConfig ?? null,
+    filterQuery: t.filterQuery ?? null,
+    actions: t.actions.map((a) => ({
+      type: a.type as ActionType,
+      delayMinutes: a.delayMinutes,
+      config: a.config,
+    })),
+  };
+}
+
 export default function WorkflowBuilderPanel({ workflows, templates }: PanelProps) {
   const router = useRouter();
   const [creating, setCreating] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [starterSeed, setStarterSeed] = useState<WorkflowFormSeed | null>(null);
+  const [showStarters, setShowStarters] = useState(true);
+
+  function useStarter(t: WorkflowTemplate) {
+    setStarterSeed(templateToSeed(t));
+    setEditingId(null);
+    setCreating(true);
+  }
+
+  function closeCreate() {
+    setCreating(false);
+    setStarterSeed(null);
+  }
 
   async function toggle(wf: WorkflowSummary) {
     setBusyId(wf.id);
@@ -560,8 +589,59 @@ export default function WorkflowBuilderPanel({ workflows, templates }: PanelProp
   return (
     <div className="space-y-4">
       {!creating && !editingId && (
+        <section className="card p-4">
+          <div className="flex items-center justify-between gap-2 mb-3">
+            <div className="flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-[#c9a24b]" />
+              <h3 className="font-bold text-sm">Starter templates</h3>
+              <span className="text-[11px] text-gray-500">
+                One-click clone a proven workflow rule, then tweak before saving.
+              </span>
+            </div>
+            <button
+              onClick={() => setShowStarters((v) => !v)}
+              className="btn btn-ghost text-xs"
+            >
+              {showStarters ? "Hide" : "Show"}
+            </button>
+          </div>
+          {showStarters && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+              {WORKFLOW_TEMPLATES.map((t) => (
+                <div
+                  key={t.id}
+                  className="border border-gray-200 hover:border-[#c9a24b] rounded-lg p-3 flex flex-col gap-2 transition"
+                >
+                  <div className="font-semibold text-sm">{t.name}</div>
+                  <p className="text-[11px] text-gray-600 line-clamp-3">{t.description}</p>
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="chip chip-new text-[10px]">
+                      {TRIGGER_OPTIONS.find((o) => o.value === t.trigger)?.label ?? t.trigger}
+                    </span>
+                    {t.filterQuery && (
+                      <span className="chip chip-warm text-[10px]">if: {t.filterQuery}</span>
+                    )}
+                    <span className="chip chip-won text-[10px]">
+                      {t.actions.length} action{t.actions.length === 1 ? "" : "s"}
+                    </span>
+                  </div>
+                  <button
+                    onClick={() => useStarter(t)}
+                    className="btn btn-ghost text-xs self-start mt-auto"
+                    title="Prefill builder with this template"
+                  >
+                    <Plus className="w-3 h-3" /> Use this
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      )}
+
+      {!creating && !editingId && (
         <div className="flex justify-end">
-          <button onClick={() => setCreating(true)} className="btn btn-primary text-sm">
+          <button onClick={() => { setStarterSeed(null); setCreating(true); }} className="btn btn-primary text-sm">
             <Plus className="w-4 h-4" /> New workflow
           </button>
         </div>
@@ -569,8 +649,9 @@ export default function WorkflowBuilderPanel({ workflows, templates }: PanelProp
 
       {creating && (
         <Builder
+          seed={starterSeed ?? undefined}
           templates={templates}
-          onClose={() => setCreating(false)}
+          onClose={closeCreate}
         />
       )}
 

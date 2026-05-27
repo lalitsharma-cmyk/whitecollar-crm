@@ -14,6 +14,7 @@ import FestiveBanner from "./FestiveBanner";
 import AccentPainter from "./AccentPainter";
 import XPToastHost from "./XPToast";
 import DealCelebrationHost from "./DealCelebration";
+import QuickSearch from "./QuickSearch";
 import { useBodyScrollLock } from "@/hooks/useBodyScrollLock";
 
 const fullNav = [
@@ -285,6 +286,9 @@ export default function MobileShell({ children, user }: Props) {
         })}
       </nav>
 
+      {/* Global Ctrl/Cmd+K quick-search palette — mounted at shell so the
+          shortcut works on every page. */}
+      <QuickSearch />
       {/* Gamification XP toasts — mounted once at the shell so any client
           component (Log Call, status update, etc.) can call showXpToast(). */}
       <XPToastHost />

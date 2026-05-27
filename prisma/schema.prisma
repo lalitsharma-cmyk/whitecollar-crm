@@ -900,6 +900,10 @@ model Notification {
   linkUrl   String?       // where clicking it takes you (e.g. /leads/abc)
   leadId    String?       // optional related lead
   readAt    DateTime?     // null = unread
+  // When set + in the future, the notification is hidden from the inbox until that time.
+  // Cleared automatically by simply letting the timestamp pass (no cron needed — queries
+  // filter `snoozedUntil > now`).
+  snoozedUntil DateTime?
   createdAt DateTime      @default(now())
   @@index([userId, readAt])
   @@index([createdAt])

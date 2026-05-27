@@ -20,6 +20,7 @@ import { canTouchLead } from "@/lib/leadScope";
 import SuggestedUnitsCard from "@/components/SuggestedUnitsCard";
 import { bestUnitsForLead } from "@/lib/inventoryMatch";
 import CallHistoryCard from "@/components/CallHistoryCard";
+import BuyingSignalsCard from "@/components/BuyingSignalsCard";
 import LeadReassignClient from "@/components/LeadReassignClient";
 import RejectLeadClient from "@/components/RejectLeadClient";
 import LeadMobileTabs from "@/components/LeadMobileTabs";
@@ -443,6 +444,15 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
             <InlineEdit leadId={lead.id} field="whoIsClient" type="textarea" value={lead.whoIsClient ?? ""}
               placeholder="e.g. NRI from Mumbai based in Dubai. Senior Director at consulting firm. Husband already owns at Burj Vista. Looking for parents who'll relocate next year. Wife is decision maker." />
           </div>
+        </div>
+
+        {/* §6.5 / §9.4 — rules-based Buying Signals chip card.
+            Pure synchronous computation over data already loaded above
+            (discussed[], callLogs[], activities[], status, eoiStage, bantStatus,
+            fundReadiness, followupDate, aiScore, lastTouchedAt, budgetMin).
+            Card hides itself when nothing fires. No AI dependency. */}
+        <div data-lead-section="overview">
+          <BuyingSignalsCard lead={lead} />
         </div>
 
         {/* AI Summary MOVED to the top of the left column (right after Call
