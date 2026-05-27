@@ -6,6 +6,7 @@ import AcefoneAgentIdEdit from "@/components/AcefoneAgentIdEdit";
 import WhatsAppNumberEdit from "@/components/WhatsAppNumberEdit";
 import ManagerPicker from "@/components/ManagerPicker";
 import UserSpecializationEditor from "@/components/UserSpecializationEditor";
+import Link from "next/link";
 
 export const dynamic = "force-dynamic";
 
@@ -160,7 +161,14 @@ export default async function TeamPage() {
                   <td>
                     <div className="flex items-center gap-2">
                       <div className={`avatar ${u.avatarColor ?? "bg-slate-500"}`}>{u.name.split(" ").map(s=>s[0]).slice(0,2).join("")}</div>
-                      <div><div className="font-semibold">{u.name}</div><div className="text-xs text-gray-500">{u.email}</div></div>
+                      <div>
+                        <div className="font-semibold">
+                          <Link href={"/team/" + u.id} className="hover:underline text-[#0b1a33]">
+                            {u.name}
+                          </Link>
+                        </div>
+                        <div className="text-xs text-gray-500">{u.email}</div>
+                      </div>
                     </div>
                   </td>
                   <td><span className={`chip ${roleChip[u.role]}`}>{u.role}</span></td>

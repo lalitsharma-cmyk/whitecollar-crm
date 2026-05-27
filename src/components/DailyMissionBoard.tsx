@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { ActivityType, ActivityStatus } from "@prisma/client";
 import { startOfDay } from "date-fns";
+import MissionCompleteBeacon from "@/components/MissionCompleteBeacon";
 
 // §11.5 Daily Missions board — agent-facing gamified daily targets.
 //
@@ -64,6 +65,8 @@ export default async function DailyMissionBoard({ userId }: { userId: string }) 
     { emoji: "🤝", label: "Book 1 meeting", count: meetingsCount, target: 1, xp: 75 },
   ];
 
+  const allDone = missions.every((m) => m.count >= m.target);
+
   return (
     <div className="card p-4 border-l-4 border-[#c9a24b] bg-amber-50/60">
       <div className="flex items-center justify-between gap-2 mb-3 flex-wrap">
@@ -77,6 +80,7 @@ export default async function DailyMissionBoard({ userId }: { userId: string }) 
           <MissionRow key={m.label} mission={m} />
         ))}
       </div>
+      <MissionCompleteBeacon fired={allDone} />
     </div>
   );
 }

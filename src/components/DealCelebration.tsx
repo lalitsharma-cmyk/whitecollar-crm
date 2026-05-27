@@ -25,7 +25,8 @@ export type CelebrationKind =
   | "meeting_booked"
   | "site_visit_done"
   | "cold_to_lead"
-  | "booking_done";
+  | "booking_done"
+  | "all_missions_done";
 
 interface CelebrationPayload {
   kind: CelebrationKind;
@@ -47,7 +48,7 @@ let nextId = 1;
 
 // Small-toast kinds get an emoji prefix; the big one renders its own header.
 const SMALL_META: Record<
-  Exclude<CelebrationKind, "booking_done">,
+  Exclude<CelebrationKind, "booking_done" | "all_missions_done">,
   { emoji: string; label: string }
 > = {
   meeting_booked:  { emoji: "📅", label: "Meeting booked" },
@@ -106,7 +107,12 @@ export default function DealCelebrationHost() {
       if (!p || typeof p.message !== "string" || !p.kind) return;
       const id = nextId++;
       setItems((prev) => [...prev, { ...p, id }]);
-      const ttl = p.kind === "booking_done" ? 5000 : 3000;
+      const ttl =
+        p.kind === "booking_done"
+          ? 5000
+          : p.kind === "all_missions_done"
+            ? 4000
+            : 3000;
       if (p.kind === "booking_done") playSuccessChime();
       window.setTimeout(() => {
         setItems((prev) => prev.filter((t) => t.id !== id));
@@ -119,7 +125,10 @@ export default function DealCelebrationHost() {
   if (items.length === 0) return null;
 
   const big = items.filter((i) => i.kind === "booking_done");
-  const small = items.filter((i) => i.kind !== "booking_done");
+  const small = items.filter(
+    (i) => i.kind !== "booking_done" && i.kind !== "all_missions_done",
+  );
+  const missionsDone = items.filter((i) => i.kind === "all_missions_done");
 
   return (
     <>
@@ -136,12 +145,15 @@ export default function DealCelebrationHost() {
       )}
 
       {/* ── SMALL: bottom-center toasts for the other kinds ── */}
-      {small.length > 0 && (
+      {(small.length > 0 || missionsDone.length > 0) && (
         <div
           className="fixed left-1/2 -translate-x-1/2 z-[100] flex flex-col items-center gap-2 pointer-events-none"
           style={{ bottom: "calc(5rem + env(safe-area-inset-bottom))" }}
           aria-live="polite"
         >
+          {missionsDone.map((t) => (
+            <AllMissionsDonePill key={t.id} message={t.message} />
+          ))}
           {small.map((t) => (
             <SmallToast key={t.id} item={t} />
           ))}
@@ -255,8 +267,41 @@ function BookingDoneOverlay({ message }: { message: string }) {
   );
 }
 
+function AllMissionsDonePill({ message }: { message: string }) {
+  return (
+    <div
+      className="wcr-celeb-small pointer-events-auto rounded-full shadow-lg border-2 px-5 py-2.5 flex items-center gap-2.5 max-w-[92vw]"
+      style={{
+        background:
+          "linear-gradient(135deg, #0b1a33 0%, #152d57 55%, #0b1a33 100%)",
+        borderColor: "var(--accent-primary, #c9a24b)",
+        color: "#fff",
+        boxShadow:
+          "0 10px 30px rgba(0,0,0,0.35), 0 0 0 1px rgba(201,162,75,0.35), 0 0 40px rgba(201,162,75,0.25)",
+      }}
+    >
+      <span className="text-base leading-none" aria-hidden>
+        🎯
+      </span>
+      <div className="text-xs leading-tight">
+        <div
+          className="font-bold tracking-wide"
+          style={{ color: "var(--accent-primary, #c9a24b)" }}
+        >
+          All daily missions complete — well done!
+        </div>
+        <div className="text-white/85 truncate max-w-[260px]">
+          {message}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function SmallToast({ item }: { item: CelebrationItem }) {
-  if (item.kind === "booking_done") return null; // handled in overlay
+  if (item.kind === "booking_done" || item.kind === "all_missions_done") {
+    return null; // handled elsewhere
+  }
   const meta = SMALL_META[item.kind];
   return (
     <div
