@@ -384,6 +384,41 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
             (outcome buckets, no-pick streak, callback times). */}
         <CallHistoryCard callLogs={lead.callLogs} />
 
+        {/* EOI / Booking workflow — wide card on the LEFT column for
+            negotiation-stage leads. Lalit: "EOI one should be in middle
+            section — not in right corner". Surfaces only when status
+            reaches NEGOTIATION, BOOKING_DONE, or WON. */}
+        {(lead.status === "NEGOTIATION" || lead.status === "BOOKING_DONE" || lead.status === "WON") && (
+          <EOIWorkflowCard
+            lead={{
+              id: lead.id,
+              status: lead.status,
+              eoiStage: lead.eoiStage,
+              eoiAmount: lead.eoiAmount,
+              eoiCurrency: lead.eoiCurrency,
+              eoiPaymentMethod: lead.eoiPaymentMethod,
+              eoiCollectedAt: lead.eoiCollectedAt,
+              kycStatus: lead.kycStatus,
+              kycReceivedAt: lead.kycReceivedAt,
+              bookingFormStatus: lead.bookingFormStatus,
+              bookingFormSentAt: lead.bookingFormSentAt,
+              bookingFormSignedAt: lead.bookingFormSignedAt,
+              paymentProofStatus: lead.paymentProofStatus,
+              paymentProofReceivedAt: lead.paymentProofReceivedAt,
+              developerConfirmationStatus: lead.developerConfirmationStatus,
+              developerConfirmedAt: lead.developerConfirmedAt,
+              bookingDoneAt: lead.bookingDoneAt,
+              commissionAmount: lead.commissionAmount,
+              commissionCurrency: lead.commissionCurrency,
+              commissionStatus: lead.commissionStatus,
+              commissionReceivedAt: lead.commissionReceivedAt,
+              eoiNotes: lead.eoiNotes,
+              eoiApprovalRequired: lead.eoiApprovalRequired,
+              eoiApprovedAt: lead.eoiApprovedAt,
+            }}
+          />
+        )}
+
         <div className="card p-5 border-l-4 border-[#c9a24b]">
           <div className="flex items-center gap-2 mb-2">
             <span className="ai-tag">WHO IS THE CLIENT</span>
@@ -494,39 +529,10 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
           } : null}
         />
 
-        {/* EOI / Booking workflow — only surfaces once a lead has reached
-            NEGOTIATION (or later). Earlier stages are still in qualification,
-            so showing the EOI funnel would be premature. */}
-        {(lead.status === "NEGOTIATION" || lead.status === "BOOKING_DONE" || lead.status === "WON") && (
-          <EOIWorkflowCard
-            lead={{
-              id: lead.id,
-              status: lead.status,
-              eoiStage: lead.eoiStage,
-              eoiAmount: lead.eoiAmount,
-              eoiCurrency: lead.eoiCurrency,
-              eoiPaymentMethod: lead.eoiPaymentMethod,
-              eoiCollectedAt: lead.eoiCollectedAt,
-              kycStatus: lead.kycStatus,
-              kycReceivedAt: lead.kycReceivedAt,
-              bookingFormStatus: lead.bookingFormStatus,
-              bookingFormSentAt: lead.bookingFormSentAt,
-              bookingFormSignedAt: lead.bookingFormSignedAt,
-              paymentProofStatus: lead.paymentProofStatus,
-              paymentProofReceivedAt: lead.paymentProofReceivedAt,
-              developerConfirmationStatus: lead.developerConfirmationStatus,
-              developerConfirmedAt: lead.developerConfirmedAt,
-              bookingDoneAt: lead.bookingDoneAt,
-              commissionAmount: lead.commissionAmount,
-              commissionCurrency: lead.commissionCurrency,
-              commissionStatus: lead.commissionStatus,
-              commissionReceivedAt: lead.commissionReceivedAt,
-              eoiNotes: lead.eoiNotes,
-              eoiApprovalRequired: lead.eoiApprovalRequired,
-              eoiApprovedAt: lead.eoiApprovedAt,
-            }}
-          />
-        )}
+        {/* EOI / Booking workflow MOVED to the LEFT / middle column —
+            Lalit's ask: "EOI one should be in middle section — not in
+            right corner". The card is wide (8-step stepper + many fields),
+            so the wider left column gives it room to breathe. */}
 
         {/* Scheduling & next action — Followup + To-Do FIRST per Lalit's ask
             ("Followup and to do should be on top") since those are the daily
