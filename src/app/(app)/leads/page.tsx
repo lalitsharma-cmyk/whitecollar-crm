@@ -424,6 +424,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
 
       <LeadsListClient
         canBulk={canBulk}
+        canReassign={canBulk}
         showSource={me.role !== "AGENT"}
         agents={agents.map((a) => ({ id: a.id, name: a.name, team: a.team }))}
         leads={leads.map((l) => ({

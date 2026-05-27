@@ -126,6 +126,13 @@ export default async function DailyReportPage({ searchParams }: { searchParams: 
           {dayStr < todayStr && (
             <Link href={`/reports/daily?date=${nextDay}${sp.agent ? `&agent=${sp.agent}` : ""}`} className="btn btn-ghost text-xs">Next day ›</Link>
           )}
+          {isAdminOrMgr && (
+            <a
+              href={`/api/reports/daily/pdf?date=${dayStr}${sp.agent ? `&agent=${sp.agent}` : ""}${sp.team ? `&team=${sp.team}` : ""}`}
+              className="btn btn-primary text-xs"
+              download
+            >⬇ Download PDF</a>
+          )}
         </div>
       </div>
 

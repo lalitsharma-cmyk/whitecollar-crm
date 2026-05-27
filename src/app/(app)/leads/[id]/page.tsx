@@ -21,6 +21,7 @@ import SuggestedUnitsCard from "@/components/SuggestedUnitsCard";
 import { bestUnitsForLead } from "@/lib/inventoryMatch";
 import CallHistoryCard from "@/components/CallHistoryCard";
 import BuyingSignalsCard from "@/components/BuyingSignalsCard";
+import LeadNotesCard from "@/components/LeadNotesCard";
 import LeadReassignClient from "@/components/LeadReassignClient";
 import RejectLeadClient from "@/components/RejectLeadClient";
 import LeadMobileTabs from "@/components/LeadMobileTabs";
@@ -461,6 +462,24 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
             Card hides itself when nothing fires. No AI dependency. */}
         <div data-lead-section="overview">
           <BuyingSignalsCard lead={lead} />
+        </div>
+
+        {/* 📝 Notes — free-form per-lead notes (distinct from Timeline activity
+            events and Call-History call rows). Authors can delete their own;
+            ADMIN can delete any. No pin support — Note model has no `pinned`
+            column. Newest-first (matches the orderBy on the page fetch). */}
+        <div data-lead-section="overview">
+          <LeadNotesCard
+            leadId={lead.id}
+            currentUserId={me.id}
+            currentUserRole={me.role}
+            initialNotes={lead.notes.map((n) => ({
+              id: n.id,
+              content: n.body,
+              createdAt: n.createdAt.toISOString(),
+              user: n.user ? { id: n.user.id, name: n.user.name, avatarColor: n.user.avatarColor } : null,
+            }))}
+          />
         </div>
 
         {/* AI Summary MOVED to the top of the left column (right after Call
