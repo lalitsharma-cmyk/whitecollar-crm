@@ -588,6 +588,15 @@ export default function WorkflowBuilderPanel({ workflows, templates }: PanelProp
     } finally { setBusyId(null); }
   }
 
+  async function clone(wf: WorkflowSummary) {
+    if (!confirm("Clone this workflow as a paused copy?")) return;
+    setBusyId(wf.id);
+    try {
+      const r = await fetch(`/api/admin/workflows/${wf.id}/clone`, { method: "POST" });
+      if (r.ok) router.refresh();
+    } finally { setBusyId(null); }
+  }
+
   function seedFor(wf: WorkflowSummary): WorkflowFormSeed {
     let tc: Record<string, unknown> | null = null;
     if (wf.triggerConfig) { try { tc = JSON.parse(wf.triggerConfig); } catch { /* ignore */ } }
@@ -753,6 +762,14 @@ export default function WorkflowBuilderPanel({ workflows, templates }: PanelProp
                     : "Never run yet"}
                 </div>
                 <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => clone(wf)}
+                    disabled={busyId === wf.id}
+                    className="text-[10px] text-gray-500 hover:text-[#c9a24b] hover:underline whitespace-nowrap inline-flex items-center gap-0.5 disabled:opacity-50"
+                    title="Duplicate this workflow as a paused copy"
+                  >
+                    📋 Clone
+                  </button>
                   <button
                     onClick={() => setTestingId(testingId === wf.id ? null : wf.id)}
                     className="text-[10px] text-gray-500 hover:text-[#c9a24b] hover:underline whitespace-nowrap inline-flex items-center gap-0.5"

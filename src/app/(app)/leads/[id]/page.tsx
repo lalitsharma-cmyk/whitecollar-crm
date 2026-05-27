@@ -29,6 +29,7 @@ import RejectLeadClient from "@/components/RejectLeadClient";
 import LeadMobileTabs from "@/components/LeadMobileTabs";
 import LeadTagsEditor from "@/components/LeadTagsEditor";
 import PrintButton from "@/components/PrintButton";
+import BestCallTimeChip from "@/components/BestCallTimeChip";
 import { formatBudget } from "@/lib/budgetParse";
 
 export const dynamic = "force-dynamic";
@@ -359,22 +360,29 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
                 <span className="text-xs text-gray-500 font-semibold pt-0.5">Tags:</span>
                 <LeadTagsEditor leadId={lead.id} initialTags={lead.tags} />
               </div>
-              <LeadActionsClient
-                leadId={lead.id}
-                phone={lead.phone}
-                altPhone={lead.altPhone}
-                email={lead.email}
-                currentOwnerId={lead.ownerId}
-                canReassign={canReassign}
-                agents={agents.map(a => ({ id: a.id, name: a.name, role: a.role, team: a.team, avatarColor: a.avatarColor }))}
-                phoneMasked={maskPhone(lead.phone)}
-                altPhoneMasked={maskPhone(lead.altPhone)}
-                leadName={lead.name}
-                agentName={me.name}
-                acefoneEnabled={acefoneEnabled()}
-                acefoneMappedForUser={!!me.acefoneAgentId}
-                hideReassign={true}
-              />
+              {/* Phone/WA action buttons + "best time to call" hint.
+                  Wrapped in a flex-wrap container so the chip flows beside
+                  the buttons on desktop and onto its own line on mobile —
+                  doesn't disturb LeadActionsClient's own internal layout. */}
+              <div className="flex items-center flex-wrap gap-2">
+                <LeadActionsClient
+                  leadId={lead.id}
+                  phone={lead.phone}
+                  altPhone={lead.altPhone}
+                  email={lead.email}
+                  currentOwnerId={lead.ownerId}
+                  canReassign={canReassign}
+                  agents={agents.map(a => ({ id: a.id, name: a.name, role: a.role, team: a.team, avatarColor: a.avatarColor }))}
+                  phoneMasked={maskPhone(lead.phone)}
+                  altPhoneMasked={maskPhone(lead.altPhone)}
+                  leadName={lead.name}
+                  agentName={me.name}
+                  acefoneEnabled={acefoneEnabled()}
+                  acefoneMappedForUser={!!me.acefoneAgentId}
+                  hideReassign={true}
+                />
+                <BestCallTimeChip leadId={lead.id} />
+              </div>
               {/* 🖨 Print — collapses sticky UI / modals / nav and lays out
                   all [data-lead-section] cards as a clean briefing for the
                   client. Print rules live in globals.css under @media print. */}

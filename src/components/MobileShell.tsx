@@ -17,6 +17,7 @@ import DealCelebrationHost from "./DealCelebration";
 import QuickSearch from "./QuickSearch";
 import KeyboardShortcutsHelp from "./KeyboardShortcutsHelp";
 import OnboardingTour from "./OnboardingTour";
+import PWAInstallNudge from "./PWAInstallNudge";
 import { useBodyScrollLock } from "@/hooks/useBodyScrollLock";
 
 const fullNav = [
@@ -309,6 +310,10 @@ export default function MobileShell({ children, user }: Props) {
           only ever shows once per device; can be re-triggered from
           /settings → "Restart onboarding tour". */}
       <OnboardingTour />
+      {/* One-time mobile nudge to install the CRM as a PWA. Hidden on
+          desktop, on iOS (no beforeinstallprompt), already-installed, and
+          for 30 days after dismissal. */}
+      <PWAInstallNudge />
     </div>
   );
 }

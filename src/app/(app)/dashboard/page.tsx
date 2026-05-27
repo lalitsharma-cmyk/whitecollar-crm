@@ -12,6 +12,7 @@ import MoodCheckIn from "@/components/MoodCheckIn";
 import AttendanceBadge from "@/components/AttendanceBadge";
 import DailyMissionBoard from "@/components/DailyMissionBoard";
 import PersonalScoreboard from "@/components/PersonalScoreboard";
+import SmartSuggestionsCard from "@/components/SmartSuggestionsCard";
 import TeamDailyTargetTile from "@/components/TeamDailyTargetTile";
 import { todayIST } from "@/lib/attendance";
 import { quoteOfTheDay } from "@/lib/salesQuotes";
@@ -399,6 +400,13 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
           </div>
         </div>
       )}
+
+      {/* Smart suggestions — rule-based daily nudges. Mounted between the
+          live Sales Floor feed and the productivity tables so the agent
+          immediately sees concrete actions ("which 5 things should I act on
+          right now") before the broader stats. Hides itself when every rule
+          returns zero. */}
+      <SmartSuggestionsCard userId={me.id} role={me.role} team={me.team} />
 
       {/* Attendance badge — auto-marked on login, shown next to mood */}
       <div className="flex flex-wrap gap-3 items-start">
