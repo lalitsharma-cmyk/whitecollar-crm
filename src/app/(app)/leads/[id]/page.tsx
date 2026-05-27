@@ -9,6 +9,7 @@ import LeadActionsClient from "@/components/LeadActionsClient";
 import LeadProjectsClient from "@/components/LeadProjectsClient";
 import LeadMeetingClient from "@/components/LeadMeetingClient";
 import SiteVisitTracker from "@/components/SiteVisitTracker";
+import EOIWorkflowCard from "@/components/EOIWorkflowCard";
 import AdvancedActivityLogger from "@/components/AdvancedActivityLogger";
 import { getTravelRatePerKmInr } from "@/lib/settings";
 import { runReconciler } from "@/lib/reconciler";
@@ -463,6 +464,40 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
             startedAt: activeVisit.startedAt.toISOString(),
           } : null}
         />
+
+        {/* EOI / Booking workflow — only surfaces once a lead has reached
+            NEGOTIATION (or later). Earlier stages are still in qualification,
+            so showing the EOI funnel would be premature. */}
+        {(lead.status === "NEGOTIATION" || lead.status === "BOOKING_DONE" || lead.status === "WON") && (
+          <EOIWorkflowCard
+            lead={{
+              id: lead.id,
+              status: lead.status,
+              eoiStage: lead.eoiStage,
+              eoiAmount: lead.eoiAmount,
+              eoiCurrency: lead.eoiCurrency,
+              eoiPaymentMethod: lead.eoiPaymentMethod,
+              eoiCollectedAt: lead.eoiCollectedAt,
+              kycStatus: lead.kycStatus,
+              kycReceivedAt: lead.kycReceivedAt,
+              bookingFormStatus: lead.bookingFormStatus,
+              bookingFormSentAt: lead.bookingFormSentAt,
+              bookingFormSignedAt: lead.bookingFormSignedAt,
+              paymentProofStatus: lead.paymentProofStatus,
+              paymentProofReceivedAt: lead.paymentProofReceivedAt,
+              developerConfirmationStatus: lead.developerConfirmationStatus,
+              developerConfirmedAt: lead.developerConfirmedAt,
+              bookingDoneAt: lead.bookingDoneAt,
+              commissionAmount: lead.commissionAmount,
+              commissionCurrency: lead.commissionCurrency,
+              commissionStatus: lead.commissionStatus,
+              commissionReceivedAt: lead.commissionReceivedAt,
+              eoiNotes: lead.eoiNotes,
+              eoiApprovalRequired: lead.eoiApprovalRequired,
+              eoiApprovedAt: lead.eoiApprovedAt,
+            }}
+          />
+        )}
 
         {/* Scheduling & next action — Followup + To-Do FIRST per Lalit's ask
             ("Followup and to do should be on top") since those are the daily

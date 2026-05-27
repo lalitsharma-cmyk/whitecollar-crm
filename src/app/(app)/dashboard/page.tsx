@@ -107,6 +107,28 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
 
   const connectRate = callsToday ? Math.round((connectedToday / callsToday) * 100) : 0;
 
+  // ── EOI / Booking pipeline alerts (Admin + Manager only) ──
+  // Surface the most important counts: how many leads are mid-funnel, how many
+  // are waiting on KYC, how many need the viewer's approval, how many are stuck
+  // beyond 7 days. Each tile links to /leads?eoi=X for a filtered view.
+  let eoiAlerts: { active: number; kycPending: number; approvalNeeded: number; stuck: number } | null = null;
+  if (isAdminOrMgr) {
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 3600 * 1000);
+    const [active, kycPending, approvalNeeded, stuck] = await Promise.all([
+      prisma.lead.count({ where: { ...teamScope, eoiStage: { not: null } } }),
+      prisma.lead.count({ where: { ...teamScope, kycStatus: "PENDING" } }),
+      prisma.lead.count({ where: { ...teamScope, eoiApprovalRequired: true } }),
+      prisma.lead.count({
+        where: {
+          ...teamScope,
+          bookingDoneAt: null,
+          eoiCollectedAt: { lt: sevenDaysAgo, not: null },
+        },
+      }),
+    ]);
+    eoiAlerts = { active, kycPending, approvalNeeded, stuck };
+  }
+
   // Forecast computation — weighted by stage
   const forecast = { aed: { closing: 0, meeting: 0, moving: 0, early: 0 }, inr: { closing: 0, meeting: 0, moving: 0, early: 0 } };
   // Live counts per bucket — used for the sub-labels under each card so they
@@ -307,6 +329,37 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
                 <KPI title="❄→🔥 Cold→Lead" value={coldPromotedToday} sub="conversions today" highlight={coldPromotedToday > 0} />
               </>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* EOI Pipeline — admin / manager view of the booking funnel. Each tile
+          links to /leads?eoi=X for the filtered list. Hidden for agents
+          (they see their own funnel on each lead detail page instead). */}
+      {eoiAlerts && (
+        <div>
+          <div className="text-xs font-bold tracking-widest text-gray-500 mb-2">EOI PIPELINE</div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 lg:gap-3">
+            <Link href="/leads?eoi=active" className="card p-3 lg:p-4 hover:border-[#c9a24b] block">
+              <div className="text-2xl lg:text-3xl font-bold">{eoiAlerts.active}</div>
+              <div className="text-[10px] lg:text-[11px] tracking-widest text-gray-500 uppercase mt-0.5 lg:mt-1 leading-tight">Active EOI funnel</div>
+              <div className="text-[11px] lg:text-xs text-gray-500 mt-0.5 lg:mt-1 leading-tight">leads with EOI stage set</div>
+            </Link>
+            <Link href="/leads?eoi=kyc_pending" className={`card p-3 lg:p-4 hover:border-orange-500 block ${eoiAlerts.kycPending > 0 ? "border-orange-300" : ""}`}>
+              <div className="text-2xl lg:text-3xl font-bold">{eoiAlerts.kycPending}</div>
+              <div className="text-[10px] lg:text-[11px] tracking-widest text-gray-500 uppercase mt-0.5 lg:mt-1 leading-tight">Waiting on KYC</div>
+              <div className="text-[11px] lg:text-xs text-gray-500 mt-0.5 lg:mt-1 leading-tight">chase clients for docs</div>
+            </Link>
+            <Link href="/leads?eoi=approval_needed" className={`card p-3 lg:p-4 hover:border-amber-500 block ${eoiAlerts.approvalNeeded > 0 ? "border-amber-500 border-2 bg-amber-50" : ""}`}>
+              <div className="text-2xl lg:text-3xl font-bold">{eoiAlerts.approvalNeeded}</div>
+              <div className="text-[10px] lg:text-[11px] tracking-widest text-gray-500 uppercase mt-0.5 lg:mt-1 leading-tight">Need your sign-off</div>
+              <div className="text-[11px] lg:text-xs text-gray-500 mt-0.5 lg:mt-1 leading-tight">discount / waiver approval</div>
+            </Link>
+            <Link href="/leads?eoi=stuck" className={`card p-3 lg:p-4 hover:border-red-500 block ${eoiAlerts.stuck > 0 ? "border-red-300" : ""}`}>
+              <div className="text-2xl lg:text-3xl font-bold">{eoiAlerts.stuck}</div>
+              <div className="text-[10px] lg:text-[11px] tracking-widest text-gray-500 uppercase mt-0.5 lg:mt-1 leading-tight">Stuck deals</div>
+              <div className="text-[11px] lg:text-xs text-gray-500 mt-0.5 lg:mt-1 leading-tight">EOI collected 7+ days, no booking</div>
+            </Link>
           </div>
         </div>
       )}
