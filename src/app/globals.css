@@ -85,6 +85,77 @@ html, body { background: var(--bg-app); color: var(--text-base); font-family: va
 [data-theme="dark"] table.tbl td { border-bottom-color: var(--border); }
 [data-theme="dark"] table.tbl th { border-bottom-color: var(--border); color: var(--text-muted); }
 
+/* ─── Dark-mode polish for Tailwind utility chips/badges/inputs ─────────────
+   Lalit screenshot of /leads in dark mode showed "Not picked 3+/7+ days" chips
+   + Smart Lists pills + filter dropdowns all invisible — the light bg-X-50 +
+   dark text-X-800 pattern that doesn't auto-invert.
+   Fix: blanket dark overrides for the colour families actually in use across
+   the app. Translucent backgrounds (rgba) keep the colour identity while
+   sitting on a dark base; text shifts to a lighter shade of the same hue. */
+
+/* Form inputs + selects + textareas — surface follows --bg-card, text follows --text-base */
+[data-theme="dark"] input,
+[data-theme="dark"] select,
+[data-theme="dark"] textarea {
+  background-color: var(--bg-card) !important;
+  color: var(--text-base) !important;
+  border-color: var(--border) !important;
+}
+[data-theme="dark"] input::placeholder,
+[data-theme="dark"] textarea::placeholder { color: var(--text-muted); }
+
+/* Tailwind colour-family chips — all bg-X-50 / bg-X-100 / text-X-700/800/900 / border-X-300 */
+[data-theme="dark"] .bg-amber-50,   [data-theme="dark"] .bg-amber-100    { background-color: rgba(245,158,11,0.18) !important; }
+[data-theme="dark"] .bg-red-50,     [data-theme="dark"] .bg-red-100      { background-color: rgba(239,68,68,0.18)  !important; }
+[data-theme="dark"] .bg-emerald-50, [data-theme="dark"] .bg-emerald-100  { background-color: rgba(16,185,129,0.18) !important; }
+[data-theme="dark"] .bg-green-50,   [data-theme="dark"] .bg-green-100    { background-color: rgba(34,197,94,0.18)  !important; }
+[data-theme="dark"] .bg-teal-50,    [data-theme="dark"] .bg-teal-100     { background-color: rgba(20,184,166,0.18) !important; }
+[data-theme="dark"] .bg-blue-50,    [data-theme="dark"] .bg-blue-100     { background-color: rgba(59,130,246,0.18) !important; }
+[data-theme="dark"] .bg-indigo-50,  [data-theme="dark"] .bg-indigo-100   { background-color: rgba(99,102,241,0.18) !important; }
+[data-theme="dark"] .bg-purple-50,  [data-theme="dark"] .bg-purple-100   { background-color: rgba(168,85,247,0.18) !important; }
+[data-theme="dark"] .bg-pink-50,    [data-theme="dark"] .bg-pink-100     { background-color: rgba(236,72,153,0.18) !important; }
+[data-theme="dark"] .bg-orange-50,  [data-theme="dark"] .bg-orange-100   { background-color: rgba(249,115,22,0.18) !important; }
+[data-theme="dark"] .bg-sky-50,     [data-theme="dark"] .bg-sky-100      { background-color: rgba(14,165,233,0.18) !important; }
+[data-theme="dark"] .bg-yellow-50,  [data-theme="dark"] .bg-yellow-100   { background-color: rgba(234,179,8,0.18)  !important; }
+[data-theme="dark"] .bg-violet-50,  [data-theme="dark"] .bg-violet-100   { background-color: rgba(139,92,246,0.18) !important; }
+
+[data-theme="dark"] .text-amber-700,   [data-theme="dark"] .text-amber-800,   [data-theme="dark"] .text-amber-900   { color: #fbbf24 !important; }
+[data-theme="dark"] .text-red-700,     [data-theme="dark"] .text-red-800,     [data-theme="dark"] .text-red-900     { color: #fca5a5 !important; }
+[data-theme="dark"] .text-emerald-700, [data-theme="dark"] .text-emerald-800, [data-theme="dark"] .text-emerald-900 { color: #6ee7b7 !important; }
+[data-theme="dark"] .text-green-700,   [data-theme="dark"] .text-green-800,   [data-theme="dark"] .text-green-900   { color: #86efac !important; }
+[data-theme="dark"] .text-teal-700,    [data-theme="dark"] .text-teal-800,    [data-theme="dark"] .text-teal-900    { color: #5eead4 !important; }
+[data-theme="dark"] .text-blue-700,    [data-theme="dark"] .text-blue-800,    [data-theme="dark"] .text-blue-900    { color: #93c5fd !important; }
+[data-theme="dark"] .text-indigo-700,  [data-theme="dark"] .text-indigo-800,  [data-theme="dark"] .text-indigo-900  { color: #a5b4fc !important; }
+[data-theme="dark"] .text-purple-700,  [data-theme="dark"] .text-purple-800,  [data-theme="dark"] .text-purple-900  { color: #d8b4fe !important; }
+[data-theme="dark"] .text-pink-700,    [data-theme="dark"] .text-pink-800,    [data-theme="dark"] .text-pink-900    { color: #f9a8d4 !important; }
+[data-theme="dark"] .text-orange-700,  [data-theme="dark"] .text-orange-800,  [data-theme="dark"] .text-orange-900  { color: #fdba74 !important; }
+[data-theme="dark"] .text-sky-700,     [data-theme="dark"] .text-sky-800,     [data-theme="dark"] .text-sky-900     { color: #7dd3fc !important; }
+[data-theme="dark"] .text-yellow-700,  [data-theme="dark"] .text-yellow-800,  [data-theme="dark"] .text-yellow-900  { color: #fde047 !important; }
+
+[data-theme="dark"] .border-amber-300,   [data-theme="dark"] .border-amber-200,   [data-theme="dark"] .border-amber-400   { border-color: rgba(245,158,11,0.4) !important; }
+[data-theme="dark"] .border-red-300,     [data-theme="dark"] .border-red-200,     [data-theme="dark"] .border-red-500     { border-color: rgba(239,68,68,0.4)  !important; }
+[data-theme="dark"] .border-emerald-300, [data-theme="dark"] .border-emerald-200, [data-theme="dark"] .border-emerald-500 { border-color: rgba(16,185,129,0.4) !important; }
+[data-theme="dark"] .border-teal-300                                                                                       { border-color: rgba(20,184,166,0.4) !important; }
+[data-theme="dark"] .border-blue-300                                                                                       { border-color: rgba(59,130,246,0.4) !important; }
+[data-theme="dark"] .border-indigo-300                                                                                     { border-color: rgba(99,102,241,0.4) !important; }
+[data-theme="dark"] .border-pink-300                                                                                       { border-color: rgba(236,72,153,0.4) !important; }
+
+/* The existing .chip-* utility classes also use light bg + dark text */
+[data-theme="dark"] .chip-hot   { background: rgba(239,68,68,0.18);  color: #fca5a5; }
+[data-theme="dark"] .chip-warm  { background: rgba(245,158,11,0.18); color: #fbbf24; }
+[data-theme="dark"] .chip-cold  { background: rgba(59,130,246,0.18); color: #93c5fd; }
+[data-theme="dark"] .chip-new   { background: rgba(99,102,241,0.18); color: #a5b4fc; }
+[data-theme="dark"] .chip-won   { background: rgba(34,197,94,0.18);  color: #86efac; }
+[data-theme="dark"] .chip-lost  { background: rgba(55,65,81,0.4);    color: #e5e7eb; }
+[data-theme="dark"] .src        { background: rgba(99,102,241,0.18); color: #a5b4fc; }
+[data-theme="dark"] .src-wa     { background: rgba(34,197,94,0.18);  color: #86efac; }
+
+/* Hover backgrounds on white surfaces — kill the white flash in dark mode */
+[data-theme="dark"] .hover\:bg-amber-50:hover    { background-color: rgba(245,158,11,0.25) !important; }
+[data-theme="dark"] .hover\:bg-emerald-50:hover  { background-color: rgba(16,185,129,0.25) !important; }
+[data-theme="dark"] .hover\:bg-gray-50:hover     { background-color: var(--bg-muted) !important; }
+[data-theme="dark"] .active\:bg-amber-50:active  { background-color: rgba(245,158,11,0.25) !important; }
+
 /* Sidebar */
 .sidebar { background: linear-gradient(180deg, #0b1a33 0%, #0f2347 100%); }
 .nav-item {
