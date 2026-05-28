@@ -368,6 +368,13 @@ export default async function ReportsPage() {
           <div className="font-bold text-sm mt-1">Team comparison</div>
           <div className="text-[10px] text-gray-500 mt-0.5">Dubai vs India side-by-side · weighted winner</div>
         </Link>
+        {/* Commission & earnings — booked-deal commissions by status, agent
+            and booking, currency-correct (AED + INR never summed). Admin/Manager only. */}
+        <Link href="/reports/commission" className="card p-4 border-l-4 border-emerald-600 hover:shadow-md transition">
+          <div className="text-2xl">💰</div>
+          <div className="font-bold text-sm mt-1">Commission &amp; earnings</div>
+          <div className="text-[10px] text-gray-500 mt-0.5">Booked, received, outstanding · per agent · per booking</div>
+        </Link>
         <a href="#pipeline-overview" className="card p-4 border-l-4 border-[#c9a24b] hover:shadow-md transition active:bg-amber-50 block">
           <div className="text-2xl">📈</div>
           <div className="font-bold text-sm mt-1">Pipeline overview</div>

@@ -2,7 +2,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Phone, MessageCircle, Tag, RefreshCw, XCircle, X } from "lucide-react";
+import { Phone, MessageCircle, Tag, RefreshCw, XCircle, X, ExternalLink } from "lucide-react";
 import LeadBulkActions from "./LeadBulkActions";
 import { telLink, whatsappLink } from "@/lib/phone";
 
@@ -29,6 +29,14 @@ const REJECT_REASONS: Array<{ v: string; label: string }> = [
   { v: "LOOK_AFTER_2_YEARS",          label: "📅 Look after 2 years" },
   { v: "WAITING_FOR_PROPERTY_SALE",   label: "🏠 Waiting to sell own property" },
   { v: "OTHER",                       label: "✏ Other (specify)" },
+];
+
+// Bulk-WhatsApp template presets — must match the keys the /api/leads/bulk-wa
+// endpoint understands.
+const WA_PRESETS: Array<{ v: string; label: string }> = [
+  { v: "followup",   label: "Follow-up" },
+  { v: "checkin",    label: "Check-in" },
+  { v: "newlisting", label: "New listing" },
 ];
 
 interface Row {
@@ -66,10 +74,14 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, a
   const [showTagPopover, setShowTagPopover] = useState(false);
   const [showReassignPopover, setShowReassignPopover] = useState(false);
   const [showRejectModal, setShowRejectModal] = useState(false);
+  const [showWaPopover, setShowWaPopover] = useState(false);
   const [pickedTags, setPickedTags] = useState<Set<string>>(new Set());
   const [reassignPick, setReassignPick] = useState("");
   const [rejectReason, setRejectReason] = useState("FUND_ISSUE");
   const [rejectNote, setRejectNote] = useState("");
+  const [waTemplate, setWaTemplate] = useState("followup");
+  const [waLinks, setWaLinks] = useState<Array<{ leadId: string; name: string; phone: string; waLink: string }>>([]);
+  const [waSkipped, setWaSkipped] = useState<Array<{ leadId: string; name: string; reason: string }>>([]);
   const [bulkBusy, setBulkBusy] = useState(false);
   const [bulkErr, setBulkErr] = useState<string | null>(null);
 
@@ -89,10 +101,14 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, a
     setShowTagPopover(false);
     setShowReassignPopover(false);
     setShowRejectModal(false);
+    setShowWaPopover(false);
     setPickedTags(new Set());
     setReassignPick("");
     setRejectReason("FUND_ISSUE");
     setRejectNote("");
+    setWaTemplate("followup");
+    setWaLinks([]);
+    setWaSkipped([]);
     setBulkErr(null);
   }
   const allChecked = leads.length > 0 && selected.size === leads.length;
@@ -101,17 +117,18 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, a
   useEffect(() => {
     const fn = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
-      if (showTagPopover || showReassignPopover || showRejectModal) {
+      if (showTagPopover || showReassignPopover || showRejectModal || showWaPopover) {
         setShowTagPopover(false);
         setShowReassignPopover(false);
         setShowRejectModal(false);
+        setShowWaPopover(false);
       } else if (selected.size > 0) {
         clearSelection();
       }
     };
     window.addEventListener("keydown", fn);
     return () => window.removeEventListener("keydown", fn);
-  }, [showTagPopover, showReassignPopover, showRejectModal, selected.size]);
+  }, [showTagPopover, showReassignPopover, showRejectModal, showWaPopover, selected.size]);
 
   function togglePickedTag(t: string) {
     setPickedTags((s) => {
@@ -177,6 +194,37 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, a
     } catch (e) {
       setBulkErr(`Network error: ${String(e).slice(0, 80)}`);
     } finally { setBulkBusy(false); }
+  }
+
+  // Bulk WhatsApp can't send server-side (no Meta API) — the endpoint returns a
+  // list of wa.me draft links the agent opens one by one. Each is also logged
+  // as a PLANNED activity server-side.
+  async function generateWaLinks() {
+    if (bulkBusy) return;
+    setBulkBusy(true); setBulkErr(null);
+    setWaLinks([]); setWaSkipped([]);
+    try {
+      const r = await fetch("/api/leads/bulk-wa", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ leadIds: selectedIds, templateKey: waTemplate }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) { setBulkErr(j.error ?? `Failed (${r.status})`); return; }
+      setWaLinks(Array.isArray(j.links) ? j.links : []);
+      setWaSkipped(Array.isArray(j.skipped) ? j.skipped : []);
+      router.refresh(); // surface the new PLANNED activities
+    } catch (e) {
+      setBulkErr(`Network error: ${String(e).slice(0, 80)}`);
+    } finally { setBulkBusy(false); }
+  }
+
+  // Open every generated link with a 300ms stagger. Browsers may block all but
+  // the first — the UI shows a hint to allow popups for this site.
+  function openAllWa() {
+    waLinks.forEach((l, i) => {
+      setTimeout(() => window.open(l.waLink, "_blank", "noopener,noreferrer"), i * 300);
+    });
   }
 
   return (
@@ -339,21 +387,27 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, a
               </button>
               <div className="w-px h-6 bg-gray-200 mx-1" />
               <button
-                onClick={() => { setShowTagPopover(v => !v); setShowReassignPopover(false); }}
+                onClick={() => { setShowTagPopover(v => !v); setShowReassignPopover(false); setShowWaPopover(false); }}
                 className="inline-flex items-center gap-1 text-xs font-semibold bg-fuchsia-50 text-fuchsia-800 border border-fuchsia-300 px-3 py-2 rounded-lg min-h-11"
               >
                 <Tag className="w-3.5 h-3.5" /> Tag
               </button>
+              <button
+                onClick={() => { setShowWaPopover(v => !v); setShowTagPopover(false); setShowReassignPopover(false); }}
+                className="inline-flex items-center gap-1 text-xs font-semibold bg-[#e7f9ef] text-[#0f7a3d] border border-[#9ce0bb] px-3 py-2 rounded-lg min-h-11"
+              >
+                <MessageCircle className="w-3.5 h-3.5" /> WhatsApp
+              </button>
               {canReassign && (
                 <button
-                  onClick={() => { setShowReassignPopover(v => !v); setShowTagPopover(false); }}
+                  onClick={() => { setShowReassignPopover(v => !v); setShowTagPopover(false); setShowWaPopover(false); }}
                   className="inline-flex items-center gap-1 text-xs font-semibold bg-blue-50 text-blue-800 border border-blue-300 px-3 py-2 rounded-lg min-h-11"
                 >
                   <RefreshCw className="w-3.5 h-3.5" /> Reassign
                 </button>
               )}
               <button
-                onClick={() => { setShowRejectModal(true); setShowTagPopover(false); setShowReassignPopover(false); }}
+                onClick={() => { setShowRejectModal(true); setShowTagPopover(false); setShowReassignPopover(false); setShowWaPopover(false); }}
                 className="inline-flex items-center gap-1 text-xs font-semibold bg-red-50 text-red-800 border border-red-300 px-3 py-2 rounded-lg min-h-11"
               >
                 <XCircle className="w-3.5 h-3.5" /> Reject
@@ -423,6 +477,86 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, a
                     {bulkBusy ? "Reassigning…" : "Apply"}
                   </button>
                 </div>
+              </div>
+            )}
+
+            {/* WhatsApp popover — pick a template, generate wa.me draft links.
+                WhatsApp can't be sent server-side (no Meta API), so the agent
+                opens each link one-by-one (or "Open all" with a 300ms stagger). */}
+            {showWaPopover && (
+              <div className="absolute left-3 right-3 sm:left-1/2 sm:-translate-x-1/2 sm:max-w-md bottom-full mb-2 bg-white border border-[#e5e7eb] rounded-xl shadow-2xl p-3">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="text-xs font-semibold text-[#0b1a33] inline-flex items-center gap-1.5">
+                    <MessageCircle className="w-4 h-4 text-[#0f7a3d]" />
+                    WhatsApp {selectedIds.length} lead{selectedIds.length === 1 ? "" : "s"}
+                  </div>
+                  <button onClick={() => setShowWaPopover(false)} className="text-gray-400 hover:text-gray-700"><X className="w-4 h-4" /></button>
+                </div>
+
+                {waLinks.length === 0 && waSkipped.length === 0 ? (
+                  <>
+                    <label className="text-[11px] font-semibold text-gray-600">Template</label>
+                    <select
+                      value={waTemplate}
+                      onChange={(e) => setWaTemplate(e.target.value)}
+                      className="w-full mt-1 mb-3 border border-[#e5e7eb] rounded-lg px-3 py-2 text-sm bg-white"
+                    >
+                      {WA_PRESETS.map(p => <option key={p.v} value={p.v}>{p.label}</option>)}
+                    </select>
+                    {bulkErr && <div className="text-[11px] text-red-600 mb-2">{bulkErr}</div>}
+                    <div className="flex justify-end gap-2">
+                      <button onClick={() => setShowWaPopover(false)} className="btn btn-ghost text-xs">Cancel</button>
+                      <button
+                        onClick={generateWaLinks}
+                        disabled={bulkBusy}
+                        className="btn btn-primary text-xs"
+                      >
+                        {bulkBusy ? "Generating…" : "Generate links"}
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-[11px] text-gray-500 mb-2">
+                      {waLinks.length} link{waLinks.length === 1 ? "" : "s"} ready. Tap each to open WhatsApp with the message pre-typed, then hit Send.
+                      {waLinks.length > 1 && " “Open all” staggers them — your browser may block extras, so allow popups for this site."}
+                    </p>
+                    {waLinks.length > 0 && (
+                      <div className="max-h-56 overflow-y-auto border border-[#eef0f3] rounded-lg divide-y divide-[#f1f3f5] mb-2">
+                        {waLinks.map((l) => (
+                          <a
+                            key={l.leadId}
+                            href={l.waLink}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex items-center justify-between gap-2 px-3 py-2 text-xs hover:bg-[#f3fbf6]"
+                          >
+                            <span className="truncate font-medium text-[#0b1a33]">Open WhatsApp — {l.name}</span>
+                            <ExternalLink className="w-3.5 h-3.5 text-[#0f7a3d] flex-none" />
+                          </a>
+                        ))}
+                      </div>
+                    )}
+                    {waSkipped.length > 0 && (
+                      <div className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5 mb-2">
+                        Skipped {waSkipped.length} (no phone): {waSkipped.slice(0, 5).map(s => s.name).join(", ")}{waSkipped.length > 5 ? "…" : ""}
+                      </div>
+                    )}
+                    <div className="flex justify-between gap-2">
+                      <button
+                        onClick={() => { setWaLinks([]); setWaSkipped([]); setBulkErr(null); }}
+                        className="btn btn-ghost text-xs"
+                      >
+                        Back
+                      </button>
+                      {waLinks.length > 0 && (
+                        <button onClick={openAllWa} className="btn btn-primary text-xs">
+                          Open all ({waLinks.length})
+                        </button>
+                      )}
+                    </div>
+                  </>
+                )}
               </div>
             )}
           </div>
