@@ -23,6 +23,8 @@ import { bestUnitsForLead } from "@/lib/inventoryMatch";
 import CallHistoryCard from "@/components/CallHistoryCard";
 import BuyingSignalsCard from "@/components/BuyingSignalsCard";
 import NextBestActionCard from "@/components/NextBestActionCard";
+import LeadScoreBreakdown from "@/components/LeadScoreBreakdown";
+import { explainScore } from "@/lib/leadRescorer";
 import LeadNotesCard from "@/components/LeadNotesCard";
 import LeadReassignClient from "@/components/LeadReassignClient";
 import RejectLeadClient from "@/components/RejectLeadClient";
@@ -71,6 +73,7 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
         discussed:       { include: { project: true }, orderBy: { discussedAt: "desc" } },
         activities: { orderBy: { createdAt: "desc" }, take: 25, include: { user: true } },
         callLogs:   { orderBy: { startedAt: "desc" }, take: 50, include: { user: true } },
+        waMessages: { orderBy: { receivedAt: "desc" }, take: 20 },
         notes:      { orderBy: { createdAt: "desc" }, take: 10, include: { user: true } },
         assignments:{ orderBy: { assignedAt: "desc" }, take: 5, include: { user: true } },
       },
@@ -110,6 +113,22 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
 
   const aiClass = lead.aiScore === "HOT" ? "chip-hot" : lead.aiScore === "WARM" ? "chip-warm" : "chip-cold";
   const canReassign = me.role === "ADMIN" || me.role === "MANAGER";
+
+  // Rule-based breakdown of the AI score (no AI call) — mirrors the exact
+  // arithmetic of the stateless rescorer so the displayed score matches
+  // lead.aiScoreValue. Pure synchronous computation over already-loaded data.
+  const scoreExplanation = explainScore({
+    categorization: lead.categorization,
+    bantStatus: lead.bantStatus,
+    fundReadiness: lead.fundReadiness as string | null,
+    potential: lead.potential as string | null,
+    budgetMin: lead.budgetMin,
+    budgetMax: lead.budgetMax,
+    callLogs: lead.callLogs.map((c) => ({ outcome: c.outcome, startedAt: c.startedAt })),
+    waMessages: lead.waMessages.map((m) => ({ direction: m.direction, receivedAt: m.receivedAt })),
+    activities: lead.activities.map((a) => ({ type: a.type, status: a.status })),
+    lastTouchedAt: lead.lastTouchedAt ?? lead.createdAt,
+  });
 
   // Travel rate fetched once — used by the AdvancedActivityLogger which now
   // lives at the bottom of the RIGHT column (moved from header per Lalit's
@@ -490,6 +509,18 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
             Card hides itself when nothing fires. No AI dependency. */}
         <div data-lead-section="overview">
           <BuyingSignalsCard lead={lead} />
+        </div>
+
+        {/* WHY THIS SCORE — rule-based breakdown of the AI score. No AI: the
+            score is already a deterministic rule computation (see
+            src/lib/leadRescorer.ts). explainScore() mirrors the same arithmetic
+            step-by-step and the card narrates each factor. */}
+        <div data-lead-section="overview">
+          <LeadScoreBreakdown
+            score={scoreExplanation.score}
+            bucket={scoreExplanation.bucket}
+            factors={scoreExplanation.factors}
+          />
         </div>
 
         {/* 📝 Notes — free-form per-lead notes (distinct from Timeline activity

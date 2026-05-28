@@ -134,6 +134,160 @@ function computeScore(args: {
   return Math.max(0, Math.min(100, Math.round(score)));
 }
 
+export type ScoreFactorKind = "seed" | "boost" | "penalty" | "cap";
+
+export interface ScoreFactor {
+  label: string;
+  delta: number;
+  kind: ScoreFactorKind;
+}
+
+export interface ScoreExplanation {
+  score: number;
+  bucket: "HOT" | "WARM" | "COLD";
+  factors: ScoreFactor[];
+}
+
+/**
+ * Parallel explainer for computeScore. Reproduces the EXACT same arithmetic
+ * step-by-step so the final `score` always matches computeScore(args), while
+ * also emitting a human-readable factor for each scoring step. Keep this in
+ * lock-step with computeScore above — any change there must be mirrored here.
+ *
+ * `delta` is expressed relative to the running score:
+ *   - the seed factor shows the offset from the 50 neutral baseline,
+ *   - cap factors (BANT) show the actual change applied by the floor/ceiling
+ *     (0 if the verdict didn't move the score),
+ *   - boosts/penalties show their signed contribution.
+ */
+export function explainScore(args: {
+  categorization: string | null;
+  bantStatus: BantStatus | null;
+  fundReadiness: string | null;
+  potential: string | null;
+  budgetMin: number | null;
+  budgetMax: number | null;
+  callLogs: Array<{ outcome: CallOutcome; startedAt: Date }>;
+  waMessages: Array<{ direction: WAMessageDirection; receivedAt: Date }>;
+  activities: Array<{ type: ActivityType; status: ActivityStatus }>;
+  lastTouchedAt: Date;
+}): ScoreExplanation {
+  const now = Date.now();
+  const DAY = 24 * 60 * 60 * 1000;
+  const factors: ScoreFactor[] = [];
+
+  // 1. SEED from MIS categorization (baseline 50).
+  const cat = (args.categorization ?? "").toLowerCase();
+  let score = 50;
+  let seedLabel = "MIS: Uncategorized (neutral)";
+  if (/highly responsive|🔥|hot|excited|ready to (book|buy|close)|booked|signed|paid/i.test(cat)) {
+    score = 80;
+    seedLabel = "MIS: Highly responsive";
+  } else if (/responsive|warm|interested|positive|considering|will visit|meeting scheduled|🙂/i.test(cat)) {
+    score = 60;
+    seedLabel = "MIS: Responsive / interested";
+  } else if (/sometimes responsive|🤔/i.test(cat)) {
+    score = 45;
+    seedLabel = "MIS: Sometimes responsive";
+  } else if (/not interested|dropped|do not call|wrong number|stale|❌/i.test(cat)) {
+    score = 15;
+    seedLabel = "MIS: Not interested / dropped";
+  } else if (/cold|not picking|switched off|low interest|just browsing|window shopping|future plan|🧊|📵/i.test(cat)) {
+    score = 25;
+    seedLabel = "MIS: Cold / not picking";
+  }
+  factors.push({ label: seedLabel, delta: score - 50, kind: "seed" });
+
+  // 2. BANT verdict — definitive overrides (caps/floors).
+  if (args.bantStatus === BantStatus.QUALIFIES) {
+    const before = score;
+    score = Math.max(score, 70);
+    factors.push({ label: "BANT qualifies (floor 70)", delta: score - before, kind: "cap" });
+  }
+  if (args.bantStatus === BantStatus.NOT_QUALIFIED) {
+    const before = score;
+    score = Math.min(score, 25);
+    factors.push({ label: "BANT not qualified (cap 25)", delta: score - before, kind: "cap" });
+  }
+
+  // 3. Profile signals (small, one-shot, additive).
+  const ccyMul = args.budgetMin && args.budgetMin > 1_000_000 ? 5 : 0;
+  score += ccyMul;
+  if (ccyMul) factors.push({ label: "Budget over 1M", delta: 5, kind: "boost" });
+  if (args.fundReadiness === "CASH_READY") {
+    score += 8;
+    factors.push({ label: "Cash ready", delta: 8, kind: "boost" });
+  } else if (args.fundReadiness === "BANK_APPROVED") {
+    score += 4;
+    factors.push({ label: "Bank approved", delta: 4, kind: "boost" });
+  }
+  if (args.potential === "HIGH") {
+    score += 5;
+    factors.push({ label: "High potential", delta: 5, kind: "boost" });
+  } else if (args.potential === "LOW") {
+    score -= 5;
+    factors.push({ label: "Low potential", delta: -5, kind: "penalty" });
+  }
+
+  // 4. Behavioural BOOSTS.
+  const sevenDaysAgo = now - 7 * DAY;
+  const fourteenDaysAgo = now - 14 * DAY;
+  const repliedRecentlyOnWA = args.waMessages.some(
+    (m) => m.direction === WAMessageDirection.INBOUND && m.receivedAt.getTime() >= sevenDaysAgo
+  );
+  if (repliedRecentlyOnWA) {
+    score += 12;
+    factors.push({ label: "Replied on WhatsApp <7d", delta: 12, kind: "boost" });
+  }
+
+  const recentConnectedCall = args.callLogs.some(
+    (c) => c.outcome === CallOutcome.CONNECTED && c.startedAt.getTime() >= fourteenDaysAgo
+  );
+  if (recentConnectedCall) {
+    score += 10;
+    factors.push({ label: "Connected call <14d", delta: 10, kind: "boost" });
+  }
+
+  const completedSiteVisitEver = args.activities.some(
+    (a) => a.type === ActivityType.SITE_VISIT && a.status === ActivityStatus.DONE
+  );
+  if (completedSiteVisitEver) {
+    score += 15;
+    factors.push({ label: "Completed a site visit", delta: 15, kind: "boost" });
+  }
+
+  // 5. Behavioural PENALTIES.
+  let consecutiveNotPicked = 0;
+  for (const c of args.callLogs) {
+    if (c.outcome === CallOutcome.NOT_PICKED || c.outcome === CallOutcome.SWITCHED_OFF || c.outcome === CallOutcome.BUSY) {
+      consecutiveNotPicked++;
+    } else break;
+  }
+  if (consecutiveNotPicked >= 7) {
+    score -= 20;
+    factors.push({ label: "7+ consecutive not-picked", delta: -20, kind: "penalty" });
+  } else if (consecutiveNotPicked >= 5) {
+    score -= 15;
+    factors.push({ label: "5+ consecutive not-picked", delta: -15, kind: "penalty" });
+  } else if (consecutiveNotPicked >= 3) {
+    score -= 10;
+    factors.push({ label: "3+ consecutive not-picked", delta: -10, kind: "penalty" });
+  }
+
+  // Idle decay — one-shot bracket.
+  const daysSinceTouch = (now - args.lastTouchedAt.getTime()) / DAY;
+  if (daysSinceTouch >= 60) {
+    score -= 15;
+    factors.push({ label: "Idle 60+ days", delta: -15, kind: "penalty" });
+  } else if (daysSinceTouch >= 30) {
+    score -= 8;
+    factors.push({ label: "Idle 30+ days", delta: -8, kind: "penalty" });
+  }
+
+  const finalScore = Math.max(0, Math.min(100, Math.round(score)));
+  return { score: finalScore, bucket: bucketFor(finalScore) as ScoreExplanation["bucket"], factors };
+}
+
 export async function rescoreLead(leadId: string): Promise<RescoreResult> {
   const lead = await prisma.lead.findUnique({
     where: { id: leadId },
