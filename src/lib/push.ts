@@ -25,11 +25,43 @@ interface PushPayload {
   url?: string;
   tag?: string;        // dedupes notifications for the same lead
   severity?: "INFO" | "WARNING" | "CRITICAL";
+  /**
+   * One of the notification-preference keys (hot_lead / followup / sla /
+   * daily_report / meeting / cold_promote / mood_checkin / team_feed). When
+   * set, sendPushToUser checks the user's `notifPrefs` and SUPPRESSES the push
+   * if they've explicitly muted that kind. Opt-out model: a missing key (or no
+   * prefs at all) means SEND. Omit prefKey entirely for operational/critical
+   * pushes that should never be muted (auto-assign, SLA escalation to admin).
+   */
+  prefKey?: string;
+}
+
+/** Parse the JSON notifPrefs column → a {key: boolean} map (best-effort). */
+function parseNotifPrefs(raw: string | null | undefined): Record<string, boolean> {
+  if (!raw) return {};
+  try {
+    const o = JSON.parse(raw);
+    if (o && typeof o === "object" && !Array.isArray(o)) {
+      const out: Record<string, boolean> = {};
+      for (const [k, v] of Object.entries(o)) if (typeof v === "boolean") out[k] = v;
+      return out;
+    }
+  } catch { /* malformed — treat as no prefs */ }
+  return {};
 }
 
 export async function sendPushToUser(userId: string, payload: PushPayload) {
   if (!pushEnabled()) return { sent: 0, dead: 0 };
   configure();
+
+  // Honour the user's per-type mute. Only one extra read, and only when the
+  // caller tagged the push with a prefKey — operational pushes skip this.
+  if (payload.prefKey) {
+    const u = await prisma.user.findUnique({ where: { id: userId }, select: { notifPrefs: true } });
+    const prefs = parseNotifPrefs(u?.notifPrefs);
+    if (prefs[payload.prefKey] === false) return { sent: 0, dead: 0, muted: true };
+  }
+
   const subs = await prisma.pushSubscription.findMany({ where: { userId } });
   if (subs.length === 0) return { sent: 0, dead: 0 };
 
@@ -127,6 +159,7 @@ export async function notifyHotLead(lead: HotLeadInput): Promise<{ sent: number;
       url: `/leads/${lead.id}`,
       tag: `hot-lead-${lead.id}`,
       severity: "CRITICAL",
+      prefKey: "hot_lead",
     });
   } catch {
     return null;

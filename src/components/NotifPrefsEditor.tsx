@@ -34,6 +34,17 @@ export default function NotifPrefsEditor({ initialPrefs }: Props) {
     for (const o of OPTIONS) seed[o.key] = initialPrefs[o.key] !== false;
     return seed;
   });
+
+  // `sound` is device-local (the bell stores it in localStorage). On mount,
+  // prefer that value over the server seed so the toggle matches what the bell
+  // is actually doing on THIS device. Runs once, client-side only.
+  useEffect(() => {
+    if (typeof localStorage === "undefined") return;
+    const v = localStorage.getItem("wcr.notifSoundEnabled");
+    if (v === "true" || v === "false") {
+      setPrefs((p) => (p.sound === (v === "true") ? p : { ...p, sound: v === "true" }));
+    }
+  }, []);
   const [status, setStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const latest = useRef<Prefs>(prefs);
@@ -49,8 +60,18 @@ export default function NotifPrefsEditor({ initialPrefs }: Props) {
     };
   }, []);
 
+  // The NotifBell owns in-app sound via localStorage key "wcr.notifSoundEnabled"
+  // (see src/lib/notifSounds.ts). Mirror the Settings "sound" toggle into that
+  // SAME key so the two controls stay consistent on this device — otherwise the
+  // Settings toggle would be a no-op while the bell kept its own state.
   function toggle(key: string) {
-    setPrefs((p) => ({ ...p, [key]: !p[key] }));
+    setPrefs((p) => {
+      const next = { ...p, [key]: !p[key] };
+      if (key === "sound" && typeof localStorage !== "undefined") {
+        localStorage.setItem("wcr.notifSoundEnabled", next.sound ? "true" : "false");
+      }
+      return next;
+    });
     setStatus("saving");
     if (timer.current) clearTimeout(timer.current);
     timer.current = setTimeout(save, 500);

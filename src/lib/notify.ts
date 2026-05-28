@@ -17,6 +17,17 @@ interface NotifyInput {
 
 const BASE = process.env.NEXTAUTH_URL ?? "https://crm.whitecollarrealty.com";
 
+// Map the in-app NotifKind enum → the notification-preference key used by the
+// per-user mute toggles on Settings (§ wave 15). Kinds with no mapping are
+// always delivered (operational alerts the user shouldn't be able to silence,
+// e.g. AUTO_ASSIGN_FIRED). LEAD_ASSIGNED rides the "hot_lead" toggle since
+// both are "a new lead needs you now" alerts.
+const KIND_TO_PREF: Partial<Record<NotifKind, string>> = {
+  LEAD_ASSIGNED: "hot_lead",
+  CALL_SLA_BREACH: "sla",
+  REMINDER: "followup",
+};
+
 export async function notify(input: NotifyInput) {
   const severity = input.severity ?? "INFO";
 
@@ -33,13 +44,16 @@ export async function notify(input: NotifyInput) {
     },
   });
 
-  // 2. Web Push (best-effort, never throws)
+  // 2. Web Push (best-effort, never throws). Tag with the matching pref key
+  //    so a muted type is suppressed at the push layer — the in-app row above
+  //    is still created (the bell stays truthful; only the push is silenced).
   sendPushToUser(input.userId, {
     title: input.title,
     body: input.body,
     url: input.linkUrl ? `${BASE}${input.linkUrl}` : undefined,
     tag: input.leadId ?? input.kind,
     severity,
+    prefKey: KIND_TO_PREF[input.kind],
   }).catch(() => {});
 
   // 3. Email — only for important events, or when explicitly requested

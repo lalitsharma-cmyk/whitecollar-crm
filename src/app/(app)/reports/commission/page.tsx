@@ -45,10 +45,14 @@ function rangeStart(key: RangeKey): Date | null {
   return new Date(now.getFullYear(), now.getMonth(), 1); // month
 }
 
-// commissionAmount/commissionCurrency are smallest-unit ints. Convert to a
-// major-unit number for the money formatters.
+// commissionAmount is stored as the raw whole-currency number the agent types
+// in the EOI workflow card (e.g. 50000 = AED 50,000) — NOT a smallest-unit
+// int, despite the schema comment. The only writer is EOIWorkflowCard, which
+// does Number(form.commissionAmount) with no ×100 and renders it back
+// un-divided. So we pass it straight through. (If a future migration switches
+// to fils/paise, change this one function.)
 function major(amount: number): number {
-  return amount / 100;
+  return amount;
 }
 
 // Currency normalised to "AED" | "INR" (default AED — matches money.ts).
