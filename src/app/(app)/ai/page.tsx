@@ -29,7 +29,7 @@ export default function Page() {
         {!enabled && (
           <div className="card p-5 bg-amber-50 border-amber-200">
             <div className="font-semibold mb-1">Turn on real AI</div>
-            <p className="text-xs text-gray-700">Add <code>ANTHROPIC_API_KEY</code> to your <code>.env</code> file and restart. Until then, AI runs in demo/rule-based mode.</p>
+            <p className="text-xs text-gray-700">In <b>Vercel → Project → Settings → Environment Variables</b>, add <code>GEMINI_API_KEY</code> (free, from <a href="https://aistudio.google.com" target="_blank" rel="noopener noreferrer" className="underline">aistudio.google.com</a>) or <code>ANTHROPIC_API_KEY</code> (paid), then redeploy. Until then AI runs in demo / rule-based mode and the rest of the CRM works fully.</p>
           </div>
         )}
         <div className="card p-5">
