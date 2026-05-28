@@ -7,8 +7,10 @@ export default async function LoginPage({ searchParams }: { searchParams?: Promi
       <div className="card w-full max-w-md p-8 shadow-2xl">
         <div className="flex flex-col items-center mb-6">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/brand/wcr-logo.png" alt="White Collar Realty" className="h-16 w-auto object-contain mb-2" style={{ filter: "invert(1)" }} />
-          <div className="text-[11px] tracking-widest text-gray-500 mt-2">CRM · SIGN IN</div>
+          {/* h-24 (was h-16) so the brand reads confidently on the login screen.
+              filter:invert(1) flips the white source mark to dark for the white card. */}
+          <img src="/brand/wcr-logo.png" alt="White Collar Realty" className="h-24 w-auto object-contain" style={{ filter: "invert(1)" }} />
+          <div className="text-[11px] tracking-[0.3em] text-gray-400 mt-3">CRM · SIGN IN</div>
         </div>
         {sp.error && <div className="mb-3 text-sm bg-red-50 border border-red-200 text-red-800 rounded-lg p-2">{sp.error}</div>}
         <form action="/api/login" method="post" className="space-y-3">
