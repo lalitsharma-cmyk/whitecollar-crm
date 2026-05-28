@@ -15,6 +15,7 @@ import AccentPainter from "./AccentPainter";
 import XPToastHost from "./XPToast";
 import DealCelebrationHost from "./DealCelebration";
 import QuickSearch from "./QuickSearch";
+import QuickAddLeadFab from "./QuickAddLeadFab";
 import KeyboardShortcutsHelp from "./KeyboardShortcutsHelp";
 import OnboardingTour from "./OnboardingTour";
 import PWAInstallNudge from "./PWAInstallNudge";
@@ -296,6 +297,10 @@ export default function MobileShell({ children, user }: Props) {
       {/* Global Ctrl/Cmd+K quick-search palette — mounted at shell so the
           shortcut works on every page. */}
       <QuickSearch />
+      {/* Floating "+" quick-add-lead button — capture a lead in 2 taps from
+          ANY page. Reuses the same create path (ingestLead) as /leads/new.
+          z-40 so it sits under modals (z-50+). */}
+      <QuickAddLeadFab />
       {/* Global `?` keyboard-shortcuts cheatsheet — also handles the `g X`
           2-key navigation sequences. */}
       <KeyboardShortcutsHelp />
