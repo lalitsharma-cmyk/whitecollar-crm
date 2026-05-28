@@ -30,6 +30,7 @@ import LeadMobileTabs from "@/components/LeadMobileTabs";
 import LeadTagsEditor from "@/components/LeadTagsEditor";
 import PrintButton from "@/components/PrintButton";
 import BestCallTimeChip from "@/components/BestCallTimeChip";
+import CopyLeadSnapshot from "@/components/CopyLeadSnapshot";
 import { formatBudget } from "@/lib/budgetParse";
 import LinkedContactsCard from "@/components/LinkedContactsCard";
 
@@ -576,6 +577,32 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
                 agents={agents.map(a => ({ id: a.id, name: a.name, role: a.role, team: a.team }))}
               />
             )}
+            {/* Share + export — copy a clean text snapshot for WhatsApp, or
+                download the full activity history as CSV. Both ownership-scoped
+                (the snapshot is built from already-authorized props; the CSV
+                route re-checks via loadOwnedLead). */}
+            <div className="pt-2 border-t border-[#e5e7eb] space-y-2">
+              <CopyLeadSnapshot
+                leadId={lead.id}
+                name={lead.name}
+                phone={lead.phone}
+                budget={lead.budgetMin ? formatBudget(lead.budgetMin, budgetCcy) : null}
+                status={lead.status}
+                aiScore={lead.aiScore ? `${lead.aiScore}${lead.aiScoreValue ? ` · ${lead.aiScoreValue}` : ""}` : null}
+                owner={lead.owner?.name ?? null}
+                lastTouched={lead.lastTouchedAt ? formatDistanceToNow(lead.lastTouchedAt, { addSuffix: true }) : null}
+                nextFollowup={lead.followupDate ? `${fmtIST12(lead.followupDate)} IST` : null}
+                projects={lead.discussed.map((d) => `${d.project.name}${d.project.city ? ` (${d.project.city})` : ""}`)}
+                whoIsClient={lead.whoIsClient}
+              />
+              <a
+                href={`/api/leads/${lead.id}/activity-csv`}
+                className="btn btn-ghost text-xs w-full justify-center"
+                title="Download the full call + activity + notes history as CSV"
+              >
+                ⬇ Export history (CSV)
+              </a>
+            </div>
           </div>
         )}
 
