@@ -13,11 +13,24 @@
 //         before normalizePhone existed), so we ALSO match the raw submitted
 //         value against the stored value.  This catches un-normalised historical
 //         rows and correctly-normalised future rows.
-//       - LIMITATION: if a historical row is stored as "9876543210" (no +91) and
-//         the new entry is "+919876543210", this query will NOT detect the dup
-//         because neither the raw nor the normalised form matches the stored raw.
-//         Fix: a one-time backfill migration to normalise all phone columns.
-//         Track as follow-up item (see dedup-followups in the project docs).
+//       - Canonical last-10-digits probe: in addition to the above, we run a
+//         parameterised raw query that strips all non-digits from the stored
+//         phone/altPhone and compares the RIGHTmost 10 digits to the submitted
+//         number's last 10 digits. This catches the case where a historical row
+//         is stored as "9876543210" (no +91) and the new entry is "+919876543210"
+//         (and vice-versa) — neither the raw nor the normalised string matches,
+//         but the last 10 digits do. The query reuses the EXACT REGEXP_REPLACE
+//         expression from the admin duplicates page so the regex/escaping is
+//         proven in prod Postgres; it is wrapped in try/catch so dev DBs without
+//         REGEXP_REPLACE (e.g. SQLite) silently fall back to the clauses above.
+//         The matched IDs are AND-ed under the same ownership scope (see below),
+//         so this never widens what the caller can see.
+//       - LIMITATION: the LIVE warning now matches on the last-10-digit canonical
+//         form, so historical un-normalised rows ARE surfaced at warning time.
+//         The stored-`fingerprint` dedupe applied at lead intake still relies on
+//         normalised columns, so it continues to benefit from the one-time
+//         backfill script that canonicalises all phone columns (separate
+//         follow-up; see dedup-followups in the project docs).
 //   • Email matching: case-insensitive exact match (Prisma mode:"insensitive").
 //   • Includes the lead's owner so the warning can display owner name.
 //
@@ -80,6 +93,39 @@ export async function findPossibleDuplicates(opts: DedupOpts): Promise<LeadWithO
     if (trimmedPhone && trimmedPhone !== normPhone) {
       orClauses.push({ phone: trimmedPhone });
       orClauses.push({ altPhone: trimmedPhone });
+    }
+
+    // Canonical last-10-digits probe (additive, read-only). Strip every
+    // non-digit from the submitted number and take its last 10 digits. Only
+    // proceed with a FULL 10-digit canonical key — never match on shorter
+    // fragments, which would over-match (e.g. a 4-digit extension).
+    if (phone) {
+      const digits = phone.replace(/\D/g, "");
+      const last10 = digits.slice(-10);
+      if (last10.length === 10) {
+        // Compare against the digit-only RIGHTmost-10 of stored phone/altPhone.
+        // REGEXP_REPLACE expression copied verbatim from the admin duplicates
+        // page so escaping is proven in prod Postgres. ${last10} is a Prisma
+        // bound parameter — safe from injection. Wrapped in try/catch so dev
+        // DBs lacking REGEXP_REPLACE (SQLite) just skip this enhancement.
+        let idsFromDigits: string[] = [];
+        try {
+          const rows = await prisma.$queryRaw<{ id: string }[]>`
+            SELECT id FROM "Lead"
+            WHERE RIGHT(REGEXP_REPLACE(COALESCE(phone, ''), '\D', '', 'g'), 10) = ${last10}
+               OR RIGHT(REGEXP_REPLACE(COALESCE("altPhone", ''), '\D', '', 'g'), 10) = ${last10}
+            LIMIT 50`;
+          idsFromDigits = rows.map((r) => r.id);
+        } catch {
+          // Fall back silently to the exact-string clauses already pushed above.
+          idsFromDigits = [];
+        }
+        if (idsFromDigits.length > 0) {
+          // These IDs are still AND-ed under `scope` in the final `where`, so we
+          // never reveal a lead the caller couldn't already see.
+          orClauses.push({ id: { in: idsFromDigits } });
+        }
+      }
     }
   }
 

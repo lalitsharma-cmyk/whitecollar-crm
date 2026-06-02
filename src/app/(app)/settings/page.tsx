@@ -1,11 +1,12 @@
 import { createHmac } from "node:crypto";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { getTravelRatePerKmInr, getSpeedToLeadEnabled, getRoundRobinEnabled, getTestingModeEnabled, getMotivationPilotEnabled, getMotivationPilotTeam } from "@/lib/settings";
+import { getTravelRatePerKmInr, getSpeedToLeadEnabled, getRoundRobinEnabled, getTestingModeEnabled, getMotivationPilotEnabled, getMotivationPilotTeam, getBantGateMode } from "@/lib/settings";
 import TravelRateEditor from "@/components/TravelRateEditor";
 import SpeedToLeadToggle from "@/components/SpeedToLeadToggle";
 import RoundRobinToggle from "@/components/RoundRobinToggle";
 import TestingModeToggle from "@/components/TestingModeToggle";
+import BantGateToggle from "@/components/BantGateToggle";
 import MotivationPilotToggle from "@/components/MotivationPilotToggle";
 import FestivalAdminPanel from "@/components/FestivalAdminPanel";
 import TestPushButton from "@/components/TestPushButton";
@@ -43,13 +44,14 @@ function buildIcsUrl(userId: string): string {
 
 export default async function SettingsPage() {
   const me = await requireUser();
-  const [travelRate, speedToLeadOn, roundRobinOn, testingModeOn, motivationPilotOn, motivationPilotTeam, pushSubCount] = await Promise.all([
+  const [travelRate, speedToLeadOn, roundRobinOn, testingModeOn, motivationPilotOn, motivationPilotTeam, bantGateMode, pushSubCount] = await Promise.all([
     getTravelRatePerKmInr(),
     getSpeedToLeadEnabled(),
     getRoundRobinEnabled(),
     getTestingModeEnabled(),
     getMotivationPilotEnabled(),
     getMotivationPilotTeam(),
+    getBantGateMode(),
     prisma.pushSubscription.count({ where: { userId: me.id } }),
   ]);
   const isAdmin = me.role === "ADMIN";
@@ -109,6 +111,20 @@ export default async function SettingsPage() {
           Logged to the lead timeline so the agent can see what was sent.
         </p>
         <SpeedToLeadToggle initial={speedToLeadOn} canEdit={isAdmin} />
+      </div>
+
+      {/* BANT qualification stage-gate — checks Budget/Authority/Need/Timeline
+          are captured before a lead is moved to Qualified+. Default WARN. */}
+      <div className="card p-5 max-w-2xl">
+        <div className="font-semibold flex items-center gap-2">🎯 Qualification gate (BANT)</div>
+        <p className="text-xs text-gray-500 mt-1">
+          When an agent moves a lead to “Qualified” or beyond, the CRM checks that all four
+          BANT signals (Budget · Authority · Need · Timeline) are captured.
+          <b> Off</b> — no check.
+          <b> Warn (recommended)</b> — shows a reminder but still lets the agent advance (default).
+          <b> Strict</b> — blocks the move until BANT is complete.
+        </p>
+        <BantGateToggle initial={bantGateMode} canEdit={isAdmin} />
       </div>
 
       {/* Daily-motivation / voice pilot (B-20) — admin picks who sees it. */}

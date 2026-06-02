@@ -4,7 +4,8 @@ import { ActivityType, ActivityStatus, LeadStatus, AIScore, Potential, FundReadi
 import { loadOwnedLead } from "@/lib/leadScope";
 import { rescoreLead } from "@/lib/leadRescorer";
 import { fireWorkflowTrigger } from "@/lib/workflowEngine";
-import { getTestingModeEnabled } from "@/lib/settings";
+import { getTestingModeEnabled, getBantGateMode } from "@/lib/settings";
+import { evaluateBantGate, type BantFields } from "@/lib/bantGate";
 import { awardXp, type AwardResult, type XpReason } from "@/lib/gamification.server";
 
 // Inline-edit endpoint — accepts one or more field updates and logs an Activity
@@ -70,10 +71,38 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   // If followupDate moved, re-arm the 10-min-before reminder so the new time gets pushed.
   if ("followupDate" in updates) updates.followupReminderSentAt = null;
   // Capture the BEFORE-status so a status change to NEGOTIATION/BOOKING_DONE/WON
-  // only awards XP on the actual transition, not on a no-op re-save.
-  const prevStatus = "status" in updates
-    ? (await prisma.lead.findUnique({ where: { id }, select: { status: true } }))?.status ?? null
+  // only awards XP on the actual transition, not on a no-op re-save. We fetch
+  // the current BANT fields in the SAME query so the stage-gate can evaluate the
+  // MERGED view (incoming updates overlaid on current) — this prevents a false
+  // block when an agent fills BANT and advances stage in one PATCH.
+  const prevRow = "status" in updates
+    ? await prisma.lead.findUnique({
+        where: { id },
+        select: { status: true, budgetMin: true, authorityLevel: true, needSummary: true, whenCanInvest: true },
+      })
     : null;
+  const prevStatus = prevRow?.status ?? null;
+
+  // BANT stage-gate — only on a REAL transition into a (possibly) gated stage.
+  // Merge: use the incoming value when that field is present in this PATCH,
+  // otherwise the freshly-loaded current value. SOFT warns (collected below and
+  // returned with the success payload); only HARD blocks with a 422 BEFORE we
+  // write anything.
+  let bantGateWarning: { message: string | null; missing: string[] } | null = null;
+  if ("status" in updates && prevRow && updates.status !== prevStatus) {
+    const mergedBant: BantFields = {
+      budgetMin: ("budgetMin" in updates ? (updates.budgetMin as number | null) : prevRow.budgetMin),
+      authorityLevel: ("authorityLevel" in updates ? (updates.authorityLevel as string | null) : prevRow.authorityLevel),
+      needSummary: ("needSummary" in updates ? (updates.needSummary as string | null) : prevRow.needSummary),
+      whenCanInvest: ("whenCanInvest" in updates ? (updates.whenCanInvest as string | null) : prevRow.whenCanInvest),
+    };
+    const gate = evaluateBantGate({ targetStatus: String(updates.status), lead: mergedBant, mode: await getBantGateMode() });
+    if (gate.blocked) {
+      return NextResponse.json({ error: gate.message, bantBlocked: true, missing: gate.missing }, { status: 422 });
+    }
+    if (gate.warn) bantGateWarning = { message: gate.message, missing: gate.missing };
+  }
+
   await prisma.lead.update({ where: { id }, data: updates as never });
 
   if (activityNotes.length) {
@@ -131,5 +160,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
           newLevel: awarded.leveledUp ? awarded.newLevel : null,
         }
       : null,
+    // SOFT-mode BANT nudge: move was allowed, but flag the missing signals so
+    // the inline-edit UI can warn the agent. Absent on OFF / HARD-allowed paths.
+    ...(bantGateWarning ? { bantWarning: bantGateWarning.message, missing: bantGateWarning.missing } : {}),
   });
 }

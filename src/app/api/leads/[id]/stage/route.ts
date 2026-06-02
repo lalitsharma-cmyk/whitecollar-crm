@@ -4,6 +4,8 @@ import { LeadStatus, ActivityType, ActivityStatus } from "@prisma/client";
 import { loadOwnedLead } from "@/lib/leadScope";
 import { rescoreLead } from "@/lib/leadRescorer";
 import { fireWorkflowTrigger } from "@/lib/workflowEngine";
+import { getBantGateMode } from "@/lib/settings";
+import { evaluateBantGate } from "@/lib/bantGate";
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -25,6 +27,15 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   if (!lead) return NextResponse.json({ error: "Lead not found" }, { status: 404 });
   if (lead.status === newStatus) return NextResponse.json({ ok: true, unchanged: true });
 
+  // BANT stage-gate. `lead` is a full row, so its budgetMin/authorityLevel/
+  // needSummary/whenCanInvest satisfy BantFields structurally. Default mode is
+  // SOFT (warn-but-allow); only HARD blocks the move with a 422.
+  const bantMode = await getBantGateMode();
+  const gate = evaluateBantGate({ targetStatus: newStatus, lead, mode: bantMode });
+  if (gate.blocked) {
+    return NextResponse.json({ error: gate.message, bantBlocked: true, missing: gate.missing }, { status: 422 });
+  }
+
   await prisma.lead.update({ where: { id }, data: { status: newStatus as LeadStatus, lastTouchedAt: new Date() } });
   await prisma.activity.create({
     data: {
@@ -40,5 +51,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   rescoreLead(id).catch(() => {});
   // Workflow engine: STATUS_CHANGED rules can fire WA/email/tasks etc.
   fireWorkflowTrigger("STATUS_CHANGED", id, { newStatus, previousStatus: lead.status }).catch(() => {});
-  return NextResponse.json({ ok: true });
+  // SOFT mode: the move was allowed but surface the warning so the UI can nudge
+  // the agent to capture the missing BANT. HARD already returned 422 above; OFF
+  // and fully-captured leads leave `gate.warn` false → no extra keys.
+  return NextResponse.json({ ok: true, ...(gate.warn ? { bantWarning: gate.message, missing: gate.missing } : {}) });
 }

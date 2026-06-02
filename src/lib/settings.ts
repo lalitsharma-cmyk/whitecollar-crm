@@ -34,6 +34,16 @@ const DEFAULTS = {
   // viewer's team matches. NEVER infer team from phone/geography.
   "motivationPilot.enabled": "false",
   "motivationPilot.team": "",
+  // ── BANT qualification stage-gate ──
+  // Controls what happens when an agent advances a lead to "Qualified" or
+  // beyond WITHOUT all four BANT signals (Budget / Authority / Need / Timeline)
+  // captured. Values: "off" | "soft" | "hard".
+  //   • off  — no check at all.
+  //   • soft — WARN but still allow the move (returns a bantWarning, never blocks).
+  //   • hard — BLOCK advancing into Qualified+ until all 4 BANT are captured (422).
+  // Default SOFT so it NEVER blocks an agent unexpectedly mid-sale — only an
+  // admin deliberately flipping to "hard" makes the gate blocking.
+  "bantGate.mode": "soft",
 };
 
 export async function getSetting(key: string): Promise<string> {
@@ -73,6 +83,16 @@ export async function getTestingModeEnabled(): Promise<boolean> {
   const raw = await getSetting("testingMode.enabled");
   if (!raw) return false; // default OFF
   return raw.toLowerCase() === "true";
+}
+
+// ── BANT stage-gate mode accessor ──────────────────────────────────────
+// "off" disables the check, "soft" warns-but-allows, "hard" blocks. Anything
+// unrecognised (incl. the legacy empty/default) resolves to "soft" so the gate
+// NEVER blocks unless an admin explicitly chose "hard".
+export type BantGateMode = "off" | "soft" | "hard";
+export async function getBantGateMode(): Promise<BantGateMode> {
+  const raw = (await getSetting("bantGate.mode")).toLowerCase();
+  return raw === "off" || raw === "hard" ? raw : "soft"; // default soft
 }
 
 // ── B-20 voice / motivation pilot accessors ──────────────────────────
