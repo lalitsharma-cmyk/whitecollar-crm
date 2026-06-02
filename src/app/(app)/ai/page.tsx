@@ -1,10 +1,14 @@
 import AIChat from "@/components/AIChat";
 import { aiEnabled } from "@/lib/ai";
+import { getRoundRobinEnabled } from "@/lib/settings";
 
 export const dynamic = "force-dynamic";
 
-export default function Page() {
-  const enabled = aiEnabled();
+export default async function Page() {
+  const [enabled, roundRobinOn] = await Promise.all([
+    Promise.resolve(aiEnabled()),
+    getRoundRobinEnabled(),
+  ]);
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
       <div className="lg:col-span-2 card p-5 flex flex-col h-[75vh]">
@@ -35,8 +39,17 @@ export default function Page() {
         <div className="card p-5">
           <div className="font-semibold mb-2">Automations active</div>
           <div className="space-y-2 text-sm">
-            <div className="flex items-center justify-between"><div>Round-robin lead distribution</div><span className="chip chip-won">ON</span></div>
-            <div className="flex items-center justify-between"><div>Auto-dedupe on intake</div><span className="chip chip-won">ON</span></div>
+            <div className="flex items-center justify-between">
+              <div>Round-robin lead distribution</div>
+              <span className={`chip ${roundRobinOn ? "chip-won" : "chip-warm"}`}>{roundRobinOn ? "ON" : "OFF"}</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <div>Auto-dedupe on intake</div>
+              {/* Dedupe is unconditionally wired in ingestLead — there is no
+                  admin kill-switch. Showing it as a non-interactive "Always on"
+                  badge so the UI is truthful. */}
+              <span className="chip chip-won opacity-60 cursor-default" title="Built-in — always active, not user-configurable">Always on</span>
+            </div>
             <div className="flex items-center justify-between"><div>AI lead scoring</div><span className={`chip ${enabled ? "chip-won" : "chip-warm"}`}>{enabled ? "ON" : "Rule-based"}</span></div>
           </div>
         </div>
