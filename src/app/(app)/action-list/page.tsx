@@ -90,19 +90,19 @@ export default async function ActionListPage() {
       where: { ...scope, status: { in: [LeadStatus.NEGOTIATION, LeadStatus.SITE_VISIT] } },
       orderBy: { lastTouchedAt: "desc" },
       take: 10,
-      include: { owner: true },
+      include: { owner: { select: { name: true } } }, // B-15: only owner.name is rendered
     }),
     prisma.lead.findMany({
       where: { ...scope, followupDate: { lt: new Date() }, status: { notIn: [LeadStatus.WON, LeadStatus.LOST] } },
       orderBy: { followupDate: "asc" },
       take: 20,
-      include: { owner: true },
+      include: { owner: { select: { name: true } } }, // B-15: only owner.name is rendered
     }),
     prisma.lead.findMany({
       where: { ...scope, needsManagerReview: true, status: { notIn: [LeadStatus.WON, LeadStatus.LOST] } },
       orderBy: { flaggedAt: "desc" },
       take: 15,
-      include: { owner: true },
+      include: { owner: { select: { name: true } } }, // B-15: only owner.name is rendered
     }),
   ]);
 

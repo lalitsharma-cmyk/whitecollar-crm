@@ -73,15 +73,52 @@ export default async function CallsPage() {
     where: isAgent ? { userId: me.id } : {},
     orderBy: { startedAt: "desc" },
     take: 50,
-    include: {
+    // B-15: select only the fields the QualityList + CallsClient rows actually
+    // render. `lead` is a ~100-column model with long-text fields (aiSummary,
+    // remarks, photoUrls, EOI/KYC/commission…); a bare `include` dragged all of
+    // them ×50 rows ×(1 + up to 5 nested call logs). The `where` scope above is
+    // unchanged — this only narrows the column projection.
+    select: {
+      id: true,
+      startedAt: true,
+      outcome: true,
+      direction: true,
+      durationSec: true,
+      notes: true,
+      phoneNumber: true,
+      attributedAgentName: true,
       user: { select: { name: true } },
       lead: {
-        include: {
+        select: {
+          id: true,
+          name: true,
+          phone: true,
+          email: true,
+          status: true,
+          aiScore: true,
+          aiScoreValue: true,
+          bantStatus: true,
+          bantReason: true,
+          budgetMin: true,
+          budgetCurrency: true,
+          configuration: true,
+          whoIsClient: true,
+          followupDate: true,
+          todoNext: true,
+          forwardedTeam: true,
+          currentStatus: true,
+          categorization: true,
           owner: { select: { name: true } },
           callLogs: {
             orderBy: { startedAt: "desc" },
             take: 5,
-            include: { user: { select: { name: true } } },
+            select: {
+              startedAt: true,
+              outcome: true,
+              attributedAgentName: true,
+              notes: true,
+              user: { select: { name: true } },
+            },
           },
         },
       },

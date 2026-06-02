@@ -95,8 +95,8 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     prisma.activity.count({ where: { ...meActWhere, status: ActivityStatus.PLANNED, scheduledAt: { lt: todayStart } } }),
     prisma.lead.count({ where: { ...meScope, status: { in: [LeadStatus.NEGOTIATION, LeadStatus.SITE_VISIT] } } }),
     prisma.lead.count({ where: { ...meScope, needsManagerReview: true, status: { notIn: [LeadStatus.WON, LeadStatus.LOST] } } }),
-    prisma.activity.findMany({ where: meActWhere, orderBy: { createdAt: "desc" }, take: 6, include: { lead: true, user: true } }),
-    prisma.activity.findMany({ where: { ...meActWhere, status: ActivityStatus.PLANNED, scheduledAt: { gte: new Date() } }, orderBy: { scheduledAt: "asc" }, take: 5, include: { lead: true } }),
+    prisma.activity.findMany({ where: meActWhere, orderBy: { createdAt: "desc" }, take: 6, include: { lead: { select: { id: true, name: true } }, user: { select: { name: true } } } }), // B-15: only lead.id/name + user.name rendered
+    prisma.activity.findMany({ where: { ...meActWhere, status: ActivityStatus.PLANNED, scheduledAt: { gte: new Date() } }, orderBy: { scheduledAt: "asc" }, take: 5, include: { lead: { select: { id: true, name: true } } } }), // B-15: only lead.id/name rendered
     // leadsByTeam — team-distribution chart; intentionally all-teams (no scope).
     prisma.lead.groupBy({ by: ["forwardedTeam"], _count: { _all: true } }),
     prisma.lead.findMany({

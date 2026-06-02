@@ -218,7 +218,8 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
   const [leads, total, hot, newToday, totalAll, agents, followupToday, followupTomorrow, followupWeek, followupMonth, followupOverdue, allTagRows] = await Promise.all([
     prisma.lead.findMany({
       where, orderBy, skip, take: PAGE_SIZE,
-      include: { owner: true, interestedUnits: { include: { unit: { include: { project: true } } }, take: 1 } },
+      // B-15: trim relations to rendered fields (owner.name/avatarColor, unit.configuration + project.name). `where`/`take`/`skip` pagination unchanged.
+      include: { owner: { select: { name: true, avatarColor: true } }, interestedUnits: { take: 1, select: { unit: { select: { configuration: true, project: { select: { name: true } } } } } } },
     }),
     prisma.lead.count({ where }),
     prisma.lead.count({ where: { ...scope, aiScore: AIScore.HOT } }),

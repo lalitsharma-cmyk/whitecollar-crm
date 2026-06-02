@@ -49,9 +49,10 @@ export default async function PipelinePage({ searchParams }: { searchParams: Pro
     prisma.lead.findMany({
       where,
       orderBy: { updatedAt: "desc" },
+      take: 300, // B-15: bound the previously-unbounded pipeline query (>current ~45 leads, so no visible truncation; forward-looking guard)
       include: {
-        owner: true,
-        interestedUnits: { include: { unit: { include: { project: true } } }, take: 1 },
+        owner: { select: { name: true, avatarColor: true } }, // B-15: only name+avatar rendered
+        interestedUnits: { take: 1, select: { unit: { select: { project: { select: { name: true } } } } } }, // B-15: only project.name rendered
         // Pull the most recent STATUS_CHANGE so we know when this lead
         // entered its current stage. Falls back to lead.updatedAt if there's
         // never been a change (eg. brand-new lead in NEW). One row per lead
