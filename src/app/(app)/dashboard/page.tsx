@@ -81,7 +81,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     leadsByTeam, forecastLeads,
     // Team-specific KPIs
     expoMeetingsThisMonth, homeVisitsThisMonth, virtualThisMonth, officeThisMonth, siteVisitsThisMonth,
-    coldPromotedToday, callsThisMonth,
+    coldPromotedThisMonth, callsThisMonth,
   ] = await Promise.all([
     // Personal KPI tiles (audit B-03): me* scopes → the agent's own book;
     // identical to the team scopes for ADMIN/MANAGER (no change for them).
@@ -111,8 +111,9 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     prisma.activity.count({ where: { ...teamActWhere, type: ActivityType.VIRTUAL_MEETING, completedAt: { gte: monthStart } } }),
     prisma.activity.count({ where: { ...teamActWhere, type: ActivityType.OFFICE_MEETING, completedAt: { gte: monthStart } } }),
     prisma.activity.count({ where: { ...teamActWhere, type: ActivityType.SITE_VISIT, completedAt: { gte: monthStart } } }),
-    // Cold→Lead conversions today (team-scoped)
-    prisma.activity.count({ where: { ...teamActWhere, type: ActivityType.COLD_TO_LEAD, completedAt: { gte: todayStart } } }),
+    // Cold→Lead conversions THIS MONTH (team-scoped) — matches the sibling
+    // "THIS MONTH" tiles in this block (Lalit: count the whole month, not today).
+    prisma.activity.count({ where: { ...teamActWhere, type: ActivityType.COLD_TO_LEAD, completedAt: { gte: monthStart } } }),
     // Calls this month — true month-to-date count for the "Calls (mo)" tile
     // (audit B-05; the tile previously showed callsToday mislabelled "(mo)").
     prisma.callLog.count({ where: { ...teamCallWhere, startedAt: { gte: monthStart } } }),
@@ -683,7 +684,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
                 <KPI title="🚗 Site visits" value={siteVisitsThisMonth} sub={monthRangeLabel} />
                 <KPI title="🏠 Home visits" value={homeVisitsThisMonth} sub={monthRangeLabel} />
                 <KPI title="🏢 Office meets" value={officeThisMonth} sub={monthRangeLabel} />
-                <KPI title="❄→🔥 Cold→Lead — today" value={coldPromotedToday} sub="conversions today (not month)" highlight={coldPromotedToday > 0} />
+                <KPI title="❄→🔥 Cold→Lead" value={coldPromotedThisMonth} sub={`${monthRangeLabel} · conversions`} highlight={coldPromotedThisMonth > 0} />
               </>
             )}
           </div>
