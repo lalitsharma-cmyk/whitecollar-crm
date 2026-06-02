@@ -14,7 +14,6 @@ import IamHereCard from "@/components/IamHereCard";
 import DailyMissionBoard from "@/components/DailyMissionBoard";
 import PersonalScoreboard from "@/components/PersonalScoreboard";
 import SmartSuggestionsCard from "@/components/SmartSuggestionsCard";
-import AIMotivatorCard from "@/components/AIMotivatorCard";
 import MotivationPilot from "@/components/MotivationPilot";
 import TeamDailyTargetTile from "@/components/TeamDailyTargetTile";
 import { todayIST } from "@/lib/attendance";
@@ -421,16 +420,6 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         userId={me.id}
         userName={me.name}
       />
-
-      {/* AI Motivator card — Lalit's brief (Round): "For each agent, there
-          should be AI who analyses everything in agent dashboard and
-          Motivate him … Each day in morning , A recorded voice should be
-          there by Agent which should be like his manager who is motivating
-          him." Sits right after I-am-here so the morning order is:
-          greeting → attendance → coach → KPIs. The card itself client-fetches
-          /api/ai/motivate and (on click) /api/ai/morning-message which it
-          plays via the browser's Web Speech API — no server TTS dependency. */}
-      <AIMotivatorCard />
 
       {/* B-20 — voice / motivation pilot (flag-gated, ONE team). Renders NOTHING
           unless an admin has set motivationPilot.enabled=true AND the viewer's
