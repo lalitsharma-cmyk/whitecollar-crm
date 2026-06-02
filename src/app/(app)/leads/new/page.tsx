@@ -9,6 +9,7 @@ import PhoneInput from "@/components/PhoneInput";
 import { fromISTLocalInput } from "@/lib/datetime";
 import BudgetInput from "@/components/BudgetInput";
 import FormDateTimeIST from "@/components/FormDateTimeIST";
+import DedupWarning from "@/components/DedupWarning";
 
 async function createLeadAction(formData: FormData) {
   "use server";
@@ -85,7 +86,7 @@ export default async function NewLeadPage() {
     <>
       <h1 className="text-xl sm:text-2xl font-bold">New Lead</h1>
       <p className="text-xs sm:text-sm text-gray-500">Mirror of your Dubai team sheet — capture the FULL situation, not keywords.</p>
-      <form action={createLeadAction} className="card p-4 sm:p-6 max-w-4xl space-y-5 sm:space-y-6">
+      <form id="new-lead-form" action={createLeadAction} className="card p-4 sm:p-6 max-w-4xl space-y-5 sm:space-y-6">
         {/* Identity */}
         <section>
           <div className="text-xs font-bold tracking-widest text-[#c9a24b] mb-3">IDENTITY</div>
@@ -99,6 +100,12 @@ export default async function NewLeadPage() {
               <p className="text-[10px] text-gray-500 mt-0.5">Pick country flag · WhatsApp/Call buttons stop working without the right code</p>
             </div>
             <div><label className={label}>✉ E-mail</label><input name="email" type="email" className={input} /></div>
+          </div>
+          {/* Dedup warning — non-blocking; appears after the user enters phone/email */}
+          <div className="mt-3">
+            <DedupWarning formId="new-lead-form" />
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 sm:gap-4 mt-3">
             <div><label className={label}>🏢 Company</label><input name="company" placeholder="e.g. Emirates NBD, TCS" className={input} /></div>
             <div>
               <label className={label}>💼 Profession</label>
