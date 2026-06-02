@@ -281,7 +281,7 @@ export default async function ReportsPage() {
             {fmtMoneyDual({ aed: forecastAed, inr: forecastInr })}
           </div>
           <div className="text-[11px] text-emerald-700/70 mt-1">
-            Weighted active pipeline · open pipeline-stage moves change this
+            Weighted active pipeline · all teams · open pipeline-stage moves change this
           </div>
         </Link>
 
@@ -448,7 +448,7 @@ export default async function ReportsPage() {
 
       <div id="funnel" className="grid grid-cols-1 lg:grid-cols-3 gap-4 scroll-mt-20">
         <div className="card p-5 lg:col-span-2">
-          <div className="text-xs text-gray-500 tracking-widest">MONTHLY · ALL TIME</div>
+          <div className="text-xs text-gray-500 tracking-widest">ALL TIME · ALL TEAMS</div>
           <div className="font-semibold mt-1">Conversion funnel</div>
           <FunnelChart data={[
             { stage: "Leads", n: tot },
@@ -473,7 +473,7 @@ export default async function ReportsPage() {
           )}
         </div>
         <div className="card p-5">
-          <div className="text-xs text-gray-500 tracking-widest">MONTHLY</div>
+          <div className="text-xs text-gray-500 tracking-widest">ALL TIME</div>
           <div className="font-semibold mt-1">Top performing projects</div>
           <table className="w-full text-sm mt-2">
             <thead><tr className="text-xs text-gray-500"><th className="text-left py-1">Project</th><th>Leads</th><th>Bookings</th></tr></thead>

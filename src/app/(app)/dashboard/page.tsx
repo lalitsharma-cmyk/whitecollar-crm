@@ -641,16 +641,16 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
 
       {/* 8 KPI tiles matching your dashboard exactly */}
       <div>
-        <div className="text-xs font-bold tracking-widest text-gray-500 mb-2">TODAY AT A GLANCE</div>
+        <div className="text-xs font-bold tracking-widest text-gray-500 mb-2">TODAY &amp; RIGHT NOW</div>
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-4 gap-2 lg:gap-3">
-          <KPI title="Calls Dialed Today" value={callsToday} sub="logged across all leads" />
-          <KPI title="Calls Connected Today" value={connectedToday} sub={`${connectRate}% connect rate`} />
-          <KPI title="Follow-ups Due Today" value={followupsDueToday} sub="scheduled for today" />
-          <KPI title="Overdue Follow-ups" value={followupsOverdue} sub="past their follow-up date" />
-          <KPI title="Ready to Close" value={readyToClose} sub="showing buying signals" />
-          <KPI title="Need Your Attention" value={needsYou} sub="flagged for manager" highlight={needsYou > 0} />
-          <KPI title="WhatsApp Touches Today" value={waToday} sub="messages logged" />
-          <KPI title="Total Clients" value={totalClients} sub={`${totalNotContacted} not yet contacted`} />
+          <KPI title="Calls Dialed — today" value={callsToday} sub="dials logged today" />
+          <KPI title="Calls Connected — today" value={connectedToday} sub={`${connectRate}% connect rate today`} />
+          <KPI title="Follow-ups Due — today" value={followupsDueToday} sub="scheduled for today" />
+          <KPI title="Overdue Follow-ups — now" value={followupsOverdue} sub="past their follow-up date" />
+          <KPI title="Ready to Close — now" value={readyToClose} sub="showing buying signals" />
+          <KPI title="Need Your Attention — now" value={needsYou} sub="flagged for manager" highlight={needsYou > 0} />
+          <KPI title="WhatsApp Touches — today" value={waToday} sub="messages logged today" />
+          <KPI title="Total Clients — all time" value={totalClients} sub={`${totalNotContacted} not yet contacted`} />
         </div>
       </div>
 
@@ -675,7 +675,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
                 <KPI title="🚗 Site visits" value={siteVisitsThisMonth} sub={monthRangeLabel} />
                 <KPI title="🏠 Home visits" value={homeVisitsThisMonth} sub={monthRangeLabel} />
                 <KPI title="🏢 Office meets" value={officeThisMonth} sub={monthRangeLabel} />
-                <KPI title="❄→🔥 Cold→Lead" value={coldPromotedToday} sub="conversions today" highlight={coldPromotedToday > 0} />
+                <KPI title="❄→🔥 Cold→Lead — today" value={coldPromotedToday} sub="conversions today (not month)" highlight={coldPromotedToday > 0} />
               </>
             )}
           </div>
@@ -687,7 +687,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
           (they see their own funnel on each lead detail page instead). */}
       {eoiAlerts && (
         <div>
-          <div className="text-xs font-bold tracking-widest text-gray-500 mb-2">EOI PIPELINE</div>
+          <div className="text-xs font-bold tracking-widest text-gray-500 mb-2">EOI PIPELINE · TEAM · RIGHT NOW</div>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 lg:gap-3">
             <Link href="/leads?eoi=active" className="card p-3 lg:p-4 hover:border-[#c9a24b] block">
               <div className="text-2xl lg:text-3xl font-bold">{eoiAlerts.active}</div>
@@ -728,10 +728,10 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
       {/* By Salesperson table — ADMIN/MANAGER only (team-wide competitive data) */}
       {isAdminOrMgr && (
       <div className="card p-3 lg:p-5 overflow-x-auto">
-        <div className="text-xs font-bold tracking-widest text-gray-500 mb-3">BY SALESPERSON</div>
+        <div className="text-xs font-bold tracking-widest text-gray-500 mb-3">BY SALESPERSON · TEAM</div>
         <table className="tbl w-full min-w-[520px]">
           <thead><tr>
-            <th>Salesperson</th><th>Team</th><th className="text-center">Calls Today</th><th className="text-center">Connected</th><th className="text-center">Due Today</th><th className="text-center">Overdue</th><th className="text-center">Closeable</th><th className="text-center">Needs Lalit</th><th className="text-center">Clients</th>
+            <th>Salesperson</th><th>Team</th><th className="text-center">Calls today</th><th className="text-center">Connected today</th><th className="text-center">Due today</th><th className="text-center">Overdue now</th><th className="text-center">Closeable now</th><th className="text-center">Needs Lalit</th><th className="text-center">Clients (total)</th>
           </tr></thead>
           <tbody>
             {spStats.map((s) => (
