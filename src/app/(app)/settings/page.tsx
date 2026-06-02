@@ -1,11 +1,12 @@
 import { createHmac } from "node:crypto";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { getTravelRatePerKmInr, getSpeedToLeadEnabled, getRoundRobinEnabled, getTestingModeEnabled } from "@/lib/settings";
+import { getTravelRatePerKmInr, getSpeedToLeadEnabled, getRoundRobinEnabled, getTestingModeEnabled, getMotivationPilotEnabled, getMotivationPilotTeam } from "@/lib/settings";
 import TravelRateEditor from "@/components/TravelRateEditor";
 import SpeedToLeadToggle from "@/components/SpeedToLeadToggle";
 import RoundRobinToggle from "@/components/RoundRobinToggle";
 import TestingModeToggle from "@/components/TestingModeToggle";
+import MotivationPilotToggle from "@/components/MotivationPilotToggle";
 import FestivalAdminPanel from "@/components/FestivalAdminPanel";
 import TestPushButton from "@/components/TestPushButton";
 import NotifPrefsEditor from "@/components/NotifPrefsEditor";
@@ -42,11 +43,13 @@ function buildIcsUrl(userId: string): string {
 
 export default async function SettingsPage() {
   const me = await requireUser();
-  const [travelRate, speedToLeadOn, roundRobinOn, testingModeOn, pushSubCount] = await Promise.all([
+  const [travelRate, speedToLeadOn, roundRobinOn, testingModeOn, motivationPilotOn, motivationPilotTeam, pushSubCount] = await Promise.all([
     getTravelRatePerKmInr(),
     getSpeedToLeadEnabled(),
     getRoundRobinEnabled(),
     getTestingModeEnabled(),
+    getMotivationPilotEnabled(),
+    getMotivationPilotTeam(),
     prisma.pushSubscription.count({ where: { userId: me.id } }),
   ]);
   const isAdmin = me.role === "ADMIN";
@@ -106,6 +109,20 @@ export default async function SettingsPage() {
           Logged to the lead timeline so the agent can see what was sent.
         </p>
         <SpeedToLeadToggle initial={speedToLeadOn} canEdit={isAdmin} />
+      </div>
+
+      {/* Daily-motivation / voice pilot (B-20) — admin picks who sees it. */}
+      <div className="card p-5 max-w-2xl">
+        <div className="font-semibold flex items-center gap-2">☕ Daily motivation (pilot)</div>
+        <p className="text-xs text-gray-500 mt-1">
+          Shows a calm <b>“Daily note”</b> on the dashboard — a line of the day plus an
+          optional <b>Listen</b> button (read aloud by the browser, no extra cost).
+          Choose which team sees it. Whether someone is on the India or Dubai team
+          comes from their staff profile — never from their phone number or location.
+          <b className="text-amber-700"> “Both teams” shows it to everyone</b> — start with
+          one team if you'd like to judge the tone first.
+        </p>
+        <MotivationPilotToggle initialEnabled={motivationPilotOn} initialTeam={motivationPilotTeam} canEdit={isAdmin} />
       </div>
 
       {/* Festival theme — admin manual override for festive mode (spec §12.1) */}

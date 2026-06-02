@@ -104,7 +104,12 @@ export async function isMotivationPilotViewer(
   ]);
   if (!enabled) return false;
   if (!pilotTeam) return false;
+  // "ALL" / "both" → roll the pilot out to every team. Lalit chose both calling
+  // teams (India + Dubai), which is effectively everyone, so this sentinel shows
+  // the surface to all signed-in users regardless of their own team value.
+  const target = pilotTeam.toLowerCase();
+  if (target === "all" || target === "both") return true;
   const mine = (viewerTeam ?? "").trim();
   if (!mine) return false;
-  return mine.toLowerCase() === pilotTeam.toLowerCase();
+  return mine.toLowerCase() === target;
 }
