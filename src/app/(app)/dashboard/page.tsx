@@ -396,25 +396,12 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         </div>
       </div>
 
-      {/* Welcome strip — greeting + quote always visible at top.
-          Per Lalit (Round 5): "Greeting and quote also at top".
-          The full Daily Opening card below still has missions/streaks/last-win;
-          this is the lightweight always-visible welcome above it. */}
-      <div className="card p-3 mb-3 bg-gradient-to-r from-amber-50/40 to-white border-l-4 border-[#c9a24b]">
-        <div className="text-sm font-semibold text-[#0b1a33]">
-          {energyEmoji} {greeting}, {me.name.split(" ")[0]}
-        </div>
-        <blockquote className="text-xs italic text-gray-600 mt-1 leading-relaxed">
-          💡 {dailyQuote.text}
-          <span className="text-[10px] text-gray-500 not-italic"> — {dailyQuote.author}</span>
-        </blockquote>
-      </div>
-
       {/* ─── "I am here" widget — Agent T (Round 5) ───
           Per Lalit: "Put I am here at top. so user knows its attendance."
-          First card under the page title so the agent sees their check-in
-          status the moment the dashboard loads — bigger and more obvious
-          than the small AttendanceBadge below. */}
+          TOP card under the page title (the greeting/quote welcome strip that
+          used to sit above this was removed per Lalit "remove daily note" — the
+          greeting + daily quote still live in the Daily Opening card below).
+          Bigger and more obvious than the small AttendanceBadge below. */}
       <IamHereCard
         today={myAttendanceToday ? { status: myAttendanceToday.status, markedAt: myAttendanceToday.markedAt.toISOString() } : null}
         userId={me.id}
