@@ -21,6 +21,19 @@ const DEFAULTS = {
   //   • Round-robin auto-assign (reconciler section 1)
   // Default OFF — only Lalit flips this ON during go-live testing.
   "testingMode.enabled": "false",
+  // ── B-20 voice / motivation pilot (Bucket H) ──
+  // The voice + daily-motivation surface is partially specced but NOT yet
+  // validated for tone/usefulness, so it ships behind a flag and is piloted
+  // with ONE team before any global rollout. Two settings work together:
+  //   • motivationPilot.enabled — master ON/OFF for the pilot (default OFF).
+  //   • motivationPilot.team    — the single team string (matched against the
+  //     existing User.team field, e.g. "Dubai" / "India" / "HQ") that the
+  //     surface renders for. Empty = no team scoped → nothing renders even if
+  //     the flag is ON. Lalit sets both from /settings when starting the pilot.
+  // Off-by-default + team-scoped: nothing renders unless enabled AND the
+  // viewer's team matches. NEVER infer team from phone/geography.
+  "motivationPilot.enabled": "false",
+  "motivationPilot.team": "",
 };
 
 export async function getSetting(key: string): Promise<string> {
@@ -60,4 +73,38 @@ export async function getTestingModeEnabled(): Promise<boolean> {
   const raw = await getSetting("testingMode.enabled");
   if (!raw) return false; // default OFF
   return raw.toLowerCase() === "true";
+}
+
+// ── B-20 voice / motivation pilot accessors ──────────────────────────
+// Master switch for the one-team pilot. Default OFF (mirrors testingMode):
+// the surface stays dark for everyone until Lalit deliberately flips it on.
+export async function getMotivationPilotEnabled(): Promise<boolean> {
+  const raw = await getSetting("motivationPilot.enabled");
+  if (!raw) return false; // default OFF
+  return raw.toLowerCase() === "true";
+}
+
+// The single team the pilot is scoped to (matched against User.team). Trimmed;
+// empty string means "no team chosen" → the surface renders for nobody.
+export async function getMotivationPilotTeam(): Promise<string> {
+  const raw = await getSetting("motivationPilot.team");
+  return (raw ?? "").trim();
+}
+
+// One-stop eligibility check used by the MotivationPilot component. Returns
+// true ONLY when the pilot is enabled AND a team is configured AND the viewer's
+// own team (from the User.team field — never derived from phone/geography)
+// matches that team, case-insensitively. Any missing piece → false.
+export async function isMotivationPilotViewer(
+  viewerTeam: string | null | undefined,
+): Promise<boolean> {
+  const [enabled, pilotTeam] = await Promise.all([
+    getMotivationPilotEnabled(),
+    getMotivationPilotTeam(),
+  ]);
+  if (!enabled) return false;
+  if (!pilotTeam) return false;
+  const mine = (viewerTeam ?? "").trim();
+  if (!mine) return false;
+  return mine.toLowerCase() === pilotTeam.toLowerCase();
 }

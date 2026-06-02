@@ -15,6 +15,7 @@ import DailyMissionBoard from "@/components/DailyMissionBoard";
 import PersonalScoreboard from "@/components/PersonalScoreboard";
 import SmartSuggestionsCard from "@/components/SmartSuggestionsCard";
 import AIMotivatorCard from "@/components/AIMotivatorCard";
+import MotivationPilot from "@/components/MotivationPilot";
 import TeamDailyTargetTile from "@/components/TeamDailyTargetTile";
 import { todayIST } from "@/lib/attendance";
 import { quoteOfTheDay } from "@/lib/salesQuotes";
@@ -429,6 +430,13 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
           /api/ai/motivate and (on click) /api/ai/morning-message which it
           plays via the browser's Web Speech API — no server TTS dependency. */}
       <AIMotivatorCard />
+
+      {/* B-20 — voice / motivation pilot (flag-gated, ONE team). Renders NOTHING
+          unless an admin has set motivationPilot.enabled=true AND the viewer's
+          User.team matches motivationPilot.team. Safe to mount unconditionally:
+          the gate lives server-side inside the component. Team comes from
+          me.team (User.team) only — never inferred from phone/geography. */}
+      <MotivationPilot viewer={{ name: me.name, team: me.team }} />
 
       {/* Team daily target — rolling progress vs sum of agent targets.
           Sits above the 4-tile hero strip so the team sees their collective
