@@ -139,3 +139,22 @@ export function isPastISTLocalInput(s: string | null | undefined): boolean {
   if (!d) return false;
   return d.getTime() < Date.now();
 }
+
+/**
+ * Short, honest range label for KPI sub-text.
+ *
+ * Dashboard tiles used to hard-code "this month" / "last 30 days" — but the
+ * underlying query range often didn't match that copy (e.g. a 7-day window
+ * was still labelled "this month"). This helper picks a compact unit so the
+ * label matches the actual span: under 30 days → "Xd", else → "Xmo".
+ *
+ * Examples:
+ *   smartRangeLabel(7d ago, now)   → "7d"
+ *   smartRangeLabel(30d ago, now)  → "1mo"
+ *   smartRangeLabel(90d ago, now)  → "3mo"
+ */
+export function smartRangeLabel(start: Date, end: Date): string {
+  const days = Math.round((end.getTime() - start.getTime()) / 86400000);
+  if (days < 30) return `${days}d`;
+  return `${Math.round(days / 30)}mo`;
+}

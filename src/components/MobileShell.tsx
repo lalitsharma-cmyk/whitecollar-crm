@@ -5,7 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import {
   LayoutDashboard, Users, KanbanSquare, Sparkles, Menu, X, Bell,
   Building2, CalendarDays, PhoneCall, BarChart3, Upload, UserCog, Settings as SettingsIcon, LogOut,
-  ShieldCheck, ChevronLeft, Heart, Gem, Trophy, HelpCircle, Activity, Copy, Plug,
+  ShieldCheck, ChevronLeft, Heart, Gem, Trophy, HelpCircle, Activity, Copy, Plug, AlertTriangle,
 } from "lucide-react";
 import NotifBell from "./NotifBell";
 import WhatsAppPanel from "./WhatsAppPanel";
@@ -43,6 +43,12 @@ const fullNav = [
     { href: "/settings", label: "Settings",      Icon: SettingsIcon },
     { href: "/help",     label: "Help",          Icon: HelpCircle },
   ]},
+  // MANAGER+ADMIN mini-group — surfaced to managers too (Lalit's ask).
+  // Currently only the "Awaiting Team" inbox needs this scope; new items go
+  // in ADMIN below unless a manager should see them.
+  { section: "TEAM", managerOrAdmin: true, items: [
+    { href: "/admin/awaiting-team", label: "Awaiting Team", Icon: AlertTriangle, tag: undefined as string | undefined },
+  ]},
   // ADMIN-only section — filtered out in render below
   { section: "ADMIN", adminOnly: true, items: [
     { href: "/intake",            label: "Lead Intake",   Icon: Upload,       tag: undefined as string | undefined },
@@ -52,6 +58,7 @@ const fullNav = [
     { href: "/admin/templates",   label: "Templates",     Icon: Sparkles,     tag: undefined as string | undefined },
     { href: "/admin/audit",       label: "Audit Log",     Icon: ShieldCheck,  tag: undefined as string | undefined },
     { href: "/admin/targets",     label: "Daily Targets", Icon: Sparkles,     tag: undefined as string | undefined },
+    { href: "/admin/quality",     label: "Quality",       Icon: BarChart3,    tag: undefined as string | undefined },
     { href: "/admin/team-mood",   label: "Team Mood",     Icon: Sparkles,     tag: undefined as string | undefined },
     { href: "/admin/duplicates",  label: "🔁 Duplicates", Icon: Copy,         tag: undefined as string | undefined },
     { href: "/admin/health",      label: "💚 System health", Icon: Activity,  tag: undefined as string | undefined },
@@ -71,18 +78,21 @@ const bottomNav = [
 interface Props {
   children: React.ReactNode;
   user: { name: string; role: string; avatarColor: string; photoUrl?: string | null };
+  // Red badge count next to ADMIN → "Awaiting Team" — only ever >0 for
+  // ADMIN/MANAGER. Server-fetched in (app)/layout.tsx, 0 for agents.
+  awaitingTeamCount?: number;
 }
 
 /** Inline avatar — uses uploaded photo if present, falls back to colored initials. */
 function Avatar({ user, initials, size }: { user: Props["user"]; initials: string; size: string }) {
   if (user.photoUrl) {
     // eslint-disable-next-line @next/next/no-img-element
-    return <img src={user.photoUrl} alt={user.name} className={`${size} rounded-full object-cover`} />;
+    return <img src={user.photoUrl} alt={user.name} className={`${size} rounded-full object-cover object-top`} />;
   }
   return <div className={`avatar ${user.avatarColor} ${size}`}>{initials}</div>;
 }
 
-export default function MobileShell({ children, user }: Props) {
+export default function MobileShell({ children, user, awaitingTeamCount = 0 }: Props) {
   const pathname = usePathname();
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -125,16 +135,26 @@ export default function MobileShell({ children, user }: Props) {
           <img src="/brand/wcr-logo.png" alt="White Collar Realty" className="h-12 w-auto object-contain" />
         </div>
         <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
-          {fullNav.filter((g) => !g.adminOnly || user.role === "ADMIN").map((group) => (
+          {fullNav.filter((g) => {
+            if (g.adminOnly) return user.role === "ADMIN";
+            if (g.managerOrAdmin) return user.role === "ADMIN" || user.role === "MANAGER";
+            return true;
+          }).map((group) => (
             <div key={group.section}>
               <div className="text-[10px] uppercase tracking-widest text-white/40 px-3 mb-1 mt-3 first:mt-0">{group.section}</div>
               {group.items.map(({ href, label, Icon, tag }) => {
                 const active = pathname === href || (href !== "/dashboard" && pathname?.startsWith(href));
+                const showAwaitingBadge = href === "/admin/awaiting-team" && awaitingTeamCount > 0;
                 return (
                   <Link key={href} href={href} className={`nav-item ${active ? "active" : ""}`}>
                     <Icon className="w-[18px] h-[18px] flex-none" strokeWidth={2} />
                     <span>{label}</span>
-                    {tag && <span className="ml-auto text-[10px] bg-[#c9a24b] text-[#0b1a33] px-2 py-0.5 rounded-full font-bold">{tag}</span>}
+                    {showAwaitingBadge && (
+                      <span className="ml-auto text-[10px] bg-red-600 text-white px-2 py-0.5 rounded-full font-bold">
+                        {awaitingTeamCount}
+                      </span>
+                    )}
+                    {!showAwaitingBadge && tag && <span className="ml-auto text-[10px] bg-[#c9a24b] text-[#0b1a33] px-2 py-0.5 rounded-full font-bold">{tag}</span>}
                   </Link>
                 );
               })}
@@ -210,16 +230,26 @@ export default function MobileShell({ children, user }: Props) {
               <button onClick={() => setOpen(false)} className="p-2 rounded hover:bg-white/10"><X className="w-5 h-5" /></button>
             </div>
             <nav className="flex-1 px-2 py-3 space-y-1 overflow-y-auto">
-              {fullNav.map((group) => (
+              {fullNav.filter((g) => {
+                if (g.adminOnly) return user.role === "ADMIN";
+                if (g.managerOrAdmin) return user.role === "ADMIN" || user.role === "MANAGER";
+                return true;
+              }).map((group) => (
                 <div key={group.section}>
                   <div className="text-[10px] uppercase tracking-widest text-white/40 px-3 mb-1 mt-3 first:mt-0">{group.section}</div>
                   {group.items.map(({ href, label, Icon, tag }) => {
                     const active = pathname === href || (href !== "/dashboard" && pathname?.startsWith(href));
+                    const showAwaitingBadge = href === "/admin/awaiting-team" && awaitingTeamCount > 0;
                     return (
                       <Link key={href} href={href} onClick={() => setOpen(false)} className={`nav-item ${active ? "active" : ""}`}>
                         <Icon className="w-[18px] h-[18px] flex-none" />
                         <span>{label}</span>
-                        {tag && <span className="ml-auto text-[10px] bg-[#c9a24b] text-[#0b1a33] px-2 py-0.5 rounded-full font-bold">{tag}</span>}
+                        {showAwaitingBadge && (
+                          <span className="ml-auto text-[10px] bg-red-600 text-white px-2 py-0.5 rounded-full font-bold">
+                            {awaitingTeamCount}
+                          </span>
+                        )}
+                        {!showAwaitingBadge && tag && <span className="ml-auto text-[10px] bg-[#c9a24b] text-[#0b1a33] px-2 py-0.5 rounded-full font-bold">{tag}</span>}
                       </Link>
                     );
                   })}

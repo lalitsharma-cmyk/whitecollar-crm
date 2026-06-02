@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { ActivityType, ActivityStatus, LeadStatus } from "@prisma/client";
 import { loadOwnedLead } from "@/lib/leadScope";
+import { audit, reqMeta } from "@/lib/audit";
 
 // PATCH /api/leads/[id]/eoi — partial update of any EOI / booking-funnel field.
 //
@@ -258,6 +259,37 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       },
     });
   }
+
+  // When the funnel reaches BOOKING_DONE, drop a STATUS_CHANGE activity so it
+  // shows up distinctly in the timeline (separate from the rolling NOTE entries).
+  // Triggered either by an explicit eoiStage → BOOKING_DONE transition OR by
+  // a bookingDoneAt being stamped from null this request.
+  const reachedBookingDone =
+    (typeof newStage === "string" && newStage === "BOOKING_DONE" && current.eoiStage !== "BOOKING_DONE") ||
+    (updates.bookingDoneAt instanceof Date && !current.bookingDoneAt);
+  if (reachedBookingDone) {
+    await prisma.activity.create({
+      data: {
+        leadId: id,
+        userId: me.id,
+        type: ActivityType.STATUS_CHANGE,
+        status: ActivityStatus.DONE,
+        title: "Booking confirmed",
+        description: "Lead reached BOOKING_DONE — booking funnel complete.",
+        completedAt: now,
+      },
+    });
+  }
+
+  // Audit trail for the EOI funnel. Best-effort — never blocks the response.
+  await audit({
+    userId: me.id,
+    action: "lead.eoi_update",
+    entity: "Lead",
+    entityId: id,
+    meta: { fields: Object.keys(updates), reachedBookingDone },
+    request: reqMeta(req),
+  });
 
   return NextResponse.json({ ok: true, lead: updated });
 }

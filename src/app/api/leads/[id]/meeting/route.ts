@@ -28,6 +28,18 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const when = whenRaw ? new Date(whenRaw) : new Date();
   if (isNaN(when.getTime())) return NextResponse.json({ error: "Invalid date" }, { status: 400 });
   const isFuture = when.getTime() > Date.now();
+
+  // 7-day forward cap for AGENT role — Lalit's policy (2026-06): agents
+  // tend to "park" leads against vague future dates. Force them to either
+  // schedule within a week or escalate to a manager for longer-horizon
+  // planning. ADMIN + MANAGER bypass (they may be planning launches /
+  // expo cycles). Applies to all three meeting types here.
+  const SEVEN_DAYS_MS = 7 * 24 * 3600 * 1000;
+  if (me.role === "AGENT" && when.getTime() > Date.now() + SEVEN_DAYS_MS) {
+    return NextResponse.json({
+      error: "Meetings can only be scheduled up to 7 days in advance. For longer-term planning, ask your manager.",
+    }, { status: 400 });
+  }
   const activityStatus = isFuture ? ActivityStatus.PLANNED : ActivityStatus.DONE;
 
   const title =

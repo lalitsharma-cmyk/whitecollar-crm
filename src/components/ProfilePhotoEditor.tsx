@@ -65,7 +65,7 @@ export default function ProfilePhotoEditor({ initialPhotoUrl, avatarColor, initi
       <div className="relative">
         {preview ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={preview} alt="Profile" className="w-32 h-32 rounded-full object-cover border-4 border-[#c9a24b]" />
+          <img src={preview} alt="Profile" className="w-32 h-32 rounded-full object-cover object-top border-4 border-[#c9a24b]" />
         ) : (
           <div className={`w-32 h-32 rounded-full ${avatarColor} flex items-center justify-center text-white text-4xl font-bold border-4 border-[#e5e7eb]`}>
             {initials}

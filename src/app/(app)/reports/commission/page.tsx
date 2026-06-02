@@ -3,6 +3,7 @@ import { requireRole } from "@/lib/auth";
 import { LeadStatus, Prisma } from "@prisma/client";
 import { fmtMoney, fmtMoneyDual } from "@/lib/money";
 import Link from "next/link";
+import ReportDateRangePicker from "@/components/ReportDateRangePicker";
 
 export const dynamic = "force-dynamic";
 
@@ -22,19 +23,18 @@ export const dynamic = "force-dynamic";
 // in major units (divide by 100) and NEVER add AED + INR — totals track two
 // independent running sums and render via fmtMoneyDual.
 
-type RangeKey = "month" | "quarter" | "year" | "all";
-const RANGE_LABEL: Record<RangeKey, string> = {
-  month: "This month",
-  quarter: "This quarter",
-  year: "This year",
-  all: "All time",
-};
-function parseRange(raw: string | undefined): RangeKey {
+// Date controls migrated to the shared ReportDateRangePicker (?from=&to=).
+// "All time" is now expressed as "no from/to supplied" — the cleanest mapping
+// given the picker has no built-in all-time chip. ?range= is still parsed
+// for one release so old bookmarks resolve to a sensible window.
+type LegacyRangeKey = "month" | "quarter" | "year" | "all";
+function parseLegacyRange(raw: string | undefined): LegacyRangeKey {
   if (raw === "quarter" || raw === "year" || raw === "all") return raw;
   return "month";
 }
-// Returns the inclusive start of the selected window, or null for "all".
-function rangeStart(key: RangeKey): Date | null {
+// Legacy enum → start date (null = all time). Used only for backwards-compat
+// when the new ?from=&to= aren't supplied.
+function legacyRangeStart(key: LegacyRangeKey): Date | null {
   const now = new Date();
   if (key === "all") return null;
   if (key === "year") return new Date(now.getFullYear(), 0, 1);
@@ -43,6 +43,23 @@ function rangeStart(key: RangeKey): Date | null {
     return new Date(now.getFullYear(), q * 3, 1);
   }
   return new Date(now.getFullYear(), now.getMonth(), 1); // month
+}
+
+// Strict YYYY-MM-DD → UTC midnight. Reject junk so we don't slip an
+// Invalid Date into a Prisma filter.
+function parseYmd(s: string | undefined): Date | null {
+  if (!s) return null;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return null;
+  const d = new Date(`${s}T00:00:00.000Z`);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+function endOfDayUtc(d: Date): Date {
+  const out = new Date(d);
+  out.setUTCHours(23, 59, 59, 999);
+  return out;
+}
+function toYmd(d: Date): string {
+  return d.toISOString().slice(0, 10);
 }
 
 // commissionAmount is stored as the raw whole-currency number the agent types
@@ -107,20 +124,87 @@ export default async function CommissionReportPage({
 }) {
   await requireRole("ADMIN", "MANAGER");
   const sp = await searchParams;
-  const rangeKey = parseRange(sp.range);
-  const since = rangeStart(rangeKey);
+
+  // Resolve the window. Precedence:
+  //   1. ?from=&to= (new shared-picker contract) ─ wins if present
+  //   2. ?range= (legacy enum — month/quarter/year/all) for one release
+  //   3. default = This month (matches previous page default)
+  //
+  // "All time" maps to "no from/to" — there's no all-time chip on the shared
+  // picker, but the absence of both params is the cleanest signal and means
+  // we don't have to fabricate a synthetic origin date.
+  const fromParam = parseYmd(sp.from);
+  const toParam = parseYmd(sp.to);
+
+  let since: Date | null;
+  let until: Date | null;
+  let rangeLabel: string;
+  // Were date params explicitly supplied in the URL? Used to disambiguate
+  // "user picked a window" from "user hit the page with nothing".
+  const hasDateParams = sp.from !== undefined || sp.to !== undefined;
+
+  if (fromParam && toParam) {
+    since = fromParam;
+    until = endOfDayUtc(toParam);
+    rangeLabel = `${toYmd(since)} → ${toYmd(until)}`;
+  } else if (hasDateParams) {
+    // Partial picker submission — fall back to wide-open on the missing side.
+    since = fromParam ?? null;
+    until = toParam ? endOfDayUtc(toParam) : null;
+    rangeLabel = since
+      ? until
+        ? `${toYmd(since)} → ${toYmd(until)}`
+        : `From ${toYmd(since)}`
+      : until
+      ? `Up to ${toYmd(until)}`
+      : "All time";
+  } else if (sp.range !== undefined) {
+    // Legacy ?range= path.
+    const legacy = parseLegacyRange(sp.range);
+    since = legacyRangeStart(legacy);
+    until = endOfDayUtc(new Date());
+    rangeLabel =
+      legacy === "all"
+        ? "All time"
+        : legacy === "month"
+        ? "This month"
+        : legacy === "quarter"
+        ? "This quarter"
+        : "This year";
+  } else {
+    // Default — this month, matching the prior default.
+    since = legacyRangeStart("month");
+    until = endOfDayUtc(new Date());
+    rangeLabel = "This month";
+  }
 
   // Period filter on bookingDoneAt, falling back to commissionReceivedAt then
   // updatedAt — OR'd so a booking with any one of those in-window is counted.
+  // gte+lte both bounded by the picker; if either bound is null we just omit it.
+  // Inline shape rather than `Prisma.DateTimeFilter` — Prisma's generic version
+  // varies by client version, this stays portable.
+  const dateBound = (d1: Date | null, d2: Date | null): { gte?: Date; lte?: Date } | undefined => {
+    if (!d1 && !d2) return undefined;
+    const out: { gte?: Date; lte?: Date } = {};
+    if (d1) out.gte = d1;
+    if (d2) out.lte = d2;
+    return out;
+  };
   const periodWhere: Prisma.LeadWhereInput | undefined =
-    since == null
+    since == null && until == null
       ? undefined
       : {
           OR: [
-            { bookingDoneAt: { gte: since } },
-            { commissionReceivedAt: { gte: since } },
+            { bookingDoneAt: dateBound(since, until) },
+            { commissionReceivedAt: dateBound(since, until) },
             // updatedAt fallback only when no explicit booking/received stamp.
-            { AND: [{ bookingDoneAt: null }, { commissionReceivedAt: null }, { updatedAt: { gte: since } }] },
+            {
+              AND: [
+                { bookingDoneAt: null },
+                { commissionReceivedAt: null },
+                { updatedAt: dateBound(since, until) },
+              ],
+            },
           ],
         };
 
@@ -237,7 +321,7 @@ export default async function CommissionReportPage({
         <div>
           <h1 className="text-xl sm:text-2xl font-bold">Commission &amp; Earnings</h1>
           <p className="text-xs sm:text-sm text-gray-500">
-            Booked deals · currency-correct (AED + INR never summed) · {RANGE_LABEL[rangeKey]}
+            Booked deals · currency-correct (AED + INR never summed) · {rangeLabel}
           </p>
         </div>
         <Link href="/reports" className="text-xs text-gray-500 hover:underline">
@@ -245,26 +329,14 @@ export default async function CommissionReportPage({
         </Link>
       </div>
 
-      {/* Period selector — plain anchor links so the page stays a pure RSC. */}
-      <div className="flex items-center gap-2 text-xs flex-wrap">
-        <span className="text-gray-500">Period:</span>
-        {(Object.keys(RANGE_LABEL) as RangeKey[]).map((k) => {
-          const active = k === rangeKey;
-          return (
-            <Link
-              key={k}
-              href={`/reports/commission?range=${k}`}
-              className={`px-2.5 py-1 rounded-md border ${
-                active
-                  ? "bg-[#0b1a33] text-white border-[#0b1a33]"
-                  : "bg-white text-gray-700 border-gray-200 hover:bg-gray-50"
-              }`}
-            >
-              {RANGE_LABEL[k]}
-            </Link>
-          );
-        })}
-      </div>
+      {/* Shared date-range picker — replaces the legacy ?range= chip row.
+          "All time" is expressed by clearing both inputs (i.e. visiting with
+          no from/to). The default values come from the resolved window so
+          the picker reflects whichever path got us here. */}
+      <ReportDateRangePicker
+        defaultFrom={since ? toYmd(since) : ""}
+        defaultTo={until ? toYmd(until) : ""}
+      />
 
       {!hasBookings ? (
         <div className="card p-8 text-center">
@@ -272,7 +344,7 @@ export default async function CommissionReportPage({
           <div className="font-semibold mt-2">No bookings in this period</div>
           <div className="text-sm text-gray-500 mt-1">
             No leads with commission or a WON/BOOKING_DONE status fall in{" "}
-            {RANGE_LABEL[rangeKey].toLowerCase()}. Try a wider period.
+            {rangeLabel.toLowerCase()}. Try a wider period.
           </div>
         </div>
       ) : (

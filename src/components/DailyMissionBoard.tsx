@@ -21,6 +21,7 @@ interface Mission {
   count: number;
   target: number;
   xp: number;
+  tooltip?: string;
 }
 
 export default async function DailyMissionBoard({ userId }: { userId: string }) {
@@ -60,7 +61,15 @@ export default async function DailyMissionBoard({ userId }: { userId: string }) 
 
   const missions: Mission[] = [
     { emoji: "📞", label: `Make ${callTarget} calls today`, count: callsCount, target: callTarget, xp: 30 },
-    { emoji: "✅", label: "Complete 5 follow-ups today", count: followupsCount, target: 5, xp: 50 },
+    {
+      emoji: "✅",
+      label: "Clear 5 Action List cards today",
+      count: followupsCount,
+      target: 5,
+      xp: 50,
+      tooltip:
+        "Counts the ✅ Complete button on Action List cards. New leads and calendar follow-ups don't count here — only items you actively cleared from your Action List.",
+    },
     { emoji: "🧊", label: "Convert 2 cold leads", count: coldConvCount, target: 2, xp: 100 },
     { emoji: "🤝", label: "Book 1 meeting", count: meetingsCount, target: 1, xp: 75 },
   ];
@@ -86,13 +95,13 @@ export default async function DailyMissionBoard({ userId }: { userId: string }) 
 }
 
 function MissionRow({ mission }: { mission: Mission }) {
-  const { emoji, label, count, target, xp } = mission;
+  const { emoji, label, count, target, xp, tooltip } = mission;
   const done = count >= target;
   const empty = count === 0;
   const pct = Math.min(100, (count / target) * 100);
 
   return (
-    <div className="rounded-xl border border-[#c9a24b]/40 bg-white px-3 py-2.5">
+    <div className="rounded-xl border border-[#c9a24b]/40 bg-white px-3 py-2.5" title={tooltip}>
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-2 min-w-0 flex-1">
           <span className="text-lg flex-none">{emoji}</span>
@@ -100,6 +109,7 @@ function MissionRow({ mission }: { mission: Mission }) {
             className={`text-sm font-semibold truncate ${
               done ? "text-emerald-700" : empty ? "text-gray-400" : "text-[#0b1a33]"
             }`}
+            title={tooltip}
           >
             {label}
           </span>

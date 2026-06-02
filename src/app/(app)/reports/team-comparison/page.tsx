@@ -3,6 +3,7 @@ import { requireRole } from "@/lib/auth";
 import { ActivityType, CallOutcome, LeadStatus, Prisma } from "@prisma/client";
 import { fmtMoney, type Currency } from "@/lib/money";
 import Link from "next/link";
+import ReportDateRangePicker from "@/components/ReportDateRangePicker";
 
 export const dynamic = "force-dynamic";
 
@@ -45,13 +46,11 @@ const ACTIVE_STAGES: LeadStatus[] = [
 // "Bookings done" — anything that crossed the line. BOOKING_DONE or WON.
 const BOOKINGS: LeadStatus[] = [LeadStatus.BOOKING_DONE, LeadStatus.WON];
 
+// Date controls migrated to the shared ReportDateRangePicker (?from=&to=).
+// Legacy ?range= is still parsed for one release so old bookmarks still
+// load on a sensible window; from/to win when both are present.
 type RangeKey = "30d" | "90d" | "year";
-const RANGE_LABEL: Record<RangeKey, string> = {
-  "30d": "Last 30 days",
-  "90d": "Last 90 days",
-  "year": "Year to date",
-};
-function rangeStart(key: RangeKey): Date {
+function legacyRangeStart(key: RangeKey): Date {
   const now = new Date();
   if (key === "year") {
     return new Date(now.getFullYear(), 0, 1);
@@ -61,9 +60,26 @@ function rangeStart(key: RangeKey): Date {
   d.setDate(d.getDate() - days);
   return d;
 }
-function parseRange(raw: string | undefined): RangeKey {
+function parseLegacyRange(raw: string | undefined): RangeKey {
   if (raw === "90d" || raw === "year") return raw;
   return "30d";
+}
+
+// Strict YYYY-MM-DD → UTC midnight. Reject junk so we don't slip an
+// Invalid Date into a Prisma gte filter.
+function parseYmd(s: string | undefined): Date | null {
+  if (!s) return null;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return null;
+  const d = new Date(`${s}T00:00:00.000Z`);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+function endOfDayUtc(d: Date): Date {
+  const out = new Date(d);
+  out.setUTCHours(23, 59, 59, 999);
+  return out;
+}
+function toYmd(d: Date): string {
+  return d.toISOString().slice(0, 10);
 }
 
 interface TeamMetrics {
@@ -82,7 +98,7 @@ interface TeamMetrics {
   avgAiScore: number | null;
 }
 
-async function computeTeamMetrics(team: Team, since: Date): Promise<TeamMetrics> {
+async function computeTeamMetrics(team: Team, since: Date, until: Date): Promise<TeamMetrics> {
   // forwardedTeam is the canonical team marker (set at assignment time);
   // call/activity queries scope via the join because CallLog/Activity have
   // no team column of their own — they inherit from the lead.
@@ -104,18 +120,18 @@ async function computeTeamMetrics(team: Team, since: Date): Promise<TeamMetrics>
     firstCallRows,
   ] = await Promise.all([
     // NEW leads in window — anything created in-range belonging to this team.
-    prisma.lead.count({ where: { ...leadWhere, createdAt: { gte: since } } }),
+    prisma.lead.count({ where: { ...leadWhere, createdAt: { gte: since, lte: until } } }),
 
     // ACTIVE leads — currently in any in-flight stage. Independent of the
     // window — "active right now" is a snapshot, not a flow metric.
     prisma.lead.count({ where: { ...leadWhere, status: { in: ACTIVE_STAGES } } }),
 
     // Calls made in-window.
-    prisma.callLog.count({ where: { ...callWhere, startedAt: { gte: since } } }),
+    prisma.callLog.count({ where: { ...callWhere, startedAt: { gte: since, lte: until } } }),
 
     // Calls connected in-window — used as numerator for connect rate.
     prisma.callLog.count({
-      where: { ...callWhere, startedAt: { gte: since }, outcome: CallOutcome.CONNECTED },
+      where: { ...callWhere, startedAt: { gte: since, lte: until }, outcome: CallOutcome.CONNECTED },
     }),
 
     // Meetings BOOKED in-window — scheduledAt within range, any future or
@@ -132,7 +148,7 @@ async function computeTeamMetrics(team: Team, since: Date): Promise<TeamMetrics>
             ActivityType.EXPO_MEETING,
           ],
         },
-        scheduledAt: { gte: since },
+        scheduledAt: { gte: since, lte: until },
       },
     }),
 
@@ -141,7 +157,7 @@ async function computeTeamMetrics(team: Team, since: Date): Promise<TeamMetrics>
       where: {
         ...actWhere,
         type: ActivityType.SITE_VISIT,
-        completedAt: { gte: since },
+        completedAt: { gte: since, lte: until },
       },
     }),
 
@@ -154,8 +170,8 @@ async function computeTeamMetrics(team: Team, since: Date): Promise<TeamMetrics>
         ...leadWhere,
         status: { in: BOOKINGS },
         OR: [
-          { bookingDoneAt: { gte: since } },
-          { updatedAt: { gte: since } },
+          { bookingDoneAt: { gte: since, lte: until } },
+          { updatedAt: { gte: since, lte: until } },
         ],
       },
     }),
@@ -178,14 +194,14 @@ async function computeTeamMetrics(team: Team, since: Date): Promise<TeamMetrics>
       where: {
         ...actWhere,
         type: ActivityType.COLD_TO_LEAD,
-        completedAt: { gte: since },
+        completedAt: { gte: since, lte: until },
       },
     }),
 
     // Avg AI score — only over leads created in-window with a numeric score.
     // null safe: _avg returns null if no rows match.
     prisma.lead.aggregate({
-      where: { ...leadWhere, createdAt: { gte: since }, aiScoreValue: { not: null } },
+      where: { ...leadWhere, createdAt: { gte: since, lte: until }, aiScoreValue: { not: null } },
       _avg: { aiScoreValue: true },
     }),
 
@@ -207,6 +223,7 @@ async function computeTeamMetrics(team: Team, since: Date): Promise<TeamMetrics>
       FROM "Lead" l
       JOIN first_call fc ON fc.lead_id = l."id"
       WHERE l."createdAt" >= ${since}
+        AND l."createdAt" <= ${until}
         AND l."forwardedTeam" = ${team}
         AND fc.first_call_at >= l."createdAt"
     `,
@@ -330,15 +347,30 @@ export default async function TeamComparisonReportPage({
 }) {
   await requireRole("ADMIN", "MANAGER");
   const sp = await searchParams;
-  const rangeKey = parseRange(sp.range);
-  const since = rangeStart(rangeKey);
+
+  // Resolve window. ?from=&to= win; otherwise fall back to legacy ?range=
+  // (one release of backwards-compat), defaulting to last 30 days.
+  const fromParam = parseYmd(sp.from);
+  const toParam = parseYmd(sp.to);
+
+  let since: Date;
+  let until: Date;
+  if (fromParam && toParam) {
+    since = fromParam;
+    until = endOfDayUtc(toParam);
+  } else {
+    const legacy = parseLegacyRange(sp.range);
+    since = legacyRangeStart(legacy);
+    until = endOfDayUtc(new Date());
+  }
+  const rangeLabel = `${toYmd(since)} → ${toYmd(until)}`;
 
   // Two team queries in parallel — `Promise.all` at this layer ensures Dubai
   // and India hit the DB concurrently; each `computeTeamMetrics` already
   // parallelises its own sub-queries via `Promise.all`.
   const [dubai, india] = await Promise.all([
-    computeTeamMetrics("Dubai", since),
-    computeTeamMetrics("India", since),
+    computeTeamMetrics("Dubai", since, until),
+    computeTeamMetrics("India", since, until),
   ]);
 
   const composite = compositeScore(dubai, india);
@@ -462,7 +494,7 @@ export default async function TeamComparisonReportPage({
         <div>
           <h1 className="text-xl sm:text-2xl font-bold">Team Comparison</h1>
           <p className="text-xs sm:text-sm text-gray-500">
-            Dubai vs India · head-to-head · {RANGE_LABEL[rangeKey]}
+            Dubai vs India · head-to-head · {rangeLabel}
           </p>
         </div>
         <Link href="/reports" className="text-xs text-gray-500 hover:underline">
@@ -470,27 +502,9 @@ export default async function TeamComparisonReportPage({
         </Link>
       </div>
 
-      {/* Period selector — kept as plain anchor links (no JS) so the page
-          stays a pure RSC. Each link sets ?range= and the server re-runs. */}
-      <div className="flex items-center gap-2 text-xs">
-        <span className="text-gray-500">Period:</span>
-        {(Object.keys(RANGE_LABEL) as RangeKey[]).map((k) => {
-          const active = k === rangeKey;
-          return (
-            <Link
-              key={k}
-              href={`/reports/team-comparison?range=${k}`}
-              className={`px-2.5 py-1 rounded-md border ${
-                active
-                  ? "bg-[#0b1a33] text-white border-[#0b1a33]"
-                  : "bg-white text-gray-700 border-gray-200 hover:bg-gray-50"
-              }`}
-            >
-              {RANGE_LABEL[k]}
-            </Link>
-          );
-        })}
-      </div>
+      {/* Shared date-range picker — replaces the previous ?range= anchor links.
+          Reads & writes ?from=&to= and exposes the standard preset chips. */}
+      <ReportDateRangePicker defaultFrom={toYmd(since)} defaultTo={toYmd(until)} />
 
       {/* Winner banner — at-a-glance verdict driven by the weighted composite
           (bookings 50% + pipeline 30% + connect rate 20%). */}
@@ -504,7 +518,7 @@ export default async function TeamComparisonReportPage({
         }`}
       >
         <div className="text-[10px] uppercase tracking-widest text-gray-500 font-bold">
-          🏆 Winner overall · {RANGE_LABEL[rangeKey]}
+          🏆 Winner overall · {rangeLabel}
         </div>
         {isDraw ? (
           <div className="text-xl sm:text-2xl font-extrabold mt-1">

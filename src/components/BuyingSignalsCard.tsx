@@ -89,7 +89,13 @@ export default function BuyingSignalsCard({ lead }: Props) {
     risks.push("⚠ Stuck > 14d");
   }
 
-  if (signals.length === 0 && risks.length === 0) return null;
+  // "Why this score" line — Agent I. Pulls lead.aiSummary (populated by the
+  // AI rescorer or rule-based fallback). Only renders when present.
+  const whyThisScore: string | null = typeof lead?.aiSummary === "string" && lead.aiSummary.trim()
+    ? lead.aiSummary.trim()
+    : null;
+
+  if (signals.length === 0 && risks.length === 0 && !whyThisScore) return null;
 
   // Tone scaling based on signal count
   let cardClass = "card p-4";
@@ -113,6 +119,12 @@ export default function BuyingSignalsCard({ lead }: Props) {
           </span>
         )}
       </div>
+      {whyThisScore && (
+        <div className="mb-2 text-[12px] leading-snug text-gray-700 italic border-l-2 border-gray-300 pl-2">
+          <span className="not-italic font-semibold text-gray-600">Why this score:</span>{" "}
+          {whyThisScore}
+        </div>
+      )}
       {signals.length > 0 && (
         <div className="flex flex-wrap gap-1.5">
           {signals.map((s) => (

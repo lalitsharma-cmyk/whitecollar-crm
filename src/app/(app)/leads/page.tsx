@@ -43,6 +43,14 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
   const where: Prisma.LeadWhereInput = sp.showCold === "1"
     ? { ...scope }
     : { ...scope, isColdCall: false };
+  // Agents shouldn't see LOST leads they once owned in their default view —
+  // rejected leads disappear from the agent's queue, but ADMIN/MANAGER keep
+  // oversight via /admin/rejected-leads and the unfiltered list. An explicit
+  // ?status= filter (e.g. ?status=LOST) overrides this hide, so an agent
+  // who deliberately navigates "show me my rejected" still sees them.
+  if (me.role === "AGENT" && !sp.status) {
+    where.status = { not: LeadStatus.LOST };
+  }
   if (sp.q) {
     where.OR = [
       { name: { contains: sp.q, mode: "insensitive" } },

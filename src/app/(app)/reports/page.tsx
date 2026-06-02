@@ -6,6 +6,7 @@ import AgentBarChart from "@/components/charts/AgentBarChart";
 import ConnectRateChart from "@/components/charts/ConnectRateChart";
 import FunnelChart from "@/components/charts/FunnelChart";
 import { requireUser } from "@/lib/auth";
+import { projectWhereForUser } from "@/lib/propertyScope";
 import { fmtMoneyDual } from "@/lib/money";
 import Link from "next/link";
 
@@ -77,6 +78,7 @@ export default async function ReportsPage() {
     ]),
 
     prisma.project.findMany({
+      where: projectWhereForUser(me),
       include: { units: { include: { interestedBy: { include: { lead: true } } } } },
       take: 6,
     }),
@@ -212,13 +214,35 @@ export default async function ReportsPage() {
   }
 
   const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  // §9.12 fix (Lalit feedback 2026-06): the old `12a/12p` short labels were
+  // ambiguous in narrow columns — managers couldn't tell midnight from noon
+  // at a glance, and the "best slot" line read "12p IST" which Lalit flagged
+  // as "AM/PM wrong". We now render unambiguous `am/pm` everywhere and use
+  // an Intl IST formatter for the recommendation line so the timezone math
+  // is anchored to Asia/Kolkata (not the runner's TZ).
   const fmtHour = (h: number) => {
-    if (h === 0) return "12a";
-    if (h === 12) return "12p";
-    if (h < 12) return `${h}a`;
-    return `${h - 12}p`;
+    if (h === 0) return "12am";
+    if (h === 12) return "12pm";
+    if (h < 12) return `${h}am`;
+    return `${h - 12}pm`;
   };
   const fmtHourTooltip = (h: number) => `${String(h).padStart(2, "0")}:00`;
+  // Intl-backed IST formatter for the "best slot" sentence. Anchored to a
+  // fixed UTC date, then we shift the hour and ask Intl for IST am/pm.
+  // Using an explicit timeZone here protects against the heatmap rendering
+  // a different label than the SQL grouping if the JS host TZ drifts.
+  const fmtHourIST = (h: number): string => {
+    // Build an arbitrary UTC instant at hour=h in IST (UTC+5:30):
+    // IST hour h ⇔ UTC hour (h - 5.5) on 2024-01-01. Day wrap is fine —
+    // Intl renders just the hour with am/pm so the date is irrelevant.
+    const utcMinutes = h * 60 - 330; // IST is UTC+330 minutes
+    const d = new Date(Date.UTC(2024, 0, 1, 0, utcMinutes, 0));
+    return new Intl.DateTimeFormat("en-US", {
+      hour: "numeric",
+      hour12: true,
+      timeZone: "Asia/Kolkata",
+    }).format(d).replace(/\s/g, "").toLowerCase();
+  };
   // Tailwind needs static class names; pre-pick emerald shades by bucket.
   const cellClass = (rate: number, total: number): string => {
     if (total === 0) return "bg-gray-50 text-gray-300";
@@ -375,6 +399,13 @@ export default async function ReportsPage() {
           <div className="font-bold text-sm mt-1">Commission &amp; earnings</div>
           <div className="text-[10px] text-gray-500 mt-0.5">Booked, received, outstanding · per agent · per booking</div>
         </Link>
+        {/* Year-to-Date — Jan 1 → today, Dubai vs India side-by-side.
+            All 9 YTD metrics in one screen. Admin/Manager only. */}
+        <Link href="/reports/ytd" className="card p-4 border-l-4 border-teal-500 hover:shadow-md transition">
+          <div className="text-2xl">📅</div>
+          <div className="font-bold text-sm mt-1">Year-to-Date</div>
+          <div className="text-[10px] text-gray-500 mt-0.5">YTD leads, bookings, won, commission · Dubai vs India</div>
+        </Link>
         <a href="#pipeline-overview" className="card p-4 border-l-4 border-[#c9a24b] hover:shadow-md transition active:bg-amber-50 block">
           <div className="text-2xl">📈</div>
           <div className="font-bold text-sm mt-1">Pipeline overview</div>
@@ -393,11 +424,16 @@ export default async function ReportsPage() {
       )}
 
       <div id="pipeline-overview" className="grid grid-cols-1 lg:grid-cols-3 gap-4 scroll-mt-20">
-        <div className="card p-5">
-          <div className="text-xs text-gray-500 tracking-widest">DAILY · TODAY</div>
-          <div className="font-semibold mt-1">Lead intake by source</div>
-          <SourceBarChart data={bySource.map(b => ({ source: b.source, n: b._count._all }))} />
-        </div>
+        {/* Source breakdown is admin/manager-only (channel mix is sensitive — agents
+            shouldn't be able to back-derive which campaigns / portals we lean on,
+            same policy as the leads list page filter at leads/page.tsx:57). */}
+        {me.role !== "AGENT" && (
+          <div className="card p-5">
+            <div className="text-xs text-gray-500 tracking-widest">DAILY · TODAY</div>
+            <div className="font-semibold mt-1">Lead intake by source</div>
+            <SourceBarChart data={bySource.map(b => ({ source: b.source, n: b._count._all }))} />
+          </div>
+        )}
         <div className="card p-5">
           <div className="text-xs text-gray-500 tracking-widest">DAILY · TODAY</div>
           <div className="font-semibold mt-1">Agent productivity</div>
@@ -515,7 +551,7 @@ export default async function ReportsPage() {
 
         {bestSlot ? (
           <div className="mt-2 text-sm font-medium text-emerald-800">
-            💡 Best slot: {DAY_LABELS[bestSlot.dow]} {fmtHour(bestSlot.hour).replace(/a$/, "am").replace(/p$/, "pm")} IST
+            💡 Best slot: {DAY_LABELS[bestSlot.dow]} {fmtHourIST(bestSlot.hour)} IST
             ({Math.round(bestSlot.rate * 100)}% connect · {bestSlot.total} calls)
           </div>
         ) : (

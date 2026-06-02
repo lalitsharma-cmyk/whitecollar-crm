@@ -10,6 +10,8 @@ import { sendSpeedToLeadResponses } from "@/lib/speedToLead";
 import { fireWorkflowTrigger } from "@/lib/workflowEngine";
 import { getTestingModeEnabled } from "@/lib/settings";
 import { notifyHotLead } from "@/lib/push";
+import { findMatchingLeads, summariseHistory, projectsFromInterestedUnits } from "@/lib/investorMatch";
+import { audit } from "@/lib/audit";
 
 export interface RawLeadInput {
   name: string;
@@ -42,11 +44,13 @@ const FIRST_CALL_SLA_MIN = 15;
 export async function ingestLead(input: RawLeadInput) {
   // Normalize phone to E.164 up-front so dedupe fingerprint is consistent and
   // every wa.me / tel: link downstream gets a valid number.
+  // NOTE (Lalit clarification 2026-06): team is NOT a phone-country signal —
+  // the Dubai team can hold India numbers and vice-versa. Only `country` (the
+  // lead's actual country) drives the fallback dial. When neither is given,
+  // toE164() now infers from the digit shape itself.
   const fallbackDial = input.country === "India" ? "+91"
     : input.country === "UAE" ? "+971"
-    : input.team === "India" ? "+91"
-    : input.team === "Dubai" ? "+971"
-    : undefined;
+    : undefined;          // team no longer used here
   if (input.phone) {
     const normalized = toE164(input.phone, fallbackDial);
     if (normalized) input.phone = normalized;
@@ -120,7 +124,11 @@ export async function ingestLead(input: RawLeadInput) {
 
   // ── New lead path ── (no immediate auto-assign — Admin gets 5 min)
   const currency = defaultCurrencyForLocation(input.city, input.country);
-  const team = input.team ?? (currency === "INR" ? "India" : "Dubai");
+  // Lalit clarification 2026-06: a lead's TEAM is an internal label, not
+  // derived from currency or phone country. Leave untagged when not given —
+  // Admin will assign it. The downstream `notifyRoles` message handles a null
+  // team (no auto-route mention).
+  const team = input.team ?? null;
 
   // Default follow-up = TODAY at 7:00pm IST (close of business). Lalit's ask:
   // "Any new lead received today should automatically have today's followup
@@ -171,6 +179,93 @@ export async function ingestLead(input: RawLeadInput) {
       completedAt: new Date(),
     },
   });
+
+  // ── Returning-investor detection (Lalit ask 2026-06-02) ──
+  // For any newly-created lead, scan for prior Lead rows that look like the
+  // same person (phone tail / email / name+city). If any match is WON or
+  // booked, flip categorization=Investor and merge bought-project history
+  // onto the new lead so the agent sees it on first render. Best-effort —
+  // never blocks intake.
+  try {
+    const matches = await findMatchingLeads({
+      name: lead.name,
+      phone: lead.phone,
+      email: lead.email,
+      city: lead.city,
+      excludeLeadId: lead.id,
+    });
+    if (matches.length > 0) {
+      const summary = summariseHistory(matches);
+      const investorMatches = matches.filter(
+        (m) => m.status === "WON" || m.bookingDoneAt != null
+      );
+      // Augment with project names pulled from interestedUnits on WON matches —
+      // covers the case where historical leads never had alreadyBought filled
+      // but DID have a booked unit linked.
+      const unitProjects = await projectsFromInterestedUnits(
+        investorMatches.map((m) => m.id)
+      );
+      const merged = new Map<string, string>();
+      for (const p of [...summary.evidence.projectsBought, ...unitProjects]) {
+        const key = p.toLowerCase();
+        if (!merged.has(key)) merged.set(key, p);
+      }
+      const joinedList = Array.from(merged.values()).join(", ");
+
+      if (summary.isInvestor) {
+        await prisma.lead.update({
+          where: { id: lead.id },
+          data: {
+            categorization: "Investor",
+            ...(joinedList ? { alreadyBought: joinedList } : {}),
+          },
+        });
+        // Notify whoever currently owns the new lead. If still unassigned at
+        // ingest, notify Admin/Manager so they know to route to a senior agent.
+        const title = `🔁 ${lead.name} is an existing investor — see history`;
+        const body = `${summary.evidence.bookings} prior bookings, ${summary.evidence.previousInquiries} inquiries on file${joinedList ? `. Owns: ${joinedList}` : "."}`;
+        if (lead.ownerId) {
+          await notify({
+            userId: lead.ownerId,
+            kind: "LEAD_DUPLICATE",
+            severity: "WARNING",
+            title,
+            body,
+            linkUrl: `/leads/${lead.id}`,
+            leadId: lead.id,
+          });
+        } else {
+          await notifyRoles(["ADMIN", "MANAGER"], {
+            kind: "LEAD_DUPLICATE",
+            severity: "WARNING",
+            title,
+            body: `${body} — assign to a senior agent.`,
+            linkUrl: `/leads/${lead.id}`,
+            leadId: lead.id,
+          });
+        }
+      }
+      // Always audit-log when matches existed, even sub-investor — useful for
+      // tracking how good the matcher is. Meta carries the matched ids and
+      // their reasons so debugging stale matches is straightforward.
+      await audit({
+        action: "lead.investor_detected",
+        entity: "Lead",
+        entityId: lead.id,
+        meta: {
+          isInvestor: summary.isInvestor,
+          matchedLeadIds: matches.map((m) => m.id),
+          matchReasons: matches.map((m) => m.matchReason),
+          wonLeads: summary.evidence.wonLeads,
+          bookings: summary.evidence.bookings,
+          projectsBought: Array.from(merged.values()),
+        },
+      });
+    }
+  } catch {
+    // Never fail intake because of investor-match — swallow and move on.
+  }
+
   // Overnight (10pm-10am IST) — fire auto-WhatsApp welcome from company number.
   // Best-effort: stub mode just logs to AuditLog + WhatsAppMessage; real send
   // happens once admin sets WA_BUSINESS_TOKEN.
@@ -183,19 +278,34 @@ export async function ingestLead(input: RawLeadInput) {
   }
 
   // Admin alert — they have 5 minutes to assign manually
-  const adminBody = window.kind === "OFFICE_RR"
-    ? `Assign within 5 minutes or it will be auto-routed to ${team} round-robin (present agents only).`
-    : window.kind === "EVENING_LALIT"
-      ? `After-hours lead — will auto-assign to Lalit if you don't pick it up.`
-      : `Overnight lead — queued for your 10am morning window. Auto-WA welcome has been triggered.`;
-  await notifyRoles(["ADMIN", "MANAGER"], {
-    kind: "LEAD_ASSIGNED",
-    severity: window.kind === "OVERNIGHT_QUEUE" ? "WARNING" : "INFO",
-    title: `New ${input.source} lead: ${lead.name}`,
-    body: adminBody,
-    linkUrl: `/leads/${lead.id}`,
-    leadId: lead.id,
-  });
+  // Lalit's mandatory-team policy (2026-06): when the intake doesn't supply
+  // a team, NOTHING auto-routes. The lead sits in /admin/awaiting-team
+  // until an admin/manager tags it Dubai or India. The reconciler also
+  // skips null-team leads in its 5-min orphan sweep.
+  if (lead.forwardedTeam === null) {
+    await notifyRoles(["ADMIN", "MANAGER"], {
+      kind: "LEAD_ASSIGNED",
+      severity: "WARNING",
+      title: `⚠️ New lead needs team assignment: ${lead.name}`,
+      body: `This ${input.source} lead arrived without a team tag. Nothing will auto-route until you pick Dubai or India in the "Awaiting team assignment" queue.`,
+      linkUrl: `/admin/awaiting-team`,
+      leadId: lead.id,
+    });
+  } else {
+    const adminBody = window.kind === "OFFICE_RR"
+      ? `Assign within 5 minutes or it will be auto-routed to ${team} round-robin (present agents only).`
+      : window.kind === "EVENING_LALIT"
+        ? `After-hours lead — will auto-assign to Lalit if you don't pick it up.`
+        : `Overnight lead — queued for your 10am morning window. Auto-WA welcome has been triggered.`;
+    await notifyRoles(["ADMIN", "MANAGER"], {
+      kind: "LEAD_ASSIGNED",
+      severity: window.kind === "OVERNIGHT_QUEUE" ? "WARNING" : "INFO",
+      title: `New ${input.source} lead: ${lead.name}`,
+      body: adminBody,
+      linkUrl: `/leads/${lead.id}`,
+      leadId: lead.id,
+    });
+  }
 
   // ── Speed-to-lead auto-response: fire-and-forget WA + email under 60s ──
   // Runs after the after-hours welcome trigger so the WA-dedupe check inside

@@ -222,6 +222,126 @@ function ruleBasedScore(lead: LeadForAI): AIScoreResult {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// AI-driven structured score  (NEW — Agent I)
+//
+// Called from leadRescorer.rescoreLead AFTER the rule-based numeric is computed.
+// Uses a compact context (recent activities, recent WA messages, BANT verdict,
+// budget, days since contact, pre-extracted buying signals) so we don't blow
+// the prompt budget on huge histories.
+//
+// Returns a structured JSON envelope. The contract is documented inline below
+// so future agents don't have to grep for it.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface AIScoreLeadInput {
+  leadId: string;
+  name: string;
+  company?: string | null;
+  whoIsClient?: string | null;
+  bantStatus?: string | null;
+  budgetMin?: number | null;
+  budgetMax?: number | null;
+  budgetCurrency?: string | null;
+  configuration?: string | null;
+  remarks?: string | null;
+  currentStatus?: string | null;
+  status?: string | null;
+  whenCanInvest?: string | null;
+  potential?: string | null;
+  fundReadiness?: string | null;
+  moodStatus?: string | null;
+  categorization?: string | null;
+  recentActivities: Array<{ type: string; status: string; title?: string | null; createdAt: Date }>;
+  recentWA: Array<{ direction: string; body: string; receivedAt: Date }>;
+  buyingSignals: string[];
+  lastTouchDaysAgo: number;
+}
+
+export interface AIScoreLeadResult {
+  score: "HOT" | "WARM" | "COLD";
+  value: number; // 0-100
+  whyShort: string; // 1-sentence explanation — surfaces in BuyingSignalsCard
+  buyingSignals: string[];
+  risks: string[];
+  nextAction: string;
+}
+
+export async function aiScoreLead(input: AIScoreLeadInput): Promise<AIScoreLeadResult | null> {
+  if (!aiEnabled()) return null;
+
+  const acts = input.recentActivities
+    .slice(0, 6)
+    .map(
+      (a, i) =>
+        `${i + 1}. ${a.createdAt.toISOString().slice(0, 10)} · ${a.type} · ${a.status}${a.title ? ` — ${a.title}` : ""}`,
+    )
+    .join("\n");
+  const wa = input.recentWA
+    .slice(0, 3)
+    .map(
+      (m, i) =>
+        `${i + 1}. ${m.receivedAt.toISOString().slice(0, 10)} · ${m.direction} — ${(m.body ?? "").slice(0, 240)}`,
+    )
+    .join("\n");
+  const sigs = input.buyingSignals.length ? input.buyingSignals.map((s) => `• ${s}`).join("\n") : "(none detected)";
+
+  const prompt = `You are a senior real-estate sales coach scoring a Dubai property lead for likelihood-to-close within 30 days.
+
+Reply STRICTLY as JSON with this exact shape (no markdown, no prose outside the JSON):
+{"score":"HOT|WARM|COLD","value":0-100,"whyShort":"1 sentence","buyingSignals":["..."],"risks":["..."],"nextAction":"1 sentence, specific action"}
+
+Scoring guidance:
+- HOT  ≥ 70: BANT qualifies AND late-funnel (NEGOTIATION/SITE_VISIT/BOOKING_DONE) or immediate timeline AND clear buying intent in last 14d.
+- WARM 40-69: qualified or under-review, engaged (a connected call), touched in last 14d, no killer risk.
+- COLD < 40: stalled, ghosting, no contact 30+ days, unqualified, or zero engagement.
+
+Use the buying-signal hits below as evidence — do not invent signals not in the data.
+"whyShort" must reference the actual situation, not generic phrases.
+
+LEAD: ${input.name}${input.company ? ` · ${input.company}` : ""}
+BANT: ${input.bantStatus ?? "—"} · Stage: ${input.status ?? "—"} · Current: ${input.currentStatus ?? "—"}
+Budget: ${input.budgetCurrency ?? "AED"} ${input.budgetMin ?? "?"} - ${input.budgetMax ?? "?"} · Looking for: ${input.configuration ?? "—"}
+Timeline: ${input.whenCanInvest ?? "—"} · Fund: ${input.fundReadiness ?? "—"} · Potential: ${input.potential ?? "—"} · Mood: ${input.moodStatus ?? "—"}
+Categorization: ${input.categorization ?? "—"} · Last touch: ${input.lastTouchDaysAgo}d ago
+
+Who is the client:
+${input.whoIsClient ?? "(no narrative)"}
+
+Pre-extracted buying signals (last 14d):
+${sigs}
+
+Recent activities (max 6):
+${acts || "(none)"}
+
+Recent WhatsApp (max 3):
+${wa || "(none)"}
+
+Remarks (truncated):
+${(input.remarks ?? "").slice(0, 1200)}`;
+
+  const text = await generateText({ prompt, maxTokens: 500 });
+  if (!text) return null;
+  try {
+    const json = JSON.parse(text.match(/\{[\s\S]*\}/)?.[0] ?? text);
+    const score = json.score === "HOT" || json.score === "WARM" || json.score === "COLD" ? json.score : "COLD";
+    const value = Math.max(0, Math.min(100, Number(json.value) || 0));
+    const arr = (v: unknown): string[] =>
+      Array.isArray(v) ? v.map((x) => String(x)).filter(Boolean).slice(0, 6) : [];
+    return {
+      score,
+      value,
+      whyShort: String(json.whyShort ?? "").slice(0, 240),
+      buyingSignals: arr(json.buyingSignals),
+      risks: arr(json.risks),
+      nextAction: String(json.nextAction ?? "").slice(0, 240),
+    };
+  } catch (e) {
+    console.warn("aiScoreLead JSON parse failed:", e);
+    return null;
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Conversation-grounded summary  (NEW — fixes Lalit's "Next Step and whatsapp
 // draft are senseless, They should be according to client real call
 // conversations, not anytime on its own")

@@ -1,8 +1,9 @@
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/auth";
 import { LeadSource, LeadStatus } from "@prisma/client";
-import { subDays, startOfYear } from "date-fns";
+import { subDays, startOfYear, startOfMonth, startOfQuarter } from "date-fns";
 import Link from "next/link";
+import ReportDateRangePicker from "@/components/ReportDateRangePicker";
 
 export const dynamic = "force-dynamic";
 
@@ -13,7 +14,12 @@ export const dynamic = "force-dynamic";
 // average AI lead score. This lets Lalit redirect ad spend toward the
 // source that converts, not just the source that produces volume.
 
-type Range = "30d" | "90d" | "year";
+// Date controls are now the shared ReportDateRangePicker (?from=&to=).
+// Legacy ?range=30d|90d|year is still accepted for one release so old
+// bookmarks / shared links don't 404 the period selector — if both are
+// supplied, from/to win.
+
+type Range = "30d" | "90d" | "year" | "month" | "quarter";
 
 interface SourceRow {
   source: LeadSource;
@@ -42,16 +48,33 @@ const QUALIFIED_PLUS: LeadStatus[] = [
 // where bookedPct is artificially deflated by leads that skipped BOOKING_DONE.
 const BOOKED: LeadStatus[] = [LeadStatus.BOOKING_DONE, LeadStatus.WON];
 
+// Legacy enum → since-date. Kept ONLY for backwards-compat parsing of the
+// old ?range= URL: it lets us derive an initial from/to when the new
+// ?from=&to= aren't present yet. Once a user lands on this page with the
+// picker, they'll switch to the new params on Apply.
 function rangeStart(range: Range): Date {
   if (range === "year") return startOfYear(new Date());
+  if (range === "month") return startOfMonth(new Date());
+  if (range === "quarter") return startOfQuarter(new Date());
   if (range === "30d") return subDays(new Date(), 30);
   return subDays(new Date(), 90);
 }
 
-function rangeLabel(range: Range): string {
-  if (range === "year") return "Year to date";
-  if (range === "30d") return "Last 30 days";
-  return "Last 90 days";
+// Strict YYYY-MM-DD → Date at UTC midnight. Rejects junk so a hand-edited
+// URL doesn't end up gte: Invalid Date.
+function parseYmd(s: string | undefined): Date | null {
+  if (!s) return null;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return null;
+  const d = new Date(`${s}T00:00:00.000Z`);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+function endOfDayUtc(d: Date): Date {
+  const out = new Date(d);
+  out.setUTCHours(23, 59, 59, 999);
+  return out;
+}
+function toYmd(d: Date): string {
+  return d.toISOString().slice(0, 10);
 }
 
 // Colour-code conversion-rate cells: >20% green, >10% amber, else red.
@@ -78,8 +101,30 @@ export default async function SourcesReportPage({
 }) {
   await requireRole("ADMIN", "MANAGER");
   const sp = await searchParams;
-  const range: Range = sp.range === "30d" || sp.range === "year" ? sp.range : "90d";
-  const since = rangeStart(range);
+
+  // Resolve the active window. Precedence:
+  //   1. ?from=&to= (new shared-picker contract)  ← wins if present
+  //   2. ?range=    (legacy enum — keep for one release)
+  //   3. default = last 90 days (matches the previous page default)
+  const fromParam = parseYmd(sp.from);
+  const toParam = parseYmd(sp.to);
+
+  let since: Date;
+  let until: Date;
+  if (fromParam && toParam) {
+    since = fromParam;
+    until = endOfDayUtc(toParam);
+  } else {
+    const legacyRange: Range =
+      sp.range === "30d" || sp.range === "year" || sp.range === "month" || sp.range === "quarter"
+        ? sp.range
+        : "90d";
+    since = rangeStart(legacyRange);
+    until = endOfDayUtc(new Date());
+  }
+
+  // Header label is now derived from the window itself (no fixed enum).
+  const rangeLabel = `${toYmd(since)} → ${toYmd(until)}`;
 
   // ── Pull all the aggregations in parallel.
   // Five Prisma groupBys + one $queryRaw — every query is bounded by
@@ -95,32 +140,32 @@ export default async function SourcesReportPage({
   ] = await Promise.all([
     prisma.lead.groupBy({
       by: ["source"],
-      where: { createdAt: { gte: since } },
+      where: { createdAt: { gte: since, lte: until } },
       _count: { _all: true },
     }),
     prisma.lead.groupBy({
       by: ["source"],
-      where: { createdAt: { gte: since }, status: { not: LeadStatus.NEW } },
+      where: { createdAt: { gte: since, lte: until }, status: { not: LeadStatus.NEW } },
       _count: { _all: true },
     }),
     prisma.lead.groupBy({
       by: ["source"],
-      where: { createdAt: { gte: since }, status: { in: QUALIFIED_PLUS } },
+      where: { createdAt: { gte: since, lte: until }, status: { in: QUALIFIED_PLUS } },
       _count: { _all: true },
     }),
     prisma.lead.groupBy({
       by: ["source"],
-      where: { createdAt: { gte: since }, status: { in: BOOKED } },
+      where: { createdAt: { gte: since, lte: until }, status: { in: BOOKED } },
       _count: { _all: true },
     }),
     prisma.lead.groupBy({
       by: ["source"],
-      where: { createdAt: { gte: since }, status: LeadStatus.LOST },
+      where: { createdAt: { gte: since, lte: until }, status: LeadStatus.LOST },
       _count: { _all: true },
     }),
     prisma.lead.groupBy({
       by: ["source"],
-      where: { createdAt: { gte: since }, aiScoreValue: { not: null } },
+      where: { createdAt: { gte: since, lte: until }, aiScoreValue: { not: null } },
       _avg: { aiScoreValue: true },
     }),
 
@@ -145,6 +190,7 @@ export default async function SourcesReportPage({
       FROM "Lead" l
       JOIN first_call fc ON fc.lead_id = l."id"
       WHERE l."createdAt" >= ${since}
+        AND l."createdAt" <= ${until}
         AND fc.first_call_at >= l."createdAt"
       GROUP BY l."source"
     `,
@@ -206,26 +252,22 @@ export default async function SourcesReportPage({
     <>
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <div className="text-xs text-gray-500">
-            <Link href="/reports" className="hover:underline">Reports</Link> · Lead Source Breakdown
-          </div>
+          {/* Clear back affordance per Lalit feedback 2026-06 — the
+              breadcrumb on its own wasn't obvious enough. */}
+          <Link href="/reports" className="text-xs text-gray-500 hover:underline">
+            ← Back to reports
+          </Link>
           <h1 className="text-xl sm:text-2xl font-bold">Lead Source Breakdown</h1>
           <p className="text-xs sm:text-sm text-gray-500">
-            Which sources are actually closing? · {rangeLabel(range)} · {grandTotal} leads
+            Which sources are actually closing? · {rangeLabel} · {grandTotal} leads
           </p>
         </div>
-        <div className="flex gap-1 text-xs">
-          {(["30d", "90d", "year"] as const).map((r) => (
-            <Link
-              key={r}
-              href={`/reports/sources?range=${r}`}
-              className={`px-3 py-1.5 rounded border ${range === r ? "bg-[#0b1a33] text-white border-[#0b1a33] font-semibold" : "bg-white text-gray-700 border-gray-300 hover:bg-gray-50"}`}
-            >
-              {r === "year" ? "YTD" : r.toUpperCase()}
-            </Link>
-          ))}
-        </div>
       </div>
+
+      {/* Shared date-range picker (?from=&to=). The picker preserves any other
+          query params on Apply, so retrofitting it doesn't blow away filters
+          that future iterations of this page might add. */}
+      <ReportDateRangePicker defaultFrom={toYmd(since)} defaultTo={toYmd(until)} />
 
       {/* Summary tiles — best/worst at a glance so Lalit doesn't have
           to scan the table to find the action. */}
@@ -306,7 +348,7 @@ export default async function SourcesReportPage({
       {/* Main breakdown table */}
       <div className="card p-4 overflow-x-auto">
         <div className="text-xs uppercase tracking-widest text-gray-500 font-semibold mb-3">
-          Source funnel · {rangeLabel(range)}
+          Source funnel · {rangeLabel}
         </div>
         <table className="w-full text-sm min-w-[860px]">
           <thead>

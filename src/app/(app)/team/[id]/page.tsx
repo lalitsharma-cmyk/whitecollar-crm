@@ -405,7 +405,7 @@ export default async function AgentDeepDivePage({
               <img
                 src={user.photoUrl}
                 alt={user.name}
-                className="w-16 h-16 rounded-full object-cover border border-slate-200"
+                className="w-16 h-16 rounded-full object-cover object-top border border-slate-200"
               />
             ) : (
               <div

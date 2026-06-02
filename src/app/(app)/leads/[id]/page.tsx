@@ -10,7 +10,9 @@ import LeadProjectsClient from "@/components/LeadProjectsClient";
 import LeadMeetingClient from "@/components/LeadMeetingClient";
 import SiteVisitTracker from "@/components/SiteVisitTracker";
 import SiteVisitChecklist from "@/components/SiteVisitChecklist";
-import EOIWorkflowCard from "@/components/EOIWorkflowCard";
+// EOIWorkflowCard removed by Lalit (Round 3) — "Remove EOI for now".
+// EOIPanel (Agent K's replacement) is built and available in src/components/EOIPanel.tsx
+// for a future round when EOI is ready to surface again.
 import AdvancedActivityLogger from "@/components/AdvancedActivityLogger";
 import { getTravelRatePerKmInr } from "@/lib/settings";
 import { runReconciler } from "@/lib/reconciler";
@@ -18,23 +20,28 @@ import { activityVisual } from "@/lib/activityIcon";
 import InlineEdit from "@/components/InlineEdit";
 import { acefoneEnabled } from "@/lib/acefone";
 import { canTouchLead } from "@/lib/leadScope";
+import { projectWhereForUser, teamToCountry } from "@/lib/propertyScope";
 import SuggestedUnitsCard from "@/components/SuggestedUnitsCard";
 import { bestUnitsForLead } from "@/lib/inventoryMatch";
-import CallHistoryCard from "@/components/CallHistoryCard";
+// CallHistoryCard removed — folded into ConversationStreamCard below.
+import ConversationStreamCard from "@/components/ConversationStreamCard";
+import SmartCMACard from "@/components/SmartCMACard";
+import StickyNoteWidget from "@/components/StickyNoteWidget";
 import BuyingSignalsCard from "@/components/BuyingSignalsCard";
 import NextBestActionCard from "@/components/NextBestActionCard";
 import LeadScoreBreakdown from "@/components/LeadScoreBreakdown";
 import { explainScore } from "@/lib/leadRescorer";
 import LeadNotesCard from "@/components/LeadNotesCard";
+import VoiceNoteRecorder from "@/components/VoiceNoteRecorder";
 import LeadReassignClient from "@/components/LeadReassignClient";
-import RejectLeadClient from "@/components/RejectLeadClient";
+import RejectLeadModal from "@/components/RejectLeadModal";
 import LeadMobileTabs from "@/components/LeadMobileTabs";
 import LeadTagsEditor from "@/components/LeadTagsEditor";
-import PrintButton from "@/components/PrintButton";
+// PrintButton removed — Lalit asked for the Print action to be dropped.
 import BestCallTimeChip from "@/components/BestCallTimeChip";
-import CopyLeadSnapshot from "@/components/CopyLeadSnapshot";
 import { formatBudget } from "@/lib/budgetParse";
 import LinkedContactsCard from "@/components/LinkedContactsCard";
+import InvestorBanner from "@/components/InvestorBanner";
 
 export const dynamic = "force-dynamic";
 
@@ -63,8 +70,10 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
   // Run reconciler in the background — non-blocking
   runReconciler().catch(() => {});
 
-  // ⚡ Parallelize all queries — was 3 sequential, now 1 round-trip via Promise.all
-  const [lead, meetingActs, allProjects] = await Promise.all([
+  // ⚡ Parallelize all queries — was 3 sequential, now 1 round-trip via Promise.all.
+  // 4th query: get-or-create the agent's sticky note for this lead. We do it
+  // here so the widget can render synchronously without an extra round-trip.
+  const [lead, meetingActs, allProjects, stickyNote] = await Promise.all([
     prisma.lead.findUnique({
       where: { id },
       include: {
@@ -83,8 +92,16 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
       orderBy: { createdAt: "desc" },
     }),
     prisma.project.findMany({
-      select: { id: true, name: true, city: true },
+      where: projectWhereForUser(me),
+      select: { id: true, name: true, city: true, country: true },
       orderBy: { name: "asc" },
+    }),
+    // Sticky note — private to the calling agent. Upsert so a new row is
+    // created on first render of a lead (empty body, just to anchor updatedAt).
+    prisma.stickyNote.upsert({
+      where: { leadId_userId: { leadId: id, userId: me.id } },
+      create: { leadId: id, userId: me.id, body: "" },
+      update: {},
     }),
   ]);
   if (!lead) notFound();
@@ -93,6 +110,18 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
   // returns HTTP 200 — confusing for auditors. Redirect is cleaner UX too:
   // agent lands back on their own list rather than a dead end.
   if (!(await canTouchLead(me, lead))) redirect("/leads");
+
+  // Investor-history quick counts for the banner (Agent V, Round 6).
+  // Match the new lead against the existing pipeline on phone / email /
+  // name+city. If matches exist, the banner surfaces "returning client".
+  // Computed on the fly — no schema change.
+  const { findMatchingLeads } = await import("@/lib/investorMatch");
+  const investorMatches = await findMatchingLeads({
+    name: lead.name, phone: lead.phone, email: lead.email,
+    city: lead.city, excludeLeadId: lead.id,
+  });
+  const bookingsCount = investorMatches.filter(m => m.bookingDoneAt != null || m.status === "WON").length;
+  const matchedLeadIds = investorMatches.map(m => m.id);
 
   // Inventory matching — top 3 best-fit AVAILABLE units. Empty array if the
   // lead is missing budget/team or nothing matches; card hides itself in that case.
@@ -163,25 +192,98 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
   //     right-rail cards).
   // Each ref renders an independent React tree per call site, so the
   // InlineEdit components inside have their own state — safe to render twice.
+  // ── BANT chip helper ──
+  // Each chip turns GREEN when the underlying field has a meaningful value,
+  // RED when explicitly NOT_QUALIFIED / NOT_DISCUSSED / UNKNOWN, and AMBER
+  // (neutral) when the field is null/empty (not yet asked). Lalit's ask was
+  // "remove why → green/red signals" so we drop the bantReason free-text row.
+  const bantBudgetFilled = lead.budgetMin != null && lead.budgetMin > 0;
+  const bantBudgetBad = lead.fundReadiness === "NOT_DISCUSSED";
+  const bantAuthFilled = lead.authorityLevel != null && lead.authorityLevel !== "UNKNOWN";
+  const bantAuthBad = lead.authorityLevel === "UNKNOWN";
+  const bantNeedFilled = !!(lead.needSummary && lead.needSummary.trim());
+  const bantTimeFilled = lead.whenCanInvest != null && lead.whenCanInvest !== "UNKNOWN";
+  const bantTimeBad = lead.whenCanInvest === "UNKNOWN";
+
+  // Tailwind colour map for a BANT chip. `good` overrides `bad` (i.e. if the
+  // field has a filled value it's green even when the related signal is null).
+  function bantChipClass(good: boolean, bad: boolean): string {
+    if (good) return "border-emerald-300 bg-emerald-50";
+    if (bad) return "border-red-300 bg-red-50";
+    return "border-amber-200 bg-amber-50";
+  }
+
   const bantCard = (
     <div data-lead-section="overview" className={`card p-4 border-l-4 ${
       lead.bantStatus === "QUALIFIES" ? "border-emerald-500 bg-emerald-50" :
       lead.bantStatus === "NOT_QUALIFIED" ? "border-red-500 bg-red-50" :
       "border-amber-400 bg-amber-50"
     }`}>
-      <div className="flex items-center gap-2 mb-2">
-        <span className="text-xs font-bold tracking-widest text-gray-600">BANT VERDICT</span>
-        <span className="text-[10px] text-gray-500">Budget · Authority · Need · Timeline</span>
-      </div>
-      <div className="flex items-center gap-3 flex-wrap">
+      <div className="flex items-center justify-between gap-2 mb-3 flex-wrap">
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-bold tracking-widest text-gray-600">BANT VERDICT</span>
+          <span className="text-[10px] text-gray-500">Budget · Authority · Need · Timeline</span>
+        </div>
         <InlineEdit leadId={lead.id} field="bantStatus" type="select" value={lead.bantStatus}
           options={[
             {value:"UNDER_REVIEW",label:"🤔 Under review"},
             {value:"QUALIFIES",label:"✅ Qualifies"},
             {value:"NOT_QUALIFIED",label:"❌ Not qualified"},
           ]} />
-        <div className="text-xs text-gray-600 flex-1 min-w-[200px]">
-          Why: <InlineEdit leadId={lead.id} field="bantReason" value={lead.bantReason ?? ""} placeholder="One-line reason (e.g. 'budget too low for any of our inventory')" />
+      </div>
+      {/* 4 chips — one per BANT letter. Click any value inside to edit. */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+        {/* B — Budget. Backed by budgetMin + fundReadiness. */}
+        <div className={`p-2.5 rounded border ${bantChipClass(bantBudgetFilled, bantBudgetBad)}`}>
+          <div className="text-[10px] font-bold tracking-widest text-gray-600">💰 B · BUDGET</div>
+          <div className="text-sm mt-0.5">
+            <InlineEdit
+              leadId={lead.id}
+              field="budgetMin"
+              value={lead.budgetMin ?? ""}
+              display={lead.budgetMin ? formatBudget(lead.budgetMin, budgetCcy) : undefined}
+              parseAs="budget"
+              editHint={budgetCcy === "INR" ? "type 30L · 3Cr · 500K" : "type 2.5M · 500K"}
+              placeholder={budgetCcy === "INR" ? "e.g. 3 Cr" : "e.g. 2.5M"}
+            />
+          </div>
+          <div className="text-[10px] text-gray-600 mt-1">Fund: <InlineEdit leadId={lead.id} field="fundReadiness" type="select" value={lead.fundReadiness ?? ""}
+            options={[{value:"CASH_READY",label:"Cash Ready"},{value:"BANK_APPROVED",label:"Bank Approved"},{value:"FINANCING_NEEDED",label:"Financing"},{value:"NOT_DISCUSSED",label:"Not discussed"}]} /></div>
+        </div>
+        {/* A — Authority. New field authorityLevel. */}
+        <div className={`p-2.5 rounded border ${bantChipClass(bantAuthFilled, bantAuthBad)}`}>
+          <div className="text-[10px] font-bold tracking-widest text-gray-600">👤 A · AUTHORITY</div>
+          <div className="text-sm mt-0.5">
+            <InlineEdit leadId={lead.id} field="authorityLevel" type="select" value={lead.authorityLevel ?? ""}
+              options={[
+                {value:"DECISION_MAKER",label:"✅ Decision maker"},
+                {value:"INFLUENCER",label:"🤝 Influencer"},
+                {value:"GATEKEEPER",label:"🚧 Gatekeeper"},
+                {value:"UNKNOWN",label:"❓ Unknown"},
+              ]} />
+          </div>
+        </div>
+        {/* N — Need. New free-text needSummary. */}
+        <div className={`p-2.5 rounded border ${bantChipClass(bantNeedFilled, false)}`}>
+          <div className="text-[10px] font-bold tracking-widest text-gray-600">🎯 N · NEED</div>
+          <div className="text-sm mt-0.5">
+            <InlineEdit leadId={lead.id} field="needSummary" value={lead.needSummary ?? ""} placeholder="e.g. parents relocating, rental yield, kid's school" />
+          </div>
+        </div>
+        {/* T — Timeline. Backed by whenCanInvest. */}
+        <div className={`p-2.5 rounded border ${bantChipClass(bantTimeFilled, bantTimeBad)}`}>
+          <div className="text-[10px] font-bold tracking-widest text-gray-600">⏱ T · TIMELINE</div>
+          <div className="text-sm mt-0.5">
+            <InlineEdit leadId={lead.id} field="whenCanInvest" type="select" value={lead.whenCanInvest ?? ""}
+              options={[
+                {value:"IMMEDIATE",label:"Immediate"},
+                {value:"THIRTY_DAYS",label:"30 days"},
+                {value:"THREE_MONTHS",label:"3 months"},
+                {value:"SIX_PLUS_MONTHS",label:"6+ months"},
+                {value:"WINDOW_SHOPPING",label:"Just browsing"},
+                {value:"UNKNOWN",label:"Unknown"},
+              ]} />
+          </div>
         </div>
       </div>
     </div>
@@ -195,9 +297,30 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
           overflowing into the neighbour. Lalit screenshot showed the
           LinkedIn URL bleeding into the Configuration column on mobile. */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm [&>div]:min-w-0 [&>div]:overflow-hidden">
-        <div>
-          <div className="text-xs text-gray-500">🏢 Company</div>
-          <InlineEdit leadId={lead.id} field="company" value={lead.company ?? ""} placeholder="e.g. Emirates NBD, TCS" />
+        {/* Row 1 (full width) — Profession + Company merged into ONE combined
+            cell per Lalit's ask. Renders as 💼 {profession} @ {company} with
+            two inline editors stacked. Replaces the previous standalone
+            Company cell (which has been removed) and the standalone Profession
+            cell. */}
+        <div className="sm:col-span-2 p-2.5 rounded border border-[#e5e7eb] bg-gray-50">
+          <div className="text-xs text-gray-500 mb-1">💼 Profession @ Company</div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <div>
+              <InlineEdit leadId={lead.id} field="profession" type="select" value={lead.profession ?? ""}
+                options={[
+                  {value:"JOB",label:"Job (salaried)"},
+                  {value:"SELF_EMPLOYED",label:"Self-employed"},
+                  {value:"BUSINESS_OWNER",label:"Business owner"},
+                  {value:"INVESTOR",label:"Investor"},
+                  {value:"RETIRED",label:"Retired"},
+                  {value:"STUDENT",label:"Student"},
+                  {value:"OTHER",label:"Other"},
+                ]} />
+            </div>
+            <div>
+              <InlineEdit leadId={lead.id} field="company" value={lead.company ?? ""} placeholder="@ company (e.g. Emirates NBD)" />
+            </div>
+          </div>
         </div>
         <div>
           <div className="text-xs text-gray-500">📱 Alt phone</div>
@@ -207,16 +330,6 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
           <div className="text-xs text-gray-500">Potential</div>
           <InlineEdit leadId={lead.id} field="potential" type="select" value={lead.potential ?? ""}
             options={[{value:"HIGH",label:"High"},{value:"MEDIUM",label:"Medium"},{value:"LOW",label:"Low"},{value:"UNKNOWN",label:"Unknown"}]} />
-        </div>
-        <div>
-          <div className="text-xs text-gray-500">Fund Readiness</div>
-          <InlineEdit leadId={lead.id} field="fundReadiness" type="select" value={lead.fundReadiness ?? ""}
-            options={[{value:"CASH_READY",label:"Cash Ready"},{value:"BANK_APPROVED",label:"Bank Approved"},{value:"FINANCING_NEEDED",label:"Financing Needed"},{value:"NOT_DISCUSSED",label:"Not Discussed"}]} />
-        </div>
-        <div>
-          <div className="text-xs text-gray-500">When can invest</div>
-          <InlineEdit leadId={lead.id} field="whenCanInvest" type="select" value={lead.whenCanInvest ?? ""}
-            options={[{value:"IMMEDIATE",label:"Immediate"},{value:"THIRTY_DAYS",label:"30 days"},{value:"THREE_MONTHS",label:"3 months"},{value:"SIX_PLUS_MONTHS",label:"6+ months"},{value:"WINDOW_SHOPPING",label:"Just browsing"},{value:"UNKNOWN",label:"Unknown"}]} />
         </div>
         <div>
           <div className="text-xs text-gray-500">Mood</div>
@@ -240,19 +353,6 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
             ]} />
         </div>
         <div>
-          <div className="text-xs text-gray-500">💼 Profession</div>
-          <InlineEdit leadId={lead.id} field="profession" type="select" value={lead.profession ?? ""}
-            options={[
-              {value:"JOB",label:"Job (salaried)"},
-              {value:"SELF_EMPLOYED",label:"Self-employed"},
-              {value:"BUSINESS_OWNER",label:"Business owner"},
-              {value:"INVESTOR",label:"Investor"},
-              {value:"RETIRED",label:"Retired"},
-              {value:"STUDENT",label:"Student"},
-              {value:"OTHER",label:"Other"},
-            ]} />
-        </div>
-        <div>
           <div className="text-xs text-gray-500">🔗 LinkedIn</div>
           {lead.linkedInUrl && (
             <a href={lead.linkedInUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-[#0b1a33] underline block truncate">View profile ↗</a>
@@ -263,18 +363,8 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
           <div className="text-xs text-gray-500">Configuration</div>
           <InlineEdit leadId={lead.id} field="configuration" value={lead.configuration ?? ""} placeholder="2BR / Villa / PH" />
         </div>
-        <div>
-          <div className="text-xs text-gray-500">💰 Budget ({budgetCcy})</div>
-          <InlineEdit
-            leadId={lead.id}
-            field="budgetMin"
-            value={lead.budgetMin ?? ""}
-            display={lead.budgetMin ? formatBudget(lead.budgetMin, budgetCcy) : undefined}
-            parseAs="budget"
-            editHint={budgetCcy === "INR" ? "type 30L · 3Cr · 500K · or digits" : "type 2.5M · 500K · or digits"}
-            placeholder={budgetCcy === "INR" ? "e.g. 3 Cr" : "e.g. 2.5M"}
-          />
-        </div>
+        {/* Budget, fundReadiness, whenCanInvest moved into the BANT card —
+            they're already shown there. */}
         <div>
           <div className="text-xs text-gray-500">Stage</div>
           <InlineEdit leadId={lead.id} field="status" type="select" value={lead.status}
@@ -321,6 +411,17 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
           button in the mobile header (chevron-left next to hamburger) so
           every non-root page has it, not just lead detail. */}
       <div className="lg:col-span-2 space-y-4">
+        {/* INVESTOR BANNER — Agent V (Round 6). Surfaces "returning client"
+            status above everything else. Hides itself when categorization
+            !== "Investor" AND no matched leads exist (the component handles it). */}
+        <InvestorBanner
+          leadId={lead.id}
+          categorization={lead.categorization}
+          alreadyBought={lead.alreadyBought}
+          matchedLeadIds={matchedLeadIds}
+          bookingsCount={bookingsCount}
+        />
+
         {/* NEEDS YOU BANNER */}
         {lead.needsManagerReview && (
           <div data-lead-section="overview" className="card p-4 border-l-4 border-amber-500 bg-amber-50">
@@ -404,12 +505,10 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
                 />
                 <BestCallTimeChip leadId={lead.id} />
               </div>
-              {/* 🖨 Print — collapses sticky UI / modals / nav and lays out
-                  all [data-lead-section] cards as a clean briefing for the
-                  client. Print rules live in globals.css under @media print. */}
-              <div className="mt-2 print:hidden">
-                <PrintButton />
-              </div>
+              {/* Print button removed — Lalit asked to drop it from the lead
+                  header (no business reason to print a single lead). Component
+                  file deleted too; @media print rules in globals.css stay so
+                  the browser default Print menu still works if anyone wants it. */}
               {/* Expo / Dubai-site-visit button MOVED to the very bottom of the
                   right column (was here in the header). Reassign dropdown also
                   moved — now rendered standalone on the right rail. */}
@@ -447,49 +546,17 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
             later (e.g. if billing is enabled or a different provider is
             added) — just not mounted on the page. */}
 
-        {/* CALL HISTORY — second card so agents can scan structured calls after
-            reading the Summary. Outcomes + recordings are actionable per-row
-            (outcome buckets, no-pick streak, callback times). */}
+        {/* CONVERSATION STREAM — merged call + WhatsApp feed (Lalit's ask:
+            one card that shows the full conversation flow in time order
+            instead of two separate columns). Calls render green/red, WA
+            renders blue/purple. Outcomes + recordings preserved per-row. */}
         <div data-lead-section="timeline">
-          <CallHistoryCard callLogs={lead.callLogs} />
+          <ConversationStreamCard callLogs={lead.callLogs} waMessages={lead.waMessages} forwardedTeam={lead.forwardedTeam} />
         </div>
 
-        {/* EOI / Booking workflow — wide card on the LEFT column for
-            negotiation-stage leads. Lalit: "EOI one should be in middle
-            section — not in right corner". Surfaces only when status
-            reaches NEGOTIATION, BOOKING_DONE, or WON. */}
-        {(lead.status === "NEGOTIATION" || lead.status === "BOOKING_DONE" || lead.status === "WON") && (
-          <div data-lead-section="actions">
-          <EOIWorkflowCard
-            lead={{
-              id: lead.id,
-              status: lead.status,
-              eoiStage: lead.eoiStage,
-              eoiAmount: lead.eoiAmount,
-              eoiCurrency: lead.eoiCurrency,
-              eoiPaymentMethod: lead.eoiPaymentMethod,
-              eoiCollectedAt: lead.eoiCollectedAt,
-              kycStatus: lead.kycStatus,
-              kycReceivedAt: lead.kycReceivedAt,
-              bookingFormStatus: lead.bookingFormStatus,
-              bookingFormSentAt: lead.bookingFormSentAt,
-              bookingFormSignedAt: lead.bookingFormSignedAt,
-              paymentProofStatus: lead.paymentProofStatus,
-              paymentProofReceivedAt: lead.paymentProofReceivedAt,
-              developerConfirmationStatus: lead.developerConfirmationStatus,
-              developerConfirmedAt: lead.developerConfirmedAt,
-              bookingDoneAt: lead.bookingDoneAt,
-              commissionAmount: lead.commissionAmount,
-              commissionCurrency: lead.commissionCurrency,
-              commissionStatus: lead.commissionStatus,
-              commissionReceivedAt: lead.commissionReceivedAt,
-              eoiNotes: lead.eoiNotes,
-              eoiApprovalRequired: lead.eoiApprovalRequired,
-              eoiApprovedAt: lead.eoiApprovedAt,
-            }}
-          />
-          </div>
-        )}
+        {/* EOI / Booking workflow — REMOVED by Lalit in Round 3 ("Remove EOI for now").
+            Both old EOIWorkflowCard + new Agent-K EOIPanel are off the page; bring
+            either back when the EOI process is the next feature priority. */}
 
         <div data-lead-section="overview" className="card p-5 border-l-4 border-[#c9a24b]">
           <div className="flex items-center gap-2 mb-2">
@@ -527,6 +594,14 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
             events and Call-History call rows). Authors can delete their own;
             ADMIN can delete any. No pin support — Note model has no `pinned`
             column. Newest-first (matches the orderBy on the page fetch). */}
+        {/* Voice note recorder — Agent X (Round 7). Browser audio capture →
+            auto-transcribe (currently a graceful stub until STT is wired) →
+            confirm → posts to /api/leads/[id]/notes. Sits above Notes so it
+            feels like part of the note-taking flow. */}
+        <div data-lead-section="overview">
+          <VoiceNoteRecorder leadId={lead.id} />
+        </div>
+
         <div data-lead-section="overview">
           <LeadNotesCard
             leadId={lead.id}
@@ -580,6 +655,16 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
             ... rest unchanged
       */}
       <div className="space-y-4">
+        {/* 📌 Sticky note — pinned (position:sticky) at the top of the right
+            rail. Private per agent (StickyNote model, unique on leadId+userId).
+            Auto-saves on blur. Lalit's ask: "give every agent a private
+            scratchpad on the lead that follows them as they scroll the page". */}
+        <StickyNoteWidget
+          leadId={lead.id}
+          initialBody={stickyNote.body}
+          initialUpdatedAt={stickyNote.updatedAt ? stickyNote.updatedAt.toISOString() : null}
+        />
+
         {/* DESKTOP-ONLY BANT + Qualification (top of right column). The mobile
             copies live near the top of the LEFT column above. */}
         <div className="hidden lg:block space-y-4">
@@ -595,12 +680,13 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
         {(canReassign || lead.status !== "LOST") && (
           <div data-lead-section="admin" className="card p-4 space-y-3">
             <div className="text-[10px] uppercase tracking-widest text-gray-500 font-semibold">🛠 Lead admin</div>
-            <RejectLeadClient
-              leadId={lead.id}
-              leadName={lead.name}
-              alreadyRejected={lead.status === "LOST"}
-              currentReason={lead.rejectionReason}
-            />
+            {lead.status === "LOST" ? (
+              <div className="text-xs text-gray-600">
+                Already rejected{lead.rejectionReason ? ` — ${lead.rejectionReason.replace(/_/g, " ").toLowerCase()}` : ""}.
+              </div>
+            ) : (
+              <RejectLeadModal leadId={lead.id} />
+            )}
             {canReassign && (
               <LeadReassignClient
                 leadId={lead.id}
@@ -608,47 +694,30 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
                 agents={agents.map(a => ({ id: a.id, name: a.name, role: a.role, team: a.team }))}
               />
             )}
-            {/* Share + export — copy a clean text snapshot for WhatsApp, or
-                download the full activity history as CSV. Both ownership-scoped
-                (the snapshot is built from already-authorized props; the CSV
-                route re-checks via loadOwnedLead). */}
-            <div className="pt-2 border-t border-[#e5e7eb] space-y-2">
-              <CopyLeadSnapshot
-                leadId={lead.id}
-                name={lead.name}
-                phone={lead.phone}
-                budget={lead.budgetMin ? formatBudget(lead.budgetMin, budgetCcy) : null}
-                status={lead.status}
-                aiScore={lead.aiScore ? `${lead.aiScore}${lead.aiScoreValue ? ` · ${lead.aiScoreValue}` : ""}` : null}
-                owner={lead.owner?.name ?? null}
-                lastTouched={lead.lastTouchedAt ? formatDistanceToNow(lead.lastTouchedAt, { addSuffix: true }) : null}
-                nextFollowup={lead.followupDate ? `${fmtIST12(lead.followupDate)} IST` : null}
-                projects={lead.discussed.map((d) => `${d.project.name}${d.project.city ? ` (${d.project.city})` : ""}`)}
-                whoIsClient={lead.whoIsClient}
-              />
-              <a
-                href={`/api/leads/${lead.id}/activity-csv`}
-                className="btn btn-ghost text-xs w-full justify-center"
-                title="Download the full call + activity + notes history as CSV"
-              >
-                ⬇ Export history (CSV)
-              </a>
-            </div>
+            {/* Copy Snapshot + Activity CSV affordances removed per Lalit's
+                ask ("remove copy snapshot and CSV functionality"). The
+                CopyLeadSnapshot component and /api/leads/[id]/activity-csv
+                route were deleted along with this block. */}
           </div>
         )}
 
         {/* 📍 Address — the SINGLE place location appears on this page now.
-            Combines lead.city / lead.country / lead.address. Card hides itself
-            only when literally nothing is set. */}
+            Combines lead.city / lead.country / lead.address.
+            Duplicate-Delhi fix (Lalit's screenshot): when lead.address already
+            CONTAINS the city, skip the city/country line — otherwise we render
+            "Sector 42, Delhi" + "Delhi, India" stacked, which looks like a
+            broken duplicate. If we have a usable address, render it alone and
+            fall back to city/country only when address is empty. */}
         {(lead.address || lead.city || lead.country) && (
           <div data-lead-section="overview" className="card p-5">
             <div className="font-semibold mb-2">📍 Location</div>
-            {lead.address && <p className="text-sm text-gray-700">{lead.address}</p>}
-            {(lead.city || lead.country) && (
-              <p className="text-xs text-gray-500 mt-1">
+            {lead.address ? (
+              <p className="text-sm text-gray-700">{lead.address}</p>
+            ) : (lead.city || lead.country) ? (
+              <p className="text-sm text-gray-700">
                 {[lead.city, lead.country].filter(Boolean).join(", ")}
               </p>
-            )}
+            ) : null}
           </div>
         )}
 
@@ -710,10 +779,9 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
               <div className="text-xs text-emerald-700 font-semibold">🔁 Follow-up</div>
               <InlineEdit leadId={lead.id} field="followupDate" type="date" value={toISTLocalInput(lead.followupDate)} placeholder="Not scheduled" />
             </div>
-            <div className="p-3 border border-amber-200 rounded-lg bg-amber-50">
-              <div className="text-xs text-amber-700 font-semibold">✅ To Do</div>
-              <InlineEdit leadId={lead.id} field="todoNext" value={lead.todoNext ?? ""} placeholder="Decide what's next" />
-            </div>
+            {/* "✅ To Do" tile removed per Lalit's ask — the next-step UI lives
+                in NextBestActionCard at the top of the left column. The
+                todoNext Lead column is kept (used elsewhere). */}
             <div className="p-3 border border-[#e5e7eb] rounded-lg">
               <div className="text-xs text-gray-500">📅 Meeting</div>
               <InlineEdit leadId={lead.id} field="meetingDate" type="date" value={toISTLocalInput(lead.meetingDate)} placeholder="Not scheduled" />
@@ -735,7 +803,31 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
               project: { name: d.project.name, city: d.project.city },
             }))}
             allProjects={allProjects}
+            scopeCountry={(me.role === "ADMIN" || me.role === "MANAGER") ? null : teamToCountry(lead.forwardedTeam)}
           />
+        </div>
+
+        {/* Interested properties — MOVED to sit immediately under
+            LeadProjectsClient (Lalit's ask: "this card belongs right under
+            Projects discussed, not way down at the bottom"). Header carries a
+            count chip so the agent sees "(N)" at a glance. */}
+        <div data-lead-section="projects" className="card p-5">
+          <div className="font-semibold mb-2 flex items-center gap-2">
+            Interested properties
+            <span className="chip src text-[10px]">({lead.interestedUnits.length})</span>
+          </div>
+          {lead.interestedUnits.length === 0 && <div className="text-sm text-gray-500">None attached yet.</div>}
+          <div className="space-y-2 text-sm">
+            {lead.interestedUnits.map((p) => (
+              <div key={p.id} className="flex items-center justify-between border border-[#e5e7eb] rounded-lg p-2">
+                <div>
+                  <div className="font-semibold">{p.unit.project.name} {p.unit.configuration}</div>
+                  <div className="text-xs text-gray-500">{p.unit.code} · {aedFmt(p.unit.priceBase, p.unit.project.country === "India" ? "INR" : "AED")}</div>
+                </div>
+                <span className={`chip ${p.type === "PRIMARY" ? "chip-hot" : p.type === "COMPARE" ? "chip-warm" : "chip-lost"}`}>{p.type}</span>
+              </div>
+            ))}
+          </div>
         </div>
 
         {/* Smart CMA — branded PDF with units + payment plan + ROI for the client */}
@@ -780,21 +872,16 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
           </div>
         )}
 
-        <div data-lead-section="projects" className="card p-5">
-          <div className="font-semibold mb-2">Interested properties (unit-level)</div>
-          {lead.interestedUnits.length === 0 && <div className="text-sm text-gray-500">None attached yet.</div>}
-          <div className="space-y-2 text-sm">
-            {lead.interestedUnits.map((p) => (
-              <div key={p.id} className="flex items-center justify-between border border-[#e5e7eb] rounded-lg p-2">
-                <div>
-                  <div className="font-semibold">{p.unit.project.name} {p.unit.configuration}</div>
-                  <div className="text-xs text-gray-500">{p.unit.code} · {aedFmt(p.unit.priceBase, p.unit.project.country === "India" ? "INR" : "AED")}</div>
-                </div>
-                <span className={`chip ${p.type === "PRIMARY" ? "chip-hot" : p.type === "COMPARE" ? "chip-warm" : "chip-lost"}`}>{p.type}</span>
-              </div>
-            ))}
-          </div>
-        </div>
+        {/* Interested properties moved UP — now lives directly under
+            LeadProjectsClient. */}
+
+        {/* Smart CMA — Agent P (Round 4). Surfaces 3 lookalike units from our
+            inventory + optional Claude narrative. Shows only when the lead has
+            either a configuration or at least one interested unit (the
+            comparable anchor). */}
+        {(lead.configuration || lead.interestedUnits.length > 0) && (
+          <SmartCMACard leadId={lead.id} />
+        )}
 
         {/* Assignment history — admin/manager only. Agents shouldn't see who else
             owned the lead before them (avoids inter-agent friction + cherry-picking). */}

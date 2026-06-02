@@ -30,6 +30,16 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const when = whenRaw ? new Date(whenRaw) : new Date();
   if (isNaN(when.getTime())) return NextResponse.json({ error: "Invalid date" }, { status: 400 });
   const isFuture = when.getTime() > Date.now();
+
+  // 7-day forward cap for AGENT role (matches /meeting + /visit policy).
+  // EXPO_MEETING + HOME_VISIT + DUBAI_SITE_VISIT all fall under the same
+  // "no planning more than a week out" rule. Managers/Admins bypass.
+  const SEVEN_DAYS_MS = 7 * 24 * 3600 * 1000;
+  if (me.role === "AGENT" && when.getTime() > Date.now() + SEVEN_DAYS_MS) {
+    return NextResponse.json({
+      error: "Meetings can only be scheduled up to 7 days in advance. For longer-term planning, ask your manager.",
+    }, { status: 400 });
+  }
   const notes = String(body.notes ?? "").trim();
 
   // Distance-based reimbursement (HOME_VISIT or India SITE_VISIT)

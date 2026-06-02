@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { LeadStatus, LeadSource, AIScore, CallOutcome, ActivityStatus, ActivityType, Prisma } from "@prisma/client";
 import { formatDistanceToNow, startOfDay } from "date-fns";
-import { fmtIST12 } from "@/lib/datetime";
+import { fmtIST12, smartRangeLabel } from "@/lib/datetime";
 import { fmtMoney, fmtMoneyDual } from "@/lib/money";
 import { runReconciler } from "@/lib/reconciler";
 import { getTestingModeEnabled } from "@/lib/settings";
@@ -10,9 +10,11 @@ import { requireUser } from "@/lib/auth";
 import Link from "next/link";
 import MoodCheckIn from "@/components/MoodCheckIn";
 import AttendanceBadge from "@/components/AttendanceBadge";
+import IamHereCard from "@/components/IamHereCard";
 import DailyMissionBoard from "@/components/DailyMissionBoard";
 import PersonalScoreboard from "@/components/PersonalScoreboard";
 import SmartSuggestionsCard from "@/components/SmartSuggestionsCard";
+import AIMotivatorCard from "@/components/AIMotivatorCard";
 import TeamDailyTargetTile from "@/components/TeamDailyTargetTile";
 import { todayIST } from "@/lib/attendance";
 import { quoteOfTheDay } from "@/lib/salesQuotes";
@@ -27,6 +29,11 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   const sp = await searchParams;
   runReconciler().catch(() => {});
   const todayStart = startOfDay(new Date());
+  // Calendar-month start — reused as the lower bound for the "this month"
+  // KPIs below AND as the smartRangeLabel input so the sub-text matches the
+  // actual window the count is over (no more hard-coded "last 30 days").
+  const monthStart = new Date(todayStart.getFullYear(), todayStart.getMonth(), 1);
+  const monthRangeLabel = smartRangeLabel(monthStart, new Date());
 
   // ── Team-scoped view ───────────────────────────────────────────────
   // Admin/Manager → default to their own team, can toggle via ?team=Dubai / India / all
@@ -48,7 +55,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     totalClients, totalNotContacted, newToday, hotLeads,
     callsToday, connectedToday, waToday,
     followupsDueToday, followupsOverdue, readyToClose, needsYou,
-    leadsBySource, recentActivities, upcoming, _sourceMix,
+    recentActivities, upcoming,
     leadsByTeam, forecastLeads,
     // Team-specific KPIs
     expoMeetingsThisMonth, homeVisitsThisMonth, virtualThisMonth, officeThisMonth, siteVisitsThisMonth,
@@ -65,10 +72,8 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     prisma.activity.count({ where: { ...teamActWhere, status: ActivityStatus.PLANNED, scheduledAt: { lt: todayStart } } }),
     prisma.lead.count({ where: { ...teamScope, status: { in: [LeadStatus.NEGOTIATION, LeadStatus.SITE_VISIT] } } }),
     prisma.lead.count({ where: { ...teamScope, needsManagerReview: true, status: { notIn: [LeadStatus.WON, LeadStatus.LOST] } } }),
-    prisma.lead.groupBy({ by: ["source"], _count: { _all: true }, where: { ...teamScope, createdAt: { gte: todayStart } } }),
     prisma.activity.findMany({ where: teamActWhere, orderBy: { createdAt: "desc" }, take: 6, include: { lead: true, user: true } }),
     prisma.activity.findMany({ where: { ...teamActWhere, status: ActivityStatus.PLANNED, scheduledAt: { gte: new Date() } }, orderBy: { scheduledAt: "asc" }, take: 5, include: { lead: true } }),
-    prisma.lead.groupBy({ by: ["source"], _count: { _all: true }, where: teamScope }),
     prisma.lead.groupBy({ by: ["forwardedTeam"], _count: { _all: true } }),
     prisma.lead.findMany({
       where: { ...teamScope, status: { in: [LeadStatus.NEW, LeadStatus.CONTACTED, LeadStatus.QUALIFIED, LeadStatus.SITE_VISIT, LeadStatus.NEGOTIATION] }, budgetMin: { not: null } },
@@ -286,6 +291,19 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   const dailyQuote = quoteOfTheDay();
   const hasMorningWork = myNewOvernight > 0 || myFollowupsToday > 0 || myCallbacksToday > 0;
 
+  // Motivation hook — surface the agent's most recent vault WIN so the morning
+  // greeting reminds them of a real recent success (much stickier than a generic
+  // quote alone). If they have no wins logged, render nothing — explicit "no
+  // wins" copy is demotivating.
+  const lastWin = await prisma.vaultEntry.findFirst({
+    where: { userId: me.id, kind: "WIN" },
+    orderBy: { createdAt: "desc" },
+    select: { content: true, createdAt: true },
+  });
+  const lastWinClipped = lastWin
+    ? (lastWin.content.length > 120 ? `${lastWin.content.slice(0, 120).trimEnd()}…` : lastWin.content)
+    : null;
+
   // Time-aware greeting — uses IST hour to pick morning/afternoon/evening.
   // Worth noting: server runs in UTC on Vercel, so we convert explicitly
   // rather than relying on local time on the box.
@@ -335,9 +353,48 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
               <Link href="/dashboard?team=all" className={view === "all" ? "on" : ""}>All</Link>
             </div>
           )}
-          <Link href="/action-list" className="btn btn-gold justify-center">📋 Action List</Link>
+          <Link
+            href="/action-list"
+            title="Ready-to-close (NEGOTIATION/SITE_VISIT) + Overdue follow-ups + Manager-flagged leads. Scoped to your leads if agent, all leads if manager/admin."
+            className="btn btn-gold justify-center"
+          >📋 Action List</Link>
         </div>
       </div>
+
+      {/* Welcome strip — greeting + quote always visible at top.
+          Per Lalit (Round 5): "Greeting and quote also at top".
+          The full Daily Opening card below still has missions/streaks/last-win;
+          this is the lightweight always-visible welcome above it. */}
+      <div className="card p-3 mb-3 bg-gradient-to-r from-amber-50/40 to-white border-l-4 border-[#c9a24b]">
+        <div className="text-sm font-semibold text-[#0b1a33]">
+          {energyEmoji} {greeting}, {me.name.split(" ")[0]}
+        </div>
+        <blockquote className="text-xs italic text-gray-600 mt-1 leading-relaxed">
+          💡 {dailyQuote.text}
+          <span className="text-[10px] text-gray-500 not-italic"> — {dailyQuote.author}</span>
+        </blockquote>
+      </div>
+
+      {/* ─── "I am here" widget — Agent T (Round 5) ───
+          Per Lalit: "Put I am here at top. so user knows its attendance."
+          First card under the page title so the agent sees their check-in
+          status the moment the dashboard loads — bigger and more obvious
+          than the small AttendanceBadge below. */}
+      <IamHereCard
+        today={myAttendanceToday ? { status: myAttendanceToday.status, markedAt: myAttendanceToday.markedAt.toISOString() } : null}
+        userId={me.id}
+        userName={me.name}
+      />
+
+      {/* AI Motivator card — Lalit's brief (Round): "For each agent, there
+          should be AI who analyses everything in agent dashboard and
+          Motivate him … Each day in morning , A recorded voice should be
+          there by Agent which should be like his manager who is motivating
+          him." Sits right after I-am-here so the morning order is:
+          greeting → attendance → coach → KPIs. The card itself client-fetches
+          /api/ai/motivate and (on click) /api/ai/morning-message which it
+          plays via the browser's Web Speech API — no server TTS dependency. */}
+      <AIMotivatorCard />
 
       {/* Team daily target — rolling progress vs sum of agent targets.
           Sits above the 4-tile hero strip so the team sees their collective
@@ -375,12 +432,15 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
       {salesFloorFeed.length > 0 && (
         <div className="card p-4 border-l-4 border-emerald-500">
           <div className="flex items-center gap-2 mb-3">
-            <span className="relative flex h-2 w-2">
+            <span
+              className="relative flex h-2 w-2"
+              title="Auto-refreshes on every page load. Shows the last 20 calls, meetings, site visits, and notes from your team."
+            >
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
               <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
             </span>
-            <div className="font-semibold text-sm">Sales Floor — live</div>
-            <span className="text-[10px] text-gray-500">Last {salesFloorFeed.length} actions</span>
+            <div className="font-semibold text-sm">Team activity — live (last 20 actions)</div>
+            <span className="text-[10px] text-gray-500">Showing {salesFloorFeed.length}</span>
           </div>
           <div className="space-y-1.5 max-h-[260px] overflow-y-auto">
             {salesFloorFeed.map((a) => {
@@ -492,6 +552,23 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
               💡 {dailyQuote.text}
               <div className="text-[10px] text-gray-500 not-italic mt-0.5">— {dailyQuote.author}</div>
             </blockquote>
+
+            {/* Last vault WIN — only renders if the agent has logged one.
+                No "no wins yet" fallback — demotivating. */}
+            {lastWin && lastWinClipped && (
+              <div
+                className="text-[12px] text-emerald-800 mt-2 flex items-start gap-1.5 leading-relaxed"
+                title="Your most recent entry in the Vault tagged as WIN."
+              >
+                <span aria-hidden>📈</span>
+                <span className="min-w-0">
+                  <b>Your last win:</b> {lastWinClipped}
+                  <span className="text-[10px] text-gray-500 ml-1">
+                    · {formatDistanceToNow(lastWin.createdAt, { addSuffix: true })}
+                  </span>
+                </span>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -553,17 +630,17 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
             {view === "Dubai" ? (
               <>
                 <KPI title="📞 Calls (mo)" value={callsToday} sub="today" />
-                <KPI title="💻 Virtual meets" value={virtualThisMonth} sub="this month" />
-                <KPI title="🏢 Office meets" value={officeThisMonth} sub="this month" />
-                <KPI title="🎪 Expo meets" value={expoMeetingsThisMonth} sub="developer expos in IN" />
-                <KPI title="🚗 Dubai site visits" value={siteVisitsThisMonth} sub="with developer's sales" />
+                <KPI title="💻 Virtual meets" value={virtualThisMonth} sub={monthRangeLabel} />
+                <KPI title="🏢 Office meets" value={officeThisMonth} sub={monthRangeLabel} />
+                <KPI title="🎪 Expo meets" value={expoMeetingsThisMonth} sub={`${monthRangeLabel} · expos in IN`} />
+                <KPI title="🚗 Dubai site visits" value={siteVisitsThisMonth} sub={`${monthRangeLabel} · w/ developer sales`} />
               </>
             ) : (
               <>
                 <KPI title="📞 Calls (mo)" value={callsToday} sub="today" />
-                <KPI title="🚗 Site visits" value={siteVisitsThisMonth} sub="this month" />
-                <KPI title="🏠 Home visits" value={homeVisitsThisMonth} sub="this month" />
-                <KPI title="🏢 Office meets" value={officeThisMonth} sub="this month" />
+                <KPI title="🚗 Site visits" value={siteVisitsThisMonth} sub={monthRangeLabel} />
+                <KPI title="🏠 Home visits" value={homeVisitsThisMonth} sub={monthRangeLabel} />
+                <KPI title="🏢 Office meets" value={officeThisMonth} sub={monthRangeLabel} />
                 <KPI title="❄→🔥 Cold→Lead" value={coldPromotedToday} sub="conversions today" highlight={coldPromotedToday > 0} />
               </>
             )}

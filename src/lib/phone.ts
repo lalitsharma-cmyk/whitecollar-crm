@@ -74,7 +74,21 @@ export function toE164(raw: string | null | undefined, fallbackDial?: string): s
   if (!s) return null;
   if (hasPlus) return "+" + s;
   // No country code given — prepend fallback
-  if (!fallbackDial) return "+" + s; // best-effort
+  if (!fallbackDial) {
+    // No explicit hint — try to infer country from the digit shape itself.
+    // Lalit's rule: team is NOT a phone-country signal, so when the Google-Sheet
+    // route forwards a bare "9876543210" we still need to land on +91, not +98…
+    //
+    //   10-digit starting 6/7/8/9  → India mobile     → +91
+    //   9-digit  starting 5        → UAE mobile       → +971
+    //   10-digit starting 0        → strip leading 0, re-test above
+    //   anything else              → "+" + digits (best-effort, unchanged)
+    let t = s;
+    if (t.length === 10 && t.startsWith("0")) t = t.slice(1);
+    if (t.length === 10 && /^[6-9]/.test(t)) return "+91" + t;
+    if (t.length === 9 && t.startsWith("5")) return "+971" + t;
+    return "+" + s; // best-effort
+  }
   const dialDigits = fallbackDial.replace(/\D/g, "");
   // If the number already starts with the country code AND total length matches
   // a real number for that country, don't double-prefix.

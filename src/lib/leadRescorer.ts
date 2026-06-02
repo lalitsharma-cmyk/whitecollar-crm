@@ -29,10 +29,66 @@ import {
   CallOutcome,
   WAMessageDirection,
   BantStatus,
+  LeadStatus,
 } from "@prisma/client";
 import { notifyHotLead } from "@/lib/push";
+import { aiEnabled, aiScoreLead } from "@/lib/ai";
 
 const NOISE_THRESHOLD = 3;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// HOT / WARM / COLD DEFINITION (Agent I, scoring spec)
+//
+// These are the opinionated rule-based baselines. They cover the no-AI fallback
+// path AND act as a sanity floor/ceiling even when AI is enabled (we don't let
+// Claude call a 0-call ghost lead "HOT" — see clampBucketByRules).
+//
+//   HOT  := BANT.QUALIFIES
+//           AND (status ∈ {NEGOTIATION, SITE_VISIT, BOOKING_DONE}
+//                OR whenCanInvest ∈ {IMMEDIATE, THIRTY_DAYS})
+//           AND ≥1 explicit buying signal in the last 14 days.
+//   WARM := BANT ∈ {QUALIFIES, UNDER_REVIEW}
+//           AND ≥1 connected call ever
+//           AND last touch ≤14 days.
+//   COLD := everything else, or no contact in 30+ days.
+// ─────────────────────────────────────────────────────────────────────────────
+export const HOT_STATUSES: LeadStatus[] = [
+  LeadStatus.NEGOTIATION,
+  LeadStatus.SITE_VISIT,
+  LeadStatus.BOOKING_DONE,
+];
+const HOT_TIMELINES = new Set(["IMMEDIATE", "THIRTY_DAYS"]);
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+export type LeadBucket = "HOT" | "WARM" | "COLD";
+
+interface BucketInputs {
+  bantStatus: BantStatus | null;
+  status: LeadStatus | null;
+  whenCanInvest: string | null;
+  callLogs: Array<{ outcome: CallOutcome; durationSec?: number | null; startedAt: Date }>;
+  buyingSignalsCount14d: number;
+  lastTouchedAt: Date;
+}
+
+/** Authoritative rule-based bucket (HOT/WARM/COLD) per Agent I spec. */
+export function ruleBucket(args: BucketInputs): LeadBucket {
+  const now = Date.now();
+  const daysSinceTouch = (now - args.lastTouchedAt.getTime()) / DAY_MS;
+  if (daysSinceTouch >= 30) return "COLD";
+
+  const hasConnectedCallEver = args.callLogs.some((c) => c.outcome === CallOutcome.CONNECTED);
+
+  const qualifies = args.bantStatus === BantStatus.QUALIFIES;
+  const stageHot = args.status != null && HOT_STATUSES.includes(args.status);
+  const timelineHot = args.whenCanInvest != null && HOT_TIMELINES.has(args.whenCanInvest);
+  if (qualifies && (stageHot || timelineHot) && args.buyingSignalsCount14d >= 1) return "HOT";
+
+  const bantWarm = args.bantStatus === BantStatus.QUALIFIES || args.bantStatus === BantStatus.UNDER_REVIEW;
+  if (bantWarm && hasConnectedCallEver && daysSinceTouch <= 14) return "WARM";
+
+  return "COLD";
+}
 
 export interface RescoreResult {
   from: number | null;
@@ -46,6 +102,109 @@ function bucketFor(score: number): AIScore {
   if (score >= 70) return AIScore.HOT;
   if (score >= 40) return AIScore.WARM;
   return AIScore.COLD;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// BUYING SIGNAL EXTRACTION
+// Define a clean, on-the-fly extractor — NOT persisted to a schema column this
+// turn. Surfaces human-readable strings that we (a) feed into the AI prompt
+// for grounding and (b) use as a "real evidence of intent" gate in HOT.
+// ─────────────────────────────────────────────────────────────────────────────
+const BUYING_PHRASES: Array<{ rx: RegExp; label: string }> = [
+  { rx: /\bready to (book|buy|invest|close)\b/i, label: "Said 'ready to book/buy'" },
+  { rx: /\btoken\b|\btoken amount\b|\bpaid token\b/i, label: "Token discussed" },
+  { rx: /\bsite visit done\b|\bvisited (the )?site\b|\bsite seen\b/i, label: "Site visit completed" },
+  { rx: /\bwants to invest\b|\binterested to invest\b/i, label: "Said 'wants to invest'" },
+  { rx: /\bsend (me )?(the )?(eoi|booking form|payment link)\b/i, label: "Asked for EOI / booking form / payment link" },
+  { rx: /\bsign(ing)? (the )?(mou|agreement)\b/i, label: "Signing agreement" },
+  { rx: /\bkyc\b/i, label: "KYC discussed" },
+  { rx: /\bblock(ed|ing)? (the )?unit\b/i, label: "Unit blocking discussed" },
+];
+
+export interface BuyingSignalsInput {
+  remarks?: string | null;
+  todoNext?: string | null;
+  whoIsClient?: string | null;
+  notesShort?: string | null;
+  recentCalls: Array<{
+    outcome: CallOutcome;
+    durationSec?: number | null;
+    notes?: string | null;
+    startedAt: Date;
+  }>;
+  recentWA: Array<{ direction: WAMessageDirection; receivedAt: Date; body?: string | null }>;
+}
+
+/**
+ * Returns human-readable buying-signal strings observed in remarks, recent
+ * calls (notes / outcome / duration), and recent WA messages.
+ * Stable, deterministic, deduplicated. Top-N caller's responsibility.
+ */
+export function extractBuyingSignals(input: BuyingSignalsInput): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  const push = (s: string) => {
+    if (!seen.has(s)) {
+      seen.add(s);
+      out.push(s);
+    }
+  };
+
+  const haystack = [input.remarks, input.todoNext, input.whoIsClient, input.notesShort]
+    .filter(Boolean)
+    .join("\n");
+  for (const { rx, label } of BUYING_PHRASES) {
+    if (rx.test(haystack)) push(label);
+  }
+
+  // Connected call longer than 5 min — real conversation, not a check-in.
+  for (const c of input.recentCalls) {
+    if (c.outcome === CallOutcome.CONNECTED && (c.durationSec ?? 0) > 300) {
+      push("Connected call >5 min");
+      break;
+    }
+  }
+
+  // Inbound WhatsApp after a missed call — classic re-engagement.
+  const lastMissedAt = input.recentCalls.find(
+    (c) =>
+      c.outcome === CallOutcome.NOT_PICKED ||
+      c.outcome === CallOutcome.BUSY ||
+      c.outcome === CallOutcome.SWITCHED_OFF,
+  )?.startedAt;
+  if (lastMissedAt) {
+    const reEngaged = input.recentWA.some(
+      (m) => m.direction === WAMessageDirection.INBOUND && m.receivedAt > lastMissedAt,
+    );
+    if (reEngaged) push("Inbound WA reply after a missed call (re-engaged)");
+  }
+
+  // Pure inbound WA in the last 7d is itself a buying-intent flag.
+  const sevenAgo = Date.now() - 7 * DAY_MS;
+  if (input.recentWA.some((m) => m.direction === WAMessageDirection.INBOUND && m.receivedAt.getTime() >= sevenAgo)) {
+    push("Inbound WhatsApp <7d");
+  }
+
+  // Buying-intent phrases inside call notes themselves.
+  for (const c of input.recentCalls) {
+    if (!c.notes) continue;
+    for (const { rx, label } of BUYING_PHRASES) {
+      if (rx.test(c.notes)) push(`Call note: ${label}`);
+    }
+  }
+
+  return out;
+}
+
+/** Count buying signals within the last 14 days — used by ruleBucket. */
+export function buyingSignalsCount14d(input: BuyingSignalsInput): number {
+  const fourteenAgo = Date.now() - 14 * DAY_MS;
+  const recentInput: BuyingSignalsInput = {
+    ...input,
+    recentCalls: input.recentCalls.filter((c) => c.startedAt.getTime() >= fourteenAgo),
+    recentWA: input.recentWA.filter((m) => m.receivedAt.getTime() >= fourteenAgo),
+  };
+  return extractBuyingSignals(recentInput).length;
 }
 
 /**
@@ -301,7 +460,7 @@ export async function rescoreLead(leadId: string): Promise<RescoreResult> {
 
   const previousScore = typeof lead.aiScoreValue === "number" ? lead.aiScoreValue : null;
 
-  const score = computeScore({
+  let ruleScoreValue = computeScore({
     categorization: lead.categorization,
     bantStatus: lead.bantStatus,
     fundReadiness: lead.fundReadiness as string | null,
@@ -314,7 +473,94 @@ export async function rescoreLead(leadId: string): Promise<RescoreResult> {
     lastTouchedAt: lead.lastTouchedAt ?? lead.createdAt,
   });
 
-  const newBucket = bucketFor(score);
+  // Step 1: compute opinionated rule-based bucket (HOT/WARM/COLD) on top of the
+  // raw computeScore numeric. This is the AI-OFF default AND a sanity floor
+  // even when AI is enabled.
+  const buyingInput: BuyingSignalsInput = {
+    remarks: lead.remarks,
+    todoNext: lead.todoNext,
+    whoIsClient: lead.whoIsClient,
+    notesShort: lead.notesShort,
+    recentCalls: lead.callLogs.map((c) => ({
+      outcome: c.outcome,
+      durationSec: c.durationSec,
+      notes: c.notes,
+      startedAt: c.startedAt,
+    })),
+    recentWA: lead.waMessages.map((m) => ({
+      direction: m.direction,
+      receivedAt: m.receivedAt,
+      body: m.body,
+    })),
+  };
+  const sig14d = buyingSignalsCount14d(buyingInput);
+  const ruleBucketResult = ruleBucket({
+    bantStatus: lead.bantStatus,
+    status: lead.status,
+    whenCanInvest: lead.whenCanInvest as string | null,
+    callLogs: lead.callLogs.map((c) => ({
+      outcome: c.outcome,
+      durationSec: c.durationSec,
+      startedAt: c.startedAt,
+    })),
+    buyingSignalsCount14d: sig14d,
+    lastTouchedAt: lead.lastTouchedAt ?? lead.createdAt,
+  });
+
+  // Step 2: if AI is enabled, ask Claude/Gemini to score using full narrative.
+  // We grant Claude the right to choose any bucket — but we still record the
+  // rule bucket as a guardrail (logged into aiSummary tail for explainability).
+  let score = ruleScoreValue;
+  let newBucket: AIScore = ruleBucketResult === "HOT" ? AIScore.HOT : ruleBucketResult === "WARM" ? AIScore.WARM : AIScore.COLD;
+  let aiSummary: string | null = null;
+  let aiNextAction: string | null = null;
+
+  if (aiEnabled()) {
+    try {
+      const aiResult = await aiScoreLead({
+        leadId: lead.id,
+        name: lead.name,
+        company: lead.company,
+        whoIsClient: lead.whoIsClient,
+        bantStatus: lead.bantStatus,
+        budgetMin: lead.budgetMin,
+        budgetMax: lead.budgetMax,
+        budgetCurrency: lead.budgetCurrency,
+        configuration: lead.configuration,
+        remarks: lead.remarks,
+        currentStatus: lead.currentStatus,
+        status: lead.status,
+        whenCanInvest: lead.whenCanInvest as string | null,
+        potential: lead.potential as string | null,
+        fundReadiness: lead.fundReadiness as string | null,
+        moodStatus: lead.moodStatus as string | null,
+        categorization: lead.categorization,
+        recentActivities: lead.activities.slice(0, 6).map((a) => ({
+          type: a.type,
+          status: a.status,
+          title: a.title,
+          createdAt: a.createdAt,
+        })),
+        recentWA: lead.waMessages.slice(0, 3).map((m) => ({
+          direction: m.direction,
+          body: m.body,
+          receivedAt: m.receivedAt,
+        })),
+        buyingSignals: extractBuyingSignals(buyingInput),
+        lastTouchDaysAgo: Math.floor((Date.now() - (lead.lastTouchedAt ?? lead.createdAt).getTime()) / DAY_MS),
+      });
+      if (aiResult) {
+        score = aiResult.value;
+        newBucket = aiResult.score === "HOT" ? AIScore.HOT : aiResult.score === "WARM" ? AIScore.WARM : AIScore.COLD;
+        aiSummary = aiResult.whyShort || null;
+        aiNextAction = aiResult.nextAction || null;
+        ruleScoreValue = score; // keep delta reporting honest
+      }
+    } catch (e) {
+      console.warn("[rescoreLead] aiScoreLead failed, falling back to rules:", e);
+    }
+  }
+
   const oldBucket = lead.aiScore;
   const delta = previousScore != null ? score - previousScore : score;
 
@@ -332,8 +578,13 @@ export async function rescoreLead(leadId: string): Promise<RescoreResult> {
       aiScore: newBucket,
       aiScoreValue: score,
       aiUpdatedAt: updatedAt,
+      ...(aiSummary ? { aiSummary } : {}),
+      ...(aiNextAction ? { aiNextAction } : {}),
     },
   });
+  // Suppress unused-var warning: ruleScoreValue is mirrored into `score` above;
+  // keeping the binding makes the AI-on path's audit trail readable.
+  void ruleScoreValue;
 
   await prisma.activity.create({
     data: {

@@ -54,6 +54,11 @@ export async function runReconciler(): Promise<ReconcileResult> {
       status: { notIn: [LeadStatus.WON, LeadStatus.LOST] },
       // Cold-data imports are admin-assigned only — skip them in the 5-min auto-sweep.
       isColdCall: false,
+      // Lalit's mandatory-team policy (2026-06): leads without a team tag
+      // must NEVER auto-route. They park in /admin/awaiting-team until an
+      // admin picks Dubai or India; once tagged, the orphan sweep picks them
+      // up on the next pass.
+      forwardedTeam: { not: null },
     },
     take: 50,
   }) : [];

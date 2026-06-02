@@ -112,6 +112,13 @@ export default async function DailyReportPage({ searchParams }: { searchParams: 
     <>
       <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
         <div>
+          {/* Back link added per Lalit feedback 2026-06 — managers were
+              getting "lost" inside individual report pages with no obvious
+              way back to the reports hub. Same affordance as the
+              team-comparison / commission pages. */}
+          <Link href="/reports" className="text-xs text-gray-500 hover:underline">
+            ← Back to reports
+          </Link>
           <h1 className="text-xl sm:text-2xl font-bold">📅 Daily Report — {targetUser.name}</h1>
           <p className="text-xs sm:text-sm text-gray-500">
             Auto-generated. {format(day, "dd-MMM-yy")} · Team: {targetUser.team ?? "—"}
@@ -121,6 +128,24 @@ export default async function DailyReportPage({ searchParams }: { searchParams: 
           </p>
         </div>
         <div className="flex gap-2 flex-wrap items-center self-start sm:self-auto">
+          {/* Calendar input added per Lalit feedback 2026-06 — picking a
+              specific historic date via prev/next chips was tedious.
+              The form GETs back to this same page with ?date=YYYY-MM-DD,
+              preserving the agent param if set. No JS required — the
+              native date picker on Chrome/Edge/Safari opens a calendar. */}
+          <form method="get" action="/reports/daily" className="flex gap-1 items-center">
+            <label htmlFor="daily-date-picker" className="sr-only">Pick a date</label>
+            <input
+              id="daily-date-picker"
+              type="date"
+              name="date"
+              defaultValue={dayStr}
+              max={todayStr}
+              className="text-xs border border-gray-300 rounded px-2 py-1 bg-white"
+            />
+            {sp.agent && <input type="hidden" name="agent" value={sp.agent} />}
+            <button type="submit" className="btn btn-ghost text-xs">Go</button>
+          </form>
           <Link href={`/reports/daily?date=${prevDay}${sp.agent ? `&agent=${sp.agent}` : ""}`} className="btn btn-ghost text-xs">‹ Prev day</Link>
           <Link href={`/reports/daily?date=${todayStr}${sp.agent ? `&agent=${sp.agent}` : ""}`} className="btn btn-ghost text-xs">Today</Link>
           {dayStr < todayStr && (

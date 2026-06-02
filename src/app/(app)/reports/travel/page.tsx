@@ -62,6 +62,10 @@ export default async function TravelReportPage({ searchParams }: { searchParams:
   return (
     <>
       <div>
+        {/* Back link added per Lalit feedback 2026-06. */}
+        <Link href="/reports" className="text-xs text-gray-500 hover:underline">
+          ← Back to reports
+        </Link>
         <h1 className="text-xl sm:text-2xl font-bold">🚗 Travel Reimbursement</h1>
         <p className="text-xs sm:text-sm text-gray-500">
           Distance + reimbursement totals per agent. Rate currently: <b>₹{rate}/km</b>

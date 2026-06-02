@@ -142,9 +142,10 @@ export default async function CoolingLeadsReport() {
     <>
       <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
         <div>
-          <div className="text-xs text-gray-500">
-            <Link href="/reports" className="hover:underline">Reports</Link> · Cooling leads
-          </div>
+          {/* Clear back affordance per Lalit feedback 2026-06. */}
+          <Link href="/reports" className="text-xs text-gray-500 hover:underline">
+            ← Back to reports
+          </Link>
           <h1 className="text-xl sm:text-2xl font-bold">🌡 Cooling leads</h1>
           <p className="text-xs sm:text-sm text-gray-500">
             HOT leads downgraded to WARM/COLD in the last {WINDOW_DAYS} days · {totalCount} lead{totalCount === 1 ? "" : "s"} losing momentum

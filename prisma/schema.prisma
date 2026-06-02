@@ -91,6 +91,7 @@ model User {
   auditLogs     AuditLog[]
   notifications Notification[]
   vaultEntries  VaultEntry[]
+  stickyNotes   StickyNote[]
 }
 
 // =====================================================
@@ -182,6 +183,15 @@ enum Profession {
   OTHER
 }
 
+// Authority — the "A" in BANT. Captures the client's decision power.
+// Drives whether to push for site visit, or to involve spouse / family.
+enum AuthorityLevel {
+  DECISION_MAKER
+  INFLUENCER
+  GATEKEEPER
+  UNKNOWN
+}
+
 // =====================================================
 // LEAD — the core entity
 // =====================================================
@@ -228,6 +238,14 @@ model Lead {
   // BANT verdict — set after qualification call. Drives the "Qualifies/Not qualified" chip.
   bantStatus      BantStatus  @default(UNDER_REVIEW)
   bantReason      String?     // optional one-liner explaining the verdict
+  // BANT depth — real per-letter fields so the BANT card shows true B/A/N/T.
+  // B uses budgetMin/Max/Currency + fundReadiness; T uses whenCanInvest.
+  // A + N need dedicated columns:
+  //   authorityLevel — is the lead the decision-maker, an influencer, or a gatekeeper?
+  //   needSummary    — one-line summary of WHY they're buying (move-in, rental yield,
+  //                    family relocation, kid's education, etc.).
+  authorityLevel  AuthorityLevel?
+  needSummary     String?
   // Profile depth
   profession      Profession?
   linkedInUrl     String?     // full https://linkedin.com/in/... URL
@@ -327,12 +345,32 @@ model Lead {
   notes           Note[]
   assignments     Assignment[]
   waMessages      WhatsAppMessage[]
+  stickyNotes     StickyNote[]
 
   @@index([status])
   @@index([source])
   @@index([ownerId])
   @@index([createdAt])
   @@index([eoiStage])
+}
+
+// =====================================================
+// STICKY NOTES — Per-agent private scratchpad pinned to a lead.
+// One row per (leadId, userId). The body is the agent's private scratch
+// — NEVER expose to other users. Get-or-create on lead-detail render.
+// =====================================================
+model StickyNote {
+  id        String   @id @default(cuid())
+  leadId    String
+  lead      Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  body      String   @default("")
+  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now())
+
+  @@unique([leadId, userId])
+  @@index([userId])
 }
 
 // =====================================================

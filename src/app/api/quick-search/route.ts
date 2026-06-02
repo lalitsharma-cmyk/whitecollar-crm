@@ -8,6 +8,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
 import { leadScopeWhere } from "@/lib/leadScope";
+import { projectWhereForUser } from "@/lib/propertyScope";
 
 export async function GET(req: NextRequest) {
   const me = await requireUser();
@@ -39,6 +40,7 @@ export async function GET(req: NextRequest) {
     }),
     prisma.project.findMany({
       where: {
+        ...projectWhereForUser(me),
         OR: [
           { name: { contains: q, mode: "insensitive" } },
           { city: { contains: q, mode: "insensitive" } },

@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { ActivityType, ActivityStatus, CallOutcome } from "@prisma/client";
+import { ActivityType, ActivityStatus, CallOutcome, LeadStatus } from "@prisma/client";
 import { startOfWeek } from "date-fns";
 import {
   levelForXp,
@@ -7,6 +7,7 @@ import {
   BADGES,
   type BadgeId,
 } from "@/lib/gamification";
+import QualityScoreCard from "./QualityScoreCard";
 
 // "Your scoreboard" widget — personal gamification snapshot for the dashboard.
 //
@@ -37,6 +38,10 @@ export default async function PersonalScoreboard({ userId }: { userId: string })
       followupStreak: true,
       coldCallStreak: true,
       badges: true,
+      // role needed so the embedded QualityScoreCard knows whether to hide
+      // the wellbeing axis (manager viewing a report — privacy line per
+      // docs/SPEC-quality-score.md §4). For self-view, wellbeing stays.
+      role: true,
     },
   });
 
@@ -117,12 +122,58 @@ export default async function PersonalScoreboard({ userId }: { userId: string })
   const connectRank = findRank(connectRanked.map((r) => r.userId), userId);
   const connectTotal = connectRanked.length;
 
+  // ── Star of the Month — most WON deals in current calendar month ──
+  // Lalit's signed-off definition: highest count of leads moved to WON whose
+  // updatedAt falls in the current calendar month (UTC-month, same as the rest
+  // of the dashboard's "this month" tiles use). One groupBy + one user fetch,
+  // both indexed on (ownerId, status).
+  const now = new Date();
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const topWonGroup = await prisma.lead.groupBy({
+    by: ["ownerId"],
+    where: {
+      status: LeadStatus.WON,
+      updatedAt: { gte: monthStart },
+      ownerId: { not: null },
+    },
+    _count: { _all: true },
+    orderBy: { _count: { ownerId: "desc" } },
+    take: 1,
+  });
+  const topRow = topWonGroup[0];
+  let starOfMonth: { name: string; wins: number } | null = null;
+  if (topRow?.ownerId && topRow._count._all > 0) {
+    const winner = await prisma.user.findUnique({
+      where: { id: topRow.ownerId },
+      select: { name: true },
+    });
+    if (winner) starOfMonth = { name: winner.name, wins: topRow._count._all };
+  }
+
   return (
     <div className="card p-4 lg:p-5 border-l-4 border-[#c9a24b] bg-gradient-to-br from-amber-50/40 to-white">
       <div className="flex items-center gap-2 mb-3">
         <span className="text-lg" aria-hidden>🏅</span>
         <h2 className="font-bold text-base text-[#0b1a33]">Your scoreboard</h2>
         <span className="ml-auto text-[10px] uppercase tracking-widest text-gray-500">This week</span>
+      </div>
+
+      {/* Star of the Month ribbon — most WON deals this calendar month.
+          Always visible; quietly says "No bookings yet" rather than hiding
+          so the team sees the slot and competes for it. */}
+      <div
+        title="Most leads moved to WON status this calendar month. Updates live."
+        className="mb-3 rounded-xl border-2 border-[#c9a24b] bg-gradient-to-r from-amber-100 via-amber-50 to-white px-3 py-2 flex items-center gap-2 flex-wrap"
+      >
+        <span className="text-base" aria-hidden>🏆</span>
+        <span className="text-[10px] uppercase tracking-widest font-bold text-[#7a5a10]">
+          Star of the Month
+        </span>
+        <span className="text-sm font-bold text-[#0b1a33]">
+          {starOfMonth
+            ? `${starOfMonth.name} (${starOfMonth.wins} deal${starOfMonth.wins === 1 ? "" : "s"})`
+            : "No bookings yet this month"}
+        </span>
       </div>
 
       {/* Level chip + XP progress bar */}
@@ -166,11 +217,40 @@ export default async function PersonalScoreboard({ userId }: { userId: string })
         <StreakChip emoji="🧊" label="Cold call" value={coldCallStreak} tone="blue" />
       </div>
 
+      {/* Quality Score — headline composite (Activity 30 + Funnel 35 +
+          Behavioural 25 + Wellbeing 10). Sits ABOVE the rank pills so the
+          QS is the headline and the per-board ranks read as detail.
+          Self-view → role="AGENT" semantically (own data, wellbeing visible).
+          When the viewer IS a manager opening their own scoreboard, that's
+          still "self" so wellbeing shows — the API hides it only when
+          MANAGER views a DIFFERENT user. */}
+      <div className="mb-3">
+        <QualityScoreCard userId={userId} window="week" viewerRole={user.role} />
+      </div>
+
       {/* Rank pills */}
       <div className="flex flex-wrap gap-1.5 mb-3">
-        <RankPill emoji="📞" rank={callsRank} total={callsTotal} suffix="in calls" />
-        <RankPill emoji="🎯" rank={followupsRank} total={followupsTotal} suffix="in follow-ups" />
-        <RankPill emoji="📈" rank={connectRank} total={connectTotal} suffix="in connect rate" />
+        <RankPill
+          emoji="📞"
+          rank={callsRank}
+          total={callsTotal}
+          suffix="in calls"
+          tooltip="Total CallLog rows since Monday. Top 10 only — outside top 10 shows Unranked."
+        />
+        <RankPill
+          emoji="🎯"
+          rank={followupsRank}
+          total={followupsTotal}
+          suffix="in follow-ups"
+          tooltip="Activity rows (type=TASK, status=DONE) since Monday."
+        />
+        <RankPill
+          emoji="📈"
+          rank={connectRank}
+          total={connectTotal}
+          suffix="in connect rate"
+          tooltip="Connected ÷ total calls since Monday. Min 5 calls required to rank."
+        />
       </div>
 
       {/* Earned badges */}
@@ -239,11 +319,13 @@ function RankPill({
   rank,
   total,
   suffix,
+  tooltip,
 }: {
   emoji: string;
   rank: number | null;
   total: number;
   suffix: string;
+  tooltip?: string;
 }) {
   const isTop = rank !== null && rank <= 3;
   const tone = isTop
@@ -253,6 +335,7 @@ function RankPill({
     : "bg-slate-50 border-slate-200 text-slate-500";
   return (
     <span
+      title={tooltip}
       className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold border ${tone}`}
     >
       <span aria-hidden>{emoji}</span>

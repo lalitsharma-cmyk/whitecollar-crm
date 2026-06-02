@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { UnitStatus, ProjectStatus, Prisma } from "@prisma/client";
 import { requireUser } from "@/lib/auth";
 import { bestLeadsForProject, type SuggestedLead } from "@/lib/leadsForProject";
+import { projectWhereForUser } from "@/lib/propertyScope";
 import Link from "next/link";
 
 export const dynamic = "force-dynamic";
@@ -47,6 +48,15 @@ export default async function PropertiesPage({ searchParams }: { searchParams: P
 
   // ── Compose Prisma where (team + q + country + city, all AND) ──
   const andClauses: Prisma.ProjectWhereInput[] = [];
+
+  // Hard team-scope for AGENTS — Dubai team sees only UAE, India team sees
+  // only India. Cannot be bypassed via ?team=all (the segmented control above
+  // only renders for admin/manager, but a crafted URL would otherwise leak).
+  // Admin / Manager / HQ / null-team agents → empty (no extra filter).
+  const userScope = projectWhereForUser(me);
+  if (Object.keys(userScope).length > 0) {
+    andClauses.push(userScope);
+  }
 
   if (view !== "all" && COUNTRY_FOR_TEAM[view]) {
     andClauses.push({ country: { in: COUNTRY_FOR_TEAM[view] } });

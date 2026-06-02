@@ -212,11 +212,15 @@ export async function GET(req: NextRequest) {
     })));
     filename = `wcr-leads-filtered-${new Date().toISOString().slice(0, 10).replace(/-/g, "")}.csv`;
   } else if (type === "calls") {
+    // Per Lalit's feedback (2026-06): the CSV export must NOT carry an
+    // "Agents" / agent-name column — exports were getting forwarded to
+    // brokers and partners, and agent attribution was leaking. We still
+    // pull `user` for any future auditing, but omit it from the rendered row.
     const calls = await prisma.callLog.findMany({ include: { lead: true, user: true } });
     rowCount = calls.length;
     csv = toCsv(calls.map(c => ({
       id: c.id, startedAt: c.startedAt.toISOString(), lead: c.lead?.name ?? c.phoneNumber,
-      agent: c.user.name, direction: c.direction, outcome: c.outcome, durationSec: c.durationSec,
+      direction: c.direction, outcome: c.outcome, durationSec: c.durationSec,
       notes: c.notes,
     })));
     filename = `calls-${new Date().toISOString().slice(0, 10)}.csv`;

@@ -103,6 +103,10 @@ export default async function SlaReportPage({ searchParams }: { searchParams: Pr
     <>
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
+          {/* Back link added per Lalit feedback 2026-06. */}
+          <Link href="/reports" className="text-xs text-gray-500 hover:underline">
+            ← Back to reports
+          </Link>
           <h1 className="text-xl sm:text-2xl font-bold">📊 SLA & Meeting Report</h1>
           <p className="text-xs sm:text-sm text-gray-500">
             Site visits, office meetings, and virtual meetings — rescheduled, no-shows, and who actually attended.
