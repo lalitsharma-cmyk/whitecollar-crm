@@ -137,7 +137,7 @@
 - ❌ **OPEN AGENT↔AGENT DATA LEAK — the recent-calls list is unscoped.** `prisma.callLog.findMany({ orderBy:{startedAt:"desc"}, take:50, include:{ ... } })` (lines 67–83) has **no `userId`/owner filter**. An AGENT sees the latest **50 company-wide** calls. Tapping a row opens `CallsClient`'s right-hand summary panel, which exposes the peer lead's **name, phone, email, status, AI score, BANT status + reason, budget, configuration, "who is client", follow-up date, to-do, owner name, and the last 5 call notes** (row mapping lines 98–137). `CallsClient.tsx` is purely presentational — it does no filtering, so the leak is entirely in the page query.
 - ❌ **Same leak in the QualityList.** `quality` is mapped from the same unscoped `calls` array (lines 89–96) and rendered for everyone (lines 245–277) — agents see peers' lead names + call quality.
   > **Important:** `docs/QA-AUDIT-FINDINGS.md` stated "Cold-calls / Calls / Activities all correctly agent-scoped." That is **inaccurate for `/calls`** — the heatmap is scoped, the **list and QualityList are not**. This leak survived Round 11. **B-02 — ✅ Resolved (`1f30647`), deployed.** The fix is a one-liner mirroring the heatmap: `const callScope = isAgent ? { userId: me.id } : {}` spread into the `findMany` where-clause (and the `quality` map).
-- ⚠️ Over-include / N+1: 50 rows × (`lead → owner` + nested `callLogs(take:5) → user`). Heavy even after scoping. **B-15 (P2).**
+- ⚠️ Over-include / N+1: 50 rows × (`lead → owner` + nested `callLogs(take:5) → user`). Heavy even after scoping. **B-15 — ✅ Resolved (`078b353`)**: the recent-calls query was converted `include`→`select` (only rendered columns; B-02 `where` scope preserved), and the other list/feed queries trimmed + `take`-bounded. Projection-only, no scope change.
 
 **UX read:** The heatmap and quality scoring are good ideas, but the page currently leaks the most sensitive cross-agent data in the app. This is the single most important data-safety fix remaining.
 **Mobile note:** Tap-row-to-open-summary is a mobile-friendly pattern; the leak makes that worse on mobile, not better. *(Screenshot to be captured during live UAT.)*
@@ -262,7 +262,8 @@ Round 11 closed every **major** cross-agent leak the original audit found (pipel
 3. **B-03 (P2) — Dashboard agent KPI-tile scope.** Agents must see their own numbers, not the team's, on their personal dashboard. Ship with B-02.
 
 **Can wait (fix in the first week post-launch):**
-- B-04 (WhatsApp team filter), B-05 ("Calls (mo)" label), B-16 (Automations hardcoded ON), B-13 (inert owner dropdown), B-14/B-15 (loading/error states + pagination/N+1), B-18 (label pass).
+- ✅ Shipped since this report: B-04 (WhatsApp team filter, `1f30647`), B-05 ("Calls (mo)" label, `1f30647`), B-16 (Automations real state, `e2658de`), B-13 (inert owner dropdown hidden, `1f30647`), B-14 (loading/error states, `1f9f5f5`), B-15 (pagination/N+1 hardening, `078b353`), B-19 (AI-score explainability, `0b9b5b0`).
+- ⏳ Still open — **need Lalit's input:** B-17 (BANT depth, P1), B-18 (label pass, P3), B-20 (voice/motivation pilot, P4).
 
 **Hide initially (don't expose to agents until validated):**
 - **Automations/Workflows toggles** (B-16) — hide or mark "Coming soon" until bound to real state, so nobody trusts a workflow that isn't running.
