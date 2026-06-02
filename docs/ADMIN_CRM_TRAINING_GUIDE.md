@@ -16,10 +16,12 @@ Open the **Dashboard** first thing. Top to bottom:
 - **Team toggle (Dubai / India / All)** — switch which team you're looking at. Admins and managers can switch freely; agents are locked to their own team.
 - **Today's mission** — the headline goal for the day.
 - **Four hero tiles** — your daily early-warning system:
-  - **🔥 Hot untouched** — hot leads nobody has called yet
+  - **🔥 Hot leads untouched** — hot leads with no activity in 6+ hours
   - **⏰ Overdue follow-ups** — promises the team hasn't kept
-  - **✅ Closable deals** — deals near the finish line
-  - **💎 Cold revival** — quiet leads worth reviving
+  - **💎 Closable deals** — leads in Negotiation with an EOI stage set
+  - **🧊 Cold revival opportunities** — high-value dormant leads (30+ days)
+  
+  Note: agents see these tiles scoped to their own leads only. You see the full team.
 - **Sales Floor Live Feed** — every team action as it happens.
 - **KPI tiles** — the day's headline numbers.
 - **EOI pipeline + weighted forecast** — expected revenue, weighted by how likely each stage is to close.
@@ -123,7 +125,9 @@ Reports available:
 - **Team comparison** · **Commission** · **YTD** · **Travel Reimbursement** · **Pipeline overview**
 - **Best-time-to-call heatmap** (you see the whole team's)
 
-**CSV exports are Admin-only** — you can export reports and the leads list for offline analysis or board reporting.
+Every report now has a **← Back to reports** link and a **shared date-range picker** (calendar) so you can query any date window. The old "Agent productivity" chart has been removed — use the **By Salesperson table** on the Dashboard instead.
+
+**CSV exports are Admin-only** — Leads CSV and Calls CSV export buttons appear only for you. They're in the exports section at the bottom of the Reports page.
 
 ---
 
@@ -141,7 +145,7 @@ All new leads then flow through **round-robin** assignment (unless pre-assigned 
 
 The whole reason we moved off spreadsheets was to **stop losing clients**. Here's how the CRM protects our data — and what you should check.
 
-- **Nothing is ever hard-deleted.** Leads aren't wiped — they're rejected/closed but stay in the system. There is no "delete everything" button. Your team **cannot** accidentally erase data.
+- **Nothing is ever hard-deleted in day-to-day use.** Leads aren't wiped — they're rejected/closed but stay in the system. There is no "delete everything" button. Your team **cannot** accidentally erase data. *(The one deliberate exception is the admin **Duplicate Detector** below: when you merge duplicates, the extra copy is folded into the master you keep — all its calls, notes, and history move over — and the merge is written to the audit log. That's the only place a record is removed, and only an Admin can do it.)*
 - **Audit Log** — open the **Audit Log** page (Admin only). It's an **append-only** trail: who did what, when, and from where. Columns: **When / Who / Action / Entity / Detail / IP.** Filter by exports, admin actions, failed logins, and bulk lead changes. If anything ever looks wrong, the answer is here.
 - **Automatic database backups** — the system backs up the database on a schedule, so even in a worst case we can restore.
 - **System health / Integrations** — open the **Integrations** (and **System health**) page to confirm everything is green: **Push notifications**, **Acefone calling**, **Email (Resend)**, **WhatsApp**, **scheduled jobs (crons, including the backup)**, and the **database**. A red card here is your signal to call for technical help before it becomes a problem.
@@ -158,9 +162,13 @@ The whole reason we moved off spreadsheets was to **stop losing clients**. Here'
 - **Workflows / Templates** — automate routine steps and standard messages.
 - **Duplicates** — find and merge the same client entered twice.
 - **Team Mood / Vault** — keep a pulse on morale.
-- **Settings** — working hours (10:00–19:00 IST, Mon–Sat), round-robin controls, speed-to-lead, travel ₹/km, and the **🧪 Testing mode** master switch (pauses automations while you experiment).
+- **Settings** — working hours (10:00–19:00 IST, Mon–Sat), round-robin controls, speed-to-lead, travel ₹/km, the **🧪 Testing mode** master switch, and the **☕ Daily motivation (pilot)** toggle.
 
 > **About Testing mode:** When ON, it pauses round-robin, SLA timers, overnight messages, and speed-to-lead. Great for trying things safely — just remember to turn it **OFF** so real leads flow again.
+
+> **About the ☕ Daily motivation (pilot):** In **Settings**, find the "Daily motivation (pilot)" card. Switch it ON and choose which team sees it (Dubai, India, or Both). The card shows a daily quote on every team member's dashboard, with an optional **Listen** button the browser reads aloud. Start with one team to check the tone before rolling out to everyone. This has nothing to do with AI — it runs on a deterministic daily quote list and is always on even without an AI key.
+
+> **About AI features:** Several features (AI score explanations, the AI Motivator card voice line) say "available once AI is switched on." To activate them, add the Anthropic API key to the server environment variables. Until then, rule-based fallbacks are shown instead — no errors, just no AI-generated text.
 
 ---
 
@@ -185,7 +193,7 @@ Open the in-app **Help** page, or for anything technical, escalate to your devel
 
 **☀️ Morning**
 - [ ] Punch in (**"I am here"**)
-- [ ] Scan the **4 hero tiles** (Hot untouched / Overdue / Closable / Cold revival)
+- [ ] Scan the **4 hero tiles** (Hot untouched / Overdue / Closable / Cold revival opportunities)
 - [ ] Clear the **Admin morning queue** (or let auto-assign handle it)
 - [ ] Tag any **Awaiting Team** leads so they start routing
 - [ ] Confirm **Testing mode** is **OFF** (unless you're deliberately testing)

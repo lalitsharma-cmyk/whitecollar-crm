@@ -25,10 +25,12 @@
 > dual AED/INR pair and **never** summed across currencies (`fmtMoneyDual`,
 > `src/lib/money.ts`).
 >
-> **Date.** Generated 2026-06-02. Reflects post-Round-11 source state
-> (permission-leak fixes landed). **One known open item — Round 12 — is NOT
-> fixed:** the dashboard's AGENT KPI count tiles still use team-wide scope
-> (see §3.1 Dashboard).
+> **Date.** Updated 2026-06-03. Reflects post-Round-12 / B-01…B-20 source state.
+> All B-01…B-20 bugs are resolved except: **B-15** (list-query N+1 performance —
+> groundwork shipped, low urgency at ~45 leads in prod) and the **structural half
+> of B-17** (gating stage-advancement on BANT completeness — needs Lalit's
+> co-design; the at-a-glance BANT completeness pill did ship). See
+> `docs/CRM_BUG_REPORT.md` for per-item status.
 
 ---
 
@@ -42,14 +44,14 @@ Pages live under `src/app/(app)/…/page.tsx` unless noted. Readiness legend:
 ### `/dashboard` — Home / KPI cockpit
 - **File:** `src/app/(app)/dashboard/page.tsx`
 - **Purpose:** Role-aware landing page. KPI tiles, today's action surface, pipeline snapshot, and (for admin/manager) a per-salesperson breakdown.
-- **Current functionality:** `requireUser()`; computes IST day/week boundaries; KPI count tiles (calls, follow-ups, etc.), pipeline-by-stage, "By salesperson" table. Numerous server-side aggregations.
+- **Current functionality:** `requireUser()`; computes IST day/week boundaries; KPI count tiles (calls, follow-ups, etc.), pipeline-by-stage, "By salesperson" table. Numerous server-side aggregations. Also includes: **"I am here" attendance widget** (`IamHereCard`) at the top of the dashboard; **"☕ Daily motivation (pilot)" card** (`MotivationPilot`) — flag-gated, now LIVE for both Dubai and India teams (`motivationPilot.team = ALL`), admin-toggleable from Settings; deterministic daily quote + optional browser voice playback (no server AI call). KPI tiles now use `meScope`/`meActWhere`/`meCallWhere` so agents see only their own numbers; ADMIN/MANAGER still see the team view.
 - **Buttons / actions:** Navigation into leads/activities; quick links to action surfaces.
 - **Forms / dropdowns:** None of note (read dashboard).
-- **Role access:** All roles (`requireUser`). "By salesperson" block is gated to ADMIN/MANAGER (confirmed: gated at line ~699).
+- **Role access:** All roles (`requireUser`). "By salesperson" block is gated to ADMIN/MANAGER (confirmed: gated at line ~699). KPI tiles are now properly agent-scoped (B-03 resolved).
 - **Current UX issues:** (screenshot to be captured during live UAT).
 - **Mobile issues:** Dense tile grid; verify wrap on small screens (screenshot to be captured during live UAT).
-- **Missing / known-broken:** **Round 12 OPEN — NOT FIXED:** the AGENT KPI count tiles use `teamScope` rather than `ownerId: me.id` (lines ~49, ~64–90), so an agent sees team-wide counts on those tiles instead of their own. Tracked, not yet patched.
-- **Readiness:** Partially ready (functional, but the Round 12 agent-scope leak should be closed before agent-facing rollout).
+- **Missing / known-broken:** No open data-scope bugs remaining. B-15 (N+1 performance) groundwork shipped — low urgency at current ~45-lead prod volume.
+- **Readiness:** Production-ready.
 
 ---
 
@@ -70,13 +72,13 @@ Pages live under `src/app/(app)/…/page.tsx` unless noted. Readiness legend:
 ### `/leads/new` — Create lead
 - **File:** `src/app/(app)/leads/new/page.tsx`
 - **Purpose:** Full Dubai-depth lead intake.
-- **Current functionality:** `requireUser()`; server action `createLeadAction` → `ingestLead`; IST follow-up parse via `fromISTLocalInput`. Sections: Identity / Requirement / Qualification / "Who is the client" free-text / Action.
+- **Current functionality:** `requireUser()`; server action `createLeadAction` → `ingestLead`; IST follow-up parse via `fromISTLocalInput`. Sections: Identity / Requirement / Qualification / "Who is the client" / Action. **"Who is the client" is now an Investor/End-user/Both dropdown** (`ClientTypeSelect`), not a free-text field. After the phone field is filled, a **non-blocking "possible duplicate" warning** (`DedupWarning`) appears if the phone matches an existing lead the user can already see (role-scoped via `leadScopeWhere`). An **investor-detection banner** (`InvestorBanner`) appears when the lead's history or signals suggest an existing investor.
 - **Buttons / actions:** Submit (create + optional first follow-up).
-- **Forms / dropdowns:** `PhoneInput`, `BudgetInput`, `FormDateTimeIST`; enums LeadSource, Potential, FundReadiness, MoodStatus, InvestTimeline, Profession.
+- **Forms / dropdowns:** `PhoneInput`, `BudgetInput`, `FormDateTimeIST`; enums LeadSource, Potential, FundReadiness, MoodStatus, InvestTimeline, Profession; `ClientTypeSelect` (Investor/End-user/Both/Unclear).
 - **Role access:** All roles (`requireUser`).
 - **Current UX issues:** Long single-column form (screenshot to be captured during live UAT).
 - **Mobile issues:** Many fields; verify input zoom/keyboard behaviour on mobile (screenshot to be captured during live UAT).
-- **Missing / expected:** —
+- **Missing / expected:** The *on-create* auto-merge/block prompt and a one-time historical-phone backfill are deferred pending Lalit's co-design. (Manual cleanup already exists for admins via the Duplicate Detector at `/admin/duplicates`.)
 - **Readiness:** Production-ready.
 
 ---
@@ -84,13 +86,13 @@ Pages live under `src/app/(app)/…/page.tsx` unless noted. Readiness legend:
 ### `/leads/[id]` — Lead detail / timeline
 - **File:** `src/app/(app)/leads/[id]/page.tsx`
 - **Purpose:** Single-lead workspace — full profile, activity timeline, call/WhatsApp/follow-up actions, stage controls.
-- **Current functionality:** `canTouchLead()` ownership guard; ~20 cards (identity, requirement, qualification, timeline, calls, follow-ups, etc.).
-- **Buttons / actions:** Call via Acefone, WhatsApp draft, log activity, schedule follow-up, change stage, reassign (role-permitting).
-- **Forms / dropdowns:** Inline editors for stage/owner/fields.
+- **Current functionality:** `canTouchLead()` ownership guard; ~20 cards (identity, requirement, qualification, timeline, calls, follow-ups, etc.). Additional shipped features: **AI score explainability** — `LeadScoreBreakdown` card shows the top signals driving the HOT/WARM/COLD verdict (`explainScore` + `topScoreFactors`, B-19 resolved); **BANT completeness pill** — at-a-glance "N/4 captured" indicator on the BANT card so qualification status reads instantly (B-17 resolved); **Voice recording** — Acefone playback and Web Speech API transcription; **Smart CMA v1** — lookalike-property comparison card. **"Copy Snapshot" and CSV export have been removed** from this page (by Lalit's request).
+- **Buttons / actions:** Call via Acefone, WhatsApp draft, log activity, schedule follow-up, change stage, reassign (role-permitting). Voice record/playback.
+- **Forms / dropdowns:** Inline editors for stage/owner/fields. "Who is the client" is an Investor/End-user/Both dropdown.
 - **Role access:** All roles, but a non-owning AGENT is blocked by `canTouchLead()`.
 - **Current UX issues:** Very dense; many cards (screenshot to be captured during live UAT).
 - **Mobile issues:** Long scroll; action buttons should remain reachable (screenshot to be captured during live UAT).
-- **Missing / expected:** —
+- **Missing / expected:** Stage-gating on BANT completeness still needs Lalit's co-design (the BANT pill shows status but does not block stage moves yet).
 - **Readiness:** Production-ready.
 
 ---
@@ -165,8 +167,8 @@ Pages live under `src/app/(app)/…/page.tsx` unless noted. Readiness legend:
 - **Purpose:** Call history + connect-rate analytics.
 - **Current functionality:** `requireUser()`; connect-rate-by-hour IST heatmap (agent-scoped raw SQL: `userId = me.id` for agents, all otherwise); per-call quality scoring (+50 connected/interested, +20 ≥60s, +10 ≥180s, +20 note via `QualityList`); `CallsClient`.
 - **Role access:** All roles.
-- **Current UX issues / known leak:** **(inferred from code)** the recent-calls `findMany` (line ~67) has **no role scope**, so all roles see the latest 50 calls team-wide. Minor competitive-data leak; the heatmap above it *is* scoped. Worth tightening, though the Round 11 remit explicitly scoped edits elsewhere.
-- **Readiness:** Partially ready (the unscoped recent-calls list is the one caveat).
+- **Current UX issues:** (screenshot to be captured during live UAT).
+- **Readiness:** Production-ready. (B-02 resolved: recent-calls list + QualityList now scope to `userId: me.id` for agents; heatmap was already scoped.)
 
 ---
 
@@ -200,7 +202,7 @@ Pages live under `src/app/(app)/…/page.tsx` unless noted. Readiness legend:
 ### `/settings` — Personal + system settings
 - **File:** `src/app/(app)/settings/page.tsx`
 - **Purpose:** Personal prefs + admin system toggles.
-- **Current functionality:** `requireUser()`; Testing-mode master kill-switch (admin), round-robin toggle, travel rate ₹/km, speed-to-lead, festival theme (admin), ICS calendar subscription (`buildIcsUrl`, HMAC with `NEXTAUTH_SECRET`), `TestPushButton`, `NotifPrefsEditor`, onboarding-tour reset.
+- **Current functionality:** `requireUser()`; Testing-mode master kill-switch (admin), round-robin toggle, travel rate ₹/km, speed-to-lead, festival theme (admin), ICS calendar subscription (`buildIcsUrl`, HMAC with `NEXTAUTH_SECRET`), `TestPushButton`, `NotifPrefsEditor`, onboarding-tour reset. Also includes the **"☕ Daily motivation (pilot)"** admin toggle (`MotivationPilotToggle`) — admin can switch the pilot on/off and change the target team from this page.
 - **Role access:** All roles for personal prefs; admin-only toggles guarded inline.
 - **Current UX issues — STALE COPY:** read-only card (line ~260) still says the pipeline ends "Won/Lost"; line ~262 reads "AI provider: Anthropic Claude (set ANTHROPIC_API_KEY in .env)". Cosmetic / informational only.
 - **Readiness:** Production-ready (with two stale copy strings noted above).
@@ -214,7 +216,7 @@ Pages live under `src/app/(app)/…/page.tsx` unless noted. Readiness legend:
 - **Buttons / actions:** Chat input / send.
 - **Current UX issues — STALE COPY:** hardcoded "Automations active" string (tracked as P2-4).
 - **Role access:** All roles (per permission matrix, "Use AI assistant" = Admin/Manager/Agent all ✅).
-- **Readiness:** Partially ready — **depends on `ANTHROPIC_API_KEY`**; without it, responses fall back to rule-based (degraded, not broken).
+- **Readiness:** Partially ready — **depends on `ANTHROPIC_API_KEY`**; without it, responses fall back to rule-based (degraded, not broken). **AI is currently OFF in production** (no `ANTHROPIC_API_KEY` / `AI_MODEL` set on Vercel), so the rule-based fallback is what agents see today.
 
 ---
 
@@ -223,8 +225,8 @@ Pages live under `src/app/(app)/…/page.tsx` unless noted. Readiness legend:
 - **Purpose:** Each agent's private notes/credentials store.
 - **Current functionality:** `requireUser()`; strictly `userId`-scoped (each user sees only their own entries).
 - **Role access:** All roles, self only.
-- **Privacy contradiction (documented):** `/admin/vault` (below) intentionally exposes **all** agents' vault content to admins — an owner (Lalit) decision that overrides the "private-per-user" framing here. Flagged in `docs/QA-AUDIT-FINDINGS.md` as a copy/expectation contradiction to reconcile.
-- **Readiness:** Production-ready (resolve the privacy copy vs. `/admin/vault` exposure before telling agents it's "private").
+- **Privacy copy resolved:** the agent-facing copy now reads "Your space to journal, vent, log wins, and reset" and the file header notes admin/manager review (`VaultClient.tsx:5`). The earlier false "only you can see this" strings have been removed. The `docs/QA-AUDIT-FINDINGS.md` privacy-contradiction flag is resolved.
+- **Readiness:** Production-ready.
 
 ---
 
@@ -373,8 +375,8 @@ Pages live under `src/app/(app)/…/page.tsx` unless noted. Readiness legend:
 - **Purpose:** Admin oversight of agent vaults.
 - **Current functionality:** `requireRole("ADMIN")`; **intentionally shows full agent vault content** for oversight (owner Lalit decision; comment notes it "overrides the original private-per-user design of /vault"). Filter by agent / kind.
 - **Role access:** ADMIN only.
-- **Privacy contradiction:** This is the documented contradiction with `/vault`'s "private" framing (see `/vault` above and `docs/QA-AUDIT-FINDINGS.md`).
-- **Readiness:** Production-ready (resolve the privacy messaging before launch).
+- **Privacy copy resolved:** the earlier contradiction with `/vault`'s "private" framing is fixed (see `/vault` above). Agent-facing copy updated; admin oversight is documented and expected.
+- **Readiness:** Production-ready.
 
 ### `/admin/site-visits`
 - **File:** `src/app/(app)/admin/site-visits/page.tsx`
@@ -442,14 +444,18 @@ Status legend: **Built** (working in code) · **Partial** (works with caveats / 
 | Attendance | **Built** | `/admin/attendance`; auto-mark on login (PRESENT/LATE at 10:30 IST), gates round-robin. |
 | Templates | **Built (mgmt) / Partial (send)** | `/admin/templates` library + stats fully built; real WhatsApp send depends on Cloud API keys; email send works via Resend. |
 | Notifications | **Built** | `/notifications` + web-push (VAPID) infra; push delivery depends on VAPID keys. |
-| AI assistant | **Partial** | `/ai` works with `ANTHROPIC_API_KEY`; rule-based fallback without it. Gemini path abandoned. |
+| AI assistant | **Partial** | `/ai` works with `ANTHROPIC_API_KEY`; rule-based fallback without it. Gemini path abandoned. **AI is OFF in prod** (no key on Vercel) so rule-based fallback is live. |
 | Roles | **Built** | `requireRole` + `leadScope` recursive CTE; permission matrix rendered on `/team`. |
 | Mobile nav | **Built** | `MobileShell.tsx` bottom/drawer nav. |
-| Dashboard widgets | **Partial** | Built, **but Round 12 open:** agent KPI count tiles use team-wide scope, not own (NOT fixed). |
+| Dashboard widgets | **Built** | KPI tiles now properly agent-scoped (`meScope`/`meActWhere`/`meCallWhere`); attendance widget ("I am here") and motivation pilot card both shipped (B-03/B-20 resolved). |
 | Team mood | **Built** | `/admin/team-mood`, anonymous, never reads vault content. |
 | Daily targets | **Built** | `/admin/targets` (8 metrics) → `/reports/daily`. |
 | Workflows | **Built** | `/admin/workflows` IF/THEN engine + perf widget + run history. |
 | Audit log | **Built** | `/admin/audit`, append-only, last 1000. |
+| Lead dedup detection + merge | **Built (intake-guard partial)** | Read-only, role-scoped "possible duplicate" warning on `/leads/new` (never reveals a peer's lead) **plus** an ADMIN-only Duplicate Detector + merge at `/admin/duplicates` (phone/email grouping → merge into a master, audited, duplicate removed). Deferred to Lalit: auto-merge/block on create/import + one-time historical-phone backfill. |
+| BANT completeness | **Partial** | At-a-glance "N/4 captured" pill on lead detail (B-17 resolved). Stage-gating on BANT completeness still needs Lalit's co-design. |
+| AI score explainability | **Built** | `LeadScoreBreakdown` card on lead detail shows top signals behind each HOT/WARM/COLD verdict (B-19 resolved). Runs rule-based — no AI key needed. |
+| Loading / error states | **Built** | `(app)/error.tsx` (friendly retry) + `(app)/loading.tsx` + `(app)/reports/loading.tsx` skeletons added (B-14 resolved). |
 | Data backup | **Partial / inferred** | No dedicated in-app backup UI seen; Neon (managed Postgres) provides platform-level backups. Verify operational backup story during UAT. |
 | Data export / import | **Partial** | Import: CSV bulk import built. Export: PDF for daily report (`/api/reports/daily/pdf`); no confirmed general CSV/Excel export of leads (inferred — verify during UAT). |
 | Gamification | **Built** | XP/levels (`levelForXp`), badges (`@/lib/gamification`), streaks, `/leaderboards`, `/profile`. |
@@ -473,7 +479,7 @@ What each capability relies on. "Env-gated" means the feature degrades or no-ops
 - Every `(app)` page (`requireUser` / `requireRole`). Session signing uses `NEXTAUTH_SECRET` (also reused for the ICS-subscription HMAC in `/settings`). bcryptjs for password hashing.
 
 ### Depends on Role permissions (`src/lib/leadScope.ts` + `requireRole`)
-- Lead visibility/scoping everywhere; admin/manager-only reports (sources, ytd, team-comparison, commission); all `/admin/*` pages; `/team` competitive data. **Round 12 open item lives here:** the dashboard agent KPI tiles bypass own-scope.
+- Lead visibility/scoping everywhere; admin/manager-only reports (sources, ytd, team-comparison, commission); all `/admin/*` pages; `/team` competitive data. Dashboard agent KPI tiles now correctly use `meScope`/`meActWhere`/`meCallWhere` (B-03 resolved).
 
 ### Depends on WhatsApp
 - **Free path (always on):** `wa.me` draft links — open WhatsApp on the user's own device; no env needed.
@@ -483,7 +489,7 @@ What each capability relies on. "Env-gated" means the feature degrades or no-ops
 - Env-gated via `acefoneEnabled()`: `ACEFONE_API_KEY`, `ACEFONE_DID_NUMBER`, `ACEFONE_WEBHOOK_TOKEN`, optional `ACEFONE_BASE_URL`. Per-agent `acefoneAgentId` set on `/team`. Inbound/outbound auto-CallLog arrives via `/api/acefone/webhook?token=…`. Until configured, "📞 Call via Acefone" is inactive and `/admin/integrations` shows Acefone as not-configured. See `docs/ACEFONE_SETUP.md`.
 
 ### Depends on the AI API
-- `/ai` assistant and AI lead-scoring/re-scoring. Primary: `ANTHROPIC_API_KEY` (Anthropic Claude). `GEMINI_API_KEY` path abandoned. Rule-based fallback runs without a key (degraded). `/reports/sources` "avg AI score" and `/reports/cooling` ("AI re-score" STATUS_CHANGE activities) depend on the scorer having run.
+- `/ai` assistant and AI lead-scoring/re-scoring. Primary: `ANTHROPIC_API_KEY` (Anthropic Claude). `GEMINI_API_KEY` path abandoned. Rule-based fallback runs without a key (degraded). **In production today, `ANTHROPIC_API_KEY` and `AI_MODEL` are NOT set on Vercel, so all AI-powered features are dormant** and the rule-based fallback is active. `/reports/sources` "avg AI score" and `/reports/cooling` ("AI re-score" STATUS_CHANGE activities) depend on the scorer having run — these will show limited data until the key is configured.
 
 ### Depends on file upload
 - **(inferred)** Vault attachments / any document storage. No dedicated upload provider confirmed in the pages re-read; verify storage backend during UAT.

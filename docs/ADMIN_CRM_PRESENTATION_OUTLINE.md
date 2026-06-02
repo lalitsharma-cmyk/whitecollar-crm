@@ -32,24 +32,27 @@
 ## Slide 3 — Admin dashboard overview
 
 - Opens on the **Sales Command Center** — toggle between Dubai, India, or All teams.
-- Top strip answers "what needs attention RIGHT NOW": hot leads untouched, overdue follow-ups, closable deals, cold-revival opportunities.
-- **8 KPI tiles**: calls dialed, calls connected, follow-ups due/overdue, ready-to-close, needs-attention, WhatsApp touches, total clients.
-- **Weighted sales forecast** in AED + INR, and a **live Sales Floor feed** of the team's latest actions.
+- Top strip: **"I am here"** attendance widget first, then the hero action strip (hot leads untouched, overdue follow-ups, closable deals, cold-revival opportunities).
+- **KPI tiles** each labelled with their time window and scope (today / this month / team vs you): calls dialed, calls connected, follow-ups due/overdue, ready-to-close, needs-attention, WhatsApp touches, total clients, and **"❄→🔥 Cold→Lead" (this month's conversions)**.
+- **Weighted sales forecast** in AED + INR, a **live Sales Floor feed** of the team's latest actions, and leaderboards (intentionally visible to everyone — motivating, not surveillance).
+- **☕ Daily motivation (pilot)** card: a rotating daily quote for both teams, with an optional spoken morning message. Admin-controlled from Settings.
 - Admin-only morning queue: overnight leads waiting for you to assign.
 
-> Speaker note: Emphasise the toggle (Dubai/India/All) — you can run each team's view or the whole company from one screen.
+> Speaker note: Emphasise the toggle (Dubai/India/All) — you can run each team's view or the whole company from one screen. Point out the attendance widget at the top — it doubles as a quick "who is in today" check.
 
 ---
 
 ## Slide 4 — Lead visibility
 
-- You see **every lead** across both teams; agents see **only their own** (tightened recently for privacy).
+- You see **every lead** across both teams; agents see **only their own** (role-scoped — verified in the current build).
+- Each lead detail shows: **Investor / End-user / Both** dropdown, full BANT card with **"N/4 captured" pill** at a glance, and a "why this score" explanation next to the AI score.
 - Powerful filters: by team, owner, status, AI score, source, follow-up window, and tags (NRI / Investor / HNI).
 - One-tap **smart filters**: Hot today, Ghosting, Site-visit potential, High budget; plus "Not picked 3+ / 7+ days".
 - **EOI pipeline tiles** surface deals mid-booking, waiting on KYC, needing your sign-off, or stuck 7+ days.
-- Full-text search across name, phone, email, company — and CSV export of any filtered view (admin only).
+- Full-text search across name, phone, email, company — and **CSV export is Admin-only**.
+- New-lead entry warns instantly if the same phone number is already in the system — no more duplicate clients sneaking in.
 
-> Speaker note: Stress the privacy change — agents can no longer browse each other's leads or back-derive lead sources.
+> Speaker note: Stress the privacy point — agents can no longer browse each other's leads or back-derive lead sources. Also call out the duplicate-phone warning: that's the fix for the #1 complaint from the old sheets era.
 
 ---
 
@@ -80,24 +83,25 @@
 ## Slide 7 — Reports & performance
 
 - **Reports hub** leads with decisions: forecasted revenue, biggest funnel leak, and stalled-deal money tied up.
+- All reports share a **date-range picker** (set once, all numbers update) and have **back buttons** so you never lose your place.
 - Ready-made reports: Daily (target vs achieved), SLA & Meetings, Travel reimbursement, Lead Sources, Cooling leads, **Team comparison (Dubai vs India)**, Commission & earnings, Year-to-Date.
-- **Best-time-to-call heatmap** (last 30 days, IST) shows when connects actually happen.
+- **Best-time-to-call heatmap** (last 30 days, IST) shows when connects actually happen — down to the hour.
 - Conversion funnel + per-source funnel reveal which channels truly close.
 - **CSV export** of leads and calls is Admin-only.
 
-> Speaker note: Team comparison and commission reports are the two Lalit will open most — call those out by name.
+> Speaker note: Team comparison and commission reports are the two you'll open most — call those out by name. The shared date picker means you can compare last month vs this month in seconds.
 
 ---
 
 ## Slide 8 — Data safety
 
-- **Append-only Audit Log**: every login, export, role change, and sensitive action is recorded — who, what, when.
-- Role-based access: agents are locked to their own leads; team/comparison stats are Admin/Manager only.
-- Nothing is truly deleted — rejected/LOST leads stay visible to you via Rejected Leads and the audit trail.
-- **Duplicates** tool and **System health** page keep the data clean and the app honest.
-- **Testing mode** lets you pause every automation (round-robin, escalation, auto-WhatsApp) safely while you experiment.
+- **Soft-delete by default**: rejected leads, LOST leads, and old imports are never wiped — full history is always there. *(The single exception is the admin Duplicate Detector: merging duplicates folds the extra copy into the one you keep, with an audit-log record.)*
+- Role-based access: agents are locked to their own leads; team/comparison stats are Admin/Manager only. Every scoping rule is enforced server-side, not just hidden in the UI.
+- **System health** page keeps the data clean and the app honest.
+- **Testing mode** lets you pause automations (round-robin, escalation, auto-WhatsApp) safely while you experiment.
+- **AI features** (AI score explanations, morning voice message) are built and ready — they switch on the moment an API key is added. Present as "ready to go", not yet live in production.
 
-> Speaker note: Reassure on the big fear of leaving sheets — "we didn't lose control, we gained a black box recorder."
+> Speaker note: Reassure on the big fear of leaving sheets — "we didn't lose control, we gained a safety net." Soft-delete means nobody can accidentally erase a client's history.
 
 ---
 
@@ -117,8 +121,8 @@
 
 - **Week 1**: you + managers go live; import existing sheets; confirm every agent has login + Acefone ID set.
 - **Week 2**: agents start on the **Action List** daily; enforce "log every call + set a follow-up date".
-- Turn on **Acefone click-to-call**; enable the **WhatsApp** side panel once the business number is connected.
-- Lean on the in-app **Help** guide and onboarding tour for first-timers — no training manual needed.
-- **Review after 30 days**: compare connect rates, follow-up discipline, and bookings vs the old sheet era.
+- Turn on **Acefone click-to-call** and **WhatsApp** templates once the business number is connected.
+- **Daily motivation pilot** is already ON for both teams — if the tone doesn't land, you can switch it off or back on from **Settings → "☕ Daily motivation (pilot)"** in seconds.
+- **Review after 30 days**: compare connect rates, follow-up discipline, and bookings vs the old sheet era. Use the Reports date-range picker to pull a clean before/after.
 
 > Speaker note: Close on momentum — small daily habits, one team leading, then both. Sheets get switched off only once everyone trusts the CRM.

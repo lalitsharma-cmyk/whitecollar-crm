@@ -13,10 +13,12 @@ You don't need any technical knowledge. If you can read a dashboard and have a c
 1. Open the CRM (**crm.whitecollarrealty.com** or the installed app).
 2. On the **Dashboard**, tap **"I am here"** to punch in.
 3. Glance at the **four hero tiles** at the top — they're your early-warning system:
-   - **🔥 Hot untouched** — fresh hot leads nobody has called yet.
+   - **🔥 Hot leads untouched** — hot leads with no agent activity in 6+ hours.
    - **⏰ Overdue follow-ups** — promises your team hasn't kept.
-   - **✅ Closable deals** — deals close to the finish line.
-   - **💎 Cold revival** — quiet leads worth reviving.
+   - **💎 Closable deals** — leads in Negotiation with an EOI stage set.
+   - **🧊 Cold revival opportunities** — high-value leads dormant 30+ days.
+   
+   These tiles show numbers for your team. (Agents see only their own counts — which is intentional.)
 4. Use the **team toggle** (Dubai / India / All) to focus on the team you're running today.
 
 If any hero tile is high, that's where your morning attention goes.
@@ -27,8 +29,8 @@ If any hero tile is high, that's where your morning attention goes.
 
 ### The Dashboard
 Below the hero tiles you'll find:
-- **Sales Floor Live Feed** — the team's latest activity as it happens (calls logged, stages moved, follow-ups set). A quiet feed mid-morning means people need a nudge.
-- **KPI tiles** — the day's key numbers at a glance.
+- **Sales Floor Live Feed** — the team's latest activity as it happens (calls logged, stages moved, follow-ups set). A quiet feed mid-morning means people need a nudge. This feed is also visible to agents — that's intentional; it keeps the team energised.
+- **KPI tiles** — tiles show the time window and scope in their title (e.g. "Calls Dialed — today", "Total Clients — all time"). The "Cold→Lead" tile counts the whole calendar month.
 - **By Salesperson table** — each agent's activity side by side. This is your fastest way to see who's busy and who's stalled. *(Managers and Admins only.)*
 - **EOI / weighted forecast** — expected revenue, weighted by how likely each stage is to close.
 
@@ -124,12 +126,14 @@ Open **Reports** for the bigger picture. The **decisions strip** at the top give
 - **Stalled deals > 7 days**
 
 Useful reports for a manager:
-- **Daily report** — what the team did today
+- **Daily report** — what the team did today; use the **date picker** to look back at any day
 - **SLA & Meetings** — are response times and meetings on track?
 - **Cooling leads** — deals losing heat, ranked
 - **Team comparison** — agents side by side
 - **Lead sources** — where good leads come from *(source chart is Manager/Admin only)*
 - **Pipeline overview** — health of the whole funnel
+
+Every report has a **← Back to reports** link at the top, and a **shared date-range picker** so you can set any date window. The "Agent productivity" chart that used to appear has been removed — use the **By Salesperson table** on the Dashboard and the **Team & Roles** page instead. CSV export is Admin-only.
 
 > Use **Team comparison** in team meetings — but to *lift everyone up*, not to shame. Pair every number with a next step.
 
@@ -139,6 +143,7 @@ Useful reports for a manager:
 
 - **Leaderboards** — celebrate the top performers publicly; privately encourage the rest.
 - **Missions & streaks** — remind the team these exist; a live streak keeps daily habits sticky.
+- **☕ Daily note (pilot)** — if Lalit has switched this on for your team, a short motivational quote appears on everyone's dashboard each morning. It also has an optional **Listen** button the browser reads aloud. Encourage the team to tap it.
 - **Team Mood / Vault** — keep a pulse on morale. A burnt-out team closes less. Notice it early.
 
 ---
@@ -163,8 +168,8 @@ Open the in-app **Help** page for quick references, or message **Lalit** — **l
 
 **☀️ Morning**
 - [ ] Punch in (**"I am here"**)
-- [ ] Scan the **4 hero tiles** (Hot untouched / Overdue / Closable / Cold revival)
-- [ ] Set today's focus team (Dubai / India / All)
+- [ ] Scan the **4 hero tiles** (Hot untouched / Overdue / Closable / Cold revival opportunities)
+- [ ] Set today's focus team (Dubai / India / All) using the toggle
 - [ ] Clear any **🆘 escalations**
 - [ ] Tag any **Awaiting Team** leads so they start routing
 

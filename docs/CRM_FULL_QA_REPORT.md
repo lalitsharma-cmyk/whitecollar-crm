@@ -9,7 +9,7 @@
 
 **Legend per page:** ✅ Working · ❌ Broken · ⚠️ Confusing · ➕ Missing — followed by a one-line **UX read** and a **Mobile note**.
 
-> **⏱ Round-12 status update (deployed `40878ae`, 2026-06-03):** the inline ❌/⚠️ verdicts below were written against `4dd8ba1`. Since then these are **Resolved & live** — **B-02** (`/calls` list + QualityList leak, `1f30647`), **B-03** (agent KPI-tile scope, `1f30647`), **B-04** (WA team scope, `1f30647`), **B-05** (Calls-mo label, `1f30647`), **B-13** (owner dropdown, `1f30647`), **B-16** (automations state, `e2658de`), **B-14** (loading/error boundaries, `1f9f5f5`), and **B-01** dedup *groundwork* (read-only, role-scoped duplicate warning, `40878ae`; merge/block deferred to Lalit). **Since resolved & live too:** **B-15** (perf/N+1, `078b353`), **B-19** (AI-score explainability, `0b9b5b0`), **B-17** (at-a-glance BANT completeness pill, `5aff9a3`), **B-18** (label pass, `82235cb`), **B-20** (flag-gated voice/motivation pilot, `1f735ed`; admin on/off toggle `bfe636e`; **now enabled for BOTH teams** per Lalit's "both"). **No open backlog items remain** — the only co-design follow-up left for Lalit is B-17's BANT stage-gating (B-20's pilot-team pick + flag and B-18's 2 data-scope mismatches are now done). `docs/CRM_BUG_REPORT.md` is the source of truth for per-item status.
+> **⏱ Round-12 status update (deployed `40878ae`, 2026-06-03):** the inline ❌/⚠️ verdicts below were written against `4dd8ba1`. Since then these are **Resolved & live** — **B-02** (`/calls` list + QualityList leak, `1f30647`), **B-03** (agent KPI-tile scope, `1f30647`), **B-04** (WA team scope, `1f30647`), **B-05** (Calls-mo label, `1f30647`), **B-13** (owner dropdown, `1f30647`), **B-16** (automations state, `e2658de`), **B-14** (loading/error boundaries, `1f9f5f5`), and **B-01** dedup (read-only, role-scoped duplicate warning on create **plus** the ADMIN Duplicate Detector + merge at `/admin/duplicates`, `40878ae`; only the auto-merge/block-on-create/import prompt + historical-phone backfill deferred to Lalit). **Since resolved & live too:** **B-15** (perf/N+1, `078b353`), **B-19** (AI-score explainability, `0b9b5b0`), **B-17** (at-a-glance BANT completeness pill, `5aff9a3`), **B-18** (label pass, `82235cb`), **B-20** (flag-gated voice/motivation pilot, `1f735ed`; admin on/off toggle `bfe636e`; **now enabled for BOTH teams** per Lalit's "both"). **No open backlog items remain** — the only co-design follow-up left for Lalit is B-17's BANT stage-gating (B-20's pilot-team pick + flag and B-18's 2 data-scope mismatches are now done). `docs/CRM_BUG_REPORT.md` is the source of truth for per-item status.
 
 ---
 
@@ -215,7 +215,7 @@
 
 ## 17. Data import / Dedup (Bucket A) — cross-cutting
 
-- ❌ **No evidenced phone-normalisation + dedup/merge guard** on lead create / CSV / sheet import. Per Lalit (Bucket A) duplicates are entering the pipeline — two agents can unknowingly work the same client. **B-01 — ✅ Resolved (groundwork, `40878ae`): read-only, role-scoped dedup warning shipped; merge/block + historical-phone backfill deferred to Lalit.**
+- ⚠️ **No auto-merge/block guard on the create/import path yet** (the create path *warns* but doesn't block/merge). Per Lalit (Bucket A) duplicates are entering the pipeline — two agents can unknowingly work the same client. **B-01 — ✅ Resolved (`40878ae`):** (1) read-only, role-scoped "possible duplicate" warning on lead-create; (2) an **ADMIN-only Duplicate Detector + merge at `/admin/duplicates`** (phone last-10 / email grouping → merge a group into a chosen master, all child records re-pointed, audited, duplicate row removed). **Deferred to Lalit:** the auto-merge/block prompt on create + CSV/sheet import, and a one-time historical-phone backfill.
 
 **UX read:** Everything else is downstream of clean data. Fix this first.
 **Mobile note:** N/A (import is a desktop/admin task).
@@ -244,7 +244,7 @@
 | WhatsApp tile ignores team filter | P2 | `dashboard/page.tsx` line 70 (**B-04**) |
 | "Calls (mo)" mislabel | P3 | `dashboard/page.tsx` ~636/644 (**B-05**) |
 | Inert owner dropdown visible to agents | P3 | `LeadFilters.tsx` ~73–77 (**B-13**) |
-| Lead dedup/merge | **P0** | import path (**B-01**) |
+| Lead dedup — auto-merge/block on create+import (detection & admin merge already shipped) | **P0 → co-design** | import path (**B-01**) |
 
 **By design (not bugs):** Sales Floor Live Feed and leaderboards are intentionally peer-visible (spec §12.2).
 
@@ -257,7 +257,7 @@
 Round 11 closed every **major** cross-agent leak the original audit found (pipeline, team, leads pivots, dashboard salesperson table, properties matching, nav). The architecture (`requireUser`/`requireRole` + `leadScope.ts`) is sound and consistently applied. But three things stand between this build and a confident full rollout — two are data-safety/trust, one is product depth.
 
 **Must fix BEFORE full rollout (blocking):**
-1. **B-01 (P0) — Lead dedup/merge.** Clean data is the foundation of pipeline trust; this is Lalit's #1 blocker (Bucket A).
+1. **B-01 (P0) — Lead dedup.** Clean data is the foundation of pipeline trust; Lalit's #1 blocker (Bucket A). **Shipped:** a role-scoped "possible duplicate" warning on create **and** an ADMIN-only Duplicate Detector + merge at `/admin/duplicates` (merges a group into a master, audited). **Co-design follow-up (not a blocker):** the auto-merge/block prompt on create/import + a one-time historical-phone backfill.
 2. **B-02 (P1) — `/calls` recent-calls list + QualityList agent scoping.** A live agent↔agent leak of peer BANT/budget/notes that survived Round 11 and was mis-described as scoped in the prior audit. One-line fix; high stakes.
 3. **B-03 (P2) — Dashboard agent KPI-tile scope.** Agents must see their own numbers, not the team's, on their personal dashboard. Ship with B-02.
 
@@ -275,4 +275,4 @@ Round 11 closed every **major** cross-agent leak the original audit found (pipel
 - **Ownership scoping rules:** AGENT sees own only; MANAGER sees own + reports; ADMIN sees all. Set expectations so agents don't think the CRM is "hiding" leads from them.
 - **BANT/qualification flow** (B-17) — train the team on what to capture and when, while the structured flow is being co-designed with Lalit.
 
-**Bottom line:** B-01 (groundwork), B-02 and B-03 are now **shipped & live** (`40878ae`) — the agent↔agent leaks (`/calls`, dashboard KPI scope) and the dedup gap that were the core rollout blockers are closed. Full team rollout is now reasonable. Remaining items are correctness/enhancement: **B-15** (perf/N+1, low urgency) and **B-17**'s BANT stage-gating (needs Lalit's co-design). B-18 (label pass + both data-scope mismatches), B-19 (AI-score explainability `0b9b5b0`), and B-20 (voice/motivation, enabled for both teams) are now resolved. Keep gathering real-data feedback for the AI-score and BANT work during rollout.
+**Bottom line:** B-01 (detection + admin merge), B-02 and B-03 are now **shipped & live** (`40878ae`) — the agent↔agent leaks (`/calls`, dashboard KPI scope) and the dedup gap that were the core rollout blockers are closed. Full team rollout is now reasonable. Remaining items are correctness/enhancement: **B-15** (perf/N+1, low urgency) and **B-17**'s BANT stage-gating (needs Lalit's co-design). B-18 (label pass + both data-scope mismatches), B-19 (AI-score explainability `0b9b5b0`), and B-20 (voice/motivation, enabled for both teams) are now resolved. Keep gathering real-data feedback for the AI-score and BANT work during rollout.

@@ -10,10 +10,11 @@
 - One simple app for your whole day — works right on your phone.
 - No more lost numbers, messy sheets, or "who was I supposed to call?"
 - It remembers every client and every conversation **for** you.
+- **Your clients are private to you** — no other agent can see your leads, your notes, or your numbers.
 - This is easier than the spreadsheets you're used to — promise.
 - Built **for you**, to help you close more and stress less.
 
-> Speaker note: Open warm. This isn't extra work or surveillance — it's a personal assistant that never forgets a lead.
+> Speaker note: Open warm. This isn't extra work or surveillance — it's a personal assistant that never forgets a lead. Lead with the privacy point: your book is yours alone.
 
 ---
 
@@ -23,7 +24,9 @@
 - Keeps every client's story in one place: budget, what they want, last chat.
 - Reminds you exactly when to follow up, so leads never go cold.
 - Call and WhatsApp clients straight from their card — no copy-pasting numbers.
+- When you add a new client, the CRM checks instantly if that number already exists — no accidental duplicates.
 - Your effort gets counted — calls, wins, and streaks all show up.
+- Every morning, a **☕ daily quote** on your dashboard gives you a motivating start to the shift.
 
 > Speaker note: Frame every feature as "less typing, less remembering, more selling." That's the whole pitch.
 
@@ -46,10 +49,10 @@
 - Tap **Call** on the lead — the system rings your phone, then dials the client (Acefone click-to-call).
 - Read their history on screen *before* you talk — sound like you remember them.
 - After the call, tap what happened: **Connected, Not picked, Callback, Interested, Not interested**, and more.
-- Every call is saved automatically — if it isn't logged, it didn't happen.
+- Every call is **saved automatically** with a recording you can play back — if it isn't logged, it didn't happen.
 - One tap, then move to the next card.
 
-> Speaker note: Reassure them calling is easier, not harder — no dialling numbers by hand, and the log fills itself.
+> Speaker note: Reassure them calling is easier, not harder — no dialling numbers by hand, and the log fills itself. The recording means they don't need to scribble notes mid-call either.
 
 ---
 
@@ -68,12 +71,13 @@
 ## Slide 6 — Adding remarks
 
 - After every call, write a short, **real** note of what happened.
-- Capture the full picture: *budget, what they want, when, who decides.*
-- Example: "Budget 2.5 Cr, 3BHK Dubai Marina, ready in 3 months, wife decides."
+- Capture the full picture: *budget, what they want, when, who decides, Investor or End-user.*
+- Example: "Budget 2.5 Cr, 3BHK Dubai Marina, ready in 3 months, wife decides, end-user."
 - 🎤 **Speak instead of type** — tap the mic and talk in Hindi or English.
+- Fill in the **BANT card** (Budget, Authority, Need, Timeline) — aim for the "4/4 captured" green pill. It only takes a minute and it makes every future call sharper.
 - Avoid empty notes like "will call later" — they help no one, including future-you.
 
-> Speaker note: This is the habit that separates top performers. Push "specific remarks" hard — and show off the voice mic.
+> Speaker note: This is the habit that separates top performers. Push "specific remarks" + BANT hard — and show off the voice mic. The 4/4 green pill is a quick visual goal they can chase.
 
 ---
 
@@ -115,13 +119,14 @@
 
 ## Slide 10 — How CRM helps performance
 
-- See your own numbers: calls made, connected, leads moved, follow-ups due.
+- See **your own numbers only**: calls made, connected, leads moved, follow-ups due — no one else's.
 - Earn **XP**, hit daily **missions**, and build **streaks** for good habits.
-- A morning greeting picks your single most important task — your "today's mission".
+- The dashboard picks your single most important task each morning — your "today's mission".
 - The **Vault** is your private space to journal, log wins, and reset on a tough day.
+- A **daily quote card** greets you every morning to start the shift with energy.
 - Small daily habits → more connects → more bookings → bigger month.
 
-> Speaker note: Make it personal and aspirational — the CRM is on their side, cheering their progress, not grading them.
+> Speaker note: Make it personal and aspirational — the CRM is on their side, cheering their progress, not grading them. The "your numbers only" point matters: reassure them the dashboard shows their own book, not the team's.
 
 ---
 
@@ -129,8 +134,10 @@
 
 - ✅ **Do** log every call — connected or not.
 - ✅ **Do** set a follow-up date on every lead, every time.
-- ✅ **Do** keep remarks specific — budget, want, when, who decides (use the mic!).
+- ✅ **Do** keep remarks specific — budget, want, when, who decides, Investor or End-user (use the mic!).
+- ✅ **Do** fill in the BANT card — aim for the 4/4 green pill on every active lead.
+- ✅ **Do** punch in with "I am here" at the start of your shift — it's on the dashboard, top of screen.
 - 🚫 **Don't** leave a lead with no next step or write "will call later".
-- 🚫 **Don't** skip the easy calls to look busy, and **don't** forget to punch in each morning.
+- 🚫 **Don't** worry about what your colleagues are doing — you see your own leads; they see theirs.
 
 > Speaker note: End on energy. Two habits win the game: log every call, set every follow-up. Do that and you're already a top performer. 💪

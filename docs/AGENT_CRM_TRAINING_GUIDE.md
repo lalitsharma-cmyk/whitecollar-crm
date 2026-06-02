@@ -44,13 +44,16 @@ Now you'll have a **White Collar** icon on your phone, just like any other app. 
 
 ## 3. Your first 60 seconds every morning
 
-Do these three things the moment you start work:
+Do these things the moment you start work:
 
 1. **Open the app** (tap the icon on your phone).
-2. On the **Home/Dashboard**, find the **"I am here"** card and tap it to **punch in**. This tells the team you've started your day.
-3. Read **"Today's mission"** — it tells you your one big goal for the day.
+2. At the very top of the **Dashboard** you'll see the **"I am here"** card — tap it to **punch in**. This tells the team you've started your day.
+3. Just below, look for the **"Today's mission"** card — it highlights the single most important lead for you to act on right now (a deal to close, a hot lead to call, or an overdue follow-up).
+4. Look for the **☕ Daily note** card if it appears — it's a short motivational quote to start the day. Tap **Listen** if you'd like it read aloud. *(This card is on a pilot — it may not be visible to everyone yet.)*
 
 Then go straight to your **Action List**. That's where your day really begins.
+
+> **Your numbers are private to you.** Every KPI tile on your dashboard — calls, follow-ups, ready-to-close deals — counts only YOUR leads. Your colleagues cannot see your numbers, and you cannot see theirs. The only shared screen is the **Sales Floor Live Feed** (the team activity ticker) and the Leaderboards — those exist so the whole team can celebrate wins together.
 
 ---
 
@@ -134,12 +137,24 @@ The stages are:
 2. Change the **stage** to the right step.
 3. Save.
 
+**On the lead page you'll also see:**
+
+- **WHO IS THE CLIENT** — a dropdown. Pick **Investor**, **End-user**, **Both**, or **Unclear**. This is now a click-to-select, not a text box. Below it is a free-text "Client context" notes box for the full story.
+- **BANT** card (Budget · Authority · Need · Timeline) — four colour-coded chips showing how well you've qualified the client. A **"N/4 captured"** pill at the top tells you at a glance how complete the qualification is. Fill these in as you learn more about the client.
+- **"Why this score"** — a breakdown explaining the client's HOT / WARM / COLD score. *(Fully live once AI is switched on by Lalit; rule-based explanation always visible.)*
+
 Simple rule of thumb:
 - Talked to them once? → **Contacted**
 - They have real budget + intent? → **Qualified**
 - Booked a property viewing? → **Site Visit**
 - Discussing price/payment? → **Negotiation**
 - They said yes! → **Booking Done** 🎉
+
+---
+
+## 9b. Adding a new lead
+
+When you fill in the **New Lead** form and enter a phone number, the CRM will automatically show a yellow **"possible duplicate"** warning if that number already exists in the system. This is a non-blocking warning — you can still save the lead. It's there to stop the same client being entered twice by accident.
 
 ---
 
@@ -183,7 +198,8 @@ The **Action Board** (Activities) shows your **⭐ Today's Top 5 Actions** plus 
 - ❌ **Don't** let your **Action List** pile up. Clear it daily.
 - ❌ **Don't** forget to **punch in** ("I am here") each morning.
 - ❌ **Don't** share your login with anyone.
-- ❌ **Don't** worry about other people's leads — you'll only ever see **your own**. Focus on yours.
+- ❌ **Don't** worry about other people's leads — you'll only ever see **your own**. Focus on yours. The Sales Floor feed and Leaderboard show team activity — that's intentional and fine.
+- ❌ **Don't** look for a "Copy Snapshot" or "Export CSV" button on a lead — those were removed. If you need a lead printout, ask Lalit.
 - ❌ **Don't** panic if something looks confusing. Ask Lalit. There's no "delete everything" button you can press by accident — your data is safe.
 
 ---
@@ -202,8 +218,9 @@ Print this or screenshot it. Do it in order, every working day.
 
 **☀️ Start of day**
 - [ ] Open the CRM app on my phone
-- [ ] Tap **"I am here"** to punch in
-- [ ] Read **Today's mission**
+- [ ] Tap **"I am here"** at the top of the Dashboard to punch in
+- [ ] Read **"Today's mission"** card — act on it first
+- [ ] Glance at the **☕ Daily note** (pilot) if it's there
 - [ ] Open my **Action List**
 
 **📞 During the day**

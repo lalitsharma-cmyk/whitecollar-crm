@@ -1,7 +1,7 @@
 # White Collar Realty CRM — Role & Permission Matrix
 
 **Spec reference:** Master spec Section 9 (Role-based access).
-**Source audited:** working tree at commit `4dd8ba1` ("Round 11").
+**Source audited:** working tree at commit `4f7308e` (HEAD, 2026-06-03, post-B-01…B-20 wave).
 **Method:** read-only audit of the committed source. The live app
 (`crm.whitecollarrealty.com`) is login-gated and could **not** be clicked
 through — every claim below is taken from **reading the actual route guard** at
@@ -13,15 +13,15 @@ confirmed by clicking are marked **(inferred from code)**. No source was edited.
 Screenshots requested by the spec are marked **(screenshot to be captured
 during live UAT)**.
 
-> **⏱ Round-12 status update (deployed `40878ae`, 2026-06-03):** since this matrix
-> was audited at `4dd8ba1`, the remaining agent↔agent disclosure gaps have been
-> closed and deployed — **B-02** `/calls` recent-calls list + QualityList now scope
-> to `userId: me.id` for agents (`1f30647`); **B-03** dashboard agent KPI tiles now
-> use a personal `meScope` (`1f30647`); **B-13** the inert owner dropdown in
-> `LeadFilters` is hidden from agents (`1f30647`). New surface added this round: the
-> dedup probe `GET /api/leads/check-duplicate` AND-s in `leadScopeWhere(me)`, so it
-> never returns a lead the caller can't already see (`40878ae`). See
-> `docs/CRM_BUG_REPORT.md` for full per-item status.
+> **Build status (HEAD `4f7308e`, 2026-06-03):** all B-01…B-20 permission and
+> scoping bugs are resolved. The full wave closed: **B-02** `/calls` recent-calls
+> + QualityList scoped to `userId: me.id` for agents; **B-03** dashboard agent KPI
+> tiles use `meScope`/`meActWhere`/`meCallWhere`; **B-04** WhatsApp tile scoped via
+> lead relation; **B-13** owner dropdown hidden from agents; **B-01** dedup probe
+> `GET /api/leads/check-duplicate` ANDs in `leadScopeWhere(me)`; **B-12** nav links
+> gated; **B-17** BANT pill shipped. The only two items not fully resolved: B-15
+> (N+1 performance, groundwork done) and the structural half of B-17 (BANT
+> stage-gating, pending Lalit co-design). See `docs/CRM_BUG_REPORT.md`.
 
 ---
 
@@ -71,8 +71,8 @@ AGENT locked to own team (`:41-47`).
 | Export | — | — | — | no export on this page |
 | Assign | — | — | — | — |
 | Reassign | — | — | — | — |
-| View reports | Y (all teams) | Y (own team, toggle) | Team | KPI tiles use `teamScope` (`:49,64-90`) |
-| **View all-team data** | Y | Team + reports | **Team (GAP)** | "BY SALESPERSON" per-agent table is gated `isAdminOrMgr &&` (`:205` query, `:699-701` render) — agents do **not** see it. **But KPI count tiles are still team-wide for agents — see §3.** |
+| View reports | Y (all teams) | Y (own team, toggle) | Own (fixed) | KPI tiles now use `meScope`/`meActWhere`/`meCallWhere` (`:64`) — agents see only their own numbers; ADMIN/MANAGER keep team view. (B-03 resolved) |
+| **View all-team data** | Y | Team + reports | **N (fixed)** | "BY SALESPERSON" per-agent table is gated `isAdminOrMgr &&` (`:205` query, `:699-701` render). KPI tiles now scoped to `ownerId: me.id` for agents (B-03). No team-wide data visible to agents on this page. |
 | View settings | Y | partial | — | "Set targets" / morning-queue links are `me.role === "ADMIN"` only (`:592`) |
 
 ### 1.2 Action List — `src/app/(app)/action-list/page.tsx`
@@ -106,12 +106,10 @@ Guard: `requireUser()` (`:34`) + `leadScopeWhere(me)` (`:42`).
 | **View all-team data** | Y | Own + reports | **N (fixed)** | `?owner=` is **ignored for agents** (`:72-75`); `?source=` ignored for agents (`:65`). Owner/Source dropdowns hidden via `showSource={me.role !== "AGENT"}` (`:453,459`). |
 | View settings | — | — | — | — |
 
-> **Residual cosmetic note (not a data leak):** `LeadFilters` always renders the
-> *owner* `<select>` (`src/components/LeadFilters.tsx:73-77`); only the *source*
-> dropdown is conditional (`showSource`). An agent therefore still sees peer
-> **names** in that dropdown, but selecting one has no effect — the server
-> discards `?owner=` for agents (`leads/page.tsx:72-75`). Worth hiding the owner
-> dropdown for agents for polish; **not** a privacy breach. (inferred from code)
+> **Owner dropdown fixed (B-13 resolved):** the owner `<select>` in `LeadFilters`
+> is now hidden from agents behind the same `showSource` (leadership-only) flag.
+> Agents no longer see peer names in the dropdown. Server-side discard of
+> `?owner=` for agents remains in place as a belt-and-braces guard.
 
 ### 1.4 Lead Detail — `src/app/(app)/leads/[id]/page.tsx`
 Guard: `requireUser()` (`:70`) **and** `if (!(await canTouchLead(me, lead))) redirect("/leads")` (`:113`).
@@ -186,15 +184,15 @@ Guard: `requireUser()` (`:96`); scope `me.role === "AGENT" ? { ownerId: me.id } 
 | View settings | — | — | — | — |
 
 ### 1.9 Call Records — `src/app/(app)/calls/page.tsx`
-Guard: `requireUser()` (`:25`); `isAgent` flag (`:26`) scopes to `userId/ownerId: me.id`.
+Guard: `requireUser()` (`:25`); `isAgent` flag (`:26`) scopes to `userId: me.id`.
 
 | Cap | ADMIN | MANAGER | AGENT | Guard / note |
 |-----|:--:|:--:|:--:|---|
-| View | Y | Team | Own | agent sees only own call logs (`:26`) |
+| View | Y | Team | Own | agent sees only own call logs (`:26`); recent-calls list AND QualityList both scoped — `where: isAgent ? { userId: me.id } : {}` (B-02 resolved) |
 | Create (log call) | Y | Y | Own | `/api/leads/[id]/log-call` scoped via `loadOwnedLead` |
 | Edit / Delete | — | — | — | call logs are append-only (inferred from code) |
 | Export | — | — | — | — |
-| View all-team data | Y | Team | N | `:26` |
+| View all-team data | Y | Team | **N (fixed)** | B-02 closed the unscoped recent-calls list that previously leaked the latest 50 company-wide calls to agents |
 | View settings | — | — | — | — |
 
 ### 1.10 Reports — `src/app/(app)/reports/*`
@@ -346,8 +344,8 @@ master spec (§12.2 Sales Floor Live Feed; gamified leaderboards).
 ## 2. "Agents must NOT be able to access" — verification section
 
 This is the privacy contract the app promises on its own screens
-("Agent → Own only"). Each row states the **current** status at commit
-`4dd8ba1`, with the guard that enforces it.
+("Agent → Own only"). Each row states the **current** status at HEAD
+`4f7308e`, with the guard that enforces it.
 
 | # | An AGENT must NOT see/do… | Current status | Enforced by | Evidence |
 |---|---------------------------|----------------|-------------|----------|
@@ -358,7 +356,7 @@ This is the privacy contract the app promises on its own screens
 | V5 | **Confidential reports** (commission, sources, team comparison, YTD) | ✅ **CORRECT** | each `requireRole("ADMIN","MANAGER")` → agent redirected to `/dashboard` | `reports/commission/page.tsx:125`; `reports/sources/page.tsx:102`; `reports/team-comparison/page.tsx:348`; `reports/ytd/page.tsx:204` |
 | V6 | **Audit logs** | ✅ **CORRECT** | `requireRole("ADMIN")` | `admin/audit/page.tsx:25` |
 | V7 | **Peers' pipeline** (other agents' Kanban / lead cards) | ✅ **CORRECT (fixed Round 11)** | `/pipeline` now scoped; `/team` now ADMIN/MANAGER; properties matching scoped | `pipeline/page.tsx:37`; `team/page.tsx:26`; `properties/[id]/page.tsx:34-36` |
-| V8 | **Peers' stats** (call counts, pipeline value, response times, per-agent KPIs) | ⚠️ **MOSTLY CORRECT — ONE OPEN GAP** | `/team` gated (ADMIN/MANAGER); dashboard "BY SALESPERSON" gated `isAdminOrMgr`. **BUT** the dashboard **KPI count tiles still use team-wide scope for agents**, not `ownerId: me.id`. | Fixed parts: `team/page.tsx:26`; `dashboard/page.tsx:205,699-701`. **Open:** `dashboard/page.tsx:49,64-90` (`teamScope`, never `me.id`). See §3. |
+| V8 | **Peers' stats** (call counts, pipeline value, response times, per-agent KPIs) | ✅ **CORRECT (fixed B-03)** | `/team` gated (ADMIN/MANAGER); dashboard "BY SALESPERSON" gated `isAdminOrMgr`; dashboard KPI tiles now use `meScope`/`meActWhere`/`meCallWhere` so agents see only their own numbers. | `team/page.tsx:26`; `dashboard/page.tsx:64` (`meScope = isAdminOrMgr ? teamScope : { ownerId: me.id }`). B-03 resolved `1f30647`. |
 | V9 | **Other agents' Vault entries** | ✅ **CORRECT** | `/admin/vault` is `requireRole("ADMIN")`; agent-facing copy corrected to disclose admin review | `admin/vault/page.tsx:60`; `VaultClient.tsx:5,265` |
 | V10 | **Reassign / hand off leads** | ✅ **CORRECT** | `/api/leads/[id]/assign` + bulk reassign are `requireRole("ADMIN","MANAGER")` | `assign/route.ts:7`; `bulk/route.ts:39-40` |
 | V11 | **Source of a lead** (where it came from) | ✅ **CORRECT** | `?source=` ignored for agents; source dropdown hidden | `leads/page.tsx:65,453,459`; matches QA Bucket G "hide source from agents" |
@@ -374,14 +372,14 @@ These are intentional and should remain visible to agents.
 
 ---
 
-## 3. The one remaining gap (tracked "Round 12")
+## 3. Known open items (post B-01…B-20 wave)
 
-**Dashboard agent KPI tiles use team-wide scope, not the agent's own.**
+All permission and scoping bugs from the B-01…B-20 wave are resolved. The two items that remain are product/design co-work, not permission leaks:
 
-- **Where:** `src/app/(app)/dashboard/page.tsx:49` (`teamScope = view === "all" ? {} : { forwardedTeam: view }`) feeding the KPI counts at `:64-90` (Total clients, Not contacted, New today, Hot, Calls/Connected today, Ready to close, Needs-you, etc.).
-- **Effect:** an AGENT's headline tiles reflect their **whole team's** numbers, not their own book. The per-agent "BY SALESPERSON" breakdown is already correctly hidden from agents (`:205,699-701`), and `/team`, `/pipeline`, `/leads` are all fixed — so this is the **last** cross-visibility item. It exposes aggregate team totals (counts only, no per-peer attribution), which is lower-severity than the Round-11 leaks but still contradicts "Agent → own only".
-- **Suggested fix (for Round 12, not applied here):** when `!isAdminOrMgr`, build the agent scope as `{ ownerId: me.id }` (reuse `leadScopeWhere(me)`) instead of `teamScope`, mirroring the pattern already used on `/action-list:86` and `/activities:97`. Managers/admins keep the team toggle.
-- **Status:** **OPEN.** Everything else in §2 is **CORRECT** as of `4dd8ba1`.
+- **B-15 (performance):** list-query N+1 groundwork shipped (`078b353`); low urgency at ~45 leads in prod. No privacy impact.
+- **B-17 structural (BANT stage-gating):** the at-a-glance "N/4 captured" completeness pill shipped on lead detail (`5aff9a3`), but gating stage-advancement on BANT completeness has not been enforced — deliberately deferred for Lalit's co-design. No permission impact; agents can still move stages without full BANT.
+
+Everything in §2 is **CORRECT** as of HEAD `4f7308e`.
 
 ---
 
@@ -390,7 +388,7 @@ These are intentional and should remain visible to agents.
 The following live-login captures are required by the spec but cannot be
 produced from source:
 
-- Dashboard as AGENT vs ADMIN — confirm no "BY SALESPERSON" for agent **(screenshot to be captured during live UAT)**
+- Dashboard as AGENT vs ADMIN — confirm no "BY SALESPERSON" for agent; confirm KPI tiles show own numbers only, not team totals **(screenshot to be captured during live UAT)**
 - `/pipeline` as AGENT — only own cards **(screenshot to be captured during live UAT)**
 - `/team` as AGENT — redirect to `/dashboard` **(screenshot to be captured during live UAT)**
 - `/leads?owner=<peerId>` as AGENT — own leads only, peer filter ignored **(screenshot to be captured during live UAT)**

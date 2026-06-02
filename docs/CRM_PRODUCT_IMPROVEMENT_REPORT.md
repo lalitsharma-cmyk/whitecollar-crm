@@ -4,9 +4,9 @@
 **Author lens:** real-estate CRM product manager, writing for Lalit (owner/admin,
 non-technical) ahead of letting four agents (Dubai: Mehak, Dinesh; India: Yasir,
 Tanuj) onto the live app at `crm.whitecollarrealty.com`.
-**Source audited:** working tree at commit `4dd8ba1` ("Round 11"), read-only.
-**Grounding docs:** `docs/QA-AUDIT-FINDINGS.md` (engineering risks) and
-`docs/QA-FEEDBACK-2026-06-02.md` (Lalit's walk-through, "Bucket A–I").
+**Source audited:** working tree at commit `4f7308e` ("Round 12 + B-fix wave"), read-only.
+**Grounding docs:** `docs/CRM_BUG_REPORT.md` and `docs/CRM_FULL_QA_REPORT.md`
+(source of truth for per-item status after the B-01…B-20 fix wave).
 
 Where the spec expects before/after screenshots, items are marked
 **(screenshot to be captured during live UAT)**.
@@ -23,21 +23,25 @@ Where the spec expects before/after screenshots, items are marked
 
 ## 1. Immediate fixes before team rollout
 
-Ordered by blocker severity. Items marked ✅ are **already done in `4dd8ba1`**
-and listed only so they're not re-opened.
+Ordered by blocker severity. Items marked ✅ are **already done** and listed only
+so they're not re-opened. The peer-data-leak blockers that were holding up rollout
+are now **all closed** (Rounds 11–12 + B-fix wave, up to commit `4f7308e`).
 
-| # | Fix | Status | Why it blocks rollout | Source / ref |
-|---|-----|--------|-----------------------|--------------|
-| 1 | **De-duplicate the same lead across India + Dubai.** Lalit's **#1 blocker** (QA Bucket A): the identical investor appears in *both* team sections, and repeated phone/email show as separate leads. | ⚠️ **PARTIAL — must close** | A lead worked by two teams = double-dialling the same investor, internal conflict, and wrong pipeline counts. | Intake-time dedupe by phone+email fingerprint **exists** (`src/lib/leadIngest.ts:36-37,58-121` — bumps `duplicateCount`, keeps one record). **Gap:** it does not collapse *already-split* historical records, and a lead `forwardedTeam`-routed to both teams isn't merged. `/admin/duplicates` + `/api/admin/leads/merge` exist for manual cleanup but there's no automatic "one investor → one owner" guarantee on the existing 45 leads. **Action:** run a one-time merge pass on current data, and add a cross-team guard so a fingerprint can only live on one team. |
-| 2 | **Last cross-visibility gap: dashboard KPI tiles are team-wide for agents.** | ⚠️ **OPEN (Round 12)** | Agents' headline numbers (Total clients, Hot, Ready to close) show the *whole team's* totals, contradicting "Agent → own only". Lower severity than the now-fixed leaks (counts only, no per-peer names) but still erodes the privacy promise on day one. | `src/app/(app)/dashboard/page.tsx:49,64-90` use `teamScope`, never `ownerId: me.id`. Fix: scope agent tiles to `leadScopeWhere(me)` like `/action-list:86`. See `CRM_ROLE_PERMISSION_MATRIX.md §3`. |
-| 3 | **Correct the two mislabeled dashboard tiles.** "📞 Calls (mo)" actually shows *today's* count. | ⚠️ **Open, trivial** | Wrong labels erode trust fastest with new users (QA Bucket C). | `dashboard/page.tsx:632,640` render `value={callsToday}` under a "(mo)" title. Also `waToday` ignores the team filter (`:70`). |
-| 4 | Agent↔agent permission leaks (pipeline, team, leads `?owner=`, dashboard by-salesperson, properties matching). | ✅ **DONE (Round 11)** | — | `pipeline/page.tsx:37`; `team/page.tsx:26`; `leads/page.tsx:72-75`; `dashboard/page.tsx:699-701`; `properties/[id]/page.tsx:34-36`. |
+| # | Fix | Status | Why it matters | Source / ref |
+|---|-----|--------|----------------|--------------|
+| 1 | **De-duplicate the same lead across India + Dubai.** Lalit's **#1 trust blocker** (QA Bucket A). | ⚠️ **PARTIAL — detection + admin merge live; on-intake guard + backfill pending** | Role-scoped "possible duplicate" warning on create **and** a working ADMIN Duplicate Detector + merge. Still to co-design: auto-merge/block on create/import + one-time historical-phone backfill. | `check-duplicate/route.ts` — role-scoped warning on `/leads/new`; **`/admin/duplicates` + `POST /api/admin/leads/merge`** merge a phone/email group into a chosen master (re-points all child records, audits each merge, then deletes the duplicate). **Intake auto-merge/block + historical backfill deferred to Lalit.** |
+| 2 | **Agent↔agent permission leaks** (pipeline, team, leads `?owner=`, dashboard KPI tiles, dashboard by-salesperson, `/calls` list, properties matching, owner dropdown, WhatsApp tile, `Calls (mo)` label). | ✅ **ALL CLOSED** (Rounds 11–12, commits `4dd8ba1`, `1f30647`) | These were the rollout blockers. Agents now see only their own data on every surface. | `pipeline/page.tsx`; `team/page.tsx:26`; `leads/page.tsx:72-75`; `dashboard/page.tsx` (`meScope`/`meWaWhere`); `calls/page.tsx` (scoped `where`); `properties/[id]/page.tsx:34-36`; `LeadFilters.tsx` (owner dropdown hidden for agents). |
+| 3 | **Enable AI in production.** `/ai` assistant + AI lead scoring are dormant because `ANTHROPIC_API_KEY` is not set in Vercel. Rule-based fallback runs instead. | ⚠️ **Pending — add key** | This is the single biggest "what's next" unlock for the team. Everything else is live; AI is the only gated capability. | `src/lib/ai.ts:30` — provider detection; add `ANTHROPIC_API_KEY` in Vercel → AI activates instantly, no code change needed. |
+| 4 | **BANT stage-gating** — gate stage advancement on BANT completeness (Bucket B). | ⚠️ **Needs Lalit's co-design** | Non-blocking follow-up. The at-a-glance N/4 completeness pill is live; the hard gate needs the team to agree on rules first. | `leads/[id]/page.tsx` — `LeadScoreBreakdown` + BANT card with N/4 pill (`5aff9a3`). Stage-gating deliberately not enforced yet. |
 | 5 | Vault privacy copy corrected (no more false "only you can see this"). | ✅ **DONE** | — | `VaultClient.tsx:5,265`; `admin/vault/page.tsx:60`. |
-| 6 | Meeting scheduling capped at ≤7 days ahead. | ✅ **DONE** | QA Bucket F asked for this guardrail. | `src/app/api/leads/[id]/meeting/route.ts:37-40` returns a clear error past 7 days. |
+| 6 | Meeting scheduling capped at ≤7 days ahead. | ✅ **DONE** | QA Bucket F guardrail. | `src/app/api/leads/[id]/meeting/route.ts:37-40`. |
 
-**Recommendation:** ship after closing items 1, 2, 3. Everything else can follow
-in a fast second pass. Capture before/after of the dashboard and a de-duped lead
-**(screenshot to be captured during live UAT)**.
+**Recommendation:** rollout is now reasonable. The peer-data-leak blockers are
+closed. The three genuine follow-ups are: (a) Lalit co-designing the on-intake dedup
+auto-merge/block + historical-phone backfill (the ADMIN Duplicate Detector +
+merge already exists) and BANT stage-gating, and (b) adding `ANTHROPIC_API_KEY` to
+Vercel to unlock AI. Neither blocks day-one use. Capture before/after of the
+dashboard and a de-duped lead **(screenshot to be captured during live UAT)**.
 
 ---
 
@@ -53,13 +57,16 @@ sections). New users can't tell signal from noise.
    renders the hero strip + KPI grid + forecast + by-salesperson + activity feed
    in one scroll (`dashboard/page.tsx`).
 2. **Keep lead-detail lean — but credit what's done.** Bucket B's structural
-   asks are **already implemented** in `4dd8ba1`: BANT green/red signals replace
-   the old "why" free-text (`BuyingSignalsCard`, `leads/[id]/page.tsx:30,213-220`),
-   Profession+Company merged into one cell (`:301-322`), Timeline present
-   (`:378-380`), sticky note (`:102`), interested-units section (`:82`). **Remaining
-   UX work:** collapse the long right rail into tabs/accordions on mobile (the
-   sticky tab bar at `:405` is a good start), and make sure the *primary three*
-   (next action, call/WhatsApp buttons, status) sit above the fold.
+   asks are **already implemented**: BANT green/red signals replace the old
+   "why" free-text (`BuyingSignalsCard`), an at-a-glance **N/4 captured**
+   completeness pill shows qualification status instantly, "Why this score"
+   (`LeadScoreBreakdown`) surfaces the top contributing signals, Smart CMA v1
+   (`SmartCMACard`) is on the page, "Who is client" is now an
+   Investor/End-user/Both dropdown, Copy Snapshot + CSV removed, investor
+   banner on new-lead (`InvestorBanner`). **Remaining UX work:** collapse the
+   long right rail into tabs/accordions on mobile (the sticky tab bar is a good
+   start), and make sure the *primary three* (next action, call/WhatsApp
+   buttons, status) sit above the fold.
 3. **Explain every derived widget inline.** Add one-line hover/empty-state copy
    for "Top-5 action list" logic, "Star of the month" criteria, "Stalled deals",
    "Sales floor live", "Cooling leads". New users distrust labels they can't
@@ -106,12 +113,12 @@ drawer is open (`:114`), PWA install nudge (`:352`).
 
 | Stage | Built? | Gap to close |
 |-------|--------|--------------|
-| **Intake & dedup** | Partial | Intake + round-robin + auto-dedupe exist (`leadIngest.ts`). **Same investor in both teams** + buyer-list verification (verify phone/email/name before a lead becomes a "buyer", QA Bucket A) still open. **This is the #1 workflow gap.** |
-| **Hot-lead qualification** | Yes | AI score + green/red buying signals now shown (`BuyingSignalsCard`). Remaining: surface a plain-English "why this is hot" line (the signals exist; add a one-sentence rollup). Cold→warm/hot is still partly keyword-driven, not fully AI (QA Bucket E). |
+| **Intake & dedup** | Partial | Intake + round-robin + auto-dedupe exist (`leadIngest.ts`); a role-scoped "possible duplicate" warning fires on create and the ADMIN **Duplicate Detector + merge** (`/admin/duplicates`) cleans up existing dupes. Still open: an **auto-merge/block guard on create/import** (so the **same investor in both teams** can't slip in) + buyer-list verification (QA Bucket A). **This is the #1 workflow gap.** |
+| **Hot-lead qualification** | Yes | AI score + green/red buying signals shown (`BuyingSignalsCard`) + "Why this score" top signals (`LeadScoreBreakdown`) now on lead detail. Cold→warm/hot scoring is rule-based in prod (AI dormant until `ANTHROPIC_API_KEY` added). |
 | **Cold revival** | Partial | `/cold-calls` ("Revival Engine") + cooling report are agent-scoped. A per-lead "revive" action/engine on the lead itself is still thin (QA Bucket E: "revival engine — add to leads"). |
 | **Manager escalation / reject** | Yes | `needsManagerReview`, `/admin/awaiting-team`, reject-with-reason, and **agent-side hide of LOST leads** are done (`leads/page.tsx:51-53`; `/admin/rejected-leads`). Solid. |
 | **Site visit / meeting** | Yes | `SITE_VISIT` stage, `/admin/site-visits`, travel report, and the **≤7-day meeting guardrail** (`meeting/route.ts:37-40`) are in. Add a simple visit-prep checklist (units to show, docs). |
-| **EOI → booking** | Partial | EOI stage/KYC/approval funnel exists (dashboard EOI tiles + `leads/page.tsx:87-90`). Bucket G asks to *define* EOI and Smart CMA for users — these are unlabeled jargon today. Add definitions before exposing. |
+| **EOI → booking** | Partial | EOI stage/KYC/approval funnel exists (dashboard EOI tiles + `leads/page.tsx:87-90`). Smart CMA v1 (`SmartCMACard`) ships on lead detail. Bucket G asks to *define* EOI and CMA for users in plain English — add tooltips before exposing to new agents. |
 | **Commission / payout** | Yes (admin) | Commission report is ADMIN/MANAGER (`reports/commission`). Fine. |
 
 ---
@@ -120,9 +127,7 @@ drawer is open (`:114`), PWA install nudge (`:352`).
 
 1. **Dashboard as a 15-card command center.** Powerful for Lalit, overwhelming
    for agents. Split by role (see §8–10).
-2. **AI score without a human-readable reason.** The green/red signals exist now,
-   but the underlying score is still a black box label; pair the score with the
-   2–3 signals that drove it so agents trust it (extends Bucket E).
+2. **AI score explainability — now shipped.** "Why this score" (`LeadScoreBreakdown`) surfaces the top contributing signals on lead detail. In prod the breakdown is rule-based (AI dormant until the API key is added); the display is the same either way.
 3. **EOI / Smart CMA / "Buying signal" jargon.** These ship as labels with no
    in-app definition (QA Buckets E & G). Either add a tooltip definition or hide
    until trained.
@@ -146,13 +151,19 @@ admin/manager. None require deletion — most are nav/section toggles.
    nervous first-timers; keep it (it's peer-visible by design,
    `leaderboards/page.tsx:89`) but don't make it the landing surface.
 3. **Smart CMA / EOI advanced flows** until defined and trained (Bucket G).
-4. **AI Assistant chat** (`/ai`) — keep, but don't front-load it; the automations
-   "ON" chips there are currently hardcoded/cosmetic (QA P2-4) and can mislead
-   during setup.
+   Smart CMA v1 is live on lead detail; add an in-app definition tooltip before
+   first-time agents encounter it.
+4. **AI Assistant chat** (`/ai`) — keep, but don't front-load it; AI is dormant
+   in prod until `ANTHROPIC_API_KEY` is added. Automations toggles now show
+   real state (round-robin ON/OFF, auto-dedupe "Always on" — B-16 fixed).
 5. **Source field everywhere for agents** — already enforced server-side
-   (`leads/page.tsx:65`); also hide the residual owner dropdown in
-   `LeadFilters` for agents for polish (`components/LeadFilters.tsx:73-77`).
-6. **Templates / Workflows / Audit / Integrations** — already admin-gated; just
+   (`leads/page.tsx:65`); owner dropdown in `LeadFilters` already hidden for
+   agents (`components/LeadFilters.tsx` — B-13 fixed).
+6. **Daily motivation pilot** (`☕ Daily motivation (pilot)`) — **now ON for
+   both teams** (`motivationPilot.team=ALL`, `bfe636e`). Deterministic daily
+   quote + optional browser voice; no AI call. Lalit can toggle it off at any
+   time from **Settings → "☕ Daily motivation (pilot)"** if tone disappoints.
+7. **Templates / Workflows / Audit / Integrations** — already admin-gated; just
    confirm agents never see the nav entries (they don't —
    `MobileShell.tsx:53-67` `adminOnly`).
 
@@ -160,23 +171,27 @@ admin/manager. None require deletion — most are nav/section toggles.
 
 ## 7. Features to add later (post-rollout backlog)
 
-1. **Automatic cross-team duplicate prevention** + a periodic dedupe sweep
-   (hardening of Bucket A beyond the one-time merge).
-2. **Per-lead revival engine** with suggested re-engagement timing/templates
+1. **On-intake dedup auto-merge/block + historical-phone backfill** — the ADMIN
+   Duplicate Detector + merge (`/admin/duplicates`) is already live; co-design
+   with Lalit to decide the create/import rules, wire the auto-merge/block
+   prompt, and run the one-time historical backfill (hardening of B-01).
+2. **BANT stage-gating** — once Lalit and the team agree on which fields must
+   be filled before a lead can advance, wire the gate (`leads/[id]` stage
+   selector) to the N/4 completeness pill already on screen (B-17 structural
+   half).
+3. **Add `ANTHROPIC_API_KEY` to Vercel** — unlocks the full AI assistant and
+   AI-driven scoring in one step; no code change required.
+4. **Per-lead revival engine** with suggested re-engagement timing/templates
    (Bucket E).
-3. **AI-driven cold→warm→hot transitions** replacing keyword rules (Bucket E).
-4. **Calendar filters + back button on all reports**, remove print, CSV without
-   the agents column (Bucket D — partly addressed: back button is global in the
-   shell; date pickers and CSV column trimming still pending).
-5. **Best-time-to-call in correct IST 12-hour format** (Bucket D flagged AM/PM /
-   timezone wrong).
-6. **Motivation-from-history & voice capture** (Bucket H) — Vault voice input
-   exists (`VaultVoiceInput`); extend to motivational recall of past wins.
-7. **Visit-prep checklist** and **interested-properties → auto-CMA** linkage.
-8. **Offline write queue** for mobile logging (§3.5).
-9. **Loading skeletons / error boundaries** on heavy pages (`/pipeline`,
-   `/reports/*`, `/team`) — only 3 `loading.tsx` and 1 `error.tsx` today
-   (QA P2-5). Polish, not a blocker.
+5. **AI-driven cold→warm→hot transitions** replacing keyword rules (Bucket E) —
+   activate after real data accumulates and the API key is in.
+6. **Calendar filters on all reports**, CSV column trimming (Bucket D — back
+   button is global in the shell; date pickers already on most reports).
+7. **Voice/motivation expansion** (Bucket H) — pilot is on for both teams;
+   extend to motivational recall of past wins once tone is validated in use.
+8. **Visit-prep checklist** and **interested-properties → auto-CMA** linkage
+   (builds on Smart CMA v1 already live).
+9. **Offline write queue** for mobile logging (§3.5).
 
 ---
 
@@ -262,15 +277,21 @@ onboarding*, not building.
 
 ## Plain-English summary for Lalit
 
-The CRM is close. The day-to-day path your agents use most works well and, after
-Round 11, the privacy between agents is almost completely fixed — pipeline, the
-team page, lead filters, and property matching all now show an agent only their
-own work. **Three things stand between you and rollout:** (1) finish the
-de-duplication you flagged — make sure one investor is one record on one team,
-including the leads already in the system; (2) close the last small leak where an
-agent's dashboard headline numbers still show the *whole team's* totals; and
-(3) fix two mislabeled dashboard tiles. After that, **the biggest favour you can
-do your first-time agents is to give them less, not more**: a clean four-tile "my
-day", their leads, one-tap call/WhatsApp, and a short action list — with the
-heavier forecasting, funnels, and leaderboards saved for you and your managers
-until the team finds its feet.
+The CRM is ready for rollout. After the Round 11/12 fixes and the B-01…B-20 fix
+wave, every agent↔agent data leak is closed — pipeline, calls, dashboard numbers,
+lead filters, properties, and the owner dropdown all now show an agent only their
+own work. **You can put the team on it now**, with three follow-up items to keep
+in mind: (1) the de-duplication you flagged has a working "possible duplicate"
+warning on new leads **and** an admin "Duplicate Detector" you can use to merge
+any that slip through, but the automatic merge-on-import and the one-time
+historical clean-up still need you to sign off on the rules — treat that as
+week-one admin work; (2) AI features
+(scoring, the chat assistant) are sitting dormant until the Anthropic API key is
+added to Vercel — add it when you're ready and they switch on instantly; and
+(3) the BANT stage-gating (making sure an agent fills in the qualification fields
+before moving a lead forward) still needs us to agree on exactly which fields to
+require — the at-a-glance pill is there, the hard gate is not. Neither of these
+blocks day-one use. **The biggest favour you can do your first-time agents is to
+give them less, not more**: a clean four-tile "my day", their leads, one-tap
+call/WhatsApp, and a short action list — with the heavier forecasting, funnels,
+and leaderboards saved for you and your managers until the team finds its feet.

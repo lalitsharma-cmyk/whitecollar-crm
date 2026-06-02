@@ -20,12 +20,13 @@
 ## Slide 2 — Team lead visibility
 
 - **Leads** page shows your whole team, not just yours — filter by owner, status, team, AI score, or source.
+- Each lead detail now shows: **Investor / End-user / Both** dropdown, a BANT card with **"N/4 captured" pill**, and a "why this score" explanation next to the AI score — so you can coach the quality of qualification, not just the quantity of calls.
 - One-tap **smart filters**: Hot today, Ghosting, Site-visit potential, High budget, "Not picked 3+/7+ days".
 - Follow-up windows built in: Today, Tomorrow, This week, This month, Overdue — each with a live count.
 - **Team & Roles** page: each agent's active leads, workload, 90-day pipeline value, and average response time.
 - Spot the over-loaded agent and the idle one at a glance via colour-coded workload.
 
-> Speaker note: The workload + response-time columns are your early-warning system for who needs help today.
+> Speaker note: The workload + response-time columns are your early-warning system for who needs help today. The BANT "N/4 captured" pill is your coaching signal — if an agent's leads all show 1/4 or 2/4, that's the conversation to have.
 
 ---
 
@@ -68,24 +69,26 @@
 ## Slide 6 — Reports for manager
 
 - **Reports hub** opens with the three questions that matter: revenue coming, biggest funnel leak, stalled-deal money.
+- All reports share a **date-range picker** — set the window once and every chart updates. Back buttons mean you never lose your place.
 - **Daily Report**: target vs achieved vs pending, per agent, per day.
 - **Team comparison** (Dubai vs India), **SLA & Meetings**, **Cooling leads**, and **Lead Sources** are all one tap away.
-- **Best-time-to-call heatmap** (IST, last 30 days) tells the team when pickups actually happen.
+- **Best-time-to-call heatmap** (IST, last 30 days) tells the team when pickups actually happen — use it to plan the day's calling window.
 - Use these in weekly reviews — numbers, not opinions, drive the conversation.
 
-> Speaker note: Cooling leads and the funnel-leak card are gold for coaching — they show exactly where deals slip.
+> Speaker note: Cooling leads and the funnel-leak card are gold for coaching — they show exactly where deals slip. The shared date picker lets you pull a clean weekly or monthly window in seconds.
 
 ---
 
 ## Slide 7 — Coaching agents
 
-- Use **Agent productivity** charts + the heatmap to coach *behaviour*, not just scold outcomes.
-- Praise specific habits: detailed remarks, follow-up streaks, fast first-call response.
-- Spot patterns — an agent losing leads at "Qualified → Site Visit" needs a different fix than one who's just not dialling.
+- Use the **call records heatmap** + the **best-time-to-call chart** to coach *behaviour*, not just scold outcomes.
+- Praise specific habits: detailed BANT remarks, follow-up streaks, fast first-call response.
+- Spot patterns — an agent whose leads all show 1/4 BANT captured needs a different fix than one who just isn't dialling enough.
+- **Call recordings with auto-transcription** mean you can review any call with the agent — not from memory, from the actual recording.
 - The **Leaderboards** and gamified missions/XP make good habits visible and a bit competitive.
 - Review each agent's **Action List** with them — it's the same view they see, filtered to their leads.
 
-> Speaker note: The message: the CRM gives you evidence, so coaching becomes "here's what I see, let's fix this one thing."
+> Speaker note: The message: the CRM gives you evidence, so coaching becomes "here's what I see, let's fix this one thing." Note: the "Agent productivity" chart (call counts vs all-time leads) was removed because the numbers weren't comparable — use the Daily Report per-agent rows instead.
 
 ---
 
