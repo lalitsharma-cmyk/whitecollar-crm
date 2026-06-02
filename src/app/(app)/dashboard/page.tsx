@@ -51,6 +51,27 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   const teamActWhere: Prisma.ActivityWhereInput = view === "all" ? {} : { lead: { forwardedTeam: view } };
   const teamCallWhere: Prisma.CallLogWhereInput = view === "all" ? {} : { lead: { forwardedTeam: view } };
 
+  // ── Personal scope (audit B-03 / P1-4) ─────────────────────────────
+  // An AGENT's KPI hero tiles must count THEIR OWN book — otherwise "Total
+  // clients / Calls today / Ready to close / follow-ups" silently include
+  // teammates' work and overstate the agent's numbers. ADMIN/MANAGER keep the
+  // team view (their dashboard is a leadership console), so for them meScope
+  // === teamScope and the dashboard is byte-for-byte unchanged. BY DESIGN these
+  // stay team-wide for everyone: the team-distribution chart (leadsByTeam), the
+  // §12.2 Sales Floor Live Feed, and the explicitly-labelled "TEAM · THIS MONTH"
+  // funnel counts.
+  const meScope: Prisma.LeadWhereInput = isAdminOrMgr ? teamScope : { ownerId: me.id };
+  const meActWhere: Prisma.ActivityWhereInput = isAdminOrMgr ? teamActWhere : { userId: me.id };
+  const meCallWhere: Prisma.CallLogWhereInput = isAdminOrMgr ? teamCallWhere : { userId: me.id };
+  // WhatsApp touches (audit B-04): the tile previously counted company-wide and
+  // ignored the team filter entirely. Now agent → own leads' messages,
+  // leadership → selected team (all → no filter). WhatsAppMessage links to Lead
+  // via optional leadId, so we scope through the relation.
+  const meWaWhere: Prisma.WhatsAppMessageWhereInput =
+    !isAdminOrMgr ? { lead: { ownerId: me.id } } :
+    view === "all" ? {} :
+    { lead: { forwardedTeam: view } };
+
   const [
     totalClients, totalNotContacted, newToday, hotLeads,
     callsToday, connectedToday, waToday,
@@ -59,60 +80,69 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     leadsByTeam, forecastLeads,
     // Team-specific KPIs
     expoMeetingsThisMonth, homeVisitsThisMonth, virtualThisMonth, officeThisMonth, siteVisitsThisMonth,
-    coldPromotedToday,
+    coldPromotedToday, callsThisMonth,
   ] = await Promise.all([
-    prisma.lead.count({ where: teamScope }),
-    prisma.lead.count({ where: { ...teamScope, status: LeadStatus.NEW } }),
-    prisma.lead.count({ where: { ...teamScope, createdAt: { gte: todayStart } } }),
-    prisma.lead.count({ where: { ...teamScope, aiScore: AIScore.HOT } }),
-    prisma.callLog.count({ where: { ...teamCallWhere, startedAt: { gte: todayStart } } }),
-    prisma.callLog.count({ where: { ...teamCallWhere, startedAt: { gte: todayStart }, outcome: CallOutcome.CONNECTED } }),
-    prisma.whatsAppMessage.count({ where: { receivedAt: { gte: todayStart } } }),
-    prisma.activity.count({ where: { ...teamActWhere, status: ActivityStatus.PLANNED, type: "CALL", scheduledAt: { gte: todayStart, lt: new Date(todayStart.getTime() + 24 * 3600 * 1000) } } }),
-    prisma.activity.count({ where: { ...teamActWhere, status: ActivityStatus.PLANNED, scheduledAt: { lt: todayStart } } }),
-    prisma.lead.count({ where: { ...teamScope, status: { in: [LeadStatus.NEGOTIATION, LeadStatus.SITE_VISIT] } } }),
-    prisma.lead.count({ where: { ...teamScope, needsManagerReview: true, status: { notIn: [LeadStatus.WON, LeadStatus.LOST] } } }),
-    prisma.activity.findMany({ where: teamActWhere, orderBy: { createdAt: "desc" }, take: 6, include: { lead: true, user: true } }),
-    prisma.activity.findMany({ where: { ...teamActWhere, status: ActivityStatus.PLANNED, scheduledAt: { gte: new Date() } }, orderBy: { scheduledAt: "asc" }, take: 5, include: { lead: true } }),
+    // Personal KPI tiles (audit B-03): me* scopes → the agent's own book;
+    // identical to the team scopes for ADMIN/MANAGER (no change for them).
+    prisma.lead.count({ where: meScope }),
+    prisma.lead.count({ where: { ...meScope, status: LeadStatus.NEW } }),
+    prisma.lead.count({ where: { ...meScope, createdAt: { gte: todayStart } } }),
+    prisma.lead.count({ where: { ...meScope, aiScore: AIScore.HOT } }),
+    prisma.callLog.count({ where: { ...meCallWhere, startedAt: { gte: todayStart } } }),
+    prisma.callLog.count({ where: { ...meCallWhere, startedAt: { gte: todayStart }, outcome: CallOutcome.CONNECTED } }),
+    prisma.whatsAppMessage.count({ where: { ...meWaWhere, receivedAt: { gte: todayStart } } }),
+    prisma.activity.count({ where: { ...meActWhere, status: ActivityStatus.PLANNED, type: "CALL", scheduledAt: { gte: todayStart, lt: new Date(todayStart.getTime() + 24 * 3600 * 1000) } } }),
+    prisma.activity.count({ where: { ...meActWhere, status: ActivityStatus.PLANNED, scheduledAt: { lt: todayStart } } }),
+    prisma.lead.count({ where: { ...meScope, status: { in: [LeadStatus.NEGOTIATION, LeadStatus.SITE_VISIT] } } }),
+    prisma.lead.count({ where: { ...meScope, needsManagerReview: true, status: { notIn: [LeadStatus.WON, LeadStatus.LOST] } } }),
+    prisma.activity.findMany({ where: meActWhere, orderBy: { createdAt: "desc" }, take: 6, include: { lead: true, user: true } }),
+    prisma.activity.findMany({ where: { ...meActWhere, status: ActivityStatus.PLANNED, scheduledAt: { gte: new Date() } }, orderBy: { scheduledAt: "asc" }, take: 5, include: { lead: true } }),
+    // leadsByTeam — team-distribution chart; intentionally all-teams (no scope).
     prisma.lead.groupBy({ by: ["forwardedTeam"], _count: { _all: true } }),
     prisma.lead.findMany({
-      where: { ...teamScope, status: { in: [LeadStatus.NEW, LeadStatus.CONTACTED, LeadStatus.QUALIFIED, LeadStatus.SITE_VISIT, LeadStatus.NEGOTIATION] }, budgetMin: { not: null } },
+      where: { ...meScope, status: { in: [LeadStatus.NEW, LeadStatus.CONTACTED, LeadStatus.QUALIFIED, LeadStatus.SITE_VISIT, LeadStatus.NEGOTIATION] }, budgetMin: { not: null } },
       select: { status: true, budgetMin: true, budgetMax: true, budgetCurrency: true },
     }),
-    // Team-specific activity counts (this month)
-    prisma.activity.count({ where: { ...teamActWhere, type: ActivityType.EXPO_MEETING, completedAt: { gte: new Date(todayStart.getFullYear(), todayStart.getMonth(), 1) } } }),
-    prisma.activity.count({ where: { ...teamActWhere, type: ActivityType.HOME_VISIT, completedAt: { gte: new Date(todayStart.getFullYear(), todayStart.getMonth(), 1) } } }),
-    prisma.activity.count({ where: { ...teamActWhere, type: ActivityType.VIRTUAL_MEETING, completedAt: { gte: new Date(todayStart.getFullYear(), todayStart.getMonth(), 1) } } }),
-    prisma.activity.count({ where: { ...teamActWhere, type: ActivityType.OFFICE_MEETING, completedAt: { gte: new Date(todayStart.getFullYear(), todayStart.getMonth(), 1) } } }),
-    prisma.activity.count({ where: { ...teamActWhere, type: ActivityType.SITE_VISIT, completedAt: { gte: new Date(todayStart.getFullYear(), todayStart.getMonth(), 1) } } }),
+    // Team funnel counts (this month) — feed the explicitly-labelled
+    // "TEAM · THIS MONTH" section, so they stay TEAM-scoped for everyone.
+    prisma.activity.count({ where: { ...teamActWhere, type: ActivityType.EXPO_MEETING, completedAt: { gte: monthStart } } }),
+    prisma.activity.count({ where: { ...teamActWhere, type: ActivityType.HOME_VISIT, completedAt: { gte: monthStart } } }),
+    prisma.activity.count({ where: { ...teamActWhere, type: ActivityType.VIRTUAL_MEETING, completedAt: { gte: monthStart } } }),
+    prisma.activity.count({ where: { ...teamActWhere, type: ActivityType.OFFICE_MEETING, completedAt: { gte: monthStart } } }),
+    prisma.activity.count({ where: { ...teamActWhere, type: ActivityType.SITE_VISIT, completedAt: { gte: monthStart } } }),
     // Cold→Lead conversions today (team-scoped)
     prisma.activity.count({ where: { ...teamActWhere, type: ActivityType.COLD_TO_LEAD, completedAt: { gte: todayStart } } }),
+    // Calls this month — true month-to-date count for the "Calls (mo)" tile
+    // (audit B-05; the tile previously showed callsToday mislabelled "(mo)").
+    prisma.callLog.count({ where: { ...teamCallWhere, startedAt: { gte: monthStart } } }),
   ]);
 
   // ── "Today's situation" Command Center hero strip (master spec §9.1) ──
   // Action-first tiles answering: what needs attention RIGHT NOW?
   const sixHoursAgo = new Date(Date.now() - 6 * 3600 * 1000);
   const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 3600 * 1000);
+  // These "needs attention RIGHT NOW" hero counts are personal for an agent
+  // (their own urgent items) and team-wide for leadership (audit B-03).
   const [hotUntouched, overdueFollowups, closableDeals, coldRevivalOps, salesFloorFeed] = await Promise.all([
     prisma.lead.count({
       where: {
-        ...teamScope, aiScore: AIScore.HOT,
+        ...meScope, aiScore: AIScore.HOT,
         status: { notIn: [LeadStatus.WON, LeadStatus.LOST] },
         OR: [{ lastTouchedAt: { lt: sixHoursAgo } }, { lastTouchedAt: null }],
       },
     }),
     prisma.lead.count({
       where: {
-        ...teamScope, followupDate: { lt: new Date(), not: null },
+        ...meScope, followupDate: { lt: new Date(), not: null },
         status: { notIn: [LeadStatus.WON, LeadStatus.LOST] },
       },
     }),
     prisma.lead.count({
-      where: { ...teamScope, status: LeadStatus.NEGOTIATION, eoiStage: { not: null } },
+      where: { ...meScope, status: LeadStatus.NEGOTIATION, eoiStage: { not: null } },
     }),
     prisma.lead.count({
       where: {
-        ...teamScope, isColdCall: true,
+        ...meScope, isColdCall: true,
         status: { notIn: [LeadStatus.WON, LeadStatus.LOST] },
         lastTouchedAt: { lt: thirtyDaysAgo },
         OR: [{ budgetMin: { gt: 5_000_000 } }, { aiScore: AIScore.HOT }],
@@ -633,7 +663,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 lg:gap-3">
             {view === "Dubai" ? (
               <>
-                <KPI title="📞 Calls (mo)" value={callsToday} sub="today" />
+                <KPI title="📞 Calls (mo)" value={callsThisMonth} sub={monthRangeLabel} />
                 <KPI title="💻 Virtual meets" value={virtualThisMonth} sub={monthRangeLabel} />
                 <KPI title="🏢 Office meets" value={officeThisMonth} sub={monthRangeLabel} />
                 <KPI title="🎪 Expo meets" value={expoMeetingsThisMonth} sub={`${monthRangeLabel} · expos in IN`} />
@@ -641,7 +671,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
               </>
             ) : (
               <>
-                <KPI title="📞 Calls (mo)" value={callsToday} sub="today" />
+                <KPI title="📞 Calls (mo)" value={callsThisMonth} sub={monthRangeLabel} />
                 <KPI title="🚗 Site visits" value={siteVisitsThisMonth} sub={monthRangeLabel} />
                 <KPI title="🏠 Home visits" value={homeVisitsThisMonth} sub={monthRangeLabel} />
                 <KPI title="🏢 Office meets" value={officeThisMonth} sub={monthRangeLabel} />

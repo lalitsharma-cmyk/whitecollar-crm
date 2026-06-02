@@ -6,7 +6,10 @@ interface Props {
   agents: { id: string; name: string }[];
   sources: string[];
   statuses: string[];
-  /** Hide the Source filter dropdown — agents should not see where leads came from. */
+  /** Leadership-only flag (true unless the viewer is an AGENT). Hides the
+   *  Source AND Owner filters: an agent only ever sees their own leads, so both
+   *  are inert for them and the Owner dropdown would otherwise list every
+   *  teammate's name (audit B-13). */
   showSource?: boolean;
 }
 
@@ -70,11 +73,16 @@ export default function LeadFilters({ agents, sources, statuses, showSource = tr
         <option value="Dubai">Dubai</option>
         <option value="India">India</option>
       </select>
-      <select value={sp.get("owner") ?? ""} onChange={(e) => update("owner", e.target.value)} className="border border-[#e5e7eb] rounded-lg px-3 py-2 text-sm">
-        <option value="">All owners</option>
-        <option value="unassigned">⚠ Unassigned</option>
-        {agents.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
-      </select>
+      {/* Owner filter — leadership only (audit B-13). The server ignores
+          ?owner= for agents, so this was an inert control that also leaked
+          every teammate's name. Gate it on the same role-derived flag. */}
+      {showSource && (
+        <select value={sp.get("owner") ?? ""} onChange={(e) => update("owner", e.target.value)} className="border border-[#e5e7eb] rounded-lg px-3 py-2 text-sm">
+          <option value="">All owners</option>
+          <option value="unassigned">⚠ Unassigned</option>
+          {agents.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+        </select>
+      )}
       <select value={sp.get("when") ?? ""} onChange={(e) => update("when", e.target.value)} className="border border-[#e5e7eb] rounded-lg px-3 py-2 text-sm">
         <option value="">Any time</option>
         <option value="24h">Last 24 hours</option>

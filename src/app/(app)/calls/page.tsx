@@ -63,8 +63,14 @@ export default async function CallsPage() {
     byHour.get(h) ?? { hour: h, total: 0, connected: 0 }
   );
 
-  // -------- 2) Recent calls list (existing behavior) --------
+  // -------- 2) Recent calls list --------
+  // Role scoping (audit B-02): an AGENT must see ONLY their own calls. Without
+  // this where-clause the list returned the latest 50 calls COMPANY-WIDE, and
+  // tapping a row exposed peers' lead name/phone/email/budget/BANT/notes via
+  // CallsClient (plus the QualityList below, which maps over the same array).
+  // Mirror the heatmap scope above: AGENT → own (userId), ADMIN/MANAGER → all.
   const calls = await prisma.callLog.findMany({
+    where: isAgent ? { userId: me.id } : {},
     orderBy: { startedAt: "desc" },
     take: 50,
     include: {
