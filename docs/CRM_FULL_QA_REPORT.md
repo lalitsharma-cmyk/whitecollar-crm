@@ -9,6 +9,8 @@
 
 **Legend per page:** ✅ Working · ❌ Broken · ⚠️ Confusing · ➕ Missing — followed by a one-line **UX read** and a **Mobile note**.
 
+> **⏱ Round-12 status update (deployed `40878ae`, 2026-06-03):** the inline ❌/⚠️ verdicts below were written against `4dd8ba1`. Since then these are **Resolved & live** — **B-02** (`/calls` list + QualityList leak, `1f30647`), **B-03** (agent KPI-tile scope, `1f30647`), **B-04** (WA team scope, `1f30647`), **B-05** (Calls-mo label, `1f30647`), **B-13** (owner dropdown, `1f30647`), **B-16** (automations state, `e2658de`), **B-14** (loading/error boundaries, `1f9f5f5`), and **B-01** dedup *groundwork* (read-only, role-scoped duplicate warning, `40878ae`; merge/block deferred to Lalit). Still open: **B-15** (perf/N+1), **B-17** (BANT depth — needs Lalit), **B-18** (label pass — needs Lalit), **B-19** (AI-score explainability — in progress), **B-20** (voice/motivation — needs Lalit). `docs/CRM_BUG_REPORT.md` is the source of truth for per-item status.
+
 ---
 
 ## 1. Login / Authentication
@@ -32,9 +34,9 @@
 - ✅ "BY SALESPERSON" peer-comparison table is gated `{isAdminOrMgr && (...)}` (~line 699) and `spStatsRaw` is skipped for agents (~line 205) — **fixed Round 11** (was audit P1-3). See **B-11**.
 - ✅ Team toggle (Dubai/India/all) is locked for agents to their own team (lines 42–47) — agents can't pivot onto the other team.
 - ✅ Sales Floor Live Feed (lines 124–129, 434–466) and leaderboards are team-scoped and **peer-visible by design** (spec §12.2) — *not* a bug.
-- ❌ **Agent KPI tiles are team-scoped, not own-scoped.** Total clients / New today / Hot leads / Calls today / Ready-to-close / Needs-you / follow-ups all use `teamScope` (`forwardedTeam`) rather than `ownerId: me.id` (lines 49, 64–90, 96–120). An agent sees **whole-team** totals on their personal dashboard. **B-03 (P2), open — Round 12.**
-- ❌ **WhatsApp tile ignores the team filter:** `waToday` counts company-wide (`receivedAt` only, line 70) while adjacent Calls/Connected tiles honour the team filter — inconsistent. **B-04 (P2), open.**
-- ⚠️ **"📞 Calls (mo)" tile is mislabelled:** it binds `callsToday` (`startedAt ≥ todayStart`, line 68) with `sub="today"` but a title that says "(mo)" (~lines 636/644). Today's number wearing a monthly label. **B-05 (P3), open.**
+- ❌ **Agent KPI tiles are team-scoped, not own-scoped.** Total clients / New today / Hot leads / Calls today / Ready-to-close / Needs-you / follow-ups all use `teamScope` (`forwardedTeam`) rather than `ownerId: me.id` (lines 49, 64–90, 96–120). An agent sees **whole-team** totals on their personal dashboard. **B-03 — ✅ Resolved (`1f30647`), deployed.**
+- ❌ **WhatsApp tile ignores the team filter:** `waToday` counts company-wide (`receivedAt` only, line 70) while adjacent Calls/Connected tiles honour the team filter — inconsistent. **B-04 — ✅ Resolved (`1f30647`), deployed.**
+- ⚠️ **"📞 Calls (mo)" tile is mislabelled:** it binds `callsToday` (`startedAt ≥ todayStart`, line 68) with `sub="today"` but a title that says "(mo)" (~lines 636/644). Today's number wearing a monthly label. **B-05 — ✅ Resolved (`1f30647`), deployed.**
 
 **UX read:** Dense but genuinely action-first (hot-untouched, overdue follow-ups, closable deals up top). The scope/label bugs undermine an agent's trust in "their" numbers — fix B-03 before agents rely on it.
 **Mobile note:** Tile grid is responsive; the long page means agents scroll a lot on a phone — the hero strip up top mitigates this. *(Screenshot to be captured during live UAT.)*
@@ -59,7 +61,7 @@
 
 - ✅ `?owner=` honoured only when `me.role !== "AGENT"` (lines ~72–75) — agents can't pivot onto a peer's book — **fixed Round 11** (audit P1-2). See **B-10**.
 - ✅ `?source=` gated to non-agents (line ~65); agents hide LOST leads (lines ~51–53); `showSource={me.role!=="AGENT"}` passed to filters/list.
-- ⚠️ The owner `<select>` in `LeadFilters.tsx` (lines ~73–77) still renders for everyone. It's **inert** for agents server-side, but listing peers' names in a dropdown is a minor leak + a dead control. **B-13 (P3), open.**
+- ⚠️ The owner `<select>` in `LeadFilters.tsx` (lines ~73–77) still renders for everyone. It's **inert** for agents server-side, but listing peers' names in a dropdown is a minor leak + a dead control. **B-13 — ✅ Resolved (`1f30647`), deployed.**
 
 **UX read:** Core list is correctly private now; the leftover owner dropdown is cosmetic debris to remove.
 **Mobile note:** Filter bar collapses acceptably; confirm the owner dropdown removal also tidies the mobile filter sheet. *(Screenshot to be captured during live UAT.)*
@@ -134,7 +136,7 @@
 - ✅ Connect-rate-by-hour **heatmap** is correctly agent-scoped: the `$queryRaw` adds `AND "userId" = ${me.id}` for agents (lines 31–50). Leadership sees all. IST hour extraction is correct.
 - ❌ **OPEN AGENT↔AGENT DATA LEAK — the recent-calls list is unscoped.** `prisma.callLog.findMany({ orderBy:{startedAt:"desc"}, take:50, include:{ ... } })` (lines 67–83) has **no `userId`/owner filter**. An AGENT sees the latest **50 company-wide** calls. Tapping a row opens `CallsClient`'s right-hand summary panel, which exposes the peer lead's **name, phone, email, status, AI score, BANT status + reason, budget, configuration, "who is client", follow-up date, to-do, owner name, and the last 5 call notes** (row mapping lines 98–137). `CallsClient.tsx` is purely presentational — it does no filtering, so the leak is entirely in the page query.
 - ❌ **Same leak in the QualityList.** `quality` is mapped from the same unscoped `calls` array (lines 89–96) and rendered for everyone (lines 245–277) — agents see peers' lead names + call quality.
-  > **Important:** `docs/QA-AUDIT-FINDINGS.md` stated "Cold-calls / Calls / Activities all correctly agent-scoped." That is **inaccurate for `/calls`** — the heatmap is scoped, the **list and QualityList are not**. This leak survived Round 11. **B-02 (P1), open.** The fix is a one-liner mirroring the heatmap: `const callScope = isAgent ? { userId: me.id } : {}` spread into the `findMany` where-clause (and the `quality` map).
+  > **Important:** `docs/QA-AUDIT-FINDINGS.md` stated "Cold-calls / Calls / Activities all correctly agent-scoped." That is **inaccurate for `/calls`** — the heatmap is scoped, the **list and QualityList are not**. This leak survived Round 11. **B-02 — ✅ Resolved (`1f30647`), deployed.** The fix is a one-liner mirroring the heatmap: `const callScope = isAgent ? { userId: me.id } : {}` spread into the `findMany` where-clause (and the `quality` map).
 - ⚠️ Over-include / N+1: 50 rows × (`lead → owner` + nested `callLogs(take:5) → user`). Heavy even after scoping. **B-15 (P2).**
 
 **UX read:** The heatmap and quality scoring are good ideas, but the page currently leaks the most sensitive cross-agent data in the app. This is the single most important data-safety fix remaining.
@@ -203,7 +205,7 @@
 
 ## 16. Templates / Workflows / Automations
 
-- ❌ **Automations shown hardcoded ON** regardless of backend state (audit P2-4) — the UI can claim a workflow is running when it isn't. **B-16 (P2), open.**
+- ❌ **Automations shown hardcoded ON** regardless of backend state (audit P2-4) — the UI can claim a workflow is running when it isn't. **B-16 — ✅ Resolved (`e2658de`), deployed.**
 - ⚠️ Several toggles may not be wired to persisted config.
 
 **UX read:** Misleading state erodes trust in automation. Bind to real state or label "Coming soon" + disable.
@@ -213,7 +215,7 @@
 
 ## 17. Data import / Dedup (Bucket A) — cross-cutting
 
-- ❌ **No evidenced phone-normalisation + dedup/merge guard** on lead create / CSV / sheet import. Per Lalit (Bucket A) duplicates are entering the pipeline — two agents can unknowingly work the same client. **B-01 (P0), open — the top rollout blocker.**
+- ❌ **No evidenced phone-normalisation + dedup/merge guard** on lead create / CSV / sheet import. Per Lalit (Bucket A) duplicates are entering the pipeline — two agents can unknowingly work the same client. **B-01 — ✅ Resolved (groundwork, `40878ae`): read-only, role-scoped dedup warning shipped; merge/block + historical-phone backfill deferred to Lalit.**
 
 **UX read:** Everything else is downstream of clean data. Fix this first.
 **Mobile note:** N/A (import is a desktop/admin task).
@@ -272,4 +274,4 @@ Round 11 closed every **major** cross-agent leak the original audit found (pipel
 - **Ownership scoping rules:** AGENT sees own only; MANAGER sees own + reports; ADMIN sees all. Set expectations so agents don't think the CRM is "hiding" leads from them.
 - **BANT/qualification flow** (B-17) — train the team on what to capture and when, while the structured flow is being co-designed with Lalit.
 
-**Bottom line:** Fix B-01, B-02, B-03 → this is ready for full team rollout. Until then, a **limited rollout** (leadership + one pilot team, with `/calls` and the Automations toggles hidden from agents) is safe and would surface real-data feedback for the AI-score and BANT work.
+**Bottom line:** B-01 (groundwork), B-02 and B-03 are now **shipped & live** (`40878ae`) — the agent↔agent leaks (`/calls`, dashboard KPI scope) and the dedup gap that were the core rollout blockers are closed. Full team rollout is now reasonable. Remaining items are correctness/enhancement, several pending Lalit's product input: **B-15** (perf/N+1, low urgency), **B-17** (BANT depth), **B-18** (label pass), **B-19** (AI-score explainability — in progress), **B-20** (voice/motivation). Keep gathering real-data feedback for the AI-score and BANT work during rollout.

@@ -13,6 +13,16 @@ confirmed by clicking are marked **(inferred from code)**. No source was edited.
 Screenshots requested by the spec are marked **(screenshot to be captured
 during live UAT)**.
 
+> **⏱ Round-12 status update (deployed `40878ae`, 2026-06-03):** since this matrix
+> was audited at `4dd8ba1`, the remaining agent↔agent disclosure gaps have been
+> closed and deployed — **B-02** `/calls` recent-calls list + QualityList now scope
+> to `userId: me.id` for agents (`1f30647`); **B-03** dashboard agent KPI tiles now
+> use a personal `meScope` (`1f30647`); **B-13** the inert owner dropdown in
+> `LeadFilters` is hidden from agents (`1f30647`). New surface added this round: the
+> dedup probe `GET /api/leads/check-duplicate` AND-s in `leadScopeWhere(me)`, so it
+> never returns a lead the caller can't already see (`40878ae`). See
+> `docs/CRM_BUG_REPORT.md` for full per-item status.
+
 ---
 
 ## 0. How permission is enforced (the three primitives)
