@@ -9,7 +9,7 @@
 
 **Legend per page:** ✅ Working · ❌ Broken · ⚠️ Confusing · ➕ Missing — followed by a one-line **UX read** and a **Mobile note**.
 
-> **⏱ Round-12 status update (deployed `40878ae`, 2026-06-03):** the inline ❌/⚠️ verdicts below were written against `4dd8ba1`. Since then these are **Resolved & live** — **B-02** (`/calls` list + QualityList leak, `1f30647`), **B-03** (agent KPI-tile scope, `1f30647`), **B-04** (WA team scope, `1f30647`), **B-05** (Calls-mo label, `1f30647`), **B-13** (owner dropdown, `1f30647`), **B-16** (automations state, `e2658de`), **B-14** (loading/error boundaries, `1f9f5f5`), and **B-01** dedup *groundwork* (read-only, role-scoped duplicate warning, `40878ae`; merge/block deferred to Lalit). Still open: **B-15** (perf/N+1), **B-17** (BANT depth — needs Lalit), **B-18** (label pass — needs Lalit), **B-19** (AI-score explainability — in progress), **B-20** (voice/motivation — needs Lalit). `docs/CRM_BUG_REPORT.md` is the source of truth for per-item status.
+> **⏱ Round-12 status update (deployed `40878ae`, 2026-06-03):** the inline ❌/⚠️ verdicts below were written against `4dd8ba1`. Since then these are **Resolved & live** — **B-02** (`/calls` list + QualityList leak, `1f30647`), **B-03** (agent KPI-tile scope, `1f30647`), **B-04** (WA team scope, `1f30647`), **B-05** (Calls-mo label, `1f30647`), **B-13** (owner dropdown, `1f30647`), **B-16** (automations state, `e2658de`), **B-14** (loading/error boundaries, `1f9f5f5`), and **B-01** dedup *groundwork* (read-only, role-scoped duplicate warning, `40878ae`; merge/block deferred to Lalit). **Since resolved & live too:** **B-15** (perf/N+1, `078b353`), **B-19** (AI-score explainability, `0b9b5b0`), **B-17** (at-a-glance BANT completeness pill, `5aff9a3`), **B-18** (label pass, `82235cb`), **B-20** (flag-gated voice/motivation pilot, off by default, `1f735ed`). **No open backlog items remain** — only co-design follow-ups for Lalit (B-17 BANT stage-gating; B-20 pilot-team pick + flag; B-18's 2 data-scope mismatches). `docs/CRM_BUG_REPORT.md` is the source of truth for per-item status.
 
 ---
 
@@ -74,7 +74,7 @@
 
 - ✅ Ownership-gated: `canTouchLead(me, lead)` else `redirect("/leads")` (line ~113). Agents can't open a peer's lead by guessing the URL.
 - ✅ Sticky note is per-user (lines ~102–106) — private scratchpad, good.
-- ⚠️ ➕ **BANT / qualification depth (Bucket B).** Fields exist (`bantStatus`, `bantReason`, `whoIsClient`, budget, configuration) but the page is a dense ~20-card workspace and, per Lalit, doesn't yet match how the team actually qualifies. Stage advancement isn't gated on BANT completeness. **B-17 (P1 product), open — co-design with Lalit.**
+- ⚠️ ➕ **BANT / qualification depth (Bucket B).** Fields exist (`bantStatus`, `bantReason`, `whoIsClient`, budget, configuration) but the page is a dense ~20-card workspace and, per Lalit, doesn't yet match how the team actually qualifies. Stage advancement isn't gated on BANT completeness. **B-17 (P1 product) — Resolved (`5aff9a3`):** added an at-a-glance **N/4 captured** pill to the existing editable BANT card; **stage-gating still to co-design with Lalit.**
 
 **UX read:** Powerful but heavy. The risk isn't data safety (that's handled) — it's cognitive load and an under-structured qualification flow. Prioritise the BANT fields visually.
 **Mobile note:** ~20 cards on a phone is a long scroll; consider collapsing secondary cards by default on mobile. *(Screenshot to be captured during live UAT.)*
@@ -151,7 +151,7 @@
 - ✅ Heatmap uses `scopedUserId` (line ~46); source chart gated `me.role !== "AGENT"` (line ~430); CSV export admin-only (line ~416).
 - ✅ Sub-reports verified agent-scoped: cooling (`scopedOwnerId` ~line 70), SLA (`agentScope` ~line 104, `where.userId` ~line 59), daily (`targetUserId` ~line 50), travel (`agentScope` ~line 59).
 - ✅ Best-time-to-call IST formatting corrected (Bucket D).
-- ⚠️ Label clarity across reports still wanted (Bucket C/D). **B-18 (P3).**
+- ✅ Label clarity across dashboard + reports done (Bucket C/D) — every metric now states its window + scope. **B-18 (P3) — Resolved (`82235cb`).** Surfaced 2 data-scope mismatches for Lalit (Cold→Lead today-in-month; reports agent-productivity today vs all-time).
 
 **UX read:** Reports are correctly scoped per role and the IST fix lands. Mostly a labelling polish remains.
 **Mobile note:** Charts/tables need horizontal room — confirm they degrade gracefully on a phone. *(Screenshot to be captured during live UAT.)*
@@ -183,7 +183,7 @@
 ## 14. Attendance / Targets / Team-Mood
 
 - ✅ Targets feed the dashboard team KPIs (this-month activity counts, lines 83–89).
-- ⚠️ ➕ **Team-mood / motivation / voice (Bucket H)** is partially specced (`docs/SPEC-smart-cma-and-voice.md`) but tone/usefulness is unvalidated. **B-20 (P4).**
+- ✅ ➕ **Team-mood / motivation / voice (Bucket H)** — tone/usefulness still unvalidated, so shipped as a flag-gated one-team pilot, **off by default**. **B-20 (P4) — Resolved (`1f735ed`); needs Lalit to pick the pilot team + flip the flag.**
 - ⚠️ Attendance vs office-hours (10:00–19:00 IST) enforcement not confirmed from audited files — flag for live UAT.
 
 **UX read:** Motivational surfaces are promising but should be piloted with one team before a full switch-on.
@@ -263,7 +263,7 @@ Round 11 closed every **major** cross-agent leak the original audit found (pipel
 
 **Can wait (fix in the first week post-launch):**
 - ✅ Shipped since this report: B-04 (WhatsApp team filter, `1f30647`), B-05 ("Calls (mo)" label, `1f30647`), B-16 (Automations real state, `e2658de`), B-13 (inert owner dropdown hidden, `1f30647`), B-14 (loading/error states, `1f9f5f5`), B-15 (pagination/N+1 hardening, `078b353`), B-19 (AI-score explainability, `0b9b5b0`).
-- ⏳ Still open — **need Lalit's input:** B-17 (BANT depth, P1), B-18 (label pass, P3), B-20 (voice/motivation pilot, P4).
+- ✅ Shipped — **co-design follow-ups remain for Lalit:** B-17 (`5aff9a3`; BANT stage-gating still to design), B-18 (`82235cb`; 2 data-scope mismatches to confirm), B-20 (`1f735ed`; pick pilot team + flip the flag).
 
 **Hide initially (don't expose to agents until validated):**
 - **Automations/Workflows toggles** (B-16) — hide or mark "Coming soon" until bound to real state, so nobody trusts a workflow that isn't running.
