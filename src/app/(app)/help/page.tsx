@@ -5,21 +5,26 @@ export const dynamic = "force-dynamic";
 // In-page TOC links — used by the sticky sidebar on desktop and as
 // anchor targets for each section.
 const TOC = [
-  { id: "quick-start",     label: "🎯 Quick start" },
-  { id: "shortcuts",       label: "⌨ Keyboard shortcuts" },
-  { id: "call-logging",    label: "📞 Call logging" },
-  { id: "tags",            label: "🏷 Tags" },
+  { id: "start",           label: "🚀 Start in 60 seconds" },
+  { id: "morning",         label: "☀️ Every morning" },
+  { id: "action-list",     label: "✅ Your Action List" },
+  { id: "work-a-lead",     label: "📞 Work a lead, step by step" },
+  { id: "voice",           label: "🎤 Speak, don't type" },
+  { id: "whatsapp",        label: "💬 Send WhatsApp" },
+  { id: "pipeline",        label: "🪜 Move the pipeline" },
+  { id: "revival",         label: "♻️ Revive cold leads" },
+  { id: "vault",           label: "🧘 The Vault" },
   { id: "missions",        label: "🎯 Missions + XP" },
-  { id: "vault",           label: "🧘 Vault" },
-  { id: "workflows",       label: "🛠 Workflows" },
   { id: "reports",         label: "📊 Reports" },
+  { id: "dos-donts",       label: "👍 Do's & Don'ts" },
+  { id: "shortcuts",       label: "⌨ Keyboard shortcuts" },
   { id: "faq",             label: "❓ FAQ" },
   { id: "contact",         label: "📧 Need more help?" },
 ];
 
 export default async function HelpPage() {
-  // Login-gated. Help content is the same for every role; admin-only
-  // bits are called out inline (Workflows section).
+  // Login-gated. This page is the in-app training guide for sales agents —
+  // written for someone touching a CRM for the very first time.
   await requireUser();
 
   return (
@@ -41,48 +46,340 @@ export default async function HelpPage() {
       </aside>
 
       {/* ─────────── Main content ─────────── */}
-      <article className="space-y-10 max-w-3xl">
+      <article className="space-y-8 max-w-3xl">
         <header>
-          <h1 className="text-2xl sm:text-3xl font-bold text-[#0b1a33]">Help &amp; FAQ</h1>
+          <h1 className="text-2xl sm:text-3xl font-bold text-[#0b1a33]">Welcome 👋 Your CRM guide</h1>
           <p className="text-sm text-gray-600 mt-2">
-            How to use the White Collar Realty CRM. Built for our Dubai + India sales teams —
-            if it doesn&apos;t match how you actually work, ping Lalit and we&apos;ll change it.
+            New to a CRM? Relax — this is easier than the spreadsheets you&apos;re used to.
+            This page walks you through your whole day, one simple step at a time. No tech
+            words. Read the green box below and you&apos;re ready to make your first call. 💪
           </p>
         </header>
 
-        {/* ─────────── Quick start ─────────── */}
-        <section id="quick-start" className="card p-5 scroll-mt-20">
-          <h2 className="text-lg font-bold text-[#0b1a33] mb-3">🎯 Quick start — your day in 5 steps</h2>
-          <ol className="space-y-3 text-sm text-gray-700 list-decimal list-inside">
-            <li>
-              <b>Open the Action List.</b> The top cards are your highest-priority calls today —
-              hot leads, SLA-breaching, scheduled callbacks. Work top-down.
-            </li>
-            <li>
-              <b>Make the call.</b> Click <i>Call</i> (or <i>Call via Acefone</i> if your extension is mapped)
-              to dial. Use the WhatsApp button for written follow-ups.
-            </li>
-            <li>
-              <b>Log the outcome immediately.</b> Pick an outcome chip (Connected / Not picked / Wrong number / Callback /
-              Interested / Not interested) and write a real remark — &quot;Budget 2.5Cr, looking 3BHK Dubai Marina&quot;,
-              not &quot;will call later&quot;.
-            </li>
-            <li>
-              <b>Set the follow-up date.</b> Every connected call should leave the lead with a next-step date.
-              No date = lead falls into the Revival Engine and you lose momentum.
-            </li>
-            <li>
-              <b>End-of-day mood check.</b> Hit the mood widget on the Dashboard before you sign off — it tells
-              Lalit how the team is doing and surfaces who needs help tomorrow morning.
-            </li>
+        {/* ─────────── HERO: Start in 60 seconds ─────────── */}
+        <section id="start" className="scroll-mt-20">
+          <div className="grad-card rounded-2xl p-5 sm:p-6">
+            <div className="inline-flex items-center gap-2 text-[11px] font-bold uppercase tracking-widest bg-white/15 text-white px-2.5 py-1 rounded-full">
+              🚀 New here? Start in 60 seconds
+            </div>
+            <h2 className="text-xl sm:text-2xl font-bold text-white mt-3">
+              Your first day, in 4 tiny steps
+            </h2>
+            <p className="text-sm text-white/80 mt-1">
+              Do just these four things today. Everything else on this page can wait.
+            </p>
+
+            <ol className="mt-4 space-y-3">
+              <HeroStep n={1} emoji="🔑" title="Log in">
+                Open the link Lalit sent you, type your email and password, tap <b>Sign in</b>. Done.
+              </HeroStep>
+              <HeroStep n={2} emoji="🟢" title="Punch in">
+                On the <b>Dashboard</b>, tap the green <b>&ldquo;I am here&rdquo;</b> attendance card so the team knows you&apos;ve started.
+              </HeroStep>
+              <HeroStep n={3} emoji="✅" title="Open your Action List">
+                It&apos;s your to-do list of people to call today. The top one is the most important. Start there.
+              </HeroStep>
+              <HeroStep n={4} emoji="📞" title="Call, then write what happened">
+                Tap <b>Call</b>, talk, then pick what happened and type a short note. <b>Always</b> set the next follow-up date. 🎉
+              </HeroStep>
+            </ol>
+
+            <p className="text-xs text-white/70 mt-4">
+              That&apos;s it. You just did the whole job. Scroll down when you want the friendly details. 👇
+            </p>
+          </div>
+        </section>
+
+        {/* ─────────── Every morning ─────────── */}
+        <section id="morning" className="card p-5 scroll-mt-20">
+          <h2 className="text-lg font-bold text-[#0b1a33] mb-1">☀️ The first thing, every morning</h2>
+          <p className="text-sm text-gray-600 mb-4">
+            Three quick taps to start your day right. Takes under a minute.
+          </p>
+          <ol className="space-y-3">
+            <StepRow emoji="🏠" title="Open the Dashboard">
+              It&apos;s your home screen — the first page you see after logging in.
+            </StepRow>
+            <StepRow emoji="🟢" title="Punch in on the “I am here” card">
+              Tap it once. This marks you present for the day. Forget this and the system thinks you&apos;re off — and new leads may go to someone else.
+            </StepRow>
+            <StepRow emoji="👀" title="Read your greeting + today’s missions">
+              The Dashboard says good morning and shows your <b>missions</b> (small daily goals) and how many people you need to call today. Glance at it, then get going.
+            </StepRow>
           </ol>
+          <Tip>
+            Make this a habit: log in → punch in → check missions. Same three taps, every single morning. ☕
+          </Tip>
+        </section>
+
+        {/* ─────────── Action List ─────────── */}
+        <section id="action-list" className="card p-5 scroll-mt-20">
+          <h2 className="text-lg font-bold text-[#0b1a33] mb-1">✅ Your Action List — your to-do for the day</h2>
+          <p className="text-sm text-gray-700">
+            Think of the Action List as your boss handing you a stack of cards and saying
+            <i> &ldquo;call these people, best one on top.&rdquo;</i> You don&apos;t have to decide who to call —
+            the CRM already sorted them for you.
+          </p>
+          <div className="mt-4 grid gap-3 sm:grid-cols-3">
+            <MiniCard emoji="⬇️" title="Work top-down">
+              Start at the very top and go down. The order is the plan.
+            </MiniCard>
+            <MiniCard emoji="🔥" title="Hottest first">
+              Top cards are your warmest, most ready-to-buy people. Call them while they&apos;re keen.
+            </MiniCard>
+            <MiniCard emoji="🧹" title="Clear it daily">
+              Try to action every card by end of day. An empty Action List = a great day.
+            </MiniCard>
+          </div>
+          <Tip>
+            Don&apos;t cherry-pick the easy ones. The person at the top is at the top for a reason. 😉
+          </Tip>
+        </section>
+
+        {/* ─────────── Work a lead, step by step ─────────── */}
+        <section id="work-a-lead" className="card p-5 scroll-mt-20">
+          <h2 className="text-lg font-bold text-[#0b1a33] mb-1">📞 Working a lead, step by step</h2>
+          <p className="text-sm text-gray-600 mb-4">
+            A &ldquo;lead&rdquo; is just a person who might buy. Here&apos;s the full flow — the heart of your job.
+          </p>
+          <ol className="space-y-3">
+            <StepRow emoji="👆" title="1. Open the lead">
+              Tap a card on your Action List. You&apos;ll see their name, phone, budget, and what was said last time. Read it before you dial.
+            </StepRow>
+            <StepRow emoji="📲" title="2. Call them">
+              Tap the <b>Call</b> button. Talk like a human — you already know their history from the screen.
+            </StepRow>
+            <StepRow emoji="🏷️" title="3. Log what happened">
+              After the call, tap the outcome that fits: <i>Connected</i>, <i>Not picked</i>, <i>Callback</i>, <i>Interested</i>, <i>Not interested</i>. One tap.
+            </StepRow>
+            <StepRow emoji="✍️" title="4. Write a real remark">
+              In a sentence or two, capture the <b>real situation</b>: <i>&ldquo;Budget 2.5 Cr, wants 3BHK in Dubai Marina, ready in 2 months, decision with wife.&rdquo;</i> Future-you will thank present-you.
+            </StepRow>
+            <StepRow emoji="📅" title="5. Set the next follow-up date" highlight>
+              <b>This is the golden rule.</b> Every lead leaves with a date for the next call. No date = the lead gets forgotten and goes cold. Always. Set. A. Date.
+            </StepRow>
+          </ol>
+          <Callout emoji="🌟" title="The one habit that makes you a top performer">
+            Specific remark + a follow-up date on every single lead. That&apos;s it. Do that consistently
+            and you&apos;ll never lose a deal because you forgot to call back.
+          </Callout>
+        </section>
+
+        {/* ─────────── Voice dictation ─────────── */}
+        <section id="voice" className="card p-5 scroll-mt-20">
+          <h2 className="text-lg font-bold text-[#0b1a33] mb-1">🎤 Speak your remark — don&apos;t type it</h2>
+          <p className="text-sm text-gray-700">
+            Typing on a phone is slow. So don&apos;t. Tap the <b>🎤 microphone</b> next to the remark box and just
+            <b> talk</b> — in <b>Hindi or English</b>, whatever&apos;s comfortable. Your words turn into text.
+          </p>
+          <ol className="mt-4 space-y-3">
+            <StepRow emoji="🎤" title="Tap the mic">
+              Find the microphone icon next to where you&apos;d type the remark, and tap it.
+            </StepRow>
+            <StepRow emoji="🗣️" title="Speak naturally">
+              Say what happened on the call — Hindi, English, or a mix. No need to speak like a robot.
+            </StepRow>
+            <StepRow emoji="👁️" title="Glance, then save">
+              Read it once to fix any wrong word, then save. Quick read, big time saved.
+            </StepRow>
+          </ol>
+          <Tip>
+            Great between calls when your hands are busy. Speak it in 5 seconds and move to the next lead. ⚡
+          </Tip>
+        </section>
+
+        {/* ─────────── WhatsApp ─────────── */}
+        <section id="whatsapp" className="card p-5 scroll-mt-20">
+          <h2 className="text-lg font-bold text-[#0b1a33] mb-1">💬 Send a WhatsApp from the lead</h2>
+          <p className="text-sm text-gray-700">
+            You already live on WhatsApp — good news, it&apos;s built right in. No need to copy numbers
+            or switch apps.
+          </p>
+          <ol className="mt-4 space-y-3">
+            <StepRow emoji="📗" title="Tap the WhatsApp button">
+              On the lead&apos;s page, tap the green <b>WhatsApp</b> button. It opens a chat with their number already filled in.
+            </StepRow>
+            <StepRow emoji="✏️" title="Send your message">
+              Share a brochure, a price, or a simple &ldquo;Great speaking with you — here are the details.&rdquo;
+            </StepRow>
+            <StepRow emoji="📝" title="Log it too">
+              Sent something important? Drop a quick remark on the lead so the next person knows. Calls <i>and</i> messages live in one place.
+            </StepRow>
+          </ol>
+        </section>
+
+        {/* ─────────── Pipeline ─────────── */}
+        <section id="pipeline" className="card p-5 scroll-mt-20">
+          <h2 className="text-lg font-bold text-[#0b1a33] mb-1">🪜 Moving the pipeline stage</h2>
+          <p className="text-sm text-gray-700">
+            The &ldquo;pipeline&rdquo; is just the journey from <i>new contact</i> to <i>booked deal</i>. As a lead
+            warms up, you move them one step forward — like ticking off a ladder.
+          </p>
+          <div className="mt-4 flex flex-wrap items-center gap-2 text-[12px] font-semibold">
+            <Stage emoji="🆕">New</Stage>
+            <Arrow />
+            <Stage emoji="📞">Contacted</Stage>
+            <Arrow />
+            <Stage emoji="✅">Qualified</Stage>
+            <Arrow />
+            <Stage emoji="🏠">Site visit</Stage>
+            <Arrow />
+            <Stage emoji="🎉">Booked</Stage>
+          </div>
+          <ol className="mt-4 space-y-3">
+            <StepRow emoji="👆" title="Tap the stage label">
+              Open the lead and tap the stage chip near the top (it shows where they are now).
+            </StepRow>
+            <StepRow emoji="➡️" title="Pick the new stage">
+              Choose the stage that matches reality. Got real interest? Move them to <i>Qualified</i>. Booked? <i>Booked</i> 🎉.
+            </StepRow>
+            <StepRow emoji="↩️" title="Made a mistake? Just change it back">
+              Tap the chip again and pick the right one. Every change is saved with your name and time — no harm done.
+            </StepRow>
+          </ol>
+          <Tip>
+            Keeping stages honest helps everyone see real progress — and it&apos;s how your wins get counted. 📈
+          </Tip>
+        </section>
+
+        {/* ─────────── Revival Engine ─────────── */}
+        <section id="revival" className="card p-5 scroll-mt-20">
+          <h2 className="text-lg font-bold text-[#0b1a33] mb-1">♻️ Revival Engine — bringing old leads back to life</h2>
+          <p className="text-sm text-gray-700">
+            A &ldquo;cold&rdquo; lead is someone nobody has spoken to in a while. They&apos;re not dead — often they
+            just got forgotten. The <b>Revival Engine</b> gathers them so you can win them back. Old leads
+            are gold nobody else is digging for. 💰
+          </p>
+          <ol className="mt-4 space-y-3">
+            <StepRow emoji="🧊" title="Open the Revival Engine / Cold calls">
+              Find it in the menu. It&apos;s a fresh stack of leads that have gone quiet.
+            </StepRow>
+            <StepRow emoji="📖" title="Read the old notes first">
+              See what was discussed before. A warm &ldquo;Hi, following up on the Marina apartment&rdquo; beats a cold pitch.
+            </StepRow>
+            <StepRow emoji="📞" title="Call and re-open the conversation">
+              Reconnect, find out what changed, and log the outcome just like any other call.
+            </StepRow>
+            <StepRow emoji="📅" title="Set a follow-up if there’s a spark">
+              Any interest at all? Give them a follow-up date and pull them back into your active list.
+            </StepRow>
+          </ol>
+          <Tip>
+            Spend a few minutes here when your Action List is clear. One revived lead can make your month. ✨
+          </Tip>
+        </section>
+
+        {/* ─────────── Vault ─────────── */}
+        <section id="vault" className="card p-5 scroll-mt-20">
+          <h2 className="text-lg font-bold text-[#0b1a33] mb-1">🧘 The Vault — your space to reset</h2>
+          <p className="text-sm text-gray-700">
+            The Vault is a space to <b>journal, vent, log your wins, and reset</b>. Sales has high highs and
+            low lows — the Vault is where you take a breath and keep your head in the game. 🧠
+          </p>
+          <div className="mt-4 grid gap-3 sm:grid-cols-3">
+            <MiniCard emoji="📓" title="Journal">
+              Jot down thoughts, lessons, or what you want to do better tomorrow.
+            </MiniCard>
+            <MiniCard emoji="🏆" title="Log your wins">
+              Booked a deal? Had a great call? Write it down. Re-read it on tough days.
+            </MiniCard>
+            <MiniCard emoji="💨" title="Quick Vent">
+              Rough call? Let it out so it doesn&apos;t follow you to the next one.
+            </MiniCard>
+          </div>
+
+          <h3 className="text-sm font-semibold text-[#0b1a33] mt-5 mb-1">🎤 You can speak your vent now</h3>
+          <p className="text-sm text-gray-700">
+            Don&apos;t feel like typing? Tap the <b>🎤 mic</b> and just talk — in <b>Hindi or English</b>. Say what&apos;s on
+            your mind and it&apos;s captured for you. Sometimes saying it out loud is all you need.
+          </p>
+
+          <h3 className="text-sm font-semibold text-[#0b1a33] mt-5 mb-1">😌 Reset Mode</h3>
+          <p className="text-sm text-gray-700">
+            Having a hard day? Tap <i>Reset Mode</i> from the Vault. The CRM hides leaderboards, quiets the
+            XP pop-ups, and shows a calmer screen for a few hours so you can refocus. Use it whenever you need it.
+          </p>
+        </section>
+
+        {/* ─────────── Missions + XP ─────────── */}
+        <section id="missions" className="card p-5 scroll-mt-20">
+          <h2 className="text-lg font-bold text-[#0b1a33] mb-1">🎯 Daily missions + XP</h2>
+          <p className="text-sm text-gray-700">
+            Think of it like a game. Do the right things, earn points, watch your level climb. It makes a
+            busy day a bit more fun — and it rewards the habits that actually win deals.
+          </p>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            <MiniCard emoji="🎯" title="Missions = small daily goals">
+              Like &ldquo;hit your call target&rdquo; or &ldquo;move one lead forward.&rdquo; Tick them off each day.
+            </MiniCard>
+            <MiniCard emoji="⭐" title="XP = points for good work">
+              Connected calls, qualified leads, and bookings all earn XP. More good work, more points.
+            </MiniCard>
+            <MiniCard emoji="🔥" title="Streaks">
+              Finish your missions several days in a row to build a streak. Don&apos;t break the chain!
+            </MiniCard>
+            <MiniCard emoji="🏅" title="Levels & badges">
+              XP levels you up and unlocks badges. A friendly nudge to keep showing up strong.
+            </MiniCard>
+          </div>
+          <Tip>
+            Don&apos;t chase points for their own sake. Do the job well and the XP follows on its own. 👍
+          </Tip>
+        </section>
+
+        {/* ─────────── Reports ─────────── */}
+        <section id="reports" className="card p-5 scroll-mt-20">
+          <h2 className="text-lg font-bold text-[#0b1a33] mb-1">📊 Reports — see how you&apos;re doing</h2>
+          <p className="text-sm text-gray-700">
+            You don&apos;t need to build anything. Reports just show your effort and results in plain numbers.
+          </p>
+          <ul className="mt-4 space-y-2 text-sm text-gray-700">
+            <BulletRow emoji="📅">
+              <b>Your daily summary</b> — calls made, calls connected, leads moved, and follow-ups due tomorrow. A neat picture of your day.
+            </BulletRow>
+            <BulletRow emoji="🎯">
+              <b>Your targets</b> — how many calls you&apos;ve made vs. your goal for the day. Quick gut-check before EOD.
+            </BulletRow>
+            <BulletRow emoji="📈">
+              <b>Your progress over time</b> — how this week compares to last. Watch yourself get better.
+            </BulletRow>
+          </ul>
+          <Tip>
+            Peek at your numbers near end of day. A couple more calls might be all it takes to hit your target. 💪
+          </Tip>
+        </section>
+
+        {/* ─────────── Do's & Don'ts ─────────── */}
+        <section id="dos-donts" className="card p-5 scroll-mt-20">
+          <h2 className="text-lg font-bold text-[#0b1a33] mb-3">👍 Do&apos;s &amp; Don&apos;ts</h2>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+              <div className="text-sm font-bold text-emerald-800 mb-2">✅ Do</div>
+              <ul className="space-y-2 text-sm text-emerald-900">
+                <li className="flex gap-2"><span>📞</span><span><b>Log every call</b> — connected or not. If it isn&apos;t logged, it didn&apos;t happen.</span></li>
+                <li className="flex gap-2"><span>📅</span><span><b>Set a follow-up date</b> on every lead. Every time. No exceptions.</span></li>
+                <li className="flex gap-2"><span>✍️</span><span><b>Keep remarks specific</b> — budget, what they want, when, who decides.</span></li>
+                <li className="flex gap-2"><span>🎤</span><span><b>Use voice</b> to save time — speak your remark in Hindi or English.</span></li>
+              </ul>
+            </div>
+            <div className="rounded-xl border border-rose-200 bg-rose-50 p-4">
+              <div className="text-sm font-bold text-rose-800 mb-2">🚫 Don&apos;t</div>
+              <ul className="space-y-2 text-sm text-rose-900">
+                <li className="flex gap-2"><span>❌</span><span><b>Don&apos;t leave a lead with no next step.</b> A lead with no date gets forgotten.</span></li>
+                <li className="flex gap-2"><span>❌</span><span><b>Don&apos;t write &ldquo;will call later.&rdquo;</b> It tells the next person nothing.</span></li>
+                <li className="flex gap-2"><span>❌</span><span><b>Don&apos;t skip the easy calls</b> just to feel busy. Work top-down.</span></li>
+                <li className="flex gap-2"><span>❌</span><span><b>Don&apos;t forget to punch in.</b> No attendance, no leads coming your way.</span></li>
+              </ul>
+            </div>
+          </div>
         </section>
 
         {/* ─────────── Keyboard shortcuts ─────────── */}
         <section id="shortcuts" className="card p-5 scroll-mt-20">
-          <h2 className="text-lg font-bold text-[#0b1a33] mb-3">⌨ Keyboard shortcuts</h2>
+          <h2 className="text-lg font-bold text-[#0b1a33] mb-1">⌨ Keyboard shortcuts</h2>
           <p className="text-sm text-gray-600 mb-3">
-            Press <Kbd>?</Kbd> anywhere to open the same cheatsheet as a modal.
+            On a computer? These make you faster. On a phone? You can skip this — just tap the buttons.
+            Press <Kbd>?</Kbd> anywhere to pop open this same cheatsheet.
           </p>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -121,281 +418,77 @@ export default async function HelpPage() {
           </p>
         </section>
 
-        {/* ─────────── Call logging ─────────── */}
-        <section id="call-logging" className="card p-5 scroll-mt-20">
-          <h2 className="text-lg font-bold text-[#0b1a33] mb-3">📞 Call logging</h2>
-
-          <h3 className="text-sm font-semibold text-[#0b1a33] mt-3 mb-1">How to log a call</h3>
-          <p className="text-sm text-gray-700">
-            Open the lead → <i>Actions</i> tab → <i>Log call</i>. Pick the outcome chip, write the remark
-            (mandatory — minimum 8 characters), and save. The call appears on the lead timeline and is
-            counted toward your daily call target.
-          </p>
-
-          <h3 className="text-sm font-semibold text-[#0b1a33] mt-4 mb-1">Voice dictation</h3>
-          <p className="text-sm text-gray-700">
-            Tap the 🎤 mic icon next to the remark field on mobile to dictate in Hindi or English.
-            Edit before saving — the AI doesn&apos;t auto-clean transcripts.
-          </p>
-
-          <h3 className="text-sm font-semibold text-[#0b1a33] mt-4 mb-1">Callback scheduling</h3>
-          <p className="text-sm text-gray-700">
-            Pick the <i>Callback</i> outcome and a date — the lead drops out of your Action List until
-            that date and reappears at the top on the day, plus you get a push notification 30 min before.
-          </p>
-
-          <h3 className="text-sm font-semibold text-[#0b1a33] mt-4 mb-1">What each outcome means</h3>
-          <ul className="text-sm text-gray-700 list-disc list-inside space-y-1">
-            <li><b>Connected</b> — you spoke to the actual lead. Counts toward connected-call target + XP.</li>
-            <li><b>Not picked</b> — phone rang, no answer. Counts as an attempt but not a connection.</li>
-            <li><b>Wrong number</b> — number doesn&apos;t belong to the lead. Auto-tags <code>bad-data</code>.</li>
-            <li><b>Callback</b> — they asked you to call back later. Sets the follow-up date.</li>
-            <li><b>Interested</b> — qualified verbal interest. Suggests moving to <i>Qualified</i> stage.</li>
-            <li><b>Not interested</b> — explicit rejection. Suggests <i>Mark as LOST</i> with reason.</li>
-            <li><b>Switched off / Busy</b> — try later same day; doesn&apos;t consume an SLA attempt.</li>
-          </ul>
-        </section>
-
-        {/* ─────────── Tags ─────────── */}
-        <section id="tags" className="card p-5 scroll-mt-20">
-          <h2 className="text-lg font-bold text-[#0b1a33] mb-3">🏷 Tags</h2>
-
-          <h3 className="text-sm font-semibold text-[#0b1a33] mb-1">Preset vocabulary</h3>
-          <p className="text-sm text-gray-700 mb-2">
-            Stick to the presets when they fit — filters and Smart Lists understand them:
-          </p>
-          <div className="flex flex-wrap gap-1.5 text-[11px]">
-            {["hot", "warm", "cold", "investor", "end-user", "nri", "hni", "site-visit-done", "loan-needed", "ready-to-book", "follow-up", "bad-data", "no-budget", "decision-pending", "decision-maker", "spouse-decides"].map((t) => (
-              <span key={t} className="px-2 py-0.5 rounded bg-[#fdfaf2] border border-[#e9d8a6] text-[#856404] font-medium">{t}</span>
-            ))}
-          </div>
-
-          <h3 className="text-sm font-semibold text-[#0b1a33] mt-4 mb-1">Custom tags</h3>
-          <p className="text-sm text-gray-700">
-            On the lead detail, type a new tag and press Enter. Lowercase, hyphenated, no spaces.
-            Custom tags work in filters too — but only you see them in autocomplete until someone else uses the same string.
-          </p>
-
-          <h3 className="text-sm font-semibold text-[#0b1a33] mt-4 mb-1">How filters work</h3>
-          <p className="text-sm text-gray-700">
-            Tag filters are <b>AND</b> by default — selecting <code>hot</code> + <code>nri</code> shows only leads
-            with both. Use the <i>Any of</i> toggle on the filter panel to switch to OR. Save the combo as a
-            Smart List so you don&apos;t have to rebuild it.
-          </p>
-        </section>
-
-        {/* ─────────── Missions + XP ─────────── */}
-        <section id="missions" className="card p-5 scroll-mt-20">
-          <h2 className="text-lg font-bold text-[#0b1a33] mb-3">🎯 Daily missions + XP</h2>
-          <p className="text-sm text-gray-700">
-            The CRM rewards the behaviours that actually move deals — not just login time.
-          </p>
-
-          <h3 className="text-sm font-semibold text-[#0b1a33] mt-4 mb-1">XP &amp; levels</h3>
-          <p className="text-sm text-gray-700">
-            Each connected call = 10 XP, qualified lead = 25 XP, site visit logged = 50 XP, booking_done = 500 XP.
-            Levels are cosmetic — Rookie → Closer → Top Gun → Legend — and unlock badges shown on the Leaderboards page.
-          </p>
-
-          <h3 className="text-sm font-semibold text-[#0b1a33] mt-4 mb-1">The 4 daily missions</h3>
-          <ol className="text-sm text-gray-700 list-decimal list-inside space-y-1">
-            <li><b>Hit your call target</b> — your <code>dailyCallTarget</code> (set by Lalit, usually 30–50).</li>
-            <li><b>Move 1 lead forward</b> — any stage advance counts.</li>
-            <li><b>Clear the Action List</b> — every red/urgent card actioned by EOD.</li>
-            <li><b>End-of-day mood check</b> — the 30-second widget on the Dashboard.</li>
-          </ol>
-
-          <h3 className="text-sm font-semibold text-[#0b1a33] mt-4 mb-1">Streaks</h3>
-          <p className="text-sm text-gray-700">
-            Complete all 4 missions in a day to extend your streak. 7-day streak = badge.
-            Miss a day and the streak resets. Sundays and team holidays don&apos;t break it.
-          </p>
-        </section>
-
-        {/* ─────────── Vault ─────────── */}
-        <section id="vault" className="card p-5 scroll-mt-20">
-          <h2 className="text-lg font-bold text-[#0b1a33] mb-3">🧘 Vault</h2>
-          <p className="text-sm text-gray-700">
-            The Vault is your private space — gratitude notes, deal stories, things you want to remember,
-            anything you don&apos;t want a manager seeing. Think of it as your work journal.
-          </p>
-
-          <div className="mt-3 p-3 rounded-lg bg-emerald-50 border-l-4 border-emerald-500">
-            <div className="text-sm font-semibold text-emerald-900">Privacy guarantee</div>
-            <p className="text-xs text-emerald-900 mt-1">
-              Admins (including Lalit) <b>cannot read Vault content</b>. The database stores entries
-              keyed to your user ID and the admin Vault view is intentionally blocked at the API layer.
-              Aggregate counts only (e.g. &quot;Priya wrote 12 entries this month&quot;) — never the words.
-            </p>
-          </div>
-
-          <h3 className="text-sm font-semibold text-[#0b1a33] mt-4 mb-1">Reset Mode</h3>
-          <p className="text-sm text-gray-700">
-            Bad day? Hit <i>Reset Mode</i> from the Vault. The CRM hides leaderboards, mutes XP toasts,
-            and shows a calmer dashboard for the next 4 hours. Nobody is notified. Use it as often as you need.
-          </p>
-        </section>
-
-        {/* ─────────── Workflows (admin) ─────────── */}
-        <section id="workflows" className="card p-5 scroll-mt-20">
-          <div className="flex items-center gap-2 mb-3">
-            <h2 className="text-lg font-bold text-[#0b1a33]">🛠 Workflows</h2>
-            <span className="text-[10px] bg-[#0b1a33] text-white px-2 py-0.5 rounded-full font-bold">ADMIN</span>
-          </div>
-          <p className="text-sm text-gray-700">
-            Workflows automate the boring stuff: WhatsApp drips, stage-change alerts, SLA pokes, &quot;hot lead
-            unattended for 2h&quot; pings. Build them at <code>/admin/workflows</code>.
-          </p>
-
-          <h3 className="text-sm font-semibold text-[#0b1a33] mt-4 mb-1">The 3 building blocks</h3>
-          <ul className="text-sm text-gray-700 list-disc list-inside space-y-1">
-            <li><b>Trigger</b> — what fires the workflow. <i>Lead created</i>, <i>Stage changed to X</i>, <i>No activity for N days</i>, <i>Tag added</i>, <i>Time of day</i>.</li>
-            <li><b>Conditions</b> — optional filters. Source = website, budget &gt; 1Cr, assigned team = Dubai, etc. AND-combined.</li>
-            <li><b>Actions</b> — what happens. Send WhatsApp template, send email, add tag, change stage, notify agent, escalate to Lalit.</li>
-          </ul>
-
-          <h3 className="text-sm font-semibold text-[#0b1a33] mt-4 mb-1">Starter templates</h3>
-          <p className="text-sm text-gray-700">
-            <code>/admin/templates</code> ships pre-built workflows: <i>After-hours auto-WhatsApp</i>,
-            <i>3-day no-touch revival</i>, <i>Site-visit thank you</i>, <i>Lost-lead winback (30/60/90 day)</i>,
-            <i>NRI welcome sequence</i>. Clone one and edit — faster than starting blank.
-          </p>
-
-          <h3 className="text-sm font-semibold text-[#0b1a33] mt-4 mb-1">Test before going live</h3>
-          <p className="text-sm text-gray-700">
-            Every workflow has a <i>Test fire</i> button — pick a real lead, run the workflow once,
-            see exactly what would have happened (messages drafted, not sent). Flip <i>Active</i> to on
-            only after the test fire looks right. <b>Flip the master Testing Mode in Settings on</b>
-            {" "}when loading bulk data — it pauses every workflow so nothing leaks out.
-          </p>
-        </section>
-
-        {/* ─────────── Reports ─────────── */}
-        <section id="reports" className="card p-5 scroll-mt-20">
-          <h2 className="text-lg font-bold text-[#0b1a33] mb-3">📊 Reports</h2>
-
-          <h3 className="text-sm font-semibold text-[#0b1a33] mb-1">Daily PDF</h3>
-          <p className="text-sm text-gray-700">
-            Generated at end-of-day in the format Lalit&apos;s team used to send manually:
-            calls dialed / connected / wrong-number, leads added, stage changes, follow-ups due tomorrow,
-            mood note. Download from <code>/reports</code> or get it auto-emailed to managers.
-          </p>
-
-          <h3 className="text-sm font-semibold text-[#0b1a33] mt-4 mb-1">SLA report</h3>
-          <p className="text-sm text-gray-700">
-            <code>/reports/sla</code> — every breached SLA (lead unassigned &gt; 5 min, first call &gt; 15 min)
-            with agent, lead, breach duration, and root cause. Monthly view is the one Lalit reviews on the 1st.
-          </p>
-
-          <h3 className="text-sm font-semibold text-[#0b1a33] mt-4 mb-1">Travel reimbursement</h3>
-          <p className="text-sm text-gray-700">
-            India team only. Logs every home visit / site visit with distance (km) × the rate set in
-            <code>/settings</code> (₹/km). The agent gets a monthly summary on their profile; admin sees
-            the team-wide total in <code>/reports</code> → <i>Travel</i>.
-          </p>
-        </section>
-
         {/* ─────────── FAQ ─────────── */}
         <section id="faq" className="card p-5 scroll-mt-20">
           <h2 className="text-lg font-bold text-[#0b1a33] mb-3">❓ FAQ — common questions</h2>
           <div className="divide-y divide-gray-100 -mx-2">
-            <Faq q="What's the difference between 'Reject' and 'Mark as LOST'?">
+            <Faq q="I forgot to set a follow-up date. What now?">
               <p>
-                <b>Reject</b> is for leads you should never have received in the first place — wrong number,
-                spam, test data, duplicate. It removes them from your queue and flags the source for review.
-                <b> Mark as LOST</b> is for real leads that didn&apos;t convert — wrong budget, picked a competitor,
-                timing not right. LOST leads stay in reporting (conversion math), keep all history, and feed
-                the Lost-lead winback workflow 30/60/90 days later.
+                No panic — just open the lead and set one now. The earlier the better, so it pops back onto
+                your Action List on the right day. Make &ldquo;always set a date&rdquo; your habit and you&apos;ll
+                rarely need to fix this.
               </p>
             </Faq>
 
-            <Faq q="Why can't I see all the leads / why am I scoped to mine only?">
+            <Faq q="What makes a good remark?">
               <p>
-                Agents see only the leads assigned to them — a security lockdown decision so client data
-                doesn&apos;t walk out the door. Managers see their direct reports&apos; leads (via
-                <code> User.managerId</code>). Admins (Lalit, Sameer) see everything.
-                If you need a lead reassigned to you, ask Lalit or the admin on duty.
+                Capture the real picture: <i>budget</i>, <i>what they want</i> (size, area, project), <i>when</i> they
+                want it, and <i>who decides</i>. Example: <i>&ldquo;Budget 2.5 Cr, 3BHK Dubai Marina, wants possession
+                in 3 months, wife decides.&rdquo;</i> Avoid empty notes like &ldquo;will call later&rdquo; — they help no one.
               </p>
             </Faq>
 
-            <Faq q="How does the SLA timer work?">
+            <Faq q="Why can't I see everyone's leads — only mine?">
               <p>
-                Two timers run on every new lead: <b>5-minute auto-assign</b> (if no one picks it up, round-robin
-                assigns to a present agent) and <b>15-minute first-call SLA</b> (assigned agent must log a call
-                attempt within 15 min of assignment). Breaches show in <code>/reports/sla</code> and trigger
-                a manager notification. Sundays and 10pm–10am IST are excluded.
+                You see the leads assigned to <b>you</b> so your list stays focused and client data stays safe.
+                If you need a particular lead moved to you, just ask Lalit and he&apos;ll reassign it.
               </p>
             </Faq>
 
-            <Faq q="What does 'Cold lead' mean vs 'NEW' status?">
+            <Faq q="What does 'Connected' vs 'Not picked' mean?">
               <p>
-                <b>NEW</b> is a pipeline stage — a fresh lead nobody has called yet. <b>Cold</b> is a state:
-                any lead with no activity for 14+ days drops into the Revival Engine (<code>/cold-calls</code>)
-                regardless of stage. You can have a Qualified-stage lead that&apos;s gone cold, or a NEW-stage
-                lead that&apos;s still hot because it arrived 10 minutes ago.
+                <b>Connected</b> = you actually spoke to the person. <b>Not picked</b> = it rang but no one
+                answered. Pick the one that&apos;s true — it keeps your numbers honest and your follow-ups sensible.
               </p>
             </Faq>
 
-            <Faq q="How is the AI score computed?">
+            <Faq q="What's the difference between a cold lead and a new lead?">
               <p>
-                The score is <b>rule-based</b>, not ML. Points are awarded for: recency of activity, number of
-                connected calls, budget in range for the project, source quality (website &gt; portal &gt; cold list),
-                presence of a follow-up date, qualification flag, and tags like <code>investor</code> or <code>hni</code>.
-                Penalties for stale dates, wrong-number tags, and lost stage. The full ruleset lives in
-                <code> src/lib/score.ts</code> — recomputed nightly + on every stage change.
+                A <b>new</b> lead is fresh — nobody has called them yet. A <b>cold</b> lead is one that&apos;s gone
+                quiet for a while with no recent activity. Cold leads gather in the <i>Revival Engine</i> so you
+                can call and bring them back to life.
               </p>
             </Faq>
 
             <Faq q="Can I undo a stage change?">
               <p>
-                Yes — open the lead, click the stage chip, pick the previous stage. Every change is in the
-                timeline with the user + timestamp, so the audit trail is preserved. There&apos;s no &quot;undo button&quot;
-                because too many auto-actions fire on stage change (workflows, notifications) — manual
-                re-set is safer.
+                Yes. Open the lead, tap the stage chip, and pick the right stage. Every change is saved with
+                your name and the time, so nothing is ever lost. Just re-set it and carry on.
               </p>
             </Faq>
 
-            <Faq q="Why is my push notification not arriving?">
+            <Faq q="Is the Vault watched or scored?">
               <p>
-                Three usual causes: (1) you didn&apos;t hit <i>Allow</i> when the browser asked — re-enable in
-                Profile → Notifications; (2) your phone is in deep-sleep mode (Android battery saver kills
-                background browsers); (3) the PWA isn&apos;t installed — push works best when the CRM is
-                installed from <i>Add to Home Screen</i>. iOS requires iOS 16.4+ AND the installed PWA.
+                The Vault is simply a space to journal, vent, log wins, and reset — a tool to keep your head
+                clear during a tough day. Use it however helps you. There&apos;s no game or target attached to it;
+                it&apos;s there for <i>you</i>.
               </p>
             </Faq>
 
-            <Faq q="How do I export my leads as CSV?">
+            <Faq q="My push notifications aren't arriving.">
               <p>
-                On the Leads list, apply your filters (or open a Smart List), then click <i>Export</i> in the
-                toolbar. CSV export is <b>admin-only</b> for security — agents see the button but it asks Lalit
-                for approval. Every export is watermarked with your user ID + timestamp and logged in
-                <code> /admin/audit</code>.
+                Usually one of three things: (1) you didn&apos;t tap <i>Allow</i> when the phone asked — turn it back
+                on in Profile → Notifications; (2) battery-saver mode is blocking them; (3) you haven&apos;t added the
+                CRM to your home screen yet. Adding it from <i>Add to Home Screen</i> makes notifications far more
+                reliable. Still stuck? Ping Lalit.
               </p>
             </Faq>
 
-            <Faq q="What's a Smart List?">
+            <Faq q="The app feels slow on my phone.">
               <p>
-                A saved filter combo. Build any filter on the Leads list (stage = Qualified, tag = investor,
-                team = Dubai), click <i>Save as Smart List</i>, name it, done. Smart Lists appear in your
-                sidebar and update live as leads change. Great for &quot;NRIs to call this week&quot; or
-                &quot;hot Dubai investors&quot;.
-              </p>
-            </Faq>
-
-            <Faq q="How are commissions tracked?">
-              <p>
-                Commissions are computed off the <code>booking_done</code> stage transition: agent + lead +
-                project + booking amount + commission % (set per project in <code>/properties</code>). The
-                Leaderboards page shows month-to-date and quarter-to-date. Payouts happen offline — the CRM
-                is the source of truth for what was booked, not the payment system.
-              </p>
-            </Faq>
-
-            <Faq q="The mobile app feels sluggish — what can I do?">
-              <p>
-                Install the PWA from your browser&apos;s <i>Add to Home Screen</i> menu instead of using the
-                browser tab — it loads faster and works offline for read-only views. Clear the cache from
-                Profile → <i>Reset local data</i> if a page looks stuck on stale data.
+                Add the CRM to your home screen from your browser&apos;s <i>Add to Home Screen</i> menu and open it
+                from there — it&apos;s noticeably faster than a browser tab. If a page looks stuck on old info, close
+                and reopen it.
               </p>
             </Faq>
           </div>
@@ -405,8 +498,8 @@ export default async function HelpPage() {
         <section id="contact" className="card p-5 scroll-mt-20">
           <h2 className="text-lg font-bold text-[#0b1a33] mb-3">📧 Need more help?</h2>
           <p className="text-sm text-gray-700">
-            This CRM is a <b>custom build</b> — not Salesforce, not a stock product. If something is broken,
-            confusing, or doesn&apos;t match how the team actually works, tell Lalit and we&apos;ll fix it.
+            Stuck, confused, or something looks broken? That&apos;s totally normal on day one — and this CRM was
+            built for <i>you</i>, so we want to hear it. Reach out and we&apos;ll sort it. 🙌
           </p>
           <div className="mt-3 p-3 rounded-lg bg-[#fdfaf2] border border-[#e9d8a6]">
             <div className="text-sm">
@@ -417,12 +510,154 @@ export default async function HelpPage() {
               </a>
             </div>
             <div className="text-xs text-gray-600 mt-2">
-              For an urgent CRM outage, message Lalit directly on WhatsApp.
+              For an urgent CRM problem, message Lalit directly on WhatsApp.
             </div>
           </div>
         </section>
       </article>
     </div>
+  );
+}
+
+/* ─────────────────────────── Helper components ─────────────────────────── */
+
+/** Big numbered step inside the dark hero block. */
+function HeroStep({
+  n,
+  emoji,
+  title,
+  children,
+}: {
+  n: number;
+  emoji: string;
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <li className="flex items-start gap-3">
+      <span className="flex-none grid place-items-center w-8 h-8 rounded-full bg-white/15 text-white text-sm font-bold">
+        {n}
+      </span>
+      <div className="text-white/90">
+        <div className="text-sm font-semibold text-white">
+          <span className="mr-1.5">{emoji}</span>
+          {title}
+        </div>
+        <div className="text-sm text-white/80 mt-0.5">{children}</div>
+      </div>
+    </li>
+  );
+}
+
+/** A friendly step row used inside the white cards. Large tap target, emoji-led. */
+function StepRow({
+  emoji,
+  title,
+  children,
+  highlight = false,
+}: {
+  emoji: string;
+  title: string;
+  children: React.ReactNode;
+  highlight?: boolean;
+}) {
+  return (
+    <li
+      className={`flex items-start gap-3 rounded-xl p-3 ${
+        highlight ? "bg-amber-50 border border-amber-200" : "bg-[#fafafa] border border-gray-100"
+      }`}
+    >
+      <span className="flex-none text-xl leading-none mt-0.5" aria-hidden>
+        {emoji}
+      </span>
+      <div>
+        <div className="text-sm font-semibold text-[#0b1a33]">{title}</div>
+        <div className="text-sm text-gray-700 mt-0.5">{children}</div>
+      </div>
+    </li>
+  );
+}
+
+/** Small square info tile, used in 2–3 column grids. */
+function MiniCard({
+  emoji,
+  title,
+  children,
+}: {
+  emoji: string;
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="rounded-xl bg-[#fafafa] border border-gray-100 p-3">
+      <div className="text-2xl leading-none" aria-hidden>
+        {emoji}
+      </div>
+      <div className="text-sm font-semibold text-[#0b1a33] mt-2">{title}</div>
+      <div className="text-[13px] text-gray-700 mt-1 leading-relaxed">{children}</div>
+    </div>
+  );
+}
+
+/** A short bullet with a leading emoji. */
+function BulletRow({ emoji, children }: { emoji: string; children: React.ReactNode }) {
+  return (
+    <li className="flex items-start gap-2">
+      <span className="flex-none text-base leading-none mt-0.5" aria-hidden>
+        {emoji}
+      </span>
+      <span>{children}</span>
+    </li>
+  );
+}
+
+/** Soft yellow "tip" note used to close out a section. */
+function Tip({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="mt-4 flex items-start gap-2 rounded-lg bg-[#fdfaf2] border border-[#e9d8a6] p-3">
+      <span className="flex-none text-base leading-none mt-0.5" aria-hidden>💡</span>
+      <p className="text-[13px] text-[#856404] leading-relaxed">{children}</p>
+    </div>
+  );
+}
+
+/** Bigger, friendly emphasis box for the single most important habit. */
+function Callout({
+  emoji,
+  title,
+  children,
+}: {
+  emoji: string;
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="mt-4 rounded-xl bg-emerald-50 border border-emerald-200 p-4">
+      <div className="text-sm font-bold text-emerald-800">
+        <span className="mr-1.5" aria-hidden>{emoji}</span>
+        {title}
+      </div>
+      <p className="text-sm text-emerald-900 mt-1 leading-relaxed">{children}</p>
+    </div>
+  );
+}
+
+/** A single pipeline stage pill. */
+function Stage({ emoji, children }: { emoji: string; children: React.ReactNode }) {
+  return (
+    <span className="inline-flex items-center gap-1.5 rounded-full bg-[#fdfaf2] border border-[#e9d8a6] text-[#856404] px-3 py-1.5">
+      <span aria-hidden>{emoji}</span>
+      {children}
+    </span>
+  );
+}
+
+/** Small arrow separator between pipeline stages. */
+function Arrow() {
+  return (
+    <span className="text-gray-300 text-sm" aria-hidden>
+      →
+    </span>
   );
 }
 

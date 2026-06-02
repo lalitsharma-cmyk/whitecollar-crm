@@ -65,12 +65,18 @@
    colours (bg-white, text-gray-X) on specific components still need
    per-component dark: variants for full coverage. */
 [data-theme="dark"] {
-  --bg-app:     #0b1220;
-  --bg-card:    #131b2d;
-  --bg-muted:   #1a2438;
-  --text-base:  #e5e7eb;
-  --text-muted: #94a3b8;
-  --border:     #2a3550;
+  /* Deep navy/charcoal — NOT pure black. Layered surfaces give depth:
+     app (deepest) → card → muted → elevated (popovers/menus). */
+  --bg-app:      #0b1220;   /* page background — soft navy-charcoal */
+  --bg-card:     #111a2e;   /* cards / topbar / bottom-nav surface */
+  --bg-muted:    #1a2438;   /* inputs, hover fills, secondary surfaces */
+  --bg-elevated: #1e2a42;   /* popovers, menus, kanban cards (sit above cards) */
+  --text-base:   #e8edf5;   /* primary text — ~15.5:1 on --bg-app (AAA) */
+  --text-muted:  #9fb0c9;   /* secondary text — ~7:1 on --bg-app (AA+) */
+  --border:      #29354f;   /* hairline borders */
+  --border-strong: #3a486a; /* hover / focus borders */
+  /* Brand gold reads a touch brighter on dark so it stays legible on navy. */
+  --accent-on-dark: #d9b765;
 }
 
 html, body { background: var(--bg-app); color: var(--text-base); font-family: var(--font-sans); }
@@ -154,7 +160,63 @@ html, body { background: var(--bg-app); color: var(--text-base); font-family: va
 [data-theme="dark"] .hover\:bg-amber-50:hover    { background-color: rgba(245,158,11,0.25) !important; }
 [data-theme="dark"] .hover\:bg-emerald-50:hover  { background-color: rgba(16,185,129,0.25) !important; }
 [data-theme="dark"] .hover\:bg-gray-50:hover     { background-color: var(--bg-muted) !important; }
+[data-theme="dark"] .hover\:bg-gray-100:hover    { background-color: var(--bg-muted) !important; }
 [data-theme="dark"] .active\:bg-amber-50:active  { background-color: rgba(245,158,11,0.25) !important; }
+
+/* ─── Dark-mode component coverage (the surfaces that hardcode light values
+   in the component-class blocks further down). Translucent + token-based so
+   they track the theme and keep WCAG-AA contrast on the deep-navy base. ─── */
+
+/* Common Tailwind neutral surfaces used on cards/menus/rows */
+[data-theme="dark"] .bg-gray-50,
+[data-theme="dark"] .bg-gray-100      { background-color: var(--bg-muted) !important; }
+[data-theme="dark"] .bg-gray-900      { background-color: var(--bg-card) !important; }
+[data-theme="dark"] .text-gray-400    { color: var(--text-muted) !important; }
+[data-theme="dark"] .text-gray-900,
+[data-theme="dark"] .text-black       { color: var(--text-base) !important; }
+[data-theme="dark"] .border-gray-100,
+[data-theme="dark"] .border-gray-200,
+[data-theme="dark"] .border-gray-300  { border-color: var(--border) !important; }
+[data-theme="dark"] .divide-gray-100 > * + *,
+[data-theme="dark"] .divide-gray-200 > * + * { border-color: var(--border) !important; }
+
+/* Ghost/secondary button — white surface → card surface */
+[data-theme="dark"] .btn-ghost        { background: var(--bg-card); border-color: var(--border); color: var(--text-base); }
+[data-theme="dark"] .btn-ghost:hover  { border-color: var(--border-strong); background: var(--bg-muted); }
+/* Gold button: brighter gold so it stays legible; keep dark navy ink on top */
+[data-theme="dark"] .btn-gold         { color: #0b1220; }
+
+/* Tables — header/body borders + hover row tint */
+[data-theme="dark"] .tbl th           { color: var(--text-muted); border-bottom-color: var(--border); }
+[data-theme="dark"] .tbl td           { border-bottom-color: var(--border); }
+[data-theme="dark"] .tbl tr:hover td  { background: rgba(255,255,255,0.035); }
+
+/* Pills, chips base, segmented control, kanban, timeline, KPI surfaces */
+[data-theme="dark"] .pill             { background: var(--bg-muted); color: var(--text-muted); }
+[data-theme="dark"] .chip-lost        { background: rgba(148,163,184,0.18); color: #cbd5e1; }
+[data-theme="dark"] .src-web          { background: rgba(14,165,233,0.18);  color: #7dd3fc; }
+[data-theme="dark"] .src-csv          { background: rgba(245,158,11,0.18);  color: #fbbf24; }
+[data-theme="dark"] .src-event        { background: rgba(217,70,239,0.18);  color: #f0abfc; }
+[data-theme="dark"] .src-call         { background: rgba(239,68,68,0.18);   color: #fca5a5; }
+[data-theme="dark"] .seg              { background: var(--bg-muted); }
+[data-theme="dark"] .seg button,
+[data-theme="dark"] .seg a            { color: var(--text-muted); }
+[data-theme="dark"] .seg button.on,
+[data-theme="dark"] .seg a.on         { background: var(--bg-elevated); color: var(--text-base); box-shadow: 0 1px 2px rgba(0,0,0,0.4); }
+[data-theme="dark"] .col              { background: rgba(255,255,255,0.03); }
+[data-theme="dark"] .kanban-card      { background: var(--bg-elevated); border-color: var(--border); box-shadow: 0 1px 2px rgba(0,0,0,0.3); }
+[data-theme="dark"] .kanban-card:hover{ border-color: var(--accent-on-dark); }
+[data-theme="dark"] .tl-line          { border-left-color: var(--border); }
+[data-theme="dark"] .grad-card        { background: linear-gradient(135deg, #0f1d38, #15264a); }
+
+/* Brand-gold accents lift slightly on dark for legibility (default theme only;
+   a user/festive accent override sets --accent-primary which still wins). */
+[data-theme="dark"] .ai-tag           { color: var(--accent-on-dark); }
+
+/* Generic translucent menus/popovers built with bg-white get the elevated
+   surface so menus don't glow pure-card against cards. */
+[data-theme="dark"] .shadow-2xl,
+[data-theme="dark"] .shadow-xl        { box-shadow: 0 12px 40px rgba(0,0,0,0.55) !important; }
 
 /* Sidebar */
 .sidebar { background: linear-gradient(180deg, #0b1a33 0%, #0f2347 100%); }

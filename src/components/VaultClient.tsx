@@ -1,12 +1,14 @@
 "use client";
-// Vault — private reflection / journal / wins UI.
-// Privacy: this component never sends a userId; the server forces it to the
-// session user. All reads/writes go through /api/vault and /api/vault/[id].
+// Vault — reflection / journal / wins UI for the logged-in agent.
+// This component never sends a userId; the server forces it to the session
+// user on write. All reads/writes go through /api/vault and /api/vault/[id].
+// Note: admins/managers can review entries via /admin/vault (owner decision).
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Heart, Wind, Trophy, MessageSquare, X, Trash2, Plus, Sparkles, BookOpen } from "lucide-react";
 import { fmtIST12 } from "@/lib/datetime";
 import { useBodyScrollLock } from "@/hooks/useBodyScrollLock";
+import VaultVoiceInput from "@/components/VaultVoiceInput";
 
 // ─── Types ───────────────────────────────────────────────────────────────
 export type VaultEntryDTO = {
@@ -120,7 +122,6 @@ export default function VaultClient({ initialEntries }: Props) {
   const [moodNote, setMoodNote] = useState("");
   const [showVent, setShowVent] = useState(false);
   const [ventText, setVentText] = useState("");
-  const [ventAutoDelete, setVentAutoDelete] = useState(true);
   const [showAddWin, setShowAddWin] = useState(false);
   const [winText, setWinText] = useState("");
   const [showReset, setShowReset] = useState(false);
@@ -198,13 +199,10 @@ export default function VaultClient({ initialEntries }: Props) {
   async function saveVent() {
     const text = ventText.trim();
     if (!text) return;
-    const expiresAt = ventAutoDelete
-      ? new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
-      : null;
-    const ok = await postEntry({ kind: "VENT", content: text, expiresAt });
+    // Vents are permanent now — no expiresAt is sent.
+    const ok = await postEntry({ kind: "VENT", content: text });
     if (ok) {
       setVentText("");
-      setVentAutoDelete(true);
       setShowVent(false);
     }
   }
@@ -264,7 +262,7 @@ export default function VaultClient({ initialEntries }: Props) {
         <div>
           <h1 className="text-2xl font-bold leading-tight">Your Vault</h1>
           <p className="text-sm text-gray-500">
-            Private space — only you can see this. Journal, vent, log wins, reset when it gets heavy.
+            Your space to journal, vent, log wins, and reset when it gets heavy.
           </p>
         </div>
       </div>
@@ -300,9 +298,14 @@ export default function VaultClient({ initialEntries }: Props) {
               value={moodNote}
               onChange={(e) => setMoodNote(e.target.value)}
               rows={3}
-              placeholder="Optional — what's behind that feeling? (Only you can read this.)"
+              placeholder="Optional — what's behind that feeling?"
               className="w-full border border-[#e5e7eb] rounded-lg px-3 py-2 text-sm"
               autoFocus
+            />
+            <VaultVoiceInput
+              onTranscript={(t) =>
+                setMoodNote((prev) => (prev ? `${prev} ${t}` : t))
+              }
             />
             <div className="flex justify-end gap-2">
               <button
@@ -331,7 +334,7 @@ export default function VaultClient({ initialEntries }: Props) {
             <div className="font-semibold text-sm">Quick Vent</div>
           </div>
           <div className="text-xs text-gray-500">
-            Let it out. Optionally auto-deletes in 24 hours.
+            Let it out — get it off your chest.
           </div>
         </button>
 
@@ -461,19 +464,17 @@ export default function VaultClient({ initialEntries }: Props) {
             value={ventText}
             onChange={(e) => setVentText(e.target.value)}
             rows={4}
-            placeholder="Nobody else will see this. Say what you need to say."
+            placeholder="Say what you need to say — let it out."
             className="w-full border border-[#e5e7eb] rounded-lg px-3 py-2 text-sm"
             autoFocus
           />
-          <label className="flex items-center gap-2 mt-2 text-xs text-gray-700">
-            <input
-              type="checkbox"
-              checked={ventAutoDelete}
-              onChange={(e) => setVentAutoDelete(e.target.checked)}
-              className="rounded"
+          <div className="mt-2">
+            <VaultVoiceInput
+              onTranscript={(t) =>
+                setVentText((prev) => (prev ? `${prev} ${t}` : t))
+              }
             />
-            Auto-delete in 24h
-          </label>
+          </div>
           <div className="flex justify-end gap-2 mt-3">
             <button
               onClick={() => { setShowVent(false); setVentText(""); }}
@@ -515,6 +516,11 @@ export default function VaultClient({ initialEntries }: Props) {
                 placeholder="Booked first villa client / Talked down an angry client / Cold lead came back warm"
                 className="w-full border border-[#e5e7eb] rounded-lg px-3 py-2 text-sm"
                 autoFocus
+              />
+              <VaultVoiceInput
+                onTranscript={(t) =>
+                  setWinText((prev) => (prev ? `${prev} ${t}` : t))
+                }
               />
               <div className="flex justify-end gap-2">
                 <button
@@ -658,11 +664,6 @@ export default function VaultClient({ initialEntries }: Props) {
                         {e.tags.split(",").map((t) => t.trim()).filter(Boolean).map((t) => (
                           <span key={t} className="pill text-[10px]">#{t}</span>
                         ))}
-                      </div>
-                    )}
-                    {e.expiresAt && (
-                      <div className="mt-1 text-[10px] text-rose-600">
-                        Auto-deletes {fmtIST12(e.expiresAt)}
                       </div>
                     )}
                   </li>

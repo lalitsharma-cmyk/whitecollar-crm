@@ -12,6 +12,9 @@ export const dynamic = "force-dynamic";
 
 const roleChip: Record<string,string> = { ADMIN: "chip-hot", MANAGER: "chip-warm", AGENT: "chip-new" };
 
+// JS getDay() index (0=Sun … 6=Sat) → short label, for the weekly-off chip.
+const DOW_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
 type PipelineRow = { ownerId: string; currency: string; total: number };
 type ResponseRow = { ownerId: string; avgMinutes: number | null };
 
@@ -172,7 +175,16 @@ export default async function TeamPage() {
                     </div>
                   </td>
                   <td><span className={`chip ${roleChip[u.role]}`}>{u.role}</span></td>
-                  <td>{u.team ?? "—"}</td>
+                  <td>
+                    <div className="flex flex-col gap-1">
+                      <span>{u.team ?? "—"}</span>
+                      {u.weeklyOff != null && DOW_SHORT[u.weeklyOff] && (
+                        <span className="inline-flex w-fit items-center rounded-full border border-gray-200 bg-gray-50 px-1.5 py-0.5 text-[10px] font-medium text-gray-600">
+                          Off: {DOW_SHORT[u.weeklyOff]}
+                        </span>
+                      )}
+                    </div>
+                  </td>
                   <td>
                     <ManagerPicker
                       userId={u.id}

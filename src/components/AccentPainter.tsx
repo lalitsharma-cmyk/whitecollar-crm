@@ -1,10 +1,12 @@
 "use client";
 import { useEffect } from "react";
-import { getActiveFestival } from "@/lib/festivals";
+import { getActiveFestival, resolveAccent } from "@/lib/festivals";
 
 /**
  * Sets the global --accent-primary CSS variable based on (in priority order):
- *   1. User-picked custom accent in localStorage (`wcr.accent`)
+ *   1. User-picked accent in localStorage (`wcr.accent`) — either a #hex or a
+ *      named preset key (gold, royal-blue, emerald, violet, rose, teal,
+ *      orange, …). See resolveAccent() / ACCENT_PRESETS in src/lib/festivals.
  *   2. Active festival's accentHex (auto-applied during festival week)
  *   3. Default brand gold (#c9a24b — set in globals.css :root)
  *
@@ -52,11 +54,15 @@ export default function AccentPainter() {
       root.style.setProperty("--cta-primary-2", hex);   // hover = the base accent
     }
 
-    // 1) User pick wins
+    // 1) User pick wins — accepts a raw #hex OR a named preset key
+    //    (e.g. "royal-blue"). resolveAccent() maps keys → hex and validates.
     const userPick = localStorage.getItem("wcr.accent");
-    if (userPick && /^#[0-9a-f]{6}$/i.test(userPick)) {
-      apply(userPick);
-      return;
+    if (userPick) {
+      const hex = resolveAccent(userPick);
+      if (hex) {
+        apply(hex);
+        return;
+      }
     }
 
     // 2) Festival accent (auto)

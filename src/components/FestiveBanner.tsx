@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { X } from "lucide-react";
 import { getActiveFestival, type Festival } from "@/lib/festivals";
+import SeasonalDelight from "./SeasonalDelight";
 
 /**
  * Auto-displays a celebratory banner when today (or the day before) matches
@@ -14,6 +15,12 @@ import { getActiveFestival, type Festival } from "@/lib/festivals";
  *
  * Festive mode itself can be turned off in profile/settings (separate
  * preference key `wcr.festiveModeEnabled`). Defaults to ON.
+ *
+ * Also mounts <SeasonalDelight/> — the floating animated decorations + the
+ * interactive easter-egg. It's rendered here (rather than the shell) because
+ * FestiveBanner is already mounted globally in MobileShell. SeasonalDelight
+ * decides for itself whether to show (it reads getActiveFestival() too), so
+ * the floating layer keeps working even after the banner strip is dismissed.
  */
 const PREF_KEY = "wcr.festiveModeEnabled";
 const DISMISS_PREFIX = "wcr.festiveDismissed.";
@@ -44,30 +51,36 @@ export default function FestiveBanner() {
     setShow(false);
   }
 
-  if (!show || !festival) return null;
-
   return (
-    <div
-      className={`relative bg-gradient-to-r ${festival.theme.gradient} ${festival.theme.textColor} px-4 py-3 shadow-md`}
-      role="alert"
-      aria-label={`${festival.name} greeting`}
-    >
-      <div className="max-w-7xl mx-auto flex items-center gap-3">
-        <span className="text-2xl flex-none" aria-hidden>{festival.theme.emoji}</span>
-        <div className="flex-1 min-w-0">
-          <div className="font-bold text-sm sm:text-base truncate">{festival.greeting}</div>
-          {festival.subline && (
-            <div className="text-xs opacity-90 truncate">{festival.subline}</div>
-          )}
-        </div>
-        <button
-          onClick={dismiss}
-          aria-label="Dismiss greeting"
-          className="flex-none p-1.5 rounded hover:bg-white/15"
+    <>
+      {show && festival && (
+        <div
+          className={`relative bg-gradient-to-r ${festival.theme.gradient} ${festival.theme.textColor} px-4 py-3 shadow-md`}
+          role="alert"
+          aria-label={`${festival.name} greeting`}
         >
-          <X className="w-4 h-4" />
-        </button>
-      </div>
-    </div>
+          <div className="max-w-7xl mx-auto flex items-center gap-3">
+            <span className="text-2xl flex-none" aria-hidden>{festival.theme.emoji}</span>
+            <div className="flex-1 min-w-0">
+              <div className="font-bold text-sm sm:text-base truncate">{festival.greeting}</div>
+              {festival.subline && (
+                <div className="text-xs opacity-90 truncate">{festival.subline}</div>
+              )}
+            </div>
+            <button
+              onClick={dismiss}
+              aria-label="Dismiss greeting"
+              className="flex-none p-1.5 rounded hover:bg-white/15"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Floating seasonal decorations + interactive easter-egg. Self-gates on
+          the active festival + festive-mode preference. */}
+      <SeasonalDelight />
+    </>
   );
 }

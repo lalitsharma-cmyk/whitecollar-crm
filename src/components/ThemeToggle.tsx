@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { Sun, Moon, Monitor, Palette } from "lucide-react";
+import { ACCENT_PRESETS } from "@/lib/festivals";
 
 /**
  * Theme switcher — Light / Dark / Auto.
@@ -65,14 +66,12 @@ function applyAccent(hex: string | null) {
   localStorage.setItem("wcr.accent", hex);
 }
 
-const PRESET_ACCENTS = [
-  { name: "Brand gold",  hex: "#c9a24b" },
-  { name: "Eid green",   hex: "#10b981" },
-  { name: "Diwali pink", hex: "#ec4899" },
-  { name: "Ocean blue",  hex: "#3b82f6" },
-  { name: "Royal violet",hex: "#7c3aed" },
-  { name: "Ruby red",    hex: "#dc2626" },
-];
+// Accent swatches shown in the picker. Sourced from the shared ACCENT_PRESETS
+// in src/lib/festivals so AccentPainter + this picker never drift apart. We
+// store the resolved hex in localStorage (`wcr.accent`); AccentPainter's
+// resolveAccent() accepts both hex and preset keys, so this stays compatible
+// with any previously-saved custom hex.
+const PRESET_ACCENTS = ACCENT_PRESETS.map((p) => ({ name: p.name, hex: p.hex }));
 
 export default function ThemeToggle() {
   const [mode, setMode] = useState<Mode>("auto");

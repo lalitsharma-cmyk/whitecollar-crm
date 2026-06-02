@@ -44,6 +44,8 @@ model User {
   managerId     String?
   manager       User?      @relation("Reports", fields: [managerId], references: [id])
   reports       User[]     @relation("Reports")
+  // Day-of-week the agent is off, JS getDay() convention (0=Sunday … 6=Saturday); null = no fixed weekly off.
+  weeklyOff     Int?
   avatarColor   String?    // tailwind class e.g. "bg-indigo-500"
   active        Boolean    @default(true)
   createdAt     DateTime   @default(now())
