@@ -55,9 +55,8 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   // teammates' work and overstate the agent's numbers. ADMIN/MANAGER keep the
   // team view (their dashboard is a leadership console), so for them meScope
   // === teamScope and the dashboard is byte-for-byte unchanged. BY DESIGN these
-  // stay team-wide for everyone: the team-distribution chart (leadsByTeam), the
-  // §12.2 Sales Floor Live Feed, and the explicitly-labelled "TEAM · THIS MONTH"
-  // funnel counts.
+  // stay team-wide for everyone: the team-distribution chart (leadsByTeam) and
+  // the explicitly-labelled "TEAM · THIS MONTH" funnel counts.
   const meScope: Prisma.LeadWhereInput = isAdminOrMgr ? teamScope : { ownerId: me.id };
   const meActWhere: Prisma.ActivityWhereInput = isAdminOrMgr ? teamActWhere : { userId: me.id };
   const meCallWhere: Prisma.CallLogWhereInput = isAdminOrMgr ? teamCallWhere : { userId: me.id };
@@ -122,7 +121,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 3600 * 1000);
   // These "needs attention RIGHT NOW" hero counts are personal for an agent
   // (their own urgent items) and team-wide for leadership (audit B-03).
-  const [hotUntouched, overdueFollowups, closableDeals, coldRevivalOps, salesFloorFeed] = await Promise.all([
+  const [hotUntouched, overdueFollowups, closableDeals, coldRevivalOps] = await Promise.all([
     prisma.lead.count({
       where: {
         ...meScope, aiScore: AIScore.HOT,
@@ -146,15 +145,6 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         lastTouchedAt: { lt: thirtyDaysAgo },
         OR: [{ budgetMin: { gt: 5_000_000 } }, { aiScore: AIScore.HOT }],
       },
-    }),
-    // Sales Floor Live Feed — last 20 team actions (§ 12.2). Each row: agent,
-    // verb, lead name, timestamp. Pulled from Activity table (covers CALL,
-    // MEETING, SITE_VISIT, COLD_TO_LEAD, NOTE) — already team-scoped.
-    prisma.activity.findMany({
-      where: { ...teamActWhere, type: { in: [ActivityType.CALL, ActivityType.OFFICE_MEETING, ActivityType.VIRTUAL_MEETING, ActivityType.SITE_VISIT, ActivityType.HOME_VISIT, ActivityType.EXPO_MEETING, ActivityType.COLD_TO_LEAD, ActivityType.LEAD_CREATED, ActivityType.NOTE] } },
-      orderBy: { createdAt: "desc" },
-      take: 20,
-      include: { user: { select: { name: true, avatarColor: true } }, lead: { select: { id: true, name: true } } },
     }),
   ]);
 
@@ -436,45 +426,10 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         </Link>
       </div>
 
-      {/* ─── Sales Floor Live Feed (§ 12.2) ───
-          Real-time view of what the team is doing — gives the floor energy. */}
-      {salesFloorFeed.length > 0 && (
-        <div className="card p-4 border-l-4 border-emerald-500">
-          <div className="flex items-center gap-2 mb-3">
-            <span
-              className="relative flex h-2 w-2"
-              title="Auto-refreshes on every page load. Shows the last 20 calls, meetings, site visits, and notes from your team."
-            >
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-            </span>
-            <div className="font-semibold text-sm">Team activity — live (last 20 actions)</div>
-            <span className="text-[10px] text-gray-500">Showing {salesFloorFeed.length}</span>
-          </div>
-          <div className="space-y-1.5 max-h-[260px] overflow-y-auto">
-            {salesFloorFeed.map((a) => {
-              const v = activityVisual(a.type);
-              return (
-                <div key={a.id} className="flex items-center gap-2 text-xs">
-                  <div className={`w-6 h-6 rounded-full ${v.dot} text-white text-[10px] flex items-center justify-center flex-none`}>{v.icon}</div>
-                  <div className="min-w-0 flex-1">
-                    <span className="font-semibold text-[#0b1a33]">{a.user?.name ?? "System"}</span>
-                    <span className="text-gray-600"> · {v.label.toLowerCase()}</span>
-                    {a.lead && <> · <Link href={`/leads/${a.lead.id}`} className="text-[#0b1a33] underline">{a.lead.name}</Link></>}
-                  </div>
-                  <span className="text-[10px] text-gray-400 flex-none">{formatDistanceToNow(a.createdAt, { addSuffix: true })}</span>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* Smart suggestions — rule-based daily nudges. Mounted between the
-          live Sales Floor feed and the productivity tables so the agent
-          immediately sees concrete actions ("which 5 things should I act on
-          right now") before the broader stats. Hides itself when every rule
-          returns zero. */}
+      {/* Smart suggestions — rule-based daily nudges. Mounted near the top,
+          above the productivity tables so the agent immediately sees concrete
+          actions ("which 5 things should I act on right now") before the
+          broader stats. Hides itself when every rule returns zero. */}
       <SmartSuggestionsCard userId={me.id} role={me.role} team={me.team} />
 
       {/* §12.4 Daily Opening Experience
