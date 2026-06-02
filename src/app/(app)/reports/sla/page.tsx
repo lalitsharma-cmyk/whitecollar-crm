@@ -1,8 +1,9 @@
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
 import { ActivityType, ActivityStatus, Prisma } from "@prisma/client";
-import { format, startOfMonth, endOfMonth, subMonths } from "date-fns";
+import { format, startOfMonth, endOfMonth, subMonths, differenceInCalendarDays, subDays } from "date-fns";
 import Link from "next/link";
+import ReportDateRangePicker from "@/components/ReportDateRangePicker";
 
 export const dynamic = "force-dynamic";
 
@@ -29,6 +30,23 @@ interface MonthBlock {
 }
 
 const VISIT_TYPES: ActivityType[] = ["SITE_VISIT", "OFFICE_MEETING", "VIRTUAL_MEETING"] as ActivityType[];
+
+// Strict YYYY-MM-DD → UTC midnight. Reject junk so we don't slip an
+// Invalid Date into a Prisma gte filter.
+function parseYmd(s: string | undefined): Date | null {
+  if (!s) return null;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return null;
+  const d = new Date(`${s}T00:00:00.000Z`);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+function endOfDayUtc(d: Date): Date {
+  const out = new Date(d);
+  out.setUTCHours(23, 59, 59, 999);
+  return out;
+}
+function toYmd(d: Date): string {
+  return d.toISOString().slice(0, 10);
+}
 
 async function computeMonth(start: Date, end: Date, label: string, agentScope: string | null): Promise<MonthBlock> {
   const where: Prisma.ActivityWhereInput = {
@@ -85,15 +103,52 @@ export default async function SlaReportPage({ searchParams }: { searchParams: Pr
   // Agents see only their own row; admin/manager see everything (with optional ?agent=…)
   const agentScope = me.role === "AGENT" ? me.id : (sp.agent ?? null);
 
+  // ── Date range resolution ────────────────────────────────────────────
+  // Per Lalit feedback 2026-06: the page used to be fixed at
+  // "this month / last month" — now it accepts ?from=&to= via the shared
+  // ReportDateRangePicker. Default window = this month, which preserves
+  // the previous look for anyone visiting without params.
+  //
+  // We also keep the dual-block compare-to-prior-period view because the
+  // month-over-month delta is the actual SLA story; we just relabel the
+  // headers so block A = the picked window and block B = the same length
+  // immediately preceding it.
   const now = new Date();
-  const thisMonthStart = startOfMonth(now);
-  const thisMonthEnd = endOfMonth(now);
-  const lastMonthStart = startOfMonth(subMonths(now, 1));
-  const lastMonthEnd = endOfMonth(subMonths(now, 1));
+  const fromParam = parseYmd(sp.from);
+  const toParam = parseYmd(sp.to);
+
+  const primaryStart = fromParam ?? startOfMonth(now);
+  const primaryEnd = toParam ? endOfDayUtc(toParam) : endOfMonth(now);
+
+  // Compute the "previous N days" block — same span as primary, ending
+  // the day before primary starts. For the default (this month) case we
+  // intentionally fall back to startOfMonth(lastMonth)/endOfMonth(lastMonth)
+  // so the label still reads as a clean calendar-month comparison — the
+  // most familiar SLA framing.
+  const usingDefaultMonth = !fromParam && !toParam;
+  let prevStart: Date;
+  let prevEnd: Date;
+  let primaryLabel: string;
+  let prevLabel: string;
+  if (usingDefaultMonth) {
+    prevStart = startOfMonth(subMonths(now, 1));
+    prevEnd = endOfMonth(subMonths(now, 1));
+    primaryLabel = format(now, "MMMM yyyy");
+    prevLabel = format(subMonths(now, 1), "MMMM yyyy");
+  } else {
+    // Length in days (inclusive). +1 because differenceInCalendarDays
+    // treats same-day as 0.
+    const span = Math.max(1, differenceInCalendarDays(primaryEnd, primaryStart) + 1);
+    prevEnd = endOfDayUtc(subDays(primaryStart, 1));
+    prevStart = subDays(prevEnd, span - 1);
+    prevStart.setUTCHours(0, 0, 0, 0);
+    primaryLabel = `${toYmd(primaryStart)} → ${toYmd(primaryEnd)}`;
+    prevLabel = `Previous ${span} day${span === 1 ? "" : "s"} · ${toYmd(prevStart)} → ${toYmd(prevEnd)}`;
+  }
 
   const [thisM, lastM, agents] = await Promise.all([
-    computeMonth(thisMonthStart, thisMonthEnd, format(now, "MMMM yyyy"), agentScope),
-    computeMonth(lastMonthStart, lastMonthEnd, format(subMonths(now, 1), "MMMM yyyy"), agentScope),
+    computeMonth(primaryStart, primaryEnd, primaryLabel, agentScope),
+    computeMonth(prevStart, prevEnd, prevLabel, agentScope),
     me.role !== "AGENT"
       ? prisma.user.findMany({ where: { active: true, role: { in: ["AGENT", "MANAGER"] } }, orderBy: { name: "asc" } })
       : Promise.resolve([]),
@@ -124,6 +179,10 @@ export default async function SlaReportPage({ searchParams }: { searchParams: Pr
           </div>
         )}
       </div>
+
+      {/* Shared date-range picker — writes ?from=&to=. Default window is
+          this month so visitors who don't pick see the same layout as before. */}
+      <ReportDateRangePicker defaultFrom={toYmd(primaryStart)} defaultTo={toYmd(primaryEnd)} />
 
       {[thisM, lastM].map((m) => (
         <section key={m.label} className="space-y-3">

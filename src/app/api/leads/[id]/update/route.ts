@@ -16,6 +16,8 @@ const ALLOWED: Record<string, "string" | "date" | "number" | "enum" | "bool"> = 
   configuration: "string", currentStatus: "string", categorization: "string",
   tags: "string", notesShort: "string", remarks: "string",
   whoIsClient: "string", detailShared: "string", todoNext: "string",
+  // ClientType: 'INVESTOR' | 'END_USER' | 'BOTH' | 'UNCLEAR' (or null to clear)
+  clientType: "enum",
   budgetMin: "number", budgetMax: "number", budgetCurrency: "string",
   followupDate: "date", meetingDate: "date", siteVisitDate: "date",
   status: "enum", potential: "enum", fundReadiness: "enum",

@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { LeadSource, LeadStatus, ActivityType, ActivityStatus, AIScore } from "@prisma/client";
+import { LeadSource, LeadStatus, ActivityType, ActivityStatus, AIScore, ClientType } from "@prisma/client";
 import { pickRoundRobinAgent, fingerprintFor } from "@/lib/assignment";
 import { defaultCurrencyForLocation } from "@/lib/money";
 import { notify, notifyRoles } from "@/lib/notify";
@@ -179,6 +179,38 @@ export async function ingestLead(input: RawLeadInput) {
       completedAt: new Date(),
     },
   });
+
+  // ── Heuristic clientType auto-tag (Lalit ask 2026-06-02) ──
+  // Mirrors the back-fill SQL in 20260602b_add_client_type/migration.sql so
+  // newly-ingested leads land in the same state as historical ones. Order
+  // matters: BOTH first (most specific), then INVESTOR, then END_USER.
+  // Anything that doesn't match stays NULL and the agent picks from the
+  // dropdown on the lead-detail page.
+  try {
+    const haystack = [
+      input.notesShort ?? "",
+      input.tags ?? "",
+      input.sourceDetail ?? "",
+    ].join(" ").toLowerCase();
+    let guess: ClientType | null = null;
+    const mentionsInvestor = haystack.includes("investor");
+    const mentionsEndUser = /end[\s-]?user|self[\s-]?use|relocate|move[\s-]?in/.test(haystack);
+    if (haystack.includes("both") || (mentionsInvestor && mentionsEndUser)) {
+      guess = ClientType.BOTH;
+    } else if (mentionsInvestor) {
+      guess = ClientType.INVESTOR;
+    } else if (mentionsEndUser) {
+      guess = ClientType.END_USER;
+    }
+    if (guess) {
+      await prisma.lead.update({
+        where: { id: lead.id },
+        data: { clientType: guess },
+      });
+    }
+  } catch {
+    // Never block intake on a heuristic miss — leave clientType null.
+  }
 
   // ── Returning-investor detection (Lalit ask 2026-06-02) ──
   // For any newly-created lead, scan for prior Lead rows that look like the

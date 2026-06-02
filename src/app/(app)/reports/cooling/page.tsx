@@ -2,27 +2,32 @@ import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
 import { fmtMoneyDual, fmtMoney } from "@/lib/money";
 import Link from "next/link";
+import ReportDateRangePicker from "@/components/ReportDateRangePicker";
 
 export const dynamic = "force-dynamic";
 
 // ── Cooling Leads Report ──────────────────────────────────────────────
 // Surfaces leads that WERE HOT but have been downgraded to WARM/COLD in
-// the last 14 days. This is the "save the deal" report — Lalit's most
-// requested intervention list: hot leads that started cooling off, while
-// there's still time to re-engage before they go fully cold.
+// a configurable window (default 14 days). This is the "save the deal"
+// report — Lalit's most requested intervention list: hot leads that
+// started cooling off, while there's still time to re-engage before they
+// go fully cold.
 //
 // Detection: rescoreLead() logs every bucket flip as an Activity with
 // type=STATUS_CHANGE and a title in the shape
 //     "🤖 AI re-score: <prevScore> → <newScore> (<oldBucket> → <newBucket>)"
-// So we look for STATUS_CHANGE activities in the last 14 days whose title
+// So we look for STATUS_CHANGE activities in the picked window whose title
 // contains "(HOT → WARM)" or "(HOT → COLD)", pick the most recent such
 // downgrade per lead, then keep only leads whose CURRENT aiScore is still
 // WARM/COLD — if they've been re-promoted back to HOT we don't surface
 // them as cooling anymore.
 //
 // Role scope: AGENT sees own leads only; ADMIN/MANAGER see everything.
+// Date controls: ?from=&to= via the shared ReportDateRangePicker. Default
+// remains 14 days back → today, matching the page's original fixed window
+// so a visit with no params is identical to the pre-picker behaviour.
 
-const WINDOW_DAYS = 14;
+const DEFAULT_WINDOW_DAYS = 14;
 
 interface CoolingRow {
   id: string;
@@ -38,18 +43,56 @@ interface CoolingRow {
   downgraded_at: Date;         // when the STATUS_CHANGE happened
 }
 
-export default async function CoolingLeadsReport() {
+// Strict YYYY-MM-DD → UTC midnight. Reject junk so we don't slip an
+// Invalid Date into a Prisma filter.
+function parseYmd(s: string | undefined): Date | null {
+  if (!s) return null;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return null;
+  const d = new Date(`${s}T00:00:00.000Z`);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+function endOfDayUtc(d: Date): Date {
+  const out = new Date(d);
+  out.setUTCHours(23, 59, 59, 999);
+  return out;
+}
+function toYmd(d: Date): string {
+  return d.toISOString().slice(0, 10);
+}
+
+export default async function CoolingLeadsReport({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | undefined>>;
+}) {
   const me = await requireUser();
+  const sp = await searchParams;
   const scopedOwnerId: string | null = me.role === "AGENT" ? me.id : null;
+
+  // ── Resolve the window ──
+  // Default = last 14 days → today, matching the page's pre-picker behaviour.
+  // ?from=&to= via the shared picker override on either side; both bounds
+  // are passed directly to the SQL query as parameters (no string interpolation).
+  const now = new Date();
+  const fromParam = parseYmd(sp.from);
+  const toParam = parseYmd(sp.to);
+
+  const since: Date =
+    fromParam ?? new Date(now.getTime() - DEFAULT_WINDOW_DAYS * 86_400_000);
+  const until: Date = toParam ? endOfDayUtc(toParam) : now;
+
+  // Span in days for the descriptive copy on the header / empty-state.
+  const spanDays = Math.max(
+    1,
+    Math.round((until.getTime() - since.getTime()) / 86_400_000),
+  );
 
   // Raw query — DISTINCT ON picks the most recent qualifying downgrade
   // per lead. We pass scopedOwnerId as a parameter so AGENTs only see
   // their own; ADMIN/MANAGER pass null and the OR short-circuits.
   //
-  // We can't $-interpolate a number into `INTERVAL 'N days'` because
-  // Prisma would wrap it in quotes inside the literal — so we multiply
-  // a parameter against `INTERVAL '1 day'` instead (same trick used by
-  // the stalled-deal query in /reports).
+  // Window bounds are now driven by ?from=&to= rather than a fixed
+  // INTERVAL — both ends are Date params, so SQL injection isn't a risk.
   const rows = await prisma.$queryRaw<CoolingRow[]>`
     WITH downgrades AS (
       SELECT DISTINCT ON (a."leadId")
@@ -61,7 +104,8 @@ export default async function CoolingLeadsReport() {
         END            AS new_bucket
       FROM "Activity" a
       WHERE a."type" = 'STATUS_CHANGE'
-        AND a."createdAt" >= NOW() - (${WINDOW_DAYS} * INTERVAL '1 day')
+        AND a."createdAt" >= ${since}
+        AND a."createdAt" <= ${until}
         AND (a.title LIKE '%(HOT → WARM)%' OR a.title LIKE '%(HOT → COLD)%')
       ORDER BY a."leadId", a."createdAt" DESC
     )
@@ -127,10 +171,10 @@ export default async function CoolingLeadsReport() {
   }
 
   // ── Table rows — compute days-since-downgrade + sort-stable on it ──
-  const now = Date.now();
+  const nowMs = Date.now();
   const tableRows = rows.map((r) => {
     const downgradeMs = new Date(r.downgraded_at).getTime();
-    const daysSince = Math.max(0, Math.floor((now - downgradeMs) / 86_400_000));
+    const daysSince = Math.max(0, Math.floor((nowMs - downgradeMs) / 86_400_000));
     return {
       ...r,
       ownerName: r.owner_id ? (ownerNameById.get(r.owner_id) ?? "—") : "Unassigned",
@@ -148,11 +192,16 @@ export default async function CoolingLeadsReport() {
           </Link>
           <h1 className="text-xl sm:text-2xl font-bold">🌡 Cooling leads</h1>
           <p className="text-xs sm:text-sm text-gray-500">
-            HOT leads downgraded to WARM/COLD in the last {WINDOW_DAYS} days · {totalCount} lead{totalCount === 1 ? "" : "s"} losing momentum
+            HOT leads downgraded to WARM/COLD in the last {spanDays} day{spanDays === 1 ? "" : "s"} · {totalCount} lead{totalCount === 1 ? "" : "s"} losing momentum
             {scopedOwnerId ? " · your leads only" : " · team-wide"}
           </p>
         </div>
       </div>
+
+      {/* Shared date-range picker — writes ?from=&to=. Default window is
+          14 days back → today, so visitors without params see the same
+          report they saw before the picker was added. */}
+      <ReportDateRangePicker defaultFrom={toYmd(since)} defaultTo={toYmd(until)} />
 
       {/* Summary tiles — three things Lalit asks first: how many, how
           much money is on the line, and who needs the most help. */}
@@ -220,7 +269,7 @@ export default async function CoolingLeadsReport() {
         </div>
         {tableRows.length === 0 ? (
           <div className="p-6 text-center text-sm text-gray-500">
-            No leads have cooled off in the last {WINDOW_DAYS} days. 🎉 The pipeline is holding heat.
+            No leads have cooled off in the last {spanDays} day{spanDays === 1 ? "" : "s"}. 🎉 The pipeline is holding heat.
           </div>
         ) : (
           <table className="w-full text-sm min-w-[860px]">

@@ -1,8 +1,9 @@
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
-import { startOfMonth, endOfMonth, subMonths, format } from "date-fns";
+import { startOfMonth, endOfMonth, subMonths, format, differenceInCalendarDays, subDays } from "date-fns";
 import { getTravelRatePerKmInr } from "@/lib/settings";
 import Link from "next/link";
+import ReportDateRangePicker from "@/components/ReportDateRangePicker";
 
 export const dynamic = "force-dynamic";
 
@@ -13,6 +14,22 @@ interface Row {
   trips: number;
   km: number;
   amount: number;
+}
+
+// Strict YYYY-MM-DD → UTC midnight.
+function parseYmd(s: string | undefined): Date | null {
+  if (!s) return null;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return null;
+  const d = new Date(`${s}T00:00:00.000Z`);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+function endOfDayUtc(d: Date): Date {
+  const out = new Date(d);
+  out.setUTCHours(23, 59, 59, 999);
+  return out;
+}
+function toYmd(d: Date): string {
+  return d.toISOString().slice(0, 10);
 }
 
 async function compute(start: Date, end: Date, agentScope: string | null): Promise<Row[]> {
@@ -41,15 +58,40 @@ export default async function TravelReportPage({ searchParams }: { searchParams:
   const sp = await searchParams;
   const agentScope = me.role === "AGENT" ? me.id : (sp.agent ?? null);
 
+  // ── Date range resolution ────────────────────────────────────────────
+  // Per Lalit feedback 2026-06: page now accepts ?from=&to= via the shared
+  // ReportDateRangePicker. Default window = this month, preserving the
+  // previous look. We keep the dual-block prior-period comparison so the
+  // month-over-month travel-cost story is still visible.
   const now = new Date();
-  const thisStart = startOfMonth(now);
-  const thisEnd = endOfMonth(now);
-  const lastStart = startOfMonth(subMonths(now, 1));
-  const lastEnd = endOfMonth(subMonths(now, 1));
+  const fromParam = parseYmd(sp.from);
+  const toParam = parseYmd(sp.to);
+
+  const primaryStart = fromParam ?? startOfMonth(now);
+  const primaryEnd = toParam ? endOfDayUtc(toParam) : endOfMonth(now);
+
+  const usingDefaultMonth = !fromParam && !toParam;
+  let prevStart: Date;
+  let prevEnd: Date;
+  let primaryLabel: string;
+  let prevLabel: string;
+  if (usingDefaultMonth) {
+    prevStart = startOfMonth(subMonths(now, 1));
+    prevEnd = endOfMonth(subMonths(now, 1));
+    primaryLabel = format(now, "MMMM yyyy");
+    prevLabel = format(subMonths(now, 1), "MMMM yyyy");
+  } else {
+    const span = Math.max(1, differenceInCalendarDays(primaryEnd, primaryStart) + 1);
+    prevEnd = endOfDayUtc(subDays(primaryStart, 1));
+    prevStart = subDays(prevEnd, span - 1);
+    prevStart.setUTCHours(0, 0, 0, 0);
+    primaryLabel = `${toYmd(primaryStart)} → ${toYmd(primaryEnd)}`;
+    prevLabel = `Previous ${span} day${span === 1 ? "" : "s"} · ${toYmd(prevStart)} → ${toYmd(prevEnd)}`;
+  }
 
   const [thisM, lastM, rate, agents] = await Promise.all([
-    compute(thisStart, thisEnd, agentScope),
-    compute(lastStart, lastEnd, agentScope),
+    compute(primaryStart, primaryEnd, agentScope),
+    compute(prevStart, prevEnd, agentScope),
     getTravelRatePerKmInr(),
     me.role !== "AGENT"
       ? prisma.user.findMany({ where: { active: true, role: { in: ["AGENT", "MANAGER"] } }, orderBy: { name: "asc" } })
@@ -73,6 +115,10 @@ export default async function TravelReportPage({ searchParams }: { searchParams:
         </p>
       </div>
 
+      {/* Shared date-range picker — writes ?from=&to=. Default window is
+          this month so visitors without params see the same layout as before. */}
+      <ReportDateRangePicker defaultFrom={toYmd(primaryStart)} defaultTo={toYmd(primaryEnd)} />
+
       {me.role !== "AGENT" && (
         <div className="flex flex-wrap gap-2 items-center">
           <span className="text-xs text-gray-500">Filter by agent:</span>
@@ -85,8 +131,8 @@ export default async function TravelReportPage({ searchParams }: { searchParams:
       )}
 
       {[
-        { m: thisM, label: format(now, "MMMM yyyy"), total: thisTotal },
-        { m: lastM, label: format(subMonths(now, 1), "MMMM yyyy"), total: lastTotal },
+        { m: thisM, label: primaryLabel, total: thisTotal },
+        { m: lastM, label: prevLabel, total: lastTotal },
       ].map((blk) => (
         <section key={blk.label}>
           <h2 className="text-base font-bold text-[#0b1a33] mb-2">{blk.label} <span className="text-sm text-gray-500 font-normal">· total ₹{blk.total.toLocaleString("en-IN")}</span></h2>
@@ -100,7 +146,7 @@ export default async function TravelReportPage({ searchParams }: { searchParams:
               </tr></thead>
               <tbody>
                 {blk.m.length === 0 && (
-                  <tr><td colSpan={5} className="text-center text-gray-500 py-6 text-sm">No travel logged this month.</td></tr>
+                  <tr><td colSpan={5} className="text-center text-gray-500 py-6 text-sm">No travel logged in this window.</td></tr>
                 )}
                 {blk.m.map((r) => (
                   <tr key={r.userId}>

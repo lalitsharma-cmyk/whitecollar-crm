@@ -42,6 +42,7 @@ import BestCallTimeChip from "@/components/BestCallTimeChip";
 import { formatBudget } from "@/lib/budgetParse";
 import LinkedContactsCard from "@/components/LinkedContactsCard";
 import InvestorBanner from "@/components/InvestorBanner";
+import ClientTypeSelect from "@/components/ClientTypeSelect";
 
 export const dynamic = "force-dynamic";
 
@@ -561,11 +562,24 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
         <div data-lead-section="overview" className="card p-5 border-l-4 border-[#c9a24b]">
           <div className="flex items-center gap-2 mb-2">
             <span className="ai-tag">WHO IS THE CLIENT</span>
-            <span className="text-xs text-gray-500">— full situation, not keywords · click to edit</span>
+            <span className="text-xs text-gray-500">— Investor / End-user / Both</span>
           </div>
-          <div className="text-sm text-gray-800 leading-relaxed">
-            <InlineEdit leadId={lead.id} field="whoIsClient" type="textarea" value={lead.whoIsClient ?? ""}
-              placeholder="e.g. NRI from Mumbai based in Dubai. Senior Director at consulting firm. Husband already owns at Burj Vista. Looking for parents who'll relocate next year. Wife is decision maker." />
+          {/* Lalit's 3-option dropdown (+ Unclear) — the structured signal.
+              Changes POST to /api/leads/[id]/update {clientType}. The long
+              context still lives in the notes box below. */}
+          <ClientTypeSelect leadId={lead.id} value={lead.clientType ?? null} />
+
+          {/* Repurposed free-text field — kept so the existing data isn't
+              lost. Re-labelled as the "situation / context" notes box. */}
+          <div className="mt-4 border-t border-gray-100 pt-3">
+            <div className="flex items-center gap-2 mb-1">
+              <span className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">Client context (notes)</span>
+              <span className="text-xs text-gray-400">— the long story · click to edit</span>
+            </div>
+            <div className="text-xs text-gray-600 leading-relaxed">
+              <InlineEdit leadId={lead.id} field="whoIsClient" type="textarea" value={lead.whoIsClient ?? ""}
+                placeholder="e.g. NRI from Mumbai based in Dubai. Senior Director at consulting firm. Husband already owns at Burj Vista. Looking for parents who'll relocate next year. Wife is decision maker." />
+            </div>
           </div>
         </div>
 

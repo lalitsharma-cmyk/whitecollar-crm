@@ -192,6 +192,19 @@ enum AuthorityLevel {
   UNKNOWN
 }
 
+// Client classification (Lalit ask 2026-06-02) — replaces free-text
+// `whoIsClient` as the structured signal. Investor (buying for yield /
+// flip), End-user (will live in / use it), Both (mixed motive), Unclear
+// (agent hasn't established yet). The free-text `whoIsClient` field stays
+// on the Lead model and is repurposed as "client situation / context notes"
+// for the long story behind the classification.
+enum ClientType {
+  INVESTOR
+  END_USER
+  BOTH
+  UNCLEAR
+}
+
 // =====================================================
 // LEAD — the core entity
 // =====================================================
@@ -230,7 +243,13 @@ model Lead {
   categorization  String?     // NRI / Resident / Investor / End-user
   language        String?     // "English,Hindi"
   // DEPTH FIELDS (from Dubai sheet — Lalit's priority)
-  whoIsClient     String?     // FULL client situation, not keywords
+  // `clientType` is the structured "who is the client" signal (3 + 1 options:
+  // Investor / End-user / Both / Unclear). Drives messaging, routing, and the
+  // Quality Score. `whoIsClient` stays as the free-text "client situation /
+  // context notes" — long story behind the classification (e.g. "NRI in Dubai,
+  // husband already owns at Burj Vista, parents will relocate next year").
+  clientType      ClientType?
+  whoIsClient     String?     // FULL client situation context, not keywords
   whenCanInvest   InvestTimeline?
   potential       Potential?
   fundReadiness   FundReadiness?
