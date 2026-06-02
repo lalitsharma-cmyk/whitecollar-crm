@@ -31,6 +31,8 @@ import BuyingSignalsCard from "@/components/BuyingSignalsCard";
 import NextBestActionCard from "@/components/NextBestActionCard";
 import LeadScoreBreakdown from "@/components/LeadScoreBreakdown";
 import { explainScore } from "@/lib/leadRescorer";
+import { topScoreFactors } from "@/lib/scoreExplain";
+import { aiEnabled } from "@/lib/ai";
 import LeadNotesCard from "@/components/LeadNotesCard";
 import VoiceNoteRecorder from "@/components/VoiceNoteRecorder";
 import LeadReassignClient from "@/components/LeadReassignClient";
@@ -159,6 +161,18 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
     activities: lead.activities.map((a) => ({ type: a.type, status: a.status })),
     lastTouchedAt: lead.lastTouchedAt ?? lead.createdAt,
   });
+
+  // Top 3–5 signed contributors for the compact "Why this score" strip. Pure
+  // transform over the factors explainScore() already produced — no new weights.
+  const topFactors = topScoreFactors(
+    scoreExplanation.factors,
+    { budgetMin: lead.budgetMin, budgetCurrency: lead.budgetCurrency },
+    5,
+  );
+  // When an AI provider is configured the rescorer may override the stored
+  // aiScoreValue/aiScore with the model's own number; the breakdown card uses
+  // this flag to stay truthful about what it's explaining (see component).
+  const aiScoringOn = aiEnabled();
 
   // Travel rate fetched once — used by the AdvancedActivityLogger which now
   // lives at the bottom of the RIGHT column (moved from header per Lalit's
@@ -601,6 +615,10 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
             score={scoreExplanation.score}
             bucket={scoreExplanation.bucket}
             factors={scoreExplanation.factors}
+            topFactors={topFactors}
+            aiActive={aiScoringOn}
+            storedScore={lead.aiScoreValue}
+            storedBucket={lead.aiScore}
           />
         </div>
 
