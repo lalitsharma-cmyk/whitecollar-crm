@@ -9,7 +9,6 @@ import { activityVisual } from "@/lib/activityIcon";
 import { requireUser } from "@/lib/auth";
 import Link from "next/link";
 import MoodCheckIn from "@/components/MoodCheckIn";
-import AttendanceBadge from "@/components/AttendanceBadge";
 import IamHereCard from "@/components/IamHereCard";
 import DailyMissionBoard from "@/components/DailyMissionBoard";
 import PersonalScoreboard from "@/components/PersonalScoreboard";
@@ -400,8 +399,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
           Per Lalit: "Put I am here at top. so user knows its attendance."
           TOP card under the page title (the greeting/quote welcome strip that
           used to sit above this was removed per Lalit "remove daily note" — the
-          greeting + daily quote still live in the Daily Opening card below).
-          Bigger and more obvious than the small AttendanceBadge below. */}
+          greeting + daily quote still live in the Daily Opening card below). */}
       <IamHereCard
         today={myAttendanceToday ? { status: myAttendanceToday.status, markedAt: myAttendanceToday.markedAt.toISOString() } : null}
         userId={me.id}
@@ -486,11 +484,6 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
           right now") before the broader stats. Hides itself when every rule
           returns zero. */}
       <SmartSuggestionsCard userId={me.id} role={me.role} team={me.team} />
-
-      {/* Attendance badge — auto-marked on login, shown next to mood */}
-      <div className="flex flex-wrap gap-3 items-start">
-        <AttendanceBadge today={myAttendanceToday ? { status: myAttendanceToday.status, markedAt: myAttendanceToday.markedAt.toISOString() } : null} />
-      </div>
 
       {/* §12.4 Daily Opening Experience
           Premium morning greeting + single "today's mission" CTA + streak
