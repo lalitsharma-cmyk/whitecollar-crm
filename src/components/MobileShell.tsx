@@ -39,7 +39,6 @@ const fullNav = [
   ]},
   { section: "SETUP", items: [
     { href: "/profile",  label: "My Profile",    Icon: UserCog },
-    { href: "/team",     label: "Team & Roles",  Icon: UserCog },
     { href: "/settings", label: "Settings",      Icon: SettingsIcon },
     { href: "/help",     label: "Help",          Icon: HelpCircle },
   ]},
@@ -47,6 +46,7 @@ const fullNav = [
   // Currently only the "Awaiting Team" inbox needs this scope; new items go
   // in ADMIN below unless a manager should see them.
   { section: "TEAM", managerOrAdmin: true, items: [
+    { href: "/team",                label: "Team & Roles",  Icon: UserCog,       tag: undefined as string | undefined },
     { href: "/admin/awaiting-team", label: "Awaiting Team", Icon: AlertTriangle, tag: undefined as string | undefined },
   ]},
   // ADMIN-only section — filtered out in render below

@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { requireUser } from "@/lib/auth";
+import { requireRole } from "@/lib/auth";
 import { acefoneEnabled } from "@/lib/acefone";
 import { fmtMoneyDual } from "@/lib/money";
 import AcefoneAgentIdEdit from "@/components/AcefoneAgentIdEdit";
@@ -19,7 +19,11 @@ type PipelineRow = { ownerId: string; currency: string; total: number };
 type ResponseRow = { ownerId: string; avgMinutes: number | null };
 
 export default async function TeamPage() {
-  const me = await requireUser();
+  // ADMIN/MANAGER only — this page exposes every teammate's call counts,
+  // pipeline value, and response times (competitive data) plus role/Acefone
+  // editors. Agents are redirected to /dashboard; they have /profile +
+  // /leaderboards for their own stats and the (intended) public rankings.
+  const me = await requireRole("ADMIN", "MANAGER");
   const now = new Date();
   const ninetyDaysAgo = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
   const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);

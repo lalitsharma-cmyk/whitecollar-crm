@@ -3,6 +3,7 @@ import { UnitStatus, ProjectStatus, Prisma } from "@prisma/client";
 import { requireUser } from "@/lib/auth";
 import { bestLeadsForProject, type SuggestedLead } from "@/lib/leadsForProject";
 import { projectWhereForUser } from "@/lib/propertyScope";
+import { leadScopeWhere } from "@/lib/leadScope";
 import Link from "next/link";
 
 export const dynamic = "force-dynamic";
@@ -128,11 +129,14 @@ export default async function PropertiesPage({ searchParams }: { searchParams: P
 
   // §9.8 — for each project, find pipeline leads worth pitching this to.
   // Done in parallel so we don't add round-trip latency per card.
+  // Scope to the viewer (audit P2-1): an AGENT only matches their OWN leads, so
+  // the expander never names a peer's client/budget. ADMIN → all, MANAGER → reports.
+  const leadScope = await leadScopeWhere(me);
   const matchesByProject = new Map<string, SuggestedLead[]>(
     await Promise.all(
       sortedProjects.map(async (p): Promise<[string, SuggestedLead[]]> => [
         p.id,
-        await bestLeadsForProject(p.id, 5),
+        await bestLeadsForProject(p.id, 5, leadScope),
       ]),
     ),
   );

@@ -2,6 +2,8 @@ import { prisma } from "@/lib/prisma";
 import { LeadStatus, AIScore, ActivityType, Prisma } from "@prisma/client";
 import KanbanBoard from "@/components/KanbanBoard";
 import Link from "next/link";
+import { requireUser } from "@/lib/auth";
+import { leadScopeWhere } from "@/lib/leadScope";
 
 export const dynamic = "force-dynamic";
 
@@ -28,11 +30,19 @@ const DAYS_HEALTHY = 3;
 const DAYS_STUCK   = 7;
 
 export default async function PipelinePage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
+  const me = await requireUser();
   const sp = await searchParams;
-  const where: Prisma.LeadWhereInput = { status: { in: stages.map(s => s.key) } };
+  // Ownership scope: AGENT → own leads only, MANAGER → own + reports, ADMIN → all.
+  // Without this an agent could open /pipeline and see every company lead.
+  const scope = await leadScopeWhere(me);
+  const where: Prisma.LeadWhereInput = { ...scope, status: { in: stages.map(s => s.key) } };
   if (sp.team) where.forwardedTeam = sp.team;
-  if (sp.owner === "unassigned") where.ownerId = null;
-  else if (sp.owner) where.ownerId = sp.owner;
+  // Only ADMIN/MANAGER may override ownership via ?owner=. Agents stay locked to
+  // their own scope — otherwise ?owner=<peerId> would leak a colleague's pipeline.
+  if (me.role !== "AGENT") {
+    if (sp.owner === "unassigned") where.ownerId = null;
+    else if (sp.owner) where.ownerId = sp.owner;
+  }
   if (sp.ai) where.aiScore = sp.ai as AIScore;
 
   const [leads, agents] = await Promise.all([

@@ -198,7 +198,11 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   // ⚡ PERFORMANCE: was 30 sequential queries (5 per agent × 6 agents). Now 1.
   const tomorrow = new Date(todayStart.getTime() + 24 * 3600_000);
   type SpRow = { id: string; name: string; team: string | null; calls: bigint; connected: bigint; due_today: bigint; overdue: bigint; closeable: bigint; needs: bigint; clients: bigint };
-  const spStatsRaw = await prisma.$queryRaw<SpRow[]>`
+  // ADMIN/MANAGER only — this table exposes every teammate's call counts,
+  // pipeline & client totals (competitive data). Agents see their own numbers
+  // in the KPI tiles + briefing above; the cross-team breakdown is management-
+  // only. Skipping the query for agents also avoids 9 sub-selects × N users.
+  const spStatsRaw: SpRow[] = isAdminOrMgr ? await prisma.$queryRaw<SpRow[]>`
     SELECT u.id, u.name, u.team,
       COALESCE((SELECT COUNT(*) FROM "CallLog" c WHERE c."userId" = u.id AND c."startedAt" >= ${todayStart}), 0) as calls,
       COALESCE((SELECT COUNT(*) FROM "CallLog" c WHERE c."userId" = u.id AND c."startedAt" >= ${todayStart} AND c.outcome::text = 'CONNECTED'), 0) as connected,
@@ -210,7 +214,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     FROM "User" u
     WHERE u.active = true AND u.role::text IN ('AGENT','MANAGER')
     ORDER BY calls DESC
-  `;
+  ` : [];
   const spStats = spStatsRaw.map(r => ({
     id: r.id, name: r.name, team: r.team,
     calls: Number(r.calls), connected: Number(r.connected),
@@ -691,7 +695,8 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         <p className="text-xs text-gray-500 mt-2">Each deal is weighted by likelihood: closing 55%, meeting 30%, actively moving 10%, early/cold 2%. Adjust in <code>WEIGHTS</code> if needed.</p>
       </div>
 
-      {/* By Salesperson table */}
+      {/* By Salesperson table — ADMIN/MANAGER only (team-wide competitive data) */}
+      {isAdminOrMgr && (
       <div className="card p-3 lg:p-5 overflow-x-auto">
         <div className="text-xs font-bold tracking-widest text-gray-500 mb-3">BY SALESPERSON</div>
         <table className="tbl w-full min-w-[520px]">
@@ -715,6 +720,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
           </tbody>
         </table>
       </div>
+      )}
 
       {/* Charts — Leads-over-time chart removed per Lalit's "remove leads
           over time from dashboard". The daily intake number is already in

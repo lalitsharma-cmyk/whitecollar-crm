@@ -4,6 +4,7 @@ import Link from "next/link";
 import { UnitStatus, LeadStatus } from "@prisma/client";
 import { requireUser } from "@/lib/auth";
 import { bestLeadsForProject } from "@/lib/leadsForProject";
+import { leadScopeWhere } from "@/lib/leadScope";
 import { fmtMoney } from "@/lib/money";
 import UnitsCsvImport from "@/components/UnitsCsvImport";
 
@@ -27,10 +28,15 @@ export default async function PropertyDetail({ params }: { params: Promise<{ id:
   });
   if (!project) notFound();
 
+  // Scope both lead lists to the viewer (audit P2-1): an AGENT sees only their
+  // OWN matching leads + own active discussions — not peers' client names,
+  // budgets or owners. ADMIN → all, MANAGER → own + reports.
+  const leadScope = await leadScopeWhere(me);
   const [matchingLeads, activeDiscussions] = await Promise.all([
-    bestLeadsForProject(id, 10),
+    bestLeadsForProject(id, 10, leadScope),
     prisma.lead.findMany({
       where: {
+        ...leadScope,
         discussed: { some: { projectId: id } },
         status: { notIn: [LeadStatus.WON, LeadStatus.LOST] },
       },

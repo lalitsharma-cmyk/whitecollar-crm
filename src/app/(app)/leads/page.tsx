@@ -66,8 +66,13 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
   if (sp.status) where.status = sp.status as LeadStatus;
   if (sp.ai) where.aiScore = sp.ai as AIScore;
   if (sp.team) where.forwardedTeam = sp.team;
-  if (sp.owner === "unassigned") where.ownerId = null;
-  else if (sp.owner) where.ownerId = sp.owner;
+  // Agents are scoped to their own leads (leadScopeWhere above). Only ADMIN/MANAGER
+  // may filter by owner — without this guard an agent could read a peer's leads by
+  // hand-crafting ?owner=<id>, overriding their ownership scope.
+  if (me.role !== "AGENT") {
+    if (sp.owner === "unassigned") where.ownerId = null;
+    else if (sp.owner) where.ownerId = sp.owner;
+  }
   if (sp.when === "24h") where.createdAt = { gte: new Date(Date.now() - 24 * 3600 * 1000) };
   else if (sp.when === "7d") where.createdAt = { gte: new Date(Date.now() - 7 * 24 * 3600 * 1000) };
   else if (sp.when === "30d") where.createdAt = { gte: new Date(Date.now() - 30 * 24 * 3600 * 1000) };

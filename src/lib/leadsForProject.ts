@@ -25,7 +25,7 @@
 //     (avoid double-pitching the same prospect)
 
 import { prisma } from "@/lib/prisma";
-import { LeadStatus, AIScore } from "@prisma/client";
+import { LeadStatus, AIScore, Prisma } from "@prisma/client";
 
 export type SuggestedLead = {
   leadId: string;
@@ -75,6 +75,11 @@ function normaliseCity(s?: string | null): string {
 export async function bestLeadsForProject(
   projectId: string,
   limit = 5,
+  // Ownership scope (from leadScopeWhere): ADMIN → {} (all), MANAGER → own +
+  // reports, AGENT → { ownerId: me.id }. Defaults to {} for callers that have
+  // already gated access. Without it, an agent's "matching leads" expander
+  // would name peers' clients + budgets (audit P2-1).
+  scope: Prisma.LeadWhereInput = {},
 ): Promise<SuggestedLead[]> {
   const project = await prisma.project.findUnique({
     where: { id: projectId },
@@ -116,6 +121,7 @@ export async function bestLeadsForProject(
   const candidatePool = Math.min(Math.max(limit * 8, 24), 200);
   const leads = await prisma.lead.findMany({
     where: {
+      ...scope,
       status: { in: ACTIVE_STATUSES },
       forwardedTeam: team,
       budgetMin: { gte: lo, lte: hi },
