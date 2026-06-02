@@ -9,7 +9,7 @@
 
 **Legend per page:** ✅ Working · ❌ Broken · ⚠️ Confusing · ➕ Missing — followed by a one-line **UX read** and a **Mobile note**.
 
-> **⏱ Round-12 status update (deployed `40878ae`, 2026-06-03):** the inline ❌/⚠️ verdicts below were written against `4dd8ba1`. Since then these are **Resolved & live** — **B-02** (`/calls` list + QualityList leak, `1f30647`), **B-03** (agent KPI-tile scope, `1f30647`), **B-04** (WA team scope, `1f30647`), **B-05** (Calls-mo label, `1f30647`), **B-13** (owner dropdown, `1f30647`), **B-16** (automations state, `e2658de`), **B-14** (loading/error boundaries, `1f9f5f5`), and **B-01** dedup *groundwork* (read-only, role-scoped duplicate warning, `40878ae`; merge/block deferred to Lalit). **Since resolved & live too:** **B-15** (perf/N+1, `078b353`), **B-19** (AI-score explainability, `0b9b5b0`), **B-17** (at-a-glance BANT completeness pill, `5aff9a3`), **B-18** (label pass, `82235cb`), **B-20** (flag-gated voice/motivation pilot, off by default, `1f735ed`). **No open backlog items remain** — only co-design follow-ups for Lalit (B-17 BANT stage-gating; B-20 pilot-team pick + flag; B-18's 2 data-scope mismatches). `docs/CRM_BUG_REPORT.md` is the source of truth for per-item status.
+> **⏱ Round-12 status update (deployed `40878ae`, 2026-06-03):** the inline ❌/⚠️ verdicts below were written against `4dd8ba1`. Since then these are **Resolved & live** — **B-02** (`/calls` list + QualityList leak, `1f30647`), **B-03** (agent KPI-tile scope, `1f30647`), **B-04** (WA team scope, `1f30647`), **B-05** (Calls-mo label, `1f30647`), **B-13** (owner dropdown, `1f30647`), **B-16** (automations state, `e2658de`), **B-14** (loading/error boundaries, `1f9f5f5`), and **B-01** dedup *groundwork* (read-only, role-scoped duplicate warning, `40878ae`; merge/block deferred to Lalit). **Since resolved & live too:** **B-15** (perf/N+1, `078b353`), **B-19** (AI-score explainability, `0b9b5b0`), **B-17** (at-a-glance BANT completeness pill, `5aff9a3`), **B-18** (label pass, `82235cb`), **B-20** (flag-gated voice/motivation pilot, `1f735ed`; admin on/off toggle `bfe636e`; **now enabled for BOTH teams** per Lalit's "both"). **No open backlog items remain** — the only co-design follow-up left for Lalit is B-17's BANT stage-gating (B-20's pilot-team pick + flag and B-18's 2 data-scope mismatches are now done). `docs/CRM_BUG_REPORT.md` is the source of truth for per-item status.
 
 ---
 
@@ -151,7 +151,7 @@
 - ✅ Heatmap uses `scopedUserId` (line ~46); source chart gated `me.role !== "AGENT"` (line ~430); CSV export admin-only (line ~416).
 - ✅ Sub-reports verified agent-scoped: cooling (`scopedOwnerId` ~line 70), SLA (`agentScope` ~line 104, `where.userId` ~line 59), daily (`targetUserId` ~line 50), travel (`agentScope` ~line 59).
 - ✅ Best-time-to-call IST formatting corrected (Bucket D).
-- ✅ Label clarity across dashboard + reports done (Bucket C/D) — every metric now states its window + scope. **B-18 (P3) — Resolved (`82235cb`).** Surfaced 2 data-scope mismatches for Lalit (Cold→Lead today-in-month; reports agent-productivity today vs all-time).
+- ✅ Label clarity across dashboard + reports done (Bucket C/D) — every metric now states its window + scope. **B-18 (P3) — Resolved (`82235cb`).** The 2 data-scope mismatches it surfaced are now **both resolved** — dashboard "Cold→Lead" counts the whole month (`ca04f5b`); the reports agent-productivity chart (today calls vs all-time owned leads) was removed (`89e042f`).
 
 **UX read:** Reports are correctly scoped per role and the IST fix lands. Mostly a labelling polish remains.
 **Mobile note:** Charts/tables need horizontal room — confirm they degrade gracefully on a phone. *(Screenshot to be captured during live UAT.)*
@@ -183,10 +183,10 @@
 ## 14. Attendance / Targets / Team-Mood
 
 - ✅ Targets feed the dashboard team KPIs (this-month activity counts, lines 83–89).
-- ✅ ➕ **Team-mood / motivation / voice (Bucket H)** — tone/usefulness still unvalidated, so shipped as a flag-gated one-team pilot, **off by default**. **B-20 (P4) — Resolved (`1f735ed`); needs Lalit to pick the pilot team + flip the flag.**
+- ✅ ➕ **Team-mood / motivation / voice (Bucket H)** — shipped flag-gated as a pilot; Lalit chose to enable it for **both teams**. **B-20 (P4) — Resolved (`1f735ed`); admin on/off toggle `bfe636e`; now ON for both teams (`motivationPilot.team=ALL`).**
 - ⚠️ Attendance vs office-hours (10:00–19:00 IST) enforcement not confirmed from audited files — flag for live UAT.
 
-**UX read:** Motivational surfaces are promising but should be piloted with one team before a full switch-on.
+**UX read:** Motivational surfaces are promising; shipped as a deterministic daily-quote card (AI voice optional, still off until a key is added) and enabled for both teams — keep watching tone/usefulness with live feedback.
 **Mobile note:** *(Screenshot to be captured during live UAT.)*
 
 ---
@@ -263,11 +263,11 @@ Round 11 closed every **major** cross-agent leak the original audit found (pipel
 
 **Can wait (fix in the first week post-launch):**
 - ✅ Shipped since this report: B-04 (WhatsApp team filter, `1f30647`), B-05 ("Calls (mo)" label, `1f30647`), B-16 (Automations real state, `e2658de`), B-13 (inert owner dropdown hidden, `1f30647`), B-14 (loading/error states, `1f9f5f5`), B-15 (pagination/N+1 hardening, `078b353`), B-19 (AI-score explainability, `0b9b5b0`).
-- ✅ Shipped — **co-design follow-ups remain for Lalit:** B-17 (`5aff9a3`; BANT stage-gating still to design), B-18 (`82235cb`; 2 data-scope mismatches to confirm), B-20 (`1f735ed`; pick pilot team + flip the flag).
+- ✅ Shipped — **only B-17's BANT stage-gating still needs Lalit's co-design:** B-17 (`5aff9a3`; at-a-glance completeness pill shipped, stage-gating still to design). B-18's 2 data-scope mismatches are resolved (Cold→Lead monthly `ca04f5b`, productivity chart removed `89e042f`); B-20 (`1f735ed`, admin toggle `bfe636e`) is enabled for both teams.
 
 **Hide initially (don't expose to agents until validated):**
 - **Automations/Workflows toggles** (B-16) — hide or mark "Coming soon" until bound to real state, so nobody trusts a workflow that isn't running.
-- **Team-mood / voice / motivation** surfaces (B-20) — pilot with one team first.
+- **Team-mood / voice / motivation** surfaces (B-20) — now enabled for both teams; started as a deterministic daily-quote card (AI voice optional). Admin can switch it off in **Settings → "☕ Daily motivation (pilot)"** if tone/usefulness disappoints.
 - Anything still showing the **inert owner dropdown** (B-13) — hide for agents.
 
 **Explain in training (known-good behaviour that looks surprising):**
@@ -275,4 +275,4 @@ Round 11 closed every **major** cross-agent leak the original audit found (pipel
 - **Ownership scoping rules:** AGENT sees own only; MANAGER sees own + reports; ADMIN sees all. Set expectations so agents don't think the CRM is "hiding" leads from them.
 - **BANT/qualification flow** (B-17) — train the team on what to capture and when, while the structured flow is being co-designed with Lalit.
 
-**Bottom line:** B-01 (groundwork), B-02 and B-03 are now **shipped & live** (`40878ae`) — the agent↔agent leaks (`/calls`, dashboard KPI scope) and the dedup gap that were the core rollout blockers are closed. Full team rollout is now reasonable. Remaining items are correctness/enhancement, several pending Lalit's product input: **B-15** (perf/N+1, low urgency), **B-17** (BANT depth), **B-18** (label pass), **B-19** (AI-score explainability — in progress), **B-20** (voice/motivation). Keep gathering real-data feedback for the AI-score and BANT work during rollout.
+**Bottom line:** B-01 (groundwork), B-02 and B-03 are now **shipped & live** (`40878ae`) — the agent↔agent leaks (`/calls`, dashboard KPI scope) and the dedup gap that were the core rollout blockers are closed. Full team rollout is now reasonable. Remaining items are correctness/enhancement: **B-15** (perf/N+1, low urgency) and **B-17**'s BANT stage-gating (needs Lalit's co-design). B-18 (label pass + both data-scope mismatches), B-19 (AI-score explainability `0b9b5b0`), and B-20 (voice/motivation, enabled for both teams) are now resolved. Keep gathering real-data feedback for the AI-score and BANT work during rollout.
