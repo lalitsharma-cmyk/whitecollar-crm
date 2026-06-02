@@ -220,6 +220,14 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
   const bantTimeFilled = lead.whenCanInvest != null && lead.whenCanInvest !== "UNKNOWN";
   const bantTimeBad = lead.whenCanInvest === "UNKNOWN";
 
+  // B-17 — at-a-glance qualification completeness. Lalit (Bucket B) wanted BANT
+  // "visible at a glance". The four chips below already capture each value, so
+  // rather than add a second redundant card we surface a single count of how
+  // many of Budget / Authority / Need / Timeline are filled. (We intentionally
+  // do NOT re-add the bantReason free-text row — Lalit asked to drop it in
+  // favour of the green/red signals.)
+  const bantFilledCount = [bantBudgetFilled, bantAuthFilled, bantNeedFilled, bantTimeFilled].filter(Boolean).length;
+
   // Tailwind colour map for a BANT chip. `good` overrides `bad` (i.e. if the
   // field has a filled value it's green even when the related signal is null).
   function bantChipClass(good: boolean, bad: boolean): string {
@@ -235,9 +243,16 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
       "border-amber-400 bg-amber-50"
     }`}>
       <div className="flex items-center justify-between gap-2 mb-3 flex-wrap">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <span className="text-xs font-bold tracking-widest text-gray-600">BANT VERDICT</span>
           <span className="text-[10px] text-gray-500">Budget · Authority · Need · Timeline</span>
+          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
+            bantFilledCount === 4 ? "bg-emerald-100 text-emerald-700" :
+            bantFilledCount === 0 ? "bg-gray-100 text-gray-500" :
+            "bg-amber-100 text-amber-700"
+          }`}>
+            {bantFilledCount}/4 captured
+          </span>
         </div>
         <InlineEdit leadId={lead.id} field="bantStatus" type="select" value={lead.bantStatus}
           options={[
