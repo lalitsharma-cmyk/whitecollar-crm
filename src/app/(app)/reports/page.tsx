@@ -2,7 +2,6 @@ import { prisma } from "@/lib/prisma";
 import { LeadStatus, CallOutcome } from "@prisma/client";
 import { startOfDay } from "date-fns";
 import SourceBarChart from "@/components/charts/SourceBarChart";
-import AgentBarChart from "@/components/charts/AgentBarChart";
 import ConnectRateChart from "@/components/charts/ConnectRateChart";
 import FunnelChart from "@/components/charts/FunnelChart";
 import { requireUser } from "@/lib/auth";
@@ -47,20 +46,10 @@ export default async function ReportsPage() {
     me.role === "AGENT" ? me.id : null;
 
   const [
-    bySource, agentPerf, callsByDay, funnel, topProjects,
+    bySource, callsByDay, funnel, topProjects,
     activeLeadsForForecast, stalledRaw, heatmapRaw,
   ] = await Promise.all([
     prisma.lead.groupBy({ by: ["source"], _count: { _all: true }, where: { createdAt: { gte: today } } }),
-
-    prisma.user.findMany({
-      where: { active: true, role: { in: ["AGENT", "MANAGER"] } },
-      include: {
-        _count: { select: {
-          callLogs: { where: { startedAt: { gte: today } } },
-          ownedLeads: true,
-        }},
-      },
-    }),
 
     prisma.$queryRaw<Array<{ d: string; total: number; connected: number }>>`
       SELECT to_char("startedAt"::date, 'YYYY-MM-DD') as d,
@@ -434,11 +423,6 @@ export default async function ReportsPage() {
             <SourceBarChart data={bySource.map(b => ({ source: b.source, n: b._count._all }))} />
           </div>
         )}
-        <div className="card p-5">
-          <div className="text-xs text-gray-500 tracking-widest">DAILY · TODAY</div>
-          <div className="font-semibold mt-1">Agent productivity</div>
-          <AgentBarChart data={agentPerf.map(u => ({ name: u.name.split(" ")[0], calls: u._count.callLogs, leads: u._count.ownedLeads }))} />
-        </div>
         <div className="card p-5">
           <div className="text-xs text-gray-500 tracking-widest">LAST 14 DAYS</div>
           <div className="font-semibold mt-1">Call connect rate</div>
