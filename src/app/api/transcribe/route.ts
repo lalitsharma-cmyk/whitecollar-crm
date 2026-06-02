@@ -1,3 +1,4 @@
+/* DEPRECATED — kept for back-compat. The browser now does STT directly via Web Speech API in VoiceNoteRecorder.tsx. */
 import { NextResponse, type NextRequest } from "next/server";
 import { requireUser } from "@/lib/auth";
 import { audit, reqMeta } from "@/lib/audit";

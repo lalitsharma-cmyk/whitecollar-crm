@@ -3,21 +3,24 @@
 //   "There should be a voice recording feature , and it should auto write
 //    whatever agents says."
 //
-// Browser-side MediaRecorder captures the agent's voice while they're on the
-// lead detail page (typically after a call, summarising the conversation).
-// On stop the audio blob POSTs to /api/transcribe?leadId=… and the returned
-// transcript is shown in an editable textarea — agent can clean it up and
-// confirm it as a Note (which POSTs to the existing /api/leads/[id]/notes).
+// Implementation: browser-native Web Speech API (SpeechRecognition /
+// webkitSpeechRecognition). Free, no STT key required, live transcription
+// while the agent speaks. Works in Chrome, Edge, and Safari iOS — Firefox
+// does not implement the API today (see browser support matrix in agent
+// hand-off notes).
+//
+// Earlier iterations of this component used MediaRecorder + a server-side
+// /api/transcribe endpoint, but Anthropic's SDK has no audio input and we
+// don't want to add a paid STT key. The Web Speech API gives us live
+// streaming text for free, right in the browser — which is exactly the UX
+// Lalit asked for ("auto write whatever agents says").
 //
 // Designed to degrade gracefully:
-//   • Browser doesn't support MediaRecorder → button disabled with reason
-//   • Mic permission denied → friendly inline error, no console-only failure
-//   • Transcription endpoint returns empty text → textarea still shows the
-//     "note" message so the agent can type their own note instead of losing
-//     the workflow entirely
-//
-// Mount instructions are in the parent agent's report — this file just
-// exports the component; insertion lives on the lead detail page.
+//   • Browser without SpeechRecognition (Firefox, old WebView) → friendly
+//     fallback explaining where it works + textarea so the agent can still
+//     type the note (workflow never breaks).
+//   • Mic permission denied → specific inline error from onerror handler.
+//   • Empty transcript → save button disabled, no silent failures.
 
 import { useEffect, useRef, useState } from "react";
 
@@ -27,98 +30,195 @@ interface Props {
   onTranscribed?: (text: string) => void;
 }
 
-type Phase = "idle" | "recording" | "transcribing" | "review" | "saving" | "done" | "error";
+type Phase = "idle" | "recording" | "review" | "saving" | "done" | "error";
+
+// Minimal shape of the Web Speech API SpeechRecognition object — typed inline
+// because lib.dom.d.ts doesn't ship these (it's a draft spec). Only the bits
+// we actually use are declared.
+interface SRResult {
+  isFinal: boolean;
+  0: { transcript: string };
+}
+interface SREvent {
+  resultIndex: number;
+  results: { length: number; [i: number]: SRResult };
+}
+interface SRErrorEvent {
+  error: string;
+}
+interface SRInstance {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  onresult: ((e: SREvent) => void) | null;
+  onerror: ((e: SRErrorEvent) => void) | null;
+  onend: (() => void) | null;
+  start: () => void;
+  stop: () => void;
+  abort: () => void;
+}
+type SRCtor = new () => SRInstance;
 
 export default function VoiceNoteRecorder({ leadId, onTranscribed }: Props) {
   const [phase, setPhase] = useState<Phase>("idle");
   const [elapsedSec, setElapsedSec] = useState(0);
-  const [transcript, setTranscript] = useState("");
+  // finalTranscript = locked-in pieces; interim = current word(s) still being
+  // recognised. We render `finalTranscript + interimTranscript` so the user
+  // sees the live tail update as they speak.
+  const [finalTranscript, setFinalTranscript] = useState("");
+  const [interimTranscript, setInterimTranscript] = useState("");
+  // After Stop the user can edit the merged transcript — kept separate from
+  // finalTranscript so onresult callbacks don't clobber edits.
+  const [editableTranscript, setEditableTranscript] = useState("");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [hint, setHint] = useState<string | null>(null);
 
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const chunksRef = useRef<Blob[]>([]);
-  const streamRef = useRef<MediaStream | null>(null);
+  const recognitionRef = useRef<SRInstance | null>(null);
   const startedAtRef = useRef<number>(0);
   const tickRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Track whether the user pressed Stop so onend doesn't auto-restart.
+  const stoppedByUserRef = useRef(false);
 
-  // Feature-detect MediaRecorder up-front so the button can disable when the
-  // browser doesn't support it (older Safari, locked-down corporate IE shells).
-  const supported = typeof window !== "undefined" && typeof window.MediaRecorder !== "undefined";
+  // Resolve the constructor once on mount — SSR safe, since `window` only
+  // exists in the browser. `null` here means the browser doesn't support it.
+  const [SR, setSR] = useState<SRCtor | null>(null);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const w = window as unknown as {
+      SpeechRecognition?: SRCtor;
+      webkitSpeechRecognition?: SRCtor;
+    };
+    const Ctor = w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null;
+    setSR(() => Ctor);
+  }, []);
 
-  // Cleanup any open mic stream on unmount — otherwise the browser keeps the
-  // red mic indicator on the tab after navigating away.
+  // Cleanup on unmount: kill the recognition session and timer so the
+  // browser's mic indicator doesn't linger after navigating away.
   useEffect(() => {
     return () => {
-      tickRef.current && clearInterval(tickRef.current);
-      streamRef.current?.getTracks().forEach((t) => t.stop());
+      if (tickRef.current) clearInterval(tickRef.current);
+      try {
+        recognitionRef.current?.abort();
+      } catch {
+        /* no-op — safe to swallow during teardown */
+      }
     };
   }, []);
 
-  async function startRecording() {
-    if (!supported) return;
+  function startRecording() {
+    if (!SR) return;
     setErrorMsg(null);
-    setHint(null);
-    setTranscript("");
+    setFinalTranscript("");
+    setInterimTranscript("");
+    setEditableTranscript("");
+    stoppedByUserRef.current = false;
+
+    let recognition: SRInstance;
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      streamRef.current = stream;
-      // Prefer audio/webm — Chrome's default and what /api/transcribe expects.
-      // Falls back to whatever the browser picks if webm isn't supported.
-      const mimeType = MediaRecorder.isTypeSupported("audio/webm") ? "audio/webm" : "";
-      const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
-      mediaRecorderRef.current = recorder;
-      chunksRef.current = [];
-      recorder.ondataavailable = (e) => {
-        if (e.data && e.data.size > 0) chunksRef.current.push(e.data);
-      };
-      recorder.onstop = handleStop;
-      recorder.start();
-      startedAtRef.current = Date.now();
-      setElapsedSec(0);
-      tickRef.current = setInterval(() => {
-        setElapsedSec(Math.floor((Date.now() - startedAtRef.current) / 1000));
-      }, 250);
-      setPhase("recording");
+      recognition = new SR();
     } catch (e) {
-      console.warn("Mic access failed", e);
-      setErrorMsg("Couldn't access the microphone. Check the browser permission and try again.");
+      console.warn("SpeechRecognition init failed", e);
+      setErrorMsg("Couldn't start voice recognition in this browser. Type the note below instead.");
       setPhase("error");
+      return;
     }
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    // en-IN — Lalit's team primarily works the India / Dubai pipeline and
+    // Indian-English accent recognition is meaningfully better with this lang
+    // tag than the en-US default.
+    recognition.lang = "en-IN";
+
+    recognition.onresult = (event: SREvent) => {
+      // Walk only the new results from this event (resultIndex onwards) —
+      // anything before that we've already folded into finalTranscript.
+      let interim = "";
+      let appendFinal = "";
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const res = event.results[i];
+        const text = res[0]?.transcript ?? "";
+        if (res.isFinal) {
+          appendFinal += text;
+        } else {
+          interim += text;
+        }
+      }
+      if (appendFinal) {
+        setFinalTranscript((prev) => (prev + appendFinal).replace(/\s+/g, " "));
+      }
+      setInterimTranscript(interim);
+    };
+
+    recognition.onerror = (event: SRErrorEvent) => {
+      // Specific, friendly messages per the Web Speech API error vocabulary.
+      let msg = "Voice recognition failed. Type the note below instead.";
+      if (event.error === "no-speech") {
+        msg = "Didn't hear anything — try again and speak closer to the mic.";
+      } else if (event.error === "audio-capture") {
+        msg = "No microphone detected. Plug one in or pick a different device.";
+      } else if (event.error === "not-allowed" || event.error === "service-not-allowed") {
+        msg = "Microphone blocked. Allow mic access in your browser settings, then try again.";
+      } else if (event.error === "network") {
+        msg = "Voice recognition needs internet to work. Reconnect and try again.";
+      } else if (event.error === "aborted") {
+        // User-initiated stop — no error UI needed.
+        return;
+      }
+      setErrorMsg(msg);
+    };
+
+    recognition.onend = () => {
+      // Stop the elapsed-time tick once recognition actually ends.
+      if (tickRef.current) {
+        clearInterval(tickRef.current);
+        tickRef.current = null;
+      }
+      // If the user stopped it deliberately, move into review with whatever
+      // we captured. If the engine ended on its own (silence timeout, etc.)
+      // also drop into review rather than silently going back to idle.
+      setPhase((current) => (current === "recording" ? "review" : current));
+    };
+
+    try {
+      recognition.start();
+    } catch (e) {
+      console.warn("recognition.start() threw", e);
+      setErrorMsg("Couldn't start recording. Try again in a moment.");
+      setPhase("error");
+      return;
+    }
+    recognitionRef.current = recognition;
+    startedAtRef.current = Date.now();
+    setElapsedSec(0);
+    tickRef.current = setInterval(() => {
+      setElapsedSec(Math.floor((Date.now() - startedAtRef.current) / 1000));
+    }, 250);
+    setPhase("recording");
   }
 
   function stopRecording() {
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
-      mediaRecorderRef.current.stop();
-    }
-    tickRef.current && clearInterval(tickRef.current);
-    streamRef.current?.getTracks().forEach((t) => t.stop());
-  }
-
-  async function handleStop() {
-    setPhase("transcribing");
-    const blob = new Blob(chunksRef.current, { type: "audio/webm" });
-    chunksRef.current = [];
+    stoppedByUserRef.current = true;
     try {
-      const r = await fetch(`/api/transcribe?leadId=${encodeURIComponent(leadId)}`, {
-        method: "POST",
-        headers: { "Content-Type": "audio/webm" },
-        body: blob,
-      });
-      const j = await r.json().catch(() => ({}));
-      const txt = String(j.transcript ?? "").trim();
-      if (j.note) setHint(String(j.note));
-      setTranscript(txt);
-      setPhase("review");
-    } catch (e) {
-      console.warn("Transcribe failed", e);
-      setErrorMsg("Transcription failed. You can still type the note manually below and confirm.");
-      setPhase("review");
+      recognitionRef.current?.stop();
+    } catch {
+      /* ignore — onend will still fire */
     }
+    if (tickRef.current) {
+      clearInterval(tickRef.current);
+      tickRef.current = null;
+    }
+    // Seed the editable textarea with whatever's been captured so far. Use a
+    // microtask delay so any in-flight final result from the engine has a
+    // chance to land before we snapshot.
+    setTimeout(() => {
+      setEditableTranscript((prev) => {
+        if (prev) return prev; // user already edited
+        return (finalTranscript + " " + interimTranscript).trim().replace(/\s+/g, " ");
+      });
+    }, 0);
   }
 
   async function confirmNote() {
-    const content = transcript.trim();
+    const content = editableTranscript.trim();
     if (!content) {
       setErrorMsg("Note is empty — record again or type something before saving.");
       return;
@@ -136,8 +236,9 @@ export default function VoiceNoteRecorder({ leadId, onTranscribed }: Props) {
         throw new Error(j.error ?? `HTTP ${r.status}`);
       }
       onTranscribed?.(content);
-      setTranscript("");
-      setHint(null);
+      setEditableTranscript("");
+      setFinalTranscript("");
+      setInterimTranscript("");
       setPhase("done");
       // Auto-reset so the agent can record again without a page refresh.
       setTimeout(() => setPhase("idle"), 1800);
@@ -149,10 +250,20 @@ export default function VoiceNoteRecorder({ leadId, onTranscribed }: Props) {
   }
 
   function reset() {
+    try {
+      recognitionRef.current?.abort();
+    } catch {
+      /* no-op */
+    }
+    if (tickRef.current) {
+      clearInterval(tickRef.current);
+      tickRef.current = null;
+    }
     setPhase("idle");
-    setTranscript("");
+    setFinalTranscript("");
+    setInterimTranscript("");
+    setEditableTranscript("");
     setErrorMsg(null);
-    setHint(null);
     setElapsedSec(0);
   }
 
@@ -162,16 +273,22 @@ export default function VoiceNoteRecorder({ leadId, onTranscribed }: Props) {
     return `${m}:${ss}`;
   };
 
-  if (!supported) {
+  // SR resolved to null after mount → browser doesn't support Web Speech API.
+  // (During the very first render before useEffect runs SR is also null, but
+  // since the component is "use client" the effect fires on hydration so the
+  // fallback only flashes for an instant on unsupported browsers.)
+  if (SR === null) {
     return (
       <div className="card p-3 border-l-4 border-gray-300 bg-gray-50">
         <div className="text-xs text-gray-600">
-          🎙 Voice note: your browser doesn&apos;t support recording. Use Chrome on
-          desktop or Android to capture voice notes.
+          🎙 Voice transcription works on Chrome / Edge / Safari iOS. Type the
+          note below or open in a supported browser.
         </div>
       </div>
     );
   }
+
+  const liveText = (finalTranscript + " " + interimTranscript).trim();
 
   return (
     <div className="card p-3 border-l-4 border-[#c9a24b]">
@@ -179,7 +296,7 @@ export default function VoiceNoteRecorder({ leadId, onTranscribed }: Props) {
         <span className="text-base">🎙</span>
         <div className="text-sm font-semibold">Voice note</div>
         <span className="text-[10px] text-gray-500">
-          Tap to record · auto-transcribes when you stop
+          Tap to record · auto-writes as you speak
         </span>
       </div>
 
@@ -189,41 +306,59 @@ export default function VoiceNoteRecorder({ leadId, onTranscribed }: Props) {
           onClick={startRecording}
           className="btn btn-primary w-full justify-center min-h-11 text-sm font-semibold bg-red-600 hover:bg-red-700 border-red-700 text-white"
         >
-          ● Start recording
+          🎙 Start recording
         </button>
       )}
 
       {phase === "recording" && (
-        <div className="flex items-center gap-3">
-          <button
-            type="button"
-            onClick={stopRecording}
-            className="btn btn-primary flex-1 justify-center min-h-11 text-sm font-semibold bg-gray-800 hover:bg-gray-900 border-gray-900 text-white"
-          >
-            ■ Stop & transcribe
-          </button>
-          <span className="flex items-center gap-1 text-xs font-mono">
-            <span className="relative flex h-2 w-2">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
+        <div className="space-y-2">
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={stopRecording}
+              className="btn btn-primary flex-1 justify-center min-h-11 text-sm font-semibold bg-gray-800 hover:bg-gray-900 border-gray-900 text-white"
+            >
+              ⏸ Stop
+            </button>
+            <span className="flex items-center gap-1 text-xs font-mono">
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
+              </span>
+              {fmtTime(elapsedSec)}
             </span>
-            {fmtTime(elapsedSec)}
-          </span>
-        </div>
-      )}
-
-      {phase === "transcribing" && (
-        <div className="text-xs text-gray-600 py-2">
-          ⏳ Transcribing… this can take a few seconds.
+          </div>
+          <div
+            className="w-full text-sm border border-gray-300 rounded-lg p-2 min-h-[88px] bg-white"
+            aria-live="polite"
+          >
+            {liveText ? (
+              <>
+                <span>{finalTranscript}</span>
+                {interimTranscript && (
+                  <span className="text-gray-400 italic">
+                    {finalTranscript ? " " : ""}
+                    {interimTranscript}
+                  </span>
+                )}
+              </>
+            ) : (
+              <span className="text-gray-400 italic">Listening… start speaking and your words will appear here.</span>
+            )}
+          </div>
+          {errorMsg && (
+            <div className="text-[11px] text-red-700 bg-red-50 border border-red-200 rounded px-2 py-1">
+              {errorMsg}
+            </div>
+          )}
         </div>
       )}
 
       {(phase === "review" || phase === "saving") && (
         <div className="space-y-2">
-          {hint && <div className="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded px-2 py-1">{hint}</div>}
           <textarea
-            value={transcript}
-            onChange={(e) => setTranscript(e.target.value)}
+            value={editableTranscript}
+            onChange={(e) => setEditableTranscript(e.target.value)}
             placeholder="Transcript will appear here — edit it before saving as a note."
             className="w-full text-sm border border-gray-300 rounded-lg p-2 min-h-[88px] focus:border-[#c9a24b] focus:outline-none"
             disabled={phase === "saving"}
@@ -232,7 +367,7 @@ export default function VoiceNoteRecorder({ leadId, onTranscribed }: Props) {
             <button
               type="button"
               onClick={confirmNote}
-              disabled={phase === "saving" || !transcript.trim()}
+              disabled={phase === "saving" || !editableTranscript.trim()}
               className="btn btn-primary flex-1 justify-center min-h-11 text-sm font-semibold bg-emerald-600 hover:bg-emerald-700 border-emerald-700 text-white disabled:opacity-60"
             >
               {phase === "saving" ? "Saving…" : "✅ Save as note"}
@@ -246,6 +381,9 @@ export default function VoiceNoteRecorder({ leadId, onTranscribed }: Props) {
               Discard
             </button>
           </div>
+          {errorMsg && (
+            <div className="text-[11px] text-red-700">{errorMsg}</div>
+          )}
         </div>
       )}
 
@@ -264,10 +402,6 @@ export default function VoiceNoteRecorder({ leadId, onTranscribed }: Props) {
             Try again
           </button>
         </div>
-      )}
-
-      {errorMsg && phase === "review" && (
-        <div className="mt-1 text-[11px] text-red-700">{errorMsg}</div>
       )}
     </div>
   );

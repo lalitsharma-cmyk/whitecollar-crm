@@ -84,7 +84,7 @@ export default function LeadBulkActions({ selectedIds, agents, onClear }: { sele
 
   return (
     <>
-      <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 bg-[#0b1a33] text-white rounded-xl shadow-2xl px-4 py-3 flex items-center gap-3 flex-wrap max-w-[95vw]">
+      <div className="fixed bottom-20 lg:bottom-6 left-1/2 -translate-x-1/2 z-40 bg-[#0b1a33] text-white rounded-xl shadow-2xl px-4 py-3 flex items-center gap-3 flex-wrap max-w-[95vw]">
         <div className="text-sm font-semibold">{selectedIds.length} selected</div>
         <div className="w-px h-6 bg-white/20" />
         <select value={picked} onChange={(e) => setPicked(e.target.value)} className="bg-white/10 text-white border-0 rounded-lg px-2 py-1 text-xs">
