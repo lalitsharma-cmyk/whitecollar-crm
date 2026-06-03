@@ -27,7 +27,7 @@ const srcLabel: Record<LeadSource, string> = {
 };
 const statusChip: Record<LeadStatus, string> = {
   NEW: "chip-new", CONTACTED: "chip-warm", QUALIFIED: "chip-warm", SITE_VISIT: "chip-warm",
-  NEGOTIATION: "chip-warm", BOOKING_DONE: "chip-won", WON: "chip-won", LOST: "chip-lost",
+  NEGOTIATION: "chip-warm", EOI: "chip-warm", BOOKING_DONE: "chip-won", WON: "chip-won", LOST: "chip-lost",
 };
 
 export default async function LeadsPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
@@ -43,12 +43,31 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
   const where: Prisma.LeadWhereInput = sp.showCold === "1"
     ? { ...scope }
     : { ...scope, isColdCall: false, leadOrigin: "ACTIVE" };
+  // ── Top-level pipeline filter tabs: ?filter=all|active|bookings|won|lost ──
+  // Applied before the per-role LOST-hide below so explicit tab selections
+  // (e.g. ?filter=lost) are respected for ADMIN/MANAGER.
+  const filterTab = sp.filter ?? "all";
+  if (filterTab === "active") {
+    // Active pipeline — exclude closed/booked stages
+    where.status = { notIn: [LeadStatus.WON, LeadStatus.LOST, LeadStatus.BOOKING_DONE] };
+  } else if (filterTab === "bookings") {
+    // Booking funnel — EOI or Booking Done
+    where.status = { in: [LeadStatus.EOI, LeadStatus.BOOKING_DONE] };
+  } else if (filterTab === "won") {
+    // Won deals — Booking Done or WON
+    where.status = { in: [LeadStatus.WON, LeadStatus.BOOKING_DONE] };
+  } else if (filterTab === "lost") {
+    // Lost deals
+    where.status = LeadStatus.LOST;
+  }
+  // filterTab === "all" → no status filter added here (other filters still compose)
+
   // Agents shouldn't see LOST leads they once owned in their default view —
   // rejected leads disappear from the agent's queue, but ADMIN/MANAGER keep
   // oversight via /admin/rejected-leads and the unfiltered list. An explicit
   // ?status= filter (e.g. ?status=LOST) overrides this hide, so an agent
   // who deliberately navigates "show me my rejected" still sees them.
-  if (me.role === "AGENT" && !sp.status) {
+  if (me.role === "AGENT" && !sp.status && filterTab === "all") {
     where.status = { not: LeadStatus.LOST };
   }
   if (sp.q) {
@@ -458,6 +477,51 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
         >
           📵 Not picked 7+ days
         </Link>
+      </div>
+
+      {/* ─── PIPELINE FILTER TABS ────────────────────────────────────────
+          Top-level view switcher: All / Active / Bookings / Won / Lost.
+          Each tab is a plain <Link> that sets ?filter=X; all other query
+          params (followup, smart, notPicked, etc.) are intentionally NOT
+          forwarded so switching tabs gives a clean view — consistent with
+          how the smart-filter chips work. Active tab gets a dark background
+          styled like the existing filter chips in this page. */}
+      <div className="space-y-2">
+        <div className="text-[10px] uppercase tracking-widest text-gray-500 dark:text-slate-400 font-semibold">
+          📋 Pipeline view
+        </div>
+        <div className="flex gap-2 overflow-x-auto lg:flex-wrap pb-1 -mx-3 px-3 lg:mx-0 lg:px-0 scrollbar-thin">
+          <Link
+            href="/leads?filter=all"
+            className={`px-3 py-2 rounded-full text-xs font-semibold border min-h-11 inline-flex items-center gap-1 ${filterTab === "all" ? "bg-[#0b1a33] text-white border-[#0b1a33]" : "bg-white dark:bg-slate-700 border-[#e5e7eb] dark:border-slate-600 text-gray-700 dark:text-slate-100"}`}
+          >
+            All Leads
+          </Link>
+          <Link
+            href="/leads?filter=active"
+            className={`px-3 py-2 rounded-full text-xs font-semibold border min-h-11 inline-flex items-center gap-1 ${filterTab === "active" ? "bg-emerald-600 text-white border-emerald-600" : "bg-emerald-50 border-emerald-300 text-emerald-800"}`}
+          >
+            Active Leads
+          </Link>
+          <Link
+            href="/leads?filter=bookings"
+            className={`px-3 py-2 rounded-full text-xs font-semibold border min-h-11 inline-flex items-center gap-1 ${filterTab === "bookings" ? "bg-amber-600 text-white border-amber-600" : "bg-amber-50 border-amber-300 text-amber-800"}`}
+          >
+            Bookings
+          </Link>
+          <Link
+            href="/leads?filter=won"
+            className={`px-3 py-2 rounded-full text-xs font-semibold border min-h-11 inline-flex items-center gap-1 ${filterTab === "won" ? "bg-teal-600 text-white border-teal-600" : "bg-teal-50 border-teal-300 text-teal-800"}`}
+          >
+            Won Deals
+          </Link>
+          <Link
+            href="/leads?filter=lost"
+            className={`px-3 py-2 rounded-full text-xs font-semibold border min-h-11 inline-flex items-center gap-1 ${filterTab === "lost" ? "bg-red-600 text-white border-red-600" : "bg-red-50 border-red-300 text-red-800"}`}
+          >
+            Lost Deals
+          </Link>
+        </div>
       </div>
 
       <SavedFiltersBar isAdmin={me.role === "ADMIN"} />
