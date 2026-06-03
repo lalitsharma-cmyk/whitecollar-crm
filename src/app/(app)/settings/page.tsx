@@ -1,4 +1,4 @@
-import { createHmac } from "node:crypto";
+﻿import { createHmac } from "node:crypto";
 import Link from "next/link";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
@@ -98,36 +98,40 @@ export default async function SettingsPage() {
         </div>
       )}
 
-      {/* MASTER kill-switch — pauses every auto-action. Top of page, loudest banner. */}
-      <div className={`card p-5 max-w-2xl border-l-4 ${testingModeOn ? "border-amber-500 bg-amber-50" : "border-emerald-500"}`}>
-        <div className="font-semibold flex items-center gap-2 text-base">🧪 Testing mode (master switch)</div>
-        <p className="text-xs text-gray-600 mt-1">
-          Flip ON while loading real client data so nothing leaks out or nags the team.
-          <b className="text-amber-800"> One toggle pauses ALL of these at once:</b>
-        </p>
-        <ul className="text-xs text-gray-700 mt-2 list-disc list-inside space-y-0.5">
-          <li>🔁 Round-robin auto-assign (5-min orphan sweep)</li>
-          <li>⏱ 15-min call SLA escalation (no admin/agent alerts)</li>
-          <li>🚩 "Needs You" auto-flagging (no banners on stale leads)</li>
-          <li>🌙 Overnight auto-WhatsApp welcome (10pm-10am IST)</li>
-          <li>🚀 Speed-to-lead first-touch WA + email</li>
-        </ul>
-        <p className="text-[11px] text-gray-500 mt-2">
-          Manual actions (logging calls, clicking Call/WhatsApp/Email buttons) still work normally. Flip OFF for go-live.
-        </p>
-        <TestingModeToggle initial={testingModeOn} canEdit={isAdmin} />
-      </div>
+      {/* MASTER kill-switch — pauses every auto-action. Admin only. */}
+      {isAdmin && (
+        <div className={`card p-5 max-w-2xl border-l-4 ${testingModeOn ? "border-amber-500 bg-amber-50" : "border-emerald-500"}`}>
+          <div className="font-semibold flex items-center gap-2 text-base">🧪 Testing mode (master switch)</div>
+          <p className="text-xs text-gray-600 mt-1">
+            Flip ON while loading real client data so nothing leaks out or nags the team.
+            <b className="text-amber-800"> One toggle pauses ALL of these at once:</b>
+          </p>
+          <ul className="text-xs text-gray-700 mt-2 list-disc list-inside space-y-0.5">
+            <li>🔁 Round-robin auto-assign (5-min orphan sweep)</li>
+            <li>⏱ 15-min call SLA escalation (no admin/agent alerts)</li>
+            <li>🚩 "Needs You" auto-flagging (no banners on stale leads)</li>
+            <li>🌙 Overnight auto-WhatsApp welcome (10pm-10am IST)</li>
+            <li>🚀 Speed-to-lead first-touch WA + email</li>
+          </ul>
+          <p className="text-[11px] text-gray-500 mt-2">
+            Manual actions (logging calls, clicking Call/WhatsApp/Email buttons) still work normally. Flip OFF for go-live.
+          </p>
+          <TestingModeToggle initial={testingModeOn} canEdit={isAdmin} />
+        </div>
+      )}
 
-      {/* Round-robin kill-switch — individual control (also gated by testing-mode above) */}
-      <div className={`card p-5 max-w-2xl border-l-4 ${roundRobinOn && !testingModeOn ? "border-emerald-500" : "border-amber-500 bg-amber-50"}`}>
-        <div className="font-semibold flex items-center gap-2">🔁 Round-robin auto-assign {testingModeOn && <span className="text-[10px] text-amber-700">(also paused by testing mode)</span>}</div>
-        <p className="text-xs text-gray-500 mt-1">
-          When ON, every unassigned lead older than 5 min gets routed to a present agent automatically.
-          <b className="text-amber-700"> Switch OFF before bulk-uploading existing-client lists</b> so they don't get
-          stolen by round-robin while you're routing them manually. Switch back ON when done.
-        </p>
-        <RoundRobinToggle initial={roundRobinOn} canEdit={isAdmin} />
-      </div>
+      {/* Round-robin kill-switch — individual control. Admin only. */}
+      {isAdmin && (
+        <div className={`card p-5 max-w-2xl border-l-4 ${roundRobinOn && !testingModeOn ? "border-emerald-500" : "border-amber-500 bg-amber-50"}`}>
+          <div className="font-semibold flex items-center gap-2">🔁 Round-robin auto-assign {testingModeOn && <span className="text-[10px] text-amber-700">(also paused by testing mode)</span>}</div>
+          <p className="text-xs text-gray-500 mt-1">
+            When ON, every unassigned lead older than 5 min gets routed to a present agent automatically.
+            <b className="text-amber-700"> Switch OFF before bulk-uploading existing-client lists</b> so they don't get
+            stolen by round-robin while you're routing them manually. Switch back ON when done.
+          </p>
+          <RoundRobinToggle initial={roundRobinOn} canEdit={isAdmin} />
+        </div>
+      )}
 
       {/* Editable card — travel reimbursement (admin-only) */}
       <div className="card p-5 max-w-2xl">
@@ -140,39 +144,42 @@ export default async function SettingsPage() {
       </div>
 
       {/* Speed-to-lead auto-response (admin-only) */}
-      <div className="card p-5 max-w-2xl">
-        <div className="font-semibold flex items-center gap-2">🚀 Speed-to-lead auto-response {testingModeOn && <span className="text-[10px] text-amber-700">(also paused by testing mode)</span>}</div>
-        <p className="text-xs text-gray-500 mt-1">
-          When ON, every brand-new lead automatically receives the active FIRST_QUERY WhatsApp + email
-          templates within seconds of intake. Skips during overnight 10pm-10am IST (after-hours welcome handles that).
-          Logged to the lead timeline so the agent can see what was sent.
-        </p>
-        <SpeedToLeadToggle initial={speedToLeadOn} canEdit={isAdmin} />
-      </div>
+      {isAdmin && (
+        <div className="card p-5 max-w-2xl">
+          <div className="font-semibold flex items-center gap-2">🚀 Speed-to-lead auto-response {testingModeOn && <span className="text-[10px] text-amber-700">(also paused by testing mode)</span>}</div>
+          <p className="text-xs text-gray-500 mt-1">
+            When ON, every brand-new lead automatically receives the active FIRST_QUERY WhatsApp + email
+            templates within seconds of intake. Skips during overnight 10pm-10am IST (after-hours welcome handles that).
+            Logged to the lead timeline so the agent can see what was sent.
+          </p>
+          <SpeedToLeadToggle initial={speedToLeadOn} canEdit={isAdmin} />
+        </div>
+      )}
 
-      {/* BANT qualification stage-gate — checks Budget/Authority/Need/Timeline
-          are captured before a lead is moved to Qualified+. Default WARN. */}
-      <div className="card p-5 max-w-2xl">
-        <div className="font-semibold flex items-center gap-2">🎯 Qualification gate (BANT)</div>
-        <p className="text-xs text-gray-500 mt-1">
-          When an agent moves a lead to “Qualified” or beyond, the CRM checks that all four
-          BANT signals (Budget · Authority · Need · Timeline) are captured.
-          <b> Off</b> — no check.
-          <b> Warn (recommended)</b> — shows a reminder but still lets the agent advance (default).
-          <b> Strict</b> — blocks the move until BANT is complete.
-        </p>
-        <BantGateToggle initial={bantGateMode} canEdit={isAdmin} />
-      </div>
+      {/* BANT qualification stage-gate (admin-only) */}
+      {isAdmin && (
+        <div className="card p-5 max-w-2xl">
+          <div className="font-semibold flex items-center gap-2">🎯 Qualification gate (BANT)</div>
+          <p className="text-xs text-gray-500 mt-1">
+            When an agent moves a lead to &ldquo;Qualified&rdquo; or beyond, the CRM checks that all four
+            BANT signals (Budget &middot; Authority &middot; Need &middot; Timeline) are captured.
+            <b> Off</b> &mdash; no check.
+            <b> Warn (recommended)</b> &mdash; shows a reminder but still lets the agent advance (default).
+            <b> Strict</b> &mdash; blocks the move until BANT is complete.
+          </p>
+          <BantGateToggle initial={bantGateMode} canEdit={isAdmin} />
+        </div>
+      )}
 
       {/* Daily-motivation / voice pilot (B-20) — admin picks who sees it. */}
       <div className="card p-5 max-w-2xl">
         <div className="font-semibold flex items-center gap-2">☕ Daily motivation (pilot)</div>
         <p className="text-xs text-gray-500 mt-1">
-          Shows a calm <b>“Daily note”</b> on the dashboard — a line of the day plus an
+          Shows a calm <b>"Daily note"</b> on the dashboard — a line of the day plus an
           optional <b>Listen</b> button (read aloud by the browser, no extra cost).
           Choose which team sees it. Whether someone is on the India or Dubai team
           comes from their staff profile — never from their phone number or location.
-          <b className="text-amber-700"> “Both teams” shows it to everyone</b> — start with
+          <b className="text-amber-700"> "Both teams" shows it to everyone</b> — start with
           one team if you'd like to judge the tone first.
         </p>
         <MotivationPilotToggle initialEnabled={motivationPilotOn} initialTeam={motivationPilotTeam} canEdit={isAdmin} />
@@ -273,9 +280,12 @@ export default async function SettingsPage() {
               ✅ {pushSubCount} active device{pushSubCount === 1 ? "" : "s"}
             </span>
           ) : (
-            <span className="text-amber-700 font-medium">
-              ⚠️ Not subscribed on any device — enable from the bell icon first
-            </span>
+            <>
+              <span className="text-amber-700 font-medium">
+                ⚠️ Not subscribed on any device — enable from the bell icon first
+              </span>
+              <p className="text-xs text-gray-500 mt-1">To enable: click the 🔔 bell icon in the top header → click Allow in your browser. On mobile, first add the app to your home screen, then enable notifications.</p>
+            </>
           )}
         </p>
         <TestPushButton />

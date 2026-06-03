@@ -2,8 +2,9 @@ import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
 import { normalizeTeam } from "@/lib/teamRouting";
 import { LeadStatus, Role } from "@prisma/client";
-import { subDays, startOfDay } from "date-fns";
+import { subDays, startOfDay, format } from "date-fns";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 
 const AGENT_ROLES: Role[] = [Role.AGENT, Role.MANAGER];
 
@@ -22,11 +23,15 @@ const MEDAL = ["🥇", "🥈", "🥉"];
 
 export default async function LeaderboardPage() {
   const me = await requireUser();
+
+  // BUG-005: block AGENT role from accessing leaderboard
+  if (me.role === "AGENT") redirect("/dashboard");
+
   const managerTeam = me.role === "MANAGER" ? normalizeTeam(me.team) : null;
 
-  // Date range: last 30 days
+  // Date range: last 90 days (was 30 — extended so historical call data shows up)
   const rangeEnd = new Date();
-  const rangeStart = startOfDay(subDays(rangeEnd, 30));
+  const rangeStart = startOfDay(subDays(rangeEnd, 90));
 
   // Agent scope
   const agentWhere =
@@ -60,7 +65,7 @@ export default async function LeaderboardPage() {
 
   // Fetch all counts in parallel
   const [callCounts, leadCounts, qualifiedCounts, wonCounts] = await Promise.all([
-    // Calls made in last 30 days per agent
+    // Calls made in last 90 days per agent
     prisma.callLog.groupBy({
       by: ["userId"],
       where: {
@@ -136,6 +141,8 @@ export default async function LeaderboardPage() {
   // Sort by callsMade descending
   rows.sort((a, b) => b.callsMade - a.callsMade);
 
+  const allZeroCalls = rows.every((r) => r.callsMade === 0);
+
   return (
     <>
       <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
@@ -144,9 +151,18 @@ export default async function LeaderboardPage() {
             ← Back to reports
           </Link>
           <h1 className="text-xl sm:text-2xl font-bold">🏆 Agent Leaderboard</h1>
-          <p className="text-xs sm:text-sm text-gray-500">Last 30 days</p>
+          <p className="text-xs sm:text-sm text-gray-500">
+            Last 90 days · {format(rangeStart, "d MMM yyyy")} – {format(rangeEnd, "d MMM yyyy")}
+          </p>
         </div>
       </div>
+
+      {allZeroCalls && (
+        <div className="card p-4 bg-amber-50 border-l-4 border-amber-400 text-sm text-amber-800">
+          No calls logged in the last 90 days. Call data from earlier periods is available in{" "}
+          <Link href="/reports/activity" className="underline font-medium">Reports → Activity</Link>.
+        </div>
+      )}
 
       <div className="card overflow-x-auto">
         <table className="tbl min-w-[520px]">
@@ -190,7 +206,7 @@ export default async function LeaderboardPage() {
           </tbody>
         </table>
         <div className="text-[10px] text-gray-500 p-3">
-          Calls Made = last 30 days. Leads Assigned, Qualified, Won = all time for this scope.
+          Calls Made = last 90 days. Leads Assigned, Qualified, Won = all time for this scope.
           Conversion % = Won ÷ Leads Assigned × 100.
         </div>
       </div>

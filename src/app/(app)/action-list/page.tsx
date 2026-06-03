@@ -110,8 +110,8 @@ export default async function ActionListPage() {
   const sections = [
     {
       key: "ready_close" as const,
-      title: "🔥 READY TO CLOSE",
-      caption: "Push these over the line today.",
+      title: "💎 IN NEGOTIATION / EOI",
+      caption: "Leads in NEGOTIATION or EOI stage — push for booking today.",
       accent: "border-l-emerald-500",
       tint: "bg-emerald-50/60",
       items: readyToClose.map((l) => makeCard(l, "ready_close")),

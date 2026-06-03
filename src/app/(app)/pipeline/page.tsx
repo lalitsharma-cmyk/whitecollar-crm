@@ -137,7 +137,7 @@ export default async function PipelinePage({ searchParams }: { searchParams: Pro
         <div>
           <h1 className="text-xl sm:text-2xl font-bold">Sales Pipeline</h1>
           <p className="text-xs sm:text-sm text-gray-500 dark:text-slate-400">
-            {leads.length} leads · <span className="hidden sm:inline">drag a card to change its stage — you'll be asked what changed</span><span className="sm:hidden">tap a lead to open it (use desktop to drag)</span>
+            {leads.length} leads · <span className="hidden sm:inline">drag a card to change its stage — you'll be asked what changed</span><span className="sm:hidden">tap ↕ Move Stage on a card to change stage, or tap the card name to open it</span>
           </p>
         </div>
         <div className="seg self-start">

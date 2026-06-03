@@ -734,9 +734,15 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
         </div>
 
         {bestSlot ? (
-          <div className="mt-2 text-sm font-medium text-emerald-800">
-            💡 Best slot: {DAY_LABELS[bestSlot.dow]} {fmtHourIST(bestSlot.hour)} IST
-            ({Math.round(bestSlot.rate * 100)}% connect · {bestSlot.total} calls)
+          <div className="mt-2">
+            <div className="text-sm font-medium text-emerald-800">
+              {bestSlot.hour < 8 || bestSlot.hour >= 21 ? "⚠️" : "💡"} Best slot:{" "}
+              {DAY_LABELS[bestSlot.dow]} {fmtHourIST(bestSlot.hour)} IST
+              ({Math.round(bestSlot.rate * 100)}% connect · {bestSlot.total} calls)
+            </div>
+            {(bestSlot.hour < 8 || bestSlot.hour >= 21) && (
+              <p className="text-[10px] text-gray-400 mt-1">* Times shown in IST. Off-hours slots may reflect call log timestamps that were recorded after midnight. Focus on 9am–8pm slots for reliable patterns.</p>
+            )}
           </div>
         ) : (
           <div className="mt-2 text-xs text-gray-500 italic">

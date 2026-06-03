@@ -28,6 +28,7 @@ type CallEntry = {
   kind: "call";
   time: Date;
   agentName: string;
+  isHistorical: boolean; // true when user is null but attributedAgentName is set (MIS import)
   leadName: string | null;
   outcome: string;
   durationSec: number | null;
@@ -43,16 +44,44 @@ type AuditEntry = {
 
 type FeedItem = CallEntry | AuditEntry;
 
-export default async function ActivityFeedPage() {
+export default async function ActivityFeedPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | undefined>>;
+}) {
   const me = await requireRole("ADMIN", "MANAGER");
   const managerTeam = me.role === "MANAGER" ? normalizeTeam(me.team) : null;
+  const sp = await searchParams;
 
+  // BUG-020: support ?date=YYYY-MM-DD to view a specific day's activity.
+  // If absent, fall back to today (IST).
   const todayIstMidnight = getTodayIstMidnight();
+
+  // Parse selected date from query param; fall back to today on invalid input.
+  let selectedDayStart: Date;
+  let currentDateISO: string;
+  if (sp.date && /^\d{4}-\d{2}-\d{2}$/.test(sp.date)) {
+    // Parse as an IST midnight for the chosen date
+    const [year, month, day] = sp.date.split("-").map(Number);
+    const istOffsetMs = 5.5 * 60 * 60 * 1000;
+    selectedDayStart = new Date(
+      Date.UTC(year, month - 1, day) - istOffsetMs
+    );
+    currentDateISO = sp.date;
+  } else {
+    selectedDayStart = todayIstMidnight;
+    // Format today as YYYY-MM-DD in IST for the date input default
+    const istNow = new Date(Date.now() + 5.5 * 60 * 60 * 1000);
+    currentDateISO = `${istNow.getUTCFullYear()}-${String(istNow.getUTCMonth() + 1).padStart(2, "0")}-${String(istNow.getUTCDate()).padStart(2, "0")}`;
+  }
+
+  // The end of the selected day in IST = start of next day
+  const selectedDayEnd = new Date(selectedDayStart.getTime() + 24 * 60 * 60 * 1000);
 
   const [callLogs, auditLogs] = await Promise.all([
     prisma.callLog.findMany({
       where: {
-        startedAt: { gte: todayIstMidnight },
+        startedAt: { gte: selectedDayStart, lt: selectedDayEnd },
         ...(managerTeam ? { user: { team: managerTeam } } : {}),
       },
       orderBy: { startedAt: "desc" },
@@ -65,7 +94,7 @@ export default async function ActivityFeedPage() {
     prisma.auditLog.findMany({
       where: {
         action: "lead.update",
-        createdAt: { gte: todayIstMidnight },
+        createdAt: { gte: selectedDayStart, lt: selectedDayEnd },
         ...(managerTeam ? { user: { team: managerTeam } } : {}),
       },
       orderBy: { createdAt: "desc" },
@@ -79,6 +108,9 @@ export default async function ActivityFeedPage() {
     ...callLogs.map((c): CallEntry => ({
       kind: "call",
       time: c.startedAt,
+      // isHistorical: attributedAgentName is set → entry was created by MIS import,
+      // the real caller is not a registered user in the system
+      isHistorical: c.attributedAgentName != null,
       agentName: c.attributedAgentName ?? c.user.name,
       leadName: c.lead?.name ?? null,
       outcome: c.outcome,
@@ -129,22 +161,39 @@ export default async function ActivityFeedPage() {
           <Link href="/reports" className="text-xs text-gray-500 hover:underline">
             ← Back to reports
           </Link>
-          <h1 className="text-xl sm:text-2xl font-bold">📋 Today&apos;s Activity Feed</h1>
+          <h1 className="text-xl sm:text-2xl font-bold">📋 Activity Feed</h1>
           <p className="text-xs sm:text-sm text-gray-500">
-            Calls and lead updates logged today (IST) — live
+            Calls and lead updates for {currentDateISO} (IST) — live
             {managerTeam ? ` · ${managerTeam} team` : " · all teams"}
           </p>
         </div>
         <a href="/api/call-logs/export" className="btn btn-ghost btn-sm">⬇️ Export CSV</a>
       </div>
 
+      {/* BUG-020: date selector — ?date=YYYY-MM-DD, defaults to today */}
+      <form method="GET" className="flex items-center gap-2 mb-4">
+        <label className="text-sm font-medium">Date:</label>
+        <input
+          type="date"
+          name="date"
+          defaultValue={currentDateISO}
+          className="border rounded px-2 py-1 text-sm"
+        />
+        <button type="submit" className="btn btn-sm">View</button>
+      </form>
+
       {feed.length === 0 ? (
         <div className="card p-6 text-center text-gray-500 text-sm">
-          No activity logged today yet
+          No activity logged for {currentDateISO} yet
         </div>
       ) : (
         <div className="space-y-4">
-          {agentEntries.map(([agentName, items]) => (
+          {agentEntries.map(([agentName, items]) => {
+            // Detect historical/imported agent: any call in this group that has no registered user
+            const agentIsHistorical = items.some(
+              (item) => item.kind === "call" && (item as CallEntry).isHistorical
+            );
+            return (
             <div key={agentName} className="card p-4">
               {/* Agent section header */}
               <div className="flex items-center gap-2 mb-3 pb-2 border-b border-gray-100">
@@ -153,6 +202,9 @@ export default async function ActivityFeedPage() {
                 </div>
                 <div>
                   <span className="font-semibold text-sm">{agentName}</span>
+                  {agentIsHistorical && (
+                    <span className="ml-1.5 text-xs text-gray-400">(historical data)</span>
+                  )}
                   <span className="ml-2 text-[11px] text-gray-500 bg-gray-100 rounded-full px-2 py-0.5">
                     {items.length} action{items.length !== 1 ? "s" : ""} today
                   </span>
@@ -205,7 +257,8 @@ export default async function ActivityFeedPage() {
                 ))}
               </ul>
             </div>
-          ))}
+          );
+          })}
         </div>
       )}
     </>

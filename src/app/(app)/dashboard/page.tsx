@@ -753,7 +753,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         <div className="text-xs font-bold tracking-widest text-gray-500 dark:text-slate-400 mb-3">BY SALESPERSON · TEAM · {periodSection}</div>
         <table className="tbl w-full min-w-[520px]">
           <thead><tr>
-            <th>Salesperson</th><th>Team</th><th className="text-center">Calls</th><th className="text-center">Connected</th><th className="text-center">Due</th><th className="text-center">Overdue now</th><th className="text-center">Closeable now</th><th className="text-center">Needs Lalit</th><th className="text-center">Clients (total)</th>
+            <th>Salesperson</th><th>Team</th><th className="text-center">Calls</th><th className="text-center">Connected</th><th className="text-center">Due</th><th className="text-center">Overdue now</th><th className="text-center">Closeable now</th><th className="text-center">Needs {me.name.split(" ")[0]}</th><th className="text-center">Clients (total)</th>
           </tr></thead>
           <tbody>
             {spStats.map((s) => (

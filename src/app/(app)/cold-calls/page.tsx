@@ -234,12 +234,18 @@ export default async function ColdDataPage({ searchParams }: { searchParams: Pro
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <Link
-            href="/cold-calls/session"
-            className="btn bg-orange-600 text-white text-sm font-bold shadow hover:bg-orange-700"
-          >
-            🎯 Start session (20 leads)
-          </Link>
+          {totalCount > 0 ? (
+            <Link
+              href="/cold-calls/session"
+              className="btn bg-orange-600 text-white text-sm font-bold shadow hover:bg-orange-700"
+            >
+              🎯 Start session ({totalCount} leads)
+            </Link>
+          ) : (
+            <span className="btn bg-gray-200 text-gray-400 text-sm font-bold cursor-not-allowed" aria-disabled="true">
+              No cold leads available
+            </span>
+          )}
           {isAdminOrMgr && (
             <ColdDataAdminControls agents={agents.map((a) => ({ id: a.id, name: a.name, team: a.team }))} />
           )}

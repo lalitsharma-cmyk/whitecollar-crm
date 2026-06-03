@@ -92,7 +92,12 @@ function actRow(
 }
 
 // ── Page ───────────────────────────────────────────────────────────────
-export default async function ActivitiesPage() {
+export default async function ActivitiesPage(
+  { searchParams }: { searchParams: Promise<Record<string, string | undefined>> }
+) {
+  const sp = await searchParams;
+  const typeFilter = (sp.type ?? null) as ActivityType | null;
+
   const me = await requireUser();
   const scope = me.role === "AGENT" ? { ownerId: me.id } : {};
   const leadScopeAsActivityFilter = me.role === "AGENT" ? { lead: { ownerId: me.id } } : {};
@@ -175,11 +180,12 @@ export default async function ActivitiesPage() {
       take: 10,
       include: activityInclude,
     }),
-    // 5. Scheduled today (IST window)
+    // 5. Scheduled today (IST window) — optionally filtered by type
     prisma.activity.findMany({
       where: {
         ...leadScopeAsActivityFilter,
         scheduledAt: { gte: dayStart, lt: dayEnd },
+        ...(typeFilter ? { type: typeFilter } : {}),
       },
       orderBy: { scheduledAt: "asc" },
       take: 15,
@@ -294,6 +300,16 @@ export default async function ActivitiesPage() {
           {new Date().toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: "Asia/Kolkata" })}
         </p>
       </div>
+
+      {/* ── Type filter banner ──────────────────────────────────────── */}
+      {typeFilter && (
+        <div className="flex items-center gap-2 p-3 bg-blue-50 border border-blue-200 rounded-lg mb-2">
+          <span className="text-sm font-semibold text-blue-800">
+            Filtering: {typeFilter.replace(/_/g, " ")} activities
+          </span>
+          <a href="/activities" className="ml-auto text-xs text-blue-600 hover:underline">Clear filter ×</a>
+        </div>
+      )}
 
       {/* ── Today's Top 5 strip ─────────────────────────────────────── */}
       <section className="card p-4 border-l-4 border-l-[#c9a24b] bg-amber-50/40">

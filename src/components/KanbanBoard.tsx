@@ -66,6 +66,10 @@ export default function KanbanBoard({ stages, leadsByStage, agents }: Props) {
   // (or skips) the note. Null when no move is pending.
   const [pendingMove, setPendingMove] = useState<null | { leadId: string; leadName: string; from: string; to: string }>(null);
   const [noteDraft, setNoteDraft] = useState("");
+  // Mobile stage picker — tapping "↕ Move Stage" on a card opens a bottom
+  // sheet listing all stages. Picking one transitions to the normal
+  // pendingMove flow (same "What changed?" modal as drag-and-drop).
+  const [mobilePick, setMobilePick] = useState<null | { leadId: string; leadName: string; fromStage: string }>(null);
 
   function update(key: string, value: string) {
     const p = new URLSearchParams(sp);
@@ -216,6 +220,22 @@ export default function KanbanBoard({ stages, leadsByStage, agents }: Props) {
                       {l.ownerName && <div className={`avatar ${l.ownerAvatar ?? "bg-slate-500"}`} title={l.ownerName}>{initialsOf(l.ownerName)}</div>}
                     </div>
                   </Link>
+                  {/* Mobile-only: stage mover button. Drag-and-drop doesn't work
+                      on touch screens so agents had no way to change stages on
+                      mobile. Opens a bottom-sheet stage picker, then flows into
+                      the same "What changed?" modal used by desktop drag. */}
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setMobilePick({ leadId: l.id, leadName: l.name, fromStage: stage.key });
+                    }}
+                    className="sm:hidden mt-2 w-full text-[11px] font-semibold text-[#0b1a33] dark:text-slate-200 bg-gray-100 dark:bg-slate-700 hover:bg-amber-100 dark:hover:bg-amber-900/40 rounded-lg py-1.5 transition-colors disabled:opacity-50"
+                  >
+                    ↕ Move Stage
+                  </button>
                 </div>
                 );
               })}
@@ -320,6 +340,68 @@ export default function KanbanBoard({ stages, leadsByStage, agents }: Props) {
                 {busy ? "Moving…" : "Move stage"}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Mobile stage picker — bottom sheet, sm:hidden equivalent via JS
+          (this component already can't conditionally render server-side).
+          Lists all stages so the agent taps the target; then hands off to
+          the normal pendingMove "What changed?" flow. */}
+      {mobilePick && (
+        <div
+          className="fixed inset-0 z-[60] flex items-end justify-center bg-black/40 sm:items-center sm:p-4"
+          onClick={() => setMobilePick(null)}
+        >
+          <div
+            className="bg-white dark:bg-slate-800 rounded-t-2xl sm:rounded-2xl shadow-2xl border dark:border-slate-700 w-full max-w-sm p-5"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="text-[10px] uppercase tracking-widest text-[#c9a24b] font-bold">
+              Move to stage
+            </div>
+            <div className="mt-1 font-bold text-[#0b1a33] dark:text-white text-base truncate">
+              {mobilePick.leadName}
+            </div>
+            <div className="text-xs text-gray-500 dark:text-slate-400 mt-0.5">
+              Currently: <span className="font-semibold">{mobilePick.fromStage.replaceAll("_", " ")}</span>
+            </div>
+            <div className="mt-4 flex flex-col gap-2">
+              {stages.map((s) => {
+                const isCurrent = s.key === mobilePick.fromStage;
+                return (
+                  <button
+                    key={s.key}
+                    type="button"
+                    disabled={isCurrent || busy}
+                    onClick={() => {
+                      setMobilePick(null);
+                      setPendingMove({
+                        leadId: mobilePick.leadId,
+                        leadName: mobilePick.leadName,
+                        from: mobilePick.fromStage,
+                        to: s.key,
+                      });
+                      setNoteDraft("");
+                    }}
+                    className={`w-full text-sm font-semibold rounded-xl px-4 py-3 text-left transition-colors
+                      ${isCurrent
+                        ? "bg-gray-100 dark:bg-slate-700 text-gray-400 dark:text-slate-500 cursor-default"
+                        : "bg-gray-50 dark:bg-slate-700 text-[#0b1a33] dark:text-slate-100 hover:bg-amber-100 dark:hover:bg-amber-900/40 hover:text-amber-900 dark:hover:text-yellow-300"
+                      }`}
+                  >
+                    {isCurrent ? `✓ ${s.label} (current)` : s.label}
+                  </button>
+                );
+              })}
+            </div>
+            <button
+              type="button"
+              onClick={() => setMobilePick(null)}
+              className="mt-4 w-full text-xs text-gray-500 dark:text-slate-400 py-2"
+            >
+              Cancel
+            </button>
           </div>
         </div>
       )}

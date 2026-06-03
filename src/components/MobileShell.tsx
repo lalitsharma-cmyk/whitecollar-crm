@@ -5,7 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import {
   LayoutDashboard, Users, Sparkles, Menu, X,
   Building2, BarChart3, Upload, UserCog, Settings as SettingsIcon, LogOut,
-  ChevronLeft, Gem, HelpCircle, AlertTriangle, Lock,
+  ChevronLeft, Gem, HelpCircle, AlertTriangle, Lock, PhoneCall,
 } from "lucide-react";
 import GlobalDateFilter from "./GlobalDateFilter";
 import NotifBell from "./NotifBell";
@@ -33,7 +33,8 @@ const fullNav: NavSection[] = [
     { href: "/action-list", label: "Action List",    Icon: Sparkles },
     { href: "/properties",  label: "Properties",     Icon: Building2 },
     { href: "/vault",       label: "Vault",          Icon: Lock },
-    { href: "/reports",     label: "Reports",        Icon: BarChart3, agentHidden: true },
+    { href: "/reports",     label: "Reports",        Icon: BarChart3,  agentHidden: true },
+    { href: "/call-logs",   label: "Call Logs",      Icon: PhoneCall,  agentHidden: true },
   ]},
   { section: "SETUP", items: [
     { href: "/profile",  label: "My Profile",    Icon: UserCog },
