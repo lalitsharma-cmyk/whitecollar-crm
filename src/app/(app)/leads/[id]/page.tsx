@@ -55,6 +55,7 @@ import CopyPhoneButton from "@/components/CopyPhoneButton";
 import AIIntelligencePanel from "@/components/AIIntelligencePanel";
 import { getLatestExtraction } from "@/lib/aiExtractor";
 import type { AIExtractionResult } from "@/lib/aiExtractor";
+import SchedulingField from "@/components/SchedulingField";
 
 export const dynamic = "force-dynamic";
 
@@ -1112,23 +1113,35 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
             ("Followup and to do should be on top") since those are the daily
             agent actions. Meeting + Site Visit are second-row reference dates. */}
         <div data-lead-section="actions" className="card p-5">
-          <div className="font-semibold mb-3 dark:text-slate-100">📅 Scheduling & next action <span className="text-[10px] text-gray-400 dark:text-slate-500 font-normal">(click to edit)</span></div>
+          <div className="font-semibold mb-3 dark:text-slate-100">📅 Scheduling & next action</div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
-            <div className="p-3 border border-emerald-200 rounded-lg bg-emerald-50">
-              <div className="text-xs text-emerald-700 font-semibold">🔁 Follow-up</div>
-              <InlineEdit leadId={lead.id} field="followupDate" type="date" value={toISTLocalInput(lead.followupDate)} placeholder="Not scheduled" />
-            </div>
             {/* "✅ To Do" tile removed per Lalit's ask — the next-step UI lives
-                in NextBestActionCard at the top of the left column. The
-                todoNext Lead column is kept (used elsewhere). */}
-            <div className="p-3 border border-[#e5e7eb] rounded-lg">
-              <div className="text-xs text-gray-500 dark:text-slate-400">📅 Meeting</div>
-              <InlineEdit leadId={lead.id} field="meetingDate" type="date" value={toISTLocalInput(lead.meetingDate)} placeholder="Not scheduled" />
-            </div>
-            <div className="p-3 border border-[#e5e7eb] rounded-lg">
-              <div className="text-xs text-gray-500 dark:text-slate-400">🏢 Site Visit</div>
-              <InlineEdit leadId={lead.id} field="siteVisitDate" type="date" value={toISTLocalInput(lead.siteVisitDate)} placeholder="Not scheduled" />
-            </div>
+                in NextBestActionCard at the top of the left column. */}
+            <SchedulingField
+              leadId={lead.id}
+              field="followupDate"
+              title="Set Follow-up"
+              label="🔁 Follow-up"
+              value={toISTLocalInput(lead.followupDate)}
+              placeholder="Not scheduled"
+              variant="primary"
+            />
+            <SchedulingField
+              leadId={lead.id}
+              field="meetingDate"
+              title="Set Meeting"
+              label="📅 Meeting"
+              value={toISTLocalInput(lead.meetingDate)}
+              placeholder="Not scheduled"
+            />
+            <SchedulingField
+              leadId={lead.id}
+              field="siteVisitDate"
+              title="Set Site Visit"
+              label="🏢 Site Visit"
+              value={toISTLocalInput(lead.siteVisitDate)}
+              placeholder="Not scheduled"
+            />
           </div>
         </div>
 
