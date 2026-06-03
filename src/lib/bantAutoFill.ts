@@ -38,9 +38,10 @@ function fmtAmt(n: number, c: "AED" | "INR"): string {
     if (n >= 100_000) return `${+(n/100_000).toFixed(1)} L`;
     return `${+(n/1000).toFixed(0)}K`;
   }
-  if (n >= 1_000_000) return `${+(n/1_000_000).toFixed(1)}M AED`;
-  if (n >= 1_000) return `${+(n/1_000).toFixed(0)}K AED`;
-  return `${n} AED`;
+  // AED: prefix format — "AED 1.7M"
+  if (n >= 1_000_000) return `AED ${+(n/1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `AED ${+(n/1_000).toFixed(0)}K`;
+  return `AED ${n}`;
 }
 
 function detectBudget(text: string): { amount: number; display: string; currency: "AED" | "INR" } | null {
@@ -79,25 +80,50 @@ function detectAuthority(text: string): { value: string; enumValue: string; conf
   return null;
 }
 
-function detectNeed(text: string): string | null {
+// Extract "for X purpose" qualifier from text near a property type mention
+function extractPurpose(text: string): string {
   const t = text.toLowerCase();
+  if (/rental\s*(?:yield|income|purpose|investment)?|passive\s*income|roi/.test(t)) return "for rental income";
+  if (/end\s*use|end\s*user|own\s*use|self\s*use|(?:to|for)\s*(?:stay|live|residence|residing)/.test(t)) return "for own use";
+  if (/capital\s*appreciation|cap.*apprec/.test(t)) return "for capital appreciation";
+  if (/investment|invest\b/.test(t)) return "for investment";
+  if (/(?:family|parents?)\s*(?:relocat|moving|shifting)/.test(t)) return "family relocation";
+  if (/commercial/.test(t)) return "commercial";
+  return "";
+}
+
+function detectNeed(text: string, team?: string | null): string | null {
+  const t = text.toLowerCase();
+  const isDubai = team === "Dubai";
   const parts: string[] = [];
-  const bhk = t.match(/(\d)\s*(?:bhk|br|bedroom)/);
-  if (bhk) parts.push(`${bhk[1]}BHK`);
+
+  // Bedroom type — use BR for Dubai, BHK for India
+  const bedroomMatch = t.match(/(\d)\s*(?:bhk|br(?:k|h)?|bedroom)/);
+  if (bedroomMatch) {
+    parts.push(isDubai ? `${bedroomMatch[1]}BR` : `${bedroomMatch[1]}BHK`);
+  }
+
+  // Dubai-specific unit types
+  if (/\bstudio\b/.test(t)) parts.push("Studio");
   if (/\bvilla\b/.test(t)) parts.push("Villa");
   if (/\bpenthouse|ph\b/.test(t)) parts.push("Penthouse");
-  if (/\bstudio\b/.test(t)) parts.push("Studio");
-  if (/rental\s*yield|rental\s*income|passive\s*income|roi/.test(t)) parts.push("Rental yield");
-  else if (/end\s*use|own\s*use|self\s*use|to\s*(?:stay|live)/.test(t)) parts.push("Own use");
-  else if (/investment\b/.test(t)) parts.push("Investment");
-  if (/parents?\s*(?:relocat|moving|shifting)/.test(t)) parts.push("Parents relocating");
-  if (/migrat|relocat|shifting\s*to\s*dubai/.test(t)) parts.push("Relocation");
-  return parts.length > 0 ? parts.join(" · ") : null;
+  if (/\btownhouse\b/.test(t)) parts.push("Townhouse");
+
+  if (parts.length === 0) return null;
+
+  // Append purpose if found
+  const purpose = extractPurpose(t);
+  if (purpose) parts.push(purpose);
+
+  return parts.join(" ");
 }
 
 function detectTimeline(text: string): { value: string; enumValue: string; confidence: BantConfidence } | null {
   const t = text.toLowerCase();
-  if (/\b(?:immediate|asap|right now|ready now|this week|today|urgent)\b/.test(t))
+  // Explicit urgency signals
+  if (/\b(?:immediate|asap|right now|ready now|this week|today|urgent)\b/.test(t) ||
+      /ready\s*to\s*book|wants?\s*to\s*finaliz|finalize\s*now|will\s*close|close\s*(?:the\s*)?deal/.test(t) ||
+      /wants?\s*eoi\s*today|visiting\s*this\s*week(?:end)?\s*for\s*booking|wants?\s*to\s*book|book\s*now/.test(t))
     return { value: "Immediate", enumValue: "IMMEDIATE", confidence: "HIGH" };
   if (/within\s*30\s*days?|next\s*month|by\s*month.?end|30\s*days/.test(t))
     return { value: "30 days", enumValue: "THIRTY_DAYS", confidence: "HIGH" };
@@ -107,6 +133,9 @@ function detectTimeline(text: string): { value: string; enumValue: string; confi
     return { value: "6+ months", enumValue: "SIX_PLUS_MONTHS", confidence: "HIGH" };
   if (/just\s*(?:looking|browsing|exploring)|window\s*shopping|not\s*decided/.test(t))
     return { value: "Just browsing", enumValue: "WINDOW_SHOPPING", confidence: "MEDIUM" };
+  // "after site visit", "after funds release" etc.
+  if (/after\s*(?:site\s*)?visit|after\s*funds?\s*releas|after\s*meeting/.test(t))
+    return { value: "After site visit / funds", enumValue: "THREE_MONTHS", confidence: "MEDIUM" };
   const months = ["january","february","march","april","may","june","july","august","september","october","november","december"];
   for (const month of months) {
     if (new RegExp(`\\b${month}\\b`).test(t))
@@ -136,6 +165,8 @@ export async function runBantAutoFill(leadId: string): Promise<BantSuggestions> 
       waMessages: { orderBy: { receivedAt: "desc" }, take: 20, select: { body: true, receivedAt: true } },
     },
   });
+
+  const team = lead.forwardedTeam;
 
   const sources: TextSource[] = [];
   if (lead.remarks) sources.push({ text: lead.remarks, label: "Remarks", date: lead.createdAt });
@@ -169,7 +200,7 @@ export async function runBantAutoFill(leadId: string): Promise<BantSuggestions> 
     if (b) bHits.push({ result: { value: b.display, rawValue: b.amount, confidence: src.label === "Call note" ? "HIGH" : "MEDIUM" }, src });
     const a = detectAuthority(src.text);
     if (a) aHits.push({ result: a, src });
-    const n = detectNeed(src.text);
+    const n = detectNeed(src.text, team);
     if (n) nHits.push({ result: { value: n, confidence: src.label === "Call note" ? "HIGH" : "MEDIUM" }, src });
     const t = detectTimeline(src.text);
     if (t) tHits.push({ result: t, src });

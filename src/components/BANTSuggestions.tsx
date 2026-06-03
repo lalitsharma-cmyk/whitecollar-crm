@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import type { BantSuggestion } from "@/lib/bantAutoFill";
 
 interface BANTSuggestionsProps {
@@ -44,6 +44,7 @@ export default function BANTSuggestions({
 }: BANTSuggestionsProps) {
   const [applying, setApplying] = useState<DimKey | null>(null);
   const [scanning, setScanning] = useState(false);
+  const [autoScanned, setAutoScanned] = useState(false);
 
   const dims: DimConfig[] = [
     {
@@ -108,6 +109,15 @@ export default function BANTSuggestions({
     }
   }
 
+  // Auto-scan once on mount if no suggestions have been stored yet
+  useEffect(() => {
+    if (!suggestions && !autoScanned) {
+      setAutoScanned(true);
+      handleScan();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   function isEmpty(val: string | number | null): boolean {
     if (val === null || val === undefined) return true;
     if (typeof val === "string" && (val.trim() === "" || val === "UNKNOWN")) return true;
@@ -123,13 +133,18 @@ export default function BANTSuggestions({
         <span className="text-[10px] font-semibold uppercase tracking-widest text-gray-400">
           Auto-detect from history
         </span>
-        <button
-          onClick={handleScan}
-          disabled={scanning}
-          className="text-[10px] px-2 py-0.5 rounded border border-gray-300 bg-white text-gray-600 hover:bg-gray-50 disabled:opacity-50 transition-colors"
-        >
-          {scanning ? "Scanning…" : "Scan history"}
-        </button>
+        {scanning && (
+          <span className="text-[10px] text-gray-400 italic">Scanning…</span>
+        )}
+        {!scanning && suggestions?.scannedAt && (
+          <button
+            onClick={handleScan}
+            disabled={scanning}
+            className="text-[10px] px-2 py-0.5 rounded border border-gray-300 bg-white text-gray-600 hover:bg-gray-50 disabled:opacity-50 transition-colors"
+          >
+            Re-scan
+          </button>
+        )}
       </div>
 
       {hasSuggestions ? (
@@ -185,7 +200,7 @@ export default function BANTSuggestions({
         </div>
       ) : (
         <div className="text-[10px] text-gray-400 italic">
-          {suggestions ? "No new suggestions found." : "Click 'Scan history' to auto-detect BANT signals."}
+          {suggestions ? "No new signals found in call history." : "Scanning history…"}
         </div>
       )}
 
