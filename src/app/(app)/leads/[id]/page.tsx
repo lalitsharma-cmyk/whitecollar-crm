@@ -480,10 +480,6 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
               {value:"CONDITIONAL_BUYER", label:"🔵 Conditional Buyer"},
               {value:"FINANCED_BUYER",    label:"🟣 Financed Buyer"},
               {value:"FUTURE_BUYER",      label:"🔴 Future Buyer"},
-              {value:"CASH_READY",        label:"💵 Cash Ready"},
-              {value:"BANK_APPROVED",     label:"🏦 Bank Approved"},
-              {value:"FINANCING_NEEDED",  label:"📋 Financing Needed"},
-              {value:"NOT_DISCUSSED",     label:"— Not discussed"},
             ]} /></div>
         </div>
         {/* A — Authority. Who makes the final buying decision. */}
@@ -526,8 +522,8 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
                 {value:"THIRTY_DAYS",     label:"📅 Within 1 Month"},
                 {value:"THREE_MONTHS",    label:"✈ Will Visit Dubai First"},
                 {value:"SIX_PLUS_MONTHS", label:"⏳ Not in 6 Months"},
-                {value:"WINDOW_SHOPPING", label:"📆 6+ Months"},
-                {value:"UNKNOWN",         label:"❓ Not Sure"},
+                {value:"WINDOW_SHOPPING", label:"📆 6+ Months / Window Shopping"},
+                {value:"UNKNOWN",         label:"❓ Not Sure / Unknown"},
               ]} />
           </div>
         </div>

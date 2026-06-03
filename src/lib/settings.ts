@@ -19,8 +19,9 @@ const DEFAULTS = {
   //   • Overnight auto-WA welcome (leadIngest)
   //   • Speed-to-lead first-touch WA + email (speedToLead)
   //   • Round-robin auto-assign (reconciler section 1)
-  // Default OFF — only Lalit flips this ON during go-live testing.
-  "testingMode.enabled": "false",
+  // Default ON — stays ON through go-live; Lalit flips OFF only after
+  // confirming all automated outbound (WA, email, round-robin, SLA) is safe.
+  "testingMode.enabled": "true",
   // ── B-20 voice / motivation pilot (Bucket H) ──
   // The voice + daily-motivation surface is partially specced but NOT yet
   // validated for tone/usefulness, so it ships behind a flag and is piloted

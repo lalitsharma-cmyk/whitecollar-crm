@@ -74,25 +74,25 @@ function detectAuthority(text: string): { value: string; confidence: BantConfide
   if (/\bi\s*will\s*(decide|take\s*(the\s+)?decision|book)\b|\bself\s*decision\b|\bmy\s*own\s*decision\b/.test(t))
     return { value: "Self", confidence: "HIGH" };
 
-  // ─── HUSBAND + WIFE ────────────────────────────────────────────────────────
+  // ─── HUSBAND + WIFE (→ Family) ────────────────────────────────────────────
   if (/\b(husband\s*(and|with|&)\s*wife|wife\s*(and|with|&)\s*husband)\b/.test(t))
-    return { value: "Husband + Wife", confidence: "HIGH" };
+    return { value: "Family", confidence: "HIGH" };
   if (/\bjoint\s*decision\b|\bboth\s*of\s*us\s*(will|to)\s*(decide|finali[sz]e)\b/.test(t))
-    return { value: "Husband + Wife", confidence: "MEDIUM" };
+    return { value: "Family", confidence: "MEDIUM" };
 
-  // ─── SPOUSE + SELF ─────────────────────────────────────────────────────────
+  // ─── SPOUSE + SELF (→ Family) ─────────────────────────────────────────────
   if (/\b(spouse\s*(and\s*self|with\s*self)|myself\s*(and\s*)?(?:wife|husband))\b/.test(t))
-    return { value: "Spouse + Self", confidence: "HIGH" };
+    return { value: "Family", confidence: "HIGH" };
   if (/\bneed\s*(to\s*)?(consult|discuss|check|ask|talk)\s*(with\s*)?(wife|husband|spouse)\b/.test(t))
-    return { value: "Spouse + Self", confidence: "MEDIUM" };
+    return { value: "Family", confidence: "MEDIUM" };
   if (/\b(decide|discuss|finali[sz]e)\s*with\s*(my\s+)?(wife|husband|spouse)\b/.test(t))
-    return { value: "Spouse + Self", confidence: "HIGH" };
+    return { value: "Family", confidence: "HIGH" };
 
-  // ─── FATHER + SON ──────────────────────────────────────────────────────────
+  // ─── FATHER + SON (→ Family) ──────────────────────────────────────────────
   if (/\b(father\s*(and|with|&)\s*son|son\s*(and|with|&)\s*father)\b/.test(t))
-    return { value: "Father + Son", confidence: "HIGH" };
+    return { value: "Family", confidence: "HIGH" };
   if (/\bclient\s*(and|with)\s*father\b|\bfather\s*(will\s*)?visit\b|\bvisit\s*with\s*(his\s*)?father\b/.test(t))
-    return { value: "Father + Son", confidence: "HIGH" };
+    return { value: "Family", confidence: "HIGH" };
 
   // ─── INDIVIDUAL FAMILY ─────────────────────────────────────────────────────
   if (/\bwife\s*(will|needs?\s*to|to)\s*(decide|approve|finali[sz]e|confirm|see)\b/.test(t))
@@ -124,10 +124,10 @@ function detectAuthority(text: string): { value: string; confidence: BantConfide
     return { value: "Sister", confidence: "HIGH" };
 
   if (/\b(his|her|my)\s*son\s*(will|needs?\s*to|to)\s*(decide|approve|confirm)\b/.test(t))
-    return { value: "Son", confidence: "HIGH" };
+    return { value: "Relative", confidence: "HIGH" };
 
   if (/\bdaughter\s*(will|needs?\s*to|to)\s*(decide|approve|confirm)\b/.test(t))
-    return { value: "Daughter", confidence: "HIGH" };
+    return { value: "Relative", confidence: "HIGH" };
 
   // ─── PARENTS / FAMILY ──────────────────────────────────────────────────────
   if (/\b(both\s*parents?|father\s*and\s*mother|mother\s*and\s*father|parents?\s*(will|to)\s*(decide|confirm))\b/.test(t))
@@ -146,9 +146,9 @@ function detectAuthority(text: string): { value: string; confidence: BantConfide
   if (/\bbusiness\s*partner\s*(will|to)\s*(decide|approve|discuss)\b/.test(t))
     return { value: "Business Partner", confidence: "HIGH" };
   if (/\binvestor\s*(group|committee|partners?)\b/.test(t))
-    return { value: "Investor Group", confidence: "HIGH" };
+    return { value: "Company", confidence: "HIGH" };
   if (/\b(company|management|board)\s*(will|to)\s*(decide|approve|invest)\b/.test(t))
-    return { value: "Company / Management", confidence: "HIGH" };
+    return { value: "Company", confidence: "HIGH" };
 
   return null;
 }
