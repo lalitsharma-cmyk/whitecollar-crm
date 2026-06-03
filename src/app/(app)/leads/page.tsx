@@ -248,7 +248,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
     prisma.lead.count({ where: { ...scope, aiScore: AIScore.HOT } }),
     prisma.lead.count({ where: { ...scope, createdAt: { gte: new Date(Date.now() - 24 * 3600 * 1000) } } }),
     prisma.lead.count({ where: scope }),
-    prisma.user.findMany({ where: { active: true, role: { in: ["AGENT", "MANAGER"] } }, orderBy: { name: "asc" } }),
+    prisma.user.findMany({ where: { active: true, OR: [{ role: { in: ["AGENT", "MANAGER"] } }, { email: "lalitsharma@whitecollarrealty.com" }] }, orderBy: { name: "asc" } }),
     prisma.lead.count({ where: { ...activeScope, followupDate: todayWindow } }),
     prisma.lead.count({ where: { ...activeScope, followupDate: tomorrowWindow } }),
     prisma.lead.count({ where: { ...activeScope, followupDate: weekWindow } }),
