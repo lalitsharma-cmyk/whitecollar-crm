@@ -118,6 +118,8 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     expoMeetingsThisMonth, homeVisitsThisMonth, virtualThisMonth, officeThisMonth, siteVisitsThisMonth,
     coldPromotedThisMonth, callsThisMonth,
     todayCallsCount,
+    // TODAY section — scheduled activity counts for the selected period
+    leadFollowupsDueToday, meetingsToday, siteVisitsToday, virtualMeetingsToday,
   ] = await Promise.all([
     // Personal KPI tiles (audit B-03): me* scopes → the agent's own book;
     // identical to the team scopes for ADMIN/MANAGER (no change for them).
@@ -137,7 +139,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     // State-based: ready to close / needs attention
     prisma.lead.count({ where: { ...meScope, status: { in: [LeadStatus.NEGOTIATION, LeadStatus.SITE_VISIT] } } }),
     prisma.lead.count({ where: { ...meScope, needsManagerReview: true, status: { notIn: [LeadStatus.WON, LeadStatus.LOST] } } }),
-    prisma.activity.findMany({ where: { ...meActWhere, status: ActivityStatus.PLANNED, scheduledAt: { gte: new Date() } }, orderBy: { scheduledAt: "asc" }, take: 5, include: { lead: { select: { id: true, name: true } } } }), // B-15: only lead.id/name rendered
+    prisma.activity.findMany({ where: { ...meActWhere, status: ActivityStatus.PLANNED, scheduledAt: { gte: sqlTo } }, orderBy: { scheduledAt: "asc" }, take: 8, include: { lead: { select: { id: true, name: true } } } }), // B-15: only lead.id/name rendered — UPCOMING: after selected period
     // Team funnel counts — respect selected period (was "this month").
     prisma.activity.count({ where: { ...teamActWhere, type: ActivityType.EXPO_MEETING, completedAt: { gte: sqlFrom, lt: sqlTo } } }),
     prisma.activity.count({ where: { ...teamActWhere, type: ActivityType.HOME_VISIT, completedAt: { gte: sqlFrom, lt: sqlTo } } }),
@@ -155,6 +157,17 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         startedAt: { gte: sqlFrom, lt: sqlTo },
       },
     }),
+    // TODAY section — lead follow-up dates and scheduled activity counts for the selected period
+    prisma.lead.count({ where: { ...meScope, followupDate: { gte: sqlFrom, lt: sqlTo }, status: { notIn: [LeadStatus.WON, LeadStatus.LOST] } } }),
+    prisma.activity.count({ where: { ...meActWhere, status: ActivityStatus.PLANNED, type: { in: [ActivityType.EXPO_MEETING, ActivityType.OFFICE_MEETING, ActivityType.HOME_VISIT] }, scheduledAt: { gte: sqlFrom, lt: sqlTo } } }),
+    prisma.activity.count({ where: { ...meActWhere, status: ActivityStatus.PLANNED, type: ActivityType.SITE_VISIT, scheduledAt: { gte: sqlFrom, lt: sqlTo } } }),
+    prisma.activity.count({ where: { ...meActWhere, status: ActivityStatus.PLANNED, type: ActivityType.VIRTUAL_MEETING, scheduledAt: { gte: sqlFrom, lt: sqlTo } } }),
+  ]);
+
+  // UPCOMING counts — activities/follow-ups scheduled after the selected period ends
+  const [upcomingFollowupsCount, upcomingActivitiesCount] = await Promise.all([
+    prisma.lead.count({ where: { ...meScope, followupDate: { gte: sqlTo }, status: { notIn: [LeadStatus.WON, LeadStatus.LOST] } } }),
+    prisma.activity.count({ where: { ...meActWhere, status: ActivityStatus.PLANNED, scheduledAt: { gte: sqlTo } } }),
   ]);
 
   // ── "Today's situation" Command Center hero strip (master spec §9.1) ──
@@ -476,48 +489,89 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
           goal first, then the action-first tiles below. Hidden for "all". */}
       <TeamDailyTargetTile team={view} todayStart={todayStart} />
 
-      {/* ─── Today's Situation — Sales Command Center hero (§9.1) ───
-          Action-first tiles answering: what needs attention RIGHT NOW?
-          Each card is a clickable link to the filtered Leads/Pipeline view. */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <Link href="/leads?ai=HOT&when=overdue" className="card p-4 border-l-4 border-red-500 hover:shadow-lg transition active:bg-red-50">
-          <div className="text-3xl font-extrabold text-red-700">{hotUntouched}</div>
-          <div className="text-xs font-semibold text-red-900 mt-1">🔥 Hot leads untouched</div>
-          <div className="text-[10px] text-red-700/70 mt-0.5">No agent activity in 6+ hours</div>
-        </Link>
-        <Link href="/leads?followup=overdue" className="card p-4 border-l-4 border-orange-500 hover:shadow-lg transition active:bg-orange-50">
-          <div className="text-3xl font-extrabold text-orange-700">{overdueFollowups}</div>
-          <div className="text-xs font-semibold text-orange-900 mt-1">⏰ Overdue follow-ups</div>
-          <div className="text-[10px] text-orange-700/70 mt-0.5">Follow-up date in the past</div>
-        </Link>
-        <Link href="/pipeline" className="card p-4 border-l-4 border-emerald-500 hover:shadow-lg transition active:bg-emerald-50">
-          <div className="text-3xl font-extrabold text-emerald-700">{closableDeals}</div>
-          <div className="text-xs font-semibold text-emerald-900 mt-1">💎 Closable deals</div>
-          <div className="text-[10px] text-emerald-700/70 mt-0.5">Negotiation + EOI in progress</div>
-        </Link>
-        <Link href="/cold-calls" className="card p-4 border-l-4 border-blue-500 hover:shadow-lg transition active:bg-blue-50">
-          <div className="text-3xl font-extrabold text-blue-700">{coldRevivalOps}</div>
-          <div className="text-xs font-semibold text-blue-900 mt-1">🧊 Cold revival opportunities</div>
-          <div className="text-[10px] text-blue-700/70 mt-0.5">High-value dormant 30+ days</div>
-        </Link>
+      {/* ── SECTION 1: TODAY ─────────────────────────────────────────────
+          Q1: What needs attention right now? + What is planned today?
+          Row 1 = urgent (state-based, always current).
+          Row 2 = scheduled for the selected period. */}
+      <div>
+        <div className="text-xs font-bold tracking-widest text-gray-500 dark:text-slate-400 mb-2 uppercase">
+          📅 TODAY — {periodSection}
+        </div>
+        {/* Urgent — state-based, always "right now" */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          <Link href="/leads?ai=HOT&when=overdue" className="card p-4 border-l-4 border-red-500 hover:shadow-lg transition active:bg-red-50">
+            <div className="text-3xl font-extrabold text-red-700">{hotUntouched}</div>
+            <div className="text-xs font-semibold text-red-900 mt-1">🔥 Hot leads untouched</div>
+            <div className="text-[10px] text-red-700/70 mt-0.5">No agent activity in 6+ hours</div>
+          </Link>
+          <Link href="/leads?followup=overdue" className="card p-4 border-l-4 border-orange-500 hover:shadow-lg transition active:bg-orange-50">
+            <div className="text-3xl font-extrabold text-orange-700">{overdueFollowups}</div>
+            <div className="text-xs font-semibold text-orange-900 mt-1">⏰ Overdue follow-ups</div>
+            <div className="text-[10px] text-orange-700/70 mt-0.5">Follow-up date in the past</div>
+          </Link>
+          <Link href="/pipeline" className="card p-4 border-l-4 border-emerald-500 hover:shadow-lg transition active:bg-emerald-50">
+            <div className="text-3xl font-extrabold text-emerald-700">{closableDeals}</div>
+            <div className="text-xs font-semibold text-emerald-900 mt-1">💎 Closable deals</div>
+            <div className="text-[10px] text-emerald-700/70 mt-0.5">Negotiation + EOI in progress</div>
+          </Link>
+          <Link href="/cold-calls" className="card p-4 border-l-4 border-blue-500 hover:shadow-lg transition active:bg-blue-50">
+            <div className="text-3xl font-extrabold text-blue-700">{coldRevivalOps}</div>
+            <div className="text-xs font-semibold text-blue-900 mt-1">🧊 Cold revival opportunities</div>
+            <div className="text-[10px] text-blue-700/70 mt-0.5">High-value dormant 30+ days</div>
+          </Link>
+        </div>
+        {/* Scheduled — period-based, what is planned for the selected day/range */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mt-3">
+          <Link href="/activities?type=CALL" className="card p-4 hover:shadow-lg transition">
+            <div className="text-3xl font-extrabold text-indigo-700 dark:text-indigo-300">{followupsDueToday}</div>
+            <div className="text-xs font-semibold text-slate-800 dark:text-slate-200 mt-1">📞 Calls due</div>
+            <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">scheduled · {periodSection.toLowerCase()}</div>
+          </Link>
+          <Link href="/leads?followup=today" className="card p-4 hover:shadow-lg transition">
+            <div className="text-3xl font-extrabold text-amber-700 dark:text-amber-300">{leadFollowupsDueToday}</div>
+            <div className="text-xs font-semibold text-slate-800 dark:text-slate-200 mt-1">📅 Follow-ups due</div>
+            <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">lead follow-up date · {periodSection.toLowerCase()}</div>
+          </Link>
+          <Link href="/activities?type=MEETING" className="card p-4 hover:shadow-lg transition">
+            <div className="text-3xl font-extrabold text-teal-700 dark:text-teal-300">{meetingsToday}</div>
+            <div className="text-xs font-semibold text-slate-800 dark:text-slate-200 mt-1">🤝 Meetings</div>
+            <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">expo / office / home · {periodSection.toLowerCase()}</div>
+          </Link>
+          <Link href="/activities?type=SITE_VISIT" className="card p-4 hover:shadow-lg transition">
+            <div className="text-3xl font-extrabold text-green-700 dark:text-green-300">{siteVisitsToday}</div>
+            <div className="text-xs font-semibold text-slate-800 dark:text-slate-200 mt-1">🏗️ Site visits</div>
+            <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">scheduled · {periodSection.toLowerCase()}</div>
+          </Link>
+          <Link href="/activities?type=VIRTUAL_MEETING" className="card p-4 hover:shadow-lg transition">
+            <div className="text-3xl font-extrabold text-sky-700 dark:text-sky-300">{virtualMeetingsToday}</div>
+            <div className="text-xs font-semibold text-slate-800 dark:text-slate-200 mt-1">💻 Virtual meets</div>
+            <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">scheduled · {periodSection.toLowerCase()}</div>
+          </Link>
+        </div>
       </div>
 
-      {/* Team live scoreboard — ADMIN / MANAGER only */}
-      {(me.role === "ADMIN" || me.role === "MANAGER") && (
-        <TeamScoreboardCard rows={scoreboardRows} />
-      )}
 
-      {/* Weekly pipeline summary — ADMIN / MANAGER only */}
-      {(me.role === "ADMIN" || me.role === "MANAGER") && weeklyMetrics.length > 0 && (
-        <WeeklySummaryCard metrics={weeklyMetrics} />
+      {/* Admin-only: leads waiting for morning assignment (15-min window) */}
+      {me.role === "ADMIN" && morningQueueCount > 0 && (
+        <div className="card p-4 border-l-4 border-red-500 bg-red-50">
+          <div className="flex items-center justify-between mb-2">
+            <div className="font-bold text-red-900">⏰ {morningQueueCount} lead{morningQueueCount === 1 ? "" : "s"} waiting for your assign</div>
+            <div className="text-[10px] text-red-700">After 5 min the system auto-assigns to present agents (round-robin)</div>
+          </div>
+          <div className="space-y-1">
+            {morningQueueLeads.map((l) => (
+              <Link key={l.id} href={`/leads/${l.id}`} className="block text-xs p-2 rounded bg-white border border-red-200 hover:border-red-400">
+                <b>{l.name}</b> {l.phone && <span className="text-gray-500">· {l.phone}</span>}
+                <span className="text-gray-400 ml-2">{l.forwardedTeam ?? "—"} · {formatDistanceToNow(l.createdAt, { addSuffix: true })}</span>
+              </Link>
+            ))}
+          </div>
+        </div>
       )}
-
 
       {/* §12.4 Daily Opening Experience
           Premium morning greeting + single "today's mission" CTA + streak
-          nudge + the existing chips + the daily quote. Sits above the Hero
-          strip so logging in feels like a sales pep-talk, not a wall of
-          numbers. Always visible (not just on cron tick). */}
+          nudge + the existing chips + the daily quote. Always visible. */}
       <div className="card p-4 border-l-4 border-[#c9a24b] bg-gradient-to-br from-amber-50/60 to-white">
         <div className="flex items-start justify-between gap-3 flex-wrap">
           <div className="flex-1 min-w-0">
@@ -608,28 +662,50 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         </div>
       </div>
 
-      {/* Admin-only: leads waiting for morning assignment (15-min window) */}
-      {me.role === "ADMIN" && morningQueueCount > 0 && (
-        <div className="card p-4 border-l-4 border-red-500 bg-red-50">
-          <div className="flex items-center justify-between mb-2">
-            <div className="font-bold text-red-900">⏰ {morningQueueCount} lead{morningQueueCount === 1 ? "" : "s"} waiting for your assign</div>
-            <div className="text-[10px] text-red-700">After 5 min the system auto-assigns to present agents (round-robin)</div>
-          </div>
-          <div className="space-y-1">
-            {morningQueueLeads.map((l) => (
-              <Link key={l.id} href={`/leads/${l.id}`} className="block text-xs p-2 rounded bg-white border border-red-200 hover:border-red-400">
-                <b>{l.name}</b> {l.phone && <span className="text-gray-500">· {l.phone}</span>}
-                <span className="text-gray-400 ml-2">{l.forwardedTeam ?? "—"} · {formatDistanceToNow(l.createdAt, { addSuffix: true })}</span>
+      {/* ── SECTION 2: UPCOMING ────────────────────────────────────────────
+          Q2: What is coming next after the selected period? */}
+      <div className="card p-5">
+        <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+          <div className="font-semibold">📆 UPCOMING</div>
+          <div className="flex gap-2 text-xs flex-wrap">
+            {upcomingFollowupsCount > 0 && (
+              <Link href="/leads?followup=upcoming" className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-300 font-semibold hover:bg-amber-200">
+                {upcomingFollowupsCount} follow-up{upcomingFollowupsCount === 1 ? "" : "s"}
               </Link>
-            ))}
+            )}
+            {upcomingActivitiesCount > 0 && (
+              <Link href="/activities" className="px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 border border-blue-300 font-semibold hover:bg-blue-200">
+                {upcomingActivitiesCount} activit{upcomingActivitiesCount === 1 ? "y" : "ies"}
+              </Link>
+            )}
           </div>
         </div>
+        <div className="space-y-2">
+          {upcoming.map((a) => (
+            <Link key={a.id} href={a.lead ? `/leads/${a.lead.id}` : "#"} className="flex items-center justify-between p-3 rounded-lg border border-[#e5e7eb] hover:border-[#c9a24b]">
+              <div>
+                <div className="text-sm font-semibold">{a.title}{a.lead && ` · ${a.lead.name}`}</div>
+                <div className="text-xs text-gray-500 dark:text-slate-400">{a.scheduledAt && `${fmtIST12(a.scheduledAt)} IST`}</div>
+              </div>
+              <span className="chip chip-new">{a.type}</span>
+            </Link>
+          ))}
+          {upcoming.length === 0 && <div className="text-sm text-gray-500 dark:text-slate-400">Nothing scheduled ahead.</div>}
+        </div>
+      </div>
+
+      {/* ── TEAM PERFORMANCE ── (after UPCOMING so Q1/Q2 answer first) */}
+      {(me.role === "ADMIN" || me.role === "MANAGER") && (
+        <TeamScoreboardCard rows={scoreboardRows} />
+      )}
+      {(me.role === "ADMIN" || me.role === "MANAGER") && weeklyMetrics.length > 0 && (
+        <WeeklySummaryCard metrics={weeklyMetrics} />
       )}
 
-      {/* 8 KPI tiles — period-based counts use the selected date range */}
+      {/* ── SECTION 3: ANALYTICS ──────────────────────────────────────── */}
       <div>
         <div className="text-xs font-bold tracking-widest text-gray-500 dark:text-slate-400 mb-2">
-          {isToday ? periodSection : `${periodSection} · & RIGHT NOW`}
+          📊 ANALYTICS · {periodSection}
         </div>
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-4 gap-2 lg:gap-3">
           <KPI title="Calls Dialed" value={callsToday} sub={`dials logged · ${periodSection.toLowerCase()}`} />
@@ -697,23 +773,6 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         </table>
       </div>
       )}
-
-      {/* Upcoming follow-ups */}
-      <div className="card p-5">
-        <div className="font-semibold mb-3">Upcoming follow-ups</div>
-        <div className="space-y-2">
-          {upcoming.map((a) => (
-            <Link key={a.id} href={a.lead ? `/leads/${a.lead.id}` : "#"} className="flex items-center justify-between p-3 rounded-lg border border-[#e5e7eb] hover:border-[#c9a24b]">
-              <div>
-                <div className="text-sm font-semibold">{a.title}{a.lead && ` · ${a.lead.name}`}</div>
-                <div className="text-xs text-gray-500 dark:text-slate-400">{a.scheduledAt && `${fmtIST12(a.scheduledAt)} IST`}</div>
-              </div>
-              <span className="chip chip-new">{a.type}</span>
-            </Link>
-          ))}
-          {upcoming.length === 0 && <div className="text-sm text-gray-500 dark:text-slate-400">Nothing scheduled.</div>}
-        </div>
-      </div>
     </>
   );
 }
