@@ -1,3 +1,5 @@
+"use client";
+
 // Merged WhatsApp + Call stream — replaces the standalone CallHistoryCard
 // mount on the lead detail page. One unified chronological feed lets the agent
 // scan "what happened with this client" in time order instead of bouncing
@@ -6,15 +8,32 @@
 // Lalit's ask: "Merge call history + WhatsApp into one stream so I can see the
 // real conversation flow, not two separate columns."
 
+import { useState } from "react";
 import { fmtIST12Paren, fmtISTDate } from "@/lib/datetime";
 import type { CallLog, WhatsAppMessage } from "@prisma/client";
 
+// CONNECTED = actual two-way communication happened (call answered, or client
+// expressed interest / disinterest — either way they spoke). INTERESTED and
+// NOT_INTERESTED both imply a real conversation; only the outcome differs.
+const CONNECTED_OUTCOMES = new Set(["CONNECTED", "INTERESTED", "NOT_INTERESTED"]);
+// UNSUCCESSFUL = no connection was made regardless of reason.
+const UNSUCCESSFUL_OUTCOMES = new Set(["NOT_PICKED", "BUSY", "SWITCHED_OFF", "WRONG_NUMBER", "CALLBACK"]);
+
+// Compress consecutive unsuccessful attempts older than this many days
+// (ones with no notes and no recording) into a single collapsible row.
+const COMPRESS_THRESHOLD_DAYS = 30;
+const COMPRESS_MIN_COUNT = 3;
+
 function callOutcomeLabel(outcome: string): string {
   const map: Record<string, string> = {
-    CONNECTED: "✅ Connected", NOT_PICKED: "📵 Not Picked",
-    CALLBACK: "🔁 Callback", WRONG_NUMBER: "🚫 Wrong Number",
-    BUSY: "⏳ Busy", SWITCHED_OFF: "📴 Switched Off",
-    INTERESTED: "⭐ Interested", NOT_INTERESTED: "🛑 Not Interested",
+    CONNECTED: "✅ Connected",
+    NOT_PICKED: "📵 Not Picked",
+    CALLBACK: "🔁 Callback",
+    WRONG_NUMBER: "🚫 Wrong Number",
+    BUSY: "⏳ Busy",
+    SWITCHED_OFF: "📴 Switched Off",
+    INTERESTED: "✅ Connected",       // interest belongs in BANT, not call history
+    NOT_INTERESTED: "🛑 Not Interested",
   };
   return map[outcome] ?? outcome.replaceAll("_", " ");
 }
@@ -37,10 +56,22 @@ type StreamRow =
   | { kind: "call"; at: Date; call: CallLogWithUser }
   | { kind: "wa"; at: Date; msg: WhatsAppMessage };
 
-// Map a call outcome to the colour theme for its row. CONNECTED / INTERESTED
-// → green (real conversation), everything else → red (no answer / declined).
+// A compressed placeholder for ≥ COMPRESS_MIN_COUNT consecutive unsuccessful
+// attempts that are all older than the threshold and have no notes/recordings.
+type CompressedGroup = {
+  kind: "compressed";
+  count: number;
+  from: Date;  // oldest attempt in the group
+  to: Date;    // newest attempt in the group
+  rows: StreamRow[];
+};
+
+type DisplayRow = StreamRow | CompressedGroup;
+
+// Map a call outcome to the colour theme for its row.
+// Green = real conversation happened; red = no connection made.
 function callColour(outcome: CallLog["outcome"]): { border: string; bg: string; pill: string } {
-  if (outcome === "CONNECTED" || outcome === "INTERESTED") {
+  if (CONNECTED_OUTCOMES.has(outcome as string)) {
     return { border: "border-emerald-300", bg: "bg-emerald-50/40", pill: "chip-won" };
   }
   return { border: "border-red-200", bg: "bg-red-50/30", pill: "chip-cold" };
@@ -55,12 +86,70 @@ function waColour(direction: WhatsAppMessage["direction"]): { border: string; bg
   return { border: "border-purple-300", bg: "bg-purple-50/40", pill: "src-wa" };
 }
 
+// Walk the newest-first row list and group consecutive compressible entries.
+// Never compresses: connected calls, WA messages, calls with notes/recordings,
+// or anything within the last COMPRESS_THRESHOLD_DAYS days.
+function buildDisplayRows(rows: StreamRow[]): DisplayRow[] {
+  const threshold = new Date(Date.now() - COMPRESS_THRESHOLD_DAYS * 24 * 60 * 60 * 1000);
+
+  const canCompress = (row: StreamRow): boolean => {
+    if (row.kind !== "call") return false;
+    if (row.at >= threshold) return false;
+    const { outcome, notes, recordingUrl } = row.call;
+    if (notes && notes.trim().length > 0) return false;
+    if (recordingUrl) return false;
+    return UNSUCCESSFUL_OUTCOMES.has(outcome as string);
+  };
+
+  const result: DisplayRow[] = [];
+  let pending: StreamRow[] = [];
+
+  const flush = () => {
+    if (pending.length >= COMPRESS_MIN_COUNT) {
+      // rows are newest-first → last item is oldest, first item is newest
+      result.push({
+        kind: "compressed",
+        count: pending.length,
+        from: pending[pending.length - 1].at,
+        to: pending[0].at,
+        rows: [...pending],
+      });
+    } else {
+      result.push(...pending);
+    }
+    pending = [];
+  };
+
+  for (const row of rows) {
+    if (canCompress(row)) {
+      pending.push(row);
+    } else {
+      flush();
+      result.push(row);
+    }
+  }
+  flush();
+
+  return result;
+}
+
 export default function ConversationStreamCard({ callLogs, waMessages, forwardedTeam }: Props) {
+  const [expandedGroups, setExpandedGroups] = useState<Set<number>>(new Set());
+
+  const toggleGroup = (idx: number) =>
+    setExpandedGroups(prev => {
+      const next = new Set(prev);
+      if (next.has(idx)) next.delete(idx);
+      else next.add(idx);
+      return next;
+    });
+
   // UAE recording-consent hint — Dubai team is reminded that recordings are
   // generally India-team only; Dubai-side calls typically aren't recorded.
   const audioTitle = forwardedTeam === "Dubai"
     ? "Recordings may exist only for India team (UAE consent rules)"
     : undefined;
+
   // Merge then sort newest-first. Stable Date comparison; ties broken by
   // CALL > WA so a "log call + send confirmation" pair shows the action first.
   const rows: StreamRow[] = [
@@ -73,9 +162,11 @@ export default function ConversationStreamCard({ callLogs, waMessages, forwarded
   });
 
   // Header counts — agent skims these before scrolling.
-  const callCount = callLogs.length;
-  const waCount = waMessages.length;
-  const connectedCount = callLogs.filter((c) => c.outcome === "CONNECTED" || c.outcome === "INTERESTED").length;
+  const connectedCount = callLogs.filter(c => CONNECTED_OUTCOMES.has(c.outcome as string)).length;
+  const unsuccessfulCount = callLogs.filter(c => UNSUCCESSFUL_OUTCOMES.has(c.outcome as string)).length;
+  const waInboundCount = waMessages.filter(m => m.direction === "INBOUND").length;
+
+  const displayRows = buildDisplayRows(rows);
 
   return (
     <div className="card p-5 border-l-4 border-emerald-500 bg-emerald-50/20">
@@ -85,9 +176,9 @@ export default function ConversationStreamCard({ callLogs, waMessages, forwarded
           <span className="text-[10px] text-gray-500 font-normal">— calls + WhatsApp, newest first</span>
         </div>
         <div className="flex items-center gap-1.5 text-[10px]">
-          <span className="chip chip-warm">📞 {callCount}</span>
-          <span className="chip chip-won">✅ {connectedCount}</span>
-          <span className="chip src-wa">💬 {waCount}</span>
+          <span className="chip chip-won">📞 {connectedCount} connected</span>
+          <span className="chip chip-cold">📵 {unsuccessfulCount} no-answer</span>
+          <span className="chip src-wa">💬 {waInboundCount} WA replies</span>
         </div>
       </div>
 
@@ -98,7 +189,44 @@ export default function ConversationStreamCard({ callLogs, waMessages, forwarded
           </div>
         )}
 
-        {rows.map((row, idx) => {
+        {displayRows.map((row, idx) => {
+          // ── Compressed group ──────────────────────────────────────────────
+          if (row.kind === "compressed") {
+            const expanded = expandedGroups.has(idx);
+            return (
+              <div key={`grp-${idx}`} className="border-l-2 border-gray-300 bg-gray-50/60 pl-3 pr-2 py-1.5 rounded-r">
+                <button
+                  onClick={() => toggleGroup(idx)}
+                  className="text-[11px] text-gray-500 flex items-center gap-1 w-full text-left hover:text-gray-700"
+                >
+                  <span>📵 {row.count} unsuccessful attempts</span>
+                  <span className="text-gray-400">·</span>
+                  <span>{fmtISTDate(row.from)} – {fmtISTDate(row.to)}</span>
+                  <span className="ml-auto text-gray-400">{expanded ? "▲ Hide" : "▼ Expand"}</span>
+                </button>
+                {expanded && (
+                  <div className="mt-2 space-y-1 pl-1 border-l border-gray-200">
+                    {row.rows.map((r, ri) => {
+                      if (r.kind !== "call") return null;
+                      const c = r.call;
+                      const col = callColour(c.outcome);
+                      const displayName = c.attributedAgentName ?? c.user.name;
+                      return (
+                        <div key={`cg-${c.id}-${ri}`} className={`border-l-2 ${col.border} ${col.bg} pl-3 pr-2 py-1 rounded-r`}>
+                          <div className="flex items-center justify-between flex-wrap gap-1 text-[11px] text-gray-500">
+                            <span>📞 <b>{displayName}</b> · {fmtIST12Paren(c.startedAt)} IST</span>
+                            <span className={`chip ${col.pill} text-[9px]`}>{callOutcomeLabel(c.outcome)}</span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          }
+
+          // ── Call row ──────────────────────────────────────────────────────
           if (row.kind === "call") {
             const c = row.call;
             const col = callColour(c.outcome);
@@ -130,7 +258,8 @@ export default function ConversationStreamCard({ callLogs, waMessages, forwarded
               </div>
             );
           }
-          // WhatsApp row.
+
+          // ── WhatsApp row ──────────────────────────────────────────────────
           const m = row.msg;
           const col = waColour(m.direction);
           return (

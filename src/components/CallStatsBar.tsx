@@ -1,5 +1,8 @@
+const CONNECTED_OUTCOMES = new Set(["CONNECTED", "INTERESTED", "NOT_INTERESTED"]);
+const UNSUCCESSFUL_OUTCOMES = new Set(["NOT_PICKED", "BUSY", "SWITCHED_OFF", "WRONG_NUMBER", "CALLBACK"]);
+
 interface CallLog {
-  duration?: number | null;
+  durationSec?: number | null;
   outcome?: string | null;
   startedAt: Date | string;
 }
@@ -25,14 +28,31 @@ function formatHour(hour: number): string {
   return `~${hour - 12}pm`;
 }
 
+function lastOutcomeLabel(outcome: string): string {
+  const map: Record<string, string> = {
+    CONNECTED: "✅ Connected",
+    NOT_PICKED: "📵 Not Picked",
+    CALLBACK: "🔁 Callback",
+    WRONG_NUMBER: "🚫 Wrong Number",
+    BUSY: "⏳ Busy",
+    SWITCHED_OFF: "📴 Switched Off",
+    INTERESTED: "✅ Connected",
+    NOT_INTERESTED: "🛑 Not Interested",
+  };
+  return map[outcome] ?? outcome.toLowerCase().replace(/_/g, " ");
+}
+
 export default function CallStatsBar({ callLogs }: Props) {
   if (!callLogs || callLogs.length === 0) return null;
 
-  const totalCalls = callLogs.length;
+  const connectedCount = callLogs.filter(c => CONNECTED_OUTCOMES.has(c.outcome ?? "")).length;
+  const unsuccessfulCount = callLogs.filter(c => UNSUCCESSFUL_OUTCOMES.has(c.outcome ?? "")).length;
 
-  // Sum durations — prop uses `duration` per the interface spec; fall back to 0
-  const totalSec = callLogs.reduce((sum, c) => sum + (c.duration ?? 0), 0);
-  const talkTime = formatTalkTime(totalSec);
+  // Talk time — sum durationSec for connected calls only (meaningless on missed calls)
+  const talkSec = callLogs
+    .filter(c => CONNECTED_OUTCOMES.has(c.outcome ?? ""))
+    .reduce((sum, c) => sum + (c.durationSec ?? 0), 0);
+  const talkTime = formatTalkTime(talkSec);
 
   // Most recent call by startedAt
   const sorted = [...callLogs].sort(
@@ -44,12 +64,11 @@ export default function CallStatsBar({ callLogs }: Props) {
   const hourCounts: Record<number, number> = {};
   for (const c of callLogs) {
     const d = new Date(c.startedAt);
-    // Convert to IST by adding 5h30m = 330 minutes
     const istMs = d.getTime() + 330 * 60 * 1000;
     const hour = new Date(istMs).getUTCHours();
     hourCounts[hour] = (hourCounts[hour] ?? 0) + 1;
   }
-  let bestHour = 10; // default
+  let bestHour = 10;
   let bestCount = 0;
   for (const [h, count] of Object.entries(hourCounts)) {
     if (count > bestCount) {
@@ -61,8 +80,12 @@ export default function CallStatsBar({ callLogs }: Props) {
   return (
     <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500 px-1 mb-2">
       <span>
-        <span className="font-medium text-gray-700">Total calls:</span>{" "}
-        {totalCalls}
+        <span className="font-medium text-gray-700">📞 Connected:</span>{" "}
+        {connectedCount}
+      </span>
+      <span>
+        <span className="font-medium text-gray-700">📵 Unsuccessful:</span>{" "}
+        {unsuccessfulCount}
       </span>
       <span>
         <span className="font-medium text-gray-700">Talk time:</span>{" "}
@@ -72,7 +95,7 @@ export default function CallStatsBar({ callLogs }: Props) {
         <span>
           <span className="font-medium text-gray-700">Last outcome:</span>{" "}
           <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-gray-100 text-gray-600 border border-gray-200">
-            {lastOutcome.toLowerCase().replace(/_/g, " ")}
+            {lastOutcomeLabel(lastOutcome)}
           </span>
         </span>
       )}
