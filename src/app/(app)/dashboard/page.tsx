@@ -6,6 +6,7 @@ import { fmtMoney, fmtMoneyDual } from "@/lib/money";
 import { runReconciler } from "@/lib/reconciler";
 import { getTestingModeEnabled } from "@/lib/settings";
 import { requireUser } from "@/lib/auth";
+import { redirect } from "next/navigation";
 import Link from "next/link";
 import IamHereCard from "@/components/IamHereCard";
 import CallTargetWidget from "@/components/CallTargetWidget";
@@ -63,42 +64,50 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     view === "all" ? {} :
     { lead: { forwardedTeam: view } };
 
-  // IST today window for today's follow-up leads widget
-  const nowUtc = new Date();
+  // IST offset (UTC+5:30) — used throughout this page
   const istOffset = 5.5 * 60 * 60 * 1000;
-  const todayIstMidnight = new Date(Math.floor((nowUtc.getTime() + istOffset) / 86400000) * 86400000 - istOffset);
-  const tomorrowIstMidnight = new Date(todayIstMidnight.getTime() + 86400000);
 
   // ── Global date-range filter (?from=YYYY-MM-DD&to=YYYY-MM-DD) ─────────
-  // FROM the GlobalDateFilter header control. When absent: ALL TIME (no
-  // date restriction). State-based counts (hot untouched, overdue, closable,
-  // cold revival) are always current-moment regardless of this filter.
+  // Dashboard defaults to IST today when no date params are present.
+  // Server redirect sets from=today&to=today, preserving any ?team= param.
   const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
   const rawFrom = sp.from && DATE_RE.test(sp.from) ? sp.from : null;
   const rawTo   = sp.to   && DATE_RE.test(sp.to)   ? sp.to   : null;
-  const hasDateFilter = !!(rawFrom && rawTo);
-  // IST midnight for a YYYY-MM-DD string: IST 00:00 = UTC −5:30
+
+  if (!rawFrom || !rawTo) {
+    const todayIso = new Date(Date.now() + istOffset).toISOString().slice(0, 10);
+    const p = new URLSearchParams();
+    for (const [k, v] of Object.entries(sp)) {
+      if (v && k !== "from" && k !== "to") p.set(k, v);
+    }
+    p.set("from", todayIso);
+    p.set("to", todayIso);
+    redirect(`/dashboard?${p.toString()}`);
+  }
+
+  // rawFrom & rawTo are non-null after redirect
   function istMidnightUTC(dateStr: string): Date {
     const [y, m, d] = dateStr.split("-").map(Number);
     return new Date(Date.UTC(y, m - 1, d) - istOffset);
   }
-  const periodStart = rawFrom ? istMidnightUTC(rawFrom) : null;
-  const periodEnd   = rawTo   ? new Date(istMidnightUTC(rawTo).getTime() + 86400000) : null;
-  // sqlFrom/sqlTo are used in every period-scoped query.
-  // No filter → year-2000 to year-2100 = effectively all records.
-  const sqlFrom = hasDateFilter ? periodStart! : new Date("2000-01-01T00:00:00Z");
-  const sqlTo   = hasDateFilter ? periodEnd!   : new Date("2100-01-01T00:00:00Z");
-  // Section label used in dashboard headers
+  const sqlFrom = istMidnightUTC(rawFrom);
+  const sqlTo   = new Date(istMidnightUTC(rawTo).getTime() + 86400000);
+
+  // Section labels
+  const todayIsoStr = new Date(Date.now() + istOffset).toISOString().slice(0, 10);
   const fmt2 = (s: string) => {
     const [y, m, d] = s.split("-").map(Number);
     return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" });
   };
-  const periodSection: string = hasDateFilter
-    ? (rawFrom === rawTo ? fmt2(rawFrom!).toUpperCase() : `${fmt2(rawFrom!)} – ${fmt2(rawTo!)}`)
-    : "ALL TIME";
-  const monthRangeLabel = hasDateFilter
-    ? smartRangeLabel(periodStart!, new Date(periodEnd!.getTime() - 1))
-    : "All Time";
+  const isToday     = rawFrom === rawTo && rawFrom === todayIsoStr;
+  const isSingleDay = rawFrom === rawTo;
+  const periodSection: string = isToday
+    ? "TODAY & RIGHT NOW"
+    : isSingleDay ? fmt2(rawFrom).toUpperCase()
+    : `${fmt2(rawFrom)} – ${fmt2(rawTo)}`;
+  const monthRangeLabel = isToday ? "today"
+    : isSingleDay ? fmt2(rawFrom).toLowerCase()
+    : `${fmt2(rawFrom)} – ${fmt2(rawTo)}`;
 
   const [
     totalClients, totalNotContacted, newToday, hotLeads,
@@ -620,7 +629,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
       {/* 8 KPI tiles — period-based counts use the selected date range */}
       <div>
         <div className="text-xs font-bold tracking-widest text-gray-500 dark:text-slate-400 mb-2">
-          {periodSection} · & RIGHT NOW
+          {isToday ? periodSection : `${periodSection} · & RIGHT NOW`}
         </div>
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-4 gap-2 lg:gap-3">
           <KPI title="Calls Dialed" value={callsToday} sub={`dials logged · ${periodSection.toLowerCase()}`} />
