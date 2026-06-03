@@ -1,4 +1,5 @@
 import { createHmac } from "node:crypto";
+import Link from "next/link";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getTravelRatePerKmInr, getSpeedToLeadEnabled, getRoundRobinEnabled, getTestingModeEnabled, getMotivationPilotEnabled, getMotivationPilotTeam, getBantGateMode, getAiEnabled, getAiTrialModeEnabled, getAiMonthlyCostCapUsd } from "@/lib/settings";
@@ -64,6 +65,38 @@ export default async function SettingsPage() {
   return (
     <>
       <h1 className="text-xl sm:text-2xl font-bold">Settings</h1>
+
+      {isAdmin && (
+        <div>
+          <div className="text-xs font-semibold text-gray-500 uppercase tracking-widest mb-3">🛠 Admin Tools</div>
+          <p className="text-xs text-gray-500 -mt-2 mb-3">Manage system configuration, users, and audit tools.</p>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+            {[
+              { href: "/admin/users",        emoji: "👥", label: "Users",          desc: "Team members & roles" },
+              { href: "/admin/templates",    emoji: "📋", label: "Templates",      desc: "WhatsApp & email templates" },
+              { href: "/admin/workflows",    emoji: "⚡", label: "Workflows",      desc: "Automation rules" },
+              { href: "/admin/imports",      emoji: "📂", label: "Import History", desc: "Past CSV/Excel imports" },
+              { href: "/admin/audit",        emoji: "🛡", label: "Audit Log",      desc: "Admin action history" },
+              { href: "/admin/health",       emoji: "💚", label: "System Health",  desc: "Server & cron status" },
+              { href: "/admin/integrations", emoji: "🔌", label: "Integrations",   desc: "Webhooks & third-party" },
+              { href: "/admin/dedup",        emoji: "🔁", label: "Duplicates",     desc: "Review & merge dupes" },
+              { href: "/admin/attendance",   emoji: "🗓", label: "Attendance",     desc: "Team check-in records" },
+              { href: "/admin/team-mood",    emoji: "😊", label: "Team Mood",      desc: "Daily mood survey results" },
+              { href: "/admin/quality",      emoji: "⭐", label: "Quality",        desc: "Call quality scoring" },
+              { href: "/admin/targets",      emoji: "🎯", label: "Daily Targets",  desc: "Set & track call targets" },
+              { href: "/admin/site-visits",  emoji: "📍", label: "Site Visits",    desc: "All site visit logs" },
+              { href: "/admin/vault",        emoji: "🔒", label: "Vault",          desc: "Team shared notes" },
+              { href: "/admin/ai-trial",     emoji: "🤖", label: "AI Trial",       desc: "Bounded AI cost trial" },
+            ].map(({ href, emoji, label, desc }) => (
+              <Link key={href} href={href} className="card p-4 flex flex-col gap-1 hover:shadow-md transition no-underline">
+                <div className="text-2xl">{emoji}</div>
+                <div className="font-semibold text-sm">{label}</div>
+                <div className="text-xs text-gray-500">{desc}</div>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* MASTER kill-switch — pauses every auto-action. Top of page, loudest banner. */}
       <div className={`card p-5 max-w-2xl border-l-4 ${testingModeOn ? "border-amber-500 bg-amber-50" : "border-emerald-500"}`}>
