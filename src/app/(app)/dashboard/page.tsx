@@ -70,45 +70,36 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   const todayIstMidnight = new Date(Math.floor((nowUtc.getTime() + istOffset) / 86400000) * 86400000 - istOffset);
   const tomorrowIstMidnight = new Date(todayIstMidnight.getTime() + 86400000);
 
-  // ── Global date-range filter (from GlobalDateFilter header control) ────
-  // ?from=YYYY-MM-DD&to=YYYY-MM-DD (both in IST). When absent, default to
-  // today (IST). All period-based counts (calls, WA, follow-ups due, new
-  // leads) use periodStart/periodEnd. State-based counts (overdue, hot
-  // untouched, closable, cold revival) always reflect the current moment.
-  const nowIST8601 = new Date(nowUtc.getTime() + istOffset);
-  const todayISOStr = `${nowIST8601.getUTCFullYear()}-${String(nowIST8601.getUTCMonth() + 1).padStart(2, "0")}-${String(nowIST8601.getUTCDate()).padStart(2, "0")}`;
+  // ── Global date-range filter (?from=YYYY-MM-DD&to=YYYY-MM-DD) ─────────
+  // FROM the GlobalDateFilter header control. When absent: ALL TIME (no
+  // date restriction). State-based counts (hot untouched, overdue, closable,
+  // cold revival) are always current-moment regardless of this filter.
   const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
-  const rawFrom = sp.from && DATE_RE.test(sp.from) ? sp.from : todayISOStr;
-  const rawTo   = sp.to   && DATE_RE.test(sp.to)   ? sp.to   : todayISOStr;
-  // Convert IST date strings to UTC boundaries (IST midnight = UTC−5:30)
+  const rawFrom = sp.from && DATE_RE.test(sp.from) ? sp.from : null;
+  const rawTo   = sp.to   && DATE_RE.test(sp.to)   ? sp.to   : null;
+  const hasDateFilter = !!(rawFrom && rawTo);
+  // IST midnight for a YYYY-MM-DD string: IST 00:00 = UTC −5:30
   function istMidnightUTC(dateStr: string): Date {
     const [y, m, d] = dateStr.split("-").map(Number);
     return new Date(Date.UTC(y, m - 1, d) - istOffset);
   }
-  const periodStart = istMidnightUTC(rawFrom);
-  const periodEnd   = new Date(istMidnightUTC(rawTo).getTime() + 86400000); // excl. end (next IST midnight)
-  // Section label for dashboard tiles: "TODAY", "YESTERDAY", "THIS WEEK", etc.
-  const yestStr = new Date(nowIST8601.getTime() - 86400000);
-  const yestISOStr = `${yestStr.getUTCFullYear()}-${String(yestStr.getUTCMonth() + 1).padStart(2, "0")}-${String(yestStr.getUTCDate()).padStart(2, "0")}`;
-  const dowIST = nowIST8601.getUTCDay();
-  const monStr = (() => {
-    const m = new Date(nowIST8601.getTime() - ((dowIST + 6) % 7) * 86400000);
-    return `${m.getUTCFullYear()}-${String(m.getUTCMonth() + 1).padStart(2, "0")}-${String(m.getUTCDate()).padStart(2, "0")}`;
-  })();
-  const fomStr = `${nowIST8601.getUTCFullYear()}-${String(nowIST8601.getUTCMonth() + 1).padStart(2, "0")}-01`;
+  const periodStart = rawFrom ? istMidnightUTC(rawFrom) : null;
+  const periodEnd   = rawTo   ? new Date(istMidnightUTC(rawTo).getTime() + 86400000) : null;
+  // sqlFrom/sqlTo are used in every period-scoped query.
+  // No filter → year-2000 to year-2100 = effectively all records.
+  const sqlFrom = hasDateFilter ? periodStart! : new Date("2000-01-01T00:00:00Z");
+  const sqlTo   = hasDateFilter ? periodEnd!   : new Date("2100-01-01T00:00:00Z");
+  // Section label used in dashboard headers
   const fmt2 = (s: string) => {
     const [y, m, d] = s.split("-").map(Number);
-    return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString("en-IN", { day: "2-digit", month: "short", timeZone: "UTC" });
+    return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" });
   };
-  const periodSection: string =
-    rawFrom === todayISOStr && rawTo === todayISOStr ? "TODAY" :
-    rawFrom === yestISOStr  && rawTo === yestISOStr  ? "YESTERDAY" :
-    rawFrom === monStr      && rawTo === todayISOStr ? "THIS WEEK" :
-    rawFrom === fomStr      && rawTo === todayISOStr ? "THIS MONTH" :
-    rawFrom === rawTo ? fmt2(rawFrom).toUpperCase() :
-    `${fmt2(rawFrom)} – ${fmt2(rawTo)}`;
-  const isToday = periodSection === "TODAY";
-  const monthRangeLabel = smartRangeLabel(periodStart, new Date(periodEnd.getTime() - 1));
+  const periodSection: string = hasDateFilter
+    ? (rawFrom === rawTo ? fmt2(rawFrom!).toUpperCase() : `${fmt2(rawFrom!)} – ${fmt2(rawTo!)}`)
+    : "ALL TIME";
+  const monthRangeLabel = hasDateFilter
+    ? smartRangeLabel(periodStart!, new Date(periodEnd!.getTime() - 1))
+    : "All Time";
 
   const [
     totalClients, totalNotContacted, newToday, hotLeads,
@@ -127,13 +118,13 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     prisma.lead.count({ where: meScope }),
     prisma.lead.count({ where: { ...meScope, status: LeadStatus.NEW } }),
     // Period-based: new leads created in selected period
-    prisma.lead.count({ where: { ...meScope, createdAt: { gte: periodStart, lt: periodEnd } } }),
+    prisma.lead.count({ where: { ...meScope, createdAt: { gte: sqlFrom, lt: sqlTo } } }),
     prisma.lead.count({ where: { ...meScope, aiScore: AIScore.HOT } }),
     // Period-based: calls/WA/follow-ups in selected period
-    prisma.callLog.count({ where: { ...meCallWhere, startedAt: { gte: periodStart, lt: periodEnd } } }),
-    prisma.callLog.count({ where: { ...meCallWhere, startedAt: { gte: periodStart, lt: periodEnd }, outcome: CallOutcome.CONNECTED } }),
-    prisma.whatsAppMessage.count({ where: { ...meWaWhere, receivedAt: { gte: periodStart, lt: periodEnd } } }),
-    prisma.activity.count({ where: { ...meActWhere, status: ActivityStatus.PLANNED, type: "CALL", scheduledAt: { gte: periodStart, lt: periodEnd } } }),
+    prisma.callLog.count({ where: { ...meCallWhere, startedAt: { gte: sqlFrom, lt: sqlTo } } }),
+    prisma.callLog.count({ where: { ...meCallWhere, startedAt: { gte: sqlFrom, lt: sqlTo }, outcome: CallOutcome.CONNECTED } }),
+    prisma.whatsAppMessage.count({ where: { ...meWaWhere, receivedAt: { gte: sqlFrom, lt: sqlTo } } }),
+    prisma.activity.count({ where: { ...meActWhere, status: ActivityStatus.PLANNED, type: "CALL", scheduledAt: { gte: sqlFrom, lt: sqlTo } } }),
     // State-based: activities overdue RIGHT NOW (always before today)
     prisma.activity.count({ where: { ...meActWhere, status: ActivityStatus.PLANNED, scheduledAt: { lt: todayStart } } }),
     // State-based: ready to close / needs attention
@@ -141,27 +132,27 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     prisma.lead.count({ where: { ...meScope, needsManagerReview: true, status: { notIn: [LeadStatus.WON, LeadStatus.LOST] } } }),
     prisma.activity.findMany({ where: { ...meActWhere, status: ActivityStatus.PLANNED, scheduledAt: { gte: new Date() } }, orderBy: { scheduledAt: "asc" }, take: 5, include: { lead: { select: { id: true, name: true } } } }), // B-15: only lead.id/name rendered
     // Team funnel counts — respect selected period (was "this month").
-    prisma.activity.count({ where: { ...teamActWhere, type: ActivityType.EXPO_MEETING, completedAt: { gte: periodStart, lt: periodEnd } } }),
-    prisma.activity.count({ where: { ...teamActWhere, type: ActivityType.HOME_VISIT, completedAt: { gte: periodStart, lt: periodEnd } } }),
-    prisma.activity.count({ where: { ...teamActWhere, type: ActivityType.VIRTUAL_MEETING, completedAt: { gte: periodStart, lt: periodEnd } } }),
-    prisma.activity.count({ where: { ...teamActWhere, type: ActivityType.OFFICE_MEETING, completedAt: { gte: periodStart, lt: periodEnd } } }),
-    prisma.activity.count({ where: { ...teamActWhere, type: ActivityType.SITE_VISIT, completedAt: { gte: periodStart, lt: periodEnd } } }),
+    prisma.activity.count({ where: { ...teamActWhere, type: ActivityType.EXPO_MEETING, completedAt: { gte: sqlFrom, lt: sqlTo } } }),
+    prisma.activity.count({ where: { ...teamActWhere, type: ActivityType.HOME_VISIT, completedAt: { gte: sqlFrom, lt: sqlTo } } }),
+    prisma.activity.count({ where: { ...teamActWhere, type: ActivityType.VIRTUAL_MEETING, completedAt: { gte: sqlFrom, lt: sqlTo } } }),
+    prisma.activity.count({ where: { ...teamActWhere, type: ActivityType.OFFICE_MEETING, completedAt: { gte: sqlFrom, lt: sqlTo } } }),
+    prisma.activity.count({ where: { ...teamActWhere, type: ActivityType.SITE_VISIT, completedAt: { gte: sqlFrom, lt: sqlTo } } }),
     // Cold→Lead conversions in selected period
-    prisma.activity.count({ where: { ...teamActWhere, type: ActivityType.COLD_TO_LEAD, completedAt: { gte: periodStart, lt: periodEnd } } }),
+    prisma.activity.count({ where: { ...teamActWhere, type: ActivityType.COLD_TO_LEAD, completedAt: { gte: sqlFrom, lt: sqlTo } } }),
     // Calls in selected period (was "this month")
-    prisma.callLog.count({ where: { ...teamCallWhere, startedAt: { gte: periodStart, lt: periodEnd } } }),
+    prisma.callLog.count({ where: { ...teamCallWhere, startedAt: { gte: sqlFrom, lt: sqlTo } } }),
     // Calls by this user in the selected period — feeds CallTargetWidget
     prisma.callLog.count({
       where: {
         userId: me.id,
-        startedAt: { gte: periodStart, lt: periodEnd },
+        startedAt: { gte: sqlFrom, lt: sqlTo },
       },
     }),
-    // Follow-up leads with followupDate within the selected period
+    // Follow-up leads due today — always IST today regardless of date filter
     prisma.lead.findMany({
       where: {
         ...meScope,
-        followupDate: { gte: periodStart, lt: periodEnd },
+        followupDate: { gte: todayIstMidnight, lt: tomorrowIstMidnight },
         status: { notIn: ["LOST", "WON"] },
       },
       select: { id: true, name: true, potential: true, followupDate: true, lastTouchedAt: true },
@@ -293,7 +284,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
           by: ["userId"],
           _count: { _all: true },
           where: {
-            startedAt: { gte: periodStart, lt: periodEnd },
+            startedAt: { gte: sqlFrom, lt: sqlTo },
             ...(managerTeam !== null
               ? { user: { team: managerTeam } }
               : {}),
@@ -325,9 +316,9 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   // Calls / due_today use the selected period; overdue/closeable/needs are state-based.
   const spStatsRaw: SpRow[] = isAdminOrMgr ? await prisma.$queryRaw<SpRow[]>`
     SELECT u.id, u.name, u.team,
-      COALESCE((SELECT COUNT(*) FROM "CallLog" c WHERE c."userId" = u.id AND c."startedAt" >= ${periodStart} AND c."startedAt" < ${periodEnd}), 0) as calls,
-      COALESCE((SELECT COUNT(*) FROM "CallLog" c WHERE c."userId" = u.id AND c."startedAt" >= ${periodStart} AND c."startedAt" < ${periodEnd} AND c.outcome::text = 'CONNECTED'), 0) as connected,
-      COALESCE((SELECT COUNT(*) FROM "Activity" a WHERE a."userId" = u.id AND a.status::text = 'PLANNED' AND a."scheduledAt" >= ${periodStart} AND a."scheduledAt" < ${periodEnd}), 0) as due_today,
+      COALESCE((SELECT COUNT(*) FROM "CallLog" c WHERE c."userId" = u.id AND c."startedAt" >= ${sqlFrom} AND c."startedAt" < ${sqlTo}), 0) as calls,
+      COALESCE((SELECT COUNT(*) FROM "CallLog" c WHERE c."userId" = u.id AND c."startedAt" >= ${sqlFrom} AND c."startedAt" < ${sqlTo} AND c.outcome::text = 'CONNECTED'), 0) as connected,
+      COALESCE((SELECT COUNT(*) FROM "Activity" a WHERE a."userId" = u.id AND a.status::text = 'PLANNED' AND a."scheduledAt" >= ${sqlFrom} AND a."scheduledAt" < ${sqlTo}), 0) as due_today,
       COALESCE((SELECT COUNT(*) FROM "Activity" a WHERE a."userId" = u.id AND a.status::text = 'PLANNED' AND a."scheduledAt" < ${todayStart}), 0) as overdue,
       COALESCE((SELECT COUNT(*) FROM "Lead" l WHERE l."ownerId" = u.id AND l.status::text IN ('NEGOTIATION','SITE_VISIT')), 0) as closeable,
       COALESCE((SELECT COUNT(*) FROM "Lead" l WHERE l."ownerId" = u.id AND l."needsManagerReview" = true), 0) as needs,
@@ -540,7 +531,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
       {todayFollowups.length > 0 && (
         <div className="card p-4">
           <div className="flex items-center justify-between mb-3">
-            <h3 className="font-semibold text-sm">📞 {isToday ? "Today's" : periodSection} Calls</h3>
+            <h3 className="font-semibold text-sm">📞 Today's Calls</h3>
             <a href="/leads?followup=today" className="text-xs text-blue-600 hover:underline">View all →</a>
           </div>
           <div className="space-y-2">
@@ -693,7 +684,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
       {/* 8 KPI tiles — period-based counts use the selected date range */}
       <div>
         <div className="text-xs font-bold tracking-widest text-gray-500 dark:text-slate-400 mb-2">
-          {periodSection}{isToday ? " & RIGHT NOW" : " · & RIGHT NOW"}
+          {periodSection} · & RIGHT NOW
         </div>
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-4 gap-2 lg:gap-3">
           <KPI title="Calls Dialed" value={callsToday} sub={`dials logged · ${periodSection.toLowerCase()}`} />
