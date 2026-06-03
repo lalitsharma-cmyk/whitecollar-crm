@@ -137,7 +137,8 @@ const MOOD_TO_SCORE: Record<Mood, number> = {
 /**
  * Activity axis — how well did they execute calls.
  * Composite of:
- *   • connect_rate       — CONNECTED / total calls (0-100)
+ *   • connect_rate       — connects / total calls, normalised to dailyConnectTarget/dailyCallTarget
+ *                          benchmark (≥ target = 100; 0 = 0). Aligned to mission board 10/30 = 33%.
  *   • calls_vs_target    — avg-per-day actual vs User.dailyCallTarget (0-100, capped)
  *   • followup_completion — Activity DONE / (DONE + OVERDUE + PLANNED-past) for type=CALL/TASK
  */
@@ -146,6 +147,7 @@ async function computeActivity(
   start: Date,
   days: number,
   dailyCallTarget: number,
+  dailyConnectTarget: number,
 ): Promise<number> {
   const now = new Date();
 
@@ -169,9 +171,11 @@ async function computeActivity(
     }),
   ]);
 
-  // Connect rate — % of dialled calls that reached the client.
-  // No floor — zero calls in window = zero connect rate signal.
-  const connectRate = pct(connectedCalls, totalCalls);
+  // Connect rate — normalised against the daily connect/call target ratio (e.g. 10/30 = 33%).
+  // Hitting or exceeding the target rate scores 100; zero calls = zero.
+  const connectRateTarget = dailyCallTarget > 0 ? dailyConnectTarget / dailyCallTarget : 1 / 3;
+  const rawConnectRatio = totalCalls > 0 ? connectedCalls / totalCalls : 0;
+  const connectRate = clamp((rawConnectRatio / connectRateTarget) * 100);
 
   // Calls vs target — avg calls/day as a % of personal daily target.
   // Cap at 100 so "calling machines" don't drag others down via comparison.
@@ -405,17 +409,18 @@ export async function computeQualityScore(
   const start = windowStart(window);
   const days = windowDays(window);
 
-  // Look up the user's daily call target once (used by Activity axis).
+  // Look up the user's daily targets once (used by Activity axis).
   const user = await prisma.user.findUnique({
     where: { id: userId },
-    select: { dailyCallTarget: true },
+    select: { dailyCallTarget: true, dailyConnectTarget: true },
   });
   const dailyCallTarget = user?.dailyCallTarget ?? 30;
+  const dailyConnectTarget = user?.dailyConnectTarget ?? 10;
 
   const excludeWB = !!opts?.excludeWellbeing;
 
   const [activity, funnel, behavioural, wellbeing] = await Promise.all([
-    computeActivity(userId, start, days, dailyCallTarget),
+    computeActivity(userId, start, days, dailyCallTarget, dailyConnectTarget),
     computeFunnel(userId, start),
     computeBehavioural(userId, start),
     excludeWB ? Promise.resolve(0) : computeWellbeing(userId, start, days),

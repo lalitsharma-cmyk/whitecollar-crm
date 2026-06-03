@@ -74,7 +74,9 @@ model User {
   specializations   String?
   // Per-agent daily call target. Surfaced in DailyMissionBoard so the agent
   // knows their personal goal for the day. Editable by ADMIN/MANAGER on /team.
-  dailyCallTarget   Int       @default(30)
+  dailyCallTarget     Int       @default(30)
+  // Per-agent daily connect target. Surfaced in DailyMissionBoard (connecting calls mission).
+  dailyConnectTarget  Int       @default(10)
 
   // ── Per-user notification preferences ──
   // JSON-stringified object of `{ kind: boolean }` toggles plus a "sound" key
