@@ -4,6 +4,8 @@ import { CallDirection, CallOutcome, ActivityType, ActivityStatus } from "@prism
 import { loadOwnedLead } from "@/lib/leadScope";
 import { rescoreLead } from "@/lib/leadRescorer";
 import { awardXp, bumpStreak, type AwardResult } from "@/lib/gamification.server";
+import { aiLive } from "@/lib/ai";
+import { runAIExtraction } from "@/lib/aiExtractor";
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -81,10 +83,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   // Fire-and-forget behavioural re-score — rule-based, doesn't need AI.
   rescoreLead(id).catch(() => {});
 
-  // AI auto-summary refresh REMOVED — Lalit gave up on Gemini after the free
-  // tier returned NOT_FOUND for every model variant. Re-wire here if/when a
-  // working AI provider is added (or billing is enabled on Google Cloud).
-  // The generateConversationSummary helper still lives in src/lib/ai.ts.
+  // Fire-and-forget AI extraction — only when AI is live and call has notes.
+  if (remarks) {
+    aiLive().then((on) => {
+      if (on) runAIExtraction(id, "call_log", { leadId: id }).catch(() => {});
+    }).catch(() => {});
+  }
 
   // ── Gamification: award XP + bump streaks.
   // Connected/Interested also count as a connected-call bonus. Order matters:

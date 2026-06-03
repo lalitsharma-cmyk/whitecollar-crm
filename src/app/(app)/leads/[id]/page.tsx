@@ -31,7 +31,7 @@ import NextBestActionCard from "@/components/NextBestActionCard";
 import LeadScoreBreakdown from "@/components/LeadScoreBreakdown";
 import { explainScore } from "@/lib/leadRescorer";
 import { topScoreFactors } from "@/lib/scoreExplain";
-import { aiEnabled } from "@/lib/ai";
+import { aiEnabled, aiLive } from "@/lib/ai";
 import LeadNotesCard from "@/components/LeadNotesCard";
 import VoiceNoteRecorder from "@/components/VoiceNoteRecorder";
 import QuickNoteCard from "@/components/QuickNoteCard";
@@ -52,6 +52,9 @@ import BANTSuggestions from "@/components/BANTSuggestions";
 import type { BantSuggestions } from "@/lib/bantAutoFill";
 import StageDurationBadge from "@/components/StageDurationBadge";
 import CopyPhoneButton from "@/components/CopyPhoneButton";
+import AIIntelligencePanel from "@/components/AIIntelligencePanel";
+import { getLatestExtraction } from "@/lib/aiExtractor";
+import type { AIExtractionResult } from "@/lib/aiExtractor";
 
 export const dynamic = "force-dynamic";
 
@@ -204,6 +207,14 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
     try { return lead.bantSuggestionsJson ? JSON.parse(lead.bantSuggestionsJson) : null; }
     catch { return null; }
   })();
+
+  // AI Intelligence Panel — latest extraction result + live AI status.
+  const [latestExtraction, aiPanelEnabled] = await Promise.all([
+    getLatestExtraction(lead.id),
+    aiLive(),
+  ]);
+  const aiExtractionResult: AIExtractionResult | null = latestExtraction?.result ?? null;
+  const aiExtractionAt: string | null = latestExtraction?.createdAt?.toISOString() ?? null;
 
   // Investor-history quick counts for the banner (Agent V, Round 6).
   // Match the new lead against the existing pipeline on phone / email /
@@ -1176,6 +1187,13 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
           />
         </div>
 
+        {/* 🤖 AI Intelligence Panel — structured extraction from all history */}
+        <AIIntelligencePanel
+          leadId={lead.id}
+          initial={aiExtractionResult}
+          lastRunAt={aiExtractionAt}
+          aiEnabled={aiPanelEnabled}
+        />
 
         {/* Assignment history — admin/manager only. Agents shouldn't see who else
             owned the lead before them (avoids inter-agent friction + cherry-picking). */}

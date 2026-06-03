@@ -59,6 +59,12 @@ const DEFAULTS = {
   //   generateTextWithUsage call is short-circuited and returns { state: "disabled" }.
   //   "0" = disabled (no cap). Default: "50" = $50/month.
   "ai.monthlyCostCapUsd": "50",
+  // ai.extraction.autoApply — when "true", AI-extracted fields with confidence >= 0.90
+  //   are written directly to the Lead row (authorityPerson, needSummary, configuration,
+  //   aiSummary, aiNextAction). Default "false" so Lalit can review quality on 20 sample
+  //   leads BEFORE enabling batch auto-fill. Budget and status fields are NEVER
+  //   auto-applied regardless of this flag.
+  "ai.extraction.autoApply": "false",
 };
 
 export async function getSetting(key: string): Promise<string> {
@@ -132,6 +138,13 @@ export type BantGateMode = "off" | "soft" | "hard";
 export async function getBantGateMode(): Promise<BantGateMode> {
   const raw = (await getSetting("bantGate.mode")).toLowerCase();
   return raw === "off" || raw === "hard" ? raw : "soft"; // default soft
+}
+
+// Whether to auto-apply AI-extracted fields with confidence >= 0.90.
+// Default OFF — admin reviews quality on sample leads first.
+export async function getAiExtractionAutoApply(): Promise<boolean> {
+  const raw = await getSetting("ai.extraction.autoApply");
+  return raw.toLowerCase() === "true";
 }
 
 // ── B-20 voice / motivation pilot accessors ──────────────────────────

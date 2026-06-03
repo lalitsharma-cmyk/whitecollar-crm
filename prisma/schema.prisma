@@ -1274,6 +1274,27 @@ model AiUsageLog {
   @@index([feature])
 }
 
+// ── AI EXTRACTION — per-lead structured field extraction ─────────────────
+// Each row is one extraction run (triggered manually or after an activity).
+// resultJson holds a serialised AIExtractionResult so the schema stays stable
+// as extracted fields evolve. Auto-apply is gated by the Setting key
+// "ai.extraction.autoApply" (default "false") so Lalit can review quality
+// on 20 sample leads before enabling batch auto-fill.
+model AiExtraction {
+  id           String   @id @default(cuid())
+  leadId       String
+  resultJson   String   @db.Text   // serialised AIExtractionResult JSON
+  triggeredBy  String   @default("manual") // call_log|wa_message|voice_note|meeting_note|import|manual
+  provider     String?
+  model        String?
+  inputTokens  Int      @default(0)
+  outputTokens Int      @default(0)
+  costMicroUsd Int      @default(0)
+  createdAt    DateTime @default(now())
+
+  @@index([leadId, createdAt])
+}
+
 // ── Customer Intelligence System (pre-assignment check) ───────────────────
 // Master customer profile consolidating identity across all data sources.
 // Created/updated when a STRONG match is confirmed.
