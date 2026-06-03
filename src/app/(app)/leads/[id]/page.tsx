@@ -187,7 +187,7 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
   // Fetch active agents for the reassign dropdown
   const agents = canReassign
     ? await prisma.user.findMany({
-        where: { active: true, role: { in: ["AGENT", "MANAGER"] } },
+        where: { active: true, role: { in: ["ADMIN", "AGENT", "MANAGER"] } },
         orderBy: [{ team: "asc" }, { name: "asc" }],
       })
     : [];

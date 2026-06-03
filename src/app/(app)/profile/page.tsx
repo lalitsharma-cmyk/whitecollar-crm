@@ -115,11 +115,19 @@ export default async function ProfilePage() {
         </div>
       </div>
 
-      {/* Password change */}
-      <div className="card p-5">
-        <div className="font-semibold mb-3">🔒 Change password</div>
-        <ProfilePasswordChange />
-      </div>
+      {/* Password change — admins and managers only; agents contact admin */}
+      {me.role !== "AGENT" && (
+        <div className="card p-5">
+          <div className="font-semibold mb-3">🔒 Change password</div>
+          <ProfilePasswordChange />
+        </div>
+      )}
+      {me.role === "AGENT" && (
+        <div className="card p-5 border border-slate-200 bg-slate-50">
+          <div className="font-semibold mb-1 text-sm text-slate-700">🔒 Password</div>
+          <p className="text-sm text-slate-500">To change your password, contact your admin.</p>
+        </div>
+      )}
     </>
   );
 }

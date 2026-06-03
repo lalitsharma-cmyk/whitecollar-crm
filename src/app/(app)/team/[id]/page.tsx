@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/auth";
 import { notFound } from "next/navigation";
 import Link from "next/link";
+import AdminPasswordReset from "@/components/AdminPasswordReset";
 import { startOfDay, startOfWeek, startOfMonth } from "date-fns";
 import { ActivityType, ActivityStatus, CallOutcome } from "@prisma/client";
 import { activityVisual } from "@/lib/activityIcon";
@@ -70,7 +71,7 @@ export default async function AgentDeepDivePage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  await requireRole("ADMIN", "MANAGER");
+  const me = await requireRole("ADMIN", "MANAGER");
   const { id } = await params;
 
   const user = await prisma.user.findUnique({ where: { id } });
@@ -716,6 +717,16 @@ export default async function AgentDeepDivePage({
           )}
         </div>
       </div>
+
+      {/* Admin-only: reset this agent's password */}
+      {me.role === "ADMIN" && (
+        <div className="card p-4 lg:p-5">
+          <div className="font-semibold text-sm uppercase tracking-wider text-slate-500 mb-3">
+            🔒 Reset password (admin only)
+          </div>
+          <AdminPasswordReset userId={user.id} />
+        </div>
+      )}
     </div>
   );
 }
