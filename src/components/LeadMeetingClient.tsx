@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { fromISTLocalInput } from "@/lib/datetime";
-import DateTimeIST from "./DateTimeIST";
+import CRMDatePicker from "./CRMDatePicker";
 import { showXpToast } from "./XPToast";
 import { showCelebration } from "@/components/DealCelebration";
 
@@ -101,9 +101,16 @@ export default function LeadMeetingClient({ leadId, counts, leadName }: { leadId
             <select value={type} onChange={(e) => setType(e.target.value)} className="w-full mt-1 mb-3 border border-[#e5e7eb] rounded-lg px-3 py-2 text-sm">
               {TYPES.map((t) => <option key={t.v} value={t.v}>{t.label}</option>)}
             </select>
-            <label className="text-xs font-semibold text-gray-600 block mb-1.5">When (leave both empty for now)</label>
+            <label className="text-xs font-semibold text-gray-600 block mb-1.5">When (leave empty to log as now)</label>
             <div className="mb-3">
-              <DateTimeIST value={when} onChange={setWhen} futureOnly={false} />
+              <CRMDatePicker
+                value={when}
+                onChange={setWhen}
+                withTime
+                triggerStyle="input"
+                placeholder="Leave empty — defaults to now"
+                title="When did this happen?"
+              />
             </div>
             <label className="text-xs font-semibold text-gray-600">Duration (minutes, optional)</label>
             <input
