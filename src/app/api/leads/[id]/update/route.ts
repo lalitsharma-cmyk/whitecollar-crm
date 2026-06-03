@@ -24,9 +24,10 @@ const ALLOWED: Record<string, "string" | "date" | "number" | "enum" | "bool"> = 
   status: "enum", potential: "enum", fundReadiness: "enum",
   moodStatus: "enum", whenCanInvest: "enum",
   bantStatus: "enum", bantReason: "string",
-  // BANT depth — Authority (enum) + Need (one-liner summary).
-  // Authority maps to AuthorityLevel enum; Need is free text.
-  authorityLevel: "enum", needSummary: "string",
+  // BANT depth — Authority + Need.
+  // authorityPerson is the new free-text "who decides" field ("Self", "Wife", etc.)
+  // authorityLevel (enum) kept for backward compat with existing data.
+  authorityLevel: "enum", authorityPerson: "string", needSummary: "string",
   isColdCall: "bool", coldCallReason: "string",
   profession: "enum", linkedInUrl: "string",
 };

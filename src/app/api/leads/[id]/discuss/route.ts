@@ -13,11 +13,23 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const { me } = scoped;
   const body = await req.json().catch(() => ({}));
   const projectId = String(body.projectId ?? "").trim();
+  if (!projectId) return NextResponse.json({ error: "projectId required" }, { status: 400 });
+
+  // action="accept" — approve an auto-detected suggestion (suggestion=true → false).
+  // No status/notes change; just marks it as confirmed by the user.
+  if (body.action === "accept") {
+    await prisma.leadProject.update({
+      where: { leadId_projectId: { leadId: id, projectId } },
+      data: { suggestion: false, discussedAt: new Date() },
+    });
+    await prisma.lead.update({ where: { id }, data: { lastTouchedAt: new Date() } });
+    return NextResponse.json({ ok: true });
+  }
+
   const statusRaw = String(body.status ?? "DISCUSSED");
   const status = (Object.values(LeadProjectStatus) as string[]).includes(statusRaw)
     ? (statusRaw as LeadProjectStatus) : LeadProjectStatus.DISCUSSED;
   const notes = body.notes ? String(body.notes).trim() : undefined;
-  if (!projectId) return NextResponse.json({ error: "projectId required" }, { status: 400 });
 
   const [lead, project] = await Promise.all([
     prisma.lead.findUnique({ where: { id } }),
@@ -26,10 +38,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   if (!lead) return NextResponse.json({ error: "Lead not found" }, { status: 404 });
   if (!project) return NextResponse.json({ error: "Project not found" }, { status: 404 });
 
+  // Manual add or status update: suggestion=false (user explicitly chose this project)
   await prisma.leadProject.upsert({
     where: { leadId_projectId: { leadId: id, projectId } },
-    create: { leadId: id, projectId, status, notes, discussedAt: new Date() },
-    update: { status, notes, discussedAt: new Date() },
+    create: { leadId: id, projectId, status, notes, discussedAt: new Date(), suggestion: false },
+    update: { status, notes, discussedAt: new Date(), suggestion: false },
   });
   await prisma.activity.create({
     data: {

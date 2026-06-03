@@ -59,7 +59,7 @@ export default function BANTSuggestions({
       label: "Authority",
       current: currentAuthority,
       suggestion: suggestions?.authority,
-      patchPayload: (s) => ({ authorityLevel: s.enumValue }),
+      patchPayload: (s) => ({ authorityPerson: s.value }),
     },
     {
       key: "need",
@@ -152,7 +152,7 @@ export default function BANTSuggestions({
           {activeDims.map((dim) => {
             const s = dim.suggestion!;
             const isNew = isEmpty(dim.current);
-            const isDiff = !isNew && String(dim.current) !== s.value && String(dim.current) !== s.enumValue;
+            const isDiff = !isNew && String(dim.current) !== s.value && String(dim.current) !== (s.enumValue ?? "");
 
             if (!isNew && !isDiff) return null;
 

@@ -65,18 +65,91 @@ function detectBudget(text: string): { amount: number; display: string; currency
   return null;
 }
 
-function detectAuthority(text: string): { value: string; enumValue: string; confidence: BantConfidence } | null {
+function detectAuthority(text: string): { value: string; confidence: BantConfidence } | null {
   const t = text.toLowerCase();
-  if (/\b(?:i am|i'm|myself|self|i will|i decide|sole)\s*(?:the\s+)?(?:decision\s*maker|investor|buyer|deciding|investing)\b/.test(t))
-    return { value: "Self — decision maker", enumValue: "DECISION_MAKER", confidence: "HIGH" };
-  if (/\bself\s*decision\b|\bmy\s*own\s*decision\b|\bself\s+investor\b/.test(t))
-    return { value: "Self — decision maker", enumValue: "DECISION_MAKER", confidence: "HIGH" };
-  if (/\b(?:wife|husband|spouse)\s*(?:will|needs? to|to)\s*(?:decide|approve|finalise|confirm|see)\b/.test(t))
-    return { value: "Spouse needs to approve", enumValue: "INFLUENCER", confidence: "HIGH" };
-  if (/\b(?:father|dad|mother|mum|mom|parent)\s*(?:will|to)\s*(?:decide|approve|confirm)\b/.test(t))
-    return { value: "Parent decision", enumValue: "INFLUENCER", confidence: "HIGH" };
-  if (/\bneed\s*(?:to\s*)?(?:consult|check|ask|discuss|talk)\s*(?:with\s+)?\w+/.test(t))
-    return { value: "Consulting someone first", enumValue: "INFLUENCER", confidence: "MEDIUM" };
+
+  // ─── SELF ──────────────────────────────────────────────────────────────────
+  if (/\b(i am|i'm|myself|i will|i alone)\s*(the\s+)?(decision\s*maker|deciding|investor|buyer|investing)\b/.test(t))
+    return { value: "Self", confidence: "HIGH" };
+  if (/\bi\s*will\s*(decide|take\s*(the\s+)?decision|book)\b|\bself\s*decision\b|\bmy\s*own\s*decision\b/.test(t))
+    return { value: "Self", confidence: "HIGH" };
+
+  // ─── HUSBAND + WIFE ────────────────────────────────────────────────────────
+  if (/\b(husband\s*(and|with|&)\s*wife|wife\s*(and|with|&)\s*husband)\b/.test(t))
+    return { value: "Husband + Wife", confidence: "HIGH" };
+  if (/\bjoint\s*decision\b|\bboth\s*of\s*us\s*(will|to)\s*(decide|finali[sz]e)\b/.test(t))
+    return { value: "Husband + Wife", confidence: "MEDIUM" };
+
+  // ─── SPOUSE + SELF ─────────────────────────────────────────────────────────
+  if (/\b(spouse\s*(and\s*self|with\s*self)|myself\s*(and\s*)?(?:wife|husband))\b/.test(t))
+    return { value: "Spouse + Self", confidence: "HIGH" };
+  if (/\bneed\s*(to\s*)?(consult|discuss|check|ask|talk)\s*(with\s*)?(wife|husband|spouse)\b/.test(t))
+    return { value: "Spouse + Self", confidence: "MEDIUM" };
+  if (/\b(decide|discuss|finali[sz]e)\s*with\s*(my\s+)?(wife|husband|spouse)\b/.test(t))
+    return { value: "Spouse + Self", confidence: "HIGH" };
+
+  // ─── FATHER + SON ──────────────────────────────────────────────────────────
+  if (/\b(father\s*(and|with|&)\s*son|son\s*(and|with|&)\s*father)\b/.test(t))
+    return { value: "Father + Son", confidence: "HIGH" };
+  if (/\bclient\s*(and|with)\s*father\b|\bfather\s*(will\s*)?visit\b|\bvisit\s*with\s*(his\s*)?father\b/.test(t))
+    return { value: "Father + Son", confidence: "HIGH" };
+
+  // ─── INDIVIDUAL FAMILY ─────────────────────────────────────────────────────
+  if (/\bwife\s*(will|needs?\s*to|to)\s*(decide|approve|finali[sz]e|confirm|see)\b/.test(t))
+    return { value: "Wife", confidence: "HIGH" };
+  if (/\bwife\s*(is\s*)?(the\s+)?decision\s*maker\b/.test(t))
+    return { value: "Wife", confidence: "HIGH" };
+
+  if (/\bhusband\s*(will|needs?\s*to|to)\s*(decide|approve|finali[sz]e|confirm|see)\b/.test(t))
+    return { value: "Husband", confidence: "HIGH" };
+
+  if (/\b(father|dad)\s*(will|needs?\s*to|to)\s*(decide|approve|finali[sz]e|confirm|see)\b/.test(t))
+    return { value: "Father", confidence: "HIGH" };
+  if (/\blooking\s*(for|with)\s*(his|her|my)\s*father\b|\bdiscuss\s*with\s*(his\s*)?father\b/.test(t))
+    return { value: "Father", confidence: "HIGH" };
+  if (/\b(need\s*(to\s*)?)?(consult|check|ask|talk)\s*(with\s*)?(father|dad)\b/.test(t))
+    return { value: "Father", confidence: "MEDIUM" };
+
+  if (/\b(mother|mum|mom)\s*(will|needs?\s*to|to)\s*(decide|approve|confirm|see)\b/.test(t))
+    return { value: "Mother", confidence: "HIGH" };
+  if (/\bdiscuss\s*with\s*(his\s*|her\s*|my\s*)?(mother|mum|mom)\b/.test(t))
+    return { value: "Mother", confidence: "HIGH" };
+
+  if (/\bbrother\s*(will|needs?\s*to|to|is)\s*(deciding|decide|approve|evaluate|evaluating|confirm)\b/.test(t))
+    return { value: "Brother", confidence: "HIGH" };
+  if (/\bhis\s*brother\s*(is\s*)?(evaluating|deciding|checking)\b/.test(t))
+    return { value: "Brother", confidence: "HIGH" };
+
+  if (/\bsister\s*(will|needs?\s*to|to)\s*(decide|approve|confirm)\b/.test(t))
+    return { value: "Sister", confidence: "HIGH" };
+
+  if (/\b(his|her|my)\s*son\s*(will|needs?\s*to|to)\s*(decide|approve|confirm)\b/.test(t))
+    return { value: "Son", confidence: "HIGH" };
+
+  if (/\bdaughter\s*(will|needs?\s*to|to)\s*(decide|approve|confirm)\b/.test(t))
+    return { value: "Daughter", confidence: "HIGH" };
+
+  // ─── PARENTS / FAMILY ──────────────────────────────────────────────────────
+  if (/\b(both\s*parents?|father\s*and\s*mother|mother\s*and\s*father|parents?\s*(will|to)\s*(decide|confirm))\b/.test(t))
+    return { value: "Parents", confidence: "HIGH" };
+  if (/\blooking\s*(for|with)\s*(both\s*)?parents?\b/.test(t))
+    return { value: "Parents", confidence: "HIGH" };
+  if (/\b(need\s*(to\s*)?)?(consult|check|ask)\s*(with\s*)?(parents?)\b/.test(t))
+    return { value: "Parents", confidence: "MEDIUM" };
+
+  if (/\b(whole\s*family|family\s*(will|to)\s*(decide|discuss|approve))\b/.test(t))
+    return { value: "Family", confidence: "MEDIUM" };
+  if (/\bneed\s*(to\s*)?(consult|discuss|ask)\s*(with\s*)?(?:the\s*)?family\b/.test(t))
+    return { value: "Family", confidence: "MEDIUM" };
+
+  // ─── BUSINESS / CORPORATE ──────────────────────────────────────────────────
+  if (/\bbusiness\s*partner\s*(will|to)\s*(decide|approve|discuss)\b/.test(t))
+    return { value: "Business Partner", confidence: "HIGH" };
+  if (/\binvestor\s*(group|committee|partners?)\b/.test(t))
+    return { value: "Investor Group", confidence: "HIGH" };
+  if (/\b(company|management|board)\s*(will|to)\s*(decide|approve|invest)\b/.test(t))
+    return { value: "Company / Management", confidence: "HIGH" };
+
   return null;
 }
 
@@ -213,7 +286,7 @@ export async function runBantAutoFill(leadId: string): Promise<BantSuggestions> 
   }
 
   type BH = { result: { value: string; rawValue: number; confidence: BantConfidence }; src: TextSource };
-  type AH = { result: { value: string; enumValue: string; confidence: BantConfidence }; src: TextSource };
+  type AH = { result: { value: string; confidence: BantConfidence }; src: TextSource };
   type NH = { result: { value: string; confidence: BantConfidence }; src: TextSource };
   type TH = { result: { value: string; enumValue: string; confidence: BantConfidence }; src: TextSource };
 
@@ -239,7 +312,7 @@ export async function runBantAutoFill(leadId: string): Promise<BantSuggestions> 
   if (bBest) out.budget = { value: bBest.result.value, rawValue: bBest.result.rawValue, confidence: bBest.result.confidence, source: fmtSrc(bBest.src.label, bBest.src.date), date: bBest.src.date.toISOString(), snippet: bBest.src.text.slice(0, 120) };
 
   const aBest = pickBest(aHits);
-  if (aBest) out.authority = { value: aBest.result.value, enumValue: aBest.result.enumValue, confidence: aBest.result.confidence, source: fmtSrc(aBest.src.label, aBest.src.date), date: aBest.src.date.toISOString(), snippet: aBest.src.text.slice(0, 120) };
+  if (aBest) out.authority = { value: aBest.result.value, confidence: aBest.result.confidence, source: fmtSrc(aBest.src.label, aBest.src.date), date: aBest.src.date.toISOString(), snippet: aBest.src.text.slice(0, 120) };
 
   const nBest = pickBest(nHits);
   if (nBest) out.need = { value: nBest.result.value, confidence: nBest.result.confidence, source: fmtSrc(nBest.src.label, nBest.src.date), date: nBest.src.date.toISOString(), snippet: nBest.src.text.slice(0, 120) };

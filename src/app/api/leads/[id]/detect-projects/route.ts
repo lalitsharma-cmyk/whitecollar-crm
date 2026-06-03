@@ -81,12 +81,16 @@ export async function POST(
         leadId: id,
         projectId: match.projectId,
         autoDetected: true,
+        suggestion: true,  // pending user accept/reject
         sourceType: match.sourceType,
         sourceDate: match.sourceDate,
         sourceText: match.sourceText.slice(0, 200),
       },
       update: {
-        // No-op: preserve any manual settings already on this row
+        // No-op: preserve existing row (if already accepted/rejected, don't revert)
+        sourceType: match.sourceType,
+        sourceDate: match.sourceDate,
+        sourceText: match.sourceText.slice(0, 200),
       },
     });
     projectsAdded++;

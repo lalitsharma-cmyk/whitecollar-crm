@@ -1,7 +1,12 @@
 // Pure TypeScript project detection — no external dependencies.
-// Scans all text fields of a lead and fuzzy-matches against known Project names
-// to auto-detect which projects were discussed, plus unmatched developer-brand
-// mentions and interest notes (config + area + price).
+// Scans all text fields of a lead and matches against known Project names.
+//
+// STRICT matching policy (per Lalit's request):
+//   - Project must be explicitly named in the text.
+//   - Developer brand alone ("Emaar", "Sobha") is NOT sufficient.
+//   - Exact phrase match is required, OR ALL distinctive non-brand tokens match.
+//   - A match here goes into LeadProject with suggestion=true (pending review).
+//   - User must Accept before it appears in "Projects Discussed".
 
 export interface TextSource {
   text: string;
@@ -43,14 +48,19 @@ export interface DetectionResult {
 const STOPWORDS = new Set([
   "the", "and", "for", "with", "from", "into", "over", "under",
   "than", "this", "that", "city", "real", "estate", "project",
-  "tower", "residences", "heights", "plaza",
+  "tower", "residences", "heights", "plaza", "suites", "villas",
+  "gardens", "views", "hills", "valley", "bay", "creek", "park",
+  "south", "north", "east", "west", "central", "grand", "new", "old",
 ]);
 
-// Known developer brand names (lowercase for comparison)
-const DEVELOPER_BRANDS = [
+// Developer brand names — a brand alone is NOT a project match. Brand +
+// project-specific tokens are required.
+const DEVELOPER_BRANDS = new Set([
   "emaar", "sobha", "danube", "damac", "omniyat", "nakheel", "azizi",
   "binghatti", "meraas", "ellington", "meydan", "wasl", "reportage",
-];
+  "godrej", "lodha", "dlf", "shapoorji", "prestige", "puravankara",
+  "brigade", "tata", "mahindra", "oberoi", "rustomjee", "hiranandani",
+]);
 
 // Area names used in interest-note detection
 const AREA_NAMES = [
@@ -69,27 +79,25 @@ function norm(s: string): string {
 }
 
 /**
- * Tokenize a project name into distinctive tokens.
+ * Tokenize a project name into DISTINCTIVE tokens only.
  * - Splits on non-alphanumeric boundaries
- * - Filters stopwords
- * - Keeps only tokens ≥3 chars
+ * - Filters stopwords AND developer brand names
+ * - Keeps only tokens ≥4 chars (3-char tokens are too generic)
  */
 function tokenize(name: string): string[] {
   return name
     .split(/[^a-zA-Z0-9]+/)
     .map((t) => t.toLowerCase())
-    .filter((t) => t.length >= 3 && !STOPWORDS.has(t));
+    .filter((t) => t.length >= 4 && !STOPWORDS.has(t) && !DEVELOPER_BRANDS.has(t));
 }
 
 /**
  * Build an excerpt (≤200 chars) around a match position in original text.
- * Finds the token in the original text (case-insensitive) and takes ±80 chars.
  */
 function buildExcerpt(text: string, token: string, maxLen = 200): string {
   const lower = text.toLowerCase();
   const pos = lower.indexOf(token.toLowerCase());
   if (pos === -1) {
-    // Fallback: return the beginning
     return text.length <= maxLen ? text : text.slice(0, maxLen) + "…";
   }
   const start = Math.max(0, pos - 80);
@@ -110,21 +118,18 @@ export function detectProjectsAndInterests(
   const unmatchedMentions: UnmatchedMentionData[] = [];
   const interestNotes: InterestNoteData[] = [];
 
-  // Pre-compute tokens for each project
+  // Pre-compute tokens + exact lowercase name for each project
   const projectTokens: Array<{
     id: string;
     name: string;
+    nameLower: string;
     tokens: string[];
   }> = allProjects.map((p) => ({
     id: p.id,
     name: p.name,
+    nameLower: p.name.toLowerCase(),
     tokens: tokenize(p.name),
   }));
-
-  // Build a set of all known project normalized names (for unmatched-mention dedup)
-  const knownProjectNormNames = new Set(
-    allProjects.map((p) => norm(p.name))
-  );
 
   // Track seen interest note signatures to deduplicate across sources
   const seenInterestSigs = new Set<string>();
@@ -132,44 +137,45 @@ export function detectProjectsAndInterests(
   for (const src of sources) {
     if (!src.text || !src.text.trim()) continue;
     const text = src.text;
-    const normText = norm(text);
+    const lower = text.toLowerCase();
 
     // -----------------------------------------------------------------------
-    // 1. Project matching
+    // 1. Project matching — two-pass: exact phrase first, then all-tokens
     // -----------------------------------------------------------------------
     for (const proj of projectTokens) {
-      if (proj.tokens.length === 0) continue;
+      // ── Pass 1: exact phrase match (case-insensitive) ──────────────────────
+      // "Sobha Hartland 2" must appear verbatim (modulo case) in the text.
+      // This is the high-confidence path and virtually zero false-positives.
+      if (lower.includes(proj.nameLower)) {
+        const sourceText = buildExcerpt(text, proj.nameLower, 200);
+        projectMatches.push({
+          projectId: proj.id,
+          projectName: proj.name,
+          sourceType: src.sourceType,
+          sourceDate: src.sourceDate,
+          sourceText,
+        });
+        continue; // no need to check tokens if exact match found
+      }
 
-      // Separate into long tokens (≥5 chars) and short tokens (3-4 chars)
-      const longTokens = proj.tokens.filter((t) => t.length >= 5);
-      const shortTokens = proj.tokens.filter((t) => t.length >= 3 && t.length <= 4);
+      // ── Pass 2: ALL distinctive tokens must appear ─────────────────────────
+      // Requires ≥2 distinctive tokens; brand name alone never counts.
+      // E.g. "Hartland 2" (sobha stripped, "2" short → only "hartland") →
+      // doesn't satisfy ≥2 rule → no match. Prevents brand-only false positives.
+      const tokens = proj.tokens;
+      if (tokens.length < 2) continue; // not enough evidence without exact match
 
+      let allMatch = true;
       let matchToken: string | null = null;
-
-      // Rule 1: at least 1 long distinctive token
-      for (const t of longTokens) {
-        if (normText.includes(t)) {
-          matchToken = t;
+      for (const t of tokens) {
+        if (!norm(lower).includes(t)) {
+          allMatch = false;
           break;
         }
+        if (!matchToken) matchToken = t;
       }
 
-      // Rule 2: 2+ short distinctive tokens both appear
-      if (!matchToken) {
-        let shortMatched = 0;
-        let firstShortToken: string | null = null;
-        for (const t of shortTokens) {
-          if (normText.includes(t)) {
-            shortMatched++;
-            if (!firstShortToken) firstShortToken = t;
-          }
-        }
-        if (shortMatched >= 2) {
-          matchToken = firstShortToken;
-        }
-      }
-
-      if (matchToken) {
+      if (allMatch && matchToken) {
         const sourceText = buildExcerpt(text, matchToken, 200);
         projectMatches.push({
           projectId: proj.id,
@@ -182,39 +188,31 @@ export function detectProjectsAndInterests(
     }
 
     // -----------------------------------------------------------------------
-    // 2. Unmatched mention detection
+    // 2. Unmatched mention detection — developer brand + extra words
     // -----------------------------------------------------------------------
-    // Look for developer brand names followed by additional words.
-    // Use original text for readability, but match case-insensitively.
-    const lowerText = text.toLowerCase();
-    for (const brand of DEVELOPER_BRANDS) {
+    for (const brand of [...DEVELOPER_BRANDS]) {
       let searchFrom = 0;
       while (true) {
-        const brandPos = lowerText.indexOf(brand, searchFrom);
+        const brandPos = lower.indexOf(brand, searchFrom);
         if (brandPos === -1) break;
 
-        // Check that the brand is at a word boundary (not part of another word)
-        const charBefore = brandPos > 0 ? lowerText[brandPos - 1] : " ";
-        const charAfter = lowerText[brandPos + brand.length] ?? " ";
-        const atWordBoundary =
-          /[^a-z0-9]/.test(charBefore) && /[^a-z0-9]/.test(charAfter);
+        // Require word boundary
+        const charBefore = brandPos > 0 ? lower[brandPos - 1] : " ";
+        const charAfter = lower[brandPos + brand.length] ?? " ";
+        const atWordBoundary = /[^a-z0-9]/.test(charBefore) && /[^a-z0-9]/.test(charAfter);
 
         if (atWordBoundary) {
-          // Extract up to 3 additional words after the brand
           const afterBrand = text.slice(brandPos + brand.length).trimStart();
           const additionalWords = afterBrand.match(/^([A-Za-z0-9]+(?:\s+[A-Za-z0-9]+){0,2})/);
 
           if (additionalWords && additionalWords[1].trim().length > 0) {
             const mentionText = text.slice(brandPos, brandPos + brand.length) + " " + additionalWords[1].trim();
 
-            // Check if this matches a known project
+            // Skip if this mention resolves to a known project (already in matches above)
             const mentionNorm = norm(mentionText);
             let matchesKnown = false;
             for (const p of projectTokens) {
-              // Check if the mention's tokens substantially overlap with project tokens
-              const mentionTokens = tokenize(mentionText);
-              const longMatch = mentionTokens.filter((t) => t.length >= 5 && p.tokens.includes(t));
-              if (longMatch.length >= 1) {
+              if (p.nameLower && norm(p.nameLower).includes(norm(additionalWords[1].trim()))) {
                 matchesKnown = true;
                 break;
               }
@@ -237,17 +235,14 @@ export function detectProjectsAndInterests(
     }
 
     // -----------------------------------------------------------------------
-    // 3. Interest note detection
+    // 3. Interest note detection — config (BHK/BR) + area + optional price
     // -----------------------------------------------------------------------
-    // Look for config (BHK/BR/bedroom) + area + optional price
     const configRegex = /(\d+)\s*(BHK|BR|bedroom|bedrooms)/gi;
     let configMatch: RegExpExecArray | null;
 
     while ((configMatch = configRegex.exec(text)) !== null) {
       const configStr = `${configMatch[1]}${configMatch[2].toUpperCase().replace(/BEDROOMS?/i, "BR")}`;
       const matchPos = configMatch.index;
-
-      // Look for area name within a window of ±120 chars around the config match
       const windowStart = Math.max(0, matchPos - 120);
       const windowEnd = Math.min(text.length, matchPos + configMatch[0].length + 120);
       const window = text.slice(windowStart, windowEnd).toLowerCase();
@@ -259,39 +254,28 @@ export function detectProjectsAndInterests(
           break;
         }
       }
-
       if (!foundArea) continue;
 
-      // Capitalize area for the note
       const areaFormatted = foundArea
         .split(" ")
         .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
         .join(" ");
 
-      // Look for price pattern near the config
       let priceStr: string | null = null;
       const pricePatterns = [
         /AED\s*(\d+(?:\.\d+)?)\s*M/i,
-        /AED\s*(\d+(?:\.\d+)?)\s*Cr/i,
         /(\d+(?:\.\d+)?)\s*Cr(?:ore)?/i,
         /(\d+(?:\.\d+)?)\s*Lakh/i,
         /AED\s*([\d,]+)/i,
       ];
-
       const windowForPrice = text.slice(windowStart, windowEnd);
       for (const priceRe of pricePatterns) {
         const priceMatch = priceRe.exec(windowForPrice);
         if (priceMatch) {
-          // Format price string
-          if (/AED\s*[\d.]+\s*M/i.test(priceMatch[0])) {
-            priceStr = `AED ${priceMatch[1]}M`;
-          } else if (/Cr/i.test(priceMatch[0])) {
-            priceStr = `${priceMatch[1]} Cr`;
-          } else if (/Lakh/i.test(priceMatch[0])) {
-            priceStr = `${priceMatch[1]} Lakh`;
-          } else if (/AED\s*[\d,]+/i.test(priceMatch[0])) {
-            priceStr = `AED ${priceMatch[1]}`;
-          }
+          if (/AED\s*[\d.]+\s*M/i.test(priceMatch[0])) priceStr = `AED ${priceMatch[1]}M`;
+          else if (/Cr/i.test(priceMatch[0])) priceStr = `${priceMatch[1]} Cr`;
+          else if (/Lakh/i.test(priceMatch[0])) priceStr = `${priceMatch[1]} Lakh`;
+          else if (/AED\s*[\d,]+/i.test(priceMatch[0])) priceStr = `AED ${priceMatch[1]}`;
           break;
         }
       }
@@ -300,20 +284,31 @@ export function detectProjectsAndInterests(
         ? `${configStr} ${areaFormatted} (${priceStr} budget)`
         : `${configStr} ${areaFormatted}`;
 
-      // Deduplicate same config+area across sources
       const sig = `${configStr}|${areaFormatted}`;
       if (!seenInterestSigs.has(sig)) {
         seenInterestSigs.add(sig);
-        interestNotes.push({
-          noteText,
-          sourceType: src.sourceType,
-          sourceDate: src.sourceDate,
-        });
+        interestNotes.push({ noteText, sourceType: src.sourceType, sourceDate: src.sourceDate });
       }
     }
   }
 
-  return { projectMatches, unmatchedMentions, interestNotes };
+  // Deduplicate projectMatches by projectId — keep the one from the most
+  // specific source (call note > WA > remark > note)
+  const sourceOrder = ["CALL_NOTE", "WA_MESSAGE", "REMARK", "NOTE", "MANUAL"];
+  const best = new Map<string, ProjectMatch>();
+  for (const m of projectMatches) {
+    const existing = best.get(m.projectId);
+    if (!existing) { best.set(m.projectId, m); continue; }
+    const existingRank = sourceOrder.indexOf(existing.sourceType);
+    const newRank = sourceOrder.indexOf(m.sourceType);
+    if (newRank < existingRank) best.set(m.projectId, m);
+  }
+
+  return {
+    projectMatches: [...best.values()],
+    unmatchedMentions,
+    interestNotes,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -331,48 +326,24 @@ export function buildSourcesFromLead(lead: {
   const now = new Date();
 
   if (lead.remarks && lead.remarks.trim()) {
-    sources.push({
-      text: lead.remarks,
-      sourceType: "REMARK",
-      sourceDate: now,
-    });
+    sources.push({ text: lead.remarks, sourceType: "REMARK", sourceDate: now });
   }
-
   if (lead.notesShort && lead.notesShort.trim()) {
-    sources.push({
-      text: lead.notesShort,
-      sourceType: "NOTE",
-      sourceDate: now,
-    });
+    sources.push({ text: lead.notesShort, sourceType: "NOTE", sourceDate: now });
   }
-
   for (const note of lead.notes) {
     if (note.body && note.body.trim()) {
-      sources.push({
-        text: note.body,
-        sourceType: "NOTE",
-        sourceDate: note.createdAt,
-      });
+      sources.push({ text: note.body, sourceType: "NOTE", sourceDate: note.createdAt });
     }
   }
-
   for (const cl of lead.callLogs) {
     if (cl.notes && cl.notes.trim()) {
-      sources.push({
-        text: cl.notes,
-        sourceType: "CALL_NOTE",
-        sourceDate: cl.startedAt,
-      });
+      sources.push({ text: cl.notes, sourceType: "CALL_NOTE", sourceDate: cl.startedAt });
     }
   }
-
   for (const wa of lead.waMessages) {
     if (wa.body && wa.body.trim()) {
-      sources.push({
-        text: wa.body,
-        sourceType: "WA_MESSAGE",
-        sourceDate: wa.receivedAt,
-      });
+      sources.push({ text: wa.body, sourceType: "WA_MESSAGE", sourceDate: wa.receivedAt });
     }
   }
 

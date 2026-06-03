@@ -276,6 +276,7 @@ model Lead {
   //   needSummary    — one-line summary of WHY they're buying (move-in, rental yield,
   //                    family relocation, kid's education, etc.).
   authorityLevel       AuthorityLevel?
+  authorityPerson      String?   // WHO decides: "Self", "Wife", "Father + Son", "Parents", etc.
   needSummary          String?
   bantSuggestionsJson  String?   // JSON: BantSuggestions (auto-detected from history)
   // Profile depth
@@ -508,6 +509,7 @@ model LeadProject {
   sourceType   String?        // "REMARK" | "CALL_NOTE" | "WA_MESSAGE" | "NOTE" | "MANUAL"
   sourceDate   DateTime?
   sourceText   String?        // ≤200-char excerpt from source text
+  suggestion   Boolean        @default(false) // true = auto-detected, pending accept/reject
   lead      Lead              @relation(fields: [leadId], references: [id], onDelete: Cascade)
   project   Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
   @@unique([leadId, projectId])

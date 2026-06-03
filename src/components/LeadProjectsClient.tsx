@@ -1,7 +1,7 @@
 "use client";
 import { useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { X, Plus } from "lucide-react";
+import { X, Plus, Check } from "lucide-react";
 
 interface Project { id: string; name: string; city: string; country?: string; }
 interface Discussion {
@@ -10,6 +10,7 @@ interface Discussion {
   project: { name: string; city: string };
   discussedAt: string;
   autoDetected?: boolean;
+  suggestion?: boolean;
   sourceType?: string | null;
   sourceDate?: string | null;
   sourceText?: string | null;
@@ -74,6 +75,10 @@ export default function LeadProjectsClient({
   const [scanning, setScanning] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  // Split into confirmed (user accepted or manually added) vs suggested (auto-detected pending)
+  const confirmed = items.filter(it => !it.suggestion);
+  const suggested = items.filter(it => it.suggestion);
+
   const remaining = useMemo(
     () => allProjects.filter((p) => {
       if (items.some((it) => it.projectId === p.id)) return false;
@@ -136,9 +141,39 @@ export default function LeadProjectsClient({
     } finally { setBusy(false); }
   }
 
+  async function acceptSuggestion(projectId: string) {
+    setBusy(true);
+    try {
+      const r = await fetch(`/api/leads/${leadId}/discuss`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId, action: "accept" }),
+      });
+      if (r.ok) {
+        setItems(arr => arr.map(it => it.projectId === projectId ? { ...it, suggestion: false } : it));
+        router.refresh();
+      }
+    } finally { setBusy(false); }
+  }
+
+  async function rejectSuggestion(projectId: string) {
+    setBusy(true);
+    try {
+      const r = await fetch(`/api/leads/${leadId}/discuss`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId }),
+      });
+      if (r.ok) {
+        setItems(arr => arr.filter(it => it.projectId !== projectId));
+        router.refresh();
+      }
+    } finally { setBusy(false); }
+  }
+
   async function linkMention(id: string, projectId: string) {
     await fetch(`/api/admin/unmatched-mentions/${id}`, {
-      method: "POST",
+      method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action: "link", projectId }),
     });
@@ -147,7 +182,7 @@ export default function LeadProjectsClient({
 
   async function ignoreMention(id: string) {
     await fetch(`/api/admin/unmatched-mentions/${id}`, {
-      method: "POST",
+      method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action: "ignore" }),
     });
@@ -172,10 +207,7 @@ export default function LeadProjectsClient({
     } else if (e.key === "Enter") {
       e.preventDefault();
       const m = matches[highlight];
-      if (m) {
-        setPicked(m);
-        setQuery(`${m.name} (${m.city})`);
-      }
+      if (m) { setPicked(m); setQuery(`${m.name} (${m.city})`); }
     } else if (e.key === "Escape") {
       e.preventDefault();
       setPicking(false);
@@ -186,10 +218,11 @@ export default function LeadProjectsClient({
 
   return (
     <div>
+      {/* ── Confirmed projects ───────────────────────────────────────────── */}
       <div className="font-semibold mb-2">Projects discussed</div>
-      {items.length === 0 && <div className="text-sm text-gray-500 mb-2">None yet — add a project once it&apos;s mentioned.</div>}
+      {confirmed.length === 0 && <div className="text-sm text-gray-500 mb-2">None yet — add a project once it&apos;s mentioned.</div>}
       <div className="space-y-2">
-        {items.map((it) => (
+        {confirmed.map((it) => (
           <div key={it.projectId} className="flex flex-col sm:flex-row sm:items-center gap-2 p-2.5 border border-[#e5e7eb] rounded-lg text-sm">
             <div className="flex-1 min-w-0">
               <div className="font-semibold truncate">{it.project.name}</div>
@@ -227,13 +260,12 @@ export default function LeadProjectsClient({
           </div>
         ))}
       </div>
+
+      {/* ── Add project + scan buttons ───────────────────────────────────── */}
       <div className="flex items-center gap-3">
         {!picking && remaining.length > 0 && (
           <button
-            onClick={() => {
-              setPicking(true);
-              setTimeout(() => inputRef.current?.focus(), 0);
-            }}
+            onClick={() => { setPicking(true); setTimeout(() => inputRef.current?.focus(), 0); }}
             className="text-sm text-[#0b1a33] font-semibold mt-3 flex items-center gap-1.5 min-h-11 px-1"
           >
             <Plus className="w-4 h-4" /> Add project
@@ -247,17 +279,14 @@ export default function LeadProjectsClient({
           {scanning ? "Scanning…" : "🔍 Scan for projects"}
         </button>
       </div>
+
       {picking && (
         <div className="mt-3 flex flex-col gap-2">
           <div className="relative">
             <input
               ref={inputRef}
               value={query}
-              onChange={(e) => {
-                setQuery(e.target.value);
-                setPicked(null);
-                setHighlight(0);
-              }}
+              onChange={(e) => { setQuery(e.target.value); setPicked(null); setHighlight(0); }}
               onKeyDown={onKey}
               placeholder="Type project or city — e.g. 'Marina', 'Gurgaon', 'Burj'"
               className="w-full border border-[#e5e7eb] rounded-lg px-3 py-2.5 text-sm min-h-11"
@@ -268,15 +297,9 @@ export default function LeadProjectsClient({
                 {matches.map((p, idx) => (
                   <div
                     key={p.id}
-                    onMouseDown={(e) => {
-                      e.preventDefault();
-                      setPicked(p);
-                      setQuery(`${p.name} (${p.city})`);
-                    }}
+                    onMouseDown={(e) => { e.preventDefault(); setPicked(p); setQuery(`${p.name} (${p.city})`); }}
                     onMouseEnter={() => setHighlight(idx)}
-                    className={`px-3 py-2 text-sm cursor-pointer border-b border-[#f3f4f6] last:border-b-0 ${
-                      idx === highlight ? "bg-amber-50" : "hover:bg-gray-50"
-                    }`}
+                    className={`px-3 py-2 text-sm cursor-pointer border-b border-[#f3f4f6] last:border-b-0 ${idx === highlight ? "bg-amber-50" : "hover:bg-gray-50"}`}
                   >
                     <div className="font-semibold">{p.name}</div>
                     <div className="text-xs text-gray-500">{p.city}</div>
@@ -308,7 +331,59 @@ export default function LeadProjectsClient({
         </div>
       )}
 
-      {/* Unmatched mentions — ADMIN / MANAGER only */}
+      {/* ── Suggested projects (auto-detected, pending review) ───────────── */}
+      {suggested.length > 0 && (
+        <div className="mt-5 pt-4 border-t border-dashed border-blue-200">
+          <div className="text-[10px] font-semibold text-blue-700 uppercase tracking-widest mb-2">
+            🔍 Suggested — auto-detected from history ({suggested.length})
+          </div>
+          <div className="text-[10px] text-gray-500 mb-3">
+            These project names were found in call notes, remarks, or WhatsApp. Review each one and Accept or Reject.
+          </div>
+          <div className="space-y-2">
+            {suggested.map((it) => (
+              <div key={it.projectId} className="p-2.5 border border-blue-200 bg-blue-50/60 rounded-lg">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex-1 min-w-0">
+                    <div className="font-semibold text-sm">{it.project.name}</div>
+                    <div className="text-xs text-gray-500">{it.project.city}</div>
+                    {it.sourceType && (
+                      <div className="text-[10px] text-blue-600 mt-0.5">
+                        {sourceLabel(it.sourceType)}{it.sourceDate ? ` · ${fmtDate(it.sourceDate)}` : ""}
+                      </div>
+                    )}
+                    {it.sourceText && (
+                      <div className="text-[10px] text-gray-600 italic mt-1 bg-white/70 rounded px-1.5 py-1 border border-blue-100">
+                        &ldquo;{it.sourceText}&rdquo;
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex gap-1.5 flex-none mt-0.5">
+                    <button
+                      onClick={() => acceptSuggestion(it.projectId)}
+                      disabled={busy}
+                      title="Accept — add to Projects Discussed"
+                      className="flex items-center gap-0.5 text-[10px] px-2 py-1 rounded bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50 min-h-8"
+                    >
+                      <Check className="w-3 h-3" /> Accept
+                    </button>
+                    <button
+                      onClick={() => rejectSuggestion(it.projectId)}
+                      disabled={busy}
+                      title="Reject — remove suggestion"
+                      className="flex items-center gap-0.5 text-[10px] px-2 py-1 rounded bg-white text-red-600 border border-red-200 hover:bg-red-50 disabled:opacity-50 min-h-8"
+                    >
+                      <X className="w-3 h-3" /> Reject
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ── Unmatched mentions — ADMIN / MANAGER only ────────────────────── */}
       {unmatchedMentions && unmatchedMentions.length > 0 && (userRole === "ADMIN" || userRole === "MANAGER") && unresolvedCount > 0 && (
         <div className="mt-4 pt-4 border-t border-dashed border-amber-200">
           <div className="text-[10px] font-semibold text-amber-700 uppercase tracking-widest mb-2">

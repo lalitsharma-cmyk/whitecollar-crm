@@ -327,8 +327,9 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
   // "remove why → green/red signals" so we drop the bantReason free-text row.
   const bantBudgetFilled = lead.budgetMin != null && lead.budgetMin > 0;
   const bantBudgetBad = lead.fundReadiness === "NOT_DISCUSSED";
-  const bantAuthFilled = lead.authorityLevel != null && lead.authorityLevel !== "UNKNOWN";
-  const bantAuthBad = lead.authorityLevel === "UNKNOWN";
+  const bantAuthFilled = !!(lead.authorityPerson && lead.authorityPerson.trim() && lead.authorityPerson !== "Unknown")
+    || (lead.authorityLevel != null && lead.authorityLevel !== "UNKNOWN");
+  const bantAuthBad = lead.authorityPerson === "Unknown" || (!lead.authorityPerson && lead.authorityLevel === "UNKNOWN");
   const bantNeedFilled = !!(lead.needSummary && lead.needSummary.trim());
   const bantTimeFilled = lead.whenCanInvest != null && lead.whenCanInvest !== "UNKNOWN";
   const bantTimeBad = lead.whenCanInvest === "UNKNOWN";
@@ -389,13 +390,8 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
         </div>
         <div className="flex items-center gap-2">
           <span className="text-[10px] font-semibold text-gray-500 dark:text-slate-400 w-32 shrink-0">Decision Maker</span>
-          <InlineEdit leadId={lead.id} field="authorityLevel" type="select" value={lead.authorityLevel ?? ""}
-            options={[
-              {value:"DECISION_MAKER",label:"✅ Decision maker"},
-              {value:"INFLUENCER",label:"🤝 Influencer"},
-              {value:"GATEKEEPER",label:"🚧 Gatekeeper"},
-              {value:"UNKNOWN",label:"❓ Unknown"},
-            ]} placeholder="Not set" />
+          <InlineEdit leadId={lead.id} field="authorityPerson" value={lead.authorityPerson ?? ""}
+            placeholder="Self · Wife · Father · Father + Son" />
         </div>
         {lastDiscussionLabel && (
           <div className="flex items-center gap-2">
@@ -465,17 +461,12 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
               {value:"NOT_DISCUSSED",     label:"— Not discussed"},
             ]} /></div>
         </div>
-        {/* A — Authority. New field authorityLevel. */}
+        {/* A — Authority. Who makes the final buying decision. */}
         <div className={`p-2.5 rounded border ${bantChipClass(bantAuthFilled, bantAuthBad)}`}>
           <div className="text-[10px] font-bold tracking-widest text-gray-600 dark:text-slate-300">👤 A · AUTHORITY</div>
           <div className="text-sm mt-0.5">
-            <InlineEdit leadId={lead.id} field="authorityLevel" type="select" value={lead.authorityLevel ?? ""}
-              options={[
-                {value:"DECISION_MAKER",label:"✅ Decision maker"},
-                {value:"INFLUENCER",label:"🤝 Influencer"},
-                {value:"GATEKEEPER",label:"🚧 Gatekeeper"},
-                {value:"UNKNOWN",label:"❓ Unknown"},
-              ]} />
+            <InlineEdit leadId={lead.id} field="authorityPerson" value={lead.authorityPerson ?? ""}
+              placeholder="Who decides? e.g. Self · Wife · Father + Son" />
           </div>
         </div>
         {/* N — Need. New free-text needSummary. */}
@@ -505,7 +496,7 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
         leadId={lead.id}
         suggestions={bantSuggestions}
         currentBudget={lead.budgetMin}
-        currentAuthority={lead.authorityLevel}
+        currentAuthority={lead.authorityPerson ?? lead.authorityLevel}
         currentNeed={lead.needSummary}
         currentTimeline={lead.whenCanInvest}
       />
@@ -1139,6 +1130,7 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
               discussedAt: d.discussedAt.toISOString(),
               project: { name: d.project.name, city: d.project.city },
               autoDetected: d.autoDetected,
+              suggestion: d.suggestion,
               sourceType: d.sourceType,
               sourceDate: d.sourceDate?.toISOString() ?? null,
               sourceText: d.sourceText,
