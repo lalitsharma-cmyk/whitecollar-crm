@@ -5,7 +5,7 @@ import { Phone, MessageCircle, AlertCircle } from "lucide-react";
 import { whatsappLink, telLink } from "@/lib/phone";
 import TemplatePickerButton from "./TemplatePickerButton";
 import { fromISTLocalInput } from "@/lib/datetime";
-import DateTimeIST from "./DateTimeIST";
+import CRMDatePicker from "./CRMDatePicker";
 import { useBodyScrollLock } from "@/hooks/useBodyScrollLock";
 import { showXpToast } from "./XPToast";
 
@@ -487,7 +487,15 @@ export default function LeadActionsClient({ leadId, phone, altPhone, email, curr
                     {needsCallback ? "(required for scheduled callback)" : "(optional — schedule the next touchpoint)"}
                   </span>
                 </label>
-                <DateTimeIST value={callbackAt} onChange={setCallbackAt} futureOnly />
+                <CRMDatePicker
+                  value={callbackAt}
+                  onChange={setCallbackAt}
+                  withTime
+                  futureOnly
+                  triggerStyle="input"
+                  placeholder="Pick date &amp; time"
+                  title="Schedule callback"
+                />
                 <p className={`text-[10px] mt-2 ${needsCallback ? "text-amber-800" : "text-emerald-800"}`}>
                   You&apos;ll get a push notification 10 min before this time, and it will appear in your morning briefing.
                 </p>

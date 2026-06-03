@@ -3,7 +3,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Calendar, AlertCircle, X } from "lucide-react";
 import { fromISTLocalInput } from "@/lib/datetime";
-import DateTimeIST from "./DateTimeIST";
+import CRMDatePicker from "./CRMDatePicker";
 
 type AdvancedType = "EXPO_MEETING" | "HOME_VISIT" | "DUBAI_SITE_VISIT";
 
@@ -115,7 +115,15 @@ export default function AdvancedActivityLogger({ leadId, team, travelRatePerKm }
 
             <label className="text-xs font-semibold text-gray-600 block mb-1.5">When</label>
             <div className="mb-3">
-              <DateTimeIST value={form.when} onChange={(v) => update("when", v)} futureOnly />
+              <CRMDatePicker
+                value={form.when}
+                onChange={(v) => update("when", v)}
+                withTime
+                futureOnly
+                triggerStyle="input"
+                placeholder="Pick date &amp; time"
+                title="When"
+              />
             </div>
 
             {type === "EXPO_MEETING" && (
