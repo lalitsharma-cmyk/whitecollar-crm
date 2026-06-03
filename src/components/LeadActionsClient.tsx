@@ -28,18 +28,23 @@ const PHONE_OUTCOMES: OutcomeOption[] = [
   { key: "PHONE_FOLLOWUP",       v: "CALLBACK",       label: "🔔 Follow-up Required" },
 ];
 
-// WhatsApp-specific outcomes. "Message Sent/Delivered/Seen" are NOT connected —
-// connected only happens when the client actually replies (two-way exchange).
-const WA_OUTCOMES: OutcomeOption[] = [
-  { key: "WA_SENT",         v: "NOT_PICKED",     label: "📤 Message Sent" },
-  { key: "WA_DELIVERED",    v: "NOT_PICKED",     label: "✓✓ Message Delivered" },
-  { key: "WA_SEEN",         v: "NOT_PICKED",     label: "👁 Message Seen (no reply)" },
-  { key: "WA_REPLIED",      v: "CONNECTED",      label: "💬 Replied — Connected" },
-  { key: "WA_NO_REPLY",     v: "NOT_PICKED",     label: "🔕 No Reply" },
-  { key: "WA_CLIENT_CALL",  v: "CALLBACK",       label: "📞 Client Asked to Call" },
-  { key: "WA_DETAILS",      v: "CONNECTED",      label: "📋 Client Asked for Details" },
-  { key: "WA_NOT_INTERESTED",v: "NOT_INTERESTED", label: "🛑 Not Interested" },
-  { key: "WA_FOLLOWUP",     v: "CALLBACK",       label: "🔔 Follow-up Required" },
+// WhatsApp outbound outcomes (We Sent) — agent initiated the message.
+const WA_OUTBOUND_OUTCOMES: OutcomeOption[] = [
+  { key: "WA_SENT",           v: "NOT_PICKED",     label: "✅ WhatsApp Message Sent" },
+  { key: "WA_DELIVERED",      v: "NOT_PICKED",     label: "✅ WhatsApp Delivered" },
+  { key: "WA_SEEN",           v: "NOT_PICKED",     label: "✅ WhatsApp Read" },
+  { key: "WA_REPLIED",        v: "CONNECTED",      label: "✅ Client Replied" },
+  { key: "WA_FAILED",         v: "NOT_PICKED",     label: "❌ Failed to Deliver" },
+];
+
+// WhatsApp inbound outcomes (Client Sent) — client initiated the message.
+// Never show "Message Sent" here — that describes outbound, not inbound.
+const WA_INBOUND_OUTCOMES: OutcomeOption[] = [
+  { key: "WA_RECEIVED",       v: "CONNECTED",      label: "✅ Message Received" },
+  { key: "WA_CLIENT_REPLIED", v: "CONNECTED",      label: "✅ Client Replied" },
+  { key: "WA_SHARED_REQ",     v: "INTERESTED",     label: "✅ Client Shared Requirement" },
+  { key: "WA_REQ_CALLBACK",   v: "CALLBACK",       label: "✅ Client Requested Callback" },
+  { key: "WA_REQ_MEETING",    v: "CALLBACK",       label: "✅ Client Requested Meeting" },
 ];
 
 interface Agent { id: string; name: string; role: string; team: string | null; avatarColor: string | null; }
@@ -108,7 +113,9 @@ export default function LeadActionsClient({ leadId, phone, altPhone, email, curr
   const [callbackAt, setCallbackAt] = useState("");
 
   // Derive current outcome list and DB value from channel + selected key
-  const currentOutcomeOptions = logChannel === "PHONE" ? PHONE_OUTCOMES : WA_OUTCOMES;
+  const currentOutcomeOptions = logChannel === "PHONE" ? PHONE_OUTCOMES
+    : logDirection === "OUTBOUND" ? WA_OUTBOUND_OUTCOMES
+    : WA_INBOUND_OUTCOMES;
   const currentOutcomeV = currentOutcomeOptions.find((o) => o.key === outcomeKey)?.v ?? "NOT_PICKED";
 
   // Three categories of outcome:
@@ -420,13 +427,13 @@ export default function LeadActionsClient({ leadId, phone, altPhone, email, curr
               <div>
                 <label className="text-[10px] font-semibold text-gray-600 uppercase tracking-widest">Direction</label>
                 <div className="grid grid-cols-2 gap-1 mt-1 border border-[#e5e7eb] rounded-lg p-1">
-                  <button type="button" onClick={() => setLogDirection("OUTBOUND")}
+                  <button type="button" onClick={() => { setLogDirection("OUTBOUND"); if (logChannel === "WHATSAPP") setOutcomeKey("WA_SENT"); }}
                     className={`py-1.5 rounded text-xs font-semibold transition ${logDirection === "OUTBOUND" ? "bg-[#0b1a33] text-white" : "text-gray-600 hover:bg-gray-50"}`}>
-                    ↗ I sent
+                    📤 Outbound (We Sent)
                   </button>
-                  <button type="button" onClick={() => setLogDirection("INBOUND")}
+                  <button type="button" onClick={() => { setLogDirection("INBOUND"); if (logChannel === "WHATSAPP") setOutcomeKey("WA_RECEIVED"); }}
                     className={`py-1.5 rounded text-xs font-semibold transition ${logDirection === "INBOUND" ? "bg-[#0b1a33] text-white" : "text-gray-600 hover:bg-gray-50"}`}>
-                    ↙ They sent
+                    📥 Inbound (Client Sent)
                   </button>
                 </div>
               </div>

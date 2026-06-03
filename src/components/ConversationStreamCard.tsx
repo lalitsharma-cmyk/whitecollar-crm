@@ -9,6 +9,16 @@
 import { fmtIST12Paren, fmtISTDate } from "@/lib/datetime";
 import type { CallLog, WhatsAppMessage } from "@prisma/client";
 
+function callOutcomeLabel(outcome: string): string {
+  const map: Record<string, string> = {
+    CONNECTED: "✅ Connected", NOT_PICKED: "📵 Not Picked",
+    CALLBACK: "🔁 Callback", WRONG_NUMBER: "🚫 Wrong Number",
+    BUSY: "⏳ Busy", SWITCHED_OFF: "📴 Switched Off",
+    INTERESTED: "⭐ Interested", NOT_INTERESTED: "🛑 Not Interested",
+  };
+  return map[outcome] ?? outcome.replaceAll("_", " ");
+}
+
 type CallLogWithUser = CallLog & { user: { name: string } };
 
 interface Props {
@@ -105,7 +115,7 @@ export default function ConversationStreamCard({ callLogs, waMessages, forwarded
                     📞 <b>{displayName}</b> · {fmtIST12Paren(c.startedAt)} IST
                     {c.durationSec ? ` · ${Math.floor(c.durationSec / 60)}m ${c.durationSec % 60}s` : ""}
                   </span>
-                  <span className={`chip ${col.pill} text-[9px]`}>{c.outcome.replaceAll("_", " ")}</span>
+                  <span className={`chip ${col.pill} text-[9px]`}>{callOutcomeLabel(c.outcome)}</span>
                 </div>
                 {notesClean && <div className="text-xs mt-1 text-gray-700 whitespace-pre-wrap">{notesClean}</div>}
                 {c.recordingUrl && (
@@ -123,14 +133,13 @@ export default function ConversationStreamCard({ callLogs, waMessages, forwarded
           // WhatsApp row.
           const m = row.msg;
           const col = waColour(m.direction);
-          const arrow = m.direction === "INBOUND" ? "↙" : "↗";
           return (
             <div key={`w-${m.id}-${idx}`} className={`border-l-2 ${col.border} ${col.bg} pl-3 pr-2 py-1.5 rounded-r`}>
               <div className="flex items-center justify-between flex-wrap gap-1 text-[11px] text-gray-500">
                 <span>
-                  💬 {arrow} <b>{m.direction === "INBOUND" ? "Client" : "Agent"}</b> · {fmtIST12Paren(m.receivedAt)} IST
+                  💬 <b>{m.direction === "INBOUND" ? "📥 Client" : "📤 Agent"}</b> · {fmtIST12Paren(m.receivedAt)} IST
                 </span>
-                <span className={`chip ${col.pill} text-[9px]`}>{m.direction === "INBOUND" ? "Inbound" : "Outbound"}</span>
+                <span className={`chip ${col.pill} text-[9px]`}>{m.direction === "INBOUND" ? "📥 Inbound" : "📤 Outbound"}</span>
               </div>
               <div className="text-xs mt-1 text-gray-800 whitespace-pre-wrap">{m.body}</div>
             </div>
@@ -143,8 +152,8 @@ export default function ConversationStreamCard({ callLogs, waMessages, forwarded
       <div className="mt-3 pt-2 border-t border-emerald-200 flex items-center gap-3 flex-wrap text-[10px] text-gray-600">
         <span><span className="inline-block w-2 h-2 bg-emerald-400 rounded-full mr-1 align-middle" />Call connected</span>
         <span><span className="inline-block w-2 h-2 bg-red-400 rounded-full mr-1 align-middle" />Call missed/declined</span>
-        <span><span className="inline-block w-2 h-2 bg-blue-400 rounded-full mr-1 align-middle" />WA inbound</span>
-        <span><span className="inline-block w-2 h-2 bg-purple-400 rounded-full mr-1 align-middle" />WA outbound</span>
+        <span><span className="inline-block w-2 h-2 bg-blue-400 rounded-full mr-1 align-middle" />📥 Client sent</span>
+        <span><span className="inline-block w-2 h-2 bg-purple-400 rounded-full mr-1 align-middle" />📤 Agent sent</span>
       </div>
       {/* Date band — first → last conversation (handy at a glance even on a
           super long history). */}
