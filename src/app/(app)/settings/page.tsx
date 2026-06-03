@@ -1,7 +1,7 @@
 import { createHmac } from "node:crypto";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { getTravelRatePerKmInr, getSpeedToLeadEnabled, getRoundRobinEnabled, getTestingModeEnabled, getMotivationPilotEnabled, getMotivationPilotTeam, getBantGateMode, getAiEnabled, getAiTrialModeEnabled } from "@/lib/settings";
+import { getTravelRatePerKmInr, getSpeedToLeadEnabled, getRoundRobinEnabled, getTestingModeEnabled, getMotivationPilotEnabled, getMotivationPilotTeam, getBantGateMode, getAiEnabled, getAiTrialModeEnabled, getAiMonthlyCostCapUsd } from "@/lib/settings";
 import TravelRateEditor from "@/components/TravelRateEditor";
 import SpeedToLeadToggle from "@/components/SpeedToLeadToggle";
 import RoundRobinToggle from "@/components/RoundRobinToggle";
@@ -45,7 +45,7 @@ function buildIcsUrl(userId: string): string {
 
 export default async function SettingsPage() {
   const me = await requireUser();
-  const [travelRate, speedToLeadOn, roundRobinOn, testingModeOn, motivationPilotOn, motivationPilotTeam, bantGateMode, pushSubCount, aiEnabledOn, aiTrialModeOn] = await Promise.all([
+  const [travelRate, speedToLeadOn, roundRobinOn, testingModeOn, motivationPilotOn, motivationPilotTeam, bantGateMode, pushSubCount, aiEnabledOn, aiTrialModeOn, aiMonthlyCostCapUsd] = await Promise.all([
     getTravelRatePerKmInr(),
     getSpeedToLeadEnabled(),
     getRoundRobinEnabled(),
@@ -56,6 +56,7 @@ export default async function SettingsPage() {
     prisma.pushSubscription.count({ where: { userId: me.id } }),
     getAiEnabled(),
     getAiTrialModeEnabled(),
+    getAiMonthlyCostCapUsd(),
   ]);
   const isAdmin = me.role === "ADMIN";
   const icsUrl = buildIcsUrl(me.id);
@@ -304,6 +305,7 @@ export default async function SettingsPage() {
           <AiEnabledToggle
             initialAiEnabled={aiEnabledOn}
             initialTrialModeEnabled={aiTrialModeOn}
+            initialMonthlyCostCapUsd={aiMonthlyCostCapUsd}
             canEdit={isAdmin}
           />
         </div>

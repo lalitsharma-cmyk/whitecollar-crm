@@ -54,6 +54,11 @@ const DEFAULTS = {
   //   before global go-live). Normal flows stay gated by ai.enabled. Default OFF.
   "ai.enabled": "false",
   "ai.trialMode.enabled": "false",
+  // ai.monthlyCostCapUsd — hard cap on monthly AI spend. When the rolling calendar-
+  //   month total (sum of AiUsageLog.costMicroUsd) reaches this value, every further
+  //   generateTextWithUsage call is short-circuited and returns { state: "disabled" }.
+  //   "0" = disabled (no cap). Default: "50" = $50/month.
+  "ai.monthlyCostCapUsd": "50",
 };
 
 export async function getSetting(key: string): Promise<string> {
@@ -110,6 +115,13 @@ export async function getAiTrialModeEnabled(): Promise<boolean> {
   const raw = await getSetting("ai.trialMode.enabled");
   if (!raw) return false; // default OFF
   return raw.toLowerCase() === "true";
+}
+
+// Monthly AI cost cap in USD. "0" = disabled. Default $50.
+export async function getAiMonthlyCostCapUsd(): Promise<number> {
+  const raw = await getSetting("ai.monthlyCostCapUsd");
+  const n = Number(raw);
+  return isNaN(n) || n < 0 ? 50 : n;
 }
 
 // ── BANT stage-gate mode accessor ──────────────────────────────────────

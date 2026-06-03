@@ -1,7 +1,7 @@
 import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
 import { prisma } from "@/lib/prisma";
-import { getAiEnabled, getAiTrialModeEnabled } from "@/lib/settings";
+import { getAiEnabled, getAiTrialModeEnabled, getAiMonthlyCostCapUsd } from "@/lib/settings";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Provider selection
@@ -132,6 +132,24 @@ export async function generateTextWithUsage(
   const globalOn = await getAiEnabled();
   const allowed = globalOn || (ctx.trial === true && (await getAiTrialModeEnabled()));
   if (!allowed) return emptyGen("disabled", provider);
+
+  // MONTHLY COST-CAP CHECK. Skip if cap is 0 (disabled) or not set.
+  const capUsd = await getAiMonthlyCostCapUsd();
+  if (capUsd > 0) {
+    const monthStart = new Date();
+    monthStart.setUTCDate(1);
+    monthStart.setUTCHours(0, 0, 0, 0);
+    const spent = await prisma.aiUsageLog.aggregate({
+      _sum: { costMicroUsd: true },
+      where: { createdAt: { gte: monthStart } },
+    });
+    const spentMicroUsd = spent._sum.costMicroUsd ?? 0;
+    const spentUsd = spentMicroUsd / 1_000_000;
+    if (spentUsd >= capUsd) {
+      console.warn(`AI monthly cost cap reached: $${spentUsd.toFixed(4)} >= $${capUsd}`);
+      return emptyGen("disabled", provider);
+    }
+  }
 
   const model = provider === "gemini" ? GEMINI_MODEL : ANTHROPIC_MODEL;
   const startedAt = Date.now();

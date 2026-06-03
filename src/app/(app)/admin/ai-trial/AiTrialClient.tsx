@@ -85,14 +85,88 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
+// ─── Monthly cost card ────────────────────────────────────────────────────────
+
+function MonthlyCostCard({ spentMicroUsd, capUsd }: { spentMicroUsd: number; capUsd: number }) {
+  const spentUsd = spentMicroUsd / 1_000_000;
+  const pct = capUsd > 0 ? Math.min(100, Math.round((spentUsd / capUsd) * 100)) : null;
+  const now = new Date();
+  const monthLabel = now.toLocaleString("default", { month: "long", year: "numeric" });
+
+  const barColor =
+    pct == null ? "bg-blue-400"
+    : pct >= 90 ? "bg-red-500"
+    : pct >= 70 ? "bg-amber-500"
+    : "bg-blue-500";
+
+  return (
+    <div className="card p-5 border-l-4 border-blue-300">
+      <h2 className="font-semibold text-base mb-3">F — Monthly AI Cost Report</h2>
+      <p className="text-xs text-gray-500 mb-3">{monthLabel} (calendar month, UTC)</p>
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-sm mb-4">
+        <div className="rounded-lg bg-gray-50 p-3">
+          <div className="text-xs text-gray-500">Spent this month</div>
+          <div className="font-semibold text-blue-700">${spentUsd.toFixed(4)}</div>
+          <div className="text-[11px] text-gray-400">{spentMicroUsd.toLocaleString()} µUSD</div>
+        </div>
+        <div className="rounded-lg bg-gray-50 p-3">
+          <div className="text-xs text-gray-500">Monthly cap</div>
+          <div className="font-semibold">{capUsd > 0 ? `$${capUsd}` : "None"}</div>
+          <div className="text-[11px] text-gray-400">
+            {capUsd > 0 ? "Change in Settings → AI Features" : "Set in Settings → AI Features"}
+          </div>
+        </div>
+        <div className="rounded-lg bg-gray-50 p-3">
+          <div className="text-xs text-gray-500">Budget used</div>
+          <div className={`font-semibold ${pct != null && pct >= 90 ? "text-red-600" : pct != null && pct >= 70 ? "text-amber-600" : "text-gray-700"}`}>
+            {pct != null ? `${pct}%` : "—"}
+          </div>
+          <div className="text-[11px] text-gray-400">
+            {capUsd === 0 ? "No cap configured" : pct != null && pct >= 100 ? "Cap reached — AI blocked" : "Of monthly cap"}
+          </div>
+        </div>
+      </div>
+      {capUsd > 0 && pct != null && (
+        <div>
+          <div className="flex justify-between text-xs text-gray-500 mb-1">
+            <span>${spentUsd.toFixed(2)} spent</span>
+            <span>${capUsd} cap</span>
+          </div>
+          <div className="w-full bg-gray-200 rounded-full h-2">
+            <div
+              className={`${barColor} h-2 rounded-full transition-all`}
+              style={{ width: `${pct}%` }}
+            />
+          </div>
+          {pct >= 100 && (
+            <p className="text-xs text-red-700 mt-2 font-medium">
+              Monthly cap reached. All AI calls are blocked until next month or the cap is raised.
+            </p>
+          )}
+          {pct >= 70 && pct < 100 && (
+            <p className="text-xs text-amber-700 mt-2">
+              Approaching monthly cap. Review usage in the run history above.
+            </p>
+          )}
+        </div>
+      )}
+      <p className="text-[11px] text-gray-400 mt-2">
+        Data reflects <code>AiUsageLog</code> rows for this calendar month. Refreshes on page load.
+      </p>
+    </div>
+  );
+}
+
 // ─── main component ───────────────────────────────────────────────────────────
 
 interface Props {
   initialAiEnabled: boolean;
   initialTrialModeEnabled: boolean;
+  initialMonthlySpentMicroUsd: number;
+  initialMonthlyCostCapUsd: number;
 }
 
-export default function AiTrialClient({ initialAiEnabled, initialTrialModeEnabled }: Props) {
+export default function AiTrialClient({ initialAiEnabled, initialTrialModeEnabled, initialMonthlySpentMicroUsd, initialMonthlyCostCapUsd }: Props) {
   const router = useRouter();
 
   // ── A: Global AI state ─────────────────────────────────────────────────────
@@ -686,6 +760,12 @@ export default function AiTrialClient({ initialAiEnabled, initialTrialModeEnable
           </div>
         </div>
       )}
+
+      {/* ── Section F: Monthly AI cost report ────────────────────────────────── */}
+      <MonthlyCostCard
+        spentMicroUsd={initialMonthlySpentMicroUsd}
+        capUsd={initialMonthlyCostCapUsd}
+      />
 
       {/* ── Section E: Run history ─────────────────────────────────────────── */}
       <div className="card p-5">
