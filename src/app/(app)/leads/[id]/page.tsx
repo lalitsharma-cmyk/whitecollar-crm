@@ -524,11 +524,11 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
           <div className="text-sm mt-0.5">
             <InlineEdit leadId={lead.id} field="whenCanInvest" type="select" value={lead.whenCanInvest ?? ""}
               options={[
-                {value:"IMMEDIATE",       label:"⚡ On Spot / Immediate"},
+                {value:"IMMEDIATE",       label:"⚡ Immediate / On Spot"},
                 {value:"THIRTY_DAYS",     label:"📅 Within 1 Month"},
                 {value:"THREE_MONTHS",    label:"✈ Will Visit Dubai First"},
                 {value:"SIX_PLUS_MONTHS", label:"⏳ Not in 6 Months"},
-                {value:"WINDOW_SHOPPING", label:"👀 Just Browsing"},
+                {value:"WINDOW_SHOPPING", label:"📆 6+ Months"},
                 {value:"UNKNOWN",         label:"❓ Not Sure"},
               ]} />
           </div>
@@ -795,9 +795,6 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
                 />
                 {lead.phone && <CopyPhoneButton phone={lead.phone} />}
                 <BestCallTimeChip leadId={lead.id} />
-                {waLink && (
-                  <a href={waLink} target="_blank" rel="noopener noreferrer" className="btn btn-sm bg-green-500 hover:bg-green-600 text-white border-0 gap-1">💬 WhatsApp</a>
-                )}
               </div>
               {/* Voice note recorder — moved to header so agents see all 4
                   actions (Call / WhatsApp / Log Call / Voice Note) together
