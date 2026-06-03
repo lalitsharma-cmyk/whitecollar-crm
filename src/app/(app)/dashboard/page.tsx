@@ -5,18 +5,12 @@ import { fmtIST12, smartRangeLabel } from "@/lib/datetime";
 import { fmtMoney, fmtMoneyDual } from "@/lib/money";
 import { runReconciler } from "@/lib/reconciler";
 import { getTestingModeEnabled } from "@/lib/settings";
-import { activityVisual } from "@/lib/activityIcon";
 import { requireUser } from "@/lib/auth";
 import Link from "next/link";
-import MoodCheckIn from "@/components/MoodCheckIn";
 import IamHereCard from "@/components/IamHereCard";
 import CallTargetWidget from "@/components/CallTargetWidget";
-import DailyMissionBoard from "@/components/DailyMissionBoard";
-import PersonalScoreboard from "@/components/PersonalScoreboard";
-import SmartSuggestionsCard from "@/components/SmartSuggestionsCard";
 import TeamDailyTargetTile from "@/components/TeamDailyTargetTile";
 import { todayIST } from "@/lib/attendance";
-import { quoteOfTheDay } from "@/lib/salesQuotes";
 import { normalizeTeam } from "@/lib/teamRouting";
 import TeamScoreboardCard from "@/components/TeamScoreboardCard";
 import WeeklySummaryCard from "@/components/WeeklySummaryCard";
@@ -24,8 +18,6 @@ import TeamFollowupsWidget from "@/components/TeamFollowupsWidget";
 
 export const dynamic = "force-dynamic";
 
-// Sales forecast weights (matches your dashboard)
-const WEIGHTS = { NEGOTIATION: 0.55, SITE_VISIT: 0.30, QUALIFIED: 0.10, CONTACTED: 0.02, NEW: 0.02 };
 
 export default async function DashboardPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const me = await requireUser();
@@ -83,8 +75,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     totalClients, totalNotContacted, newToday, hotLeads,
     callsToday, connectedToday, waToday,
     followupsDueToday, followupsOverdue, readyToClose, needsYou,
-    recentActivities, upcoming,
-    leadsByTeam, forecastLeads,
+    upcoming,
     // Team-specific KPIs
     expoMeetingsThisMonth, homeVisitsThisMonth, virtualThisMonth, officeThisMonth, siteVisitsThisMonth,
     coldPromotedThisMonth, callsThisMonth,
@@ -104,14 +95,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     prisma.activity.count({ where: { ...meActWhere, status: ActivityStatus.PLANNED, scheduledAt: { lt: todayStart } } }),
     prisma.lead.count({ where: { ...meScope, status: { in: [LeadStatus.NEGOTIATION, LeadStatus.SITE_VISIT] } } }),
     prisma.lead.count({ where: { ...meScope, needsManagerReview: true, status: { notIn: [LeadStatus.WON, LeadStatus.LOST] } } }),
-    prisma.activity.findMany({ where: meActWhere, orderBy: { createdAt: "desc" }, take: 6, include: { lead: { select: { id: true, name: true } }, user: { select: { name: true } } } }), // B-15: only lead.id/name + user.name rendered
     prisma.activity.findMany({ where: { ...meActWhere, status: ActivityStatus.PLANNED, scheduledAt: { gte: new Date() } }, orderBy: { scheduledAt: "asc" }, take: 5, include: { lead: { select: { id: true, name: true } } } }), // B-15: only lead.id/name rendered
-    // leadsByTeam — team-distribution chart; intentionally all-teams (no scope).
-    prisma.lead.groupBy({ by: ["forwardedTeam"], _count: { _all: true } }),
-    prisma.lead.findMany({
-      where: { ...meScope, status: { in: [LeadStatus.NEW, LeadStatus.CONTACTED, LeadStatus.QUALIFIED, LeadStatus.SITE_VISIT, LeadStatus.NEGOTIATION] }, budgetMin: { not: null } },
-      select: { status: true, budgetMin: true, budgetMax: true, budgetCurrency: true },
-    }),
     // Team funnel counts (this month) — feed the explicitly-labelled
     // "TEAM · THIS MONTH" section, so they stay TEAM-scoped for everyone.
     prisma.activity.count({ where: { ...teamActWhere, type: ActivityType.EXPO_MEETING, completedAt: { gte: monthStart } } }),
@@ -178,11 +162,6 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     }),
   ]);
 
-  // Today's mood check-in for THIS user (drives the dashboard card)
-  const myMoodToday = await prisma.dailyMood.findUnique({
-    where: { userId_date: { userId: me.id, date: todayStart } },
-  });
-
   // Today's attendance for THIS user
   const myAttendanceToday = await prisma.attendance.findUnique({
     where: { userId_date: { userId: me.id, date: todayIST() } },
@@ -204,28 +183,6 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   }
 
   const connectRate = callsToday ? Math.round((connectedToday / callsToday) * 100) : 0;
-
-  // ── EOI / Booking pipeline alerts (Admin + Manager only) ──
-  // Surface the most important counts: how many leads are mid-funnel, how many
-  // are waiting on KYC, how many need the viewer's approval, how many are stuck
-  // beyond 7 days. Each tile links to /leads?eoi=X for a filtered view.
-  let eoiAlerts: { active: number; kycPending: number; approvalNeeded: number; stuck: number } | null = null;
-  if (isAdminOrMgr) {
-    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 3600 * 1000);
-    const [active, kycPending, approvalNeeded, stuck] = await Promise.all([
-      prisma.lead.count({ where: { ...teamScope, eoiStage: { not: null } } }),
-      prisma.lead.count({ where: { ...teamScope, kycStatus: "PENDING" } }),
-      prisma.lead.count({ where: { ...teamScope, eoiApprovalRequired: true } }),
-      prisma.lead.count({
-        where: {
-          ...teamScope,
-          bookingDoneAt: null,
-          eoiCollectedAt: { lt: sevenDaysAgo, not: null },
-        },
-      }),
-    ]);
-    eoiAlerts = { active, kycPending, approvalNeeded, stuck };
-  }
 
   // ── Weekly pipeline summary — ADMIN / MANAGER only ───────────────────
   // IST week boundaries: Mon midnight IST → Sun midnight IST
@@ -317,23 +274,6 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     name: scoreboardUsers.find((u) => u.id === r.userId)?.name ?? "Unknown",
     calls: r._count?._all ?? 0,
   }));
-
-  // Forecast computation — weighted by stage
-  const forecast = { aed: { closing: 0, meeting: 0, moving: 0, early: 0 }, inr: { closing: 0, meeting: 0, moving: 0, early: 0 } };
-  // Live counts per bucket — used for the sub-labels under each card so they
-  // reflect reality instead of hard-coded text.
-  const fcCounts = { closing: 0, meeting: 0, moving: 0, early: 0 };
-  for (const l of forecastLeads) {
-    const v = l.budgetMin ?? 0;
-    const cur = l.budgetCurrency === "INR" ? "inr" : "aed";
-    if (l.status === "NEGOTIATION") { forecast[cur].closing += v * WEIGHTS.NEGOTIATION; fcCounts.closing++; }
-    else if (l.status === "SITE_VISIT") { forecast[cur].meeting += v * WEIGHTS.SITE_VISIT; fcCounts.meeting++; }
-    else if (l.status === "QUALIFIED") { forecast[cur].moving += v * WEIGHTS.QUALIFIED; fcCounts.moving++; }
-    else { forecast[cur].early += v * (l.status === "CONTACTED" ? WEIGHTS.CONTACTED : WEIGHTS.NEW); fcCounts.early++; }
-  }
-  const fcTotal = (cur: "aed" | "inr") => forecast[cur].closing + forecast[cur].meeting + forecast[cur].moving + forecast[cur].early;
-  const fcTotalCount = fcCounts.closing + fcCounts.meeting + fcCounts.moving + fcCounts.early;
-  const pluralDeals = (n: number) => `${n} deal${n === 1 ? "" : "s"}`;
 
   // ⚡ PERFORMANCE: was 30 sequential queries (5 per agent × 6 agents). Now 1.
   const tomorrow = new Date(todayStart.getTime() + 24 * 3600_000);
@@ -432,7 +372,6 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
       return null;
     })(),
   ]);
-  const dailyQuote = quoteOfTheDay();
   const hasMorningWork = myNewOvernight > 0 || myFollowupsToday > 0 || myCallbacksToday > 0;
 
   // Motivation hook — surface the agent's most recent vault WIN so the morning
@@ -455,12 +394,10 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   const istHour = istNow.getUTCHours();
   const greeting =
     istHour < 12 ? "Good morning" :
-    istHour < 17 ? "Good afternoon" :
-    istHour < 21 ? "Good evening" : "Working late";
+    istHour < 17 ? "Good afternoon" : "Good evening";
   const energyEmoji =
     istHour < 12 ? "☀️" :
-    istHour < 17 ? "⚡" :
-    istHour < 21 ? "🌇" : "🌙";
+    istHour < 17 ? "⚡" : "🌇";
 
   // Streak nudge — surface a quick callout if the agent has a meaningful streak.
   // Cap displayed values at 999 so the chip doesn't blow out on long-running
@@ -599,12 +536,6 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         <TeamFollowupsWidget items={teamFollowups} />
       )}
 
-      {/* Smart suggestions — rule-based daily nudges. Mounted near the top,
-          above the productivity tables so the agent immediately sees concrete
-          actions ("which 5 things should I act on right now") before the
-          broader stats. Hides itself when every rule returns zero. */}
-      <SmartSuggestionsCard userId={me.id} role={me.role} team={me.team} />
-
       {/* §12.4 Daily Opening Experience
           Premium morning greeting + single "today's mission" CTA + streak
           nudge + the existing chips + the daily quote. Sits above the Hero
@@ -680,11 +611,6 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
               </div>
             )}
 
-            <blockquote className="text-[12px] text-gray-700 dark:text-slate-300 italic mt-3 border-l-2 border-[#c9a24b] pl-3 leading-relaxed">
-              💡 {dailyQuote.text}
-              <div className="text-[10px] text-gray-500 dark:text-slate-400 not-italic mt-0.5">— {dailyQuote.author}</div>
-            </blockquote>
-
             {/* Last vault WIN — only renders if the agent has logged one.
                 No "no wins yet" fallback — demotivating. */}
             {lastWin && lastWinClipped && (
@@ -705,17 +631,6 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         </div>
       </div>
 
-      {/* "Your scoreboard" — personal gamification snapshot (level + XP +
-          streaks + leaderboard ranks + badges). Mounts immediately after the
-          Daily Opening Experience card so the agent sees their standing as
-          part of the morning view. */}
-      <PersonalScoreboard userId={me.id} />
-
-      {/* §11.5 Daily Missions board — agent-facing gamified daily targets.
-          Mounts immediately after the Daily Opening Experience card so the
-          morning view flows: greeting + mission CTA → mission progress bars. */}
-      <DailyMissionBoard userId={me.id} />
-
       {/* Admin-only: leads waiting for morning assignment (15-min window) */}
       {me.role === "ADMIN" && morningQueueCount > 0 && (
         <div className="card p-4 border-l-4 border-red-500 bg-red-50">
@@ -733,9 +648,6 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
           </div>
         </div>
       )}
-
-      {/* Optional end-of-day mood check-in (renders for all logged-in users) */}
-      <MoodCheckIn existing={myMoodToday ? { mood: myMoodToday.mood, comment: myMoodToday.comment } : null} />
 
       {/* 8 KPI tiles matching your dashboard exactly */}
       <div>
@@ -780,49 +692,6 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         </div>
       )}
 
-      {/* EOI Pipeline — admin / manager view of the booking funnel. Each tile
-          links to /leads?eoi=X for the filtered list. Hidden for agents
-          (they see their own funnel on each lead detail page instead). */}
-      {eoiAlerts && (
-        <div>
-          <div className="text-xs font-bold tracking-widest text-gray-500 dark:text-slate-400 mb-2">EOI PIPELINE · TEAM · RIGHT NOW</div>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 lg:gap-3">
-            <Link href="/leads?eoi=active" className="card p-3 lg:p-4 hover:border-[#c9a24b] block">
-              <div className="text-2xl lg:text-3xl font-bold">{eoiAlerts.active}</div>
-              <div className="text-[10px] lg:text-[11px] tracking-widest text-gray-500 dark:text-slate-400 uppercase mt-0.5 lg:mt-1 leading-tight">Active EOI funnel</div>
-              <div className="text-[11px] lg:text-xs text-gray-500 dark:text-slate-400 mt-0.5 lg:mt-1 leading-tight">leads with EOI stage set</div>
-            </Link>
-            <Link href="/leads?eoi=kyc_pending" className={`card p-3 lg:p-4 hover:border-orange-500 block ${eoiAlerts.kycPending > 0 ? "border-orange-300" : ""}`}>
-              <div className="text-2xl lg:text-3xl font-bold">{eoiAlerts.kycPending}</div>
-              <div className="text-[10px] lg:text-[11px] tracking-widest text-gray-500 dark:text-slate-400 uppercase mt-0.5 lg:mt-1 leading-tight">Waiting on KYC</div>
-              <div className="text-[11px] lg:text-xs text-gray-500 dark:text-slate-400 mt-0.5 lg:mt-1 leading-tight">chase clients for docs</div>
-            </Link>
-            <Link href="/leads?eoi=approval_needed" className={`card p-3 lg:p-4 hover:border-amber-500 block ${eoiAlerts.approvalNeeded > 0 ? "border-amber-500 border-2 bg-amber-50" : ""}`}>
-              <div className="text-2xl lg:text-3xl font-bold">{eoiAlerts.approvalNeeded}</div>
-              <div className="text-[10px] lg:text-[11px] tracking-widest text-gray-500 dark:text-slate-400 uppercase mt-0.5 lg:mt-1 leading-tight">Need your sign-off</div>
-              <div className="text-[11px] lg:text-xs text-gray-500 dark:text-slate-400 mt-0.5 lg:mt-1 leading-tight">discount / waiver approval</div>
-            </Link>
-            <Link href="/leads?eoi=stuck" className={`card p-3 lg:p-4 hover:border-red-500 block ${eoiAlerts.stuck > 0 ? "border-red-300" : ""}`}>
-              <div className="text-2xl lg:text-3xl font-bold">{eoiAlerts.stuck}</div>
-              <div className="text-[10px] lg:text-[11px] tracking-widest text-gray-500 dark:text-slate-400 uppercase mt-0.5 lg:mt-1 leading-tight">Stuck deals</div>
-              <div className="text-[11px] lg:text-xs text-gray-500 dark:text-slate-400 mt-0.5 lg:mt-1 leading-tight">EOI collected 7+ days, no booking</div>
-            </Link>
-          </div>
-        </div>
-      )}
-
-      {/* Weighted Sales Forecast */}
-      <div>
-        <div className="text-xs font-bold tracking-widest text-gray-500 dark:text-slate-400 mb-2">SALES FORECAST (WEIGHTED)</div>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
-          <ForecastCard label="EXPECTED THIS MONTH" sub={`${pluralDeals(fcCounts.closing)} at closing stage`} aed={forecast.aed.closing} inr={forecast.inr.closing} color="border-emerald-500" />
-          <ForecastCard label="EXPECTED IN 1-3 MONTHS" sub={`${pluralDeals(fcCounts.meeting + fcCounts.moving)} actively moving`} aed={forecast.aed.meeting + forecast.aed.moving} inr={forecast.inr.meeting + forecast.inr.moving} color="border-amber-500" />
-          <ForecastCard label="LONGER-TERM POTENTIAL" sub={`${pluralDeals(fcCounts.early)} early / cold`} aed={forecast.aed.early} inr={forecast.inr.early} color="border-blue-500" />
-          <ForecastCard label="TOTAL WEIGHTED FORECAST" sub={`${pluralDeals(fcTotalCount)} across all stages`} aed={fcTotal("aed")} inr={fcTotal("inr")} color="border-[#c9a24b]" />
-        </div>
-        <p className="text-xs text-gray-500 dark:text-slate-400 mt-2">Each deal is weighted by likelihood: closing 55%, meeting 30%, actively moving 10%, early/cold 2%. Adjust in <code>WEIGHTS</code> if needed.</p>
-      </div>
-
       {/* By Salesperson table — ADMIN/MANAGER only (team-wide competitive data) */}
       {isAdminOrMgr && (
       <div className="card p-3 lg:p-5 overflow-x-auto">
@@ -850,47 +719,20 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
       </div>
       )}
 
-      {/* Charts — Leads-over-time chart removed per Lalit's "remove leads
-          over time from dashboard". The daily intake number is already in
-          the KPI tile row above so the chart was redundant. */}
-
-      {/* Recent activity + Upcoming */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <div className="card p-5">
-          <div className="font-semibold mb-3">Recent activity</div>
-          <div className="space-y-3">
-            {recentActivities.map((a) => {
-              const v = activityVisual(a.type);
-              return (
-                <div key={a.id} className="flex gap-3 items-start">
-                  <div className={`w-7 h-7 rounded-full ${v.dot} text-white flex items-center justify-center text-xs flex-none shadow-sm`}>{v.icon}</div>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-sm">
-                      <b>{a.user?.name ?? "System"}</b> · {a.title}
-                      {a.lead && <> on <Link href={`/leads/${a.lead.id}`} className="text-[#0b1a33] font-semibold hover:underline">{a.lead.name}</Link></>}
-                    </div>
-                    <div className="text-xs text-gray-500 dark:text-slate-400">{v.label} · {formatDistanceToNow(a.createdAt, { addSuffix: true })}</div>
-                  </div>
-                </div>
-              );
-            })}
-            {recentActivities.length === 0 && <div className="text-sm text-gray-500 dark:text-slate-400">No activity yet.</div>}
-          </div>
-        </div>
-        <div className="card p-5">
-          <div className="font-semibold mb-3">Upcoming follow-ups</div>
-          <div className="space-y-2">
-            {upcoming.map((a) => (
-              <Link key={a.id} href={a.lead ? `/leads/${a.lead.id}` : "#"} className="flex items-center justify-between p-3 rounded-lg border border-[#e5e7eb] hover:border-[#c9a24b]">
-                <div>
-                  <div className="text-sm font-semibold">{a.title}{a.lead && ` · ${a.lead.name}`}</div>
-                  <div className="text-xs text-gray-500 dark:text-slate-400">{a.scheduledAt && `${fmtIST12(a.scheduledAt)} IST`}</div>
-                </div>
-                <span className="chip chip-new">{a.type}</span>
-              </Link>
-            ))}
-            {upcoming.length === 0 && <div className="text-sm text-gray-500 dark:text-slate-400">Nothing scheduled.</div>}
-          </div>
+      {/* Upcoming follow-ups */}
+      <div className="card p-5">
+        <div className="font-semibold mb-3">Upcoming follow-ups</div>
+        <div className="space-y-2">
+          {upcoming.map((a) => (
+            <Link key={a.id} href={a.lead ? `/leads/${a.lead.id}` : "#"} className="flex items-center justify-between p-3 rounded-lg border border-[#e5e7eb] hover:border-[#c9a24b]">
+              <div>
+                <div className="text-sm font-semibold">{a.title}{a.lead && ` · ${a.lead.name}`}</div>
+                <div className="text-xs text-gray-500 dark:text-slate-400">{a.scheduledAt && `${fmtIST12(a.scheduledAt)} IST`}</div>
+              </div>
+              <span className="chip chip-new">{a.type}</span>
+            </Link>
+          ))}
+          {upcoming.length === 0 && <div className="text-sm text-gray-500 dark:text-slate-400">Nothing scheduled.</div>}
         </div>
       </div>
     </>
@@ -903,19 +745,6 @@ function KPI({ title, value, sub, highlight }: { title: string; value: number; s
       <div className="text-2xl lg:text-3xl font-bold dark:text-white">{value}</div>
       <div className="text-[10px] lg:text-[11px] tracking-widest text-gray-500 dark:text-slate-400 uppercase mt-0.5 lg:mt-1 leading-tight">{title}</div>
       <div className="text-[11px] lg:text-xs text-gray-500 dark:text-slate-400 mt-0.5 lg:mt-1 leading-tight">{sub}</div>
-    </div>
-  );
-}
-function ForecastCard({ label, sub, aed, inr, color }: { label: string; sub: string; aed: number; inr: number; color: string }) {
-  return (
-    <div className={`card p-3 border-l-4 ${color}`}>
-      <div className="text-[10px] tracking-widest text-gray-500 dark:text-slate-400 uppercase">{label}</div>
-      <div className="text-base font-bold mt-1 leading-tight dark:text-white">
-        {aed > 0 && <div>{fmtMoney(aed, "AED")}</div>}
-        {inr > 0 && <div>{fmtMoney(inr, "INR")}</div>}
-        {aed === 0 && inr === 0 && <div className="text-gray-400 dark:text-slate-500">—</div>}
-      </div>
-      <div className="text-[11px] text-gray-500 dark:text-slate-400 mt-1">{sub}</div>
     </div>
   );
 }
