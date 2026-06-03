@@ -63,7 +63,7 @@ export default function StickyNoteWidget({ leadId, initialBody, initialUpdatedAt
       : "Private to you — auto-saves on blur";
 
   return (
-    <div className="card p-3 border-l-4 border-amber-400 bg-amber-50 sticky top-[80px] z-10">
+    <div className="card p-3 border-l-4 border-amber-400 bg-amber-50">
       <div className="flex items-center justify-between mb-2 gap-2">
         <div className="text-xs font-semibold text-amber-900 flex items-center gap-1.5">
           📌 Your sticky note
