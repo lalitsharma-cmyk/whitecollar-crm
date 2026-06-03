@@ -50,6 +50,7 @@ import CustomerIntelligenceCard from "@/components/CustomerIntelligenceCard";
 import BANTSuggestions from "@/components/BANTSuggestions";
 import type { BantSuggestions } from "@/lib/bantAutoFill";
 import StageDurationBadge from "@/components/StageDurationBadge";
+import CopyPhoneButton from "@/components/CopyPhoneButton";
 
 export const dynamic = "force-dynamic";
 
@@ -758,6 +759,7 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
                   acefoneMappedForUser={!!me.acefoneAgentId}
                   hideReassign={true}
                 />
+                {lead.phone && <CopyPhoneButton phone={lead.phone} />}
                 <BestCallTimeChip leadId={lead.id} />
                 {waLink && (
                   <a href={waLink} target="_blank" rel="noopener noreferrer" className="btn btn-sm bg-green-500 hover:bg-green-600 text-white border-0 gap-1">💬 WhatsApp</a>

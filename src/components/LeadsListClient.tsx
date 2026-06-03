@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Phone, MessageCircle, Tag, RefreshCw, XCircle, X, ExternalLink } from "lucide-react";
 import LeadBulkActions from "./LeadBulkActions";
 import { telLink, whatsappLink } from "@/lib/phone";
+import CopyPhoneButton from "./CopyPhoneButton";
 
 // Preset tag vocab — mirrors what Lalit asked the team to standardise on
 // across the pipeline. Kept here (not server-fetched) so the popover renders
@@ -401,7 +402,7 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
                 </Link>
                 {/* Direct-action call/WA buttons */}
                 {l.phone && (
-                  <div className="flex flex-col gap-1.5 flex-none">
+                  <div className="flex flex-col gap-1.5 flex-none items-center">
                     <a
                       href={telLink(l.phone) || "#"}
                       aria-label={`Call ${l.name}`}
@@ -417,6 +418,7 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
                     >
                       <MessageCircle className="w-4 h-4" />
                     </a>
+                    {l.phone && <CopyPhoneButton phone={l.phone} />}
                   </div>
                 )}
               </div>
@@ -464,6 +466,7 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
                       {maskedPhone && (
                         <span className="text-[11px] text-gray-400 dark:text-slate-500 font-mono">{maskedPhone}</span>
                       )}
+                      {l.phone && <CopyPhoneButton phone={l.phone} />}
                       {statusOpenFor === l.id ? (
                         <select
                           autoFocus

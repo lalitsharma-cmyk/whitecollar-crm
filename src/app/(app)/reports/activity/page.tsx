@@ -135,6 +135,7 @@ export default async function ActivityFeedPage() {
             {managerTeam ? ` · ${managerTeam} team` : " · all teams"}
           </p>
         </div>
+        <a href="/api/call-logs/export" className="btn btn-ghost btn-sm">⬇️ Export CSV</a>
       </div>
 
       {feed.length === 0 ? (

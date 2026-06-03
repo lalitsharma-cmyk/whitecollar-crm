@@ -573,6 +573,27 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
         showSource={me.role !== "AGENT"}
       />
 
+      {/* ─── RESULT COUNT ───────────────────────────────────────────────
+          Shows how many leads match the current filters so agents know
+          at a glance whether their view is narrow or broad. Uses `total`
+          (the exact DB count for the current `where` clause) rather than
+          leads.length (which is capped at PAGE_SIZE). */}
+      {(() => {
+        const hasActiveFilters = !!(
+          sp.q || sp.source || sp.status || sp.owner || sp.team ||
+          sp.ai || sp.when || sp.score || sp.notPicked || sp.eoi ||
+          sp.smart || sp.tag || sp.filter || sp.followup
+        );
+        return (
+          <div className="flex items-center">
+            <span className="text-xs text-gray-400 dark:text-slate-500 ml-auto">
+              {total === 1 ? "1 lead" : `${total} leads`}
+              {hasActiveFilters ? " (filtered)" : ""}
+            </span>
+          </div>
+        );
+      })()}
+
       <LeadsListClient
         canBulk={canBulk}
         canReassign={canBulk}
