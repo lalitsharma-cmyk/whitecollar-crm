@@ -47,6 +47,7 @@ import InvestorBanner from "@/components/InvestorBanner";
 import CustomerIntelligenceCard from "@/components/CustomerIntelligenceCard";
 import BANTSuggestions from "@/components/BANTSuggestions";
 import type { BantSuggestions } from "@/lib/bantAutoFill";
+import StageDurationBadge from "@/components/StageDurationBadge";
 
 export const dynamic = "force-dynamic";
 
@@ -64,6 +65,24 @@ function potentialLabel(p: string | null): string {
   return "—";
 }
 const fundClass: Record<string, string> = { CASH_READY: "chip-won", BANK_APPROVED: "chip-warm", FINANCING_NEEDED: "chip-cold", NOT_DISCUSSED: "chip-lost" };
+
+/** Format a phone number for WhatsApp wa.me links.
+ *  Strips non-digits, then applies country-code rules:
+ *  - 12 digits starting with 91  → Indian number, keep
+ *  - 12 digits starting with 971 → UAE number, keep
+ *  - 10 digits                   → assume India, prepend 91
+ *  - anything else               → use digits as-is
+ */
+function formatPhoneForWA(p?: string | null): string | null {
+  if (!p) return null;
+  const digits = p.replace(/\D/g, "");
+  if (!digits) return null;
+  if (digits.length === 12 && (digits.startsWith("91") || digits.startsWith("971"))) {
+    return digits;
+  }
+  if (digits.length === 10) return `91${digits}`;
+  return digits;
+}
 
 /** Visually mask a phone: keep + country code + first 2 digits + last 4 */
 function maskPhone(p?: string | null): string | null {
@@ -188,6 +207,13 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
   // lives at the bottom of the RIGHT column (moved from header per Lalit's
   // ask: "Move this [Expo / Dubai site visit] button down.").
   const travelRatePerKmInr = await getTravelRatePerKmInr();
+
+  // WhatsApp click-to-message link — only built when lead.phone is non-empty.
+  const waPhone = formatPhoneForWA(lead.phone);
+  const agentFirstName = me.name.split(" ")[0] ?? me.name;
+  const waTeam = lead.forwardedTeam === "India" ? "India" : "Dubai";
+  const waText = `Hi ${lead.name}, this is ${agentFirstName} from White Collar Realty. I wanted to follow up regarding your enquiry about properties in ${waTeam}. Is this a good time to talk?`;
+  const waLink = waPhone ? `https://wa.me/${waPhone}?text=${encodeURIComponent(waText)}` : null;
 
   // Currency used to format budget cells — "12M AED" for Dubai, "1.2 Cr" for
   // India. Falls back to AED when the field is null (Dubai default).
@@ -625,6 +651,7 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
                 <h2 className="text-xl font-bold">{lead.name}{lead.altName && <span className="text-base font-medium text-gray-600"> & {lead.altName}</span>}</h2>
                 {lead.aiScore && <span className={`chip ${aiClass}`}>{lead.aiScore} · {lead.aiScoreValue}</span>}
                 <span className="chip chip-warm">{lead.status.replaceAll("_"," ")}</span>
+                <StageDurationBadge since={lead.updatedAt} />
                 {lead.currentStatus && <span className="chip src">{lead.currentStatus}</span>}
                 {lead.originalSheetStatus && lead.originalSheetStatus !== lead.currentStatus && (
                   <span className="chip text-[10px] bg-gray-100 text-gray-500 border border-gray-300" title="Original sheet status">📋 {lead.originalSheetStatus}</span>
@@ -684,6 +711,9 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
                   hideReassign={true}
                 />
                 <BestCallTimeChip leadId={lead.id} />
+                {waLink && (
+                  <a href={waLink} target="_blank" rel="noopener noreferrer" className="btn btn-sm bg-green-500 hover:bg-green-600 text-white border-0 gap-1">💬 WhatsApp</a>
+                )}
               </div>
               {/* Voice note recorder — moved to header so agents see all 4
                   actions (Call / WhatsApp / Log Call / Voice Note) together

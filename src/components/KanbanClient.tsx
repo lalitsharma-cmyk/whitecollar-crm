@@ -2,6 +2,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import StageDurationBadge from "@/components/StageDurationBadge";
 
 // Types — match the server component's select
 interface KanbanLead {
@@ -12,6 +13,7 @@ interface KanbanLead {
   potential: string | null;
   followupDate: string | null;
   forwardedTeam: string | null;
+  updatedAt: string;
   owner: { name: string } | null;
 }
 
@@ -68,6 +70,9 @@ function KanbanCard({
         </Link>
         <PotentialBadge potential={lead.potential} />
       </div>
+
+      {/* Stage duration */}
+      <StageDurationBadge since={lead.updatedAt} />
 
       {/* Follow-up date */}
       {lead.followupDate && (

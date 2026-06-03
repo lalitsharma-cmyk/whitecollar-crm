@@ -49,6 +49,7 @@ export default async function KanbanPage() {
       potential: true,
       followupDate: true,
       forwardedTeam: true,
+      updatedAt: true,
       owner: { select: { name: true } },
     },
     orderBy: [{ potential: "asc" }, { createdAt: "desc" }],
@@ -64,6 +65,7 @@ export default async function KanbanPage() {
     potential: string | null;
     followupDate: string | null;
     forwardedTeam: string | null;
+    updatedAt: string;
     owner: { name: string } | null;
   }>> = {};
 
@@ -82,6 +84,7 @@ export default async function KanbanPage() {
       potential: lead.potential,
       followupDate: lead.followupDate ? lead.followupDate.toISOString().slice(0, 10) : null,
       forwardedTeam: lead.forwardedTeam,
+      updatedAt: lead.updatedAt.toISOString(),
       owner: lead.owner,
     });
   }

@@ -10,6 +10,7 @@ import { requireUser } from "@/lib/auth";
 import Link from "next/link";
 import MoodCheckIn from "@/components/MoodCheckIn";
 import IamHereCard from "@/components/IamHereCard";
+import CallTargetWidget from "@/components/CallTargetWidget";
 import DailyMissionBoard from "@/components/DailyMissionBoard";
 import PersonalScoreboard from "@/components/PersonalScoreboard";
 import SmartSuggestionsCard from "@/components/SmartSuggestionsCard";
@@ -83,6 +84,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     // Team-specific KPIs
     expoMeetingsThisMonth, homeVisitsThisMonth, virtualThisMonth, officeThisMonth, siteVisitsThisMonth,
     coldPromotedThisMonth, callsThisMonth,
+    todayCallsCount,
     todayFollowups,
   ] = await Promise.all([
     // Personal KPI tiles (audit B-03): me* scopes → the agent's own book;
@@ -119,6 +121,13 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     // Calls this month — true month-to-date count for the "Calls (mo)" tile
     // (audit B-05; the tile previously showed callsToday mislabelled "(mo)").
     prisma.callLog.count({ where: { ...teamCallWhere, startedAt: { gte: monthStart } } }),
+    // Today's actual calls logged (by this user, IST window) — feeds CallTargetWidget
+    prisma.callLog.count({
+      where: {
+        userId: me.id,
+        startedAt: { gte: todayIstMidnight, lt: tomorrowIstMidnight },
+      },
+    }),
     // Today's follow-up leads widget — leads with followupDate within today (IST)
     prisma.lead.findMany({
       where: {
@@ -416,6 +425,11 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         userId={me.id}
         userName={me.name}
       />
+
+      {/* Daily call target progress — agent-only personal progress bar */}
+      {me.role === "AGENT" && (
+        <CallTargetWidget count={todayCallsCount} target={20} />
+      )}
 
       {/* Team daily target — rolling progress vs sum of agent targets.
           Sits above the 4-tile hero strip so the team sees their collective
