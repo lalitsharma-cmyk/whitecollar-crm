@@ -1,14 +1,14 @@
 import { prisma } from "@/lib/prisma";
 import { LeadSource, LeadStatus, AIScore, Prisma } from "@prisma/client";
-import { formatDistanceToNow } from "date-fns";
+import { formatDistanceToNow, format as fnsFormat } from "date-fns";
 import Link from "next/link";
-import { fmtMoney } from "@/lib/money";
 import { requireUser } from "@/lib/auth";
 import LeadFilters from "@/components/LeadFilters";
 import SavedFiltersBar from "@/components/SavedFiltersBar";
 import LeadsListClient from "@/components/LeadsListClient";
 import { runReconciler } from "@/lib/reconciler";
 import { leadScopeWhere } from "@/lib/leadScope";
+import { formatBudget } from "@/lib/budgetParse";
 
 export const dynamic = "force-dynamic";
 
@@ -42,7 +42,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
   const scope = await leadScopeWhere(me);
   const where: Prisma.LeadWhereInput = sp.showCold === "1"
     ? { ...scope }
-    : { ...scope, isColdCall: false };
+    : { ...scope, isColdCall: false, leadOrigin: "ACTIVE" };
   // Agents shouldn't see LOST leads they once owned in their default view —
   // rejected leads disappear from the agent's queue, but ADMIN/MANAGER keep
   // oversight via /admin/rejected-leads and the unfiltered list. An explicit
@@ -218,8 +218,12 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
   const [leads, total, hot, newToday, totalAll, agents, followupToday, followupTomorrow, followupWeek, followupMonth, followupOverdue, allTagRows] = await Promise.all([
     prisma.lead.findMany({
       where, orderBy, skip, take: PAGE_SIZE,
-      // B-15: trim relations to rendered fields (owner.name/avatarColor, unit.configuration + project.name). `where`/`take`/`skip` pagination unchanged.
-      include: { owner: { select: { name: true, avatarColor: true } }, interestedUnits: { take: 1, select: { unit: { select: { configuration: true, project: { select: { name: true } } } } } } },
+      // B-15: trim relations to rendered fields. Augmented with discussed projects (top 3) for Command Center row.
+      include: {
+        owner: { select: { name: true, avatarColor: true } },
+        interestedUnits: { take: 1, select: { unit: { select: { configuration: true, project: { select: { name: true } } } } } },
+        discussed: { take: 3, select: { project: { select: { name: true } } } },
+      },
     }),
     prisma.lead.count({ where }),
     prisma.lead.count({ where: { ...scope, aiScore: AIScore.HOT } }),
@@ -250,6 +254,17 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
   const distinctTags: string[] = allTagRows
     .map((r) => r.tag)
     .filter((t): t is string => typeof t === "string" && t.length > 0);
+
+  // Fetch intelligence match data for the current page of leads (post-join:
+  // IntelligenceMatch has no FK back-relation on Lead, so we query separately).
+  const leadIds = leads.map((l) => l.id);
+  const intelMatches = leadIds.length > 0
+    ? await prisma.intelligenceMatch.findMany({
+        where: { leadId: { in: leadIds } },
+        select: { leadId: true, matchType: true, confidence: true, totalPropertiesFound: true },
+      })
+    : [];
+  const intelByLeadId = new Map(intelMatches.map((m) => [m.leadId, m]));
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const canBulk = me.role === "ADMIN" || me.role === "MANAGER";
@@ -459,18 +474,53 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
         canReassign={canBulk}
         showSource={me.role !== "AGENT"}
         agents={agents.map((a) => ({ id: a.id, name: a.name, team: a.team }))}
-        leads={leads.map((l) => ({
-          id: l.id, name: l.name, phone: l.phone, email: l.email,
-          source: l.source, statusName: l.status,
-          srcChip: srcChip[l.source], srcLabel: srcLabel[l.source],
-          statusChip: statusChip[l.status],
-          aiScore: l.aiScore, aiScoreValue: l.aiScoreValue,
-          team: l.forwardedTeam,
-          owner: l.owner ? { name: l.owner.name, avatarColor: l.owner.avatarColor ?? "bg-slate-500" } : null,
-          budget: l.budgetMin ? fmtMoney(l.budgetMin, l.budgetCurrency) : null,
-          interest: l.interestedUnits[0] ? `${l.interestedUnits[0].unit.project.name} ${l.interestedUnits[0].unit.configuration}` : null,
-          lastTouched: l.lastTouchedAt ? formatDistanceToNow(l.lastTouchedAt, { addSuffix: true }) : "—",
-        }))}
+        leads={leads.map((l) => {
+          const intel = intelByLeadId.get(l.id) ?? null;
+          // BANT count: B=budget, A=authority, N=need, T=timeline
+          const bantCount = [
+            l.budgetMin != null && l.budgetMin > 0,
+            l.authorityLevel != null && l.authorityLevel !== "UNKNOWN",
+            l.needSummary != null && l.needSummary.trim().length > 0,
+            l.whenCanInvest != null && l.whenCanInvest !== "UNKNOWN",
+          ].filter(Boolean).length;
+
+          return {
+            id: l.id,
+            name: l.name,
+            phone: l.phone,
+            email: l.email,
+            source: l.source,
+            statusName: l.status,
+            srcChip: srcChip[l.source],
+            srcLabel: srcLabel[l.source],
+            statusChip: statusChip[l.status],
+            aiScore: l.aiScore,
+            aiScoreValue: l.aiScoreValue,
+            team: l.forwardedTeam,
+            owner: l.owner ? { name: l.owner.name, avatarColor: l.owner.avatarColor ?? "bg-slate-500" } : null,
+            // Command Center fields
+            budgetFormatted: formatBudget(l.budgetMin, l.budgetCurrency) !== "—"
+              ? `${l.budgetCurrency} ${formatBudget(l.budgetMin, l.budgetCurrency)}`
+              : null,
+            bantCount,
+            needSummary: l.needSummary ?? null,
+            discussedProjects: l.discussed.map((d) => d.project.name),
+            lastTouched: l.lastTouchedAt ? formatDistanceToNow(l.lastTouchedAt, { addSuffix: false }) : null,
+            lastTouchedAt: l.lastTouchedAt ? l.lastTouchedAt.toISOString() : null,
+            todoNext: l.todoNext ?? null,
+            followupDate: l.followupDate ? fnsFormat(l.followupDate, "dd MMM") : null,
+            intelligenceMatch: intel ? {
+              matchType: intel.matchType,
+              confidence: intel.confidence,
+              totalPropertiesFound: intel.totalPropertiesFound,
+            } : null,
+            // Legacy fields kept for bulk actions and mobile card
+            budget: formatBudget(l.budgetMin, l.budgetCurrency) !== "—"
+              ? `${l.budgetCurrency} ${formatBudget(l.budgetMin, l.budgetCurrency)}`
+              : null,
+            interest: l.interestedUnits[0] ? `${l.interestedUnits[0].unit.project.name} ${l.interestedUnits[0].unit.configuration}` : null,
+          };
+        })}
       />
 
       {/* Pagination */}

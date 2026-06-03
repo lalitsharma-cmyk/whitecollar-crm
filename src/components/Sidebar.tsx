@@ -16,7 +16,6 @@ const nav = [
     { href: "/leads",       label: "Leads",       Icon: Users, badge: true, adminOnly: false },
     { href: "/pipeline",    label: "Pipeline",    Icon: KanbanSquare, adminOnly: false },
     { href: "/properties", label: "Properties",  Icon: Building2, adminOnly: false },
-    { href: "/activities", label: "Activities",  Icon: CalendarDays, adminOnly: false },
     { href: "/calls",      label: "Call Records",Icon: PhoneCall, adminOnly: false },
     { href: "/reports",    label: "Reports",     Icon: BarChart3, adminOnly: false },
     { href: "/ai",         label: "AI Assistant",Icon: Sparkles, tag: "NEW", adminOnly: false },

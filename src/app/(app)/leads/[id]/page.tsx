@@ -46,6 +46,8 @@ import LinkedContactsCard from "@/components/LinkedContactsCard";
 import InvestorBanner from "@/components/InvestorBanner";
 import ClientTypeSelect from "@/components/ClientTypeSelect";
 import CustomerIntelligenceCard from "@/components/CustomerIntelligenceCard";
+import BANTSuggestions from "@/components/BANTSuggestions";
+import type { BantSuggestions } from "@/lib/bantAutoFill";
 
 export const dynamic = "force-dynamic";
 
@@ -114,6 +116,12 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
   // returns HTTP 200 — confusing for auditors. Redirect is cleaner UX too:
   // agent lands back on their own list rather than a dead end.
   if (!(await canTouchLead(me, lead))) redirect("/leads");
+
+  // Parse BANT auto-fill suggestions stored as JSON on the Lead model.
+  const bantSuggestions: BantSuggestions | null = (() => {
+    try { return lead.bantSuggestionsJson ? JSON.parse(lead.bantSuggestionsJson) : null; }
+    catch { return null; }
+  })();
 
   // Investor-history quick counts for the banner (Agent V, Round 6).
   // Match the new lead against the existing pipeline on phone / email /
@@ -317,6 +325,14 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
           </div>
         </div>
       </div>
+      <BANTSuggestions
+        leadId={lead.id}
+        suggestions={bantSuggestions}
+        currentBudget={lead.budgetMin}
+        currentAuthority={lead.authorityLevel}
+        currentNeed={lead.needSummary}
+        currentTimeline={lead.whenCanInvest}
+      />
     </div>
   );
 

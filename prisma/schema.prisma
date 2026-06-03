@@ -267,8 +267,9 @@ model Lead {
   //   authorityLevel — is the lead the decision-maker, an influencer, or a gatekeeper?
   //   needSummary    — one-line summary of WHY they're buying (move-in, rental yield,
   //                    family relocation, kid's education, etc.).
-  authorityLevel  AuthorityLevel?
-  needSummary     String?
+  authorityLevel       AuthorityLevel?
+  needSummary          String?
+  bantSuggestionsJson  String?   // JSON: BantSuggestions (auto-detected from history)
   // Profile depth
   profession      Profession?
   linkedInUrl     String?     // full https://linkedin.com/in/... URL
@@ -301,6 +302,7 @@ model Lead {
   routingMethod   String?     // "manual" | "import" | "rule" | "round_robin_pool" | "admin_queue"
   routingSource   String?     // e.g. "website:dubai-property", "csv:forceTeam", "manual_form", "whatsapp"
   routingReason   String?     // human-readable, e.g. "Dubai property page" / "agent picked India"
+  leadOrigin      String      @default("ACTIVE") // "ACTIVE" | "COLD" | "PORTFOLIO" | "SYSTEM"
   // SLA reconciler
   slaFirstCallBy  DateTime?   // ownerId-set + 15 min — escalate if no call by then
   slaEscalated    Boolean     @default(false)  // already notified admin

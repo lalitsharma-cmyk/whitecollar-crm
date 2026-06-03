@@ -179,6 +179,16 @@ export async function POST(req: NextRequest) {
   const fd = await req.formData();
   const file = fd.get("file");
   const campaign = (fd.get("campaign")?.toString() ?? "").trim() || undefined;
+  // leadOrigin — controls which CRM section the imported leads appear in.
+  // "ACTIVE"    → main Leads page (default for standard imports)
+  // "COLD"      → Revival Engine only (cold-data batches)
+  // "PORTFOLIO" → historical purchase records
+  // "SYSTEM"    → reserved for system-generated records
+  const rawLeadOrigin = (fd.get("leadOrigin")?.toString() ?? "").trim();
+  const importType: string =
+    rawLeadOrigin === "ACTIVE" || rawLeadOrigin === "COLD" || rawLeadOrigin === "PORTFOLIO" || rawLeadOrigin === "SYSTEM"
+      ? rawLeadOrigin
+      : "COLD";
   // When the admin imports through /cold-calls "Import cold data", isColdCall=true
   // is set as a form field. Every newly created lead gets isColdCall=true + left
   // unassigned (ownerId=null) so admin can bulk-assign afterwards.
@@ -287,6 +297,8 @@ export async function POST(req: NextRequest) {
       if (r.deduped) deduped++; else created++;
 
       const update: Record<string, unknown> = {};
+      // Stamp the import origin on every new row — drives Leads vs Revival Engine separation.
+      if (!r.deduped) update.leadOrigin = importType;
       if (altPhone) update.altPhone = altPhone;
       if (altName) update.altName = altName;
       const company = pick(row, "company"); if (company) update.company = company;

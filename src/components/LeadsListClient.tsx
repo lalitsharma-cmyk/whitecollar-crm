@@ -55,8 +55,20 @@ interface Row {
   owner: { name: string; avatarColor: string } | null;
   budget: string | null;
   interest: string | null;
-  lastTouched: string;
+  lastTouched: string | null;
   lastTouchedAt?: string | Date | null;
+  // Command Center fields
+  budgetFormatted: string | null;
+  bantCount: number;
+  needSummary: string | null;
+  discussedProjects: string[];
+  todoNext: string | null;
+  followupDate: string | null;
+  intelligenceMatch: {
+    matchType: string;
+    confidence: number;
+    totalPropertiesFound: number;
+  } | null;
 }
 
 const aiChip = (s: string | null) => s === "HOT" ? "chip-hot" : s === "WARM" ? "chip-warm" : s === "COLD" ? "chip-cold" : "chip-lost";
@@ -233,12 +245,14 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, a
 
   return (
     <>
-      {/* MOBILE: card list */}
+      {/* MOBILE: Command Center card list */}
       <div className="lg:hidden space-y-2">
         {leads.length === 0 && <div className="card p-6 text-center text-gray-500 text-sm">No leads match these filters.</div>}
         {leads.map((l) => {
-          const teamChip = l.team === "India" ? "src-csv" : "src-wa";
           const isFreshHot = l.aiScore === "HOT" && (!l.lastTouchedAt || new Date(l.lastTouchedAt).getTime() > Date.now() - 6 * 3600_000);
+          const maskedPhone = l.phone ? `···${l.phone.slice(-4)}` : null;
+          const intel = l.intelligenceMatch;
+          const nextAction = l.todoNext ?? (l.followupDate ? `Follow-up: ${l.followupDate}` : null);
           return (
             <div key={l.id} className={`card p-3 active:bg-amber-50 ${isFreshHot ? "wcr-fresh-hot-pulse" : ""}`}>
               <div className="flex items-start gap-2">
@@ -246,42 +260,68 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, a
                   <input type="checkbox" checked={selected.has(l.id)} onChange={() => toggle(l.id)} className="mt-1" />
                 )}
                 <Link href={`/leads/${l.id}`} className="flex-1 min-w-0 block">
+                  {/* Row 1: Name · Phone masked · Status · AI */}
                   <div className="flex items-center justify-between gap-1">
-                    <div className="font-bold text-sm truncate">{l.name}</div>
+                    <div className="flex items-center gap-1.5 flex-wrap min-w-0">
+                      <span className="font-bold text-sm text-[#0b1a33] truncate">{l.name}</span>
+                      {maskedPhone && <span className="text-[10px] text-gray-400 font-mono flex-none">{maskedPhone}</span>}
+                    </div>
                     <div className="flex items-center gap-1 flex-none">
                       {isFreshHot && (
                         <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-red-50 text-red-700 border border-red-200 inline-flex items-center gap-0.5">
                           <span aria-hidden>🚨</span>Untouched
                         </span>
                       )}
+                      <span className={`chip ${l.statusChip} text-[9px]`}>{l.statusName.replaceAll("_", " ")}</span>
                       {l.aiScore && <span className={`chip ${aiChip(l.aiScore)} text-[9px]`}>{l.aiScore}</span>}
                     </div>
                   </div>
-                  {/* Phone gets its own line — email moved to lead detail page only.
-                      Lalit asked: "no need to show email id here" and "number should
-                      be shown under number field". */}
-                  {l.phone && (
-                    <div className="text-[11px] text-gray-600 truncate mt-0.5">📞 {l.phone}</div>
+                  {/* Row 2: Budget · BANT · Need */}
+                  <div className="flex items-center gap-1 text-[10px] text-gray-600 mt-0.5 flex-wrap">
+                    <span>💰 {l.budgetFormatted ?? "—"}</span>
+                    <span className="text-gray-300">·</span>
+                    <span>📋 BANT {l.bantCount}/4</span>
+                    {l.needSummary && (
+                      <>
+                        <span className="text-gray-300">·</span>
+                        <span className="truncate max-w-[160px] text-gray-500">🎯 {l.needSummary}</span>
+                      </>
+                    )}
+                  </div>
+                  {/* Row 3: Projects · Intel · Last */}
+                  <div className="flex items-center gap-1 text-[10px] text-gray-500 mt-0.5 flex-wrap">
+                    {l.discussedProjects.length > 0 ? (
+                      l.discussedProjects.slice(0, 2).map((p, i) => (
+                        <span key={i} className="bg-slate-100 text-slate-700 px-1 py-0 rounded">{p}</span>
+                      ))
+                    ) : l.interest ? (
+                      <span className="bg-slate-100 text-slate-700 px-1 py-0 rounded truncate max-w-[120px]">{l.interest}</span>
+                    ) : null}
+                    {intel?.matchType === "STRONG" && (
+                      <span className="text-[9px] font-semibold px-1 py-0 rounded bg-red-100 text-red-700">🏠 Existing</span>
+                    )}
+                    {intel?.matchType === "MEDIUM" && (
+                      <span className="text-[9px] font-semibold px-1 py-0 rounded bg-amber-100 text-amber-700">~ Possible</span>
+                    )}
+                    {l.lastTouched && (
+                      <span className="text-gray-400">· {l.lastTouched} ago</span>
+                    )}
+                  </div>
+                  {/* Row 4: Next action · Owner */}
+                  {(nextAction || l.owner) && (
+                    <div className="flex items-center justify-between mt-1 text-[10px]">
+                      <span className="text-gray-500 truncate max-w-[180px]">
+                        {nextAction ? (l.todoNext ? `📌 ${nextAction}` : `📅 ${nextAction}`) : ""}
+                      </span>
+                      {l.owner && (
+                        <span className={`avatar ${l.owner.avatarColor} inline-flex w-5 h-5 text-[9px]`}>
+                          {l.owner.name.split(" ").map((s: string) => s[0]).slice(0, 2).join("")}
+                        </span>
+                      )}
+                    </div>
                   )}
-                  <div className="flex items-center gap-1 mt-1 flex-wrap">
-                    <span className={`chip ${l.statusChip} text-[9px]`}>{l.statusName.replaceAll("_", " ")}</span>
-                    {showSource && <span className={`chip ${l.srcChip} text-[9px]`}>{l.srcLabel}</span>}
-                    {l.team && <span className={`chip ${teamChip} text-[9px]`}>{l.team}</span>}
-                  </div>
-                  <div className="flex items-center justify-between mt-1.5 text-[11px]">
-                    <span className="font-semibold">{l.budget ?? "—"}</span>
-                    <span className="text-gray-500">
-                      {l.owner ? <span className={`avatar ${l.owner.avatarColor} inline-flex w-5 h-5 text-[9px] mr-1`}>{l.owner.name.split(" ").map(s=>s[0]).slice(0,2).join("")}</span> : "—"}
-                      · {l.lastTouched}
-                    </span>
-                  </div>
-                  {l.interest && <div className="text-[10px] text-gray-500 mt-1 truncate">→ {l.interest}</div>}
                 </Link>
-                {/* Direct-action icons on the right edge of each mobile lead
-                    card. One-tap call or WhatsApp without having to drill into
-                    the lead detail page. Lalit's ask: "Mobile call, whatsapp
-                    icon". stopPropagation isn't needed — these are siblings of
-                    the Link now, not nested inside it. */}
+                {/* Direct-action call/WA buttons */}
                 {l.phone && (
                   <div className="flex flex-col gap-1.5 flex-none">
                     <a
@@ -307,59 +347,120 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, a
         })}
       </div>
 
-      {/* DESKTOP: full table */}
+      {/* DESKTOP: Investor Command Center rows */}
       <div className="hidden lg:block card overflow-hidden">
         <table className="tbl">
           <thead>
             <tr>
-              <th>{canBulk && <input type="checkbox" checked={allChecked} onChange={toggleAll} />}</th>
-              <th>Lead</th>
-              <th>Team</th>
-              {showSource && <th>Source</th>}
-              <th>Budget</th>
-              <th>Stage</th>
-              <th>AI</th>
-              <th>Owner</th>
-              <th>Last touch</th>
-              <th></th>
+              <th className="w-8">{canBulk && <input type="checkbox" checked={allChecked} onChange={toggleAll} />}</th>
+              <th className="w-[60%]">Lead · BANT · Projects</th>
+              <th className="w-[40%] text-right pr-3">Intel · Next action · Owner</th>
             </tr>
           </thead>
           <tbody>
             {leads.length === 0 && (
-              <tr><td colSpan={showSource ? 10 : 9} className="text-center py-8 text-gray-500">No leads match these filters. Try clearing some.</td></tr>
+              <tr><td colSpan={3} className="text-center py-8 text-gray-500">No leads match these filters. Try clearing some.</td></tr>
             )}
             {leads.map((l) => {
-              const teamChip = l.team === "India" ? "src-csv" : "src-wa";
               const isFreshHot = l.aiScore === "HOT" && (!l.lastTouchedAt || new Date(l.lastTouchedAt).getTime() > Date.now() - 6 * 3600_000);
-              // Whole row navigates to the lead detail. Lalit: "client open
-              // on click on client name, it should open on full selection
-              // anywhere." Implemented as onClick on <tr> (table rows can't
-              // wrap a Link cleanly without breaking layout). The checkbox td
-              // stops propagation so bulk-select still works.
               const openLead = () => router.push(`/leads/${l.id}`);
+              const maskedPhone = l.phone ? `···${l.phone.slice(-4)}` : null;
+              const intel = l.intelligenceMatch;
+              const nextAction = l.todoNext ?? (l.followupDate ? `Follow-up: ${l.followupDate}` : null);
+
               return (
                 <tr
                   key={l.id}
                   onClick={openLead}
                   className={`cursor-pointer transition hover:bg-amber-50/40 ${selected.has(l.id) ? "bg-blue-50/50" : ""} ${isFreshHot ? "wcr-fresh-hot-pulse" : ""}`}
                 >
-                  <td onClick={(e) => e.stopPropagation()}>
+                  <td onClick={(e) => e.stopPropagation()} className="w-8 align-top pt-2.5">
                     {canBulk && <input type="checkbox" checked={selected.has(l.id)} onChange={() => toggle(l.id)} />}
                   </td>
-                  <td>
-                    <span className="font-semibold text-[#0b1a33]">{l.name}</span>
-                    {/* Phone on its own line (no email). Email is on the lead detail page only. */}
-                    {l.phone && <div className="text-xs text-gray-500">📞 {l.phone}</div>}
-                    {l.interest && <div className="text-[11px] text-gray-500">→ {l.interest}</div>}
+
+                  {/* LEFT ZONE — 60% */}
+                  <td className="py-2 align-top">
+                    {/* Row 1: Name · Phone masked · Status · AI score */}
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="font-bold text-[#0b1a33] text-sm">{l.name}</span>
+                      {maskedPhone && (
+                        <span className="text-[11px] text-gray-400 font-mono">{maskedPhone}</span>
+                      )}
+                      <span className={`chip ${l.statusChip} text-[10px] py-0`}>{l.statusName.replaceAll("_", " ")}</span>
+                      {l.aiScore && (
+                        <span className={`chip ${aiChip(l.aiScore)} text-[10px] py-0`}>{l.aiScore}{l.aiScoreValue != null ? ` ${l.aiScoreValue}` : ""}</span>
+                      )}
+                    </div>
+                    {/* Row 2: Budget · BANT · Need */}
+                    <div className="flex items-center gap-1 text-[11px] text-gray-600 mt-0.5 flex-wrap">
+                      <span>💰 {l.budgetFormatted ?? "—"}</span>
+                      <span className="text-gray-300">·</span>
+                      <span>📋 BANT {l.bantCount}/4</span>
+                      <span className="text-gray-300">·</span>
+                      <span className="text-gray-500 truncate max-w-[220px]">🎯 {l.needSummary?.trim() || "Need unknown"}</span>
+                    </div>
+                    {/* Row 3: Projects · Last touch */}
+                    <div className="flex items-center gap-1 text-[11px] text-gray-500 mt-0.5 flex-wrap">
+                      {l.discussedProjects.length > 0 ? (
+                        <>
+                          <span className="text-gray-400">Projects:</span>
+                          {l.discussedProjects.map((p, i) => (
+                            <span key={i} className="bg-slate-100 text-slate-700 px-1.5 py-0 rounded text-[10px]">{p}</span>
+                          ))}
+                        </>
+                      ) : l.interest ? (
+                        <>
+                          <span className="text-gray-400">→</span>
+                          <span className="bg-slate-100 text-slate-700 px-1.5 py-0 rounded text-[10px]">{l.interest}</span>
+                        </>
+                      ) : (
+                        <span className="text-gray-400 italic">No projects</span>
+                      )}
+                      {l.lastTouched && (
+                        <>
+                          <span className="text-gray-300">·</span>
+                          <span>Last: {l.lastTouched} ago</span>
+                        </>
+                      )}
+                    </div>
                   </td>
-                  <td>{l.team ? <span className={`chip ${teamChip}`}>{l.team}</span> : <span className="text-gray-400">—</span>}</td>
-                  {showSource && <td><span className={`chip ${l.srcChip}`}>{l.srcLabel}</span></td>}
-                  <td className="text-sm font-semibold">{l.budget ?? <span className="text-gray-400 font-normal">—</span>}</td>
-                  <td><span className={`chip ${l.statusChip}`}>{l.statusName.replaceAll("_", " ")}</span></td>
-                  <td>{l.aiScore ? <span className={`chip ${aiChip(l.aiScore)}`}>{l.aiScore} · {l.aiScoreValue}</span> : <span className="text-gray-400">—</span>}</td>
-                  <td>{l.owner ? <div className={`avatar ${l.owner.avatarColor}`} title={l.owner.name}>{l.owner.name.split(" ").map(s => s[0]).slice(0, 2).join("")}</div> : <span className="text-gray-400">—</span>}</td>
-                  <td className="text-xs text-gray-500">{l.lastTouched}</td>
-                  <td>⋯</td>
+
+                  {/* RIGHT ZONE — 40% */}
+                  <td className="py-2 align-top text-right pr-3">
+                    {/* Intelligence match badges */}
+                    <div className="flex items-center justify-end gap-1 flex-wrap mb-1">
+                      {intel?.matchType === "STRONG" && (
+                        <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold px-1.5 py-0.5 rounded bg-red-100 text-red-700 border border-red-200">
+                          🏠 Existing Client
+                        </span>
+                      )}
+                      {intel?.matchType === "MEDIUM" && (
+                        <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 border border-amber-200">
+                          ~ Possible Client
+                        </span>
+                      )}
+                      {intel != null && intel.totalPropertiesFound > 0 && (
+                        <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 border border-blue-200">
+                          {intel.totalPropertiesFound} Properties
+                        </span>
+                      )}
+                    </div>
+                    {/* Next action */}
+                    {nextAction && (
+                      <div className="text-[11px] text-gray-600 truncate max-w-[220px] ml-auto mb-1">
+                        {l.todoNext ? `📌 ${l.todoNext}` : `📅 ${nextAction}`}
+                      </div>
+                    )}
+                    {/* Owner chip */}
+                    {l.owner && (
+                      <div className={`avatar ${l.owner.avatarColor} inline-flex text-[9px]`} title={l.owner.name}>
+                        {l.owner.name.split(" ").map((s: string) => s[0]).slice(0, 2).join("")}
+                      </div>
+                    )}
+                    {showSource && (
+                      <span className={`chip ${l.srcChip} text-[10px] py-0 ml-1`}>{l.srcLabel}</span>
+                    )}
+                  </td>
                 </tr>
               );
             })}

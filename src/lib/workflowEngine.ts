@@ -18,6 +18,7 @@ import { renderTemplate } from "@/lib/templates";
 import { audit } from "@/lib/audit";
 import { notify, notifyRoles } from "@/lib/notify";
 import { sendAfterHoursWelcome } from "@/lib/whatsappOutbound";
+import { getTestingModeEnabled } from "@/lib/settings";
 
 type EventData = Record<string, unknown>;
 
@@ -89,6 +90,9 @@ export async function fireWorkflowTrigger(
 
 /** Run all PENDING actions whose runAt <= now. Called by /api/cron/workflows. */
 export async function dispatchDuePendingActions(): Promise<{ dispatched: number; failed: number }> {
+  const testingMode = await getTestingModeEnabled();
+  if (testingMode) return { dispatched: 0, failed: 0 };
+
   const due = await prisma.workflowRun.findMany({
     where: { status: WorkflowRunStatus.PENDING, runAt: { lte: new Date() }, actionId: { not: null } },
     take: 100,

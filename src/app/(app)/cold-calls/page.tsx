@@ -6,6 +6,7 @@ import Link from "next/link";
 import { whatsappLink, telLink } from "@/lib/phone";
 import ColdCallToggle from "@/components/ColdCallToggle";
 import ColdDataPromoteButton from "@/components/ColdDataPromoteButton";
+import OriginColdPromoteButton from "@/components/OriginColdPromoteButton";
 import ColdDataAdminControls from "@/components/ColdDataAdminControls";
 import HiddenGemsBanner, { type HiddenGem } from "@/components/HiddenGemsBanner";
 import DailyRevivalMission from "@/components/DailyRevivalMission";
@@ -50,6 +51,9 @@ export default async function ColdDataPage({ searchParams }: { searchParams: Pro
   const baseScope: Prisma.LeadWhereInput = isAdminOrMgr ? {} : { ownerId: me.id };
 
   const manualCold: Prisma.LeadWhereInput = { isColdCall: true };
+  // Leads imported with leadOrigin="COLD" (new import-type selector) — these
+  // should be exclusively visible in the Revival Engine, not in /leads.
+  const originCold: Prisma.LeadWhereInput = { leadOrigin: "COLD" };
   const bantNot: Prisma.LeadWhereInput = { bantStatus: "NOT_QUALIFIED" };
   const stale: Prisma.LeadWhereInput = {
     status: { in: [LeadStatus.NEW, LeadStatus.CONTACTED] },
@@ -58,13 +62,18 @@ export default async function ColdDataPage({ searchParams }: { searchParams: Pro
     bantStatus: { not: "NOT_QUALIFIED" },
   };
   const unassigned: Prisma.LeadWhereInput = { isColdCall: true, ownerId: null };
-  const allCold: Prisma.LeadWhereInput = { AND: [baseScope, { OR: [manualCold, bantNot, stale] }] };
+  // STRICT: Revival Engine only shows leadOrigin="COLD" records.
+  // Active leads (leadOrigin="ACTIVE") stay in /leads exclusively.
+  const allCold: Prisma.LeadWhereInput = { AND: [baseScope, originCold] };
 
+  // All sub-buckets are now scoped to leadOrigin="COLD" — Revival Engine is strictly
+  // Cold Data only. Active leads live in /leads.
   const where: Prisma.LeadWhereInput =
-    showOnly === "unassigned" ? { AND: [{}, unassigned] } :   // admin-only view
-    showOnly === "manual" ? { AND: [baseScope, manualCold] } :
-    showOnly === "bant"   ? { AND: [baseScope, bantNot] } :
-    showOnly === "stale"  ? { AND: [baseScope, stale] } :
+    showOnly === "unassigned" ? { AND: [originCold, unassigned] } :   // admin-only view
+    showOnly === "origin_cold" ? { AND: [baseScope, originCold] } :
+    showOnly === "manual" ? { AND: [baseScope, originCold, manualCold] } :
+    showOnly === "bant"   ? { AND: [baseScope, originCold, bantNot] } :
+    showOnly === "stale"  ? { AND: [baseScope, originCold, stale] } :
     allCold;
 
   // Hidden-gem filter: cold + (high budget OR HOT score) + dormant 30d+ + not closed.
@@ -88,6 +97,7 @@ export default async function ColdDataPage({ searchParams }: { searchParams: Pro
   const [
     leads,
     manualCount,
+    originColdCount,
     bantCount,
     staleCount,
     totalCount,
@@ -104,11 +114,12 @@ export default async function ColdDataPage({ searchParams }: { searchParams: Pro
       orderBy: { lastTouchedAt: "asc" },
       take: 200,
     }),
-    prisma.lead.count({ where: { AND: [baseScope, manualCold] } }),
-    prisma.lead.count({ where: { AND: [baseScope, bantNot] } }),
-    prisma.lead.count({ where: { AND: [baseScope, stale] } }),
+    prisma.lead.count({ where: { AND: [baseScope, originCold, manualCold] } }),
+    prisma.lead.count({ where: { AND: [baseScope, originCold] } }),
+    prisma.lead.count({ where: { AND: [baseScope, originCold, bantNot] } }),
+    prisma.lead.count({ where: { AND: [baseScope, originCold, stale] } }),
     prisma.lead.count({ where: allCold }),
-    isAdminOrMgr ? prisma.lead.count({ where: unassigned }) : Promise.resolve(0),
+    isAdminOrMgr ? prisma.lead.count({ where: { AND: [originCold, unassigned] } }) : Promise.resolve(0),
     isAdminOrMgr ? prisma.user.findMany({ where: { active: true, role: { in: ["AGENT", "MANAGER"] } }, orderBy: { name: "asc" } }) : Promise.resolve([]),
     // Conversions today: cold-to-lead activities scoped to me (or all if admin)
     prisma.activity.count({
@@ -204,6 +215,12 @@ export default async function ColdDataPage({ searchParams }: { searchParams: Pro
 
   return (
     <>
+      {/* ───────── COLD DATA NOTICE ───────── */}
+      <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-2 text-sm text-blue-800 flex items-center gap-2">
+        <span className="font-semibold">❄ Cold Data</span>
+        <span className="text-blue-700">— Not yet promoted to active leads. Use &quot;Promote to Lead&quot; to move a contact into your live pipeline.</span>
+      </div>
+
       {/* ───────── HEADER ───────── */}
       <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
         <div>
@@ -245,6 +262,7 @@ export default async function ColdDataPage({ searchParams }: { searchParams: Pro
             {isAdminOrMgr && (
               <Link href="/cold-calls?kind=unassigned" className={showOnly === "unassigned" ? "on" : ""}>⚠ Unassigned · {unassignedCount}</Link>
             )}
+            <Link href="/cold-calls?kind=origin_cold" className={showOnly === "origin_cold" ? "on" : ""}>❄ Cold Data Import · {originColdCount}</Link>
             <Link href="/cold-calls?kind=manual" className={showOnly === "manual" ? "on" : ""}>Manual cold · {manualCount}</Link>
             <Link href="/cold-calls?kind=bant" className={showOnly === "bant" ? "on" : ""}>BANT not qualified · {bantCount}</Link>
             <Link href="/cold-calls?kind=stale" className={showOnly === "stale" ? "on" : ""}>{COLD_DAYS}d+ stale · {staleCount}</Link>
@@ -264,11 +282,13 @@ export default async function ColdDataPage({ searchParams }: { searchParams: Pro
               const tel = l.phone ? telLink(l.phone) : "";
               const reasonChips: { label: string; cls: string }[] = [];
               if (l.isColdCall) reasonChips.push({ label: "Cold data", cls: "chip-cold" });
+              if (l.leadOrigin === "COLD") reasonChips.push({ label: "Cold import", cls: "chip-cold" });
               if (l.bantStatus === "NOT_QUALIFIED") reasonChips.push({ label: "BANT ❌", cls: "chip-lost" });
               if (l.lastTouchedAt && l.lastTouchedAt < cutoff && !l.isColdCall && l.bantStatus !== "NOT_QUALIFIED") {
                 reasonChips.push({ label: `${COLD_DAYS}d+ stale`, cls: "chip-warm" });
               }
               const isUnassigned = !l.ownerId;
+              const isOriginCold = l.leadOrigin === "COLD";
 
               return (
                 <div key={l.id} className="card p-3">
@@ -302,7 +322,10 @@ export default async function ColdDataPage({ searchParams }: { searchParams: Pro
                   {/* Promote-to-Lead — agents (and admin) get this when row is theirs */}
                   {(l.ownerId === me.id || isAdminOrMgr) && (
                     <div className="mt-2">
-                      <ColdDataPromoteButton leadId={l.id} leadName={l.name} />
+                      {isOriginCold
+                        ? <OriginColdPromoteButton leadId={l.id} leadName={l.name} />
+                        : <ColdDataPromoteButton leadId={l.id} leadName={l.name} />
+                      }
                     </div>
                   )}
                 </div>

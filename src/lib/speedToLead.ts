@@ -28,7 +28,7 @@ import { renderTemplate, type TemplateContext } from "@/lib/templates";
 import { whatsappEnabled } from "@/lib/whatsappOutbound";
 import { currentWindow } from "@/lib/assignmentWindow";
 import { audit } from "@/lib/audit";
-import { getSetting } from "@/lib/settings";
+import { getSetting, getTestingModeEnabled } from "@/lib/settings";
 
 const FROM_NUMBER = "8810286629"; // company main WA display number (informational)
 const META_BASE = "https://graph.facebook.com/v21.0";
@@ -43,6 +43,12 @@ export async function sendSpeedToLeadResponses(leadId: string): Promise<{
   emailSent: boolean;
   skipped?: string;
 }> {
+  // 0. Testing-mode kill-switch — suppresses all automated outbound
+  const testingMode = await getTestingModeEnabled();
+  if (testingMode) {
+    return { ok: true, waSent: false, emailSent: false, skipped: "testing mode — automation suppressed" };
+  }
+
   // 1. Admin kill-switch
   const enabledRaw = await getSetting("speedToLead.enabled");
   const enabled = enabledRaw === "" ? true : enabledRaw.toLowerCase() !== "false";

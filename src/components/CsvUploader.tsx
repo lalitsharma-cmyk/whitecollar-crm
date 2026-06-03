@@ -8,6 +8,9 @@ export default function CsvUploader({ agents = [] }: { agents?: Agent[] }) {
   const router = useRouter();
   const [file, setFile] = useState<File | null>(null);
   const [campaign, setCampaign] = useState("");
+  // leadOrigin — determines which CRM section these imports land in.
+  // Default: "COLD" — CSV imports go to Revival Engine unless explicitly changed.
+  const [leadOrigin, setLeadOrigin] = useState<"ACTIVE" | "COLD" | "PORTFOLIO">("COLD");
   // Team override — admin picks which team this whole import belongs to.
   // Lalit reported same sheet landing as both India + Dubai when auto-detection
   // mis-guessed per row. "ask" forces the picker to be deliberate (no default).
@@ -37,6 +40,7 @@ export default function CsvUploader({ agents = [] }: { agents?: Agent[] }) {
       const fd = new FormData();
       fd.append("file", file);
       if (campaign) fd.append("campaign", campaign);
+      fd.append("leadOrigin", leadOrigin);
       fd.append("forceTeam", forceTeam);
       if (assignToUserId) fd.append("assignToUserId", assignToUserId);
       const res = await fetch("/api/intake/csv", { method: "POST", body: fd });
@@ -54,6 +58,25 @@ export default function CsvUploader({ agents = [] }: { agents?: Agent[] }) {
 
   return (
     <div>
+      {/* Import type selector — controls where these leads land in the CRM */}
+      <div className="mb-4">
+        <label className="block text-sm font-semibold mb-2">Import type <span className="text-red-500">*</span></label>
+        <div className="flex flex-col gap-2">
+          <label className="flex items-center gap-2 text-sm cursor-pointer">
+            <input type="radio" name="importType" value="ACTIVE" checked={leadOrigin === "ACTIVE"} onChange={() => setLeadOrigin("ACTIVE")} className="accent-[#0b1a33]" />
+            <span><b>Active Leads</b> — appears in Leads page immediately</span>
+          </label>
+          <label className="flex items-center gap-2 text-sm cursor-pointer">
+            <input type="radio" name="importType" value="COLD" checked={leadOrigin === "COLD"} onChange={() => setLeadOrigin("COLD")} className="accent-amber-500" />
+            <span><b>Cold Data / Revival Engine</b> — only visible in Revival Engine</span>
+          </label>
+          <label className="flex items-center gap-2 text-sm cursor-pointer">
+            <input type="radio" name="importType" value="PORTFOLIO" checked={leadOrigin === "PORTFOLIO"} onChange={() => setLeadOrigin("PORTFOLIO")} className="accent-blue-500" />
+            <span><b>Historical Purchase Records</b> — portfolio / purchase history only</span>
+          </label>
+        </div>
+      </div>
+
       {/* MANDATORY team picker — must be set before upload button enables */}
       <div className={`mb-3 p-3 rounded-lg border-2 ${forceTeam === "ask" ? "border-amber-400 bg-amber-50" : "border-emerald-300 bg-emerald-50"}`}>
         <div className="text-xs font-bold uppercase tracking-widest text-gray-700 mb-1.5">
