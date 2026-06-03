@@ -110,7 +110,6 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     expoMeetingsThisMonth, homeVisitsThisMonth, virtualThisMonth, officeThisMonth, siteVisitsThisMonth,
     coldPromotedThisMonth, callsThisMonth,
     todayCallsCount,
-    todayFollowups,
   ] = await Promise.all([
     // Personal KPI tiles (audit B-03): me* scopes → the agent's own book;
     // identical to the team scopes for ADMIN/MANAGER (no change for them).
@@ -147,17 +146,6 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         userId: me.id,
         startedAt: { gte: sqlFrom, lt: sqlTo },
       },
-    }),
-    // Follow-up leads due today — always IST today regardless of date filter
-    prisma.lead.findMany({
-      where: {
-        ...meScope,
-        followupDate: { gte: todayIstMidnight, lt: tomorrowIstMidnight },
-        status: { notIn: ["LOST", "WON"] },
-      },
-      select: { id: true, name: true, potential: true, followupDate: true, lastTouchedAt: true },
-      orderBy: [{ potential: "asc" }, { followupDate: "asc" }],
-      take: 5,
     }),
   ]);
 
@@ -525,33 +513,6 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
           <div className="text-[10px] text-blue-700/70 mt-0.5">High-value dormant 30+ days</div>
         </Link>
       </div>
-
-      {/* Today's Calls widget — leads with followupDate due today, scoped to
-          the agent's own book (or full team for admin/manager, matching meScope). */}
-      {todayFollowups.length > 0 && (
-        <div className="card p-4">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="font-semibold text-sm">📞 Today's Calls</h3>
-            <a href="/leads?followup=today" className="text-xs text-blue-600 hover:underline">View all →</a>
-          </div>
-          <div className="space-y-2">
-            {todayFollowups.map(lead => (
-              <a key={lead.id} href={`/leads/${lead.id}`} className="flex items-center gap-2 hover:bg-gray-50 rounded-lg px-2 py-1 -mx-2">
-                <span className="text-sm">{lead.potential === "HIGH" ? "🔥" : lead.potential === "MEDIUM" ? "🌤" : "❄"}</span>
-                <span className="text-sm font-medium flex-1 truncate">{lead.name}</span>
-                {lead.followupDate && (
-                  <span className="text-[11px] text-gray-400">
-                    {new Date(lead.followupDate).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}
-                  </span>
-                )}
-              </a>
-            ))}
-          </div>
-          <a href="/leads?followup=today" className="mt-2 block text-xs text-center text-blue-600 hover:underline">
-            See all follow-ups for today →
-          </a>
-        </div>
-      )}
 
       {/* Team live scoreboard — ADMIN / MANAGER only */}
       {(me.role === "ADMIN" || me.role === "MANAGER") && (
