@@ -300,7 +300,7 @@ export default function LeadActionsClient({ leadId, phone, altPhone, email, curr
           sub-line in the lead-detail header card, both on mobile and desktop.
           Channel buttons are OMITTED entirely (not faded/disabled) when the
           channel is unavailable. */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-3">
+      <div className="grid grid-cols-3 sm:grid-cols-5 gap-2 mt-3">
         {phone && (
           <a href={telUrl(phone)} onClick={logCallClick} className="flex items-center justify-center gap-1.5 py-2.5 rounded-lg bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700 transition shadow-sm min-h-11">
             <Phone className="w-4 h-4" /> Call
@@ -314,6 +314,13 @@ export default function LeadActionsClient({ leadId, phone, altPhone, email, curr
         )}
         <button onClick={() => setShowCall(true)} className="flex items-center justify-center gap-1.5 py-2.5 rounded-lg bg-[#c9a24b] text-[#0b1a33] text-sm font-semibold hover:bg-[#e7c97a] transition shadow-sm min-h-11">
           📝 Log Call
+        </button>
+        <button
+          onClick={() => window.dispatchEvent(new CustomEvent(`open-sticky-${leadId}`))}
+          className="flex items-center justify-center gap-1.5 py-2.5 rounded-lg bg-yellow-300 text-yellow-900 text-sm font-semibold hover:bg-yellow-400 transition shadow-sm min-h-11"
+          title="Open private sticky note"
+        >
+          🗒 Note
         </button>
       </div>
 

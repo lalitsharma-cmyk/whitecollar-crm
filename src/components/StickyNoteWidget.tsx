@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 
 interface Props {
   leadId: string;
@@ -8,379 +8,242 @@ interface Props {
   initialUpdatedAt: string | null;
 }
 
-const MINIMIZE_KEY = (id: string) => `sticky-minimized-${id}`;
+type SaveStatus = "idle" | "saving" | "saved" | "error";
 
-/**
- * Zoho-style floating sticky-note widget.
- * Floats over page content (position: fixed, bottom-right).
- * Supports rich-text editing via contenteditable + execCommand.
- * Auto-saves with a 1.5s debounce. Minimize state is persisted in localStorage.
- */
 export default function StickyNoteWidget({ leadId, initialBody, initialUpdatedAt }: Props) {
-  const editorRef = useRef<HTMLDivElement>(null);
-  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const lastSavedRef = useRef(initialBody);
-
-  const [status, setStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
-  const [savedAt, setSavedAt] = useState<string | null>(initialUpdatedAt);
+  const [visible, setVisible] = useState(false);
   const [minimized, setMinimized] = useState(false);
-  const [hidden, setHidden] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
+  const [isMobile, setIsMobile] = useState(false);
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
 
-  // Relative-time ticker — re-renders every 30s
-  const [, forceRender] = useState(0);
-  useEffect(() => {
-    const t = setInterval(() => forceRender((n) => n + 1), 30_000);
-    return () => clearInterval(t);
-  }, []);
+  const editorRef = useRef<HTMLDivElement>(null);
+  const widgetRef = useRef<HTMLDivElement>(null);
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const dragRef = useRef<{ startX: number; startY: number; startTop: number; startLeft: number } | null>(null);
 
-  // Read persisted minimize state on mount, then seed editor content
+  const LS_POS = `sticky-pos-${leadId}`;
+  const LS_MIN = `sticky-min-${leadId}`;
+  const LS_VIS = `sticky-vis-${leadId}`;
+
   useEffect(() => {
+    const mobile = window.innerWidth < 640;
+    setIsMobile(mobile);
     try {
-      const stored = localStorage.getItem(MINIMIZE_KEY(leadId));
-      if (stored === "1") setMinimized(true);
+      const savedPos = localStorage.getItem(LS_POS);
+      if (savedPos) setPos(JSON.parse(savedPos));
+      else setPos({ top: Math.max(60, window.innerHeight - 480), left: Math.max(0, window.innerWidth - 352) });
+
+      const savedMin = localStorage.getItem(LS_MIN);
+      if (savedMin === "true") setMinimized(true);
+
+      const savedVis = localStorage.getItem(LS_VIS);
+      if (savedVis === "true") setVisible(true);
+      else if (initialBody) setVisible(true);
     } catch {
-      // localStorage unavailable (e.g. SSR guard — shouldn't reach here, but safe)
+      setPos({ top: Math.max(60, window.innerHeight - 480), left: Math.max(0, window.innerWidth - 352) });
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [leadId]);
 
-  // Seed contenteditable on mount
+  // Seed contenteditable once
   useEffect(() => {
-    if (!editorRef.current) return;
-    // Render as HTML if the body contains HTML tags, otherwise as plain text
-    if (/<[a-z][\s\S]*>/i.test(initialBody)) {
+    if (editorRef.current && initialBody) {
       editorRef.current.innerHTML = initialBody;
-    } else {
-      editorRef.current.innerText = initialBody;
     }
-  // Only run on mount — we intentionally ignore initialBody changes after mount
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Persist minimize state
-  const toggleMinimize = useCallback(() => {
-    setMinimized((prev) => {
-      const next = !prev;
-      try {
-        if (next) {
-          localStorage.setItem(MINIMIZE_KEY(leadId), "1");
-        } else {
-          localStorage.removeItem(MINIMIZE_KEY(leadId));
-        }
-      } catch {/* ignore */}
-      return next;
-    });
-  }, [leadId]);
-
-  // Save logic
-  const save = useCallback(async () => {
-    if (!editorRef.current) return;
-    const current = editorRef.current.innerHTML;
-    if (current === lastSavedRef.current) return;
-    setStatus("saving");
-    try {
-      const r = await fetch(`/api/leads/${leadId}/sticky-note`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ body: current }),
-      });
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      const j = await r.json();
-      lastSavedRef.current = current;
-      setSavedAt(j.updatedAt ?? new Date().toISOString());
-      setStatus("saved");
-    } catch {
-      setStatus("error");
-    }
-  }, [leadId]);
-
-  // Debounced save trigger
-  const scheduleSave = useCallback(() => {
-    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-    saveTimerRef.current = setTimeout(save, 1500);
-  }, [save]);
-
-  // Cleanup debounce timer on unmount
+  // Listen for open-sticky trigger from action bar button
   useEffect(() => {
-    return () => {
-      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    const handler = () => {
+      setVisible(true);
+      setMinimized(false);
+      try { localStorage.setItem(LS_VIS, "true"); localStorage.setItem(LS_MIN, "false"); } catch {}
     };
-  }, []);
+    const eventName = `open-sticky-${leadId}`;
+    window.addEventListener(eventName, handler);
+    return () => window.removeEventListener(eventName, handler);
+  }, [leadId, LS_VIS, LS_MIN]);
 
-  // Toolbar command helper — e.preventDefault() is critical to keep focus
-  function execCmd(cmd: string, value?: string) {
-    document.execCommand(cmd, false, value);
-    editorRef.current?.focus();
-    scheduleSave();
+  const saveToServer = useCallback((html: string) => {
+    fetch(`/api/leads/${leadId}/sticky-note`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ body: html }),
+    }).then((r) => setSaveStatus(r.ok ? "saved" : "error"))
+      .catch(() => setSaveStatus("error"));
+  }, [leadId]);
+
+  function handleInput() {
+    const html = editorRef.current?.innerHTML ?? "";
+    setSaveStatus("saving");
+    clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(() => saveToServer(html), 1500);
   }
 
-  // Status label
-  const relTime = savedAt ? relativeTime(savedAt) : null;
-  const statusLabel =
-    status === "saving"
-      ? "Saving…"
-      : status === "error"
-      ? "Save failed"
-      : relTime
-      ? `Saved ${relTime}`
-      : "Saved just now";
+  function fmt(cmd: string) {
+    editorRef.current?.focus();
+    document.execCommand(cmd, false, undefined);
+  }
 
-  // If hidden (X was clicked), render nothing visible — but keep state alive
-  if (hidden) return null;
+  function handleClose() {
+    setVisible(false);
+    try { localStorage.setItem(LS_VIS, "false"); } catch {}
+  }
 
-  // ── Minimized tab ──────────────────────────────────────────────────────────
+  function handleMinimize() {
+    const next = !minimized;
+    setMinimized(next);
+    try { localStorage.setItem(LS_MIN, String(next)); } catch {}
+  }
+
+  function handleDragStart(e: React.MouseEvent) {
+    if (!pos) return;
+    e.preventDefault();
+    dragRef.current = { startX: e.clientX, startY: e.clientY, startTop: pos.top, startLeft: pos.left };
+
+    function onMove(ev: MouseEvent) {
+      if (!dragRef.current) return;
+      const newTop = Math.max(0, Math.min(window.innerHeight - 60, dragRef.current.startTop + ev.clientY - dragRef.current.startY));
+      const newLeft = Math.max(0, Math.min(window.innerWidth - 60, dragRef.current.startLeft + ev.clientX - dragRef.current.startX));
+      const newPos = { top: newTop, left: newLeft };
+      setPos(newPos);
+      try { localStorage.setItem(`sticky-pos-${leadId}`, JSON.stringify(newPos)); } catch {}
+    }
+    function onUp() {
+      dragRef.current = null;
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+    }
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+  }
+
+  const statusText =
+    saveStatus === "saving" ? "Saving…" :
+    saveStatus === "saved"  ? "✓ Saved" :
+    saveStatus === "error"  ? "⚠ Save failed" :
+    initialUpdatedAt ? `Saved ${new Date(initialUpdatedAt).toLocaleDateString("en-GB", { day: "2-digit", month: "short" })}` : "";
+
+  const TOOLBAR = [
+    { cmd: "bold",                label: "B",  cls: "font-bold" },
+    { cmd: "italic",              label: "I",  cls: "italic" },
+    { cmd: "underline",           label: "U",  cls: "underline" },
+    { cmd: "insertUnorderedList", label: "•",  cls: "" },
+    { cmd: "insertOrderedList",   label: "1.", cls: "" },
+    { cmd: "removeFormat",        label: "⎌", cls: "" },
+  ];
+
+  if (!visible || pos === null) return null;
+
+  // ── Mobile: full-screen bottom sheet ──────────────────────────────────────
+  if (isMobile) {
+    return (
+      <div className="fixed inset-0 z-[9999] flex flex-col justify-end" style={{ background: "rgba(0,0,0,0.4)" }}>
+        <div className="flex-1" onClick={handleClose} />
+        <div className="flex flex-col rounded-t-2xl" style={{ background: "#fffde7", maxHeight: "85vh" }}>
+          <div className="flex items-center justify-between px-4 py-3 rounded-t-2xl" style={{ background: "#f5e642" }}>
+            <span className="font-bold text-sm" style={{ color: "#4a3600" }}>
+              📝 Sticky Note <span className="font-normal text-xs opacity-70">· Private to you</span>
+            </span>
+            <button onClick={handleClose} className="w-7 h-7 rounded-full text-sm flex items-center justify-center" style={{ background: "#e6cc00", color: "#4a3600" }}>✕</button>
+          </div>
+          <div className="flex gap-1 px-3 py-2" style={{ background: "#fef9c3", borderBottom: "1px solid #f0d900" }}>
+            {TOOLBAR.map(({ cmd, label, cls }) => (
+              <button key={cmd} type="button"
+                onMouseDown={(e) => { e.preventDefault(); fmt(cmd); }}
+                className={`w-8 h-8 rounded text-xs hover:bg-yellow-200 ${cls}`}
+                style={{ color: "#4a3600" }}>{label}</button>
+            ))}
+          </div>
+          <div ref={editorRef} contentEditable suppressContentEditableWarning onInput={handleInput}
+            className="flex-1 p-4 text-sm outline-none overflow-y-auto"
+            style={{ minHeight: 200, background: "#fffde7" }}
+          />
+          <div className="px-4 py-2 text-[10px]" style={{ color: "#8a6f00", background: "#fef9c3", borderTop: "1px solid #f0d900" }}>
+            {statusText}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Desktop: minimized tab ─────────────────────────────────────────────────
   if (minimized) {
     return (
       <button
-        type="button"
-        onClick={toggleMinimize}
-        style={{
-          position: "fixed",
-          bottom: 80,
-          right: 16,
-          zIndex: 9999,
-          background: "#f5e642",
-          border: "1.5px solid #d4c200",
-          borderRadius: "8px 8px 4px 4px",
-          padding: "6px 14px",
-          fontSize: 13,
-          fontWeight: 600,
-          color: "#5a4800",
-          cursor: "pointer",
-          boxShadow: "0 4px 16px rgba(0,0,0,0.18)",
-          display: "flex",
-          alignItems: "center",
-          gap: 6,
-          userSelect: "none",
-        }}
+        onClick={handleMinimize}
+        className="fixed z-[9999] flex items-center gap-1.5 px-3 py-2 rounded-xl shadow-lg text-sm font-semibold"
+        style={{ top: pos.top + "px", left: pos.left + "px", background: "#f5e642", color: "#4a3600" }}
       >
-        📝 <span>Note</span>
+        📝 Note
       </button>
     );
   }
 
-  // ── Expanded widget ────────────────────────────────────────────────────────
+  // ── Desktop: full draggable + resizable window ─────────────────────────────
   return (
     <div
+      ref={widgetRef}
+      className="fixed z-[9999] rounded-xl shadow-2xl flex flex-col"
       style={{
-        position: "fixed",
-        bottom: 80,
-        right: 16,
-        zIndex: 9999,
+        top: pos.top + "px",
+        left: pos.left + "px",
         width: 320,
-        boxShadow: "0 4px 24px rgba(0,0,0,0.18)",
-        borderRadius: 12,
-        overflow: "hidden",
-        display: "flex",
-        flexDirection: "column",
-        fontFamily: "inherit",
+        minWidth: 220,
+        minHeight: 220,
+        maxWidth: "90vw",
+        maxHeight: "80vh",
+        background: "#fffde7",
+        resize: "both",
+        overflow: "auto",
       }}
     >
-      {/* ── Header bar ───────────────────────────────────────────────────── */}
+      {/* Drag handle / header */}
       <div
-        style={{
-          background: "#f5e642",
-          padding: "6px 10px",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          borderBottom: "1px solid #d4c200",
-          userSelect: "none",
-        }}
+        onMouseDown={handleDragStart}
+        className="flex items-center justify-between px-3 py-2 flex-shrink-0 select-none cursor-grab active:cursor-grabbing rounded-t-xl"
+        style={{ background: "#f5e642", borderBottom: "1px solid #e6cc00" }}
       >
-        <span style={{ fontSize: 13, fontWeight: 700, color: "#5a4800", display: "flex", alignItems: "center", gap: 5 }}>
-          📝 Sticky Note
+        <span className="text-xs font-bold" style={{ color: "#4a3600" }}>
+          📝 Sticky Note <span className="font-normal opacity-60">· Private</span>
         </span>
-        <div style={{ display: "flex", gap: 4 }}>
-          {/* Minimize */}
-          <button
-            type="button"
-            title="Minimize"
-            onClick={toggleMinimize}
-            style={headerBtnStyle}
-            onMouseEnter={(e) => Object.assign((e.target as HTMLElement).style, headerBtnHover)}
-            onMouseLeave={(e) => Object.assign((e.target as HTMLElement).style, headerBtnStyle)}
-          >
-            _
-          </button>
-          {/* Close / hide */}
-          <button
-            type="button"
-            title="Hide"
-            onClick={() => setHidden(true)}
-            style={headerBtnStyle}
-            onMouseEnter={(e) => Object.assign((e.target as HTMLElement).style, headerBtnHover)}
-            onMouseLeave={(e) => Object.assign((e.target as HTMLElement).style, headerBtnStyle)}
-          >
-            ✕
-          </button>
+        <div className="flex gap-1">
+          <button type="button" onClick={handleMinimize}
+            className="w-5 h-5 rounded text-[11px] flex items-center justify-center hover:bg-yellow-300"
+            style={{ color: "#4a3600" }} title="Minimize">—</button>
+          <button type="button" onClick={handleClose}
+            className="w-5 h-5 rounded text-[11px] flex items-center justify-center hover:bg-yellow-300"
+            style={{ color: "#4a3600" }} title="Close">✕</button>
         </div>
       </div>
 
-      {/* ── Toolbar ──────────────────────────────────────────────────────── */}
-      <div
-        style={{
-          background: "#fef9c3",
-          borderBottom: "1px solid #e9d800",
-          display: "flex",
-          alignItems: "center",
-          padding: "3px 6px",
-          gap: 2,
-        }}
-      >
-        {(
-          [
-            { label: "B", cmd: "bold", title: "Bold", style: { fontWeight: "bold" } },
-            { label: "I", cmd: "italic", title: "Italic", style: { fontStyle: "italic" } },
-            { label: "U", cmd: "underline", title: "Underline", style: { textDecoration: "underline" } },
-            { label: "•", cmd: "insertUnorderedList", title: "Bullets" },
-            { label: "1.", cmd: "insertOrderedList", title: "Numbered list" },
-          ] as Array<{ label: string; cmd: string; title: string; style?: React.CSSProperties }>
-        ).map(({ label, cmd, title, style: btnLabelStyle }) => (
-          <button
-            key={cmd}
-            type="button"
-            title={title}
-            onMouseDown={(e) => {
-              e.preventDefault(); // keep focus in contenteditable
-              execCmd(cmd);
-            }}
-            style={toolbarBtnStyle}
-            onMouseEnter={(e) => Object.assign((e.target as HTMLElement).style, toolbarBtnHover)}
-            onMouseLeave={(e) => Object.assign((e.target as HTMLElement).style, toolbarBtnStyle)}
-          >
-            <span style={btnLabelStyle}>{label}</span>
-          </button>
+      {/* Toolbar */}
+      <div className="flex gap-0.5 px-2 py-1 flex-shrink-0" style={{ background: "#fef9c3", borderBottom: "1px solid #f0d900" }}>
+        {TOOLBAR.map(({ cmd, label, cls }) => (
+          <button key={cmd} type="button"
+            onMouseDown={(e) => { e.preventDefault(); fmt(cmd); }}
+            className={`w-7 h-7 rounded text-xs hover:bg-yellow-200 ${cls}`}
+            style={{ color: "#4a3600" }}>{label}</button>
         ))}
-
-        {/* Clear formatting */}
-        <button
-          type="button"
-          title="Clear formatting"
-          onMouseDown={(e) => {
-            e.preventDefault();
-            execCmd("removeFormat");
-          }}
-          style={{ ...toolbarBtnStyle, marginLeft: "auto" }}
-          onMouseEnter={(e) => Object.assign((e.target as HTMLElement).style, { ...toolbarBtnHover, marginLeft: "auto" })}
-          onMouseLeave={(e) => Object.assign((e.target as HTMLElement).style, { ...toolbarBtnStyle, marginLeft: "auto" })}
-        >
-          <span title="Clear formatting">⎎</span>
-        </button>
       </div>
 
-      {/* ── Writing area ─────────────────────────────────────────────────── */}
+      {/* Writing area */}
       <div
         ref={editorRef}
         contentEditable
         suppressContentEditableWarning
-        onInput={scheduleSave}
-        onKeyDown={(e) => {
-          // Cmd/Ctrl+Enter triggers immediate save
-          if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
-            e.preventDefault();
-            if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-            save();
-          }
-        }}
-        data-placeholder="Scratch notes only you can see…"
-        style={{
-          background: "#fffde7",
-          minHeight: 160,
-          padding: "10px 12px",
-          fontSize: 13,
-          lineHeight: 1.6,
-          color: "#3b2f00",
-          outline: "none",
-          overflowY: "auto",
-          maxHeight: 360,
-          wordBreak: "break-word",
-        }}
+        onInput={handleInput}
+        className="flex-1 p-3 text-sm outline-none overflow-y-auto"
+        style={{ background: "#fffde7", minHeight: 140 }}
       />
 
-      {/* ── Status bar ───────────────────────────────────────────────────── */}
-      <div
-        style={{
-          background: "#fafafa",
-          borderTop: "1px solid #e5e7eb",
-          padding: "4px 10px",
-          fontSize: 11,
-          color: status === "error" ? "#cc0000" : "#6b7280",
-          display: "flex",
-          alignItems: "center",
-          gap: 4,
-        }}
-      >
-        💾 {statusLabel}
+      {/* Status bar */}
+      <div className="px-3 py-1.5 text-[10px] flex-shrink-0 rounded-b-xl" style={{ background: "#fef9c3", borderTop: "1px solid #f0d900", color: "#8a6f00" }}>
+        {statusText}
+        <span className="opacity-40 ml-1.5">· drag header · resize ↘</span>
       </div>
-
-      {/* Placeholder CSS injected as a style tag scoped to this widget */}
-      <style>{`
-        [contenteditable][data-placeholder]:empty::before {
-          content: attr(data-placeholder);
-          color: rgba(120,100,0,0.35);
-          pointer-events: none;
-        }
-      `}</style>
     </div>
   );
-}
-
-// ── Shared style objects ─────────────────────────────────────────────────────
-
-const headerBtnStyle: React.CSSProperties = {
-  background: "transparent",
-  border: "none",
-  borderRadius: 4,
-  width: 22,
-  height: 22,
-  cursor: "pointer",
-  fontSize: 13,
-  color: "#5a4800",
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  lineHeight: 1,
-  padding: 0,
-};
-
-const headerBtnHover: React.CSSProperties = {
-  ...headerBtnStyle,
-  background: "rgba(0,0,0,0.12)",
-};
-
-const toolbarBtnStyle: React.CSSProperties = {
-  background: "transparent",
-  border: "1px solid transparent",
-  borderRadius: 4,
-  width: 26,
-  height: 24,
-  cursor: "pointer",
-  fontSize: 12,
-  color: "#5a4800",
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  padding: 0,
-};
-
-const toolbarBtnHover: React.CSSProperties = {
-  ...toolbarBtnStyle,
-  background: "#fde047",
-  border: "1px solid #d4c200",
-};
-
-// ── Relative-time helper ─────────────────────────────────────────────────────
-
-function relativeTime(iso: string): string {
-  const t = new Date(iso).getTime();
-  if (isNaN(t)) return "just now";
-  const sec = Math.max(0, Math.floor((Date.now() - t) / 1000));
-  if (sec < 5) return "just now";
-  if (sec < 60) return `${sec}s ago`;
-  const min = Math.floor(sec / 60);
-  if (min < 60) return `${min}m ago`;
-  const hr = Math.floor(min / 60);
-  if (hr < 24) return `${hr}h ago`;
-  const d = Math.floor(hr / 24);
-  return `${d}d ago`;
 }
