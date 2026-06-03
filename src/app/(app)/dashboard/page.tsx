@@ -68,6 +68,12 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     view === "all" ? {} :
     { lead: { forwardedTeam: view } };
 
+  // IST today window for today's follow-up leads widget
+  const nowUtc = new Date();
+  const istOffset = 5.5 * 60 * 60 * 1000;
+  const todayIstMidnight = new Date(Math.floor((nowUtc.getTime() + istOffset) / 86400000) * 86400000 - istOffset);
+  const tomorrowIstMidnight = new Date(todayIstMidnight.getTime() + 86400000);
+
   const [
     totalClients, totalNotContacted, newToday, hotLeads,
     callsToday, connectedToday, waToday,
@@ -77,6 +83,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     // Team-specific KPIs
     expoMeetingsThisMonth, homeVisitsThisMonth, virtualThisMonth, officeThisMonth, siteVisitsThisMonth,
     coldPromotedThisMonth, callsThisMonth,
+    todayFollowups,
   ] = await Promise.all([
     // Personal KPI tiles (audit B-03): me* scopes → the agent's own book;
     // identical to the team scopes for ADMIN/MANAGER (no change for them).
@@ -112,6 +119,17 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     // Calls this month — true month-to-date count for the "Calls (mo)" tile
     // (audit B-05; the tile previously showed callsToday mislabelled "(mo)").
     prisma.callLog.count({ where: { ...teamCallWhere, startedAt: { gte: monthStart } } }),
+    // Today's follow-up leads widget — leads with followupDate within today (IST)
+    prisma.lead.findMany({
+      where: {
+        ...meScope,
+        followupDate: { gte: todayIstMidnight, lt: tomorrowIstMidnight },
+        status: { notIn: ["LOST", "WON"] },
+      },
+      select: { id: true, name: true, potential: true, followupDate: true, lastTouchedAt: true },
+      orderBy: [{ potential: "asc" }, { followupDate: "asc" }],
+      take: 5,
+    }),
   ]);
 
   // ── "Today's situation" Command Center hero strip (master spec §9.1) ──
@@ -429,6 +447,33 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
           <div className="text-[10px] text-blue-700/70 mt-0.5">High-value dormant 30+ days</div>
         </Link>
       </div>
+
+      {/* Today's Calls widget — leads with followupDate due today, scoped to
+          the agent's own book (or full team for admin/manager, matching meScope). */}
+      {todayFollowups.length > 0 && (
+        <div className="card p-4">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="font-semibold text-sm">📞 Today&apos;s Calls</h3>
+            <a href="/leads?followup=today" className="text-xs text-blue-600 hover:underline">View all →</a>
+          </div>
+          <div className="space-y-2">
+            {todayFollowups.map(lead => (
+              <a key={lead.id} href={`/leads/${lead.id}`} className="flex items-center gap-2 hover:bg-gray-50 rounded-lg px-2 py-1 -mx-2">
+                <span className="text-sm">{lead.potential === "HIGH" ? "🔥" : lead.potential === "MEDIUM" ? "🌤" : "❄"}</span>
+                <span className="text-sm font-medium flex-1 truncate">{lead.name}</span>
+                {lead.followupDate && (
+                  <span className="text-[11px] text-gray-400">
+                    {new Date(lead.followupDate).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}
+                  </span>
+                )}
+              </a>
+            ))}
+          </div>
+          <a href="/leads?followup=today" className="mt-2 block text-xs text-center text-blue-600 hover:underline">
+            See all follow-ups for today →
+          </a>
+        </div>
+      )}
 
       {/* Smart suggestions — rule-based daily nudges. Mounted near the top,
           above the productivity tables so the agent immediately sees concrete

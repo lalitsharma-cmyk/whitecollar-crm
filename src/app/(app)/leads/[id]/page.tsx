@@ -23,6 +23,7 @@ import { canTouchLead } from "@/lib/leadScope";
 import { projectWhereForUser, teamToCountry } from "@/lib/propertyScope";
 // CallHistoryCard removed — folded into ConversationStreamCard below.
 import ConversationStreamCard from "@/components/ConversationStreamCard";
+import RemarksCard from "@/components/RemarksCard";
 import StickyNoteWidget from "@/components/StickyNoteWidget";
 import BuyingSignalsCard from "@/components/BuyingSignalsCard";
 import NextBestActionCard from "@/components/NextBestActionCard";
@@ -741,6 +742,14 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
             src/lib/ai.ts + the regenerate endpoint so it can be re-wired
             later (e.g. if billing is enabled or a different provider is
             added) — just not mounted on the page. */}
+
+        {/* ORIGINAL REMARKS — raw MIS text from the import sheet. Collapsible
+            so agents can see the source material before the parsed call log. */}
+        {lead.remarks && lead.remarks.trim() && (
+          <div data-lead-section="timeline">
+            <RemarksCard remarks={lead.remarks} callLogsCount={lead.callLogs.length} />
+          </div>
+        )}
 
         {/* CONVERSATION STREAM — merged call + WhatsApp feed (Lalit's ask:
             one card that shows the full conversation flow in time order
