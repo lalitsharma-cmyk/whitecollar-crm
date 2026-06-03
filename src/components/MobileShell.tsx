@@ -30,6 +30,7 @@ const fullNav: NavSection[] = [
     { href: "/action-list", label: "Action List", Icon: Sparkles, tag: "HOT" },
     { href: "/leads",        label: "Leads",          Icon: Users },
     { href: "/leads/kanban", label: "📋 Pipeline",   Icon: KanbanSquare },
+    { href: "/leads/overdue", label: "⚠️ Overdue",   Icon: AlertTriangle },
     { href: "/cold-calls",  label: "Revival Engine", Icon: Gem },
     { href: "/pipeline",    label: "Pipeline",    Icon: KanbanSquare },
     { href: "/properties",  label: "Properties",  Icon: Building2 },

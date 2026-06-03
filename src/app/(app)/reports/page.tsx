@@ -3,7 +3,8 @@ import { LeadStatus, CallOutcome, Prisma } from "@prisma/client";
 import { startOfDay } from "date-fns";
 import SourceBarChart from "@/components/charts/SourceBarChart";
 import ConnectRateChart from "@/components/charts/ConnectRateChart";
-import FunnelChart from "@/components/charts/FunnelChart";
+import LegacyFunnelChart from "@/components/charts/FunnelChart";
+import StatusFunnelChart from "@/components/FunnelChart";
 import { requireUser } from "@/lib/auth";
 import { projectWhereForUser } from "@/lib/propertyScope";
 import { fmtMoneyDual } from "@/lib/money";
@@ -103,6 +104,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
   const [
     bySource, callsByDay, funnel, topProjects,
     activeLeadsForForecast, stalledRaw, heatmapRaw,
+    statusCounts,
   ] = await Promise.all([
     prisma.lead.groupBy({ by: ["source"], _count: { _all: true }, where: { ...teamScope, createdAt: { gte: today } } }),
 
@@ -198,9 +200,50 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
         AND (${scopedUserId}::text IS NULL OR "userId" = ${scopedUserId})
       GROUP BY dow, hour
     `,
+
+    // ── Status-level funnel for the new StatusFunnelChart at top of page.
+    // AGENT role returns early above, so me.role here is ADMIN | MANAGER.
+    // MANAGER: locked to their team. ADMIN: respects the current teamScope filter.
+    prisma.lead.groupBy({
+      by: ["status"],
+      _count: { _all: true },
+      where: me.role === "MANAGER"
+        ? { forwardedTeam: normalizeTeam(me.team) ?? undefined }
+        : teamScope,
+    }),
   ]);
 
   const [tot, contacted, qualified, visit, neg] = funnel;
+
+  // ── Build status funnel stages for StatusFunnelChart ─────────────────
+  // Stage order: NEW → WON. LOST is deliberately excluded (not a forward stage).
+  // Percent denominator = all active leads (excluding WON/LOST) so bars show
+  // "how much of the active pipeline is at this stage". WON gets its own %
+  // relative to total (active + WON) so the bar is meaningful.
+  const STATUS_ORDER: LeadStatus[] = [
+    LeadStatus.NEW,
+    LeadStatus.CONTACTED,
+    LeadStatus.QUALIFIED,
+    LeadStatus.SITE_VISIT,
+    LeadStatus.NEGOTIATION,
+    LeadStatus.EOI,
+    LeadStatus.BOOKING_DONE,
+    LeadStatus.WON,
+  ];
+  const countMap: Partial<Record<LeadStatus, number>> = {};
+  for (const row of statusCounts) {
+    countMap[row.status] = row._count._all;
+  }
+  const totalActive = STATUS_ORDER
+    .filter((s) => s !== LeadStatus.WON && s !== LeadStatus.LOST)
+    .reduce((sum, s) => sum + (countMap[s] ?? 0), 0);
+  const totalWithWon = totalActive + (countMap[LeadStatus.WON] ?? 0);
+  const funnelStages = STATUS_ORDER.map((s) => {
+    const count = countMap[s] ?? 0;
+    const denom = s === LeadStatus.WON ? totalWithWon : totalActive;
+    const percent = denom > 0 ? (count / denom) * 100 : 0;
+    return { label: s as string, count, percent };
+  });
 
   // ── Compute decision metrics ───────────────────────────────────────
   // Weighted forecast — sum(budgetMin * weight per stage), split by currency
@@ -445,6 +488,28 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
         </div>
       )}
 
+      {/* ── Conversion funnel ──────────────────────────────────────────────
+          Shows every status from NEW → WON as a horizontal bar chart so
+          Lalit can see at a glance where leads are piling up. Rendered
+          prominently above the nav links so it's the first thing visible. */}
+      <div className="card p-5">
+        <div className="text-xs text-gray-500 tracking-widest uppercase mb-1">
+          Conversion funnel · active pipeline
+        </div>
+        <div className="font-semibold text-sm mb-3">
+          Leads by stage
+          {resolvedTeam !== "all" && (
+            <span className="ml-2 text-[11px] text-gray-400 font-normal">
+              ({resolvedTeam} team)
+            </span>
+          )}
+        </div>
+        <StatusFunnelChart stages={funnelStages} />
+        <div className="mt-2 text-[10px] text-gray-400">
+          Bar width = % of active pipeline (WON bar relative to active + won). LOST leads excluded.
+        </div>
+      </div>
+
       {/* Primary report navigation — these are the everyday reports */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
         <Link href="/reports/daily" className="card p-4 border-l-4 border-emerald-500 hover:shadow-md transition">
@@ -533,7 +598,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
         <div className="card p-5 lg:col-span-2">
           <div className="text-xs text-gray-500 tracking-widest">ALL TIME · ALL TEAMS</div>
           <div className="font-semibold mt-1">Conversion funnel</div>
-          <FunnelChart data={[
+          <LegacyFunnelChart data={[
             { stage: "Leads", n: tot },
             { stage: "Contacted", n: contacted },
             { stage: "Qualified", n: qualified },

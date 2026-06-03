@@ -33,6 +33,7 @@ import { topScoreFactors } from "@/lib/scoreExplain";
 import { aiEnabled } from "@/lib/ai";
 import LeadNotesCard from "@/components/LeadNotesCard";
 import VoiceNoteRecorder from "@/components/VoiceNoteRecorder";
+import QuickNoteCard from "@/components/QuickNoteCard";
 import LeadReassignClient from "@/components/LeadReassignClient";
 import RejectLeadModal from "@/components/RejectLeadModal";
 import LeadMobileTabs from "@/components/LeadMobileTabs";
@@ -750,6 +751,14 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
             <RemarksCard remarks={lead.remarks} callLogsCount={lead.callLogs.length} />
           </div>
         )}
+
+        {/* QUICK NOTE — fast freeform note widget. Sits between the original
+            remarks and the full conversation stream so agents can jot context
+            right after reviewing the import remarks. Creates a Note record and
+            refreshes the stream on save. */}
+        <div data-lead-section="timeline">
+          <QuickNoteCard leadId={lead.id} />
+        </div>
 
         {/* CONVERSATION STREAM — merged call + WhatsApp feed (Lalit's ask:
             one card that shows the full conversation flow in time order
