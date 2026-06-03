@@ -17,6 +17,8 @@ import SmartSuggestionsCard from "@/components/SmartSuggestionsCard";
 import TeamDailyTargetTile from "@/components/TeamDailyTargetTile";
 import { todayIST } from "@/lib/attendance";
 import { quoteOfTheDay } from "@/lib/salesQuotes";
+import { normalizeTeam } from "@/lib/teamRouting";
+import TeamScoreboardCard from "@/components/TeamScoreboardCard";
 
 export const dynamic = "force-dynamic";
 
@@ -222,6 +224,38 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     ]);
     eoiAlerts = { active, kycPending, approvalNeeded, stuck };
   }
+
+  // ── Team scoreboard — calls made today by each agent ──────────────────
+  // Only fetched for ADMIN / MANAGER (competitive data, not for agents).
+  const managerTeam = me.role === "MANAGER" ? normalizeTeam(me.team ?? "") : null;
+  const teamScoreboard =
+    me.role === "ADMIN" || me.role === "MANAGER"
+      ? await prisma.callLog.groupBy({
+          by: ["userId"],
+          _count: { _all: true },
+          where: {
+            startedAt: { gte: todayIstMidnight, lt: tomorrowIstMidnight },
+            ...(managerTeam !== null
+              ? { user: { team: managerTeam } }
+              : {}),
+          },
+          orderBy: { _count: { userId: "desc" } },
+          take: 10,
+        })
+      : [];
+
+  const scoreboardUserIds = teamScoreboard.map((r) => r.userId);
+  const scoreboardUsers =
+    scoreboardUserIds.length > 0
+      ? await prisma.user.findMany({
+          where: { id: { in: scoreboardUserIds } },
+          select: { id: true, name: true },
+        })
+      : [];
+  const scoreboardRows = teamScoreboard.map((r) => ({
+    name: scoreboardUsers.find((u) => u.id === r.userId)?.name ?? "Unknown",
+    calls: r._count?._all ?? 0,
+  }));
 
   // Forecast computation — weighted by stage
   const forecast = { aed: { closing: 0, meeting: 0, moving: 0, early: 0 }, inr: { closing: 0, meeting: 0, moving: 0, early: 0 } };
@@ -487,6 +521,11 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
             See all follow-ups for today →
           </a>
         </div>
+      )}
+
+      {/* Team live scoreboard — ADMIN / MANAGER only */}
+      {(me.role === "ADMIN" || me.role === "MANAGER") && (
+        <TeamScoreboardCard rows={scoreboardRows} />
       )}
 
       {/* Smart suggestions — rule-based daily nudges. Mounted near the top,

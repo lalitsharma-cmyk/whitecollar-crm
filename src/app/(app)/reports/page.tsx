@@ -5,6 +5,7 @@ import SourceBarChart from "@/components/charts/SourceBarChart";
 import ConnectRateChart from "@/components/charts/ConnectRateChart";
 import LegacyFunnelChart from "@/components/charts/FunnelChart";
 import StatusFunnelChart from "@/components/FunnelChart";
+import SourceChart from "@/components/SourceChart";
 import { requireUser } from "@/lib/auth";
 import { projectWhereForUser } from "@/lib/propertyScope";
 import { fmtMoneyDual } from "@/lib/money";
@@ -104,7 +105,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
   const [
     bySource, callsByDay, funnel, topProjects,
     activeLeadsForForecast, stalledRaw, heatmapRaw,
-    statusCounts,
+    statusCounts, sourceByCount,
   ] = await Promise.all([
     prisma.lead.groupBy({ by: ["source"], _count: { _all: true }, where: { ...teamScope, createdAt: { gte: today } } }),
 
@@ -210,6 +211,18 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
       where: me.role === "MANAGER"
         ? { forwardedTeam: normalizeTeam(me.team) ?? undefined }
         : teamScope,
+    }),
+
+    // ── Source analytics — all-time, top 12 sources by count.
+    // Sorted desc so SourceChart renders the biggest bars first.
+    // source is a non-nullable enum (LeadSource @default WEBSITE) so no
+    // null-filter is needed; every lead has a source value.
+    prisma.lead.groupBy({
+      by: ["source"],
+      _count: { _all: true },
+      where: teamScope,
+      orderBy: { _count: { id: "desc" } },
+      take: 12,
     }),
   ]);
 
@@ -508,6 +521,13 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
         <div className="mt-2 text-[10px] text-gray-400">
           Bar width = % of active pipeline (WON bar relative to active + won). LOST leads excluded.
         </div>
+      </div>
+
+      {/* ── Source analytics bar chart ───────────────────────────────────
+          All-time lead counts by source, top 12, scoped to current team
+          filter. Placed here so the two funnel-level views sit together. */}
+      <div className="card p-5">
+        <SourceChart data={sourceByCount} />
       </div>
 
       {/* Primary report navigation — these are the everyday reports */}

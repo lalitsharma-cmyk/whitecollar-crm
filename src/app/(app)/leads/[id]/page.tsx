@@ -721,10 +721,9 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
               <div className="mt-3 w-full">
                 <VoiceNoteRecorder leadId={lead.id} />
               </div>
-              {/* Print button removed — Lalit asked to drop it from the lead
-                  header (no business reason to print a single lead). Component
-                  file deleted too; @media print rules in globals.css stay so
-                  the browser default Print menu still works if anyone wants it. */}
+              <div className="mt-2 no-print">
+                <Link href={`/leads/${lead.id}/print`} target="_blank" className="btn btn-ghost btn-sm no-print">🖨️ Print</Link>
+              </div>
               {/* Expo / Dubai-site-visit button MOVED to the very bottom of the
                   right column (was here in the header). Reassign dropdown also
                   moved — now rendered standalone on the right rail. */}
