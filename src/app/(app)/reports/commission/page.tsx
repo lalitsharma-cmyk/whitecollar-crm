@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/auth";
+import { normalizeTeam } from "@/lib/teamRouting";
 import { LeadStatus, Prisma } from "@prisma/client";
 import { fmtMoney, fmtMoneyDual } from "@/lib/money";
 import Link from "next/link";
@@ -122,7 +123,8 @@ export default async function CommissionReportPage({
 }: {
   searchParams: Promise<Record<string, string | undefined>>;
 }) {
-  await requireRole("ADMIN", "MANAGER");
+  const me = await requireRole("ADMIN", "MANAGER");
+  const managerTeam = me.role === "MANAGER" ? normalizeTeam(me.team) : null;
   const sp = await searchParams;
 
   // Resolve the window. Precedence:
@@ -213,6 +215,7 @@ export default async function CommissionReportPage({
     AND: [
       { OR: [{ commissionAmount: { gt: 0 } }, { status: { in: BOOKINGS } }] },
       ...(periodWhere ? [periodWhere] : []),
+      ...(managerTeam ? [{ forwardedTeam: managerTeam }] : []),
     ],
   };
 
@@ -235,7 +238,7 @@ export default async function CommissionReportPage({
         owner: { select: { id: true, name: true } },
       },
     }),
-    prisma.user.findMany({ select: { id: true, name: true } }),
+    prisma.user.findMany({ where: { ...(managerTeam ? { team: managerTeam } : {}) }, select: { id: true, name: true } }),
   ]);
 
   const ownerName = new Map(owners.map((o) => [o.id, o.name]));

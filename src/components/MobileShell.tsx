@@ -59,6 +59,7 @@ const fullNav: NavSection[] = [
     { href: "/admin/workflows",   label: "Workflows",     Icon: Sparkles,     tag: "AUTO" as string | undefined },
     { href: "/admin/templates",   label: "Templates",     Icon: Sparkles,     tag: undefined as string | undefined },
     { href: "/admin/audit",       label: "Audit Log",     Icon: ShieldCheck,  tag: undefined as string | undefined },
+    { href: "/admin/imports",     label: "Import History", Icon: Upload,       tag: undefined as string | undefined },
     { href: "/admin/targets",     label: "Daily Targets", Icon: Sparkles,     tag: undefined as string | undefined },
     { href: "/admin/quality",     label: "Quality",       Icon: BarChart3,    tag: undefined as string | undefined },
     { href: "/admin/team-mood",   label: "Team Mood",     Icon: Sparkles,     tag: undefined as string | undefined },

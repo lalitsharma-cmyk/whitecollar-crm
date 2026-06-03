@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
+import { normalizeTeam } from "@/lib/teamRouting";
 import { startOfMonth, endOfMonth, subMonths, format, differenceInCalendarDays, subDays } from "date-fns";
 import { getTravelRatePerKmInr } from "@/lib/settings";
 import Link from "next/link";
@@ -33,12 +34,13 @@ function toYmd(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
 
-async function compute(start: Date, end: Date, agentScope: string | null): Promise<Row[]> {
+async function compute(start: Date, end: Date, agentScope: string | null, teamFilter: string | null): Promise<Row[]> {
   const acts = await prisma.activity.findMany({
     where: {
       completedAt: { gte: start, lte: end },
       distanceKm: { not: null },
       ...(agentScope ? { userId: agentScope } : {}),
+      ...(teamFilter ? { lead: { forwardedTeam: teamFilter } } : {}),
     },
     include: { user: true },
   });
@@ -57,6 +59,7 @@ async function compute(start: Date, end: Date, agentScope: string | null): Promi
 export default async function TravelReportPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const me = await requireUser();
   if (me.role === "AGENT") redirect("/reports");
+  const managerTeam = me.role === "MANAGER" ? normalizeTeam(me.team) : null;
   const sp = await searchParams;
   const agentScope = sp.agent ?? null;
 
@@ -92,10 +95,10 @@ export default async function TravelReportPage({ searchParams }: { searchParams:
   }
 
   const [thisM, lastM, rate, agents] = await Promise.all([
-    compute(primaryStart, primaryEnd, agentScope),
-    compute(prevStart, prevEnd, agentScope),
+    compute(primaryStart, primaryEnd, agentScope, managerTeam),
+    compute(prevStart, prevEnd, agentScope, managerTeam),
     getTravelRatePerKmInr(),
-    prisma.user.findMany({ where: { active: true, role: { in: ["AGENT", "MANAGER"] } }, orderBy: { name: "asc" } }),
+    prisma.user.findMany({ where: { active: true, role: { in: ["AGENT", "MANAGER"] }, ...(managerTeam ? { team: managerTeam } : {}) }, orderBy: { name: "asc" } }),
   ]);
 
   const thisTotal = thisM.reduce((s, r) => s + r.amount, 0);

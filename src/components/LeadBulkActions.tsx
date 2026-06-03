@@ -15,6 +15,7 @@ export default function LeadBulkActions({ selectedIds, agents, onClear }: { sele
   const [emailTplId, setEmailTplId] = useState("");
   const [emailMsg, setEmailMsg] = useState<string | null>(null);
   const [crossTeamWarn, setCrossTeamWarn] = useState<string | null>(null);
+  const [followupDate, setFollowupDate] = useState("");
 
   // Lazy-load email templates when user opens the modal
   useEffect(() => {
@@ -91,6 +92,18 @@ export default function LeadBulkActions({ selectedIds, agents, onClear }: { sele
     } finally { setBusy(false); }
   }
 
+  async function bulkSetFollowup() {
+    setBusy(true);
+    try {
+      const r = await fetch("/api/leads/bulk", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "set_followup", ids: selectedIds, followupDate }),
+      });
+      if (r.ok) { onClear(); router.refresh(); }
+    } finally { setBusy(false); }
+  }
+
   return (
     <>
       {crossTeamWarn && (
@@ -107,6 +120,8 @@ export default function LeadBulkActions({ selectedIds, agents, onClear }: { sele
         </select>
         <button onClick={bulkReassign} disabled={busy || !picked} className="text-xs font-semibold bg-[#c9a24b] text-[#0b1a33] px-3 py-1 rounded-lg">Reassign</button>
         <button onClick={() => setShowEmail(true)} disabled={busy} className="text-xs font-semibold bg-sky-600 text-white px-3 py-1 rounded-lg flex items-center gap-1"><Mail className="w-3 h-3" /> Email</button>
+        <input type="date" value={followupDate} onChange={(e) => setFollowupDate(e.target.value)} className="bg-white/10 text-white border-0 rounded-lg px-2 py-1 text-xs" />
+        <button onClick={bulkSetFollowup} disabled={busy} className="text-xs font-semibold bg-emerald-600 text-white px-3 py-1 rounded-lg">Set Follow-up</button>
         <button onClick={bulkDelete} disabled={busy} className="text-xs font-semibold bg-red-600 text-white px-3 py-1 rounded-lg">Delete</button>
         <button onClick={onClear} className="text-xs text-white/70 hover:text-white">Clear</button>
       </div>

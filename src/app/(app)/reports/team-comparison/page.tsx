@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/auth";
+import { normalizeTeam } from "@/lib/teamRouting";
 import { ActivityType, CallOutcome, LeadStatus, Prisma } from "@prisma/client";
 import { fmtMoney, type Currency } from "@/lib/money";
 import Link from "next/link";
@@ -345,7 +346,8 @@ export default async function TeamComparisonReportPage({
 }: {
   searchParams: Promise<Record<string, string | undefined>>;
 }) {
-  await requireRole("ADMIN", "MANAGER");
+  const me = await requireRole("ADMIN", "MANAGER");
+  const managerTeam = me.role === "MANAGER" ? normalizeTeam(me.team) : null;
   const sp = await searchParams;
 
   // Resolve window. ?from=&to= win; otherwise fall back to legacy ?range=
@@ -365,22 +367,27 @@ export default async function TeamComparisonReportPage({
   }
   const rangeLabel = `${toYmd(since)} → ${toYmd(until)}`;
 
-  // Two team queries in parallel — `Promise.all` at this layer ensures Dubai
-  // and India hit the DB concurrently; each `computeTeamMetrics` already
-  // parallelises its own sub-queries via `Promise.all`.
-  const [dubai, india] = await Promise.all([
-    computeTeamMetrics("Dubai", since, until),
-    computeTeamMetrics("India", since, until),
-  ]);
+  // MANAGER sees only their own team; ADMIN sees both in a head-to-head comparison.
+  const teamsToCompute: Array<"Dubai" | "India"> =
+    managerTeam === "Dubai" ? ["Dubai"]
+    : managerTeam === "India" ? ["India"]
+    : ["Dubai", "India"];
 
-  const composite = compositeScore(dubai, india);
-  const winner: Team =
+  const teamResults = await Promise.all(teamsToCompute.map((t) => computeTeamMetrics(t, since, until)));
+  const dubai = teamsToCompute.includes("Dubai") ? teamResults[teamsToCompute.indexOf("Dubai")] : null;
+  const india = teamsToCompute.includes("India") ? teamResults[teamsToCompute.indexOf("India")] : null;
+
+  // Winner banner only makes sense when both teams are visible (ADMIN).
+  const composite = dubai && india ? compositeScore(dubai, india) : null;
+  const winner: Team | null =
+    composite == null ? null :
     composite.a === composite.b ? "Dubai" : composite.a > composite.b ? "Dubai" : "India";
-  const isDraw = composite.a === composite.b;
+  const isDraw = composite != null && composite.a === composite.b;
 
   // Build per-row cell data once so the JSX stays readable.
   // Each row: label, dubai value (rendered), india value (rendered), and
   // delta direction the table uses to color the arrows.
+  // For MANAGER (only one team available), delta cells show "—".
   interface Row {
     label: string;
     note?: string;
@@ -389,93 +396,95 @@ export default async function TeamComparisonReportPage({
     delta: { dubai: { label: string; cls: string }; india: { label: string; cls: string } };
   }
 
-  const numericDelta = (a: number, b: number, dir: Direction) => ({
-    dubai: deltaCell(a, b, dir),
-    india: deltaCell(b, a, dir),
-  });
+  const noVal = { label: "—", cls: "text-gray-400" };
+
+  const numericDelta = (a: number | null, b: number | null, dir: Direction) =>
+    a !== null && b !== null
+      ? { dubai: deltaCell(a, b, dir), india: deltaCell(b, a, dir) }
+      : { dubai: noVal, india: noVal };
 
   const rows: Row[] = [
     {
       label: "New leads",
-      dubaiValue: dubai.newLeads.toLocaleString(),
-      indiaValue: india.newLeads.toLocaleString(),
-      delta: numericDelta(dubai.newLeads, india.newLeads, "higher_is_better"),
+      dubaiValue: dubai ? dubai.newLeads.toLocaleString() : "—",
+      indiaValue: india ? india.newLeads.toLocaleString() : "—",
+      delta: numericDelta(dubai ? dubai.newLeads : null, india ? india.newLeads : null, "higher_is_better"),
     },
     {
       label: "Active leads",
       note: "currently in NEW → NEGOTIATION (snapshot, not window-bound)",
-      dubaiValue: dubai.activeLeads.toLocaleString(),
-      indiaValue: india.activeLeads.toLocaleString(),
-      delta: numericDelta(dubai.activeLeads, india.activeLeads, "higher_is_better"),
+      dubaiValue: dubai ? dubai.activeLeads.toLocaleString() : "—",
+      indiaValue: india ? india.activeLeads.toLocaleString() : "—",
+      delta: numericDelta(dubai ? dubai.activeLeads : null, india ? india.activeLeads : null, "higher_is_better"),
     },
     {
       label: "Calls made",
-      dubaiValue: dubai.callsMade.toLocaleString(),
-      indiaValue: india.callsMade.toLocaleString(),
-      delta: numericDelta(dubai.callsMade, india.callsMade, "higher_is_better"),
+      dubaiValue: dubai ? dubai.callsMade.toLocaleString() : "—",
+      indiaValue: india ? india.callsMade.toLocaleString() : "—",
+      delta: numericDelta(dubai ? dubai.callsMade : null, india ? india.callsMade : null, "higher_is_better"),
     },
     {
       label: "Connect rate",
       note: "connected / total calls",
-      dubaiValue: fmtPct(dubai.connectRate),
-      indiaValue: fmtPct(india.connectRate),
-      delta: numericDelta(dubai.connectRate, india.connectRate, "higher_is_better"),
+      dubaiValue: dubai ? fmtPct(dubai.connectRate) : "—",
+      indiaValue: india ? fmtPct(india.connectRate) : "—",
+      delta: numericDelta(dubai ? dubai.connectRate : null, india ? india.connectRate : null, "higher_is_better"),
     },
     {
       label: "Avg first-call response",
       note: "lead created → first CallLog (lower is better)",
-      dubaiValue: fmtMins(dubai.avgFirstCallMins),
-      indiaValue: fmtMins(india.avgFirstCallMins),
+      dubaiValue: dubai ? fmtMins(dubai.avgFirstCallMins) : "—",
+      indiaValue: india ? fmtMins(india.avgFirstCallMins) : "—",
       delta: {
-        dubai: deltaCell(dubai.avgFirstCallMins, india.avgFirstCallMins, "lower_is_better"),
-        india: deltaCell(india.avgFirstCallMins, dubai.avgFirstCallMins, "lower_is_better"),
+        dubai: dubai && india ? deltaCell(dubai.avgFirstCallMins, india.avgFirstCallMins, "lower_is_better") : noVal,
+        india: dubai && india ? deltaCell(india.avgFirstCallMins, dubai.avgFirstCallMins, "lower_is_better") : noVal,
       },
     },
     {
       label: "Meetings booked",
       note: "office + virtual + home + expo, scheduled in-window",
-      dubaiValue: dubai.meetingsBooked.toLocaleString(),
-      indiaValue: india.meetingsBooked.toLocaleString(),
-      delta: numericDelta(dubai.meetingsBooked, india.meetingsBooked, "higher_is_better"),
+      dubaiValue: dubai ? dubai.meetingsBooked.toLocaleString() : "—",
+      indiaValue: india ? india.meetingsBooked.toLocaleString() : "—",
+      delta: numericDelta(dubai ? dubai.meetingsBooked : null, india ? india.meetingsBooked : null, "higher_is_better"),
     },
     {
       label: "Site visits done",
-      dubaiValue: dubai.siteVisitsDone.toLocaleString(),
-      indiaValue: india.siteVisitsDone.toLocaleString(),
-      delta: numericDelta(dubai.siteVisitsDone, india.siteVisitsDone, "higher_is_better"),
+      dubaiValue: dubai ? dubai.siteVisitsDone.toLocaleString() : "—",
+      indiaValue: india ? india.siteVisitsDone.toLocaleString() : "—",
+      delta: numericDelta(dubai ? dubai.siteVisitsDone : null, india ? india.siteVisitsDone : null, "higher_is_better"),
     },
     {
       label: "Bookings done",
       note: "BOOKING_DONE or WON in-window",
-      dubaiValue: dubai.bookingsDone.toLocaleString(),
-      indiaValue: india.bookingsDone.toLocaleString(),
-      delta: numericDelta(dubai.bookingsDone, india.bookingsDone, "higher_is_better"),
+      dubaiValue: dubai ? dubai.bookingsDone.toLocaleString() : "—",
+      indiaValue: india ? india.bookingsDone.toLocaleString() : "—",
+      delta: numericDelta(dubai ? dubai.bookingsDone : null, india ? india.bookingsDone : null, "higher_is_better"),
     },
     {
       label: "Pipeline value",
       note: "active deals in team's native currency — never summed across teams",
-      dubaiValue: fmtMoney(dubai.pipelineValue, dubai.currency),
-      indiaValue: fmtMoney(india.pipelineValue, india.currency),
+      dubaiValue: dubai ? fmtMoney(dubai.pipelineValue, dubai.currency) : "—",
+      indiaValue: india ? fmtMoney(india.pipelineValue, india.currency) : "—",
       delta: {
-        dubai: pipelineDelta(dubai.pipelineValue, india.pipelineValue),
-        india: pipelineDelta(india.pipelineValue, dubai.pipelineValue),
+        dubai: dubai && india ? pipelineDelta(dubai.pipelineValue, india.pipelineValue) : noVal,
+        india: dubai && india ? pipelineDelta(india.pipelineValue, dubai.pipelineValue) : noVal,
       },
     },
     {
       label: "Cold revivals",
       note: "COLD_TO_LEAD activities in-window",
-      dubaiValue: dubai.coldRevivals.toLocaleString(),
-      indiaValue: india.coldRevivals.toLocaleString(),
-      delta: numericDelta(dubai.coldRevivals, india.coldRevivals, "higher_is_better"),
+      dubaiValue: dubai ? dubai.coldRevivals.toLocaleString() : "—",
+      indiaValue: india ? india.coldRevivals.toLocaleString() : "—",
+      delta: numericDelta(dubai ? dubai.coldRevivals : null, india ? india.coldRevivals : null, "higher_is_better"),
     },
     {
       label: "Avg AI score",
       note: "0-100, leads created in-window",
-      dubaiValue: fmtScore(dubai.avgAiScore),
-      indiaValue: fmtScore(india.avgAiScore),
+      dubaiValue: dubai ? fmtScore(dubai.avgAiScore) : "—",
+      indiaValue: india ? fmtScore(india.avgAiScore) : "—",
       delta: {
-        dubai: deltaCell(dubai.avgAiScore, india.avgAiScore, "higher_is_better"),
-        india: deltaCell(india.avgAiScore, dubai.avgAiScore, "higher_is_better"),
+        dubai: dubai && india ? deltaCell(dubai.avgAiScore, india.avgAiScore, "higher_is_better") : noVal,
+        india: dubai && india ? deltaCell(india.avgAiScore, dubai.avgAiScore, "higher_is_better") : noVal,
       },
     },
   ];
@@ -483,8 +492,8 @@ export default async function TeamComparisonReportPage({
   // For the "winner banner" we also surface the composite shares so Lalit
   // can see *how decisive* the call is. Close races (within 5pp) get a
   // softer "edges out" verb.
-  const aPct = Math.round(composite.a * 100);
-  const bPct = Math.round(composite.b * 100);
+  const aPct = composite ? Math.round(composite.a * 100) : 0;
+  const bPct = composite ? Math.round(composite.b * 100) : 0;
   const margin = Math.abs(aPct - bPct);
   const verb = margin <= 5 ? "edges out" : margin <= 15 ? "leads" : "dominates";
 
@@ -494,7 +503,7 @@ export default async function TeamComparisonReportPage({
         <div>
           <h1 className="text-xl sm:text-2xl font-bold">Team Comparison</h1>
           <p className="text-xs sm:text-sm text-gray-500">
-            Dubai vs India · head-to-head · {rangeLabel}
+            {managerTeam ? `${managerTeam} team · ${rangeLabel}` : `Dubai vs India · head-to-head · ${rangeLabel}`}
           </p>
         </div>
         <Link href="/reports" className="text-xs text-gray-500 hover:underline">
@@ -506,8 +515,8 @@ export default async function TeamComparisonReportPage({
           Reads & writes ?from=&to= and exposes the standard preset chips. */}
       <ReportDateRangePicker defaultFrom={toYmd(since)} defaultTo={toYmd(until)} />
 
-      {/* Winner banner — at-a-glance verdict driven by the weighted composite
-          (bookings 50% + pipeline 30% + connect rate 20%). */}
+      {/* Winner banner — only shown when ADMIN (both teams visible). */}
+      {composite && (
       <div
         className={`card p-4 border-l-4 ${
           isDraw
@@ -537,10 +546,10 @@ export default async function TeamComparisonReportPage({
           bookings 50% + pipeline 30% + connect rate 20%
         </div>
       </div>
+      )}
 
-      {/* Head-to-head table — 4 columns: metric, Dubai value+delta, India
-          value+delta. Sticky-ish responsive layout: on mobile we collapse the
-          notes under the metric label. */}
+      {/* Head-to-head table — metric, Dubai value+delta, India value+delta.
+          For MANAGER with a single team, the other team's column shows "—". */}
       <div className="card p-0 overflow-hidden">
         <div className="grid grid-cols-[1.4fr_1fr_1fr] sm:grid-cols-[1.6fr_1fr_1fr] bg-gray-50 border-b text-[11px] uppercase tracking-widest text-gray-500 font-semibold">
           <div className="px-3 py-2">Metric</div>

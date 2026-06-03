@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/auth";
+import { normalizeTeam } from "@/lib/teamRouting";
 import { CallOutcome, LeadStatus, Prisma } from "@prisma/client";
 import { fmtMoneyDual } from "@/lib/money";
 import Link from "next/link";
@@ -201,7 +202,8 @@ export default async function YtdReportPage({
 }: {
   searchParams: Promise<Record<string, string | undefined>>;
 }) {
-  await requireRole("ADMIN", "MANAGER");
+  const me = await requireRole("ADMIN", "MANAGER");
+  const managerTeam = me.role === "MANAGER" ? normalizeTeam(me.team) : null;
   const sp = await searchParams;
 
   // Default window — Jan 1 (UTC) of current year through end-of-today.
@@ -210,10 +212,15 @@ export default async function YtdReportPage({
   const since = parseYmd(sp.from, jan1);
   const until = endOfDay(parseYmd(sp.to, now));
 
-  const [dubai, india] = await Promise.all([
-    computeTeamYtd("Dubai", since, until),
-    computeTeamYtd("India", since, until),
-  ]);
+  // MANAGER sees only their own team; ADMIN sees both.
+  const teamsToShow: Array<"Dubai" | "India"> =
+    managerTeam === "Dubai" ? ["Dubai"]
+    : managerTeam === "India" ? ["India"]
+    : ["Dubai", "India"];
+
+  const teamResults = await Promise.all(teamsToShow.map((t) => computeTeamYtd(t, since, until)));
+  const dubai = teamsToShow.includes("Dubai") ? teamResults[teamsToShow.indexOf("Dubai")] : null;
+  const india = teamsToShow.includes("India") ? teamResults[teamsToShow.indexOf("India")] : null;
 
   const isFullYtd = toYmd(since) === toYmd(jan1) && toYmd(until).slice(0, 10) === toYmd(now);
 
@@ -227,7 +234,7 @@ export default async function YtdReportPage({
           <h1 className="text-xl sm:text-2xl font-bold">📅 Year-to-Date</h1>
           <p className="text-xs sm:text-sm text-gray-500">
             {isFullYtd
-              ? `Jan 1, ${now.getUTCFullYear()} → today · Dubai vs India side-by-side`
+              ? `Jan 1, ${now.getUTCFullYear()} → today · ${managerTeam ? managerTeam : "Dubai vs India side-by-side"}`
               : `Custom window: ${toYmd(since)} → ${toYmd(until)}`}
           </p>
         </div>
@@ -235,11 +242,11 @@ export default async function YtdReportPage({
 
       <ReportDateRangePicker defaultFrom={toYmd(since)} defaultTo={toYmd(until).slice(0, 10)} />
 
-      {/* Team columns — Dubai (AED) and India (INR) side-by-side. Each column
-          is self-contained so the layout collapses cleanly on mobile. */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <TeamColumn t={dubai} accent="border-amber-500" flag="🇦🇪" subTitle="AED" />
-        <TeamColumn t={india} accent="border-emerald-500" flag="🇮🇳" subTitle="INR" />
+      {/* Team columns — Dubai (AED) and India (INR) side-by-side (ADMIN).
+          MANAGER sees only their own team's column. */}
+      <div className={`grid grid-cols-1 ${!managerTeam ? "lg:grid-cols-2" : ""} gap-4`}>
+        {dubai && <TeamColumn t={dubai} accent="border-amber-500" flag="🇦🇪" subTitle="AED" />}
+        {india && <TeamColumn t={india} accent="border-emerald-500" flag="🇮🇳" subTitle="INR" />}
       </div>
 
       <div className="text-[10px] text-gray-500 leading-relaxed">

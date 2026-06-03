@@ -183,5 +183,26 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, updated: r.count });
   }
 
+  if (action === "set_followup") {
+    const dateStr = String(body.followupDate ?? "").trim();
+    const followupDate = dateStr ? new Date(dateStr) : null;
+    if (dateStr && isNaN(followupDate!.getTime())) {
+      return NextResponse.json({ error: "Invalid followupDate" }, { status: 400 });
+    }
+    const r = await prisma.lead.updateMany({
+      where: { id: { in: ids }, ...scope },
+      data: {
+        followupDate: followupDate,
+        lastTouchedAt: new Date(),
+      },
+    });
+    await audit({
+      userId: me.id, action: "lead.bulk.followup", entity: "Lead",
+      meta: { count: r.count, followupDate: dateStr, leadIds: ids.slice(0, 50) },
+      request: reqMeta(req),
+    });
+    return NextResponse.json({ ok: true, updated: r.count });
+  }
+
   return NextResponse.json({ error: "Unknown action" }, { status: 400 });
 }

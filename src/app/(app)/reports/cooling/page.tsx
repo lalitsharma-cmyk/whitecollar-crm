@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
+import { normalizeTeam } from "@/lib/teamRouting";
 import { fmtMoneyDual, fmtMoney } from "@/lib/money";
 import Link from "next/link";
 import ReportDateRangePicker from "@/components/ReportDateRangePicker";
@@ -68,6 +69,7 @@ export default async function CoolingLeadsReport({
 }) {
   const me = await requireUser();
   if (me.role === "AGENT") redirect("/reports");
+  const managerTeam = me.role === "MANAGER" ? normalizeTeam(me.team) : null;
   const sp = await searchParams;
   const scopedOwnerId: string | null = null;
 
@@ -95,40 +97,76 @@ export default async function CoolingLeadsReport({
   //
   // Window bounds are now driven by ?from=&to= rather than a fixed
   // INTERVAL — both ends are Date params, so SQL injection isn't a risk.
-  const rows = await prisma.$queryRaw<CoolingRow[]>`
-    WITH downgrades AS (
-      SELECT DISTINCT ON (a."leadId")
-        a."leadId"     AS lead_id,
-        a."createdAt"  AS downgraded_at,
-        CASE
-          WHEN a.title LIKE '%(HOT → WARM)%' THEN 'WARM'
-          WHEN a.title LIKE '%(HOT → COLD)%' THEN 'COLD'
-        END            AS new_bucket
-      FROM "Activity" a
-      WHERE a."type" = 'STATUS_CHANGE'
-        AND a."createdAt" >= ${since}
-        AND a."createdAt" <= ${until}
-        AND (a.title LIKE '%(HOT → WARM)%' OR a.title LIKE '%(HOT → COLD)%')
-      ORDER BY a."leadId", a."createdAt" DESC
-    )
-    SELECT
-      l."id"             AS id,
-      l."name"           AS name,
-      l."phone"          AS phone,
-      l."budgetMin"      AS budget_min,
-      l."budgetCurrency" AS budget_currency,
-      l."ownerId"        AS owner_id,
-      l."lastTouchedAt"  AS last_touched_at,
-      l."aiScore"::text  AS ai_score,
-      l."aiScoreValue"   AS ai_score_value,
-      'HOT'              AS previous_score,
-      d.downgraded_at    AS downgraded_at
-    FROM "Lead" l
-    INNER JOIN downgrades d ON d.lead_id = l."id"
-    WHERE l."aiScore" IN ('WARM', 'COLD')
-      AND (${scopedOwnerId}::text IS NULL OR l."ownerId" = ${scopedOwnerId})
-    ORDER BY d.downgraded_at DESC
-  `;
+  const rows = managerTeam
+    ? await prisma.$queryRaw<CoolingRow[]>`
+        WITH downgrades AS (
+          SELECT DISTINCT ON (a."leadId")
+            a."leadId"     AS lead_id,
+            a."createdAt"  AS downgraded_at,
+            CASE
+              WHEN a.title LIKE '%(HOT → WARM)%' THEN 'WARM'
+              WHEN a.title LIKE '%(HOT → COLD)%' THEN 'COLD'
+            END            AS new_bucket
+          FROM "Activity" a
+          WHERE a."type" = 'STATUS_CHANGE'
+            AND a."createdAt" >= ${since}
+            AND a."createdAt" <= ${until}
+            AND (a.title LIKE '%(HOT → WARM)%' OR a.title LIKE '%(HOT → COLD)%')
+          ORDER BY a."leadId", a."createdAt" DESC
+        )
+        SELECT
+          l."id"             AS id,
+          l."name"           AS name,
+          l."phone"          AS phone,
+          l."budgetMin"      AS budget_min,
+          l."budgetCurrency" AS budget_currency,
+          l."ownerId"        AS owner_id,
+          l."lastTouchedAt"  AS last_touched_at,
+          l."aiScore"::text  AS ai_score,
+          l."aiScoreValue"   AS ai_score_value,
+          'HOT'              AS previous_score,
+          d.downgraded_at    AS downgraded_at
+        FROM "Lead" l
+        INNER JOIN downgrades d ON d.lead_id = l."id"
+        WHERE l."aiScore" IN ('WARM', 'COLD')
+          AND (${scopedOwnerId}::text IS NULL OR l."ownerId" = ${scopedOwnerId})
+          AND l."forwardedTeam" = ${managerTeam}
+        ORDER BY d.downgraded_at DESC
+      `
+    : await prisma.$queryRaw<CoolingRow[]>`
+        WITH downgrades AS (
+          SELECT DISTINCT ON (a."leadId")
+            a."leadId"     AS lead_id,
+            a."createdAt"  AS downgraded_at,
+            CASE
+              WHEN a.title LIKE '%(HOT → WARM)%' THEN 'WARM'
+              WHEN a.title LIKE '%(HOT → COLD)%' THEN 'COLD'
+            END            AS new_bucket
+          FROM "Activity" a
+          WHERE a."type" = 'STATUS_CHANGE'
+            AND a."createdAt" >= ${since}
+            AND a."createdAt" <= ${until}
+            AND (a.title LIKE '%(HOT → WARM)%' OR a.title LIKE '%(HOT → COLD)%')
+          ORDER BY a."leadId", a."createdAt" DESC
+        )
+        SELECT
+          l."id"             AS id,
+          l."name"           AS name,
+          l."phone"          AS phone,
+          l."budgetMin"      AS budget_min,
+          l."budgetCurrency" AS budget_currency,
+          l."ownerId"        AS owner_id,
+          l."lastTouchedAt"  AS last_touched_at,
+          l."aiScore"::text  AS ai_score,
+          l."aiScoreValue"   AS ai_score_value,
+          'HOT'              AS previous_score,
+          d.downgraded_at    AS downgraded_at
+        FROM "Lead" l
+        INNER JOIN downgrades d ON d.lead_id = l."id"
+        WHERE l."aiScore" IN ('WARM', 'COLD')
+          AND (${scopedOwnerId}::text IS NULL OR l."ownerId" = ${scopedOwnerId})
+        ORDER BY d.downgraded_at DESC
+      `;
 
   // Resolve owner names in one round-trip so the table can show "Owner".
   const ownerIds = Array.from(new Set(rows.map(r => r.owner_id).filter((x): x is string => !!x)));

@@ -9,6 +9,7 @@ import { parseRemarks } from "@/lib/remarkParser";
 import { extractFromRemarks, mergeSuggestions } from "@/lib/remarkAutofill";
 import { splitPhones } from "@/lib/phone";
 import { resolveTeam, routingFieldsFor } from "@/lib/teamRouting";
+import { audit, reqMeta } from "@/lib/audit";
 // runIntelligenceCheck is called inside ingestLead() for every new (non-deduped)
 // lead. No explicit call needed here — the check fires sequentially, one per row,
 // before any assignment or automation runs, satisfying the bulk-import constraint.
@@ -528,6 +529,28 @@ export async function POST(req: NextRequest) {
       errors.push(`Row ${i + 2}: ${String(e).slice(0, 200)}`);
     }
   }
+
+  await audit({
+    userId: me.id,
+    action: "import.csv",
+    entity: "Lead",
+    meta: {
+      fileName: file.name,
+      fileSize: file.size,
+      rowsProcessed: rows.length,
+      created,
+      deduped,
+      enriched,
+      callLogsCreated,
+      errors: errors.slice(0, 5),
+      sheetName: parseInfo.sheetName ?? null,
+      campaign: campaign ?? null,
+      importType,
+      assignToUserId: assignToUserId ?? null,
+      forceTeam: forceTeam ?? null,
+    },
+    request: reqMeta(req),
+  }).catch(() => {}); // non-fatal
 
   return NextResponse.json({
     ok: true,

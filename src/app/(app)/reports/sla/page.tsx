@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
+import { normalizeTeam } from "@/lib/teamRouting";
 import { ActivityType, ActivityStatus, Prisma } from "@prisma/client";
 import { format, startOfMonth, endOfMonth, subMonths, differenceInCalendarDays, subDays } from "date-fns";
 import Link from "next/link";
@@ -49,13 +50,14 @@ function toYmd(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
 
-async function computeMonth(start: Date, end: Date, label: string, agentScope: string | null): Promise<MonthBlock> {
+async function computeMonth(start: Date, end: Date, label: string, agentScope: string | null, teamFilter: string | null): Promise<MonthBlock> {
   const where: Prisma.ActivityWhereInput = {
     type: { in: VISIT_TYPES },
     OR: [
       { scheduledAt: { gte: start, lte: end } },
       { completedAt: { gte: start, lte: end } },
     ],
+    ...(teamFilter ? { lead: { forwardedTeam: teamFilter } } : {}),
   };
   if (agentScope) where.userId = agentScope;
   const activities = await prisma.activity.findMany({
@@ -101,6 +103,7 @@ async function computeMonth(start: Date, end: Date, label: string, agentScope: s
 export default async function SlaReportPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const me = await requireUser();
   if (me.role === "AGENT") redirect("/reports");
+  const managerTeam = me.role === "MANAGER" ? normalizeTeam(me.team) : null;
   const sp = await searchParams;
   // Admin/manager see everything (with optional ?agent=…)
   const agentScope = sp.agent ?? null;
@@ -149,9 +152,9 @@ export default async function SlaReportPage({ searchParams }: { searchParams: Pr
   }
 
   const [thisM, lastM, agents] = await Promise.all([
-    computeMonth(primaryStart, primaryEnd, primaryLabel, agentScope),
-    computeMonth(prevStart, prevEnd, prevLabel, agentScope),
-    prisma.user.findMany({ where: { active: true, role: { in: ["AGENT", "MANAGER"] } }, orderBy: { name: "asc" } }),
+    computeMonth(primaryStart, primaryEnd, primaryLabel, agentScope, managerTeam),
+    computeMonth(prevStart, prevEnd, prevLabel, agentScope, managerTeam),
+    prisma.user.findMany({ where: { active: true, role: { in: ["AGENT", "MANAGER"] }, ...(managerTeam ? { team: managerTeam } : {}) }, orderBy: { name: "asc" } }),
   ]);
 
   return (

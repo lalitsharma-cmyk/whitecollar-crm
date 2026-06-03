@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
+import { normalizeTeam } from "@/lib/teamRouting";
 import { startOfDay, endOfDay, format, parseISO, isValid } from "date-fns";
 import Link from "next/link";
 import { ActivityType, LeadStatus, CallOutcome, TargetMetric } from "@prisma/client";
@@ -34,6 +35,7 @@ async function readTarget(userId: string, metric: TargetMetric): Promise<number>
 
 export default async function DailyReportPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const me = await requireUser();
+  const managerTeam = me.role === "MANAGER" ? normalizeTeam(me.team) : null;
   const sp = await searchParams;
   const isAdminOrMgr = me.role === "ADMIN" || me.role === "MANAGER";
 
@@ -104,8 +106,9 @@ export default async function DailyReportPage({ searchParams }: { searchParams: 
   const dayStr = format(day, "yyyy-MM-dd");
 
   // Agents list for admin/manager dropdown
+  // MANAGER sees only agents from their own team; ADMIN sees all.
   const agents = isAdminOrMgr
-    ? await prisma.user.findMany({ where: { active: true, role: { in: ["AGENT", "MANAGER"] } }, orderBy: { name: "asc" } })
+    ? await prisma.user.findMany({ where: { active: true, role: { in: ["AGENT", "MANAGER"] }, ...(me.role === "MANAGER" && managerTeam ? { team: managerTeam } : {}) }, orderBy: { name: "asc" } })
     : [];
 
   return (

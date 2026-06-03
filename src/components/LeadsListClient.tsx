@@ -39,6 +39,14 @@ const WA_PRESETS: Array<{ v: string; label: string }> = [
   { v: "newlisting", label: "New listing" },
 ];
 
+function idleClass(lastTouchedAt: string | null | undefined): string {
+  if (!lastTouchedAt) return "text-gray-400";
+  const days = (Date.now() - new Date(lastTouchedAt).getTime()) / (1000 * 60 * 60 * 24);
+  if (days > 7) return "text-red-600 font-semibold";
+  if (days > 2) return "text-amber-600 font-medium";
+  return "text-emerald-600";
+}
+
 interface Row {
   id: string;
   name: string;
@@ -304,7 +312,10 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, a
                       <span className="text-[9px] font-semibold px-1 py-0 rounded bg-amber-100 text-amber-700">~ Possible</span>
                     )}
                     {l.lastTouched && (
-                      <span className="text-gray-400 dark:text-slate-500">· {l.lastTouched} ago</span>
+                      <span className={idleClass(l.lastTouchedAt as string | null)}>
+                        · {l.lastTouched} ago
+                        {(() => { const d = l.lastTouchedAt ? (Date.now() - new Date(l.lastTouchedAt as string).getTime()) / (1000 * 60 * 60 * 24) : 0; return d > 7 ? <span className="ml-1 text-[10px] bg-red-100 text-red-700 px-1 rounded">idle</span> : null; })()}
+                      </span>
                     )}
                   </div>
                   {/* Row 4: Next action · Owner */}
@@ -419,7 +430,10 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, a
                       {l.lastTouched && (
                         <>
                           <span className="text-gray-300 dark:text-slate-600">·</span>
-                          <span>Last: {l.lastTouched} ago</span>
+                          <span className={idleClass(l.lastTouchedAt as string | null)}>
+                            Last: {l.lastTouched} ago
+                            {(() => { const d = l.lastTouchedAt ? (Date.now() - new Date(l.lastTouchedAt as string).getTime()) / (1000 * 60 * 60 * 24) : 0; return d > 7 ? <span className="ml-1 text-[10px] bg-red-100 text-red-700 px-1 rounded">idle</span> : null; })()}
+                          </span>
                         </>
                       )}
                     </div>

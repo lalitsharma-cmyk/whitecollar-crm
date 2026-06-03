@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/auth";
+import { normalizeTeam } from "@/lib/teamRouting";
 import { LeadSource, LeadStatus } from "@prisma/client";
 import { subDays, startOfYear, startOfMonth, startOfQuarter } from "date-fns";
 import Link from "next/link";
@@ -99,7 +100,8 @@ export default async function SourcesReportPage({
 }: {
   searchParams: Promise<Record<string, string | undefined>>;
 }) {
-  await requireRole("ADMIN", "MANAGER");
+  const me = await requireRole("ADMIN", "MANAGER");
+  const managerTeam = me.role === "MANAGER" ? normalizeTeam(me.team) : null;
   const sp = await searchParams;
 
   // Resolve the active window. Precedence:
@@ -140,32 +142,32 @@ export default async function SourcesReportPage({
   ] = await Promise.all([
     prisma.lead.groupBy({
       by: ["source"],
-      where: { createdAt: { gte: since, lte: until } },
+      where: { createdAt: { gte: since, lte: until }, ...(managerTeam ? { forwardedTeam: managerTeam } : {}) },
       _count: { _all: true },
     }),
     prisma.lead.groupBy({
       by: ["source"],
-      where: { createdAt: { gte: since, lte: until }, status: { not: LeadStatus.NEW } },
+      where: { createdAt: { gte: since, lte: until }, status: { not: LeadStatus.NEW }, ...(managerTeam ? { forwardedTeam: managerTeam } : {}) },
       _count: { _all: true },
     }),
     prisma.lead.groupBy({
       by: ["source"],
-      where: { createdAt: { gte: since, lte: until }, status: { in: QUALIFIED_PLUS } },
+      where: { createdAt: { gte: since, lte: until }, status: { in: QUALIFIED_PLUS }, ...(managerTeam ? { forwardedTeam: managerTeam } : {}) },
       _count: { _all: true },
     }),
     prisma.lead.groupBy({
       by: ["source"],
-      where: { createdAt: { gte: since, lte: until }, status: { in: BOOKED } },
+      where: { createdAt: { gte: since, lte: until }, status: { in: BOOKED }, ...(managerTeam ? { forwardedTeam: managerTeam } : {}) },
       _count: { _all: true },
     }),
     prisma.lead.groupBy({
       by: ["source"],
-      where: { createdAt: { gte: since, lte: until }, status: LeadStatus.LOST },
+      where: { createdAt: { gte: since, lte: until }, status: LeadStatus.LOST, ...(managerTeam ? { forwardedTeam: managerTeam } : {}) },
       _count: { _all: true },
     }),
     prisma.lead.groupBy({
       by: ["source"],
-      where: { createdAt: { gte: since, lte: until }, aiScoreValue: { not: null } },
+      where: { createdAt: { gte: since, lte: until }, aiScoreValue: { not: null }, ...(managerTeam ? { forwardedTeam: managerTeam } : {}) },
       _avg: { aiScoreValue: true },
     }),
 
@@ -176,24 +178,44 @@ export default async function SourcesReportPage({
     // Type guard: rows without a CallLog don't appear here, which is what
     // we want — we measure "speed when we DID respond", not "speed
     // including unresponded leads".
-    prisma.$queryRaw<Array<{ source: string; avg_mins: number | null }>>`
-      WITH first_call AS (
-        SELECT DISTINCT ON (cl."leadId")
-               cl."leadId" AS lead_id,
-               cl."startedAt" AS first_call_at
-        FROM "CallLog" cl
-        WHERE cl."leadId" IS NOT NULL
-        ORDER BY cl."leadId", cl."startedAt" ASC
-      )
-      SELECT l."source"::text AS source,
-             AVG(EXTRACT(EPOCH FROM (fc.first_call_at - l."createdAt")) / 60.0) AS avg_mins
-      FROM "Lead" l
-      JOIN first_call fc ON fc.lead_id = l."id"
-      WHERE l."createdAt" >= ${since}
-        AND l."createdAt" <= ${until}
-        AND fc.first_call_at >= l."createdAt"
-      GROUP BY l."source"
-    `,
+    managerTeam
+      ? prisma.$queryRaw<Array<{ source: string; avg_mins: number | null }>>`
+          WITH first_call AS (
+            SELECT DISTINCT ON (cl."leadId")
+                   cl."leadId" AS lead_id,
+                   cl."startedAt" AS first_call_at
+            FROM "CallLog" cl
+            WHERE cl."leadId" IS NOT NULL
+            ORDER BY cl."leadId", cl."startedAt" ASC
+          )
+          SELECT l."source"::text AS source,
+                 AVG(EXTRACT(EPOCH FROM (fc.first_call_at - l."createdAt")) / 60.0) AS avg_mins
+          FROM "Lead" l
+          JOIN first_call fc ON fc.lead_id = l."id"
+          WHERE l."createdAt" >= ${since}
+            AND l."createdAt" <= ${until}
+            AND l."forwardedTeam" = ${managerTeam}
+            AND fc.first_call_at >= l."createdAt"
+          GROUP BY l."source"
+        `
+      : prisma.$queryRaw<Array<{ source: string; avg_mins: number | null }>>`
+          WITH first_call AS (
+            SELECT DISTINCT ON (cl."leadId")
+                   cl."leadId" AS lead_id,
+                   cl."startedAt" AS first_call_at
+            FROM "CallLog" cl
+            WHERE cl."leadId" IS NOT NULL
+            ORDER BY cl."leadId", cl."startedAt" ASC
+          )
+          SELECT l."source"::text AS source,
+                 AVG(EXTRACT(EPOCH FROM (fc.first_call_at - l."createdAt")) / 60.0) AS avg_mins
+          FROM "Lead" l
+          JOIN first_call fc ON fc.lead_id = l."id"
+          WHERE l."createdAt" >= ${since}
+            AND l."createdAt" <= ${until}
+            AND fc.first_call_at >= l."createdAt"
+          GROUP BY l."source"
+        `,
   ]);
 
   // Build per-source lookups for O(1) access in the render loop below.
