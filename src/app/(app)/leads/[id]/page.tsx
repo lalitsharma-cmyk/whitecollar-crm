@@ -41,7 +41,6 @@ import BestCallTimeChip from "@/components/BestCallTimeChip";
 import { formatBudget } from "@/lib/budgetParse";
 import LinkedContactsCard from "@/components/LinkedContactsCard";
 import InvestorBanner from "@/components/InvestorBanner";
-import ClientTypeSelect from "@/components/ClientTypeSelect";
 import CustomerIntelligenceCard from "@/components/CustomerIntelligenceCard";
 import BANTSuggestions from "@/components/BANTSuggestions";
 import type { BantSuggestions } from "@/lib/bantAutoFill";
@@ -237,6 +236,68 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
     if (bad) return "border-red-300 bg-red-50 dark:border-red-700 dark:bg-red-900/30";
     return "border-amber-200 bg-amber-50 dark:border-amber-700 dark:bg-amber-900/30";
   }
+
+  // Client Summary — auto-assembled from structured fields, all inline-editable.
+  // Replaces the removed "WHO IS THE CLIENT" free-text card.
+  const lastDiscussionDate = lead.callLogs[0]?.startedAt ?? lead.lastTouchedAt ?? null;
+  const lastDiscussionLabel = lastDiscussionDate
+    ? new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short", year: "2-digit" }).format(new Date(lastDiscussionDate))
+    : null;
+  const clientSummaryCard = (
+    <div data-lead-section="overview" className="card p-4">
+      <div className="flex items-center gap-2 mb-3">
+        <span className="text-xs font-bold tracking-widest text-gray-600 dark:text-slate-300">CLIENT SUMMARY</span>
+        <span className="text-[10px] text-gray-400 dark:text-slate-500">— click any value to edit</span>
+      </div>
+      <div className="space-y-2 text-sm">
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] font-semibold text-gray-500 dark:text-slate-400 w-32 shrink-0">Client Type</span>
+          <InlineEdit leadId={lead.id} field="clientType" type="select" value={lead.clientType ?? ""}
+            options={[
+              {value:"INVESTOR",label:"Investor"},
+              {value:"END_USER",label:"End User"},
+              {value:"BOTH",label:"Both"},
+              {value:"UNCLEAR",label:"Unclear"},
+            ]} placeholder="Not set" />
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] font-semibold text-gray-500 dark:text-slate-400 w-32 shrink-0">Budget</span>
+          <InlineEdit leadId={lead.id} field="budgetMin" value={lead.budgetMin ?? ""}
+            display={lead.budgetMin ? formatBudget(lead.budgetMin, budgetCcy) : undefined}
+            parseAs="budget" placeholder="Not set"
+            editHint={budgetCcy === "INR" ? "type 30L · 3Cr · 500K" : "type 2.5M · 500K"} />
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] font-semibold text-gray-500 dark:text-slate-400 w-32 shrink-0">Requirement</span>
+          <InlineEdit leadId={lead.id} field="needSummary" value={lead.needSummary ?? ""} placeholder="Not set" />
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] font-semibold text-gray-500 dark:text-slate-400 w-32 shrink-0">Configuration</span>
+          <InlineEdit leadId={lead.id} field="configuration" value={lead.configuration ?? ""} placeholder="2BR / Villa / PH" />
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] font-semibold text-gray-500 dark:text-slate-400 w-32 shrink-0">Decision Maker</span>
+          <InlineEdit leadId={lead.id} field="authorityLevel" type="select" value={lead.authorityLevel ?? ""}
+            options={[
+              {value:"DECISION_MAKER",label:"✅ Decision maker"},
+              {value:"INFLUENCER",label:"🤝 Influencer"},
+              {value:"GATEKEEPER",label:"🚧 Gatekeeper"},
+              {value:"UNKNOWN",label:"❓ Unknown"},
+            ]} placeholder="Not set" />
+        </div>
+        {lastDiscussionLabel && (
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-semibold text-gray-500 dark:text-slate-400 w-32 shrink-0">Last Discussion</span>
+            <span className="text-xs text-gray-600 dark:text-slate-300">{lastDiscussionLabel}</span>
+          </div>
+        )}
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] font-semibold text-gray-500 dark:text-slate-400 w-32 shrink-0">Next Action</span>
+          <InlineEdit leadId={lead.id} field="todoNext" value={lead.todoNext ?? ""} placeholder="Not set" />
+        </div>
+      </div>
+    </div>
+  );
 
   const bantCard = (
     <div data-lead-section="overview" className={`card p-4 border-l-4 ${
@@ -610,29 +671,7 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
             Both old EOIWorkflowCard + new Agent-K EOIPanel are off the page; bring
             either back when the EOI process is the next feature priority. */}
 
-        <div data-lead-section="overview" className="card p-5 border-l-4 border-[#c9a24b]">
-          <div className="flex items-center gap-2 mb-2">
-            <span className="ai-tag">WHO IS THE CLIENT</span>
-            <span className="text-xs text-gray-500 dark:text-slate-400">— Investor / End-user / Both</span>
-          </div>
-          {/* Lalit's 3-option dropdown (+ Unclear) — the structured signal.
-              Changes POST to /api/leads/[id]/update {clientType}. The long
-              context still lives in the notes box below. */}
-          <ClientTypeSelect leadId={lead.id} value={lead.clientType ?? null} />
-
-          {/* Repurposed free-text field — kept so the existing data isn't
-              lost. Re-labelled as the "situation / context" notes box. */}
-          <div className="mt-4 border-t border-gray-100 pt-3">
-            <div className="flex items-center gap-2 mb-1">
-              <span className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-slate-400">Client context (notes)</span>
-              <span className="text-xs text-gray-400 dark:text-slate-500">— the long story · click to edit</span>
-            </div>
-            <div className="text-xs text-gray-600 dark:text-slate-300 leading-relaxed">
-              <InlineEdit leadId={lead.id} field="whoIsClient" type="textarea" value={lead.whoIsClient ?? ""}
-                placeholder="e.g. NRI from Mumbai based in Dubai. Senior Director at consulting firm. Husband already owns at Burj Vista. Looking for parents who'll relocate next year. Wife is decision maker." />
-            </div>
-          </div>
-        </div>
+        {clientSummaryCard}
 
         {/* §6.5 / §9.4 — rules-based Buying Signals chip card.
             Pure synchronous computation over data already loaded above
