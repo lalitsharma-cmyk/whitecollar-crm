@@ -8,6 +8,8 @@ const PUBLIC_PATHS = [
   // PWA assets — must be reachable without auth so phones can install before login
   "/manifest.webmanifest", "/sw.js",
   "/icon", "/apple-icon", "/icon-192.png", "/icon-512.png", "/icon-maskable-512.png", "/og-image.png",
+  // Brand assets — logo used on the login page and apple-icon before auth
+  "/brand/",
 ];
 
 export async function proxy(req: NextRequest) {
