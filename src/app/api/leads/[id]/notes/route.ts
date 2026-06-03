@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { ActivityType, ActivityStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { loadOwnedLead } from "@/lib/leadScope";
 
@@ -32,6 +33,17 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     data: { leadId: id, userId: me.id, body: content },
     include: { user: { select: { name: true, avatarColor: true } } },
   });
+
+  await prisma.activity.create({
+    data: {
+      leadId: id,
+      userId: me.id,
+      type: ActivityType.NOTE,
+      status: ActivityStatus.DONE,
+      title: "📝 Note added",
+      description: content.length > 200 ? content.slice(0, 200) + "…" : content,
+    },
+  }).catch(() => {}); // non-fatal — note already saved
 
   // Bump lastTouchedAt so the lead doesn't immediately flag as "stale" after
   // an agent adds notes — same pattern other lead-touching endpoints use.

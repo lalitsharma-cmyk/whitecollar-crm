@@ -10,14 +10,12 @@ import { useBodyScrollLock } from "@/hooks/useBodyScrollLock";
 import { showXpToast } from "./XPToast";
 
 const OUTCOMES = [
-  { v: "CONNECTED",        label: "✅ Connected" },
-  { v: "NOT_PICKED",       label: "📵 Not picked" },
-  { v: "CALLBACK",         label: "🔁 Callback" },
-  { v: "WRONG_NUMBER",     label: "🚫 Wrong number" },
-  { v: "BUSY",             label: "⏳ Busy" },
-  { v: "SWITCHED_OFF",     label: "📵 Switched off" },
-  { v: "INTERESTED",       label: "🔥 Interested" },
-  { v: "NOT_INTERESTED",   label: "❄ Not interested" },
+  { v: "CONNECTED",    label: "✅ Connected" },
+  { v: "NOT_PICKED",   label: "📵 Not Answered" },
+  { v: "BUSY",         label: "⏳ Busy" },
+  { v: "SWITCHED_OFF", label: "📵 Switched Off" },
+  { v: "CALLBACK",     label: "🔁 Call Back Later" },
+  { v: "WRONG_NUMBER", label: "🚫 Wrong Number" },
 ];
 
 interface Agent { id: string; name: string; role: string; team: string | null; avatarColor: string | null; }
@@ -60,6 +58,12 @@ export default function LeadActionsClient({ leadId, phone, altPhone, email, curr
       body: JSON.stringify({ leadId, kind, message }),
     }).catch(() => {});
   }
+  function logCallClick() {
+    fetch(`/api/leads/${leadId}/call-initiated`, {
+      method: "POST",
+      keepalive: true,
+    }).catch(() => {});
+  }
   const router = useRouter();
   const [showCall, setShowCall] = useState(false);
   // Lock background scroll while the Log Call modal is open — prevents the
@@ -86,13 +90,13 @@ export default function LeadActionsClient({ leadId, phone, altPhone, email, curr
   //   • "show optional"  → callback time OPTIONAL (call connected; next followup is good practice)
   //   • "hide"           → no callback field (wrong number / not interested — no point)
   const needsCallback = outcome === "CALLBACK" || outcome === "BUSY" || outcome === "SWITCHED_OFF" || outcome === "NOT_PICKED";
-  const showOptionalCallback = outcome === "CONNECTED" || outcome === "INTERESTED";
+  const showOptionalCallback = outcome === "CONNECTED";
   const showCallbackField = needsCallback || showOptionalCallback;
   // Duration is only meaningful when the call actually connected. Hide it for
   // not-picked / switched-off / busy / wrong-number — Lalit's ask: "Duration
   // should not get display for not picked, obviously there is no point of
   // duration to be entered".
-  const showDurationField = outcome === "CONNECTED" || outcome === "INTERESTED" || outcome === "NOT_INTERESTED" || outcome === "CALLBACK";
+  const showDurationField = outcome === "CONNECTED" || outcome === "CALLBACK";
   const [err, setErr] = useState<string | null>(null);
   const [assignBusy, setAssignBusy] = useState(false);
   const [acefoneBusy, setAcefoneBusy] = useState(false);
@@ -274,7 +278,7 @@ export default function LeadActionsClient({ leadId, phone, altPhone, email, curr
           channel is unavailable. */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-3">
         {phone && (
-          <a href={telUrl(phone)} className="flex items-center justify-center gap-1.5 py-2.5 rounded-lg bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700 transition shadow-sm min-h-11">
+          <a href={telUrl(phone)} onClick={logCallClick} className="flex items-center justify-center gap-1.5 py-2.5 rounded-lg bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700 transition shadow-sm min-h-11">
             <Phone className="w-4 h-4" /> Call
           </a>
         )}

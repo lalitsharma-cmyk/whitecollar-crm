@@ -616,6 +616,12 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
                 />
                 <BestCallTimeChip leadId={lead.id} />
               </div>
+              {/* Voice note recorder — moved to header so agents see all 4
+                  actions (Call / WhatsApp / Log Call / Voice Note) together
+                  without scrolling. */}
+              <div className="mt-3 w-full">
+                <VoiceNoteRecorder leadId={lead.id} />
+              </div>
               {/* Print button removed — Lalit asked to drop it from the lead
                   header (no business reason to print a single lead). Component
                   file deleted too; @media print rules in globals.css stay so
@@ -712,14 +718,6 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
             events and Call-History call rows). Authors can delete their own;
             ADMIN can delete any. No pin support — Note model has no `pinned`
             column. Newest-first (matches the orderBy on the page fetch). */}
-        {/* Voice note recorder — Agent X (Round 7). Browser audio capture →
-            auto-transcribe (currently a graceful stub until STT is wired) →
-            confirm → posts to /api/leads/[id]/notes. Sits above Notes so it
-            feels like part of the note-taking flow. */}
-        <div data-lead-section="overview">
-          <VoiceNoteRecorder leadId={lead.id} />
-        </div>
-
         <div data-lead-section="overview">
           <LeadNotesCard
             leadId={lead.id}
