@@ -74,16 +74,46 @@ function parseSource(s?: string): LeadSource {
   if (n.includes("housing")) return LeadSource.PORTAL_HOUSING;
   return LeadSource.CSV_IMPORT;
 }
-function parseStage(s?: string): LeadStatus {
+function mapSheetStatus(s?: string): LeadStatus {
   if (!s) return LeadStatus.NEW;
   const n = norm(s);
-  if (n.includes("contact")) return LeadStatus.CONTACTED;
-  if (n.includes("qualif")) return LeadStatus.QUALIFIED;
-  if (n.includes("visit")) return LeadStatus.SITE_VISIT;
-  if (n.includes("negotiat")) return LeadStatus.NEGOTIATION;
-  if (n.includes("book")) return LeadStatus.BOOKING_DONE;
-  if (n.includes("won")) return LeadStatus.WON;
-  if (n.includes("lost") || n.includes("dropped") || n.includes("reject")) return LeadStatus.LOST;
+  // WON
+  if (n === "won" || n.includes("converted") || n.includes("closed")) return LeadStatus.WON;
+  // BOOKING_DONE — token/booking signals
+  if (n.includes("bookingdone") || n.includes("booked") || n.includes("tokenpaid") ||
+      n.includes("dealclosed") || n.includes("dealdone") || n.includes("booking"))
+    return LeadStatus.BOOKING_DONE;
+  // EOI / Letter of Intent
+  if (n === "eoi" || n.includes("letterofintent") || n === "loi" || n.includes("eoisubmit"))
+    return LeadStatus.EOI;
+  // NEGOTIATION
+  if (n.includes("negotiat") || n.includes("offerstage") || n.includes("indiscussion"))
+    return LeadStatus.NEGOTIATION;
+  // SITE_VISIT — any visit variant
+  if (n.includes("sitevisit") || n.includes("visitschedul") || n.includes("visitdone") ||
+      n.includes("visited") || n.includes("postvisit") || n.includes("propertytour") ||
+      n.includes("onspotmeeting") || n.includes("onspot"))
+    return LeadStatus.SITE_VISIT;
+  // QUALIFIED — confirmed interest
+  if (n.includes("qualif") || n.includes("interested") || n.includes("meetingdone") ||
+      n.includes("presentationdone") || n.includes("proposalsent"))
+    return LeadStatus.QUALIFIED;
+  // LOST — junk / dead / reject
+  if (n === "junk" || n === "spam" || n === "fake" || n === "test" || n === "duplicate" ||
+      n.includes("notinterest") || n.includes("wrongnumber") || n.includes("wrongno") ||
+      n.includes("invalidnumber") || n.includes("donotcall") || n === "dnc" ||
+      n.includes("blacklist") || n === "lost" || n.includes("dropped") ||
+      n.includes("reject") || n.includes("cancel") || n.includes("stale") ||
+      n === "dead" || n.includes("languagebarrier"))
+    return LeadStatus.LOST;
+  // CONTACTED — reached / follow-up
+  if (n.includes("contact") || n.includes("followup") || n.includes("followed") ||
+      n.includes("reached") || n.includes("callback") || n.includes("callbac"))
+    return LeadStatus.CONTACTED;
+  // NEW — uncontacted / fresh
+  if (n === "new" || n.includes("freshlead") || n.includes("notcontact") ||
+      n === "pending" || n === "fresh" || n === "uncontact")
+    return LeadStatus.NEW;
   return LeadStatus.NEW;
 }
 function parsePotential(s?: string): Potential | undefined {
@@ -331,8 +361,12 @@ export async function POST(req: NextRequest) {
       const categorization = pick(row, "categorization", "category");
       if (categorization) update.categorization = categorization;
       const stage = pick(row, "stage");
-      if (stage) update.status = parseStage(stage);
       const callStatus = pick(row, "status", "callstatus");
+      // Preserve the raw sheet value so agents can see original vs mapped stage
+      const rawStatus = callStatus || stage;
+      if (rawStatus) update.originalSheetStatus = rawStatus;
+      if (stage) update.status = mapSheetStatus(stage);
+      else if (callStatus) update.status = mapSheetStatus(callStatus);
       if (callStatus) update.currentStatus = callStatus;
       const followup = parseDate(pick(row, "followupdate", "followup", "nextfollowup"));
       if (followup) update.followupDate = followup;

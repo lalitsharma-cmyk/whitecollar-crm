@@ -603,6 +603,9 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
                 {lead.aiScore && <span className={`chip ${aiClass}`}>{lead.aiScore} · {lead.aiScoreValue}</span>}
                 <span className="chip chip-warm">{lead.status.replaceAll("_"," ")}</span>
                 {lead.currentStatus && <span className="chip src">{lead.currentStatus}</span>}
+                {lead.originalSheetStatus && lead.originalSheetStatus !== lead.currentStatus && (
+                  <span className="chip text-[10px] bg-gray-100 text-gray-500 border border-gray-300" title="Original sheet status">📋 {lead.originalSheetStatus}</span>
+                )}
                 {lead.categorization && (
                   <span className={`chip text-[10px] ${
                     lead.categorization.includes("Highly Responsive") ? "bg-emerald-100 text-emerald-800 border border-emerald-300" :
