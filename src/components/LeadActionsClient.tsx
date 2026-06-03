@@ -9,13 +9,37 @@ import DateTimeIST from "./DateTimeIST";
 import { useBodyScrollLock } from "@/hooks/useBodyScrollLock";
 import { showXpToast } from "./XPToast";
 
-const OUTCOMES = [
-  { v: "CONNECTED",    label: "✅ Connected" },
-  { v: "NOT_PICKED",   label: "📵 Not Answered" },
-  { v: "BUSY",         label: "⏳ Busy" },
-  { v: "SWITCHED_OFF", label: "📵 Switched Off" },
-  { v: "CALLBACK",     label: "🔁 Call Back Later" },
-  { v: "WRONG_NUMBER", label: "🚫 Wrong Number" },
+interface OutcomeOption { key: string; v: string; label: string; }
+
+// Phone-specific outcomes. `v` = CallOutcome DB enum value sent to the API.
+// Multiple labels can map to the same DB value (e.g. "Call Disconnected" and
+// "Not Answered" both map to NOT_PICKED — distinct UX, same storage bucket).
+const PHONE_OUTCOMES: OutcomeOption[] = [
+  { key: "PHONE_CONNECTED",      v: "CONNECTED",      label: "✅ Connected" },
+  { key: "PHONE_NOT_PICKED",     v: "NOT_PICKED",     label: "📵 Not Answered" },
+  { key: "PHONE_BUSY",           v: "BUSY",           label: "⏳ Busy" },
+  { key: "PHONE_SWITCHED_OFF",   v: "SWITCHED_OFF",   label: "📴 Switched Off" },
+  { key: "PHONE_DISCONNECTED",   v: "NOT_PICKED",     label: "🔌 Call Disconnected" },
+  { key: "PHONE_CALLBACK",       v: "CALLBACK",       label: "🔁 Call Back Later" },
+  { key: "PHONE_WRONG_NUMBER",   v: "WRONG_NUMBER",   label: "🚫 Wrong Number" },
+  { key: "PHONE_INVALID",        v: "WRONG_NUMBER",   label: "❌ Invalid Number" },
+  { key: "PHONE_NOT_REACHABLE",  v: "SWITCHED_OFF",   label: "📡 Number Not Reachable" },
+  { key: "PHONE_NOT_INTERESTED", v: "NOT_INTERESTED", label: "🛑 Not Interested" },
+  { key: "PHONE_FOLLOWUP",       v: "CALLBACK",       label: "🔔 Follow-up Required" },
+];
+
+// WhatsApp-specific outcomes. "Message Sent/Delivered/Seen" are NOT connected —
+// connected only happens when the client actually replies (two-way exchange).
+const WA_OUTCOMES: OutcomeOption[] = [
+  { key: "WA_SENT",         v: "NOT_PICKED",     label: "📤 Message Sent" },
+  { key: "WA_DELIVERED",    v: "NOT_PICKED",     label: "✓✓ Message Delivered" },
+  { key: "WA_SEEN",         v: "NOT_PICKED",     label: "👁 Message Seen (no reply)" },
+  { key: "WA_REPLIED",      v: "CONNECTED",      label: "💬 Replied — Connected" },
+  { key: "WA_NO_REPLY",     v: "NOT_PICKED",     label: "🔕 No Reply" },
+  { key: "WA_CLIENT_CALL",  v: "CALLBACK",       label: "📞 Client Asked to Call" },
+  { key: "WA_DETAILS",      v: "CONNECTED",      label: "📋 Client Asked for Details" },
+  { key: "WA_NOT_INTERESTED",v: "NOT_INTERESTED", label: "🛑 Not Interested" },
+  { key: "WA_FOLLOWUP",     v: "CALLBACK",       label: "🔔 Follow-up Required" },
 ];
 
 interface Agent { id: string; name: string; role: string; team: string | null; avatarColor: string | null; }
@@ -70,7 +94,9 @@ export default function LeadActionsClient({ leadId, phone, altPhone, email, curr
   // underlying lead-detail form from jumping/shifting when the modal mounts.
   useBodyScrollLock(showCall);
   const [busy, setBusy] = useState(false);
-  const [outcome, setOutcome] = useState("CONNECTED");
+  // outcomeKey tracks which specific option the agent selected (unique per option).
+  // currentOutcomeV is the CallOutcome DB enum value derived from it.
+  const [outcomeKey, setOutcomeKey] = useState("PHONE_CONNECTED");
   // Channel + direction for Log Call modal. Lalit's ask: "From where should I
   // log a whatsapp message client sent me remarks to get it recorded in call?"
   // — answer: in the same Log Call modal, toggle channel = WhatsApp and
@@ -79,24 +105,22 @@ export default function LeadActionsClient({ leadId, phone, altPhone, email, curr
   const [logDirection, setLogDirection] = useState<"OUTBOUND" | "INBOUND">("OUTBOUND");
   const [remarks, setRemarks] = useState("");
   const [duration, setDuration] = useState("");
-  // When the agent picks "🔁 Callback" or "⏳ Busy", they need to schedule a
-  // specific time to call back. This datetime-local input (IST, future-only)
-  // posts to log-call → server sets Lead.followupDate, which triggers the
-  // 10-min-before push from the pre-meeting cron and shows up on the morning
-  // dashboard's "☎ N client callbacks today" tile.
   const [callbackAt, setCallbackAt] = useState("");
+
+  // Derive current outcome list and DB value from channel + selected key
+  const currentOutcomeOptions = logChannel === "PHONE" ? PHONE_OUTCOMES : WA_OUTCOMES;
+  const currentOutcomeV = currentOutcomeOptions.find((o) => o.key === outcomeKey)?.v ?? "NOT_PICKED";
+
   // Three categories of outcome:
   //   • "need callback"  → callback time REQUIRED (couldn't reach them; must reschedule)
   //   • "show optional"  → callback time OPTIONAL (call connected; next followup is good practice)
   //   • "hide"           → no callback field (wrong number / not interested — no point)
-  const needsCallback = outcome === "CALLBACK" || outcome === "BUSY" || outcome === "SWITCHED_OFF" || outcome === "NOT_PICKED";
-  const showOptionalCallback = outcome === "CONNECTED";
+  const needsCallback = currentOutcomeV === "CALLBACK" || currentOutcomeV === "BUSY" || currentOutcomeV === "SWITCHED_OFF" || currentOutcomeV === "NOT_PICKED";
+  const showOptionalCallback = currentOutcomeV === "CONNECTED";
   const showCallbackField = needsCallback || showOptionalCallback;
-  // Duration is only meaningful when the call actually connected. Hide it for
-  // not-picked / switched-off / busy / wrong-number — Lalit's ask: "Duration
-  // should not get display for not picked, obviously there is no point of
-  // duration to be entered".
-  const showDurationField = outcome === "CONNECTED" || outcome === "CALLBACK";
+  // Duration only makes sense for phone calls that actually connected. Hidden
+  // for WhatsApp (no measurable duration) and for not-picked / switched-off.
+  const showDurationField = logChannel === "PHONE" && (currentOutcomeV === "CONNECTED" || currentOutcomeV === "CALLBACK");
   const [err, setErr] = useState<string | null>(null);
   const [assignBusy, setAssignBusy] = useState(false);
   const [acefoneBusy, setAcefoneBusy] = useState(false);
@@ -227,7 +251,7 @@ export default function LeadActionsClient({ leadId, phone, altPhone, email, curr
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          outcome,
+          outcome: currentOutcomeV,
           remarks: finalRemarks,
           durationSec: durationToSend,
           callbackAt: callbackAtISO,
@@ -237,7 +261,7 @@ export default function LeadActionsClient({ leadId, phone, altPhone, email, curr
       const j = await r.json();
       if (!r.ok) { setErr(j.error ?? "Failed"); return; }
       setShowCall(false); setRemarks(""); setDuration(""); setCallbackAt("");
-      setLogChannel("PHONE"); setLogDirection("OUTBOUND");
+      setLogChannel("PHONE"); setLogDirection("OUTBOUND"); setOutcomeKey("PHONE_CONNECTED");
       // Gamification — show toast if the server credited XP for this call.
       // Pattern: read `awardedXp` from the JSON response, fire the toast,
       // then refresh. Never blocks UI — toast is fire-and-forget.
@@ -376,11 +400,11 @@ export default function LeadActionsClient({ leadId, phone, altPhone, email, curr
               <div>
                 <label className="text-[10px] font-semibold text-gray-600 uppercase tracking-widest">Channel</label>
                 <div className="grid grid-cols-2 gap-1 mt-1 border border-[#e5e7eb] rounded-lg p-1">
-                  <button type="button" onClick={() => setLogChannel("PHONE")}
+                  <button type="button" onClick={() => { setLogChannel("PHONE"); setOutcomeKey("PHONE_CONNECTED"); }}
                     className={`py-1.5 rounded text-xs font-semibold transition ${logChannel === "PHONE" ? "bg-[#0b1a33] text-white" : "text-gray-600 hover:bg-gray-50"}`}>
                     📞 Phone
                   </button>
-                  <button type="button" onClick={() => setLogChannel("WHATSAPP")}
+                  <button type="button" onClick={() => { setLogChannel("WHATSAPP"); setOutcomeKey("WA_SENT"); }}
                     className={`py-1.5 rounded text-xs font-semibold transition ${logChannel === "WHATSAPP" ? "bg-emerald-600 text-white" : "text-gray-600 hover:bg-gray-50"}`}>
                     💬 WhatsApp
                   </button>
@@ -402,8 +426,8 @@ export default function LeadActionsClient({ leadId, phone, altPhone, email, curr
             </div>
 
             <label className="text-xs font-semibold text-gray-600">Outcome *</label>
-            <select value={outcome} onChange={(e) => setOutcome(e.target.value)} className="w-full mt-1 mb-3 border border-[#e5e7eb] rounded-lg px-3 py-2 text-sm">
-              {OUTCOMES.map(o => <option key={o.v} value={o.v}>{o.label}</option>)}
+            <select value={outcomeKey} onChange={(e) => setOutcomeKey(e.target.value)} className="w-full mt-1 mb-3 border border-[#e5e7eb] rounded-lg px-3 py-2 text-sm">
+              {currentOutcomeOptions.map(o => <option key={o.key} value={o.key}>{o.label}</option>)}
             </select>
             {/* Duration only shown when the call could have lasted measurable
                 time — connected, interested, not-interested (heard them out),
