@@ -55,6 +55,12 @@ const moodClass: Record<string, string> = {
   HESITANT: "chip-warm", COLD: "chip-cold", CONFUSED: "chip-lost", ANGRY: "chip-hot",
 };
 const potClass: Record<string, string> = { HIGH: "chip-hot", MEDIUM: "chip-warm", LOW: "chip-cold", UNKNOWN: "chip-lost" };
+function potentialLabel(p: string | null): string {
+  if (p === "HIGH")   return "🔥 Hot";
+  if (p === "MEDIUM") return "🌤 Warm";
+  if (p === "LOW")    return "❄ Cold";
+  return "—";
+}
 const fundClass: Record<string, string> = { CASH_READY: "chip-won", BANK_APPROVED: "chip-warm", FINANCING_NEEDED: "chip-cold", NOT_DISCUSSED: "chip-lost" };
 
 /** Visually mask a phone: keep + country code + first 2 digits + last 4 */
@@ -354,7 +360,17 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
             />
           </div>
           <div className="text-[10px] text-gray-600 dark:text-slate-300 mt-1">Fund: <InlineEdit leadId={lead.id} field="fundReadiness" type="select" value={lead.fundReadiness ?? ""}
-            options={[{value:"CASH_READY",label:"Cash Ready"},{value:"BANK_APPROVED",label:"Bank Approved"},{value:"FINANCING_NEEDED",label:"Financing"},{value:"NOT_DISCUSSED",label:"Not discussed"}]} /></div>
+            options={[
+              {value:"IMMEDIATE_BUYER",   label:"🟢 Immediate Buyer"},
+              {value:"SHORT_TERM_BUYER",  label:"🟡 Short-Term Buyer"},
+              {value:"CONDITIONAL_BUYER", label:"🔵 Conditional Buyer"},
+              {value:"FINANCED_BUYER",    label:"🟣 Financed Buyer"},
+              {value:"FUTURE_BUYER",      label:"🔴 Future Buyer"},
+              {value:"CASH_READY",        label:"💵 Cash Ready"},
+              {value:"BANK_APPROVED",     label:"🏦 Bank Approved"},
+              {value:"FINANCING_NEEDED",  label:"📋 Financing Needed"},
+              {value:"NOT_DISCUSSED",     label:"— Not discussed"},
+            ]} /></div>
         </div>
         {/* A — Authority. New field authorityLevel. */}
         <div className={`p-2.5 rounded border ${bantChipClass(bantAuthFilled, bantAuthBad)}`}>
@@ -382,12 +398,12 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
           <div className="text-sm mt-0.5">
             <InlineEdit leadId={lead.id} field="whenCanInvest" type="select" value={lead.whenCanInvest ?? ""}
               options={[
-                {value:"IMMEDIATE",label:"Immediate"},
-                {value:"THIRTY_DAYS",label:"30 days"},
-                {value:"THREE_MONTHS",label:"3 months"},
-                {value:"SIX_PLUS_MONTHS",label:"6+ months"},
-                {value:"WINDOW_SHOPPING",label:"Just browsing"},
-                {value:"UNKNOWN",label:"Unknown"},
+                {value:"IMMEDIATE",       label:"⚡ On Spot / Immediate"},
+                {value:"THIRTY_DAYS",     label:"📅 Within 1 Month"},
+                {value:"THREE_MONTHS",    label:"✈ Will Visit Dubai First"},
+                {value:"SIX_PLUS_MONTHS", label:"⏳ Not in 6 Months"},
+                {value:"WINDOW_SHOPPING", label:"👀 Just Browsing"},
+                {value:"UNKNOWN",         label:"❓ Not Sure"},
               ]} />
           </div>
         </div>
@@ -443,7 +459,7 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
         <div>
           <div className="text-xs text-gray-500 dark:text-slate-400">Potential</div>
           <InlineEdit leadId={lead.id} field="potential" type="select" value={lead.potential ?? ""}
-            options={[{value:"HIGH",label:"High"},{value:"MEDIUM",label:"Medium"},{value:"LOW",label:"Low"},{value:"UNKNOWN",label:"Unknown"}]} />
+            options={[{value:"HIGH",label:"🔥 Hot"},{value:"MEDIUM",label:"🌤 Warm"},{value:"LOW",label:"❄ Cold"},{value:"UNKNOWN",label:"— Unknown"}]} />
         </div>
         <div>
           <div className="text-xs text-gray-500 dark:text-slate-400">Mood</div>
@@ -454,16 +470,16 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
           <div className="text-xs text-gray-500 dark:text-slate-400">Categorization</div>
           <InlineEdit leadId={lead.id} field="categorization" type="select" value={lead.categorization ?? ""}
             options={[
-              {value:"🔥 Highly Responsive — picks calls regularly",label:"🔥 Highly Responsive"},
-              {value:"🙂 Responsive",label:"🙂 Responsive"},
-              {value:"🤔 Sometimes responsive",label:"🤔 Sometimes responsive"},
-              {value:"🧊 Cold / not picking",label:"🧊 Cold / not picking"},
-              {value:"📵 Switched off / wrong number",label:"📵 Switched off / wrong number"},
-              {value:"❌ Not interested / dropped",label:"❌ Not interested / dropped"},
-              {value:"NRI Investor",label:"NRI Investor"},
-              {value:"NRI End-user",label:"NRI End-user"},
-              {value:"UAE Resident",label:"UAE Resident"},
-              {value:"First-time buyer",label:"First-time buyer"},
+              {value:"Highly Responsive",             label:"🟢 Highly Responsive"},
+              {value:"Moderately Responsive",         label:"🟡 Moderately Responsive"},
+              {value:"Irregular / Delayed Response",  label:"🟠 Irregular / Delayed"},
+              {value:"Disappearing Act",              label:"🔴 Disappearing Act"},
+              {value:"Non-Responsive",               label:"⚫ Non-Responsive"},
+              // Legacy values — keep for backward compat
+              {value:"🔥 Highly Responsive — picks calls regularly",label:"🔥 Highly Responsive (legacy)"},
+              {value:"🙂 Responsive",label:"🙂 Responsive (legacy)"},
+              {value:"🤔 Sometimes responsive",label:"🤔 Sometimes responsive (legacy)"},
+              {value:"🧊 Cold / not picking",label:"🧊 Cold / not picking (legacy)"},
             ]} />
         </div>
         <div>
@@ -587,6 +603,16 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
                 {lead.aiScore && <span className={`chip ${aiClass}`}>{lead.aiScore} · {lead.aiScoreValue}</span>}
                 <span className="chip chip-warm">{lead.status.replaceAll("_"," ")}</span>
                 {lead.currentStatus && <span className="chip src">{lead.currentStatus}</span>}
+                {lead.categorization && (
+                  <span className={`chip text-[10px] ${
+                    lead.categorization.includes("Highly Responsive") ? "bg-emerald-100 text-emerald-800 border border-emerald-300" :
+                    lead.categorization.includes("Moderately") ? "bg-yellow-100 text-yellow-800 border border-yellow-300" :
+                    lead.categorization.includes("Irregular") ? "bg-orange-100 text-orange-800 border border-orange-300" :
+                    lead.categorization.includes("Disappearing") ? "bg-red-100 text-red-800 border border-red-300" :
+                    lead.categorization.includes("Non-Responsive") ? "bg-gray-100 text-gray-700 border border-gray-300" :
+                    "src"
+                  }`}>{lead.categorization}</span>
+                )}
                 {lead.moodStatus && <span className={`chip ${moodClass[lead.moodStatus] ?? "src"}`}>😊 {lead.moodStatus}</span>}
                 <span className={`chip ${lead.forwardedTeam === "India" ? "src-csv" : "src-wa"}`}>{lead.forwardedTeam ?? "—"}</span>
               </div>

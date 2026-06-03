@@ -87,15 +87,28 @@ function parseStage(s?: string): LeadStatus {
   return LeadStatus.NEW;
 }
 function parsePotential(s?: string): Potential | undefined {
-  if (!s) return; const n = norm(s);
-  if (n.startsWith("h") || n.includes("hot")) return Potential.HIGH;
-  if (n.startsWith("m") || n.includes("warm")) return Potential.MEDIUM;
-  if (n.startsWith("l") || n.includes("cold") || n.includes("future")) return Potential.LOW;
+  if (!s) return;
+  const n = s.trim().toLowerCase();
+  if (n === "hot")  return Potential.HIGH;
+  if (n === "warm") return Potential.MEDIUM;
+  if (n === "cold") return Potential.LOW;
+  // Legacy / non-standard sheet values
+  if (n.startsWith("h") || n.includes("hot") || n.includes("high")) return Potential.HIGH;
+  if (n.startsWith("m") || n.includes("warm") || n.includes("medium")) return Potential.MEDIUM;
+  if (n.startsWith("l") || n.includes("cold") || n.includes("low") || n.includes("future")) return Potential.LOW;
   return Potential.UNKNOWN;
 }
 function parseFund(s?: string): FundReadiness | undefined {
-  if (!s) return; const n = norm(s);
-  if (n.includes("cash")) return FundReadiness.CASH_READY;
+  if (!s) return;
+  const n = s.trim().toLowerCase().replace(/[-\s]+/g, "");
+  // Direct MIS label matches (priority — exact sheet values)
+  if (n === "immediatebuyer" || n.includes("immediatebuyer")) return FundReadiness.IMMEDIATE_BUYER;
+  if (n === "shorttermbuyer" || n.includes("shortterm"))       return FundReadiness.SHORT_TERM_BUYER;
+  if (n === "conditionalbuyer" || n.includes("conditional"))   return FundReadiness.CONDITIONAL_BUYER;
+  if (n === "financedbuyer" || n.includes("financed"))         return FundReadiness.FINANCED_BUYER;
+  if (n === "futurebuyer" || n.includes("futurebuyer") || n === "future") return FundReadiness.FUTURE_BUYER;
+  // Legacy values — keep backward compat
+  if (n.includes("cash"))       return FundReadiness.CASH_READY;
   if (n.includes("approved") || n.includes("bank")) return FundReadiness.BANK_APPROVED;
   if (n.includes("financ") || n.includes("loan") || n.includes("mortgage")) return FundReadiness.FINANCING_NEEDED;
   return FundReadiness.NOT_DISCUSSED;
@@ -111,7 +124,15 @@ function parseMood(s?: string): MoodStatus | undefined {
   if (n.includes("angry") || n.includes("upset")) return MoodStatus.ANGRY;
 }
 function parseInvestTimeline(s?: string): InvestTimeline | undefined {
-  if (!s) return; const n = norm(s);
+  if (!s) return;
+  const n = s.trim().toLowerCase().replace(/[-\s]+/g, "");
+  // Exact Dubai MIS values (priority)
+  if (n === "onspotmeeting" || n.includes("onspot"))            return InvestTimeline.IMMEDIATE;
+  if (n === "withinamonth" || n === "withinmonth" || n.includes("withinmonth")) return InvestTimeline.THIRTY_DAYS;
+  if (n === "willgodubaifirst" || n.includes("willgodubai") || n.includes("godubaifirst")) return InvestTimeline.THREE_MONTHS;
+  if (n === "notin6month" || n.includes("notin6") || n.includes("not6month"))    return InvestTimeline.SIX_PLUS_MONTHS;
+  if (n === "notsure" || n.includes("notsure"))                 return InvestTimeline.UNKNOWN;
+  // Generic patterns
   if (n.includes("immed") || n.includes("week") || n.includes("now")) return InvestTimeline.IMMEDIATE;
   if (n.includes("3month") || n.includes("quarter") || n.includes("notsure")) return InvestTimeline.THREE_MONTHS;
   if (n.includes("6") || n.includes("year") || n.includes("longterm")) return InvestTimeline.SIX_PLUS_MONTHS;
@@ -324,13 +345,13 @@ export async function POST(req: NextRequest) {
       const todo = pick(row, "todo", "todonext", "nextaction");
       if (todo) update.todoNext = todo;
       const potential = parsePotential(pick(row, "potential"));
-      if (potential) update.potential = potential;
+      if (potential && !r.deduped) update.potential = potential;
       const fund = parseFund(pick(row, "fundreadiness", "fund", "funds"));
-      if (fund) update.fundReadiness = fund;
+      if (fund && !r.deduped) update.fundReadiness = fund;
       const mood = parseMood(pick(row, "moodstatus", "mood"));
       if (mood) update.moodStatus = mood;
-      const when = parseInvestTimeline(pick(row, "whencaninvest", "timeline", "invest"));
-      if (when) update.whenCanInvest = when;
+      const when = parseInvestTimeline(pick(row, "whencaninvest", "timeline", "invest", "whencaninvest"));
+      if (when && !r.deduped) update.whenCanInvest = when;
       // Team: admin-picked override wins over per-row column. Lalit's testing
       // sheets had rows split across India + Dubai despite all being one team's
       // pipeline — forceTeam fixes that at import time.

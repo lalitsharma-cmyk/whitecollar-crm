@@ -148,6 +148,12 @@ enum FundReadiness {
   BANK_APPROVED
   FINANCING_NEEDED
   NOT_DISCUSSED
+  // MIS-imported values — exact labels from the sheet
+  IMMEDIATE_BUYER    // "Immediate Buyer" — funds available, can move quickly
+  SHORT_TERM_BUYER   // "Short-Term Buyer" — likely to arrange funds soon
+  CONDITIONAL_BUYER  // "Conditional Buyer" — depends on another event (property sale, etc.)
+  FINANCED_BUYER     // "Financed Buyer" — requires home loan / financing
+  FUTURE_BUYER       // "Future Buyer" — not ready currently
 }
 
 enum MoodStatus {
@@ -236,7 +242,8 @@ model Lead {
   source          LeadSource  @default(WEBSITE)
   sourceDetail    String?     // "marina-may-26" campaign code
   status          LeadStatus  @default(NEW)        // = Stage (funnel position)
-  currentStatus   String?     // = Status (current state: "Not reached", "Callback today", etc.)
+  currentStatus        String?     // = Status (current state: "Not reached", "Callback today", etc.)
+  originalSheetStatus  String?     // raw value from "Status" column during Excel/CSV import
   // requirements
   budgetMin       Float?      // AED for Dubai team
   budgetMax       Float?
