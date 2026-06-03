@@ -227,6 +227,17 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
       : [tagFilter];
   }
 
+  // Date range filter
+  if (sp.dateFrom || sp.dateTo) {
+    const dateField = sp.dateField ?? "followupDate";
+    const range: { gte?: Date; lte?: Date } = {};
+    if (sp.dateFrom) range.gte = new Date(sp.dateFrom + "T00:00:00+05:30");
+    if (sp.dateTo) range.lte = new Date(sp.dateTo + "T23:59:59+05:30");
+    if (dateField === "createdAt") where.createdAt = range;
+    else if (dateField === "lastTouchedAt") where.lastTouchedAt = range;
+    else where.followupDate = range;
+  }
+
   // Sort
   let orderBy: Prisma.LeadOrderByWithRelationInput = { createdAt: "desc" };
   if (sp.sort === "created_asc") orderBy = { createdAt: "asc" };

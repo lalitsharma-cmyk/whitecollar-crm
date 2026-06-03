@@ -5,7 +5,7 @@ import { isPastISTLocalInput } from "@/lib/datetime";
 import DateTimeIST from "./DateTimeIST";
 import { parseBudget } from "@/lib/budgetParse";
 
-type FieldType = "text" | "textarea" | "number" | "date" | "select";
+type FieldType = "text" | "textarea" | "number" | "date" | "select" | "phone";
 
 interface Props {
   leadId: string;
@@ -49,6 +49,14 @@ export default function InlineEdit({ leadId, field, label, value, type = "text",
       return;
     }
     setBusy(true); setErr(null);
+    if (type === "phone" && v) {
+      const digits = v.replace(/\D/g, "");
+      if (digits.length < 10) {
+        setErr("Phone must have at least 10 digits.");
+        setBusy(false);
+        return;
+      }
+    }
     try {
       // For datetime fields, append explicit IST offset so the server parses
       // the user's IST wall-clock as the correct UTC instant. Without this,
@@ -115,7 +123,7 @@ export default function InlineEdit({ leadId, field, label, value, type = "text",
           title="Click to edit"
         >
           {isEffectivelyEmpty
-            ? <span className="text-gray-400 italic">{placeholder ?? "click to set"}</span>
+            ? <span className="text-gray-400 italic">{placeholder ?? "Add Value"}</span>
             : <>{prefix}{pretty}</>}
         </div>
       );
@@ -127,9 +135,8 @@ export default function InlineEdit({ leadId, field, label, value, type = "text",
         title="Click to edit"
       >
         {value == null || value === ""
-          ? <span className="text-gray-400 italic">{placeholder ?? "click to set"}</span>
+          ? <span className="text-gray-400 italic">{placeholder ?? "Add Value"}</span>
           : <>{prefix}{display ?? String(value)}</>}
-        {type === "select" && <span className="text-[10px] text-gray-400 ml-1">✎</span>}
       </span>
     );
   }
@@ -170,6 +177,29 @@ export default function InlineEdit({ leadId, field, label, value, type = "text",
         </div>
         {errLine}
       </div>
+    );
+  }
+
+  if (type === "phone") {
+    return (
+      <span className="inline-flex flex-col">
+        <span className="inline-flex items-center gap-1">
+          <input
+            type="text"
+            inputMode="tel"
+            pattern="[0-9+\s\-()]+"
+            value={v}
+            onChange={(e) => setV(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") save(); if (e.key === "Escape") cancel(); }}
+            className={inputCls}
+            autoFocus
+          />
+          <button onClick={save} disabled={busy} aria-label="Save" className="text-emerald-600 hover:bg-emerald-50 rounded p-2 text-base min-w-11 min-h-11 flex items-center justify-center">✓</button>
+          <button onClick={cancel} aria-label="Cancel" className="text-red-600 hover:bg-red-50 rounded p-2 text-base min-w-11 min-h-11 flex items-center justify-center">✕</button>
+        </span>
+        <div className="text-[11px] text-gray-400 mt-1">Numbers only, min 10 digits. Include country code (e.g. +971 or +91)</div>
+        {errLine}
+      </span>
     );
   }
 

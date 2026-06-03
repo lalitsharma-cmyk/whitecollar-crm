@@ -191,7 +191,9 @@ export function extractFromRemarks(remarks: string, knownProjects: string[] = []
   if (team) out.forwardedTeam = team;
 
   const pot = parsePotential(remarks);
-  if (pot) out.potential = pot;
+  // DISABLED: potential must only come from import or manual input — not auto-reclassified from remarks
+  // if (pot) out.potential = pot;
+  void pot; // suppress unused-variable warning
 
   const fund = parseFund(remarks);
   if (fund) out.fundReadiness = fund;

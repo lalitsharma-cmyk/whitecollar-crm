@@ -85,7 +85,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   const isToday     = rawFrom === rawTo && rawFrom === todayIsoStr;
   const isSingleDay = rawFrom === rawTo;
   const periodSection: string = isToday
-    ? "TODAY & RIGHT NOW"
+    ? "TODAY"
     : isSingleDay ? fmt2(rawFrom).toUpperCase()
     : `${fmt2(rawFrom)} – ${fmt2(rawTo)}`;
 

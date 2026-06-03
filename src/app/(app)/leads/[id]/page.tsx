@@ -24,22 +24,18 @@ import { canTouchLead } from "@/lib/leadScope";
 import { projectWhereForUser, teamToCountry } from "@/lib/propertyScope";
 // CallHistoryCard removed — folded into ConversationStreamCard below.
 import ConversationStreamCard from "@/components/ConversationStreamCard";
-import RemarksCard from "@/components/RemarksCard";
 import StickyNoteWidget from "@/components/StickyNoteWidget";
 import BuyingSignalsCard from "@/components/BuyingSignalsCard";
-import NextBestActionCard from "@/components/NextBestActionCard";
 import LeadScoreBreakdown from "@/components/LeadScoreBreakdown";
 import { explainScore } from "@/lib/leadRescorer";
 import { topScoreFactors } from "@/lib/scoreExplain";
-import { aiEnabled, aiLive } from "@/lib/ai";
+import { aiEnabled } from "@/lib/ai";
 import LeadNotesCard from "@/components/LeadNotesCard";
 import VoiceNoteRecorder from "@/components/VoiceNoteRecorder";
 import QuickNoteCard from "@/components/QuickNoteCard";
 import LeadReassignClient from "@/components/LeadReassignClient";
 import RejectLeadModal from "@/components/RejectLeadModal";
 import LeadMobileTabs from "@/components/LeadMobileTabs";
-import LeadTagsEditor from "@/components/LeadTagsEditor";
-import LeadTimelineCard, { type TimelineItem } from "@/components/LeadTimelineCard";
 // PrintButton removed — Lalit asked for the Print action to be dropped.
 import BestCallTimeChip from "@/components/BestCallTimeChip";
 import CallStatsBar from "@/components/CallStatsBar";
@@ -51,10 +47,6 @@ import CustomerIntelligenceCard from "@/components/CustomerIntelligenceCard";
 import BANTSuggestions from "@/components/BANTSuggestions";
 import type { BantSuggestions } from "@/lib/bantAutoFill";
 import StageDurationBadge from "@/components/StageDurationBadge";
-import CopyPhoneButton from "@/components/CopyPhoneButton";
-import AIIntelligencePanel from "@/components/AIIntelligencePanel";
-import { getLatestExtraction } from "@/lib/aiExtractor";
-import type { AIExtractionResult } from "@/lib/aiExtractor";
 import SchedulingField from "@/components/SchedulingField";
 
 export const dynamic = "force-dynamic";
@@ -152,51 +144,6 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
       : Promise.resolve([]),
   ]);
 
-  // Fetch audit logs for the unified timeline — done after the notFound() guard
-  // so we only query when the lead exists.
-  const auditLogs = await prisma.auditLog.findMany({
-    where: { entityId: lead.id, action: { in: ["lead.update", "lead.reactivate"] } },
-    orderBy: { createdAt: "desc" },
-    take: 20,
-    include: { user: { select: { name: true } } },
-  });
-
-  // Build the unified timeline from callLogs (already fetched), notes (already
-  // fetched), and auditLogs. Sort newest-first.
-  const timelineItems: TimelineItem[] = [
-    ...lead.callLogs.map((c) => {
-      const actor = c.attributedAgentName ?? c.user?.name ?? "Agent";
-      const dur = c.durationSec != null ? `${c.durationSec}s` : null;
-      const summary = dur
-        ? `${actor} called — ${c.outcome.toLowerCase().replace(/_/g, " ")} (${dur})`
-        : `${actor} called — ${c.outcome.toLowerCase().replace(/_/g, " ")}`;
-      return {
-        id: `call-${c.id}`,
-        type: "call" as const,
-        timestamp: c.startedAt,
-        actor,
-        summary,
-        detail: c.notes ?? undefined,
-      };
-    }),
-    ...lead.notes.map((n) => ({
-      id: `note-${n.id}`,
-      type: "note" as const,
-      timestamp: n.createdAt,
-      actor: n.user?.name ?? "Agent",
-      summary: `${n.user?.name ?? "Agent"} added a note`,
-      detail: n.body,
-    })),
-    ...auditLogs.map((a) => ({
-      id: `audit-${a.id}`,
-      type: "audit" as const,
-      timestamp: a.createdAt,
-      actor: a.user?.name ?? "System",
-      summary: `${a.user?.name ?? "System"} updated the lead`,
-      detail: undefined,
-    })),
-  ].sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
-
   // Agents can only see leads they own. Redirect (307) to /leads instead of
   // notFound() because Next.js app-router notFound() renders the 404 UI but
   // returns HTTP 200 — confusing for auditors. Redirect is cleaner UX too:
@@ -208,14 +155,6 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
     try { return lead.bantSuggestionsJson ? JSON.parse(lead.bantSuggestionsJson) : null; }
     catch { return null; }
   })();
-
-  // AI Intelligence Panel — latest extraction result + live AI status.
-  const [latestExtraction, aiPanelEnabled] = await Promise.all([
-    getLatestExtraction(lead.id),
-    aiLive(),
-  ]);
-  const aiExtractionResult: AIExtractionResult | null = latestExtraction?.result ?? null;
-  const aiExtractionAt: string | null = latestExtraction?.createdAt?.toISOString() ?? null;
 
   // Investor-history quick counts for the banner (Agent V, Round 6).
   // Match the new lead against the existing pipeline on phone / email /
@@ -584,7 +523,7 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
         </div>
         <div>
           <div className="text-xs text-gray-500 dark:text-slate-400">📱 Alt phone</div>
-          <InlineEdit leadId={lead.id} field="altPhone" value={lead.altPhone ?? ""} placeholder="+91…" />
+          <InlineEdit leadId={lead.id} field="altPhone" type="phone" value={lead.altPhone ?? ""} placeholder="+91 or +971…" />
         </div>
         <div>
           <div className="text-xs text-gray-500 dark:text-slate-400">Potential</div>
@@ -773,13 +712,6 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
                 {lead.email && `${lead.email}`}
                 {lead.company && ` · ${lead.company}`}
               </div>
-              {/* Tags — comma-separated free-form labels (NRI, Investor, HNI,
-                  …) editable inline. Chips are coloured by stable hash so the
-                  same tag always looks the same on every lead. */}
-              <div className="text-sm mt-2 flex items-start flex-wrap gap-2">
-                <span className="text-xs text-gray-500 dark:text-slate-400 font-semibold pt-0.5">Tags:</span>
-                <LeadTagsEditor leadId={lead.id} initialTags={lead.tags} />
-              </div>
               {/* Journey progress bar — shows pipeline stage at a glance */}
               <div className="mt-2 mb-1">
                 <LeadJourneyBar status={lead.status} />
@@ -805,7 +737,6 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
                   acefoneMappedForUser={!!me.acefoneAgentId}
                   hideReassign={true}
                 />
-                {lead.phone && <CopyPhoneButton phone={lead.phone} />}
                 <BestCallTimeChip leadId={lead.id} />
               </div>
               {/* Voice note recorder — moved to header so agents see all 4
@@ -838,15 +769,6 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
           />
         </div>
 
-        {/* ⭐ NEXT BEST ACTION — single most important card on the page.
-            Pure rules-based recommendation derived from status, eoiStage,
-            siteVisitDate, last call outcome, and lastTouchedAt. Renders first
-            (immediately after the header) so agents see THE action to take
-            before any other context. No AI — synchronous, server-friendly. */}
-        <div data-lead-section="overview">
-          <NextBestActionCard lead={lead} />
-        </div>
-
         {/* REMARKS — full conversation history from import sheet.
             Moved to the top of the left column + ALWAYS rendered (even when
             remarks is null/empty) so Lalit can't miss it. Compute the entry
@@ -868,14 +790,6 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
             later (e.g. if billing is enabled or a different provider is
             added) — just not mounted on the page. */}
 
-        {/* ORIGINAL REMARKS — raw MIS text from the import sheet. Collapsible
-            so agents can see the source material before the parsed call log. */}
-        {lead.remarks && lead.remarks.trim() && (
-          <div data-lead-section="timeline">
-            <RemarksCard remarks={lead.remarks} callLogsCount={lead.callLogs.length} />
-          </div>
-        )}
-
         {/* QUICK NOTE — fast freeform note widget. Sits between the original
             remarks and the full conversation stream so agents can jot context
             right after reviewing the import remarks. Creates a Note record and
@@ -891,14 +805,6 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
         <div data-lead-section="timeline">
           <CallStatsBar callLogs={lead.callLogs.map((c) => ({ duration: c.durationSec, outcome: c.outcome, startedAt: c.startedAt }))} />
           <ConversationStreamCard callLogs={lead.callLogs} waMessages={lead.waMessages} forwardedTeam={lead.forwardedTeam} />
-        </div>
-
-        {/* UNIFIED ACTIVITY TIMELINE — merges call logs, notes, and audit
-            events into a single chronological feed. Supplementary view that
-            sits below ConversationStreamCard so agents can see the full
-            sequence of everything that has happened on this lead. */}
-        <div data-lead-section="timeline">
-          <LeadTimelineCard items={timelineItems} />
         </div>
 
         {/* EOI / Booking workflow — REMOVED by Lalit in Round 3 ("Remove EOI for now").
@@ -1113,8 +1019,6 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
         <div data-lead-section="actions" className="card p-5">
           <div className="font-semibold mb-3 dark:text-slate-100">📅 Scheduling & next action</div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
-            {/* "✅ To Do" tile removed per Lalit's ask — the next-step UI lives
-                in NextBestActionCard at the top of the left column. */}
             <SchedulingField
               leadId={lead.id}
               field="followupDate"
@@ -1197,14 +1101,6 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
             userRole={me.role}
           />
         </div>
-
-        {/* 🤖 AI Intelligence Panel — structured extraction from all history */}
-        <AIIntelligencePanel
-          leadId={lead.id}
-          initial={aiExtractionResult}
-          lastRunAt={aiExtractionAt}
-          aiEnabled={aiPanelEnabled}
-        />
 
         {/* Assignment history — admin/manager only. Agents shouldn't see who else
             owned the lead before them (avoids inter-agent friction + cherry-picking). */}

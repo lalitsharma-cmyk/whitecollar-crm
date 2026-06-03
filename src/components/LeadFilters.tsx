@@ -45,6 +45,9 @@ export default function LeadFilters({
   const [draftTag,        setDraftTag]        = useState("");
   const [draftNotPicked,  setDraftNotPicked]  = useState("");
   const [draftFollowup,   setDraftFollowup]   = useState("");
+  const [draftDateFrom,   setDraftDateFrom]   = useState(sp.get("dateFrom") ?? "");
+  const [draftDateTo,     setDraftDateTo]     = useState(sp.get("dateTo") ?? "");
+  const [draftDateField,  setDraftDateField]  = useState(sp.get("dateField") ?? "followupDate");
 
   function openDrawer() {
     setDraftSource(sp.get("source") ?? "");
@@ -56,6 +59,9 @@ export default function LeadFilters({
     setDraftTag(sp.get("tag") ?? "");
     setDraftNotPicked(sp.get("notPicked") ?? "");
     setDraftFollowup(sp.get("followup") ?? "");
+    setDraftDateFrom(sp.get("dateFrom") ?? "");
+    setDraftDateTo(sp.get("dateTo") ?? "");
+    setDraftDateField(sp.get("dateField") ?? "followupDate");
     setOpen(true);
   }
 
@@ -71,6 +77,9 @@ export default function LeadFilters({
     set("tag",       draftTag);
     set("notPicked", draftNotPicked);
     set("followup",  draftFollowup);
+    set("dateFrom",  draftDateFrom);
+    set("dateTo",    draftDateTo);
+    set("dateField", draftDateField);
     p.delete("page");
     router.replace(`${pathname}?${p.toString()}`);
     setOpen(false);
@@ -78,7 +87,7 @@ export default function LeadFilters({
 
   function resetFilters() {
     const p = new URLSearchParams(sp);
-    ["source","status","ai","team","owner","sort","tag","notPicked","followup","smart","filter","when","eoi"]
+    ["source","status","ai","team","owner","sort","tag","notPicked","followup","smart","filter","when","eoi","dateFrom","dateTo","dateField"]
       .forEach(k => p.delete(k));
     p.delete("page");
     router.replace(`${pathname}?${p.toString()}`);
@@ -91,6 +100,7 @@ export default function LeadFilters({
     sp.get("team"),   sp.get("owner"),  sp.get("sort"),
     sp.get("tag"),    sp.get("notPicked"),
     sp.get("smart"),  sp.get("filter"),
+    sp.get("dateFrom"), sp.get("dateTo"),
   ].filter(Boolean).length;
 
   const selCls = "w-full border border-[#e5e7eb] dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 rounded-lg px-3 py-2 text-sm";
@@ -272,6 +282,28 @@ export default function LeadFilters({
                   <option value="name_asc">Name A–Z</option>
                 </select>
               </div>
+
+              {/* Date range filter */}
+              <div>
+                <label className={lblCls}>📅 Date Range Filter</label>
+                <select value={draftDateField} onChange={(e) => setDraftDateField(e.target.value)} className={selCls + " mb-2"}>
+                  <option value="followupDate">Follow-up Date</option>
+                  <option value="createdAt">Created Date</option>
+                  <option value="lastTouchedAt">Last Activity Date</option>
+                </select>
+                <div className="flex gap-2">
+                  <div className="flex-1">
+                    <label className="text-[11px] text-gray-500 dark:text-slate-400 block mb-0.5">From</label>
+                    <input type="date" value={draftDateFrom} onChange={(e) => setDraftDateFrom(e.target.value)}
+                      className={selCls} />
+                  </div>
+                  <div className="flex-1">
+                    <label className="text-[11px] text-gray-500 dark:text-slate-400 block mb-0.5">To</label>
+                    <input type="date" value={draftDateTo} onChange={(e) => setDraftDateTo(e.target.value)}
+                      className={selCls} />
+                  </div>
+                </div>
+              </div>
             </div>
 
             {/* Footer */}
@@ -284,6 +316,21 @@ export default function LeadFilters({
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {(sp.get("dateFrom") || sp.get("dateTo")) && (
+        <div className="flex items-center gap-2 text-xs bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-700 rounded-lg px-3 py-2 mt-2">
+          <span className="text-blue-700 dark:text-blue-300 font-medium">
+            📅 Date filter: {sp.get("dateField") === "createdAt" ? "Created" : sp.get("dateField") === "lastTouchedAt" ? "Last activity" : "Follow-up"}
+            {" "}{sp.get("dateFrom") || "∞"} → {sp.get("dateTo") || "∞"}
+          </span>
+          <button onClick={() => {
+            const p = new URLSearchParams(sp.toString());
+            ["dateFrom", "dateTo", "dateField"].forEach(k => p.delete(k));
+            p.delete("page");
+            router.replace(`${pathname}?${p.toString()}`);
+          }} className="ml-auto text-blue-500 hover:text-blue-700 font-semibold">✕ Clear</button>
         </div>
       )}
     </>

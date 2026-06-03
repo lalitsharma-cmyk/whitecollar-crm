@@ -3,7 +3,7 @@ import { requireUser } from "@/lib/auth";
 import { LeadStatus } from "@prisma/client";
 import { formatDistanceToNow } from "date-fns";
 import { runReconciler } from "@/lib/reconciler";
-import { waDraftLink, WA_TEMPLATES } from "@/lib/wa";
+import { waDraftLink } from "@/lib/wa";
 import Link from "next/link";
 import ActionCardClient from "@/components/ActionCardClient";
 
@@ -24,6 +24,10 @@ interface CardData {
   budget: { min: number | null; max: number | null; currency: string };
   needsManagerReason?: string | null;
   flagKind: "ready_close" | "overdue" | "needs_you";
+  needSummary: string | null;
+  configuration: string | null;
+  whenCanInvest: string | null;
+  potential: string | null;
 }
 
 function fmtAEDInr(min: number | null, currency: string) {
@@ -34,26 +38,54 @@ function fmtAEDInr(min: number | null, currency: string) {
 
 // AI reason text per stage (the master spec § 9.2 calls for "AI reason text"
 // on each card so the agent understands at a glance why this card is on top).
-function aiNextStep(status: string, todoNext: string | null, aiNext: string | null): { step: string; why: string } {
+function aiNextStep(card: CardData): { step: string; why: string } {
+  const { status, todoNext, aiNextAction, budget, needSummary, configuration, whenCanInvest, potential, team: forwardedTeam, remarks, followupDate } = card;
+  const team = forwardedTeam ?? "Dubai";
+
+  // Build context snippets for the step text
+  const budgetStr = budget.min ? (budget.currency === "INR"
+    ? `${(budget.min/10_000_000).toFixed(1)} Cr`
+    : `AED ${(budget.min/1_000_000).toFixed(1)}M`) : null;
+  const configStr = configuration ?? null;
+  const needStr = needSummary ?? null;
+  const timeline = whenCanInvest ? whenCanInvest.replace("_", " ").toLowerCase() : null;
+
+  // Build a concise context suffix
+  const contextParts: string[] = [];
+  if (budgetStr) contextParts.push(`budget ${budgetStr}`);
+  if (configStr) contextParts.push(configStr);
+  if (needStr && needStr.length < 60) contextParts.push(needStr);
+  if (timeline && timeline !== "unknown") contextParts.push(`timeline: ${timeline}`);
+  const ctx = contextParts.length > 0 ? ` (${contextParts.join(", ")})` : "";
+
+  // Step and why based on stage + context
   if (status === "NEGOTIATION") return {
-    step: "🔥 CLOSE NOW: buying signals are showing — push for booking/token and confirm payment plan.",
-    why: "Closing stage — a manager push can win the deal.",
+    step: `Close NOW — push for token/booking and confirm payment plan${ctx}.`,
+    why: "Closing stage — momentum is critical. A direct manager push can seal the deal.",
   };
   if (status === "SITE_VISIT") return {
-    step: aiNext ?? "Confirm the site visit slot and send the latest brochure/payment plan.",
-    why: "Site visit booked — momentum, don't let it slip.",
+    step: aiNextAction ?? `Confirm the site visit slot and share brochure/payment plan for ${team}${ctx}.`,
+    why: "Site visit booked — keep momentum. Confirm timing and address any objections now.",
   };
   if (status === "QUALIFIED") return {
-    step: aiNext ?? todoNext ?? "Schedule office meeting or site visit — they're ready to evaluate.",
-    why: "Qualified — next step is to lock a visit.",
+    step: todoNext ?? `Schedule a ${team === "India" ? "virtual or office" : "Dubai site"} visit${ctx}.`,
+    why: `Qualified lead${potential === "HIGH" ? " (HIGH potential)" : ""} — next step is to lock a visit.`,
   };
-  if (status === "CONTACTED") return {
-    step: todoNext ?? "Re-engage with project-specific info or a personalised question.",
-    why: "Contacted but no progress in 24h+ — manager touch helps.",
-  };
+  if (status === "CONTACTED") {
+    // Use last remark for context if available
+    const remarkHint = remarks
+      ? remarks.trim().slice(-120).replace(/\s+/g, " ") // last ~120 chars of remarks
+      : null;
+    return {
+      step: todoNext ?? (remarkHint
+        ? `Re-engage based on last conversation: "${remarkHint.slice(0, 80)}..."${ctx}`
+        : `Call and re-engage with project-specific info${ctx}.`),
+      why: "Contacted but no progress — a personal follow-up helps break the silence.",
+    };
+  }
   return {
-    step: todoNext ?? aiNext ?? "Make first call within the hour.",
-    why: "New / idle — gentle nudge from manager.",
+    step: todoNext ?? aiNextAction ?? `First call within the hour — introduce ${team} investment opportunity${ctx}.`,
+    why: "New or idle lead — early contact dramatically improves conversion.",
   };
 }
 
@@ -69,6 +101,10 @@ function makeCard(l: any, flagKind: CardData["flagKind"]): CardData {
     budget: { min: l.budgetMin, max: l.budgetMax, currency: l.budgetCurrency ?? "AED" },
     needsManagerReason: l.managerReviewReason,
     flagKind,
+    needSummary: l.needSummary ?? null,
+    configuration: l.configuration ?? null,
+    whenCanInvest: l.whenCanInvest ?? null,
+    potential: l.potential ?? null,
   };
 }
 
@@ -86,24 +122,35 @@ export default async function ActionListPage() {
   const scope = me.role === "AGENT" ? { ownerId: me.id } : {};
 
   const activeScope = { ...scope, leadOrigin: "ACTIVE" };
+  const leadSelect = {
+    id: true, name: true, phone: true, status: true,
+    forwardedTeam: true, lastTouchedAt: true, followupDate: true,
+    currentStatus: true, todoNext: true, aiNextAction: true,
+    remarks: true, whoIsClient: true,
+    budgetMin: true, budgetMax: true, budgetCurrency: true,
+    needSummary: true, configuration: true, whenCanInvest: true,
+    potential: true, managerReviewReason: true,
+    owner: { select: { name: true } },
+  } as const;
+
   const [readyToClose, overdue, needsYou] = await Promise.all([
     prisma.lead.findMany({
       where: { ...activeScope, status: { in: [LeadStatus.NEGOTIATION, LeadStatus.SITE_VISIT] } },
       orderBy: { lastTouchedAt: "desc" },
       take: 10,
-      include: { owner: { select: { name: true } } }, // B-15: only owner.name is rendered
+      select: leadSelect,
     }),
     prisma.lead.findMany({
       where: { ...activeScope, followupDate: { lt: new Date() }, status: { notIn: [LeadStatus.WON, LeadStatus.LOST] } },
       orderBy: { followupDate: "asc" },
       take: 20,
-      include: { owner: { select: { name: true } } }, // B-15: only owner.name is rendered
+      select: leadSelect,
     }),
     prisma.lead.findMany({
       where: { ...activeScope, needsManagerReview: true, status: { notIn: [LeadStatus.WON, LeadStatus.LOST] } },
       orderBy: { flaggedAt: "desc" },
       take: 15,
-      include: { owner: { select: { name: true } } }, // B-15: only owner.name is rendered
+      select: leadSelect,
     }),
   ]);
 
@@ -138,6 +185,36 @@ export default async function ActionListPage() {
     sections.find(s => s.key === "ready_close")!.items.length +
     sections.find(s => s.key === "overdue")!.items.filter(c => hoursOverdue(c.followupDate) >= 24).length +
     sections.find(s => s.key === "needs_you")!.items.length;
+
+  function buildWaDraft(card: CardData): string {
+    const firstName = card.name.split(" ")[0];
+    const team = card.team ?? "Dubai";
+    const budgetStr = card.budget.min ? (card.budget.currency === "INR"
+      ? `${(card.budget.min/10_000_000).toFixed(1)} Cr`
+      : `AED ${(card.budget.min/1_000_000).toFixed(1)}M`) : null;
+    const config = card.configuration;
+
+    // Build personalised opening lines
+    const parts: string[] = [];
+
+    if (budgetStr && config) {
+      parts.push(`You were exploring a ${config} ${team} property around ${budgetStr}.`);
+    } else if (budgetStr) {
+      parts.push(`You were looking at ${team} investment options around ${budgetStr}.`);
+    } else if (config) {
+      parts.push(`You had shown interest in a ${config} in ${team}.`);
+    } else {
+      parts.push(`You were exploring ${team} investment options.`);
+    }
+
+    if (card.needSummary && card.needSummary.length < 80) {
+      parts.push(`Your requirement: ${card.needSummary}.`);
+    }
+
+    parts.push("I can shortlist 2–3 suitable options based on your preference. Would it be convenient to connect briefly today?");
+
+    return `Hi ${firstName}, as discussed, ${parts.join(" ")}\n\n– ${card.ownerName ?? "White Collar Realty Team"} | White Collar Realty`;
+  }
 
   return (
     <>
@@ -186,8 +263,8 @@ export default async function ActionListPage() {
           ) : (
             <div className="space-y-3">
               {sec.items.map((card) => {
-                const ns = aiNextStep(card.status, card.todoNext, card.aiNextAction);
-                const greet = WA_TEMPLATES.followupEN(card.name.split(" ")[0]);
+                const ns = aiNextStep(card);
+                const greet = buildWaDraft(card);
                 const waLink = card.phone ? waDraftLink(card.phone, greet) : "";
 
                 // Urgent-glow rules:
@@ -245,7 +322,7 @@ export default async function ActionListPage() {
                     )}
 
                     {/* The interactive bar — Complete / Snooze / Escalate plus the
-                        existing Call + WhatsApp shortcuts. Awards XP on Complete. */}
+                        existing Call + WhatsApp shortcuts. */}
                     <ActionCardClient
                       leadId={card.id}
                       leadName={card.name}
