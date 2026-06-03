@@ -44,6 +44,16 @@ const DEFAULTS = {
   // Default SOFT so it NEVER blocks an agent unexpectedly mid-sale — only an
   // admin deliberately flipping to "hard" makes the gate blocking.
   "bantGate.mode": "soft",
+  // ── AI master kill-switch + trial gate (AI Trial Mode spec, Lalit 2026-06-03) ──
+  // ai.enabled — GLOBAL on/off for ALL cost-incurring AI. Default OFF: even with
+  //   a provider key set, NO AI call fires until an admin flips this ON. When OFF
+  //   the UI shows "AI disabled by admin" and every generateText() returns null →
+  //   callers fall back to the rule-based path (zero token cost).
+  // ai.trialMode.enabled — lets a CONFIRMED, bounded trial run call the provider
+  //   on a small sample EVEN WHILE ai.enabled is OFF (the whole point of piloting
+  //   before global go-live). Normal flows stay gated by ai.enabled. Default OFF.
+  "ai.enabled": "false",
+  "ai.trialMode.enabled": "false",
 };
 
 export async function getSetting(key: string): Promise<string> {
@@ -81,6 +91,23 @@ export async function getRoundRobinEnabled(): Promise<boolean> {
 
 export async function getTestingModeEnabled(): Promise<boolean> {
   const raw = await getSetting("testingMode.enabled");
+  if (!raw) return false; // default OFF
+  return raw.toLowerCase() === "true";
+}
+
+// ── AI kill-switch accessors ───────────────────────────────────────────
+// Global AI on/off. Default OFF (mirrors testingMode): nothing cost-incurring
+// runs until an admin deliberately enables it. Enforced inside generateText().
+export async function getAiEnabled(): Promise<boolean> {
+  const raw = await getSetting("ai.enabled");
+  if (!raw) return false; // default OFF
+  return raw.toLowerCase() === "true";
+}
+
+// Whether a bounded, admin-confirmed AI trial may call the provider WHILE global
+// AI is still OFF. Default OFF. The trial engine checks this; normal flows don't.
+export async function getAiTrialModeEnabled(): Promise<boolean> {
+  const raw = await getSetting("ai.trialMode.enabled");
   if (!raw) return false; // default OFF
   return raw.toLowerCase() === "true";
 }

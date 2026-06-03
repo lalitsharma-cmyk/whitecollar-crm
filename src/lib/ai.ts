@@ -1,5 +1,7 @@
 import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
+import { prisma } from "@/lib/prisma";
+import { getAiEnabled, getAiTrialModeEnabled } from "@/lib/settings";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Provider selection
@@ -35,72 +37,208 @@ export function aiEnabled() {
   return aiProvider() !== null;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Generic text-generation wrapper. Abstracts the two provider HTTP shapes so
-// the rest of the lib stays simple. Returns null when no provider is configured
-// — callers handle that fallback.
-// ─────────────────────────────────────────────────────────────────────────────
+// Truthful "is real AI live right now" — provider configured AND the admin
+// kill-switch (Setting "ai.enabled") is ON. Async (reads the DB flag). Use this
+// for UI badges + "AI disabled by admin" messaging; aiEnabled() alone only means
+// a provider key is present, not that the admin has turned AI on.
+export async function aiLive(): Promise<boolean> {
+  if (aiProvider() === null) return false;
+  return getAiEnabled();
+}
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Cost model (approximate 2026 list prices, USD per 1,000,000 tokens). Kept
+// conservative so a pre-run ESTIMATE never under-promises. Gemini's free tier
+// bills ₹0 in practice — these are the paid-tier list prices, shown so an
+// estimate is never misleadingly zero; the trial report flags free-tier runs.
+// Handy identity: USD-per-1M-tokens == micro-USD-per-token, so cost in micro-USD
+// = inTok * inPerM + outTok * outPerM.
+// ─────────────────────────────────────────────────────────────────────────────
+export interface ModelPrice { inPerM: number; outPerM: number }
+export const AI_PRICES: Record<string, ModelPrice> = {
+  "gemini-1.5-flash": { inPerM: 0.075, outPerM: 0.30 },
+  "gemini-2.0-flash": { inPerM: 0.10, outPerM: 0.40 },
+  "gemini-2.5-flash": { inPerM: 0.15, outPerM: 0.60 },
+  "gemini-1.5-pro": { inPerM: 1.25, outPerM: 5.00 },
+  "claude-haiku-4-5": { inPerM: 1.00, outPerM: 5.00 },
+};
+const DEFAULT_PRICE: ModelPrice = { inPerM: 1.0, outPerM: 5.0 };
+
+/** Cost of a call in MICRO-USD (1e-6 USD), rounded. Unknown model → safe default. */
+export function costMicroUsd(model: string | null | undefined, inTok: number, outTok: number): number {
+  const p = (model && AI_PRICES[model]) || DEFAULT_PRICE;
+  return Math.round(inTok * p.inPerM + outTok * p.outPerM);
+}
+
+/** The model id that WOULD be used for the active provider (for estimates / display). */
+export function activeModel(): string | null {
+  const p = aiProvider();
+  if (p === "gemini") return GEMINI_MODEL;
+  if (p === "anthropic") return ANTHROPIC_MODEL;
+  return null;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Generation core. ALL provider HTTP traffic funnels through generateTextWithUsage,
+// which makes it the single enforcement point for:
+//   • the admin KILL-SWITCH (Setting "ai.enabled") — when OFF, normal calls
+//     return null at ZERO cost and callers fall back to the rule-based path;
+//   • TRIAL MODE — a confirmed trial (ctx.trial) may run under
+//     "ai.trialMode.enabled" even while global AI is OFF;
+//   • token + cost capture and the AiUsageLog audit row.
+// Cost is therefore incurred ONLY when a request is actually sent from here —
+// never on page load, list render, or a cached-value display.
+// ─────────────────────────────────────────────────────────────────────────────
 interface GenArgs {
   system?: string;
   prompt: string;
   maxTokens?: number;
 }
 
-export async function generateText({ system, prompt, maxTokens = 600 }: GenArgs): Promise<string | null> {
+export interface GenContext {
+  feature?: string;            // logical tag for AiUsageLog: "score" | "summary" | "chat" | "trial" | …
+  leadId?: string | null;
+  trialRunId?: string | null;
+  trial?: boolean;             // confirmed trial → allowed under ai.trialMode.enabled while global AI is OFF
+  log?: boolean;               // write an AiUsageLog row (default true)
+}
+
+export interface GenResult {
+  text: string | null;
+  inputTokens: number;
+  outputTokens: number;
+  provider: Provider;
+  model: string | null;
+  state: "ok" | "disabled" | "no_provider" | "error";
+}
+
+const emptyGen = (state: GenResult["state"], provider: Provider = null, model: string | null = null): GenResult =>
+  ({ text: null, inputTokens: 0, outputTokens: 0, provider, model, state });
+
+/**
+ * Full-fidelity generation: text + token usage + provider/model + a machine
+ * state. Use when you need cost/usage (e.g. the AI trial engine). Enforces the
+ * kill-switch and writes the AiUsageLog row.
+ */
+export async function generateTextWithUsage(
+  { system, prompt, maxTokens = 600 }: GenArgs,
+  ctx: GenContext = {},
+): Promise<GenResult> {
   const provider = aiProvider();
-  if (provider === "gemini") return geminiGenerate({ system, prompt, maxTokens });
-  if (provider === "anthropic") return anthropicGenerate({ system, prompt, maxTokens });
-  return null;
+  if (!provider) return emptyGen("no_provider");
+
+  // KILL-SWITCH. Normal calls require global ai.enabled. A confirmed trial may
+  // proceed under ai.trialMode.enabled even while global AI is off.
+  const globalOn = await getAiEnabled();
+  const allowed = globalOn || (ctx.trial === true && (await getAiTrialModeEnabled()));
+  if (!allowed) return emptyGen("disabled", provider);
+
+  const model = provider === "gemini" ? GEMINI_MODEL : ANTHROPIC_MODEL;
+  const startedAt = Date.now();
+  let out: { text: string | null; inputTokens: number; outputTokens: number };
+  try {
+    out =
+      provider === "gemini"
+        ? await geminiGenerate({ system, prompt, maxTokens })
+        : await anthropicGenerate({ system, prompt, maxTokens });
+  } catch (e) {
+    console.error("AI generate failed", e);
+    await logUsage({ provider, model, ctx, inTok: 0, outTok: 0, ms: Date.now() - startedAt, ok: false });
+    return emptyGen("error", provider, model);
+  }
+  const ms = Date.now() - startedAt;
+  await logUsage({ provider, model, ctx, inTok: out.inputTokens, outTok: out.outputTokens, ms, ok: out.text != null });
+  return {
+    text: out.text,
+    inputTokens: out.inputTokens,
+    outputTokens: out.outputTokens,
+    provider,
+    model,
+    state: out.text != null ? "ok" : "error",
+  };
 }
 
-async function geminiGenerate({ system, prompt, maxTokens }: Required<Pick<GenArgs, "prompt" | "maxTokens">> & { system?: string }): Promise<string | null> {
+// Best-effort usage audit. NEVER throws into the caller — a logging failure must
+// not break an AI feature or abort a trial run.
+async function logUsage(args: {
+  provider: Provider; model: string; ctx: GenContext; inTok: number; outTok: number; ms: number; ok: boolean;
+}): Promise<void> {
+  if (args.ctx.log === false) return;
+  if (!args.provider) return;
+  try {
+    await prisma.aiUsageLog.create({
+      data: {
+        provider: args.provider,
+        model: args.model,
+        feature: args.ctx.feature ?? null,
+        leadId: args.ctx.leadId ?? null,
+        trialRunId: args.ctx.trialRunId ?? null,
+        inputTokens: args.inTok,
+        outputTokens: args.outTok,
+        costMicroUsd: costMicroUsd(args.model, args.inTok, args.outTok),
+        ms: args.ms,
+        ok: args.ok,
+      },
+    });
+  } catch (e) {
+    console.warn("AiUsageLog write failed (non-fatal):", e);
+  }
+}
+
+/**
+ * Back-compat convenience: text only. Honors the same kill-switch + trial gate.
+ * Existing callers keep working unchanged; pass ctx to tag usage by feature or
+ * to run under a confirmed trial.
+ */
+export async function generateText(args: GenArgs, ctx: GenContext = {}): Promise<string | null> {
+  return (await generateTextWithUsage(args, ctx)).text;
+}
+
+async function geminiGenerate({ system, prompt, maxTokens }: Required<Pick<GenArgs, "prompt" | "maxTokens">> & { system?: string }): Promise<{ text: string | null; inputTokens: number; outputTokens: number }> {
   const key = process.env.GEMINI_API_KEY!;
-  // Gemini's REST API. Using raw fetch keeps us free of @google/generative-ai
-  // as a dependency. The system instruction goes in a dedicated field on v1beta.
+  // Gemini's REST API. Raw fetch keeps us free of @google/generative-ai as a
+  // dependency. System instruction goes in a dedicated field on v1beta. A
+  // network throw propagates to generateTextWithUsage's try/catch.
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${encodeURIComponent(key)}`;
-  try {
-    const r = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        ...(system ? { systemInstruction: { parts: [{ text: system }] } } : {}),
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: {
-          maxOutputTokens: maxTokens,
-          temperature: 0.4,
-        },
-      }),
-    });
-    if (!r.ok) {
-      const errBody = await r.text();
-      console.error("Gemini error", r.status, errBody.slice(0, 200));
-      return null;
-    }
-    const j = await r.json();
-    const text = j.candidates?.[0]?.content?.parts?.map((p: { text?: string }) => p.text ?? "").join("") ?? "";
-    return text || null;
-  } catch (e) {
-    console.error("Gemini fetch failed", e);
-    return null;
+  const r = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      ...(system ? { systemInstruction: { parts: [{ text: system }] } } : {}),
+      contents: [{ parts: [{ text: prompt }] }],
+      generationConfig: { maxOutputTokens: maxTokens, temperature: 0.4 },
+    }),
+  });
+  if (!r.ok) {
+    const errBody = await r.text();
+    console.error("Gemini error", r.status, errBody.slice(0, 200));
+    return { text: null, inputTokens: 0, outputTokens: 0 };
   }
+  const j = await r.json();
+  const text = j.candidates?.[0]?.content?.parts?.map((p: { text?: string }) => p.text ?? "").join("") ?? "";
+  const u = j.usageMetadata ?? {};
+  return {
+    text: text || null,
+    inputTokens: Number(u.promptTokenCount) || 0,
+    outputTokens: Number(u.candidatesTokenCount) || 0,
+  };
 }
 
-async function anthropicGenerate({ system, prompt, maxTokens }: Required<Pick<GenArgs, "prompt" | "maxTokens">> & { system?: string }): Promise<string | null> {
+async function anthropicGenerate({ system, prompt, maxTokens }: Required<Pick<GenArgs, "prompt" | "maxTokens">> & { system?: string }): Promise<{ text: string | null; inputTokens: number; outputTokens: number }> {
   const key = process.env.ANTHROPIC_API_KEY!;
-  try {
-    const client = new Anthropic({ apiKey: key });
-    const msg = await client.messages.create({
-      model: ANTHROPIC_MODEL,
-      max_tokens: maxTokens,
-      ...(system ? { system } : {}),
-      messages: [{ role: "user", content: prompt }],
-    });
-    return msg.content.map((b) => (b.type === "text" ? b.text : "")).join("");
-  } catch (e) {
-    console.error("Anthropic call failed", e);
-    return null;
-  }
+  const client = new Anthropic({ apiKey: key });
+  const msg = await client.messages.create({
+    model: ANTHROPIC_MODEL,
+    max_tokens: maxTokens,
+    ...(system ? { system } : {}),
+    messages: [{ role: "user", content: prompt }],
+  });
+  const text = msg.content.map((b) => (b.type === "text" ? b.text : "")).join("");
+  return {
+    text: text || null,
+    inputTokens: msg.usage?.input_tokens ?? 0,
+    outputTokens: msg.usage?.output_tokens ?? 0,
+  };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -142,7 +280,7 @@ export interface AIScoreResult {
   nextAction: string;
 }
 
-export async function scoreLead(lead: LeadForAI): Promise<AIScoreResult> {
+export async function scoreLead(lead: LeadForAI, ctx: GenContext = {}): Promise<AIScoreResult> {
   if (!aiEnabled()) return ruleBasedScore(lead);
 
   const prompt = `You are an expert real-estate sales analyst for a Dubai property investment firm.
@@ -182,7 +320,7 @@ Funnel:
 - Last touch: ${lead.lastTouchDaysAgo == null ? "never" : `${lead.lastTouchDaysAgo}d ago`}
 - Remarks: ${lead.remarks ?? "—"}`;
 
-  const text = await generateText({ prompt, maxTokens: 400 });
+  const text = await generateText({ prompt, maxTokens: 400 }, { feature: "score", ...ctx });
   if (!text) return ruleBasedScore(lead);
   try {
     const json = JSON.parse(text.match(/\{[\s\S]*\}/)?.[0] ?? text);
@@ -266,7 +404,7 @@ export interface AIScoreLeadResult {
   nextAction: string;
 }
 
-export async function aiScoreLead(input: AIScoreLeadInput): Promise<AIScoreLeadResult | null> {
+export async function aiScoreLead(input: AIScoreLeadInput, ctx: GenContext = {}): Promise<AIScoreLeadResult | null> {
   if (!aiEnabled()) return null;
 
   const acts = input.recentActivities
@@ -319,7 +457,7 @@ ${wa || "(none)"}
 Remarks (truncated):
 ${(input.remarks ?? "").slice(0, 1200)}`;
 
-  const text = await generateText({ prompt, maxTokens: 500 });
+  const text = await generateText({ prompt, maxTokens: 500 }, { feature: "score", leadId: input.leadId, ...ctx });
   if (!text) return null;
   try {
     const json = JSON.parse(text.match(/\{[\s\S]*\}/)?.[0] ?? text);
@@ -368,6 +506,7 @@ export interface ConversationSummary {
 export async function generateConversationSummary(
   lead: Pick<LeadForAI, "name" | "company" | "city" | "configuration" | "budgetMin" | "budgetCurrency" | "whoIsClient" | "categorization" | "fundReadiness" | "whenCanInvest" | "status" | "remarks">,
   callLogs: CallForAI[],
+  ctx: GenContext = {},
 ): Promise<ConversationSummary | null> {
   if (!aiEnabled()) return null;
 
@@ -398,7 +537,7 @@ ${callLines || "(no calls yet)"}
 Original remarks from MIS sheet (truncated):
 ${(lead.remarks ?? "").slice(0, 1500)}`;
 
-  const text = await generateText({ prompt, maxTokens: 350 });
+  const text = await generateText({ prompt, maxTokens: 350 }, { feature: "summary", ...ctx });
   if (!text) return null;
   try {
     const json = JSON.parse(text.match(/\{[\s\S]*\}/)?.[0] ?? text);
@@ -415,7 +554,7 @@ ${(lead.remarks ?? "").slice(0, 1500)}`;
 // Ask-the-CRM chat (existing API)
 // ─────────────────────────────────────────────────────────────────────────────
 
-export async function askCRM(question: string, contextSummary: string): Promise<string> {
+export async function askCRM(question: string, contextSummary: string, ctx: GenContext = {}): Promise<string> {
   if (!aiEnabled()) {
     return `🤖 (AI not configured yet)\n\nI'd answer "${question}" if you set GEMINI_API_KEY (free) in your environment.\n\nHere's the raw CRM context I would have used:\n\n${contextSummary}`;
   }
@@ -423,6 +562,6 @@ export async function askCRM(question: string, contextSummary: string): Promise<
     system: "You are an AI assistant inside White Collar Realty's Dubai-focused CRM. Answer the sales manager's question concisely using the provided CRM context. Currency is AED. When evaluating leads, prioritise the 'Who Is Client' narrative and the qualification fields (Potential, Fund Readiness, When Can Invest, Mood). Avoid keyword-pattern summaries — explain the situation. Use bullet points for lists.",
     prompt: `CRM context:\n${contextSummary}\n\nQuestion: ${question}`,
     maxTokens: 800,
-  });
+  }, { feature: "chat", ...ctx });
   return text ?? "AI request failed. Try again or check the server logs.";
 }

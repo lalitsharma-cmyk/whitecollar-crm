@@ -289,8 +289,16 @@ model Lead {
   // ownership
   ownerId         String?
   owner           User?       @relation("LeadOwner", fields: [ownerId], references: [id])
-  forwardedTeam   String?     // "Dubai" / "India" — for assignment
+  forwardedTeam   String?     // "Dubai" / "India" — canonical team marker. NULL = not yet
+                              // classified → ALL automation is suppressed until a team is set
+                              // (the mandatory pre-assignment routing gate; see src/lib/teamRouting.ts).
   assignedAt      DateTime?   // when ownerId was last set — for 15-min SLA
+  // ── Routing provenance (Lead Routing Architecture) ──
+  // Captures HOW/WHY this lead landed on its team, for audit + the lead-detail
+  // "routing" display. Set alongside forwardedTeam at intake/assignment time.
+  routingMethod   String?     // "manual" | "import" | "rule" | "round_robin_pool" | "admin_queue"
+  routingSource   String?     // e.g. "website:dubai-property", "csv:forceTeam", "manual_form", "whatsapp"
+  routingReason   String?     // human-readable, e.g. "Dubai property page" / "agent picked India"
   // SLA reconciler
   slaFirstCallBy  DateTime?   // ownerId-set + 15 min — escalate if no call by then
   slaEscalated    Boolean     @default(false)  // already notified admin
@@ -373,6 +381,7 @@ model Lead {
   @@index([ownerId])
   @@index([createdAt])
   @@index([eoiStage])
+  @@index([forwardedTeam])
 }
 
 // =====================================================
@@ -1116,4 +1125,100 @@ model CronRun {
   error      String?
   meta       String?   // JSON string for extra context
   @@index([name, startedAt])
+}
+
+// =====================================================
+// AI TRIAL MODE + USAGE TRACKING
+// (AI kill-switch / trial-before-full-run spec — Lalit 2026-06-03)
+//
+// Before AI is unleashed on the full ~25k-lead DB it is piloted on a small,
+// admin-selected sample so we can judge output quality + real token cost first.
+//   • AiTrialRun  — one pilot batch: selection, live progress, cost aggregates.
+//   • AiTrialItem — one (lead × feature) result inside a run, kept for manual
+//                   quality review and for the "clear trial outputs" control.
+//   • AiUsageLog  — every REAL provider call (trial or live); the source of
+//                   truth for the AI usage/cost dashboard. Written ONLY when an
+//                   actual API request is sent (never on page load / cached read).
+// All additive. The global kill-switch + trial-mode flags live in Setting
+// (keys "ai.enabled" / "ai.trialMode.enabled"), NOT here.
+// =====================================================
+enum AiTrialStatus {
+  DRAFT      // created + cost-estimated, awaiting admin confirm
+  RUNNING
+  PAUSED     // admin paused — completed items kept, resumable
+  STOPPED    // admin stopped — partial results kept, NOT auto-resumed
+  DONE
+  FAILED
+}
+
+model AiTrialRun {
+  id              String        @id @default(cuid())
+  status          AiTrialStatus @default(DRAFT)
+  // ── selection ──
+  sampleSize      Int           // 10 / 25 / 50 / 100 (or custom)
+  team            String?       // "India" | "Dubai" | null = all teams
+  source          String?       // Lead.source filter | null = any source
+  features        String        // CSV of feature keys: summary,score,nextAction,waDraft,coldRevival,propertyMatch
+  // ── provider snapshot (captured at run start) ──
+  provider        String?       // "gemini" | "anthropic"
+  model           String?       // resolved model id
+  // ── live progress ──
+  totalLeads      Int           @default(0)
+  processed       Int           @default(0)
+  failed          Int           @default(0)
+  // ── usage / cost (tokens as ints; cost in MICRO-USD to avoid float drift) ──
+  inputTokens     Int           @default(0)
+  outputTokens    Int           @default(0)
+  estCostMicroUsd Int?          // pre-run estimate shown for confirmation
+  costMicroUsd    Int           @default(0)   // actual accumulated
+  totalMs         Int           @default(0)   // summed processing time
+  // ── control / audit ──
+  createdById     String?       // admin who created it (User.id; no FK so history survives user removal)
+  confirmedAt     DateTime?     // admin confirmed the estimate → allowed to run
+  startedAt       DateTime?
+  finishedAt      DateTime?
+  qualityNote     String?       // admin's post-review notes (good / bad / too generic / …)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  items           AiTrialItem[]
+
+  @@index([status])
+  @@index([createdAt])
+}
+
+model AiTrialItem {
+  id           String     @id @default(cuid())
+  runId        String
+  run          AiTrialRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+  leadId       String     // Lead.id (no FK — a deleted lead must not block trial history)
+  feature      String     // which feature this row is for
+  status       String     // "PENDING" | "DONE" | "FAILED" | "SKIPPED"
+  inputTokens  Int        @default(0)
+  outputTokens Int        @default(0)
+  costMicroUsd Int        @default(0)
+  ms           Int?       // processing time for this item
+  output       String?    // generated text, kept for manual quality review
+  error        String?
+  createdAt    DateTime   @default(now())
+
+  @@index([runId])
+  @@index([leadId])
+}
+
+model AiUsageLog {
+  id           String   @id @default(cuid())
+  provider     String   // "gemini" | "anthropic"
+  model        String
+  feature      String?  // logical feature: "score" | "summary" | "chat" | "trial" | …
+  leadId       String?  // when tied to a specific lead
+  trialRunId   String?  // when part of a trial run
+  inputTokens  Int      @default(0)
+  outputTokens Int      @default(0)
+  costMicroUsd Int      @default(0)
+  ms           Int?
+  ok           Boolean  @default(true)
+  createdAt    DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([feature])
 }

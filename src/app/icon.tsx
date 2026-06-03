@@ -6,7 +6,7 @@ export const size = { width: 32, height: 32 };
 export const contentType = "image/png";
 
 export default function Icon() {
-  const logoB64 = readFileSync(join(process.cwd(), "public/brand/wcr-favicon.png")).toString("base64");
+  const logoB64 = readFileSync(join(process.cwd(), "public/brand/wcr-logo.png")).toString("base64");
   return new ImageResponse(
     (
       <div
