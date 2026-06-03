@@ -21,11 +21,8 @@ import InlineEdit from "@/components/InlineEdit";
 import { acefoneEnabled } from "@/lib/acefone";
 import { canTouchLead } from "@/lib/leadScope";
 import { projectWhereForUser, teamToCountry } from "@/lib/propertyScope";
-import SuggestedUnitsCard from "@/components/SuggestedUnitsCard";
-import { bestUnitsForLead } from "@/lib/inventoryMatch";
 // CallHistoryCard removed — folded into ConversationStreamCard below.
 import ConversationStreamCard from "@/components/ConversationStreamCard";
-import SmartCMACard from "@/components/SmartCMACard";
 import StickyNoteWidget from "@/components/StickyNoteWidget";
 import BuyingSignalsCard from "@/components/BuyingSignalsCard";
 import NextBestActionCard from "@/components/NextBestActionCard";
@@ -134,10 +131,6 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
   });
   const bookingsCount = investorMatches.filter(m => m.bookingDoneAt != null || m.status === "WON").length;
   const matchedLeadIds = investorMatches.map(m => m.id);
-
-  // Inventory matching — top 3 best-fit AVAILABLE units. Empty array if the
-  // lead is missing budget/team or nothing matches; card hides itself in that case.
-  const suggestedUnits = await bestUnitsForLead(id, 3);
 
   const lastBy = (t: string) => meetingActs.find(a => a.type === t)?.completedAt ?? meetingActs.find(a => a.type === t)?.scheduledAt ?? null;
   const meetingCounts = {
@@ -727,7 +720,6 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
             3. Start a Site Visit (SiteVisitTracker) — "below meeting counts, at last"
             4. Scheduling & next action — moved from left column
             5. Projects discussed
-            6. Smart CMA
             ... rest unchanged
       */}
       <div className="space-y-4">
@@ -945,58 +937,6 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
           </div>
         </div>
 
-        {/* Smart CMA — branded PDF with units + payment plan + ROI for the client */}
-        <div data-lead-section="projects" className="card p-3 border-l-4 border-[#c9a24b] bg-amber-50/40">
-          <div className="flex items-center justify-between gap-2 flex-wrap">
-            <div className="min-w-0">
-              <div className="font-semibold text-sm">📄 Smart CMA · client-ready PDF</div>
-              <div className="text-[11px] text-gray-600 dark:text-slate-300">Cover · requirements · top-3 units · comparison · payment plan</div>
-            </div>
-            <a
-              href={`/api/leads/${lead.id}/cma`}
-              className="btn btn-primary text-xs flex-shrink-0"
-              download
-            >⬇ Download PDF</a>
-          </div>
-        </div>
-
-        {suggestedUnits.length > 0 && (
-          <div data-lead-section="projects">
-          <SuggestedUnitsCard
-            leadId={lead.id}
-            units={suggestedUnits.map((u) => ({
-              id: u.id,
-              code: u.code,
-              configuration: u.configuration,
-              carpetArea: u.carpetArea,
-              floor: u.floor,
-              view: u.view,
-              priceBase: u.priceBase,
-              score: u.score,
-              project: {
-                id: u.project.id,
-                name: u.project.name,
-                city: u.project.city,
-                country: u.project.country,
-                area: u.project.area,
-                heroColor: u.project.heroColor,
-              },
-            }))}
-            alreadyAddedUnitIds={lead.interestedUnits.map((p) => p.unitId)}
-          />
-          </div>
-        )}
-
-        {/* Interested properties moved UP — now lives directly under
-            LeadProjectsClient. */}
-
-        {/* Smart CMA — Agent P (Round 4). Surfaces 3 lookalike units from our
-            inventory + optional Claude narrative. Shows only when the lead has
-            either a configuration or at least one interested unit (the
-            comparable anchor). */}
-        {(lead.configuration || lead.interestedUnits.length > 0) && (
-          <SmartCMACard leadId={lead.id} />
-        )}
 
         {/* Assignment history — admin/manager only. Agents shouldn't see who else
             owned the lead before them (avoids inter-agent friction + cherry-picking). */}
