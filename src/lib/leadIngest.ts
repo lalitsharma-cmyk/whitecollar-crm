@@ -12,7 +12,7 @@ import { getTestingModeEnabled } from "@/lib/settings";
 import { notifyHotLead } from "@/lib/push";
 import { findMatchingLeads, summariseHistory, projectsFromInterestedUnits } from "@/lib/investorMatch";
 import { audit } from "@/lib/audit";
-import { resolveTeam, routingFieldsFor } from "@/lib/teamRouting";
+import { resolveTeam, routingFieldsFor, automationGate } from "@/lib/teamRouting";
 import { runIntelligenceCheck } from "@/lib/intelligenceCheck";
 
 export interface RawLeadInput {
@@ -334,8 +334,12 @@ export async function ingestLead(input: RawLeadInput) {
   // to real client numbers while he's importing existing-client data for testing.
   const window = currentWindow();
   const testingMode = await getTestingModeEnabled();
-  if (window.kind === "OVERNIGHT_QUEUE" && lead.phone && !testingMode) {
+  // Automation gate: no automation until team is classified AND testing mode is OFF.
+  const gate = automationGate(lead.forwardedTeam, testingMode);
+  if (window.kind === "OVERNIGHT_QUEUE" && lead.phone && gate.ok) {
     sendAfterHoursWelcome(lead.id, lead.phone, lead.name).catch(() => {});
+  } else if (window.kind === "OVERNIGHT_QUEUE" && lead.phone && !gate.ok) {
+    console.log("[ingestLead] after-hours welcome suppressed:", gate.reason);
   }
 
   // Admin alert — they have 5 minutes to assign manually
@@ -371,16 +375,21 @@ export async function ingestLead(input: RawLeadInput) {
   // ── Speed-to-lead auto-response: fire-and-forget WA + email under 60s ──
   // Runs after the after-hours welcome trigger so the WA-dedupe check inside
   // sees the just-created WhatsAppMessage row and skips the duplicate send.
-  // Testing-mode kill-switch: skip (speedToLead.enabled also independently gates this).
-  if (!testingMode) {
+  // Automation gate: also requires team to be classified before firing.
+  if (gate.ok) {
     sendSpeedToLeadResponses(lead.id).catch(() => {});
+  } else {
+    console.log("[ingestLead] speed-to-lead suppressed:", gate.reason);
   }
 
   // ── Workflow engine: fire any LEAD_CREATED rules ──
-  // Testing-mode kill-switch: also skip — workflow actions can send WhatsApp/email
-  // to real client numbers, which would defeat the purpose of testing mode.
-  if (!testingMode) {
+  // Automation gate: also requires team to be classified before firing.
+  // Workflow actions can send WhatsApp/email to real client numbers — don't fire
+  // until team is set and testing mode is off.
+  if (gate.ok) {
     fireWorkflowTrigger("LEAD_CREATED", lead.id, { source: input.source }).catch(() => {});
+  } else {
+    console.log("[ingestLead] workflow trigger suppressed:", gate.reason);
   }
 
   return { lead, deduped: false as const };
