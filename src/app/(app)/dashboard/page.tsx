@@ -19,6 +19,7 @@ import { todayIST } from "@/lib/attendance";
 import { quoteOfTheDay } from "@/lib/salesQuotes";
 import { normalizeTeam } from "@/lib/teamRouting";
 import TeamScoreboardCard from "@/components/TeamScoreboardCard";
+import WeeklySummaryCard from "@/components/WeeklySummaryCard";
 
 export const dynamic = "force-dynamic";
 
@@ -223,6 +224,44 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
       }),
     ]);
     eoiAlerts = { active, kycPending, approvalNeeded, stuck };
+  }
+
+  // ── Weekly pipeline summary — ADMIN / MANAGER only ───────────────────
+  // IST week boundaries: Mon midnight IST → Sun midnight IST
+  const istOffsetMs = 5.5 * 60 * 60 * 1000;
+  const nowIst = new Date(Date.now() + istOffsetMs);
+  const dayOfWeek = nowIst.getUTCDay(); // 0=Sun, 1=Mon...
+  const daysFromMonday = (dayOfWeek + 6) % 7;
+  const thisWeekMonday = new Date(
+    Date.UTC(nowIst.getUTCFullYear(), nowIst.getUTCMonth(), nowIst.getUTCDate() - daysFromMonday)
+    - istOffsetMs
+  );
+  const lastWeekMonday = new Date(thisWeekMonday.getTime() - 7 * 24 * 3600 * 1000);
+
+  let weeklyMetrics: Array<{ label: string; thisWeek: number; lastWeek: number }> = [];
+  if (isAdminOrMgr) {
+    const [thisWeekStats, lastWeekStats] = await Promise.all([
+      Promise.all([
+        prisma.lead.count({ where: { ...teamScope, createdAt: { gte: thisWeekMonday } } }),
+        prisma.lead.count({ where: { ...teamScope, status: { notIn: ["NEW", "LOST"] }, updatedAt: { gte: thisWeekMonday } } }),
+        prisma.lead.count({ where: { ...teamScope, status: { in: ["QUALIFIED", "SITE_VISIT", "NEGOTIATION", "EOI", "BOOKING_DONE", "WON"] }, updatedAt: { gte: thisWeekMonday } } }),
+        prisma.lead.count({ where: { ...teamScope, status: "WON", updatedAt: { gte: thisWeekMonday } } }),
+      ]),
+      Promise.all([
+        prisma.lead.count({ where: { ...teamScope, createdAt: { gte: lastWeekMonday, lt: thisWeekMonday } } }),
+        prisma.lead.count({ where: { ...teamScope, status: { notIn: ["NEW", "LOST"] }, updatedAt: { gte: lastWeekMonday, lt: thisWeekMonday } } }),
+        prisma.lead.count({ where: { ...teamScope, status: { in: ["QUALIFIED", "SITE_VISIT", "NEGOTIATION", "EOI", "BOOKING_DONE", "WON"] }, updatedAt: { gte: lastWeekMonday, lt: thisWeekMonday } } }),
+        prisma.lead.count({ where: { ...teamScope, status: "WON", updatedAt: { gte: lastWeekMonday, lt: thisWeekMonday } } }),
+      ]),
+    ]);
+    const [thisNew, thisContacted, thisQualified, thisWon] = thisWeekStats;
+    const [lastNew, lastContacted, lastQualified, lastWon] = lastWeekStats;
+    weeklyMetrics = [
+      { label: "New Leads", thisWeek: thisNew, lastWeek: lastNew },
+      { label: "Contacted", thisWeek: thisContacted, lastWeek: lastContacted },
+      { label: "Qualified+", thisWeek: thisQualified, lastWeek: lastQualified },
+      { label: "Won", thisWeek: thisWon, lastWeek: lastWon },
+    ];
   }
 
   // ── Team scoreboard — calls made today by each agent ──────────────────
@@ -526,6 +565,11 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
       {/* Team live scoreboard — ADMIN / MANAGER only */}
       {(me.role === "ADMIN" || me.role === "MANAGER") && (
         <TeamScoreboardCard rows={scoreboardRows} />
+      )}
+
+      {/* Weekly pipeline summary — ADMIN / MANAGER only */}
+      {(me.role === "ADMIN" || me.role === "MANAGER") && weeklyMetrics.length > 0 && (
+        <WeeklySummaryCard metrics={weeklyMetrics} />
       )}
 
       {/* Smart suggestions — rule-based daily nudges. Mounted near the top,

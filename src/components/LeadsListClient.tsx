@@ -106,6 +106,29 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
   const [bulkErr, setBulkErr] = useState<string | null>(null);
   const [bulkCrossTeamWarn, setBulkCrossTeamWarn] = useState<string | null>(null);
   const [pickerOpenFor, setPickerOpenFor] = useState<string | null>(null);
+  const [statusOpenFor, setStatusOpenFor] = useState<string | null>(null);
+
+  const LEAD_STATUSES: Array<{ v: string; label: string }> = [
+    { v: "NEW",          label: "New" },
+    { v: "CONTACTED",    label: "Contacted" },
+    { v: "QUALIFIED",    label: "Qualified" },
+    { v: "SITE_VISIT",   label: "Site Visit" },
+    { v: "NEGOTIATION",  label: "Negotiation" },
+    { v: "EOI",          label: "EOI" },
+    { v: "BOOKING_DONE", label: "Booked" },
+    { v: "WON",          label: "Won" },
+    { v: "LOST",         label: "Lost" },
+  ];
+
+  async function quickSetStatus(leadId: string, status: string) {
+    await fetch(`/api/leads/${leadId}/update`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status }),
+    });
+    setStatusOpenFor(null);
+    router.refresh();
+  }
 
   async function quickSetFollowup(leadId: string, date: string) {
     await fetch(`/api/leads/${leadId}/update`, {
@@ -291,7 +314,26 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
                           <span aria-hidden>🚨</span>Untouched
                         </span>
                       )}
-                      <span className={`chip ${l.statusChip} text-[9px]`}>{l.statusName.replaceAll("_", " ")}</span>
+                      {statusOpenFor === l.id ? (
+                        <select
+                          autoFocus
+                          className="text-[10px] border rounded px-1 py-0.5 bg-white dark:bg-slate-700 dark:text-slate-100"
+                          defaultValue={l.statusName}
+                          onChange={(e) => { e.stopPropagation(); quickSetStatus(l.id, e.target.value); }}
+                          onBlur={() => setStatusOpenFor(null)}
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          {LEAD_STATUSES.map(s => <option key={s.v} value={s.v}>{s.label}</option>)}
+                        </select>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); e.preventDefault(); setStatusOpenFor(l.id); }}
+                          className={`chip ${l.statusChip} text-[9px] inline-flex items-center gap-0.5`}
+                        >
+                          {l.statusName.replaceAll("_", " ")}<span aria-hidden>▾</span>
+                        </button>
+                      )}
                       {l.aiScore && <span className={`chip ${aiChip(l.aiScore)} text-[9px]`}>{l.aiScore}</span>}
                     </div>
                   </div>
@@ -422,7 +464,26 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
                       {maskedPhone && (
                         <span className="text-[11px] text-gray-400 dark:text-slate-500 font-mono">{maskedPhone}</span>
                       )}
-                      <span className={`chip ${l.statusChip} text-[10px] py-0`}>{l.statusName.replaceAll("_", " ")}</span>
+                      {statusOpenFor === l.id ? (
+                        <select
+                          autoFocus
+                          className="text-[10px] border rounded px-1 py-0.5 bg-white dark:bg-slate-700 dark:text-slate-100"
+                          defaultValue={l.statusName}
+                          onChange={(e) => { e.stopPropagation(); quickSetStatus(l.id, e.target.value); }}
+                          onBlur={() => setStatusOpenFor(null)}
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          {LEAD_STATUSES.map(s => <option key={s.v} value={s.v}>{s.label}</option>)}
+                        </select>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); setStatusOpenFor(l.id); }}
+                          className={`chip ${l.statusChip} text-[10px] py-0 inline-flex items-center gap-0.5`}
+                        >
+                          {l.statusName.replaceAll("_", " ")}<span aria-hidden>▾</span>
+                        </button>
+                      )}
                       {l.aiScore && (
                         <span className={`chip ${aiChip(l.aiScore)} text-[10px] py-0`}>{l.aiScore}{l.aiScoreValue != null ? ` ${l.aiScoreValue}` : ""}</span>
                       )}
