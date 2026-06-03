@@ -1,192 +1,190 @@
 # White Collar Realty CRM — Agent Onboarding Presentation Outline
-**Audience:** Sales Agents (Dinesh, Mehak, Tanuj, Yasir)
-**Format:** 11 slides | **Duration:** 30–40 minutes (including questions)
-**Tone:** Friendly, motivational, practical. Simple language. Avoid technical jargon.
-**Presenter:** Lalit or team lead
+**Audit target:** commit `64e779c`
+**Audience:** Sales Agents (AGENT role)
+**Format:** 10 slides | Duration: 30–40 minutes (including questions)
+**Tone:** Friendly, motivational, practical. Simple language. No technical jargon.
 
 ---
 
-## SLIDE 1: TITLE SLIDE
-**Headline:** "Your New Sales Superpower — White Collar CRM"
-**Subtext:** A quick guide to doing your job better, faster, and smarter
-**Visual suggestion:** CRM dashboard screenshot with "Good morning, [Agent Name]" greeting visible
-**Notes for presenter:** Open with energy. "We built this tool FOR you. Every feature in here saves you time or helps you close more deals."
+## Slide 1 — Title
+
+**Your New Sales Command Center**
+**White Collar Realty CRM — Agent Orientation**
+Date: June 2026
+
+Opening message:
+- This tool was built for how you work — calling leads, tracking follow-ups, closing deals
+- Everything you need is in one place
+- Your attendance is marked automatically when you log in — no extra steps
 
 ---
 
-## SLIDE 2: WHY WE BUILT THIS
-**Headline:** "Your clients deserve faster responses. This makes that possible."
-**Three points:**
-- Before: Notes on paper, calls logged in WhatsApp, follow-ups forgotten
-- Now: Everything in one place, automatic reminders, team visibility
-- Result: More deals, less chasing your own notes
-**Key message:** "This is not extra work. This replaces the messy work you were already doing."
-**Visual suggestion:** Before/after comparison — handwritten note vs. CRM activity timeline
+## Slide 2 — Getting started
+
+**Logging in and setting up your phone**
+
+Steps:
+1. Go to https://crm.whitecollarrealty.com on any device
+2. Log in with your email and the temporary password Lalit gave you
+3. Change your password immediately from Profile → Change password
+4. Add to home screen on your phone (works like a real app)
+5. When the browser asks about notifications — tap Allow
+
+Why notifications matter:
+- Hot lead alerts reach you even when you are not on the page
+- New lead assigned alerts so you respond within 15 minutes
 
 ---
 
-## SLIDE 3: THE FIVE THINGS ON YOUR PHONE
-**Headline:** "Five tabs. That's all you need."
-**Bottom navigation screenshot with callouts:**
-1. Home → Today's priorities
-2. Leads → Your full client list
-3. Revival → Cold leads for extra sessions
-4. To Do → Your daily action list
-5. Properties → Browse the catalog
-**Notes for presenter:** Walk through tapping each tab live on the actual device if possible.
+## Slide 3 — Your leads and why you only see yours
+
+**Your pipeline is private**
+
+Key message:
+- You can only see leads that are assigned to you
+- This protects client privacy and your commission
+- Your manager can see your leads — this is normal and helps them support you
+
+Demo:
+- Open /leads, show the list
+- Point out that only "your name" appears in the owner column
 
 ---
 
-## SLIDE 4: YOUR MORNING ROUTINE (3 STEPS)
-**Headline:** "Start every day the same way. Takes 5 minutes."
+## Slide 4 — The Action List: your daily priorities
 
-**Step 1:** Log in before 10:30am → attendance auto-marks you PRESENT
-**Step 2:** Tap "I'm here" on the dashboard → confirms you are online
-**Step 3:** Open Action List → see exactly who to call first
+**Where to start every morning**
 
-**Visual:** Animated checklist (checkboxes checking off left to right)
-**Notes for presenter:** "The Action List is the most important page in the CRM. It knows your overdue follow-ups, your hot leads, and your close-able deals. Start here every morning."
+/action-list — three sections:
 
----
+1. **IN NEGOTIATION / EOI** — your closest deals. These need a push today.
+   - Each card shows exactly what to say next
+   - One-tap WhatsApp draft is pre-filled
+   - Green glow = this deal is open right now
 
-## SLIDE 5: MAKING CALLS THE RIGHT WAY
-**Headline:** "Call → Log → Follow-up. Every time. No exceptions."
-**Three-step visual flow:**
+2. **NEED YOUR ATTENTION** — leads your manager has flagged for you
 
-[CALL] → tap phone number from Action List or Leads → phone dialer opens
-[LOG] → come back to CRM → tap log call → choose outcome → write remark
-[FOLLOW-UP] → set the next call date before you close the lead
+3. **FOLLOW-UPS OVERDUE** — leads you were supposed to call and didn't. Red glow = urgent.
 
-**What to write in the remark (examples on slide):**
-- "Connected — interested in 2BHK. Budget 80L. Discussing with family. Call Fri 5pm."
-- "No answer — 3rd attempt. Set for tomorrow morning."
-
-**What NOT to write:**
-- "Called"
-- "Follow up"
-
-**Notes for presenter:** "Your remark is what I read when I check your work. If it says 'called' I have no idea what happened on that call."
+Demo:
+- Open /action-list
+- Walk through a card in each section
 
 ---
 
-## SLIDE 6: WHATSAPP THE SMART WAY
-**Headline:** "Pre-written messages. One tap. Already opened in WhatsApp."
-**Demo flow (show on phone):**
-1. Open any lead in the Action List
-2. Tap the WhatsApp button
-3. The message is already written with the client's name
-4. Add one personal line, hit Send
+## Slide 5 — Logging a call
 
-**Key point:** "Always come back and log the WhatsApp message in the CRM after sending."
-**Visual:** Phone screen split — CRM Action List card on left, WhatsApp message draft on right
-**Notes for presenter:** Live demo here is very effective. Show from real Action List on phone.
+**The most important habit in the CRM**
 
----
+Why log every call:
+- Your manager can see your activity
+- The CRM knows when to reschedule the follow-up
+- Missed calls still count if you log them as "Not Picked"
 
-## SLIDE 7: MOVING LEADS THROUGH THE PIPELINE
-**Headline:** "Each stage means something real. Move it when it is actually true."
-**Pipeline stages as a visual funnel or horizontal flow:**
-NEW → CONTACTED → QUALIFIED → SITE VISIT → NEGOTIATION → EOI → BOOKING DONE → WON
+How to log:
+1. Open the lead
+2. Scroll to "Log a call"
+3. Pick the outcome
+4. Add a note about what happened
+5. Set the follow-up date
+6. Save
 
-**Rule for each stage:**
-- NEW: Lead received, no outreach yet
-- CONTACTED: You have spoken to them at least once
-- QUALIFIED: Budget, interest, and timeline confirmed (BANT)
-- SITE VISIT: They have agreed to visit or have visited the property
-- NEGOTIATION: Actively discussing price and terms
-- EOI: Advance/token payment made
-- WON: Deal closed
-
-**Key message:** "Do not advance a lead to QUALIFIED just to look good. It only counts if BANT is real."
-**Notes for presenter:** Ask the team: "Who can tell me what BANT stands for?" — then review it together.
+Demo:
+- Open a lead, show the call log section
 
 ---
 
-## SLIDE 8: THE REVIVAL ENGINE — BONUS EARNINGS
-**Headline:** "Earn XP, beat your team, unlock cold lead commissions"
-**Visual:** Revival Engine leaderboard screenshot with XP badges
+## Slide 6 — Moving a lead through stages
 
-**How it works:**
-1. Tap "Revival" in bottom nav
-2. Start a Cold Call Session
-3. Call leads one by one
-4. Every call = XP points
-5. Convert a cold lead = 50 XP + potential commission
+**How deals progress**
 
-**Gamification visual:** XP progress bar, streak counter, leaderboard position
+Pipeline stages:
+New → Contacted → Qualified → Site Visit → Negotiation → Booking Done → Won
 
-**Key message:** "Your pipeline is your main job. Revival sessions are your bonus opportunity. The best closers do both."
-**Notes for presenter:** Tell a story here if possible: "We had a lead that went cold 8 months ago. Someone ran a revival session, connected on the 4th attempt, and that lead is now in NEGOTIATION."
+When to move:
+- Contacted: you spoke to the client for the first time
+- Qualified: BANT (Budget, Authority, Need, Timeline) is confirmed
+- Site Visit: visit is booked or done
+- Negotiation: price/payment plan is being discussed
+- Booking Done: agreement signed, awaiting payment
+- Won: deal closed, payment received
 
----
+On desktop: drag the card to the new column on the pipeline
+On mobile: tap "Move Stage" on the card, then pick the new stage from the bottom list
 
-## SLIDE 9: THE VAULT — JUST FOR YOU
-**Headline:** "A private space your manager cannot see."
-**Types of entries:**
-- WIN: You closed a deal. Write it down. Remember this feeling.
-- LESSON: A call did not go well. What would you do differently?
-- VENT: Bad day. Get it out of your head. Come back tomorrow clear.
-- GRATITUDE: Something small that went right today.
-
-**Visual:** Vault entry types as icons with short descriptions
-
-**Key message:** "Sales is a mental game. The Vault is where you process it. Use it — it is private, and it helps."
-**Notes for presenter:** Share your own example if comfortable. "I wrote a WIN entry when Rahul signed his EOI. It keeps you motivated."
+Demo:
+- Show /pipeline kanban
+- Show the mobile "Move Stage" button and bottom-sheet
 
 ---
 
-## SLIDE 10: WHAT LALIT SEES (AND WHAT TRIGGERS A CALL)
-**Headline:** "This is what I look at every morning."
-**Split screen — what Lalit sees:**
-- By Salesperson table: your call count vs. team
-- Action List: your overdue follow-ups (and how many days overdue)
-- Leaderboard: your connect rate vs. other agents
+## Slide 7 — The Revival Engine
 
-**Three things that will start a coaching conversation:**
-1. Call count below team average by Friday
-2. More than 5 follow-ups overdue
-3. Remarks that say "called" and nothing else
+**Turning old contacts into new deals**
 
-**Key message:** "I am not watching you to catch you out. I am watching to help you when you are stuck. If something is going wrong, I will see it and ask — not to blame, but to fix."
-**Notes for presenter:** Deliver this with warmth, not threat. Agents should see the CRM as a coaching tool, not surveillance.
+What it is:
+- Dormant contacts that did not convert earlier
+- Assigned to you by the admin — these are your extra opportunity bank
 
----
+What to do:
+- Work through your assigned cold contacts alongside your main leads
+- Use "Start Session" for a focused calling mode
+- When someone is interested: tap "Promote to Lead" to move them to your active pipeline
+- The daily mission and streak track how consistently you work these
 
-## SLIDE 11: YOUR DAILY CHECKLIST + Q&A
-**Headline:** "The habits that separate top closers from average agents"
-
-**Checklist on slide:**
-Morning:
-- [ ] Log in before 10:30am
-- [ ] Tap "I'm here"
-- [ ] Open Action List
-- [ ] Call your overdue follow-ups first
-
-During the day:
-- [ ] Log every call (outcome + remark + follow-up date)
-- [ ] Log every WhatsApp sent
-- [ ] Update stage when something changes
-
-End of day:
-- [ ] Any open items? Set follow-up dates.
-- [ ] 1 Vault entry (optional but recommended)
-
-**Final message:** "The CRM does not close deals — you do. But the CRM makes sure you never forget a lead, never lose track of a conversation, and always know who to call next. Let's use it well."
-
-**Q&A prompt:** "What questions do you have? If anything in the CRM confuses you, tell me now — we will fix it."
+Show:
+- /cold-calls page, Hidden Gems banner
+- The "Start Session" button with live count
+- Daily mission progress bar
+- Streak counter
 
 ---
 
-## APPENDIX: LIVE DEMO SEQUENCE (For Presenter)
-Run this live on a shared screen or phone during the session:
+## Slide 8 — Action Board: what's scheduled
 
-1. Log in → show dashboard → morning greeting
-2. Open Action List → show overdue follow-up card
-3. Tap Call button → phone dialer opens (do not actually call)
-4. Tap WhatsApp button → show pre-filled message
-5. Open a lead → scroll through BANT card, activity timeline
-6. Show "Log Call" form → fill in outcome + remark live
-7. Change stage → confirm stage change dialog
-8. Open /pipeline → show by-stage view
-9. Open Revival Engine → show gamification and XP
-10. Open Vault → show entry types
+**Your activity calendar**
+
+/activities — 6 sections:
+1. Immediate Action: overdue follow-ups and activities
+2. Hot Follow-ups: HOT-scored leads due in the next 24 hours
+3. Slipping Leads: no touch in 5+ days
+4. Site Visits: your upcoming visits in the next 7 days
+5. Scheduled Today: your planned activities for today
+6. Potential Closures: leads showing buying signals
+
+Top 5 strip at the very top picks the 5 most urgent items across all sections.
+
+---
+
+## Slide 9 — Tips to close more deals
+
+**Using the CRM to your advantage**
+
+1. **Log every call the same day** — it protects your commission record and helps your manager back you up
+2. **Always set a follow-up date** — the system won't nag you about leads that have a date set
+3. **Use the WhatsApp draft on action cards** — it is pre-written and personalised
+4. **Work the Revival Engine daily** — hidden gems are high-value dormant contacts that most agents overlook
+5. **Check the Action Board in the morning** — it saves you time figuring out who to call first
+
+---
+
+## Slide 10 — Questions and next steps
+
+**Your first week action plan**
+
+Day 1:
+- Log in, change password, add to home screen, enable notifications
+- Review your lead list — introduce yourself to any new leads
+
+Day 2–3:
+- Log all calls from the previous days if you haven't yet
+- Make sure every active lead has a follow-up date set
+
+Day 4–5:
+- Work through the Action List each morning before anything else
+- Start your first Revival Engine session
+
+Questions?
+- For technical issues: ask Lalit
+- For lead or pipeline questions: ask your manager
+- For "how do I do X in the CRM": the Help page (/help) has guides

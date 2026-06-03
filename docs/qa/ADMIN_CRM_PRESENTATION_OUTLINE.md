@@ -1,183 +1,163 @@
 # White Collar Realty CRM — Admin Presentation Outline
-**Audience:** Lalit Sharma (Admin) and Sameer (Admin)
-**Format:** 10 slides | **Duration:** 35–45 minutes
+**Audit target:** commit `64e779c`
+**Audience:** Admin users (Lalit Sharma and any co-admins)
+**Format:** 10 slides | Duration: 35–45 minutes
 **Tone:** Comprehensive, strategic, operational
-**Presenter:** Lalit (self-briefing) or developer
 
 ---
 
-## SLIDE 1: TITLE SLIDE
-**Headline:** "White Collar Realty CRM — Full System Overview"
-**Subtext:** What is built, what it controls, and what to do before going live
-**Visual:** System architecture overview — database, server, agents on phones
+## Slide 1 — Title
+
+**White Collar Realty CRM**
+**Admin Orientation — commit 64e779c**
+Date: June 2026
+
+Key points to cover:
+- This CRM was built specifically for White Collar Realty's Dubai + India calling teams
+- All data, workflows, and logic are customised for how Lalit's team operates
+- The "team" label means market team (Dubai or India), not client location
 
 ---
 
-## SLIDE 2: THE SYSTEM IN ONE VIEW
-**Headline:** "One platform. Two teams. Real-time data."
+## Slide 2 — What was built and what was fixed
 
-**System overview diagram:**
-- 4 agents (Dinesh, Mehak, Tanuj, Yasir) → log calls, leads, WhatsApp
-- 2 admins (Lalit, Sameer) → dashboard, reports, assignments, settings
-- 1 manager (role to be assigned) → team-scoped view
-- Automated workflows → follow-up reminders, SLA alerts, stage triggers
-- Neon Postgres database (44 leads, 600+ call logs, attendance records)
-- Vercel cloud hosting (crm.whitecollarrealty.com)
+**The 16-bug fix release (64e779c)**
 
-**Key capabilities:** Lead lifecycle, call logging, WhatsApp outreach, pipeline management, reports, gamification, mobile PWA, automation engine
-
----
-
-## SLIDE 3: THE ADMIN DASHBOARD
-**Headline:** "Your command center for both teams."
-
-**What to point out:**
-- Team filter tabs (Dubai / India / All) — Admin-only feature
-- TODAY section: 4 urgent tiles + 5 scheduled tiles — what needs action right now
-- UPCOMING section: follow-ups for next 7 days
-- BY SALESPERSON table: each agent's performance at a glance
-- ANALYTICS section: 8 KPI tiles with period comparison
-- Admin morning queue widget: escalations, unassigned leads, SLA breaches
-
-**Visual:** Annotated dashboard screenshot with sections labeled
+Cover:
+- Previous audit found 20 issues, 16 were code bugs, all 16 are now fixed
+- Highlight the most impactful fixes:
+  - Attendance now auto-marks on login (no more blank grid)
+  - /call-logs page added for admin/manager
+  - Admin user management fully functional (invite, edit, deactivate)
+  - Mobile pipeline stage-change works
+  - Settings admin-only blocks properly gated
 
 ---
 
-## SLIDE 4: LEAD MANAGEMENT — THE FULL LIFECYCLE
-**Headline:** "From inquiry to booking — every step is tracked."
+## Slide 3 — The testing mode safety switch
 
-**Flow diagram:** Inquiry → /intake → Assign → Agent calls → Logs activity → Stage advances → EOI → Booking → WON
+**The most important switch to understand**
 
-**Key admin actions at each step:**
-- Intake: Review and assign new leads
-- NEW: Ensure assignment within 24 hours (speed-to-lead)
-- QUALIFIED: Verify BANT is genuinely confirmed
-- NEGOTIATION+: Monitor closely; involve yourself in deal progression
-- LOST: Review reason codes to identify systemic issues
+Cover:
+- Yellow banner at top = testing mode is ON
+- Testing mode OFF is required for go-live
+- What it pauses: WhatsApp auto-response, round-robin, escalations, notifications
+- Where to find it: Settings → Testing mode
 
-**Admin tools:** /leads (full view, all filters), /pipeline (visual), /admin/dedup (find duplicates), /admin/imports (bulk import history)
-
----
-
-## SLIDE 5: THE REPORTS SUITE
-**Headline:** "Every report you need to run the business."
-
-| Report | URL | What it answers |
-|--------|-----|----------------|
-| Funnel Analysis | /reports | Where are leads dropping off? |
-| Leaderboard | /reports/leaderboard | Who is performing? |
-| Activity Feed | /reports/activity | What happened today? |
-| Daily Report | /reports/daily | Full daily summary |
-| SLA Report | /reports/sla | Who is violating response times? |
-| Travel Reimbursement | /reports/travel | How much is owed per agent? |
-| Team Comparison | /reports/team | Dubai vs. India performance |
-| Commission Report | /reports/commission | Pipeline value and won commissions |
-
-**CSV Export:** Available on most report pages. Use for Excel analysis or sharing with stakeholders.
-
-**Notes for presenter:** Show the real /reports page. Walk through the 3 hero decision tiles at the top.
+Demo:
+- Open Settings, show the testing mode toggle
+- Show the yellow banner when ON
 
 ---
 
-## SLIDE 6: AUTOMATION — HOW THE WORKFLOW ENGINE WORKS
-**Headline:** "Set it once. The system does the follow-up."
+## Slide 4 — User management walkthrough
 
-**How workflows work:**
-1. A Trigger fires (e.g., "Follow-up date passes without activity")
-2. A Condition is checked (e.g., "Only for leads in CONTACTED or QUALIFIED stage")
-3. An Action executes (e.g., "Send push notification to assigned agent")
+**Adding, editing, deactivating users**
 
-**Current state:** Testing Mode is ON → zero workflows configured → no automation runs
-**What to configure first:** (show checklist)
-1. New lead assigned → notify agent
-2. Follow-up overdue 24h → remind agent
-3. 7 days in NEW with no activity → alert manager
-4. Lead reaches EOI stage → notify Lalit
+Cover:
+- Settings → Users (requires ADMIN)
+- "Invite Agent" button → full create flow
+- Edit button for role/team changes
+- Deactivate/Reactivate toggle (cannot deactivate self)
+- "Back" link goes to Settings (not Audit log — this was a bug, now fixed)
 
-**URL:** /admin/workflows
-
-**Visual:** IF/THEN workflow card with color-coded trigger → condition → action boxes
+Demo:
+- Show the /admin/users page
+- Walk through the Invite modal
 
 ---
 
-## SLIDE 7: SYSTEM SETTINGS AND MASTER SWITCHES
-**Headline:** "These settings control how the entire CRM behaves."
+## Slide 5 — Lead intake and team routing
 
-| Setting | Currently | What it does |
-|---------|-----------|-------------|
-| Testing Mode | ON | Pauses all automation. Safe for testing. |
-| Round-Robin | OFF | Auto-assigns leads to agents in rotation |
-| Speed-to-Lead | OFF | Auto-sends first contact after new lead |
-| BANT Gate | Set | Stage required before BANT fields are mandatory |
-| AI Features | OFF | AI scoring, summaries, next-action suggestions |
-| Travel Rate | ₹10/km | Used for travel reimbursement report |
+**How leads flow in and get to agents**
 
-**Before going live — checklist before turning Testing Mode OFF:**
-- [ ] 3+ workflows configured
-- [ ] Pagination on /leads is live
-- [ ] Attendance auto-marking confirmed working
-- [ ] All agents subscribed to push notifications
-- [ ] Stale test leads archived
+Cover:
+- Lead Intake page (CSV, WhatsApp, Google Sheet, website)
+- Lead origin: ACTIVE (goes to /leads) vs COLD (goes to Revival Engine)
+- After import: check Awaiting Team inbox for null-team leads
+- Turn off round-robin before bulk upload to prevent auto-assignment
 
-**URL:** /settings
+Demo:
+- Show Awaiting Team badge in sidebar
+- Show /admin/awaiting-team page
 
 ---
 
-## SLIDE 8: USER MANAGEMENT AND PERMISSIONS
-**Headline:** "Who can see what — and current gaps."
+## Slide 6 — Monitoring the team: dashboard, call logs, leaderboard
 
-**User table (current 7 users)** — show from /admin/users
+**Your daily command centre**
 
-**Role summary:**
-- ADMIN: Full access — you and Sameer
-- MANAGER: Team-scoped access — no one currently assigned
-- AGENT: Own leads only — 4 agents
+Cover:
+- Dashboard "By Salesperson" table — "Needs [your name]" column
+- Call Logs page: agent/outcome/date filters, CSV export, 90-day window
+- Leaderboard: 90-day calls, qualified, won, conversion rate, empty state banner
+- Activity Feed: date picker, historical data labels
 
-**Current gap:** User management is read-only from the UI. Cannot invite, edit, or deactivate users without database access. Building the "Invite User" form is a near-term priority.
-
-**Assigning MANAGER role:** When a team lead is ready to be promoted, their role field must be updated in the database (via Neon Studio) to MANAGER. This unlocks team-scoped dashboard, reports access, and attendance management.
-
----
-
-## SLIDE 9: PRE-LAUNCH CHECKLIST
-**Headline:** "8 conditions to meet before the CRM is the primary sales system."
-
-| # | Condition | Status |
-|---|-----------|--------|
-| 1 | Leads list has pagination (50/page) | NOT DONE |
-| 2 | Attendance auto-marking works | NOT DONE |
-| 3 | At least 3 workflows configured | NOT DONE |
-| 4 | All agents subscribed to push notifications | NOT DONE |
-| 5 | Stale test leads archived | NOT DONE |
-| 6 | All agents completed agent training | NOT DONE |
-| 7 | Invite agent UI built (or documented workaround) | NOT DONE |
-| 8 | Reports route guard for agents added | NOT DONE |
-
-**Estimated development effort to complete all:** 5–8 developer days
-**Estimated training time:** 2–3 half-day sessions (1 admin, 1 manager, 1 agent group)
+Demo:
+- Open /dashboard, point to the by-salesperson table
+- Open /call-logs, apply a filter
+- Open /reports/leaderboard
 
 ---
 
-## SLIDE 10: WHAT IS NEXT + Q&A
-**Headline:** "Near-term, mid-term, and future priorities."
+## Slide 7 — Reports heatmap and off-hours disclaimer
 
-**Near-term (this sprint):**
-- Fix attendance auto-marking
-- Add pagination to /leads
-- Configure 3 starter workflows
-- Add server-side route guard for reports
+**Best time to call**
 
-**Mid-term (next 30 days):**
-- Build "Invite Agent" UI in /admin/users
-- Turn on Testing Mode → observe automation for 1 week
-- Add commission summary report
-- Configure targets for each agent in /admin/targets
+Cover:
+- DOW x hour heatmap (30-day window, connect % per slot)
+- Best slot shown below the grid
+- Off-hours warning: if best slot is outside 8am–9pm, warning icon + disclaimer text appears (BUG-017 fix)
+- How to use: schedule team outbound at the highest-connect slots
 
-**Future (when team grows to 10+ agents):**
-- Assign MANAGER role to a team lead
-- Enable AI features (trial mode → gradual rollout)
-- Build site visit confirmation workflow
-- Upgrade Vercel plan and enable Neon connection pooling
-- Property preference matching + client intelligence UI
+---
 
-**Q&A:** What operational gaps are you most concerned about? What should be prioritized first?
+## Slide 8 — Operational settings to configure
+
+**Before go-live and ongoing**
+
+Cover:
+- Round-robin (ON for normal ops, OFF during bulk import)
+- Speed-to-lead (ON sends first-touch WA+email automatically)
+- BANT gate (Warn recommended)
+- Travel rate (update when petrol costs change)
+- Daily targets per agent (/admin/targets)
+
+Actions needed:
+- Configure at least one workflow rule (/admin/workflows)
+- Set daily targets for each agent
+- Delete test leads (/admin/wipe-leads)
+
+---
+
+## Slide 9 — AI features
+
+**Lead scoring, next actions, and the AI trial**
+
+Cover:
+- AI scoring: HOT/WARM/COLD (numeric score on every active lead)
+- Score explanation breakdown on lead detail page
+- Next best action, buying signals, customer intelligence cards
+- AI kill-switch in Settings (OFF = no new scoring)
+- AI Trial mode: bounded cost test on a sample before enabling globally
+- Cost cap ($X/month) configurable
+
+---
+
+## Slide 10 — Go-live checklist and what to watch
+
+**Last steps and ongoing monitoring**
+
+Go-live checklist:
+1. Turn Testing Mode OFF
+2. Delete test/dev leads via /admin/wipe-leads
+3. Verify all agent accounts and team assignments at /admin/users
+4. Set daily call targets at /admin/targets
+5. Configure workflow rules at /admin/workflows
+6. Confirm push notifications working (Settings → Test push)
+
+Ongoing monitoring cadence:
+- Daily: Dashboard by-salesperson table, Awaiting Team inbox
+- Weekly: Leaderboard, Activity Feed, Call Logs export
+- Monthly: Reports hub (sources, SLA, commission, team comparison)
+- As needed: System health (/admin/health), cron health (/admin/cron-health)

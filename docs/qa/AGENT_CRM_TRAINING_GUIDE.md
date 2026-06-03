@@ -1,288 +1,148 @@
 # White Collar Realty CRM — Agent Training Guide
-**For:** Sales Agents (Dinesh, Mehak, Tanuj, Yasir)
-**Version:** June 2026 | **CRM URL:** https://crm.whitecollarrealty.com
+**Audit target:** commit `64e779c`
+**For:** Sales Agents (AGENT role)
+**CRM URL:** https://crm.whitecollarrealty.com
 
 ---
 
-Welcome to the CRM! This guide walks you through everything you need to do your job from your phone or laptop. You do not need to be technical — just follow the steps and you will be fine.
+## Getting started
 
-If something is confusing, ask your manager. Do not try to guess.
-
----
-
-## SECTION 1: LOGGING IN
-
-1. Open your browser and go to **crm.whitecollarrealty.com**
+### Login
+1. Go to https://crm.whitecollarrealty.com
 2. Enter your email and password
-3. You will land on the **Dashboard** (Home screen)
+3. You will land on the Dashboard
 
-**Tip for your phone:** You can add the CRM to your home screen like an app. Open it in Safari (iPhone) or Chrome (Android), tap Share → Add to Home Screen. It works like a normal app after that.
+Your attendance is marked automatically when you log in. You do not need to do anything extra.
 
-**Important:** Log in every working day before 10:30am. The system automatically marks you as present if you are logged in by 10:30. After that, it marks you as late.
+### If the app asks to show notifications
+Click **Allow** — this lets the CRM send you hot-lead alerts even when you are not on the page.
 
----
-
-## SECTION 2: YOUR MORNING ROUTINE (5 minutes)
-
-Every morning, follow these 3 steps:
-
-### Step 1 — Check in
-On the dashboard, tap **"I'm here"** to confirm your attendance.
-
-### Step 2 — Read your Today's Mission
-The dashboard shows you a "Today's Mission" card. It tells you:
-- Which lead is the highest priority right now
-- Why (they are at a critical stage, or they have not been touched in days)
-
-### Step 3 — Open your Action List
-Tap **"To Do"** in the bottom navigation bar. This is your daily task list.
-
-The Action List has three sections:
-- **Ready to Close** — leads in final stages (Negotiation or EOI). These are your biggest priority.
-- **Needs Attention** — leads that have been untouched for too long or flagged by your manager.
-- **Follow-ups Overdue** — leads where the follow-up date has passed. These people are waiting for your call.
-
-**Your rule:** Start every day by calling the leads on your Action List before anything else.
+### Add to home screen (recommended on mobile)
+On iPhone: tap the Share button in Safari → "Add to Home Screen"
+On Android: tap the menu in Chrome → "Add to Home Screen"
+This makes the CRM feel like a native app.
 
 ---
 
-## SECTION 3: MAKING A CALL
+## 1. Your daily routine
 
-### From the Action List:
-1. Tap the **phone number** on any lead card — this opens your phone dialer directly
-2. Make your call
-3. Come back to the CRM and tap **"Mark done"** on that card
+### Morning
+1. Open the **Dashboard** — check your stats from yesterday
+2. Go to **Action List** (`/action-list`) — these are your highest priority leads right now
+3. Work through the **IN NEGOTIATION / EOI** section first — these are your closest deals
+4. Then work through **FOLLOW-UPS OVERDUE** — don't let these slip further
 
-### From the Leads list:
-1. Tap **"Leads"** in the bottom navigation
-2. Find the lead (use the search box or filter tabs)
-3. Tap the green **"Call"** button next to their name
+### During the day
+- After every call, log it from the lead detail page
+- Use the **Action Board** (`/activities`) to see what's scheduled
+- The **Revival Engine** (`/cold-calls`) is for working dormant contacts — do at least a few per day
 
----
-
-## SECTION 4: LOGGING A CALL (VERY IMPORTANT)
-
-Every call you make — whether the client answers or not — must be logged in the CRM.
-
-**Why this matters:** Your manager sees your call count in the dashboard. No log = no credit for that call.
-
-### How to log a call:
-1. Open the lead (tap their name)
-2. Scroll down to the **"Log a Call"** section
-3. Fill in:
-   - **Outcome** — What happened? (Connected, No answer, Call back, Interested, Not interested, etc.)
-   - **Duration** — How long was the call? (in minutes)
-   - **Remark** — A short note about what was discussed
-4. Tap **"Save Call Log"**
-
-**For the remark:** Write something useful — "Client said budget is 50L, interested in 2BHK in Dubai Marina. Follow-up next Tuesday after he speaks to wife." Not just "called" or "spoke."
+### End of day
+- Make sure all called leads have their follow-up date set
+- Log any site visit outcomes from the lead detail page
 
 ---
 
-## SECTION 5: SENDING WHATSAPP (The Easy Way)
+## 2. Working with leads
 
-Instead of typing manually in WhatsApp, use the CRM's pre-filled messages.
+### Your leads list (`/leads`)
+- Shows only your own leads
+- Filter by status (New, Contacted, Qualified, etc.) to focus on a specific stage
+- The pipeline kanban view (`/pipeline`) is the same data in a visual board layout
 
-### From the Action List:
-1. On any lead card, tap the **"WhatsApp"** button
-2. A WhatsApp message opens with the client's number and a pre-written message
-3. Review the message, add anything personal if needed, then send
+### Opening a lead
+- Click any lead name to open the detail page
+- You will see: lead info, call history, activities, notes, BANT status, AI score
 
-### From the Leads list:
-1. Find the lead
-2. Tap the blue **"WhatsApp"** button next to their name
-
-**After sending WhatsApp:** Log it in the CRM too. Open the lead → scroll to activity section → tap "Log WhatsApp" → add a quick note about what you sent.
-
----
-
-## SECTION 6: ADDING A REMARK / NOTE
-
-A remark is a short note that helps you and your manager know what is happening with a lead.
-
+### Logging a call
 1. Open the lead
-2. Find the **"Add Note"** or **"Add Remark"** section
-3. Write what happened — what the client said, what they asked, any hesitation they expressed
-4. Save
+2. Scroll to the "Log a call" section
+3. Select the outcome (Connected, Not Picked, Callback, etc.)
+4. Add a note about what was discussed
+5. Set the follow-up date for the next action
+6. Click Save
 
-**Good remark examples:**
-- "Asked about payment plan. Interested in DLD waiver. Will check with family. Call Thursday 5pm."
-- "No answer. Third attempt. Moving to cold follow-up."
-- "Connected — client is ready to visit site but wants to see a unit video first. Sending presentation."
+### Moving a lead to the next stage
+1. Open the lead detail page
+2. Find the stage bar at the top and click the next stage
+3. A "What changed?" prompt will appear — add a short note (optional but useful for manager visibility)
+4. Click "Move stage"
 
-**Bad remark examples:**
-- "Called"
-- "No answer"
-- "Follow-up"
-
----
-
-## SECTION 7: SETTING A FOLLOW-UP DATE (NEVER SKIP THIS)
-
-After every call or WhatsApp, always set a follow-up date.
-
-1. Open the lead
-2. Find the **"Follow-up"** field
-3. Set the date when you should call them again
-4. Save
-
-**Rule:** If you spoke to a client, set a follow-up date. If you did not reach them, set one for tomorrow or the day after.
-
-If you never set a follow-up date, the lead will appear as "overdue" on your Action List and your manager will flag it.
+On mobile, from the pipeline kanban:
+1. Tap the **"Move Stage"** button on the card
+2. A stage list slides up from the bottom — tap the new stage
+3. Fill in the "What changed?" note and confirm
 
 ---
 
-## SECTION 8: MOVING A LEAD THROUGH STAGES
+## 3. Action List (`/action-list`)
 
-When a lead progresses, you must update their stage in the CRM.
+The Action List is your command center. Three sections:
 
-**The stages (in order):**
-1. NEW — Just received, not called yet
-2. CONTACTED — You have spoken to them at least once
-3. QUALIFIED — They have budget, interest, and timeline confirmed
-4. SITE VISIT — They have agreed to or visited the property
-5. NEGOTIATION — Actively discussing price and terms
-6. EOI — Expression of Interest submitted / advance payment made
-7. BOOKING DONE — Full booking completed
-8. WON — Deal closed
-9. LOST — Lead is dead (no interest, wrong budget, competitor won)
+**IN NEGOTIATION / EOI** — leads you are close to closing. Each card shows:
+- The lead name and their budget
+- "Next step" — what to say or do right now
+- "Why you" — why your personal attention matters
+- A pre-filled WhatsApp message you can send in one tap
 
-### To change a stage:
-1. Open the lead
-2. Find the **"Stage"** or **"Status"** dropdown at the top of the page
-3. Select the new stage
-4. Confirm if prompted
+**NEED YOUR ATTENTION** — leads your manager has flagged. Read the reason and act.
 
-**Important:** Only move a lead forward when it is actually true. Do not move to QUALIFIED just to show progress — it must mean you have confirmed Budget, Authority, Need, and Timeline.
+**FOLLOW-UPS OVERDUE** — leads where you missed the scheduled follow-up. Call these today.
 
 ---
 
-## SECTION 9: MARKING A LEAD AS LOST
+## 4. Action Board (`/activities`)
 
-Not every lead will close. If a client is not interested or not reachable after multiple attempts, mark them as LOST.
+The Action Board gives you a broader view:
+- **Immediate Action** — overdue activities and leads
+- **Hot Follow-ups (next 24h)** — HOT-scored leads due soon
+- **Slipping Leads** — no touch in 5+ days, still active
+- **Site Visits (next 7 days)** — your upcoming site visits
+- **Scheduled Today** — your planned activities today
+- **Potential Closures** — leads in EOI/Negotiation with deal signals
 
-1. Open the lead
-2. Change the stage to **LOST**
-3. Select a reason (Wrong budget, Not interested, Competitor, Not reachable, etc.)
-4. Add a final remark explaining why
-
-**Do not leave dead leads in CONTACTED or NEW forever.** A clean pipeline helps you and your manager focus on real opportunities.
-
----
-
-## SECTION 10: ESCALATING TO YOUR MANAGER
-
-If you have a lead that needs manager attention (client asking questions you cannot answer, client requesting a special price, or a deal that needs faster processing), you can escalate.
-
-1. Open the lead
-2. Tap the **"Flag for Manager Review"** button (or on the Action List, tap "Escalate")
-3. Add a note explaining why you are escalating
-
-Your manager will see this immediately on their dashboard.
+The **Top 5 Actions** strip at the top picks the 5 most urgent items across all sections.
 
 ---
 
-## SECTION 11: THE PIPELINE VIEW
+## 5. Revival Engine (`/cold-calls`)
 
-The pipeline shows all your leads as columns on a board:
+The Revival Engine is for working dormant leads — contacts that were cold or not yet active.
 
-- Each column is a stage (NEW, CONTACTED, QUALIFIED, etc.)
-- Each card is one lead
-- The number in the column header is how many leads are at that stage
+- **Hidden Gems** — high-value dormant contacts shown at the top
+- **Daily Mission** — your daily call target for cold contacts
+- **Your Streak** — how many consecutive days you've made cold calls
+- To move a cold contact into your active pipeline: tap **"Promote to Lead"** on their card
 
-**On mobile:** You cannot drag and drop on mobile. Tap a card to open the lead, then change the stage from within the lead detail.
-
-This is a useful view to see where all your leads stand at a glance.
-
----
-
-## SECTION 12: COLD CALLS (REVIVAL ENGINE)
-
-The Revival Engine is for calling leads who went cold — people who did not respond for a long time.
-
-1. Tap **"Revival"** in the bottom navigation bar
-2. Tap **"Start Session"**
-3. The system shows you one cold lead at a time
-4. Call them, log the outcome
-5. If they show interest, tap **"Promote to Lead"** to bring them into your active pipeline
-
-**Gamification:** You earn XP (experience points) for every cold call you complete. Your XP score appears on the Revival Leaderboard — compete with your team.
+**Start Session** button opens a focused mode where you call through your assigned cold contacts one by one.
 
 ---
 
-## SECTION 13: THE VAULT (YOUR PERSONAL JOURNAL)
+## 6. Properties (`/properties`)
 
-The Vault is a private space just for you. Your manager cannot see what you write here.
-
-Use it to:
-- Write down a WIN (a deal you closed or a great call)
-- Vent after a tough day
-- Record a lesson you learned
-- Note something you are grateful for
-
-To access: Hamburger menu (top left) → Vault
+Browse the property portfolio. Useful when:
+- A lead asks about a specific project
+- You want to pull up a brochure or payment plan during a call
+- You need the correct price range or configuration details
 
 ---
 
-## SECTION 14: YOUR PROFILE AND NOTIFICATIONS
+## 7. Things you cannot do as an Agent
 
-### Profile:
-Hamburger menu → My Profile
-You can update your profile photo and contact details here.
+- Cannot see other agents' leads (your view is scoped to your own leads only)
+- Cannot access Reports pages (visible to Managers and Admins)
+- Cannot access the Call Logs page
+- Cannot add users or change system settings
+- Cannot import leads
 
-### Notifications:
-Tap the bell icon in the top bar.
-You will receive notifications when:
-- A lead is assigned to you
-- Your follow-up is overdue
-- Your manager sends an update
-- A workflow action triggers on one of your leads
-
-**To receive notifications on your phone:** After opening the CRM, tap the bell icon and allow notifications when your browser asks. If you installed the app to your home screen, notifications will appear like normal app alerts.
+If you need something from these areas, ask your Manager or Admin (Lalit).
 
 ---
 
-## DAILY CHECKLIST FOR AGENTS
+## 8. Quick tips
 
-Morning (before 10:30am):
-- [ ] Log in to CRM (attendance auto-marks)
-- [ ] Tap "I'm here" on dashboard
-- [ ] Read "Today's Mission"
-- [ ] Open Action List — review overdue follow-ups
-
-During the day:
-- [ ] Call all overdue leads first
-- [ ] Log every call (outcome + remark)
-- [ ] Log every WhatsApp message sent
-- [ ] Set a follow-up date after every interaction
-- [ ] Update lead stage when something changes
-
-End of day:
-- [ ] Check if any Action List items are still open
-- [ ] Add remarks for any leads you spoke to
-- [ ] Set tomorrow's follow-ups for today's callbacks
-
----
-
-## WHAT NOT TO DO
-
-- Do not leave leads with no follow-up date set
-- Do not write one-word remarks ("called", "busy", "follow up")
-- Do not move a lead to QUALIFIED unless BANT is confirmed
-- Do not ignore your Action List — if it shows overdue, your manager can see it too
-- Do not mark a call as logged without actually logging the outcome and remark
-
----
-
-## HELP & SUPPORT
-
-If the CRM is not working or something looks wrong:
-1. Try refreshing the page
-2. Clear your browser cache and try again
-3. Contact your manager (Lalit / your team lead)
-
-For feature requests or bugs: Tell your manager — do not try to fix things yourself.
-
----
-
-**You've got this. The CRM is here to help you close more deals, not add paperwork. Log your calls, set your follow-ups, and let the system handle the reminders.**
+- The **bell icon** in the header is for push notifications — make sure it's active (green)
+- The **search bar** (magnifying glass) lets you find any lead by name or phone number quickly
+- The **floating "+" button** on mobile lets you quickly add a new lead
+- If the attendance pop-up says you are absent but you are present, tap the "I am here" button to override
+- Your Profile page (`/profile`) lets you change your password and upload a photo

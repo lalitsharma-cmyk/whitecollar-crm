@@ -1,153 +1,83 @@
 # White Collar Realty CRM — Performance Report
-**Audit Date:** 4 June 2026 | **Environment:** Production (Vercel Hobby Plan)
-**Database:** Neon Postgres | **Framework:** Next.js 15 (App Router, server components)
+**Audit target:** commit `64e779c`
+**Audit date:** 2026-06-04
+**Environment:** Production (Vercel Hobby Plan)
+**Database:** Neon Postgres
+**Framework:** Next.js 15 App Router, server components
 
 ---
 
-## PERFORMANCE OBSERVATIONS
+## Infrastructure
 
-### Dashboard Page Load — High Query Count
-
-The `/dashboard` page.tsx executes **27+ parallel Prisma queries** in a single server component render via `Promise.all`. This is the heaviest page in the application.
-
-**Query breakdown (counted from page.tsx):**
-- 24 queries in the main `Promise.all` (lines 123–165)
-- 2 queries for upcoming counts (lines 168–171)
-- 4 queries for "Today's Mission" (lines 362–395)
-- 1 query for attendance
-- 1 query for last vault WIN
-- 2 queries for weekly metrics (each: 4 sub-queries)
-- 1 raw SQL query for the by-salesperson table (1 query replacing 30 that existed before)
-- 3–4 queries for the morning queue (admin-only)
-
-**Total: ~36–40 database roundtrips per dashboard load**
-
-With Neon Postgres on the free/hobby tier, connection pooling may not be active. Each query opens a connection. At 44 leads this is fast. At 25,000 leads with indexes in place, the individual queries will still be fast, but the sheer number of concurrent connections may cause Neon to throttle.
-
-**Observed behavior:** Dashboard loads without error or visible latency in current testing (44 leads). No timeout or slow query indicators observed.
-
-**At-scale risk (25,000 leads):** The raw SQL query (spStatsRaw) is well-optimized (replaces 30 sub-queries with 1). But count queries across 25,000 leads without proper WHERE clause indexes could be slow. Key indexes present: status, ownerId, createdAt, forwardedTeam — these cover the most common filters.
+| Component | Details |
+|---|---|
+| Hosting | Vercel Hobby (free tier) |
+| Database | Neon Postgres (serverless) |
+| ORM | Prisma |
+| CDN | Vercel Edge Network (automatic) |
+| Auth | Custom JWT/session via NextAuth |
+| Cron | 2 Vercel cron jobs (daily max) + GitHub Actions for sub-daily |
 
 ---
 
-### Leads List — Pagination Gap
+## Vercel Hobby plan constraints
 
-The `/leads` page currently loads all 44 leads in a single query. There is no virtual scrolling or cursor-based pagination visible in the accessibility tree.
-
-**Current behavior:** "Showing 1–44 of 44 · Page 1 of 1" — all records returned in one request.
-
-**At-scale risk:** Loading 25,000 leads into a single HTML page would:
-1. Cause browser memory issues (browsers struggle with DOM trees of 25,000+ nodes)
-2. Generate 25,000+ rows × 3 interactive buttons each = 75,000+ DOM elements
-3. Create a very large HTML payload sent over the wire
-
-**Assessment:** This must be fixed before importing large volumes of leads. The fix is standard offset/cursor pagination with a page size of 50–100 records.
+The deployment is on the Hobby (free) plan. Hard limits enforced:
+- Maximum 2 cron jobs in `vercel.json` — currently at 2 (no headroom)
+- All Vercel crons must be daily or less frequent
+- Sub-daily crons are routed through `.github/workflows/cron.yml` hitting the same `/api/cron/*` endpoints
 
 ---
 
-### Properties Page — DOM Size Issue
+## Server-side rendering performance observations
 
-The `/properties` page returned over 65,000 characters in its accessibility tree at depth 1, suggesting the property catalog renders a very large number of items without pagination.
+### Database query patterns
 
-**Assessment:** Same risk as leads — needs pagination before catalog grows.
+**Dashboard page:** Executes a large parallel `Promise.all` block — activity counts, lead counts, call counts, per-agent stats. This is the heaviest page. On Neon serverless, cold-start connections may add 200–500ms to first load after idle periods.
 
----
+**Pipeline page:** Bounded to `take: 300` leads (comment in code notes this is a forward-looking guard). Currently ~45 active leads so no truncation. At scale, this should be watched.
 
-### Server-Side Rendering Pattern
+**Leaderboard page (90 days):** Four parallel groupBy queries over call logs and leads. Window extended to 90 days — if the CallLog table grows significantly, this could slow. Currently fast because the team is small.
 
-The CRM uses `export const dynamic = "force-dynamic"` on the dashboard page, disabling Next.js page caching entirely. Every page load fetches fresh data from Postgres.
+**Call Logs page:** `take: PAGE_SIZE` (50) with server-side pagination — correct pattern, no unbounded queries.
 
-This is correct for a real-time sales operations tool but means:
-- No ISR (Incremental Static Regeneration)
-- No edge caching
-- Every user session hits the database directly
+**Cold Calls page:** `take: 200` for leads — appropriate bound.
 
-On Vercel Hobby with Neon Postgres, this is acceptable for the current 4-agent team. Scaling to 20+ simultaneous users may require upgrading to Vercel Pro for better serverless function concurrency limits.
+### Attendance auto-mark (BUG-001 fix)
+`AttendancePing` fires `POST /api/attendance/mark` as a fire-and-forget fetch (`.catch(() => {})`) on every page load. The endpoint uses `findUnique` then early-return if attendance is already marked for today — idempotent and fast. No performance concern.
 
----
-
-### API Endpoints — Known Patterns
-
-The reports pages reference:
-- `/api/reports/export?type=leads` — CSV export
-- `/api/reports/export?type=calls` — CSV export
-- `/api/call-logs/export` — Activity feed export
-
-These are likely streaming or buffered responses. At 25,000 leads, CSV export will be a heavy operation. No streaming indication was found in this audit.
+### Activity feed date picker (BUG-020 fix)
+Historical date lookups are bounded to a single IST day window (`gte: selectedDayStart, lt: selectedDayEnd`) with `take: 100` for call logs and `take: 50` for audit logs. Acceptable.
 
 ---
 
-### Bundle Size Observations
+## Cron jobs
 
-- The desktop sidebar imports 15+ Lucide icons, multiple custom components (WhatsAppPanel, ThemeToggle, GlobalDateFilter, NotifBell, AccentPainter, FestiveBanner, QuickSearch, QuickAddLeadFab, KeyboardShortcutsHelp, XPToastHost, DealCelebrationHost, OnboardingTour, PWAInstallNudge)
-- The MobileShell.tsx is a "use client" component — all of the above imports are part of the client bundle for every page
-- No code splitting or lazy loading visible for these shell components (they are always rendered)
-
-**Assessment:** Bundle size is not measurable from accessibility testing. On a modern phone with a good connection this is acceptable. On 4G/low-bandwidth connections in India, a large initial JS bundle will cause perceived slowness.
-
----
-
-### Database Indexes (from schema.prisma)
-
-Present indexes confirm the team has thought about query performance:
-```
-Lead: status, source, ownerId, createdAt, eoiStage, forwardedTeam
-Activity: leadId, scheduledAt, status, type+completedAt
-CallLog: leadId, userId, startedAt
-Notification: userId+readAt, createdAt
-```
-
-**Missing indexes to consider for scale:**
-- `Lead.followupDate` — used heavily in overdue/upcoming queries
-- `Lead.isColdCall + lastTouchedAt` — used in cold revival queries
-- `Lead.aiScore` — used in hot lead queries
-- `Lead.needsManagerReview` — used in action list
+| Job | Schedule | Endpoint |
+|---|---|---|
+| Morning reminder | Daily 9am IST via GitHub Actions | `/api/cron/morning-reminder` |
+| Evening reminder | Daily 6pm IST via GitHub Actions | `/api/cron/evening-reminder` |
+| Revival sweep | Daily via GitHub Actions | `/api/cron/revival-sweep` |
+| Rescore all leads | Daily via GitHub Actions | `/api/cron/rescore-all` |
+| DB backup | Daily via Vercel cron | `/api/cron/db-backup` |
+| Warm leads | Periodic via GitHub Actions | `/api/cron/warm` |
 
 ---
 
-### Vercel Hobby Plan Constraints (from AGENTS.md)
+## Performance risks
 
-- Max 2 cron jobs (currently 2 used)
-- Daily-or-less cron frequency for Vercel crons
-- Sub-daily crons use GitHub Actions instead
-- **Serverless function timeout:** Hobby plan has 10-second timeout. The dashboard's 36–40 queries need to complete within 10 seconds. Currently they do at 44 leads. At 25,000 leads with slow queries, this could time out.
-
----
-
-### Console Errors
-
-No console errors were captured. The console tracking tool noted that tracking starts only when first called — errors during page load may not have been captured.
+| Risk | Severity | Mitigation |
+|---|---|---|
+| Neon cold starts on Hobby plan | Medium | Expected 200–500ms extra on first request after idle. No mitigation on free tier. |
+| Dashboard heavy parallel queries | Low-Medium | Currently fast at small scale. Monitor as lead count grows past 500. |
+| Vercel Hobby cron limit at max (2/2) | High | Any new daily jobs must go to GitHub Actions. Fully documented in AGENTS.md. |
+| 90-day leaderboard query growth | Low | GroupBy is indexed by userId+startedAt. Safe at current scale. |
 
 ---
 
-## PERFORMANCE RECOMMENDATIONS
+## Recommendations
 
-### Immediate (before scaling)
-1. **Add pagination to /leads** — implement cursor-based pagination with 50 records per page. Add "Load more" or page number navigation.
-2. **Add missing Lead indexes** — `followupDate`, `isColdCall`, `aiScore`, `needsManagerReview`
-3. **Cache dashboard KPI counts** — consider 1-minute Redis/KV cache for counts that don't need second-by-second accuracy (Total Clients, Total Not Contacted, etc.)
-
-### Before 25,000 leads
-4. **Upgrade Vercel plan** — Vercel Pro increases serverless timeout to 60s and adds better cold-start performance
-5. **Add Neon connection pooling** — enable pgBouncer or Prisma Accelerate for Neon to avoid connection exhaustion under concurrent load
-6. **Implement streaming for CSV exports** — `/api/reports/export` should use chunked/streaming response for large datasets
-7. **Lazy-load dashboard sections** — load the by-salesperson table and weekly metrics via client-side fetching (SWR/React Query) after initial page render
-
-### Monitoring
-8. **Add Vercel Analytics or Sentry** — currently no performance monitoring is visible in this audit
-9. **Log slow queries** — add Prisma query logging for queries > 500ms in production
-
----
-
-## SCALABILITY ASSESSMENT
-
-| Metric | Current (44 leads) | Risk at 25,000 leads |
-|--------|-------------------|----------------------|
-| Dashboard load | Fast | MEDIUM risk (query count) |
-| Leads list load | Fast | HIGH risk (no pagination) |
-| Properties catalog | Slow to read | HIGH risk (no pagination) |
-| Pipeline kanban | Fast | MEDIUM risk (all leads in DOM) |
-| Reports | Fast | MEDIUM risk (funnel counts) |
-| CSV export | Not tested | HIGH risk (memory/timeout) |
-| Notification queries | N/A (test mode) | LOW risk (indexed) |
-| Cold calls | Empty | LOW risk (filtered query) |
+1. Monitor dashboard load time as the leads database grows past 1,000 records.
+2. Add a Neon index on `CallLog.startedAt` + `CallLog.userId` if leaderboard queries slow down.
+3. Consider upgrading to Vercel Pro if more than 2 daily cron jobs are needed.
+4. The `take: 300` bound on pipeline should be revisited if the team exceeds 200 active leads.
