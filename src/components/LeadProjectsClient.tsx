@@ -1,5 +1,5 @@
 "use client";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { X, Plus, Check } from "lucide-react";
 
@@ -74,6 +74,28 @@ export default function LeadProjectsClient({
   const [busy, setBusy] = useState(false);
   const [scanning, setScanning] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const pickerRef = useRef<HTMLDivElement>(null);
+
+  // Close picker on outside click or Escape
+  useEffect(() => {
+    if (!picking) return;
+    function handleOutside(e: MouseEvent) {
+      if (pickerRef.current && !pickerRef.current.contains(e.target as Node)) {
+        setPicking(false); setPicked(null); setQuery(""); setHighlight(0);
+      }
+    }
+    function handleEscape(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        setPicking(false); setPicked(null); setQuery(""); setHighlight(0);
+      }
+    }
+    document.addEventListener("mousedown", handleOutside);
+    document.addEventListener("keydown", handleEscape);
+    return () => {
+      document.removeEventListener("mousedown", handleOutside);
+      document.removeEventListener("keydown", handleEscape);
+    };
+  }, [picking]);
 
   // Split into confirmed (user accepted or manually added) vs suggested (auto-detected pending)
   const confirmed = items.filter(it => !it.suggestion);
@@ -281,7 +303,7 @@ export default function LeadProjectsClient({
       </div>
 
       {picking && (
-        <div className="mt-3 flex flex-col gap-2">
+        <div ref={pickerRef} className="mt-3 flex flex-col gap-2">
           <div className="relative">
             <input
               ref={inputRef}
