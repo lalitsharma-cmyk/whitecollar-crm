@@ -24,7 +24,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         </div>
       )}
       <MobileShell
-        user={{ name: user.name, role: user.role, avatarColor: user.avatarColor ?? "bg-slate-500", photoUrl: user.photoUrl }}
+        user={{ name: user.name, role: user.role, avatarColor: user.avatarColor ?? "bg-slate-500", photoUrl: user.photoUrl, team: user.team }}
         awaitingTeamCount={awaitingTeamCount}
       >
         {children}

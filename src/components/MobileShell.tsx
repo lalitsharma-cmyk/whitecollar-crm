@@ -5,11 +5,12 @@ import { usePathname, useRouter } from "next/navigation";
 import {
   LayoutDashboard, Users, Sparkles, Menu, X,
   Building2, BarChart3, Upload, UserCog, Settings as SettingsIcon, LogOut,
-  ChevronLeft, Gem, HelpCircle, AlertTriangle,
+  ChevronLeft, Gem, HelpCircle, AlertTriangle, Lock,
 } from "lucide-react";
 import NotifBell from "./NotifBell";
 import WhatsAppPanel from "./WhatsAppPanel";
 import ThemeToggle from "./ThemeToggle";
+import GlobalCalendarPanel from "./GlobalCalendarPanel";
 import FestiveBanner from "./FestiveBanner";
 import AccentPainter from "./AccentPainter";
 import XPToastHost from "./XPToast";
@@ -27,10 +28,11 @@ type NavSection = { section: string; adminOnly?: boolean; managerOrAdmin?: boole
 const fullNav: NavSection[] = [
   { section: "WORKSPACE", items: [
     { href: "/dashboard",   label: "Dashboard",      Icon: LayoutDashboard },
-    { href: "/action-list", label: "Action List",    Icon: Sparkles },
     { href: "/leads",       label: "Leads",          Icon: Users },
-    { href: "/properties",  label: "Properties",     Icon: Building2 },
     { href: "/cold-calls",  label: "Revival Engine", Icon: Gem },
+    { href: "/action-list", label: "Action List",    Icon: Sparkles },
+    { href: "/properties",  label: "Properties",     Icon: Building2 },
+    { href: "/vault",       label: "Vault",          Icon: Lock },
     { href: "/reports",     label: "Reports",        Icon: BarChart3, agentHidden: true },
   ]},
   { section: "SETUP", items: [
@@ -53,18 +55,18 @@ const fullNav: NavSection[] = [
   ]},
 ];
 
-// Bottom nav for mobile — the 5 most-used routes
+// Bottom nav for mobile — mirrors WORKSPACE order (top 5)
 const bottomNav = [
   { href: "/dashboard",   label: "Home",       Icon: LayoutDashboard },
-  { href: "/action-list", label: "To Do",      Icon: Sparkles },
   { href: "/leads",       label: "Leads",      Icon: Users },
-  { href: "/properties",  label: "Properties", Icon: Building2 },
   { href: "/cold-calls",  label: "Revival",    Icon: Gem },
+  { href: "/action-list", label: "To Do",      Icon: Sparkles },
+  { href: "/properties",  label: "Properties", Icon: Building2 },
 ];
 
 interface Props {
   children: React.ReactNode;
-  user: { name: string; role: string; avatarColor: string; photoUrl?: string | null };
+  user: { name: string; role: string; avatarColor: string; photoUrl?: string | null; team?: string | null };
   // Red badge count next to ADMIN → "Awaiting Team" — only ever >0 for
   // ADMIN/MANAGER. Server-fetched in (app)/layout.tsx, 0 for agents.
   awaitingTeamCount?: number;
@@ -191,6 +193,7 @@ export default function MobileShell({ children, user, awaitingTeamCount = 0 }: P
         <div className="flex-1" />
         <WhatsAppPanel />
         <ThemeToggle />
+        <GlobalCalendarPanel role={user.role} team={user.team ?? null} />
         <NotifBell />
         <Link href="/leads/new" aria-label="New lead" className="p-2 rounded hover:bg-white/10 min-w-11 min-h-11 flex items-center justify-center">
           <span className="text-xl font-bold leading-none">+</span>
@@ -280,6 +283,7 @@ export default function MobileShell({ children, user, awaitingTeamCount = 0 }: P
           <Link href="/ai" className="btn btn-gold"><Sparkles className="w-[18px] h-[18px]" /> Ask AI</Link>
           <WhatsAppPanel />
           <ThemeToggle />
+          <GlobalCalendarPanel role={user.role} team={user.team ?? null} />
           <NotifBell />
           <Avatar user={user} initials={initials} size="w-[30px] h-[30px]" />
         </header>
