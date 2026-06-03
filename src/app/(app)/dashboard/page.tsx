@@ -366,7 +366,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
              view === "India" ? "🇮🇳 India team — Sales Command Center" :
              "Sales Command Center (all teams)"}
           </h1>
-          <p className="text-xs sm:text-sm text-gray-500">{new Date().toLocaleDateString("en-US", { weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: "Asia/Kolkata" })} · {new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Kolkata" })} IST · Live data · <span className="text-[10px] text-gray-400">v.{(process.env.VERCEL_GIT_COMMIT_SHA ?? "local").slice(0, 7)}</span></p>
+          <p className="text-xs sm:text-sm text-gray-500 dark:text-slate-400">{new Date().toLocaleDateString("en-US", { weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: "Asia/Kolkata" })} · {new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Kolkata" })} IST · Live data · <span className="text-[10px] text-gray-400 dark:text-slate-500">v.{(process.env.VERCEL_GIT_COMMIT_SHA ?? "local").slice(0, 7)}</span></p>
         </div>
         <div className="flex gap-2 flex-wrap items-center self-start sm:self-auto">
           {isAdminOrMgr && (
@@ -473,7 +473,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
                   {todaysMission.reason === "oldest_overdue" && "Win back: "}
                   {todaysMission.name}
                 </div>
-                <div className="text-[11px] text-gray-600 mt-0.5">
+                <div className="text-[11px] text-gray-600 dark:text-slate-300 mt-0.5">
                   {todaysMission.reason === "close_eoi" && `In NEGOTIATION · EOI stage: ${todaysMission.eoiStage ?? "—"} · push for booking`}
                   {todaysMission.reason === "hot_untouched" && `HOT score · ${todaysMission.lastTouchedAt ? `last touched ${formatDistanceToNow(todaysMission.lastTouchedAt, { addSuffix: true })}` : "never touched"} — every hour costs you`}
                   {todaysMission.reason === "oldest_overdue" && `Follow-up overdue — win back trust by reaching out today`}
@@ -481,7 +481,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
                 </div>
               </Link>
             ) : hasMorningWork ? null : (
-              <div className="mt-3 rounded-xl border-2 border-dashed border-gray-200 px-4 py-3 text-sm text-gray-600">
+              <div className="mt-3 rounded-xl border-2 border-dashed border-gray-200 dark:border-slate-600 px-4 py-3 text-sm text-gray-600 dark:text-slate-300">
                 ✨ Inbox zero — no urgent missions right now. Great time to
                 revive a cold lead or push a stalled deal forward.
               </div>
@@ -507,9 +507,9 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
               </div>
             )}
 
-            <blockquote className="text-[12px] text-gray-700 italic mt-3 border-l-2 border-[#c9a24b] pl-3 leading-relaxed">
+            <blockquote className="text-[12px] text-gray-700 dark:text-slate-300 italic mt-3 border-l-2 border-[#c9a24b] pl-3 leading-relaxed">
               💡 {dailyQuote.text}
-              <div className="text-[10px] text-gray-500 not-italic mt-0.5">— {dailyQuote.author}</div>
+              <div className="text-[10px] text-gray-500 dark:text-slate-400 not-italic mt-0.5">— {dailyQuote.author}</div>
             </blockquote>
 
             {/* Last vault WIN — only renders if the agent has logged one.
@@ -566,7 +566,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
 
       {/* 8 KPI tiles matching your dashboard exactly */}
       <div>
-        <div className="text-xs font-bold tracking-widest text-gray-500 mb-2">TODAY &amp; RIGHT NOW</div>
+        <div className="text-xs font-bold tracking-widest text-gray-500 dark:text-slate-400 mb-2">TODAY &amp; RIGHT NOW</div>
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-4 gap-2 lg:gap-3">
           <KPI title="Calls Dialed — today" value={callsToday} sub="dials logged today" />
           <KPI title="Calls Connected — today" value={connectedToday} sub={`${connectRate}% connect rate today`} />
@@ -582,7 +582,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
       {/* Team-specific funnel KPIs (this month) */}
       {view !== "all" && (
         <div>
-          <div className="text-xs font-bold tracking-widest text-gray-500 mb-2">
+          <div className="text-xs font-bold tracking-widest text-gray-500 dark:text-slate-400 mb-2">
             {view === "Dubai" ? "DUBAI TEAM · THIS MONTH" : "INDIA TEAM · THIS MONTH"}
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 lg:gap-3">
@@ -612,27 +612,27 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
           (they see their own funnel on each lead detail page instead). */}
       {eoiAlerts && (
         <div>
-          <div className="text-xs font-bold tracking-widest text-gray-500 mb-2">EOI PIPELINE · TEAM · RIGHT NOW</div>
+          <div className="text-xs font-bold tracking-widest text-gray-500 dark:text-slate-400 mb-2">EOI PIPELINE · TEAM · RIGHT NOW</div>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 lg:gap-3">
             <Link href="/leads?eoi=active" className="card p-3 lg:p-4 hover:border-[#c9a24b] block">
               <div className="text-2xl lg:text-3xl font-bold">{eoiAlerts.active}</div>
-              <div className="text-[10px] lg:text-[11px] tracking-widest text-gray-500 uppercase mt-0.5 lg:mt-1 leading-tight">Active EOI funnel</div>
-              <div className="text-[11px] lg:text-xs text-gray-500 mt-0.5 lg:mt-1 leading-tight">leads with EOI stage set</div>
+              <div className="text-[10px] lg:text-[11px] tracking-widest text-gray-500 dark:text-slate-400 uppercase mt-0.5 lg:mt-1 leading-tight">Active EOI funnel</div>
+              <div className="text-[11px] lg:text-xs text-gray-500 dark:text-slate-400 mt-0.5 lg:mt-1 leading-tight">leads with EOI stage set</div>
             </Link>
             <Link href="/leads?eoi=kyc_pending" className={`card p-3 lg:p-4 hover:border-orange-500 block ${eoiAlerts.kycPending > 0 ? "border-orange-300" : ""}`}>
               <div className="text-2xl lg:text-3xl font-bold">{eoiAlerts.kycPending}</div>
-              <div className="text-[10px] lg:text-[11px] tracking-widest text-gray-500 uppercase mt-0.5 lg:mt-1 leading-tight">Waiting on KYC</div>
-              <div className="text-[11px] lg:text-xs text-gray-500 mt-0.5 lg:mt-1 leading-tight">chase clients for docs</div>
+              <div className="text-[10px] lg:text-[11px] tracking-widest text-gray-500 dark:text-slate-400 uppercase mt-0.5 lg:mt-1 leading-tight">Waiting on KYC</div>
+              <div className="text-[11px] lg:text-xs text-gray-500 dark:text-slate-400 mt-0.5 lg:mt-1 leading-tight">chase clients for docs</div>
             </Link>
             <Link href="/leads?eoi=approval_needed" className={`card p-3 lg:p-4 hover:border-amber-500 block ${eoiAlerts.approvalNeeded > 0 ? "border-amber-500 border-2 bg-amber-50" : ""}`}>
               <div className="text-2xl lg:text-3xl font-bold">{eoiAlerts.approvalNeeded}</div>
-              <div className="text-[10px] lg:text-[11px] tracking-widest text-gray-500 uppercase mt-0.5 lg:mt-1 leading-tight">Need your sign-off</div>
-              <div className="text-[11px] lg:text-xs text-gray-500 mt-0.5 lg:mt-1 leading-tight">discount / waiver approval</div>
+              <div className="text-[10px] lg:text-[11px] tracking-widest text-gray-500 dark:text-slate-400 uppercase mt-0.5 lg:mt-1 leading-tight">Need your sign-off</div>
+              <div className="text-[11px] lg:text-xs text-gray-500 dark:text-slate-400 mt-0.5 lg:mt-1 leading-tight">discount / waiver approval</div>
             </Link>
             <Link href="/leads?eoi=stuck" className={`card p-3 lg:p-4 hover:border-red-500 block ${eoiAlerts.stuck > 0 ? "border-red-300" : ""}`}>
               <div className="text-2xl lg:text-3xl font-bold">{eoiAlerts.stuck}</div>
-              <div className="text-[10px] lg:text-[11px] tracking-widest text-gray-500 uppercase mt-0.5 lg:mt-1 leading-tight">Stuck deals</div>
-              <div className="text-[11px] lg:text-xs text-gray-500 mt-0.5 lg:mt-1 leading-tight">EOI collected 7+ days, no booking</div>
+              <div className="text-[10px] lg:text-[11px] tracking-widest text-gray-500 dark:text-slate-400 uppercase mt-0.5 lg:mt-1 leading-tight">Stuck deals</div>
+              <div className="text-[11px] lg:text-xs text-gray-500 dark:text-slate-400 mt-0.5 lg:mt-1 leading-tight">EOI collected 7+ days, no booking</div>
             </Link>
           </div>
         </div>
@@ -640,20 +640,20 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
 
       {/* Weighted Sales Forecast */}
       <div>
-        <div className="text-xs font-bold tracking-widest text-gray-500 mb-2">SALES FORECAST (WEIGHTED)</div>
+        <div className="text-xs font-bold tracking-widest text-gray-500 dark:text-slate-400 mb-2">SALES FORECAST (WEIGHTED)</div>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
           <ForecastCard label="EXPECTED THIS MONTH" sub={`${pluralDeals(fcCounts.closing)} at closing stage`} aed={forecast.aed.closing} inr={forecast.inr.closing} color="border-emerald-500" />
           <ForecastCard label="EXPECTED IN 1-3 MONTHS" sub={`${pluralDeals(fcCounts.meeting + fcCounts.moving)} actively moving`} aed={forecast.aed.meeting + forecast.aed.moving} inr={forecast.inr.meeting + forecast.inr.moving} color="border-amber-500" />
           <ForecastCard label="LONGER-TERM POTENTIAL" sub={`${pluralDeals(fcCounts.early)} early / cold`} aed={forecast.aed.early} inr={forecast.inr.early} color="border-blue-500" />
           <ForecastCard label="TOTAL WEIGHTED FORECAST" sub={`${pluralDeals(fcTotalCount)} across all stages`} aed={fcTotal("aed")} inr={fcTotal("inr")} color="border-[#c9a24b]" />
         </div>
-        <p className="text-xs text-gray-500 mt-2">Each deal is weighted by likelihood: closing 55%, meeting 30%, actively moving 10%, early/cold 2%. Adjust in <code>WEIGHTS</code> if needed.</p>
+        <p className="text-xs text-gray-500 dark:text-slate-400 mt-2">Each deal is weighted by likelihood: closing 55%, meeting 30%, actively moving 10%, early/cold 2%. Adjust in <code>WEIGHTS</code> if needed.</p>
       </div>
 
       {/* By Salesperson table — ADMIN/MANAGER only (team-wide competitive data) */}
       {isAdminOrMgr && (
       <div className="card p-3 lg:p-5 overflow-x-auto">
-        <div className="text-xs font-bold tracking-widest text-gray-500 mb-3">BY SALESPERSON · TEAM</div>
+        <div className="text-xs font-bold tracking-widest text-gray-500 dark:text-slate-400 mb-3">BY SALESPERSON · TEAM</div>
         <table className="tbl w-full min-w-[520px]">
           <thead><tr>
             <th>Salesperson</th><th>Team</th><th className="text-center">Calls today</th><th className="text-center">Connected today</th><th className="text-center">Due today</th><th className="text-center">Overdue now</th><th className="text-center">Closeable now</th><th className="text-center">Needs Lalit</th><th className="text-center">Clients (total)</th>
@@ -696,12 +696,12 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
                       <b>{a.user?.name ?? "System"}</b> · {a.title}
                       {a.lead && <> on <Link href={`/leads/${a.lead.id}`} className="text-[#0b1a33] font-semibold hover:underline">{a.lead.name}</Link></>}
                     </div>
-                    <div className="text-xs text-gray-500">{v.label} · {formatDistanceToNow(a.createdAt, { addSuffix: true })}</div>
+                    <div className="text-xs text-gray-500 dark:text-slate-400">{v.label} · {formatDistanceToNow(a.createdAt, { addSuffix: true })}</div>
                   </div>
                 </div>
               );
             })}
-            {recentActivities.length === 0 && <div className="text-sm text-gray-500">No activity yet.</div>}
+            {recentActivities.length === 0 && <div className="text-sm text-gray-500 dark:text-slate-400">No activity yet.</div>}
           </div>
         </div>
         <div className="card p-5">
@@ -711,12 +711,12 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
               <Link key={a.id} href={a.lead ? `/leads/${a.lead.id}` : "#"} className="flex items-center justify-between p-3 rounded-lg border border-[#e5e7eb] hover:border-[#c9a24b]">
                 <div>
                   <div className="text-sm font-semibold">{a.title}{a.lead && ` · ${a.lead.name}`}</div>
-                  <div className="text-xs text-gray-500">{a.scheduledAt && `${fmtIST12(a.scheduledAt)} IST`}</div>
+                  <div className="text-xs text-gray-500 dark:text-slate-400">{a.scheduledAt && `${fmtIST12(a.scheduledAt)} IST`}</div>
                 </div>
                 <span className="chip chip-new">{a.type}</span>
               </Link>
             ))}
-            {upcoming.length === 0 && <div className="text-sm text-gray-500">Nothing scheduled.</div>}
+            {upcoming.length === 0 && <div className="text-sm text-gray-500 dark:text-slate-400">Nothing scheduled.</div>}
           </div>
         </div>
       </div>
@@ -726,23 +726,23 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
 
 function KPI({ title, value, sub, highlight }: { title: string; value: number; sub: string; highlight?: boolean }) {
   return (
-    <div className={`card p-3 lg:p-4 ${highlight ? "border-amber-500 border-2 bg-amber-50" : ""}`}>
-      <div className="text-2xl lg:text-3xl font-bold">{value}</div>
-      <div className="text-[10px] lg:text-[11px] tracking-widest text-gray-500 uppercase mt-0.5 lg:mt-1 leading-tight">{title}</div>
-      <div className="text-[11px] lg:text-xs text-gray-500 mt-0.5 lg:mt-1 leading-tight">{sub}</div>
+    <div className={`card p-3 lg:p-4 ${highlight ? "border-amber-500 border-2 bg-amber-50 dark:bg-amber-900/20" : ""}`}>
+      <div className="text-2xl lg:text-3xl font-bold dark:text-white">{value}</div>
+      <div className="text-[10px] lg:text-[11px] tracking-widest text-gray-500 dark:text-slate-400 uppercase mt-0.5 lg:mt-1 leading-tight">{title}</div>
+      <div className="text-[11px] lg:text-xs text-gray-500 dark:text-slate-400 mt-0.5 lg:mt-1 leading-tight">{sub}</div>
     </div>
   );
 }
 function ForecastCard({ label, sub, aed, inr, color }: { label: string; sub: string; aed: number; inr: number; color: string }) {
   return (
     <div className={`card p-3 border-l-4 ${color}`}>
-      <div className="text-[10px] tracking-widest text-gray-500 uppercase">{label}</div>
-      <div className="text-base font-bold mt-1 leading-tight">
+      <div className="text-[10px] tracking-widest text-gray-500 dark:text-slate-400 uppercase">{label}</div>
+      <div className="text-base font-bold mt-1 leading-tight dark:text-white">
         {aed > 0 && <div>{fmtMoney(aed, "AED")}</div>}
         {inr > 0 && <div>{fmtMoney(inr, "INR")}</div>}
-        {aed === 0 && inr === 0 && <div className="text-gray-400">—</div>}
+        {aed === 0 && inr === 0 && <div className="text-gray-400 dark:text-slate-500">—</div>}
       </div>
-      <div className="text-[11px] text-gray-500 mt-1">{sub}</div>
+      <div className="text-[11px] text-gray-500 dark:text-slate-400 mt-1">{sub}</div>
     </div>
   );
 }

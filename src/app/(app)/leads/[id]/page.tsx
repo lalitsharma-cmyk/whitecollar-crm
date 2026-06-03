@@ -240,25 +240,25 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
   // Tailwind colour map for a BANT chip. `good` overrides `bad` (i.e. if the
   // field has a filled value it's green even when the related signal is null).
   function bantChipClass(good: boolean, bad: boolean): string {
-    if (good) return "border-emerald-300 bg-emerald-50";
-    if (bad) return "border-red-300 bg-red-50";
-    return "border-amber-200 bg-amber-50";
+    if (good) return "border-emerald-300 bg-emerald-50 dark:border-emerald-700 dark:bg-emerald-900/30";
+    if (bad) return "border-red-300 bg-red-50 dark:border-red-700 dark:bg-red-900/30";
+    return "border-amber-200 bg-amber-50 dark:border-amber-700 dark:bg-amber-900/30";
   }
 
   const bantCard = (
     <div data-lead-section="overview" className={`card p-4 border-l-4 ${
-      lead.bantStatus === "QUALIFIES" ? "border-emerald-500 bg-emerald-50" :
-      lead.bantStatus === "NOT_QUALIFIED" ? "border-red-500 bg-red-50" :
-      "border-amber-400 bg-amber-50"
+      lead.bantStatus === "QUALIFIES" ? "border-emerald-500 bg-emerald-50 dark:bg-emerald-900/20" :
+      lead.bantStatus === "NOT_QUALIFIED" ? "border-red-500 bg-red-50 dark:bg-red-900/20" :
+      "border-amber-400 bg-amber-50 dark:bg-amber-900/20"
     }`}>
       <div className="flex items-center justify-between gap-2 mb-3 flex-wrap">
         <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-xs font-bold tracking-widest text-gray-600">BANT VERDICT</span>
-          <span className="text-[10px] text-gray-500">Budget · Authority · Need · Timeline</span>
+          <span className="text-xs font-bold tracking-widest text-gray-600 dark:text-slate-300">BANT VERDICT</span>
+          <span className="text-[10px] text-gray-500 dark:text-slate-400">Budget · Authority · Need · Timeline</span>
           <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
-            bantFilledCount === 4 ? "bg-emerald-100 text-emerald-700" :
-            bantFilledCount === 0 ? "bg-gray-100 text-gray-500" :
-            "bg-amber-100 text-amber-700"
+            bantFilledCount === 4 ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-green-400" :
+            bantFilledCount === 0 ? "bg-gray-100 text-gray-500 dark:bg-slate-700 dark:text-slate-400" :
+            "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-yellow-300"
           }`}>
             {bantFilledCount}/4 captured
           </span>
@@ -274,7 +274,7 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
         {/* B — Budget. Backed by budgetMin + fundReadiness. */}
         <div className={`p-2.5 rounded border ${bantChipClass(bantBudgetFilled, bantBudgetBad)}`}>
-          <div className="text-[10px] font-bold tracking-widest text-gray-600">💰 B · BUDGET</div>
+          <div className="text-[10px] font-bold tracking-widest text-gray-600 dark:text-slate-300">💰 B · BUDGET</div>
           <div className="text-sm mt-0.5">
             <InlineEdit
               leadId={lead.id}
@@ -286,12 +286,12 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
               placeholder={budgetCcy === "INR" ? "e.g. 3 Cr" : "e.g. 2.5M"}
             />
           </div>
-          <div className="text-[10px] text-gray-600 mt-1">Fund: <InlineEdit leadId={lead.id} field="fundReadiness" type="select" value={lead.fundReadiness ?? ""}
+          <div className="text-[10px] text-gray-600 dark:text-slate-300 mt-1">Fund: <InlineEdit leadId={lead.id} field="fundReadiness" type="select" value={lead.fundReadiness ?? ""}
             options={[{value:"CASH_READY",label:"Cash Ready"},{value:"BANK_APPROVED",label:"Bank Approved"},{value:"FINANCING_NEEDED",label:"Financing"},{value:"NOT_DISCUSSED",label:"Not discussed"}]} /></div>
         </div>
         {/* A — Authority. New field authorityLevel. */}
         <div className={`p-2.5 rounded border ${bantChipClass(bantAuthFilled, bantAuthBad)}`}>
-          <div className="text-[10px] font-bold tracking-widest text-gray-600">👤 A · AUTHORITY</div>
+          <div className="text-[10px] font-bold tracking-widest text-gray-600 dark:text-slate-300">👤 A · AUTHORITY</div>
           <div className="text-sm mt-0.5">
             <InlineEdit leadId={lead.id} field="authorityLevel" type="select" value={lead.authorityLevel ?? ""}
               options={[
@@ -304,14 +304,14 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
         </div>
         {/* N — Need. New free-text needSummary. */}
         <div className={`p-2.5 rounded border ${bantChipClass(bantNeedFilled, false)}`}>
-          <div className="text-[10px] font-bold tracking-widest text-gray-600">🎯 N · NEED</div>
+          <div className="text-[10px] font-bold tracking-widest text-gray-600 dark:text-slate-300">🎯 N · NEED</div>
           <div className="text-sm mt-0.5">
             <InlineEdit leadId={lead.id} field="needSummary" value={lead.needSummary ?? ""} placeholder="e.g. parents relocating, rental yield, kid's school" />
           </div>
         </div>
         {/* T — Timeline. Backed by whenCanInvest. */}
         <div className={`p-2.5 rounded border ${bantChipClass(bantTimeFilled, bantTimeBad)}`}>
-          <div className="text-[10px] font-bold tracking-widest text-gray-600">⏱ T · TIMELINE</div>
+          <div className="text-[10px] font-bold tracking-widest text-gray-600 dark:text-slate-300">⏱ T · TIMELINE</div>
           <div className="text-sm mt-0.5">
             <InlineEdit leadId={lead.id} field="whenCanInvest" type="select" value={lead.whenCanInvest ?? ""}
               options={[
@@ -338,7 +338,7 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
 
   const qualificationCard = (
     <div data-lead-section="overview" className="card p-5">
-      <div className="font-semibold mb-3">Qualification <span className="text-[10px] text-gray-400 font-normal">(click any value to edit)</span></div>
+      <div className="font-semibold mb-3 dark:text-slate-100">Qualification <span className="text-[10px] text-gray-400 dark:text-slate-500 font-normal">(click any value to edit)</span></div>
       {/* `min-w-0` on every grid cell so long values (LinkedIn URLs, long
           categorization labels) truncate within their column instead of
           overflowing into the neighbour. Lalit screenshot showed the
@@ -349,8 +349,8 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
             two inline editors stacked. Replaces the previous standalone
             Company cell (which has been removed) and the standalone Profession
             cell. */}
-        <div className="sm:col-span-2 p-2.5 rounded border border-[#e5e7eb] bg-gray-50">
-          <div className="text-xs text-gray-500 mb-1">💼 Profession @ Company</div>
+        <div className="sm:col-span-2 p-2.5 rounded border border-[#e5e7eb] bg-gray-50 dark:bg-slate-700/50 dark:border-slate-600">
+          <div className="text-xs text-gray-500 dark:text-slate-400 mb-1">💼 Profession @ Company</div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             <div>
               <InlineEdit leadId={lead.id} field="profession" type="select" value={lead.profession ?? ""}
@@ -370,21 +370,21 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
           </div>
         </div>
         <div>
-          <div className="text-xs text-gray-500">📱 Alt phone</div>
+          <div className="text-xs text-gray-500 dark:text-slate-400">📱 Alt phone</div>
           <InlineEdit leadId={lead.id} field="altPhone" value={lead.altPhone ?? ""} placeholder="+91…" />
         </div>
         <div>
-          <div className="text-xs text-gray-500">Potential</div>
+          <div className="text-xs text-gray-500 dark:text-slate-400">Potential</div>
           <InlineEdit leadId={lead.id} field="potential" type="select" value={lead.potential ?? ""}
             options={[{value:"HIGH",label:"High"},{value:"MEDIUM",label:"Medium"},{value:"LOW",label:"Low"},{value:"UNKNOWN",label:"Unknown"}]} />
         </div>
         <div>
-          <div className="text-xs text-gray-500">Mood</div>
+          <div className="text-xs text-gray-500 dark:text-slate-400">Mood</div>
           <InlineEdit leadId={lead.id} field="moodStatus" type="select" value={lead.moodStatus ?? ""}
             options={[{value:"EXCITED",label:"😀 Excited"},{value:"INTERESTED",label:"🙂 Interested"},{value:"NEUTRAL",label:"😐 Neutral"},{value:"HESITANT",label:"🤔 Hesitant"},{value:"COLD",label:"🧊 Cold"},{value:"CONFUSED",label:"😵 Confused"},{value:"ANGRY",label:"😠 Angry"}]} />
         </div>
         <div>
-          <div className="text-xs text-gray-500">Categorization</div>
+          <div className="text-xs text-gray-500 dark:text-slate-400">Categorization</div>
           <InlineEdit leadId={lead.id} field="categorization" type="select" value={lead.categorization ?? ""}
             options={[
               {value:"🔥 Highly Responsive — picks calls regularly",label:"🔥 Highly Responsive"},
@@ -400,20 +400,20 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
             ]} />
         </div>
         <div>
-          <div className="text-xs text-gray-500">🔗 LinkedIn</div>
+          <div className="text-xs text-gray-500 dark:text-slate-400">🔗 LinkedIn</div>
           {lead.linkedInUrl && (
             <a href={lead.linkedInUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-[#0b1a33] underline block truncate">View profile ↗</a>
           )}
           <InlineEdit leadId={lead.id} field="linkedInUrl" value={lead.linkedInUrl ?? ""} placeholder="https://linkedin.com/in/…" />
         </div>
         <div>
-          <div className="text-xs text-gray-500">Configuration</div>
+          <div className="text-xs text-gray-500 dark:text-slate-400">Configuration</div>
           <InlineEdit leadId={lead.id} field="configuration" value={lead.configuration ?? ""} placeholder="2BR / Villa / PH" />
         </div>
         {/* Budget, fundReadiness, whenCanInvest moved into the BANT card —
             they're already shown there. */}
         <div>
-          <div className="text-xs text-gray-500">Stage</div>
+          <div className="text-xs text-gray-500 dark:text-slate-400">Stage</div>
           <InlineEdit leadId={lead.id} field="status" type="select" value={lead.status}
             options={[{value:"NEW",label:"New"},{value:"CONTACTED",label:"Contacted"},{value:"QUALIFIED",label:"Qualified"},{value:"SITE_VISIT",label:"Site Visit"},{value:"NEGOTIATION",label:"Negotiation"},{value:"BOOKING_DONE",label:"Booking Done"}]} />
         </div>
@@ -431,14 +431,14 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
             <div key={a.id} className="flex gap-3 items-start">
               <div className={`w-8 h-8 rounded-full ${v.dot} text-white flex items-center justify-center text-sm flex-none shadow-sm`}>{v.icon}</div>
               <div className="flex-1 min-w-0">
-                <div className="text-sm"><b>{a.title}</b> <span className="text-[10px] text-gray-400 ml-1">· {v.label}</span></div>
-                <div className="text-xs text-gray-500">{a.user?.name ?? "System"} · {fmtIST12(a.createdAt)} IST</div>
-                {a.description && <div className="text-sm mt-1 text-gray-700 whitespace-pre-wrap">{a.description}</div>}
+                <div className="text-sm dark:text-slate-200"><b>{a.title}</b> <span className="text-[10px] text-gray-400 dark:text-slate-500 ml-1">· {v.label}</span></div>
+                <div className="text-xs text-gray-500 dark:text-slate-400">{a.user?.name ?? "System"} · {fmtIST12(a.createdAt)} IST</div>
+                {a.description && <div className="text-sm mt-1 text-gray-700 dark:text-slate-300 whitespace-pre-wrap">{a.description}</div>}
               </div>
             </div>
           );
         })}
-        {lead.activities.length === 0 && <div className="text-sm text-gray-500">No activity yet.</div>}
+        {lead.activities.length === 0 && <div className="text-sm text-gray-500 dark:text-slate-400">No activity yet.</div>}
       </div>
     </div>
   );
@@ -493,7 +493,7 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
                 ? `⏱  Call within ${Math.max(0, Math.floor(slaMs / 60_000))}m ${Math.max(0, Math.floor((slaMs % 60_000) / 1000))}s`
                 : `🚨 Call SLA breached ${Math.floor(-slaMs / 60_000)}m ago`}
             </div>
-            <div className="text-xs text-gray-600 mt-0.5">Logging a call clears this timer. Admin is auto-notified if you don't call.</div>
+            <div className="text-xs text-gray-600 dark:text-slate-300 mt-0.5">Logging a call clears this timer. Admin is auto-notified if you don't call.</div>
           </div>
         )}
 
@@ -518,7 +518,7 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
                   ask: "2 places location gets display in lead detail. no use.")
                   and the trailing ", null" when country was missing is also
                   killed as a side effect ("What is null here?"). */}
-              <div className="text-sm text-gray-500 mt-1">
+              <div className="text-sm text-gray-500 dark:text-slate-400 mt-1">
                 {lead.email && `${lead.email}`}
                 {lead.company && ` · ${lead.company}`}
               </div>
@@ -526,7 +526,7 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
                   …) editable inline. Chips are coloured by stable hash so the
                   same tag always looks the same on every lead. */}
               <div className="text-sm mt-2 flex items-start flex-wrap gap-2">
-                <span className="text-xs text-gray-500 font-semibold pt-0.5">Tags:</span>
+                <span className="text-xs text-gray-500 dark:text-slate-400 font-semibold pt-0.5">Tags:</span>
                 <LeadTagsEditor leadId={lead.id} initialTags={lead.tags} />
               </div>
               {/* Phone/WA action buttons + "best time to call" hint.
@@ -620,7 +620,7 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
         <div data-lead-section="overview" className="card p-5 border-l-4 border-[#c9a24b]">
           <div className="flex items-center gap-2 mb-2">
             <span className="ai-tag">WHO IS THE CLIENT</span>
-            <span className="text-xs text-gray-500">— Investor / End-user / Both</span>
+            <span className="text-xs text-gray-500 dark:text-slate-400">— Investor / End-user / Both</span>
           </div>
           {/* Lalit's 3-option dropdown (+ Unclear) — the structured signal.
               Changes POST to /api/leads/[id]/update {clientType}. The long
@@ -631,10 +631,10 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
               lost. Re-labelled as the "situation / context" notes box. */}
           <div className="mt-4 border-t border-gray-100 pt-3">
             <div className="flex items-center gap-2 mb-1">
-              <span className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">Client context (notes)</span>
-              <span className="text-xs text-gray-400">— the long story · click to edit</span>
+              <span className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-slate-400">Client context (notes)</span>
+              <span className="text-xs text-gray-400 dark:text-slate-500">— the long story · click to edit</span>
             </div>
-            <div className="text-xs text-gray-600 leading-relaxed">
+            <div className="text-xs text-gray-600 dark:text-slate-300 leading-relaxed">
               <InlineEdit leadId={lead.id} field="whoIsClient" type="textarea" value={lead.whoIsClient ?? ""}
                 placeholder="e.g. NRI from Mumbai based in Dubai. Senior Director at consulting firm. Husband already owns at Burj Vista. Looking for parents who'll relocate next year. Wife is decision maker." />
             </div>
@@ -737,9 +737,9 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
             roles (agents can see their own lead's team). Not editable here —
             use the admin queue / intake form to reassign team. */}
         <div data-lead-section="admin" className="card p-4 space-y-1.5">
-          <div className="text-[10px] uppercase tracking-widest text-gray-400 font-semibold mb-2">Team Routing</div>
+          <div className="text-[10px] uppercase tracking-widest text-gray-400 dark:text-slate-500 font-semibold mb-2">Team Routing</div>
           <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs">
-            <span className="text-gray-500 font-medium">Team</span>
+            <span className="text-gray-500 dark:text-slate-400 font-medium">Team</span>
             <span className={lead.forwardedTeam
               ? (lead.forwardedTeam === "India" ? "font-semibold text-emerald-700" : "font-semibold text-sky-700")
               : "text-amber-600 italic"
@@ -748,24 +748,24 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
             </span>
             {lead.routingMethod && (
               <>
-                <span className="text-gray-500 font-medium">Method</span>
-                <span className="text-gray-700">{lead.routingMethod.replace(/_/g, " ")}</span>
+                <span className="text-gray-500 dark:text-slate-400 font-medium">Method</span>
+                <span className="text-gray-700 dark:text-slate-300">{lead.routingMethod.replace(/_/g, " ")}</span>
               </>
             )}
             {lead.routingSource && (
               <>
-                <span className="text-gray-500 font-medium">Source</span>
-                <span className="text-gray-700">{lead.routingSource}</span>
+                <span className="text-gray-500 dark:text-slate-400 font-medium">Source</span>
+                <span className="text-gray-700 dark:text-slate-300">{lead.routingSource}</span>
               </>
             )}
             {lead.routingReason && (
               <>
-                <span className="text-gray-500 font-medium">Reason</span>
-                <span className="text-gray-700">{lead.routingReason}</span>
+                <span className="text-gray-500 dark:text-slate-400 font-medium">Reason</span>
+                <span className="text-gray-700 dark:text-slate-300">{lead.routingReason}</span>
               </>
             )}
             {!lead.routingMethod && !lead.routingSource && !lead.routingReason && (
-              <span className="col-span-2 text-gray-400 italic text-[11px]">No routing metadata recorded</span>
+              <span className="col-span-2 text-gray-400 dark:text-slate-500 italic text-[11px]">No routing metadata recorded</span>
             )}
           </div>
         </div>
@@ -794,9 +794,9 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
             is FIRST (the more decisive action), Reassign second. */}
         {(canReassign || lead.status !== "LOST") && (
           <div data-lead-section="admin" className="card p-4 space-y-3">
-            <div className="text-[10px] uppercase tracking-widest text-gray-500 font-semibold">🛠 Lead admin</div>
+            <div className="text-[10px] uppercase tracking-widest text-gray-500 dark:text-slate-400 font-semibold">🛠 Lead admin</div>
             {lead.status === "LOST" ? (
-              <div className="text-xs text-gray-600">
+              <div className="text-xs text-gray-600 dark:text-slate-300">
                 Already rejected{lead.rejectionReason ? ` — ${lead.rejectionReason.replace(/_/g, " ").toLowerCase()}` : ""}.
               </div>
             ) : (
@@ -827,9 +827,9 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
           <div data-lead-section="overview" className="card p-5">
             <div className="font-semibold mb-2">📍 Location</div>
             {lead.address ? (
-              <p className="text-sm text-gray-700">{lead.address}</p>
+              <p className="text-sm text-gray-700 dark:text-slate-300">{lead.address}</p>
             ) : (lead.city || lead.country) ? (
-              <p className="text-sm text-gray-700">
+              <p className="text-sm text-gray-700 dark:text-slate-300">
                 {[lead.city, lead.country].filter(Boolean).join(", ")}
               </p>
             ) : null}
@@ -888,7 +888,7 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
             ("Followup and to do should be on top") since those are the daily
             agent actions. Meeting + Site Visit are second-row reference dates. */}
         <div data-lead-section="actions" className="card p-5">
-          <div className="font-semibold mb-3">📅 Scheduling & next action <span className="text-[10px] text-gray-400 font-normal">(click to edit)</span></div>
+          <div className="font-semibold mb-3 dark:text-slate-100">📅 Scheduling & next action <span className="text-[10px] text-gray-400 dark:text-slate-500 font-normal">(click to edit)</span></div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
             <div className="p-3 border border-emerald-200 rounded-lg bg-emerald-50">
               <div className="text-xs text-emerald-700 font-semibold">🔁 Follow-up</div>
@@ -898,11 +898,11 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
                 in NextBestActionCard at the top of the left column. The
                 todoNext Lead column is kept (used elsewhere). */}
             <div className="p-3 border border-[#e5e7eb] rounded-lg">
-              <div className="text-xs text-gray-500">📅 Meeting</div>
+              <div className="text-xs text-gray-500 dark:text-slate-400">📅 Meeting</div>
               <InlineEdit leadId={lead.id} field="meetingDate" type="date" value={toISTLocalInput(lead.meetingDate)} placeholder="Not scheduled" />
             </div>
             <div className="p-3 border border-[#e5e7eb] rounded-lg">
-              <div className="text-xs text-gray-500">🏢 Site Visit</div>
+              <div className="text-xs text-gray-500 dark:text-slate-400">🏢 Site Visit</div>
               <InlineEdit leadId={lead.id} field="siteVisitDate" type="date" value={toISTLocalInput(lead.siteVisitDate)} placeholder="Not scheduled" />
             </div>
           </div>
@@ -927,17 +927,17 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
             Projects discussed, not way down at the bottom"). Header carries a
             count chip so the agent sees "(N)" at a glance. */}
         <div data-lead-section="projects" className="card p-5">
-          <div className="font-semibold mb-2 flex items-center gap-2">
+          <div className="font-semibold mb-2 flex items-center gap-2 dark:text-slate-100">
             Interested properties
             <span className="chip src text-[10px]">({lead.interestedUnits.length})</span>
           </div>
-          {lead.interestedUnits.length === 0 && <div className="text-sm text-gray-500">None attached yet.</div>}
+          {lead.interestedUnits.length === 0 && <div className="text-sm text-gray-500 dark:text-slate-400">None attached yet.</div>}
           <div className="space-y-2 text-sm">
             {lead.interestedUnits.map((p) => (
-              <div key={p.id} className="flex items-center justify-between border border-[#e5e7eb] rounded-lg p-2">
+              <div key={p.id} className="flex items-center justify-between border border-[#e5e7eb] dark:border-slate-600 rounded-lg p-2 dark:bg-slate-800">
                 <div>
-                  <div className="font-semibold">{p.unit.project.name} {p.unit.configuration}</div>
-                  <div className="text-xs text-gray-500">{p.unit.code} · {aedFmt(p.unit.priceBase, p.unit.project.country === "India" ? "INR" : "AED")}</div>
+                  <div className="font-semibold dark:text-slate-100">{p.unit.project.name} {p.unit.configuration}</div>
+                  <div className="text-xs text-gray-500 dark:text-slate-400">{p.unit.code} · {aedFmt(p.unit.priceBase, p.unit.project.country === "India" ? "INR" : "AED")}</div>
                 </div>
                 <span className={`chip ${p.type === "PRIMARY" ? "chip-hot" : p.type === "COMPARE" ? "chip-warm" : "chip-lost"}`}>{p.type}</span>
               </div>
@@ -950,7 +950,7 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
           <div className="flex items-center justify-between gap-2 flex-wrap">
             <div className="min-w-0">
               <div className="font-semibold text-sm">📄 Smart CMA · client-ready PDF</div>
-              <div className="text-[11px] text-gray-600">Cover · requirements · top-3 units · comparison · payment plan</div>
+              <div className="text-[11px] text-gray-600 dark:text-slate-300">Cover · requirements · top-3 units · comparison · payment plan</div>
             </div>
             <a
               href={`/api/leads/${lead.id}/cma`}
@@ -1002,13 +1002,13 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
             owned the lead before them (avoids inter-agent friction + cherry-picking). */}
         {(me.role === "ADMIN" || me.role === "MANAGER") && (
           <div data-lead-section="admin" className="card p-5">
-            <div className="font-semibold mb-2">Assignment history</div>
+            <div className="font-semibold mb-2 dark:text-slate-100">Assignment history</div>
             <div className="space-y-2 text-sm">
-              {lead.assignments.length === 0 && <div className="text-gray-500">Not assigned yet.</div>}
+              {lead.assignments.length === 0 && <div className="text-gray-500 dark:text-slate-400">Not assigned yet.</div>}
               {lead.assignments.map(a => (
-                <div key={a.id} className="text-xs">
+                <div key={a.id} className="text-xs dark:text-slate-200">
                   <b>{a.user.name}</b> · {a.reason ?? "—"}
-                  <div className="text-gray-500">{fmtIST12(a.assignedAt)} IST</div>
+                  <div className="text-gray-500 dark:text-slate-400">{fmtIST12(a.assignedAt)} IST</div>
                 </div>
               ))}
             </div>
@@ -1030,7 +1030,7 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
         {/* Expo / Dubai-site-visit logger — Lalit's ask: "Move this button down"
             → put it at the absolute bottom of the right column. */}
         <div data-lead-section="actions" className="card p-4">
-          <div className="text-xs font-semibold text-gray-600 mb-2">Log Expo / Site visit / Home visit</div>
+          <div className="text-xs font-semibold text-gray-600 dark:text-slate-300 mb-2">Log Expo / Site visit / Home visit</div>
           <AdvancedActivityLogger
             leadId={lead.id}
             team={(lead.forwardedTeam === "Dubai" || lead.forwardedTeam === "India") ? lead.forwardedTeam : null}

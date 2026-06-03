@@ -247,7 +247,7 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, a
     <>
       {/* MOBILE: Command Center card list */}
       <div className="lg:hidden space-y-2">
-        {leads.length === 0 && <div className="card p-6 text-center text-gray-500 text-sm">No leads match these filters.</div>}
+        {leads.length === 0 && <div className="card p-6 text-center text-gray-500 dark:text-slate-400 text-sm">No leads match these filters.</div>}
         {leads.map((l) => {
           const isFreshHot = l.aiScore === "HOT" && (!l.lastTouchedAt || new Date(l.lastTouchedAt).getTime() > Date.now() - 6 * 3600_000);
           const maskedPhone = l.phone ? `···${l.phone.slice(-4)}` : null;
@@ -264,7 +264,7 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, a
                   <div className="flex items-center justify-between gap-1">
                     <div className="flex items-center gap-1.5 flex-wrap min-w-0">
                       <span className="font-bold text-sm text-[#0b1a33] truncate">{l.name}</span>
-                      {maskedPhone && <span className="text-[10px] text-gray-400 font-mono flex-none">{maskedPhone}</span>}
+                      {maskedPhone && <span className="text-[10px] text-gray-400 dark:text-slate-500 font-mono flex-none">{maskedPhone}</span>}
                     </div>
                     <div className="flex items-center gap-1 flex-none">
                       {isFreshHot && (
@@ -277,25 +277,25 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, a
                     </div>
                   </div>
                   {/* Row 2: Budget · BANT · Need */}
-                  <div className="flex items-center gap-1 text-[10px] text-gray-600 mt-0.5 flex-wrap">
+                  <div className="flex items-center gap-1 text-[10px] text-gray-600 dark:text-slate-300 mt-0.5 flex-wrap">
                     <span>💰 {l.budgetFormatted ?? "—"}</span>
-                    <span className="text-gray-300">·</span>
+                    <span className="text-gray-300 dark:text-slate-600">·</span>
                     <span>📋 BANT {l.bantCount}/4</span>
                     {l.needSummary && (
                       <>
                         <span className="text-gray-300">·</span>
-                        <span className="truncate max-w-[160px] text-gray-500">🎯 {l.needSummary}</span>
+                        <span className="truncate max-w-[160px] text-gray-500 dark:text-slate-400">🎯 {l.needSummary}</span>
                       </>
                     )}
                   </div>
                   {/* Row 3: Projects · Intel · Last */}
-                  <div className="flex items-center gap-1 text-[10px] text-gray-500 mt-0.5 flex-wrap">
+                  <div className="flex items-center gap-1 text-[10px] text-gray-500 dark:text-slate-400 mt-0.5 flex-wrap">
                     {l.discussedProjects.length > 0 ? (
                       l.discussedProjects.slice(0, 2).map((p, i) => (
-                        <span key={i} className="bg-slate-100 text-slate-700 px-1 py-0 rounded">{p}</span>
+                        <span key={i} className="bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 px-1 py-0 rounded">{p}</span>
                       ))
                     ) : l.interest ? (
-                      <span className="bg-slate-100 text-slate-700 px-1 py-0 rounded truncate max-w-[120px]">{l.interest}</span>
+                      <span className="bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 px-1 py-0 rounded truncate max-w-[120px]">{l.interest}</span>
                     ) : null}
                     {intel?.matchType === "STRONG" && (
                       <span className="text-[9px] font-semibold px-1 py-0 rounded bg-red-100 text-red-700">🏠 Existing</span>
@@ -304,13 +304,13 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, a
                       <span className="text-[9px] font-semibold px-1 py-0 rounded bg-amber-100 text-amber-700">~ Possible</span>
                     )}
                     {l.lastTouched && (
-                      <span className="text-gray-400">· {l.lastTouched} ago</span>
+                      <span className="text-gray-400 dark:text-slate-500">· {l.lastTouched} ago</span>
                     )}
                   </div>
                   {/* Row 4: Next action · Owner */}
                   {(nextAction || l.owner) && (
                     <div className="flex items-center justify-between mt-1 text-[10px]">
-                      <span className="text-gray-500 truncate max-w-[180px]">
+                      <span className="text-gray-500 dark:text-slate-400 truncate max-w-[180px]">
                         {nextAction ? (l.todoNext ? `📌 ${nextAction}` : `📅 ${nextAction}`) : ""}
                       </span>
                       {l.owner && (
@@ -359,7 +359,7 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, a
           </thead>
           <tbody>
             {leads.length === 0 && (
-              <tr><td colSpan={3} className="text-center py-8 text-gray-500">No leads match these filters. Try clearing some.</td></tr>
+              <tr><td colSpan={3} className="text-center py-8 text-gray-500 dark:text-slate-400">No leads match these filters. Try clearing some.</td></tr>
             )}
             {leads.map((l) => {
               const isFreshHot = l.aiScore === "HOT" && (!l.lastTouchedAt || new Date(l.lastTouchedAt).getTime() > Date.now() - 6 * 3600_000);
@@ -384,7 +384,7 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, a
                     <div className="flex items-center gap-1.5 flex-wrap">
                       <span className="font-bold text-[#0b1a33] text-sm">{l.name}</span>
                       {maskedPhone && (
-                        <span className="text-[11px] text-gray-400 font-mono">{maskedPhone}</span>
+                        <span className="text-[11px] text-gray-400 dark:text-slate-500 font-mono">{maskedPhone}</span>
                       )}
                       <span className={`chip ${l.statusChip} text-[10px] py-0`}>{l.statusName.replaceAll("_", " ")}</span>
                       {l.aiScore && (
@@ -392,33 +392,33 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, a
                       )}
                     </div>
                     {/* Row 2: Budget · BANT · Need */}
-                    <div className="flex items-center gap-1 text-[11px] text-gray-600 mt-0.5 flex-wrap">
+                    <div className="flex items-center gap-1 text-[11px] text-gray-600 dark:text-slate-300 mt-0.5 flex-wrap">
                       <span>💰 {l.budgetFormatted ?? "—"}</span>
-                      <span className="text-gray-300">·</span>
+                      <span className="text-gray-300 dark:text-slate-600">·</span>
                       <span>📋 BANT {l.bantCount}/4</span>
-                      <span className="text-gray-300">·</span>
-                      <span className="text-gray-500 truncate max-w-[220px]">🎯 {l.needSummary?.trim() || "Need unknown"}</span>
+                      <span className="text-gray-300 dark:text-slate-600">·</span>
+                      <span className="text-gray-500 dark:text-slate-400 truncate max-w-[220px]">🎯 {l.needSummary?.trim() || "Need unknown"}</span>
                     </div>
                     {/* Row 3: Projects · Last touch */}
-                    <div className="flex items-center gap-1 text-[11px] text-gray-500 mt-0.5 flex-wrap">
+                    <div className="flex items-center gap-1 text-[11px] text-gray-500 dark:text-slate-400 mt-0.5 flex-wrap">
                       {l.discussedProjects.length > 0 ? (
                         <>
-                          <span className="text-gray-400">Projects:</span>
+                          <span className="text-gray-400 dark:text-slate-500">Projects:</span>
                           {l.discussedProjects.map((p, i) => (
-                            <span key={i} className="bg-slate-100 text-slate-700 px-1.5 py-0 rounded text-[10px]">{p}</span>
+                            <span key={i} className="bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 px-1.5 py-0 rounded text-[10px]">{p}</span>
                           ))}
                         </>
                       ) : l.interest ? (
                         <>
-                          <span className="text-gray-400">→</span>
-                          <span className="bg-slate-100 text-slate-700 px-1.5 py-0 rounded text-[10px]">{l.interest}</span>
+                          <span className="text-gray-400 dark:text-slate-500">→</span>
+                          <span className="bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 px-1.5 py-0 rounded text-[10px]">{l.interest}</span>
                         </>
                       ) : (
-                        <span className="text-gray-400 italic">No projects</span>
+                        <span className="text-gray-400 dark:text-slate-500 italic">No projects</span>
                       )}
                       {l.lastTouched && (
                         <>
-                          <span className="text-gray-300">·</span>
+                          <span className="text-gray-300 dark:text-slate-600">·</span>
                           <span>Last: {l.lastTouched} ago</span>
                         </>
                       )}
@@ -447,7 +447,7 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, a
                     </div>
                     {/* Next action */}
                     {nextAction && (
-                      <div className="text-[11px] text-gray-600 truncate max-w-[220px] ml-auto mb-1">
+                      <div className="text-[11px] text-gray-600 dark:text-slate-300 truncate max-w-[220px] ml-auto mb-1">
                         {l.todoNext ? `📌 ${l.todoNext}` : `📅 ${nextAction}`}
                       </div>
                     )}
@@ -477,20 +477,20 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, a
       {canBulk && selectedIds.length > 0 && (
         <>
           <div
-            className="fixed left-0 right-0 z-50 bg-white border-t border-[#e5e7eb] shadow-2xl px-3 py-2 safe-bottom"
+            className="fixed left-0 right-0 z-50 bg-white dark:bg-slate-800 border-t border-[#e5e7eb] dark:border-slate-700 shadow-2xl px-3 py-2 safe-bottom"
             style={{ bottom: "84px" /* sits above the dark LeadBulkActions bar */ }}
           >
             <div className="max-w-5xl mx-auto flex items-center gap-2 flex-wrap">
-              <div className="text-xs font-semibold text-[#0b1a33] mr-1">
+              <div className="text-xs font-semibold text-[#0b1a33] dark:text-white mr-1">
                 {selectedIds.length} selected
               </div>
               <button
                 onClick={clearSelection}
-                className="text-[11px] text-gray-500 hover:text-gray-800 underline"
+                className="text-[11px] text-gray-500 dark:text-slate-400 hover:text-gray-800 dark:hover:text-slate-200 underline"
               >
                 Clear
               </button>
-              <div className="w-px h-6 bg-gray-200 mx-1" />
+              <div className="w-px h-6 bg-gray-200 dark:bg-slate-600 mx-1" />
               <button
                 onClick={() => { setShowTagPopover(v => !v); setShowReassignPopover(false); setShowWaPopover(false); }}
                 className="inline-flex items-center gap-1 text-xs font-semibold bg-fuchsia-50 text-fuchsia-800 border border-fuchsia-300 px-3 py-2 rounded-lg min-h-11"
@@ -523,9 +523,9 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, a
                 bar via absolute positioning relative to viewport (mb-2 from
                 the bar by stacking it just above with bottom-full). */}
             {showTagPopover && (
-              <div className="absolute left-3 right-3 sm:left-1/2 sm:-translate-x-1/2 sm:max-w-md bottom-full mb-2 bg-white border border-[#e5e7eb] rounded-xl shadow-2xl p-3">
+              <div className="absolute left-3 right-3 sm:left-1/2 sm:-translate-x-1/2 sm:max-w-md bottom-full mb-2 bg-white dark:bg-slate-800 border border-[#e5e7eb] dark:border-slate-700 rounded-xl shadow-2xl p-3">
                 <div className="flex items-center justify-between mb-2">
-                  <div className="text-xs font-semibold text-[#0b1a33]">Add tags to {selectedIds.length} lead{selectedIds.length === 1 ? "" : "s"}</div>
+                  <div className="text-xs font-semibold text-[#0b1a33] dark:text-white">Add tags to {selectedIds.length} lead{selectedIds.length === 1 ? "" : "s"}</div>
                   <button onClick={() => setShowTagPopover(false)} className="text-gray-400 hover:text-gray-700"><X className="w-4 h-4" /></button>
                 </div>
                 <div className="flex flex-wrap gap-1.5 mb-3">
@@ -535,7 +535,7 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, a
                       <button
                         key={t}
                         onClick={() => togglePickedTag(t)}
-                        className={`px-2.5 py-1.5 rounded-full text-[11px] font-semibold border ${on ? "bg-fuchsia-600 text-white border-fuchsia-600" : "bg-white text-gray-700 border-[#e5e7eb] hover:bg-gray-50"}`}
+                        className={`px-2.5 py-1.5 rounded-full text-[11px] font-semibold border ${on ? "bg-fuchsia-600 text-white border-fuchsia-600" : "bg-white dark:bg-slate-700 text-gray-700 dark:text-slate-100 border-[#e5e7eb] dark:border-slate-600 hover:bg-gray-50 dark:hover:bg-slate-600"}`}
                       >
                         {t}
                       </button>
@@ -558,15 +558,15 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, a
 
             {/* Reassign popover — single-select agent dropdown. */}
             {showReassignPopover && canReassign && (
-              <div className="absolute left-3 right-3 sm:left-1/2 sm:-translate-x-1/2 sm:max-w-md bottom-full mb-2 bg-white border border-[#e5e7eb] rounded-xl shadow-2xl p-3">
+              <div className="absolute left-3 right-3 sm:left-1/2 sm:-translate-x-1/2 sm:max-w-md bottom-full mb-2 bg-white dark:bg-slate-800 border border-[#e5e7eb] dark:border-slate-700 rounded-xl shadow-2xl p-3">
                 <div className="flex items-center justify-between mb-2">
-                  <div className="text-xs font-semibold text-[#0b1a33]">Reassign {selectedIds.length} lead{selectedIds.length === 1 ? "" : "s"}</div>
+                  <div className="text-xs font-semibold text-[#0b1a33] dark:text-white">Reassign {selectedIds.length} lead{selectedIds.length === 1 ? "" : "s"}</div>
                   <button onClick={() => setShowReassignPopover(false)} className="text-gray-400 hover:text-gray-700"><X className="w-4 h-4" /></button>
                 </div>
                 <select
                   value={reassignPick}
                   onChange={(e) => setReassignPick(e.target.value)}
-                  className="w-full border border-[#e5e7eb] rounded-lg px-3 py-2 text-sm bg-white mb-3"
+                  className="w-full border border-[#e5e7eb] dark:border-slate-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-slate-700 dark:text-slate-100 mb-3"
                 >
                   <option value="">Pick an agent…</option>
                   {agents.map(a => <option key={a.id} value={a.id}>{a.name} ({a.team ?? "—"})</option>)}
@@ -590,9 +590,9 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, a
                 WhatsApp can't be sent server-side (no Meta API), so the agent
                 opens each link one-by-one (or "Open all" with a 300ms stagger). */}
             {showWaPopover && (
-              <div className="absolute left-3 right-3 sm:left-1/2 sm:-translate-x-1/2 sm:max-w-md bottom-full mb-2 bg-white border border-[#e5e7eb] rounded-xl shadow-2xl p-3">
+              <div className="absolute left-3 right-3 sm:left-1/2 sm:-translate-x-1/2 sm:max-w-md bottom-full mb-2 bg-white dark:bg-slate-800 border border-[#e5e7eb] dark:border-slate-700 rounded-xl shadow-2xl p-3">
                 <div className="flex items-center justify-between mb-2">
-                  <div className="text-xs font-semibold text-[#0b1a33] inline-flex items-center gap-1.5">
+                  <div className="text-xs font-semibold text-[#0b1a33] dark:text-white inline-flex items-center gap-1.5">
                     <MessageCircle className="w-4 h-4 text-[#0f7a3d]" />
                     WhatsApp {selectedIds.length} lead{selectedIds.length === 1 ? "" : "s"}
                   </div>
@@ -601,11 +601,11 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, a
 
                 {waLinks.length === 0 && waSkipped.length === 0 ? (
                   <>
-                    <label className="text-[11px] font-semibold text-gray-600">Template</label>
+                    <label className="text-[11px] font-semibold text-gray-600 dark:text-slate-300">Template</label>
                     <select
                       value={waTemplate}
                       onChange={(e) => setWaTemplate(e.target.value)}
-                      className="w-full mt-1 mb-3 border border-[#e5e7eb] rounded-lg px-3 py-2 text-sm bg-white"
+                      className="w-full mt-1 mb-3 border border-[#e5e7eb] dark:border-slate-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-slate-700 dark:text-slate-100"
                     >
                       {WA_PRESETS.map(p => <option key={p.v} value={p.v}>{p.label}</option>)}
                     </select>
@@ -623,7 +623,7 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, a
                   </>
                 ) : (
                   <>
-                    <p className="text-[11px] text-gray-500 mb-2">
+                    <p className="text-[11px] text-gray-500 dark:text-slate-400 mb-2">
                       {waLinks.length} link{waLinks.length === 1 ? "" : "s"} ready. Tap each to open WhatsApp with the message pre-typed, then hit Send.
                       {waLinks.length > 1 && " “Open all” staggers them — your browser may block extras, so allow popups for this site."}
                     </p>
@@ -671,7 +671,7 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, a
           {showRejectModal && (
             <div className="fixed inset-0 z-50 bg-black/40 flex items-end sm:items-center justify-center sm:p-4" onClick={() => !bulkBusy && setShowRejectModal(false)}>
               <div
-                className="bg-white sm:rounded-xl rounded-t-2xl max-w-md w-full p-5 shadow-2xl max-h-[90vh] overflow-y-auto safe-bottom"
+                className="bg-white dark:bg-slate-800 sm:rounded-xl rounded-t-2xl max-w-md w-full p-5 shadow-2xl max-h-[90vh] overflow-y-auto safe-bottom"
                 onClick={(e) => e.stopPropagation()}
               >
                 <div className="flex items-center justify-between mb-1">
@@ -681,20 +681,20 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, a
                   </div>
                   <button onClick={() => setShowRejectModal(false)} className="text-gray-400 hover:text-gray-700"><X className="w-5 h-5" /></button>
                 </div>
-                <p className="text-xs text-gray-500 mb-4">
+                <p className="text-xs text-gray-500 dark:text-slate-400 mb-4">
                   Each lead is marked LOST, removed from Today's follow-ups, and the reason is recorded in Reports.
                 </p>
 
-                <label className="text-xs font-semibold text-gray-600">Reason *</label>
+                <label className="text-xs font-semibold text-gray-600 dark:text-slate-300">Reason *</label>
                 <select
                   value={rejectReason}
                   onChange={(e) => setRejectReason(e.target.value)}
-                  className="w-full mt-1 mb-3 border border-[#e5e7eb] rounded-lg px-3 py-2 text-sm bg-white"
+                  className="w-full mt-1 mb-3 border border-[#e5e7eb] dark:border-slate-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-slate-700 dark:text-slate-100"
                 >
                   {REJECT_REASONS.map(r => <option key={r.v} value={r.v}>{r.label}</option>)}
                 </select>
 
-                <label className="text-xs font-semibold text-gray-600">
+                <label className="text-xs font-semibold text-gray-600 dark:text-slate-300">
                   {rejectReason === "OTHER" ? "Specify *" : "Note (optional)"}
                 </label>
                 <textarea
@@ -706,7 +706,7 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, a
                       ? "e.g. Client passed away, moved abroad, family dispute…"
                       : "Add context — what did they say?"
                   }
-                  className="w-full mt-1 border border-[#e5e7eb] rounded-lg px-3 py-2 text-sm font-mono text-[13px]"
+                  className="w-full mt-1 border border-[#e5e7eb] dark:border-slate-600 rounded-lg px-3 py-2 text-sm font-mono text-[13px] dark:bg-slate-700 dark:text-slate-100 dark:placeholder:text-slate-500"
                 />
 
                 {bulkErr && <div className="text-xs text-red-600 mt-2">{bulkErr}</div>}

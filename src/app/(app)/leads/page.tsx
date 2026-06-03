@@ -274,7 +274,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
           <h1 className="text-xl sm:text-2xl font-bold">Leads</h1>
-          <p className="text-xs sm:text-sm text-gray-500">{totalAll} total · {newToday} new in last 24h · {hot} hot · showing {total} matching</p>
+          <p className="text-xs sm:text-sm text-gray-500 dark:text-slate-400">{totalAll} total · {newToday} new in last 24h · {hot} hot · showing {total} matching</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <Link href="/intake" className="btn btn-ghost flex-1 sm:flex-none justify-center">Import</Link>
@@ -308,7 +308,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
           status / source filters via AND. Sits above the follow-up row so
           the agent's eye lands on these high-signal slices first. */}
       <div className="space-y-2">
-        <div className="text-[10px] uppercase tracking-widest text-gray-500 font-semibold">
+        <div className="text-[10px] uppercase tracking-widest text-gray-500 dark:text-slate-400 font-semibold">
           ⚡ Smart filters
         </div>
         <div className="flex gap-2 overflow-x-auto lg:flex-wrap pb-1 -mx-3 px-3 lg:mx-0 lg:px-0 scrollbar-thin">
@@ -344,7 +344,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
               the URL — picking a tag does NOT clear ?followup, ?status, etc. */}
           {distinctTags.length > 0 && (
             <form method="GET" action="/leads" className="inline-flex items-center gap-1">
-              <label htmlFor="tag-filter" className="text-[10px] uppercase tracking-widest text-gray-500 font-semibold pl-1">
+              <label htmlFor="tag-filter" className="text-[10px] uppercase tracking-widest text-gray-500 dark:text-slate-400 font-semibold pl-1">
                 🏷 Tag
               </label>
               {/* Server-rendered <select> — no onChange (would force the whole
@@ -354,7 +354,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
                 id="tag-filter"
                 name="tag"
                 defaultValue={sp.tag ?? ""}
-                className={`px-2 py-2 rounded-full text-xs font-semibold border min-h-11 ${sp.tag ? "bg-fuchsia-600 text-white border-fuchsia-600" : "bg-white border-[#e5e7eb] text-gray-700"}`}
+                className={`px-2 py-2 rounded-full text-xs font-semibold border min-h-11 ${sp.tag ? "bg-fuchsia-600 text-white border-fuchsia-600" : "bg-white dark:bg-slate-700 border-[#e5e7eb] dark:border-slate-600 text-gray-700 dark:text-slate-100"}`}
               >
                 <option value="">All tags</option>
                 {distinctTags.map((t) => (
@@ -363,14 +363,14 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
               </select>
               <button
                 type="submit"
-                className="px-3 py-2 rounded-full text-xs font-semibold border min-h-11 bg-white border-[#e5e7eb] text-gray-700 hover:bg-gray-50"
+                className="px-3 py-2 rounded-full text-xs font-semibold border min-h-11 bg-white dark:bg-slate-700 border-[#e5e7eb] dark:border-slate-600 text-gray-700 dark:text-slate-100 hover:bg-gray-50 dark:hover:bg-slate-600"
               >
                 Apply
               </button>
               {sp.tag && (
                 <Link
                   href="/leads"
-                  className="px-2 py-2 text-[11px] text-gray-500 hover:text-gray-800"
+                  className="px-2 py-2 text-[11px] text-gray-500 dark:text-slate-400 hover:text-gray-800 dark:hover:text-slate-200"
                   title="Clear tag filter"
                 >
                   ✕
@@ -387,9 +387,9 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
           full timeline of upcoming follow-ups at a glance.
           Counts are scoped to the agent's own pipeline (admin sees all). */}
       <div className="space-y-2">
-        <div className="text-[10px] uppercase tracking-widest text-gray-500 font-semibold flex items-center gap-2">
+        <div className="text-[10px] uppercase tracking-widest text-gray-500 dark:text-slate-400 font-semibold flex items-center gap-2">
           <span>📅 Follow-ups</span>
-          <span className="text-[9px] font-normal text-gray-400 normal-case tracking-normal hidden sm:inline">
+          <span className="text-[9px] font-normal text-gray-400 dark:text-slate-500 normal-case tracking-normal hidden sm:inline">
             (default view shows today's — tap All to see everything)
           </span>
         </div>
@@ -405,7 +405,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
           `}</style>
           <Link
             href="/leads?followup=all"
-            className={`px-3 py-2 rounded-full text-xs font-semibold border min-h-11 inline-flex items-center gap-1 ${effectiveFollowup === "all" ? "bg-[#0b1a33] text-white border-[#0b1a33]" : "bg-white border-[#e5e7eb] text-gray-700"}`}
+            className={`px-3 py-2 rounded-full text-xs font-semibold border min-h-11 inline-flex items-center gap-1 ${effectiveFollowup === "all" ? "bg-[#0b1a33] text-white border-[#0b1a33]" : "bg-white dark:bg-slate-700 border-[#e5e7eb] dark:border-slate-600 text-gray-700 dark:text-slate-100"}`}
           >
             All leads
           </Link>
@@ -525,12 +525,12 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
 
       {/* Pagination */}
       <div className="flex items-center justify-between text-sm">
-        <div className="text-gray-500">Showing {skip + 1}–{Math.min(skip + PAGE_SIZE, total)} of {total}</div>
+        <div className="text-gray-500 dark:text-slate-400">Showing {skip + 1}–{Math.min(skip + PAGE_SIZE, total)} of {total}</div>
         <div className="flex gap-2">
           {page > 1 && (
             <Link href={`?${new URLSearchParams({ ...sp as Record<string,string>, page: String(page - 1) }).toString()}`} className="btn btn-ghost">‹ Prev</Link>
           )}
-          <span className="px-3 py-2 text-xs text-gray-500">Page {page} of {totalPages}</span>
+          <span className="px-3 py-2 text-xs text-gray-500 dark:text-slate-400">Page {page} of {totalPages}</span>
           {page < totalPages && (
             <Link href={`?${new URLSearchParams({ ...sp as Record<string,string>, page: String(page + 1) }).toString()}`} className="btn btn-ghost">Next ›</Link>
           )}

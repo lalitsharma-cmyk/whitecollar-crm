@@ -284,10 +284,10 @@ export default function MobileShell({ children, user, awaitingTeamCount = 0 }: P
         style={{ paddingBottom: "calc(4rem + env(safe-area-inset-bottom))" }}
       >
         {/* Desktop topbar (search bar) */}
-        <header className="hidden lg:flex bg-white border-b border-[#e5e7eb] px-6 py-3 items-center gap-4 sticky top-0 z-10">
+        <header className="hidden lg:flex bg-white dark:bg-slate-800 border-b border-[#e5e7eb] dark:border-slate-700 px-6 py-3 items-center gap-4 sticky top-0 z-10">
           <div className="relative flex-1 max-w-xl">
             <input
-              className="w-full pl-4 pr-4 py-2 rounded-lg bg-[#f5f6fa] border border-transparent focus:bg-white focus:border-[#e5e7eb] outline-none text-sm"
+              className="w-full pl-4 pr-4 py-2 rounded-lg bg-[#f5f6fa] dark:bg-slate-700 dark:text-slate-100 dark:border-slate-600 border border-transparent focus:bg-white dark:focus:bg-slate-600 focus:border-[#e5e7eb] dark:focus:border-slate-500 outline-none text-sm dark:placeholder:text-slate-500"
               placeholder="Search leads, properties, phone, email…"
             />
           </div>
@@ -308,7 +308,7 @@ export default function MobileShell({ children, user, awaitingTeamCount = 0 }: P
       {/* ─────────────────── MOBILE BOTTOM NAV ─────────────────── */}
       {/* pb adds iPhone home-indicator safe area so the nav doesn't hide behind it */}
       <nav
-        className="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-[#e5e7eb] flex z-30 shadow-[0_-2px_8px_rgba(0,0,0,0.04)]"
+        className="lg:hidden fixed bottom-0 left-0 right-0 bg-white dark:bg-slate-800 border-t border-[#e5e7eb] dark:border-slate-700 flex z-30 shadow-[0_-2px_8px_rgba(0,0,0,0.04)]"
         style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
       >
         {bottomNav.map(({ href, label, Icon }) => {
@@ -317,7 +317,7 @@ export default function MobileShell({ children, user, awaitingTeamCount = 0 }: P
             <Link
               key={href}
               href={href}
-              className={`flex-1 flex flex-col items-center justify-center py-2 min-h-12 text-[10px] font-semibold ${active ? "text-[#c9a24b]" : "text-gray-500"}`}
+              className={`flex-1 flex flex-col items-center justify-center py-2 min-h-12 text-[10px] font-semibold ${active ? "text-[#c9a24b]" : "text-gray-500 dark:text-slate-400"}`}
             >
               <Icon className="w-5 h-5 mb-0.5" strokeWidth={active ? 2.5 : 2} />
               {label}

@@ -125,18 +125,18 @@ export default function KanbanBoard({ stages, leadsByStage, agents }: Props) {
     <>
       {/* Filter bar */}
       <div className="card p-3 flex flex-wrap items-center gap-2">
-        <span className="text-xs font-semibold text-gray-500 mr-1">Filter:</span>
-        <select value={sp.get("team") ?? ""} onChange={(e) => update("team", e.target.value)} className="border border-[#e5e7eb] rounded-lg px-3 py-1.5 text-sm">
+        <span className="text-xs font-semibold text-gray-500 dark:text-slate-400 mr-1">Filter:</span>
+        <select value={sp.get("team") ?? ""} onChange={(e) => update("team", e.target.value)} className="border border-[#e5e7eb] dark:border-slate-600 rounded-lg px-3 py-1.5 text-sm dark:bg-slate-700 dark:text-slate-100">
           <option value="">All teams</option>
           <option value="Dubai">Dubai</option>
           <option value="India">India</option>
         </select>
-        <select value={sp.get("owner") ?? ""} onChange={(e) => update("owner", e.target.value)} className="border border-[#e5e7eb] rounded-lg px-3 py-1.5 text-sm">
+        <select value={sp.get("owner") ?? ""} onChange={(e) => update("owner", e.target.value)} className="border border-[#e5e7eb] dark:border-slate-600 rounded-lg px-3 py-1.5 text-sm dark:bg-slate-700 dark:text-slate-100">
           <option value="">All owners</option>
           <option value="unassigned">⚠ Unassigned</option>
           {agents.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
         </select>
-        <select value={sp.get("ai") ?? ""} onChange={(e) => update("ai", e.target.value)} className="border border-[#e5e7eb] rounded-lg px-3 py-1.5 text-sm">
+        <select value={sp.get("ai") ?? ""} onChange={(e) => update("ai", e.target.value)} className="border border-[#e5e7eb] dark:border-slate-600 rounded-lg px-3 py-1.5 text-sm dark:bg-slate-700 dark:text-slate-100">
           <option value="">AI: any</option>
           <option value="HOT">🔥 Hot</option>
           <option value="WARM">☀ Warm</option>
@@ -147,7 +147,7 @@ export default function KanbanBoard({ stages, leadsByStage, agents }: Props) {
             🚨 {atRiskCount} at risk
           </span>
         )}
-        <span className="text-xs text-gray-500 ml-auto">Open value: {fmtMoneyDual({ aed: aedOpen, inr: inrOpen })}</span>
+        <span className="text-xs text-gray-500 dark:text-slate-400 ml-auto">Open value: {fmtMoneyDual({ aed: aedOpen, inr: inrOpen })}</span>
       </div>
 
       <div className="overflow-x-auto -mx-3 lg:mx-0 px-3 lg:px-0"><div className="grid grid-cols-6 gap-3 min-w-[1080px] lg:min-w-0">
@@ -165,8 +165,8 @@ export default function KanbanBoard({ stages, leadsByStage, agents }: Props) {
               onDrop={(e) => onDrop(stage.key, e)}
             >
               <div className="flex items-center justify-between mb-2">
-                <div className="font-semibold text-sm">{stage.label} <span className="text-gray-500 font-normal">· {items.length}</span></div>
-                <span className="text-[10px] text-gray-500">{(aedSum + inrSum) > 0 ? fmtMoneyDual({ aed: aedSum, inr: inrSum }) : "—"}</span>
+                <div className="font-semibold text-sm dark:text-slate-200">{stage.label} <span className="text-gray-500 dark:text-slate-400 font-normal">· {items.length}</span></div>
+                <span className="text-[10px] text-gray-500 dark:text-slate-400">{(aedSum + inrSum) > 0 ? fmtMoneyDual({ aed: aedSum, inr: inrSum }) : "—"}</span>
               </div>
               {items.slice(0, 25).map((l) => {
                 const m = l.momentum ? momentumStyle[l.momentum] : null;
@@ -192,7 +192,7 @@ export default function KanbanBoard({ stages, leadsByStage, agents }: Props) {
                         </span>
                       )}
                     </div>
-                    <div className="text-xs text-gray-500 truncate">
+                    <div className="text-xs text-gray-500 dark:text-slate-400 truncate">
                       {l.projectName ? l.projectName : l.configuration ?? "—"}
                       {l.budgetMin ? ` · ${fmtMoney(l.budgetMin, l.budgetCurrency)}` : ""}
                     </div>
@@ -212,15 +212,15 @@ export default function KanbanBoard({ stages, leadsByStage, agents }: Props) {
                       </div>
                     )}
                     <div className="flex items-center justify-between mt-2">
-                      {l.aiScore ? <span className={`chip ${aiClass(l.aiScore)}`}>{l.aiScore} · {l.aiScoreValue}</span> : <span className="text-[10px] text-gray-400">no score</span>}
+                      {l.aiScore ? <span className={`chip ${aiClass(l.aiScore)}`}>{l.aiScore} · {l.aiScoreValue}</span> : <span className="text-[10px] text-gray-400 dark:text-slate-500">no score</span>}
                       {l.ownerName && <div className={`avatar ${l.ownerAvatar ?? "bg-slate-500"}`} title={l.ownerName}>{initialsOf(l.ownerName)}</div>}
                     </div>
                   </Link>
                 </div>
                 );
               })}
-              {items.length > 25 && <div className="kanban-card text-xs text-gray-500">+ {items.length - 25} more…</div>}
-              {items.length === 0 && <div className="text-xs text-gray-400 text-center py-6">Drop a card here</div>}
+              {items.length > 25 && <div className="kanban-card text-xs text-gray-500 dark:text-slate-400">+ {items.length - 25} more…</div>}
+              {items.length === 0 && <div className="text-xs text-gray-400 dark:text-slate-500 text-center py-6">Drop a card here</div>}
             </div>
           );
         })}
@@ -236,31 +236,31 @@ export default function KanbanBoard({ stages, leadsByStage, agents }: Props) {
           onClick={() => !busy && setPendingMove(null)}
         >
           <div
-            className="bg-white rounded-2xl shadow-2xl border max-w-md w-full p-5"
+            className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl border dark:border-slate-700 max-w-md w-full p-5"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="text-[10px] uppercase tracking-widest text-[#c9a24b] font-bold">
               Stage change
             </div>
-            <div className="mt-1 font-bold text-[#0b1a33] text-base">
+            <div className="mt-1 font-bold text-[#0b1a33] dark:text-white text-base">
               {pendingMove.leadName}
             </div>
-            <div className="text-xs text-gray-600 mt-0.5">
+            <div className="text-xs text-gray-600 dark:text-slate-300 mt-0.5">
               <span className="font-semibold">{pendingMove.from.replaceAll("_", " ")}</span>
               <span className="mx-1.5">→</span>
               <span className="font-semibold">{pendingMove.to.replaceAll("_", " ")}</span>
             </div>
 
-            <label className="block mt-4 text-xs font-semibold text-gray-700">
+            <label className="block mt-4 text-xs font-semibold text-gray-700 dark:text-slate-300">
               What changed?
-              <span className="text-gray-400 font-normal"> (optional, helps the manager)</span>
+              <span className="text-gray-400 dark:text-slate-500 font-normal"> (optional, helps the manager)</span>
             </label>
 
             {/* §9.7 — preset reason chips. Click appends to the textarea
                 with a · separator. Multiple selections allowed; agent can
                 still type freely below. */}
             <div className="mt-2">
-              <div className="text-[10px] uppercase tracking-wider text-gray-500 font-semibold mb-1">
+              <div className="text-[10px] uppercase tracking-wider text-gray-500 dark:text-slate-400 font-semibold mb-1">
                 Common reasons
               </div>
               <div className="flex flex-wrap gap-1.5">
@@ -274,7 +274,7 @@ export default function KanbanBoard({ stages, leadsByStage, agents }: Props) {
                         prev.trim() ? `${prev.trim()} · ${preset}` : preset
                       )
                     }
-                    className="text-[11px] px-2 py-1 rounded-full bg-gray-100 text-gray-700 hover:bg-amber-100 hover:text-amber-900 transition-colors disabled:opacity-50"
+                    className="text-[11px] px-2 py-1 rounded-full bg-gray-100 dark:bg-slate-700 text-gray-700 dark:text-slate-200 hover:bg-amber-100 hover:text-amber-900 dark:hover:bg-amber-900/40 dark:hover:text-yellow-300 transition-colors disabled:opacity-50"
                   >
                     {preset}
                   </button>
@@ -289,10 +289,10 @@ export default function KanbanBoard({ stages, leadsByStage, agents }: Props) {
               rows={3}
               maxLength={500}
               placeholder="e.g. Client confirmed budget · agreed to site visit Saturday · waiting on bank pre-approval"
-              className="mt-2 w-full border rounded-lg p-2 text-sm"
+              className="mt-2 w-full border dark:border-slate-600 rounded-lg p-2 text-sm dark:bg-slate-700 dark:text-slate-100 dark:placeholder:text-slate-500"
               disabled={busy}
             />
-            <div className="text-[10px] text-gray-400 mt-1 text-right">{noteDraft.length}/500</div>
+            <div className="text-[10px] text-gray-400 dark:text-slate-500 mt-1 text-right">{noteDraft.length}/500</div>
 
             <div className="flex gap-2 mt-3 justify-end">
               <button
@@ -307,7 +307,7 @@ export default function KanbanBoard({ stages, leadsByStage, agents }: Props) {
                 type="button"
                 onClick={() => confirmMove(true)}
                 disabled={busy}
-                className="btn text-xs bg-gray-100 text-gray-700 hover:bg-gray-200"
+                className="btn text-xs bg-gray-100 dark:bg-slate-700 text-gray-700 dark:text-slate-200 hover:bg-gray-200 dark:hover:bg-slate-600"
               >
                 Skip note
               </button>

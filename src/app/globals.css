@@ -1,5 +1,11 @@
 @import "tailwindcss";
 
+/* Map Tailwind's `dark:` prefix to the data-theme="dark" attribute used
+   by this app (ThemeToggle sets it on <html>). Without this, dark: would
+   fire on prefers-color-scheme: dark (OS setting), not on the user's manual
+   toggle — causing the two dark-mode mechanisms to diverge. */
+@variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
 @theme inline {
   --color-navy: #0b1a33;
   --color-navy-2: #0f2347;

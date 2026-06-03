@@ -162,7 +162,7 @@ export default async function ActionListPage() {
         <h1 className="text-xl sm:text-2xl font-bold">
           {me.role === "AGENT" ? "📋 Your Action List" : `📋 ${me.name.split(" ")[0]}'s Action List (${me.role === "ADMIN" ? "Admin view — all teams" : "Manager view"})`}
         </h1>
-        <p className="text-xs sm:text-sm text-gray-500">
+        <p className="text-xs sm:text-sm text-gray-500 dark:text-slate-400">
           {me.role === "AGENT"
             ? "Your top priorities right now — close these first. Use ✅ Complete, ⏸ Snooze, or 🆘 Escalate on each card."
             : "Team-wide priority cards. Each agent sees the same view filtered to their own leads when they log in."}
@@ -178,11 +178,11 @@ export default async function ActionListPage() {
         <section key={sec.key}>
           <div className="flex items-center gap-2 mb-3 flex-wrap">
             <h2 className="font-bold text-base">{sec.title}</h2>
-            <span className="text-sm text-gray-500">{sec.items.length}</span>
-            {sec.caption && <span className="text-xs text-gray-400 hidden sm:inline">— {sec.caption}</span>}
+            <span className="text-sm text-gray-500 dark:text-slate-400">{sec.items.length}</span>
+            {sec.caption && <span className="text-xs text-gray-400 dark:text-slate-500 hidden sm:inline">— {sec.caption}</span>}
           </div>
           {sec.items.length === 0 ? (
-            <div className="text-sm text-gray-500 italic px-1">Nothing here — good job, or check back later.</div>
+            <div className="text-sm text-gray-500 dark:text-slate-400 italic px-1">Nothing here — good job, or check back later.</div>
           ) : (
             <div className="space-y-3">
               {sec.items.map((card) => {
@@ -207,7 +207,7 @@ export default async function ActionListPage() {
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2 flex-wrap">
                           <Link href={`/leads/${card.id}`} className="font-bold text-[#0b1a33] hover:underline">{card.name}</Link>
-                          <span className="text-xs text-gray-500">{card.phone}</span>
+                          <span className="text-xs text-gray-500 dark:text-slate-400">{card.phone}</span>
                           {card.team && <span className={`chip ${card.team === "India" ? "src-csv" : "src-wa"}`}>{card.team}</span>}
                           <span className="chip chip-warm">{card.status.replaceAll("_"," ")}</span>
                           {card.currentStatus && <span className="chip src">{card.currentStatus}</span>}
@@ -217,7 +217,7 @@ export default async function ActionListPage() {
                             </span>
                           )}
                         </div>
-                        <div className="text-xs text-gray-500 mt-1">
+                        <div className="text-xs text-gray-500 dark:text-slate-400 mt-1">
                           Owner: {card.ownerName ?? "—"} · Last touch: {card.lastTouchedAt ? formatDistanceToNow(card.lastTouchedAt, { addSuffix: true }) : "never"} · {fmtAEDInr(card.budget.min, card.budget.currency)}
                         </div>
                       </div>
@@ -225,22 +225,22 @@ export default async function ActionListPage() {
 
                     {card.remarks && (
                       <div className="mt-3 text-xs">
-                        <div className="font-bold text-gray-600 mb-1">LATEST REMARK</div>
-                        <div className="text-gray-700 whitespace-pre-wrap line-clamp-2">{card.remarks}</div>
+                        <div className="font-bold text-gray-600 dark:text-slate-300 mb-1">LATEST REMARK</div>
+                        <div className="text-gray-700 dark:text-slate-300 whitespace-pre-wrap line-clamp-2">{card.remarks}</div>
                       </div>
                     )}
 
-                    <div className="mt-3 p-2 rounded-lg bg-emerald-50 border border-emerald-200 text-sm">
+                    <div className="mt-3 p-2 rounded-lg bg-emerald-50 dark:bg-emerald-900/30 border border-emerald-200 dark:border-emerald-700 text-sm dark:text-slate-200">
                       <b>Next step:</b> {ns.step}
                     </div>
-                    <div className="mt-2 p-2 rounded-lg bg-amber-50 border border-amber-200 text-xs">
+                    <div className="mt-2 p-2 rounded-lg bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-700 text-xs dark:text-slate-200">
                       <b>Why you:</b> {ns.why}
-                      {card.needsManagerReason && <div className="text-amber-700 mt-1">⚠ {card.needsManagerReason}</div>}
+                      {card.needsManagerReason && <div className="text-amber-700 dark:text-yellow-300 mt-1">⚠ {card.needsManagerReason}</div>}
                     </div>
 
                     {card.phone && (
-                      <div className="mt-3 p-2 rounded-lg bg-blue-50 border border-blue-200 text-xs">
-                        <b>WhatsApp draft:</b> <span className="text-gray-700">{greet}</span>
+                      <div className="mt-3 p-2 rounded-lg bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-700 text-xs dark:text-slate-200">
+                        <b>WhatsApp draft:</b> <span className="text-gray-700 dark:text-slate-300">{greet}</span>
                       </div>
                     )}
 
@@ -255,7 +255,7 @@ export default async function ActionListPage() {
                     />
 
                     <div className="mt-2 text-right">
-                      <Link href={`/leads/${card.id}`} className="text-xs text-gray-500 hover:underline">Full history →</Link>
+                      <Link href={`/leads/${card.id}`} className="text-xs text-gray-500 dark:text-slate-400 hover:underline">Full history →</Link>
                     </div>
                   </div>
                 );
