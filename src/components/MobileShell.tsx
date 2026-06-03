@@ -4,8 +4,8 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
   LayoutDashboard, Users, Sparkles, Menu, X,
-  Building2, CalendarDays, BarChart3, Upload, UserCog, Settings as SettingsIcon, LogOut,
-  ShieldCheck, ChevronLeft, Gem, Heart, HelpCircle, Activity, Copy, Plug, AlertTriangle,
+  Building2, BarChart3, Upload, UserCog, Settings as SettingsIcon, LogOut,
+  ChevronLeft, Gem, HelpCircle, AlertTriangle,
 } from "lucide-react";
 import NotifBell from "./NotifBell";
 import WhatsAppPanel from "./WhatsAppPanel";
@@ -45,25 +45,11 @@ const fullNav: NavSection[] = [
     { href: "/team",                label: "Team & Roles",  Icon: UserCog,       tag: undefined as string | undefined },
     { href: "/admin/awaiting-team", label: "Awaiting Team", Icon: AlertTriangle, tag: undefined as string | undefined },
   ]},
-  // ADMIN-only section — filtered out in render below
+  // ADMIN-only section — all config/system tools live under /settings.
+  // Only Lead Intake (CSV import) stays here as a direct link since admins
+  // reach it multiple times per day.
   { section: "ADMIN", adminOnly: true, items: [
-    { href: "/intake",            label: "Lead Intake",   Icon: Upload,       tag: undefined as string | undefined },
-    { href: "/admin/site-visits", label: "Site Visits",   Icon: CalendarDays, tag: "LIVE" as string | undefined },
-    { href: "/admin/attendance",  label: "Attendance",    Icon: CalendarDays, tag: undefined as string | undefined },
-    { href: "/admin/workflows",   label: "Workflows",     Icon: Sparkles,     tag: "AUTO" as string | undefined },
-    { href: "/admin/templates",   label: "Templates",     Icon: Sparkles,     tag: undefined as string | undefined },
-    { href: "/admin/audit",       label: "Audit Log",     Icon: ShieldCheck,  tag: undefined as string | undefined },
-    { href: "/admin/imports",     label: "Import History", Icon: Upload,       tag: undefined as string | undefined },
-    { href: "/admin/targets",     label: "Daily Targets", Icon: Sparkles,     tag: undefined as string | undefined },
-    { href: "/admin/quality",     label: "Quality",       Icon: BarChart3,    tag: undefined as string | undefined },
-    { href: "/admin/team-mood",   label: "Team Mood",     Icon: Sparkles,     tag: undefined as string | undefined },
-    { href: "/admin/vault",       label: "Vault (team)",  Icon: Heart,        tag: undefined as string | undefined },
-    { href: "/admin/duplicates",  label: "🔁 Duplicates", Icon: Copy,         tag: undefined as string | undefined },
-    { href: "/admin/dedup",       label: "Duplicates",   Icon: Copy,         tag: undefined as string | undefined },
-    { href: "/admin/health",      label: "💚 System health", Icon: Activity,  tag: undefined as string | undefined },
-    { href: "/admin/integrations", label: "🔌 Integrations", Icon: Plug,      tag: undefined as string | undefined },
-    { href: "/admin/ai-trial",    label: "🤖 AI Trial",   Icon: Sparkles,     tag: "NEW" as string | undefined },
-    { href: "/admin/users",       label: "Users",         Icon: Users,        tag: undefined as string | undefined },
+    { href: "/intake", label: "Lead Intake", Icon: Upload },
   ]},
 ];
 
