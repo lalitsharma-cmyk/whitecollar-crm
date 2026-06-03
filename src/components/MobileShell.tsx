@@ -5,7 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import {
   LayoutDashboard, Users, KanbanSquare, Sparkles, Menu, X, Bell,
   Building2, CalendarDays, PhoneCall, BarChart3, Upload, UserCog, Settings as SettingsIcon, LogOut,
-  ShieldCheck, ChevronLeft, Heart, Gem, Trophy, HelpCircle, Activity, Copy, Plug, AlertTriangle,
+  ShieldCheck, ChevronLeft, Heart, Gem, Trophy, HelpCircle, Activity, Copy, Plug, AlertTriangle, Snowflake, Archive,
 } from "lucide-react";
 import NotifBell from "./NotifBell";
 import WhatsAppPanel from "./WhatsAppPanel";
@@ -31,6 +31,8 @@ const fullNav: NavSection[] = [
     { href: "/leads",        label: "Leads",          Icon: Users },
     { href: "/leads/kanban", label: "📋 Pipeline",   Icon: KanbanSquare },
     { href: "/leads/overdue", label: "⚠️ Overdue",   Icon: AlertTriangle },
+    { href: "/leads/archived", label: "🗄️ Archived", Icon: Archive },
+    { href: "/leads/inbox",  label: "🧊 Going Cold", Icon: Snowflake },
     { href: "/cold-calls",  label: "Revival Engine", Icon: Gem },
     { href: "/pipeline",    label: "Pipeline",    Icon: KanbanSquare },
     { href: "/properties",  label: "Properties",  Icon: Building2 },

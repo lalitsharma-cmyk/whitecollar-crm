@@ -38,6 +38,7 @@ import LeadReassignClient from "@/components/LeadReassignClient";
 import RejectLeadModal from "@/components/RejectLeadModal";
 import LeadMobileTabs from "@/components/LeadMobileTabs";
 import LeadTagsEditor from "@/components/LeadTagsEditor";
+import LeadTimelineCard, { type TimelineItem } from "@/components/LeadTimelineCard";
 // PrintButton removed — Lalit asked for the Print action to be dropped.
 import BestCallTimeChip from "@/components/BestCallTimeChip";
 import LeadJourneyBar from "@/components/LeadJourneyBar";
@@ -135,6 +136,52 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
     }),
   ]);
   if (!lead) notFound();
+
+  // Fetch audit logs for the unified timeline — done after the notFound() guard
+  // so we only query when the lead exists.
+  const auditLogs = await prisma.auditLog.findMany({
+    where: { entityId: lead.id, action: { in: ["lead.update", "lead.reactivate"] } },
+    orderBy: { createdAt: "desc" },
+    take: 20,
+    include: { user: { select: { name: true } } },
+  });
+
+  // Build the unified timeline from callLogs (already fetched), notes (already
+  // fetched), and auditLogs. Sort newest-first.
+  const timelineItems: TimelineItem[] = [
+    ...lead.callLogs.map((c) => {
+      const actor = c.attributedAgentName ?? c.user?.name ?? "Agent";
+      const dur = c.durationSec != null ? `${c.durationSec}s` : null;
+      const summary = dur
+        ? `${actor} called — ${c.outcome.toLowerCase().replace(/_/g, " ")} (${dur})`
+        : `${actor} called — ${c.outcome.toLowerCase().replace(/_/g, " ")}`;
+      return {
+        id: `call-${c.id}`,
+        type: "call" as const,
+        timestamp: c.startedAt,
+        actor,
+        summary,
+        detail: c.notes ?? undefined,
+      };
+    }),
+    ...lead.notes.map((n) => ({
+      id: `note-${n.id}`,
+      type: "note" as const,
+      timestamp: n.createdAt,
+      actor: n.user?.name ?? "Agent",
+      summary: `${n.user?.name ?? "Agent"} added a note`,
+      detail: n.body,
+    })),
+    ...auditLogs.map((a) => ({
+      id: `audit-${a.id}`,
+      type: "audit" as const,
+      timestamp: a.createdAt,
+      actor: a.user?.name ?? "System",
+      summary: `${a.user?.name ?? "System"} updated the lead`,
+      detail: undefined,
+    })),
+  ].sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
+
   // Agents can only see leads they own. Redirect (307) to /leads instead of
   // notFound() because Next.js app-router notFound() renders the 404 UI but
   // returns HTTP 200 — confusing for auditors. Redirect is cleaner UX too:
@@ -795,6 +842,14 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
             renders blue/purple. Outcomes + recordings preserved per-row. */}
         <div data-lead-section="timeline">
           <ConversationStreamCard callLogs={lead.callLogs} waMessages={lead.waMessages} forwardedTeam={lead.forwardedTeam} />
+        </div>
+
+        {/* UNIFIED ACTIVITY TIMELINE — merges call logs, notes, and audit
+            events into a single chronological feed. Supplementary view that
+            sits below ConversationStreamCard so agents can see the full
+            sequence of everything that has happened on this lead. */}
+        <div data-lead-section="timeline">
+          <LeadTimelineCard items={timelineItems} />
         </div>
 
         {/* EOI / Booking workflow — REMOVED by Lalit in Round 3 ("Remove EOI for now").

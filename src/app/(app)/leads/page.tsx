@@ -514,6 +514,8 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
         <div className="flex gap-2 overflow-x-auto lg:flex-wrap pb-1 -mx-3 px-3 lg:mx-0 lg:px-0 scrollbar-thin">
           <Link href="/leads/kanban" className="btn btn-ghost text-xs">📋 Pipeline</Link>
           <Link href="/leads/overdue" className="btn btn-ghost text-xs">⚠️ Overdue</Link>
+          <Link href="/leads/archived" className="btn btn-ghost text-xs">🗄️ Archived</Link>
+          <Link href="/leads/inbox" className="btn btn-ghost text-xs">🧊 Cold</Link>
           {(() => {
             const exportParams = new URLSearchParams();
             for (const [k, v] of Object.entries(sp)) {
