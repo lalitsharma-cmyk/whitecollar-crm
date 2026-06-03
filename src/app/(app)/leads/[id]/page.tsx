@@ -185,12 +185,24 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
   // India. Falls back to AED when the field is null (Dubai default).
   const budgetCcy: "AED" | "INR" = lead.budgetCurrency === "INR" ? "INR" : "AED";
 
-  // Fetch active agents for the reassign dropdown
+  // Fetch active agents for the reassign dropdown — filtered by the lead's team
+  // so the picker only shows agents on the same team (+ Lalit always included).
   const agents = canReassign
-    ? await prisma.user.findMany({
-        where: { active: true, OR: [{ role: { in: ["AGENT", "MANAGER"] } }, { email: "lalitsharma@whitecollarrealty.com" }] },
-        orderBy: [{ team: "asc" }, { name: "asc" }],
-      })
+    ? lead.forwardedTeam
+      ? await prisma.user.findMany({
+          where: {
+            active: true,
+            OR: [
+              { role: { in: ["AGENT", "MANAGER"] }, team: lead.forwardedTeam },
+              { email: "lalitsharma@whitecollarrealty.com" },
+            ],
+          },
+          orderBy: { name: "asc" },
+        })
+      : await prisma.user.findMany({
+          where: { active: true, role: { in: ["AGENT", "MANAGER"] } },
+          orderBy: { name: "asc" },
+        })
     : [];
 
   // SLA countdown — show timer if assigned recently and no call yet

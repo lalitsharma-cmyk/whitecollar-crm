@@ -52,17 +52,27 @@ function parseDateTime(dateStr: string, timeStr?: string): Date | null {
   return new Date(Date.UTC(yr, mon, day, h, mins) - IST_OFFSET_MS);
 }
 
-function guessOutcome(text: string): CallOutcome {
+// Salutation words that may appear at the start of an agent-name token
+// (e.g. "Thanks Nitisha" → should be trimmed to "Nitisha").
+const SALUTATIONS = /^(thanks|thank|hi|hello|dear|regards|bye|sorry|yes|no|ok|okay)\s+/i;
+
+function stripSalutation(name: string): string {
+  return name.replace(SALUTATIONS, "").trim();
+}
+
+function guessOutcome(text: string): CallOutcome | null {
   const t = text.toLowerCase();
-  if (/not\s*picked|did not pick|didn[''']?t pick|no answer|nai pick|not pick|wa dropped/i.test(t)) return CallOutcome.NOT_PICKED;
+  if (/not\s*picked|did not pick|didn[''']?t pick|no answer|nai pick|not pick|wa dropped|dropped\s*msg|drop\s*message|dropped\s*message|msg\s*dropped|not\s*connected/i.test(t)) return CallOutcome.NOT_PICKED;
   if (/switched\s*off|switch off|switch-off/i.test(t)) return CallOutcome.SWITCHED_OFF;
   if (/(call\s*)?busy|in meeting/i.test(t)) return CallOutcome.BUSY;
   if (/wrong\s*number|not the right person/i.test(t)) return CallOutcome.WRONG_NUMBER;
   if (/callback|call back|call later|will call|connect (later|after|tomorrow|sunday|monday)/i.test(t)) return CallOutcome.CALLBACK;
   if (/not\s*interested|do not call|cancel my query|drop my query/i.test(t)) return CallOutcome.NOT_INTERESTED;
   if (/interested|positive|liked|wants|booked|will buy|ready to/i.test(t)) return CallOutcome.INTERESTED;
-  if (text.trim().length >= 20) return CallOutcome.CONNECTED;
-  return CallOutcome.CONNECTED;
+  if (/connected|spoke|discussed|explained|told|confirmed|agreed|follow up|follow-up|sent details|shared details/i.test(t)) return CallOutcome.CONNECTED;
+  // Long text without an explicit signal: return null rather than incorrectly
+  // assuming CONNECTED.
+  return null;
 }
 
 export function parseRemarks(cell: string): ParsedRemark[] {
@@ -80,7 +90,7 @@ export function parseRemarks(cell: string): ParsedRemark[] {
   let m;
   while ((m = re.exec(text)) !== null) {
     const [, agent, dateStr, timeStr, rawMsg] = m;
-    if (agent) currentAgent = agent.trim();
+    if (agent) currentAgent = stripSalutation(agent.trim());
     const when = parseDateTime(dateStr.trim(), timeStr.trim());
     if (!when) continue;
     const msg = (rawMsg || "").trim()
@@ -89,7 +99,7 @@ export function parseRemarks(cell: string): ParsedRemark[] {
       .replace(/\s+/g, " ")
       .replace(/^From\s*\([^)]+\)\s*/, "");
     if (msg.length < 2) continue;
-    results.push({ agentName: currentAgent, when, outcome: guessOutcome(msg), text: msg });
+    results.push({ agentName: currentAgent, when, outcome: guessOutcome(msg) ?? CallOutcome.CONNECTED, text: msg });
   }
 
   results.sort((a, b) => a.when.getTime() - b.when.getTime());

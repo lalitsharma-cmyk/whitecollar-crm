@@ -3,16 +3,12 @@ import { prisma } from "@/lib/prisma";
 /**
  * 💡 Best time to call — small gold-tinted chip rendered in the lead header.
  *
- * Step 1 — Per-lead signal: aggregate THIS lead's CallLog rows by
- * hour-of-day in IST. If any hour has ≥3 CONNECTED calls, pick the hour
- * with the best connect rate (ties broken by raw connected count).
+ * Per-lead signal only: aggregates THIS lead's CallLog rows by hour-of-day
+ * in IST. Requires at least 1 CONNECTED call (MIN_CONNECTED = 1). Picks the
+ * hour with the best connect rate; ties broken by raw connected count.
  *
- * Step 2 — Org-wide fallback: if per-lead history is too thin, run the
- * same query as /reports (last 30 days, all users) and surface the
- * best org-wide hour. Same ≥3 connected guard applies.
- *
- * Returns null if neither source has any signal at all — the chip just
- * disappears rather than rendering an empty placeholder.
+ * Returns null when there is no per-lead connected call data — the chip
+ * disappears rather than rendering a misleading org-wide average.
  *
  * Hour grouping is done in Postgres via `AT TIME ZONE 'Asia/Kolkata'`
  * so DST/offset math stays in the DB. We don't trust JS Date math on
@@ -28,7 +24,7 @@ function fmtHourIST(h: number): string {
   return `${h - 12}pm`;
 }
 
-const MIN_CONNECTED = 3;
+const MIN_CONNECTED = 1;
 
 function pickBestHour(rows: HourRow[]): HourRow | null {
   let best: HourRow | null = null;
@@ -66,50 +62,19 @@ export default async function BestCallTimeChip({ leadId }: { leadId: string }) {
 
   const perLeadBest = pickBestHour(perLeadRows);
 
-  let bestHour: number | null = null;
-  let rate = 0;
-  let source: "lead" | "org" = "lead";
-  let totalCalls = 0;
-  let connectedCalls = 0;
+  // No org-wide fallback — if this lead has no connected call history,
+  // render nothing rather than showing a misleading "org average" time.
+  if (!perLeadBest) return null;
 
-  if (perLeadBest) {
-    bestHour = perLeadBest.hour;
-    totalCalls = perLeadBest.total;
-    connectedCalls = perLeadBest.connected;
-    rate = connectedCalls / Math.max(1, totalCalls);
-    source = "lead";
-  } else {
-    // ── Step 2: org-wide fallback (last 30 days) ────────────────────
-    // Same shape as the /reports heatmap, just collapsed across DOW so
-    // we only group by hour. No user scoping — header chip is purely
-    // informational so we don't restrict by role here.
-    const orgRows = await prisma.$queryRaw<HourRow[]>`
-      SELECT
-        EXTRACT(HOUR FROM "startedAt" AT TIME ZONE 'Asia/Kolkata')::int AS hour,
-        COUNT(*)::int AS total,
-        SUM(CASE WHEN outcome::text = 'CONNECTED' THEN 1 ELSE 0 END)::int AS connected
-      FROM "CallLog"
-      WHERE "startedAt" >= NOW() - INTERVAL '30 days'
-      GROUP BY hour
-    `;
-    const orgBest = pickBestHour(orgRows);
-    if (!orgBest) return null;
-    bestHour = orgBest.hour;
-    totalCalls = orgBest.total;
-    connectedCalls = orgBest.connected;
-    rate = connectedCalls / Math.max(1, totalCalls);
-    source = "org";
-  }
-
+  const bestHour = perLeadBest.hour;
+  const totalCalls = perLeadBest.total;
+  const connectedCalls = perLeadBest.connected;
+  const rate = connectedCalls / Math.max(1, totalCalls);
   const pct = Math.round(rate * 100);
-  const label =
-    source === "lead"
-      ? `💡 Best time to call: ${fmtHourIST(bestHour)} IST`
-      : `💡 Best time (org avg): ${fmtHourIST(bestHour)} IST`;
-  const tooltip =
-    source === "lead"
-      ? `Based on this lead's calls — ${connectedCalls}/${totalCalls} connected at ${fmtHourIST(bestHour)} IST (${pct}% pickup).`
-      : `Org-wide last 30 days — ${connectedCalls}/${totalCalls} connected at ${fmtHourIST(bestHour)} IST (${pct}% pickup).`;
+
+  const callWord = connectedCalls === 1 ? "call" : "calls";
+  const label = `💡 Best time: ${fmtHourIST(bestHour)} IST (${connectedCalls} connected ${callWord})`;
+  const tooltip = `Based on this lead's call history — ${connectedCalls}/${totalCalls} connected at ${fmtHourIST(bestHour)} IST (${pct}% pickup).`;
 
   // Gold-tinted chip — matches the brand accent used elsewhere (.btn-gold,
   // border-[#c9a24b] on EOI/WHO IS THE CLIENT cards). Inline styles instead

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 interface Props {
   leadId: string;
@@ -8,147 +8,369 @@ interface Props {
   initialUpdatedAt: string | null;
 }
 
+const MINIMIZE_KEY = (id: string) => `sticky-minimized-${id}`;
+
 /**
- * Sticky note widget — private per-agent scratchpad pinned at the top of the
- * lead-detail right rail. Backed by the StickyNote model (one row per
- * leadId + userId). Auto-saves on blur. Other agents never see this content.
- *
- * Layout decision: `position: sticky; top: 80px` so the note stays visible as
- * the agent scrolls long call histories. The 80px offset clears the global
- * navbar (~64px) + a bit of breathing room.
+ * Zoho-style floating sticky-note widget.
+ * Floats over page content (position: fixed, bottom-right).
+ * Supports rich-text editing via contenteditable + execCommand.
+ * Auto-saves with a 1.5s debounce. Minimize state is persisted in localStorage.
  */
 export default function StickyNoteWidget({ leadId, initialBody, initialUpdatedAt }: Props) {
-  const [body, setBody] = useState(initialBody);
-  const [savedAt, setSavedAt] = useState<string | null>(initialUpdatedAt);
-  const [status, setStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const editorRef = useRef<HTMLDivElement>(null);
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastSavedRef = useRef(initialBody);
 
-  // Auto-save on blur. We also save on Cmd/Ctrl+Enter so power users can
-  // commit without losing focus.
-  async function save() {
-    if (body === lastSavedRef.current) return;
+  const [status, setStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [savedAt, setSavedAt] = useState<string | null>(initialUpdatedAt);
+  const [minimized, setMinimized] = useState(false);
+  const [hidden, setHidden] = useState(false);
+
+  // Relative-time ticker — re-renders every 30s
+  const [, forceRender] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => forceRender((n) => n + 1), 30_000);
+    return () => clearInterval(t);
+  }, []);
+
+  // Read persisted minimize state on mount, then seed editor content
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(MINIMIZE_KEY(leadId));
+      if (stored === "1") setMinimized(true);
+    } catch {
+      // localStorage unavailable (e.g. SSR guard — shouldn't reach here, but safe)
+    }
+  }, [leadId]);
+
+  // Seed contenteditable on mount
+  useEffect(() => {
+    if (!editorRef.current) return;
+    // Render as HTML if the body contains HTML tags, otherwise as plain text
+    if (/<[a-z][\s\S]*>/i.test(initialBody)) {
+      editorRef.current.innerHTML = initialBody;
+    } else {
+      editorRef.current.innerText = initialBody;
+    }
+  // Only run on mount — we intentionally ignore initialBody changes after mount
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Persist minimize state
+  const toggleMinimize = useCallback(() => {
+    setMinimized((prev) => {
+      const next = !prev;
+      try {
+        if (next) {
+          localStorage.setItem(MINIMIZE_KEY(leadId), "1");
+        } else {
+          localStorage.removeItem(MINIMIZE_KEY(leadId));
+        }
+      } catch {/* ignore */}
+      return next;
+    });
+  }, [leadId]);
+
+  // Save logic
+  const save = useCallback(async () => {
+    if (!editorRef.current) return;
+    const current = editorRef.current.innerHTML;
+    if (current === lastSavedRef.current) return;
     setStatus("saving");
     try {
       const r = await fetch(`/api/leads/${leadId}/sticky-note`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ body }),
+        body: JSON.stringify({ body: current }),
       });
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       const j = await r.json();
-      lastSavedRef.current = body;
+      lastSavedRef.current = current;
       setSavedAt(j.updatedAt ?? new Date().toISOString());
       setStatus("saved");
     } catch {
       setStatus("error");
     }
-  }
+  }, [leadId]);
 
-  // "Saved 3s ago" relative-time refresher — re-renders every 30s while
-  // mounted. Cheap and avoids needing a date-fns import here.
-  const [, force] = useState(0);
+  // Debounced save trigger
+  const scheduleSave = useCallback(() => {
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(save, 1500);
+  }, [save]);
+
+  // Cleanup debounce timer on unmount
   useEffect(() => {
-    const t = setInterval(() => force((n) => n + 1), 30_000);
-    return () => clearInterval(t);
+    return () => {
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    };
   }, []);
 
+  // Toolbar command helper — e.preventDefault() is critical to keep focus
+  function execCmd(cmd: string, value?: string) {
+    document.execCommand(cmd, false, value);
+    editorRef.current?.focus();
+    scheduleSave();
+  }
+
+  // Status label
   const relTime = savedAt ? relativeTime(savedAt) : null;
   const statusLabel =
     status === "saving"
       ? "Saving…"
       : status === "error"
-      ? "Save failed — retry by blurring the box"
+      ? "Save failed"
       : relTime
-      ? `Saved · ${relTime}`
-      : "Private to you — auto-saves on blur";
+      ? `Saved ${relTime}`
+      : "Saved just now";
 
-  return (
-    <div className="relative mt-2" style={{ filter: "drop-shadow(3px 4px 8px rgba(0,0,0,0.18))" }}>
-      {/* Red pushpin */}
-      <div className="absolute -top-3 left-1/2 -translate-x-1/2 z-20 flex flex-col items-center">
-        <div
-          style={{
-            width: 22,
-            height: 22,
-            borderRadius: "50%",
-            background: "radial-gradient(circle at 38% 32%, #ff8888, #cc1111)",
-            border: "1.5px solid #991111",
-            boxShadow: "0 2px 4px rgba(0,0,0,0.35)",
-          }}
-        />
-        <div
-          style={{
-            width: 3,
-            height: 10,
-            background: "linear-gradient(to bottom, #999, #666)",
-            borderRadius: "0 0 2px 2px",
-            marginTop: -1,
-          }}
-        />
-      </div>
+  // If hidden (X was clicked), render nothing visible — but keep state alive
+  if (hidden) return null;
 
-      {/* Note body */}
-      <div
+  // ── Minimized tab ──────────────────────────────────────────────────────────
+  if (minimized) {
+    return (
+      <button
+        type="button"
+        onClick={toggleMinimize}
         style={{
-          background: "linear-gradient(160deg,#fef9c3 0%,#fde047 100%)",
-          borderRadius: 3,
-          padding: "2rem 1rem 1.5rem",
-          position: "relative",
-          overflow: "hidden",
+          position: "fixed",
+          bottom: 80,
+          right: 16,
+          zIndex: 9999,
+          background: "#f5e642",
+          border: "1.5px solid #d4c200",
+          borderRadius: "8px 8px 4px 4px",
+          padding: "6px 14px",
+          fontSize: 13,
+          fontWeight: 600,
+          color: "#5a4800",
+          cursor: "pointer",
+          boxShadow: "0 4px 16px rgba(0,0,0,0.18)",
+          display: "flex",
+          alignItems: "center",
+          gap: 6,
+          userSelect: "none",
         }}
       >
-        {/* Bottom-right page curl shadow */}
-        <div
-          style={{
-            position: "absolute",
-            bottom: 0,
-            right: 0,
-            width: 28,
-            height: 28,
-            background: "linear-gradient(225deg, #d4a800 45%, transparent 50%)",
-          }}
-        />
+        📝 <span>Note</span>
+      </button>
+    );
+  }
 
-        {/* Save status */}
-        <div
-          style={{
-            fontSize: 10,
-            color: status === "error" ? "#cc0000" : "rgba(78,52,0,0.55)",
-            textAlign: "right",
-            marginBottom: 6,
-          }}
-        >
-          {statusLabel}
+  // ── Expanded widget ────────────────────────────────────────────────────────
+  return (
+    <div
+      style={{
+        position: "fixed",
+        bottom: 80,
+        right: 16,
+        zIndex: 9999,
+        width: 320,
+        boxShadow: "0 4px 24px rgba(0,0,0,0.18)",
+        borderRadius: 12,
+        overflow: "hidden",
+        display: "flex",
+        flexDirection: "column",
+        fontFamily: "inherit",
+      }}
+    >
+      {/* ── Header bar ───────────────────────────────────────────────────── */}
+      <div
+        style={{
+          background: "#f5e642",
+          padding: "6px 10px",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          borderBottom: "1px solid #d4c200",
+          userSelect: "none",
+        }}
+      >
+        <span style={{ fontSize: 13, fontWeight: 700, color: "#5a4800", display: "flex", alignItems: "center", gap: 5 }}>
+          📝 Sticky Note
+        </span>
+        <div style={{ display: "flex", gap: 4 }}>
+          {/* Minimize */}
+          <button
+            type="button"
+            title="Minimize"
+            onClick={toggleMinimize}
+            style={headerBtnStyle}
+            onMouseEnter={(e) => Object.assign((e.target as HTMLElement).style, headerBtnHover)}
+            onMouseLeave={(e) => Object.assign((e.target as HTMLElement).style, headerBtnStyle)}
+          >
+            _
+          </button>
+          {/* Close / hide */}
+          <button
+            type="button"
+            title="Hide"
+            onClick={() => setHidden(true)}
+            style={headerBtnStyle}
+            onMouseEnter={(e) => Object.assign((e.target as HTMLElement).style, headerBtnHover)}
+            onMouseLeave={(e) => Object.assign((e.target as HTMLElement).style, headerBtnStyle)}
+          >
+            ✕
+          </button>
         </div>
-
-        {/* Textarea */}
-        <textarea
-          value={body}
-          onChange={(e) => {
-            setBody(e.target.value);
-            if (status === "saved" || status === "error") setStatus("idle");
-          }}
-          onBlur={save}
-          onKeyDown={(e) => {
-            if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
-              e.preventDefault();
-              save();
-            }
-          }}
-          placeholder="Scratch notes only you can see. e.g. 'wife is decision maker, call after 7pm IST, mentioned Burj Vista'."
-          rows={5}
-          maxLength={4000}
-          className="w-full bg-transparent border-0 focus:outline-none text-xs text-yellow-950 leading-relaxed resize-none placeholder:text-yellow-800/40"
-          style={{ borderBottom: "1px solid rgba(161,120,0,0.2)" }}
-        />
       </div>
+
+      {/* ── Toolbar ──────────────────────────────────────────────────────── */}
+      <div
+        style={{
+          background: "#fef9c3",
+          borderBottom: "1px solid #e9d800",
+          display: "flex",
+          alignItems: "center",
+          padding: "3px 6px",
+          gap: 2,
+        }}
+      >
+        {(
+          [
+            { label: "B", cmd: "bold", title: "Bold", style: { fontWeight: "bold" } },
+            { label: "I", cmd: "italic", title: "Italic", style: { fontStyle: "italic" } },
+            { label: "U", cmd: "underline", title: "Underline", style: { textDecoration: "underline" } },
+            { label: "•", cmd: "insertUnorderedList", title: "Bullets" },
+            { label: "1.", cmd: "insertOrderedList", title: "Numbered list" },
+          ] as Array<{ label: string; cmd: string; title: string; style?: React.CSSProperties }>
+        ).map(({ label, cmd, title, style: btnLabelStyle }) => (
+          <button
+            key={cmd}
+            type="button"
+            title={title}
+            onMouseDown={(e) => {
+              e.preventDefault(); // keep focus in contenteditable
+              execCmd(cmd);
+            }}
+            style={toolbarBtnStyle}
+            onMouseEnter={(e) => Object.assign((e.target as HTMLElement).style, toolbarBtnHover)}
+            onMouseLeave={(e) => Object.assign((e.target as HTMLElement).style, toolbarBtnStyle)}
+          >
+            <span style={btnLabelStyle}>{label}</span>
+          </button>
+        ))}
+
+        {/* Clear formatting */}
+        <button
+          type="button"
+          title="Clear formatting"
+          onMouseDown={(e) => {
+            e.preventDefault();
+            execCmd("removeFormat");
+          }}
+          style={{ ...toolbarBtnStyle, marginLeft: "auto" }}
+          onMouseEnter={(e) => Object.assign((e.target as HTMLElement).style, { ...toolbarBtnHover, marginLeft: "auto" })}
+          onMouseLeave={(e) => Object.assign((e.target as HTMLElement).style, { ...toolbarBtnStyle, marginLeft: "auto" })}
+        >
+          <span title="Clear formatting">⎎</span>
+        </button>
+      </div>
+
+      {/* ── Writing area ─────────────────────────────────────────────────── */}
+      <div
+        ref={editorRef}
+        contentEditable
+        suppressContentEditableWarning
+        onInput={scheduleSave}
+        onKeyDown={(e) => {
+          // Cmd/Ctrl+Enter triggers immediate save
+          if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+            e.preventDefault();
+            if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+            save();
+          }
+        }}
+        data-placeholder="Scratch notes only you can see…"
+        style={{
+          background: "#fffde7",
+          minHeight: 160,
+          padding: "10px 12px",
+          fontSize: 13,
+          lineHeight: 1.6,
+          color: "#3b2f00",
+          outline: "none",
+          overflowY: "auto",
+          maxHeight: 360,
+          wordBreak: "break-word",
+        }}
+      />
+
+      {/* ── Status bar ───────────────────────────────────────────────────── */}
+      <div
+        style={{
+          background: "#fafafa",
+          borderTop: "1px solid #e5e7eb",
+          padding: "4px 10px",
+          fontSize: 11,
+          color: status === "error" ? "#cc0000" : "#6b7280",
+          display: "flex",
+          alignItems: "center",
+          gap: 4,
+        }}
+      >
+        💾 {statusLabel}
+      </div>
+
+      {/* Placeholder CSS injected as a style tag scoped to this widget */}
+      <style>{`
+        [contenteditable][data-placeholder]:empty::before {
+          content: attr(data-placeholder);
+          color: rgba(120,100,0,0.35);
+          pointer-events: none;
+        }
+      `}</style>
     </div>
   );
 }
 
-// Compact "Xs ago" / "Xm ago" / "Xh ago" / "Xd ago" without pulling date-fns
-// into a client bundle. The widget refreshes every 30s so we don't need
-// minute-precision in the formatter.
+// ── Shared style objects ─────────────────────────────────────────────────────
+
+const headerBtnStyle: React.CSSProperties = {
+  background: "transparent",
+  border: "none",
+  borderRadius: 4,
+  width: 22,
+  height: 22,
+  cursor: "pointer",
+  fontSize: 13,
+  color: "#5a4800",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  lineHeight: 1,
+  padding: 0,
+};
+
+const headerBtnHover: React.CSSProperties = {
+  ...headerBtnStyle,
+  background: "rgba(0,0,0,0.12)",
+};
+
+const toolbarBtnStyle: React.CSSProperties = {
+  background: "transparent",
+  border: "1px solid transparent",
+  borderRadius: 4,
+  width: 26,
+  height: 24,
+  cursor: "pointer",
+  fontSize: 12,
+  color: "#5a4800",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  padding: 0,
+};
+
+const toolbarBtnHover: React.CSSProperties = {
+  ...toolbarBtnStyle,
+  background: "#fde047",
+  border: "1px solid #d4c200",
+};
+
+// ── Relative-time helper ─────────────────────────────────────────────────────
+
 function relativeTime(iso: string): string {
   const t = new Date(iso).getTime();
   if (isNaN(t)) return "just now";

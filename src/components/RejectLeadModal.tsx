@@ -28,6 +28,8 @@ const REASON_OPTIONS: Array<{ value: string; label: string }> = [
   { value: "LOW_BUDGET",                label: "Low budget" },
   { value: "LOOK_AFTER_2_YEARS",        label: "Look after 2 years" },
   { value: "WAITING_FOR_PROPERTY_SALE", label: "Waiting for property sale" },
+  { value: "TRANSFER_TO_INDIA_TEAM",    label: "Transfer to India Team" },
+  { value: "TRANSFER_TO_DUBAI_TEAM",    label: "Transfer to Dubai Team" },
   { value: "OTHER",                     label: "Other" },
 ];
 

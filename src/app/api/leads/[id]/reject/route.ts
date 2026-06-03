@@ -35,6 +35,8 @@ const REASONS = new Set([
   "LOW_BUDGET",
   "LOOK_AFTER_2_YEARS",
   "WAITING_FOR_PROPERTY_SALE",
+  "TRANSFER_TO_INDIA_TEAM",
+  "TRANSFER_TO_DUBAI_TEAM",
   "OTHER",
 ]);
 
@@ -46,6 +48,8 @@ const REASON_LABEL: Record<string, string> = {
   LOW_BUDGET: "Low budget",
   LOOK_AFTER_2_YEARS: "Look after 2 years",
   WAITING_FOR_PROPERTY_SALE: "Waiting for property sale",
+  TRANSFER_TO_INDIA_TEAM: "Transfer to India Team",
+  TRANSFER_TO_DUBAI_TEAM: "Transfer to Dubai Team",
   OTHER: "Other",
 };
 
