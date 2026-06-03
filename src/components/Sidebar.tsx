@@ -16,10 +16,10 @@ const nav = [
     { href: "/leads",       label: "Leads",       Icon: Users, badge: true, adminOnly: false },
     { href: "/pipeline",    label: "Pipeline",    Icon: KanbanSquare, adminOnly: false },
     { href: "/properties", label: "Properties",  Icon: Building2, adminOnly: false },
-    { href: "/calls",      label: "Call Records",Icon: PhoneCall, adminOnly: false },
+    { href: "/calls",      label: "Call Records",Icon: PhoneCall, adminOnly: false, agentHidden: true },
     { href: "/reports",    label: "Reports",     Icon: BarChart3, adminOnly: false },
-    { href: "/ai",         label: "AI Assistant",Icon: Sparkles, tag: "NEW", adminOnly: false },
-    { href: "/notifications", label: "Notifications", Icon: Bell, adminOnly: false },
+    { href: "/ai",         label: "AI Assistant",Icon: Sparkles, tag: "NEW", adminOnly: false, agentHidden: true },
+    { href: "/notifications", label: "Notifications", Icon: Bell, adminOnly: false, agentHidden: true },
   ]},
   { section: "SETUP", items: [
     { href: "/intake",   label: "Lead Intake",   Icon: Upload, adminOnly: true },
@@ -51,7 +51,7 @@ export default function Sidebar({
       </div>
       <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
         {nav.map((group) => {
-          const items = group.items.filter((i) => !i.adminOnly || user.role === "ADMIN");
+          const items = group.items.filter((i) => (!i.adminOnly || user.role === "ADMIN") && !(i.agentHidden && user.role === "AGENT"));
           if (items.length === 0) return null;
           return (
             <div key={group.section}>

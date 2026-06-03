@@ -1,11 +1,11 @@
 "use client";
-import { useState } from "react";
+import React, { useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
   LayoutDashboard, Users, KanbanSquare, Sparkles, Menu, X, Bell,
   Building2, CalendarDays, PhoneCall, BarChart3, Upload, UserCog, Settings as SettingsIcon, LogOut,
-  ShieldCheck, ChevronLeft, Heart, Gem, Trophy, HelpCircle, Activity, Copy, Plug, AlertTriangle, Star,
+  ShieldCheck, ChevronLeft, Heart, Gem, Trophy, HelpCircle, Activity, Copy, Plug, AlertTriangle,
 } from "lucide-react";
 import NotifBell from "./NotifBell";
 import WhatsAppPanel from "./WhatsAppPanel";
@@ -21,21 +21,23 @@ import OnboardingTour from "./OnboardingTour";
 import PWAInstallNudge from "./PWAInstallNudge";
 import { useBodyScrollLock } from "@/hooks/useBodyScrollLock";
 
-const fullNav = [
+type NavItem = { href: string; label: string; Icon: React.ElementType; tag?: string; agentHidden?: boolean };
+type NavSection = { section: string; adminOnly?: boolean; managerOrAdmin?: boolean; items: NavItem[] };
+
+const fullNav: NavSection[] = [
   { section: "WORKSPACE", items: [
     { href: "/dashboard",   label: "Dashboard",   Icon: LayoutDashboard },
     { href: "/action-list", label: "Action List", Icon: Sparkles, tag: "HOT" },
     { href: "/leads",       label: "Leads",       Icon: Users },
     { href: "/cold-calls",  label: "Revival Engine", Icon: Gem },
-    { href: "/customers",   label: "Customers",   Icon: Star },
     { href: "/pipeline",    label: "Pipeline",    Icon: KanbanSquare },
     { href: "/properties",  label: "Properties",  Icon: Building2 },
-    { href: "/leaderboards", label: "Leaderboards", Icon: Trophy },
-    { href: "/calls",       label: "Call Records",Icon: PhoneCall },
+    { href: "/leaderboards", label: "Leaderboards", Icon: Trophy, agentHidden: true },
+    { href: "/calls",       label: "Call Records",Icon: PhoneCall, agentHidden: true },
     { href: "/reports",     label: "Reports",     Icon: BarChart3 },
-    { href: "/ai",          label: "AI Assistant",Icon: Sparkles, tag: "AI" },
-    { href: "/notifications", label: "Notifications", Icon: Bell },
-    { href: "/vault", label: "Vault", Icon: Heart, tag: undefined },
+    { href: "/ai",          label: "AI Assistant",Icon: Sparkles, tag: "AI", agentHidden: true },
+    { href: "/notifications", label: "Notifications", Icon: Bell, agentHidden: true },
+    { href: "/vault", label: "Vault", Icon: Heart, tag: undefined, agentHidden: true },
   ]},
   { section: "SETUP", items: [
     { href: "/profile",  label: "My Profile",    Icon: UserCog },
@@ -144,7 +146,7 @@ export default function MobileShell({ children, user, awaitingTeamCount = 0 }: P
           }).map((group) => (
             <div key={group.section}>
               <div className="text-[10px] uppercase tracking-widest text-white/40 px-3 mb-1 mt-3 first:mt-0">{group.section}</div>
-              {group.items.map(({ href, label, Icon, tag }) => {
+              {group.items.filter((item) => !(item.agentHidden && user.role === "AGENT")).map(({ href, label, Icon, tag }) => {
                 const active = pathname === href || (href !== "/dashboard" && pathname?.startsWith(href));
                 const showAwaitingBadge = href === "/admin/awaiting-team" && awaitingTeamCount > 0;
                 return (
@@ -239,7 +241,7 @@ export default function MobileShell({ children, user, awaitingTeamCount = 0 }: P
               }).map((group) => (
                 <div key={group.section}>
                   <div className="text-[10px] uppercase tracking-widest text-white/40 px-3 mb-1 mt-3 first:mt-0">{group.section}</div>
-                  {group.items.map(({ href, label, Icon, tag }) => {
+                  {group.items.filter((item) => !(item.agentHidden && user.role === "AGENT")).map(({ href, label, Icon, tag }) => {
                     const active = pathname === href || (href !== "/dashboard" && pathname?.startsWith(href));
                     const showAwaitingBadge = href === "/admin/awaiting-team" && awaitingTeamCount > 0;
                     return (
