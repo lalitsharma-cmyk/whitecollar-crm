@@ -34,15 +34,14 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   const monthRangeLabel = smartRangeLabel(monthStart, new Date());
 
   // ── Team-scoped view ───────────────────────────────────────────────
-  // Admin/Manager → default to their own team, can toggle via ?team=Dubai / India / all
-  // Agent         → locked to their team (no toggle)
+  // Admin     → default to their own team, can toggle via ?team=Dubai / India / all
+  // Manager   → locked to their own team (no toggle, same as AGENT for view)
+  // Agent     → locked to their team (no toggle)
   const isAdminOrMgr = me.role === "ADMIN" || me.role === "MANAGER";
   const view =
-    !isAdminOrMgr ? (me.team === "India" ? "India" : "Dubai") :
-    sp.team === "India" ? "India" :
-    sp.team === "Dubai" ? "Dubai" :
-    sp.team === "all" ? "all" :
-    (me.team === "India" ? "India" : me.team === "Dubai" ? "Dubai" : "all");
+    me.role === "ADMIN"
+      ? (sp.team === "India" ? "India" : sp.team === "Dubai" ? "Dubai" : sp.team === "all" ? "all" : (me.team === "India" ? "India" : me.team === "Dubai" ? "Dubai" : "all"))
+      : (me.team === "India" ? "India" : "Dubai"); // MANAGER + AGENT locked to own team
 
   const teamScope: Prisma.LeadWhereInput = view === "all" ? {} : { forwardedTeam: view };
   // For activity / call queries we need to scope through lead.forwardedTeam
@@ -369,11 +368,16 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
           <p className="text-xs sm:text-sm text-gray-500 dark:text-slate-400">{new Date().toLocaleDateString("en-US", { weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: "Asia/Kolkata" })} · {new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Kolkata" })} IST · Live data · <span className="text-[10px] text-gray-400 dark:text-slate-500">v.{(process.env.VERCEL_GIT_COMMIT_SHA ?? "local").slice(0, 7)}</span></p>
         </div>
         <div className="flex gap-2 flex-wrap items-center self-start sm:self-auto">
-          {isAdminOrMgr && (
+          {me.role === "ADMIN" && (
             <div className="seg">
               <Link href="/dashboard?team=Dubai" className={view === "Dubai" ? "on" : ""}>🇦🇪 Dubai</Link>
               <Link href="/dashboard?team=India" className={view === "India" ? "on" : ""}>🇮🇳 India</Link>
               <Link href="/dashboard?team=all" className={view === "all" ? "on" : ""}>All</Link>
+            </div>
+          )}
+          {me.role === "MANAGER" && (
+            <div className="seg" title="Managers see their own team only">
+              <span className={`on cursor-default opacity-80`}>{view === "India" ? "🇮🇳 India" : "🇦🇪 Dubai"}</span>
             </div>
           )}
           <Link

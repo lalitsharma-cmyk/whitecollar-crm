@@ -3,16 +3,18 @@ import CsvUploader from "@/components/CsvUploader";
 import GoogleSheetImporter from "@/components/GoogleSheetImporter";
 import PreAssignedImporter from "@/components/PreAssignedImporter";
 import { requireUser } from "@/lib/auth";
+import { getTestingModeEnabled } from "@/lib/settings";
 
 export const dynamic = "force-dynamic";
 
 export default async function IntakePage() {
   const me = await requireUser();
-  const [keys, agents] = await Promise.all([
+  const [keys, agents, testingModeOn] = await Promise.all([
     prisma.intakeKey.findMany({ orderBy: { createdAt: "asc" } }),
     me.role === "ADMIN" || me.role === "MANAGER"
       ? prisma.user.findMany({ where: { active: true, role: { in: ["AGENT", "MANAGER"] } }, orderBy: { name: "asc" } })
       : Promise.resolve([]),
+    getTestingModeEnabled(),
   ]);
   const websiteKey = keys.find(k => k.source === "WEBSITE")?.key ?? "wcr_live_••••••";
   const waKey = keys.find(k => k.source === "WHATSAPP")?.key ?? "wcr_live_wa_••••••";
@@ -21,6 +23,12 @@ export default async function IntakePage() {
 
   return (
     <>
+      {testingModeOn && (
+        <div className="card p-3 border-l-4 border-amber-500 bg-amber-50 text-sm text-amber-900">
+          🧪 <b>Testing Mode is ON</b> — imported leads will NOT trigger automated WhatsApp / email.{" "}
+          <a href="/settings" className="underline ml-1">Change in Settings</a>
+        </div>
+      )}
       <h1 className="text-2xl font-bold">Lead Intake Setup</h1>
       <p className="text-sm text-gray-500">All sources flow into the same Leads inbox. Round-robin assigns to your active agents automatically.</p>
 

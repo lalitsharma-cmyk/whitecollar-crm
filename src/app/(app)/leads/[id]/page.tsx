@@ -38,6 +38,7 @@ import LeadMobileTabs from "@/components/LeadMobileTabs";
 import LeadTagsEditor from "@/components/LeadTagsEditor";
 // PrintButton removed — Lalit asked for the Print action to be dropped.
 import BestCallTimeChip from "@/components/BestCallTimeChip";
+import LeadJourneyBar from "@/components/LeadJourneyBar";
 import { formatBudget } from "@/lib/budgetParse";
 import LinkedContactsCard from "@/components/LinkedContactsCard";
 import InvestorBanner from "@/components/InvestorBanner";
@@ -593,6 +594,10 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
                 <span className="text-xs text-gray-500 dark:text-slate-400 font-semibold pt-0.5">Tags:</span>
                 <LeadTagsEditor leadId={lead.id} initialTags={lead.tags} />
               </div>
+              {/* Journey progress bar — shows pipeline stage at a glance */}
+              <div className="mt-2 mb-1">
+                <LeadJourneyBar status={lead.status} />
+              </div>
               {/* Phone/WA action buttons + "best time to call" hint.
                   Wrapped in a flex-wrap container so the chip flows beside
                   the buttons on desktop and onto its own line on mobile —
@@ -846,6 +851,7 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
                 leadId={lead.id}
                 currentOwnerId={lead.ownerId}
                 agents={agents.map(a => ({ id: a.id, name: a.name, role: a.role, team: a.team }))}
+                leadTeam={lead.forwardedTeam}
               />
             )}
             {/* Copy Snapshot + Activity CSV affordances removed per Lalit's
