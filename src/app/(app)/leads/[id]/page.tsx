@@ -401,9 +401,24 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
           <InlineEdit leadId={lead.id} field="configuration" value={lead.configuration ?? ""} placeholder="2BR / Villa / PH" />
         </div>
         <div className="flex items-center gap-2">
-          <span className="text-[10px] font-semibold text-gray-500 dark:text-slate-400 w-32 shrink-0">Decision Maker</span>
-          <InlineEdit leadId={lead.id} field="authorityPerson" value={lead.authorityPerson ?? ""}
-            placeholder="Self · Wife · Father · Father + Son" />
+          <span className="text-[10px] font-semibold text-gray-500 dark:text-slate-400 w-32 shrink-0">Who decides?</span>
+          <InlineEdit leadId={lead.id} field="authorityPerson" type="select" value={lead.authorityPerson ?? ""}
+            options={[
+              {value:"Self",            label:"Self"},
+              {value:"Wife",            label:"Wife"},
+              {value:"Husband",         label:"Husband"},
+              {value:"Father",          label:"Father"},
+              {value:"Mother",          label:"Mother"},
+              {value:"Brother",         label:"Brother"},
+              {value:"Sister",          label:"Sister"},
+              {value:"Parents",         label:"Parents"},
+              {value:"Family",          label:"Family"},
+              {value:"Business Partner",label:"Business Partner"},
+              {value:"Friend",          label:"Friend"},
+              {value:"Relative",        label:"Relative"},
+              {value:"Company",         label:"Company"},
+              {value:"Unknown",         label:"Unknown"},
+            ]} />
         </div>
         {lastDiscussionLabel && (
           <div className="flex items-center gap-2">
@@ -477,8 +492,23 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
         <div className={`p-2.5 rounded border ${bantChipClass(bantAuthFilled, bantAuthBad)}`}>
           <div className="text-[10px] font-bold tracking-widest text-gray-600 dark:text-slate-300">👤 A · AUTHORITY</div>
           <div className="text-sm mt-0.5">
-            <InlineEdit leadId={lead.id} field="authorityPerson" value={lead.authorityPerson ?? ""}
-              placeholder="Who decides? e.g. Self · Wife · Father + Son" />
+            <InlineEdit leadId={lead.id} field="authorityPerson" type="select" value={lead.authorityPerson ?? ""}
+              options={[
+                {value:"Self",            label:"Self"},
+                {value:"Wife",            label:"Wife"},
+                {value:"Husband",         label:"Husband"},
+                {value:"Father",          label:"Father"},
+                {value:"Mother",          label:"Mother"},
+                {value:"Brother",         label:"Brother"},
+                {value:"Sister",          label:"Sister"},
+                {value:"Parents",         label:"Parents"},
+                {value:"Family",          label:"Family"},
+                {value:"Business Partner",label:"Business Partner"},
+                {value:"Friend",          label:"Friend"},
+                {value:"Relative",        label:"Relative"},
+                {value:"Company",         label:"Company"},
+                {value:"Unknown",         label:"Unknown"},
+              ]} />
           </div>
         </div>
         {/* N — Need. New free-text needSummary. */}
@@ -523,30 +553,22 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
           overflowing into the neighbour. Lalit screenshot showed the
           LinkedIn URL bleeding into the Configuration column on mobile. */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm [&>div]:min-w-0 [&>div]:overflow-hidden">
-        {/* Row 1 (full width) — Profession + Company merged into ONE combined
-            cell per Lalit's ask. Renders as 💼 {profession} @ {company} with
-            two inline editors stacked. Replaces the previous standalone
-            Company cell (which has been removed) and the standalone Profession
-            cell. */}
-        <div className="sm:col-span-2 p-2.5 rounded border border-[#e5e7eb] bg-gray-50 dark:bg-slate-700/50 dark:border-slate-600">
-          <div className="text-xs text-gray-500 dark:text-slate-400 mb-1">💼 Profession @ Company</div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-            <div>
-              <InlineEdit leadId={lead.id} field="profession" type="select" value={lead.profession ?? ""}
-                options={[
-                  {value:"JOB",label:"Job (salaried)"},
-                  {value:"SELF_EMPLOYED",label:"Self-employed"},
-                  {value:"BUSINESS_OWNER",label:"Business owner"},
-                  {value:"INVESTOR",label:"Investor"},
-                  {value:"RETIRED",label:"Retired"},
-                  {value:"STUDENT",label:"Student"},
-                  {value:"OTHER",label:"Other"},
-                ]} />
-            </div>
-            <div>
-              <InlineEdit leadId={lead.id} field="company" value={lead.company ?? ""} placeholder="@ company (e.g. Emirates NBD)" />
-            </div>
-          </div>
+        <div>
+          <div className="text-xs text-gray-500 dark:text-slate-400">💼 Profession</div>
+          <InlineEdit leadId={lead.id} field="profession" type="select" value={lead.profession ?? ""}
+            options={[
+              {value:"JOB",label:"Job (salaried)"},
+              {value:"SELF_EMPLOYED",label:"Self-employed"},
+              {value:"BUSINESS_OWNER",label:"Business owner"},
+              {value:"INVESTOR",label:"Investor"},
+              {value:"RETIRED",label:"Retired"},
+              {value:"STUDENT",label:"Student"},
+              {value:"OTHER",label:"Other"},
+            ]} />
+        </div>
+        <div>
+          <div className="text-xs text-gray-500 dark:text-slate-400">🏢 Company</div>
+          <InlineEdit leadId={lead.id} field="company" value={lead.company ?? ""} placeholder="e.g. Emirates NBD" />
         </div>
         <div>
           <div className="text-xs text-gray-500 dark:text-slate-400">📱 Alt phone</div>
@@ -783,9 +805,11 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
               <div className="mt-3 w-full">
                 <VoiceNoteRecorder leadId={lead.id} />
               </div>
-              <div className="mt-2 no-print">
-                <Link href={`/leads/${lead.id}/print`} target="_blank" className="btn btn-ghost btn-sm no-print">🖨️ Print</Link>
-              </div>
+              {me.role !== "AGENT" && (
+                <div className="mt-2 no-print">
+                  <Link href={`/leads/${lead.id}/print`} target="_blank" className="btn btn-ghost btn-sm no-print">🖨️ Print</Link>
+                </div>
+              )}
               {/* Expo / Dubai-site-visit button MOVED to the very bottom of the
                   right column (was here in the header). Reassign dropdown also
                   moved — now rendered standalone on the right rail. */}

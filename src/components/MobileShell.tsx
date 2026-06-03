@@ -3,9 +3,9 @@ import React, { useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
-  LayoutDashboard, Users, KanbanSquare, Sparkles, Menu, X, Bell,
-  Building2, CalendarDays, PhoneCall, BarChart3, Upload, UserCog, Settings as SettingsIcon, LogOut,
-  ShieldCheck, ChevronLeft, Heart, Gem, Trophy, HelpCircle, Activity, Copy, Plug, AlertTriangle, Snowflake, Archive,
+  LayoutDashboard, Users, Sparkles, Menu, X,
+  Building2, CalendarDays, BarChart3, Upload, UserCog, Settings as SettingsIcon, LogOut,
+  ShieldCheck, ChevronLeft, Gem, Heart, HelpCircle, Activity, Copy, Plug, AlertTriangle,
 } from "lucide-react";
 import NotifBell from "./NotifBell";
 import WhatsAppPanel from "./WhatsAppPanel";
@@ -26,22 +26,12 @@ type NavSection = { section: string; adminOnly?: boolean; managerOrAdmin?: boole
 
 const fullNav: NavSection[] = [
   { section: "WORKSPACE", items: [
-    { href: "/dashboard",   label: "Dashboard",   Icon: LayoutDashboard },
-    { href: "/action-list", label: "Action List", Icon: Sparkles, tag: "HOT" },
-    { href: "/leads",        label: "Leads",          Icon: Users },
-    { href: "/leads/kanban", label: "📋 Pipeline",   Icon: KanbanSquare },
-    { href: "/leads/overdue", label: "⚠️ Overdue",   Icon: AlertTriangle },
-    { href: "/leads/archived", label: "🗄️ Archived", Icon: Archive },
-    { href: "/leads/inbox",  label: "🧊 Going Cold", Icon: Snowflake },
+    { href: "/dashboard",   label: "Dashboard",      Icon: LayoutDashboard },
+    { href: "/action-list", label: "Action List",    Icon: Sparkles },
+    { href: "/leads",       label: "Leads",          Icon: Users },
+    { href: "/properties",  label: "Properties",     Icon: Building2 },
     { href: "/cold-calls",  label: "Revival Engine", Icon: Gem },
-    { href: "/pipeline",    label: "Pipeline",    Icon: KanbanSquare },
-    { href: "/properties",  label: "Properties",  Icon: Building2 },
-    { href: "/leaderboards", label: "Leaderboards", Icon: Trophy, agentHidden: true },
-    { href: "/calls",       label: "Call Records",Icon: PhoneCall, agentHidden: true },
-    { href: "/reports",     label: "Reports",     Icon: BarChart3 },
-    { href: "/ai",          label: "AI Assistant",Icon: Sparkles, tag: "AI", agentHidden: true },
-    { href: "/notifications", label: "Notifications", Icon: Bell, agentHidden: true },
-    { href: "/vault", label: "Vault", Icon: Heart, tag: undefined, agentHidden: true },
+    { href: "/reports",     label: "Reports",        Icon: BarChart3, agentHidden: true },
   ]},
   { section: "SETUP", items: [
     { href: "/profile",  label: "My Profile",    Icon: UserCog },
@@ -79,11 +69,11 @@ const fullNav: NavSection[] = [
 
 // Bottom nav for mobile — the 5 most-used routes
 const bottomNav = [
-  { href: "/dashboard",   label: "Home",     Icon: LayoutDashboard },
-  { href: "/action-list", label: "To Do",    Icon: Sparkles },
-  { href: "/leads",       label: "Leads",    Icon: Users },
-  { href: "/pipeline",    label: "Pipeline", Icon: KanbanSquare },
-  { href: "/notifications", label: "Alerts", Icon: Bell },
+  { href: "/dashboard",   label: "Home",       Icon: LayoutDashboard },
+  { href: "/action-list", label: "To Do",      Icon: Sparkles },
+  { href: "/leads",       label: "Leads",      Icon: Users },
+  { href: "/properties",  label: "Properties", Icon: Building2 },
+  { href: "/cold-calls",  label: "Revival",    Icon: Gem },
 ];
 
 interface Props {
@@ -114,7 +104,7 @@ export default function MobileShell({ children, user, awaitingTeamCount = 0 }: P
   // OTHER page (lead detail, project detail, reports/daily, /intake, /team,
   // admin pages, etc.) show a back button so the user can return.
   // Lalit: "All pages should have back buttons".
-  const rootPaths = new Set(["/dashboard", "/action-list", "/leads", "/pipeline", "/notifications", "/profile"]);
+  const rootPaths = new Set(["/dashboard", "/action-list", "/leads", "/properties", "/cold-calls", "/profile"]);
   const showBack = pathname != null && !rootPaths.has(pathname);
 
   // Lock background scroll while the slide-out drawer is open so the page
