@@ -309,7 +309,7 @@ export default function GlobalCalendarPanel({ role, team }: Props) {
       <button
         onClick={() => setOpen(o => !o)}
         aria-label="Open calendar"
-        className="relative p-2 rounded hover:bg-white/10 min-w-11 min-h-11 flex items-center justify-center text-white"
+        className="relative p-2 rounded hover:bg-black/5 dark:hover:bg-white/10 min-w-11 min-h-11 flex items-center justify-center"
       >
         <Calendar className="w-5 h-5" />
         {todayEventCount > 0 && (
@@ -335,8 +335,8 @@ export default function GlobalCalendarPanel({ role, team }: Props) {
             </div>
           </div>
 
-          {/* Desktop panel */}
-          <div className="hidden sm:flex flex-col fixed right-4 top-14 z-[60] w-80 bg-white dark:bg-slate-800 rounded-xl shadow-2xl border border-slate-200 dark:border-slate-700 max-h-[80vh] overflow-hidden">
+          {/* Desktop panel — absolute to the trigger wrapper */}
+          <div className="hidden sm:flex flex-col absolute right-0 top-full mt-2 z-[60] w-80 bg-white dark:bg-slate-800 rounded-xl shadow-2xl border border-slate-200 dark:border-slate-700 max-h-[80vh] overflow-hidden">
             {PanelContent}
           </div>
         </>
