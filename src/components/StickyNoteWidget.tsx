@@ -63,38 +63,85 @@ export default function StickyNoteWidget({ leadId, initialBody, initialUpdatedAt
       : "Private to you — auto-saves on blur";
 
   return (
-    <div className="card p-3 border-l-4 border-amber-400 bg-amber-50">
-      <div className="flex items-center justify-between mb-2 gap-2">
-        <div className="text-xs font-semibold text-amber-900 flex items-center gap-1.5">
-          📌 Your sticky note
-          <span className="text-[10px] text-amber-700 font-normal">— private to you</span>
-        </div>
+    <div className="relative mt-2" style={{ filter: "drop-shadow(3px 4px 8px rgba(0,0,0,0.18))" }}>
+      {/* Red pushpin */}
+      <div className="absolute -top-3 left-1/2 -translate-x-1/2 z-20 flex flex-col items-center">
         <div
-          className={`text-[10px] ${
-            status === "error" ? "text-red-600" : "text-amber-700"
-          }`}
+          style={{
+            width: 22,
+            height: 22,
+            borderRadius: "50%",
+            background: "radial-gradient(circle at 38% 32%, #ff8888, #cc1111)",
+            border: "1.5px solid #991111",
+            boxShadow: "0 2px 4px rgba(0,0,0,0.35)",
+          }}
+        />
+        <div
+          style={{
+            width: 3,
+            height: 10,
+            background: "linear-gradient(to bottom, #999, #666)",
+            borderRadius: "0 0 2px 2px",
+            marginTop: -1,
+          }}
+        />
+      </div>
+
+      {/* Note body */}
+      <div
+        style={{
+          background: "linear-gradient(160deg,#fef9c3 0%,#fde047 100%)",
+          borderRadius: 3,
+          padding: "2rem 1rem 1.5rem",
+          position: "relative",
+          overflow: "hidden",
+        }}
+      >
+        {/* Bottom-right page curl shadow */}
+        <div
+          style={{
+            position: "absolute",
+            bottom: 0,
+            right: 0,
+            width: 28,
+            height: 28,
+            background: "linear-gradient(225deg, #d4a800 45%, transparent 50%)",
+          }}
+        />
+
+        {/* Save status */}
+        <div
+          style={{
+            fontSize: 10,
+            color: status === "error" ? "#cc0000" : "rgba(78,52,0,0.55)",
+            textAlign: "right",
+            marginBottom: 6,
+          }}
         >
           {statusLabel}
         </div>
+
+        {/* Textarea */}
+        <textarea
+          value={body}
+          onChange={(e) => {
+            setBody(e.target.value);
+            if (status === "saved" || status === "error") setStatus("idle");
+          }}
+          onBlur={save}
+          onKeyDown={(e) => {
+            if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+              e.preventDefault();
+              save();
+            }
+          }}
+          placeholder="Scratch notes only you can see. e.g. 'wife is decision maker, call after 7pm IST, mentioned Burj Vista'."
+          rows={5}
+          maxLength={4000}
+          className="w-full bg-transparent border-0 focus:outline-none text-xs text-yellow-950 leading-relaxed resize-none placeholder:text-yellow-800/40"
+          style={{ borderBottom: "1px solid rgba(161,120,0,0.2)" }}
+        />
       </div>
-      <textarea
-        value={body}
-        onChange={(e) => {
-          setBody(e.target.value);
-          if (status === "saved" || status === "error") setStatus("idle");
-        }}
-        onBlur={save}
-        onKeyDown={(e) => {
-          if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
-            e.preventDefault();
-            save();
-          }
-        }}
-        placeholder="Scratch notes only you can see. e.g. 'wife is decision maker, call after 7pm IST, mentioned Burj Vista'."
-        rows={4}
-        className="w-full border border-amber-200 rounded p-2 text-xs bg-white resize-y focus:outline-none focus:ring-1 focus:ring-amber-400 leading-relaxed"
-        maxLength={4000}
-      />
     </div>
   );
 }
