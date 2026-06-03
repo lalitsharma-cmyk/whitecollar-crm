@@ -258,6 +258,12 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
     return { label: s as string, count, percent };
   });
 
+  const conversionRates = funnelStages.slice(0, -1).map((stage, i) => {
+    const next = funnelStages[i + 1];
+    if (stage.count === 0) return 0;
+    return Math.round((next.count / stage.count) * 100);
+  });
+
   // ── Compute decision metrics ───────────────────────────────────────
   // Weighted forecast — sum(budgetMin * weight per stage), split by currency
   // so AED and INR don't get incorrectly added together.
@@ -517,7 +523,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
             </span>
           )}
         </div>
-        <StatusFunnelChart stages={funnelStages} />
+        <StatusFunnelChart stages={funnelStages} conversionRates={conversionRates} />
         <div className="mt-2 text-[10px] text-gray-400">
           Bar width = % of active pipeline (WON bar relative to active + won). LOST leads excluded.
         </div>

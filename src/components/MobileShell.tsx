@@ -69,6 +69,7 @@ const fullNav: NavSection[] = [
     { href: "/admin/team-mood",   label: "Team Mood",     Icon: Sparkles,     tag: undefined as string | undefined },
     { href: "/admin/vault",       label: "Vault (team)",  Icon: Heart,        tag: undefined as string | undefined },
     { href: "/admin/duplicates",  label: "🔁 Duplicates", Icon: Copy,         tag: undefined as string | undefined },
+    { href: "/admin/dedup",       label: "Duplicates",   Icon: Copy,         tag: undefined as string | undefined },
     { href: "/admin/health",      label: "💚 System health", Icon: Activity,  tag: undefined as string | undefined },
     { href: "/admin/integrations", label: "🔌 Integrations", Icon: Plug,      tag: undefined as string | undefined },
     { href: "/admin/ai-trial",    label: "🤖 AI Trial",   Icon: Sparkles,     tag: "NEW" as string | undefined },

@@ -41,6 +41,7 @@ import LeadTagsEditor from "@/components/LeadTagsEditor";
 import LeadTimelineCard, { type TimelineItem } from "@/components/LeadTimelineCard";
 // PrintButton removed — Lalit asked for the Print action to be dropped.
 import BestCallTimeChip from "@/components/BestCallTimeChip";
+import CallStatsBar from "@/components/CallStatsBar";
 import LeadJourneyBar from "@/components/LeadJourneyBar";
 import { formatBudget } from "@/lib/budgetParse";
 import LinkedContactsCard from "@/components/LinkedContactsCard";
@@ -841,6 +842,7 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
             instead of two separate columns). Calls render green/red, WA
             renders blue/purple. Outcomes + recordings preserved per-row. */}
         <div data-lead-section="timeline">
+          <CallStatsBar callLogs={lead.callLogs.map((c) => ({ duration: c.durationSec, outcome: c.outcome, startedAt: c.startedAt }))} />
           <ConversationStreamCard callLogs={lead.callLogs} waMessages={lead.waMessages} forwardedTeam={lead.forwardedTeam} />
         </div>
 
