@@ -120,27 +120,54 @@ function detectNeed(text: string, team?: string | null): string | null {
 
 function detectTimeline(text: string): { value: string; enumValue: string; confidence: BantConfidence } | null {
   const t = text.toLowerCase();
-  // Explicit urgency signals
-  if (/\b(?:immediate|asap|right now|ready now|this week|today|urgent)\b/.test(t) ||
-      /ready\s*to\s*book|wants?\s*to\s*finaliz|finalize\s*now|will\s*close|close\s*(?:the\s*)?deal/.test(t) ||
-      /wants?\s*eoi\s*today|visiting\s*this\s*week(?:end)?\s*for\s*booking|wants?\s*to\s*book|book\s*now/.test(t))
+
+  // ─── IMMEDIATE ───────────────────────────────────────────────────────────
+  // ONLY fire when the text explicitly describes buying-action urgency.
+  // Words like "today" or "this week" alone are NOT evidence — they appear in
+  // every call note to describe WHEN the call happened, not when the client
+  // intends to buy. We require "today/this week" to be combined with a clear
+  // booking-action verb.
+  const immediateExplicit =
+    /\b(?:immediate\s*(?:requirement|buyer|interest|purchase)|asap|ready\s*now|ready\s*to\s*buy|wants?\s*to\s*book\s*now|book\s*now|wants?\s*to\s*finaliz|finaliz(?:e|ing)\s*(?:this\s*week|now|today)|wants?\s*eoi\s*today|wants?\s*to\s*close|close\s*(?:the\s*)?deal\s*(?:now|this\s*week))\b/.test(t) ||
+    /site\s*visit\s*(?:today|tomorrow)\s*(?:for|to)\s*book|wants?\s*to\s*sign|ready\s*to\s*sign/.test(t);
+  if (immediateExplicit)
     return { value: "Immediate", enumValue: "IMMEDIATE", confidence: "HIGH" };
-  if (/within\s*30\s*days?|next\s*month|by\s*month.?end|30\s*days/.test(t))
+
+  // ─── 30 DAYS ─────────────────────────────────────────────────────────────
+  if (/within\s*30\s*days?|next\s*month|by\s*(?:end\s*of\s*)?(?:this\s*)?month|30\s*days/.test(t))
     return { value: "30 days", enumValue: "THIRTY_DAYS", confidence: "HIGH" };
-  if (/(?:in|within)\s*(?:2|3|two|three)\s*months?|next\s*quarter/.test(t))
+
+  // ─── 2–3 MONTHS ──────────────────────────────────────────────────────────
+  // "in/within/after 2-3 months", "will look after 2/3 months", "2-3 months"
+  if (/(?:in|within|after|look\s*after)\s*(?:2|3|two|three)\s*months?|next\s*quarter/.test(t) ||
+      /(?:2|3|two|three)\s*(?:to|-)\s*(?:3|4|four)\s*months?/.test(t))
     return { value: "2–3 months", enumValue: "THREE_MONTHS", confidence: "HIGH" };
-  if (/(?:in|after)\s*(?:6|six)\s*months?|next\s*year|long.?term|after\s*property\s*sale/.test(t))
+
+  // "few months", "couple of months", "in some months"
+  if (/(?:a\s*)?few\s*months?|couple\s*of\s*months?|some\s*months?/.test(t))
+    return { value: "2–3 months", enumValue: "THREE_MONTHS", confidence: "MEDIUM" };
+
+  // ─── 6+ MONTHS ───────────────────────────────────────────────────────────
+  if (/(?:in|within|after)\s*(?:6|7|8|9|10|11|12|six)\s*months?/.test(t) ||
+      /(?:after|in)\s*(?:1|2|one|two|a)\s*years?|next\s*year|long.?term/.test(t) ||
+      /after\s*(?:property\s*sale|selling\s*(?:his|her|my|the)?\s*(?:flat|house|property|apartment))|after\s*funds?\s*arrang/.test(t))
     return { value: "6+ months", enumValue: "SIX_PLUS_MONTHS", confidence: "HIGH" };
-  if (/just\s*(?:looking|browsing|exploring)|window\s*shopping|not\s*decided/.test(t))
+
+  // ─── WINDOW SHOPPING / NOT SURE ──────────────────────────────────────────
+  if (/just\s*(?:looking|browsing|exploring|searching)|window\s*shopping/.test(t))
     return { value: "Just browsing", enumValue: "WINDOW_SHOPPING", confidence: "MEDIUM" };
-  // "after site visit", "after funds release" etc.
-  if (/after\s*(?:site\s*)?visit|after\s*funds?\s*releas|after\s*meeting/.test(t))
-    return { value: "After site visit / funds", enumValue: "THREE_MONTHS", confidence: "MEDIUM" };
-  const months = ["january","february","march","april","may","june","july","august","september","october","november","december"];
-  for (const month of months) {
-    if (new RegExp(`\\b${month}\\b`).test(t))
-      return { value: `Around ${month[0]!.toUpperCase() + month.slice(1)}`, enumValue: "THREE_MONTHS", confidence: "LOW" };
-  }
+  if (/\bnot\s*(?:sure|decided|ready|confirmed)\b|\bno\s*(?:specific\s*)?timeline\b/.test(t))
+    return { value: "Not sure", enumValue: "WINDOW_SHOPPING", confidence: "MEDIUM" };
+
+  // ─── WAITING ON EXTERNAL EVENT ───────────────────────────────────────────
+  // "will visit Dubai first", "after Dubai visit", "after site visit"
+  if (/(?:will|wants?\s*to)\s*(?:go|visit|come\s*to)\s*dubai\s*first|after\s*(?:(?:going\s*to|visiting)\s*)?dubai/.test(t))
+    return { value: "Will visit Dubai first", enumValue: "SIX_PLUS_MONTHS", confidence: "MEDIUM" };
+  if (/after\s*(?:site\s*)?visit|after\s*funds?\s*releas|after\s*(?:the\s*)?meeting/.test(t))
+    return { value: "After visit / funds release", enumValue: "THREE_MONTHS", confidence: "MEDIUM" };
+
+  // Month-name mentions are intentionally NOT used as a timeline signal —
+  // month names appear constantly in dates of call notes and add noise.
   return null;
 }
 

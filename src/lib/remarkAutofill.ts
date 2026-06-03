@@ -104,11 +104,13 @@ function parseFund(text: string): FundReadiness | undefined {
 }
 
 function parseTimeline(text: string): InvestTimeline | undefined {
-  if (/this\s*week|immediate|asap|right now|today/i.test(text)) return InvestTimeline.IMMEDIATE;
-  if (/within\s*30\s*days?|next\s*month|by month.?end/i.test(text)) return InvestTimeline.THIRTY_DAYS;
-  if (/in\s*\d?\s*-?3\s*months?|quarter/i.test(text)) return InvestTimeline.THREE_MONTHS;
-  if (/(?:in|after)\s*6\s*months?|next year|year.?end|long.?term/i.test(text)) return InvestTimeline.SIX_PLUS_MONTHS;
-  if (/(?:browsing|exploring|just looking|window shopping|not decided)/i.test(text)) return InvestTimeline.WINDOW_SHOPPING;
+  // IMMEDIATE: only explicit buying-action urgency, never just "today" or "this week"
+  // alone (those appear in every call note as temporal context for the call itself).
+  if (/\bimmediate\s*(?:requirement|buyer|interest|purchase)\b|ready\s*to\s*buy|wants?\s*to\s*book\s*now|book\s*now|asap|right\s*now|ready\s*now/i.test(text)) return InvestTimeline.IMMEDIATE;
+  if (/within\s*30\s*days?|next\s*month|by\s*month.?end/i.test(text)) return InvestTimeline.THIRTY_DAYS;
+  if (/(?:in|within|after)\s*(?:2|3|two|three)\s*months?|in\s*\d?\s*-?3\s*months?|quarter/i.test(text)) return InvestTimeline.THREE_MONTHS;
+  if (/(?:in|after)\s*(?:6|six)\s*months?|next\s*year|year.?end|long.?term|after\s*property\s*sale|after\s*funds?\s*arrang/i.test(text)) return InvestTimeline.SIX_PLUS_MONTHS;
+  if (/browsing|exploring|just\s*looking|window\s*shopping|not\s*decided|not\s*sure/i.test(text)) return InvestTimeline.WINDOW_SHOPPING;
   return undefined;
 }
 
