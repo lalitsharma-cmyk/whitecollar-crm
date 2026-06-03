@@ -4,7 +4,6 @@ import { formatDistanceToNow, format as fnsFormat } from "date-fns";
 import Link from "next/link";
 import { requireUser } from "@/lib/auth";
 import LeadFilters from "@/components/LeadFilters";
-import SavedFiltersBar from "@/components/SavedFiltersBar";
 import LeadsListClient from "@/components/LeadsListClient";
 import { runReconciler } from "@/lib/reconciler";
 import { leadScopeWhere } from "@/lib/leadScope";
@@ -167,7 +166,9 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
   // nofollowup filter already sets followupDate: null, so the followup chip
   // default (today) must not compose with it — include it as an "other filter".
   const hasOtherFilter = !!(sp.q || sp.source || sp.status || sp.owner || sp.team || sp.score || sp.notPicked || sp.eoi || filterTab === "nofollowup");
-  const effectiveFollowup = sp.followup ?? (hasOtherFilter ? "all" : "today");
+  // Default view = ALL leads. No hidden filter is applied on a clean page load.
+  // (Previously defaulted to "today" which caused "44 total, 8 matching" confusion.)
+  const effectiveFollowup = sp.followup ?? "all";
 
   if (effectiveFollowup === "today") {
     // Today in IST as a UTC window: 00:00 IST = 18:30 UTC the previous day.
@@ -239,16 +240,12 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
 
   // Followup windows for chip counts (scoped to visible leads — agents see
   // their own pipeline, admin sees all). Re-use istWindow() defined above.
-  const todayWindow    = istWindow(0);
-  const tomorrowWindow = istWindow(1);
-  const weekWindow     = { gte: new Date(), lte: new Date(Date.now() + 7  * 24 * 3600 * 1000) };
-  const monthWindow    = { gte: new Date(), lte: new Date(Date.now() + 30 * 24 * 3600 * 1000) };
-  const activeScope    = { ...scope, status: { notIn: [LeadStatus.WON, LeadStatus.LOST] } };
+  const todayWindow = istWindow(0);
+  const activeScope = { ...scope, status: { notIn: [LeadStatus.WON, LeadStatus.LOST] } };
 
-  const [leads, total, hot, newToday, totalAll, agents, followupToday, followupTomorrow, followupWeek, followupMonth, followupOverdue, noFollowupCount, allTagRows] = await Promise.all([
+  const [leads, total, hot, newToday, totalAll, agents, followupToday, followupOverdue, allTagRows] = await Promise.all([
     prisma.lead.findMany({
       where, orderBy, skip, take: PAGE_SIZE,
-      // B-15: trim relations to rendered fields. Augmented with discussed projects (top 3) for Command Center row.
       include: {
         owner: { select: { name: true, avatarColor: true } },
         interestedUnits: { take: 1, select: { unit: { select: { configuration: true, project: { select: { name: true } } } } } },
@@ -261,16 +258,8 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
     prisma.lead.count({ where: scope }),
     prisma.user.findMany({ where: { active: true, OR: [{ role: { in: ["AGENT", "MANAGER"] } }, { email: "lalitsharma@whitecollarrealty.com" }] }, orderBy: { name: "asc" } }),
     prisma.lead.count({ where: { ...activeScope, followupDate: todayWindow } }),
-    prisma.lead.count({ where: { ...activeScope, followupDate: tomorrowWindow } }),
-    prisma.lead.count({ where: { ...activeScope, followupDate: weekWindow } }),
-    prisma.lead.count({ where: { ...activeScope, followupDate: monthWindow } }),
     prisma.lead.count({ where: { ...activeScope, followupDate: { lt: new Date(), not: null } } }),
-    // Count active leads with no follow-up date set — drives the "No follow-up" chip badge.
-    prisma.lead.count({ where: { ...scope, followupDate: null, status: { notIn: [LeadStatus.WON, LeadStatus.LOST] } } }),
-    // DISTINCT tag list — Lead.tags is a comma-separated string, so split it
-    // server-side (Postgres) with string_to_array + unnest, trim each tag,
-    // drop empties, and dedupe. Drives the tag-filter <select> below so we
-    // only ever offer tags that actually exist in the dataset.
+    // DISTINCT tag list for the More Filters tag-filter dropdown.
     prisma.$queryRaw<Array<{ tag: string }>>`
       SELECT DISTINCT TRIM(t) AS tag
       FROM (
@@ -303,31 +292,31 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
 
   return (
     <>
+      {/* ── Header ─────────────────────────────────────────────────────── */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
           <h1 className="text-xl sm:text-2xl font-bold">Leads</h1>
-          <p className="text-xs sm:text-sm text-gray-500 dark:text-slate-400">{totalAll} total · {newToday} new in last 24h · {hot} hot · showing {total} matching</p>
+          <p className="text-xs sm:text-sm text-gray-500 dark:text-slate-400">
+            {totalAll} total &middot; {newToday} new today &middot; {hot} hot
+          </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Link href="/intake" className="btn btn-ghost flex-1 sm:flex-none justify-center">Import</Link>
-          {me.role === "ADMIN" && (() => {
-            // Forward the page's current filter params so the export matches
-            // exactly what the admin is looking at. We strip undefined/empty
-            // values so the URL stays clean and the audit log doesn't record
-            // noise (e.g. `tag=` with no value).
+          {me.role !== "AGENT" && (
+            <Link href="/intake" className="btn btn-ghost flex-1 sm:flex-none justify-center">Import</Link>
+          )}
+          {me.role !== "AGENT" && (() => {
             const params = new URLSearchParams({ type: "leads" });
             for (const [k, v] of Object.entries(sp)) {
               if (v != null && v !== "") params.set(k, String(v));
             }
-            // Force the type param last-wins to "leads" in case URL had ?type=calls.
             params.set("type", "leads");
             return (
               <a
                 href={`/api/reports/export?${params.toString()}`}
                 className="btn btn-ghost flex-1 sm:flex-none justify-center"
-                title="Export the currently filtered leads to CSV"
+                title="Export currently filtered leads to CSV"
               >
-                ⬇ Export CSV (filtered)
+                ⬇ Export CSV
               </a>
             );
           })()}
@@ -335,264 +324,94 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
         </div>
       </div>
 
-      {/* ─── SMART FILTER PRESETS (spec §9.3) ───────────────────────────
-          Named one-tap presets that compose with the existing followup /
-          status / source filters via AND. Sits above the follow-up row so
-          the agent's eye lands on these high-signal slices first. */}
-      <div className="space-y-2">
-        <div className="text-[10px] uppercase tracking-widest text-gray-500 dark:text-slate-400 font-semibold">
-          ⚡ Smart filters
-        </div>
-        <div className="flex gap-2 overflow-x-auto lg:flex-wrap pb-1 -mx-3 px-3 lg:mx-0 lg:px-0 scrollbar-thin">
-          <Link
-            href="/leads?smart=hot_today"
-            className={`px-3 py-2 rounded-full text-xs font-semibold border min-h-11 inline-flex items-center gap-1 ${sp.smart === "hot_today" ? "bg-orange-600 text-white border-orange-600" : "bg-orange-50 border-orange-300 text-orange-800"}`}
-          >
-            🔥 Hot today
-          </Link>
-          <Link
-            href="/leads?smart=ghosting"
-            className={`px-3 py-2 rounded-full text-xs font-semibold border min-h-11 inline-flex items-center gap-1 ${sp.smart === "ghosting" ? "bg-purple-600 text-white border-purple-600" : "bg-purple-50 border-purple-300 text-purple-800"}`}
-          >
-            👻 Ghosting
-          </Link>
-          <Link
-            href="/leads?smart=visit_potential"
-            className={`px-3 py-2 rounded-full text-xs font-semibold border min-h-11 inline-flex items-center gap-1 ${sp.smart === "visit_potential" ? "bg-teal-600 text-white border-teal-600" : "bg-teal-50 border-teal-300 text-teal-800"}`}
-          >
-            🏢 Site visit potential
-          </Link>
-          <Link
-            href="/leads?smart=high_budget"
-            className={`px-3 py-2 rounded-full text-xs font-semibold border min-h-11 inline-flex items-center gap-1 ${sp.smart === "high_budget" ? "bg-amber-600 text-white border-amber-600" : "bg-amber-50 border-amber-300 text-amber-800"}`}
-          >
-            💎 High budget
-          </Link>
-          {/* Tag-filter dropdown — populated from DISTINCT tags actually in
-              the dataset (server-side via $queryRaw above). Sits inline with
-              the smart-filter chips so agents can slice by NRI/Investor/HNI
-              without leaving the keyboard-flow of the chip row. Submits a
-              plain GET form so it composes with whatever other filters are in
-              the URL — picking a tag does NOT clear ?followup, ?status, etc. */}
-          {distinctTags.length > 0 && (
-            <form method="GET" action="/leads" className="inline-flex items-center gap-1">
-              <label htmlFor="tag-filter" className="text-[10px] uppercase tracking-widest text-gray-500 dark:text-slate-400 font-semibold pl-1">
-                🏷 Tag
-              </label>
-              {/* Server-rendered <select> — no onChange (would force the whole
-                  page to be a client component). Agent picks a tag then taps
-                  Apply; the form GETs /leads?tag=X and the server re-renders. */}
-              <select
-                id="tag-filter"
-                name="tag"
-                defaultValue={sp.tag ?? ""}
-                className={`px-2 py-2 rounded-full text-xs font-semibold border min-h-11 ${sp.tag ? "bg-fuchsia-600 text-white border-fuchsia-600" : "bg-white dark:bg-slate-700 border-[#e5e7eb] dark:border-slate-600 text-gray-700 dark:text-slate-100"}`}
-              >
-                <option value="">All tags</option>
-                {distinctTags.map((t) => (
-                  <option key={t} value={t}>{t}</option>
-                ))}
-              </select>
-              <button
-                type="submit"
-                className="px-3 py-2 rounded-full text-xs font-semibold border min-h-11 bg-white dark:bg-slate-700 border-[#e5e7eb] dark:border-slate-600 text-gray-700 dark:text-slate-100 hover:bg-gray-50 dark:hover:bg-slate-600"
-              >
-                Apply
-              </button>
-              {sp.tag && (
-                <Link
-                  href="/leads"
-                  className="px-2 py-2 text-[11px] text-gray-500 dark:text-slate-400 hover:text-gray-800 dark:hover:text-slate-200"
-                  title="Clear tag filter"
-                >
-                  ✕
-                </Link>
-              )}
-            </form>
-          )}
-        </div>
-      </div>
-
-      {/* ─── FOLLOW-UPS section ─────────────────────────────────────────
-          Lalit's ask: "Make section, filter for Followup — today, tomorrow,
-          week, month". Grouped under a labelled header so agents see the
-          full timeline of upcoming follow-ups at a glance.
-          Counts are scoped to the agent's own pipeline (admin sees all). */}
-      <div className="space-y-2">
-        <div className="text-[10px] uppercase tracking-widest text-gray-500 dark:text-slate-400 font-semibold flex items-center gap-2">
-          <span>📅 Follow-ups</span>
-          <span className="text-[9px] font-normal text-gray-400 dark:text-slate-500 normal-case tracking-normal hidden sm:inline">
-            (default view shows today's — tap All to see everything)
-          </span>
-        </div>
-        {/* Mobile: chips scroll horizontally so they stay on ONE line, not
-            3 wrapping lines. Lalit: "Filters on Lead page takes so much space
-            that user has to scroll down to see the lead in mobile." Desktop
-            keeps flex-wrap so they all show at once.
-            -mx-3 + px-3 lets the scroll extend edge-to-edge inside p-3 page padding. */}
-        <div className="flex gap-2 overflow-x-auto lg:flex-wrap pb-1 -mx-3 px-3 lg:mx-0 lg:px-0 scrollbar-thin">
-          <style>{`
-            .scrollbar-thin::-webkit-scrollbar { height: 4px; }
-            .scrollbar-thin::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.15); border-radius: 2px; }
-          `}</style>
-          <Link
-            href="/leads?followup=all"
-            className={`px-3 py-2 rounded-full text-xs font-semibold border min-h-11 inline-flex items-center gap-1 ${effectiveFollowup === "all" ? "bg-[#0b1a33] text-white border-[#0b1a33]" : "bg-white dark:bg-slate-700 border-[#e5e7eb] dark:border-slate-600 text-gray-700 dark:text-slate-100"}`}
-          >
-            All leads
-          </Link>
-          <Link
-            href="/leads?followup=overdue"
-            className={`px-3 py-2 rounded-full text-xs font-semibold border min-h-11 inline-flex items-center gap-1 ${effectiveFollowup === "overdue" ? "bg-red-600 text-white border-red-600" : "bg-red-50 border-red-300 text-red-800"}`}
-          >
-            ⏰ Overdue {followupOverdue > 0 && <span className={`px-1.5 rounded ${effectiveFollowup === "overdue" ? "bg-white/20" : "bg-red-200/60"}`}>{followupOverdue}</span>}
-          </Link>
-          <Link
-            href="/leads?followup=today"
-            className={`px-3 py-2 rounded-full text-xs font-semibold border min-h-11 inline-flex items-center gap-1 ${effectiveFollowup === "today" ? "bg-emerald-600 text-white border-emerald-600" : "bg-emerald-50 border-emerald-300 text-emerald-800"}`}
-          >
-            Today {followupToday > 0 && <span className={`px-1.5 rounded ${effectiveFollowup === "today" ? "bg-white/20" : "bg-emerald-200/60"}`}>{followupToday}</span>}
-          </Link>
-          <Link
-            href="/leads?followup=tomorrow"
-            className={`px-3 py-2 rounded-full text-xs font-semibold border min-h-11 inline-flex items-center gap-1 ${effectiveFollowup === "tomorrow" ? "bg-teal-600 text-white border-teal-600" : "bg-teal-50 border-teal-300 text-teal-800"}`}
-          >
-            Tomorrow {followupTomorrow > 0 && <span className={`px-1.5 rounded ${effectiveFollowup === "tomorrow" ? "bg-white/20" : "bg-teal-200/60"}`}>{followupTomorrow}</span>}
-          </Link>
-          <Link
-            href="/leads?followup=week"
-            className={`px-3 py-2 rounded-full text-xs font-semibold border min-h-11 inline-flex items-center gap-1 ${effectiveFollowup === "week" ? "bg-blue-600 text-white border-blue-600" : "bg-blue-50 border-blue-300 text-blue-800"}`}
-          >
-            This week {followupWeek > 0 && <span className={`px-1.5 rounded ${effectiveFollowup === "week" ? "bg-white/20" : "bg-blue-200/60"}`}>{followupWeek}</span>}
-          </Link>
-          <Link
-            href="/leads?followup=month"
-            className={`px-3 py-2 rounded-full text-xs font-semibold border min-h-11 inline-flex items-center gap-1 ${effectiveFollowup === "month" ? "bg-indigo-600 text-white border-indigo-600" : "bg-indigo-50 border-indigo-300 text-indigo-800"}`}
-          >
-            This month {followupMonth > 0 && <span className={`px-1.5 rounded ${effectiveFollowup === "month" ? "bg-white/20" : "bg-indigo-200/60"}`}>{followupMonth}</span>}
-          </Link>
-        </div>
-      </div>
-
-      <div className="flex gap-2 overflow-x-auto lg:flex-wrap pb-1 -mx-3 px-3 lg:mx-0 lg:px-0 scrollbar-thin">
-        {/* Not-picked filter chips — Lalit's ask: "If client is not picking
-            calls from 3 Days, there should be a tag added so filtration can be
-            easy. Call not pick form 2, 3, 4, 5,6 7, days type of tag." */}
-        <Link
-          href="/leads?notPicked=3"
-          className={`px-3 py-2 rounded-full text-xs font-semibold border min-h-11 inline-flex items-center gap-1 ${sp.notPicked === "3" ? "bg-amber-600 text-white border-amber-600" : "bg-amber-50 border-amber-300 text-amber-800"}`}
-        >
-          📵 Not picked 3+ days
-        </Link>
-        <Link
-          href="/leads?notPicked=7"
-          className={`px-3 py-2 rounded-full text-xs font-semibold border min-h-11 inline-flex items-center gap-1 ${sp.notPicked === "7" ? "bg-red-600 text-white border-red-600" : "bg-red-50 border-red-300 text-red-800"}`}
-        >
-          📵 Not picked 7+ days
-        </Link>
-        {/* No follow-up set — surfaces active leads where no next-touch date
-            has been scheduled. Gives managers a quick scan of pipeline gaps. */}
-        <Link
-          href="/leads?filter=nofollowup"
-          className={`px-3 py-2 rounded-full text-xs font-semibold border min-h-11 inline-flex items-center gap-1 ${filterTab === "nofollowup" ? "bg-gray-700 text-white border-gray-700" : "bg-gray-50 border-gray-300 text-gray-700"}`}
-        >
-          📅 No follow-up {noFollowupCount > 0 && <span className={`px-1.5 rounded ${filterTab === "nofollowup" ? "bg-white/20" : "bg-gray-200/70"}`}>{noFollowupCount}</span>}
-        </Link>
-      </div>
-
-      {/* ─── PIPELINE FILTER TABS ────────────────────────────────────────
-          Top-level view switcher: All / Active / Bookings / Won / Lost.
-          Each tab is a plain <Link> that sets ?filter=X; all other query
-          params (followup, smart, notPicked, etc.) are intentionally NOT
-          forwarded so switching tabs gives a clean view — consistent with
-          how the smart-filter chips work. Active tab gets a dark background
-          styled like the existing filter chips in this page. */}
-      <div className="space-y-2">
-        <div className="text-[10px] uppercase tracking-widest text-gray-500 dark:text-slate-400 font-semibold">
-          📋 Pipeline view
-        </div>
-        <div className="flex gap-2 overflow-x-auto lg:flex-wrap pb-1 -mx-3 px-3 lg:mx-0 lg:px-0 scrollbar-thin">
-          <Link href="/leads/kanban" className="btn btn-ghost text-xs">📋 Pipeline</Link>
-          <Link href="/leads/overdue" className="btn btn-ghost text-xs">⚠️ Overdue</Link>
-          <Link href="/leads/archived" className="btn btn-ghost text-xs">🗄️ Archived</Link>
-          <Link href="/leads/inbox" className="btn btn-ghost text-xs">🧊 Cold</Link>
-          {(() => {
-            const exportParams = new URLSearchParams();
-            for (const [k, v] of Object.entries(sp)) {
-              if (v != null && v !== "") exportParams.set(k, String(v));
-            }
-            return (
-              <a
-                href={`/api/leads/export?${exportParams.toString()}`}
-                className="btn btn-ghost text-xs"
-                title="Download the currently filtered leads as a CSV file"
-              >
-                💾 Export CSV
-              </a>
-            );
-          })()}
-          <Link
-            href="/leads?filter=all"
-            className={`px-3 py-2 rounded-full text-xs font-semibold border min-h-11 inline-flex items-center gap-1 ${filterTab === "all" ? "bg-[#0b1a33] text-white border-[#0b1a33]" : "bg-white dark:bg-slate-700 border-[#e5e7eb] dark:border-slate-600 text-gray-700 dark:text-slate-100"}`}
-          >
-            All Leads
-          </Link>
-          <Link
-            href="/leads?filter=active"
-            className={`px-3 py-2 rounded-full text-xs font-semibold border min-h-11 inline-flex items-center gap-1 ${filterTab === "active" ? "bg-emerald-600 text-white border-emerald-600" : "bg-emerald-50 border-emerald-300 text-emerald-800"}`}
-          >
-            Active Leads
-          </Link>
-          <Link
-            href="/leads?filter=bookings"
-            className={`px-3 py-2 rounded-full text-xs font-semibold border min-h-11 inline-flex items-center gap-1 ${filterTab === "bookings" ? "bg-amber-600 text-white border-amber-600" : "bg-amber-50 border-amber-300 text-amber-800"}`}
-          >
-            Bookings
-          </Link>
-          <Link
-            href="/leads?filter=won"
-            className={`px-3 py-2 rounded-full text-xs font-semibold border min-h-11 inline-flex items-center gap-1 ${filterTab === "won" ? "bg-teal-600 text-white border-teal-600" : "bg-teal-50 border-teal-300 text-teal-800"}`}
-          >
-            Won Deals
-          </Link>
-          <Link
-            href="/leads?filter=lost"
-            className={`px-3 py-2 rounded-full text-xs font-semibold border min-h-11 inline-flex items-center gap-1 ${filterTab === "lost" ? "bg-red-600 text-white border-red-600" : "bg-red-50 border-red-300 text-red-800"}`}
-          >
-            Lost Deals
-          </Link>
-        </div>
-      </div>
-
-      <SavedFiltersBar isAdmin={me.role === "ADMIN"} />
-
+      {/* ── Search + More Filters ───────────────────────────────────────── */}
       <LeadFilters
         agents={agents.map((a) => ({ id: a.id, name: a.name }))}
         sources={Object.values(LeadSource)}
         statuses={Object.values(LeadStatus)}
         showSource={me.role !== "AGENT"}
+        distinctTags={distinctTags}
       />
 
-      {/* ─── RESULT COUNT ───────────────────────────────────────────────
-          Shows how many leads match the current filters so agents know
-          at a glance whether their view is narrow or broad. Uses `total`
-          (the exact DB count for the current `where` clause) rather than
-          leads.length (which is capped at PAGE_SIZE). */}
+      {/* ── Quick filter chips ──────────────────────────────────────────── */}
       {(() => {
-        const hasActiveFilters = !!(
-          sp.q || sp.source || sp.status || sp.owner || sp.team ||
-          sp.ai || sp.when || sp.score || sp.notPicked || sp.eoi ||
-          sp.smart || sp.tag || sp.filter || sp.followup
-        );
+        const base = "px-3 py-2 rounded-full text-xs font-semibold border min-h-11 inline-flex items-center gap-1 flex-none whitespace-nowrap";
+        const chip = (active: boolean, on: string, off: string) => `${base} ${active ? on : off}`;
+        const neutral = { on: "bg-[#0b1a33] text-white border-[#0b1a33] dark:bg-blue-700 dark:border-blue-700", off: "bg-white dark:bg-slate-700 border-[#e5e7eb] dark:border-slate-600 text-gray-700 dark:text-slate-100 hover:bg-gray-50 dark:hover:bg-slate-600" };
+        const allActive = !sp.followup && !sp.ai && !sp.team && !sp.owner && !sp.smart && !sp.filter;
         return (
-          <div className="flex items-center">
-            <span className="text-xs text-gray-400 dark:text-slate-500 ml-auto">
-              {total === 1 ? "1 lead" : `${total} leads`}
-              {hasActiveFilters ? " (filtered)" : ""}
-            </span>
+          <div className="flex gap-2 overflow-x-auto pb-1 -mx-3 px-3 sm:mx-0 sm:px-0" style={{ scrollbarWidth: "thin" }}>
+            <Link href="/leads" className={chip(allActive, neutral.on, neutral.off)}>All</Link>
+            <Link
+              href="/leads?followup=today"
+              className={chip(effectiveFollowup === "today" && !sp.ai, "bg-emerald-600 text-white border-emerald-600", "bg-emerald-50 border-emerald-300 text-emerald-800 dark:bg-emerald-950/30 dark:border-emerald-700 dark:text-emerald-200")}
+            >
+              Today
+              {followupToday > 0 && <span className={`px-1 rounded text-[10px] ${effectiveFollowup === "today" ? "bg-white/25" : "bg-emerald-200/60 dark:bg-emerald-800/60"}`}>{followupToday}</span>}
+            </Link>
+            <Link
+              href="/leads?followup=overdue"
+              className={chip(effectiveFollowup === "overdue" && !sp.ai, "bg-red-600 text-white border-red-600", "bg-red-50 border-red-300 text-red-800 dark:bg-red-950/30 dark:border-red-700 dark:text-red-200")}
+            >
+              ⏰ Overdue
+              {followupOverdue > 0 && <span className={`px-1 rounded text-[10px] ${effectiveFollowup === "overdue" ? "bg-white/25" : "bg-red-200/60 dark:bg-red-800/60"}`}>{followupOverdue}</span>}
+            </Link>
+            <Link
+              href="/leads?ai=HOT"
+              className={chip(sp.ai === "HOT", "bg-orange-600 text-white border-orange-600", "bg-orange-50 border-orange-300 text-orange-800 dark:bg-orange-950/30 dark:border-orange-700 dark:text-orange-200")}
+            >
+              🔥 Hot
+              {hot > 0 && <span className={`px-1 rounded text-[10px] ${sp.ai === "HOT" ? "bg-white/25" : "bg-orange-200/60 dark:bg-orange-800/60"}`}>{hot}</span>}
+            </Link>
+            {me.role !== "AGENT" && (
+              <>
+                <Link href="/leads?owner=unassigned" className={chip(sp.owner === "unassigned", "bg-amber-600 text-white border-amber-600", "bg-amber-50 border-amber-300 text-amber-800 dark:bg-amber-950/30 dark:border-amber-700 dark:text-amber-200")}>
+                  ⚠ Unassigned
+                </Link>
+                <Link href="/leads?team=Dubai" className={chip(sp.team === "Dubai", "bg-blue-600 text-white border-blue-600", "bg-blue-50 border-blue-300 text-blue-800 dark:bg-blue-950/30 dark:border-blue-700 dark:text-blue-200")}>
+                  Dubai
+                </Link>
+                <Link href="/leads?team=India" className={chip(sp.team === "India", "bg-purple-600 text-white border-purple-600", "bg-purple-50 border-purple-300 text-purple-800 dark:bg-purple-950/30 dark:border-purple-700 dark:text-purple-200")}>
+                  India
+                </Link>
+              </>
+            )}
+            {/* Nav shortcuts */}
+            <Link href="/leads/kanban" className={`${base} border-[#e5e7eb] dark:border-slate-600 text-gray-500 dark:text-slate-400 hover:bg-gray-50 dark:hover:bg-slate-700`}>📋 Pipeline</Link>
+            <Link href="/leads/archived" className={`${base} border-[#e5e7eb] dark:border-slate-600 text-gray-500 dark:text-slate-400 hover:bg-gray-50 dark:hover:bg-slate-700`}>🗄️ Archived</Link>
           </div>
         );
       })()}
+
+      {/* ── Active filter banner ────────────────────────────────────────── */}
+      {(() => {
+        const hasActiveFilters = !!(
+          sp.q || sp.source || sp.status || sp.owner || sp.team ||
+          sp.ai || sp.when || sp.notPicked || sp.eoi || sp.smart ||
+          sp.tag || sp.filter || (sp.followup && sp.followup !== "all")
+        );
+        if (!hasActiveFilters) return null;
+        return (
+          <div className="flex items-center gap-3 flex-wrap">
+            <span className="text-xs text-amber-700 dark:text-amber-400 font-medium">
+              ⚠ Filtered — showing {total} of {totalAll} leads
+            </span>
+            <Link
+              href="/leads"
+              className="text-xs text-[#0b1a33] dark:text-blue-300 hover:underline font-medium"
+            >
+              ✕ Clear all filters
+            </Link>
+          </div>
+        );
+      })()}
+
+      {/* ── Result count ────────────────────────────────────────────────── */}
+      <div className="flex items-center justify-end">
+        <span className="text-xs text-gray-400 dark:text-slate-500">
+          {total === 1 ? "1 lead" : `${total} leads`}
+        </span>
+      </div>
 
       <LeadsListClient
         canBulk={canBulk}

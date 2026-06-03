@@ -117,7 +117,6 @@ export default function InlineEdit({ leadId, field, label, value, type = "text",
           {isEffectivelyEmpty
             ? <span className="text-gray-400 italic">{placeholder ?? "click to set"}</span>
             : <>{prefix}{pretty}</>}
-          <span className="text-[10px] text-gray-400 ml-1">✎</span>
         </div>
       );
     }
@@ -130,7 +129,7 @@ export default function InlineEdit({ leadId, field, label, value, type = "text",
         {value == null || value === ""
           ? <span className="text-gray-400 italic">{placeholder ?? "click to set"}</span>
           : <>{prefix}{display ?? String(value)}</>}
-        <span className="text-[10px] text-gray-400 ml-1">✎</span>
+        {type === "select" && <span className="text-[10px] text-gray-400 ml-1">✎</span>}
       </span>
     );
   }
