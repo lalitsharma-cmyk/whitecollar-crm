@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth";
 import { fmtIST12, fmtISTDate } from "@/lib/datetime";
 import { formatBudget } from "@/lib/budgetParse";
@@ -104,8 +104,9 @@ export default async function LeadPrintPage({
 }) {
   const { id } = await params;
 
-  // Auth — any authenticated role can view (agents see their own, managers/admins see all)
-  await requireUser();
+  // Auth — agents cannot access the print page
+  const me = await requireUser();
+  if (me.role === "AGENT") redirect("/leads");
 
   const lead = await prisma.lead.findUnique({
     where: { id },

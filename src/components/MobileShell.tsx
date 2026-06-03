@@ -13,12 +13,9 @@ import WhatsAppPanel from "./WhatsAppPanel";
 import ThemeToggle from "./ThemeToggle";
 import FestiveBanner from "./FestiveBanner";
 import AccentPainter from "./AccentPainter";
-import XPToastHost from "./XPToast";
-import DealCelebrationHost from "./DealCelebration";
 import QuickSearch from "./QuickSearch";
 import QuickAddLeadFab from "./QuickAddLeadFab";
 import KeyboardShortcutsHelp from "./KeyboardShortcutsHelp";
-import OnboardingTour from "./OnboardingTour";
 import PWAInstallNudge from "./PWAInstallNudge";
 import { useBodyScrollLock } from "@/hooks/useBodyScrollLock";
 
@@ -198,9 +195,11 @@ export default function MobileShell({ children, user, awaitingTeamCount = 0 }: P
           <GlobalDateFilter />
         </Suspense>
         <NotifBell />
-        <Link href="/leads/new" aria-label="New lead" className="p-2 rounded hover:bg-white/10 min-w-11 min-h-11 flex items-center justify-center">
-          <span className="text-xl font-bold leading-none">+</span>
-        </Link>
+        {user.role !== "AGENT" && (
+          <Link href="/leads/new" aria-label="New lead" className="p-2 rounded hover:bg-white/10 min-w-11 min-h-11 flex items-center justify-center">
+            <span className="text-xl font-bold leading-none">+</span>
+          </Link>
+        )}
         <Link href="/profile" className="block">
           <Avatar user={user} initials={initials} size="w-7 h-7 text-[10px]" />
         </Link>
@@ -282,8 +281,8 @@ export default function MobileShell({ children, user, awaitingTeamCount = 0 }: P
               placeholder="Search leads, properties, phone, email…"
             />
           </div>
-          <Link href="/leads/new" className="btn btn-ghost">+ New Lead</Link>
-          <Link href="/ai" className="btn btn-gold"><Sparkles className="w-[18px] h-[18px]" /> Ask AI</Link>
+          {user.role !== "AGENT" && <Link href="/leads/new" className="btn btn-ghost">+ New Lead</Link>}
+          {user.role !== "AGENT" && <Link href="/ai" className="btn btn-gold"><Sparkles className="w-[18px] h-[18px]" /> Ask AI</Link>}
           <WhatsAppPanel />
           <ThemeToggle />
           <Suspense fallback={<span className="w-9 h-9 inline-block" />}>
@@ -326,21 +325,10 @@ export default function MobileShell({ children, user, awaitingTeamCount = 0 }: P
       {/* Floating "+" quick-add-lead button — capture a lead in 2 taps from
           ANY page. Reuses the same create path (ingestLead) as /leads/new.
           z-40 so it sits under modals (z-50+). */}
-      <QuickAddLeadFab />
+      {user.role !== "AGENT" && <QuickAddLeadFab />}
       {/* Global `?` keyboard-shortcuts cheatsheet — also handles the `g X`
           2-key navigation sequences. */}
       <KeyboardShortcutsHelp />
-      {/* Gamification XP toasts — mounted once at the shell so any client
-          component (Log Call, status update, etc.) can call showXpToast(). */}
-      <XPToastHost />
-      {/* Deal celebrations — premium milestone animations (booking_done is
-          the big one). Mounted alongside XPToastHost so any client component
-          can fire showCelebration() from anywhere. */}
-      <DealCelebrationHost />
-      {/* First-run 4-step onboarding tour. Checks a localStorage flag so it
-          only ever shows once per device; can be re-triggered from
-          /settings → "Restart onboarding tour". */}
-      <OnboardingTour />
       {/* One-time mobile nudge to install the CRM as a PWA. Hidden on
           desktop, on iOS (no beforeinstallprompt), already-installed, and
           for 30 days after dismissal. */}

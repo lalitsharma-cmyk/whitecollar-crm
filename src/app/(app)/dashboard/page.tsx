@@ -1,20 +1,15 @@
 import { prisma } from "@/lib/prisma";
-import { LeadStatus, LeadSource, AIScore, CallOutcome, ActivityStatus, ActivityType, Prisma } from "@prisma/client";
+import { LeadStatus, AIScore, CallOutcome, ActivityStatus, ActivityType, Prisma } from "@prisma/client";
 import { formatDistanceToNow, startOfDay } from "date-fns";
-import { fmtIST12, smartRangeLabel } from "@/lib/datetime";
-import { fmtMoney, fmtMoneyDual } from "@/lib/money";
+import { fmtIST12 } from "@/lib/datetime";
 import { runReconciler } from "@/lib/reconciler";
 import { getTestingModeEnabled } from "@/lib/settings";
 import { requireUser } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import IamHereCard from "@/components/IamHereCard";
-import CallTargetWidget from "@/components/CallTargetWidget";
-import TeamDailyTargetTile from "@/components/TeamDailyTargetTile";
 import { todayIST } from "@/lib/attendance";
 import { normalizeTeam } from "@/lib/teamRouting";
-import TeamScoreboardCard from "@/components/TeamScoreboardCard";
-import WeeklySummaryCard from "@/components/WeeklySummaryCard";
 
 export const dynamic = "force-dynamic";
 
@@ -24,10 +19,6 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   const sp = await searchParams;
   runReconciler().catch(() => {});
   const todayStart = startOfDay(new Date());
-  // Calendar-month start — reused as the lower bound for the "this month"
-  // KPIs below AND as the smartRangeLabel input so the sub-text matches the
-  // actual window the count is over (no more hard-coded "last 30 days").
-  const monthStart = new Date(todayStart.getFullYear(), todayStart.getMonth(), 1);
 
   // ── Team-scoped view ───────────────────────────────────────────────
   // Admin     → default to their own team, can toggle via ?team=Dubai / India / all
@@ -55,14 +46,6 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   const meScope: Prisma.LeadWhereInput = isAdminOrMgr ? teamScope : { ownerId: me.id };
   const meActWhere: Prisma.ActivityWhereInput = isAdminOrMgr ? teamActWhere : { userId: me.id };
   const meCallWhere: Prisma.CallLogWhereInput = isAdminOrMgr ? teamCallWhere : { userId: me.id };
-  // WhatsApp touches (audit B-04): the tile previously counted company-wide and
-  // ignored the team filter entirely. Now agent → own leads' messages,
-  // leadership → selected team (all → no filter). WhatsAppMessage links to Lead
-  // via optional leadId, so we scope through the relation.
-  const meWaWhere: Prisma.WhatsAppMessageWhereInput =
-    !isAdminOrMgr ? { lead: { ownerId: me.id } } :
-    view === "all" ? {} :
-    { lead: { forwardedTeam: view } };
 
   // IST offset (UTC+5:30) — used throughout this page
   const istOffset = 5.5 * 60 * 60 * 1000;
@@ -105,52 +88,17 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     ? "TODAY & RIGHT NOW"
     : isSingleDay ? fmt2(rawFrom).toUpperCase()
     : `${fmt2(rawFrom)} – ${fmt2(rawTo)}`;
-  const monthRangeLabel = isToday ? "today"
-    : isSingleDay ? fmt2(rawFrom).toLowerCase()
-    : `${fmt2(rawFrom)} – ${fmt2(rawTo)}`;
 
   const [
-    totalClients, totalNotContacted, newToday, hotLeads,
-    callsToday, connectedToday, waToday,
-    followupsDueToday, followupsOverdue, readyToClose, needsYou,
+    followupsDueToday,
     upcoming,
-    // Team-specific KPIs
-    expoMeetingsThisMonth, homeVisitsThisMonth, virtualThisMonth, officeThisMonth, siteVisitsThisMonth,
-    coldPromotedThisMonth, callsThisMonth,
     todayCallsCount,
     // TODAY section — scheduled activity counts for the selected period
     leadFollowupsDueToday, meetingsToday, siteVisitsToday, virtualMeetingsToday,
   ] = await Promise.all([
-    // Personal KPI tiles (audit B-03): me* scopes → the agent's own book;
-    // identical to the team scopes for ADMIN/MANAGER (no change for them).
-    // State-based (always "right now"): totalClients, totalNotContacted, hotLeads
-    prisma.lead.count({ where: meScope }),
-    prisma.lead.count({ where: { ...meScope, status: LeadStatus.NEW } }),
-    // Period-based: new leads created in selected period
-    prisma.lead.count({ where: { ...meScope, createdAt: { gte: sqlFrom, lt: sqlTo } } }),
-    prisma.lead.count({ where: { ...meScope, aiScore: AIScore.HOT } }),
-    // Period-based: calls/WA/follow-ups in selected period
-    prisma.callLog.count({ where: { ...meCallWhere, startedAt: { gte: sqlFrom, lt: sqlTo } } }),
-    prisma.callLog.count({ where: { ...meCallWhere, startedAt: { gte: sqlFrom, lt: sqlTo }, outcome: CallOutcome.CONNECTED } }),
-    prisma.whatsAppMessage.count({ where: { ...meWaWhere, receivedAt: { gte: sqlFrom, lt: sqlTo } } }),
     prisma.activity.count({ where: { ...meActWhere, status: ActivityStatus.PLANNED, type: "CALL", scheduledAt: { gte: sqlFrom, lt: sqlTo } } }),
-    // State-based: activities overdue RIGHT NOW (always before today)
-    prisma.activity.count({ where: { ...meActWhere, status: ActivityStatus.PLANNED, scheduledAt: { lt: todayStart } } }),
-    // State-based: ready to close / needs attention
-    prisma.lead.count({ where: { ...meScope, status: { in: [LeadStatus.NEGOTIATION, LeadStatus.SITE_VISIT] } } }),
-    prisma.lead.count({ where: { ...meScope, needsManagerReview: true, status: { notIn: [LeadStatus.WON, LeadStatus.LOST] } } }),
     prisma.activity.findMany({ where: { ...meActWhere, status: ActivityStatus.PLANNED, scheduledAt: { gte: sqlTo } }, orderBy: { scheduledAt: "asc" }, take: 8, include: { lead: { select: { id: true, name: true } } } }), // B-15: only lead.id/name rendered — UPCOMING: after selected period
-    // Team funnel counts — respect selected period (was "this month").
-    prisma.activity.count({ where: { ...teamActWhere, type: ActivityType.EXPO_MEETING, completedAt: { gte: sqlFrom, lt: sqlTo } } }),
-    prisma.activity.count({ where: { ...teamActWhere, type: ActivityType.HOME_VISIT, completedAt: { gte: sqlFrom, lt: sqlTo } } }),
-    prisma.activity.count({ where: { ...teamActWhere, type: ActivityType.VIRTUAL_MEETING, completedAt: { gte: sqlFrom, lt: sqlTo } } }),
-    prisma.activity.count({ where: { ...teamActWhere, type: ActivityType.OFFICE_MEETING, completedAt: { gte: sqlFrom, lt: sqlTo } } }),
-    prisma.activity.count({ where: { ...teamActWhere, type: ActivityType.SITE_VISIT, completedAt: { gte: sqlFrom, lt: sqlTo } } }),
-    // Cold→Lead conversions in selected period
-    prisma.activity.count({ where: { ...teamActWhere, type: ActivityType.COLD_TO_LEAD, completedAt: { gte: sqlFrom, lt: sqlTo } } }),
-    // Calls in selected period (was "this month")
-    prisma.callLog.count({ where: { ...teamCallWhere, startedAt: { gte: sqlFrom, lt: sqlTo } } }),
-    // Calls by this user in the selected period — feeds CallTargetWidget
+    // Calls by this user in the selected period — feeds KPI tiles
     prisma.callLog.count({
       where: {
         userId: me.id,
@@ -223,78 +171,9 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     morningQueueCount = morningQueueLeads.length;
   }
 
-  const connectRate = callsToday ? Math.round((connectedToday / callsToday) * 100) : 0;
-
-  // ── Weekly pipeline summary — ADMIN / MANAGER only ───────────────────
-  // IST week boundaries: Mon midnight IST → Sun midnight IST
-  const istOffsetMs = 5.5 * 60 * 60 * 1000;
-  const nowIst = new Date(Date.now() + istOffsetMs);
-  const dayOfWeek = nowIst.getUTCDay(); // 0=Sun, 1=Mon...
-  const daysFromMonday = (dayOfWeek + 6) % 7;
-  const thisWeekMonday = new Date(
-    Date.UTC(nowIst.getUTCFullYear(), nowIst.getUTCMonth(), nowIst.getUTCDate() - daysFromMonday)
-    - istOffsetMs
-  );
-  const lastWeekMonday = new Date(thisWeekMonday.getTime() - 7 * 24 * 3600 * 1000);
-
-  let weeklyMetrics: Array<{ label: string; thisWeek: number; lastWeek: number }> = [];
-  if (isAdminOrMgr) {
-    const [thisWeekStats, lastWeekStats] = await Promise.all([
-      Promise.all([
-        prisma.lead.count({ where: { ...teamScope, createdAt: { gte: thisWeekMonday } } }),
-        prisma.lead.count({ where: { ...teamScope, status: { notIn: ["NEW", "LOST"] }, updatedAt: { gte: thisWeekMonday } } }),
-        prisma.lead.count({ where: { ...teamScope, status: { in: ["QUALIFIED", "SITE_VISIT", "NEGOTIATION", "EOI", "BOOKING_DONE", "WON"] }, updatedAt: { gte: thisWeekMonday } } }),
-        prisma.lead.count({ where: { ...teamScope, status: "WON", updatedAt: { gte: thisWeekMonday } } }),
-      ]),
-      Promise.all([
-        prisma.lead.count({ where: { ...teamScope, createdAt: { gte: lastWeekMonday, lt: thisWeekMonday } } }),
-        prisma.lead.count({ where: { ...teamScope, status: { notIn: ["NEW", "LOST"] }, updatedAt: { gte: lastWeekMonday, lt: thisWeekMonday } } }),
-        prisma.lead.count({ where: { ...teamScope, status: { in: ["QUALIFIED", "SITE_VISIT", "NEGOTIATION", "EOI", "BOOKING_DONE", "WON"] }, updatedAt: { gte: lastWeekMonday, lt: thisWeekMonday } } }),
-        prisma.lead.count({ where: { ...teamScope, status: "WON", updatedAt: { gte: lastWeekMonday, lt: thisWeekMonday } } }),
-      ]),
-    ]);
-    const [thisNew, thisContacted, thisQualified, thisWon] = thisWeekStats;
-    const [lastNew, lastContacted, lastQualified, lastWon] = lastWeekStats;
-    weeklyMetrics = [
-      { label: "New Leads", thisWeek: thisNew, lastWeek: lastNew },
-      { label: "Contacted", thisWeek: thisContacted, lastWeek: lastContacted },
-      { label: "Qualified+", thisWeek: thisQualified, lastWeek: lastQualified },
-      { label: "Won", thisWeek: thisWon, lastWeek: lastWon },
-    ];
-  }
-
-
   // ── Team scoreboard — calls made today by each agent ──────────────────
   // Only fetched for ADMIN / MANAGER (competitive data, not for agents).
   const managerTeam = me.role === "MANAGER" ? normalizeTeam(me.team ?? "") : null;
-  const teamScoreboard =
-    me.role === "ADMIN" || me.role === "MANAGER"
-      ? await prisma.callLog.groupBy({
-          by: ["userId"],
-          _count: { _all: true },
-          where: {
-            startedAt: { gte: sqlFrom, lt: sqlTo },
-            ...(managerTeam !== null
-              ? { user: { team: managerTeam } }
-              : {}),
-          },
-          orderBy: { _count: { userId: "desc" } },
-          take: 10,
-        })
-      : [];
-
-  const scoreboardUserIds = teamScoreboard.map((r) => r.userId);
-  const scoreboardUsers =
-    scoreboardUserIds.length > 0
-      ? await prisma.user.findMany({
-          where: { id: { in: scoreboardUserIds } },
-          select: { id: true, name: true },
-        })
-      : [];
-  const scoreboardRows = teamScoreboard.map((r) => ({
-    name: scoreboardUsers.find((u) => u.id === r.userId)?.name ?? "Unknown",
-    calls: r._count?._all ?? 0,
-  }));
 
   // ⚡ PERFORMANCE: was 30 sequential queries (5 per agent × 6 agents). Now 1.
   type SpRow = { id: string; name: string; team: string | null; calls: bigint; connected: bigint; due_today: bigint; overdue: bigint; closeable: bigint; needs: bigint; clients: bigint };
@@ -325,6 +204,20 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
 
   const testingModeOn = await getTestingModeEnabled();
 
+  // Daily targets — read from Setting table, fall back to defaults
+  const targetRow = await prisma.setting.findUnique({ where: { key: "dailyTargets" } });
+  const T = { calls: 150, connected: 50, virtual: 2, f2f: 1, fresh: 5, deals: 5 };
+  const targets = targetRow ? { ...T, ...JSON.parse(targetRow.value) } : T;
+
+  // Personal KPI metrics — always userId: me.id (agents AND admin/manager see their OWN numbers)
+  const [connectedPersonal, virtualPersonal, f2fPersonal, freshPersonal, dealsPersonal] = await Promise.all([
+    prisma.callLog.count({ where: { userId: me.id, startedAt: { gte: sqlFrom, lt: sqlTo }, outcome: CallOutcome.CONNECTED } }),
+    prisma.activity.count({ where: { userId: me.id, type: ActivityType.VIRTUAL_MEETING, scheduledAt: { gte: sqlFrom, lt: sqlTo }, status: { not: ActivityStatus.CANCELLED } } }),
+    prisma.activity.count({ where: { userId: me.id, type: { in: [ActivityType.SITE_VISIT, ActivityType.HOME_VISIT, ActivityType.OFFICE_MEETING, ActivityType.EXPO_MEETING] }, scheduledAt: { gte: sqlFrom, lt: sqlTo }, status: { not: ActivityStatus.CANCELLED } } }),
+    prisma.activity.count({ where: { userId: me.id, type: ActivityType.COLD_TO_LEAD, completedAt: { gte: sqlFrom, lt: sqlTo } } }),
+    prisma.lead.count({ where: { ownerId: me.id, status: LeadStatus.WON, updatedAt: { gte: sqlFrom, lt: sqlTo } } }),
+  ]);
+
   // ── Per-agent morning briefing (also shown to admins) ──
   // What landed since yesterday + what's on the agent's plate today. Mirrors
   // the morning-reminder cron notification but always visible on dashboard so
@@ -336,8 +229,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   //   • Time-aware greeting (good morning / afternoon / evening in IST).
   //   • Streak nudge so the daily login + follow-up streak feel rewarded.
   const since24h = new Date(Date.now() - 24 * 3600_000);
-  const sixHoursAgoIst = new Date(Date.now() - 6 * 3600_000);
-  const [myNewOvernight, myFollowupsToday, myCallbacksToday, todaysMission] = await Promise.all([
+  const [myNewOvernight, myFollowupsToday, myCallbacksToday] = await Promise.all([
     prisma.lead.count({ where: { ownerId: me.id, createdAt: { gte: since24h } } }),
     prisma.activity.count({
       where: {
@@ -353,64 +245,10 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         status: { notIn: ["WON", "LOST"] },
       },
     }),
-    // Today's mission — single highest-impact lead for the agent. We pick
-    // by status priority via three sequential cheap finds, taking the first
-    // that matches: NEGOTIATION first (close-able money on the table), then
-    // hot untouched, then oldest overdue. Each is a one-row .findFirst with
-    // an index hit, so cumulative cost is negligible.
-    (async () => {
-      const candidates = await Promise.all([
-        prisma.lead.findFirst({
-          where: { ownerId: me.id, status: LeadStatus.NEGOTIATION, eoiStage: { not: null } },
-          orderBy: { lastTouchedAt: "desc" },
-          select: { id: true, name: true, status: true, budgetMin: true, budgetCurrency: true, lastTouchedAt: true, eoiStage: true },
-        }),
-        prisma.lead.findFirst({
-          where: {
-            ownerId: me.id,
-            aiScore: AIScore.HOT,
-            status: { notIn: [LeadStatus.WON, LeadStatus.LOST] },
-            OR: [{ lastTouchedAt: { lt: sixHoursAgoIst } }, { lastTouchedAt: null }],
-          },
-          orderBy: { createdAt: "desc" },
-          select: { id: true, name: true, status: true, budgetMin: true, budgetCurrency: true, lastTouchedAt: true, eoiStage: true },
-        }),
-        prisma.lead.findFirst({
-          where: {
-            ownerId: me.id,
-            followupDate: { lt: todayStart },
-            status: { notIn: [LeadStatus.WON, LeadStatus.LOST] },
-          },
-          orderBy: { followupDate: "asc" },
-          select: { id: true, name: true, status: true, budgetMin: true, budgetCurrency: true, lastTouchedAt: true, eoiStage: true },
-        }),
-      ]);
-      // Tag each candidate with the reason so the UI can show "Why this?"
-      const reasons = ["close_eoi", "hot_untouched", "oldest_overdue"] as const;
-      for (let i = 0; i < candidates.length; i++) {
-        if (candidates[i]) return { ...candidates[i]!, reason: reasons[i] };
-      }
-      return null;
-    })(),
   ]);
   const hasMorningWork = myNewOvernight > 0 || myFollowupsToday > 0 || myCallbacksToday > 0;
 
-  // Motivation hook — surface the agent's most recent vault WIN so the morning
-  // greeting reminds them of a real recent success (much stickier than a generic
-  // quote alone). If they have no wins logged, render nothing — explicit "no
-  // wins" copy is demotivating.
-  const lastWin = await prisma.vaultEntry.findFirst({
-    where: { userId: me.id, kind: "WIN" },
-    orderBy: { createdAt: "desc" },
-    select: { content: true, createdAt: true },
-  });
-  const lastWinClipped = lastWin
-    ? (lastWin.content.length > 120 ? `${lastWin.content.slice(0, 120).trimEnd()}…` : lastWin.content)
-    : null;
-
   // Time-aware greeting — uses IST hour to pick morning/afternoon/evening.
-  // Worth noting: server runs in UTC on Vercel, so we convert explicitly
-  // rather than relying on local time on the box.
   const istNow = new Date(Date.now() + 5.5 * 3600_000);
   const istHour = istNow.getUTCHours();
   const greeting =
@@ -419,13 +257,6 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   const energyEmoji =
     istHour < 12 ? "☀️" :
     istHour < 17 ? "⚡" : "🌇";
-
-  // Streak nudge — surface a quick callout if the agent has a meaningful streak.
-  // Cap displayed values at 999 so the chip doesn't blow out on long-running
-  // accounts. lastStreakDay==today means they've already touched the streak
-  // today (no warning needed); blank/old means they're about to break it.
-  const dailyStreak = me.dailyStreak ?? 0;
-  const followupStreak = me.followupStreak ?? 0;
 
   return (
     <>
@@ -440,12 +271,10 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
       )}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
-          <h1 className="text-xl sm:text-2xl font-bold">
-            {view === "Dubai" ? "🇦🇪 Dubai team — Sales Command Center" :
-             view === "India" ? "🇮🇳 India team — Sales Command Center" :
-             "Sales Command Center (all teams)"}
-          </h1>
-          <p className="text-xs sm:text-sm text-gray-500 dark:text-slate-400">{new Date().toLocaleDateString("en-US", { weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: "Asia/Kolkata" })} · {new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Kolkata" })} IST · Live data · <span className="text-[10px] text-gray-400 dark:text-slate-500">v.{(process.env.VERCEL_GIT_COMMIT_SHA ?? "local").slice(0, 7)}</span></p>
+          <h1 className="text-xl sm:text-2xl font-bold">Dashboard</h1>
+          <p className="text-xs sm:text-sm text-gray-500 dark:text-slate-400">
+            {new Date().toLocaleDateString("en-US", { weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: "Asia/Kolkata" })} · {new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Kolkata" })} IST
+          </p>
         </div>
         <div className="flex gap-2 flex-wrap items-center self-start sm:self-auto">
           {me.role === "ADMIN" && (
@@ -479,15 +308,6 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         userName={me.name}
       />
 
-      {/* Daily call target progress — agent-only personal progress bar */}
-      {me.role === "AGENT" && (
-        <CallTargetWidget count={todayCallsCount} target={20} />
-      )}
-
-      {/* Team daily target — rolling progress vs sum of agent targets.
-          Sits above the 4-tile hero strip so the team sees their collective
-          goal first, then the action-first tiles below. Hidden for "all". */}
-      <TeamDailyTargetTile team={view} todayStart={todayStart} />
 
       {/* ── SECTION 1: TODAY ─────────────────────────────────────────────
           Q1: What needs attention right now? + What is planned today?
@@ -579,48 +399,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
               <h2 className="text-base sm:text-lg font-bold text-[#0b1a33]">
                 {energyEmoji} {greeting}, {me.name.split(" ")[0]}
               </h2>
-              {dailyStreak >= 3 && (
-                <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-300">
-                  🔥 {dailyStreak}-day streak
-                </span>
-              )}
-              {followupStreak >= 3 && (
-                <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300">
-                  🎯 {followupStreak}-day follow-up streak
-                </span>
-              )}
             </div>
-
-            {/* TODAY'S MISSION — single highest-impact card, the spec's flagship
-                idea for the daily opener. Picks NEGOTIATION-with-EOI first,
-                then hot-untouched, then oldest overdue. */}
-            {todaysMission ? (
-              <Link
-                href={`/leads/${todaysMission.id}`}
-                className="block mt-3 rounded-xl border-2 border-[#c9a24b] bg-white px-4 py-3 hover:shadow-lg transition group"
-              >
-                <div className="text-[10px] uppercase tracking-widest text-[#c9a24b] font-bold">
-                  🎯 Today's mission
-                </div>
-                <div className="mt-1 text-sm sm:text-base font-bold text-[#0b1a33] group-hover:underline">
-                  {todaysMission.reason === "close_eoi" && "Close this EOI: "}
-                  {todaysMission.reason === "hot_untouched" && "Call this hot lead NOW: "}
-                  {todaysMission.reason === "oldest_overdue" && "Win back: "}
-                  {todaysMission.name}
-                </div>
-                <div className="text-[11px] text-gray-600 dark:text-slate-300 mt-0.5">
-                  {todaysMission.reason === "close_eoi" && `In NEGOTIATION · EOI stage: ${todaysMission.eoiStage ?? "—"} · push for booking`}
-                  {todaysMission.reason === "hot_untouched" && `HOT score · ${todaysMission.lastTouchedAt ? `last touched ${formatDistanceToNow(todaysMission.lastTouchedAt, { addSuffix: true })}` : "never touched"} — every hour costs you`}
-                  {todaysMission.reason === "oldest_overdue" && `Follow-up overdue — win back trust by reaching out today`}
-                  {todaysMission.budgetMin && ` · ${fmtMoney(todaysMission.budgetMin, todaysMission.budgetCurrency === "INR" ? "INR" : "AED")}`}
-                </div>
-              </Link>
-            ) : hasMorningWork ? null : (
-              <div className="mt-3 rounded-xl border-2 border-dashed border-gray-200 dark:border-slate-600 px-4 py-3 text-sm text-gray-600 dark:text-slate-300">
-                ✨ Inbox zero — no urgent missions right now. Great time to
-                revive a cold lead or push a stalled deal forward.
-              </div>
-            )}
 
             {hasMorningWork && (
               <div className="flex flex-wrap gap-2 mt-3 text-sm">
@@ -642,22 +421,6 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
               </div>
             )}
 
-            {/* Last vault WIN — only renders if the agent has logged one.
-                No "no wins yet" fallback — demotivating. */}
-            {lastWin && lastWinClipped && (
-              <div
-                className="text-[12px] text-emerald-800 mt-2 flex items-start gap-1.5 leading-relaxed"
-                title="Your most recent entry in the Vault tagged as WIN."
-              >
-                <span aria-hidden>📈</span>
-                <span className="min-w-0">
-                  <b>Your last win:</b> {lastWinClipped}
-                  <span className="text-[10px] text-gray-500 ml-1">
-                    · {formatDistanceToNow(lastWin.createdAt, { addSuffix: true })}
-                  </span>
-                </span>
-              </div>
-            )}
           </div>
         </div>
       </div>
@@ -666,7 +429,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
           Q2: What is coming next after the selected period? */}
       <div className="card p-5">
         <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
-          <div className="font-semibold">📆 UPCOMING</div>
+          <div className="font-semibold">📆 Future Activities</div>
           <div className="flex gap-2 text-xs flex-wrap">
             {upcomingFollowupsCount > 0 && (
               <Link href="/leads?followup=upcoming" className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-300 font-semibold hover:bg-amber-200">
@@ -694,58 +457,20 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         </div>
       </div>
 
-      {/* ── TEAM PERFORMANCE ── (after UPCOMING so Q1/Q2 answer first) */}
-      {(me.role === "ADMIN" || me.role === "MANAGER") && (
-        <TeamScoreboardCard rows={scoreboardRows} />
-      )}
-      {(me.role === "ADMIN" || me.role === "MANAGER") && weeklyMetrics.length > 0 && (
-        <WeeklySummaryCard metrics={weeklyMetrics} />
-      )}
-
-      {/* ── SECTION 3: ANALYTICS ──────────────────────────────────────── */}
+      {/* ── DAILY PERFORMANCE ────────────────────────────────── */}
       <div>
-        <div className="text-xs font-bold tracking-widest text-gray-500 dark:text-slate-400 mb-2">
-          📊 ANALYTICS · {periodSection}
+        <div className="text-xs font-bold tracking-widest text-gray-500 dark:text-slate-400 mb-2 uppercase">
+          📊 Daily Performance · {periodSection}
         </div>
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-4 gap-2 lg:gap-3">
-          <KPI title="Calls Dialed" value={callsToday} sub={`dials logged · ${periodSection.toLowerCase()}`} />
-          <KPI title="Calls Connected" value={connectedToday} sub={`${connectRate}% connect rate · ${periodSection.toLowerCase()}`} />
-          <KPI title="Follow-ups Due" value={followupsDueToday} sub={`scheduled · ${periodSection.toLowerCase()}`} />
-          <KPI title="Overdue Follow-ups — now" value={followupsOverdue} sub="past their follow-up date" />
-          <KPI title="Ready to Close — now" value={readyToClose} sub="showing buying signals" />
-          <KPI title="Need Your Attention — now" value={needsYou} sub="flagged for manager" highlight={needsYou > 0} />
-          <KPI title="WhatsApp Touches" value={waToday} sub={`messages logged · ${periodSection.toLowerCase()}`} />
-          <KPI title="Total Clients — all time" value={totalClients} sub={`${totalNotContacted} not yet contacted`} />
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-3 gap-2 lg:gap-3">
+          <KpiTarget label="Total Calls" achieved={todayCallsCount} target={targets.calls} />
+          <KpiTarget label="Connected Calls" achieved={connectedPersonal} target={targets.connected} />
+          <KpiTarget label="Virtual Meetings" achieved={virtualPersonal} target={targets.virtual} />
+          <KpiTarget label="Site Visits (F2F)" achieved={f2fPersonal} target={targets.f2f} />
+          <KpiTarget label="Fresh Clients" achieved={freshPersonal} target={targets.fresh} />
+          <KpiTarget label="Deals Closed" achieved={dealsPersonal} target={targets.deals} />
         </div>
       </div>
-
-      {/* Team-specific funnel KPIs (this month) */}
-      {view !== "all" && (
-        <div>
-          <div className="text-xs font-bold tracking-widest text-gray-500 dark:text-slate-400 mb-2">
-            {view === "Dubai" ? `DUBAI TEAM · ${periodSection}` : `INDIA TEAM · ${periodSection}`}
-          </div>
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 lg:gap-3">
-            {view === "Dubai" ? (
-              <>
-                <KPI title="📞 Calls (mo)" value={callsThisMonth} sub={monthRangeLabel} />
-                <KPI title="💻 Virtual meets" value={virtualThisMonth} sub={monthRangeLabel} />
-                <KPI title="🏢 Office meets" value={officeThisMonth} sub={monthRangeLabel} />
-                <KPI title="🎪 Expo meets" value={expoMeetingsThisMonth} sub={`${monthRangeLabel} · expos in IN`} />
-                <KPI title="🚗 Dubai site visits" value={siteVisitsThisMonth} sub={`${monthRangeLabel} · w/ developer sales`} />
-              </>
-            ) : (
-              <>
-                <KPI title="📞 Calls (mo)" value={callsThisMonth} sub={monthRangeLabel} />
-                <KPI title="🚗 Site visits" value={siteVisitsThisMonth} sub={monthRangeLabel} />
-                <KPI title="🏠 Home visits" value={homeVisitsThisMonth} sub={monthRangeLabel} />
-                <KPI title="🏢 Office meets" value={officeThisMonth} sub={monthRangeLabel} />
-                <KPI title="❄→🔥 Cold→Lead" value={coldPromotedThisMonth} sub={`${monthRangeLabel} · conversions`} highlight={coldPromotedThisMonth > 0} />
-              </>
-            )}
-          </div>
-        </div>
-      )}
 
       {/* By Salesperson table — ADMIN/MANAGER only (team-wide competitive data) */}
       {isAdminOrMgr && (
@@ -774,6 +499,36 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
       </div>
       )}
     </>
+  );
+}
+
+function KpiTarget({ label, achieved, target }: { label: string; achieved: number; target: number }) {
+  const pending = Math.max(0, target - achieved);
+  const done = target > 0 && achieved >= target;
+  return (
+    <div className={`card p-3 lg:p-4 ${done ? "border-emerald-500 border-2 bg-emerald-50 dark:bg-emerald-900/20" : ""}`}>
+      <div className="text-[10px] lg:text-[11px] tracking-widest text-gray-500 dark:text-slate-400 uppercase font-bold mb-2 leading-tight">{label}</div>
+      <div className="space-y-1.5">
+        <div className="flex items-center justify-between text-sm">
+          <span className="text-[11px] text-gray-500 dark:text-slate-400">Target</span>
+          <span className="font-semibold text-gray-600 dark:text-slate-300">{target}</span>
+        </div>
+        <div className="flex items-center justify-between text-sm">
+          <span className="text-[11px] text-gray-500 dark:text-slate-400">Achieved</span>
+          <span className={`font-bold text-base ${done ? "text-emerald-600 dark:text-emerald-400" : "text-[#0b1a33] dark:text-white"}`}>{achieved}</span>
+        </div>
+        <div className="flex items-center justify-between text-sm">
+          <span className="text-[11px] text-gray-500 dark:text-slate-400">Pending</span>
+          <span className={`font-bold text-base ${pending === 0 ? "text-emerald-600 dark:text-emerald-400" : "text-amber-600 dark:text-amber-400"}`}>{pending}</span>
+        </div>
+        {target > 0 && (
+          <div className="w-full bg-gray-200 dark:bg-slate-600 rounded-full h-1 mt-1">
+            <div className={`h-1 rounded-full transition-all ${done ? "bg-emerald-500" : "bg-[#c9a24b]"}`}
+              style={{ width: `${Math.min(100, Math.round((achieved / target) * 100))}%` }} />
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 

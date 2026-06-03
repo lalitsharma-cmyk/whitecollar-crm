@@ -352,12 +352,30 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
   // favour of the green/red signals.)
   const bantFilledCount = [bantBudgetFilled, bantAuthFilled, bantNeedFilled, bantTimeFilled].filter(Boolean).length;
 
-  // Tailwind colour map for a BANT chip. `good` overrides `bad` (i.e. if the
-  // field has a filled value it's green even when the related signal is null).
-  function bantChipClass(good: boolean, bad: boolean): string {
-    if (good) return "border-emerald-300 bg-emerald-50 dark:border-emerald-700 dark:bg-emerald-900/30";
-    if (bad) return "border-red-300 bg-red-50 dark:border-red-700 dark:bg-red-900/30";
-    return "border-amber-200 bg-amber-50 dark:border-amber-700 dark:bg-amber-900/30";
+  // Per-letter BANT chip colour functions. Each letter gets its own colour when
+  // filled so agents can tell Budget / Authority / Need / Timeline apart at a glance.
+  // B = Budget → blue
+  function bantBClass(good: boolean, bad: boolean): string {
+    if (good) return "border-blue-300 bg-blue-50 dark:border-blue-700 dark:bg-blue-900/20";
+    if (bad) return "border-red-300 bg-red-50 dark:border-red-700 dark:bg-red-900/20";
+    return "border-gray-200 bg-white dark:border-slate-600 dark:bg-slate-800";
+  }
+  // A = Authority → purple
+  function bantAClass(good: boolean, bad: boolean): string {
+    if (good) return "border-purple-300 bg-purple-50 dark:border-purple-700 dark:bg-purple-900/20";
+    if (bad) return "border-red-300 bg-red-50 dark:border-red-700 dark:bg-red-900/20";
+    return "border-gray-200 bg-white dark:border-slate-600 dark:bg-slate-800";
+  }
+  // N = Need → emerald/green
+  function bantNClass(good: boolean): string {
+    if (good) return "border-emerald-300 bg-emerald-50 dark:border-emerald-700 dark:bg-emerald-900/20";
+    return "border-gray-200 bg-white dark:border-slate-600 dark:bg-slate-800";
+  }
+  // T = Timeline → amber
+  function bantTClass(good: boolean, bad: boolean): string {
+    if (good) return "border-amber-300 bg-amber-50 dark:border-amber-700 dark:bg-amber-900/20";
+    if (bad) return "border-red-300 bg-red-50 dark:border-red-700 dark:bg-red-900/20";
+    return "border-gray-200 bg-white dark:border-slate-600 dark:bg-slate-800";
   }
 
   // Client Summary — auto-assembled from structured fields, all inline-editable.
@@ -460,7 +478,7 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
       {/* 4 chips — one per BANT letter. Click any value inside to edit. */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
         {/* B — Budget. Backed by budgetMin + fundReadiness. */}
-        <div className={`p-2.5 rounded border ${bantChipClass(bantBudgetFilled, bantBudgetBad)}`}>
+        <div className={`p-2.5 rounded border ${bantBClass(bantBudgetFilled, bantBudgetBad)}`}>
           <div className="text-[10px] font-bold tracking-widest text-gray-600 dark:text-slate-300">💰 B · BUDGET</div>
           <div className="text-sm mt-0.5">
             <InlineEdit
@@ -483,7 +501,7 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
             ]} /></div>
         </div>
         {/* A — Authority. Who makes the final buying decision. */}
-        <div className={`p-2.5 rounded border ${bantChipClass(bantAuthFilled, bantAuthBad)}`}>
+        <div className={`p-2.5 rounded border ${bantAClass(bantAuthFilled, bantAuthBad)}`}>
           <div className="text-[10px] font-bold tracking-widest text-gray-600 dark:text-slate-300">👤 A · AUTHORITY</div>
           <div className="text-sm mt-0.5">
             <InlineEdit leadId={lead.id} field="authorityPerson" type="select" value={lead.authorityPerson ?? ""}
@@ -506,14 +524,14 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
           </div>
         </div>
         {/* N — Need. New free-text needSummary. */}
-        <div className={`p-2.5 rounded border ${bantChipClass(bantNeedFilled, false)}`}>
+        <div className={`p-2.5 rounded border ${bantNClass(bantNeedFilled)}`}>
           <div className="text-[10px] font-bold tracking-widest text-gray-600 dark:text-slate-300">🎯 N · NEED</div>
           <div className="text-sm mt-0.5">
             <InlineEdit leadId={lead.id} field="needSummary" value={lead.needSummary ?? ""} placeholder="e.g. parents relocating, rental yield, kid's school" />
           </div>
         </div>
         {/* T — Timeline. Backed by whenCanInvest. */}
-        <div className={`p-2.5 rounded border ${bantChipClass(bantTimeFilled, bantTimeBad)}`}>
+        <div className={`p-2.5 rounded border ${bantTClass(bantTimeFilled, bantTimeBad)}`}>
           <div className="text-[10px] font-bold tracking-widest text-gray-600 dark:text-slate-300">⏱ T · TIMELINE</div>
           <div className="text-sm mt-0.5">
             <InlineEdit leadId={lead.id} field="whenCanInvest" type="select" value={lead.whenCanInvest ?? ""}
@@ -974,40 +992,6 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
             Shows the team classification provenance so managers/admins can
             audit how this lead ended up on the current team. Hidden from
             agents (internal system metadata per spec). */}
-        {me.role !== "AGENT" && <div data-lead-section="admin" className="card p-4 space-y-1.5">
-          <div className="text-[10px] uppercase tracking-widest text-gray-400 dark:text-slate-500 font-semibold mb-2">Team Routing</div>
-          <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs">
-            <span className="text-gray-500 dark:text-slate-400 font-medium">Team</span>
-            <span className={lead.forwardedTeam
-              ? (lead.forwardedTeam === "India" ? "font-semibold text-emerald-700" : "font-semibold text-sky-700")
-              : "text-amber-600 italic"
-            }>
-              {lead.forwardedTeam ?? "Awaiting team"}
-            </span>
-            {lead.routingMethod && (
-              <>
-                <span className="text-gray-500 dark:text-slate-400 font-medium">Method</span>
-                <span className="text-gray-700 dark:text-slate-300">{lead.routingMethod.replace(/_/g, " ")}</span>
-              </>
-            )}
-            {lead.routingSource && (
-              <>
-                <span className="text-gray-500 dark:text-slate-400 font-medium">Source</span>
-                <span className="text-gray-700 dark:text-slate-300">{lead.routingSource}</span>
-              </>
-            )}
-            {lead.routingReason && (
-              <>
-                <span className="text-gray-500 dark:text-slate-400 font-medium">Reason</span>
-                <span className="text-gray-700 dark:text-slate-300">{lead.routingReason}</span>
-              </>
-            )}
-            {!lead.routingMethod && !lead.routingSource && !lead.routingReason && (
-              <span className="col-span-2 text-gray-400 dark:text-slate-500 italic text-[11px]">No routing metadata recorded</span>
-            )}
-          </div>
-        </div>}
-
         {/* 📌 Sticky note — pinned (position:sticky) at the top of the right
             rail. Private per agent (StickyNote model, unique on leadId+userId).
             Auto-saves on blur. Lalit's ask: "give every agent a private

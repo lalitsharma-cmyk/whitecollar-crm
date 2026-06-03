@@ -13,6 +13,8 @@ import FestivalAdminPanel from "@/components/FestivalAdminPanel";
 import TestPushButton from "@/components/TestPushButton";
 import NotifPrefsEditor from "@/components/NotifPrefsEditor";
 import AiEnabledToggle from "@/components/AiEnabledToggle";
+import DailyTargetsForm from "@/components/DailyTargetsForm";
+import { getDailyTargets } from "@/lib/targets";
 
 // Parse User.notifPrefs (JSON-stringified `{ kind: boolean }` map). Bad JSON or
 // non-object payloads fall back to {} so the editor seeds every toggle ON.
@@ -60,6 +62,7 @@ export default async function SettingsPage() {
     getAiMonthlyCostCapUsd(),
   ]);
   const isAdmin = me.role === "ADMIN";
+  const currentTargets = isAdmin ? await getDailyTargets() : null;
   const icsUrl = buildIcsUrl(me.id);
   const notifPrefs = parseNotifPrefs((me as { notifPrefs?: string | null }).notifPrefs);
   return (
@@ -376,6 +379,14 @@ export default async function SettingsPage() {
           <p className="text-[11px] text-gray-400 mt-1">
             The toggle above (AI Features section) controls both switches together.
           </p>
+        </div>
+      )}
+
+      {isAdmin && currentTargets && (
+        <div className="card p-5 max-w-2xl">
+          <h3 className="font-semibold mb-1">🎯 Daily Targets (per agent)</h3>
+          <p className="text-xs text-gray-500 dark:text-slate-400 mb-3">Set the daily performance targets shown on each agent&apos;s dashboard KPI blocks. Applied globally to all agents.</p>
+          <DailyTargetsForm initial={currentTargets} />
         </div>
       )}
 

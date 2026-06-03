@@ -80,6 +80,7 @@ const label = "text-xs font-semibold text-gray-600";
 
 export default async function NewLeadPage() {
   const me = await requireUser();
+  if (me.role === "AGENT") redirect("/leads");
   const defaultCurrency = defaultCurrencyForTeam(me.team);
   const defaultTeam = me.team && (me.team === "Dubai" || me.team === "India") ? me.team : (defaultCurrency === "INR" ? "India" : "Dubai");
   return (

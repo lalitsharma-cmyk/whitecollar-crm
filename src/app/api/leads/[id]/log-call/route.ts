@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { CallDirection, CallOutcome, ActivityType, ActivityStatus } from "@prisma/client";
+import { CallDirection, CallOutcome, ActivityType, ActivityStatus, LeadStatus } from "@prisma/client";
 import { loadOwnedLead } from "@/lib/leadScope";
 import { rescoreLead } from "@/lib/leadRescorer";
 import { awardXp, bumpStreak, type AwardResult } from "@/lib/gamification.server";
@@ -80,6 +80,15 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       } : {}),
     },
   });
+  // Auto-advance: if this lead is still NEW and a call was just logged, move it to CONTACTED
+  // so the status reflects that conversation has started.
+  if (lead.status === LeadStatus.NEW) {
+    await prisma.lead.update({
+      where: { id },
+      data: { status: LeadStatus.CONTACTED },
+    });
+  }
+
   // Fire-and-forget behavioural re-score — rule-based, doesn't need AI.
   rescoreLead(id).catch(() => {});
 
