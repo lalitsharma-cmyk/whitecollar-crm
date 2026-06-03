@@ -283,8 +283,6 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
   const agentFirstName = me.name.split(" ")[0] ?? me.name;
   const waTeam = lead.forwardedTeam === "India" ? "India" : "Dubai";
   const waText = `Hi ${lead.name}, this is ${agentFirstName} from White Collar Realty. I wanted to follow up regarding your enquiry about properties in ${waTeam}. Is this a good time to talk?`;
-  const waLink = waPhone ? `https://wa.me/${waPhone}?text=${encodeURIComponent(waText)}` : null;
-
   // Currency used to format budget cells — "12M AED" for Dubai, "1.2 Cr" for
   // India. Falls back to AED when the field is null (Dubai default).
   const budgetCcy: "AED" | "INR" = lead.budgetCurrency === "INR" ? "INR" : "AED";

@@ -191,9 +191,9 @@ export default function LeadFilters({
                 </select>
               </div>
 
-              {/* AI Status */}
+              {/* Potential (AI score) */}
               <div>
-                <label className={lblCls}>AI Status</label>
+                <label className={lblCls}>Potential</label>
                 <select value={draftAI} onChange={(e) => setDraftAI(e.target.value)} className={selCls}>
                   <option value="">Any score</option>
                   <option value="HOT">🔥 Hot</option>
