@@ -978,10 +978,9 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
       <div className="space-y-4">
         {/* ── Routing info panel (small, read-only) ──
             Shows the team classification provenance so managers/admins can
-            audit how this lead ended up on the current team. Visible to all
-            roles (agents can see their own lead's team). Not editable here —
-            use the admin queue / intake form to reassign team. */}
-        <div data-lead-section="admin" className="card p-4 space-y-1.5">
+            audit how this lead ended up on the current team. Hidden from
+            agents (internal system metadata per spec). */}
+        {me.role !== "AGENT" && <div data-lead-section="admin" className="card p-4 space-y-1.5">
           <div className="text-[10px] uppercase tracking-widest text-gray-400 dark:text-slate-500 font-semibold mb-2">Team Routing</div>
           <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs">
             <span className="text-gray-500 dark:text-slate-400 font-medium">Team</span>
@@ -1013,7 +1012,7 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
               <span className="col-span-2 text-gray-400 dark:text-slate-500 italic text-[11px]">No routing metadata recorded</span>
             )}
           </div>
-        </div>
+        </div>}
 
         {/* 📌 Sticky note — pinned (position:sticky) at the top of the right
             rail. Private per agent (StickyNote model, unique on leadId+userId).
@@ -1037,7 +1036,7 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
             above. Right side corner is too clumsy" — moved up from the
             bottom so admins/managers can find them without scrolling. Reject
             is FIRST (the more decisive action), Reassign second. */}
-        {(canReassign || lead.status !== "LOST") && (
+        {canReassign && (
           <div data-lead-section="admin" className="card p-4 space-y-3">
             <div className="text-[10px] uppercase tracking-widest text-gray-500 dark:text-slate-400 font-semibold">🛠 Lead admin</div>
             {lead.status === "LOST" ? (
