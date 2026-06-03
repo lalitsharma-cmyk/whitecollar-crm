@@ -20,6 +20,7 @@ import { quoteOfTheDay } from "@/lib/salesQuotes";
 import { normalizeTeam } from "@/lib/teamRouting";
 import TeamScoreboardCard from "@/components/TeamScoreboardCard";
 import WeeklySummaryCard from "@/components/WeeklySummaryCard";
+import TeamFollowupsWidget from "@/components/TeamFollowupsWidget";
 
 export const dynamic = "force-dynamic";
 
@@ -263,6 +264,27 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
       { label: "Won", thisWeek: thisWon, lastWeek: lastWon },
     ];
   }
+
+  // ── Team follow-ups for the rest of this week (IST) ────────────────────
+  const endOfWeekIST = new Date(thisWeekMonday.getTime() + 7 * 24 * 3600 * 1000);
+  const teamFollowups = isAdminOrMgr
+    ? await prisma.lead.findMany({
+        where: {
+          ...teamScope,
+          followupDate: { gte: new Date(), lt: endOfWeekIST },
+          status: { notIn: ["LOST", "WON"] },
+        },
+        orderBy: { followupDate: "asc" },
+        take: 20,
+        select: {
+          id: true,
+          name: true,
+          followupDate: true,
+          potential: true,
+          owner: { select: { name: true } },
+        },
+      })
+    : [];
 
   // ── Team scoreboard — calls made today by each agent ──────────────────
   // Only fetched for ADMIN / MANAGER (competitive data, not for agents).
@@ -570,6 +592,11 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
       {/* Weekly pipeline summary — ADMIN / MANAGER only */}
       {(me.role === "ADMIN" || me.role === "MANAGER") && weeklyMetrics.length > 0 && (
         <WeeklySummaryCard metrics={weeklyMetrics} />
+      )}
+
+      {/* Team follow-ups this week — ADMIN / MANAGER only */}
+      {(me.role === "ADMIN" || me.role === "MANAGER") && (
+        <TeamFollowupsWidget items={teamFollowups} />
       )}
 
       {/* Smart suggestions — rule-based daily nudges. Mounted near the top,

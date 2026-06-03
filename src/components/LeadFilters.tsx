@@ -43,7 +43,7 @@ export default function LeadFilters({ agents, sources, statuses, showSource = tr
     <div className="card p-3 lg:p-4 space-y-2 lg:space-y-0 lg:flex lg:flex-wrap lg:gap-2 lg:items-center">
       <input
         type="search"
-        placeholder="Search name / phone / email"
+        placeholder="Search name / phone / email / company"
         value={q}
         onChange={(e) => setQ(e.target.value)}
         className="border border-[#e5e7eb] rounded-lg px-3 py-2 text-sm w-full lg:flex-1 lg:min-w-[200px]"

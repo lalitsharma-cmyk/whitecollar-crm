@@ -72,6 +72,7 @@ const fullNav: NavSection[] = [
     { href: "/admin/health",      label: "💚 System health", Icon: Activity,  tag: undefined as string | undefined },
     { href: "/admin/integrations", label: "🔌 Integrations", Icon: Plug,      tag: undefined as string | undefined },
     { href: "/admin/ai-trial",    label: "🤖 AI Trial",   Icon: Sparkles,     tag: "NEW" as string | undefined },
+    { href: "/admin/users",       label: "Users",         Icon: Users,        tag: undefined as string | undefined },
   ]},
 ];
 
