@@ -1,5 +1,5 @@
 "use client";
-import React, { useState } from "react";
+import React, { Suspense, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
@@ -7,10 +7,10 @@ import {
   Building2, BarChart3, Upload, UserCog, Settings as SettingsIcon, LogOut,
   ChevronLeft, Gem, HelpCircle, AlertTriangle, Lock,
 } from "lucide-react";
+import GlobalDateFilter from "./GlobalDateFilter";
 import NotifBell from "./NotifBell";
 import WhatsAppPanel from "./WhatsAppPanel";
 import ThemeToggle from "./ThemeToggle";
-import GlobalCalendarPanel from "./GlobalCalendarPanel";
 import FestiveBanner from "./FestiveBanner";
 import AccentPainter from "./AccentPainter";
 import XPToastHost from "./XPToast";
@@ -193,7 +193,9 @@ export default function MobileShell({ children, user, awaitingTeamCount = 0 }: P
         <div className="flex-1" />
         <WhatsAppPanel />
         <ThemeToggle />
-        <GlobalCalendarPanel role={user.role} team={user.team ?? null} />
+        <Suspense fallback={<span className="w-9 h-9 inline-block" />}>
+          <GlobalDateFilter />
+        </Suspense>
         <NotifBell />
         <Link href="/leads/new" aria-label="New lead" className="p-2 rounded hover:bg-white/10 min-w-11 min-h-11 flex items-center justify-center">
           <span className="text-xl font-bold leading-none">+</span>
@@ -283,7 +285,9 @@ export default function MobileShell({ children, user, awaitingTeamCount = 0 }: P
           <Link href="/ai" className="btn btn-gold"><Sparkles className="w-[18px] h-[18px]" /> Ask AI</Link>
           <WhatsAppPanel />
           <ThemeToggle />
-          <GlobalCalendarPanel role={user.role} team={user.team ?? null} />
+          <Suspense fallback={<span className="w-9 h-9 inline-block" />}>
+          <GlobalDateFilter />
+        </Suspense>
           <NotifBell />
           <Avatar user={user} initials={initials} size="w-[30px] h-[30px]" />
         </header>
