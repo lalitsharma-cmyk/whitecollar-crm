@@ -6,7 +6,18 @@ import { X, Mail } from "lucide-react";
 interface Agent { id: string; name: string; team: string | null; }
 interface EmailTpl { id: string; name: string; subject: string | null; }
 
-export default function LeadBulkActions({ selectedIds, agents, onClear, canReassign = false }: { selectedIds: string[]; agents: Agent[]; onClear: () => void; canReassign?: boolean; }) {
+const STATUS_OPTIONS: Array<{ v: string; label: string }> = [
+  { v: "NEW",          label: "New" },
+  { v: "CONTACTED",    label: "Contacted" },
+  { v: "QUALIFIED",    label: "Qualified" },
+  { v: "SITE_VISIT",   label: "Site Visit" },
+  { v: "NEGOTIATION",  label: "Negotiation" },
+  { v: "EOI",          label: "EOI" },
+  { v: "BOOKING_DONE", label: "Booking Done" },
+  { v: "LOST",         label: "Lost" },
+];
+
+export default function LeadBulkActions({ selectedIds, agents, onClear, canReassign = false, canSetStatus = false }: { selectedIds: string[]; agents: Agent[]; onClear: () => void; canReassign?: boolean; canSetStatus?: boolean; }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [picked, setPicked] = useState("");
@@ -17,6 +28,7 @@ export default function LeadBulkActions({ selectedIds, agents, onClear, canReass
   const [emailMsg, setEmailMsg] = useState<string | null>(null);
   const [crossTeamWarn, setCrossTeamWarn] = useState<string | null>(null);
   const [followupDate, setFollowupDate] = useState("");
+  const [statusValue, setStatusValue] = useState("");
 
   // Lazy-load email templates when user opens the modal
   useEffect(() => {
@@ -105,6 +117,19 @@ export default function LeadBulkActions({ selectedIds, agents, onClear, canReass
     } finally { setBusy(false); }
   }
 
+  async function bulkSetStatus() {
+    if (!statusValue || busy) return;
+    setBusy(true);
+    try {
+      const r = await fetch("/api/leads/bulk", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "set_status", ids: selectedIds, status: statusValue }),
+      });
+      if (r.ok) { onClear(); router.refresh(); }
+    } finally { setBusy(false); }
+  }
+
   return (
     <>
       {crossTeamWarn && (
@@ -127,6 +152,15 @@ export default function LeadBulkActions({ selectedIds, agents, onClear, canReass
         <button onClick={() => setShowEmail(true)} disabled={busy} className="text-xs font-semibold bg-sky-600 text-white px-3 py-1 rounded-lg flex items-center gap-1"><Mail className="w-3 h-3" /> Email</button>
         <input type="date" value={followupDate} onChange={(e) => setFollowupDate(e.target.value)} className="bg-white/10 text-white border-0 rounded-lg px-2 py-1 text-xs" />
         <button onClick={bulkSetFollowup} disabled={busy} className="text-xs font-semibold bg-emerald-600 text-white px-3 py-1 rounded-lg">Set Follow-up</button>
+        {canSetStatus && selectedIds.length > 0 && (
+          <>
+            <select value={statusValue} onChange={(e) => setStatusValue(e.target.value)} className="bg-white/10 text-white border-0 rounded-lg px-2 py-1 text-xs">
+              <option value="">Status →</option>
+              {STATUS_OPTIONS.map(s => <option key={s.v} value={s.v} className="text-black">{s.label}</option>)}
+            </select>
+            <button onClick={bulkSetStatus} disabled={busy || !statusValue} className="text-xs font-semibold bg-violet-600 text-white px-3 py-1 rounded-lg">Move to</button>
+          </>
+        )}
         <button onClick={bulkDelete} disabled={busy} className="text-xs font-semibold bg-red-600 text-white px-3 py-1 rounded-lg">Delete</button>
         <button onClick={onClear} className="text-xs text-white/70 hover:text-white">Clear</button>
       </div>

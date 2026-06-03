@@ -81,7 +81,7 @@ interface Row {
 
 const aiChip = (s: string | null) => s === "HOT" ? "chip-hot" : s === "WARM" ? "chip-warm" : s === "COLD" ? "chip-cold" : "chip-lost";
 
-export default function LeadsListClient({ leads, canBulk, canReassign = false, agents, showSource = true }: { leads: Row[]; canBulk: boolean; canReassign?: boolean; agents: { id: string; name: string; team: string | null }[]; showSource?: boolean; }) {
+export default function LeadsListClient({ leads, canBulk, canReassign = false, canSetStatus = false, agents, showSource = true }: { leads: Row[]; canBulk: boolean; canReassign?: boolean; canSetStatus?: boolean; agents: { id: string; name: string; team: string | null }[]; showSource?: boolean; }) {
   // showSource = false → hide the source column + chip from agents.
   // Lalit's policy: agents shouldn't see where each lead came from (avoids them
   // cherry-picking high-converting sources or gaming the round-robin pool).
@@ -527,7 +527,7 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, a
           </tbody>
         </table>
       </div>
-      {canBulk && <LeadBulkActions selectedIds={selectedIds} agents={agents} onClear={() => setSelected(new Set())} canReassign={canReassign} />}
+      {canBulk && <LeadBulkActions selectedIds={selectedIds} agents={agents} onClear={() => setSelected(new Set())} canReassign={canReassign} canSetStatus={canSetStatus} />}
 
       {/* ─── New bulk action bar (Tag · Reassign · Reject) ─────────────
           Renders ABOVE the legacy LeadBulkActions bar (email/delete) when

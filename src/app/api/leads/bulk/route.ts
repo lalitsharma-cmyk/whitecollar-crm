@@ -197,6 +197,27 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, updated: r.count });
   }
 
+  if (action === "set_status") {
+    // Set status is admin/manager only — agents can't bulk-move pipeline stages.
+    if (me.role !== "ADMIN" && me.role !== "MANAGER") {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+    const statusValue = String(body.status ?? "").trim();
+    if (!statusValue || !(Object.values(LeadStatus) as string[]).includes(statusValue)) {
+      return NextResponse.json({ error: "Invalid status" }, { status: 400 });
+    }
+    const r = await prisma.lead.updateMany({
+      where: { id: { in: ids }, ...scope },
+      data: { status: statusValue as LeadStatus, lastTouchedAt: new Date() },
+    });
+    await audit({
+      userId: me.id, action: "lead.bulk.status", entity: "Lead",
+      meta: { count: r.count, status: statusValue, leadIds: ids.slice(0, 50) },
+      request: reqMeta(req),
+    });
+    return NextResponse.json({ ok: true, updated: r.count });
+  }
+
   if (action === "set_followup") {
     const dateStr = String(body.followupDate ?? "").trim();
     const followupDate = dateStr ? new Date(dateStr) : null;

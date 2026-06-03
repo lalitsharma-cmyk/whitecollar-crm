@@ -62,6 +62,15 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
   }
   // filterTab === "all" → no status filter added here (other filters still compose)
 
+  // Quick filter: ?filter=nofollowup → active leads with no follow-up date set.
+  // Helps agents and managers surface leads that have slipped through without
+  // a scheduled next-touch. Excludes WON/LOST since closed deals don't need
+  // follow-ups.
+  if (filterTab === "nofollowup") {
+    where.followupDate = null;
+    where.status = { notIn: [LeadStatus.WON, LeadStatus.LOST] };
+  }
+
   // Agents shouldn't see LOST leads they once owned in their default view —
   // rejected leads disappear from the agent's queue, but ADMIN/MANAGER keep
   // oversight via /admin/rejected-leads and the unfiltered list. An explicit
@@ -155,7 +164,9 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
   // ?followup=all. Other filters (search, source, owner, etc.) bypass this
   // default — if any non-followup filter is in the URL, treat as a targeted
   // search and show all matching, not just today's.
-  const hasOtherFilter = !!(sp.q || sp.source || sp.status || sp.owner || sp.team || sp.score || sp.notPicked || sp.eoi);
+  // nofollowup filter already sets followupDate: null, so the followup chip
+  // default (today) must not compose with it — include it as an "other filter".
+  const hasOtherFilter = !!(sp.q || sp.source || sp.status || sp.owner || sp.team || sp.score || sp.notPicked || sp.eoi || filterTab === "nofollowup");
   const effectiveFollowup = sp.followup ?? (hasOtherFilter ? "all" : "today");
 
   if (effectiveFollowup === "today") {
@@ -234,7 +245,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
   const monthWindow    = { gte: new Date(), lte: new Date(Date.now() + 30 * 24 * 3600 * 1000) };
   const activeScope    = { ...scope, status: { notIn: [LeadStatus.WON, LeadStatus.LOST] } };
 
-  const [leads, total, hot, newToday, totalAll, agents, followupToday, followupTomorrow, followupWeek, followupMonth, followupOverdue, allTagRows] = await Promise.all([
+  const [leads, total, hot, newToday, totalAll, agents, followupToday, followupTomorrow, followupWeek, followupMonth, followupOverdue, noFollowupCount, allTagRows] = await Promise.all([
     prisma.lead.findMany({
       where, orderBy, skip, take: PAGE_SIZE,
       // B-15: trim relations to rendered fields. Augmented with discussed projects (top 3) for Command Center row.
@@ -254,6 +265,8 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
     prisma.lead.count({ where: { ...activeScope, followupDate: weekWindow } }),
     prisma.lead.count({ where: { ...activeScope, followupDate: monthWindow } }),
     prisma.lead.count({ where: { ...activeScope, followupDate: { lt: new Date(), not: null } } }),
+    // Count active leads with no follow-up date set — drives the "No follow-up" chip badge.
+    prisma.lead.count({ where: { ...scope, followupDate: null, status: { notIn: [LeadStatus.WON, LeadStatus.LOST] } } }),
     // DISTINCT tag list — Lead.tags is a comma-separated string, so split it
     // server-side (Postgres) with string_to_array + unnest, trim each tag,
     // drop empties, and dedupe. Drives the tag-filter <select> below so we
@@ -477,6 +490,14 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
         >
           📵 Not picked 7+ days
         </Link>
+        {/* No follow-up set — surfaces active leads where no next-touch date
+            has been scheduled. Gives managers a quick scan of pipeline gaps. */}
+        <Link
+          href="/leads?filter=nofollowup"
+          className={`px-3 py-2 rounded-full text-xs font-semibold border min-h-11 inline-flex items-center gap-1 ${filterTab === "nofollowup" ? "bg-gray-700 text-white border-gray-700" : "bg-gray-50 border-gray-300 text-gray-700"}`}
+        >
+          📅 No follow-up {noFollowupCount > 0 && <span className={`px-1.5 rounded ${filterTab === "nofollowup" ? "bg-white/20" : "bg-gray-200/70"}`}>{noFollowupCount}</span>}
+        </Link>
       </div>
 
       {/* ─── PIPELINE FILTER TABS ────────────────────────────────────────
@@ -553,6 +574,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
       <LeadsListClient
         canBulk={canBulk}
         canReassign={canBulk}
+        canSetStatus={me.role === "ADMIN" || me.role === "MANAGER"}
         showSource={me.role !== "AGENT"}
         agents={agents.map((a) => ({ id: a.id, name: a.name, team: a.team }))}
         leads={leads.map((l) => {
