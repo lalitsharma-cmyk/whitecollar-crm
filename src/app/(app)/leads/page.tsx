@@ -338,7 +338,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
         const base = "px-3 py-2 rounded-full text-xs font-semibold border min-h-11 inline-flex items-center gap-1 flex-none whitespace-nowrap";
         const chip = (active: boolean, on: string, off: string) => `${base} ${active ? on : off}`;
         const neutral = { on: "bg-[#0b1a33] text-white border-[#0b1a33] dark:bg-blue-700 dark:border-blue-700", off: "bg-white dark:bg-slate-700 border-[#e5e7eb] dark:border-slate-600 text-gray-700 dark:text-slate-100 hover:bg-gray-50 dark:hover:bg-slate-600" };
-        const allActive = !sp.followup && !sp.ai && !sp.team && !sp.owner && !sp.smart && !sp.filter;
+        const allActive = !sp.followup && !sp.ai && !sp.team && !sp.owner && !sp.smart && !sp.filter && !sp.status;
         return (
           <div className="flex gap-2 overflow-x-auto pb-1 -mx-3 px-3 sm:mx-0 sm:px-0" style={{ scrollbarWidth: "thin" }}>
             <Link href="/leads" className={chip(allActive, neutral.on, neutral.off)}>All</Link>
@@ -362,6 +362,18 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
             >
               🔥 Hot
               {hot > 0 && <span className={`px-1 rounded text-[10px] ${sp.ai === "HOT" ? "bg-white/25" : "bg-orange-200/60 dark:bg-orange-800/60"}`}>{hot}</span>}
+            </Link>
+            <Link
+              href="/leads?status=SITE_VISIT"
+              className={chip(sp.status === "SITE_VISIT", "bg-teal-600 text-white border-teal-600", "bg-teal-50 border-teal-300 text-teal-800 dark:bg-teal-950/30 dark:border-teal-700 dark:text-teal-200")}
+            >
+              🏠 Site Visit
+            </Link>
+            <Link
+              href="/leads?status=NEGOTIATION"
+              className={chip(sp.status === "NEGOTIATION", "bg-indigo-600 text-white border-indigo-600", "bg-indigo-50 border-indigo-300 text-indigo-800 dark:bg-indigo-950/30 dark:border-indigo-700 dark:text-indigo-200")}
+            >
+              💼 Negotiation
             </Link>
             {me.role !== "AGENT" && (
               <>
