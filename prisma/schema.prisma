@@ -1222,3 +1222,104 @@ model AiUsageLog {
   @@index([createdAt])
   @@index([feature])
 }
+
+// ── Customer Intelligence System (pre-assignment check) ───────────────────
+// Master customer profile consolidating identity across all data sources.
+// Created/updated when a STRONG match is confirmed.
+model CustomerProfile {
+  id               String    @id @default(cuid())
+  name             String
+  primaryPhone     String?
+  secondaryPhone   String?
+  whatsappPhone    String?
+  email            String?
+  city             String?
+  company          String?
+  isInvestor       Boolean?
+  totalProperties  Int       @default(0)
+  totalTxValueAed  Int       @default(0)
+  previousProjects String    @default("[]") // JSON string[]
+  previousAgents   String    @default("[]") // JSON string[]
+  firstSeenAt      DateTime  @default(now())
+  lastInteractedAt DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  matches   IntelligenceMatch[]
+  portfolio PropertyPortfolio[]
+
+  @@index([primaryPhone])
+  @@index([email])
+  @@index([name])
+}
+
+enum MatchType {
+  STRONG
+  MEDIUM
+  WEAK
+  NONE
+}
+
+// One per Lead — pre-assignment intelligence check result.
+// Populated BEFORE round-robin / SLA / automation runs.
+// leadId is a loose string reference (no FK) — no cascades needed.
+model IntelligenceMatch {
+  id               String           @id @default(cuid())
+  leadId           String?          @unique
+  profileId        String?
+  profile          CustomerProfile? @relation(fields: [profileId], references: [id])
+
+  matchType            MatchType  @default(NONE)
+  confidence           Int        @default(0)    // 0–100
+  matchedBy            String     @default("[]") // JSON [{field,value,source,recordId}]
+  historyJson          String     @default("[]") // JSON full previous timeline
+  previousAgentName    String?
+  previousStatus       String?
+  lastContactAt        DateTime?
+  totalRecordsFound    Int        @default(0)
+  totalPropertiesFound Int        @default(0)
+
+  // Project-to-project comparison
+  projectMatch  String?  // "SAME_PROJECT" | "DIFFERENT_PROJECT" | "EXISTING_BUYER"
+  projectNote   String?
+
+  // AI summary (generated after match when AI enabled)
+  aiSummary        String?
+  suggestedApproach String?
+  aiCheckedAt      DateTime?
+
+  checkedAt DateTime @default(now())
+  createdAt DateTime @default(now())
+
+  @@index([profileId])
+}
+
+// Imported property buyer / investor records (Section 11 columns).
+// Phone-matched to CustomerProfile on import.
+model PropertyPortfolio {
+  id                  String           @id @default(cuid())
+  profileId           String?
+  profile             CustomerProfile? @relation(fields: [profileId], references: [id])
+
+  date                DateTime?
+  project             String
+  tower               String?
+  unit                String?
+  bedrooms            String?
+  transactionValueAed Int?
+  actualSizeSqft      Int?
+  ownerName           String
+  primaryPhone        String?
+  secondaryPhone      String?
+  agentName           String?
+  status              String?
+  followUpDate        DateTime?
+  remarks             String?
+  importSource        String?
+
+  createdAt DateTime @default(now())
+
+  @@index([primaryPhone])
+  @@index([ownerName])
+  @@index([project])
+}

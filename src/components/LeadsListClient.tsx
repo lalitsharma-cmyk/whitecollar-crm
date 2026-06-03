@@ -84,6 +84,7 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, a
   const [waSkipped, setWaSkipped] = useState<Array<{ leadId: string; name: string; reason: string }>>([]);
   const [bulkBusy, setBulkBusy] = useState(false);
   const [bulkErr, setBulkErr] = useState<string | null>(null);
+  const [bulkCrossTeamWarn, setBulkCrossTeamWarn] = useState<string | null>(null);
 
   function toggle(id: string) {
     setSelected((s) => {
@@ -158,7 +159,7 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, a
 
   async function applyBulkReassign() {
     if (!reassignPick || bulkBusy) return;
-    setBulkBusy(true); setBulkErr(null);
+    setBulkBusy(true); setBulkErr(null); setBulkCrossTeamWarn(null);
     try {
       const r = await fetch("/api/leads/bulk", {
         method: "POST",
@@ -167,6 +168,9 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, a
       });
       const j = await r.json().catch(() => ({}));
       if (!r.ok) { setBulkErr(j.error ?? `Failed (${r.status})`); return; }
+      if (j.crossTeamWarningMessage) {
+        setBulkCrossTeamWarn(j.crossTeamWarningMessage);
+      }
       clearSelection();
       router.refresh();
     } catch (e) {
@@ -467,6 +471,7 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, a
                   {agents.map(a => <option key={a.id} value={a.id}>{a.name} ({a.team ?? "—"})</option>)}
                 </select>
                 {bulkErr && <div className="text-[11px] text-red-600 mb-2">{bulkErr}</div>}
+                {bulkCrossTeamWarn && <div className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1 mb-2">⚠️ {bulkCrossTeamWarn}</div>}
                 <div className="flex justify-end gap-2">
                   <button onClick={() => setShowReassignPopover(false)} className="btn btn-ghost text-xs">Cancel</button>
                   <button

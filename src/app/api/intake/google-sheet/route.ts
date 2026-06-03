@@ -4,6 +4,10 @@ import { ingestLead } from "@/lib/leadIngest";
 import { LeadSource, Potential, FundReadiness, MoodStatus, InvestTimeline } from "@prisma/client";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { resolveTeam, routingFieldsFor } from "@/lib/teamRouting";
+// runIntelligenceCheck is called inside ingestLead() for every new (non-deduped)
+// lead. No explicit call needed here — the check fires sequentially before any
+// assignment or automation runs, satisfying the bulk-import constraint.
 
 // Accepts any Google Sheets URL the user pastes (edit URL, share URL, view URL).
 // Extracts the sheet ID and (optional) gid (per-tab), then fetches the public
@@ -181,7 +185,23 @@ export async function POST(req: NextRequest) {
       const fd = parseFund(pick(row, "fundreadiness", "fund")); if (fd) update.fundReadiness = fd;
       const md = parseMood(pick(row, "moodstatus", "mood")); if (md) update.moodStatus = md;
       const tl = parseTimeline(pick(row, "whencaninvest", "timeline")); if (tl) update.whenCanInvest = tl;
-      const tm = pick(row, "forwardedteam", "team"); if (tm) update.forwardedTeam = tm;
+      {
+        const rowTeamRaw = pick(row, "forwardedteam", "team") ?? null;
+        const teamResult = resolveTeam({
+          forceTeam: rowTeamRaw,
+          forceMethod: "import",
+          sourceDetail: campaign,
+          projectSlug: pick(row, "project"),
+          text: pick(row, "remarks", "message", "requirement"),
+        });
+        if (teamResult.team) {
+          update.forwardedTeam = teamResult.team;
+          const rf = routingFieldsFor(teamResult);
+          update.routingMethod = rf.routingMethod;
+          update.routingSource = rf.routingSource;
+          update.routingReason = rf.routingReason;
+        }
+      }
       // Currency inference
       const budgetHeader = Object.keys(row).find(k => /budget/i.test(k));
       if (budgetHeader) {

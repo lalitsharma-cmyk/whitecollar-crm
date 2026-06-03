@@ -8,6 +8,7 @@ import { ActivityType, ActivityStatus, LeadStatus } from "@prisma/client";
 import { audit, reqMeta } from "@/lib/audit";
 import { fireWorkflowTrigger } from "@/lib/workflowEngine";
 import { awardXp, type AwardResult } from "@/lib/gamification.server";
+import { runIntelligenceCheck } from "@/lib/intelligenceCheck";
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -49,6 +50,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   });
   // Workflow engine: fire any COLD_PROMOTED rules (e.g. auto-create welcome task)
   fireWorkflowTrigger("COLD_PROMOTED", id).catch(() => {});
+
+  // ── Re-run Customer Intelligence after cold promotion ──
+  // A cold-converted lead may now match differently (new phone data, active status).
+  // Best-effort: never blocks the promotion response.
+  runIntelligenceCheck(id).catch((err: unknown) => {
+    console.error("[intelligenceCheck] failed for promoted lead", id, err);
+  });
 
   // ── Gamification: cold-to-lead is a meaningful conversion, awarded here.
   let awarded: AwardResult | null = null;

@@ -14,6 +14,7 @@ export default function LeadBulkActions({ selectedIds, agents, onClear }: { sele
   const [emailTpls, setEmailTpls] = useState<EmailTpl[]>([]);
   const [emailTplId, setEmailTplId] = useState("");
   const [emailMsg, setEmailMsg] = useState<string | null>(null);
+  const [crossTeamWarn, setCrossTeamWarn] = useState<string | null>(null);
 
   // Lazy-load email templates when user opens the modal
   useEffect(() => {
@@ -41,13 +42,21 @@ export default function LeadBulkActions({ selectedIds, agents, onClear }: { sele
   async function bulkReassign() {
     if (!picked) return;
     setBusy(true);
+    setCrossTeamWarn(null);
     try {
       const r = await fetch("/api/leads/bulk", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "reassign", ids: selectedIds, userId: picked }),
       });
-      if (r.ok) { onClear(); router.refresh(); }
+      if (r.ok) {
+        const j = await r.json().catch(() => ({}));
+        if (j.crossTeamWarningMessage) {
+          setCrossTeamWarn(j.crossTeamWarningMessage);
+        }
+        onClear();
+        router.refresh();
+      }
     } finally { setBusy(false); }
   }
 
@@ -84,6 +93,11 @@ export default function LeadBulkActions({ selectedIds, agents, onClear }: { sele
 
   return (
     <>
+      {crossTeamWarn && (
+        <div className="fixed bottom-36 lg:bottom-24 left-1/2 -translate-x-1/2 z-50 bg-amber-50 border border-amber-300 text-amber-800 rounded-xl shadow-2xl px-4 py-3 text-xs max-w-sm text-center">
+          ⚠️ {crossTeamWarn}
+        </div>
+      )}
       <div className="fixed bottom-20 lg:bottom-6 left-1/2 -translate-x-1/2 z-40 bg-[#0b1a33] text-white rounded-xl shadow-2xl px-4 py-3 flex items-center gap-3 flex-wrap max-w-[95vw]">
         <div className="text-sm font-semibold">{selectedIds.length} selected</div>
         <div className="w-px h-6 bg-white/20" />

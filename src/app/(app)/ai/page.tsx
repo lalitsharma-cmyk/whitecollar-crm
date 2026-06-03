@@ -1,12 +1,12 @@
 import AIChat from "@/components/AIChat";
-import { aiEnabled } from "@/lib/ai";
+import { getAiEnabled } from "@/lib/settings";
 import { getRoundRobinEnabled } from "@/lib/settings";
 
 export const dynamic = "force-dynamic";
 
 export default async function Page() {
   const [enabled, roundRobinOn] = await Promise.all([
-    Promise.resolve(aiEnabled()),
+    getAiEnabled(),
     getRoundRobinEnabled(),
   ]);
   return (
@@ -16,6 +16,12 @@ export default async function Page() {
           <div className="flex items-center gap-2"><div className="font-semibold">CRM AI Assistant</div><span className="ai-tag">AI</span></div>
           <span className={`chip ${enabled ? "chip-won" : "chip-warm"}`}>{enabled ? "Live" : "Demo mode"}</span>
         </div>
+        {!enabled && (
+          <div className="mb-3 rounded-lg bg-amber-50 border border-amber-200 px-4 py-2.5 text-sm text-amber-800">
+            <b>AI disabled by admin.</b> The assistant runs in demo / rule-based mode — no AI provider calls are made. Enable AI from{" "}
+            <a href="/settings" className="underline font-medium">Settings → AI Features</a>.
+          </div>
+        )}
         <AIChat />
       </div>
       <div className="space-y-4">
@@ -25,7 +31,7 @@ export default async function Page() {
             <div className="p-2 rounded-lg bg-gray-50">📊 What changed in my pipeline this week?</div>
             <div className="p-2 rounded-lg bg-gray-50">🔥 List leads likely to close in 7 days</div>
             <div className="p-2 rounded-lg bg-gray-50">🧊 Find cold leads worth re-engaging</div>
-            <div className="p-2 rounded-lg bg-gray-50">📞 Who hasn't logged a call today?</div>
+            <div className="p-2 rounded-lg bg-gray-50">📞 Who hasn&apos;t logged a call today?</div>
             <div className="p-2 rounded-lg bg-gray-50">🏢 Compare Marina Bay vs Sobha Hartland performance</div>
             <div className="p-2 rounded-lg bg-gray-50">💡 Draft a WhatsApp template for NRI investors</div>
           </div>
@@ -33,7 +39,7 @@ export default async function Page() {
         {!enabled && (
           <div className="card p-5 bg-amber-50 border-amber-200">
             <div className="font-semibold mb-1">Turn on real AI</div>
-            <p className="text-xs text-gray-700">In <b>Vercel → Project → Settings → Environment Variables</b>, add <code>GEMINI_API_KEY</code> (free, from <a href="https://aistudio.google.com" target="_blank" rel="noopener noreferrer" className="underline">aistudio.google.com</a>) or <code>ANTHROPIC_API_KEY</code> (paid), then redeploy. Until then AI runs in demo / rule-based mode and the rest of the CRM works fully.</p>
+            <p className="text-xs text-gray-700">In <b>Settings → AI Features</b>, flip the AI toggle ON (admin only). Make sure <code>GEMINI_API_KEY</code> or <code>ANTHROPIC_API_KEY</code> is set in Vercel env vars. Consider running an <a href="/admin/ai-trial" className="underline text-blue-700">AI Trial</a> first to preview costs.</p>
           </div>
         )}
         <div className="card p-5">

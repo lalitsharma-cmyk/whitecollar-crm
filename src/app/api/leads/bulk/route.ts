@@ -5,6 +5,7 @@ import { assignLeadTo } from "@/lib/leadIngest";
 import { audit, reqMeta } from "@/lib/audit";
 import { leadScopeWhere } from "@/lib/leadScope";
 import { LeadStatus, ActivityType, ActivityStatus } from "@prisma/client";
+import { crossTeamWarning, normalizeTeam } from "@/lib/teamRouting";
 
 // Allow-list mirrors /api/leads/[id]/reject — keep these in sync.
 const REJECT_REASONS = new Set([
@@ -47,17 +48,34 @@ export async function POST(req: NextRequest) {
     // for ADMIN — scope is {} for admin so they get the full set).
     const visible = await prisma.lead.findMany({
       where: { id: { in: ids }, ...scope },
-      select: { id: true },
+      select: { id: true, forwardedTeam: true },
     });
     const visibleIds = visible.map(v => v.id);
     let done = 0;
-    for (const id of visibleIds) {
-      try { await assignLeadTo(id, userId, "bulk reassign"); done++; }
+    let crossTeamCount = 0;
+    for (const lead of visible) {
+      try {
+        // Write routingMethod = "manual" on the lead if not yet set.
+        if (!normalizeTeam(lead.forwardedTeam) || !lead.forwardedTeam) {
+          // No team yet — mark provenance as manual so it's traceable.
+          await prisma.lead.update({ where: { id: lead.id }, data: { routingMethod: "manual" } });
+        }
+        // Track cross-team warnings (soft — assignment still proceeds).
+        const w = crossTeamWarning(me.team, lead.forwardedTeam);
+        if (w) crossTeamCount++;
+        await assignLeadTo(lead.id, userId, "bulk reassign");
+        done++;
+      }
       catch {}
     }
     await audit({ userId: me.id, action: "lead.bulk.reassign", entity: "Lead",
-      meta: { count: done, toUserId: userId, leadIds: visibleIds.slice(0, 50) }, request: reqMeta(req) });
-    return NextResponse.json({ ok: true, reassigned: done, updated: done });
+      meta: { count: done, toUserId: userId, crossTeamWarnings: crossTeamCount, leadIds: visibleIds.slice(0, 50) }, request: reqMeta(req) });
+    return NextResponse.json({
+      ok: true,
+      reassigned: done,
+      updated: done,
+      ...(crossTeamCount > 0 ? { crossTeamWarnings: crossTeamCount, crossTeamWarningMessage: `${crossTeamCount} lead${crossTeamCount === 1 ? "" : "s"} were assigned across teams. Please confirm this was intentional.` } : {}),
+    });
   }
 
   if (action === "delete") {

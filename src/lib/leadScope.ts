@@ -2,9 +2,9 @@
 // that reads or mutates a single lead, and by list queries to scope results.
 //
 // Rules (with manager hierarchy):
-//   ADMIN              → see and act on every lead
-//   MANAGER            → see/act on own leads + every lead owned by a DIRECT REPORT
-//                        (recursive — also includes reports-of-reports)
+//   ADMIN              → see and act on every lead (no team filter)
+//   MANAGER            → see/act on leads whose forwardedTeam matches their team
+//                        (team-scoped: a Dubai manager ONLY sees Dubai leads)
 //   AGENT              → only leads they own (ownerId === me.id)
 //
 // Anything outside that scope is treated as not-found (404) rather than
@@ -14,8 +14,9 @@ import type { Role } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
+import { normalizeTeam } from "@/lib/teamRouting";
 
-export interface ScopedUser { id: string; role: Role; }
+export interface ScopedUser { id: string; role: Role; team?: string | null; }
 
 /**
  * Returns the set of user ids whose leads `me` is allowed to see.
@@ -40,20 +41,53 @@ export async function visibleOwnerIds(me: ScopedUser): Promise<string[] | null> 
   return rows.map(r => r.id);
 }
 
-/** Where-clause fragment to filter a lead list by ownership. */
-export async function leadScopeWhere(me: ScopedUser): Promise<{ ownerId?: { in: string[] } | string }> {
+/** Where-clause fragment to filter a lead list by ownership AND (for MANAGERs) by team.
+ *
+ * ADMIN:   no filter — sees all leads across both teams.
+ * MANAGER: team-scoped — ONLY sees leads whose forwardedTeam matches normalizeTeam(me.team).
+ *          This is STRICT: a Dubai manager cannot see India leads, even if the India agent
+ *          reports to them. Team comes from the LEAD's market, never from phone/geo.
+ * AGENT:   ownership-scoped — only leads they own (ownerId === me.id).
+ */
+export async function leadScopeWhere(
+  me: ScopedUser,
+): Promise<{ ownerId?: { in: string[] } | string; forwardedTeam?: string }> {
   const ids = await visibleOwnerIds(me);
-  if (ids === null) return {};
+  if (ids === null) {
+    // ADMIN — no restrictions at all
+    return {};
+  }
+  if (me.role === "MANAGER") {
+    // Team-scoped: only leads in the manager's team. If the manager has no
+    // team set, fall back to the owner-id walk (graceful degradation) so the
+    // manager still sees SOMETHING rather than an empty page.
+    const team = normalizeTeam(me.team ?? undefined);
+    if (team) {
+      return { forwardedTeam: team };
+    }
+    // Fallback: no team configured — use the old owner-id scope
+  }
+  // AGENT or MANAGER without a team configured
   if (ids.length === 1) return { ownerId: ids[0] };
   return { ownerId: { in: ids } };
 }
 
 /** True if the user is allowed to access this specific lead. */
-export async function canTouchLead(me: ScopedUser, lead: { ownerId: string | null }): Promise<boolean> {
+export async function canTouchLead(
+  me: ScopedUser,
+  lead: { ownerId: string | null; forwardedTeam?: string | null },
+): Promise<boolean> {
   if (me.role === "ADMIN") return true;
-  if (lead.ownerId === me.id) return true;
-  if (me.role === "AGENT") return false;
-  // MANAGER — check that the lead's owner is in their report tree
+  if (me.role === "AGENT") return lead.ownerId === me.id;
+  // MANAGER — team-scoped first (strict).
+  // If manager has a team, only leads in that team are visible.
+  const team = normalizeTeam(me.team ?? undefined);
+  if (team) {
+    const leadTeam = normalizeTeam(lead.forwardedTeam);
+    // Leads without a team are NOT visible to managers (awaiting classification).
+    return leadTeam === team;
+  }
+  // Manager has no team configured — fall back to owner-tree check.
   const ids = await visibleOwnerIds(me);
   return ids === null || (lead.ownerId !== null && ids.includes(lead.ownerId));
 }
@@ -64,13 +98,13 @@ export async function canTouchLead(me: ScopedUser, lead: { ownerId: string | nul
  * to be returned by the route on failure.
  */
 export async function loadOwnedLead(leadId: string): Promise<
-  | { me: Awaited<ReturnType<typeof requireUser>>; lead: { id: string; ownerId: string | null; phone: string | null; name: string }; error?: undefined }
+  | { me: Awaited<ReturnType<typeof requireUser>>; lead: { id: string; ownerId: string | null; phone: string | null; name: string; forwardedTeam: string | null }; error?: undefined }
   | { error: NextResponse; me?: undefined; lead?: undefined }
 > {
   const me = await requireUser();
   const lead = await prisma.lead.findUnique({
     where: { id: leadId },
-    select: { id: true, ownerId: true, phone: true, name: true },
+    select: { id: true, ownerId: true, phone: true, name: true, forwardedTeam: true },
   });
   if (!lead) return { error: NextResponse.json({ error: "Lead not found" }, { status: 404 }) };
   if (!(await canTouchLead(me, lead))) {

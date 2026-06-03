@@ -3,6 +3,7 @@ import { notify, notifyRoles } from "@/lib/notify";
 import { LeadStatus } from "@prisma/client";
 import { chooseOwnerForNewLead } from "@/lib/assignmentWindow";
 import { getRoundRobinEnabled, getTestingModeEnabled } from "@/lib/settings";
+import { automationGate } from "@/lib/teamRouting";
 
 // The reconciler runs on every dashboard/leads page load (cheap, deduped).
 // It enforces two SLAs without needing a separate cron service:
@@ -64,6 +65,10 @@ export async function runReconciler(): Promise<ReconcileResult> {
   }) : [];
 
   for (const lead of orphans) {
+    // Mandatory pre-automation gate: block unclassified leads and respect testing mode.
+    const gate = automationGate(lead.forwardedTeam, testingMode);
+    if (!gate.ok) continue;
+
     const team = lead.forwardedTeam ?? null;
     // Use time-window-aware chooser: 10am-7pm round-robin among present,
     // 7-10pm → Lalit, 10pm-10am → null (skip, keep in admin's morning queue).
@@ -123,6 +128,10 @@ export async function runReconciler(): Promise<ReconcileResult> {
   });
 
   for (const lead of overdue) {
+    // Mandatory pre-automation gate: block unclassified leads and respect testing mode.
+    const gate = automationGate(lead.forwardedTeam, testingMode);
+    if (!gate.ok) continue;
+
     if (lead.callLogs.length > 0) {
       // Agent already called — just clear the flag
       await prisma.lead.update({ where: { id: lead.id }, data: { slaEscalated: true } });
@@ -166,6 +175,10 @@ export async function runReconciler(): Promise<ReconcileResult> {
   });
   let flagged = 0;
   for (const lead of closingLeads) {
+    // Mandatory pre-automation gate: block unclassified leads and respect testing mode.
+    const gate = automationGate(lead.forwardedTeam, testingMode);
+    if (!gate.ok) continue;
+
     let reason = "";
     if (lead.lastTouchedAt && lead.lastTouchedAt < new Date(Date.now() - 24 * 3600 * 1000)) {
       reason = `${lead.status} stage idle >24h — manager push may close`;

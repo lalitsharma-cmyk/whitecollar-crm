@@ -4,6 +4,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/auth";
 import { audit, reqMeta } from "@/lib/audit";
+import { crossTeamWarning } from "@/lib/teamRouting";
 
 export async function POST(req: NextRequest) {
   const me = await requireRole("ADMIN", "MANAGER");
@@ -27,7 +28,7 @@ export async function POST(req: NextRequest) {
     },
     orderBy: { createdAt: "asc" },
     take: count,
-    select: { id: true },
+    select: { id: true, forwardedTeam: true },
   });
 
   if (candidates.length === 0) {
@@ -35,9 +36,17 @@ export async function POST(req: NextRequest) {
   }
 
   const ids = candidates.map((c) => c.id);
+
+  // Count cross-team warnings (soft — assignment still proceeds).
+  let crossTeamCount = 0;
+  for (const lead of candidates) {
+    const w = crossTeamWarning(target.team, lead.forwardedTeam);
+    if (w) crossTeamCount++;
+  }
+
   await prisma.lead.updateMany({
     where: { id: { in: ids } },
-    data: { ownerId: userId, assignedAt: new Date() },
+    data: { ownerId: userId, assignedAt: new Date(), routingMethod: "manual" },
   });
   // Record an Assignment row per lead so the history page reflects this
   await prisma.assignment.createMany({
@@ -45,8 +54,12 @@ export async function POST(req: NextRequest) {
   });
   await audit({
     userId: me.id, action: "cold.bulk-assign", entity: "Lead",
-    meta: { assignedTo: userId, count: ids.length, leadIds: ids.slice(0, 50) },
+    meta: { assignedTo: userId, count: ids.length, crossTeamWarnings: crossTeamCount, leadIds: ids.slice(0, 50) },
     request: reqMeta(req),
   });
-  return NextResponse.json({ ok: true, assigned: ids.length });
+  return NextResponse.json({
+    ok: true,
+    assigned: ids.length,
+    ...(crossTeamCount > 0 ? { crossTeamWarnings: crossTeamCount, crossTeamWarningMessage: `${crossTeamCount} lead${crossTeamCount === 1 ? "" : "s"} were assigned across teams. Please confirm this was intentional.` } : {}),
+  });
 }

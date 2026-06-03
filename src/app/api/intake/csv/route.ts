@@ -8,6 +8,10 @@ import { prisma } from "@/lib/prisma";
 import { parseRemarks } from "@/lib/remarkParser";
 import { extractFromRemarks, mergeSuggestions } from "@/lib/remarkAutofill";
 import { splitPhones } from "@/lib/phone";
+import { resolveTeam, routingFieldsFor } from "@/lib/teamRouting";
+// runIntelligenceCheck is called inside ingestLead() for every new (non-deduped)
+// lead. No explicit call needed here — the check fires sequentially, one per row,
+// before any assignment or automation runs, satisfying the bulk-import constraint.
 
 // Map the MIS "Categorization" / "Status" column to the CRM's AIScore bucket.
 // Lalit's policy: when the agent has already written something like "Highly
@@ -318,13 +322,25 @@ export async function POST(req: NextRequest) {
       // Team: admin-picked override wins over per-row column. Lalit's testing
       // sheets had rows split across India + Dubai despite all being one team's
       // pipeline — forceTeam fixes that at import time.
-      if (forceTeam) {
-        update.forwardedTeam = forceTeam;
-        // Currency follows team automatically (AED for Dubai, INR for India)
-        if (!update.budgetCurrency) update.budgetCurrency = forceTeam === "Dubai" ? "AED" : "INR";
-      } else {
-        const team = pick(row, "forwardedteam", "team");
-        if (team) update.forwardedTeam = team;
+      // Always run through resolveTeam so routing provenance columns are set.
+      {
+        const rowTeamRaw = forceTeam ?? pick(row, "forwardedteam", "team") ?? null;
+        const teamResult = resolveTeam({
+          forceTeam: rowTeamRaw,
+          forceMethod: "import",
+          sourceDetail: (update.sourceDetail as string | undefined) ?? undefined,
+          projectSlug: pick(row, "project"),
+          text: pick(row, "remarks", "remark"),
+        });
+        if (teamResult.team) {
+          update.forwardedTeam = teamResult.team;
+          const rf = routingFieldsFor(teamResult);
+          update.routingMethod = rf.routingMethod;
+          update.routingSource = rf.routingSource;
+          update.routingReason = rf.routingReason;
+          // Currency follows team automatically (AED for Dubai, INR for India)
+          if (!update.budgetCurrency) update.budgetCurrency = teamResult.team === "Dubai" ? "AED" : "INR";
+        }
       }
       // AI score from the MIS "Categorization" / "Status" column — sheet writes win
       // over the AI rule-engine. "Highly Responsive – picks calls regularly" → HOT,

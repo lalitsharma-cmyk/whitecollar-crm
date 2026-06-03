@@ -20,17 +20,25 @@ interface Props {
 export default function LeadReassignClient({ leadId, currentOwnerId, agents }: Props) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
+  const [crossTeamWarn, setCrossTeamWarn] = useState<string | null>(null);
 
   async function onReassign(userId: string) {
     if (!userId || userId === currentOwnerId) return;
     setBusy(true);
+    setCrossTeamWarn(null);
     try {
       const r = await fetch(`/api/leads/${leadId}/assign`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ userId }),
       });
-      if (r.ok) router.refresh();
+      if (r.ok) {
+        const j = await r.json().catch(() => ({}));
+        if (j.crossTeamWarning) {
+          setCrossTeamWarn(j.crossTeamWarning);
+        }
+        router.refresh();
+      }
     } finally { setBusy(false); }
   }
 
@@ -53,6 +61,11 @@ export default function LeadReassignClient({ leadId, currentOwnerId, agents }: P
         ))}
       </select>
       {busy && <div className="text-xs text-gray-500 mt-1">Reassigning…</div>}
+      {crossTeamWarn && (
+        <div className="mt-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+          ⚠️ {crossTeamWarn}
+        </div>
+      )}
     </div>
   );
 }

@@ -21,6 +21,7 @@ export default function ColdDataAdminControls({ agents }: { agents: Agent[] }) {
   const [assignTo, setAssignTo] = useState<string>(agents[0]?.id ?? "");
   const [assignTeam, setAssignTeam] = useState<"" | "Dubai" | "India">("");
   const [assignCount, setAssignCount] = useState(20);
+  const [crossTeamWarn, setCrossTeamWarn] = useState<string | null>(null);
 
   async function doImport() {
     if (!file || busy) return;
@@ -40,7 +41,7 @@ export default function ColdDataAdminControls({ agents }: { agents: Agent[] }) {
 
   async function doBulkAssign() {
     if (!assignTo || busy) return;
-    setBusy(true); setMsg(null);
+    setBusy(true); setMsg(null); setCrossTeamWarn(null);
     try {
       const r = await fetch("/api/cold-data/bulk-assign", {
         method: "POST",
@@ -50,6 +51,9 @@ export default function ColdDataAdminControls({ agents }: { agents: Agent[] }) {
       const j = await r.json();
       if (!r.ok) { setMsg(j.error ?? "Assign failed"); return; }
       setMsg(`✓ Assigned ${j.assigned} cold-data rows to ${agents.find(a => a.id === assignTo)?.name}.`);
+      if (j.crossTeamWarningMessage) {
+        setCrossTeamWarn(j.crossTeamWarningMessage);
+      }
       router.refresh();
     } finally { setBusy(false); }
   }
@@ -59,6 +63,7 @@ export default function ColdDataAdminControls({ agents }: { agents: Agent[] }) {
       <button onClick={() => setShowImport(true)} className="btn btn-ghost text-xs"><Upload className="w-3 h-3" /> Import cold data</button>
       <button onClick={() => setShowAssign(true)} className="btn btn-primary text-xs"><Users className="w-3 h-3" /> Assign to agent</button>
       {msg && <div className={`text-[11px] mt-2 w-full ${msg.startsWith("✓") ? "text-emerald-700" : "text-red-700"}`}>{msg}</div>}
+      {crossTeamWarn && <div className="text-[11px] mt-1 w-full text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1">⚠️ {crossTeamWarn}</div>}
 
       {/* Import modal */}
       {showImport && (

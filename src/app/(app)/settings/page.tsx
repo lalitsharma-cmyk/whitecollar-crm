@@ -1,7 +1,7 @@
 import { createHmac } from "node:crypto";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { getTravelRatePerKmInr, getSpeedToLeadEnabled, getRoundRobinEnabled, getTestingModeEnabled, getMotivationPilotEnabled, getMotivationPilotTeam, getBantGateMode } from "@/lib/settings";
+import { getTravelRatePerKmInr, getSpeedToLeadEnabled, getRoundRobinEnabled, getTestingModeEnabled, getMotivationPilotEnabled, getMotivationPilotTeam, getBantGateMode, getAiEnabled, getAiTrialModeEnabled } from "@/lib/settings";
 import TravelRateEditor from "@/components/TravelRateEditor";
 import SpeedToLeadToggle from "@/components/SpeedToLeadToggle";
 import RoundRobinToggle from "@/components/RoundRobinToggle";
@@ -11,6 +11,7 @@ import MotivationPilotToggle from "@/components/MotivationPilotToggle";
 import FestivalAdminPanel from "@/components/FestivalAdminPanel";
 import TestPushButton from "@/components/TestPushButton";
 import NotifPrefsEditor from "@/components/NotifPrefsEditor";
+import AiEnabledToggle from "@/components/AiEnabledToggle";
 
 // Parse User.notifPrefs (JSON-stringified `{ kind: boolean }` map). Bad JSON or
 // non-object payloads fall back to {} so the editor seeds every toggle ON.
@@ -44,7 +45,7 @@ function buildIcsUrl(userId: string): string {
 
 export default async function SettingsPage() {
   const me = await requireUser();
-  const [travelRate, speedToLeadOn, roundRobinOn, testingModeOn, motivationPilotOn, motivationPilotTeam, bantGateMode, pushSubCount] = await Promise.all([
+  const [travelRate, speedToLeadOn, roundRobinOn, testingModeOn, motivationPilotOn, motivationPilotTeam, bantGateMode, pushSubCount, aiEnabledOn, aiTrialModeOn] = await Promise.all([
     getTravelRatePerKmInr(),
     getSpeedToLeadEnabled(),
     getRoundRobinEnabled(),
@@ -53,6 +54,8 @@ export default async function SettingsPage() {
     getMotivationPilotTeam(),
     getBantGateMode(),
     prisma.pushSubscription.count({ where: { userId: me.id } }),
+    getAiEnabled(),
+    getAiTrialModeEnabled(),
   ]);
   const isAdmin = me.role === "ADMIN";
   const icsUrl = buildIcsUrl(me.id);
@@ -286,6 +289,50 @@ export default async function SettingsPage() {
           }}
         />
       </div>
+
+      {/* ── AI kill-switches — admin only ─────────────────────────────────── */}
+      {isAdmin && (
+        <div className={`card p-5 max-w-2xl border-l-4 ${aiEnabledOn ? "border-blue-500" : "border-gray-300"}`}>
+          <div className="font-semibold flex items-center gap-2 text-base">🤖 AI Features</div>
+          <p className="text-xs text-gray-600 mt-1">
+            When <b>OFF</b>, no AI scoring, summaries, or automated AI runs. Existing AI outputs are preserved.
+            Turn <b>ON</b> only after reviewing the trial results and confirming costs are acceptable.
+          </p>
+          <p className="text-xs text-gray-500 mt-1">
+            Use <a href="/admin/ai-trial" className="underline text-blue-700">Admin → AI Trial</a> to run a bounded cost-preview before enabling globally.
+          </p>
+          <AiEnabledToggle
+            initialAiEnabled={aiEnabledOn}
+            initialTrialModeEnabled={aiTrialModeOn}
+            canEdit={isAdmin}
+          />
+        </div>
+      )}
+
+      {isAdmin && (
+        <div className={`card p-5 max-w-2xl border-l-4 ${aiTrialModeOn ? "border-blue-400 bg-blue-50" : "border-gray-300"}`}>
+          <div className="font-semibold flex items-center gap-2 text-base">🧪 AI Trial Mode</div>
+          <p className="text-xs text-gray-600 mt-1">
+            Allows running a bounded trial on a small sample even while global AI is <b>OFF</b>.
+            Turn <b>ON</b> only when starting a trial from the{" "}
+            <a href="/admin/ai-trial" className="underline text-blue-700">AI Trial admin page</a>.
+            The trial engine checks this gate; normal agent flows are not affected.
+          </p>
+          <div className="mt-2 text-xs text-gray-500">
+            Current state:{" "}
+            <span className={`font-semibold ${aiTrialModeOn ? "text-blue-700" : "text-gray-500"}`}>
+              {aiTrialModeOn ? "Trial Mode ON" : "Trial Mode OFF"}
+            </span>
+            {" — "}
+            <span className={`font-semibold ${aiEnabledOn ? "text-emerald-700" : "text-gray-500"}`}>
+              Global AI {aiEnabledOn ? "ON" : "OFF"}
+            </span>
+          </div>
+          <p className="text-[11px] text-gray-400 mt-1">
+            The toggle above (AI Features section) controls both switches together.
+          </p>
+        </div>
+      )}
 
       {/* Read-only info cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">

@@ -45,6 +45,7 @@ import { formatBudget } from "@/lib/budgetParse";
 import LinkedContactsCard from "@/components/LinkedContactsCard";
 import InvestorBanner from "@/components/InvestorBanner";
 import ClientTypeSelect from "@/components/ClientTypeSelect";
+import CustomerIntelligenceCard from "@/components/CustomerIntelligenceCard";
 
 export const dynamic = "force-dynamic";
 
@@ -546,6 +547,18 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
           </div>
         </div>
 
+        {/* ⭐ CUSTOMER INTELLIGENCE — pre-assignment match result. Agents must
+            see this BEFORE calling so they know if it's a returning contact,
+            previous investor, or someone who's been through our funnel before.
+            Fetches /api/leads/[id]/intelligence on mount (client component). */}
+        <div data-lead-section="overview">
+          <CustomerIntelligenceCard
+            leadId={lead.id}
+            leadName={lead.name}
+            currentRole={me.role}
+          />
+        </div>
+
         {/* ⭐ NEXT BEST ACTION — single most important card on the page.
             Pure rules-based recommendation derived from status, eoiStage,
             siteVisitDate, last call outcome, and lastTouchedAt. Renders first
@@ -702,6 +715,45 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
             ... rest unchanged
       */}
       <div className="space-y-4">
+        {/* ── Routing info panel (small, read-only) ──
+            Shows the team classification provenance so managers/admins can
+            audit how this lead ended up on the current team. Visible to all
+            roles (agents can see their own lead's team). Not editable here —
+            use the admin queue / intake form to reassign team. */}
+        <div data-lead-section="admin" className="card p-4 space-y-1.5">
+          <div className="text-[10px] uppercase tracking-widest text-gray-400 font-semibold mb-2">Team Routing</div>
+          <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs">
+            <span className="text-gray-500 font-medium">Team</span>
+            <span className={lead.forwardedTeam
+              ? (lead.forwardedTeam === "India" ? "font-semibold text-emerald-700" : "font-semibold text-sky-700")
+              : "text-amber-600 italic"
+            }>
+              {lead.forwardedTeam ?? "Awaiting team"}
+            </span>
+            {lead.routingMethod && (
+              <>
+                <span className="text-gray-500 font-medium">Method</span>
+                <span className="text-gray-700">{lead.routingMethod.replace(/_/g, " ")}</span>
+              </>
+            )}
+            {lead.routingSource && (
+              <>
+                <span className="text-gray-500 font-medium">Source</span>
+                <span className="text-gray-700">{lead.routingSource}</span>
+              </>
+            )}
+            {lead.routingReason && (
+              <>
+                <span className="text-gray-500 font-medium">Reason</span>
+                <span className="text-gray-700">{lead.routingReason}</span>
+              </>
+            )}
+            {!lead.routingMethod && !lead.routingSource && !lead.routingReason && (
+              <span className="col-span-2 text-gray-400 italic text-[11px]">No routing metadata recorded</span>
+            )}
+          </div>
+        </div>
+
         {/* 📌 Sticky note — pinned (position:sticky) at the top of the right
             rail. Private per agent (StickyNote model, unique on leadId+userId).
             Auto-saves on blur. Lalit's ask: "give every agent a private

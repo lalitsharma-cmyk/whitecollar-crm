@@ -12,6 +12,8 @@ import { getTestingModeEnabled } from "@/lib/settings";
 import { notifyHotLead } from "@/lib/push";
 import { findMatchingLeads, summariseHistory, projectsFromInterestedUnits } from "@/lib/investorMatch";
 import { audit } from "@/lib/audit";
+import { resolveTeam, routingFieldsFor } from "@/lib/teamRouting";
+import { runIntelligenceCheck } from "@/lib/intelligenceCheck";
 
 export interface RawLeadInput {
   name: string;
@@ -21,6 +23,10 @@ export interface RawLeadInput {
   country?: string;
   source: LeadSource;
   sourceDetail?: string;
+  /** Inquired project slug/name — fed into resolveTeam for market keyword matching. */
+  projectSlug?: string;
+  /** Landing / referrer URL — fed into resolveTeam for market keyword matching. */
+  url?: string;
   configuration?: string;
   budgetMin?: number;
   budgetMax?: number;
@@ -124,11 +130,21 @@ export async function ingestLead(input: RawLeadInput) {
 
   // ── New lead path ── (no immediate auto-assign — Admin gets 5 min)
   const currency = defaultCurrencyForLocation(input.city, input.country);
-  // Lalit clarification 2026-06: a lead's TEAM is an internal label, not
-  // derived from currency or phone country. Leave untagged when not given —
-  // Admin will assign it. The downstream `notifyRoles` message handles a null
-  // team (no auto-route mention).
-  const team = input.team ?? null;
+
+  // ── Team routing (Lead Routing Architecture) ──────────────────────────
+  // Priority: explicit input.team > market keywords > null (awaiting-team).
+  // HARD RULE: NEVER use phone/country/city to infer team — see teamRouting.ts.
+  const routingResult = input.team
+    ? resolveTeam({ forceTeam: input.team, forceMethod: "manual" })
+    : resolveTeam({
+        source: input.source,
+        sourceDetail: input.sourceDetail,
+        projectSlug: input.projectSlug,
+        url: input.url,
+        text: input.notesShort,
+      });
+  const team = routingResult.team;  // null = awaiting-team, correct
+  const routingFields = routingFieldsFor(routingResult);
 
   // Default follow-up = TODAY at 7:00pm IST (close of business). Lalit's ask:
   // "Any new lead received today should automatically have today's followup
@@ -162,6 +178,10 @@ export async function ingestLead(input: RawLeadInput) {
       budgetMax: input.budgetMax,
       budgetCurrency: currency,
       forwardedTeam: team,
+      // Routing provenance — set at intake so every lead has a full audit trail
+      routingMethod: routingFields.routingMethod,
+      routingSource: routingFields.routingSource,
+      routingReason: routingFields.routingReason,
       notesShort: input.notesShort,
       tags: input.tags,
       fingerprint: fp,
@@ -179,6 +199,15 @@ export async function ingestLead(input: RawLeadInput) {
       completedAt: new Date(),
     },
   });
+
+  // ── Customer Intelligence pre-assignment check ──
+  // MUST complete before any round-robin / assignment / SLA step fires.
+  // Best-effort: a failure here NEVER blocks lead creation.
+  try {
+    await runIntelligenceCheck(lead.id);
+  } catch (err) {
+    console.error("[intelligenceCheck] failed for lead", lead.id, err);
+  }
 
   // ── Heuristic clientType auto-tag (Lalit ask 2026-06-02) ──
   // Mirrors the back-fill SQL in 20260602b_add_client_type/migration.sql so

@@ -15,6 +15,7 @@ import { requireRole } from "@/lib/auth";
 import { chooseOwnerForNewLead } from "@/lib/assignmentWindow";
 import { assignLeadTo } from "@/lib/leadIngest";
 import { audit, reqMeta } from "@/lib/audit";
+import { resolveTeam, routingFieldsFor } from "@/lib/teamRouting";
 
 const TEAMS = ["Dubai", "India"] as const;
 type Team = (typeof TEAMS)[number];
@@ -32,9 +33,16 @@ export async function POST(req: NextRequest) {
   const lead = await prisma.lead.findUnique({ where: { id: leadId } });
   if (!lead) return NextResponse.json({ error: "Lead not found" }, { status: 404 });
 
+  // Resolve routing provenance via teamRouting — uses admin_queue method since
+  // this is explicitly a human pulling a lead out of the awaiting-team queue.
+  const routing = resolveTeam({ forceTeam: team, forceMethod: "admin_queue" });
+
   await prisma.lead.update({
     where: { id: leadId },
-    data: { forwardedTeam: team },
+    data: {
+      forwardedTeam: team,
+      ...routingFieldsFor(routing),
+    },
   });
 
   // Try to round-robin immediately so the agent gets pinged now rather than

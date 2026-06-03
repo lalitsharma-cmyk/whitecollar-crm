@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { LeadStatus, CallOutcome } from "@prisma/client";
+import { LeadStatus, CallOutcome, Prisma } from "@prisma/client";
 import { startOfDay } from "date-fns";
 import SourceBarChart from "@/components/charts/SourceBarChart";
 import ConnectRateChart from "@/components/charts/ConnectRateChart";
@@ -8,6 +8,7 @@ import { requireUser } from "@/lib/auth";
 import { projectWhereForUser } from "@/lib/propertyScope";
 import { fmtMoneyDual } from "@/lib/money";
 import Link from "next/link";
+import { normalizeTeam } from "@/lib/teamRouting";
 
 export const dynamic = "force-dynamic";
 
@@ -32,10 +33,36 @@ const FORECAST_WEIGHTS: Record<string, number> = {
 // once the pipeline grows past ~200 active leads.
 const STALLED_DAYS = 7;
 
-export default async function ReportsPage() {
+export default async function ReportsPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const me = await requireUser();
+  const sp = await searchParams;
   const isAdmin = me.role === "ADMIN";
+  const isAdminOrMgr = me.role === "ADMIN" || me.role === "MANAGER";
   const today = startOfDay(new Date());
+
+  // ── Team filter ────────────────────────────────────────────────────────
+  // ADMIN:   All | India | Dubai selector, default All (no forced constraint).
+  // MANAGER: Pre-selected to their team, selector rendered but locked (greyed out).
+  //          A manager can only see their own team's data — ?team= param is
+  //          overridden if it doesn't match their team.
+  // AGENT:   No selector shown; data is not team-filtered (own leads only via
+  //          the existing scopes).
+  const resolvedTeam: "India" | "Dubai" | "all" = (() => {
+    if (me.role === "MANAGER") {
+      // STRICT: managers always see their own team regardless of URL param.
+      return normalizeTeam(me.team) ?? "all";
+    }
+    if (me.role === "ADMIN") {
+      const p = sp.team;
+      if (p === "India" || p === "Dubai") return p;
+      return "all";
+    }
+    // AGENT — no team filter on the reports page (own data only via scopes below)
+    return "all";
+  })();
+
+  const teamScope: Prisma.LeadWhereInput =
+    resolvedTeam === "all" ? {} : { forwardedTeam: resolvedTeam };
 
   // §9.12 Best-time-to-call heatmap — role-scoped raw query.
   // We pass userId as a Prisma parameter rather than string-interpolating
@@ -49,7 +76,7 @@ export default async function ReportsPage() {
     bySource, callsByDay, funnel, topProjects,
     activeLeadsForForecast, stalledRaw, heatmapRaw,
   ] = await Promise.all([
-    prisma.lead.groupBy({ by: ["source"], _count: { _all: true }, where: { createdAt: { gte: today } } }),
+    prisma.lead.groupBy({ by: ["source"], _count: { _all: true }, where: { ...teamScope, createdAt: { gte: today } } }),
 
     prisma.$queryRaw<Array<{ d: string; total: number; connected: number }>>`
       SELECT to_char("startedAt"::date, 'YYYY-MM-DD') as d,
@@ -58,12 +85,12 @@ export default async function ReportsPage() {
       FROM "CallLog" WHERE "startedAt" >= (CURRENT_DATE - INTERVAL '13 days') GROUP BY "startedAt"::date ORDER BY "startedAt"::date ASC`,
 
     Promise.all([
-      prisma.lead.count(),
-      prisma.lead.count({ where: { status: { not: LeadStatus.NEW } } }),
-      prisma.lead.count({ where: { status: { in: [LeadStatus.QUALIFIED, LeadStatus.SITE_VISIT, LeadStatus.NEGOTIATION, LeadStatus.BOOKING_DONE, LeadStatus.WON] } } }),
-      prisma.lead.count({ where: { status: { in: [LeadStatus.SITE_VISIT, LeadStatus.NEGOTIATION, LeadStatus.BOOKING_DONE, LeadStatus.WON] } } }),
-      prisma.lead.count({ where: { status: { in: [LeadStatus.NEGOTIATION, LeadStatus.BOOKING_DONE, LeadStatus.WON] } } }),
-      prisma.lead.count({ where: { status: { in: [LeadStatus.WON, LeadStatus.BOOKING_DONE] } } }),
+      prisma.lead.count({ where: teamScope }),
+      prisma.lead.count({ where: { ...teamScope, status: { not: LeadStatus.NEW } } }),
+      prisma.lead.count({ where: { ...teamScope, status: { in: [LeadStatus.QUALIFIED, LeadStatus.SITE_VISIT, LeadStatus.NEGOTIATION, LeadStatus.BOOKING_DONE, LeadStatus.WON] } } }),
+      prisma.lead.count({ where: { ...teamScope, status: { in: [LeadStatus.SITE_VISIT, LeadStatus.NEGOTIATION, LeadStatus.BOOKING_DONE, LeadStatus.WON] } } }),
+      prisma.lead.count({ where: { ...teamScope, status: { in: [LeadStatus.NEGOTIATION, LeadStatus.BOOKING_DONE, LeadStatus.WON] } } }),
+      prisma.lead.count({ where: { ...teamScope, status: { in: [LeadStatus.WON, LeadStatus.BOOKING_DONE] } } }),
     ]),
 
     prisma.project.findMany({
@@ -76,7 +103,7 @@ export default async function ReportsPage() {
     // Pull only the fields we need; budgetMin can be null for un-qualified
     // leads, those contribute 0 to the forecast.
     prisma.lead.findMany({
-      where: { status: { in: [LeadStatus.NEW, LeadStatus.CONTACTED, LeadStatus.QUALIFIED, LeadStatus.SITE_VISIT, LeadStatus.NEGOTIATION] } },
+      where: { ...teamScope, status: { in: [LeadStatus.NEW, LeadStatus.CONTACTED, LeadStatus.QUALIFIED, LeadStatus.SITE_VISIT, LeadStatus.NEGOTIATION] } },
       select: { status: true, budgetMin: true, budgetCurrency: true },
     }),
 
@@ -90,23 +117,43 @@ export default async function ReportsPage() {
     // can multiply against INTERVAL '1 day'. We can't `${}`-interpolate
     // inside an `INTERVAL 'N days'` string literal — Prisma's $queryRaw
     // would turn it into a placeholder inside quotes which is invalid SQL.
-    prisma.$queryRaw<Array<{ id: string; status: string; budget_min: number | null; currency: string | null; entered_at: Date }>>`
-      WITH latest_change AS (
-        SELECT DISTINCT ON ("leadId") "leadId", "createdAt"
-        FROM "Activity"
-        WHERE "type" = 'STATUS_CHANGE'
-        ORDER BY "leadId", "createdAt" DESC
-      )
-      SELECT l."id" as id,
-             l."status"::text as status,
-             l."budgetMin" as budget_min,
-             l."budgetCurrency" as currency,
-             COALESCE(lc."createdAt", l."createdAt") as entered_at
-      FROM "Lead" l
-      LEFT JOIN latest_change lc ON lc."leadId" = l."id"
-      WHERE l."status" IN ('QUALIFIED','SITE_VISIT','NEGOTIATION')
-        AND COALESCE(lc."createdAt", l."createdAt") < NOW() - (${STALLED_DAYS} * INTERVAL '1 day')
-    `,
+    // teamFilter is null when we want all teams, or the team string for scoped queries.
+    (resolvedTeam === "all"
+      ? prisma.$queryRaw<Array<{ id: string; status: string; budget_min: number | null; currency: string | null; entered_at: Date }>>`
+          WITH latest_change AS (
+            SELECT DISTINCT ON ("leadId") "leadId", "createdAt"
+            FROM "Activity"
+            WHERE "type" = 'STATUS_CHANGE'
+            ORDER BY "leadId", "createdAt" DESC
+          )
+          SELECT l."id" as id,
+                 l."status"::text as status,
+                 l."budgetMin" as budget_min,
+                 l."budgetCurrency" as currency,
+                 COALESCE(lc."createdAt", l."createdAt") as entered_at
+          FROM "Lead" l
+          LEFT JOIN latest_change lc ON lc."leadId" = l."id"
+          WHERE l."status" IN ('QUALIFIED','SITE_VISIT','NEGOTIATION')
+            AND COALESCE(lc."createdAt", l."createdAt") < NOW() - (${STALLED_DAYS} * INTERVAL '1 day')
+        `
+      : prisma.$queryRaw<Array<{ id: string; status: string; budget_min: number | null; currency: string | null; entered_at: Date }>>`
+          WITH latest_change AS (
+            SELECT DISTINCT ON ("leadId") "leadId", "createdAt"
+            FROM "Activity"
+            WHERE "type" = 'STATUS_CHANGE'
+            ORDER BY "leadId", "createdAt" DESC
+          )
+          SELECT l."id" as id,
+                 l."status"::text as status,
+                 l."budgetMin" as budget_min,
+                 l."budgetCurrency" as currency,
+                 COALESCE(lc."createdAt", l."createdAt") as entered_at
+          FROM "Lead" l
+          LEFT JOIN latest_change lc ON lc."leadId" = l."id"
+          WHERE l."status" IN ('QUALIFIED','SITE_VISIT','NEGOTIATION')
+            AND l."forwardedTeam" = ${resolvedTeam}
+            AND COALESCE(lc."createdAt", l."createdAt") < NOW() - (${STALLED_DAYS} * INTERVAL '1 day')
+        `),
 
     // ── Best time to call heatmap (last 30 days, IST tz).
     // Role-scoped: AGENT sees own calls only; ADMIN/MANAGER see all.
@@ -252,9 +299,35 @@ export default async function ReportsPage() {
 
   return (
     <>
-      <div>
-        <h1 className="text-xl sm:text-2xl font-bold">Reports</h1>
-        <p className="text-xs sm:text-sm text-gray-500">Decisions first · raw numbers below · live</p>
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <div>
+          <h1 className="text-xl sm:text-2xl font-bold">
+            {resolvedTeam === "Dubai" ? "🇦🇪 Dubai — Reports" :
+             resolvedTeam === "India" ? "🇮🇳 India — Reports" :
+             "Reports"}
+          </h1>
+          <p className="text-xs sm:text-sm text-gray-500">Decisions first · raw numbers below · live</p>
+        </div>
+        {/* Team filter — shown for ADMIN (full control) and MANAGER (locked to their team) */}
+        {isAdminOrMgr && (
+          <div className="flex items-center gap-2 self-start sm:self-auto">
+            {me.role === "MANAGER" ? (
+              /* Manager: selector shown but effectively locked to their team */
+              <div className="seg opacity-60 cursor-not-allowed" title="Team filter is locked to your team">
+                <span className={resolvedTeam === "Dubai" ? "on pointer-events-none" : "pointer-events-none"}>🇦🇪 Dubai</span>
+                <span className={resolvedTeam === "India" ? "on pointer-events-none" : "pointer-events-none"}>🇮🇳 India</span>
+                <span className="pointer-events-none">All</span>
+              </div>
+            ) : (
+              /* Admin: fully interactive */
+              <div className="seg">
+                <Link href="/reports?team=Dubai" className={resolvedTeam === "Dubai" ? "on" : ""}>🇦🇪 Dubai</Link>
+                <Link href="/reports?team=India" className={resolvedTeam === "India" ? "on" : ""}>🇮🇳 India</Link>
+                <Link href="/reports" className={resolvedTeam === "all" ? "on" : ""}>All</Link>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* §9.11 Decisions strip — lead with the three questions Lalit cares
