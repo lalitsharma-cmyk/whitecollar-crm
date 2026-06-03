@@ -4,6 +4,7 @@ import { startOfMonth, endOfMonth, subMonths, format, differenceInCalendarDays, 
 import { getTravelRatePerKmInr } from "@/lib/settings";
 import Link from "next/link";
 import ReportDateRangePicker from "@/components/ReportDateRangePicker";
+import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
 
@@ -55,8 +56,9 @@ async function compute(start: Date, end: Date, agentScope: string | null): Promi
 
 export default async function TravelReportPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const me = await requireUser();
+  if (me.role === "AGENT") redirect("/reports");
   const sp = await searchParams;
-  const agentScope = me.role === "AGENT" ? me.id : (sp.agent ?? null);
+  const agentScope = sp.agent ?? null;
 
   // ── Date range resolution ────────────────────────────────────────────
   // Per Lalit feedback 2026-06: page now accepts ?from=&to= via the shared
@@ -93,9 +95,7 @@ export default async function TravelReportPage({ searchParams }: { searchParams:
     compute(primaryStart, primaryEnd, agentScope),
     compute(prevStart, prevEnd, agentScope),
     getTravelRatePerKmInr(),
-    me.role !== "AGENT"
-      ? prisma.user.findMany({ where: { active: true, role: { in: ["AGENT", "MANAGER"] } }, orderBy: { name: "asc" } })
-      : Promise.resolve([]),
+    prisma.user.findMany({ where: { active: true, role: { in: ["AGENT", "MANAGER"] } }, orderBy: { name: "asc" } }),
   ]);
 
   const thisTotal = thisM.reduce((s, r) => s + r.amount, 0);
@@ -119,16 +119,14 @@ export default async function TravelReportPage({ searchParams }: { searchParams:
           this month so visitors without params see the same layout as before. */}
       <ReportDateRangePicker defaultFrom={toYmd(primaryStart)} defaultTo={toYmd(primaryEnd)} />
 
-      {me.role !== "AGENT" && (
-        <div className="flex flex-wrap gap-2 items-center">
-          <span className="text-xs text-gray-500">Filter by agent:</span>
-          <Link href="/reports/travel" className={`chip text-[10px] ${!agentScope ? "chip-warm" : "chip-lost"}`}>All</Link>
-          {agents.map((u) => (
-            <Link key={u.id} href={`/reports/travel?agent=${u.id}`}
-              className={`chip text-[10px] ${agentScope === u.id ? "chip-warm" : "chip-lost"}`}>{u.name}</Link>
-          ))}
-        </div>
-      )}
+      <div className="flex flex-wrap gap-2 items-center">
+        <span className="text-xs text-gray-500">Filter by agent:</span>
+        <Link href="/reports/travel" className={`chip text-[10px] ${!agentScope ? "chip-warm" : "chip-lost"}`}>All</Link>
+        {agents.map((u) => (
+          <Link key={u.id} href={`/reports/travel?agent=${u.id}`}
+            className={`chip text-[10px] ${agentScope === u.id ? "chip-warm" : "chip-lost"}`}>{u.name}</Link>
+        ))}
+      </div>
 
       {[
         { m: thisM, label: primaryLabel, total: thisTotal },

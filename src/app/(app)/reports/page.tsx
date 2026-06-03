@@ -9,6 +9,7 @@ import { projectWhereForUser } from "@/lib/propertyScope";
 import { fmtMoneyDual } from "@/lib/money";
 import Link from "next/link";
 import { normalizeTeam } from "@/lib/teamRouting";
+import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
 
@@ -38,6 +39,33 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
   const sp = await searchParams;
   const isAdmin = me.role === "ADMIN";
   const isAdminOrMgr = me.role === "ADMIN" || me.role === "MANAGER";
+
+  // AGENT role — show only personal performance reports. No team data,
+  // no revenue forecasting, no system metrics.
+  if (me.role === "AGENT") {
+    return (
+      <>
+        <div>
+          <h1 className="text-xl sm:text-2xl font-bold">Reports</h1>
+          <p className="text-xs sm:text-sm text-gray-500">
+            These are your personal performance reports
+          </p>
+        </div>
+
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+          <Link href="/reports/daily" className="card p-4 border-l-4 border-emerald-500 hover:shadow-md transition">
+            <div className="text-2xl">📅</div>
+            <div className="font-bold text-sm mt-1">Daily Report</div>
+            <div className="text-[10px] text-gray-500 mt-0.5">Target vs Achieved vs Pending — your numbers, per day</div>
+          </Link>
+        </div>
+
+        <div className="card p-4 bg-blue-50 border-l-4 border-blue-400 text-sm text-blue-800">
+          Your reports show personal performance only. Contact your manager for team-level data.
+        </div>
+      </>
+    );
+  }
   const today = startOfDay(new Date());
 
   // ── Team filter ────────────────────────────────────────────────────────
@@ -69,8 +97,8 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
   // (SQL injection + Prisma's parameter binding gives us proper type
   // handling). For ADMIN/MANAGER, pass null and the WHERE-clause OR-branch
   // short-circuits via "$1 IS NULL". DOW is 0=Sun..6=Sat from Postgres.
-  const scopedUserId: string | null =
-    me.role === "AGENT" ? me.id : null;
+  // AGENT role returns early above; for ADMIN/MANAGER the heatmap is team-wide.
+  const scopedUserId: string | null = null;
 
   const [
     bySource, callsByDay, funnel, topProjects,
@@ -489,13 +517,11 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
         {/* Source breakdown is admin/manager-only (channel mix is sensitive — agents
             shouldn't be able to back-derive which campaigns / portals we lean on,
             same policy as the leads list page filter at leads/page.tsx:57). */}
-        {me.role !== "AGENT" && (
-          <div className="card p-5">
-            <div className="text-xs text-gray-500 tracking-widest">DAILY · TODAY</div>
-            <div className="font-semibold mt-1">Lead intake by source</div>
-            <SourceBarChart data={bySource.map(b => ({ source: b.source, n: b._count._all }))} />
-          </div>
-        )}
+        <div className="card p-5">
+          <div className="text-xs text-gray-500 tracking-widest">DAILY · TODAY</div>
+          <div className="font-semibold mt-1">Lead intake by source</div>
+          <SourceBarChart data={bySource.map(b => ({ source: b.source, n: b._count._all }))} />
+        </div>
         <div className="card p-5">
           <div className="text-xs text-gray-500 tracking-widest">LAST 14 DAYS</div>
           <div className="font-semibold mt-1">Call connect rate</div>

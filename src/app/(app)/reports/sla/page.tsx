@@ -4,6 +4,7 @@ import { ActivityType, ActivityStatus, Prisma } from "@prisma/client";
 import { format, startOfMonth, endOfMonth, subMonths, differenceInCalendarDays, subDays } from "date-fns";
 import Link from "next/link";
 import ReportDateRangePicker from "@/components/ReportDateRangePicker";
+import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
 
@@ -99,9 +100,10 @@ async function computeMonth(start: Date, end: Date, label: string, agentScope: s
 
 export default async function SlaReportPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const me = await requireUser();
+  if (me.role === "AGENT") redirect("/reports");
   const sp = await searchParams;
-  // Agents see only their own row; admin/manager see everything (with optional ?agent=…)
-  const agentScope = me.role === "AGENT" ? me.id : (sp.agent ?? null);
+  // Admin/manager see everything (with optional ?agent=…)
+  const agentScope = sp.agent ?? null;
 
   // ── Date range resolution ────────────────────────────────────────────
   // Per Lalit feedback 2026-06: the page used to be fixed at
@@ -149,9 +151,7 @@ export default async function SlaReportPage({ searchParams }: { searchParams: Pr
   const [thisM, lastM, agents] = await Promise.all([
     computeMonth(primaryStart, primaryEnd, primaryLabel, agentScope),
     computeMonth(prevStart, prevEnd, prevLabel, agentScope),
-    me.role !== "AGENT"
-      ? prisma.user.findMany({ where: { active: true, role: { in: ["AGENT", "MANAGER"] } }, orderBy: { name: "asc" } })
-      : Promise.resolve([]),
+    prisma.user.findMany({ where: { active: true, role: { in: ["AGENT", "MANAGER"] } }, orderBy: { name: "asc" } }),
   ]);
 
   return (
@@ -165,19 +165,16 @@ export default async function SlaReportPage({ searchParams }: { searchParams: Pr
           <h1 className="text-xl sm:text-2xl font-bold">📊 SLA & Meeting Report</h1>
           <p className="text-xs sm:text-sm text-gray-500">
             Site visits, office meetings, and virtual meetings — rescheduled, no-shows, and who actually attended.
-            {agentScope && agentScope === me.id && " · Showing your activity only"}
           </p>
         </div>
-        {me.role !== "AGENT" && (
-          <div className="flex flex-wrap gap-2 items-center">
-            <span className="text-xs text-gray-500">Filter by agent:</span>
-            <Link href="/reports/sla" className={`chip text-[10px] ${!agentScope ? "chip-warm" : "chip-lost"}`}>All agents</Link>
-            {agents.map((u) => (
-              <Link key={u.id} href={`/reports/sla?agent=${u.id}`}
-                className={`chip text-[10px] ${agentScope === u.id ? "chip-warm" : "chip-lost"}`}>{u.name}</Link>
-            ))}
-          </div>
-        )}
+        <div className="flex flex-wrap gap-2 items-center">
+          <span className="text-xs text-gray-500">Filter by agent:</span>
+          <Link href="/reports/sla" className={`chip text-[10px] ${!agentScope ? "chip-warm" : "chip-lost"}`}>All agents</Link>
+          {agents.map((u) => (
+            <Link key={u.id} href={`/reports/sla?agent=${u.id}`}
+              className={`chip text-[10px] ${agentScope === u.id ? "chip-warm" : "chip-lost"}`}>{u.name}</Link>
+          ))}
+        </div>
       </div>
 
       {/* Shared date-range picker — writes ?from=&to=. Default window is
@@ -210,9 +207,8 @@ export default async function SlaReportPage({ searchParams }: { searchParams: Pr
           </div>
 
           {/* Per-agent table */}
-          {me.role !== "AGENT" && (
-            <div className="card overflow-x-auto">
-              <table className="tbl min-w-[760px]">
+          <div className="card overflow-x-auto">
+            <table className="tbl min-w-[760px]">
                 <thead><tr>
                   <th>Agent</th><th>Team</th>
                   <th className="text-center">Scheduled</th>
@@ -243,7 +239,6 @@ export default async function SlaReportPage({ searchParams }: { searchParams: Pr
                 </tbody>
               </table>
             </div>
-          )}
         </section>
       ))}
     </>

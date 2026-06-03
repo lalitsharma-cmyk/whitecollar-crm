@@ -3,6 +3,7 @@ import { requireUser } from "@/lib/auth";
 import { fmtMoneyDual, fmtMoney } from "@/lib/money";
 import Link from "next/link";
 import ReportDateRangePicker from "@/components/ReportDateRangePicker";
+import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
 
@@ -66,8 +67,9 @@ export default async function CoolingLeadsReport({
   searchParams: Promise<Record<string, string | undefined>>;
 }) {
   const me = await requireUser();
+  if (me.role === "AGENT") redirect("/reports");
   const sp = await searchParams;
-  const scopedOwnerId: string | null = me.role === "AGENT" ? me.id : null;
+  const scopedOwnerId: string | null = null;
 
   // ── Resolve the window ──
   // Default = last 14 days → today, matching the page's pre-picker behaviour.
