@@ -9,12 +9,13 @@ import { crossTeamWarning, normalizeTeam } from "@/lib/teamRouting";
 
 // Allow-list mirrors /api/leads/[id]/reject — keep these in sync.
 const REJECT_REASONS = new Set([
-  "FUND_ISSUE",
-  "WAR_FEAR",
-  "LOW_BUDGET",
-  "LOOK_AFTER_2_YEARS",
-  "WAITING_FOR_PROPERTY_SALE",
-  "OTHER",
+  "NOT_INTERESTED", "JUST_SEARCHING", "BY_MISTAKE_INQUIRY", "DROP_THE_PLAN",
+  "LOW_BUDGET", "FUND_ISSUE", "OTHER_LOCATION", "BROKER", "ALREADY_BOUGHT",
+  "LEASING_REQUIREMENT", "COMMERCIAL_REQUIREMENT", "INVALID_NUMBER",
+  "NUMBER_CHANGED", "NEVER_RESPONDED", "PASSED_AWAY", "WAR_FEAR",
+  "WAITING_FOR_PROPERTY_SALE", "NOT_ABLE_TO_BUY", "OTHER",
+  // Legacy
+  "LOOK_AFTER_2_YEARS", "TRANSFER_TO_INDIA_TEAM", "TRANSFER_TO_DUBAI_TEAM",
 ]);
 
 export async function POST(req: NextRequest) {
@@ -153,9 +154,6 @@ export async function POST(req: NextRequest) {
     const note = String(body.note ?? "").trim();
     if (!REJECT_REASONS.has(reason)) {
       return NextResponse.json({ error: "Invalid reason" }, { status: 400 });
-    }
-    if (reason === "OTHER" && !note) {
-      return NextResponse.json({ error: "Note is required when reason is OTHER" }, { status: 400 });
     }
     const rows = await prisma.lead.findMany({
       where: { id: { in: ids }, ...scope },

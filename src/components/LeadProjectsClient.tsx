@@ -9,6 +9,19 @@ interface Discussion {
   status: "DISCUSSED" | "SHORTLISTED" | "SITE_VISITED" | "RULED_OUT";
   project: { name: string; city: string };
   discussedAt: string;
+  autoDetected?: boolean;
+  sourceType?: string | null;
+  sourceDate?: string | null;
+  sourceText?: string | null;
+}
+interface UnmatchedMention {
+  id: string;
+  mentionText: string;
+  sourceType: string;
+  sourceDate: string | null;
+  sourceText: string | null;
+  resolved: boolean;
+  resolvedIgnored: boolean;
 }
 
 const statusChip: Record<string, string> = {
@@ -18,25 +31,39 @@ const statusChip: Record<string, string> = {
   RULED_OUT:    "chip-lost",
 };
 
-// Lower-case + remove non-alphanumerics. Cheap normalisation so the user can
-// type "marinaBay 1" / "marina-bay 1" / "Marina Bay 1" and they all match.
 function norm(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+function sourceLabel(t: string): string {
+  const m: Record<string, string> = {
+    REMARK: "Imported remark", CALL_NOTE: "Call note",
+    WA_MESSAGE: "WhatsApp", NOTE: "Note", MANUAL: "Manual",
+  };
+  return m[t] ?? t;
+}
+
+function fmtDate(iso: string): string {
+  try {
+    return new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short", year: "2-digit" }).format(new Date(iso));
+  } catch { return ""; }
 }
 
 export default function LeadProjectsClient({
   leadId,
   initial,
   allProjects,
-  /**
-   * Optional defensive secondary filter. When set (e.g. "UAE" or "India"),
-   * the picker only surfaces projects whose `country` matches. The parent
-   * page is expected to already pre-filter `allProjects`, but this provides
-   * belt-and-braces protection in case the parent forgets. Pass null/omit
-   * for admin/manager (no extra filter).
-   */
   scopeCountry,
-}: { leadId: string; initial: Discussion[]; allProjects: Project[]; scopeCountry?: string | null; }) {
+  unmatchedMentions,
+  userRole,
+}: {
+  leadId: string;
+  initial: Discussion[];
+  allProjects: Project[];
+  scopeCountry?: string | null;
+  unmatchedMentions?: UnmatchedMention[];
+  userRole?: "ADMIN" | "MANAGER" | "AGENT";
+}) {
   const router = useRouter();
   const [items, setItems] = useState(initial);
   const [picking, setPicking] = useState(false);
@@ -44,22 +71,18 @@ export default function LeadProjectsClient({
   const [query, setQuery] = useState("");
   const [highlight, setHighlight] = useState(0);
   const [busy, setBusy] = useState(false);
+  const [scanning, setScanning] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const remaining = useMemo(
     () => allProjects.filter((p) => {
       if (items.some((it) => it.projectId === p.id)) return false;
-      // Defensive secondary scope — only drop a row if BOTH the scope and the
-      // project's country are known and they disagree. Unknown country on a
-      // project means "show it" (don't hide data we can't classify).
       if (scopeCountry && p.country && p.country !== scopeCountry) return false;
       return true;
     }),
     [allProjects, items, scopeCountry],
   );
 
-  // Fuzzy substring match on normalised "name + city". Limits the dropdown
-  // to 50 hits so we don't paint thousands of rows when the query is empty.
   const matches = useMemo(() => {
     const q = norm(query);
     if (!q) return remaining.slice(0, 50);
@@ -67,6 +90,8 @@ export default function LeadProjectsClient({
       .filter((p) => norm(`${p.name} ${p.city}`).includes(q))
       .slice(0, 50);
   }, [remaining, query]);
+
+  const unresolvedCount = (unmatchedMentions ?? []).filter(m => !m.resolved && !m.resolvedIgnored).length;
 
   async function addProject(projectId: string) {
     setBusy(true);
@@ -83,6 +108,7 @@ export default function LeadProjectsClient({
       setHighlight(0);
     } finally { setBusy(false); }
   }
+
   async function removeProject(projectId: string) {
     setBusy(true);
     try {
@@ -97,6 +123,7 @@ export default function LeadProjectsClient({
       }
     } finally { setBusy(false); }
   }
+
   async function changeStatus(projectId: string, status: string) {
     setBusy(true);
     try {
@@ -107,6 +134,32 @@ export default function LeadProjectsClient({
       });
       router.refresh();
     } finally { setBusy(false); }
+  }
+
+  async function linkMention(id: string, projectId: string) {
+    await fetch(`/api/admin/unmatched-mentions/${id}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "link", projectId }),
+    });
+    router.refresh();
+  }
+
+  async function ignoreMention(id: string) {
+    await fetch(`/api/admin/unmatched-mentions/${id}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "ignore" }),
+    });
+    router.refresh();
+  }
+
+  async function runScan() {
+    setScanning(true);
+    try {
+      await fetch(`/api/leads/${leadId}/detect-projects`, { method: "POST" });
+      router.refresh();
+    } finally { setScanning(false); }
   }
 
   function onKey(e: React.KeyboardEvent<HTMLInputElement>) {
@@ -134,16 +187,21 @@ export default function LeadProjectsClient({
   return (
     <div>
       <div className="font-semibold mb-2">Projects discussed</div>
-      {items.length === 0 && <div className="text-sm text-gray-500 mb-2">None yet — add a project once it's mentioned.</div>}
+      {items.length === 0 && <div className="text-sm text-gray-500 mb-2">None yet — add a project once it&apos;s mentioned.</div>}
       <div className="space-y-2">
         {items.map((it) => (
-          // Mobile-friendly row: stacks vertically on small screens so the project
-          // name + status chip + delete don't get squashed together (the old single-row
-          // layout broke on phones — name truncated, chip+x overlapped).
           <div key={it.projectId} className="flex flex-col sm:flex-row sm:items-center gap-2 p-2.5 border border-[#e5e7eb] rounded-lg text-sm">
             <div className="flex-1 min-w-0">
               <div className="font-semibold truncate">{it.project.name}</div>
               <div className="text-xs text-gray-500 truncate">{it.project.city}</div>
+              {it.autoDetected && it.sourceType && (
+                <div className="text-[10px] text-amber-600 mt-0.5">
+                  🔍 Auto-detected · {sourceLabel(it.sourceType)}{it.sourceDate ? ` · ${fmtDate(it.sourceDate)}` : ""}
+                </div>
+              )}
+              {it.sourceText && it.autoDetected && (
+                <div className="text-[10px] text-gray-400 italic mt-0.5 truncate">&ldquo;{it.sourceText}&rdquo;</div>
+              )}
             </div>
             <div className="flex items-center gap-2 flex-none">
               <select
@@ -169,21 +227,27 @@ export default function LeadProjectsClient({
           </div>
         ))}
       </div>
-      {!picking && remaining.length > 0 && (
+      <div className="flex items-center gap-3">
+        {!picking && remaining.length > 0 && (
+          <button
+            onClick={() => {
+              setPicking(true);
+              setTimeout(() => inputRef.current?.focus(), 0);
+            }}
+            className="text-sm text-[#0b1a33] font-semibold mt-3 flex items-center gap-1.5 min-h-11 px-1"
+          >
+            <Plus className="w-4 h-4" /> Add project
+          </button>
+        )}
         <button
-          onClick={() => {
-            setPicking(true);
-            setTimeout(() => inputRef.current?.focus(), 0);
-          }}
-          className="text-sm text-[#0b1a33] font-semibold mt-3 flex items-center gap-1.5 min-h-11 px-1"
+          onClick={runScan}
+          disabled={scanning}
+          className="text-sm text-amber-700 font-semibold mt-2 flex items-center gap-1.5 min-h-11 px-1"
         >
-          <Plus className="w-4 h-4" /> Add project
+          {scanning ? "Scanning…" : "🔍 Scan for projects"}
         </button>
-      )}
+      </div>
       {picking && (
-        // Typeahead picker: type to filter by name OR city. Arrow keys + Enter
-        // for power users, click for everyone else. No new API — we fuzzy
-        // match the `allProjects` prop already passed down by the server.
         <div className="mt-3 flex flex-col gap-2">
           <div className="relative">
             <input
@@ -199,16 +263,12 @@ export default function LeadProjectsClient({
               className="w-full border border-[#e5e7eb] rounded-lg px-3 py-2.5 text-sm min-h-11"
               autoComplete="off"
             />
-            {/* Dropdown — render only while picking and we have at least one
-                hit. Caps at 50 rows (matches.slice in useMemo above). */}
             {matches.length > 0 && !picked && (
               <div className="absolute left-0 right-0 top-full mt-1 max-h-64 overflow-y-auto bg-white border border-[#e5e7eb] rounded-lg shadow-lg z-20">
                 {matches.map((p, idx) => (
                   <div
                     key={p.id}
                     onMouseDown={(e) => {
-                      // onMouseDown so the input's onBlur doesn't fire and
-                      // close the dropdown before this click registers.
                       e.preventDefault();
                       setPicked(p);
                       setQuery(`${p.name} (${p.city})`);
@@ -226,7 +286,7 @@ export default function LeadProjectsClient({
             )}
             {query && matches.length === 0 && (
               <div className="absolute left-0 right-0 top-full mt-1 px-3 py-2 text-xs text-gray-500 bg-white border border-[#e5e7eb] rounded-lg shadow-lg z-20">
-                No project matches "{query}". Add it in /projects first.
+                No project matches &ldquo;{query}&rdquo;. Add it in /projects first.
               </div>
             )}
           </div>
@@ -245,6 +305,40 @@ export default function LeadProjectsClient({
               Cancel
             </button>
           </div>
+        </div>
+      )}
+
+      {/* Unmatched mentions — ADMIN / MANAGER only */}
+      {unmatchedMentions && unmatchedMentions.length > 0 && (userRole === "ADMIN" || userRole === "MANAGER") && unresolvedCount > 0 && (
+        <div className="mt-4 pt-4 border-t border-dashed border-amber-200">
+          <div className="text-[10px] font-semibold text-amber-700 uppercase tracking-widest mb-2">
+            ⚠️ Unmatched project mentions ({unresolvedCount})
+          </div>
+          {unmatchedMentions.filter(m => !m.resolved && !m.resolvedIgnored).map(m => (
+            <div key={m.id} className="flex flex-col gap-1 p-2 border border-amber-200 bg-amber-50 rounded-lg mb-2">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-semibold text-amber-800">&ldquo;{m.mentionText}&rdquo;</span>
+                <span className="text-[10px] text-gray-500">{sourceLabel(m.sourceType)}</span>
+              </div>
+              {m.sourceText && <div className="text-[10px] text-gray-500 italic">…{m.sourceText}…</div>}
+              <div className="flex gap-2 mt-1">
+                <select
+                  className="text-xs border border-amber-300 rounded px-1 py-0.5 flex-1 bg-white"
+                  defaultValue=""
+                  onChange={(e) => e.target.value && linkMention(m.id, e.target.value)}
+                >
+                  <option value="">Link to project…</option>
+                  {allProjects.map(p => <option key={p.id} value={p.id}>{p.name} ({p.city})</option>)}
+                </select>
+                <button
+                  onClick={() => ignoreMention(m.id)}
+                  className="text-[10px] text-gray-500 hover:text-red-500 px-2 py-0.5 border border-gray-200 rounded"
+                >
+                  Ignore
+                </button>
+              </div>
+            </div>
+          ))}
         </div>
       )}
     </div>

@@ -28,29 +28,56 @@ import { notify } from "@/lib/notify";
  *   • notify() admin/manager so they have oversight
  */
 
-// Allowed reasons — kept in sync with the modal options. OTHER requires note.
+// Allowed reasons — kept in sync with the modal options.
 const REASONS = new Set([
-  "FUND_ISSUE",
-  "WAR_FEAR",
+  "NOT_INTERESTED",
+  "JUST_SEARCHING",
+  "BY_MISTAKE_INQUIRY",
+  "DROP_THE_PLAN",
   "LOW_BUDGET",
-  "LOOK_AFTER_2_YEARS",
+  "FUND_ISSUE",
+  "OTHER_LOCATION",
+  "BROKER",
+  "ALREADY_BOUGHT",
+  "LEASING_REQUIREMENT",
+  "COMMERCIAL_REQUIREMENT",
+  "INVALID_NUMBER",
+  "NUMBER_CHANGED",
+  "NEVER_RESPONDED",
+  "PASSED_AWAY",
+  "WAR_FEAR",
   "WAITING_FOR_PROPERTY_SALE",
+  "NOT_ABLE_TO_BUY",
+  "OTHER",
+  // Legacy values kept so old records remain readable
+  "LOOK_AFTER_2_YEARS",
   "TRANSFER_TO_INDIA_TEAM",
   "TRANSFER_TO_DUBAI_TEAM",
-  "OTHER",
 ]);
 
-// Human-readable labels mirrored from the client modal — used in notification
-// + activity titles so admins/managers see "Low budget" not "LOW_BUDGET".
 const REASON_LABEL: Record<string, string> = {
-  FUND_ISSUE: "Fund issue",
-  WAR_FEAR: "War / market fear",
-  LOW_BUDGET: "Low budget",
+  NOT_INTERESTED: "Not Interested",
+  JUST_SEARCHING: "Just Searching",
+  BY_MISTAKE_INQUIRY: "By Mistake Inquiry",
+  DROP_THE_PLAN: "Drop The Plan",
+  LOW_BUDGET: "Low Budget",
+  FUND_ISSUE: "Fund Issue",
+  OTHER_LOCATION: "Other Location",
+  BROKER: "Broker",
+  ALREADY_BOUGHT: "Already Bought",
+  LEASING_REQUIREMENT: "Leasing Requirement",
+  COMMERCIAL_REQUIREMENT: "Commercial Requirement",
+  INVALID_NUMBER: "Invalid Number",
+  NUMBER_CHANGED: "Number Changed",
+  NEVER_RESPONDED: "Never Responded",
+  PASSED_AWAY: "Passed Away",
+  WAR_FEAR: "War / Market Fear",
+  WAITING_FOR_PROPERTY_SALE: "Waiting For Property Sale",
+  NOT_ABLE_TO_BUY: "Not Able To Buy",
+  OTHER: "Other",
   LOOK_AFTER_2_YEARS: "Look after 2 years",
-  WAITING_FOR_PROPERTY_SALE: "Waiting for property sale",
   TRANSFER_TO_INDIA_TEAM: "Transfer to India Team",
   TRANSFER_TO_DUBAI_TEAM: "Transfer to Dubai Team",
-  OTHER: "Other",
 };
 
 const NOTE_MAX = 500;
@@ -84,9 +111,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   if (!REASONS.has(reason)) {
     return NextResponse.json({ error: "Invalid reason" }, { status: 400 });
-  }
-  if (reason === "OTHER" && !note) {
-    return NextResponse.json({ error: "Note is required when reason is OTHER" }, { status: 400 });
   }
   if (note.length > NOTE_MAX) {
     return NextResponse.json({ error: `Note must be ${NOTE_MAX} characters or fewer` }, { status: 400 });

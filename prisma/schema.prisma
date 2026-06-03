@@ -503,11 +503,48 @@ model LeadProject {
   status    LeadProjectStatus @default(DISCUSSED)
   notes     String?
   discussedAt DateTime        @default(now())
+  // Auto-detection source tracking
+  autoDetected Boolean        @default(false)
+  sourceType   String?        // "REMARK" | "CALL_NOTE" | "WA_MESSAGE" | "NOTE" | "MANUAL"
+  sourceDate   DateTime?
+  sourceText   String?        // ≤200-char excerpt from source text
   lead      Lead              @relation(fields: [leadId], references: [id], onDelete: Cascade)
   project   Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
   @@unique([leadId, projectId])
   @@index([leadId])
   @@index([projectId])
+}
+
+// Project mentions in lead text that didn't match any known project.
+// Admin/Manager can link to an existing project, create a new one, or ignore.
+model UnmatchedMention {
+  id                String    @id @default(cuid())
+  leadId            String
+  mentionText       String    // the project-like phrase extracted from text
+  sourceType        String    // "REMARK" | "CALL_NOTE" | "WA_MESSAGE" | "NOTE"
+  sourceDate        DateTime?
+  sourceText        String?   // ~150-char excerpt for context
+  resolved          Boolean   @default(false)
+  resolvedProjectId String?   // linked Project.id (if admin linked it)
+  resolvedIgnored   Boolean   @default(false)
+  createdAt         DateTime  @default(now())
+  @@index([leadId])
+  @@index([resolved])
+}
+
+// Free-text property interest notes — auto-detected from lead text or manually added.
+// Separate from LeadProperty (which requires an actual Unit record).
+// Example: "Client interested in 2BR Business Bay under AED 2M"
+model LeadInterestNote {
+  id            String    @id @default(cuid())
+  leadId        String
+  noteText      String    // human-readable interest summary
+  autoDetected  Boolean   @default(false)
+  sourceType    String?
+  sourceDate    DateTime?
+  matchedUnitId String?   // set if a specific Unit was found for this interest
+  createdAt     DateTime  @default(now())
+  @@index([leadId])
 }
 
 enum UnitStatus {

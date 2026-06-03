@@ -7,6 +7,7 @@ import { fmtMoney } from "@/lib/money";
 import { requireUser } from "@/lib/auth";
 import LeadActionsClient from "@/components/LeadActionsClient";
 import LeadProjectsClient from "@/components/LeadProjectsClient";
+import LeadInterestNotesClient from "@/components/LeadInterestNotesClient";
 import LeadMeetingClient from "@/components/LeadMeetingClient";
 import SiteVisitTracker from "@/components/SiteVisitTracker";
 import SiteVisitChecklist from "@/components/SiteVisitChecklist";
@@ -138,6 +139,14 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
     }),
   ]);
   if (!lead) notFound();
+
+  // Auto-detection queries — run after notFound() guard.
+  const [interestNotes, unmatchedMentions] = await Promise.all([
+    prisma.leadInterestNote.findMany({ where: { leadId: id }, orderBy: { createdAt: "asc" } }),
+    (me.role === "ADMIN" || me.role === "MANAGER")
+      ? prisma.unmatchedMention.findMany({ where: { leadId: id, resolved: false, resolvedIgnored: false }, orderBy: { createdAt: "asc" } })
+      : Promise.resolve([]),
+  ]);
 
   // Fetch audit logs for the unified timeline — done after the notFound() guard
   // so we only query when the lead exists.
@@ -1129,33 +1138,50 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
               status: d.status,
               discussedAt: d.discussedAt.toISOString(),
               project: { name: d.project.name, city: d.project.city },
+              autoDetected: d.autoDetected,
+              sourceType: d.sourceType,
+              sourceDate: d.sourceDate?.toISOString() ?? null,
+              sourceText: d.sourceText,
             }))}
             allProjects={allProjects}
             scopeCountry={(me.role === "ADMIN" || me.role === "MANAGER") ? null : teamToCountry(lead.forwardedTeam)}
+            unmatchedMentions={unmatchedMentions.map(m => ({
+              id: m.id,
+              mentionText: m.mentionText,
+              sourceType: m.sourceType,
+              sourceDate: m.sourceDate?.toISOString() ?? null,
+              sourceText: m.sourceText ?? null,
+              resolved: m.resolved,
+              resolvedIgnored: m.resolvedIgnored,
+            }))}
+            userRole={me.role}
           />
         </div>
 
-        {/* Interested properties — MOVED to sit immediately under
-            LeadProjectsClient (Lalit's ask: "this card belongs right under
-            Projects discussed, not way down at the bottom"). Header carries a
-            count chip so the agent sees "(N)" at a glance. */}
         <div data-lead-section="projects" className="card p-5">
-          <div className="font-semibold mb-2 flex items-center gap-2 dark:text-slate-100">
-            Interested properties
-            <span className="chip src text-[10px]">({lead.interestedUnits.length})</span>
-          </div>
-          {lead.interestedUnits.length === 0 && <div className="text-sm text-gray-500 dark:text-slate-400">None attached yet.</div>}
-          <div className="space-y-2 text-sm">
-            {lead.interestedUnits.map((p) => (
-              <div key={p.id} className="flex items-center justify-between border border-[#e5e7eb] dark:border-slate-600 rounded-lg p-2 dark:bg-slate-800">
-                <div>
-                  <div className="font-semibold dark:text-slate-100">{p.unit.project.name} {p.unit.configuration}</div>
-                  <div className="text-xs text-gray-500 dark:text-slate-400">{p.unit.code} · {aedFmt(p.unit.priceBase, p.unit.project.country === "India" ? "INR" : "AED")}</div>
-                </div>
-                <span className={`chip ${p.type === "PRIMARY" ? "chip-hot" : p.type === "COMPARE" ? "chip-warm" : "chip-lost"}`}>{p.type}</span>
-              </div>
-            ))}
-          </div>
+          <LeadInterestNotesClient
+            leadId={lead.id}
+            notes={interestNotes.map(n => ({
+              id: n.id,
+              noteText: n.noteText,
+              autoDetected: n.autoDetected,
+              sourceType: n.sourceType ?? null,
+              sourceDate: n.sourceDate?.toISOString() ?? null,
+              createdAt: n.createdAt.toISOString(),
+            }))}
+            interestedUnits={lead.interestedUnits.map(p => ({
+              id: p.id,
+              type: p.type,
+              unit: {
+                id: p.unit.id,
+                code: p.unit.code,
+                configuration: p.unit.configuration,
+                priceBase: p.unit.priceBase,
+                project: { name: p.unit.project.name, country: p.unit.project.country },
+              },
+            }))}
+            userRole={me.role}
+          />
         </div>
 
 

@@ -21,16 +21,26 @@ interface Props {
   leadId: string;
 }
 
-// Static, human-readable labels for the six fixed rejection reasons.
 const REASON_OPTIONS: Array<{ value: string; label: string }> = [
-  { value: "FUND_ISSUE",                label: "Fund issue" },
-  { value: "WAR_FEAR",                  label: "War / market fear" },
-  { value: "LOW_BUDGET",                label: "Low budget" },
-  { value: "LOOK_AFTER_2_YEARS",        label: "Look after 2 years" },
-  { value: "WAITING_FOR_PROPERTY_SALE", label: "Waiting for property sale" },
-  { value: "TRANSFER_TO_INDIA_TEAM",    label: "Transfer to India Team" },
-  { value: "TRANSFER_TO_DUBAI_TEAM",    label: "Transfer to Dubai Team" },
-  { value: "OTHER",                     label: "Other" },
+  { value: "NOT_INTERESTED",          label: "Not Interested" },
+  { value: "JUST_SEARCHING",          label: "Just Searching" },
+  { value: "BY_MISTAKE_INQUIRY",      label: "By Mistake Inquiry" },
+  { value: "DROP_THE_PLAN",           label: "Drop The Plan" },
+  { value: "LOW_BUDGET",              label: "Low Budget" },
+  { value: "FUND_ISSUE",              label: "Fund Issue" },
+  { value: "OTHER_LOCATION",          label: "Other Location" },
+  { value: "BROKER",                  label: "Broker" },
+  { value: "ALREADY_BOUGHT",          label: "Already Bought" },
+  { value: "LEASING_REQUIREMENT",     label: "Leasing Requirement" },
+  { value: "COMMERCIAL_REQUIREMENT",  label: "Commercial Requirement" },
+  { value: "INVALID_NUMBER",          label: "Invalid Number" },
+  { value: "NUMBER_CHANGED",          label: "Number Changed" },
+  { value: "NEVER_RESPONDED",         label: "Never Responded" },
+  { value: "PASSED_AWAY",             label: "Passed Away" },
+  { value: "WAR_FEAR",                label: "War / Market Fear" },
+  { value: "WAITING_FOR_PROPERTY_SALE", label: "Waiting For Property Sale" },
+  { value: "NOT_ABLE_TO_BUY",         label: "Not Able To Buy" },
+  { value: "OTHER",                   label: "Other" },
 ];
 
 const NOTE_MAX = 500;
@@ -38,7 +48,7 @@ const NOTE_MAX = 500;
 export default function RejectLeadModal({ leadId }: Props) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
-  const [reason, setReason] = useState<string>("FUND_ISSUE");
+  const [reason, setReason] = useState<string>("NOT_INTERESTED");
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -54,13 +64,6 @@ export default function RejectLeadModal({ leadId }: Props) {
     if (busy) return;
     setErr(null);
 
-    // Client-side guard for OTHER → require a note. Server enforces this
-    // too, but we surface it instantly so the agent isn't punished with a
-    // round-trip for a missing required field.
-    if (reason === "OTHER" && !note.trim()) {
-      setErr("Please describe the reason in the note (required for Other).");
-      return;
-    }
     if (note.length > NOTE_MAX) {
       setErr(`Note is too long — max ${NOTE_MAX} characters.`);
       return;
@@ -149,23 +152,23 @@ export default function RejectLeadModal({ leadId }: Props) {
               ))}
             </select>
 
-            {/* Conditional free-text — only shown when OTHER. Required + capped. */}
+            {/* Optional note — only shown when OTHER. Not required. */}
             {reason === "OTHER" && (
               <>
                 <label htmlFor="reject-note" className="text-xs font-semibold text-gray-600">
-                  Describe the reason <span className="text-red-600">*</span>
+                  Additional note <span className="text-gray-400 font-normal">(optional)</span>
                 </label>
                 <textarea
                   id="reject-note"
                   value={note}
                   onChange={(e) => setNote(e.target.value.slice(0, NOTE_MAX))}
-                  rows={3}
+                  rows={2}
                   maxLength={NOTE_MAX}
                   disabled={busy}
-                  placeholder="e.g. Client passed away, moved abroad, family dispute…"
+                  placeholder="Any extra context…"
                   className="w-full mt-1 border border-[#e5e7eb] rounded-lg px-3 py-2 text-sm"
                 />
-                <div className="text-[10px] text-gray-400 mt-1 text-right">
+                <div className="text-[10px] text-gray-400 mt-0.5 text-right">
                   {note.length}/{NOTE_MAX}
                 </div>
               </>
