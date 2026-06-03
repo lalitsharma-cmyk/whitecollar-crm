@@ -121,24 +121,24 @@ const STATUS_CHIP: Record<string, string> = {
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
-function BadgeForMatch({ matchType, confidence }: { matchType: string; confidence: number }) {
-  if (matchType === "STRONG") {
+function ConfidenceBadge({ confidence }: { confidence: number }) {
+  if (confidence > 90) {
     return (
       <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-red-100 text-red-800 border border-red-300">
-        Known Contact — {confidence}% match
+        Existing Customer Confirmed — {confidence}%
       </span>
     );
   }
-  if (matchType === "MEDIUM") {
+  if (confidence >= 60) {
     return (
       <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-800 border border-amber-300">
-        ~ Possible Match — {confidence}%
+        Existing Customer — {confidence}%
       </span>
     );
   }
   return (
     <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-gray-100 text-gray-700 border border-gray-300">
-      ? Weak Signal — {confidence}%
+      Possible Match Found — {confidence}%
     </span>
   );
 }
@@ -302,7 +302,7 @@ export default function CustomerIntelligenceCard({ leadId, leadName, currentRole
           <span className="text-xs font-bold tracking-widest text-gray-700 uppercase">
             Customer Intelligence
           </span>
-          <BadgeForMatch matchType={match.matchType} confidence={match.confidence} />
+          <ConfidenceBadge confidence={match.confidence} />
         </div>
         {isManager && !match.aiSummary && (
           <button
@@ -324,9 +324,20 @@ export default function CustomerIntelligenceCard({ leadId, leadName, currentRole
 
       {/* ── Matched by ── */}
       {match.matchedBy.length > 0 && (
-        <div className="mb-3 text-xs text-gray-700">
-          <span className="font-semibold">Matched by:</span>{" "}
-          {match.matchedBy.map((m) => `${m.field} (${m.source})`).join(", ")}
+        <div className="mb-3">
+          <div className="text-[10px] font-bold tracking-widest text-gray-600 uppercase mb-1.5">
+            Matched By
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {[...new Set(match.matchedBy.map((m) => m.field))].map((field) => (
+              <span
+                key={field}
+                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200"
+              >
+                ✓ {field}
+              </span>
+            ))}
+          </div>
         </div>
       )}
 

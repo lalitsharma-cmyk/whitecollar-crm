@@ -195,7 +195,7 @@ export async function runIntelligenceCheck(
       select: { id: true },
     });
     for (const r of rows) {
-      pushStrong(95, "phone", newLead.phone, "lead.phone", r.id);
+      pushStrong(95, "Mobile Number", newLead.phone, "lead.phone", r.id);
     }
   }
 
@@ -221,7 +221,7 @@ export async function runIntelligenceCheck(
           : r.phone === newLead.altPhone
             ? (newLead.altPhone ?? "")
             : (newLead.altPhone ?? "");
-      pushStrong(92, "phone/altPhone", matchedVal, "lead.altPhone", r.id);
+      pushStrong(92, "Secondary Mobile", matchedVal, "lead.altPhone", r.id);
     }
   }
 
@@ -235,7 +235,7 @@ export async function runIntelligenceCheck(
       select: { id: true },
     });
     for (const r of rows) {
-      pushStrong(90, "email", newLead.email, "lead.email", r.id);
+      pushStrong(90, "Email", newLead.email, "lead.email", r.id);
     }
   }
 
@@ -248,7 +248,7 @@ export async function runIntelligenceCheck(
     });
     for (const wa of waRows) {
       if (wa.leadId && wa.leadId !== leadId) {
-        pushStrong(88, "whatsapp", wa.phoneNumber, "WhatsAppMessage", wa.leadId);
+        pushStrong(88, "Mobile Number", wa.phoneNumber, "WhatsAppMessage", wa.leadId);
       }
     }
   }
@@ -268,7 +268,7 @@ export async function runIntelligenceCheck(
       const matchedVal = phonesToCheck.includes(pp.primaryPhone ?? "")
         ? (pp.primaryPhone ?? "")
         : (pp.secondaryPhone ?? "");
-      pushStrong(88, "portfolio.phone", matchedVal, "PropertyPortfolio", pp.id);
+      pushStrong(88, "Mobile Number", matchedVal, "PropertyPortfolio", pp.id);
     }
   }
 
@@ -298,10 +298,8 @@ export async function runIntelligenceCheck(
   if (matchType === "NONE") {
     const newNameNorm = normName(newLead.name);
     const newCity = (newLead.city ?? "").toLowerCase().trim();
-    const newEmailDomain = emailDomain(newLead.email);
     const newLastDigits = lastDigits(newLead.phone);
     const newAltLastDigits = lastDigits(newLead.altPhone);
-    const newProjectIds = newLead.discussed.map((d) => d.projectId);
     const newCompany = (newLead.company ?? "").toLowerCase().trim();
 
     if (newNameNorm.length >= 3) {
@@ -317,23 +315,17 @@ export async function runIntelligenceCheck(
           id: true,
           name: true,
           city: true,
-          email: true,
           company: true,
           phone: true,
           altPhone: true,
-          discussed: {
-            select: { projectId: true },
-          },
         },
       });
 
       for (const c of candidates) {
         const cNameNorm = normName(c.name);
         const cCity = (c.city ?? "").toLowerCase().trim();
-        const cEmailDomain = emailDomain(c.email);
         const cLastDigits = lastDigits(c.phone);
         const cAltLastDigits = lastDigits(c.altPhone);
-        const cProjectIds = c.discussed.map((d) => d.projectId);
         const cCompany = (c.company ?? "").toLowerCase().trim();
         const editDist = levenshtein(newNameNorm, cNameNorm);
 
@@ -347,7 +339,7 @@ export async function runIntelligenceCheck(
           mediumHits.push({
             confidence: 72,
             field: {
-              field: "name+city",
+              field: "Full Name + City",
               value: `${newLead.name} / ${newLead.city}`,
               source: "lead",
               recordId: c.id,
@@ -356,24 +348,7 @@ export async function runIntelligenceCheck(
           continue;
         }
 
-        // 3b. Exact normalised name + same project → 70
-        if (
-          newNameNorm === cNameNorm &&
-          newProjectIds.some((pid) => cProjectIds.includes(pid))
-        ) {
-          mediumHits.push({
-            confidence: 70,
-            field: {
-              field: "name+project",
-              value: newLead.name,
-              source: "lead",
-              recordId: c.id,
-            },
-          });
-          continue;
-        }
-
-        // 3c. Name edit-distance ≤ 2 + matching last 6 phone digits → 68
+        // 3b. Name edit-distance ≤ 2 + matching last 6 phone digits → 68
         const phoneDigitsMatch =
           (newLastDigits.length === 6 &&
             (cLastDigits === newLastDigits ||
@@ -386,7 +361,7 @@ export async function runIntelligenceCheck(
           mediumHits.push({
             confidence: 68,
             field: {
-              field: "fuzzyName+phoneDigits",
+              field: "Full Name + Mobile",
               value: newLead.name,
               source: "lead",
               recordId: c.id,
@@ -395,29 +370,7 @@ export async function runIntelligenceCheck(
           continue;
         }
 
-        // 3d. Edit-distance ≤ 2 + same email domain + same city → 65
-        if (
-          editDist <= 2 &&
-          newEmailDomain &&
-          cEmailDomain &&
-          newEmailDomain === cEmailDomain &&
-          newCity &&
-          cCity &&
-          newCity === cCity
-        ) {
-          mediumHits.push({
-            confidence: 65,
-            field: {
-              field: "fuzzyName+emailDomain+city",
-              value: newLead.name,
-              source: "lead",
-              recordId: c.id,
-            },
-          });
-          continue;
-        }
-
-        // 3e. Same company + overlapping last-6-digit match → 58
+        // 3c. Same company + overlapping last-6-digit match → 58
         if (
           newCompany &&
           cCompany &&
@@ -427,7 +380,7 @@ export async function runIntelligenceCheck(
           mediumHits.push({
             confidence: 58,
             field: {
-              field: "company+phoneDigits",
+              field: "Company + Mobile",
               value: newCompany,
               source: "lead",
               recordId: c.id,
@@ -451,8 +404,6 @@ export async function runIntelligenceCheck(
 
   if (matchType === "NONE") {
     const newNameNorm = normName(newLead.name);
-    const newProjectIds = newLead.discussed.map((d) => d.projectId);
-    const newCity = (newLead.city ?? "").toLowerCase().trim();
 
     // 4a. Similar name only (edit-distance ≤ 3, min length 5) → 42
     if (newNameNorm.length >= 5) {
@@ -471,62 +422,13 @@ export async function runIntelligenceCheck(
           weakHits.push({
             confidence: 42,
             field: {
-              field: "fuzzyName",
+              field: "Full Name",
               value: newLead.name,
               source: "lead",
               recordId: c.id,
             },
           });
         }
-      }
-    }
-
-    // 4b. Same project enquiry only → 35 (only if no name-match found)
-    if (weakHits.length === 0 && newProjectIds.length > 0) {
-      const rows = await prisma.leadProject.findMany({
-        where: {
-          projectId: { in: newProjectIds },
-          leadId: { not: leadId },
-        },
-        select: { leadId: true, projectId: true },
-        distinct: ["leadId"],
-        take: 20,
-      });
-      for (const r of rows) {
-        if (!weakHits.find((h) => h.field.recordId === r.leadId)) {
-          weakHits.push({
-            confidence: 35,
-            field: {
-              field: "sameProject",
-              value: r.projectId,
-              source: "LeadProject",
-              recordId: r.leadId,
-            },
-          });
-        }
-      }
-    }
-
-    // 4c. Same city only → 30 (not enough to merge, purely informational)
-    if (weakHits.length === 0 && newCity) {
-      const rows = await prisma.lead.findMany({
-        where: {
-          id: { not: leadId },
-          city: { equals: newCity, mode: "insensitive" },
-        },
-        select: { id: true },
-        take: 5,
-      });
-      for (const r of rows) {
-        weakHits.push({
-          confidence: 30,
-          field: {
-            field: "city",
-            value: newCity,
-            source: "lead.city",
-            recordId: r.id,
-          },
-        });
       }
     }
 
