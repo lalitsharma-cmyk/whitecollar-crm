@@ -105,6 +105,17 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, a
   const [bulkBusy, setBulkBusy] = useState(false);
   const [bulkErr, setBulkErr] = useState<string | null>(null);
   const [bulkCrossTeamWarn, setBulkCrossTeamWarn] = useState<string | null>(null);
+  const [pickerOpenFor, setPickerOpenFor] = useState<string | null>(null);
+
+  async function quickSetFollowup(leadId: string, date: string) {
+    await fetch(`/api/leads/${leadId}/update`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ followupDate: date || null }),
+    });
+    setPickerOpenFor(null);
+    router.refresh();
+  }
 
   function toggle(id: string) {
     setSelected((s) => {
@@ -319,18 +330,32 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, a
                     )}
                   </div>
                   {/* Row 4: Next action · Owner */}
-                  {(nextAction || l.owner) && (
-                    <div className="flex items-center justify-between mt-1 text-[10px]">
-                      <span className="text-gray-500 dark:text-slate-400 truncate max-w-[180px]">
-                        {nextAction ? (l.todoNext ? `📌 ${nextAction}` : `📅 ${nextAction}`) : ""}
-                      </span>
-                      {l.owner && (
-                        <span className={`avatar ${l.owner.avatarColor} inline-flex w-5 h-5 text-[9px]`}>
-                          {l.owner.name.split(" ").map((s: string) => s[0]).slice(0, 2).join("")}
-                        </span>
+                  <div className="flex items-center justify-between mt-1 text-[10px]">
+                    <span className="flex items-center gap-1 text-gray-500 dark:text-slate-400 truncate max-w-[180px]">
+                      {nextAction ? (l.todoNext ? `📌 ${nextAction}` : `📅 ${nextAction}`) : ""}
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); e.preventDefault(); setPickerOpenFor(pickerOpenFor === l.id ? null : l.id); }}
+                        className="text-gray-400 hover:text-blue-600 text-xs flex-none"
+                        title="Set follow-up date"
+                      >📅</button>
+                      {pickerOpenFor === l.id && (
+                        <input
+                          type="date"
+                          autoFocus
+                          className="text-xs border rounded px-1 py-0.5"
+                          defaultValue={l.followupDate ?? ""}
+                          onChange={(e) => quickSetFollowup(l.id, e.target.value)}
+                          onBlur={() => setPickerOpenFor(null)}
+                        />
                       )}
-                    </div>
-                  )}
+                    </span>
+                    {l.owner && (
+                      <span className={`avatar ${l.owner.avatarColor} inline-flex w-5 h-5 text-[9px]`}>
+                        {l.owner.name.split(" ").map((s: string) => s[0]).slice(0, 2).join("")}
+                      </span>
+                    )}
+                  </div>
                 </Link>
                 {/* Direct-action call/WA buttons */}
                 {l.phone && (
@@ -460,11 +485,32 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, a
                       )}
                     </div>
                     {/* Next action */}
-                    {nextAction && (
-                      <div className="text-[11px] text-gray-600 dark:text-slate-300 truncate max-w-[220px] ml-auto mb-1">
-                        {l.todoNext ? `📌 ${l.todoNext}` : `📅 ${nextAction}`}
-                      </div>
-                    )}
+                    <div
+                      className="flex items-center justify-end gap-1 mb-1"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      {nextAction && (
+                        <span className="text-[11px] text-gray-600 dark:text-slate-300 truncate max-w-[180px]">
+                          {l.todoNext ? `📌 ${l.todoNext}` : `📅 ${nextAction}`}
+                        </span>
+                      )}
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); setPickerOpenFor(pickerOpenFor === l.id ? null : l.id); }}
+                        className="text-gray-400 hover:text-blue-600 text-xs flex-none"
+                        title="Set follow-up date"
+                      >📅</button>
+                      {pickerOpenFor === l.id && (
+                        <input
+                          type="date"
+                          autoFocus
+                          className="text-xs border rounded px-1 py-0.5"
+                          defaultValue={l.followupDate ?? ""}
+                          onChange={(e) => quickSetFollowup(l.id, e.target.value)}
+                          onBlur={() => setPickerOpenFor(null)}
+                        />
+                      )}
+                    </div>
                     {/* Owner chip */}
                     {l.owner && (
                       <div className={`avatar ${l.owner.avatarColor} inline-flex text-[9px]`} title={l.owner.name}>

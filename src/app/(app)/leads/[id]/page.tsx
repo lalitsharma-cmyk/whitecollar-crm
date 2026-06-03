@@ -216,6 +216,13 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
   const slaMs = lead.slaFirstCallBy ? lead.slaFirstCallBy.getTime() - Date.now() : null;
   const slaActive = lead.ownerId && callsCount === 0 && slaMs !== null && slaMs > -3600_000;
 
+  // Follow-up overdue — true when followupDate is in the past and the lead is
+  // still active (not LOST or WON). Computed server-side so there's no flash.
+  const followupOverdue = lead.followupDate &&
+    lead.followupDate < new Date() &&
+    lead.status !== "LOST" &&
+    lead.status !== "WON";
+
   // ── JSX render consts — extracted so they can be rendered in DIFFERENT
   // positions on mobile vs desktop without duplicating ~100 lines of JSX.
   // Lalit's mobile asks:
@@ -587,6 +594,20 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
                 : `🚨 Call SLA breached ${Math.floor(-slaMs / 60_000)}m ago`}
             </div>
             <div className="text-xs text-gray-600 dark:text-slate-300 mt-0.5">Logging a call clears this timer. Admin is auto-notified if you don't call.</div>
+          </div>
+        )}
+
+        {/* FOLLOW-UP OVERDUE BANNER */}
+        {followupOverdue && (
+          <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 flex items-center gap-3 text-sm">
+            <span className="text-red-600 text-base">⚠️</span>
+            <div>
+              <span className="font-semibold text-red-700">Follow-up overdue</span>
+              <span className="text-red-600 ml-2">
+                — was due {lead.followupDate ? new Date(lead.followupDate).toLocaleDateString("en-GB", { day: "2-digit", month: "short" }) : ""}
+                . Log a call or reschedule.
+              </span>
+            </div>
           </div>
         )}
 
