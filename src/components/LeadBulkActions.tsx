@@ -6,10 +6,11 @@ import { X, Mail } from "lucide-react";
 interface Agent { id: string; name: string; team: string | null; }
 interface EmailTpl { id: string; name: string; subject: string | null; }
 
-export default function LeadBulkActions({ selectedIds, agents, onClear }: { selectedIds: string[]; agents: Agent[]; onClear: () => void; }) {
+export default function LeadBulkActions({ selectedIds, agents, onClear, canReassign = false }: { selectedIds: string[]; agents: Agent[]; onClear: () => void; canReassign?: boolean; }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [picked, setPicked] = useState("");
+  const [assignToUserId, setAssignToUserId] = useState("");
   const [showEmail, setShowEmail] = useState(false);
   const [emailTpls, setEmailTpls] = useState<EmailTpl[]>([]);
   const [emailTplId, setEmailTplId] = useState("");
@@ -41,14 +42,14 @@ export default function LeadBulkActions({ selectedIds, agents, onClear }: { sele
   if (selectedIds.length === 0) return null;
 
   async function bulkReassign() {
-    if (!picked) return;
+    if (!assignToUserId) return;
     setBusy(true);
     setCrossTeamWarn(null);
     try {
       const r = await fetch("/api/leads/bulk", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "reassign", ids: selectedIds, userId: picked }),
+        body: JSON.stringify({ action: "reassign", ids: selectedIds, assignToUserId }),
       });
       if (r.ok) {
         const j = await r.json().catch(() => ({}));
@@ -114,11 +115,15 @@ export default function LeadBulkActions({ selectedIds, agents, onClear }: { sele
       <div className="fixed bottom-20 lg:bottom-6 left-1/2 -translate-x-1/2 z-40 bg-[#0b1a33] text-white rounded-xl shadow-2xl px-4 py-3 flex items-center gap-3 flex-wrap max-w-[95vw]">
         <div className="text-sm font-semibold">{selectedIds.length} selected</div>
         <div className="w-px h-6 bg-white/20" />
-        <select value={picked} onChange={(e) => setPicked(e.target.value)} className="bg-white/10 text-white border-0 rounded-lg px-2 py-1 text-xs">
-          <option value="">Reassign to…</option>
-          {agents.map(a => <option key={a.id} value={a.id} className="text-black">{a.name} ({a.team ?? "—"})</option>)}
-        </select>
-        <button onClick={bulkReassign} disabled={busy || !picked} className="text-xs font-semibold bg-[#c9a24b] text-[#0b1a33] px-3 py-1 rounded-lg">Reassign</button>
+        {canReassign && (
+          <>
+            <select value={assignToUserId} onChange={(e) => { setAssignToUserId(e.target.value); setPicked(e.target.value); }} className="bg-white/10 text-white border-0 rounded-lg px-2 py-1 text-xs">
+              <option value="">Reassign to →</option>
+              {agents.map(a => <option key={a.id} value={a.id} className="text-black">{a.name} ({a.team ?? "—"})</option>)}
+            </select>
+            <button onClick={bulkReassign} disabled={busy || !assignToUserId} className="text-xs font-semibold bg-[#c9a24b] text-[#0b1a33] px-3 py-1 rounded-lg">Reassign</button>
+          </>
+        )}
         <button onClick={() => setShowEmail(true)} disabled={busy} className="text-xs font-semibold bg-sky-600 text-white px-3 py-1 rounded-lg flex items-center gap-1"><Mail className="w-3 h-3" /> Email</button>
         <input type="date" value={followupDate} onChange={(e) => setFollowupDate(e.target.value)} className="bg-white/10 text-white border-0 rounded-lg px-2 py-1 text-xs" />
         <button onClick={bulkSetFollowup} disabled={busy} className="text-xs font-semibold bg-emerald-600 text-white px-3 py-1 rounded-lg">Set Follow-up</button>

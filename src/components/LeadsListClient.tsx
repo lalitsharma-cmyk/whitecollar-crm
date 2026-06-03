@@ -527,7 +527,7 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, a
           </tbody>
         </table>
       </div>
-      {canBulk && <LeadBulkActions selectedIds={selectedIds} agents={agents} onClear={() => setSelected(new Set())} />}
+      {canBulk && <LeadBulkActions selectedIds={selectedIds} agents={agents} onClear={() => setSelected(new Set())} canReassign={canReassign} />}
 
       {/* ─── New bulk action bar (Tag · Reassign · Reject) ─────────────
           Renders ABOVE the legacy LeadBulkActions bar (email/delete) when

@@ -42,8 +42,22 @@ export async function POST(req: NextRequest) {
     if (me.role !== "ADMIN" && me.role !== "MANAGER") {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
-    const userId = String(body.ownerId ?? body.userId ?? "");
-    if (!userId) return NextResponse.json({ error: "ownerId required" }, { status: 400 });
+    const userId = String(body.assignToUserId ?? body.ownerId ?? body.userId ?? "");
+    if (!userId) return NextResponse.json({ error: "assignToUserId required" }, { status: 400 });
+    // For MANAGER: verify target user exists and shares the same team as the
+    // manager — prevents cross-team reassigns being silently allowed at the
+    // API layer (the frontend only soft-warns, but we hard-block here).
+    if (me.role === "MANAGER") {
+      const targetUser = await prisma.user.findUnique({ where: { id: userId }, select: { id: true, team: true, active: true } });
+      if (!targetUser || !targetUser.active) {
+        return NextResponse.json({ error: "Target user not found" }, { status: 404 });
+      }
+      const meTeam = normalizeTeam(me.team);
+      const targetTeam = normalizeTeam(targetUser.team);
+      if (meTeam && targetTeam && meTeam !== targetTeam) {
+        return NextResponse.json({ error: "Managers can only reassign leads to agents on their own team" }, { status: 403 });
+      }
+    }
     // Restrict to leads the caller is allowed to touch (scope applies even
     // for ADMIN — scope is {} for admin so they get the full set).
     const visible = await prisma.lead.findMany({

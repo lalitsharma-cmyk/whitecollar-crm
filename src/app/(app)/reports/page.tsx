@@ -566,6 +566,11 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
           <div className="font-bold text-sm mt-1">Pipeline overview</div>
           <div className="text-[10px] text-gray-500 mt-0.5">Funnel, source mix, agent performance · below ↓</div>
         </a>
+        <Link href="/reports/leaderboard" className="card p-4 border-l-4 border-yellow-500 hover:shadow-md transition">
+          <div className="text-2xl">🏆</div>
+          <div className="font-bold text-sm mt-1">Leaderboard</div>
+          <div className="text-[10px] text-gray-500 mt-0.5">Agent call volume and conversion performance</div>
+        </Link>
       </div>
 
       {isAdmin ? (

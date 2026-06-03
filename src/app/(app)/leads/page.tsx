@@ -493,6 +493,21 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
         <div className="flex gap-2 overflow-x-auto lg:flex-wrap pb-1 -mx-3 px-3 lg:mx-0 lg:px-0 scrollbar-thin">
           <Link href="/leads/kanban" className="btn btn-ghost text-xs">📋 Pipeline</Link>
           <Link href="/leads/overdue" className="btn btn-ghost text-xs">⚠️ Overdue</Link>
+          {(() => {
+            const exportParams = new URLSearchParams();
+            for (const [k, v] of Object.entries(sp)) {
+              if (v != null && v !== "") exportParams.set(k, String(v));
+            }
+            return (
+              <a
+                href={`/api/leads/export?${exportParams.toString()}`}
+                className="btn btn-ghost text-xs"
+                title="Download the currently filtered leads as a CSV file"
+              >
+                💾 Export CSV
+              </a>
+            );
+          })()}
           <Link
             href="/leads?filter=all"
             className={`px-3 py-2 rounded-full text-xs font-semibold border min-h-11 inline-flex items-center gap-1 ${filterTab === "all" ? "bg-[#0b1a33] text-white border-[#0b1a33]" : "bg-white dark:bg-slate-700 border-[#e5e7eb] dark:border-slate-600 text-gray-700 dark:text-slate-100"}`}
