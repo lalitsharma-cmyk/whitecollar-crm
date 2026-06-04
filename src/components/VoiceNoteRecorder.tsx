@@ -78,6 +78,13 @@ export default function VoiceNoteRecorder({ leadId, onTranscribed }: Props) {
   const tickRef = useRef<ReturnType<typeof setInterval> | null>(null);
   // Track whether the user pressed Stop so onend doesn't auto-restart.
   const stoppedByUserRef = useRef(false);
+  // Ref copies of transcript state — avoids stale closures in stopRecording
+  // and in the onend restart loop (state captured at callback creation time
+  // is always the initial empty string due to JS closure semantics).
+  const finalTranscriptRef = useRef("");
+  const interimTranscriptRef = useRef("");
+  // Whether a recording session is currently active — used by onend restart.
+  const isRecordingRef = useRef(false);
 
   // Resolve the constructor once on mount — SSR safe, since `window` only
   // exists in the browser. `null` here means the browser doesn't support it.
@@ -144,8 +151,14 @@ export default function VoiceNoteRecorder({ leadId, onTranscribed }: Props) {
         }
       }
       if (appendFinal) {
-        setFinalTranscript((prev) => (prev + appendFinal).replace(/\s+/g, " "));
+        setFinalTranscript((prev) => {
+          const next = (prev + appendFinal).replace(/\s+/g, " ");
+          // Keep ref in sync so stopRecording reads the latest value.
+          finalTranscriptRef.current = next;
+          return next;
+        });
       }
+      interimTranscriptRef.current = interim;
       setInterimTranscript(interim);
     };
 
@@ -168,11 +181,23 @@ export default function VoiceNoteRecorder({ leadId, onTranscribed }: Props) {
     };
 
     recognition.onend = () => {
+      // On iOS/Safari, continuous mode causes onend to fire immediately after
+      // every utterance pause. Restart the session automatically when the user
+      // hasn't pressed Stop, so recording stays live.
+      if (isRecordingRef.current && !stoppedByUserRef.current) {
+        try {
+          recognition.start();
+          return; // Stay in "recording" phase — don't transition yet
+        } catch {
+          /* If restart throws (e.g. already running), fall through to review */
+        }
+      }
       // Stop the elapsed-time tick once recognition actually ends.
       if (tickRef.current) {
         clearInterval(tickRef.current);
         tickRef.current = null;
       }
+      isRecordingRef.current = false;
       // If the user stopped it deliberately, move into review with whatever
       // we captured. If the engine ended on its own (silence timeout, etc.)
       // also drop into review rather than silently going back to idle.
@@ -188,6 +213,9 @@ export default function VoiceNoteRecorder({ leadId, onTranscribed }: Props) {
       return;
     }
     recognitionRef.current = recognition;
+    isRecordingRef.current = true;
+    finalTranscriptRef.current = "";
+    interimTranscriptRef.current = "";
     startedAtRef.current = Date.now();
     setElapsedSec(0);
     tickRef.current = setInterval(() => {
@@ -198,6 +226,7 @@ export default function VoiceNoteRecorder({ leadId, onTranscribed }: Props) {
 
   function stopRecording() {
     stoppedByUserRef.current = true;
+    isRecordingRef.current = false;
     try {
       recognitionRef.current?.stop();
     } catch {
@@ -207,15 +236,20 @@ export default function VoiceNoteRecorder({ leadId, onTranscribed }: Props) {
       clearInterval(tickRef.current);
       tickRef.current = null;
     }
-    // Seed the editable textarea with whatever's been captured so far. Use a
-    // microtask delay so any in-flight final result from the engine has a
-    // chance to land before we snapshot.
+    // Seed the editable textarea with whatever's been captured so far.
+    // Read from REFS (not state) to get the actual latest value — the state
+    // variables captured in this closure reflect the render when stopRecording
+    // was defined, not the current values at call time (stale closure).
+    // A short delay lets the engine emit any pending final result before we snapshot.
     setTimeout(() => {
       setEditableTranscript((prev) => {
         if (prev) return prev; // user already edited
-        return (finalTranscript + " " + interimTranscript).trim().replace(/\s+/g, " ");
+        const merged = (finalTranscriptRef.current + " " + interimTranscriptRef.current)
+          .trim()
+          .replace(/\s+/g, " ");
+        return merged;
       });
-    }, 0);
+    }, 300);
   }
 
   async function confirmNote() {
@@ -251,6 +285,8 @@ export default function VoiceNoteRecorder({ leadId, onTranscribed }: Props) {
   }
 
   function reset() {
+    stoppedByUserRef.current = true;
+    isRecordingRef.current = false;
     try {
       recognitionRef.current?.abort();
     } catch {
@@ -260,6 +296,8 @@ export default function VoiceNoteRecorder({ leadId, onTranscribed }: Props) {
       clearInterval(tickRef.current);
       tickRef.current = null;
     }
+    finalTranscriptRef.current = "";
+    interimTranscriptRef.current = "";
     setPhase("idle");
     setFinalTranscript("");
     setInterimTranscript("");

@@ -41,6 +41,19 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const body = await req.json().catch(() => ({}));
   if (!body || typeof body !== "object") return NextResponse.json({ error: "Invalid body" }, { status: 400 });
 
+  // Name / phone / email are sensitive PII — only admin/manager may change them.
+  // Agents see a "request admin" affordance in the UI; enforce it server-side too.
+  const ADMIN_ONLY_FIELDS = new Set(["name", "phone", "email"]);
+  if (me.role === "AGENT") {
+    const restricted = Object.keys(body).filter(k => ADMIN_ONLY_FIELDS.has(k));
+    if (restricted.length > 0) {
+      return NextResponse.json(
+        { error: "Only an admin can change name, phone, or email. Ask your admin to update it.", adminOnly: true },
+        { status: 403 }
+      );
+    }
+  }
+
   const updates: Record<string, unknown> = {};
   const activityNotes: string[] = [];
 

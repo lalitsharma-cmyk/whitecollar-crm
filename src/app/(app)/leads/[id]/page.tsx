@@ -415,14 +415,31 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
     </div>
   );
 
+  const isAdminOrManager = me.role === "ADMIN" || me.role === "MANAGER";
+
   const qualificationCard = (
     <div data-lead-section="overview" className="card p-5">
-      <div className="font-semibold mb-3 dark:text-slate-100">Qualification <span className="text-[10px] text-gray-400 dark:text-slate-500 font-normal">(click any value to edit)</span></div>
+      <div className="font-semibold mb-3 dark:text-slate-100">Client information <span className="text-[10px] text-gray-400 dark:text-slate-500 font-normal">(click any value to edit)</span></div>
       {/* `min-w-0` on every grid cell so long values (LinkedIn URLs, long
           categorization labels) truncate within their column instead of
-          overflowing into the neighbour. Lalit screenshot showed the
-          LinkedIn URL bleeding into the Configuration column on mobile. */}
+          overflowing into the neighbour. */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm [&>div]:min-w-0 [&>div]:overflow-hidden">
+        {/* Phone — admin/manager can edit; agent sees read-only + lock note */}
+        <div>
+          <div className="text-xs text-gray-500 dark:text-slate-400">📞 Phone</div>
+          {isAdminOrManager ? (
+            <InlineEdit leadId={lead.id} field="phone" type="phone" value={lead.phone ?? ""} placeholder="+91 or +971…" />
+          ) : (
+            <div className="flex items-center gap-1.5 mt-0.5">
+              <span className="text-sm">{lead.phone ? maskPhone(lead.phone) : <span className="text-gray-400">—</span>}</span>
+              <span className="text-[10px] text-gray-400 italic">🔒 admin only</span>
+            </div>
+          )}
+        </div>
+        <div>
+          <div className="text-xs text-gray-500 dark:text-slate-400">📱 Alt phone</div>
+          <InlineEdit leadId={lead.id} field="altPhone" type="phone" value={lead.altPhone ?? ""} placeholder="+91 or +971…" />
+        </div>
         <div>
           <div className="text-xs text-gray-500 dark:text-slate-400">💼 Profession</div>
           <InlineEdit leadId={lead.id} field="profession" type="select" value={lead.profession ?? ""}
@@ -441,13 +458,29 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
           <InlineEdit leadId={lead.id} field="company" value={lead.company ?? ""} placeholder="e.g. Emirates NBD" />
         </div>
         <div>
-          <div className="text-xs text-gray-500 dark:text-slate-400">📱 Alt phone</div>
-          <InlineEdit leadId={lead.id} field="altPhone" type="phone" value={lead.altPhone ?? ""} placeholder="+91 or +971…" />
-        </div>
-        <div>
           <div className="text-xs text-gray-500 dark:text-slate-400">Potential</div>
           <InlineEdit leadId={lead.id} field="potential" type="select" value={lead.potential ?? ""}
             options={[{value:"HIGH",label:"🔥 Hot"},{value:"MEDIUM",label:"🌤 Warm"},{value:"LOW",label:"❄ Cold"},{value:"UNKNOWN",label:"— Unknown"}]} />
+        </div>
+        {/* LinkedIn — full URL, shown as clickable link when set */}
+        <div className="sm:col-span-2">
+          <div className="text-xs text-gray-500 dark:text-slate-400">🔗 LinkedIn</div>
+          {lead.linkedInUrl ? (
+            <div className="flex items-center gap-2 mt-0.5 min-w-0">
+              <a
+                href={lead.linkedInUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-sm text-blue-600 hover:underline dark:text-blue-400 truncate max-w-xs"
+                title={lead.linkedInUrl}
+              >
+                {lead.linkedInUrl.replace(/^https?:\/\/(www\.)?linkedin\.com\/in\//i, "linkedin.com/in/")}
+              </a>
+              <InlineEdit leadId={lead.id} field="linkedInUrl" value={lead.linkedInUrl} placeholder="https://linkedin.com/in/…" />
+            </div>
+          ) : (
+            <InlineEdit leadId={lead.id} field="linkedInUrl" value="" placeholder="https://linkedin.com/in/…" />
+          )}
         </div>
       </div>
     </div>
@@ -552,7 +585,14 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
           <div className="flex items-start justify-between flex-wrap gap-3">
             <div>
               <div className="flex flex-wrap items-center gap-2">
-                <h2 className="text-xl font-bold">{lead.name}{lead.altName && <span className="text-base font-medium text-gray-600"> & {lead.altName}</span>}</h2>
+                {(me.role === "ADMIN" || me.role === "MANAGER") ? (
+                  <h2 className="text-xl font-bold">
+                    <InlineEdit leadId={lead.id} field="name" value={lead.name} placeholder="Lead name" />
+                    {lead.altName && <span className="text-base font-medium text-gray-600"> & {lead.altName}</span>}
+                  </h2>
+                ) : (
+                  <h2 className="text-xl font-bold">{lead.name}{lead.altName && <span className="text-base font-medium text-gray-600"> & {lead.altName}</span>}</h2>
+                )}
                 {lead.aiScore && <span className={`chip ${aiClass}`}>{lead.aiScore} · {lead.aiScoreValue}</span>}
                 <span className="chip chip-warm">{lead.status.replaceAll("_"," ")}</span>
                 <StageDurationBadge since={lead.updatedAt} />
@@ -573,14 +613,24 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
                 {lead.moodStatus && <span className={`chip ${moodClass[lead.moodStatus] ?? "src"}`}>😊 {lead.moodStatus}</span>}
                 <span className={`chip ${lead.forwardedTeam === "India" ? "src-csv" : "src-wa"}`}>{lead.forwardedTeam ?? "—"}</span>
               </div>
-              {/* Header sub-line — email + company only. City/country now live
-                  EXCLUSIVELY in the 📍 Address card on the right rail (Lalit's
-                  ask: "2 places location gets display in lead detail. no use.")
-                  and the trailing ", null" when country was missing is also
-                  killed as a side effect ("What is null here?"). */}
-              <div className="text-sm text-gray-500 dark:text-slate-400 mt-1">
-                {lead.email && `${lead.email}`}
-                {lead.company && ` · ${lead.company}`}
+              {/* Header sub-line — email + company. Admin/manager can inline-edit
+                  both email and phone here. Agents see read-only values with a
+                  "contact admin" note (enforced both client-side and server-side). */}
+              <div className="text-sm text-gray-500 dark:text-slate-400 mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                {(me.role === "ADMIN" || me.role === "MANAGER") ? (
+                  <>
+                    <InlineEdit leadId={lead.id} field="email" value={lead.email ?? ""} placeholder="Email (click to set)" />
+                    {lead.company && <span>· {lead.company}</span>}
+                  </>
+                ) : (
+                  <>
+                    {lead.email && <span>{lead.email}</span>}
+                    {lead.company && <span>· {lead.company}</span>}
+                    {!lead.email && (
+                      <span className="text-[10px] text-gray-400 italic">🔒 Contact admin to update email</span>
+                    )}
+                  </>
+                )}
               </div>
               {/* Journey progress bar — shows pipeline stage at a glance */}
               <div className="mt-2 mb-1">
