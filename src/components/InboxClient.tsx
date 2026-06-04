@@ -36,12 +36,33 @@ interface Props {
   canDelete: boolean;
 }
 
+const REJECT_REASONS = [
+  { value: "NOT_INTERESTED",           label: "Not Interested" },
+  { value: "LOW_BUDGET",               label: "Low Budget" },
+  { value: "FUND_ISSUE",               label: "Fund Issue" },
+  { value: "NEVER_RESPONDED",          label: "Never Responded" },
+  { value: "JUST_SEARCHING",           label: "Just Searching" },
+  { value: "DROP_THE_PLAN",            label: "Drop The Plan" },
+  { value: "WAR_FEAR",                 label: "War / Market Fear" },
+  { value: "WAITING_FOR_PROPERTY_SALE",label: "Waiting to Sell Own Property" },
+  { value: "INVALID_NUMBER",           label: "Invalid Number" },
+  { value: "OTHER",                    label: "Other" },
+];
+
 export default function InboxClient({ rows, canDelete }: Props) {
   const router = useRouter();
+
+  // ── Single-lead actions
   const [pickerOpenFor, setPickerOpenFor] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
   const [deleteReason, setDeleteReason] = useState("NOT_INTERESTED");
   const [deleteBusy, setDeleteBusy] = useState(false);
+
+  // ── Bulk select
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkModalOpen, setBulkModalOpen] = useState(false);
+  const [bulkReason, setBulkReason] = useState("NOT_INTERESTED");
+  const [bulkBusy, setBulkBusy] = useState(false);
 
   async function quickSetFollowup(leadId: string, date: string) {
     await fetch(`/api/leads/${leadId}/update`, {
@@ -70,6 +91,37 @@ export default function InboxClient({ rows, canDelete }: Props) {
     }
   }
 
+  function toggleSelect(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleAll() {
+    if (selectedIds.size === rows.length) setSelectedIds(new Set());
+    else setSelectedIds(new Set(rows.map((r) => r.id)));
+  }
+
+  async function doBulkReject() {
+    if (bulkBusy || selectedIds.size === 0) return;
+    setBulkBusy(true);
+    try {
+      const r = await fetch("/api/leads/bulk", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "reject", ids: [...selectedIds], reason: bulkReason }),
+      });
+      if (!r.ok) return;
+      setSelectedIds(new Set());
+      setBulkModalOpen(false);
+      router.refresh();
+    } finally {
+      setBulkBusy(false);
+    }
+  }
+
   function coldClass(daysCold: number | null) {
     if (daysCold === null || daysCold > 7) return "font-semibold text-red-600 dark:text-red-400";
     return "font-semibold text-amber-600 dark:text-amber-400";
@@ -80,14 +132,50 @@ export default function InboxClient({ rows, canDelete }: Props) {
     return `${daysCold}d cold`;
   }
 
+  const allSelected = rows.length > 0 && selectedIds.size === rows.length;
+  const someSelected = selectedIds.size > 0 && selectedIds.size < rows.length;
+
   return (
     <>
+      {/* ── Bulk action bar (floats at top when rows are selected) ── */}
+      {selectedIds.size > 0 && (
+        <div className="sticky top-2 z-30 flex justify-center">
+          <div className="bg-[#0b1a33] text-white rounded-xl px-4 py-2.5 flex items-center gap-3 shadow-xl">
+            <span className="text-sm font-semibold">{selectedIds.size} selected</span>
+            {canDelete && (
+              <button
+                type="button"
+                onClick={() => { setBulkReason("NOT_INTERESTED"); setBulkModalOpen(true); }}
+                className="flex items-center gap-1.5 bg-red-600 hover:bg-red-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                Reject {selectedIds.size}
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => setSelectedIds(new Set())}
+              className="text-xs text-slate-400 hover:text-white transition-colors"
+            >
+              Clear
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* ── Mobile cards ── */}
       <div className="md:hidden space-y-3">
         {rows.map((lead) => (
-          <div key={lead.id} className="bg-white dark:bg-slate-800 rounded-xl border border-[#e5e7eb] dark:border-slate-700 p-4 shadow-sm">
+          <div key={lead.id} className={`bg-white dark:bg-slate-800 rounded-xl border transition-colors shadow-sm p-4 ${selectedIds.has(lead.id) ? "border-blue-400 dark:border-blue-500" : "border-[#e5e7eb] dark:border-slate-700"}`}>
             <div className="flex items-start justify-between gap-2 mb-2">
-              <div className="min-w-0">
+              {/* Checkbox */}
+              <input
+                type="checkbox"
+                checked={selectedIds.has(lead.id)}
+                onChange={() => toggleSelect(lead.id)}
+                className="mt-1 flex-none accent-blue-600 w-4 h-4"
+              />
+              <div className="min-w-0 flex-1">
                 <Link href={`/leads/${lead.id}`} className="font-semibold text-[#0b1a33] dark:text-slate-100 hover:underline truncate block">
                   {lead.name}
                 </Link>
@@ -108,18 +196,21 @@ export default function InboxClient({ rows, canDelete }: Props) {
             {/* Action buttons — mobile */}
             <div className="flex items-center gap-1.5 flex-wrap">
               {lead.phone && (
-                <a href={telLink(lead.phone) || "#"} className="w-8 h-8 rounded-lg bg-blue-600 hover:bg-blue-700 text-white flex items-center justify-center transition-colors">
+                <a href={telLink(lead.phone) || "#"} title={`Call ${lead.name}`}
+                  className="w-8 h-8 rounded-lg bg-blue-600 hover:bg-blue-700 text-white flex items-center justify-center transition-colors">
                   <Phone className="w-3.5 h-3.5" />
                 </a>
               )}
               {lead.phone && (
                 <a href={whatsappLink(lead.phone) || "#"} target="_blank" rel="noopener noreferrer"
+                  title={`WhatsApp ${lead.name}`}
                   className="w-8 h-8 rounded-lg bg-[#25D366] hover:bg-[#1ea953] text-white flex items-center justify-center transition-colors">
                   <WaIcon />
                 </a>
               )}
               <div className="relative">
                 <button type="button" onClick={() => setPickerOpenFor(pickerOpenFor === lead.id ? null : lead.id)}
+                  title="Set follow-up"
                   className="w-8 h-8 rounded-lg bg-amber-500 hover:bg-amber-600 text-white flex items-center justify-center transition-colors">
                   <Calendar className="w-3.5 h-3.5" />
                 </button>
@@ -133,15 +224,18 @@ export default function InboxClient({ rows, canDelete }: Props) {
                 )}
               </div>
               {lead.email && (
-                <a href={`mailto:${lead.email}`} className="w-8 h-8 rounded-lg bg-sky-500 hover:bg-sky-600 text-white flex items-center justify-center transition-colors">
+                <a href={`mailto:${lead.email}`} title={`Email ${lead.name}`}
+                  className="w-8 h-8 rounded-lg bg-sky-500 hover:bg-sky-600 text-white flex items-center justify-center transition-colors">
                   <Mail className="w-3.5 h-3.5" />
                 </a>
               )}
-              <a href={`/leads/${lead.id}`} className="w-8 h-8 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-white flex items-center justify-center transition-colors">
+              <a href={`/leads/${lead.id}`} title="Open lead"
+                className="w-8 h-8 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-white flex items-center justify-center transition-colors">
                 <Pencil className="w-3.5 h-3.5" />
               </a>
               {canDelete && (
-                <button type="button" onClick={() => { setDeleteTarget({ id: lead.id, name: lead.name }); setDeleteReason("NOT_INTERESTED"); }}
+                <button type="button" title="Reject lead"
+                  onClick={() => { setDeleteTarget({ id: lead.id, name: lead.name }); setDeleteReason("NOT_INTERESTED"); }}
                   className="w-8 h-8 rounded-lg bg-red-500 hover:bg-red-600 text-white flex items-center justify-center transition-colors">
                   <Trash2 className="w-3.5 h-3.5" />
                 </button>
@@ -156,6 +250,17 @@ export default function InboxClient({ rows, canDelete }: Props) {
         <table className="w-full text-sm border-collapse">
           <thead className="bg-gray-50 dark:bg-slate-800 text-xs font-semibold text-gray-500 dark:text-slate-400">
             <tr>
+              {/* Select-all checkbox */}
+              <th className="px-3 py-3 w-8">
+                <input
+                  type="checkbox"
+                  checked={allSelected}
+                  ref={(el) => { if (el) el.indeterminate = someSelected; }}
+                  onChange={toggleAll}
+                  className="accent-blue-600 w-4 h-4 cursor-pointer"
+                  title="Select all"
+                />
+              </th>
               <th className="px-4 py-3 text-left">Lead</th>
               <th className="px-4 py-3 text-left w-28">Status</th>
               <th className="px-4 py-3 text-left w-16">Potential</th>
@@ -167,7 +272,17 @@ export default function InboxClient({ rows, canDelete }: Props) {
           </thead>
           <tbody className="divide-y divide-[#e5e7eb] dark:divide-slate-700 bg-white dark:bg-slate-900">
             {rows.map((lead) => (
-              <tr key={lead.id} className="hover:bg-amber-50/30 dark:hover:bg-slate-800/60 transition-colors">
+              <tr key={lead.id}
+                className={`transition-colors ${selectedIds.has(lead.id) ? "bg-blue-50/60 dark:bg-blue-900/20" : "hover:bg-amber-50/30 dark:hover:bg-slate-800/60"}`}>
+                {/* Row checkbox */}
+                <td className="px-3 py-3">
+                  <input
+                    type="checkbox"
+                    checked={selectedIds.has(lead.id)}
+                    onChange={() => toggleSelect(lead.id)}
+                    className="accent-blue-600 w-4 h-4 cursor-pointer"
+                  />
+                </td>
                 <td className="px-4 py-3">
                   <Link href={`/leads/${lead.id}`} className="font-medium text-[#0b1a33] dark:text-slate-100 hover:underline">
                     {lead.name}
@@ -250,7 +365,7 @@ export default function InboxClient({ rows, canDelete }: Props) {
         </table>
       </div>
 
-      {/* ── Delete confirm modal ── */}
+      {/* ── Single-lead delete confirm modal ── */}
       {deleteTarget && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4"
           onClick={() => !deleteBusy && setDeleteTarget(null)}>
@@ -258,7 +373,7 @@ export default function InboxClient({ rows, canDelete }: Props) {
             onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center gap-2 mb-1">
               <Trash2 className="w-4 h-4 text-red-500 flex-none" />
-              <span className="font-semibold text-base">Reject "{deleteTarget.name}"?</span>
+              <span className="font-semibold text-base">Reject &ldquo;{deleteTarget.name}&rdquo;?</span>
             </div>
             <p className="text-xs text-gray-500 dark:text-slate-400 mb-3">
               Lead will be marked Lost and removed from the active queue.
@@ -266,22 +381,42 @@ export default function InboxClient({ rows, canDelete }: Props) {
             <label className="text-xs font-semibold text-gray-600 dark:text-slate-300">Reason</label>
             <select value={deleteReason} onChange={(e) => setDeleteReason(e.target.value)}
               className="w-full mt-1 mb-4 border border-[#e5e7eb] dark:border-slate-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-slate-800 dark:text-slate-100">
-              <option value="NOT_INTERESTED">Not Interested</option>
-              <option value="LOW_BUDGET">Low Budget</option>
-              <option value="FUND_ISSUE">Fund Issue</option>
-              <option value="NEVER_RESPONDED">Never Responded</option>
-              <option value="JUST_SEARCHING">Just Searching</option>
-              <option value="DROP_THE_PLAN">Drop The Plan</option>
-              <option value="WAR_FEAR">War / Market Fear</option>
-              <option value="WAITING_FOR_PROPERTY_SALE">Waiting to Sell Own Property</option>
-              <option value="INVALID_NUMBER">Invalid Number</option>
-              <option value="OTHER">Other</option>
+              {REJECT_REASONS.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
             </select>
             <div className="flex justify-end gap-2">
               <button onClick={() => setDeleteTarget(null)} className="btn btn-ghost text-sm">Cancel</button>
               <button onClick={quickReject} disabled={deleteBusy}
                 className="btn bg-red-600 hover:bg-red-700 text-white text-sm">
                 {deleteBusy ? "Rejecting…" : "Reject Lead"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Bulk reject confirm modal ── */}
+      {bulkModalOpen && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4"
+          onClick={() => !bulkBusy && setBulkModalOpen(false)}>
+          <div className="bg-white dark:bg-slate-900 rounded-xl max-w-sm w-full p-5 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center gap-2 mb-1">
+              <Trash2 className="w-4 h-4 text-red-500 flex-none" />
+              <span className="font-semibold text-base">Reject {selectedIds.size} leads?</span>
+            </div>
+            <p className="text-xs text-gray-500 dark:text-slate-400 mb-3">
+              All {selectedIds.size} selected leads will be marked Lost and removed from the active queue.
+            </p>
+            <label className="text-xs font-semibold text-gray-600 dark:text-slate-300">Reason</label>
+            <select value={bulkReason} onChange={(e) => setBulkReason(e.target.value)}
+              className="w-full mt-1 mb-4 border border-[#e5e7eb] dark:border-slate-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-slate-800 dark:text-slate-100">
+              {REJECT_REASONS.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
+            </select>
+            <div className="flex justify-end gap-2">
+              <button onClick={() => setBulkModalOpen(false)} className="btn btn-ghost text-sm">Cancel</button>
+              <button onClick={doBulkReject} disabled={bulkBusy}
+                className="btn bg-red-600 hover:bg-red-700 text-white text-sm">
+                {bulkBusy ? "Rejecting…" : `Reject ${selectedIds.size} Leads`}
               </button>
             </div>
           </div>
