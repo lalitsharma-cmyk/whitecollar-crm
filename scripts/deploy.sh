@@ -31,6 +31,10 @@ if [ -z "${VERCEL_DEPLOY_HOOK_URL:-}" ]; then
   exit 1
 fi
 
+echo "📤 Pushing to GitHub (origin/main)..."
+git push origin main
+
+echo ""
 echo "🚀 Triggering Vercel deploy of $(git rev-parse --short HEAD) ($(git log -1 --format=%s))..."
 response=$(curl -sX POST "$VERCEL_DEPLOY_HOOK_URL")
 echo "   Vercel response: $response"
