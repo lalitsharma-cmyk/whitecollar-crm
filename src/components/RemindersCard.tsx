@@ -143,8 +143,8 @@ export default function RemindersCard({ events, todayIso, showAgent }: Props) {
 
   return (
     <div
-      className="rounded-2xl overflow-hidden"
-      style={{ background: "#0b1a33", color: "#fff" }}
+      className="rounded-2xl flex flex-col"
+      style={{ background: "#0b1a33", color: "#fff", maxHeight: "calc(100vh - 2rem)" }}
     >
       {/* ── Header: title + Month/Year selectors ── */}
       <div className="flex items-center justify-between px-4 pt-4 pb-3">
@@ -268,7 +268,7 @@ export default function RemindersCard({ events, todayIso, showAgent }: Props) {
       </div>
 
       {/* ── Event list ── */}
-      <div className="px-0 pb-2" style={{ maxHeight: "340px", overflowY: "auto" }}>
+      <div className="px-0 pb-2 flex-1 min-h-0 overflow-y-auto" style={{ scrollbarWidth: "thin", scrollbarColor: "#2d4a6b #0b1a33" }}>
         {dayEvents.length === 0 ? (
           <div className="px-4 py-6 text-center text-xs" style={{ color: "#475569" }}>
             Nothing scheduled for {label.toLowerCase()}.

@@ -566,7 +566,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         </div>{/* end LEFT COLUMN */}
 
         {/* ════ RIGHT COLUMN — sticky Reminders ════ */}
-        <div className="lg:sticky lg:top-4">
+        <div className="lg:sticky lg:top-4 lg:h-[calc(100vh-2rem)] flex flex-col">
           <RemindersCard
             events={reminderEvents}
             todayIso={todayIsoIST}
