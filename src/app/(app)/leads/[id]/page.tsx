@@ -39,8 +39,6 @@ import { formatBudget } from "@/lib/budgetParse";
 import LinkedContactsCard from "@/components/LinkedContactsCard";
 import InvestorBanner from "@/components/InvestorBanner";
 import CustomerIntelligenceCard from "@/components/CustomerIntelligenceCard";
-import BANTSuggestions from "@/components/BANTSuggestions";
-import type { BantSuggestions } from "@/lib/bantAutoFill";
 import StageDurationBadge from "@/components/StageDurationBadge";
 import SchedulingField from "@/components/SchedulingField";
 
@@ -144,12 +142,6 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
   // returns HTTP 200 — confusing for auditors. Redirect is cleaner UX too:
   // agent lands back on their own list rather than a dead end.
   if (!(await canTouchLead(me, lead))) redirect("/leads");
-
-  // Parse BANT auto-fill suggestions stored as JSON on the Lead model.
-  const bantSuggestions: BantSuggestions | null = (() => {
-    try { return lead.bantSuggestionsJson ? JSON.parse(lead.bantSuggestionsJson) : null; }
-    catch { return null; }
-  })();
 
   // Investor-history quick counts for the banner (Agent V, Round 6).
   // Match the new lead against the existing pipeline on phone / email /
@@ -448,14 +440,6 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
           </div>
         </div>
       </div>
-      <BANTSuggestions
-        leadId={lead.id}
-        suggestions={bantSuggestions}
-        currentBudget={lead.budgetMin}
-        currentAuthority={lead.authorityPerson ?? lead.authorityLevel}
-        currentNeed={lead.needSummary}
-        currentTimeline={lead.whenCanInvest}
-      />
     </div>
   );
 
@@ -492,55 +476,6 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
           <div className="text-xs text-gray-500 dark:text-slate-400">Potential</div>
           <InlineEdit leadId={lead.id} field="potential" type="select" value={lead.potential ?? ""}
             options={[{value:"HIGH",label:"🔥 Hot"},{value:"MEDIUM",label:"🌤 Warm"},{value:"LOW",label:"❄ Cold"},{value:"UNKNOWN",label:"— Unknown"}]} />
-        </div>
-        <div>
-          <div className="text-xs text-gray-500 dark:text-slate-400">Mood</div>
-          <InlineEdit leadId={lead.id} field="moodStatus" type="select" value={lead.moodStatus ?? ""}
-            options={[{value:"EXCITED",label:"😀 Excited"},{value:"INTERESTED",label:"🙂 Interested"},{value:"NEUTRAL",label:"😐 Neutral"},{value:"HESITANT",label:"🤔 Hesitant"},{value:"COLD",label:"🧊 Cold"},{value:"CONFUSED",label:"😵 Confused"},{value:"ANGRY",label:"😠 Angry"}]} />
-        </div>
-        <div>
-          <div className="text-xs text-gray-500 dark:text-slate-400">Categorization</div>
-          <InlineEdit leadId={lead.id} field="categorization" type="select" value={lead.categorization ?? ""}
-            options={[
-              {value:"Highly Responsive",             label:"🟢 Highly Responsive"},
-              {value:"Moderately Responsive",         label:"🟡 Moderately Responsive"},
-              {value:"Irregular / Delayed Response",  label:"🟠 Irregular / Delayed"},
-              {value:"Disappearing Act",              label:"🔴 Disappearing Act"},
-              {value:"Non-Responsive",               label:"⚫ Non-Responsive"},
-              // Legacy values — keep for backward compat
-              {value:"🔥 Highly Responsive — picks calls regularly",label:"🔥 Highly Responsive (legacy)"},
-              {value:"🙂 Responsive",label:"🙂 Responsive (legacy)"},
-              {value:"🤔 Sometimes responsive",label:"🤔 Sometimes responsive (legacy)"},
-              {value:"🧊 Cold / not picking",label:"🧊 Cold / not picking (legacy)"},
-            ]} />
-        </div>
-        <div>
-          <div className="text-xs text-gray-500 dark:text-slate-400">🔗 LinkedIn</div>
-          {lead.linkedInUrl && (
-            <a href={lead.linkedInUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-[#0b1a33] underline block truncate">View profile ↗</a>
-          )}
-          <InlineEdit leadId={lead.id} field="linkedInUrl" value={lead.linkedInUrl ?? ""} placeholder="https://linkedin.com/in/…" />
-        </div>
-        <div>
-          <div className="text-xs text-gray-500 dark:text-slate-400">Configuration</div>
-          <InlineEdit leadId={lead.id} field="configuration" value={lead.configuration ?? ""} placeholder="2BR / Villa / PH" />
-        </div>
-        {/* Budget, fundReadiness, whenCanInvest moved into the BANT card —
-            they're already shown there. */}
-        <div>
-          <div className="text-xs text-gray-500 dark:text-slate-400">Stage</div>
-          <InlineEdit leadId={lead.id} field="status" type="select" value={lead.status}
-            options={[
-              {value:"NEW",         label:"New"},
-              {value:"CONTACTED",   label:"Contacted"},
-              {value:"QUALIFIED",   label:"Qualified"},
-              {value:"SITE_VISIT",  label:"Site Visit"},
-              {value:"NEGOTIATION", label:"Negotiation"},
-              {value:"EOI",         label:"EOI"},
-              {value:"BOOKING_DONE",label:"Booking Done"},
-              {value:"WON",         label:"Closed Won"},
-              {value:"LOST",        label:"Closed Lost"},
-            ]} />
         </div>
       </div>
     </div>

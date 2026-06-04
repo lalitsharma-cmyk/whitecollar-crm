@@ -23,6 +23,7 @@
 //   • Empty transcript → save button disabled, no silent failures.
 
 import { useEffect, useRef, useState } from "react";
+import { Mic } from "lucide-react";
 
 interface Props {
   leadId: string;
@@ -291,9 +292,9 @@ export default function VoiceNoteRecorder({ leadId, onTranscribed }: Props) {
   const liveText = (finalTranscript + " " + interimTranscript).trim();
 
   return (
-    <div className="card p-3 border-l-4 border-[#c9a24b]">
+    <div className="card p-3 border-l-4 border-red-400">
       <div className="flex items-center gap-2 mb-2">
-        <span className="text-base">🎙</span>
+        <Mic className="w-4 h-4 text-red-500 flex-none" />
         <div className="text-sm font-semibold">Voice note</div>
         <span className="text-[10px] text-gray-500">
           Tap to record · auto-writes as you speak
@@ -304,9 +305,9 @@ export default function VoiceNoteRecorder({ leadId, onTranscribed }: Props) {
         <button
           type="button"
           onClick={startRecording}
-          className="btn btn-primary w-full justify-center min-h-11 text-sm font-semibold bg-red-600 hover:bg-red-700 border-red-700 text-white"
+          className="flex items-center justify-center gap-2 w-full min-h-11 text-sm font-semibold rounded-lg bg-red-600 hover:bg-red-700 text-white transition-colors"
         >
-          🎙 Start recording
+          <Mic className="w-4 h-4" /> Start recording
         </button>
       )}
 

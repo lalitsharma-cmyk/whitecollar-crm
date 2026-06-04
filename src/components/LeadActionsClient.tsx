@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { Phone, MessageCircle, AlertCircle } from "lucide-react";
+import { Phone, MessageCircle, AlertCircle, Mic } from "lucide-react";
 import { whatsappLink, telLink } from "@/lib/phone";
 import TemplatePickerButton from "./TemplatePickerButton";
 import { fromISTLocalInput } from "@/lib/datetime";
@@ -404,40 +404,39 @@ export default function LeadActionsClient({ leadId, phone, altPhone, email, curr
           >
             <div className="font-semibold mb-3 text-lg">Log conversation</div>
 
-            {/* Channel + direction toggles — agent picks BOTH then writes
-                what happened in Remarks. Use for:
-                  • Phone call you made   → Phone + Outbound (default)
-                  • Phone call they made  → Phone + Inbound
-                  • WhatsApp you sent     → WhatsApp + Outbound
-                  • WhatsApp they sent    → WhatsApp + Inbound (Lalit's ask) */}
-            <div className="grid grid-cols-2 gap-2 mb-3">
-              <div>
-                <label className="text-[10px] font-semibold text-gray-600 uppercase tracking-widest">Channel</label>
-                <div className="grid grid-cols-2 gap-1 mt-1 border border-[#e5e7eb] rounded-lg p-1">
-                  <button type="button" onClick={() => { setLogChannel("PHONE"); setOutcomeKey("PHONE_CONNECTED"); }}
-                    className={`py-1.5 rounded text-xs font-semibold transition ${logChannel === "PHONE" ? "bg-[#0b1a33] text-white" : "text-gray-600 hover:bg-gray-50"}`}>
-                    📞 Phone
-                  </button>
-                  <button type="button" onClick={() => { setLogChannel("WHATSAPP"); setOutcomeKey("WA_SENT"); }}
-                    className={`py-1.5 rounded text-xs font-semibold transition ${logChannel === "WHATSAPP" ? "bg-emerald-600 text-white" : "text-gray-600 hover:bg-gray-50"}`}>
-                    💬 WhatsApp
-                  </button>
-                </div>
+            {/* Channel toggle — Phone or WhatsApp. Direction is only
+                relevant for WhatsApp (to distinguish "we sent" vs "client
+                sent"); phone calls are always agent-initiated (outbound). */}
+            <div className="mb-3">
+              <label className="text-[10px] font-semibold text-gray-600 uppercase tracking-widest">Channel</label>
+              <div className="grid grid-cols-2 gap-1 mt-1 border border-[#e5e7eb] rounded-lg p-1">
+                <button type="button" onClick={() => { setLogChannel("PHONE"); setLogDirection("OUTBOUND"); setOutcomeKey("PHONE_CONNECTED"); }}
+                  className={`py-1.5 rounded text-xs font-semibold transition ${logChannel === "PHONE" ? "bg-[#0b1a33] text-white" : "text-gray-600 hover:bg-gray-50"}`}>
+                  📞 Phone
+                </button>
+                <button type="button" onClick={() => { setLogChannel("WHATSAPP"); setOutcomeKey("WA_SENT"); }}
+                  className={`py-1.5 rounded text-xs font-semibold transition ${logChannel === "WHATSAPP" ? "bg-emerald-600 text-white" : "text-gray-600 hover:bg-gray-50"}`}>
+                  💬 WhatsApp
+                </button>
               </div>
-              <div>
+            </div>
+
+            {/* Direction — only shown when WhatsApp is selected */}
+            {logChannel === "WHATSAPP" && (
+              <div className="mb-3">
                 <label className="text-[10px] font-semibold text-gray-600 uppercase tracking-widest">Direction</label>
                 <div className="grid grid-cols-2 gap-1 mt-1 border border-[#e5e7eb] rounded-lg p-1">
-                  <button type="button" onClick={() => { setLogDirection("OUTBOUND"); if (logChannel === "WHATSAPP") setOutcomeKey("WA_SENT"); }}
+                  <button type="button" onClick={() => { setLogDirection("OUTBOUND"); setOutcomeKey("WA_SENT"); }}
                     className={`py-1.5 rounded text-xs font-semibold transition ${logDirection === "OUTBOUND" ? "bg-[#0b1a33] text-white" : "text-gray-600 hover:bg-gray-50"}`}>
                     📤 Outbound (We Sent)
                   </button>
-                  <button type="button" onClick={() => { setLogDirection("INBOUND"); if (logChannel === "WHATSAPP") setOutcomeKey("WA_RECEIVED"); }}
+                  <button type="button" onClick={() => { setLogDirection("INBOUND"); setOutcomeKey("WA_RECEIVED"); }}
                     className={`py-1.5 rounded text-xs font-semibold transition ${logDirection === "INBOUND" ? "bg-[#0b1a33] text-white" : "text-gray-600 hover:bg-gray-50"}`}>
                     📥 Inbound (Client Sent)
                   </button>
                 </div>
               </div>
-            </div>
+            )}
 
             <label className="text-xs font-semibold text-gray-600">Outcome *</label>
             <select value={outcomeKey} onChange={(e) => setOutcomeKey(e.target.value)} className="w-full mt-1 mb-3 border border-[#e5e7eb] rounded-lg px-3 py-2 text-sm">
@@ -508,10 +507,15 @@ export default function LeadActionsClient({ leadId, phone, altPhone, email, curr
                 <button
                   type="button"
                   onClick={toggleDictation}
-                  title="Click to dictate"
-                  className={`btn btn-ghost text-xs ${listening ? "animate-pulse text-red-600" : ""}`}
+                  title={listening ? "Stop dictation" : "Tap to dictate remarks"}
+                  className={`flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium transition border ${
+                    listening
+                      ? "bg-red-50 border-red-300 text-red-600 animate-pulse"
+                      : "bg-red-50 border-red-200 text-red-500 hover:bg-red-100"
+                  }`}
                 >
-                  {listening ? "🔴" : "🎙"}
+                  <Mic className="w-3.5 h-3.5" />
+                  {listening ? "Stop" : "Dictate"}
                 </button>
               )}
             </div>
