@@ -72,7 +72,7 @@ export default function HiddenGemsBanner({ gems }: Props) {
       <div className="flex gap-3 overflow-x-auto pb-1 -mx-1 px-1 snap-x snap-mandatory">
         {gems.map((g) => {
           const daysDormant = g.lastTouchedAt
-            ? Math.floor((Date.now() - g.lastTouchedAt.getTime()) / 86_400_000)
+            ? Math.floor((Date.now() - new Date(g.lastTouchedAt).getTime()) / 86_400_000)
             : null;
           const wa = buildWA(g);
           const tel = g.phone ? telLink(g.phone) : "";
@@ -106,7 +106,7 @@ export default function HiddenGemsBanner({ gems }: Props) {
                 </span>
                 <span className="text-gray-500">
                   {g.lastTouchedAt
-                    ? `${formatDistanceToNowStrict(g.lastTouchedAt)} cold`
+                    ? `${formatDistanceToNowStrict(new Date(g.lastTouchedAt))} cold`
                     : "never contacted"}
                 </span>
               </div>
