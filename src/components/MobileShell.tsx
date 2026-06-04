@@ -49,7 +49,8 @@ const fullNav: NavSection[] = [
   // Only Lead Intake (CSV import) stays here as a direct link since admins
   // reach it multiple times per day.
   { section: "ADMIN", adminOnly: true, items: [
-    { href: "/intake", label: "Lead Intake", Icon: Upload },
+    { href: "/intake",                label: "Lead Intake",        Icon: Upload },
+    { href: "/admin/revival-logs",    label: "Revival Logs",       Icon: Gem },
   ]},
 ];
 

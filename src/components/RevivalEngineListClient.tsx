@@ -1,25 +1,39 @@
 "use client";
 
 /**
- * RevivalEngineListClient — the leads grid section of /cold-calls.
- * Extracted from the Server Component so we can add bulk-select + bulk reject
- * without touching the leaderboard / mission data that stays server-rendered.
+ * RevivalEngineListClient — leads grid/table for /cold-calls.
  *
- * Bulk reject (admin / manager only):
- *   • Checkbox on each card
- *   • "Select all" toggle above the grid
- *   • Floating action bar when any row is selected
- *   • Reason modal → POST /api/leads/bulk { action: "reject", ids, reason }
+ * Layout mirrors the main Leads list:
+ *   • Mobile (<1024px): cards
+ *   • Desktop (≥1024px): table with Lead / Status / Owner / Actions columns
+ *
+ * Filtering is status-based (NEW, CONTACTED, etc.) — replaces the old
+ * "sub-bucket" concept (cold import / BANT / stale).  The unassigned
+ * admin-only tab is preserved as a workflow tool.
+ *
+ * Admin/manager bulk-reject is preserved (checkbox → floating bar → modal).
  */
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { formatDistanceToNow } from "date-fns";
-import ColdCallToggle from "./ColdCallToggle";
 import ColdDataPromoteButton from "./ColdDataPromoteButton";
 import OriginColdPromoteButton from "./OriginColdPromoteButton";
 import { whatsappLink, telLink } from "@/lib/phone";
+
+// ── Status definitions ───────────────────────────────────────────────────────
+export const REVIVAL_STATUSES: Array<{ v: string; label: string; chip: string }> = [
+  { v: "NEW",          label: "New",         chip: "chip-new" },
+  { v: "CONTACTED",    label: "Contacted",   chip: "chip-warm" },
+  { v: "QUALIFIED",    label: "Qualified",   chip: "chip-warm" },
+  { v: "SITE_VISIT",   label: "Site Visit",  chip: "chip-warm" },
+  { v: "NEGOTIATION",  label: "Negotiation", chip: "chip-warm" },
+  { v: "EOI",          label: "EOI",         chip: "chip-warm" },
+  { v: "BOOKING_DONE", label: "Booked",      chip: "chip-won" },
+  { v: "WON",          label: "Won",         chip: "chip-won" },
+  { v: "LOST",         label: "Lost",        chip: "chip-lost" },
+];
 
 const REJECT_REASONS = [
   { value: "NOT_INTERESTED",            label: "Not Interested" },
@@ -38,9 +52,12 @@ export interface RevivalLead {
   id: string;
   name: string;
   phone: string | null;
+  company: string | null;
+  city: string | null;
   isColdCall: boolean;
   leadOrigin: string | null;
-  bantStatus: string | null;
+  status: string;
+  statusChip: string;
   lastTouchedAt: Date | null;
   ownerId: string | null;
   owner: { name: string } | null;
@@ -58,7 +75,7 @@ interface Props {
   coldDays: number;
 }
 
-// ── Inline icon components ──────────────────────────────────────────────────
+// ── Inline icons ─────────────────────────────────────────────────────────────
 function PhoneIcon() {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5">
@@ -94,7 +111,6 @@ export default function RevivalEngineListClient({ leads, myId, isAdminOrMgr, cut
       return next;
     });
   }
-
   function toggleAll() {
     setSelectedIds(allChecked ? new Set() : new Set(leads.map(l => l.id)));
   }
@@ -117,11 +133,27 @@ export default function RevivalEngineListClient({ leads, myId, isAdminOrMgr, cut
     }
   }
 
+  // ── Empty state ───────────────────────────────────────────────────────────
+  if (leads.length === 0) {
+    return (
+      <div className="card p-8 text-center text-gray-500 text-sm">
+        Nothing in this bucket. Either you&apos;re on top of follow-ups (✅) or no leads in this stage.
+      </div>
+    );
+  }
+
+  // ── Helpers ───────────────────────────────────────────────────────────────
+  function isStale(l: RevivalLead) {
+    return l.lastTouchedAt && new Date(l.lastTouchedAt) < cutoff;
+  }
+
+  const canSee = (l: RevivalLead) => l.ownerId === myId || isAdminOrMgr;
+
   return (
     <>
-      {/* ── Select-all toolbar (admin/mgr only, only when leads exist) ── */}
-      {isAdminOrMgr && leads.length > 0 && (
-        <div className="flex items-center gap-3 px-1">
+      {/* ── Select-all toolbar (admin/mgr only) ─────────────────────────── */}
+      {isAdminOrMgr && (
+        <div className="flex items-center gap-3 px-1 mb-1">
           <label className="flex items-center gap-2 cursor-pointer select-none text-xs text-gray-600">
             <input
               type="checkbox"
@@ -146,34 +178,22 @@ export default function RevivalEngineListClient({ leads, myId, isAdminOrMgr, cut
         </div>
       )}
 
-      {/* ── Lead cards grid ────────────────────────────────────────────────── */}
-      {leads.length === 0 && (
-        <div className="card p-8 text-center text-gray-500 text-sm">
-          Nothing in this bucket. Either you&apos;re on top of follow-ups (✅) or no leads in this stage.
-        </div>
-      )}
-
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+      {/* ── MOBILE: card list (<1024px) ───────────────────────────────────── */}
+      <div className="lg:hidden space-y-2">
         {leads.map((l) => {
           const wa  = l.phone ? (whatsappLink(l.phone, `Hi ${l.name.split(" ")[0]}, this is from White Collar Realty. Just checking in — any update on your property search?`) ?? "") : "";
           const tel = l.phone ? (telLink(l.phone) ?? "") : "";
-          const reasonChips: { label: string; cls: string }[] = [];
-          if (l.isColdCall) reasonChips.push({ label: "Cold data", cls: "chip-cold" });
-          if (l.leadOrigin === "COLD") reasonChips.push({ label: "Cold import", cls: "chip-cold" });
-          if (l.bantStatus === "NOT_QUALIFIED") reasonChips.push({ label: "BANT ❌", cls: "chip-lost" });
-          if (l.lastTouchedAt && new Date(l.lastTouchedAt) < cutoff && !l.isColdCall && l.bantStatus !== "NOT_QUALIFIED") {
-            reasonChips.push({ label: `${coldDays}d+ stale`, cls: "chip-warm" });
-          }
-          const isUnassigned = !l.ownerId;
+          const isSelected = selectedIds.has(l.id);
           const isOriginCold = l.leadOrigin === "COLD";
-          const isSelected   = selectedIds.has(l.id);
+          const stale = isStale(l);
+          const statusMeta = REVIVAL_STATUSES.find(s => s.v === l.status);
 
           return (
             <div
               key={l.id}
               className={`card p-3 relative transition-colors ${isSelected ? "ring-2 ring-red-400 bg-red-50/30" : ""}`}
             >
-              {/* Checkbox overlay — admin/manager only */}
+              {/* Checkbox — admin/mgr only */}
               {isAdminOrMgr && (
                 <input
                   type="checkbox"
@@ -187,49 +207,61 @@ export default function RevivalEngineListClient({ leads, myId, isAdminOrMgr, cut
 
               <div className={`flex items-start justify-between gap-2 ${isAdminOrMgr ? "pl-6" : ""}`}>
                 <div className="min-w-0 flex-1">
-                  <Link href={`/leads/${l.id}`} className="font-bold text-sm hover:underline truncate block">{l.name}</Link>
-                  <div className="text-[11px] text-gray-500 truncate">{l.phone}</div>
+                  <Link href={`/leads/${l.id}`} className="font-bold text-sm hover:underline truncate block text-[#0b1a33] dark:text-white">
+                    {l.name}
+                  </Link>
+                  <div className="text-[11px] text-gray-500 truncate">
+                    {l.phone}
+                    {l.company && <span className="ml-1">· {l.company}</span>}
+                  </div>
                 </div>
-                <ColdCallToggle leadId={l.id} initial={l.isColdCall} />
               </div>
 
+              {/* Status + stale chips */}
               <div className="flex flex-wrap gap-1 mt-2">
-                {reasonChips.map((c, i) => (
-                  <span key={i} className={`chip ${c.cls} text-[9px]`}>{c.label}</span>
-                ))}
-                {isUnassigned && <span className="chip chip-hot text-[9px]">UNASSIGNED</span>}
-                {l.alreadyBought && <span className="chip src text-[9px]" title={l.alreadyBought}>🏠 owns</span>}
+                {statusMeta && (
+                  <span className={`chip ${statusMeta.chip} text-[10px]`}>{statusMeta.label}</span>
+                )}
+                {stale && (
+                  <span className="chip chip-warm text-[9px]">{coldDays}d+ stale</span>
+                )}
+                {!l.ownerId && (
+                  <span className="chip chip-hot text-[9px]">UNASSIGNED</span>
+                )}
+                {l.alreadyBought && (
+                  <span className="chip src text-[9px]" title={l.alreadyBought}>🏠 owns</span>
+                )}
               </div>
 
               {l.coldCallReason && (
                 <div className="text-[11px] text-gray-700 mt-1 italic">&quot;{l.coldCallReason}&quot;</div>
               )}
-              {l.alreadyBought && (
-                <div className="text-[11px] text-gray-700 mt-1">
-                  <b>Already owns:</b> {l.alreadyBought}{l.alreadyBoughtBy && ` (via ${l.alreadyBoughtBy})`}
-                </div>
-              )}
 
-              <div className="text-[11px] text-gray-500 mt-2">
-                {l.owner ? `Owner: ${l.owner.name}` : "Unassigned"} · last touch{" "}
-                {l.lastTouchedAt ? formatDistanceToNow(new Date(l.lastTouchedAt), { addSuffix: true }) : "never"}
+              <div className="text-[11px] text-gray-500 mt-2 flex items-center justify-between">
+                <span>{l.owner ? l.owner.name : "Unassigned"}</span>
+                <span>
+                  {l.lastTouchedAt
+                    ? formatDistanceToNow(new Date(l.lastTouchedAt), { addSuffix: true })
+                    : "never touched"}
+                </span>
               </div>
 
+              {/* Action buttons */}
               {l.phone && (
                 <div className="flex gap-1.5 mt-2">
                   <a href={tel} title={`Call ${l.name}`}
-                    className="w-8 h-8 rounded-lg bg-blue-600 hover:bg-blue-700 text-white flex items-center justify-center transition-colors">
+                    className="w-8 h-8 rounded-lg bg-blue-600 hover:bg-blue-700 text-white flex items-center justify-center transition-colors flex-none">
                     <PhoneIcon />
                   </a>
                   <a href={wa} target="_blank" rel="noopener noreferrer" title={`WhatsApp ${l.name}`}
-                    className="w-8 h-8 rounded-lg bg-[#25D366] hover:bg-[#1ea953] text-white flex items-center justify-center transition-colors">
+                    className="w-8 h-8 rounded-lg bg-[#25D366] hover:bg-[#1ea953] text-white flex items-center justify-center transition-colors flex-none">
                     <WaIcon />
                   </a>
                 </div>
               )}
 
-              {/* Promote to Lead — agents (and admin) get this when row is theirs */}
-              {(l.ownerId === myId || isAdminOrMgr) && (
+              {/* Promote to Lead */}
+              {canSee(l) && (
                 <div className="mt-2">
                   {isOriginCold
                     ? <OriginColdPromoteButton leadId={l.id} leadName={l.name} />
@@ -240,6 +272,138 @@ export default function RevivalEngineListClient({ leads, myId, isAdminOrMgr, cut
             </div>
           );
         })}
+      </div>
+
+      {/* ── DESKTOP: table (≥1024px) ─────────────────────────────────────── */}
+      <div className="hidden lg:block card overflow-x-auto">
+        <table className="w-full text-sm border-collapse">
+          <thead>
+            <tr className="border-b border-[#e5e7eb] dark:border-slate-700 text-left text-xs font-semibold text-gray-500 dark:text-slate-400 bg-gray-50/80 dark:bg-slate-800/50">
+              {isAdminOrMgr && (
+                <th className="w-8 px-3 py-2.5">
+                  <input
+                    type="checkbox"
+                    checked={allChecked}
+                    ref={(el) => { if (el) el.indeterminate = someChecked; }}
+                    onChange={toggleAll}
+                  />
+                </th>
+              )}
+              <th className="px-3 py-2.5">Lead</th>
+              <th className="px-3 py-2.5 w-32">Status</th>
+              <th className="px-3 py-2.5 w-36">Owner</th>
+              <th className="px-3 py-2.5 w-36">Last Touch</th>
+              <th className="px-3 py-2.5 w-56">Actions</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-[#f1f3f5] dark:divide-slate-800">
+            {leads.map((l) => {
+              const wa  = l.phone ? (whatsappLink(l.phone, `Hi ${l.name.split(" ")[0]}, this is from White Collar Realty. Just checking in — any update on your property search?`) ?? "") : "";
+              const tel = l.phone ? (telLink(l.phone) ?? "") : "";
+              const isSelected = selectedIds.has(l.id);
+              const isOriginCold = l.leadOrigin === "COLD";
+              const stale = isStale(l);
+              const statusMeta = REVIVAL_STATUSES.find(s => s.v === l.status);
+
+              return (
+                <tr
+                  key={l.id}
+                  className={`transition-colors hover:bg-amber-50/40 dark:hover:bg-slate-800/40 ${isSelected ? "bg-red-50/40 dark:bg-red-950/20" : ""}`}
+                >
+                  {/* Checkbox */}
+                  {isAdminOrMgr && (
+                    <td className="px-3 py-3 w-8 align-top">
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={() => toggleSelect(l.id)}
+                        onClick={(e) => e.stopPropagation()}
+                      />
+                    </td>
+                  )}
+
+                  {/* Lead name + phone + chips */}
+                  <td className="px-3 py-3 align-top">
+                    <Link href={`/leads/${l.id}`} className="font-bold text-[#0b1a33] dark:text-white hover:underline text-sm">
+                      {l.name}
+                    </Link>
+                    {l.phone && (
+                      <div className="text-[11px] text-gray-400 font-mono mt-0.5">
+                        ···{l.phone.slice(-4)}
+                      </div>
+                    )}
+                    {(l.company || l.city) && (
+                      <div className="text-[11px] text-gray-500 truncate max-w-[180px]">
+                        {[l.company, l.city].filter(Boolean).join(" · ")}
+                      </div>
+                    )}
+                    <div className="flex flex-wrap gap-1 mt-1">
+                      {stale && <span className="chip chip-warm text-[9px]">{coldDays}d+ stale</span>}
+                      {!l.ownerId && <span className="chip chip-hot text-[9px]">UNASSIGNED</span>}
+                      {l.alreadyBought && <span className="chip src text-[9px]">🏠 owns</span>}
+                    </div>
+                    {l.coldCallReason && (
+                      <div className="text-[11px] text-gray-600 italic mt-0.5 truncate max-w-[200px]">
+                        &quot;{l.coldCallReason}&quot;
+                      </div>
+                    )}
+                  </td>
+
+                  {/* Status */}
+                  <td className="px-3 py-3 align-top">
+                    {statusMeta ? (
+                      <span className={`chip ${statusMeta.chip} text-[10px]`}>{statusMeta.label}</span>
+                    ) : (
+                      <span className="chip chip-new text-[10px]">{l.status}</span>
+                    )}
+                  </td>
+
+                  {/* Owner */}
+                  <td className="px-3 py-3 align-top">
+                    {l.owner ? (
+                      <span className="text-xs text-gray-700 dark:text-slate-300">{l.owner.name}</span>
+                    ) : (
+                      <span className="text-[11px] text-amber-600 font-medium">Unassigned</span>
+                    )}
+                  </td>
+
+                  {/* Last touch */}
+                  <td className="px-3 py-3 align-top text-[11px] text-gray-500">
+                    {l.lastTouchedAt
+                      ? formatDistanceToNow(new Date(l.lastTouchedAt), { addSuffix: true })
+                      : "—"}
+                  </td>
+
+                  {/* Actions */}
+                  <td className="px-3 py-3 align-top" onClick={(e) => e.stopPropagation()}>
+                    <div className="flex items-center gap-1.5 flex-nowrap">
+                      {l.phone && (
+                        <a href={tel} title={`Call ${l.name}`}
+                          className="w-8 h-8 rounded-lg bg-blue-600 hover:bg-blue-700 text-white flex items-center justify-center transition-colors flex-none">
+                          <PhoneIcon />
+                        </a>
+                      )}
+                      {l.phone && (
+                        <a href={wa} target="_blank" rel="noopener noreferrer" title={`WhatsApp ${l.name}`}
+                          className="w-8 h-8 rounded-lg bg-[#25D366] hover:bg-[#1ea953] text-white flex items-center justify-center transition-colors flex-none">
+                          <WaIcon />
+                        </a>
+                      )}
+                      {canSee(l) && (
+                        <div className="flex-none">
+                          {isOriginCold
+                            ? <OriginColdPromoteButton leadId={l.id} leadName={l.name} compact />
+                            : <ColdDataPromoteButton   leadId={l.id} leadName={l.name} compact />
+                          }
+                        </div>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
       </div>
 
       {/* ── Floating bulk action bar ─────────────────────────────────────── */}

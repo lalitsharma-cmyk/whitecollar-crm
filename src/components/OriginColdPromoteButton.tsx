@@ -3,14 +3,14 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { TrendingUp } from "lucide-react";
 
-interface Props { leadId: string; leadName: string; }
+interface Props { leadId: string; leadName: string; compact?: boolean; }
 
 /**
  * Promotes a leadOrigin="COLD" record to an active lead by calling
  * PATCH /api/leads/[id]/promote, which flips leadOrigin → "ACTIVE"
  * and bumps status from NEW → CONTACTED.
  */
-export default function OriginColdPromoteButton({ leadId, leadName }: Props) {
+export default function OriginColdPromoteButton({ leadId, leadName, compact }: Props) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -32,6 +32,23 @@ export default function OriginColdPromoteButton({ leadId, leadName }: Props) {
     } finally {
       setBusy(false);
     }
+  }
+
+  if (compact) {
+    return (
+      <div>
+        <button
+          onClick={promote}
+          disabled={busy}
+          title={`Promote ${leadName} to active lead`}
+          className="h-8 px-2 rounded-lg bg-emerald-600 text-white text-[11px] font-semibold hover:bg-emerald-700 disabled:opacity-50 flex items-center gap-1 whitespace-nowrap"
+        >
+          <TrendingUp className="w-3 h-3 flex-none" />
+          {busy ? "…" : "Promote"}
+        </button>
+        {err && <div className="text-[10px] text-red-600 mt-1">{err}</div>}
+      </div>
+    );
   }
 
   return (

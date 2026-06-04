@@ -7,75 +7,63 @@ import ColdDataAdminControls from "@/components/ColdDataAdminControls";
 import HiddenGemsBanner, { type HiddenGem } from "@/components/HiddenGemsBanner";
 import DailyRevivalMission from "@/components/DailyRevivalMission";
 import RevivalLeaderboard, { type LeaderboardRow } from "@/components/RevivalLeaderboard";
-import RevivalEngineListClient from "@/components/RevivalEngineListClient";
+import RevivalEngineListClient, { REVIVAL_STATUSES } from "@/components/RevivalEngineListClient";
 import { REVIVAL_MISSION } from "@/lib/missions";
 
 export const dynamic = "force-dynamic";
 
-// 💎 REVIVAL ENGINE — rebrand of the old "Cold Data" page (master spec §9.6).
+// 💎 REVIVAL ENGINE — cold data pipeline with status-based filtering.
 //
-// Admin imports a CSV/Excel batch and assigns rows to agents. Agents see only
-// their assigned rows. When connected and qualified, agent taps "Promote to
-// Lead" which flips isColdCall=false → the row moves into the main /leads
-// pipeline as the agent's owned lead and disappears here.
+// Leads with leadOrigin="COLD" are shown here exclusively. Agents see only
+// their assigned rows. "Promote to Lead" flips leadOrigin → "ACTIVE" and
+// the row moves into /leads.
 //
-// The "Revival Engine" framing wraps the same data in a treasure-hunt
-// aesthetic: Hidden Gems (high-value dormant leads) surfaced on top, a daily
-// mission with progress bar, and a weekly leaderboard for cold-to-warm
-// revivals. Goal: make this work FEEL rewarding instead of dreary.
-//
-// Three sub-buckets stay the same:
-//   • Unassigned (admin only) — freshly imported, not yet given to anyone
-//   • Assigned to me (agent + admin) — active cold data being worked
-//   • BANT not qualified — leads that turned cold post-qualification
-//   • 30d+ stale — abandoned leads worth a fresh outbound
+// Filter tabs are now STATUS-based (NEW, CONTACTED, QUALIFIED…) matching the
+// same statuses used in the main /leads pipeline. "Stages" concept removed.
 
 const COLD_DAYS = REVIVAL_MISSION.dormantDays;
+
+const statusChipMap: Record<LeadStatus, string> = {
+  NEW: "chip-new",
+  CONTACTED: "chip-warm",
+  QUALIFIED: "chip-warm",
+  SITE_VISIT: "chip-warm",
+  NEGOTIATION: "chip-warm",
+  EOI: "chip-warm",
+  BOOKING_DONE: "chip-won",
+  WON: "chip-won",
+  LOST: "chip-lost",
+};
 
 export default async function ColdDataPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const me = await requireUser();
   const sp = await searchParams;
-  const showOnly = sp.kind ?? "all";
+
+  // Active status filter — "all" means no status restriction
+  const statusFilter = sp.status ?? "all";
   const cutoff = new Date(Date.now() - COLD_DAYS * 86400 * 1000);
   const todayStart = startOfDay(new Date());
-  // Week boundary for the leaderboard. weekStartsOn:1 = Monday — matches Lalit's
-  // existing weekly-report convention (sales week resets Monday IST).
   const weekStart = startOfWeek(new Date(), { weekStartsOn: 1 });
 
   const isAdminOrMgr = me.role === "ADMIN" || me.role === "MANAGER";
 
   // Agents only see cold data assigned to them. Admin sees everything.
   const baseScope: Prisma.LeadWhereInput = isAdminOrMgr ? {} : { ownerId: me.id };
-
-  const manualCold: Prisma.LeadWhereInput = { isColdCall: true };
-  // Leads imported with leadOrigin="COLD" (new import-type selector) — these
-  // should be exclusively visible in the Revival Engine, not in /leads.
   const originCold: Prisma.LeadWhereInput = { leadOrigin: "COLD" };
-  const bantNot: Prisma.LeadWhereInput = { bantStatus: "NOT_QUALIFIED" };
-  const stale: Prisma.LeadWhereInput = {
-    status: { in: [LeadStatus.NEW, LeadStatus.CONTACTED] },
-    lastTouchedAt: { lt: cutoff },
-    isColdCall: false,
-    bantStatus: { not: "NOT_QUALIFIED" },
-  };
-  const unassigned: Prisma.LeadWhereInput = { isColdCall: true, ownerId: null };
-  // STRICT: Revival Engine only shows leadOrigin="COLD" records.
-  // Active leads (leadOrigin="ACTIVE") stay in /leads exclusively.
+  const unassigned: Prisma.LeadWhereInput = { ownerId: null };
+
+  // Status-based filter — "all" shows everything, "unassigned" is admin shortcut
+  const statusWhere: Prisma.LeadWhereInput =
+    statusFilter === "unassigned"
+      ? unassigned
+      : REVIVAL_STATUSES.some(s => s.v === statusFilter)
+        ? { status: statusFilter as LeadStatus }
+        : {};
+
   const allCold: Prisma.LeadWhereInput = { AND: [baseScope, originCold] };
+  const where: Prisma.LeadWhereInput = { AND: [baseScope, originCold, statusWhere] };
 
-  // All sub-buckets are now scoped to leadOrigin="COLD" — Revival Engine is strictly
-  // Cold Data only. Active leads live in /leads.
-  const where: Prisma.LeadWhereInput =
-    showOnly === "unassigned" ? { AND: [originCold, unassigned] } :   // admin-only view
-    showOnly === "origin_cold" ? { AND: [baseScope, originCold] } :
-    showOnly === "manual" ? { AND: [baseScope, originCold, manualCold] } :
-    showOnly === "bant"   ? { AND: [baseScope, originCold, bantNot] } :
-    showOnly === "stale"  ? { AND: [baseScope, originCold, stale] } :
-    allCold;
-
-  // Hidden-gem filter: cold + (high budget OR HOT score) + dormant 30d+ + not closed.
-  // Scoped to the same baseScope as everything else so agents only see THEIR gems
-  // and admin sees the team's. Take 10 — enough for a scroll, not overwhelming.
+  // Hidden-gem filter: high-value dormant leads
   const hiddenGemsWhere: Prisma.LeadWhereInput = {
     AND: [
       baseScope,
@@ -93,16 +81,13 @@ export default async function ColdDataPage({ searchParams }: { searchParams: Pro
 
   const [
     leads,
-    manualCount,
-    originColdCount,
-    bantCount,
-    staleCount,
     totalCount,
     unassignedCount,
     agents,
     convertedTodayCount,
     hiddenGemsRaw,
     weeklyRevivals,
+    ...statusCountResults
   ] = await Promise.all([
     prisma.lead.findMany({
       where,
@@ -110,14 +95,11 @@ export default async function ColdDataPage({ searchParams }: { searchParams: Pro
       orderBy: { lastTouchedAt: "asc" },
       take: 200,
     }),
-    prisma.lead.count({ where: { AND: [baseScope, originCold, manualCold] } }),
-    prisma.lead.count({ where: { AND: [baseScope, originCold] } }),
-    prisma.lead.count({ where: { AND: [baseScope, originCold, bantNot] } }),
-    prisma.lead.count({ where: { AND: [baseScope, originCold, stale] } }),
     prisma.lead.count({ where: allCold }),
     isAdminOrMgr ? prisma.lead.count({ where: { AND: [originCold, unassigned] } }) : Promise.resolve(0),
-    isAdminOrMgr ? prisma.user.findMany({ where: { active: true, role: { in: ["AGENT", "MANAGER", "ADMIN"] } }, orderBy: { name: "asc" } }) : Promise.resolve([]),
-    // Conversions today: cold-to-lead activities scoped to me (or all if admin)
+    isAdminOrMgr
+      ? prisma.user.findMany({ where: { active: true, role: { in: ["AGENT", "MANAGER", "ADMIN"] } }, orderBy: { name: "asc" } })
+      : Promise.resolve([]),
     prisma.activity.count({
       where: {
         type: "COLD_TO_LEAD",
@@ -125,79 +107,55 @@ export default async function ColdDataPage({ searchParams }: { searchParams: Pro
         ...(isAdminOrMgr ? {} : { userId: me.id }),
       },
     }),
-    // Hidden gems — high-value dormant leads worth a fresh attempt.
     prisma.lead.findMany({
       where: hiddenGemsWhere,
       orderBy: { lastTouchedAt: "asc" },
       take: 10,
       select: {
-        id: true,
-        name: true,
-        phone: true,
-        company: true,
-        city: true,
-        budgetMin: true,
-        budgetCurrency: true,
-        aiScore: true,
-        lastTouchedAt: true,
+        id: true, name: true, phone: true, company: true, city: true,
+        budgetMin: true, budgetCurrency: true, aiScore: true, lastTouchedAt: true,
       },
     }),
-    // Weekly leaderboard — cold-to-warm revivals per agent this week.
-    // "Revived" = lead was cold (isColdCall flag history not tracked, so we use
-    // the activity log as the canonical signal) AND status is now CONTACTED or
-    // further AND it happened this week. We use the COLD_TO_LEAD Activity row
-    // as the proxy — it's written exactly once when the agent promotes a cold
-    // row to a real lead, and ActivityType already has it (schema.prisma:465).
     prisma.activity.groupBy({
       by: ["userId"],
-      where: {
-        type: "COLD_TO_LEAD",
-        completedAt: { gte: weekStart },
-        userId: { not: null },
-      },
+      where: { type: "COLD_TO_LEAD", completedAt: { gte: weekStart }, userId: { not: null } },
       _count: { _all: true },
       orderBy: { _count: { userId: "desc" } },
       take: 5,
     }),
+    // Count per status for filter tabs
+    ...REVIVAL_STATUSES.map(s =>
+      prisma.lead.count({ where: { AND: [baseScope, originCold, { status: s.v as LeadStatus }] } })
+    ),
   ]);
 
-  // Resolve userIds → names for the leaderboard. Single round-trip lookup so
-  // the group-by doesn't need a join (Prisma group-by can't include relations).
-  const leaderboardUserIds = weeklyRevivals
-    .map((r) => r.userId)
-    .filter((id): id is string => id != null);
+  // Build statusCounts map: { NEW: 5, CONTACTED: 12, … }
+  const statusCounts: Record<string, number> = {};
+  REVIVAL_STATUSES.forEach((s, i) => {
+    statusCounts[s.v] = (statusCountResults[i] as number) ?? 0;
+  });
+
+  // Leaderboard name resolution
+  const leaderboardUserIds = weeklyRevivals.map(r => r.userId).filter((id): id is string => id != null);
   const leaderboardUsers = leaderboardUserIds.length
-    ? await prisma.user.findMany({
-        where: { id: { in: leaderboardUserIds } },
-        select: { id: true, name: true },
-      })
+    ? await prisma.user.findMany({ where: { id: { in: leaderboardUserIds } }, select: { id: true, name: true } })
     : [];
-  const userNameById = new Map(leaderboardUsers.map((u) => [u.id, u.name]));
+  const userNameById = new Map(leaderboardUsers.map(u => [u.id, u.name]));
   const top5: LeaderboardRow[] = weeklyRevivals
-    .filter((r) => r.userId)
-    .map((r) => ({
+    .filter(r => r.userId)
+    .map(r => ({
       ownerId: r.userId as string,
       name: userNameById.get(r.userId as string) ?? "Unknown",
       count: r._count._all,
       isMe: r.userId === me.id,
     }));
 
-  // Shape gems for the client component — keep the prop surface narrow so
-  // we never accidentally leak unrelated lead fields.
-  const hiddenGems: HiddenGem[] = hiddenGemsRaw.map((g) => ({
-    id: g.id,
-    name: g.name,
-    phone: g.phone,
-    company: g.company,
-    city: g.city,
-    budgetMin: g.budgetMin,
-    budgetCurrency: g.budgetCurrency,
-    aiScore: g.aiScore,
+  const hiddenGems: HiddenGem[] = hiddenGemsRaw.map(g => ({
+    id: g.id, name: g.name, phone: g.phone, company: g.company, city: g.city,
+    budgetMin: g.budgetMin, budgetCurrency: g.budgetCurrency, aiScore: g.aiScore,
     lastTouchedAt: g.lastTouchedAt,
   }));
 
-  // Agent's current cold-call streak — shown in the right-rail "Streak" card.
-  // Field maintained by the gamification engine (see schema.prisma:59).
   const streak = me.coldCallStreak ?? 0;
 
   return (
@@ -234,7 +192,7 @@ export default async function ColdDataPage({ searchParams }: { searchParams: Pro
             </span>
           )}
           {isAdminOrMgr && (
-            <ColdDataAdminControls agents={agents.map((a) => ({ id: a.id, name: a.name, team: a.team }))} />
+            <ColdDataAdminControls agents={agents.map(a => ({ id: a.id, name: a.name, team: a.team }))} />
           )}
         </div>
       </div>
@@ -247,21 +205,31 @@ export default async function ColdDataPage({ searchParams }: { searchParams: Pro
 
       {/* ───────── TWO-COLUMN: list (left) + leaderboard/streak (right) ───────── */}
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_280px] gap-4 lg:gap-6">
-        {/* ─── LEFT: existing cold-data list ─── */}
+        {/* ─── LEFT: leads list ─── */}
         <div className="space-y-3 min-w-0">
-          {/* Sub-bucket tabs */}
+
+          {/* Status-based filter tabs */}
           <div className="seg flex-wrap">
-            <Link href="/cold-calls" className={showOnly === "all" ? "on" : ""}>All · {totalCount}</Link>
+            <Link href="/cold-calls" className={statusFilter === "all" ? "on" : ""}>
+              All · {totalCount}
+            </Link>
             {isAdminOrMgr && (
-              <Link href="/cold-calls?kind=unassigned" className={showOnly === "unassigned" ? "on" : ""}>⚠ Unassigned · {unassignedCount}</Link>
+              <Link href="/cold-calls?status=unassigned" className={statusFilter === "unassigned" ? "on" : ""}>
+                ⚠ Unassigned · {unassignedCount}
+              </Link>
             )}
-            <Link href="/cold-calls?kind=origin_cold" className={showOnly === "origin_cold" ? "on" : ""}>❄ Cold Data Import · {originColdCount}</Link>
-            <Link href="/cold-calls?kind=manual" className={showOnly === "manual" ? "on" : ""}>Manual cold · {manualCount}</Link>
-            <Link href="/cold-calls?kind=bant" className={showOnly === "bant" ? "on" : ""}>BANT not qualified · {bantCount}</Link>
-            <Link href="/cold-calls?kind=stale" className={showOnly === "stale" ? "on" : ""}>{COLD_DAYS}d+ stale · {staleCount}</Link>
+            {REVIVAL_STATUSES.map(s => (
+              <Link
+                key={s.v}
+                href={`/cold-calls?status=${s.v}`}
+                className={statusFilter === s.v ? "on" : ""}
+              >
+                {s.label} · {statusCounts[s.v] ?? 0}
+              </Link>
+            ))}
           </div>
 
-          {showOnly === "unassigned" && isAdminOrMgr && leads.length === 0 && (
+          {statusFilter === "unassigned" && isAdminOrMgr && leads.length === 0 && (
             <div className="card p-8 text-center text-gray-500 text-sm">
               No unassigned cold data. Import a batch with the Import button above.
             </div>
@@ -269,15 +237,18 @@ export default async function ColdDataPage({ searchParams }: { searchParams: Pro
 
           <RevivalEngineListClient
             leads={leads.map(l => ({
-              id:            l.id,
-              name:          l.name,
-              phone:         l.phone,
-              isColdCall:    l.isColdCall,
-              leadOrigin:    l.leadOrigin,
-              bantStatus:    l.bantStatus,
-              lastTouchedAt: l.lastTouchedAt,
-              ownerId:       l.ownerId,
-              owner:         l.owner ? { name: l.owner.name } : null,
+              id:             l.id,
+              name:           l.name,
+              phone:          l.phone,
+              company:        l.company ?? null,
+              city:           l.city ?? null,
+              isColdCall:     l.isColdCall,
+              leadOrigin:     l.leadOrigin,
+              status:         l.status,
+              statusChip:     statusChipMap[l.status] ?? "chip-new",
+              lastTouchedAt:  l.lastTouchedAt,
+              ownerId:        l.ownerId,
+              owner:          l.owner ? { name: l.owner.name } : null,
               coldCallReason: l.coldCallReason ?? null,
               alreadyBought:  l.alreadyBought ?? null,
               alreadyBoughtBy: l.alreadyBoughtBy ?? null,
@@ -287,7 +258,6 @@ export default async function ColdDataPage({ searchParams }: { searchParams: Pro
             cutoffMs={cutoff.getTime()}
             coldDays={COLD_DAYS}
           />
-
         </div>
 
         {/* ─── RIGHT: leaderboard + streak ─── */}
