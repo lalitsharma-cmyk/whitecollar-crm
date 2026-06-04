@@ -500,11 +500,11 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
           globals.css can hide non-matching [data-lead-section] cards on
           phones. Desktop ignores this entirely. */}
       <LeadMobileTabs />
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 pb-24 lg:pb-0">
+    <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 pb-24 lg:pb-0">
       {/* Mobile back link removed — MobileShell now renders a global back
           button in the mobile header (chevron-left next to hamburger) so
           every non-root page has it, not just lead detail. */}
-      <div className="lg:col-span-2 space-y-4">
+      <div className="xl:col-span-2 space-y-4">
         {/* INVESTOR BANNER — Agent V (Round 6). Surfaces "returning client"
             status above everything else. Hides itself when categorization
             !== "Investor" AND no matched leads exist (the component handles it). */}
@@ -671,11 +671,11 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
         {/* CustomerIntelligenceCard, clientSummaryCard, BuyingSignalsCard
             REMOVED per Lalit's repeated request — "remove these 3 sections". */}
 
-        {/* MOBILE-ONLY: BANT + Qualification surface near the top of the page
-            on phones (Lalit: "Qualification moving up wards in mobile"). On
-            desktop they live in the right column (rendered there with the
-            opposite hidden lg:block wrapper). */}
-        <div className="lg:hidden space-y-4">
+        {/* MOBILE/TABLET-ONLY: BANT + Qualification surface near the top of the
+            page on phones + iPads (Lalit: "Qualification moving up wards in mobile").
+            On desktop (≥1280px) they live in the right column (rendered there with
+            the opposite hidden xl:block wrapper). */}
+        <div className="xl:hidden space-y-4">
           {bantCard}
           {qualificationCard}
         </div>
@@ -714,9 +714,9 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
           initialUpdatedAt={stickyNote.updatedAt ? stickyNote.updatedAt.toISOString() : null}
         />
 
-        {/* DESKTOP-ONLY BANT + Qualification (top of right column). The mobile
-            copies live near the top of the LEFT column above. */}
-        <div className="hidden lg:block space-y-4">
+        {/* DESKTOP-ONLY (≥1280px) BANT + Qualification (top of right column). The
+            mobile + tablet copies live near the top of the LEFT column above. */}
+        <div className="hidden xl:block space-y-4">
           {bantCard}
           {qualificationCard}
         </div>

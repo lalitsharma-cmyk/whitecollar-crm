@@ -418,7 +418,6 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
                           className="text-xs border rounded px-1 py-0.5"
                           defaultValue={l.followupDate ?? ""}
                           onChange={(e) => quickSetFollowup(l.id, e.target.value)}
-                          onBlur={() => setPickerOpenFor(null)}
                         />
                       )}
                     </span>
@@ -633,7 +632,6 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
                             className="absolute top-9 left-0 z-20 text-xs border rounded px-2 py-1 shadow-lg bg-white dark:bg-slate-800 dark:border-slate-600 dark:text-slate-100"
                             defaultValue={l.followupDate ?? ""}
                             onChange={(e) => quickSetFollowup(l.id, e.target.value)}
-                            onBlur={() => setPickerOpenFor(null)}
                           />
                         )}
                       </div>

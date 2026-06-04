@@ -345,12 +345,12 @@ body.modal-open {
    The lead detail page tags each card with `data-lead-section="overview" |
    "timeline" | "actions" | "projects" | "admin"`. The mobile tab bar
    (LeadMobileTabs.tsx) sets `body[data-lead-tab="..."]` on click. These
-   rules hide non-matching sections on mobile only — desktop sees everything
-   in the original 2-column grid.
+   rules hide non-matching sections on phones + tablets/iPads — desktop
+   (≥1280px) sees everything in the 2-col grid (xl:grid-cols-3).
 
    Default (no body attr) = overview tab. Listed explicitly so the very
    first paint hides the long sections even before React hydrates. */
-@media (max-width: 1023px) {
+@media (max-width: 1279px) {
   body:not([data-lead-tab]) [data-lead-section]:not([data-lead-section="overview"]) { display: none !important; }
   body[data-lead-tab="overview"] [data-lead-section]:not([data-lead-section="overview"]) { display: none !important; }
   body[data-lead-tab="timeline"] [data-lead-section]:not([data-lead-section="timeline"]) { display: none !important; }

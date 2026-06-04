@@ -40,19 +40,21 @@ export default function LeadMobileTabs() {
   }, [active]);
 
   return (
-    // lg:hidden — desktop ignores the bar entirely.
+    // xl:hidden — desktop (≥1280px) ignores the bar; iPad + phones use it.
+    //   The lead detail grid is xl:grid-cols-3 so on iPad (1024–1279px) the page
+    //   is still single-column and benefits from tab navigation.
     // sticky top-0 — bar stays visible while the agent scrolls the active
     //   section. z-30 keeps it above cards but below modals (z-50+).
     // Backdrop-blur because cards have lots of color; a frosted bar reads
     //   better than a solid one.
     //
     // Responsive margin: parent section always uses p-3 (12px) on all
-    // sub-lg breakpoints, so we only negate by 3 units — never sm:-mx-4
+    // sub-xl breakpoints, so we only negate by 3 units — never sm:-mx-4
     // which would create 4px horizontal overflow on iPad.
-    <div className="lg:hidden sticky top-0 z-30 -mx-3 mb-3 bg-white/85 backdrop-blur border-b border-gray-200">
+    <div className="xl:hidden sticky top-0 z-30 -mx-3 mb-3 bg-white/85 backdrop-blur border-b border-gray-200">
       {/*
         Mobile (<768px): horizontal scroll row — shrink-0 pills, scroll if needed.
-        Tablet/iPad (768-1023px, md to lg): 5-column grid so every tab fills
+        Tablet/iPad (768-1279px, md to xl): 4-column grid so every tab fills
         equal width, no overflow, no crowding.
       */}
       <div className="flex overflow-x-auto px-1 py-1.5 gap-1 no-scrollbar md:grid md:grid-cols-4 md:overflow-x-visible md:gap-1.5 md:px-2">
