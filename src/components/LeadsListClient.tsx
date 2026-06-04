@@ -2,7 +2,16 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Phone, MessageCircle, Tag, RefreshCw, XCircle, X, ExternalLink, Pencil, Calendar, Mail } from "lucide-react";
+import { Phone, MessageCircle, Tag, RefreshCw, XCircle, X, ExternalLink, Pencil, Calendar, Mail, Trash2 } from "lucide-react";
+
+/** Official WhatsApp logo mark (brand colour applied via parent bg) */
+function WaIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" className="w-3.5 h-3.5" aria-hidden>
+      <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
+    </svg>
+  );
+}
 import LeadBulkActions from "./LeadBulkActions";
 import { telLink, whatsappLink } from "@/lib/phone";
 import CopyPhoneButton from "./CopyPhoneButton";
@@ -108,6 +117,9 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
   const [bulkCrossTeamWarn, setBulkCrossTeamWarn] = useState<string | null>(null);
   const [pickerOpenFor, setPickerOpenFor] = useState<string | null>(null);
   const [statusOpenFor, setStatusOpenFor] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
+  const [deleteReason, setDeleteReason] = useState("NOT_INTERESTED");
+  const [deleteBusy, setDeleteBusy] = useState(false);
 
   const LEAD_STATUSES: Array<{ v: string; label: string }> = [
     { v: "NEW",          label: "New" },
@@ -139,6 +151,23 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
     });
     setPickerOpenFor(null);
     router.refresh();
+  }
+
+  async function quickReject() {
+    if (!deleteTarget || deleteBusy) return;
+    setDeleteBusy(true);
+    try {
+      const r = await fetch(`/api/leads/${deleteTarget.id}/reject`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason: deleteReason, note: "" }),
+      });
+      if (!r.ok) return;
+      setDeleteTarget(null);
+      router.refresh();
+    } finally {
+      setDeleteBusy(false);
+    }
   }
 
   function toggle(id: string) {
@@ -575,30 +604,32 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
                   <td className="px-3 py-3 align-top" onClick={(e) => e.stopPropagation()}>
                     <div className="flex items-center gap-1.5 flex-wrap">
 
-                      {/* Edit / View */}
-                      <button
-                        type="button"
-                        title="Open lead"
-                        onClick={() => router.push(`/leads/${l.id}`)}
-                        className="w-8 h-8 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-white flex items-center justify-center transition-colors flex-none"
-                      >
-                        <Pencil className="w-3.5 h-3.5" />
-                      </button>
+                      {/* 1. Call */}
+                      {l.phone && (
+                        <a href={telLink(l.phone) || "#"} title={`Call ${l.name}`}
+                          className="w-8 h-8 rounded-lg bg-blue-600 hover:bg-blue-700 text-white flex items-center justify-center transition-colors flex-none">
+                          <Phone className="w-3.5 h-3.5" />
+                        </a>
+                      )}
 
-                      {/* Follow-up date picker */}
+                      {/* 2. WhatsApp — real brand icon */}
+                      {l.phone && (
+                        <a href={whatsappLink(l.phone) || "#"} target="_blank" rel="noopener noreferrer"
+                          title={`WhatsApp ${l.name}`}
+                          className="w-8 h-8 rounded-lg bg-[#25D366] hover:bg-[#1ea953] text-white flex items-center justify-center transition-colors flex-none">
+                          <WaIcon />
+                        </a>
+                      )}
+
+                      {/* 3. Follow-up */}
                       <div className="relative flex-none">
-                        <button
-                          type="button"
-                          title="Set follow-up date"
+                        <button type="button" title="Set follow-up date"
                           onClick={() => setPickerOpenFor(pickerOpenFor === l.id ? null : l.id)}
-                          className="w-8 h-8 rounded-lg bg-amber-500 hover:bg-amber-600 text-white flex items-center justify-center transition-colors"
-                        >
+                          className="w-8 h-8 rounded-lg bg-amber-500 hover:bg-amber-600 text-white flex items-center justify-center transition-colors">
                           <Calendar className="w-3.5 h-3.5" />
                         </button>
                         {pickerOpenFor === l.id && (
-                          <input
-                            type="date"
-                            autoFocus
+                          <input type="date" autoFocus
                             className="absolute top-9 left-0 z-20 text-xs border rounded px-2 py-1 shadow-lg bg-white dark:bg-slate-800 dark:border-slate-600 dark:text-slate-100"
                             defaultValue={l.followupDate ?? ""}
                             onChange={(e) => quickSetFollowup(l.id, e.target.value)}
@@ -607,39 +638,28 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
                         )}
                       </div>
 
-                      {/* Email */}
+                      {/* 4. Email */}
                       {l.email && (
-                        <a
-                          href={`mailto:${l.email}`}
-                          title={`Email ${l.name}`}
-                          className="w-8 h-8 rounded-lg bg-sky-500 hover:bg-sky-600 text-white flex items-center justify-center transition-colors flex-none"
-                        >
+                        <a href={`mailto:${l.email}`} title={`Email ${l.name}`}
+                          className="w-8 h-8 rounded-lg bg-sky-500 hover:bg-sky-600 text-white flex items-center justify-center transition-colors flex-none">
                           <Mail className="w-3.5 h-3.5" />
                         </a>
                       )}
 
-                      {/* WhatsApp */}
-                      {l.phone && (
-                        <a
-                          href={whatsappLink(l.phone) || "#"}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          title={`WhatsApp ${l.name}`}
-                          className="w-8 h-8 rounded-lg bg-[#25D366] hover:bg-[#1ea953] text-white flex items-center justify-center transition-colors flex-none"
-                        >
-                          <MessageCircle className="w-3.5 h-3.5" />
-                        </a>
-                      )}
+                      {/* 5. Edit */}
+                      <button type="button" title="Open lead"
+                        onClick={() => router.push(`/leads/${l.id}`)}
+                        className="w-8 h-8 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-white flex items-center justify-center transition-colors flex-none">
+                        <Pencil className="w-3.5 h-3.5" />
+                      </button>
 
-                      {/* Call — tel: link auto-dials on mobile, opens default phone app on desktop */}
-                      {l.phone && (
-                        <a
-                          href={telLink(l.phone) || "#"}
-                          title={`Call ${l.name}`}
-                          className="w-8 h-8 rounded-lg bg-blue-600 hover:bg-blue-700 text-white flex items-center justify-center transition-colors flex-none"
-                        >
-                          <Phone className="w-3.5 h-3.5" />
-                        </a>
+                      {/* 6. Delete — admin / manager only */}
+                      {canBulk && (
+                        <button type="button" title="Reject lead"
+                          onClick={() => { setDeleteTarget({ id: l.id, name: l.name }); setDeleteReason("NOT_INTERESTED"); }}
+                          className="w-8 h-8 rounded-lg bg-red-500 hover:bg-red-600 text-white flex items-center justify-center transition-colors flex-none">
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
                       )}
 
                     </div>
@@ -909,6 +929,56 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
           )}
         </>
       )}
+      {/* ── Delete / Reject confirm modal ── */}
+      {deleteTarget && (
+        <div
+          className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4"
+          onClick={() => !deleteBusy && setDeleteTarget(null)}
+        >
+          <div
+            className="bg-white dark:bg-slate-900 rounded-xl max-w-sm w-full p-5 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-2 mb-1">
+              <Trash2 className="w-4 h-4 text-red-500 flex-none" />
+              <span className="font-semibold text-base">Reject "{deleteTarget.name}"?</span>
+            </div>
+            <p className="text-xs text-gray-500 dark:text-slate-400 mb-3">
+              Lead will be marked Lost and removed from the active queue.
+            </p>
+            <label className="text-xs font-semibold text-gray-600 dark:text-slate-300">Reason</label>
+            <select
+              value={deleteReason}
+              onChange={(e) => setDeleteReason(e.target.value)}
+              className="w-full mt-1 mb-4 border border-[#e5e7eb] dark:border-slate-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-slate-800 dark:text-slate-100"
+            >
+              <option value="NOT_INTERESTED">Not Interested</option>
+              <option value="LOW_BUDGET">Low Budget</option>
+              <option value="FUND_ISSUE">Fund Issue</option>
+              <option value="NEVER_RESPONDED">Never Responded</option>
+              <option value="JUST_SEARCHING">Just Searching</option>
+              <option value="DROP_THE_PLAN">Drop The Plan</option>
+              <option value="WAR_FEAR">War / Market Fear</option>
+              <option value="WAITING_FOR_PROPERTY_SALE">Waiting to Sell Own Property</option>
+              <option value="INVALID_NUMBER">Invalid Number</option>
+              <option value="OTHER">Other</option>
+            </select>
+            <div className="flex justify-end gap-2">
+              <button onClick={() => setDeleteTarget(null)} className="btn btn-ghost text-sm">
+                Cancel
+              </button>
+              <button
+                onClick={quickReject}
+                disabled={deleteBusy}
+                className="btn bg-red-600 hover:bg-red-700 text-white text-sm"
+              >
+                {deleteBusy ? "Rejecting…" : "Reject Lead"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* §12.3 Hot Lead Alert — subtle red pulse on HOT leads that haven't been
           touched yet (or were touched within the last 6h). Keyframes inlined
           because this is a "use client" island and we don't want to bloat the
