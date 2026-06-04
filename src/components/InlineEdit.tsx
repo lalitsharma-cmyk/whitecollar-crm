@@ -148,8 +148,8 @@ export default function InlineEdit({ leadId, field, label, value, type = "text",
   if (type === "select" && options) {
     return (
       <div className="inline-flex flex-col">
-        <div className="inline-flex items-center gap-1">
-          <select value={v} onChange={(e) => setV(e.target.value)} className={inputCls} autoFocus>
+        <div className="flex items-center gap-1">
+          <select value={v} onChange={(e) => setV(e.target.value)} className="min-w-[90px] border border-[#c9a24b] rounded px-2 py-1 text-sm" autoFocus>
             <option value="">—</option>
             {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>

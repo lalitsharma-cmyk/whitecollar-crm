@@ -10,6 +10,7 @@ import Link from "next/link";
 import IamHereCard from "@/components/IamHereCard";
 import { todayIST } from "@/lib/attendance";
 import { normalizeTeam } from "@/lib/teamRouting";
+import TargetCelebration from "@/components/TargetCelebration";
 
 export const dynamic = "force-dynamic";
 
@@ -90,13 +91,11 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     : `${fmt2(rawFrom)} – ${fmt2(rawTo)}`;
 
   const [
-    followupsDueToday,
     upcoming,
     todayCallsCount,
-    // TODAY section — scheduled activity counts for the selected period
-    leadFollowupsDueToday, meetingsToday, siteVisitsToday, virtualMeetingsToday,
+    // TODAY section — only meetings/site visits/virtual meets shown
+    meetingsToday, siteVisitsToday, virtualMeetingsToday,
   ] = await Promise.all([
-    prisma.activity.count({ where: { ...meActWhere, status: ActivityStatus.PLANNED, type: "CALL", scheduledAt: { gte: sqlFrom, lt: sqlTo } } }),
     prisma.activity.findMany({ where: { ...meActWhere, status: ActivityStatus.PLANNED, scheduledAt: { gte: sqlTo } }, orderBy: { scheduledAt: "asc" }, take: 8, include: { lead: { select: { id: true, name: true } } } }), // B-15: only lead.id/name rendered — UPCOMING: after selected period
     // Calls by this user in the selected period — feeds KPI tiles
     prisma.callLog.count({
@@ -105,8 +104,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         startedAt: { gte: sqlFrom, lt: sqlTo },
       },
     }),
-    // TODAY section — lead follow-up dates and scheduled activity counts for the selected period
-    prisma.lead.count({ where: { ...meScope, followupDate: { gte: sqlFrom, lt: sqlTo }, status: { notIn: [LeadStatus.WON, LeadStatus.LOST] } } }),
+    // TODAY section — scheduled activity counts for the selected period
     prisma.activity.count({ where: { ...meActWhere, status: ActivityStatus.PLANNED, type: { in: [ActivityType.EXPO_MEETING, ActivityType.OFFICE_MEETING, ActivityType.HOME_VISIT] }, scheduledAt: { gte: sqlFrom, lt: sqlTo } } }),
     prisma.activity.count({ where: { ...meActWhere, status: ActivityStatus.PLANNED, type: ActivityType.SITE_VISIT, scheduledAt: { gte: sqlFrom, lt: sqlTo } } }),
     prisma.activity.count({ where: { ...meActWhere, status: ActivityStatus.PLANNED, type: ActivityType.VIRTUAL_MEETING, scheduledAt: { gte: sqlFrom, lt: sqlTo } } }),
@@ -248,15 +246,9 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   ]);
   const hasMorningWork = myNewOvernight > 0 || myFollowupsToday > 0 || myCallbacksToday > 0;
 
-  // Time-aware greeting — uses IST hour to pick morning/afternoon/evening.
-  const istNow = new Date(Date.now() + 5.5 * 3600_000);
-  const istHour = istNow.getUTCHours();
-  const greeting =
-    istHour < 12 ? "Good morning" :
-    istHour < 17 ? "Good afternoon" : "Good evening";
-  const energyEmoji =
-    istHour < 12 ? "☀️" :
-    istHour < 17 ? "⚡" : "🌇";
+  // Greeting — always "Good morning" regardless of time of day.
+  const greeting = "Good morning";
+  const energyEmoji = "☀️";
 
   return (
     <>
@@ -344,32 +336,22 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
             <div className="text-[10px] text-blue-700/70 mt-0.5">High-value dormant 30+ days</div>
           </Link>
         </div>
-        {/* Scheduled — period-based, what is planned for the selected day/range */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mt-3">
-          <Link href="/activities?type=CALL" className="card p-4 hover:shadow-lg transition">
-            <div className="text-3xl font-extrabold text-indigo-700 dark:text-indigo-300">{followupsDueToday}</div>
-            <div className="text-xs font-semibold text-slate-800 dark:text-slate-200 mt-1">📞 Calls due</div>
-            <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">scheduled · {periodSection.toLowerCase()}</div>
-          </Link>
-          <Link href="/leads?followup=today" className="card p-4 hover:shadow-lg transition">
-            <div className="text-3xl font-extrabold text-amber-700 dark:text-amber-300">{leadFollowupsDueToday}</div>
-            <div className="text-xs font-semibold text-slate-800 dark:text-slate-200 mt-1">📅 Follow-ups due</div>
-            <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">lead follow-up date · {periodSection.toLowerCase()}</div>
-          </Link>
+        {/* Scheduled — period-based: only meetings, site visits, virtual meets */}
+        <div className="grid grid-cols-3 gap-3 mt-3">
           <Link href="/activities?type=MEETING" className="card p-4 hover:shadow-lg transition">
             <div className="text-3xl font-extrabold text-teal-700 dark:text-teal-300">{meetingsToday}</div>
             <div className="text-xs font-semibold text-slate-800 dark:text-slate-200 mt-1">🤝 Meetings</div>
-            <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">expo / office / home · {periodSection.toLowerCase()}</div>
+            <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">expo / office / home · today</div>
           </Link>
           <Link href="/activities?type=SITE_VISIT" className="card p-4 hover:shadow-lg transition">
             <div className="text-3xl font-extrabold text-green-700 dark:text-green-300">{siteVisitsToday}</div>
             <div className="text-xs font-semibold text-slate-800 dark:text-slate-200 mt-1">🏗️ Site visits</div>
-            <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">scheduled · {periodSection.toLowerCase()}</div>
+            <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">scheduled · today</div>
           </Link>
           <Link href="/activities?type=VIRTUAL_MEETING" className="card p-4 hover:shadow-lg transition">
             <div className="text-3xl font-extrabold text-sky-700 dark:text-sky-300">{virtualMeetingsToday}</div>
             <div className="text-xs font-semibold text-slate-800 dark:text-slate-200 mt-1">💻 Virtual meets</div>
-            <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">scheduled · {periodSection.toLowerCase()}</div>
+            <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">scheduled · today</div>
           </Link>
         </div>
       </div>
@@ -502,6 +484,19 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         </table>
       </div>
       )}
+
+      {/* 🎉 Party poppers — fires once per newly-completed KPI target today */}
+      {(() => {
+        const achievedTargets = [
+          todayCallsCount >= targets.calls     && "calls",
+          connectedPersonal >= targets.connected && "connected",
+          virtualPersonal  >= targets.virtual  && "virtual",
+          f2fPersonal      >= targets.f2f      && "f2f",
+          freshPersonal    >= targets.fresh    && "fresh",
+          dealsPersonal    >= targets.deals    && "deals",
+        ].filter(Boolean) as string[];
+        return <TargetCelebration achievedTargets={achievedTargets} date={rawFrom} />;
+      })()}
     </>
   );
 }
