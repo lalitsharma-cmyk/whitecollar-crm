@@ -41,7 +41,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
   const scope = await leadScopeWhere(me);
   const where: Prisma.LeadWhereInput = sp.showCold === "1"
     ? { ...scope }
-    : { ...scope, isColdCall: false, leadOrigin: "ACTIVE" };
+    : { ...scope, isColdCall: false };
   // ── Top-level pipeline filter tabs: ?filter=all|active|bookings|won|lost ──
   // Applied before the per-role LOST-hide below so explicit tab selections
   // (e.g. ?filter=lost) are respected for ADMIN/MANAGER.
@@ -245,6 +245,9 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
   else if (sp.sort === "touched_asc") orderBy = { lastTouchedAt: "asc" };
   else if (sp.sort === "touched_desc") orderBy = { lastTouchedAt: "desc" };
   else if (sp.sort === "name_asc") orderBy = { name: "asc" };
+  // When no explicit sort param is present we'll apply smart priority ordering
+  // (NEW → today's follow-up → overdue → others). The flag drives the pre-query below.
+  const useSmartSort = !sp.sort;
 
   const page = Math.max(1, parseInt(sp.page ?? "1") || 1);
   const skip = (page - 1) * PAGE_SIZE;
@@ -254,16 +257,64 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
   const todayWindow = istWindow(0);
   const activeScope = { ...scope, status: { notIn: [LeadStatus.WON, LeadStatus.LOST] } };
 
-  const [leads, total, hot, newToday, totalAll, agents, followupToday, followupOverdue, allTagRows] = await Promise.all([
-    prisma.lead.findMany({
-      where, orderBy, skip, take: PAGE_SIZE,
-      include: {
-        owner: { select: { name: true, avatarColor: true } },
-        interestedUnits: { take: 1, select: { unit: { select: { configuration: true, project: { select: { name: true } } } } } },
-        discussed: { take: 3, select: { project: { select: { name: true } } } },
-      },
-    }),
-    prisma.lead.count({ where }),
+  // ── Smart priority sort pre-query ─────────────────────────────────────────
+  // When no explicit ?sort= is provided we sort by urgency rather than created-
+  // at. Priority tiers: 0=NEW (freshly assigned) → 1=follow-up today → 2=overdue
+  // follow-up → 3=everything else. Within each tier, newest-created first.
+  // Implemented as a lightweight SELECT (id + 3 fields) over ALL matching rows,
+  // sorted in Node.js, then the page slice fed into the full findMany.
+  let smartSortPageIds: string[] | null = null;
+  let smartSortTotal: number | null = null;
+
+  if (useSmartSort) {
+    const now = new Date();
+    const priorityRows = await prisma.lead.findMany({
+      where,
+      select: { id: true, status: true, followupDate: true, createdAt: true },
+    });
+
+    const getP = (l: { status: string; followupDate: Date | null }): number => {
+      // 0 — freshly assigned (NEW status, never contacted yet)
+      if (l.status === "NEW") return 0;
+      // 1 — follow-up is due today (IST window)
+      if (l.followupDate && l.followupDate >= todayWindow.gte && l.followupDate < todayWindow.lt) return 1;
+      // 2 — overdue follow-up (missed deadline)
+      if (l.followupDate && l.followupDate < now) return 2;
+      // 3 — everything else (future follow-ups, no follow-up set, etc.)
+      return 3;
+    };
+
+    priorityRows.sort((a, b) => {
+      const pa = getP(a), pb = getP(b);
+      if (pa !== pb) return pa - pb;
+      // Within same tier: newer lead first
+      return b.createdAt.getTime() - a.createdAt.getTime();
+    });
+
+    smartSortTotal = priorityRows.length;
+    smartSortPageIds = priorityRows.slice(skip, skip + PAGE_SIZE).map(r => r.id);
+  }
+
+  const [leadsRaw, totalFromDb, hot, newToday, totalAll, agents, followupToday, followupOverdue, allTagRows] = await Promise.all([
+    smartSortPageIds != null
+      ? prisma.lead.findMany({
+          where: { id: { in: smartSortPageIds } },
+          include: {
+            owner: { select: { name: true, avatarColor: true } },
+            interestedUnits: { take: 1, select: { unit: { select: { configuration: true, project: { select: { name: true } } } } } },
+            discussed: { take: 3, select: { project: { select: { name: true } } } },
+          },
+        })
+      : prisma.lead.findMany({
+          where, orderBy, skip, take: PAGE_SIZE,
+          include: {
+            owner: { select: { name: true, avatarColor: true } },
+            interestedUnits: { take: 1, select: { unit: { select: { configuration: true, project: { select: { name: true } } } } } },
+            discussed: { take: 3, select: { project: { select: { name: true } } } },
+          },
+        }),
+    // Skip the count query when we already have the total from the pre-query.
+    smartSortTotal != null ? Promise.resolve(smartSortTotal) : prisma.lead.count({ where }),
     prisma.lead.count({ where: { ...scope, aiScore: AIScore.HOT } }),
     prisma.lead.count({ where: { ...scope, createdAt: { gte: new Date(Date.now() - 24 * 3600 * 1000) } } }),
     prisma.lead.count({ where: scope }),
@@ -282,6 +333,15 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
       ORDER BY tag ASC
     `,
   ]);
+
+  // Re-sort smart-sort results to match the computed priority order.
+  // findMany with { id: { in: [...] } } doesn't guarantee insertion order.
+  const leads = (() => {
+    if (smartSortPageIds == null) return leadsRaw;
+    const m = new Map(leadsRaw.map(l => [l.id, l]));
+    return smartSortPageIds.map(id => m.get(id)).filter((l): l is NonNullable<typeof l> => l != null);
+  })();
+  const total = totalFromDb;
 
   const distinctTags: string[] = allTagRows
     .map((r) => r.tag)
