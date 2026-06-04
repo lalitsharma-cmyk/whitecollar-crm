@@ -299,7 +299,12 @@ export default function LeadActionsClient({ leadId, phone, altPhone, email, curr
   }
 
   return (
-    <>
+    // A single block div is required here — the parent mounts LeadActionsClient
+    // inside a flex container alongside BestCallTimeChip. A bare fragment would
+    // unwrap all children into flex items, causing the buttons grid and the alt-
+    // phone section to lay out horizontally instead of stacking vertically. The
+    // w-full ensures the block spans the container width on every viewport.
+    <div className="w-full min-w-0">
       {/* Primary phone masked display REMOVED per Lalit's ask. The tap-to-call
           action lives in the action grid below — the masked-number line was
           duplicative noise. Real number is still used when the agent taps Call. */}
@@ -402,11 +407,10 @@ export default function LeadActionsClient({ leadId, phone, altPhone, email, curr
       {showCall && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-end sm:items-center justify-center sm:p-4" onClick={() => setShowCall(false)}>
           {/* Mobile: bottom-sheet (full-width, slides up from bottom, scrollable).
-              Desktop: centered card. Both cap height at 90vh so the form scrolls
-              internally instead of overflowing off-screen when the keyboard / a
-              long form pushes content. */}
+              Desktop / iPad: centered card. Both cap height at 90vh so the form
+              scrolls internally instead of overflowing off-screen. */}
           <div
-            className="bg-white sm:rounded-xl rounded-t-2xl max-w-md w-full p-5 shadow-2xl max-h-[90vh] overflow-y-auto safe-bottom"
+            className="bg-white sm:rounded-xl rounded-t-2xl max-w-lg w-full p-5 shadow-2xl max-h-[90vh] overflow-y-auto safe-bottom"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="font-semibold mb-3 text-lg">Log conversation</div>
@@ -537,6 +541,6 @@ export default function LeadActionsClient({ leadId, phone, altPhone, email, curr
           </div>
         </div>
       )}
-    </>
+    </div>
   );
 }

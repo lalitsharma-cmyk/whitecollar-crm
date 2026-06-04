@@ -42,9 +42,9 @@ export default function LeadJourneyBar({ status }: { status: string }) {
   const currentIndex = isLost ? 0 : resolveStageIndex(status);
   const currentStage = STAGES[currentIndex];
 
-  // ─── Mobile summary (hidden on lg+) ─────────────────────────────────────
+  // ─── Mobile summary (hidden on md+, i.e. tablets and desktop) ──────────
   const mobileSummary = (
-    <div className="lg:hidden flex items-center gap-2 text-sm py-1">
+    <div className="md:hidden flex items-center gap-2 text-sm py-1">
       <span className="font-semibold" style={{ color: isLost ? "#dc2626" : "#c9a24b" }}>
         {isLost ? "Closed Lost" : currentStage.label}
       </span>
@@ -64,9 +64,9 @@ export default function LeadJourneyBar({ status }: { status: string }) {
     </div>
   );
 
-  // ─── Desktop full bar (hidden on mobile) ────────────────────────────────
+  // ─── Full bar (shown on md+: tablets and desktop) ───────────────────────
   const desktopBar = (
-    <div className="hidden lg:block w-full overflow-x-auto" aria-label="Lead pipeline progress">
+    <div className="hidden md:block w-full overflow-x-auto" aria-label="Lead pipeline progress">
       <div className="flex items-start min-w-max">
         {STAGES.map((stage, i) => {
           const isCompleted = i < currentIndex;

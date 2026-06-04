@@ -586,29 +586,26 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
               <div className="mt-2 mb-1">
                 <LeadJourneyBar status={lead.status} />
               </div>
-              {/* Phone/WA action buttons + "best time to call" hint.
-                  Wrapped in a flex-wrap container so the chip flows beside
-                  the buttons on desktop and onto its own line on mobile —
-                  doesn't disturb LeadActionsClient's own internal layout. */}
-              <div className="flex items-center flex-wrap gap-2">
-                <LeadActionsClient
-                  leadId={lead.id}
-                  phone={lead.phone}
-                  altPhone={lead.altPhone}
-                  email={lead.email}
-                  currentOwnerId={lead.ownerId}
-                  canReassign={canReassign}
-                  agents={agents.map(a => ({ id: a.id, name: a.name, role: a.role, team: a.team, avatarColor: a.avatarColor }))}
-                  phoneMasked={maskPhone(lead.phone)}
-                  altPhoneMasked={maskPhone(lead.altPhone)}
-                  leadName={lead.name}
-                  agentName={me.name}
-                  acefoneEnabled={acefoneEnabled()}
-                  acefoneMappedForUser={!!me.acefoneAgentId}
-                  hideReassign={true}
-                />
-                <BestCallTimeChip leadId={lead.id} />
-              </div>
+              {/* Phone/WA action buttons — full-width block so the buttons grid
+                  and alt-phone row stack vertically rather than appearing as
+                  horizontal flex siblings. BestCallTimeChip sits below. */}
+              <LeadActionsClient
+                leadId={lead.id}
+                phone={lead.phone}
+                altPhone={lead.altPhone}
+                email={lead.email}
+                currentOwnerId={lead.ownerId}
+                canReassign={canReassign}
+                agents={agents.map(a => ({ id: a.id, name: a.name, role: a.role, team: a.team, avatarColor: a.avatarColor }))}
+                phoneMasked={maskPhone(lead.phone)}
+                altPhoneMasked={maskPhone(lead.altPhone)}
+                leadName={lead.name}
+                agentName={me.name}
+                acefoneEnabled={acefoneEnabled()}
+                acefoneMappedForUser={!!me.acefoneAgentId}
+                hideReassign={true}
+              />
+              <BestCallTimeChip leadId={lead.id} />
               {/* Voice note recorder — moved to header so agents see all 4
                   actions (Call / WhatsApp / Log Call / Voice Note) together
                   without scrolling. */}
