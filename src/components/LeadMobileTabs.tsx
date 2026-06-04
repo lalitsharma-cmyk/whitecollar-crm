@@ -46,8 +46,17 @@ export default function LeadMobileTabs() {
     //   section. z-30 keeps it above cards but below modals (z-50+).
     // Backdrop-blur because cards have lots of color; a frosted bar reads
     //   better than a solid one.
-    <div className="lg:hidden sticky top-0 z-30 -mx-3 sm:-mx-4 mb-3 bg-white/85 backdrop-blur border-b border-gray-200">
-      <div className="flex overflow-x-auto px-1 py-1.5 gap-1 no-scrollbar">
+    //
+    // Responsive margin: parent section always uses p-3 (12px) on all
+    // sub-lg breakpoints, so we only negate by 3 units — never sm:-mx-4
+    // which would create 4px horizontal overflow on iPad.
+    <div className="lg:hidden sticky top-0 z-30 -mx-3 mb-3 bg-white/85 backdrop-blur border-b border-gray-200">
+      {/*
+        Mobile (<768px): horizontal scroll row — shrink-0 pills, scroll if needed.
+        Tablet/iPad (768-1023px, md to lg): 5-column grid so every tab fills
+        equal width, no overflow, no crowding.
+      */}
+      <div className="flex overflow-x-auto px-1 py-1.5 gap-1 no-scrollbar md:grid md:grid-cols-5 md:overflow-x-visible md:gap-1.5 md:px-2">
         {TABS.map((t) => {
           const isActive = t.id === active;
           return (
@@ -55,14 +64,15 @@ export default function LeadMobileTabs() {
               key={t.id}
               type="button"
               onClick={() => setActive(t.id)}
-              className={`shrink-0 px-3 py-1.5 rounded-full text-xs font-semibold transition-colors ${
+              className={`shrink-0 md:shrink-0 md:w-full flex items-center justify-center gap-1 px-3 py-2 rounded-full text-xs font-semibold transition-colors whitespace-nowrap ${
                 isActive
                   ? "bg-[#0b1a33] text-white"
                   : "bg-gray-100 text-gray-600 hover:bg-gray-200"
               }`}
               aria-pressed={isActive}
             >
-              <span aria-hidden className="mr-1">{t.emoji}</span>{t.label}
+              <span aria-hidden>{t.emoji}</span>
+              <span>{t.label}</span>
             </button>
           );
         })}

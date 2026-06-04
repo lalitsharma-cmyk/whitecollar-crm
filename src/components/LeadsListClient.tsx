@@ -575,6 +575,28 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
                         />
                       )}
                     </div>
+                    {/* Quick call / WA action icons */}
+                    {l.phone && (
+                      <div className="flex items-center justify-end gap-1 mt-1 mb-0.5" onClick={(e) => e.stopPropagation()}>
+                        <a
+                          href={telLink(l.phone) || "#"}
+                          aria-label={`Call ${l.name}`}
+                          onClick={(e) => e.stopPropagation()}
+                          className="w-8 h-8 rounded-full bg-emerald-600 text-white flex items-center justify-center hover:bg-emerald-700 transition flex-none"
+                        >
+                          <Phone className="w-3.5 h-3.5" />
+                        </a>
+                        <a
+                          href={whatsappLink(l.phone) || "#"}
+                          target="_blank" rel="noopener noreferrer"
+                          aria-label={`WhatsApp ${l.name}`}
+                          onClick={(e) => e.stopPropagation()}
+                          className="w-8 h-8 rounded-full bg-[#25D366] text-white flex items-center justify-center hover:bg-[#1ea953] transition flex-none"
+                        >
+                          <MessageCircle className="w-3.5 h-3.5" />
+                        </a>
+                      </div>
+                    )}
                     {/* Owner chip */}
                     {l.owner && (
                       <div className={`avatar ${l.owner.avatarColor} inline-flex text-[9px]`} title={l.owner.name}>
