@@ -393,8 +393,8 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
                         />
                       )}
                     </span>
-                    {l.owner && (
-                      <span className={`avatar ${l.owner.avatarColor} inline-flex w-5 h-5 text-[9px]`}>
+                    {canReassign && l.owner && (
+                      <span className={`avatar ${l.owner.avatarColor} inline-flex w-5 h-5 text-[9px]`} title={l.owner.name}>
                         {l.owner.name.split(" ").map((s: string) => s[0]).slice(0, 2).join("")}
                       </span>
                     )}
@@ -597,8 +597,8 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
                         </a>
                       </div>
                     )}
-                    {/* Owner chip */}
-                    {l.owner && (
+                    {/* Owner chip — only shown to admin/manager (agents see only their own leads) */}
+                    {canReassign && l.owner && (
                       <div className={`avatar ${l.owner.avatarColor} inline-flex text-[9px]`} title={l.owner.name}>
                         {l.owner.name.split(" ").map((s: string) => s[0]).slice(0, 2).join("")}
                       </div>
