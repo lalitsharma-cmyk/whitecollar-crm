@@ -467,7 +467,7 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
               <th className="px-3 py-2.5">Lead</th>
               <th className="px-3 py-2.5 w-36">Status</th>
               {canReassign && <th className="px-3 py-2.5 w-32">Assigned to</th>}
-              <th className="px-3 py-2.5 w-52">Actions</th>
+              <th className="px-3 py-2.5 w-60">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-[#f1f3f5] dark:divide-slate-800">
@@ -602,7 +602,7 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
 
                   {/* ── Actions ── */}
                   <td className="px-3 py-3 align-top" onClick={(e) => e.stopPropagation()}>
-                    <div className="flex items-center gap-1.5 flex-wrap">
+                    <div className="flex items-center gap-1 flex-nowrap">
 
                       {/* 1. Call */}
                       {l.phone && (

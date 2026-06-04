@@ -12,6 +12,15 @@ import { useState } from "react";
 import { fmtIST12Paren, fmtISTDate } from "@/lib/datetime";
 import type { CallLog, WhatsAppMessage } from "@prisma/client";
 
+// Voice notes + quick text notes — all saved to the Note model via
+// /api/leads/[id]/notes. Displayed inline in the stream in IST order.
+interface NoteWithUser {
+  id: string;
+  body: string;
+  createdAt: Date;
+  user: { name: string } | null;
+}
+
 // CONNECTED = actual two-way communication happened (call answered, or client
 // expressed interest / disinterest — either way they spoke). INTERESTED and
 // NOT_INTERESTED both imply a real conversation; only the outcome differs.
@@ -58,6 +67,7 @@ type CallLogWithUser = CallLog & { user: { name: string } };
 interface Props {
   callLogs: CallLogWithUser[];
   waMessages: WhatsAppMessage[];
+  notes?: NoteWithUser[];
   // Optional: when "Dubai", surface a tiny UAE-consent reminder tooltip on the
   // audio control. UAE call-recording rules require explicit consent, so we
   // hint to the agent that any recording here likely belongs to the India team
@@ -65,11 +75,13 @@ interface Props {
   forwardedTeam?: string | null;
 }
 
-// Discriminated union — each row in the merged stream is either a call or
-// a WhatsApp message. `at` is the sortable timestamp used by Array.sort.
+// Discriminated union — each row in the merged stream is either a call,
+// a WhatsApp message, or a typed/voice note.
+// `at` is the sortable timestamp used by Array.sort.
 type StreamRow =
   | { kind: "call"; at: Date; call: CallLogWithUser }
-  | { kind: "wa"; at: Date; msg: WhatsAppMessage };
+  | { kind: "wa"; at: Date; msg: WhatsAppMessage }
+  | { kind: "note"; at: Date; note: NoteWithUser };
 
 // A compressed placeholder for ≥ COMPRESS_MIN_COUNT consecutive unsuccessful
 // attempts that are all older than the threshold and have no notes/recordings.
@@ -155,7 +167,7 @@ function buildDisplayRows(rows: StreamRow[]): DisplayRow[] {
 
 type FilterType = "ALL" | "CONNECTED" | "NO_ANSWER" | "WA";
 
-export default function ConversationStreamCard({ callLogs, waMessages, forwardedTeam }: Props) {
+export default function ConversationStreamCard({ callLogs, waMessages, notes = [], forwardedTeam }: Props) {
   const [expandedGroups, setExpandedGroups] = useState<Set<number>>(new Set());
   const [filter, setFilter] = useState<FilterType>("ALL");
 
@@ -174,14 +186,17 @@ export default function ConversationStreamCard({ callLogs, waMessages, forwarded
     : undefined;
 
   // Merge then sort newest-first. Stable Date comparison; ties broken by
-  // CALL > WA so a "log call + send confirmation" pair shows the action first.
+  // CALL > NOTE > WA so a "log call + voice note" pair shows the call first.
   const rows: StreamRow[] = [
     ...callLogs.map((c) => ({ kind: "call" as const, at: c.startedAt, call: c })),
     ...waMessages.map((m) => ({ kind: "wa" as const, at: m.receivedAt, msg: m })),
+    ...notes.map((n) => ({ kind: "note" as const, at: n.createdAt, note: n })),
   ].sort((a, b) => {
     const d = b.at.getTime() - a.at.getTime();
     if (d !== 0) return d;
-    return a.kind === "call" && b.kind === "wa" ? -1 : a.kind === "wa" && b.kind === "call" ? 1 : 0;
+    // tie-break: call > note > wa
+    const rank = (r: StreamRow) => r.kind === "call" ? 0 : r.kind === "note" ? 1 : 2;
+    return rank(a) - rank(b);
   });
 
   // Header counts — use effectiveOutcome so "Dropped Wa" entries aren't
@@ -189,11 +204,14 @@ export default function ConversationStreamCard({ callLogs, waMessages, forwarded
   const connectedCount = callLogs.filter(c => CONNECTED_OUTCOMES.has(effectiveOutcome(c.outcome as string, c.notes))).length;
   const unsuccessfulCount = callLogs.filter(c => UNSUCCESSFUL_OUTCOMES.has(effectiveOutcome(c.outcome as string, c.notes))).length;
   const waInboundCount = waMessages.filter(m => m.direction === "INBOUND").length;
+  const noteCount = notes.length;
 
   const displayRows = buildDisplayRows(rows);
 
-  // Apply active filter to display rows
+  // Apply active filter to display rows.
+  // Notes only appear in ALL — they're context, not a call/WA event.
   const filteredRows = filter === "ALL" ? displayRows : displayRows.filter(row => {
+    if (row.kind === "note") return false; // notes only in ALL view
     if (filter === "CONNECTED") {
       if (row.kind === "compressed") return false;
       if (row.kind === "wa") return false;
@@ -215,7 +233,7 @@ export default function ConversationStreamCard({ callLogs, waMessages, forwarded
       <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
         <div className="font-semibold flex items-center gap-2 text-base">
           💬 Conversation history
-          <span className="text-[10px] text-gray-500 font-normal">— calls + WhatsApp, newest first</span>
+          <span className="text-[10px] text-gray-500 font-normal">— calls · WhatsApp · notes, newest first</span>
         </div>
         {/* Filter chips — clickable to show only that category */}
         <div className="flex items-center gap-1.5 text-[10px] flex-wrap">
@@ -245,6 +263,14 @@ export default function ConversationStreamCard({ callLogs, waMessages, forwarded
               💬 {waInboundCount} WA replies
             </button>
           )}
+          {noteCount > 0 && (
+            <span
+              className="chip text-[9px] border border-amber-300 bg-amber-50 text-amber-700"
+              title="Notes (voice + typed) — always shown in All view"
+            >
+              📝 {noteCount} {noteCount === 1 ? "note" : "notes"}
+            </span>
+          )}
           {filter !== "ALL" && (
             <button
               type="button"
@@ -260,7 +286,7 @@ export default function ConversationStreamCard({ callLogs, waMessages, forwarded
       <div className="space-y-2 text-sm max-h-[520px] overflow-y-auto pr-1">
         {rows.length === 0 && (
           <div className="text-gray-500 text-xs text-center py-4">
-            No calls or WhatsApp messages logged yet. Use 📝 Log Call above to record the first one.
+            No calls, WhatsApp messages, or notes logged yet. Use the Log Call button or Voice Note recorder above.
           </div>
         )}
         {rows.length > 0 && filteredRows.length === 0 && (
@@ -340,17 +366,33 @@ export default function ConversationStreamCard({ callLogs, waMessages, forwarded
           }
 
           // ── WhatsApp row ──────────────────────────────────────────────────
-          const m = row.msg;
-          const col = waColour(m.direction);
+          if (row.kind === "wa") {
+            const m = row.msg;
+            const col = waColour(m.direction);
+            return (
+              <div key={`w-${m.id}-${idx}`} className={`border-l-2 ${col.border} ${col.bg} pl-3 pr-2 py-1.5 rounded-r`}>
+                <div className="flex items-center justify-between flex-wrap gap-1 text-[11px] text-gray-500">
+                  <span>
+                    💬 <b>{m.direction === "INBOUND" ? "📥 Client" : "📤 Agent"}</b> · {fmtIST12Paren(m.receivedAt)} IST
+                  </span>
+                  <span className={`chip ${col.pill} text-[9px]`}>{m.direction === "INBOUND" ? "📥 Inbound" : "📤 Outbound"}</span>
+                </div>
+                <div className="text-xs mt-1 text-gray-800 whitespace-pre-wrap">{m.body}</div>
+              </div>
+            );
+          }
+
+          // ── Note row (voice transcript or quick text note) ─────────────────
+          const n = row.note;
           return (
-            <div key={`w-${m.id}-${idx}`} className={`border-l-2 ${col.border} ${col.bg} pl-3 pr-2 py-1.5 rounded-r`}>
+            <div key={`n-${n.id}-${idx}`} className="border-l-2 border-amber-300 bg-amber-50/40 pl-3 pr-2 py-1.5 rounded-r">
               <div className="flex items-center justify-between flex-wrap gap-1 text-[11px] text-gray-500">
                 <span>
-                  💬 <b>{m.direction === "INBOUND" ? "📥 Client" : "📤 Agent"}</b> · {fmtIST12Paren(m.receivedAt)} IST
+                  📝 <b>{n.user?.name ?? "Agent"}</b> · {fmtIST12Paren(n.createdAt)} IST
                 </span>
-                <span className={`chip ${col.pill} text-[9px]`}>{m.direction === "INBOUND" ? "📥 Inbound" : "📤 Outbound"}</span>
+                <span className="chip text-[9px] border border-amber-300 bg-amber-100 text-amber-700">Note</span>
               </div>
-              <div className="text-xs mt-1 text-gray-800 whitespace-pre-wrap">{m.body}</div>
+              <div className="text-xs mt-1 text-gray-800 whitespace-pre-wrap">{n.body}</div>
             </div>
           );
         })}
@@ -360,9 +402,10 @@ export default function ConversationStreamCard({ callLogs, waMessages, forwarded
           means without asking. */}
       <div className="mt-3 pt-2 border-t border-emerald-200 flex items-center gap-3 flex-wrap text-[10px] text-gray-600">
         <span><span className="inline-block w-2 h-2 bg-emerald-400 rounded-full mr-1 align-middle" />Call connected</span>
-        <span><span className="inline-block w-2 h-2 bg-red-400 rounded-full mr-1 align-middle" />Call missed/declined</span>
-        <span><span className="inline-block w-2 h-2 bg-blue-400 rounded-full mr-1 align-middle" />📥 Client sent</span>
-        <span><span className="inline-block w-2 h-2 bg-purple-400 rounded-full mr-1 align-middle" />📤 Agent sent</span>
+        <span><span className="inline-block w-2 h-2 bg-red-400 rounded-full mr-1 align-middle" />Call missed</span>
+        <span><span className="inline-block w-2 h-2 bg-blue-400 rounded-full mr-1 align-middle" />📥 Client WA</span>
+        <span><span className="inline-block w-2 h-2 bg-purple-400 rounded-full mr-1 align-middle" />📤 Agent WA</span>
+        <span><span className="inline-block w-2 h-2 bg-amber-400 rounded-full mr-1 align-middle" />📝 Note</span>
       </div>
       {/* Date band — first → last conversation (handy at a glance even on a
           super long history). */}

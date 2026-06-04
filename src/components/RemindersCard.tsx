@@ -303,9 +303,11 @@ export default function RemindersCard({ events, todayIso, showAgent }: Props) {
                 >
                   {/* Left: time + agent name */}
                   <div className="w-16 shrink-0 text-left">
-                    <div className="text-[11px] font-bold tabular-nums" style={{ color }}>
-                      {isDateOnly(evt.timeIso) ? "All day" : fmtTime(evt.timeIso)}
-                    </div>
+                    {!isDateOnly(evt.timeIso) && (
+                      <div className="text-[11px] font-bold tabular-nums" style={{ color }}>
+                        {fmtTime(evt.timeIso)}
+                      </div>
+                    )}
                     {showAgent && evt.agentName && (
                       <div className="text-[10px] mt-0.5 truncate max-w-[64px]" style={{ color: "#94a3b8" }}>
                         {evt.agentName.split(" ")[0]}{" "}

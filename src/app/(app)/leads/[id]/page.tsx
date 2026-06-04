@@ -17,7 +17,6 @@ import SiteVisitChecklist from "@/components/SiteVisitChecklist";
 import AdvancedActivityLogger from "@/components/AdvancedActivityLogger";
 import { getTravelRatePerKmInr } from "@/lib/settings";
 import { runReconciler } from "@/lib/reconciler";
-import { activityVisual } from "@/lib/activityIcon";
 import InlineEdit from "@/components/InlineEdit";
 import { acefoneEnabled } from "@/lib/acefone";
 import { canTouchLead } from "@/lib/leadScope";
@@ -106,7 +105,7 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
         activities: { orderBy: { createdAt: "desc" }, take: 25, include: { user: true } },
         callLogs:   { orderBy: { startedAt: "desc" }, take: 50, include: { user: true } },
         waMessages: { orderBy: { receivedAt: "desc" }, take: 20 },
-        notes:      { orderBy: { createdAt: "desc" }, take: 10, include: { user: true } },
+        notes:      { orderBy: { createdAt: "desc" }, take: 50, include: { user: true } },
         assignments:{ orderBy: { assignedAt: "desc" }, take: 5, include: { user: true } },
       },
     }),
@@ -487,27 +486,9 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
     </div>
   );
 
-  const timelineCard = (
-    <div data-lead-section="timeline" className="card p-5">
-      <div className="font-semibold mb-3">Timeline</div>
-      <div className="space-y-3">
-        {lead.activities.map((a) => {
-          const v = activityVisual(a.type);
-          return (
-            <div key={a.id} className="flex gap-3 items-start">
-              <div className={`w-8 h-8 rounded-full ${v.dot} text-white flex items-center justify-center text-sm flex-none shadow-sm`}>{v.icon}</div>
-              <div className="flex-1 min-w-0">
-                <div className="text-sm dark:text-slate-200"><b>{a.title}</b> <span className="text-[10px] text-gray-400 dark:text-slate-500 ml-1">· {v.label}</span></div>
-                <div className="text-xs text-gray-500 dark:text-slate-400">{a.user?.name ?? "System"} · {fmtIST12(a.createdAt)} IST</div>
-                {a.description && <div className="text-sm mt-1 text-gray-700 dark:text-slate-300 whitespace-pre-wrap">{a.description}</div>}
-              </div>
-            </div>
-          );
-        })}
-        {lead.activities.length === 0 && <div className="text-sm text-gray-500 dark:text-slate-400">No activity yet.</div>}
-      </div>
-    </div>
-  );
+  // timelineCard removed — activities are now visible inside Conversation
+  // History (notes merged in) per Lalit's ask: "Keep only conversation history
+  // which should have all details everything".
 
   return (
     /* pb-24 reserves space at the bottom on mobile only for the GLOBAL bottom
@@ -680,7 +661,7 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
             conversation history before the "No previous history" fallback. */}
         <div data-lead-section="timeline">
           <CallStatsBar callLogs={lead.callLogs.map((c) => ({ duration: c.durationSec, outcome: c.outcome, startedAt: c.startedAt }))} />
-          <ConversationStreamCard callLogs={lead.callLogs} waMessages={lead.waMessages} forwardedTeam={lead.forwardedTeam} />
+          <ConversationStreamCard callLogs={lead.callLogs} waMessages={lead.waMessages} notes={lead.notes} forwardedTeam={lead.forwardedTeam} />
         </div>
 
         {/* EOI / Booking workflow — REMOVED by Lalit in Round 3 ("Remove EOI for now").
@@ -699,12 +680,7 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
           {qualificationCard}
         </div>
 
-        {/* DESKTOP-ONLY Timeline — on mobile, Timeline moves to the very
-            bottom of the page (Lalit: "move timeline at below"). The mobile
-            instance is rendered after the right column closes. */}
-        <div data-lead-section="timeline" className="hidden lg:block">
-          {timelineCard}
-        </div>
+        {/* Timeline removed — all activity now lives in Conversation History above. */}
 
         {/* REMARKS card REMOVED per Lalit: "Is Remarks and Call history all
             details same?" — yes, Call History already shows the parsed,
@@ -989,12 +965,7 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
         <Link href="/leads" className="text-xs text-[#0b1a33] font-semibold inline-block">← Back to leads</Link>
       </div>
 
-      {/* MOBILE-ONLY Timeline at the very bottom (Lalit: "move timeline at
-          below"). Spans the full grid width so it's just one tall card under
-          everything else. Desktop instance lives in the left column above. */}
-      <div data-lead-section="timeline" className="lg:hidden lg:col-span-3">
-        {timelineCard}
-      </div>
+      {/* Mobile Timeline removed — merged into Conversation History above. */}
     </div>
     </>
   );
