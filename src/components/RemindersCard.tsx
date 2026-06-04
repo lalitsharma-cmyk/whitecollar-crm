@@ -1,17 +1,16 @@
 "use client";
 
 /**
- * RemindersCard — weekly mini-calendar + daily reminder timeline.
+ * RemindersCard — matches the LeadRat-style Reminders widget.
  *
- * Shows a 7-day strip (starting today). Clicking a day tile switches the
- * list below to that day's site visits, meetings, and follow-up callbacks.
- * Each row shows time (IST), agent name (admin/manager view), event type,
- * and client name with a link to the lead detail page.
- *
- * Designed to match the "Reminders" widget spec Lalit shared:
- *   - Week strip at top, selected day highlighted in brand gold
- *   - Count chips: Site Visits | Meetings | Callbacks
- *   - Time-sorted list grouped by "Today" / "Tomorrow" / day label
+ * Dark navy card with:
+ *   • Month / Year selectors in the header
+ *   • Mon–Sun column labels + 7-day week strip (prev / next week navigation)
+ *   • Selected day highlighted with a filled white circle
+ *   • Count row: N Site Visits  N Meetings  N Callbacks (colored bars)
+ *   • "Today" / "Tomorrow" / date-label section header
+ *   • Event rows: left = time (colored) + agent name below;
+ *                 right = "Site Visit scheduled with [bold client]"
  */
 
 import { useState, useMemo } from "react";
@@ -39,14 +38,20 @@ interface Props {
   showAgent: boolean;
 }
 
-const TYPE_META: Record<ReminderType, { label: string; color: string; dot: string }> = {
-  SITE_VISIT: { label: "Site Visit",   color: "text-emerald-700 dark:text-emerald-400", dot: "bg-emerald-500" },
-  MEETING:    { label: "Meeting",      color: "text-blue-700 dark:text-blue-400",       dot: "bg-blue-500"   },
-  CALLBACK:   { label: "Follow-up",    color: "text-amber-700 dark:text-amber-400",     dot: "bg-amber-500"  },
-};
-
 const DAY_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-const MONTH_SHORT = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+const MONTHS_SHORT = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+
+const TYPE_COLOR: Record<ReminderType, string> = {
+  SITE_VISIT: "#22c55e",   // green-500
+  MEETING:    "#3b82f6",   // blue-500
+  CALLBACK:   "#f59e0b",   // amber-500
+};
+const TYPE_VERB: Record<ReminderType, string> = {
+  SITE_VISIT: "Site Visit scheduled with",
+  MEETING:    "Meeting scheduled with",
+  CALLBACK:   "Callback due for",
+};
 
 function addDays(isoDate: string, n: number): string {
   const [y, m, d] = isoDate.split("-").map(Number);
@@ -54,59 +59,55 @@ function addDays(isoDate: string, n: number): string {
   return dt.toISOString().slice(0, 10);
 }
 
+/** Monday of the week that contains isoDate */
+function weekStart(isoDate: string): string {
+  const [y, m, d] = isoDate.split("-").map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  // getUTCDay(): 0=Sun, 1=Mon … 6=Sat
+  const dow = dt.getUTCDay();
+  const mondayOffset = dow === 0 ? -6 : 1 - dow;
+  return addDays(isoDate, mondayOffset);
+}
+
+function isoToLocalDate(iso: string): string {
+  return new Date(iso).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+}
+
+function fmtTime(iso: string): string {
+  return new Date(iso).toLocaleTimeString("en-US", {
+    hour: "2-digit", minute: "2-digit", hour12: true, timeZone: "Asia/Kolkata",
+  }).toLowerCase(); // "10:00 am"
+}
+
 function dateLabel(isoDate: string, todayIso: string): string {
   if (isoDate === todayIso) return "Today";
   if (isoDate === addDays(todayIso, 1)) return "Tomorrow";
   const [y, m, d] = isoDate.split("-").map(Number);
   const dt = new Date(Date.UTC(y, m - 1, d));
-  return `${DAY_SHORT[dt.getUTCDay()]}, ${d} ${MONTH_SHORT[m - 1]}`;
-}
-
-function fmtTime(iso: string): string {
-  return new Date(iso).toLocaleTimeString("en-IN", {
-    hour: "2-digit", minute: "2-digit", hour12: true, timeZone: "Asia/Kolkata",
-  }).replace(" am", " am").replace(" pm", " pm").toUpperCase();
-}
-
-function isoToLocalDate(iso: string): string {
-  return new Date(iso).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" }); // YYYY-MM-DD
-}
-
-function initials(name: string | null): string {
-  if (!name) return "?";
-  return name.split(" ").map(p => p[0]).slice(0, 2).join("").toUpperCase();
-}
-
-const AVATAR_COLORS = [
-  "bg-blue-500", "bg-purple-500", "bg-emerald-500", "bg-amber-500",
-  "bg-rose-500", "bg-teal-500", "bg-indigo-500", "bg-orange-500",
-];
-function avatarColor(name: string | null): string {
-  if (!name) return AVATAR_COLORS[0];
-  let h = 0;
-  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) & 0xffff;
-  return AVATAR_COLORS[h % AVATAR_COLORS.length];
+  return `${DAY_SHORT[dt.getUTCDay()]}, ${d} ${MONTHS_SHORT[m - 1]}`;
 }
 
 export default function RemindersCard({ events, todayIso, showAgent }: Props) {
+  // Track the Monday of the currently visible week
+  const [weekMonday, setWeekMonday] = useState(() => weekStart(todayIso));
   const [selectedDate, setSelectedDate] = useState(todayIso);
 
-  // Build 7-day strip starting today
-  const days = useMemo(() => {
+  // Build 7 days of the visible week (Mon → Sun)
+  const weekDays = useMemo(() => {
     return Array.from({ length: 7 }, (_, i) => {
-      const iso = addDays(todayIso, i);
+      const iso = addDays(weekMonday, i);
       const [y, m, d] = iso.split("-").map(Number);
       const dt = new Date(Date.UTC(y, m - 1, d));
-      return {
-        iso,
-        dayShort: DAY_SHORT[dt.getUTCDay()],
-        dayNum: d,
-        monthNum: m,
-      };
+      return { iso, dayShort: ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"][i], dayNum: d, month: m, year: y, jsDay: dt.getUTCDay() };
     });
-  }, [todayIso]);
+  }, [weekMonday]);
 
-  // Group all events by local date (IST)
+  // Month/Year of the selected date (for header dropdowns)
+  const selParts = selectedDate.split("-").map(Number);
+  const selMonth = selParts[1] - 1; // 0-indexed
+  const selYear  = selParts[0];
+
+  // Group all events by local IST date
   const eventsByDate = useMemo(() => {
     const map = new Map<string, ReminderEvent[]>();
     for (const e of events) {
@@ -117,152 +118,206 @@ export default function RemindersCard({ events, todayIso, showAgent }: Props) {
     return map;
   }, [events]);
 
-  // Events for the selected day, sorted by time
+  // Events for selected day, sorted by time
   const dayEvents = useMemo(() => {
     return (eventsByDate.get(selectedDate) ?? [])
       .slice()
       .sort((a, b) => a.timeIso.localeCompare(b.timeIso));
   }, [eventsByDate, selectedDate]);
 
-  // Summary counts for selected day
   const siteVisitCount = dayEvents.filter(e => e.type === "SITE_VISIT").length;
   const meetingCount   = dayEvents.filter(e => e.type === "MEETING").length;
   const callbackCount  = dayEvents.filter(e => e.type === "CALLBACK").length;
 
+  function prevWeek() { setWeekMonday(w => addDays(w, -7)); }
+  function nextWeek() { setWeekMonday(w => addDays(w, 7)); }
+
+  // Jump to month/year — move week to the Monday of the 1st of that month
+  function jumpToMonth(month: number, year: number) {
+    const firstDay = `${year}-${String(month + 1).padStart(2, "0")}-01`;
+    setWeekMonday(weekStart(firstDay));
+    setSelectedDate(firstDay);
+  }
+
   const label = dateLabel(selectedDate, todayIso);
 
   return (
-    <div className="card p-4">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-3">
-        <div className="font-semibold text-sm dark:text-slate-100">🔔 Reminders</div>
-        <span className="text-[10px] text-gray-400 dark:text-slate-500">Next 7 days</span>
+    <div
+      className="rounded-2xl overflow-hidden"
+      style={{ background: "#0b1a33", color: "#fff" }}
+    >
+      {/* ── Header: title + Month/Year selectors ── */}
+      <div className="flex items-center justify-between px-4 pt-4 pb-3">
+        <span className="font-bold text-sm text-white">Reminders</span>
+        <div className="flex gap-2">
+          {/* Month dropdown */}
+          <select
+            value={selMonth}
+            onChange={e => jumpToMonth(Number(e.target.value), selYear)}
+            className="text-xs rounded-lg px-2 py-1 font-semibold cursor-pointer"
+            style={{ background: "#1a2d4d", color: "#94a3b8", border: "1px solid #2d4a6b" }}
+          >
+            {MONTHS.map((m, i) => (
+              <option key={m} value={i}>{m.slice(0, 3)}</option>
+            ))}
+          </select>
+          {/* Year dropdown */}
+          <select
+            value={selYear}
+            onChange={e => jumpToMonth(selMonth, Number(e.target.value))}
+            className="text-xs rounded-lg px-2 py-1 font-semibold cursor-pointer"
+            style={{ background: "#1a2d4d", color: "#94a3b8", border: "1px solid #2d4a6b" }}
+          >
+            {Array.from({ length: 4 }, (_, i) => selYear - 1 + i).map(y => (
+              <option key={y} value={y}>{y}</option>
+            ))}
+          </select>
+        </div>
       </div>
 
-      {/* Week strip */}
-      <div className="grid grid-cols-7 gap-1 mb-3">
-        {days.map((day) => {
-          const evts = eventsByDate.get(day.iso) ?? [];
-          const isSelected = day.iso === selectedDate;
-          const isToday = day.iso === todayIso;
-          // dots: up to 3 colored pips for event types present
-          const hasSV  = evts.some(e => e.type === "SITE_VISIT");
-          const hasMtg = evts.some(e => e.type === "MEETING");
-          const hasCB  = evts.some(e => e.type === "CALLBACK");
+      {/* ── Week navigation + day grid ── */}
+      <div className="px-3 pb-2">
+        {/* Day-of-week labels */}
+        <div className="grid grid-cols-7 mb-1">
+          {["Mon","Tue","Wed","Thu","Fri","Sat","Sun"].map(d => (
+            <div key={d} className="text-center text-[10px] font-semibold" style={{ color: "#64748b" }}>
+              {d}
+            </div>
+          ))}
+        </div>
 
-          return (
-            <button
-              key={day.iso}
-              type="button"
-              onClick={() => setSelectedDate(day.iso)}
-              className={`flex flex-col items-center rounded-lg py-1.5 px-0.5 transition-colors ${
-                isSelected
-                  ? "bg-[#c9a24b] text-white shadow"
-                  : isToday
-                  ? "bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700"
-                  : "hover:bg-gray-100 dark:hover:bg-slate-700"
-              }`}
-            >
-              <span className={`text-[9px] font-semibold uppercase tracking-wide ${
-                isSelected ? "text-white" : "text-gray-400 dark:text-slate-500"
-              }`}>
-                {day.dayShort}
-              </span>
-              <span className={`text-sm font-bold leading-tight ${
-                isSelected ? "text-white" : isToday ? "text-[#c9a24b]" : "text-gray-700 dark:text-slate-200"
-              }`}>
-                {day.dayNum}
-              </span>
-              {/* Event dots */}
-              <div className="flex gap-0.5 mt-0.5 h-1.5">
-                {hasSV  && <span className={`w-1 h-1 rounded-full ${isSelected ? "bg-white/80" : "bg-emerald-500"}`} />}
-                {hasMtg && <span className={`w-1 h-1 rounded-full ${isSelected ? "bg-white/80" : "bg-blue-500"}`} />}
-                {hasCB  && <span className={`w-1 h-1 rounded-full ${isSelected ? "bg-white/80" : "bg-amber-500"}`} />}
-              </div>
-            </button>
-          );
-        })}
+        {/* Date tiles */}
+        <div className="grid grid-cols-7 gap-0.5">
+          {weekDays.map(day => {
+            const isSelected = day.iso === selectedDate;
+            const isToday    = day.iso === todayIso;
+            const hasEvents  = (eventsByDate.get(day.iso)?.length ?? 0) > 0;
+            const hasSV  = eventsByDate.get(day.iso)?.some(e => e.type === "SITE_VISIT") ?? false;
+            const hasMtg = eventsByDate.get(day.iso)?.some(e => e.type === "MEETING") ?? false;
+            const hasCB  = eventsByDate.get(day.iso)?.some(e => e.type === "CALLBACK") ?? false;
+
+            return (
+              <button
+                key={day.iso}
+                type="button"
+                onClick={() => setSelectedDate(day.iso)}
+                className="flex flex-col items-center py-1 rounded-lg transition-colors"
+                style={isSelected ? { background: "#fff" } : isToday ? { background: "#1a2d4d" } : {}}
+              >
+                <span
+                  className="text-sm font-bold leading-tight"
+                  style={{ color: isSelected ? "#0b1a33" : isToday ? "#c9a24b" : "#e2e8f0" }}
+                >
+                  {day.dayNum}
+                </span>
+                {/* Event dots */}
+                <div className="flex gap-px mt-0.5 h-1.5 justify-center">
+                  {hasSV  && <span className="w-1 h-1 rounded-full" style={{ background: isSelected ? "#22c55e" : "#22c55e" }} />}
+                  {hasMtg && <span className="w-1 h-1 rounded-full" style={{ background: "#3b82f6" }} />}
+                  {hasCB  && <span className="w-1 h-1 rounded-full" style={{ background: "#f59e0b" }} />}
+                  {!hasEvents && <span className="w-1 h-1 rounded-full opacity-0" />}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Prev / Next week navigation */}
+        <div className="flex justify-between mt-2">
+          <button
+            type="button"
+            onClick={prevWeek}
+            className="text-[10px] px-2 py-0.5 rounded"
+            style={{ color: "#64748b", background: "#1a2d4d" }}
+          >
+            ‹ Prev
+          </button>
+          <button
+            type="button"
+            onClick={nextWeek}
+            className="text-[10px] px-2 py-0.5 rounded"
+            style={{ color: "#64748b", background: "#1a2d4d" }}
+          >
+            Next ›
+          </button>
+        </div>
       </div>
 
-      {/* Count chips for selected day */}
-      <div className="flex gap-2 flex-wrap mb-3">
-        <span className={`inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full ${
-          siteVisitCount > 0 ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300" : "bg-gray-100 text-gray-400 dark:bg-slate-700 dark:text-slate-500"
-        }`}>
-          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block" />
-          {siteVisitCount} Site Visit{siteVisitCount !== 1 ? "s" : ""}
+      {/* ── Count summary row ── */}
+      <div
+        className="flex items-center gap-3 px-4 py-2.5 text-[11px] font-semibold"
+        style={{ borderTop: "1px solid #1a2d4d", borderBottom: "1px solid #1a2d4d" }}
+      >
+        <span className="flex items-center gap-1.5">
+          <span className="w-2.5 h-2.5 rounded-[3px] inline-block" style={{ background: "#22c55e" }} />
+          <span style={{ color: "#e2e8f0" }}>{String(siteVisitCount).padStart(2, "0")}</span>
+          <span style={{ color: "#64748b" }}>Site Visits</span>
         </span>
-        <span className={`inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full ${
-          meetingCount > 0 ? "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300" : "bg-gray-100 text-gray-400 dark:bg-slate-700 dark:text-slate-500"
-        }`}>
-          <span className="w-1.5 h-1.5 rounded-full bg-blue-500 inline-block" />
-          {meetingCount} Meeting{meetingCount !== 1 ? "s" : ""}
+        <span style={{ color: "#1e3a5f" }}>|</span>
+        <span className="flex items-center gap-1.5">
+          <span className="w-2.5 h-2.5 rounded-[3px] inline-block" style={{ background: "#3b82f6" }} />
+          <span style={{ color: "#e2e8f0" }}>{String(meetingCount).padStart(2, "0")}</span>
+          <span style={{ color: "#64748b" }}>Meetings</span>
         </span>
-        <span className={`inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full ${
-          callbackCount > 0 ? "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300" : "bg-gray-100 text-gray-400 dark:bg-slate-700 dark:text-slate-500"
-        }`}>
-          <span className="w-1.5 h-1.5 rounded-full bg-amber-500 inline-block" />
-          {callbackCount} Callback{callbackCount !== 1 ? "s" : ""}
+        <span style={{ color: "#1e3a5f" }}>|</span>
+        <span className="flex items-center gap-1.5">
+          <span className="w-2.5 h-2.5 rounded-[3px] inline-block" style={{ background: "#f59e0b" }} />
+          <span style={{ color: "#e2e8f0" }}>{String(callbackCount).padStart(2, "0")}</span>
+          <span style={{ color: "#64748b" }}>Callbacks</span>
         </span>
       </div>
 
-      {/* Event list */}
-      <div>
+      {/* ── Event list ── */}
+      <div className="px-0 pb-2" style={{ maxHeight: "340px", overflowY: "auto" }}>
         {dayEvents.length === 0 ? (
-          <div className="text-xs text-gray-400 dark:text-slate-500 py-3 text-center">
+          <div className="px-4 py-6 text-center text-xs" style={{ color: "#475569" }}>
             Nothing scheduled for {label.toLowerCase()}.
           </div>
         ) : (
           <>
-            <div className="text-[10px] font-bold uppercase tracking-widest text-gray-400 dark:text-slate-500 mb-2">
+            {/* Section label */}
+            <div
+              className="px-4 py-2 text-[11px] font-bold uppercase tracking-widest"
+              style={{ color: "#475569" }}
+            >
               {label}
             </div>
-            <div className="space-y-0">
-              {dayEvents.map((evt, i) => {
-                const meta = TYPE_META[evt.type];
-                const ag = evt.agentName;
-                return (
-                  <Link
-                    key={`${evt.id}-${i}`}
-                    href={`/leads/${evt.leadId}`}
-                    className="flex items-center gap-2 py-2 border-b border-gray-100 dark:border-slate-800 last:border-0 hover:bg-gray-50 dark:hover:bg-slate-800/50 rounded px-1 -mx-1 transition-colors"
-                  >
-                    {/* Time */}
-                    <span className="text-[10px] font-mono font-semibold text-gray-500 dark:text-slate-400 w-16 shrink-0 tabular-nums">
+
+            {dayEvents.map((evt, i) => {
+              const color = TYPE_COLOR[evt.type];
+              const verb  = TYPE_VERB[evt.type];
+              return (
+                <Link
+                  key={`${evt.id}-${i}`}
+                  href={`/leads/${evt.leadId}`}
+                  className="flex items-start gap-3 px-4 py-2.5 hover:opacity-80 transition-opacity"
+                  style={{ borderTop: i > 0 ? "1px solid #1a2d4d" : undefined }}
+                >
+                  {/* Left: time + agent name */}
+                  <div className="w-16 shrink-0 text-left">
+                    <div className="text-[11px] font-bold tabular-nums" style={{ color }}>
                       {fmtTime(evt.timeIso)}
-                    </span>
-
-                    {/* Agent avatar — only in admin/manager view */}
-                    {showAgent && ag && (
-                      <span
-                        className={`w-6 h-6 rounded-full flex items-center justify-center text-[9px] font-bold text-white shrink-0 ${avatarColor(ag)}`}
-                        title={ag}
-                      >
-                        {initials(ag)}
-                      </span>
-                    )}
-
-                    {/* Type dot */}
-                    <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${meta.dot}`} />
-
-                    {/* Content */}
-                    <div className="flex-1 min-w-0">
-                      <div className="text-xs leading-tight truncate">
-                        {showAgent && ag ? (
-                          <span className="font-semibold text-gray-700 dark:text-slate-200">{ag.split(" ")[0]} · </span>
-                        ) : null}
-                        <span className={`font-medium ${meta.color}`}>{meta.label}</span>
-                        <span className="text-gray-400 dark:text-slate-500"> with </span>
-                        <span className="font-semibold text-gray-800 dark:text-slate-100">{evt.leadName}</span>
-                      </div>
                     </div>
+                    {showAgent && evt.agentName && (
+                      <div className="text-[10px] mt-0.5 truncate max-w-[64px]" style={{ color: "#94a3b8" }}>
+                        {evt.agentName.split(" ")[0]}{" "}
+                        {evt.agentName.split(" ")[1]?.[0] ?? ""}
+                      </div>
+                    )}
+                  </div>
 
-                    {/* Arrow */}
-                    <span className="text-gray-300 dark:text-slate-600 text-xs shrink-0">›</span>
-                  </Link>
-                );
-              })}
-            </div>
+                  {/* Right: verb + client name */}
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[11px] leading-tight" style={{ color: "#94a3b8" }}>
+                      {verb}
+                    </div>
+                    <div className="text-sm font-semibold mt-0.5 truncate" style={{ color: "#e2e8f0" }}>
+                      {evt.leadName}
+                    </div>
+                  </div>
+                </Link>
+              );
+            })}
           </>
         )}
       </div>
