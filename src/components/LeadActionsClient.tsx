@@ -34,6 +34,7 @@ const WA_OUTBOUND_OUTCOMES: OutcomeOption[] = [
   { key: "WA_DELIVERED",      v: "NOT_PICKED",     label: "✅ WhatsApp Delivered" },
   { key: "WA_SEEN",           v: "NOT_PICKED",     label: "✅ WhatsApp Read" },
   { key: "WA_REPLIED",        v: "CONNECTED",      label: "✅ Client Replied" },
+  { key: "WA_DROPPED",        v: "NOT_PICKED",     label: "📵 Dropped WA (no response)" },
   { key: "WA_FAILED",         v: "NOT_PICKED",     label: "❌ Failed to Deliver" },
 ];
 
