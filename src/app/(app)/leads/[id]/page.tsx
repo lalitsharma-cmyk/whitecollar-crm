@@ -26,7 +26,6 @@ import { projectWhereForUser, teamToCountry } from "@/lib/propertyScope";
 import ConversationStreamCard from "@/components/ConversationStreamCard";
 import StickyNoteWidget from "@/components/StickyNoteWidget";
 import BuyingSignalsCard from "@/components/BuyingSignalsCard";
-import LeadNotesCard from "@/components/LeadNotesCard";
 import VoiceNoteRecorder from "@/components/VoiceNoteRecorder";
 import QuickNoteCard from "@/components/QuickNoteCard";
 import LeadReassignClient from "@/components/LeadReassignClient";
@@ -716,54 +715,27 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
           </div>
         </div>
 
-        {/* ⭐ CUSTOMER INTELLIGENCE — pre-assignment match result. Agents must
-            see this BEFORE calling so they know if it's a returning contact,
-            previous investor, or someone who's been through our funnel before.
-            Fetches /api/leads/[id]/intelligence on mount (client component). */}
+        {/* QUICK NOTE — fast freeform note widget for jotting context. */}
+        <div data-lead-section="timeline">
+          <QuickNoteCard leadId={lead.id} />
+        </div>
+
+        {/* CONVERSATION STREAM — merged call + WhatsApp feed, newest first.
+            Moved above Customer Intelligence so agents see the actual
+            conversation history before the "No previous history" fallback. */}
+        <div data-lead-section="timeline">
+          <CallStatsBar callLogs={lead.callLogs.map((c) => ({ duration: c.durationSec, outcome: c.outcome, startedAt: c.startedAt }))} />
+          <ConversationStreamCard callLogs={lead.callLogs} waMessages={lead.waMessages} forwardedTeam={lead.forwardedTeam} />
+        </div>
+
+        {/* ⭐ CUSTOMER INTELLIGENCE — pre-assignment match result. Shows
+            returning contacts / previous investors / funnel history. */}
         <div data-lead-section="overview">
           <CustomerIntelligenceCard
             leadId={lead.id}
             leadName={lead.name}
             currentRole={me.role}
           />
-        </div>
-
-        {/* REMARKS — full conversation history from import sheet.
-            Moved to the top of the left column + ALWAYS rendered (even when
-            remarks is null/empty) so Lalit can't miss it. Compute the entry
-            count + char count outside the JSX (the previous IIFE pattern was
-            valid but obscured what was happening).
-            The raw text uses runs of `,,,,` between call entries (MIS sheet
-            convention); InlineEdit's textarea read-view splits those into
-            paragraph breaks for readability. */}
-        {/* AI Summary — TLDR of all conversations so the agent doesn't have
-            to scroll the full Call History to remember what's going on. Lalit:
-            "All important information and conversation should be in Summary."
-            Always rendered (with placeholder when blank) so it can't be missed. */}
-        {/* AI Client Summary card REMOVED — Lalit gave up on Gemini after the
-            free tier returned NOT_FOUND for every model variant we tried
-            (2.0-flash → limit:0, 1.5-flash → 404). The card was just empty
-            visual noise without a working AI provider. Call History below is
-            the structured source of truth instead. Code path stays in
-            src/lib/ai.ts + the regenerate endpoint so it can be re-wired
-            later (e.g. if billing is enabled or a different provider is
-            added) — just not mounted on the page. */}
-
-        {/* QUICK NOTE — fast freeform note widget. Sits between the original
-            remarks and the full conversation stream so agents can jot context
-            right after reviewing the import remarks. Creates a Note record and
-            refreshes the stream on save. */}
-        <div data-lead-section="timeline">
-          <QuickNoteCard leadId={lead.id} />
-        </div>
-
-        {/* CONVERSATION STREAM — merged call + WhatsApp feed (Lalit's ask:
-            one card that shows the full conversation flow in time order
-            instead of two separate columns). Calls render green/red, WA
-            renders blue/purple. Outcomes + recordings preserved per-row. */}
-        <div data-lead-section="timeline">
-          <CallStatsBar callLogs={lead.callLogs.map((c) => ({ duration: c.durationSec, outcome: c.outcome, startedAt: c.startedAt }))} />
-          <ConversationStreamCard callLogs={lead.callLogs} waMessages={lead.waMessages} forwardedTeam={lead.forwardedTeam} />
         </div>
 
         {/* EOI / Booking workflow — REMOVED by Lalit in Round 3 ("Remove EOI for now").
@@ -781,28 +753,6 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
           <BuyingSignalsCard lead={lead} />
         </div>
 
-        {/* 📝 Notes — free-form per-lead notes (distinct from Timeline activity
-            events and Call-History call rows). Authors can delete their own;
-            ADMIN can delete any. No pin support — Note model has no `pinned`
-            column. Newest-first (matches the orderBy on the page fetch). */}
-        <div data-lead-section="overview">
-          <LeadNotesCard
-            leadId={lead.id}
-            currentUserId={me.id}
-            currentUserRole={me.role}
-            initialNotes={lead.notes.map((n) => ({
-              id: n.id,
-              content: n.body,
-              createdAt: n.createdAt.toISOString(),
-              user: n.user ? { id: n.user.id, name: n.user.name, avatarColor: n.user.avatarColor } : null,
-            }))}
-          />
-        </div>
-
-        {/* AI Summary MOVED to the top of the left column (right after Call
-            History). Lalit's ask: "all call records have not to be seen by
-            agent all time. All important information and conversation should
-            be in Summary." */}
         {/* MOBILE-ONLY: BANT + Qualification surface near the top of the page
             on phones (Lalit: "Qualification moving up wards in mobile"). On
             desktop they live in the right column (rendered there with the
