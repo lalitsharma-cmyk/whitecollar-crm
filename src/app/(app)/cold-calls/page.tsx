@@ -7,7 +7,8 @@ import ColdDataAdminControls from "@/components/ColdDataAdminControls";
 import HiddenGemsBanner, { type HiddenGem } from "@/components/HiddenGemsBanner";
 import DailyRevivalMission from "@/components/DailyRevivalMission";
 import RevivalLeaderboard, { type LeaderboardRow } from "@/components/RevivalLeaderboard";
-import RevivalEngineListClient, { REVIVAL_STATUSES } from "@/components/RevivalEngineListClient";
+import RevivalEngineListClient from "@/components/RevivalEngineListClient";
+import { REVIVAL_STATUSES } from "@/lib/revival-constants";
 import { REVIVAL_MISSION } from "@/lib/missions";
 
 export const dynamic = "force-dynamic";

@@ -21,19 +21,9 @@ import { formatDistanceToNow } from "date-fns";
 import ColdDataPromoteButton from "./ColdDataPromoteButton";
 import OriginColdPromoteButton from "./OriginColdPromoteButton";
 import { whatsappLink, telLink } from "@/lib/phone";
+import { REVIVAL_STATUSES } from "@/lib/revival-constants";
 
-// ── Status definitions ───────────────────────────────────────────────────────
-export const REVIVAL_STATUSES: Array<{ v: string; label: string; chip: string }> = [
-  { v: "NEW",          label: "New",         chip: "chip-new" },
-  { v: "CONTACTED",    label: "Contacted",   chip: "chip-warm" },
-  { v: "QUALIFIED",    label: "Qualified",   chip: "chip-warm" },
-  { v: "SITE_VISIT",   label: "Site Visit",  chip: "chip-warm" },
-  { v: "NEGOTIATION",  label: "Negotiation", chip: "chip-warm" },
-  { v: "EOI",          label: "EOI",         chip: "chip-warm" },
-  { v: "BOOKING_DONE", label: "Booked",      chip: "chip-won" },
-  { v: "WON",          label: "Won",         chip: "chip-won" },
-  { v: "LOST",         label: "Lost",        chip: "chip-lost" },
-];
+export { REVIVAL_STATUSES };
 
 const REJECT_REASONS = [
   { value: "NOT_INTERESTED",            label: "Not Interested" },
