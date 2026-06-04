@@ -105,7 +105,6 @@ export default async function ColdDataPage({ searchParams }: { searchParams: Pro
     agents,
     convertedTodayCount,
     hiddenGemsRaw,
-    coldCallsTodayCount,
     weeklyRevivals,
   ] = await Promise.all([
     prisma.lead.findMany({
@@ -120,7 +119,7 @@ export default async function ColdDataPage({ searchParams }: { searchParams: Pro
     prisma.lead.count({ where: { AND: [baseScope, originCold, stale] } }),
     prisma.lead.count({ where: allCold }),
     isAdminOrMgr ? prisma.lead.count({ where: { AND: [originCold, unassigned] } }) : Promise.resolve(0),
-    isAdminOrMgr ? prisma.user.findMany({ where: { active: true, role: { in: ["AGENT", "MANAGER"] } }, orderBy: { name: "asc" } }) : Promise.resolve([]),
+    isAdminOrMgr ? prisma.user.findMany({ where: { active: true, role: { in: ["AGENT", "MANAGER", "ADMIN"] } }, orderBy: { name: "asc" } }) : Promise.resolve([]),
     // Conversions today: cold-to-lead activities scoped to me (or all if admin)
     prisma.activity.count({
       where: {
@@ -144,15 +143,6 @@ export default async function ColdDataPage({ searchParams }: { searchParams: Pro
         budgetCurrency: true,
         aiScore: true,
         lastTouchedAt: true,
-      },
-    }),
-    // Today's cold-call count for this agent — drives the mission progress bar.
-    // Counts CallLog rows the agent created today against any Lead.isColdCall=true.
-    prisma.callLog.count({
-      where: {
-        userId: me.id,
-        startedAt: { gte: todayStart },
-        lead: { isColdCall: true },
       },
     }),
     // Weekly leaderboard — cold-to-warm revivals per agent this week.
@@ -253,7 +243,7 @@ export default async function ColdDataPage({ searchParams }: { searchParams: Pro
       </div>
 
       {/* ───────── DAILY MISSION (full width) ───────── */}
-      <DailyRevivalMission count={coldCallsTodayCount} target={REVIVAL_MISSION.dailyCallTarget} />
+      <DailyRevivalMission count={convertedTodayCount} target={REVIVAL_MISSION.dailyCallTarget} />
 
       {/* ───────── HIDDEN GEMS (horizontal scroll) ───────── */}
       <HiddenGemsBanner gems={hiddenGems} />

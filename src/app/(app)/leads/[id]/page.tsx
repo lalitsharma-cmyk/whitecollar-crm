@@ -227,7 +227,7 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
   const budgetCcy: "AED" | "INR" = lead.budgetCurrency === "INR" ? "INR" : "AED";
 
   // Fetch active agents for the reassign dropdown — filtered by the lead's team
-  // so the picker only shows agents on the same team (+ Lalit always included).
+  // so the picker only shows agents on the same team (+ admins always included).
   const agents = canReassign
     ? lead.forwardedTeam
       ? await prisma.user.findMany({
@@ -235,13 +235,13 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
             active: true,
             OR: [
               { role: { in: ["AGENT", "MANAGER"] }, team: lead.forwardedTeam },
-              { email: "lalitsharma@whitecollarrealty.com" },
+              { role: "ADMIN" },
             ],
           },
           orderBy: { name: "asc" },
         })
       : await prisma.user.findMany({
-          where: { active: true, role: { in: ["AGENT", "MANAGER"] } },
+          where: { active: true, role: { in: ["AGENT", "MANAGER", "ADMIN"] } },
           orderBy: { name: "asc" },
         })
     : [];

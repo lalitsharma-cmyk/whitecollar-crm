@@ -65,7 +65,7 @@ export default async function PipelinePage({ searchParams }: { searchParams: Pro
         },
       },
     }),
-    prisma.user.findMany({ where: { active: true, role: { in: ["AGENT", "MANAGER"] } }, orderBy: { name: "asc" } }),
+    prisma.user.findMany({ where: { active: true, role: { in: ["AGENT", "MANAGER", "ADMIN"] } }, orderBy: { name: "asc" } }),
   ]);
 
   const now = Date.now();

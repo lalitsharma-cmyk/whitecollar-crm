@@ -12,7 +12,7 @@ export default async function IntakePage() {
   const [keys, agents, testingModeOn] = await Promise.all([
     prisma.intakeKey.findMany({ orderBy: { createdAt: "asc" } }),
     me.role === "ADMIN" || me.role === "MANAGER"
-      ? prisma.user.findMany({ where: { active: true, role: { in: ["AGENT", "MANAGER"] } }, orderBy: { name: "asc" } })
+      ? prisma.user.findMany({ where: { active: true, role: { in: ["AGENT", "MANAGER", "ADMIN"] } }, orderBy: { name: "asc" } })
       : Promise.resolve([]),
     getTestingModeEnabled(),
   ]);

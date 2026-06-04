@@ -78,8 +78,19 @@ export default function ColdDataAdminControls({ agents }: { agents: Agent[] }) {
               <code className="text-[10px] block mt-1 bg-gray-50 p-2 rounded">name, phone, email, city, configuration, budget, source, whoIsClient, alreadyBought, alreadyBoughtBy</code>
               Every imported row is marked as cold data and left unassigned.
             </p>
-            <input type="file" accept=".csv,.xlsx,.xlsm" onChange={(e) => setFile(e.target.files?.[0] ?? null)} className="w-full text-sm" />
-            {file && <div className="text-[11px] mt-2 text-gray-600">Selected: {file.name} ({(file.size/1024).toFixed(0)}kb)</div>}
+            <label className="block cursor-pointer">
+              <input
+                type="file"
+                accept=".csv,.xlsx,.xlsm"
+                className="sr-only"
+                onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+              />
+              <span className="flex items-center justify-center gap-2 w-full rounded-lg border-2 border-dashed border-gray-300 bg-gray-50 px-4 py-3 text-sm text-gray-600 hover:border-blue-400 hover:bg-blue-50 transition-colors">
+                <Upload className="w-4 h-4 flex-shrink-0" />
+                {file ? file.name : "Choose file (CSV or Excel)…"}
+              </span>
+            </label>
+            {file && <div className="text-[11px] mt-1 text-gray-500">{(file.size/1024).toFixed(0)} KB selected</div>}
             <div className="flex gap-2 mt-4 justify-end">
               <button onClick={() => setShowImport(false)} disabled={busy} className="btn btn-ghost text-sm">Cancel</button>
               <button onClick={doImport} disabled={busy || !file} className="btn btn-primary text-sm">{busy ? "Uploading…" : "Import"}</button>

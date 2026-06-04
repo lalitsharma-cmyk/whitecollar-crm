@@ -319,7 +319,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
           Row 2 = scheduled for the selected period. */}
       <div>
         <div className="text-xs font-bold tracking-widest text-gray-500 dark:text-slate-400 mb-2 uppercase">
-          📅 TODAY — {periodSection}
+          📅 {periodSection}
         </div>
         {/* Urgent — state-based, always "right now" */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">

@@ -8,11 +8,11 @@ import { missionCheer, REVIVAL_MISSION } from "@/lib/missions";
 // CallLog is written, page re-renders, prop updates → bar fills).
 //
 // All counting happens server-side in cold-calls/page.tsx — this just
-// renders. Keep it dumb so the gamification team can swap mission targets
-// from src/lib/missions.ts without touching UI logic.
+// renders. Keep it dumb so mission targets can be changed in
+// src/lib/missions.ts without touching UI logic.
 
 interface Props {
-  /** How many cold-lead calls the agent has logged today. */
+  /** How many cold contacts the agent has converted to active leads today (Transfer to Lead). */
   count: number;
   /** Daily target (defaults to the missions.ts value). */
   target?: number;
@@ -40,7 +40,7 @@ export default function DailyRevivalMission({
             <h2 className="text-sm sm:text-base font-bold">Today&apos;s Mission</h2>
           </div>
           <p className="text-[11px] sm:text-xs text-gray-600 mt-0.5">
-            Call {safeTarget} cold leads · Earn {REVIVAL_MISSION.xpPerConversion} XP per conversion
+            Convert {safeTarget} cold contacts to active leads via Transfer to Lead
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -49,7 +49,7 @@ export default function DailyRevivalMission({
               {count}
               <span className="text-gray-400 font-normal text-sm">/{safeTarget}</span>
             </div>
-            <div className="text-[10px] text-gray-500 uppercase tracking-wide">calls today</div>
+            <div className="text-[10px] text-gray-500 uppercase tracking-wide">converted today</div>
           </div>
           {done && (
             <span className="text-2xl" title="Mission complete">
