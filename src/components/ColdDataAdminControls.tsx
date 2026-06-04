@@ -118,8 +118,8 @@ export default function ColdDataAdminControls({ agents }: { agents: Agent[] }) {
                 <label className="text-xs font-semibold text-gray-600">Filter by team (optional)</label>
                 <select value={assignTeam} onChange={(e) => setAssignTeam(e.target.value as "" | "Dubai" | "India")} className="w-full mt-1 border border-[#e5e7eb] rounded-lg px-3 py-2 text-sm">
                   <option value="">Any team</option>
-                  <option value="Dubai">Only Dubai-team-flagged rows</option>
-                  <option value="India">Only India-team-flagged rows</option>
+                  <option value="Dubai">Dubai Team</option>
+                  <option value="India">India Team</option>
                 </select>
               </div>
               <div>

@@ -227,7 +227,7 @@ export default function QuickSearch() {
             <div className="px-4 py-8 text-center text-sm text-gray-500">Searching…</div>
           )}
           {q.trim().length >= 2 && !loading && flat.length === 0 && (
-            <div className="px-4 py-8 text-center text-sm text-gray-500">No matches.</div>
+            <div className="px-4 py-8 text-center text-sm text-gray-500">Not found</div>
           )}
 
           {groups.map((group) =>

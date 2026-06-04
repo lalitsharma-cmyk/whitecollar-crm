@@ -277,7 +277,9 @@ export default function MobileShell({ children, user, awaitingTeamCount = 0 }: P
         <header className="hidden lg:flex bg-white dark:bg-slate-800 border-b border-[#e5e7eb] dark:border-slate-700 px-6 py-3 items-center gap-4 sticky top-0 z-10">
           <div className="relative flex-1 max-w-xl">
             <input
-              className="w-full pl-4 pr-4 py-2 rounded-lg bg-[#f5f6fa] dark:bg-slate-700 dark:text-slate-100 dark:border-slate-600 border border-transparent focus:bg-white dark:focus:bg-slate-600 focus:border-[#e5e7eb] dark:focus:border-slate-500 outline-none text-sm dark:placeholder:text-slate-500"
+              readOnly
+              onClick={() => window.dispatchEvent(new KeyboardEvent("keydown", { key: "k", ctrlKey: true, bubbles: true }))}
+              className="w-full pl-4 pr-4 py-2 rounded-lg bg-[#f5f6fa] dark:bg-slate-700 dark:text-slate-100 dark:border-slate-600 border border-transparent hover:bg-white dark:hover:bg-slate-600 hover:border-[#e5e7eb] dark:hover:border-slate-500 outline-none text-sm dark:placeholder:text-slate-500 cursor-pointer"
               placeholder="Search leads, properties, phone, email…"
             />
           </div>
