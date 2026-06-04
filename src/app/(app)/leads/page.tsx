@@ -295,7 +295,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
     smartSortPageIds = priorityRows.slice(skip, skip + PAGE_SIZE).map(r => r.id);
   }
 
-  const [leadsRaw, totalFromDb, hot, newToday, totalAll, agents, followupToday, followupOverdue, allTagRows] = await Promise.all([
+  const [leadsRaw, totalFromDb, hot, newToday, totalAll, agents, followupToday, followupOverdue, statusCountRows, allTagRows] = await Promise.all([
     smartSortPageIds != null
       ? prisma.lead.findMany({
           where: { id: { in: smartSortPageIds } },
@@ -321,6 +321,14 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
     prisma.user.findMany({ where: { active: true, role: { in: ["AGENT", "MANAGER", "ADMIN"] } }, orderBy: { name: "asc" } }),
     prisma.lead.count({ where: { ...activeScope, followupDate: todayWindow } }),
     prisma.lead.count({ where: { ...activeScope, followupDate: { lt: new Date(), not: null } } }),
+    // Per-status lead counts for the quick-filter chip bar.
+    // Uses the user's base scope (not current filters) so the chips always show
+    // how many leads they own in each stage regardless of active filter.
+    prisma.lead.groupBy({
+      by: ["status"],
+      where: sp.showCold === "1" ? { ...scope } : { ...scope, isColdCall: false },
+      _count: { _all: true },
+    }),
     // DISTINCT tag list for the More Filters tag-filter dropdown.
     prisma.$queryRaw<Array<{ tag: string }>>`
       SELECT DISTINCT TRIM(t) AS tag
@@ -342,6 +350,11 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
     return smartSortPageIds.map(id => m.get(id)).filter((l): l is NonNullable<typeof l> => l != null);
   })();
   const total = totalFromDb;
+
+  // Per-status counts keyed by status string for the chip bar.
+  const statusCounts: Partial<Record<string, number>> = Object.fromEntries(
+    statusCountRows.map(r => [r.status as string, r._count._all])
+  );
 
   const distinctTags: string[] = allTagRows
     .map((r) => r.tag)
@@ -410,55 +423,71 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
         const chip = (active: boolean, on: string, off: string) => `${base} ${active ? on : off}`;
         const neutral = { on: "bg-[#0b1a33] text-white border-[#0b1a33] dark:bg-blue-700 dark:border-blue-700", off: "bg-white dark:bg-slate-700 border-[#e5e7eb] dark:border-slate-600 text-gray-700 dark:text-slate-100 hover:bg-gray-50 dark:hover:bg-slate-600" };
         const allActive = !sp.followup && !sp.ai && !sp.team && !sp.owner && !sp.smart && !sp.filter && !sp.status;
+
+        // All pipeline stages in order — mirrors the stages in the sales sheets.
+        // Each gets a count badge showing how many leads are in that stage.
+        const stageChips: Array<{ status: string; label: string; emoji: string; on: string; off: string }> = [
+          { status: "NEW",          label: "New",          emoji: "🆕", on: "bg-blue-600 text-white border-blue-600",     off: "bg-blue-50 border-blue-300 text-blue-800 dark:bg-blue-950/30 dark:border-blue-700 dark:text-blue-200" },
+          { status: "CONTACTED",    label: "Contacted",    emoji: "📞", on: "bg-cyan-600 text-white border-cyan-600",     off: "bg-cyan-50 border-cyan-300 text-cyan-800 dark:bg-cyan-950/30 dark:border-cyan-700 dark:text-cyan-200" },
+          { status: "QUALIFIED",    label: "Qualified",    emoji: "✅", on: "bg-teal-600 text-white border-teal-600",     off: "bg-teal-50 border-teal-300 text-teal-800 dark:bg-teal-950/30 dark:border-teal-700 dark:text-teal-200" },
+          { status: "SITE_VISIT",   label: "Site Visit",   emoji: "🏠", on: "bg-green-600 text-white border-green-600",   off: "bg-green-50 border-green-300 text-green-800 dark:bg-green-950/30 dark:border-green-700 dark:text-green-200" },
+          { status: "NEGOTIATION",  label: "Negotiation",  emoji: "💼", on: "bg-indigo-600 text-white border-indigo-600", off: "bg-indigo-50 border-indigo-300 text-indigo-800 dark:bg-indigo-950/30 dark:border-indigo-700 dark:text-indigo-200" },
+          { status: "EOI",          label: "EOI",          emoji: "📄", on: "bg-purple-600 text-white border-purple-600", off: "bg-purple-50 border-purple-300 text-purple-800 dark:bg-purple-950/30 dark:border-purple-700 dark:text-purple-200" },
+          { status: "BOOKING_DONE", label: "Booking Done", emoji: "🎉", on: "bg-amber-600 text-white border-amber-600",   off: "bg-amber-50 border-amber-300 text-amber-800 dark:bg-amber-950/30 dark:border-amber-700 dark:text-amber-200" },
+          { status: "WON",          label: "Won",          emoji: "🏆", on: "bg-emerald-700 text-white border-emerald-700", off: "bg-emerald-50 border-emerald-400 text-emerald-800 dark:bg-emerald-950/30 dark:border-emerald-700 dark:text-emerald-200" },
+          { status: "LOST",         label: "Lost",         emoji: "❌", on: "bg-gray-600 text-white border-gray-600",     off: "bg-gray-100 border-gray-300 text-gray-600 dark:bg-gray-800/50 dark:border-gray-600 dark:text-gray-300" },
+        ];
+
         return (
           <div className="flex gap-2 overflow-x-auto pb-1 -mx-3 px-3 sm:mx-0 sm:px-0" style={{ scrollbarWidth: "thin" }}>
+            {/* All */}
             <Link href="/leads" className={chip(allActive, neutral.on, neutral.off)}>All</Link>
+
+            {/* Time-based chips */}
             <Link
               href="/leads?followup=today"
-              className={chip(effectiveFollowup === "today" && !sp.ai, "bg-emerald-600 text-white border-emerald-600", "bg-emerald-50 border-emerald-300 text-emerald-800 dark:bg-emerald-950/30 dark:border-emerald-700 dark:text-emerald-200")}
+              className={chip(effectiveFollowup === "today", "bg-emerald-600 text-white border-emerald-600", "bg-emerald-50 border-emerald-300 text-emerald-800 dark:bg-emerald-950/30 dark:border-emerald-700 dark:text-emerald-200")}
             >
-              Today
+              📅 Today
               {followupToday > 0 && <span className={`px-1 rounded text-[10px] ${effectiveFollowup === "today" ? "bg-white/25" : "bg-emerald-200/60 dark:bg-emerald-800/60"}`}>{followupToday}</span>}
             </Link>
             <Link
               href="/leads?followup=overdue"
-              className={chip(effectiveFollowup === "overdue" && !sp.ai, "bg-red-600 text-white border-red-600", "bg-red-50 border-red-300 text-red-800 dark:bg-red-950/30 dark:border-red-700 dark:text-red-200")}
+              className={chip(effectiveFollowup === "overdue", "bg-red-600 text-white border-red-600", "bg-red-50 border-red-300 text-red-800 dark:bg-red-950/30 dark:border-red-700 dark:text-red-200")}
             >
               ⏰ Overdue
               {followupOverdue > 0 && <span className={`px-1 rounded text-[10px] ${effectiveFollowup === "overdue" ? "bg-white/25" : "bg-red-200/60 dark:bg-red-800/60"}`}>{followupOverdue}</span>}
             </Link>
-            <Link
-              href="/leads?ai=HOT"
-              className={chip(sp.ai === "HOT", "bg-orange-600 text-white border-orange-600", "bg-orange-50 border-orange-300 text-orange-800 dark:bg-orange-950/30 dark:border-orange-700 dark:text-orange-200")}
-            >
-              🔥 Hot
-              {hot > 0 && <span className={`px-1 rounded text-[10px] ${sp.ai === "HOT" ? "bg-white/25" : "bg-orange-200/60 dark:bg-orange-800/60"}`}>{hot}</span>}
-            </Link>
-            <Link
-              href="/leads?status=SITE_VISIT"
-              className={chip(sp.status === "SITE_VISIT", "bg-teal-600 text-white border-teal-600", "bg-teal-50 border-teal-300 text-teal-800 dark:bg-teal-950/30 dark:border-teal-700 dark:text-teal-200")}
-            >
-              🏠 Site Visit
-            </Link>
-            <Link
-              href="/leads?status=NEGOTIATION"
-              className={chip(sp.status === "NEGOTIATION", "bg-indigo-600 text-white border-indigo-600", "bg-indigo-50 border-indigo-300 text-indigo-800 dark:bg-indigo-950/30 dark:border-indigo-700 dark:text-indigo-200")}
-            >
-              💼 Negotiation
-            </Link>
+
+            {/* All pipeline stages — one chip per status with live count */}
+            {stageChips.map(({ status, label, emoji, on, off }) => {
+              const count = statusCounts[status] ?? 0;
+              const isActive = sp.status === status;
+              return (
+                <Link key={status} href={`/leads?status=${status}`} className={chip(isActive, on, off)}>
+                  {emoji} {label}
+                  {count > 0 && (
+                    <span className={`px-1 rounded text-[10px] ${isActive ? "bg-white/25" : "bg-black/10 dark:bg-white/10"}`}>{count}</span>
+                  )}
+                </Link>
+              );
+            })}
+
+            {/* Leadership-only chips */}
             {me.role !== "AGENT" && (
               <>
                 <Link href="/leads?owner=unassigned" className={chip(sp.owner === "unassigned", "bg-amber-600 text-white border-amber-600", "bg-amber-50 border-amber-300 text-amber-800 dark:bg-amber-950/30 dark:border-amber-700 dark:text-amber-200")}>
                   ⚠ Unassigned
                 </Link>
-                <Link href="/leads?team=Dubai" className={chip(sp.team === "Dubai", "bg-blue-600 text-white border-blue-600", "bg-blue-50 border-blue-300 text-blue-800 dark:bg-blue-950/30 dark:border-blue-700 dark:text-blue-200")}>
-                  Dubai
+                <Link href="/leads?team=Dubai" className={chip(sp.team === "Dubai", "bg-sky-600 text-white border-sky-600", "bg-sky-50 border-sky-300 text-sky-800 dark:bg-sky-950/30 dark:border-sky-700 dark:text-sky-200")}>
+                  🇦🇪 Dubai
                 </Link>
-                <Link href="/leads?team=India" className={chip(sp.team === "India", "bg-purple-600 text-white border-purple-600", "bg-purple-50 border-purple-300 text-purple-800 dark:bg-purple-950/30 dark:border-purple-700 dark:text-purple-200")}>
-                  India
+                <Link href="/leads?team=India" className={chip(sp.team === "India", "bg-orange-600 text-white border-orange-600", "bg-orange-50 border-orange-300 text-orange-800 dark:bg-orange-950/30 dark:border-orange-700 dark:text-orange-200")}>
+                  🇮🇳 India
                 </Link>
               </>
             )}
+
             {/* Nav shortcuts */}
             <Link href="/leads/kanban" className={`${base} border-[#e5e7eb] dark:border-slate-600 text-gray-500 dark:text-slate-400 hover:bg-gray-50 dark:hover:bg-slate-700`}>📋 Pipeline</Link>
             <Link href="/leads/archived" className={`${base} border-[#e5e7eb] dark:border-slate-600 text-gray-500 dark:text-slate-400 hover:bg-gray-50 dark:hover:bg-slate-700`}>🗄️ Archived</Link>
