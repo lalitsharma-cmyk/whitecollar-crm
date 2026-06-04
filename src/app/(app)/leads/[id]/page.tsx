@@ -37,7 +37,6 @@ import LeadJourneyBar from "@/components/LeadJourneyBar";
 import { formatBudget } from "@/lib/budgetParse";
 import LinkedContactsCard from "@/components/LinkedContactsCard";
 import InvestorBanner from "@/components/InvestorBanner";
-import CustomerIntelligenceCard from "@/components/CustomerIntelligenceCard";
 import StageDurationBadge from "@/components/StageDurationBadge";
 import SchedulingField from "@/components/SchedulingField";
 
@@ -155,7 +154,10 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
   const bookingsCount = investorMatches.filter(m => m.bookingDoneAt != null || m.status === "WON").length;
   const matchedLeadIds = investorMatches.map(m => m.id);
 
-  const lastBy = (t: string) => meetingActs.find(a => a.type === t)?.completedAt ?? meetingActs.find(a => a.type === t)?.scheduledAt ?? null;
+  const lastBy = (t: string): string | null => {
+    const d = meetingActs.find(a => a.type === t)?.completedAt ?? meetingActs.find(a => a.type === t)?.scheduledAt ?? null;
+    return d ? d.toISOString() : null;
+  };
   const meetingCounts = {
     officeMeetings:  { count: meetingActs.filter(a => a.type === "OFFICE_MEETING").length,  lastAt: lastBy("OFFICE_MEETING") },
     virtualMeetings: { count: meetingActs.filter(a => a.type === "VIRTUAL_MEETING").length, lastAt: lastBy("VIRTUAL_MEETING") },

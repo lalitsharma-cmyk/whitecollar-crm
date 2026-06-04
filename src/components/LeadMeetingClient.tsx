@@ -7,9 +7,9 @@ import { showXpToast } from "./XPToast";
 import { showCelebration } from "@/components/DealCelebration";
 
 interface Counts {
-  officeMeetings: { count: number; lastAt: Date | null };
-  virtualMeetings: { count: number; lastAt: Date | null };
-  siteVisits: { count: number; lastAt: Date | null };
+  officeMeetings: { count: number; lastAt: string | null };
+  virtualMeetings: { count: number; lastAt: string | null };
+  siteVisits: { count: number; lastAt: string | null };
 }
 
 interface MeetingActivity {
@@ -35,7 +35,7 @@ const TYPE_LABEL: Record<string, string> = {
   SITE_VISIT:      "🚗 Site Visit",
 };
 
-function ago(d: Date | null) {
+function ago(d: string | null) {
   if (!d) return "never";
   const diff = Date.now() - new Date(d).getTime();
   const m = Math.floor(diff / 60_000);
