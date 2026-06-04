@@ -1,16 +1,13 @@
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
 import { LeadStatus, Prisma } from "@prisma/client";
-import { formatDistanceToNow, startOfDay, startOfWeek } from "date-fns";
+import { startOfDay, startOfWeek } from "date-fns";
 import Link from "next/link";
-import { whatsappLink, telLink } from "@/lib/phone";
-import ColdCallToggle from "@/components/ColdCallToggle";
-import ColdDataPromoteButton from "@/components/ColdDataPromoteButton";
-import OriginColdPromoteButton from "@/components/OriginColdPromoteButton";
 import ColdDataAdminControls from "@/components/ColdDataAdminControls";
 import HiddenGemsBanner, { type HiddenGem } from "@/components/HiddenGemsBanner";
 import DailyRevivalMission from "@/components/DailyRevivalMission";
 import RevivalLeaderboard, { type LeaderboardRow } from "@/components/RevivalLeaderboard";
+import RevivalEngineListClient from "@/components/RevivalEngineListClient";
 import { REVIVAL_MISSION } from "@/lib/missions";
 
 export const dynamic = "force-dynamic";
@@ -264,76 +261,33 @@ export default async function ColdDataPage({ searchParams }: { searchParams: Pro
             <Link href="/cold-calls?kind=stale" className={showOnly === "stale" ? "on" : ""}>{COLD_DAYS}d+ stale · {staleCount}</Link>
           </div>
 
-          {leads.length === 0 && (
+          {showOnly === "unassigned" && isAdminOrMgr && leads.length === 0 && (
             <div className="card p-8 text-center text-gray-500 text-sm">
-              {showOnly === "unassigned" && isAdminOrMgr
-                ? "No unassigned cold data. Import a batch with the Import button above."
-                : "Nothing in this bucket. Either you're on top of follow-ups (✅) or no leads in this stage."}
+              No unassigned cold data. Import a batch with the Import button above.
             </div>
           )}
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
-            {leads.map((l) => {
-              const wa = l.phone ? whatsappLink(l.phone, `Hi ${l.name.split(" ")[0]}, this is from White Collar Realty. Just checking in — any update on your property search?`) : "";
-              const tel = l.phone ? telLink(l.phone) : "";
-              const reasonChips: { label: string; cls: string }[] = [];
-              if (l.isColdCall) reasonChips.push({ label: "Cold data", cls: "chip-cold" });
-              if (l.leadOrigin === "COLD") reasonChips.push({ label: "Cold import", cls: "chip-cold" });
-              if (l.bantStatus === "NOT_QUALIFIED") reasonChips.push({ label: "BANT ❌", cls: "chip-lost" });
-              if (l.lastTouchedAt && l.lastTouchedAt < cutoff && !l.isColdCall && l.bantStatus !== "NOT_QUALIFIED") {
-                reasonChips.push({ label: `${COLD_DAYS}d+ stale`, cls: "chip-warm" });
-              }
-              const isUnassigned = !l.ownerId;
-              const isOriginCold = l.leadOrigin === "COLD";
+          <RevivalEngineListClient
+            leads={leads.map(l => ({
+              id:            l.id,
+              name:          l.name,
+              phone:         l.phone,
+              isColdCall:    l.isColdCall,
+              leadOrigin:    l.leadOrigin,
+              bantStatus:    l.bantStatus,
+              lastTouchedAt: l.lastTouchedAt,
+              ownerId:       l.ownerId,
+              owner:         l.owner ? { name: l.owner.name } : null,
+              coldCallReason: l.coldCallReason ?? null,
+              alreadyBought:  l.alreadyBought ?? null,
+              alreadyBoughtBy: l.alreadyBoughtBy ?? null,
+            }))}
+            myId={me.id}
+            isAdminOrMgr={isAdminOrMgr}
+            cutoffMs={cutoff.getTime()}
+            coldDays={COLD_DAYS}
+          />
 
-              return (
-                <div key={l.id} className="card p-3">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0 flex-1">
-                      <Link href={`/leads/${l.id}`} className="font-bold text-sm hover:underline truncate block">{l.name}</Link>
-                      <div className="text-[11px] text-gray-500 truncate">{l.phone}</div>
-                    </div>
-                    <ColdCallToggle leadId={l.id} initial={l.isColdCall} />
-                  </div>
-                  <div className="flex flex-wrap gap-1 mt-2">
-                    {reasonChips.map((c, i) => <span key={i} className={`chip ${c.cls} text-[9px]`}>{c.label}</span>)}
-                    {isUnassigned && <span className="chip chip-hot text-[9px]">UNASSIGNED</span>}
-                    {l.alreadyBought && <span className="chip src text-[9px]" title={l.alreadyBought}>🏠 owns</span>}
-                  </div>
-                  {l.coldCallReason && <div className="text-[11px] text-gray-700 mt-1 italic">&quot;{l.coldCallReason}&quot;</div>}
-                  {l.alreadyBought && (
-                    <div className="text-[11px] text-gray-700 mt-1">
-                      <b>Already owns:</b> {l.alreadyBought}{l.alreadyBoughtBy && ` (via ${l.alreadyBoughtBy})`}
-                    </div>
-                  )}
-                  <div className="text-[11px] text-gray-500 mt-2">
-                    {l.owner ? `Owner: ${l.owner.name}` : "Unassigned"} · last touch {l.lastTouchedAt ? formatDistanceToNow(l.lastTouchedAt, { addSuffix: true }) : "never"}
-                  </div>
-                  {l.phone && (
-                    <div className="flex gap-1.5 mt-2">
-                      <a href={tel} title={`Call ${l.name}`}
-                        className="w-8 h-8 rounded-lg bg-blue-600 hover:bg-blue-700 text-white flex items-center justify-center transition-colors">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 013.17 6.5a19.79 19.79 0 01-3.07-8.67A2 2 0 011.72 0h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L5.93 7.47a16 16 0 006.29 6.29l1.54-1.54a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z"/></svg>
-                      </a>
-                      <a href={wa} target="_blank" rel="noopener noreferrer" title={`WhatsApp ${l.name}`}
-                        className="w-8 h-8 rounded-lg bg-[#25D366] hover:bg-[#1ea953] text-white flex items-center justify-center transition-colors">
-                        <svg viewBox="0 0 24 24" fill="currentColor" className="w-3.5 h-3.5"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
-                      </a>
-                    </div>
-                  )}
-                  {/* Promote-to-Lead — agents (and admin) get this when row is theirs */}
-                  {(l.ownerId === me.id || isAdminOrMgr) && (
-                    <div className="mt-2">
-                      {isOriginCold
-                        ? <OriginColdPromoteButton leadId={l.id} leadName={l.name} />
-                        : <ColdDataPromoteButton leadId={l.id} leadName={l.name} />
-                      }
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
         </div>
 
         {/* ─── RIGHT: leaderboard + streak ─── */}
