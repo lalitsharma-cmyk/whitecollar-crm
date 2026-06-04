@@ -308,6 +308,12 @@ export default function LeadActionsClient({ leadId, phone, altPhone, email, curr
           sub-line in the lead-detail header card, both on mobile and desktop.
           Channel buttons are OMITTED entirely (not faded/disabled) when the
           channel is unavailable. */}
+      {!phone && (
+        <div className="mt-3 mb-1 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 flex items-center gap-1.5">
+          <Phone className="w-3.5 h-3.5 flex-none" />
+          No phone number saved — add one in the Qualification panel to enable Call &amp; WhatsApp.
+        </div>
+      )}
       <div className="grid grid-cols-3 sm:grid-cols-5 gap-2 mt-3">
         {phone && (
           <a href={telUrl(phone)} onClick={logCallClick} className="flex items-center justify-center gap-1.5 py-2.5 rounded-lg bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700 transition shadow-sm min-h-11">
