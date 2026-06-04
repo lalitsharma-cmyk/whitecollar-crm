@@ -168,7 +168,6 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
     (a) => a.attendedByUserId === me.id && a.startedAt && !a.endedAt && a.status !== "DONE"
   );
 
-  const aiClass = lead.aiScore === "HOT" ? "chip-hot" : lead.aiScore === "WARM" ? "chip-warm" : "chip-cold";
   const canReassign = me.role === "ADMIN" || me.role === "MANAGER";
 
   // Travel rate fetched once — used by the AdvancedActivityLogger which now
@@ -432,7 +431,6 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
           ) : (
             <div className="flex items-center gap-1.5 mt-0.5">
               <span className="text-sm">{lead.phone ? maskPhone(lead.phone) : <span className="text-gray-400">—</span>}</span>
-              <span className="text-[10px] text-gray-400 italic">🔒 admin only</span>
             </div>
           )}
         </div>
@@ -575,7 +573,6 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
                 ) : (
                   <h2 className="text-xl font-bold">{lead.name}{lead.altName && <span className="text-base font-medium text-gray-600"> & {lead.altName}</span>}</h2>
                 )}
-                {lead.aiScore && <span className={`chip ${aiClass}`}>{lead.aiScore} · {lead.aiScoreValue}</span>}
                 <span className="chip chip-warm">{lead.status.replaceAll("_"," ")}</span>
                 <StageDurationBadge since={lead.updatedAt} />
                 {lead.currentStatus && <span className="chip src">{lead.currentStatus}</span>}

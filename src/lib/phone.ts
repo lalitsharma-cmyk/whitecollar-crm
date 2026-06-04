@@ -149,17 +149,19 @@ export function whatsappDigits(e164OrAny: string | null | undefined, fallbackDia
 }
 
 /**
- * Builds a WhatsApp deep-link.
+ * Builds a WhatsApp deep-link using wa.me.
  *
- * Uses api.whatsapp.com/send instead of wa.me — empirically more reliable on
- * mobile when the number was entered without spaces or when the user has
- * WhatsApp Business installed (the wa.me redirect sometimes fails).
+ * wa.me is the canonical WhatsApp redirect URL — on mobile it opens the
+ * WhatsApp/WhatsApp Business app directly; on desktop it opens WhatsApp Web.
+ * This is the recommended format by WhatsApp and avoids the old
+ * api.whatsapp.com/send path which sometimes opens the web browser instead
+ * of the installed app on Android/iOS.
  */
 export function whatsappLink(phone: string | null | undefined, message?: string, fallbackDial?: string): string {
   const digits = whatsappDigits(phone, fallbackDial);
   if (!digits) return "";
-  const base = `https://api.whatsapp.com/send?phone=${digits}`;
-  return message ? `${base}&text=${encodeURIComponent(message)}` : base;
+  const base = `https://wa.me/${digits}`;
+  return message ? `${base}?text=${encodeURIComponent(message)}` : base;
 }
 
 /** Builds a tel: URL — strips spaces but keeps + and digits. */
