@@ -188,9 +188,9 @@ export default function ConversationStreamCard({ callLogs, waMessages, notes = [
   // Merge then sort newest-first. Stable Date comparison; ties broken by
   // CALL > NOTE > WA so a "log call + voice note" pair shows the call first.
   const rows: StreamRow[] = [
-    ...callLogs.map((c) => ({ kind: "call" as const, at: c.startedAt, call: c })),
-    ...waMessages.map((m) => ({ kind: "wa" as const, at: m.receivedAt, msg: m })),
-    ...notes.map((n) => ({ kind: "note" as const, at: n.createdAt, note: n })),
+    ...callLogs.map((c) => ({ kind: "call" as const, at: new Date(c.startedAt), call: c })),
+    ...waMessages.map((m) => ({ kind: "wa" as const, at: new Date(m.receivedAt), msg: m })),
+    ...notes.map((n) => ({ kind: "note" as const, at: new Date(n.createdAt), note: n })),
   ].sort((a, b) => {
     const d = b.at.getTime() - a.at.getTime();
     if (d !== 0) return d;
