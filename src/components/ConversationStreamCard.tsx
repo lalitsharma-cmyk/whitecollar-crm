@@ -19,10 +19,12 @@ const CONNECTED_OUTCOMES = new Set(["CONNECTED", "INTERESTED", "NOT_INTERESTED"]
 // UNSUCCESSFUL = no connection was made regardless of reason.
 const UNSUCCESSFUL_OUTCOMES = new Set(["NOT_PICKED", "BUSY", "SWITCHED_OFF", "WRONG_NUMBER", "CALLBACK"]);
 
-// Compress consecutive unsuccessful attempts older than this many days
-// (ones with no notes and no recording) into a single collapsible row.
+// Compress consecutive unsuccessful attempts into a single collapsible row.
+// NOT_PICKED: compressed regardless of age (Lalit: "merge all not-pick series")
+// Other unsuccessful (BUSY, SWITCHED_OFF, etc.): compressed only when older than
+// COMPRESS_THRESHOLD_DAYS and the call has no notes / recording.
 const COMPRESS_THRESHOLD_DAYS = 30;
-const COMPRESS_MIN_COUNT = 3;
+const COMPRESS_MIN_COUNT = 2; // lower from 3 → 2 so even pairs collapse
 
 // Effective outcome for display purposes. Older entries logged as "Dropped Wa"
 // in the remarks were incorrectly saved as CONNECTED before the "Dropped WA"
@@ -108,11 +110,15 @@ function buildDisplayRows(rows: StreamRow[]): DisplayRow[] {
 
   const canCompress = (row: StreamRow): boolean => {
     if (row.kind !== "call") return false;
-    if (row.at >= threshold) return false;
     const { outcome, notes, recordingUrl } = row.call;
+    const eff = effectiveOutcome(outcome as string, notes);
+    if (!UNSUCCESSFUL_OUTCOMES.has(eff)) return false;
     if (notes && notes.trim().length > 0) return false;
     if (recordingUrl) return false;
-    return UNSUCCESSFUL_OUTCOMES.has(outcome as string);
+    // NOT_PICKED: always compressible regardless of age
+    if (eff === "NOT_PICKED") return true;
+    // Other unsuccessful outcomes: only compress if older than threshold
+    return row.at < threshold;
   };
 
   const result: DisplayRow[] = [];

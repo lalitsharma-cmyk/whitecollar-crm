@@ -425,7 +425,9 @@ export default function LeadProjectsClient({
                   onChange={(e) => e.target.value && linkMention(m.id, e.target.value)}
                 >
                   <option value="">Link to project…</option>
-                  {allProjects.map(p => <option key={p.id} value={p.id}>{p.name} ({p.city})</option>)}
+                  {allProjects
+                    .filter(p => !scopeCountry || !p.country || p.country === scopeCountry)
+                    .map(p => <option key={p.id} value={p.id}>{p.name} ({p.city})</option>)}
                 </select>
                 <button
                   onClick={() => ignoreMention(m.id)}

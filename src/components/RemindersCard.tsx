@@ -79,6 +79,14 @@ function fmtTime(iso: string): string {
   }).toLowerCase(); // "10:00 am"
 }
 
+/** Follow-up dates are stored as a bare date (midnight UTC = 05:30 IST).
+ *  Detect this case and return "All day" so the calendar doesn't show 05:30 am
+ *  for every callback that has no specific scheduled time. */
+function isDateOnly(iso: string): boolean {
+  const d = new Date(iso);
+  return d.getUTCHours() === 0 && d.getUTCMinutes() === 0 && d.getUTCSeconds() === 0;
+}
+
 function dateLabel(isoDate: string, todayIso: string): string {
   if (isoDate === todayIso) return "Today";
   if (isoDate === addDays(todayIso, 1)) return "Tomorrow";
@@ -296,7 +304,7 @@ export default function RemindersCard({ events, todayIso, showAgent }: Props) {
                   {/* Left: time + agent name */}
                   <div className="w-16 shrink-0 text-left">
                     <div className="text-[11px] font-bold tabular-nums" style={{ color }}>
-                      {fmtTime(evt.timeIso)}
+                      {isDateOnly(evt.timeIso) ? "All day" : fmtTime(evt.timeIso)}
                     </div>
                     {showAgent && evt.agentName && (
                       <div className="text-[10px] mt-0.5 truncate max-w-[64px]" style={{ color: "#94a3b8" }}>

@@ -683,30 +683,12 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
           <ConversationStreamCard callLogs={lead.callLogs} waMessages={lead.waMessages} forwardedTeam={lead.forwardedTeam} />
         </div>
 
-        {/* ⭐ CUSTOMER INTELLIGENCE — pre-assignment match result. Shows
-            returning contacts / previous investors / funnel history. */}
-        <div data-lead-section="overview">
-          <CustomerIntelligenceCard
-            leadId={lead.id}
-            leadName={lead.name}
-            currentRole={me.role}
-          />
-        </div>
-
         {/* EOI / Booking workflow — REMOVED by Lalit in Round 3 ("Remove EOI for now").
             Both old EOIWorkflowCard + new Agent-K EOIPanel are off the page; bring
             either back when the EOI process is the next feature priority. */}
 
-        {clientSummaryCard}
-
-        {/* §6.5 / §9.4 — rules-based Buying Signals chip card.
-            Pure synchronous computation over data already loaded above
-            (discussed[], callLogs[], activities[], status, eoiStage, bantStatus,
-            fundReadiness, followupDate, aiScore, lastTouchedAt, budgetMin).
-            Card hides itself when nothing fires. No AI dependency. */}
-        <div data-lead-section="overview">
-          <BuyingSignalsCard lead={lead} />
-        </div>
+        {/* CustomerIntelligenceCard, clientSummaryCard, BuyingSignalsCard
+            REMOVED per Lalit's repeated request — "remove these 3 sections". */}
 
         {/* MOBILE-ONLY: BANT + Qualification surface near the top of the page
             on phones (Lalit: "Qualification moving up wards in mobile"). On
@@ -924,7 +906,7 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
               sourceText: d.sourceText,
             }))}
             allProjects={allProjects}
-            scopeCountry={(me.role === "ADMIN" || me.role === "MANAGER") ? null : teamToCountry(lead.forwardedTeam)}
+            scopeCountry={teamToCountry(lead.forwardedTeam)}
             unmatchedMentions={unmatchedMentions.map(m => ({
               id: m.id,
               mentionText: m.mentionText,
