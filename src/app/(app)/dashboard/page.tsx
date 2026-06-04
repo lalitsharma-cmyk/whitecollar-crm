@@ -260,7 +260,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
 
   return (
     <>
-      {testingModeOn && (
+      {testingModeOn && me.role !== "AGENT" && (
         <div className="card p-3 border-l-4 border-amber-500 bg-amber-50 mb-3">
           <div className="text-sm font-semibold text-amber-900">🧪 Testing mode is ON — every auto-action paused</div>
           <div className="text-xs text-amber-800 mt-0.5">
@@ -272,9 +272,11 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
           <h1 className="text-xl sm:text-2xl font-bold">Dashboard</h1>
-          <p className="text-xs sm:text-sm text-gray-500 dark:text-slate-400">
-            {new Date().toLocaleDateString("en-US", { weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: "Asia/Kolkata" })} · {new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Kolkata" })} IST
-          </p>
+          {me.role !== "AGENT" && (
+            <p className="text-xs sm:text-sm text-gray-500 dark:text-slate-400">
+              {new Date().toLocaleDateString("en-US", { weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: "Asia/Kolkata" })} · {new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Kolkata" })} IST
+            </p>
+          )}
         </div>
         <div className="flex gap-2 flex-wrap items-center self-start sm:self-auto">
           {me.role === "ADMIN" && (
@@ -302,11 +304,13 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
           TOP card under the page title (the greeting/quote welcome strip that
           used to sit above this was removed per Lalit "remove daily note" — the
           greeting + daily quote still live in the Daily Opening card below). */}
-      <IamHereCard
-        today={myAttendanceToday ? { status: myAttendanceToday.status, markedAt: myAttendanceToday.markedAt.toISOString() } : null}
-        userId={me.id}
-        userName={me.name}
-      />
+      {me.role !== "AGENT" && (
+        <IamHereCard
+          today={myAttendanceToday ? { status: myAttendanceToday.status, markedAt: myAttendanceToday.markedAt.toISOString() } : null}
+          userId={me.id}
+          userName={me.name}
+        />
+      )}
 
 
       {/* ── SECTION 1: TODAY ─────────────────────────────────────────────

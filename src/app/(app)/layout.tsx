@@ -16,7 +16,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     : 0;
   return (
     <>
-      {testingMode && (
+      {testingMode && user.role !== "AGENT" && (
         <div className="sticky top-0 z-[200] w-full bg-amber-400 text-amber-950 text-[11px] font-bold px-4 py-2 text-center flex items-center justify-center gap-2 border-b border-amber-500">
           ⚠ TEST MODE ACTIVE
           <span className="font-normal opacity-80 hidden sm:inline">
