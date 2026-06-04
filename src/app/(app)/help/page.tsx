@@ -25,7 +25,8 @@ const TOC = [
 export default async function HelpPage() {
   // Login-gated. This page is the in-app training guide for sales agents —
   // written for someone touching a CRM for the very first time.
-  await requireUser();
+  const me = await requireUser();
+  const isAgent = me.role === "AGENT";
 
   return (
     <div className="lg:grid lg:grid-cols-[220px_1fr] lg:gap-8 max-w-5xl">
@@ -33,7 +34,7 @@ export default async function HelpPage() {
       <aside className="hidden lg:block">
         <nav className="sticky top-20 text-sm space-y-1">
           <div className="text-[10px] uppercase tracking-widest text-gray-400 mb-2 px-2">On this page</div>
-          {TOC.map((t) => (
+          {TOC.filter(t => !(isAgent && (t.id === "reports" || t.id === "contact"))).map((t) => (
             <a
               key={t.id}
               href={`#${t.id}`}
@@ -327,8 +328,8 @@ export default async function HelpPage() {
           </Tip>
         </section>
 
-        {/* ─────────── Reports ─────────── */}
-        <section id="reports" className="card p-5 scroll-mt-20">
+        {/* ─────────── Reports — hidden for AGENT (not in their nav) ─────────── */}
+        {!isAgent && <section id="reports" className="card p-5 scroll-mt-20">
           <h2 className="text-lg font-bold text-[#0b1a33] mb-1">📊 Reports — see how you&apos;re doing</h2>
           <p className="text-sm text-gray-700">
             You don&apos;t need to build anything. Reports just show your effort and results in plain numbers.
@@ -347,7 +348,7 @@ export default async function HelpPage() {
           <Tip>
             Peek at your numbers near end of day. A couple more calls might be all it takes to hit your target. 💪
           </Tip>
-        </section>
+        </section>}
 
         {/* ─────────── Do's & Don'ts ─────────── */}
         <section id="dos-donts" className="card p-5 scroll-mt-20">
@@ -494,8 +495,8 @@ export default async function HelpPage() {
           </div>
         </section>
 
-        {/* ─────────── Contact ─────────── */}
-        <section id="contact" className="card p-5 scroll-mt-20">
+        {/* ─────────── Contact — hidden for AGENT ─────────── */}
+        {!isAgent && <section id="contact" className="card p-5 scroll-mt-20">
           <h2 className="text-lg font-bold text-[#0b1a33] mb-3">📧 Need more help?</h2>
           <p className="text-sm text-gray-700">
             Stuck, confused, or something looks broken? That&apos;s totally normal on day one — and this CRM was
@@ -513,7 +514,7 @@ export default async function HelpPage() {
               For an urgent CRM problem, message Lalit directly on WhatsApp.
             </div>
           </div>
-        </section>
+        </section>}
       </article>
     </div>
   );

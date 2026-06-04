@@ -1,5 +1,6 @@
 ﻿import { createHmac } from "node:crypto";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getTravelRatePerKmInr, getSpeedToLeadEnabled, getRoundRobinEnabled, getTestingModeEnabled, getMotivationPilotEnabled, getMotivationPilotTeam, getBantGateMode, getAiEnabled, getAiTrialModeEnabled, getAiMonthlyCostCapUsd } from "@/lib/settings";
@@ -48,6 +49,7 @@ function buildIcsUrl(userId: string): string {
 
 export default async function SettingsPage() {
   const me = await requireUser();
+  if (me.role === "AGENT") redirect("/leads");
   const [travelRate, speedToLeadOn, roundRobinOn, testingModeOn, motivationPilotOn, motivationPilotTeam, bantGateMode, pushSubCount, aiEnabledOn, aiTrialModeOn, aiMonthlyCostCapUsd] = await Promise.all([
     getTravelRatePerKmInr(),
     getSpeedToLeadEnabled(),

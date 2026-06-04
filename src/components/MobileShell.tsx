@@ -35,7 +35,7 @@ const fullNav: NavSection[] = [
   ]},
   { section: "SETUP", items: [
     { href: "/profile",  label: "My Profile",    Icon: UserCog },
-    { href: "/settings", label: "Settings",      Icon: SettingsIcon },
+    { href: "/settings", label: "Settings",      Icon: SettingsIcon, agentHidden: true },
     { href: "/help",     label: "Help",          Icon: HelpCircle },
   ]},
   // MANAGER+ADMIN mini-group — surfaced to managers too (Lalit's ask).
