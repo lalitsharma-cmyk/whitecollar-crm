@@ -112,7 +112,8 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
     }),
     prisma.activity.findMany({
       where: { leadId: id, type: { in: ["OFFICE_MEETING", "VIRTUAL_MEETING", "SITE_VISIT"] } },
-      orderBy: { createdAt: "desc" },
+      orderBy: { completedAt: "desc" },
+      include: { user: { select: { name: true } } },
     }),
     prisma.project.findMany({
       where: projectWhereForUser(me),
@@ -828,7 +829,21 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
         </div>
 
         <div data-lead-section="overview" className="card p-5">
-          <LeadMeetingClient leadId={lead.id} counts={meetingCounts} leadName={lead.name} />
+          <LeadMeetingClient
+            leadId={lead.id}
+            counts={meetingCounts}
+            leadName={lead.name}
+            activities={meetingActs.map(a => ({
+              id: a.id,
+              type: a.type as string,
+              completedAt: a.completedAt ? a.completedAt.toISOString() : null,
+              startedAt: a.startedAt ? a.startedAt.toISOString() : null,
+              endedAt: a.endedAt ? a.endedAt.toISOString() : null,
+              description: a.description ?? null,
+              isNoShow: a.isNoShow,
+              loggedBy: a.user?.name ?? null,
+            }))}
+          />
         </div>
 
         {/* Site Visit Checklist — only renders when the lead is in SITE_VISIT
