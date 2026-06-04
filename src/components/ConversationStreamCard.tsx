@@ -153,8 +153,11 @@ function buildDisplayRows(rows: StreamRow[]): DisplayRow[] {
   return result;
 }
 
+type FilterType = "ALL" | "CONNECTED" | "NO_ANSWER" | "WA";
+
 export default function ConversationStreamCard({ callLogs, waMessages, forwardedTeam }: Props) {
   const [expandedGroups, setExpandedGroups] = useState<Set<number>>(new Set());
+  const [filter, setFilter] = useState<FilterType>("ALL");
 
   const toggleGroup = (idx: number) =>
     setExpandedGroups(prev => {
@@ -189,6 +192,24 @@ export default function ConversationStreamCard({ callLogs, waMessages, forwarded
 
   const displayRows = buildDisplayRows(rows);
 
+  // Apply active filter to display rows
+  const filteredRows = filter === "ALL" ? displayRows : displayRows.filter(row => {
+    if (filter === "CONNECTED") {
+      if (row.kind === "compressed") return false;
+      if (row.kind === "wa") return false;
+      return CONNECTED_OUTCOMES.has(effectiveOutcome(row.call.outcome as string, row.call.notes));
+    }
+    if (filter === "NO_ANSWER") {
+      if (row.kind === "compressed") return true; // compressed = unsuccessful
+      if (row.kind === "wa") return false;
+      return UNSUCCESSFUL_OUTCOMES.has(effectiveOutcome(row.call.outcome as string, row.call.notes));
+    }
+    if (filter === "WA") {
+      return row.kind === "wa";
+    }
+    return true;
+  });
+
   return (
     <div className="card p-5 border-l-4 border-emerald-500 bg-emerald-50/20">
       <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
@@ -196,10 +217,43 @@ export default function ConversationStreamCard({ callLogs, waMessages, forwarded
           💬 Conversation history
           <span className="text-[10px] text-gray-500 font-normal">— calls + WhatsApp, newest first</span>
         </div>
-        <div className="flex items-center gap-1.5 text-[10px]">
-          <span className="chip chip-won">📞 {connectedCount} connected</span>
-          <span className="chip chip-cold">📵 {unsuccessfulCount} no-answer</span>
-          <span className="chip src-wa">💬 {waInboundCount} WA replies</span>
+        {/* Filter chips — clickable to show only that category */}
+        <div className="flex items-center gap-1.5 text-[10px] flex-wrap">
+          <button
+            type="button"
+            onClick={() => setFilter(f => f === "CONNECTED" ? "ALL" : "CONNECTED")}
+            className={`chip chip-won cursor-pointer transition-opacity ${filter !== "ALL" && filter !== "CONNECTED" ? "opacity-30" : ""}`}
+            title="Show only connected calls"
+          >
+            📞 {connectedCount} connected
+          </button>
+          <button
+            type="button"
+            onClick={() => setFilter(f => f === "NO_ANSWER" ? "ALL" : "NO_ANSWER")}
+            className={`chip chip-cold cursor-pointer transition-opacity ${filter !== "ALL" && filter !== "NO_ANSWER" ? "opacity-30" : ""}`}
+            title="Show only missed/declined calls"
+          >
+            📵 {unsuccessfulCount} no-answer
+          </button>
+          {waInboundCount > 0 && (
+            <button
+              type="button"
+              onClick={() => setFilter(f => f === "WA" ? "ALL" : "WA")}
+              className={`chip src-wa cursor-pointer transition-opacity ${filter !== "ALL" && filter !== "WA" ? "opacity-30" : ""}`}
+              title="Show only WhatsApp messages"
+            >
+              💬 {waInboundCount} WA replies
+            </button>
+          )}
+          {filter !== "ALL" && (
+            <button
+              type="button"
+              onClick={() => setFilter("ALL")}
+              className="text-[10px] text-gray-400 hover:text-gray-600 px-1"
+            >
+              ✕ clear
+            </button>
+          )}
         </div>
       </div>
 
@@ -209,8 +263,13 @@ export default function ConversationStreamCard({ callLogs, waMessages, forwarded
             No calls or WhatsApp messages logged yet. Use 📝 Log Call above to record the first one.
           </div>
         )}
+        {rows.length > 0 && filteredRows.length === 0 && (
+          <div className="text-gray-400 text-xs text-center py-4">
+            No {filter === "CONNECTED" ? "connected calls" : filter === "NO_ANSWER" ? "missed calls" : "WhatsApp messages"} in this lead.
+          </div>
+        )}
 
-        {displayRows.map((row, idx) => {
+        {filteredRows.map((row, idx) => {
           // ── Compressed group ──────────────────────────────────────────────
           if (row.kind === "compressed") {
             const expanded = expandedGroups.has(idx);

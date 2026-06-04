@@ -372,6 +372,39 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         {/* ════ LEFT COLUMN — all dashboard content ════ */}
         <div className="space-y-4 min-w-0">
 
+          {/* §12.4 Morning briefing / greeting — moved to TOP so Lalit sees
+              it first, before the KPI numbers */}
+          <div className="card p-4 border-l-4 border-[#c9a24b] bg-gradient-to-br from-amber-50/60 to-white">
+            <div className="flex items-start justify-between gap-3 flex-wrap">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-baseline gap-2 flex-wrap">
+                  <h2 className="text-base sm:text-lg font-bold text-[#0b1a33]">
+                    {energyEmoji} {greeting}, {me.name.split(" ")[0]}
+                  </h2>
+                </div>
+                {hasMorningWork && (
+                  <div className="flex flex-wrap gap-2 mt-3 text-sm">
+                    {myNewOvernight > 0 && (
+                      <Link href="/leads?when=24h" className="px-3 py-1.5 rounded-full bg-emerald-100 text-emerald-900 border border-emerald-300 font-semibold hover:bg-emerald-200 min-h-9 flex items-center gap-1">
+                        🆕 {myNewOvernight} new lead{myNewOvernight === 1 ? "" : "s"} since yesterday
+                      </Link>
+                    )}
+                    {myCallbacksToday > 0 && (
+                      <Link href="/action-list" className="px-3 py-1.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300 font-semibold hover:bg-amber-200 min-h-9 flex items-center gap-1">
+                        ☎ {myCallbacksToday} client callback{myCallbacksToday === 1 ? "" : "s"} today
+                      </Link>
+                    )}
+                    {myFollowupsToday > 0 && (
+                      <Link href="/activities" className="px-3 py-1.5 rounded-full bg-blue-100 text-blue-900 border border-blue-300 font-semibold hover:bg-blue-200 min-h-9 flex items-center gap-1">
+                        📅 {myFollowupsToday} follow-up{myFollowupsToday === 1 ? "" : "s"} to do
+                      </Link>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
           {/* "I am here" attendance */}
           {me.role !== "AGENT" && (
             <IamHereCard
@@ -445,37 +478,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
             </div>
           )}
 
-          {/* §12.4 Morning briefing / greeting */}
-          <div className="card p-4 border-l-4 border-[#c9a24b] bg-gradient-to-br from-amber-50/60 to-white">
-            <div className="flex items-start justify-between gap-3 flex-wrap">
-              <div className="flex-1 min-w-0">
-                <div className="flex items-baseline gap-2 flex-wrap">
-                  <h2 className="text-base sm:text-lg font-bold text-[#0b1a33]">
-                    {energyEmoji} {greeting}, {me.name.split(" ")[0]}
-                  </h2>
-                </div>
-                {hasMorningWork && (
-                  <div className="flex flex-wrap gap-2 mt-3 text-sm">
-                    {myNewOvernight > 0 && (
-                      <Link href="/leads?when=24h" className="px-3 py-1.5 rounded-full bg-emerald-100 text-emerald-900 border border-emerald-300 font-semibold hover:bg-emerald-200 min-h-9 flex items-center gap-1">
-                        🆕 {myNewOvernight} new lead{myNewOvernight === 1 ? "" : "s"} since yesterday
-                      </Link>
-                    )}
-                    {myCallbacksToday > 0 && (
-                      <Link href="/action-list" className="px-3 py-1.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300 font-semibold hover:bg-amber-200 min-h-9 flex items-center gap-1">
-                        ☎ {myCallbacksToday} client callback{myCallbacksToday === 1 ? "" : "s"} today
-                      </Link>
-                    )}
-                    {myFollowupsToday > 0 && (
-                      <Link href="/activities" className="px-3 py-1.5 rounded-full bg-blue-100 text-blue-900 border border-blue-300 font-semibold hover:bg-blue-200 min-h-9 flex items-center gap-1">
-                        📅 {myFollowupsToday} follow-up{myFollowupsToday === 1 ? "" : "s"} to do
-                      </Link>
-                    )}
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
+          {/* §12.4 Morning briefing — moved to TOP of page (above TODAY KPIs) */}
 
           {/* ── SECTION 2: UPCOMING ── */}
           <div className="card p-5">
@@ -527,9 +530,9 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
           {isAdminOrMgr && (
             <div className="card p-3 lg:p-5 overflow-x-auto">
               <div className="text-xs font-bold tracking-widest text-gray-500 dark:text-slate-400 mb-3">BY SALESPERSON · TEAM · {periodSection}</div>
-              <table className="tbl w-full min-w-[520px]">
+              <table className="tbl w-full min-w-[640px]">
                 <thead><tr>
-                  <th>Salesperson</th><th>Team</th><th className="text-center">Calls</th><th className="text-center">Connected</th><th className="text-center">Due</th><th className="text-center">Overdue now</th><th className="text-center">Closeable now</th><th className="text-center">Needs {me.name.split(" ")[0]}</th><th className="text-center">Clients (total)</th>
+                  <th>Salesperson</th><th>Team</th><th className="text-center">Calls</th><th className="text-center">Connected</th><th className="text-center">Due</th><th className="text-center">Overdue</th><th className="text-center">Closeable</th><th className="text-center">Needs {me.name.split(" ")[0]}</th><th className="text-center">Clients</th>
                 </tr></thead>
                 <tbody>
                   {spStats.map((s) => (
