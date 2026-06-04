@@ -306,34 +306,6 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
             parseAs="budget" placeholder="Not set"
             editHint={budgetCcy === "INR" ? "type 30L · 3Cr · 500K" : "type 2.5M · 500K"} />
         </div>
-        <div className="flex items-center gap-2">
-          <span className="text-[10px] font-semibold text-gray-500 dark:text-slate-400 w-32 shrink-0">Requirement</span>
-          <InlineEdit leadId={lead.id} field="needSummary" value={lead.needSummary ?? ""} placeholder="Not set" />
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="text-[10px] font-semibold text-gray-500 dark:text-slate-400 w-32 shrink-0">Configuration</span>
-          <InlineEdit leadId={lead.id} field="configuration" value={lead.configuration ?? ""} placeholder="2BR / Villa / PH" />
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="text-[10px] font-semibold text-gray-500 dark:text-slate-400 w-32 shrink-0">Who decides?</span>
-          <InlineEdit leadId={lead.id} field="authorityPerson" type="select" value={lead.authorityPerson ?? ""}
-            options={[
-              {value:"Self",            label:"Self"},
-              {value:"Wife",            label:"Wife"},
-              {value:"Husband",         label:"Husband"},
-              {value:"Father",          label:"Father"},
-              {value:"Mother",          label:"Mother"},
-              {value:"Brother",         label:"Brother"},
-              {value:"Sister",          label:"Sister"},
-              {value:"Parents",         label:"Parents"},
-              {value:"Family",          label:"Family"},
-              {value:"Business Partner",label:"Business Partner"},
-              {value:"Friend",          label:"Friend"},
-              {value:"Relative",        label:"Relative"},
-              {value:"Company",         label:"Company"},
-              {value:"Unknown",         label:"Unknown"},
-            ]} />
-        </div>
         {lastDiscussionLabel && (
           <div className="flex items-center gap-2">
             <span className="text-[10px] font-semibold text-gray-500 dark:text-slate-400 w-32 shrink-0">Last Discussion</span>

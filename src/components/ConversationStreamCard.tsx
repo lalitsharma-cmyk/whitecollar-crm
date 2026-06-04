@@ -24,7 +24,20 @@ const UNSUCCESSFUL_OUTCOMES = new Set(["NOT_PICKED", "BUSY", "SWITCHED_OFF", "WR
 const COMPRESS_THRESHOLD_DAYS = 30;
 const COMPRESS_MIN_COUNT = 3;
 
-function callOutcomeLabel(outcome: string): string {
+// Effective outcome for display purposes. Older entries logged as "Dropped Wa"
+// in the remarks were incorrectly saved as CONNECTED before the "Dropped WA"
+// outcome option existed. Detect these by remarks text and treat them as
+// NOT_PICKED so they display and colour correctly without a DB migration.
+function effectiveOutcome(outcome: string, notes: string | null | undefined): string {
+  if (outcome === "CONNECTED" && notes && /dropped\s*wa/i.test(notes)) {
+    return "NOT_PICKED";
+  }
+  return outcome;
+}
+
+function callOutcomeLabel(outcome: string, notes?: string | null): string {
+  const eff = effectiveOutcome(outcome, notes);
+  if (eff !== outcome) return "📵 Dropped WA";
   const map: Record<string, string> = {
     CONNECTED: "✅ Connected",
     NOT_PICKED: "📵 Not Picked",
@@ -35,7 +48,7 @@ function callOutcomeLabel(outcome: string): string {
     INTERESTED: "✅ Connected",       // interest belongs in BANT, not call history
     NOT_INTERESTED: "🛑 Not Interested",
   };
-  return map[outcome] ?? outcome.replaceAll("_", " ");
+  return map[eff] ?? eff.replaceAll("_", " ");
 }
 
 type CallLogWithUser = CallLog & { user: { name: string } };
@@ -70,8 +83,9 @@ type DisplayRow = StreamRow | CompressedGroup;
 
 // Map a call outcome to the colour theme for its row.
 // Green = real conversation happened; red = no connection made.
-function callColour(outcome: CallLog["outcome"]): { border: string; bg: string; pill: string } {
-  if (CONNECTED_OUTCOMES.has(outcome as string)) {
+function callColour(outcome: CallLog["outcome"], notes?: string | null): { border: string; bg: string; pill: string } {
+  const eff = effectiveOutcome(outcome as string, notes);
+  if (CONNECTED_OUTCOMES.has(eff)) {
     return { border: "border-emerald-300", bg: "bg-emerald-50/40", pill: "chip-won" };
   }
   return { border: "border-red-200", bg: "bg-red-50/30", pill: "chip-cold" };
@@ -161,9 +175,10 @@ export default function ConversationStreamCard({ callLogs, waMessages, forwarded
     return a.kind === "call" && b.kind === "wa" ? -1 : a.kind === "wa" && b.kind === "call" ? 1 : 0;
   });
 
-  // Header counts — agent skims these before scrolling.
-  const connectedCount = callLogs.filter(c => CONNECTED_OUTCOMES.has(c.outcome as string)).length;
-  const unsuccessfulCount = callLogs.filter(c => UNSUCCESSFUL_OUTCOMES.has(c.outcome as string)).length;
+  // Header counts — use effectiveOutcome so "Dropped Wa" entries aren't
+  // miscounted as connected even though they were saved with CONNECTED in DB.
+  const connectedCount = callLogs.filter(c => CONNECTED_OUTCOMES.has(effectiveOutcome(c.outcome as string, c.notes))).length;
+  const unsuccessfulCount = callLogs.filter(c => UNSUCCESSFUL_OUTCOMES.has(effectiveOutcome(c.outcome as string, c.notes))).length;
   const waInboundCount = waMessages.filter(m => m.direction === "INBOUND").length;
 
   const displayRows = buildDisplayRows(rows);
@@ -209,13 +224,13 @@ export default function ConversationStreamCard({ callLogs, waMessages, forwarded
                     {row.rows.map((r, ri) => {
                       if (r.kind !== "call") return null;
                       const c = r.call;
-                      const col = callColour(c.outcome);
+                      const col = callColour(c.outcome, c.notes);
                       const displayName = c.attributedAgentName ?? c.user.name;
                       return (
                         <div key={`cg-${c.id}-${ri}`} className={`border-l-2 ${col.border} ${col.bg} pl-3 pr-2 py-1 rounded-r`}>
                           <div className="flex items-center justify-between flex-wrap gap-1 text-[11px] text-gray-500">
                             <span>📞 <b>{displayName}</b> · {fmtIST12Paren(c.startedAt)} IST</span>
-                            <span className={`chip ${col.pill} text-[9px]`}>{callOutcomeLabel(c.outcome)}</span>
+                            <span className={`chip ${col.pill} text-[9px]`}>{callOutcomeLabel(c.outcome, c.notes)}</span>
                           </div>
                         </div>
                       );
@@ -229,7 +244,7 @@ export default function ConversationStreamCard({ callLogs, waMessages, forwarded
           // ── Call row ──────────────────────────────────────────────────────
           if (row.kind === "call") {
             const c = row.call;
-            const col = callColour(c.outcome);
+            const col = callColour(c.outcome, c.notes);
             const displayName = c.attributedAgentName ?? c.user.name;
             // Strip leading "Agent: " prefix from MIS-imported remarks so we
             // don't show the name twice.
@@ -243,7 +258,7 @@ export default function ConversationStreamCard({ callLogs, waMessages, forwarded
                     📞 <b>{displayName}</b> · {fmtIST12Paren(c.startedAt)} IST
                     {c.durationSec ? ` · ${Math.floor(c.durationSec / 60)}m ${c.durationSec % 60}s` : ""}
                   </span>
-                  <span className={`chip ${col.pill} text-[9px]`}>{callOutcomeLabel(c.outcome)}</span>
+                  <span className={`chip ${col.pill} text-[9px]`}>{callOutcomeLabel(c.outcome, c.notes)}</span>
                 </div>
                 {notesClean && <div className="text-xs mt-1 text-gray-700 whitespace-pre-wrap">{notesClean}</div>}
                 {c.recordingUrl && (
