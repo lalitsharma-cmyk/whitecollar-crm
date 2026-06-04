@@ -324,6 +324,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
 
   return (
     <>
+      {/* ── Full-width: testing mode banner ── */}
       {testingModeOn && me.role !== "AGENT" && (
         <div className="card p-3 border-l-4 border-amber-500 bg-amber-50 mb-3">
           <div className="text-sm font-semibold text-amber-900">🧪 Testing mode is ON — every auto-action paused</div>
@@ -333,6 +334,8 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
           </div>
         </div>
       )}
+
+      {/* ── Full-width: page title + team/action controls ── */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
           <h1 className="text-xl sm:text-2xl font-bold">Dashboard</h1>
@@ -352,230 +355,226 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
           )}
           {me.role === "MANAGER" && (
             <div className="seg" title="Managers see their own team only">
-              <span className={`on cursor-default opacity-80`}>{view === "India" ? "🇮🇳 India" : "🇦🇪 Dubai"}</span>
+              <span className="on cursor-default opacity-80">{view === "India" ? "🇮🇳 India" : "🇦🇪 Dubai"}</span>
             </div>
           )}
           <Link
             href="/action-list"
-            title="Ready-to-close (NEGOTIATION/SITE_VISIT) + Overdue follow-ups + Manager-flagged leads. Scoped to your leads if agent, all leads if manager/admin."
+            title="Ready-to-close (NEGOTIATION/SITE_VISIT) + Overdue follow-ups + Manager-flagged leads."
             className="btn btn-gold justify-center"
           >📋 Action List</Link>
         </div>
       </div>
 
-      {/* ─── "I am here" widget — Agent T (Round 5) ───
-          Per Lalit: "Put I am here at top. so user knows its attendance."
-          TOP card under the page title (the greeting/quote welcome strip that
-          used to sit above this was removed per Lalit "remove daily note" — the
-          greeting + daily quote still live in the Daily Opening card below). */}
-      {me.role !== "AGENT" && (
-        <IamHereCard
-          today={myAttendanceToday ? { status: myAttendanceToday.status, markedAt: myAttendanceToday.markedAt.toISOString() } : null}
-          userId={me.id}
-          userName={me.name}
-        />
-      )}
+      {/* ── Two-column layout: left = main content, right = sticky Reminders ── */}
+      <div className="grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-4 items-start">
 
+        {/* ════ LEFT COLUMN — all dashboard content ════ */}
+        <div className="space-y-4 min-w-0">
 
-      {/* ── SECTION 1: TODAY ─────────────────────────────────────────────
-          Q1: What needs attention right now? + What is planned today?
-          Row 1 = urgent (state-based, always current).
-          Row 2 = scheduled for the selected period. */}
-      <div>
-        <div className="text-xs font-bold tracking-widest text-gray-500 dark:text-slate-400 mb-2 uppercase">
-          📅 {periodSection}
-        </div>
-        {/* Urgent — state-based, always "right now" */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-          <Link href="/leads?ai=HOT&when=overdue" className="card p-4 border-l-4 border-red-500 hover:shadow-lg transition active:bg-red-50">
-            <div className="text-3xl font-extrabold text-red-700">{hotUntouched}</div>
-            <div className="text-xs font-semibold text-red-900 mt-1">🔥 Hot leads untouched</div>
-            <div className="text-[10px] text-red-700/70 mt-0.5">No agent activity in 6+ hours</div>
-          </Link>
-          <Link href="/leads?followup=overdue" className="card p-4 border-l-4 border-orange-500 hover:shadow-lg transition active:bg-orange-50">
-            <div className="text-3xl font-extrabold text-orange-700">{overdueFollowups}</div>
-            <div className="text-xs font-semibold text-orange-900 mt-1">⏰ Overdue follow-ups</div>
-            <div className="text-[10px] text-orange-700/70 mt-0.5">Follow-up date in the past</div>
-          </Link>
-          <Link href="/pipeline" className="card p-4 border-l-4 border-emerald-500 hover:shadow-lg transition active:bg-emerald-50">
-            <div className="text-3xl font-extrabold text-emerald-700">{closableDeals}</div>
-            <div className="text-xs font-semibold text-emerald-900 mt-1">💎 Closable deals</div>
-            <div className="text-[10px] text-emerald-700/70 mt-0.5">Negotiation + EOI in progress</div>
-          </Link>
-          <Link href="/cold-calls" className="card p-4 border-l-4 border-blue-500 hover:shadow-lg transition active:bg-blue-50">
-            <div className="text-3xl font-extrabold text-blue-700">{coldRevivalOps}</div>
-            <div className="text-xs font-semibold text-blue-900 mt-1">🧊 Cold revival opportunities</div>
-            <div className="text-[10px] text-blue-700/70 mt-0.5">High-value dormant 30+ days</div>
-          </Link>
-        </div>
-        {/* Scheduled — period-based: only meetings, site visits, virtual meets */}
-        <div className="grid grid-cols-3 gap-3 mt-3">
-          <Link href="/activities?type=MEETING" className="card p-4 hover:shadow-lg transition">
-            <div className="text-3xl font-extrabold text-teal-700 dark:text-teal-300">{meetingsToday}</div>
-            <div className="text-xs font-semibold text-slate-800 dark:text-slate-200 mt-1">🤝 Meetings</div>
-            <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">expo / office / home · today</div>
-          </Link>
-          <Link href="/activities?type=SITE_VISIT" className="card p-4 hover:shadow-lg transition">
-            <div className="text-3xl font-extrabold text-green-700 dark:text-green-300">{siteVisitsToday}</div>
-            <div className="text-xs font-semibold text-slate-800 dark:text-slate-200 mt-1">🏗️ Site visits</div>
-            <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">scheduled · today</div>
-          </Link>
-          <Link href="/activities?type=VIRTUAL_MEETING" className="card p-4 hover:shadow-lg transition">
-            <div className="text-3xl font-extrabold text-sky-700 dark:text-sky-300">{virtualMeetingsToday}</div>
-            <div className="text-xs font-semibold text-slate-800 dark:text-slate-200 mt-1">💻 Virtual meets</div>
-            <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">scheduled · today</div>
-          </Link>
-        </div>
-      </div>
+          {/* "I am here" attendance */}
+          {me.role !== "AGENT" && (
+            <IamHereCard
+              today={myAttendanceToday ? { status: myAttendanceToday.status, markedAt: myAttendanceToday.markedAt.toISOString() } : null}
+              userId={me.id}
+              userName={me.name}
+            />
+          )}
 
-
-      {/* Admin-only: leads waiting for morning assignment (15-min window) */}
-      {me.role === "ADMIN" && morningQueueCount > 0 && (
-        <div className="card p-4 border-l-4 border-red-500 bg-red-50">
-          <div className="flex items-center justify-between mb-2">
-            <div className="font-bold text-red-900">⏰ {morningQueueCount} lead{morningQueueCount === 1 ? "" : "s"} waiting for your assign</div>
-            <div className="text-[10px] text-red-700">After 5 min the system auto-assigns to present agents (round-robin)</div>
-          </div>
-          <div className="space-y-1">
-            {morningQueueLeads.map((l) => (
-              <Link key={l.id} href={`/leads/${l.id}`} className="block text-xs p-2 rounded bg-white border border-red-200 hover:border-red-400">
-                <b>{l.name}</b> {l.phone && <span className="text-gray-500">· {l.phone}</span>}
-                <span className="text-gray-400 ml-2">{l.forwardedTeam ?? "—"} · {formatDistanceToNow(l.createdAt, { addSuffix: true })}</span>
-              </Link>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* §12.4 Daily Opening Experience
-          Premium morning greeting + single "today's mission" CTA + streak
-          nudge + the existing chips + the daily quote. Always visible. */}
-      <div className="card p-4 border-l-4 border-[#c9a24b] bg-gradient-to-br from-amber-50/60 to-white">
-        <div className="flex items-start justify-between gap-3 flex-wrap">
-          <div className="flex-1 min-w-0">
-            <div className="flex items-baseline gap-2 flex-wrap">
-              <h2 className="text-base sm:text-lg font-bold text-[#0b1a33]">
-                {energyEmoji} {greeting}, {me.name.split(" ")[0]}
-              </h2>
+          {/* ── SECTION 1: TODAY ── */}
+          <div>
+            <div className="text-xs font-bold tracking-widest text-gray-500 dark:text-slate-400 mb-2 uppercase">
+              📅 {periodSection}
             </div>
+            <div className="grid grid-cols-2 gap-3">
+              <Link href="/leads?ai=HOT&when=overdue" className="card p-4 border-l-4 border-red-500 hover:shadow-lg transition active:bg-red-50">
+                <div className="text-3xl font-extrabold text-red-700">{hotUntouched}</div>
+                <div className="text-xs font-semibold text-red-900 mt-1">🔥 Hot leads untouched</div>
+                <div className="text-[10px] text-red-700/70 mt-0.5">No agent activity in 6+ hours</div>
+              </Link>
+              <Link href="/leads?followup=overdue" className="card p-4 border-l-4 border-orange-500 hover:shadow-lg transition active:bg-orange-50">
+                <div className="text-3xl font-extrabold text-orange-700">{overdueFollowups}</div>
+                <div className="text-xs font-semibold text-orange-900 mt-1">⏰ Overdue follow-ups</div>
+                <div className="text-[10px] text-orange-700/70 mt-0.5">Follow-up date in the past</div>
+              </Link>
+              <Link href="/pipeline" className="card p-4 border-l-4 border-emerald-500 hover:shadow-lg transition active:bg-emerald-50">
+                <div className="text-3xl font-extrabold text-emerald-700">{closableDeals}</div>
+                <div className="text-xs font-semibold text-emerald-900 mt-1">💎 Closable deals</div>
+                <div className="text-[10px] text-emerald-700/70 mt-0.5">Negotiation + EOI in progress</div>
+              </Link>
+              <Link href="/cold-calls" className="card p-4 border-l-4 border-blue-500 hover:shadow-lg transition active:bg-blue-50">
+                <div className="text-3xl font-extrabold text-blue-700">{coldRevivalOps}</div>
+                <div className="text-xs font-semibold text-blue-900 mt-1">🧊 Cold revival</div>
+                <div className="text-[10px] text-blue-700/70 mt-0.5">High-value dormant 30+ days</div>
+              </Link>
+            </div>
+            <div className="grid grid-cols-3 gap-3 mt-3">
+              <Link href="/activities?type=MEETING" className="card p-4 hover:shadow-lg transition">
+                <div className="text-3xl font-extrabold text-teal-700 dark:text-teal-300">{meetingsToday}</div>
+                <div className="text-xs font-semibold text-slate-800 dark:text-slate-200 mt-1">🤝 Meetings</div>
+                <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">expo / office / home · today</div>
+              </Link>
+              <Link href="/activities?type=SITE_VISIT" className="card p-4 hover:shadow-lg transition">
+                <div className="text-3xl font-extrabold text-green-700 dark:text-green-300">{siteVisitsToday}</div>
+                <div className="text-xs font-semibold text-slate-800 dark:text-slate-200 mt-1">🏗️ Site visits</div>
+                <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">scheduled · today</div>
+              </Link>
+              <Link href="/activities?type=VIRTUAL_MEETING" className="card p-4 hover:shadow-lg transition">
+                <div className="text-3xl font-extrabold text-sky-700 dark:text-sky-300">{virtualMeetingsToday}</div>
+                <div className="text-xs font-semibold text-slate-800 dark:text-slate-200 mt-1">💻 Virtual meets</div>
+                <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">scheduled · today</div>
+              </Link>
+            </div>
+          </div>
 
-            {hasMorningWork && (
-              <div className="flex flex-wrap gap-2 mt-3 text-sm">
-                {myNewOvernight > 0 && (
-                  <Link href="/leads?when=24h" className="px-3 py-1.5 rounded-full bg-emerald-100 text-emerald-900 border border-emerald-300 font-semibold hover:bg-emerald-200 min-h-9 flex items-center gap-1">
-                    🆕 {myNewOvernight} new lead{myNewOvernight === 1 ? "" : "s"} since yesterday
+          {/* Admin morning queue */}
+          {me.role === "ADMIN" && morningQueueCount > 0 && (
+            <div className="card p-4 border-l-4 border-red-500 bg-red-50">
+              <div className="flex items-center justify-between mb-2">
+                <div className="font-bold text-red-900">⏰ {morningQueueCount} lead{morningQueueCount === 1 ? "" : "s"} waiting for your assign</div>
+                <div className="text-[10px] text-red-700">After 5 min the system auto-assigns to present agents (round-robin)</div>
+              </div>
+              <div className="space-y-1">
+                {morningQueueLeads.map((l) => (
+                  <Link key={l.id} href={`/leads/${l.id}`} className="block text-xs p-2 rounded bg-white border border-red-200 hover:border-red-400">
+                    <b>{l.name}</b> {l.phone && <span className="text-gray-500">· {l.phone}</span>}
+                    <span className="text-gray-400 ml-2">{l.forwardedTeam ?? "—"} · {formatDistanceToNow(l.createdAt, { addSuffix: true })}</span>
+                  </Link>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* §12.4 Morning briefing / greeting */}
+          <div className="card p-4 border-l-4 border-[#c9a24b] bg-gradient-to-br from-amber-50/60 to-white">
+            <div className="flex items-start justify-between gap-3 flex-wrap">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-baseline gap-2 flex-wrap">
+                  <h2 className="text-base sm:text-lg font-bold text-[#0b1a33]">
+                    {energyEmoji} {greeting}, {me.name.split(" ")[0]}
+                  </h2>
+                </div>
+                {hasMorningWork && (
+                  <div className="flex flex-wrap gap-2 mt-3 text-sm">
+                    {myNewOvernight > 0 && (
+                      <Link href="/leads?when=24h" className="px-3 py-1.5 rounded-full bg-emerald-100 text-emerald-900 border border-emerald-300 font-semibold hover:bg-emerald-200 min-h-9 flex items-center gap-1">
+                        🆕 {myNewOvernight} new lead{myNewOvernight === 1 ? "" : "s"} since yesterday
+                      </Link>
+                    )}
+                    {myCallbacksToday > 0 && (
+                      <Link href="/action-list" className="px-3 py-1.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300 font-semibold hover:bg-amber-200 min-h-9 flex items-center gap-1">
+                        ☎ {myCallbacksToday} client callback{myCallbacksToday === 1 ? "" : "s"} today
+                      </Link>
+                    )}
+                    {myFollowupsToday > 0 && (
+                      <Link href="/activities" className="px-3 py-1.5 rounded-full bg-blue-100 text-blue-900 border border-blue-300 font-semibold hover:bg-blue-200 min-h-9 flex items-center gap-1">
+                        📅 {myFollowupsToday} follow-up{myFollowupsToday === 1 ? "" : "s"} to do
+                      </Link>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* ── SECTION 2: UPCOMING ── */}
+          <div className="card p-5">
+            <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+              <div className="font-semibold">📆 Future Activities</div>
+              <div className="flex gap-2 text-xs flex-wrap">
+                {upcomingFollowupsCount > 0 && (
+                  <Link href="/leads?followup=upcoming" className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-300 font-semibold hover:bg-amber-200">
+                    {upcomingFollowupsCount} follow-up{upcomingFollowupsCount === 1 ? "" : "s"}
                   </Link>
                 )}
-                {myCallbacksToday > 0 && (
-                  <Link href="/action-list" className="px-3 py-1.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300 font-semibold hover:bg-amber-200 min-h-9 flex items-center gap-1">
-                    ☎ {myCallbacksToday} client callback{myCallbacksToday === 1 ? "" : "s"} today
-                  </Link>
-                )}
-                {myFollowupsToday > 0 && (
-                  <Link href="/activities" className="px-3 py-1.5 rounded-full bg-blue-100 text-blue-900 border border-blue-300 font-semibold hover:bg-blue-200 min-h-9 flex items-center gap-1">
-                    📅 {myFollowupsToday} follow-up{myFollowupsToday === 1 ? "" : "s"} to do
+                {upcomingActivitiesCount > 0 && (
+                  <Link href="/activities" className="px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 border border-blue-300 font-semibold hover:bg-blue-200">
+                    {upcomingActivitiesCount} activit{upcomingActivitiesCount === 1 ? "y" : "ies"}
                   </Link>
                 )}
               </div>
-            )}
-
+            </div>
+            <div className="space-y-2">
+              {upcoming.map((a) => (
+                <Link key={a.id} href={a.lead ? `/leads/${a.lead.id}` : "#"} className="flex items-center justify-between p-3 rounded-lg border border-[#e5e7eb] hover:border-[#c9a24b]">
+                  <div>
+                    <div className="text-sm font-semibold">{a.title}{a.lead && ` · ${a.lead.name}`}</div>
+                    <div className="text-xs text-gray-500 dark:text-slate-400">{a.scheduledAt && `${fmtIST12(a.scheduledAt)} IST`}</div>
+                  </div>
+                  <span className="chip chip-new">{a.type}</span>
+                </Link>
+              ))}
+              {upcoming.length === 0 && <div className="text-sm text-gray-500 dark:text-slate-400">Nothing scheduled ahead.</div>}
+            </div>
           </div>
-        </div>
-      </div>
 
-      {/* ── REMINDERS ──────────────────────────────────────────────────── */}
-      <RemindersCard
-        events={reminderEvents}
-        todayIso={todayIsoIST}
-        showAgent={isAdminOrMgr}
-      />
-
-      {/* ── SECTION 2: UPCOMING ────────────────────────────────────────────
-          Q2: What is coming next after the selected period? */}
-      <div className="card p-5">
-        <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
-          <div className="font-semibold">📆 Future Activities</div>
-          <div className="flex gap-2 text-xs flex-wrap">
-            {upcomingFollowupsCount > 0 && (
-              <Link href="/leads?followup=upcoming" className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-300 font-semibold hover:bg-amber-200">
-                {upcomingFollowupsCount} follow-up{upcomingFollowupsCount === 1 ? "" : "s"}
-              </Link>
-            )}
-            {upcomingActivitiesCount > 0 && (
-              <Link href="/activities" className="px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 border border-blue-300 font-semibold hover:bg-blue-200">
-                {upcomingActivitiesCount} activit{upcomingActivitiesCount === 1 ? "y" : "ies"}
-              </Link>
-            )}
+          {/* ── DAILY PERFORMANCE ── */}
+          <div>
+            <div className="text-xs font-bold tracking-widest text-gray-500 dark:text-slate-400 mb-2 uppercase">
+              📊 Daily Performance · {periodSection}
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 lg:gap-3">
+              <KpiTarget label="Total Calls" achieved={todayCallsCount} target={targets.calls} />
+              <KpiTarget label="Connected Calls" achieved={connectedPersonal} target={targets.connected} />
+              <KpiTarget label="Virtual Meetings" achieved={virtualPersonal} target={targets.virtual} />
+              <KpiTarget label="Site Visits (F2F)" achieved={f2fPersonal} target={targets.f2f} />
+              <KpiTarget label="Fresh Clients" achieved={freshPersonal} target={targets.fresh} />
+              <KpiTarget label="Deals Closed" achieved={dealsPersonal} target={targets.deals} />
+            </div>
           </div>
-        </div>
-        <div className="space-y-2">
-          {upcoming.map((a) => (
-            <Link key={a.id} href={a.lead ? `/leads/${a.lead.id}` : "#"} className="flex items-center justify-between p-3 rounded-lg border border-[#e5e7eb] hover:border-[#c9a24b]">
-              <div>
-                <div className="text-sm font-semibold">{a.title}{a.lead && ` · ${a.lead.name}`}</div>
-                <div className="text-xs text-gray-500 dark:text-slate-400">{a.scheduledAt && `${fmtIST12(a.scheduledAt)} IST`}</div>
-              </div>
-              <span className="chip chip-new">{a.type}</span>
-            </Link>
-          ))}
-          {upcoming.length === 0 && <div className="text-sm text-gray-500 dark:text-slate-400">Nothing scheduled ahead.</div>}
-        </div>
-      </div>
 
-      {/* ── DAILY PERFORMANCE ────────────────────────────────── */}
-      <div>
-        <div className="text-xs font-bold tracking-widest text-gray-500 dark:text-slate-400 mb-2 uppercase">
-          📊 Daily Performance · {periodSection}
-        </div>
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-3 gap-2 lg:gap-3">
-          <KpiTarget label="Total Calls" achieved={todayCallsCount} target={targets.calls} />
-          <KpiTarget label="Connected Calls" achieved={connectedPersonal} target={targets.connected} />
-          <KpiTarget label="Virtual Meetings" achieved={virtualPersonal} target={targets.virtual} />
-          <KpiTarget label="Site Visits (F2F)" achieved={f2fPersonal} target={targets.f2f} />
-          <KpiTarget label="Fresh Clients" achieved={freshPersonal} target={targets.fresh} />
-          <KpiTarget label="Deals Closed" achieved={dealsPersonal} target={targets.deals} />
-        </div>
-      </div>
+          {/* By Salesperson table — ADMIN/MANAGER only */}
+          {isAdminOrMgr && (
+            <div className="card p-3 lg:p-5 overflow-x-auto">
+              <div className="text-xs font-bold tracking-widest text-gray-500 dark:text-slate-400 mb-3">BY SALESPERSON · TEAM · {periodSection}</div>
+              <table className="tbl w-full min-w-[520px]">
+                <thead><tr>
+                  <th>Salesperson</th><th>Team</th><th className="text-center">Calls</th><th className="text-center">Connected</th><th className="text-center">Due</th><th className="text-center">Overdue now</th><th className="text-center">Closeable now</th><th className="text-center">Needs {me.name.split(" ")[0]}</th><th className="text-center">Clients (total)</th>
+                </tr></thead>
+                <tbody>
+                  {spStats.map((s) => (
+                    <tr key={s.id}>
+                      <td className="font-semibold">{s.name}</td>
+                      <td><span className={`chip ${s.team === "India" ? "src-csv" : "src-wa"}`}>{s.team ?? "—"}</span></td>
+                      <td className="text-center">{s.calls}</td>
+                      <td className="text-center">{s.connected}</td>
+                      <td className="text-center">{s.dueToday}</td>
+                      <td className={`text-center ${s.overdue > 0 ? "text-red-600 font-semibold" : ""}`}>{s.overdue}</td>
+                      <td className="text-center font-semibold">{s.closeable}</td>
+                      <td className={`text-center ${s.needs > 0 ? "text-amber-600 font-bold" : ""}`}>{s.needs}</td>
+                      <td className="text-center">{s.clients}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
 
-      {/* By Salesperson table — ADMIN/MANAGER only (team-wide competitive data) */}
-      {isAdminOrMgr && (
-      <div className="card p-3 lg:p-5 overflow-x-auto">
-        <div className="text-xs font-bold tracking-widest text-gray-500 dark:text-slate-400 mb-3">BY SALESPERSON · TEAM · {periodSection}</div>
-        <table className="tbl w-full min-w-[520px]">
-          <thead><tr>
-            <th>Salesperson</th><th>Team</th><th className="text-center">Calls</th><th className="text-center">Connected</th><th className="text-center">Due</th><th className="text-center">Overdue now</th><th className="text-center">Closeable now</th><th className="text-center">Needs {me.name.split(" ")[0]}</th><th className="text-center">Clients (total)</th>
-          </tr></thead>
-          <tbody>
-            {spStats.map((s) => (
-              <tr key={s.id}>
-                <td className="font-semibold">{s.name}</td>
-                <td><span className={`chip ${s.team === "India" ? "src-csv" : "src-wa"}`}>{s.team ?? "—"}</span></td>
-                <td className="text-center">{s.calls}</td>
-                <td className="text-center">{s.connected}</td>
-                <td className="text-center">{s.dueToday}</td>
-                <td className={`text-center ${s.overdue > 0 ? "text-red-600 font-semibold" : ""}`}>{s.overdue}</td>
-                <td className="text-center font-semibold">{s.closeable}</td>
-                <td className={`text-center ${s.needs > 0 ? "text-amber-600 font-bold" : ""}`}>{s.needs}</td>
-                <td className="text-center">{s.clients}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      )}
+          {/* 🎉 Party poppers */}
+          {(() => {
+            const achievedTargets = [
+              todayCallsCount >= targets.calls      && "calls",
+              connectedPersonal >= targets.connected && "connected",
+              virtualPersonal  >= targets.virtual   && "virtual",
+              f2fPersonal      >= targets.f2f       && "f2f",
+              freshPersonal    >= targets.fresh     && "fresh",
+              dealsPersonal    >= targets.deals     && "deals",
+            ].filter(Boolean) as string[];
+            return <TargetCelebration achievedTargets={achievedTargets} date={rawFrom} />;
+          })()}
 
-      {/* 🎉 Party poppers — fires once per newly-completed KPI target today */}
-      {(() => {
-        const achievedTargets = [
-          todayCallsCount >= targets.calls     && "calls",
-          connectedPersonal >= targets.connected && "connected",
-          virtualPersonal  >= targets.virtual  && "virtual",
-          f2fPersonal      >= targets.f2f      && "f2f",
-          freshPersonal    >= targets.fresh    && "fresh",
-          dealsPersonal    >= targets.deals    && "deals",
-        ].filter(Boolean) as string[];
-        return <TargetCelebration achievedTargets={achievedTargets} date={rawFrom} />;
-      })()}
+        </div>{/* end LEFT COLUMN */}
+
+        {/* ════ RIGHT COLUMN — sticky Reminders ════ */}
+        <div className="lg:sticky lg:top-4">
+          <RemindersCard
+            events={reminderEvents}
+            todayIso={todayIsoIST}
+            showAgent={isAdminOrMgr}
+          />
+        </div>
+
+      </div>{/* end two-column grid */}
     </>
   );
 }
