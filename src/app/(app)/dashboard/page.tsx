@@ -11,6 +11,7 @@ import IamHereCard from "@/components/IamHereCard";
 import { todayIST } from "@/lib/attendance";
 import { normalizeTeam } from "@/lib/teamRouting";
 import TargetCelebration from "@/components/TargetCelebration";
+import RemindersCard, { type ReminderEvent } from "@/components/RemindersCard";
 
 export const dynamic = "force-dynamic";
 
@@ -250,6 +251,77 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   const greeting = "Good morning";
   const energyEmoji = "☀️";
 
+  // ── Reminders widget data ────────────────────────────────────────────
+  // Fetch the next 7 days of: scheduled activities (site visits, meetings)
+  // + follow-up callbacks (lead.followupDate). Agents see their own;
+  // admin/manager see the whole team so they can spot double-bookings and
+  // ensure every client has someone attending.
+  const reminderEnd = new Date(todayStart.getTime() + 7 * 24 * 3600_000);
+  const activityScope: Prisma.ActivityWhereInput = isAdminOrMgr ? teamActWhere : { userId: me.id };
+  const callbackScope: Prisma.LeadWhereInput = isAdminOrMgr ? teamScope : { ownerId: me.id };
+
+  const [reminderActivities, reminderCallbacks] = await Promise.all([
+    prisma.activity.findMany({
+      where: {
+        ...activityScope,
+        status: ActivityStatus.PLANNED,
+        type: { in: [ActivityType.SITE_VISIT, ActivityType.OFFICE_MEETING, ActivityType.VIRTUAL_MEETING, ActivityType.EXPO_MEETING] },
+        scheduledAt: { gte: todayStart, lt: reminderEnd },
+      },
+      orderBy: { scheduledAt: "asc" },
+      take: 200,
+      include: {
+        lead: { select: { id: true, name: true } },
+        user: { select: { name: true } },
+      },
+    }),
+    prisma.lead.findMany({
+      where: {
+        ...callbackScope,
+        followupDate: { gte: todayStart, lt: reminderEnd },
+        status: { notIn: [LeadStatus.WON, LeadStatus.LOST] },
+      },
+      orderBy: { followupDate: "asc" },
+      take: 200,
+      select: {
+        id: true,
+        name: true,
+        followupDate: true,
+        owner: { select: { name: true } },
+      },
+    }),
+  ]);
+
+  // Normalise into a flat ReminderEvent array
+  const reminderEvents: ReminderEvent[] = [
+    ...reminderActivities
+      .filter(a => a.scheduledAt != null && a.lead != null)
+      .map(a => ({
+        id: a.id,
+        leadId: a.lead!.id,
+        leadName: a.lead!.name,
+        type: (a.type === "SITE_VISIT" ? "SITE_VISIT" : "MEETING") as ReminderEvent["type"],
+        timeIso: a.scheduledAt!.toISOString(),
+        agentName: a.user?.name ?? null,
+        agentInitials: null,
+      })),
+    ...reminderCallbacks
+      .filter(l => l.followupDate != null)
+      .map(l => ({
+        id: `cb-${l.id}`,
+        leadId: l.id,
+        leadName: l.name,
+        type: "CALLBACK" as ReminderEvent["type"],
+        timeIso: l.followupDate!.toISOString(),
+        agentName: l.owner?.name ?? null,
+        agentInitials: null,
+      })),
+  ];
+
+  // IST today as YYYY-MM-DD (for the week strip default)
+  const istOffset2 = 5.5 * 60 * 60 * 1000;
+  const todayIsoIST = new Date(Date.now() + istOffset2).toISOString().slice(0, 10);
+
   return (
     <>
       {testingModeOn && me.role !== "AGENT" && (
@@ -410,6 +482,13 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
           </div>
         </div>
       </div>
+
+      {/* ── REMINDERS ──────────────────────────────────────────────────── */}
+      <RemindersCard
+        events={reminderEvents}
+        todayIso={todayIsoIST}
+        showAgent={isAdminOrMgr}
+      />
 
       {/* ── SECTION 2: UPCOMING ────────────────────────────────────────────
           Q2: What is coming next after the selected period? */}
