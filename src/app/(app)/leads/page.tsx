@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { LeadSource, LeadStatus, AIScore, Prisma } from "@prisma/client";
+import { LeadSource, LeadStatus, AIScore, FundReadiness, InvestTimeline, Prisma } from "@prisma/client";
 import { formatDistanceToNow, format as fnsFormat } from "date-fns";
 import Link from "next/link";
 import { requireUser } from "@/lib/auth";
@@ -91,8 +91,15 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
   // by setting the param and watching the result count, defeating the privacy policy.
   if (sp.source && me.role !== "AGENT") where.source = sp.source as LeadSource;
   if (sp.status) where.status = sp.status as LeadStatus;
+  // Excel-style status filter — filters the user-facing currentStatus field
+  if (sp.cstatus) where.currentStatus = { equals: sp.cstatus, mode: "insensitive" };
   if (sp.ai) where.aiScore = sp.ai as AIScore;
   if (sp.team) where.forwardedTeam = sp.team;
+  // Excel-field filters
+  if (sp.potential) where.potential = sp.potential as "HIGH" | "MEDIUM" | "LOW" | "UNKNOWN";
+  if (sp.fundReady) where.fundReadiness = sp.fundReady as FundReadiness;
+  if (sp.clientType) where.clientType = sp.clientType as "INVESTOR" | "END_USER" | "BOTH" | "UNCLEAR";
+  if (sp.whenInvest) where.whenCanInvest = sp.whenInvest as InvestTimeline;
   // Agents are scoped to their own leads (leadScopeWhere above). Only ADMIN/MANAGER
   // may filter by owner — without this guard an agent could read a peer's leads by
   // hand-crafting ?owner=<id>, overriding their ownership scope.
@@ -165,7 +172,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
   // search and show all matching, not just today's.
   // nofollowup filter already sets followupDate: null, so the followup chip
   // default (today) must not compose with it — include it as an "other filter".
-  const hasOtherFilter = !!(sp.q || sp.source || sp.status || sp.owner || sp.team || sp.score || sp.notPicked || sp.eoi || filterTab === "nofollowup");
+  const hasOtherFilter = !!(sp.q || sp.source || sp.status || sp.cstatus || sp.owner || sp.team || sp.score || sp.notPicked || sp.eoi || sp.potential || sp.fundReady || sp.clientType || sp.whenInvest || filterTab === "nofollowup");
   // Default view = ALL leads. No hidden filter is applied on a clean page load.
   // (Previously defaulted to "today" which caused "44 total, 8 matching" confusion.)
   const effectiveFollowup = sp.followup ?? "all";
@@ -498,9 +505,10 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
       {/* ── Active filter banner ────────────────────────────────────────── */}
       {(() => {
         const hasActiveFilters = !!(
-          sp.q || sp.source || sp.status || sp.owner || sp.team ||
+          sp.q || sp.source || sp.status || sp.cstatus || sp.owner || sp.team ||
           sp.ai || sp.when || sp.notPicked || sp.eoi || sp.smart ||
-          sp.tag || sp.filter || (sp.followup && sp.followup !== "all")
+          sp.tag || sp.filter || (sp.followup && sp.followup !== "all") ||
+          sp.potential || sp.fundReady || sp.clientType || sp.whenInvest
         );
         if (!hasActiveFilters) return null;
         return (
@@ -548,6 +556,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
             email: l.email,
             source: l.source,
             statusName: l.status,
+            currentStatus: l.currentStatus ?? null,
             srcChip: srcChip[l.source],
             srcLabel: srcLabel[l.source],
             statusChip: statusChip[l.status],

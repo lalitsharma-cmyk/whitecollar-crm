@@ -1,6 +1,7 @@
 "use client";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { useState, useEffect } from "react";
+import { EXCEL_STATUSES } from "@/lib/lead-statuses";
 
 interface Props {
   agents: { id: string; name: string }[];
@@ -36,22 +37,28 @@ export default function LeadFilters({
   const [open, setOpen] = useState(false);
 
   // Draft state — initialised from URL when drawer opens
-  const [draftSource,     setDraftSource]     = useState("");
-  const [draftStatus,     setDraftStatus]     = useState("");
-  const [draftAI,         setDraftAI]         = useState("");
-  const [draftTeam,       setDraftTeam]       = useState("");
-  const [draftOwner,      setDraftOwner]      = useState("");
-  const [draftSort,       setDraftSort]       = useState("");
-  const [draftTag,        setDraftTag]        = useState("");
-  const [draftNotPicked,  setDraftNotPicked]  = useState("");
-  const [draftFollowup,   setDraftFollowup]   = useState("");
-  const [draftDateFrom,   setDraftDateFrom]   = useState(sp.get("dateFrom") ?? "");
-  const [draftDateTo,     setDraftDateTo]     = useState(sp.get("dateTo") ?? "");
-  const [draftDateField,  setDraftDateField]  = useState(sp.get("dateField") ?? "followupDate");
+  const [draftSource,       setDraftSource]       = useState("");
+  const [draftStatus,       setDraftStatus]       = useState("");
+  const [draftCstatus,      setDraftCstatus]      = useState("");
+  const [draftAI,           setDraftAI]           = useState("");
+  const [draftTeam,         setDraftTeam]         = useState("");
+  const [draftOwner,        setDraftOwner]        = useState("");
+  const [draftSort,         setDraftSort]         = useState("");
+  const [draftTag,          setDraftTag]          = useState("");
+  const [draftNotPicked,    setDraftNotPicked]    = useState("");
+  const [draftFollowup,     setDraftFollowup]     = useState("");
+  const [draftDateFrom,     setDraftDateFrom]     = useState(sp.get("dateFrom") ?? "");
+  const [draftDateTo,       setDraftDateTo]       = useState(sp.get("dateTo") ?? "");
+  const [draftDateField,    setDraftDateField]    = useState(sp.get("dateField") ?? "followupDate");
+  const [draftPotential,    setDraftPotential]    = useState("");
+  const [draftFundReady,    setDraftFundReady]    = useState("");
+  const [draftClientType,   setDraftClientType]   = useState("");
+  const [draftWhenInvest,   setDraftWhenInvest]   = useState("");
 
   function openDrawer() {
     setDraftSource(sp.get("source") ?? "");
     setDraftStatus(sp.get("status") ?? "");
+    setDraftCstatus(sp.get("cstatus") ?? "");
     setDraftAI(sp.get("ai") ?? "");
     setDraftTeam(sp.get("team") ?? "");
     setDraftOwner(sp.get("owner") ?? "");
@@ -62,24 +69,33 @@ export default function LeadFilters({
     setDraftDateFrom(sp.get("dateFrom") ?? "");
     setDraftDateTo(sp.get("dateTo") ?? "");
     setDraftDateField(sp.get("dateField") ?? "followupDate");
+    setDraftPotential(sp.get("potential") ?? "");
+    setDraftFundReady(sp.get("fundReady") ?? "");
+    setDraftClientType(sp.get("clientType") ?? "");
+    setDraftWhenInvest(sp.get("whenInvest") ?? "");
     setOpen(true);
   }
 
   function applyFilters() {
     const p = new URLSearchParams(sp);
     const set = (k: string, v: string) => v ? p.set(k, v) : p.delete(k);
-    set("source",    draftSource);
-    set("status",    draftStatus);
-    set("ai",        draftAI);
-    set("team",      draftTeam);
-    set("owner",     draftOwner);
-    set("sort",      draftSort);
-    set("tag",       draftTag);
-    set("notPicked", draftNotPicked);
-    set("followup",  draftFollowup);
-    set("dateFrom",  draftDateFrom);
-    set("dateTo",    draftDateTo);
-    set("dateField", draftDateField);
+    set("source",      draftSource);
+    set("status",      draftStatus);
+    set("cstatus",     draftCstatus);
+    set("ai",          draftAI);
+    set("team",        draftTeam);
+    set("owner",       draftOwner);
+    set("sort",        draftSort);
+    set("tag",         draftTag);
+    set("notPicked",   draftNotPicked);
+    set("followup",    draftFollowup);
+    set("dateFrom",    draftDateFrom);
+    set("dateTo",      draftDateTo);
+    set("dateField",   draftDateField);
+    set("potential",   draftPotential);
+    set("fundReady",   draftFundReady);
+    set("clientType",  draftClientType);
+    set("whenInvest",  draftWhenInvest);
     p.delete("page");
     router.replace(`${pathname}?${p.toString()}`);
     setOpen(false);
@@ -87,7 +103,7 @@ export default function LeadFilters({
 
   function resetFilters() {
     const p = new URLSearchParams(sp);
-    ["source","status","ai","team","owner","sort","tag","notPicked","followup","smart","filter","when","eoi","dateFrom","dateTo","dateField"]
+    ["source","status","cstatus","ai","team","owner","sort","tag","notPicked","followup","smart","filter","when","eoi","dateFrom","dateTo","dateField","potential","fundReady","clientType","whenInvest"]
       .forEach(k => p.delete(k));
     p.delete("page");
     router.replace(`${pathname}?${p.toString()}`);
@@ -96,11 +112,12 @@ export default function LeadFilters({
 
   // Badge: count of active drawer-managed params
   const advancedCount = [
-    sp.get("source"), sp.get("status"), sp.get("ai"),
-    sp.get("team"),   sp.get("owner"),  sp.get("sort"),
-    sp.get("tag"),    sp.get("notPicked"),
-    sp.get("smart"),  sp.get("filter"),
-    sp.get("dateFrom"), sp.get("dateTo"),
+    sp.get("source"),    sp.get("status"),   sp.get("cstatus"),
+    sp.get("ai"),        sp.get("team"),      sp.get("owner"),
+    sp.get("sort"),      sp.get("tag"),       sp.get("notPicked"),
+    sp.get("smart"),     sp.get("filter"),
+    sp.get("dateFrom"),  sp.get("dateTo"),
+    sp.get("potential"), sp.get("fundReady"), sp.get("clientType"), sp.get("whenInvest"),
   ].filter(Boolean).length;
 
   const selCls = "w-full border border-[#e5e7eb] dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 rounded-lg px-3 py-2 text-sm";
@@ -191,19 +208,68 @@ export default function LeadFilters({
                 </select>
               </div>
 
-              {/* Stage */}
+              {/* Status — Excel/MIS values (primary filter) */}
               <div>
-                <label className={lblCls}>Stage</label>
-                <select value={draftStatus} onChange={(e) => setDraftStatus(e.target.value)} className={selCls}>
-                  <option value="">All stages</option>
-                  {statuses.filter(s => s !== "WON" && s !== "LOST")
-                    .map(s => <option key={s} value={s}>{s.replaceAll("_", " ")}</option>)}
+                <label className={lblCls}>📋 Status</label>
+                <select value={draftCstatus} onChange={(e) => setDraftCstatus(e.target.value)} className={selCls}>
+                  <option value="">All statuses</option>
+                  {EXCEL_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
                 </select>
               </div>
 
-              {/* Potential (AI score) */}
+              {/* Potential */}
               <div>
                 <label className={lblCls}>Potential</label>
+                <select value={draftPotential} onChange={(e) => setDraftPotential(e.target.value)} className={selCls}>
+                  <option value="">Any potential</option>
+                  <option value="HIGH">🔥 High</option>
+                  <option value="MEDIUM">🌤 Medium</option>
+                  <option value="LOW">❄ Low</option>
+                  <option value="UNKNOWN">— Unknown</option>
+                </select>
+              </div>
+
+              {/* Fund Readiness */}
+              <div>
+                <label className={lblCls}>Fund Readiness</label>
+                <select value={draftFundReady} onChange={(e) => setDraftFundReady(e.target.value)} className={selCls}>
+                  <option value="">Any fund status</option>
+                  <option value="IMMEDIATE_BUYER">🟢 Immediate Buyer</option>
+                  <option value="SHORT_TERM_BUYER">🟡 Short-Term Buyer</option>
+                  <option value="CONDITIONAL_BUYER">🔵 Conditional Buyer</option>
+                  <option value="FINANCED_BUYER">🟣 Financed Buyer</option>
+                  <option value="FUTURE_BUYER">🔴 Future Buyer</option>
+                </select>
+              </div>
+
+              {/* Who is Client */}
+              <div>
+                <label className={lblCls}>Who Is Client</label>
+                <select value={draftClientType} onChange={(e) => setDraftClientType(e.target.value)} className={selCls}>
+                  <option value="">All client types</option>
+                  <option value="INVESTOR">Investor</option>
+                  <option value="END_USER">End User</option>
+                  <option value="BOTH">Both</option>
+                  <option value="UNCLEAR">Unclear</option>
+                </select>
+              </div>
+
+              {/* When Can Invest */}
+              <div>
+                <label className={lblCls}>When Can Invest</label>
+                <select value={draftWhenInvest} onChange={(e) => setDraftWhenInvest(e.target.value)} className={selCls}>
+                  <option value="">Any timeline</option>
+                  <option value="IMMEDIATE">⚡ Immediate / On Spot</option>
+                  <option value="THIRTY_DAYS">📅 Within 1 Month</option>
+                  <option value="THREE_MONTHS">✈ Will Visit Dubai First</option>
+                  <option value="SIX_PLUS_MONTHS">⏳ Not in 6 Months</option>
+                  <option value="WINDOW_SHOPPING">📆 Window Shopping</option>
+                </select>
+              </div>
+
+              {/* AI Score */}
+              <div>
+                <label className={lblCls}>AI Score</label>
                 <select value={draftAI} onChange={(e) => setDraftAI(e.target.value)} className={selCls}>
                   <option value="">Any score</option>
                   <option value="HOT">🔥 Hot</option>

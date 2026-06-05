@@ -14,6 +14,7 @@ function WaIcon() {
 }
 import { telLink, whatsappLink } from "@/lib/phone";
 import CopyPhoneButton from "./CopyPhoneButton";
+import { excelStatusChip } from "@/lib/lead-statuses";
 
 // Preset tag vocab — mirrors what Lalit asked the team to standardise on
 // across the pipeline. Kept here (not server-fetched) so the popover renders
@@ -63,6 +64,8 @@ interface Row {
   email: string | null;
   source: string;
   statusName: string;
+  /** User-facing Excel/MIS status (currentStatus field) */
+  currentStatus: string | null;
   srcChip: string;
   srcLabel: string;
   statusChip: string;
@@ -118,23 +121,25 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
   const [deleteReason, setDeleteReason] = useState("NOT_INTERESTED");
   const [deleteBusy, setDeleteBusy] = useState(false);
 
-  const LEAD_STATUSES: Array<{ v: string; label: string }> = [
-    { v: "NEW",          label: "New" },
-    { v: "CONTACTED",    label: "Contacted" },
-    { v: "QUALIFIED",    label: "Qualified" },
-    { v: "SITE_VISIT",   label: "Site Visit" },
-    { v: "NEGOTIATION",  label: "Negotiation" },
-    { v: "EOI",          label: "EOI" },
-    { v: "BOOKING_DONE", label: "Booked" },
-    { v: "WON",          label: "Won" },
-    { v: "LOST",         label: "Lost" },
+  // Excel/MIS status values — what agents actually use
+  const EXCEL_LEAD_STATUSES = [
+    "Not Contacted", "Fresh Lead", "Follow Up", "Long Term Followup",
+    "Details Shared", "Mail Sent", "Meeting", "Want Office Visit",
+    "Zoom Meeting", "Site Visit Schedule", "Commercial Investment",
+    "Visit Dubai", "Expo Only", "Funds Issue", "War Fear",
+    "Booked with Us", "Already Bought", "Sell Out", "Rent Out",
+    "Leasing", "Other Location", "Gurgaon", "Other Requirement",
+    "Junk", "Low Budget", "Not Interested", "Broker", "Invalid Number",
+    "Drop The Plan", "By Mistake Inquiry", "Just Searching",
+    "Never Respond Phone Calls", "Not Able To Buy", "Pass Away",
+    "Number Changed", "Repeated", "Visited With Other Broker",
   ];
 
-  async function quickSetStatus(leadId: string, status: string) {
+  async function quickSetStatus(leadId: string, currentStatus: string) {
     await fetch(`/api/leads/${leadId}/update`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status }),
+      body: JSON.stringify({ currentStatus }),
     });
     setStatusOpenFor(null);
     router.refresh();
@@ -339,20 +344,21 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
                         <select
                           autoFocus
                           className="text-[10px] border rounded px-1 py-0.5 bg-white dark:bg-slate-700 dark:text-slate-100"
-                          defaultValue={l.statusName}
+                          defaultValue={l.currentStatus ?? ""}
                           onChange={(e) => { e.stopPropagation(); quickSetStatus(l.id, e.target.value); }}
                           onBlur={() => setStatusOpenFor(null)}
                           onClick={(e) => e.stopPropagation()}
                         >
-                          {LEAD_STATUSES.map(s => <option key={s.v} value={s.v}>{s.label}</option>)}
+                          <option value="">— set status —</option>
+                          {EXCEL_LEAD_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
                         </select>
                       ) : (
                         <button
                           type="button"
                           onClick={(e) => { e.stopPropagation(); e.preventDefault(); setStatusOpenFor(l.id); }}
-                          className={`chip ${l.statusChip} text-[9px] inline-flex items-center gap-0.5`}
+                          className={`chip ${excelStatusChip(l.currentStatus)} text-[9px] inline-flex items-center gap-0.5`}
                         >
-                          {l.statusName.replaceAll("_", " ")}<span aria-hidden>▾</span>
+                          {l.currentStatus ?? l.statusName.replaceAll("_", " ")}<span aria-hidden>▾</span>
                         </button>
                       )}
                     </div>
@@ -534,25 +540,26 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
                     </div>
                   </td>
 
-                  {/* ── Status chip ── */}
+                  {/* ── Status chip (Excel/MIS) ── */}
                   <td className="px-3 py-3 align-top" onClick={(e) => e.stopPropagation()}>
                     {statusOpenFor === l.id ? (
                       <select
                         autoFocus
                         className="text-[10px] border rounded px-1 py-0.5 bg-white dark:bg-slate-700 dark:text-slate-100 w-full"
-                        defaultValue={l.statusName}
+                        defaultValue={l.currentStatus ?? ""}
                         onChange={(e) => quickSetStatus(l.id, e.target.value)}
                         onBlur={() => setStatusOpenFor(null)}
                       >
-                        {LEAD_STATUSES.map(s => <option key={s.v} value={s.v}>{s.label}</option>)}
+                        <option value="">— set status —</option>
+                        {EXCEL_LEAD_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
                       </select>
                     ) : (
                       <button
                         type="button"
                         onClick={() => setStatusOpenFor(l.id)}
-                        className={`chip ${l.statusChip} text-[10px] inline-flex items-center gap-0.5 whitespace-nowrap`}
+                        className={`chip ${excelStatusChip(l.currentStatus)} text-[10px] inline-flex items-center gap-0.5 whitespace-nowrap`}
                       >
-                        {l.statusName.replaceAll("_", " ")}<span aria-hidden>▾</span>
+                        {l.currentStatus ?? l.statusName.replaceAll("_", " ")}<span aria-hidden>▾</span>
                       </button>
                     )}
                   </td>

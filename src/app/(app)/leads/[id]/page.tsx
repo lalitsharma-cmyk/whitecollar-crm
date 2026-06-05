@@ -35,6 +35,7 @@ import BestCallTimeChip from "@/components/BestCallTimeChip";
 import CallStatsBar from "@/components/CallStatsBar";
 import LeadJourneyBar from "@/components/LeadJourneyBar";
 import { formatBudget } from "@/lib/budgetParse";
+import { EXCEL_STATUSES, excelStatusChip } from "@/lib/lead-statuses";
 import LinkedContactsCard from "@/components/LinkedContactsCard";
 import InvestorBanner from "@/components/InvestorBanner";
 import StageDurationBadge from "@/components/StageDurationBadge";
@@ -575,11 +576,20 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
                 ) : (
                   <h2 className="text-xl font-bold">{lead.name}{lead.altName && <span className="text-base font-medium text-gray-600"> & {lead.altName}</span>}</h2>
                 )}
-                <span className="chip chip-warm">{lead.status.replaceAll("_"," ")}</span>
+                {/* Status — primary user-facing field (Excel/MIS values). Click to change. */}
+                <span className={`chip ${excelStatusChip(lead.currentStatus)} font-semibold`}>
+                  <InlineEdit
+                    leadId={lead.id}
+                    field="currentStatus"
+                    type="select"
+                    value={lead.currentStatus ?? ""}
+                    options={EXCEL_STATUSES.map(s => ({ value: s, label: s }))}
+                    placeholder="Set status"
+                  />
+                </span>
                 <StageDurationBadge since={lead.updatedAt} />
-                {lead.currentStatus && <span className="chip src">{lead.currentStatus}</span>}
                 {lead.originalSheetStatus && lead.originalSheetStatus !== lead.currentStatus && (
-                  <span className="chip text-[10px] bg-gray-100 text-gray-500 border border-gray-300" title="Original sheet status">📋 {lead.originalSheetStatus}</span>
+                  <span className="chip text-[10px] bg-gray-100 text-gray-500 border border-gray-300" title="Original imported status">📋 {lead.originalSheetStatus}</span>
                 )}
                 {lead.categorization && (
                   <span className={`chip text-[10px] ${
