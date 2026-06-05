@@ -95,7 +95,7 @@ interface Row {
   remarks: string | null;
 }
 
-export default function LeadsListClient({ leads, canBulk, canReassign = false, canSetStatus = false, agents, showSource = true, view = "cards" }: { leads: Row[]; canBulk: boolean; canReassign?: boolean; canSetStatus?: boolean; agents: { id: string; name: string; team: string | null }[]; showSource?: boolean; view?: "cards" | "table"; }) {
+export default function LeadsListClient({ leads, canBulk, canReassign = false, canSetStatus = false, agents, showSource = true, view = "cards", searchParamsStr = "" }: { leads: Row[]; canBulk: boolean; canReassign?: boolean; canSetStatus?: boolean; agents: { id: string; name: string; team: string | null }[]; showSource?: boolean; view?: "cards" | "table"; searchParamsStr?: string; }) {
   // showSource = false → hide the source column + chip from agents.
   // Lalit's policy: agents shouldn't see where each lead came from (avoids them
   // cherry-picking high-converting sources or gaming the round-robin pool).
@@ -323,95 +323,150 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
 
   return (
     <>
-      {/* ── TABLE VIEW (⊞ Table mode — full-width Excel-style master sheet) ── */}
+      {/* ── TABLE VIEW — desktop only; mobile falls through to cards below ─── */}
       {view === "table" && (
-        <div className="card overflow-x-auto">
-          <table className="w-full text-xs border-collapse min-w-[900px]">
-            <thead>
-              <tr className="border-b border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-800/60 text-left">
-                <th className="px-2 py-2 font-semibold text-gray-600 dark:text-slate-300 whitespace-nowrap">Name</th>
-                <th className="px-2 py-2 font-semibold text-gray-600 dark:text-slate-300 whitespace-nowrap">Phone</th>
-                <th className="px-2 py-2 font-semibold text-gray-600 dark:text-slate-300 whitespace-nowrap">Project</th>
-                <th className="px-2 py-2 font-semibold text-gray-600 dark:text-slate-300 whitespace-nowrap">Budget</th>
-                <th className="px-2 py-2 font-semibold text-gray-600 dark:text-slate-300 whitespace-nowrap">Status</th>
-                {showSource && <th className="px-2 py-2 font-semibold text-gray-600 dark:text-slate-300 whitespace-nowrap">Source</th>}
-                <th className="px-2 py-2 font-semibold text-gray-600 dark:text-slate-300 whitespace-nowrap">Assigned To</th>
-                <th className="px-2 py-2 font-semibold text-gray-600 dark:text-slate-300 whitespace-nowrap">Follow-Up</th>
-                <th className="px-2 py-2 font-semibold text-gray-600 dark:text-slate-300 whitespace-nowrap">Timeline</th>
-                <th className="px-2 py-2 font-semibold text-gray-600 dark:text-slate-300 whitespace-nowrap max-w-xs">Remarks</th>
-              </tr>
-            </thead>
-            <tbody>
-              {leads.length === 0 && (
-                <tr><td colSpan={10} className="px-4 py-8 text-center text-gray-400 text-sm">No leads match these filters.</td></tr>
-              )}
-              {leads.map((l, i) => {
-                const WHEN: Record<string, string> = {
-                  IMMEDIATE: "⚡ Immediate", THIRTY_DAYS: "📅 1 Month",
-                  THREE_MONTHS: "✈ Visit Dubai", SIX_PLUS_MONTHS: "⏳ 6+ Months",
-                  WINDOW_SHOPPING: "📆 Window Shopping",
-                };
-                return (
-                  <tr key={l.id}
-                    onClick={() => router.push(`/leads/${l.id}`)}
-                    className={`border-b border-gray-100 dark:border-slate-700 cursor-pointer hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors ${i % 2 === 0 ? "bg-white dark:bg-slate-800" : "bg-gray-50/50 dark:bg-slate-800/50"}`}>
-                    <td className="px-2 py-1.5 font-medium text-gray-900 dark:text-slate-100 whitespace-nowrap">
-                      <Link href={`/leads/${l.id}`} onClick={e => e.stopPropagation()} className="hover:underline">{l.name}</Link>
-                    </td>
-                    <td className="px-2 py-1.5 text-gray-500 dark:text-slate-400 font-mono whitespace-nowrap">
-                      {l.phone ? `···${l.phone.slice(-4)}` : "—"}
-                    </td>
-                    <td className="px-2 py-1.5 text-gray-700 dark:text-slate-300 whitespace-nowrap max-w-[140px] truncate">
-                      {l.discussedProjects[0] ?? l.interest ?? "—"}
-                    </td>
-                    <td className="px-2 py-1.5 text-gray-700 dark:text-slate-300 whitespace-nowrap">
-                      {l.budgetFormatted ?? "—"}
-                    </td>
-                    <td className="px-2 py-1.5">
-                      {statusOpenFor === l.id ? (
-                        <select autoFocus className="text-[10px] border rounded px-1 py-0.5 bg-white dark:bg-slate-700"
-                          defaultValue={l.currentStatus ?? ""}
-                          onChange={e => quickSetStatus(l.id, e.target.value)}
-                          onBlur={() => setStatusOpenFor(null)}
-                        >
-                          <option value="">— set —</option>
-                          {EXCEL_LEAD_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
-                        </select>
-                      ) : (
-                        <button type="button" onClick={e => { e.stopPropagation(); setStatusOpenFor(l.id); }}
-                          className={`chip ${excelStatusChip(l.currentStatus)} text-[9px] inline-flex items-center gap-0.5 whitespace-nowrap`}>
-                          {l.currentStatus ?? l.statusName.replaceAll("_"," ")}<span>▾</span>
-                        </button>
-                      )}
-                    </td>
-                    {showSource && (
-                      <td className="px-2 py-1.5 text-gray-500 dark:text-slate-400 whitespace-nowrap">
-                        {l.srcLabel}
-                      </td>
+        <>
+          {/* Desktop table */}
+          <div className="hidden sm:block card overflow-x-auto w-full">
+            {(() => {
+              // Build sort URL helper — no useSearchParams needed, params come via prop
+              function sortHref(key: string): string {
+                const params = new URLSearchParams(searchParamsStr);
+                const cur = params.get("sort");
+                const next = cur === `${key}_asc` ? `${key}_desc` : `${key}_asc`;
+                params.set("sort", next);
+                params.delete("page");
+                return `/leads?${params.toString()}`;
+              }
+              function SortIcon({ k }: { k: string }) {
+                const cur = new URLSearchParams(searchParamsStr).get("sort");
+                if (cur === `${k}_asc`) return <span className="text-blue-500 ml-0.5">▲</span>;
+                if (cur === `${k}_desc`) return <span className="text-blue-500 ml-0.5">▼</span>;
+                return <span className="opacity-25 ml-0.5 text-[9px]">⇅</span>;
+              }
+              const WHEN: Record<string, string> = {
+                IMMEDIATE: "⚡ Immediate", THIRTY_DAYS: "📅 1 Month",
+                THREE_MONTHS: "✈ Visit Dubai", SIX_PLUS_MONTHS: "⏳ 6+ Months",
+                WINDOW_SHOPPING: "📆 Window Shopping",
+              };
+              const thCls = "px-3 py-2.5 font-semibold text-gray-600 dark:text-slate-300 whitespace-nowrap text-left bg-gray-50 dark:bg-slate-800/60";
+              const sortThCls = `${thCls} cursor-pointer hover:bg-gray-100 dark:hover:bg-slate-700/60 select-none`;
+              return (
+                <table className="w-full text-xs border-collapse">
+                  <thead>
+                    <tr className="border-b border-gray-200 dark:border-slate-700">
+                      <th className={thCls} style={{ width: 32 }}>
+                        {canBulk && <input type="checkbox" checked={allChecked} onChange={toggleAll} />}
+                      </th>
+                      <th className={sortThCls} onClick={() => router.push(sortHref("name"))}>
+                        Name <SortIcon k="name" />
+                      </th>
+                      <th className={`${thCls} w-24`}>Phone</th>
+                      <th className={thCls}>Project</th>
+                      <th className={sortThCls} onClick={() => router.push(sortHref("budget"))}>
+                        Budget <SortIcon k="budget" />
+                      </th>
+                      <th className={sortThCls} onClick={() => router.push(sortHref("status"))}>
+                        Status <SortIcon k="status" />
+                      </th>
+                      <th className={sortThCls} onClick={() => router.push(sortHref("owner"))}>
+                        Assigned <SortIcon k="owner" />
+                      </th>
+                      {showSource && <th className={`${thCls}`}>Source</th>}
+                      <th className={sortThCls} onClick={() => router.push(sortHref("followup"))}>
+                        Follow-Up <SortIcon k="followup" />
+                      </th>
+                      <th className={thCls}>Timeline</th>
+                      <th className={`${thCls} max-w-xs`}>Remarks</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {leads.length === 0 && (
+                      <tr><td colSpan={11} className="px-4 py-10 text-center text-gray-400 text-sm">No leads match these filters.</td></tr>
                     )}
-                    <td className="px-2 py-1.5 text-gray-600 dark:text-slate-300 whitespace-nowrap">
-                      {l.owner?.name ?? <span className="text-amber-600">Unassigned</span>}
-                    </td>
-                    <td className="px-2 py-1.5 whitespace-nowrap">
-                      {l.followupDate
-                        ? <span className="text-emerald-700 dark:text-emerald-400 font-medium">{l.followupDate}</span>
-                        : <span className="text-gray-400">—</span>}
-                    </td>
-                    <td className="px-2 py-1.5 text-gray-600 dark:text-slate-300 whitespace-nowrap">
-                      {l.whenCanInvest ? (WHEN[l.whenCanInvest] ?? l.whenCanInvest) : "—"}
-                    </td>
-                    <td className="px-2 py-1.5 text-gray-500 dark:text-slate-400 max-w-xs truncate" title={l.remarks ?? ""}>
-                      {l.remarks ?? "—"}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+                    {leads.map((l, i) => (
+                      <tr key={l.id}
+                        onClick={() => router.push(`/leads/${l.id}`)}
+                        className={`border-b border-gray-100 dark:border-slate-700/60 cursor-pointer hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors group ${i % 2 === 1 ? "bg-gray-50/40 dark:bg-slate-800/30" : "bg-white dark:bg-slate-800"}`}>
+                        <td className="px-3 py-2" onClick={e => e.stopPropagation()}>
+                          {canBulk && <input type="checkbox" checked={selected.has(l.id)} onChange={() => toggle(l.id)} />}
+                        </td>
+                        <td className="px-3 py-2 font-medium text-gray-900 dark:text-slate-100 whitespace-nowrap">
+                          <Link href={`/leads/${l.id}`} onClick={e => e.stopPropagation()} className="hover:underline group-hover:text-[#0b1a33] dark:group-hover:text-blue-300">{l.name}</Link>
+                        </td>
+                        <td className="px-3 py-2 text-gray-500 dark:text-slate-400 font-mono tabular-nums whitespace-nowrap">
+                          {l.phone ? `···${l.phone.slice(-4)}` : <span className="text-gray-300">—</span>}
+                        </td>
+                        <td className="px-3 py-2 text-gray-700 dark:text-slate-300 max-w-[160px] truncate">
+                          {l.discussedProjects[0] ?? l.interest ?? <span className="text-gray-300">—</span>}
+                        </td>
+                        <td className="px-3 py-2 text-gray-700 dark:text-slate-300 whitespace-nowrap tabular-nums">
+                          {l.budgetFormatted ?? <span className="text-gray-300">—</span>}
+                        </td>
+                        <td className="px-3 py-2" onClick={e => e.stopPropagation()}>
+                          {statusOpenFor === l.id ? (
+                            <select autoFocus className="text-[10px] border rounded px-1 py-0.5 bg-white dark:bg-slate-700 dark:text-slate-100"
+                              defaultValue={l.currentStatus ?? ""}
+                              onChange={e => quickSetStatus(l.id, e.target.value)}
+                              onBlur={() => setStatusOpenFor(null)}
+                            >
+                              <option value="">— set —</option>
+                              {EXCEL_LEAD_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+                            </select>
+                          ) : (
+                            <button type="button" onClick={() => setStatusOpenFor(l.id)}
+                              className={`chip ${excelStatusChip(l.currentStatus)} text-[9px] inline-flex items-center gap-0.5 whitespace-nowrap`}>
+                              {l.currentStatus ?? l.statusName.replaceAll("_"," ")}<span>▾</span>
+                            </button>
+                          )}
+                        </td>
+                        <td className="px-3 py-2 text-gray-600 dark:text-slate-300 whitespace-nowrap">
+                          {l.owner?.name ?? <span className="text-amber-600 text-[10px]">Unassigned</span>}
+                        </td>
+                        {showSource && (
+                          <td className="px-3 py-2 text-gray-500 dark:text-slate-400 whitespace-nowrap text-[10px]">
+                            {l.srcLabel}
+                          </td>
+                        )}
+                        <td className="px-3 py-2 whitespace-nowrap">
+                          {l.followupDate
+                            ? <span className="text-emerald-700 dark:text-emerald-400 font-medium">{l.followupDate}</span>
+                            : <span className="text-gray-300">—</span>}
+                        </td>
+                        <td className="px-3 py-2 text-gray-600 dark:text-slate-300 whitespace-nowrap text-[10px]">
+                          {l.whenCanInvest ? (WHEN[l.whenCanInvest] ?? l.whenCanInvest) : <span className="text-gray-300">—</span>}
+                        </td>
+                        <td className="px-3 py-2 text-gray-500 dark:text-slate-400 max-w-[200px] truncate text-[10px]" title={l.remarks ?? ""}>
+                          {l.remarks ?? <span className="text-gray-300">—</span>}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              );
+            })()}
+          </div>
+          {/* Mobile fallback — always show cards on small screens even in table mode */}
+          <div className="sm:hidden space-y-2">
+            {leads.length === 0 && <div className="card p-6 text-center text-gray-500 text-sm">No leads match these filters.</div>}
+            {leads.map(l => (
+              <div key={l.id} className="card p-3" onClick={() => router.push(`/leads/${l.id}`)}>
+                <div className="flex items-start justify-between gap-2">
+                  <div className="font-semibold text-sm text-gray-900 dark:text-slate-100 truncate">{l.name}</div>
+                  <button type="button" onClick={e => { e.stopPropagation(); setStatusOpenFor(l.id); }}
+                    className={`chip ${excelStatusChip(l.currentStatus)} text-[9px] flex-none`}>
+                    {l.currentStatus ?? l.statusName.replaceAll("_"," ")}
+                  </button>
+                </div>
+                <div className="text-xs text-gray-500 mt-0.5">{l.phone ?? "No phone"} · {l.budgetFormatted ?? "—"}</div>
+                {l.followupDate && <div className="text-[10px] text-emerald-700 mt-0.5">Follow-up: {l.followupDate}</div>}
+              </div>
+            ))}
+          </div>
+        </>
       )}
 
-      {/* MOBILE: Command Center card list (hidden in table mode) */}
+      {/* CARD VIEW — mobile+desktop cards when view=cards */}
       <div className={`${view === "table" ? "hidden" : ""} lg:hidden space-y-2`}>
         {leads.length === 0 && <div className="card p-6 text-center text-gray-500 dark:text-slate-400 text-sm">No leads match these filters.</div>}
         {leads.map((l) => {

@@ -8,7 +8,7 @@ export const EXCEL_STATUSES = [
   "Not Contacted",
   "Fresh Lead",
   "Follow Up",
-  "Long Term Followup",
+  "Long Term Follow Up",
   "Details Shared",
   "Mail Sent",
   // Meeting / Visit

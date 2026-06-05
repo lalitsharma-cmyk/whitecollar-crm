@@ -35,8 +35,8 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
   runReconciler().catch(() => {});
   const sp = await searchParams;
 
-  // View mode — "table" or "cards" (default)
-  const viewMode = (sp.view === "table" ? "table" : "cards") as "cards" | "table";
+  // View mode — Table is the default (matches Excel workflow); "cards" opt-in.
+  const viewMode = (sp.view === "cards" ? "cards" : "table") as "cards" | "table";
 
   // Build where clause from filters
   // 1. Agents only see leads they own — leadScopeWhere applies the ownerId filter.
@@ -303,11 +303,20 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
 
   // Sort
   let orderBy: Prisma.LeadOrderByWithRelationInput = { createdAt: "desc" };
-  if (sp.sort === "created_asc") orderBy = { createdAt: "asc" };
-  else if (sp.sort === "score_desc") orderBy = { aiScoreValue: "desc" };
-  else if (sp.sort === "touched_asc") orderBy = { lastTouchedAt: "asc" };
+  if      (sp.sort === "created_asc")  orderBy = { createdAt: "asc" };
+  else if (sp.sort === "score_desc")   orderBy = { aiScoreValue: "desc" };
+  else if (sp.sort === "touched_asc")  orderBy = { lastTouchedAt: "asc" };
   else if (sp.sort === "touched_desc") orderBy = { lastTouchedAt: "desc" };
-  else if (sp.sort === "name_asc") orderBy = { name: "asc" };
+  else if (sp.sort === "name_asc")     orderBy = { name: "asc" };
+  else if (sp.sort === "name_desc")    orderBy = { name: "desc" };
+  else if (sp.sort === "budget_asc")   orderBy = { budgetMin: "asc" };
+  else if (sp.sort === "budget_desc")  orderBy = { budgetMin: "desc" };
+  else if (sp.sort === "status_asc")   orderBy = { currentStatus: "asc" };
+  else if (sp.sort === "status_desc")  orderBy = { currentStatus: "desc" };
+  else if (sp.sort === "followup_asc") orderBy = { followupDate: "asc" };
+  else if (sp.sort === "followup_desc")orderBy = { followupDate: "desc" };
+  else if (sp.sort === "owner_asc")    orderBy = { owner: { name: "asc" } };
+  else if (sp.sort === "owner_desc")   orderBy = { owner: { name: "desc" } };
   // When no explicit sort param is present we'll apply smart priority ordering
   // (NEW → today's follow-up → overdue → others). The flag drives the pre-query below.
   const useSmartSort = !sp.sort;
@@ -456,7 +465,9 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
         <div>
           <h1 className="text-xl sm:text-2xl font-bold">Leads</h1>
           <p className="text-xs sm:text-sm text-gray-500 dark:text-slate-400">
-            {totalAll} total &middot; {newToday} new today &middot; {hot} hot
+            {total < totalAll
+              ? <><span className="font-semibold text-[#0b1a33] dark:text-blue-300">{total} filtered</span> · {totalAll} total</>
+              : <><span className="font-semibold">{totalAll}</span> total · {newToday} new today · {hot} hot</>}
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -594,11 +605,12 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
         <span className="text-xs text-gray-400 dark:text-slate-500">
           {total === 1 ? "1 lead" : `${total} leads`}
         </span>
-        {/* Card / Table toggle */}
+        {/* Table (default) / Card view toggle — table needs no ?view= param */}
         <div className="flex items-center gap-0.5 bg-gray-100 dark:bg-slate-700 rounded-lg p-0.5">
-          {([["cards","☰ Cards"],["table","⊞ Table"]] as [string,string][]).map(([v,l]) => {
-            const params = new URLSearchParams(sp.toString());
-            v === "cards" ? params.delete("view") : params.set("view", v);
+          {([["table","⊞ Table"],["cards","☰ Cards"]] as [string,string][]).map(([v,l]) => {
+            const params = new URLSearchParams(Object.entries(sp).filter(([,val]) => val != null && val !== "").map(([k,val]) => [k, String(val!)]));
+            // Table is default — no param; Cards = ?view=cards
+            if (v === "table") params.delete("view"); else params.set("view", v);
             return (
               <Link key={v} href={`/leads?${params.toString()}`}
                 className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${viewMode === v ? "bg-white dark:bg-slate-600 text-gray-900 dark:text-slate-100 shadow-sm" : "text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-200"}`}>
@@ -615,6 +627,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
         canSetStatus={me.role === "ADMIN" || me.role === "MANAGER"}
         showSource={me.role !== "AGENT"}
         view={viewMode}
+        searchParamsStr={new URLSearchParams(Object.entries(sp).filter(([,v]) => v != null && v !== "").map(([k,v]) => [k, String(v!)])).toString()}
         agents={agents.map((a) => ({ id: a.id, name: a.name, team: a.team }))}
         leads={leads.map((l) => {
           const intel = intelByLeadId.get(l.id) ?? null;
