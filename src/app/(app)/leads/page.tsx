@@ -90,34 +90,52 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
   // Agents never see source — they can't filter by it either, even by hand-crafting
   // the ?source= URL. Without this guard an agent could probe the source distribution
   // by setting the param and watching the result count, defeating the privacy policy.
-  if (sp.source && me.role !== "AGENT") where.source = sp.source as LeadSource;
+  // source filter is now multi-select — handled below after Excel-field filters
   if (sp.status) where.status = sp.status as LeadStatus;
-  // Excel-style status filter — filters the user-facing currentStatus field
-  if (sp.cstatus) where.currentStatus = { equals: sp.cstatus, mode: "insensitive" };
+  // ── Excel/MIS status filter (multi-select, comma-separated) ─────────────────
+  if (sp.cstatus) {
+    const vals = sp.cstatus.split(",").map(s => s.trim()).filter(Boolean);
+    if (vals.length === 1) where.currentStatus = { equals: vals[0], mode: "insensitive" };
+    else if (vals.length > 1) where.currentStatus = { in: vals };
+  }
   if (sp.ai) where.aiScore = sp.ai as AIScore;
   if (sp.team) where.forwardedTeam = sp.team;
-  // Excel-field filters
+  // Single-value Excel-field filters
   if (sp.potential) where.potential = sp.potential as "HIGH" | "MEDIUM" | "LOW" | "UNKNOWN";
   if (sp.fundReady) where.fundReadiness = sp.fundReady as FundReadiness;
   if (sp.clientType) where.clientType = sp.clientType as "INVESTOR" | "END_USER" | "BOTH" | "UNCLEAR";
   if (sp.whenInvest) where.whenCanInvest = sp.whenInvest as InvestTimeline;
-  // Project filter — matches leads that discussed this project OR have interested units in it
+  if (sp.city) where.city = { contains: sp.city, mode: "insensitive" };
+  if (sp.category) where.categorization = { contains: sp.category, mode: "insensitive" };
+  // Source filter — multi-select, comma-separated
+  if (sp.source && me.role !== "AGENT") {
+    const srcs = sp.source.split(",").map(s => s.trim()).filter(Boolean);
+    if (srcs.length === 1) where.source = srcs[0] as LeadSource;
+    else if (srcs.length > 1) where.source = { in: srcs as LeadSource[] };
+  }
+  // Project filter — multi-select: match any of the selected projects (OR within project, AND with rest)
   if (sp.project) {
-    const projectWhere: Prisma.LeadWhereInput = {
-      OR: [
-        { discussed: { some: { project: { name: { equals: sp.project, mode: "insensitive" } } } } },
-        { interestedUnits: { some: { unit: { project: { name: { equals: sp.project, mode: "insensitive" } } } } } },
-      ],
-    };
-    where.AND = where.AND
-      ? [...(Array.isArray(where.AND) ? where.AND : [where.AND]), projectWhere]
-      : [projectWhere];
+    const projectNames = sp.project.split(",").map(s => s.trim()).filter(Boolean);
+    if (projectNames.length > 0) {
+      const projectWhere: Prisma.LeadWhereInput = {
+        OR: projectNames.flatMap(name => ([
+          { discussed: { some: { project: { name: { equals: name } } } } },
+          { interestedUnits: { some: { unit: { project: { name: { equals: name } } } } } },
+        ])),
+      };
+      where.AND = where.AND
+        ? [...(Array.isArray(where.AND) ? where.AND : [where.AND]), projectWhere]
+        : [projectWhere];
+    }
   }
   // Budget minimum preset filter
   if (sp.budgetPreset) {
     const preset = BUDGET_PRESETS.find(b => b.key === sp.budgetPreset);
     if (preset) where.budgetMin = { gte: preset.value };
   }
+  // Meeting / Site Visit filters
+  if (sp.hasMeeting === "1") where.meetingDate = { not: null };
+  if (sp.hasSiteVisit === "1") where.siteVisitDate = { not: null };
   // Agents are scoped to their own leads (leadScopeWhere above). Only ADMIN/MANAGER
   // may filter by owner — without this guard an agent could read a peer's leads by
   // hand-crafting ?owner=<id>, overriding their ownership scope.
@@ -190,7 +208,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
   // search and show all matching, not just today's.
   // nofollowup filter already sets followupDate: null, so the followup chip
   // default (today) must not compose with it — include it as an "other filter".
-  const hasOtherFilter = !!(sp.q || sp.source || sp.status || sp.cstatus || sp.owner || sp.team || sp.score || sp.notPicked || sp.eoi || sp.potential || sp.fundReady || sp.clientType || sp.whenInvest || sp.project || sp.budgetPreset || filterTab === "nofollowup");
+  const hasOtherFilter = !!(sp.q || sp.source || sp.status || sp.cstatus || sp.owner || sp.team || sp.score || sp.notPicked || sp.eoi || sp.potential || sp.fundReady || sp.clientType || sp.whenInvest || sp.project || sp.budgetPreset || sp.city || sp.category || sp.hasMeeting || sp.hasSiteVisit || filterTab === "nofollowup");
   // Default view = ALL leads. No hidden filter is applied on a clean page load.
   // (Previously defaulted to "today" which caused "44 total, 8 matching" confusion.)
   const effectiveFollowup = sp.followup ?? "all";
@@ -532,7 +550,8 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
           sp.ai || sp.when || sp.notPicked || sp.eoi || sp.smart ||
           sp.tag || sp.filter || (sp.followup && sp.followup !== "all") ||
           sp.potential || sp.fundReady || sp.clientType || sp.whenInvest ||
-          sp.project || sp.budgetPreset
+          sp.project || sp.budgetPreset || sp.city || sp.category ||
+          sp.hasMeeting || sp.hasSiteVisit
         );
         if (!hasActiveFilters) return null;
         return (

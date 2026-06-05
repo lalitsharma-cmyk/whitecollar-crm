@@ -1,8 +1,9 @@
 "use client";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { EXCEL_STATUSES, BUDGET_PRESETS } from "@/lib/lead-statuses";
 
+// ─── Label maps ────────────────────────────────────────────────────────────────
 const SRC_LABELS: Record<string, string> = {
   WEBSITE: "Website", WHATSAPP: "WhatsApp", CSV_IMPORT: "CSV Import",
   EVENT: "Event", REFERRAL: "Referral", INBOUND_CALL: "Inbound Call",
@@ -16,8 +17,7 @@ const FOLLOWUP_LABELS: Record<string, string> = {
   overdue: "Follow-up: Overdue",
 };
 const POTENTIAL_LABELS: Record<string, string> = {
-  HIGH: "High Potential", MEDIUM: "Medium Potential",
-  LOW: "Low Potential", UNKNOWN: "Unknown Potential",
+  HIGH: "🔥 High", MEDIUM: "🌤 Medium", LOW: "❄ Low", UNKNOWN: "— Unknown",
 };
 const FUND_LABELS: Record<string, string> = {
   IMMEDIATE_BUYER: "Immediate Buyer", SHORT_TERM_BUYER: "Short-Term Buyer",
@@ -28,31 +28,119 @@ const CLIENT_LABELS: Record<string, string> = {
   INVESTOR: "Investor", END_USER: "End User", BOTH: "Investor + End User", UNCLEAR: "Unclear",
 };
 const WHEN_LABELS: Record<string, string> = {
-  IMMEDIATE: "Immediate", THIRTY_DAYS: "Within 1 Month",
-  THREE_MONTHS: "Visit Dubai First", SIX_PLUS_MONTHS: "Not in 6 Months",
-  WINDOW_SHOPPING: "Window Shopping",
+  IMMEDIATE: "⚡ Immediate", THIRTY_DAYS: "📅 Within 1 Month",
+  THREE_MONTHS: "✈ Visit Dubai First", SIX_PLUS_MONTHS: "⏳ Not in 6 Months",
+  WINDOW_SHOPPING: "📆 Window Shopping",
 };
 
+// ─── Types ─────────────────────────────────────────────────────────────────────
 interface Props {
   agents: { id: string; name: string }[];
   sources: string[];
   statuses: string[];
-  /** Leadership-only flag — false for AGENT. Hides Source and Owner. */
   showSource?: boolean;
-  /** DISTINCT tags from the dataset for the tag-filter dropdown. */
   distinctTags?: string[];
-  /** All projects for the project filter dropdown */
   projects?: { id: string; name: string }[];
 }
 
+// ─── Helper: toggle a value in a Set, return new Set ──────────────────────────
+function toggleSet(s: Set<string>, v: string): Set<string> {
+  const next = new Set(s);
+  if (next.has(v)) next.delete(v); else next.add(v);
+  return next;
+}
+
+// ─── Multi-select cell component ──────────────────────────────────────────────
+function MultiCell({
+  label, options, selected, onChange, searchable = false,
+}: {
+  label: string;
+  options: Array<{ value: string; label: string }>;
+  selected: Set<string>;
+  onChange: (next: Set<string>) => void;
+  searchable?: boolean;
+}) {
+  const [q, setQ] = useState("");
+  const filtered = q ? options.filter(o => o.label.toLowerCase().includes(q.toLowerCase())) : options;
+  return (
+    <div className="flex flex-col min-h-0">
+      <div className="text-[11px] font-bold text-gray-600 dark:text-slate-300 uppercase tracking-wide mb-1.5">{label}</div>
+      {searchable && options.length > 8 && (
+        <input
+          type="search"
+          placeholder="Search…"
+          value={q}
+          onChange={e => setQ(e.target.value)}
+          className="mb-1 px-2 py-1 text-xs border border-gray-200 dark:border-slate-600 rounded dark:bg-slate-700 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-blue-400"
+        />
+      )}
+      <div className="overflow-y-auto space-y-0.5 pr-0.5" style={{ maxHeight: 148 }}>
+        {filtered.map(o => (
+          <label key={o.value} className="flex items-center gap-1.5 cursor-pointer group">
+            <input
+              type="checkbox"
+              className="h-3.5 w-3.5 rounded border-gray-300 dark:border-slate-500 text-[#0b1a33] focus:ring-[#0b1a33] cursor-pointer flex-none"
+              checked={selected.has(o.value)}
+              onChange={() => onChange(toggleSet(selected, o.value))}
+            />
+            <span className="text-xs text-gray-700 dark:text-slate-200 truncate group-hover:text-[#0b1a33] dark:group-hover:text-blue-300 leading-tight">{o.label}</span>
+          </label>
+        ))}
+        {filtered.length === 0 && <span className="text-xs text-gray-400">No match</span>}
+      </div>
+      {selected.size > 0 && (
+        <button
+          type="button"
+          onClick={() => onChange(new Set())}
+          className="mt-1 text-[10px] text-blue-600 dark:text-blue-400 hover:underline text-left"
+        >
+          Clear {selected.size} selected
+        </button>
+      )}
+    </div>
+  );
+}
+
+// ─── Radio cell component ──────────────────────────────────────────────────────
+function RadioCell({
+  label, options, value, onChange,
+}: {
+  label: string;
+  options: Array<{ value: string; label: string }>;
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  return (
+    <div className="flex flex-col min-h-0">
+      <div className="text-[11px] font-bold text-gray-600 dark:text-slate-300 uppercase tracking-wide mb-1.5">{label}</div>
+      <div className="overflow-y-auto space-y-0.5" style={{ maxHeight: 148 }}>
+        {options.map(o => (
+          <label key={o.value} className="flex items-center gap-1.5 cursor-pointer group">
+            <input
+              type="radio"
+              className="h-3.5 w-3.5 border-gray-300 dark:border-slate-500 text-[#0b1a33] focus:ring-[#0b1a33] cursor-pointer flex-none"
+              checked={value === o.value}
+              onChange={() => onChange(o.value)}
+              name={label}
+            />
+            <span className="text-xs text-gray-700 dark:text-slate-200 truncate group-hover:text-[#0b1a33] dark:group-hover:text-blue-300 leading-tight">{o.label}</span>
+          </label>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─── Main component ────────────────────────────────────────────────────────────
 export default function LeadFilters({
   agents, sources, statuses, showSource = true, distinctTags = [], projects = [],
 }: Props) {
   const router   = useRouter();
   const pathname = usePathname();
   const sp       = useSearchParams();
+  const panelRef = useRef<HTMLDivElement>(null);
 
-  // ── Search (debounced) ─────────────────────────────────────────────────────
+  // Search input (debounced directly into URL)
   const [q, setQ] = useState(sp.get("q") ?? "");
   useEffect(() => {
     const t = setTimeout(() => {
@@ -65,75 +153,88 @@ export default function LeadFilters({
     return () => clearTimeout(t);
   }, [q]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── More-Filters drawer ────────────────────────────────────────────────────
+  // Panel open state
   const [open, setOpen] = useState(false);
 
-  // Draft state — initialised from URL when drawer opens
-  const [draftSource,       setDraftSource]       = useState("");
-  const [draftStatus,       setDraftStatus]       = useState("");
-  const [draftCstatus,      setDraftCstatus]      = useState("");
-  const [draftAI,           setDraftAI]           = useState("");
-  const [draftTeam,         setDraftTeam]         = useState("");
-  const [draftOwner,        setDraftOwner]        = useState("");
-  const [draftSort,         setDraftSort]         = useState("");
-  const [draftTag,          setDraftTag]          = useState("");
-  const [draftNotPicked,    setDraftNotPicked]    = useState("");
-  const [draftFollowup,     setDraftFollowup]     = useState("");
-  const [draftDateFrom,     setDraftDateFrom]     = useState(sp.get("dateFrom") ?? "");
-  const [draftDateTo,       setDraftDateTo]       = useState(sp.get("dateTo") ?? "");
-  const [draftDateField,    setDraftDateField]    = useState(sp.get("dateField") ?? "followupDate");
-  const [draftPotential,    setDraftPotential]    = useState("");
-  const [draftFundReady,    setDraftFundReady]    = useState("");
-  const [draftClientType,   setDraftClientType]   = useState("");
-  const [draftWhenInvest,   setDraftWhenInvest]   = useState("");
-  const [draftProject,      setDraftProject]      = useState("");
-  const [draftBudgetPreset, setDraftBudgetPreset] = useState("");
+  // ── Multi-select draft state ─────────────────────────────────────────────────
+  const [projectSel,  setProjectSel]  = useState<Set<string>>(new Set());
+  const [cstatusSel,  setCstatusSel]  = useState<Set<string>>(new Set());
+  const [sourceSel,   setSourceSel]   = useState<Set<string>>(new Set());
 
-  function openDrawer() {
-    setDraftSource(sp.get("source") ?? "");
-    setDraftStatus(sp.get("status") ?? "");
-    setDraftCstatus(sp.get("cstatus") ?? "");
-    setDraftAI(sp.get("ai") ?? "");
+  // ── Single-select draft state ────────────────────────────────────────────────
+  const [draftTeam,        setDraftTeam]        = useState("");
+  const [draftOwner,       setDraftOwner]        = useState("");
+  const [draftBudgetPreset,setDraftBudgetPreset] = useState("");
+  const [draftPotential,   setDraftPotential]    = useState("");
+  const [draftFundReady,   setDraftFundReady]    = useState("");
+  const [draftClientType,  setDraftClientType]   = useState("");
+  const [draftWhenInvest,  setDraftWhenInvest]   = useState("");
+  const [draftFollowup,    setDraftFollowup]     = useState("");
+  const [draftNotPicked,   setDraftNotPicked]    = useState("");
+  const [draftSort,        setDraftSort]         = useState("");
+  const [draftTag,         setDraftTag]          = useState("");
+  const [draftDateFrom,    setDraftDateFrom]     = useState("");
+  const [draftDateTo,      setDraftDateTo]       = useState("");
+  const [draftDateField,   setDraftDateField]    = useState("followupDate");
+  const [draftCity,        setDraftCity]         = useState("");
+  const [draftCategory,    setDraftCategory]     = useState("");
+  const [draftHasMeeting,  setDraftHasMeeting]   = useState("");
+  const [draftHasSiteVisit,setDraftHasSiteVisit] = useState("");
+
+  function openPanel() {
+    // Init multi-select from URL
+    setProjectSel(new Set(sp.get("project")?.split(",").map(s=>s.trim()).filter(Boolean) ?? []));
+    setCstatusSel(new Set(sp.get("cstatus")?.split(",").map(s=>s.trim()).filter(Boolean) ?? []));
+    setSourceSel(new Set(sp.get("source")?.split(",").map(s=>s.trim()).filter(Boolean) ?? []));
+    // Init single-select
     setDraftTeam(sp.get("team") ?? "");
     setDraftOwner(sp.get("owner") ?? "");
-    setDraftSort(sp.get("sort") ?? "");
-    setDraftTag(sp.get("tag") ?? "");
-    setDraftNotPicked(sp.get("notPicked") ?? "");
-    setDraftFollowup(sp.get("followup") ?? "");
-    setDraftDateFrom(sp.get("dateFrom") ?? "");
-    setDraftDateTo(sp.get("dateTo") ?? "");
-    setDraftDateField(sp.get("dateField") ?? "followupDate");
+    setDraftBudgetPreset(sp.get("budgetPreset") ?? "");
     setDraftPotential(sp.get("potential") ?? "");
     setDraftFundReady(sp.get("fundReady") ?? "");
     setDraftClientType(sp.get("clientType") ?? "");
     setDraftWhenInvest(sp.get("whenInvest") ?? "");
-    setDraftProject(sp.get("project") ?? "");
-    setDraftBudgetPreset(sp.get("budgetPreset") ?? "");
+    setDraftFollowup(sp.get("followup") ?? "");
+    setDraftNotPicked(sp.get("notPicked") ?? "");
+    setDraftSort(sp.get("sort") ?? "");
+    setDraftTag(sp.get("tag") ?? "");
+    setDraftDateFrom(sp.get("dateFrom") ?? "");
+    setDraftDateTo(sp.get("dateTo") ?? "");
+    setDraftDateField(sp.get("dateField") ?? "followupDate");
+    setDraftCity(sp.get("city") ?? "");
+    setDraftCategory(sp.get("category") ?? "");
+    setDraftHasMeeting(sp.get("hasMeeting") ?? "");
+    setDraftHasSiteVisit(sp.get("hasSiteVisit") ?? "");
     setOpen(true);
   }
 
   function applyFilters() {
     const p = new URLSearchParams(sp);
     const set = (k: string, v: string) => v ? p.set(k, v) : p.delete(k);
-    set("source",      draftSource);
-    set("status",      draftStatus);
-    set("cstatus",     draftCstatus);
-    set("ai",          draftAI);
-    set("team",        draftTeam);
-    set("owner",       draftOwner);
-    set("sort",        draftSort);
-    set("tag",         draftTag);
-    set("notPicked",   draftNotPicked);
-    set("followup",    draftFollowup);
-    set("dateFrom",    draftDateFrom);
-    set("dateTo",      draftDateTo);
-    set("dateField",   draftDateField);
+    const setArr = (k: string, s: Set<string>) => { const v = [...s].join(","); v ? p.set(k, v) : p.delete(k); };
+    // Multi-select
+    setArr("project",       projectSel);
+    setArr("cstatus",       cstatusSel);
+    setArr("source",        sourceSel);
+    // Single-select
+    set("team",          draftTeam);
+    set("owner",         draftOwner);
+    set("budgetPreset",  draftBudgetPreset);
     set("potential",     draftPotential);
     set("fundReady",     draftFundReady);
     set("clientType",    draftClientType);
     set("whenInvest",    draftWhenInvest);
-    set("project",       draftProject);
-    set("budgetPreset",  draftBudgetPreset);
+    set("followup",      draftFollowup);
+    set("notPicked",     draftNotPicked);
+    set("sort",          draftSort);
+    set("tag",           draftTag);
+    set("dateFrom",      draftDateFrom);
+    set("dateTo",        draftDateTo);
+    set("dateField",     draftDateField);
+    set("city",          draftCity);
+    set("category",      draftCategory);
+    set("hasMeeting",    draftHasMeeting);
+    set("hasSiteVisit",  draftHasSiteVisit);
     p.delete("page");
     router.replace(`${pathname}?${p.toString()}`);
     setOpen(false);
@@ -141,401 +242,421 @@ export default function LeadFilters({
 
   function resetFilters() {
     const p = new URLSearchParams(sp);
-    ["source","status","cstatus","ai","team","owner","sort","tag","notPicked","followup","smart","filter","when","eoi","dateFrom","dateTo","dateField","potential","fundReady","clientType","whenInvest","project","budgetPreset"]
-      .forEach(k => p.delete(k));
+    [
+      "project","cstatus","source","team","owner","budgetPreset",
+      "potential","fundReady","clientType","whenInvest","followup",
+      "notPicked","sort","tag","dateFrom","dateTo","dateField",
+      "city","category","hasMeeting","hasSiteVisit",
+      "status","ai","smart","filter","when","eoi",
+    ].forEach(k => p.delete(k));
     p.delete("page");
     router.replace(`${pathname}?${p.toString()}`);
     setOpen(false);
   }
 
-  // Badge: count of active drawer-managed params
-  const advancedCount = [
-    sp.get("source"),      sp.get("status"),       sp.get("cstatus"),
-    sp.get("ai"),          sp.get("team"),          sp.get("owner"),
-    sp.get("sort"),        sp.get("tag"),           sp.get("notPicked"),
-    sp.get("smart"),       sp.get("filter"),
-    sp.get("dateFrom"),    sp.get("dateTo"),
-    sp.get("potential"),   sp.get("fundReady"),     sp.get("clientType"), sp.get("whenInvest"),
-    sp.get("project"),     sp.get("budgetPreset"),
-  ].filter(Boolean).length;
-
-  // ── Active filter chips (shown outside the drawer, always visible) ──────────
-  // Each entry = one removable chip. Clicking × deletes just that URL param.
-  function removeParam(key: string) {
-    const p = new URLSearchParams(sp.toString());
-    p.delete(key);
-    p.delete("page");
-    router.replace(`${pathname}?${p.toString()}`);
-  }
-  function removeParamMulti(...keys: string[]) {
+  // ── Active filter chips ──────────────────────────────────────────────────────
+  function removeParam(...keys: string[]) {
     const p = new URLSearchParams(sp.toString());
     keys.forEach(k => p.delete(k));
     p.delete("page");
     router.replace(`${pathname}?${p.toString()}`);
   }
-  type Chip = { label: string; remove: () => void };
-  const activeChips: Chip[] = [];
-  if (sp.get("q"))           activeChips.push({ label: `"${sp.get("q")}"`,                          remove: () => removeParam("q") });
-  if (sp.get("project"))     activeChips.push({ label: `🏢 ${sp.get("project")}`,                    remove: () => removeParam("project") });
-  if (sp.get("cstatus"))     activeChips.push({ label: sp.get("cstatus")!,                           remove: () => removeParam("cstatus") });
-  if (sp.get("budgetPreset"))activeChips.push({ label: BUDGET_PRESETS.find(b => b.key === sp.get("budgetPreset"))?.label ?? sp.get("budgetPreset")!, remove: () => removeParam("budgetPreset") });
-  if (sp.get("potential"))   activeChips.push({ label: POTENTIAL_LABELS[sp.get("potential")!] ?? sp.get("potential")!, remove: () => removeParam("potential") });
-  if (sp.get("fundReady"))   activeChips.push({ label: FUND_LABELS[sp.get("fundReady")!] ?? sp.get("fundReady")!,     remove: () => removeParam("fundReady") });
-  if (sp.get("clientType"))  activeChips.push({ label: CLIENT_LABELS[sp.get("clientType")!] ?? sp.get("clientType")!, remove: () => removeParam("clientType") });
-  if (sp.get("whenInvest"))  activeChips.push({ label: WHEN_LABELS[sp.get("whenInvest")!] ?? sp.get("whenInvest")!,   remove: () => removeParam("whenInvest") });
-  if (sp.get("ai"))          activeChips.push({ label: `AI: ${sp.get("ai")}`,                        remove: () => removeParam("ai") });
-  if (sp.get("followup") && sp.get("followup") !== "all")
-                             activeChips.push({ label: FOLLOWUP_LABELS[sp.get("followup")!] ?? sp.get("followup")!,   remove: () => removeParam("followup") });
-  if (sp.get("notPicked"))   activeChips.push({ label: `No answer ${sp.get("notPicked")}d+`,          remove: () => removeParam("notPicked") });
-  if (sp.get("team"))        activeChips.push({ label: `Team: ${sp.get("team")}`,                    remove: () => removeParam("team") });
-  if (sp.get("owner")) {
-    const agentName = agents.find(a => a.id === sp.get("owner"))?.name ?? (sp.get("owner") === "unassigned" ? "Unassigned" : sp.get("owner")!);
-    activeChips.push({ label: `👤 ${agentName}`, remove: () => removeParam("owner") });
-  }
-  if (showSource && sp.get("source"))
-                             activeChips.push({ label: SRC_LABELS[sp.get("source")!] ?? sp.get("source")!, remove: () => removeParam("source") });
-  if (sp.get("tag"))         activeChips.push({ label: `Tag: ${sp.get("tag")}`,                      remove: () => removeParam("tag") });
-  if (sp.get("dateFrom") || sp.get("dateTo")) {
-    const field = sp.get("dateField") ?? "followupDate";
-    const fLabel = field === "createdAt" ? "Created" : field === "lastTouchedAt" ? "Activity" : "Follow-up";
-    const range = `${sp.get("dateFrom") ?? "∞"} → ${sp.get("dateTo") ?? "∞"}`;
-    activeChips.push({ label: `${fLabel}: ${range}`, remove: () => removeParamMulti("dateFrom","dateTo","dateField") });
+  function removeFromMulti(param: string, val: string) {
+    const cur = sp.get(param)?.split(",").map(s=>s.trim()).filter(Boolean) ?? [];
+    const next = cur.filter(v => v !== val);
+    const p = new URLSearchParams(sp.toString());
+    if (next.length) p.set(param, next.join(",")); else p.delete(param);
+    p.delete("page");
+    router.replace(`${pathname}?${p.toString()}`);
   }
 
-  const selCls = "w-full border border-[#e5e7eb] dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 rounded-lg px-3 py-2 text-sm";
-  const lblCls = "text-xs font-semibold text-gray-500 dark:text-slate-400 block mb-1";
+  type Chip = { key: string; label: string; remove: () => void };
+  const activeChips: Chip[] = [];
+  // Multi-select chips — one chip per selected value
+  sp.get("project")?.split(",").filter(Boolean).forEach(v =>
+    activeChips.push({ key: `project:${v}`, label: `🏢 ${v}`, remove: () => removeFromMulti("project", v) })
+  );
+  sp.get("cstatus")?.split(",").filter(Boolean).forEach(v =>
+    activeChips.push({ key: `cstatus:${v}`, label: v, remove: () => removeFromMulti("cstatus", v) })
+  );
+  if (showSource) sp.get("source")?.split(",").filter(Boolean).forEach(v =>
+    activeChips.push({ key: `source:${v}`, label: SRC_LABELS[v] ?? v, remove: () => removeFromMulti("source", v) })
+  );
+  // Single-select chips
+  if (sp.get("q"))            activeChips.push({ key:"q",           label: `"${sp.get("q")}"`,                                            remove: () => removeParam("q") });
+  if (sp.get("budgetPreset")) activeChips.push({ key:"budget",      label: BUDGET_PRESETS.find(b=>b.key===sp.get("budgetPreset"))?.label ?? sp.get("budgetPreset")!, remove: () => removeParam("budgetPreset") });
+  if (sp.get("potential"))    activeChips.push({ key:"potential",   label: POTENTIAL_LABELS[sp.get("potential")!] ?? sp.get("potential")!, remove: () => removeParam("potential") });
+  if (sp.get("fundReady"))    activeChips.push({ key:"fundReady",   label: FUND_LABELS[sp.get("fundReady")!] ?? sp.get("fundReady")!,     remove: () => removeParam("fundReady") });
+  if (sp.get("clientType"))   activeChips.push({ key:"clientType",  label: CLIENT_LABELS[sp.get("clientType")!] ?? sp.get("clientType")!, remove: () => removeParam("clientType") });
+  if (sp.get("whenInvest"))   activeChips.push({ key:"whenInvest",  label: WHEN_LABELS[sp.get("whenInvest")!] ?? sp.get("whenInvest")!,   remove: () => removeParam("whenInvest") });
+  if (sp.get("followup") && sp.get("followup") !== "all")
+                              activeChips.push({ key:"followup",    label: FOLLOWUP_LABELS[sp.get("followup")!] ?? sp.get("followup")!,   remove: () => removeParam("followup") });
+  if (sp.get("notPicked"))    activeChips.push({ key:"notPicked",   label: `No answer ${sp.get("notPicked")}d+`,                          remove: () => removeParam("notPicked") });
+  if (sp.get("team"))         activeChips.push({ key:"team",        label: `${sp.get("team")} team`,                                      remove: () => removeParam("team") });
+  if (sp.get("owner")) {
+    const n = agents.find(a=>a.id===sp.get("owner"))?.name ?? (sp.get("owner")==="unassigned" ? "Unassigned" : sp.get("owner")!);
+    activeChips.push({ key:"owner", label: `👤 ${n}`, remove: () => removeParam("owner") });
+  }
+  if (sp.get("city"))         activeChips.push({ key:"city",        label: `📍 ${sp.get("city")}`,                                       remove: () => removeParam("city") });
+  if (sp.get("category"))     activeChips.push({ key:"category",    label: `Category: ${sp.get("category")}`,                            remove: () => removeParam("category") });
+  if (sp.get("hasMeeting"))   activeChips.push({ key:"hasMeeting",  label: "Has Meeting",                                                 remove: () => removeParam("hasMeeting") });
+  if (sp.get("hasSiteVisit")) activeChips.push({ key:"hasSiteVisit",label: "Has Site Visit",                                              remove: () => removeParam("hasSiteVisit") });
+  if (sp.get("tag"))          activeChips.push({ key:"tag",         label: `Tag: ${sp.get("tag")}`,                                      remove: () => removeParam("tag") });
+  if (sp.get("ai"))           activeChips.push({ key:"ai",          label: `AI: ${sp.get("ai")}`,                                        remove: () => removeParam("ai") });
+  if (sp.get("dateFrom") || sp.get("dateTo")) {
+    const field = sp.get("dateField") ?? "followupDate";
+    const fLabel = field==="createdAt" ? "Created" : field==="lastTouchedAt" ? "Activity" : "Follow-up";
+    activeChips.push({ key:"date", label: `${fLabel}: ${sp.get("dateFrom")??"∞"} → ${sp.get("dateTo")??"∞"}`, remove: () => removeParam("dateFrom","dateTo","dateField") });
+  }
+
+  const totalActiveCount = activeChips.length;
+
+  // ── Option lists ─────────────────────────────────────────────────────────────
+  const sourceOpts = sources.map(s => ({ value: s, label: SRC_LABELS[s] ?? s }));
+  const agentOpts  = agents.map(a => ({ value: a.id, label: a.name }));
+  const projectOpts = projects.map(p => ({ value: p.name, label: p.name }));
+  const statusOpts = EXCEL_STATUSES.map(s => ({ value: s, label: s }));
+
+  const selCls = "w-full border border-gray-200 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400";
 
   return (
     <>
-      {/* ── Search row ───────────────────────────────────────────────────────── */}
+      {/* ── Search + Filter button row ────────────────────────────────────────── */}
       <div className="flex gap-2">
         <input
           type="search"
-          placeholder="Search name / phone / email / company"
+          placeholder="Search name / phone / email / company…"
           value={q}
-          onChange={(e) => setQ(e.target.value)}
+          onChange={e => setQ(e.target.value)}
           className="flex-1 border border-[#e5e7eb] dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#0b1a33]/20"
         />
         <button
           type="button"
-          onClick={openDrawer}
+          onClick={open ? () => setOpen(false) : openPanel}
           className={[
             "relative flex items-center gap-1.5 px-4 py-2.5 rounded-lg border text-sm font-medium transition-colors whitespace-nowrap",
-            advancedCount > 0
+            open || totalActiveCount > 0
               ? "border-[#0b1a33] bg-[#0b1a33] text-white dark:border-blue-500 dark:bg-blue-700"
-              : "border-[#e5e7eb] dark:border-slate-600 bg-white dark:bg-slate-800 text-gray-700 dark:text-slate-100 hover:border-gray-400 dark:hover:border-slate-400",
+              : "border-[#e5e7eb] dark:border-slate-600 bg-white dark:bg-slate-800 text-gray-700 dark:text-slate-100 hover:border-gray-400",
           ].join(" ")}
-          aria-label="Open filters"
+          aria-label={open ? "Close filters" : "Open filters"}
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
-            <line x1="4" y1="6" x2="20" y2="6"/>
-            <line x1="4" y1="12" x2="20" y2="12"/>
-            <line x1="4" y1="18" x2="20" y2="18"/>
+            <line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/>
             <circle cx="9"  cy="6"  r="2.5" fill="currentColor" stroke="none"/>
             <circle cx="16" cy="12" r="2.5" fill="currentColor" stroke="none"/>
             <circle cx="9"  cy="18" r="2.5" fill="currentColor" stroke="none"/>
           </svg>
-          Filters
-          {advancedCount > 0 && (
-            <span className="bg-white/25 rounded px-1.5 text-xs font-bold">{advancedCount}</span>
-          )}
+          Filters{totalActiveCount > 0 && <span className="bg-white/25 rounded px-1.5 text-xs font-bold">{totalActiveCount}</span>}
         </button>
       </div>
 
-      {/* ── Active filter chips (stacked AND filters, each removable) ────────── */}
+      {/* ── Active filter chips (always visible when filters are on) ─────────── */}
       {activeChips.length > 0 && (
-        <div className="flex flex-wrap gap-1.5 pt-0.5">
-          {activeChips.map((chip, i) => (
+        <div className="flex flex-wrap gap-1.5">
+          {activeChips.map(chip => (
             <button
-              key={i}
+              key={chip.key}
               type="button"
               onClick={chip.remove}
               className="inline-flex items-center gap-1 pl-2.5 pr-1.5 py-1 rounded-full text-xs font-medium bg-[#0b1a33] text-white hover:bg-[#0b1a33]/80 transition-colors dark:bg-blue-700 dark:hover:bg-blue-600"
             >
               {chip.label}
-              <span className="inline-flex items-center justify-center w-3.5 h-3.5 rounded-full bg-white/20 hover:bg-white/30 text-[10px] font-bold leading-none ml-0.5" aria-hidden>×</span>
+              <span className="inline-flex items-center justify-center w-3.5 h-3.5 rounded-full bg-white/20 text-[10px] font-bold leading-none">×</span>
             </button>
           ))}
           {activeChips.length > 1 && (
-            <button
-              type="button"
-              onClick={resetFilters}
-              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium text-gray-500 dark:text-slate-400 border border-gray-300 dark:border-slate-600 hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors"
-            >
+            <button type="button" onClick={resetFilters}
+              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium text-gray-500 dark:text-slate-400 border border-gray-300 dark:border-slate-600 hover:bg-gray-50 dark:hover:bg-slate-700">
               Clear all
             </button>
           )}
         </div>
       )}
 
-      {/* ── More-Filters drawer ───────────────────────────────────────────────── */}
+      {/* ── Wide filter panel ─────────────────────────────────────────────────── */}
       {open && (
         <div
-          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center"
-          onMouseDown={(e) => { if (e.target === e.currentTarget) setOpen(false); }}
+          ref={panelRef}
+          className="w-full bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-600 rounded-xl shadow-xl overflow-hidden"
         >
-          {/* Backdrop */}
-          <div className="absolute inset-0 bg-black/50 dark:bg-black/70" aria-hidden />
+          {/* Panel header */}
+          <div className="flex items-center justify-between px-5 py-3 bg-gray-50 dark:bg-slate-900/60 border-b border-gray-100 dark:border-slate-700">
+            <span className="text-sm font-semibold text-gray-800 dark:text-slate-100">Filter by Excel fields</span>
+            <button type="button" onClick={() => setOpen(false)} className="text-gray-400 hover:text-gray-600 dark:hover:text-slate-200 p-1 rounded">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M18 6 6 18M6 6l12 12"/></svg>
+            </button>
+          </div>
 
-          {/* Sheet */}
-          <div className="relative bg-white dark:bg-slate-800 w-full sm:w-[400px] rounded-t-2xl sm:rounded-2xl shadow-2xl z-10 overflow-hidden">
+          {/* Grid of filter cells */}
+          <div className="p-4 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-x-4 gap-y-5">
 
-            {/* Drag handle (mobile) */}
-            <div className="flex justify-center pt-3 sm:hidden">
-              <div className="w-9 h-1 rounded-full bg-gray-300 dark:bg-slate-600" />
-            </div>
+            {/* ── 1. PROJECT ── */}
+            {projectOpts.length > 0 && (
+              <MultiCell
+                label="🏢 Project"
+                options={projectOpts}
+                selected={projectSel}
+                onChange={setProjectSel}
+                searchable
+              />
+            )}
 
-            {/* Header */}
-            <div className="flex items-center justify-between px-5 pt-4 pb-2">
-              <h3 className="text-base font-semibold text-gray-900 dark:text-slate-100">More Filters</h3>
-              <button
-                type="button"
-                onClick={() => setOpen(false)}
-                aria-label="Close"
-                className="p-1.5 text-gray-400 hover:text-gray-700 dark:hover:text-slate-200 rounded-full transition-colors"
-              >
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                  <path d="M18 6 6 18M6 6l12 12"/>
-                </svg>
-              </button>
-            </div>
+            {/* ── 2. STATUS ── */}
+            <MultiCell
+              label="📋 Status"
+              options={statusOpts}
+              selected={cstatusSel}
+              onChange={setCstatusSel}
+              searchable
+            />
 
-            {/* Filter controls */}
-            <div className="px-5 pb-4 space-y-3 overflow-y-auto" style={{ maxHeight: "60vh" }}>
+            {/* ── 3. BUDGET ── */}
+            <RadioCell
+              label="💰 Budget (min)"
+              value={draftBudgetPreset}
+              onChange={setDraftBudgetPreset}
+              options={[
+                { value: "", label: "Any budget" },
+                ...BUDGET_PRESETS.map(b => ({ value: b.key, label: b.label })),
+              ]}
+            />
 
-              {/* ── PROJECT — primary Excel filter ── */}
-              {projects.length > 0 && (
-                <div>
-                  <label className={lblCls}>🏢 Project</label>
-                  <select value={draftProject} onChange={(e) => setDraftProject(e.target.value)} className={selCls}>
-                    <option value="">All projects</option>
-                    {projects.map(p => <option key={p.id} value={p.name}>{p.name}</option>)}
-                  </select>
+            {/* ── 4. SOURCE (admin only) ── */}
+            {showSource && (
+              <MultiCell
+                label="🌐 Source"
+                options={sourceOpts}
+                selected={sourceSel}
+                onChange={setSourceSel}
+              />
+            )}
+
+            {/* ── 5. ASSIGNED TO ── */}
+            {showSource && (
+              <RadioCell
+                label="👤 Assigned To"
+                value={draftOwner}
+                onChange={setDraftOwner}
+                options={[
+                  { value: "", label: "Anyone" },
+                  { value: "unassigned", label: "⚠ Unassigned" },
+                  ...agentOpts,
+                ]}
+              />
+            )}
+
+            {/* ── 6. TEAM ── */}
+            {showSource && (
+              <RadioCell
+                label="🌍 Forwarded Team"
+                value={draftTeam}
+                onChange={setDraftTeam}
+                options={[
+                  { value: "", label: "All teams" },
+                  { value: "Dubai", label: "🇦🇪 Dubai" },
+                  { value: "India", label: "🇮🇳 India" },
+                ]}
+              />
+            )}
+
+            {/* ── 7. POTENTIAL ── */}
+            <RadioCell
+              label="🎯 Potential"
+              value={draftPotential}
+              onChange={setDraftPotential}
+              options={[
+                { value: "", label: "Any" },
+                ...Object.entries(POTENTIAL_LABELS).map(([v, l]) => ({ value: v, label: l })),
+              ]}
+            />
+
+            {/* ── 8. FUND READINESS ── */}
+            <RadioCell
+              label="💼 Fund Readiness"
+              value={draftFundReady}
+              onChange={setDraftFundReady}
+              options={[
+                { value: "", label: "Any" },
+                ...Object.entries(FUND_LABELS).map(([v, l]) => ({ value: v, label: l })),
+              ]}
+            />
+
+            {/* ── 9. WHO IS CLIENT ── */}
+            <RadioCell
+              label="👥 Who Is Client"
+              value={draftClientType}
+              onChange={setDraftClientType}
+              options={[
+                { value: "", label: "Any" },
+                ...Object.entries(CLIENT_LABELS).map(([v, l]) => ({ value: v, label: l })),
+              ]}
+            />
+
+            {/* ── 10. WHEN CAN INVEST ── */}
+            <RadioCell
+              label="⏱ Timeline"
+              value={draftWhenInvest}
+              onChange={setDraftWhenInvest}
+              options={[
+                { value: "", label: "Any" },
+                ...Object.entries(WHEN_LABELS).map(([v, l]) => ({ value: v, label: l })),
+              ]}
+            />
+
+            {/* ── 11. FOLLOW-UP ── */}
+            <RadioCell
+              label="📅 Follow-up Date"
+              value={draftFollowup}
+              onChange={setDraftFollowup}
+              options={[
+                { value: "", label: "Any" },
+                { value: "overdue", label: "⏰ Overdue" },
+                { value: "today",   label: "Today" },
+                { value: "tomorrow",label: "Tomorrow" },
+                { value: "week",    label: "This week" },
+                { value: "month",   label: "This month" },
+              ]}
+            />
+
+            {/* ── 12. MEETING / SITE VISIT ── */}
+            <div className="flex flex-col min-h-0">
+              <div className="text-[11px] font-bold text-gray-600 dark:text-slate-300 uppercase tracking-wide mb-1.5">🤝 Meeting / Visit</div>
+              <div className="space-y-1">
+                {[
+                  { value: "", label: "Any" },
+                  { value: "1", label: "Has meeting" },
+                ].map(o => (
+                  <label key={o.value} className="flex items-center gap-1.5 cursor-pointer">
+                    <input type="radio" name="hasMeeting" className="h-3.5 w-3.5 text-[#0b1a33]" checked={draftHasMeeting===o.value} onChange={() => setDraftHasMeeting(o.value)} />
+                    <span className="text-xs text-gray-700 dark:text-slate-200">{o.label}</span>
+                  </label>
+                ))}
+                <div className="mt-2 pt-2 border-t border-gray-100 dark:border-slate-700">
+                  {[
+                    { value: "", label: "Any" },
+                    { value: "1", label: "Has site visit" },
+                  ].map(o => (
+                    <label key={o.value} className="flex items-center gap-1.5 cursor-pointer mb-0.5">
+                      <input type="radio" name="hasSiteVisit" className="h-3.5 w-3.5 text-[#0b1a33]" checked={draftHasSiteVisit===o.value} onChange={() => setDraftHasSiteVisit(o.value)} />
+                      <span className="text-xs text-gray-700 dark:text-slate-200">{o.label}</span>
+                    </label>
+                  ))}
                 </div>
-              )}
-
-              {/* ── BUDGET MINIMUM ── */}
-              <div>
-                <label className={lblCls}>💰 Budget (minimum)</label>
-                <select value={draftBudgetPreset} onChange={(e) => setDraftBudgetPreset(e.target.value)} className={selCls}>
-                  <option value="">Any budget</option>
-                  <optgroup label="INR">
-                    {BUDGET_PRESETS.filter(b => b.key.endsWith("_inr")).map(b =>
-                      <option key={b.key} value={b.key}>{b.label}</option>
-                    )}
-                  </optgroup>
-                  <optgroup label="AED">
-                    {BUDGET_PRESETS.filter(b => b.key.endsWith("_aed")).map(b =>
-                      <option key={b.key} value={b.key}>{b.label}</option>
-                    )}
-                  </optgroup>
-                </select>
               </div>
+            </div>
 
-              {/* ── STATUS ── */}
+            {/* ── 13. NOT PICKING CALLS ── */}
+            <RadioCell
+              label="📵 Not Picking"
+              value={draftNotPicked}
+              onChange={setDraftNotPicked}
+              options={[
+                { value: "", label: "Any" },
+                { value: "2", label: "2+ days" },
+                { value: "3", label: "3+ days" },
+                { value: "5", label: "5+ days" },
+                { value: "7", label: "7+ days" },
+              ]}
+            />
 
-              {/* Follow-up */}
-              <div>
-                <label className={lblCls}>📅 Follow-up</label>
-                <select value={draftFollowup} onChange={(e) => setDraftFollowup(e.target.value)} className={selCls}>
-                  <option value="">All leads</option>
-                  <option value="overdue">⏰ Overdue</option>
-                  <option value="today">Today</option>
-                  <option value="tomorrow">Tomorrow</option>
-                  <option value="week">This week</option>
-                  <option value="month">This month</option>
-                </select>
-              </div>
+            {/* ── 14. CITY ── */}
+            <div className="flex flex-col min-h-0">
+              <div className="text-[11px] font-bold text-gray-600 dark:text-slate-300 uppercase tracking-wide mb-1.5">📍 City / Location</div>
+              <input
+                type="text"
+                placeholder="e.g. Mumbai, Delhi…"
+                value={draftCity}
+                onChange={e => setDraftCity(e.target.value)}
+                className={selCls}
+              />
+            </div>
 
-              {/* Status — Excel/MIS values (primary filter) */}
-              <div>
-                <label className={lblCls}>📋 Status</label>
-                <select value={draftCstatus} onChange={(e) => setDraftCstatus(e.target.value)} className={selCls}>
-                  <option value="">All statuses</option>
-                  {EXCEL_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
-                </select>
-              </div>
+            {/* ── 15. CATEGORIZATION ── */}
+            <div className="flex flex-col min-h-0">
+              <div className="text-[11px] font-bold text-gray-600 dark:text-slate-300 uppercase tracking-wide mb-1.5">🏷 Categorization</div>
+              <select value={draftCategory} onChange={e=>setDraftCategory(e.target.value)} className={selCls}>
+                <option value="">Any</option>
+                <option value="NRI">NRI</option>
+                <option value="Resident">Resident</option>
+                <option value="Investor">Investor</option>
+                <option value="End-user">End-user</option>
+                <option value="HNI">HNI</option>
+                <option value="Highly Responsive">Highly Responsive</option>
+                <option value="Moderately Responsive">Moderately Responsive</option>
+                <option value="Irregular">Irregular</option>
+                <option value="Disappearing">Disappearing</option>
+                <option value="Non-Responsive">Non-Responsive</option>
+              </select>
+            </div>
 
-              {/* Potential */}
-              <div>
-                <label className={lblCls}>Potential</label>
-                <select value={draftPotential} onChange={(e) => setDraftPotential(e.target.value)} className={selCls}>
-                  <option value="">Any potential</option>
-                  <option value="HIGH">🔥 High</option>
-                  <option value="MEDIUM">🌤 Medium</option>
-                  <option value="LOW">❄ Low</option>
-                  <option value="UNKNOWN">— Unknown</option>
-                </select>
-              </div>
-
-              {/* Fund Readiness */}
-              <div>
-                <label className={lblCls}>Fund Readiness</label>
-                <select value={draftFundReady} onChange={(e) => setDraftFundReady(e.target.value)} className={selCls}>
-                  <option value="">Any fund status</option>
-                  <option value="IMMEDIATE_BUYER">🟢 Immediate Buyer</option>
-                  <option value="SHORT_TERM_BUYER">🟡 Short-Term Buyer</option>
-                  <option value="CONDITIONAL_BUYER">🔵 Conditional Buyer</option>
-                  <option value="FINANCED_BUYER">🟣 Financed Buyer</option>
-                  <option value="FUTURE_BUYER">🔴 Future Buyer</option>
-                </select>
-              </div>
-
-              {/* Who is Client */}
-              <div>
-                <label className={lblCls}>Who Is Client</label>
-                <select value={draftClientType} onChange={(e) => setDraftClientType(e.target.value)} className={selCls}>
-                  <option value="">All client types</option>
-                  <option value="INVESTOR">Investor</option>
-                  <option value="END_USER">End User</option>
-                  <option value="BOTH">Both</option>
-                  <option value="UNCLEAR">Unclear</option>
-                </select>
-              </div>
-
-              {/* When Can Invest */}
-              <div>
-                <label className={lblCls}>When Can Invest</label>
-                <select value={draftWhenInvest} onChange={(e) => setDraftWhenInvest(e.target.value)} className={selCls}>
-                  <option value="">Any timeline</option>
-                  <option value="IMMEDIATE">⚡ Immediate / On Spot</option>
-                  <option value="THIRTY_DAYS">📅 Within 1 Month</option>
-                  <option value="THREE_MONTHS">✈ Will Visit Dubai First</option>
-                  <option value="SIX_PLUS_MONTHS">⏳ Not in 6 Months</option>
-                  <option value="WINDOW_SHOPPING">📆 Window Shopping</option>
-                </select>
-              </div>
-
-              {/* AI Score */}
-              <div>
-                <label className={lblCls}>AI Score</label>
-                <select value={draftAI} onChange={(e) => setDraftAI(e.target.value)} className={selCls}>
-                  <option value="">Any score</option>
-                  <option value="HOT">🔥 Hot</option>
-                  <option value="WARM">☀ Warm</option>
-                  <option value="COLD">🧊 Cold</option>
-                </select>
-              </div>
-
-              {/* Not picking — only show if showSource (leadership) */}
-              <div>
-                <label className={lblCls}>📵 Not picking calls</label>
-                <select value={draftNotPicked} onChange={(e) => setDraftNotPicked(e.target.value)} className={selCls}>
+            {/* ── 16. TAG ── */}
+            {distinctTags.length > 0 && (
+              <div className="flex flex-col min-h-0">
+                <div className="text-[11px] font-bold text-gray-600 dark:text-slate-300 uppercase tracking-wide mb-1.5">🔖 Tag</div>
+                <select value={draftTag} onChange={e=>setDraftTag(e.target.value)} className={selCls}>
                   <option value="">Any</option>
-                  <option value="2">Not picking 2+ days</option>
-                  <option value="3">Not picking 3+ days</option>
-                  <option value="5">Not picking 5+ days</option>
-                  <option value="7">Not picking 7+ days</option>
+                  {distinctTags.map(t => <option key={t} value={t}>{t}</option>)}
                 </select>
               </div>
+            )}
 
-              {/* Source — leadership only */}
-              {showSource && (
-                <div>
-                  <label className={lblCls}>Source</label>
-                  <select value={draftSource} onChange={(e) => setDraftSource(e.target.value)} className={selCls}>
-                    <option value="">All sources</option>
-                    {sources.map(s => <option key={s} value={s}>{s.replaceAll("_", " ")}</option>)}
-                  </select>
-                </div>
-              )}
-
-              {/* Team — leadership only */}
-              {showSource && (
-                <div>
-                  <label className={lblCls}>Team</label>
-                  <select value={draftTeam} onChange={(e) => setDraftTeam(e.target.value)} className={selCls}>
-                    <option value="">All teams</option>
-                    <option value="Dubai">Dubai</option>
-                    <option value="India">India</option>
-                  </select>
-                </div>
-              )}
-
-              {/* Owner — leadership only */}
-              {showSource && (
-                <div>
-                  <label className={lblCls}>Owner</label>
-                  <select value={draftOwner} onChange={(e) => setDraftOwner(e.target.value)} className={selCls}>
-                    <option value="">All owners</option>
-                    <option value="unassigned">⚠ Unassigned</option>
-                    {agents.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
-                  </select>
-                </div>
-              )}
-
-              {/* Tag */}
-              {distinctTags.length > 0 && (
-                <div>
-                  <label className={lblCls}>Tag</label>
-                  <select value={draftTag} onChange={(e) => setDraftTag(e.target.value)} className={selCls}>
-                    <option value="">All tags</option>
-                    {distinctTags.map(t => <option key={t} value={t}>{t}</option>)}
-                  </select>
-                </div>
-              )}
-
-              {/* Sort */}
-              <div>
-                <label className={lblCls}>Sort by</label>
-                <select value={draftSort} onChange={(e) => setDraftSort(e.target.value)} className={selCls}>
-                  <option value="">Newest first</option>
-                  <option value="created_asc">Oldest first</option>
-                  <option value="score_desc">AI score: high → low</option>
-                  <option value="touched_asc">Stalest first</option>
-                  <option value="touched_desc">Recently touched</option>
-                  <option value="name_asc">Name A–Z</option>
-                </select>
-              </div>
-
-              {/* Date range filter */}
-              <div>
-                <label className={lblCls}>📅 Date Range Filter</label>
-                <select value={draftDateField} onChange={(e) => setDraftDateField(e.target.value)} className={selCls + " mb-2"}>
-                  <option value="followupDate">Follow-up Date</option>
-                  <option value="createdAt">Created Date</option>
-                  <option value="lastTouchedAt">Last Activity Date</option>
-                </select>
-                <div className="flex gap-2">
-                  <div className="flex-1">
-                    <label className="text-[11px] text-gray-500 dark:text-slate-400 block mb-0.5">From</label>
-                    <input type="date" value={draftDateFrom} onChange={(e) => setDraftDateFrom(e.target.value)}
-                      className={selCls} />
-                  </div>
-                  <div className="flex-1">
-                    <label className="text-[11px] text-gray-500 dark:text-slate-400 block mb-0.5">To</label>
-                    <input type="date" value={draftDateTo} onChange={(e) => setDraftDateTo(e.target.value)}
-                      className={selCls} />
-                  </div>
-                </div>
+            {/* ── 17. DATE RANGE ── */}
+            <div className="flex flex-col min-h-0 col-span-2 sm:col-span-1">
+              <div className="text-[11px] font-bold text-gray-600 dark:text-slate-300 uppercase tracking-wide mb-1.5">📆 Date Range</div>
+              <select value={draftDateField} onChange={e=>setDraftDateField(e.target.value)} className={selCls + " mb-1.5"}>
+                <option value="followupDate">Follow-up Date</option>
+                <option value="createdAt">Created Date</option>
+                <option value="lastTouchedAt">Last Activity</option>
+              </select>
+              <div className="flex gap-1">
+                <input type="date" value={draftDateFrom} onChange={e=>setDraftDateFrom(e.target.value)} className={selCls + " flex-1 min-w-0"} />
+                <span className="self-center text-xs text-gray-400">→</span>
+                <input type="date" value={draftDateTo} onChange={e=>setDraftDateTo(e.target.value)} className={selCls + " flex-1 min-w-0"} />
               </div>
             </div>
 
-            {/* Footer */}
-            <div className="flex gap-3 px-5 py-4 bg-gray-50 dark:bg-slate-900/60 border-t border-gray-100 dark:border-slate-700">
-              <button type="button" onClick={applyFilters} className="btn btn-primary flex-1 justify-center">
-                Apply
-              </button>
-              <button type="button" onClick={resetFilters} className="btn btn-ghost flex-1 justify-center">
-                Reset All
-              </button>
+            {/* ── 18. SORT ── */}
+            <div className="flex flex-col min-h-0">
+              <div className="text-[11px] font-bold text-gray-600 dark:text-slate-300 uppercase tracking-wide mb-1.5">⬆ Sort By</div>
+              <select value={draftSort} onChange={e=>setDraftSort(e.target.value)} className={selCls}>
+                <option value="">Newest first (default)</option>
+                <option value="created_asc">Oldest first</option>
+                <option value="touched_asc">Stalest first</option>
+                <option value="touched_desc">Recently touched</option>
+                <option value="name_asc">Name A–Z</option>
+                <option value="score_desc">AI score: high → low</option>
+              </select>
             </div>
+
+          </div>
+
+          {/* Panel footer */}
+          <div className="flex items-center gap-3 px-5 py-3.5 bg-gray-50 dark:bg-slate-900/60 border-t border-gray-100 dark:border-slate-700">
+            <button type="button" onClick={applyFilters}
+              className="btn btn-primary flex-none px-6">
+              Apply Filters
+            </button>
+            <button type="button" onClick={resetFilters}
+              className="btn btn-ghost flex-none">
+              Reset All
+            </button>
+            <button type="button" onClick={() => setOpen(false)}
+              className="btn btn-ghost flex-none ml-auto text-gray-400">
+              Cancel
+            </button>
           </div>
         </div>
       )}
 
-      {(sp.get("dateFrom") || sp.get("dateTo")) && (
-        <div className="flex items-center gap-2 text-xs bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-700 rounded-lg px-3 py-2 mt-2">
+      {/* ── Date-range active banner (keep legacy) ────────────────────────────── */}
+      {!open && (sp.get("dateFrom") || sp.get("dateTo")) && (
+        <div className="flex items-center gap-2 text-xs bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-700 rounded-lg px-3 py-2">
           <span className="text-blue-700 dark:text-blue-300 font-medium">
-            📅 Date filter: {sp.get("dateField") === "createdAt" ? "Created" : sp.get("dateField") === "lastTouchedAt" ? "Last activity" : "Follow-up"}
-            {" "}{sp.get("dateFrom") || "∞"} → {sp.get("dateTo") || "∞"}
+            📅 {sp.get("dateField")==="createdAt" ? "Created" : sp.get("dateField")==="lastTouchedAt" ? "Last activity" : "Follow-up"}:&nbsp;
+            {sp.get("dateFrom") || "∞"} → {sp.get("dateTo") || "∞"}
           </span>
-          <button onClick={() => {
-            const p = new URLSearchParams(sp.toString());
-            ["dateFrom", "dateTo", "dateField"].forEach(k => p.delete(k));
-            p.delete("page");
-            router.replace(`${pathname}?${p.toString()}`);
-          }} className="ml-auto text-blue-500 hover:text-blue-700 font-semibold">✕ Clear</button>
+          <button onClick={() => removeParam("dateFrom","dateTo","dateField")} className="text-blue-600 hover:text-blue-800 font-bold ml-auto">×</button>
         </div>
       )}
     </>
