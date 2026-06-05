@@ -8,6 +8,7 @@ import LeadsListClient from "@/components/LeadsListClient";
 import { runReconciler } from "@/lib/reconciler";
 import { leadScopeWhere } from "@/lib/leadScope";
 import { formatBudget } from "@/lib/budgetParse";
+import { excelStatusChip } from "@/lib/lead-statuses";
 
 export const dynamic = "force-dynamic";
 
@@ -302,7 +303,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
     smartSortPageIds = priorityRows.slice(skip, skip + PAGE_SIZE).map(r => r.id);
   }
 
-  const [leadsRaw, totalFromDb, hot, newToday, totalAll, agents, followupToday, followupOverdue, statusCountRows, allTagRows] = await Promise.all([
+  const [leadsRaw, totalFromDb, hot, newToday, totalAll, agents, followupToday, followupOverdue, cstatusCountRows, allTagRows] = await Promise.all([
     smartSortPageIds != null
       ? prisma.lead.findMany({
           where: { id: { in: smartSortPageIds } },
@@ -328,13 +329,14 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
     prisma.user.findMany({ where: { active: true, role: { in: ["AGENT", "MANAGER", "ADMIN"] } }, orderBy: { name: "asc" } }),
     prisma.lead.count({ where: { ...activeScope, followupDate: todayWindow } }),
     prisma.lead.count({ where: { ...activeScope, followupDate: { lt: new Date(), not: null } } }),
-    // Per-status lead counts for the quick-filter chip bar.
-    // Uses the user's base scope (not current filters) so the chips always show
-    // how many leads they own in each stage regardless of active filter.
+    // Per-currentStatus lead counts for the Excel-status chip bar.
+    // Groups by the user-facing currentStatus field so chips reflect real
+    // MIS status distribution. Excludes cold-call leads by default.
     prisma.lead.groupBy({
-      by: ["status"],
+      by: ["currentStatus"],
       where: sp.showCold === "1" ? { ...scope } : { ...scope, isColdCall: false },
       _count: { _all: true },
+      orderBy: { _count: { currentStatus: "desc" } },
     }),
     // DISTINCT tag list for the More Filters tag-filter dropdown.
     prisma.$queryRaw<Array<{ tag: string }>>`
@@ -358,9 +360,14 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
   })();
   const total = totalFromDb;
 
-  // Per-status counts keyed by status string for the chip bar.
-  const statusCounts: Partial<Record<string, number>> = Object.fromEntries(
-    statusCountRows.map(r => [r.status as string, r._count._all])
+  // Per-currentStatus counts — keyed by Excel/MIS status value, sorted by count desc.
+  // Only statuses with at least 1 lead are included (groupBy naturally excludes zeros).
+  const cstatusCounts: Array<{ label: string; count: number }> = cstatusCountRows
+    .filter(r => r.currentStatus != null && r.currentStatus !== "")
+    .map(r => ({ label: r.currentStatus as string, count: r._count._all }));
+  // Also expose as a map for O(1) lookup
+  const cstatusCountMap: Record<string, number> = Object.fromEntries(
+    cstatusCounts.map(r => [r.label, r.count])
   );
 
   const distinctTags: string[] = allTagRows
@@ -424,33 +431,23 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
         distinctTags={distinctTags}
       />
 
-      {/* ── Quick filter chips ──────────────────────────────────────────── */}
+      {/* ── Status-based filter chips (Excel/MIS values) ──────────────────── */}
       {(() => {
         const base = "px-3 py-2 rounded-full text-xs font-semibold border min-h-11 inline-flex items-center gap-1 flex-none whitespace-nowrap";
         const chip = (active: boolean, on: string, off: string) => `${base} ${active ? on : off}`;
-        const neutral = { on: "bg-[#0b1a33] text-white border-[#0b1a33] dark:bg-blue-700 dark:border-blue-700", off: "bg-white dark:bg-slate-700 border-[#e5e7eb] dark:border-slate-600 text-gray-700 dark:text-slate-100 hover:bg-gray-50 dark:hover:bg-slate-600" };
-        const allActive = !sp.followup && !sp.ai && !sp.team && !sp.owner && !sp.smart && !sp.filter && !sp.status;
-
-        // All pipeline stages in order — mirrors the stages in the sales sheets.
-        // Each gets a count badge showing how many leads are in that stage.
-        const stageChips: Array<{ status: string; label: string; emoji: string; on: string; off: string }> = [
-          { status: "NEW",          label: "New",          emoji: "🆕", on: "bg-blue-600 text-white border-blue-600",     off: "bg-blue-50 border-blue-300 text-blue-800 dark:bg-blue-950/30 dark:border-blue-700 dark:text-blue-200" },
-          { status: "CONTACTED",    label: "Contacted",    emoji: "📞", on: "bg-cyan-600 text-white border-cyan-600",     off: "bg-cyan-50 border-cyan-300 text-cyan-800 dark:bg-cyan-950/30 dark:border-cyan-700 dark:text-cyan-200" },
-          { status: "QUALIFIED",    label: "Qualified",    emoji: "✅", on: "bg-teal-600 text-white border-teal-600",     off: "bg-teal-50 border-teal-300 text-teal-800 dark:bg-teal-950/30 dark:border-teal-700 dark:text-teal-200" },
-          { status: "SITE_VISIT",   label: "Site Visit",   emoji: "🏠", on: "bg-green-600 text-white border-green-600",   off: "bg-green-50 border-green-300 text-green-800 dark:bg-green-950/30 dark:border-green-700 dark:text-green-200" },
-          { status: "NEGOTIATION",  label: "Negotiation",  emoji: "💼", on: "bg-indigo-600 text-white border-indigo-600", off: "bg-indigo-50 border-indigo-300 text-indigo-800 dark:bg-indigo-950/30 dark:border-indigo-700 dark:text-indigo-200" },
-          { status: "EOI",          label: "EOI",          emoji: "📄", on: "bg-purple-600 text-white border-purple-600", off: "bg-purple-50 border-purple-300 text-purple-800 dark:bg-purple-950/30 dark:border-purple-700 dark:text-purple-200" },
-          { status: "BOOKING_DONE", label: "Booking Done", emoji: "🎉", on: "bg-amber-600 text-white border-amber-600",   off: "bg-amber-50 border-amber-300 text-amber-800 dark:bg-amber-950/30 dark:border-amber-700 dark:text-amber-200" },
-          { status: "WON",          label: "Won",          emoji: "🏆", on: "bg-emerald-700 text-white border-emerald-700", off: "bg-emerald-50 border-emerald-400 text-emerald-800 dark:bg-emerald-950/30 dark:border-emerald-700 dark:text-emerald-200" },
-          { status: "LOST",         label: "Lost",         emoji: "❌", on: "bg-gray-600 text-white border-gray-600",     off: "bg-gray-100 border-gray-300 text-gray-600 dark:bg-gray-800/50 dark:border-gray-600 dark:text-gray-300" },
-        ];
+        const neutral = {
+          on:  "bg-[#0b1a33] text-white border-[#0b1a33] dark:bg-blue-700 dark:border-blue-700",
+          off: "bg-white dark:bg-slate-700 border-[#e5e7eb] dark:border-slate-600 text-gray-700 dark:text-slate-100 hover:bg-gray-50 dark:hover:bg-slate-600",
+        };
+        // "All" is active when no status/cstatus/follow-up/team/owner filter is set
+        const allActive = !sp.followup && !sp.ai && !sp.team && !sp.owner && !sp.smart && !sp.filter && !sp.status && !sp.cstatus;
 
         return (
           <div className="flex gap-2 overflow-x-auto pb-1 -mx-3 px-3 sm:mx-0 sm:px-0" style={{ scrollbarWidth: "thin" }}>
             {/* All */}
-            <Link href="/leads" className={chip(allActive, neutral.on, neutral.off)}>All</Link>
+            <Link href="/leads" className={chip(allActive, neutral.on, neutral.off)}>All · {totalAll}</Link>
 
-            {/* Time-based chips */}
+            {/* Follow-up time chips */}
             <Link
               href="/leads?followup=today"
               className={chip(effectiveFollowup === "today", "bg-emerald-600 text-white border-emerald-600", "bg-emerald-50 border-emerald-300 text-emerald-800 dark:bg-emerald-950/30 dark:border-emerald-700 dark:text-emerald-200")}
@@ -466,21 +463,24 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
               {followupOverdue > 0 && <span className={`px-1 rounded text-[10px] ${effectiveFollowup === "overdue" ? "bg-white/25" : "bg-red-200/60 dark:bg-red-800/60"}`}>{followupOverdue}</span>}
             </Link>
 
-            {/* All pipeline stages — one chip per status with live count */}
-            {stageChips.map(({ status, label, emoji, on, off }) => {
-              const count = statusCounts[status] ?? 0;
-              const isActive = sp.status === status;
+            {/* Excel/MIS status chips — one per status that has ≥1 lead, sorted by count */}
+            {cstatusCounts.map(({ label, count }) => {
+              const isActive = sp.cstatus === label;
+              // Encode the status label for URLs (handles spaces, special chars)
+              const href = `/leads?cstatus=${encodeURIComponent(label)}`;
+              const chipClass = excelStatusChip(label);
+              // Active: filled background; inactive: light tinted background
+              const onCls  = "bg-[#0b1a33] text-white border-[#0b1a33] dark:bg-blue-700 dark:border-blue-600";
+              const offCls = `bg-white dark:bg-slate-700 border-[#e5e7eb] dark:border-slate-600 text-gray-700 dark:text-slate-100 hover:bg-gray-50 dark:hover:bg-slate-600`;
               return (
-                <Link key={status} href={`/leads?status=${status}`} className={chip(isActive, on, off)}>
-                  {emoji} {label}
-                  {count > 0 && (
-                    <span className={`px-1 rounded text-[10px] ${isActive ? "bg-white/25" : "bg-black/10 dark:bg-white/10"}`}>{count}</span>
-                  )}
+                <Link key={label} href={href} className={chip(isActive, onCls, offCls)}>
+                  {label}
+                  <span className={`px-1 rounded text-[10px] ${isActive ? "bg-white/25" : "bg-black/10 dark:bg-white/10"}`}>{count}</span>
                 </Link>
               );
             })}
 
-            {/* Leadership-only chips */}
+            {/* Leadership-only shortcuts */}
             {me.role !== "AGENT" && (
               <>
                 <Link href="/leads?owner=unassigned" className={chip(sp.owner === "unassigned", "bg-amber-600 text-white border-amber-600", "bg-amber-50 border-amber-300 text-amber-800 dark:bg-amber-950/30 dark:border-amber-700 dark:text-amber-200")}>
@@ -496,7 +496,6 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
             )}
 
             {/* Nav shortcuts */}
-            <Link href="/leads/kanban" className={`${base} border-[#e5e7eb] dark:border-slate-600 text-gray-500 dark:text-slate-400 hover:bg-gray-50 dark:hover:bg-slate-700`}>📋 Pipeline</Link>
             <Link href="/leads/archived" className={`${base} border-[#e5e7eb] dark:border-slate-600 text-gray-500 dark:text-slate-400 hover:bg-gray-50 dark:hover:bg-slate-700`}>🗄️ Archived</Link>
           </div>
         );
