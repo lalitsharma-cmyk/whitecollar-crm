@@ -35,6 +35,9 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
   runReconciler().catch(() => {});
   const sp = await searchParams;
 
+  // View mode — "table" or "cards" (default)
+  const viewMode = (sp.view === "table" ? "table" : "cards") as "cards" | "table";
+
   // Build where clause from filters
   // 1. Agents only see leads they own — leadScopeWhere applies the ownerId filter.
   // 2. By default, hide cold-call leads (they live in /cold-calls). User can opt-in
@@ -103,8 +106,18 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
   // Single-value Excel-field filters
   if (sp.potential) where.potential = sp.potential as "HIGH" | "MEDIUM" | "LOW" | "UNKNOWN";
   if (sp.fundReady) where.fundReadiness = sp.fundReady as FundReadiness;
-  if (sp.clientType) where.clientType = sp.clientType as "INVESTOR" | "END_USER" | "BOTH" | "UNCLEAR";
-  if (sp.whenInvest) where.whenCanInvest = sp.whenInvest as InvestTimeline;
+  // Client type — multi-select
+  if (sp.clientType) {
+    const cts = sp.clientType.split(",").map(s => s.trim()).filter(Boolean) as ("INVESTOR"|"END_USER"|"BOTH"|"UNCLEAR")[];
+    if (cts.length === 1) where.clientType = cts[0];
+    else if (cts.length > 1) where.clientType = { in: cts };
+  }
+  // Timeline — multi-select
+  if (sp.whenInvest) {
+    const wis = sp.whenInvest.split(",").map(s => s.trim()).filter(Boolean) as InvestTimeline[];
+    if (wis.length === 1) where.whenCanInvest = wis[0];
+    else if (wis.length > 1) where.whenCanInvest = { in: wis };
+  }
   if (sp.city) where.city = { contains: sp.city, mode: "insensitive" };
   if (sp.category) where.categorization = { contains: sp.category, mode: "insensitive" };
   // Source filter — multi-select, comma-separated
@@ -128,10 +141,17 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
         : [projectWhere];
     }
   }
-  // Budget minimum preset filter
+  // Budget range filter — ?budgetFrom= and ?budgetTo= (raw numbers)
+  if (sp.budgetFrom || sp.budgetTo) {
+    const bWhere: { gte?: number; lte?: number } = {};
+    if (sp.budgetFrom) { const n = parseFloat(sp.budgetFrom); if (!isNaN(n)) bWhere.gte = n; }
+    if (sp.budgetTo)   { const n = parseFloat(sp.budgetTo);   if (!isNaN(n)) bWhere.lte = n; }
+    if (Object.keys(bWhere).length) where.budgetMin = bWhere;
+  }
+  // Legacy budget preset (keep backward-compatible)
   if (sp.budgetPreset) {
     const preset = BUDGET_PRESETS.find(b => b.key === sp.budgetPreset);
-    if (preset) where.budgetMin = { gte: preset.value };
+    if (preset && !sp.budgetFrom) where.budgetMin = { gte: preset.value };
   }
   // Meeting / Site Visit filters
   if (sp.hasMeeting === "1") where.meetingDate = { not: null };
@@ -208,7 +228,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
   // search and show all matching, not just today's.
   // nofollowup filter already sets followupDate: null, so the followup chip
   // default (today) must not compose with it — include it as an "other filter".
-  const hasOtherFilter = !!(sp.q || sp.source || sp.status || sp.cstatus || sp.owner || sp.team || sp.score || sp.notPicked || sp.eoi || sp.potential || sp.fundReady || sp.clientType || sp.whenInvest || sp.project || sp.budgetPreset || sp.city || sp.category || sp.hasMeeting || sp.hasSiteVisit || filterTab === "nofollowup");
+  const hasOtherFilter = !!(sp.q || sp.source || sp.status || sp.cstatus || sp.owner || sp.team || sp.score || sp.notPicked || sp.eoi || sp.potential || sp.fundReady || sp.clientType || sp.whenInvest || sp.project || sp.budgetPreset || sp.budgetFrom || sp.budgetTo || sp.city || sp.category || sp.hasMeeting || sp.hasSiteVisit || filterTab === "nofollowup");
   // Default view = ALL leads. No hidden filter is applied on a clean page load.
   // (Previously defaulted to "today" which caused "44 total, 8 matching" confusion.)
   const effectiveFollowup = sp.followup ?? "all";
@@ -569,11 +589,24 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
         );
       })()}
 
-      {/* ── Result count ────────────────────────────────────────────────── */}
-      <div className="flex items-center justify-end">
+      {/* ── Result count + view toggle ───────────────────────────────────── */}
+      <div className="flex items-center justify-between">
         <span className="text-xs text-gray-400 dark:text-slate-500">
           {total === 1 ? "1 lead" : `${total} leads`}
         </span>
+        {/* Card / Table toggle */}
+        <div className="flex items-center gap-0.5 bg-gray-100 dark:bg-slate-700 rounded-lg p-0.5">
+          {([["cards","☰ Cards"],["table","⊞ Table"]] as [string,string][]).map(([v,l]) => {
+            const params = new URLSearchParams(sp.toString());
+            v === "cards" ? params.delete("view") : params.set("view", v);
+            return (
+              <Link key={v} href={`/leads?${params.toString()}`}
+                className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${viewMode === v ? "bg-white dark:bg-slate-600 text-gray-900 dark:text-slate-100 shadow-sm" : "text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-200"}`}>
+                {l}
+              </Link>
+            );
+          })}
+        </div>
       </div>
 
       <LeadsListClient
@@ -581,6 +614,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
         canReassign={canBulk}
         canSetStatus={me.role === "ADMIN" || me.role === "MANAGER"}
         showSource={me.role !== "AGENT"}
+        view={viewMode}
         agents={agents.map((a) => ({ id: a.id, name: a.name, team: a.team }))}
         leads={leads.map((l) => {
           const intel = intelByLeadId.get(l.id) ?? null;
@@ -616,8 +650,11 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
             discussedProjects: l.discussed.map((d) => d.project.name),
             lastTouched: l.lastTouchedAt ? formatDistanceToNow(l.lastTouchedAt, { addSuffix: false }) : null,
             lastTouchedAt: l.lastTouchedAt ? l.lastTouchedAt.toISOString() : null,
-            todoNext: l.todoNext ?? null,
-            followupDate: l.followupDate ? fnsFormat(l.followupDate, "dd MMM") : null,
+            todoNext:      l.todoNext ?? null,
+            followupDate:  l.followupDate ? fnsFormat(l.followupDate, "dd MMM") : null,
+            city:          l.city ?? null,
+            whenCanInvest: l.whenCanInvest ?? null,
+            remarks:       l.remarks ? l.remarks.slice(0, 120) : null,
             intelligenceMatch: intel ? {
               matchType: intel.matchType,
               confidence: intel.confidence,
