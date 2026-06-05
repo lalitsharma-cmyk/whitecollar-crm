@@ -157,8 +157,8 @@ export default async function ActionListPage() {
   const sections = [
     {
       key: "ready_close" as const,
-      title: "💎 IN NEGOTIATION / EOI",
-      caption: "Leads in NEGOTIATION or EOI stage — push for booking today.",
+      title: "💎 READY TO CLOSE",
+      caption: "High-priority leads — push for booking today.",
       accent: "border-l-emerald-500",
       tint: "bg-emerald-50/60",
       items: readyToClose.map((l) => makeCard(l, "ready_close")),
@@ -286,8 +286,9 @@ export default async function ActionListPage() {
                           <Link href={`/leads/${card.id}`} className="font-bold text-[#0b1a33] hover:underline">{card.name}</Link>
                           <span className="text-xs text-gray-500 dark:text-slate-400">{card.phone}</span>
                           {card.team && <span className={`chip ${card.team === "India" ? "src-csv" : "src-wa"}`}>{card.team}</span>}
-                          <span className="chip chip-warm">{card.status.replaceAll("_"," ")}</span>
-                          {card.currentStatus && <span className="chip src">{card.currentStatus}</span>}
+                          {card.currentStatus
+                            ? <span className="chip src">{card.currentStatus}</span>
+                            : <span className="chip chip-warm">{card.status.replaceAll("_"," ")}</span>}
                           {card.flagKind === "overdue" && overdueHours > 0 && (
                             <span className="chip" style={{ background: overdueHours >= 24 ? "#fee2e2" : "#fef3c7", color: overdueHours >= 24 ? "#991b1b" : "#92400e" }}>
                               {overdueHours < 24 ? `${overdueHours}h overdue` : `${Math.round(overdueHours/24)}d overdue`}

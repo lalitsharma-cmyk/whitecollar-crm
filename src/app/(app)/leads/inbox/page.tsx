@@ -60,6 +60,7 @@ export default async function GoingColdPage() {
       phone: true,
       email: true,
       status: true,
+      currentStatus: true,
       potential: true,
       lastTouchedAt: true,
       followupDate: true,
@@ -76,8 +77,9 @@ export default async function GoingColdPage() {
     phone: lead.phone,
     email: lead.email,
     status: lead.status,
-    statusChip: statusChip[lead.status],
-    statusLabel: statusLabel[lead.status],
+    // Show currentStatus (Excel/MIS) as the primary label; fall back to internal stage label
+    statusChip: lead.currentStatus ? "chip-warm" : statusChip[lead.status],
+    statusLabel: lead.currentStatus ?? statusLabel[lead.status],
     potential: lead.potential,
     potentialEmoji: lead.potential ? potentialEmoji[lead.potential] : "—",
     daysCold: lead.lastTouchedAt

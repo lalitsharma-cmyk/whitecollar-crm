@@ -33,7 +33,7 @@ import LeadMobileTabs from "@/components/LeadMobileTabs";
 // PrintButton removed — Lalit asked for the Print action to be dropped.
 import BestCallTimeChip from "@/components/BestCallTimeChip";
 import CallStatsBar from "@/components/CallStatsBar";
-import LeadJourneyBar from "@/components/LeadJourneyBar";
+// LeadJourneyBar removed — stage pipeline bar replaced by currentStatus (Excel/MIS workflow)
 import { formatBudget } from "@/lib/budgetParse";
 import { EXCEL_STATUSES, excelStatusChip } from "@/lib/lead-statuses";
 import LinkedContactsCard from "@/components/LinkedContactsCard";
@@ -623,10 +623,7 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
                   </>
                 )}
               </div>
-              {/* Journey progress bar — shows pipeline stage at a glance */}
-              <div className="mt-2 mb-1">
-                <LeadJourneyBar status={lead.status} />
-              </div>
+              {/* Stage pipeline bar removed — Status (currentStatus) shown in header chip above */}
               {/* Phone/WA action buttons — full-width block so the buttons grid
                   and alt-phone row stack vertically rather than appearing as
                   horizontal flex siblings. BestCallTimeChip sits below. */}

@@ -1,11 +1,11 @@
 "use client";
-import React, { Suspense, useState } from "react";
+import React, { Suspense, useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
   LayoutDashboard, Users, Sparkles, Menu, X,
   Building2, BarChart3, Upload, UserCog, Settings as SettingsIcon, LogOut,
-  ChevronLeft, Gem, HelpCircle, AlertTriangle, Lock, PhoneCall,
+  ChevronLeft, ChevronRight, Gem, HelpCircle, AlertTriangle, Lock, PhoneCall,
 } from "lucide-react";
 import GlobalDateFilter from "./GlobalDateFilter";
 import NotifBell from "./NotifBell";
@@ -84,6 +84,17 @@ export default function MobileShell({ children, user, awaitingTeamCount = 0 }: P
   const pathname = usePathname();
   const router = useRouter();
   const [open, setOpen] = useState(false);
+  // Desktop sidebar — collapsed (icon-only) by default. Persisted in localStorage.
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
+  useEffect(() => {
+    const stored = typeof window !== "undefined" ? localStorage.getItem("sidebar_collapsed") : null;
+    if (stored === "false") setSidebarCollapsed(false);
+  }, []);
+  function toggleSidebar() {
+    const next = !sidebarCollapsed;
+    setSidebarCollapsed(next);
+    if (typeof window !== "undefined") localStorage.setItem("sidebar_collapsed", String(next));
+  }
   const initials = user.name.split(" ").map((s) => s[0]).slice(0, 2).join("");
 
   // Root pages = the 5 bottom-nav destinations + profile. On these, the
@@ -117,50 +128,105 @@ export default function MobileShell({ children, user, awaitingTeamCount = 0 }: P
   return (
     <div className="min-h-screen">
       {/* ─────────────────── DESKTOP SIDEBAR (lg+ only) ─────────────────── */}
-      <aside className="sidebar fixed left-0 top-0 bottom-0 w-64 hidden lg:flex flex-col text-white z-30">
-        <div className="px-5 py-5 border-b border-white/10 flex items-center justify-center">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/brand/wcr-logo.png" alt="White Collar Realty" className="h-12 w-auto object-contain" />
+      {/* Collapsible: icon-only (w-14) by default, expands to w-64 on toggle.
+          Preference stored in localStorage under "sidebar_collapsed". */}
+      <aside className={`sidebar fixed left-0 top-0 bottom-0 hidden lg:flex flex-col text-white z-30 transition-[width] duration-200 overflow-hidden ${sidebarCollapsed ? "w-14" : "w-64"}`}>
+
+        {/* Logo / monogram */}
+        <div className={`border-b border-white/10 flex items-center justify-center flex-none ${sidebarCollapsed ? "py-4 px-1" : "px-5 py-5"}`}>
+          {sidebarCollapsed ? (
+            <div className="w-8 h-8 bg-[#c9a24b] rounded-lg flex items-center justify-center text-[#0b1a33] font-extrabold text-[10px] select-none">WCR</div>
+          ) : (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src="/brand/wcr-logo.png" alt="White Collar Realty" className="h-12 w-auto object-contain" />
+          )}
         </div>
-        <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
+
+        {/* Nav items */}
+        <nav className={`flex-1 py-3 space-y-0.5 overflow-y-auto overflow-x-hidden ${sidebarCollapsed ? "px-1" : "px-3"}`}>
           {fullNav.filter((g) => {
             if (g.adminOnly) return user.role === "ADMIN";
             if (g.managerOrAdmin) return user.role === "ADMIN" || user.role === "MANAGER";
             return true;
           }).map((group) => (
             <div key={group.section}>
-              <div className="text-[10px] uppercase tracking-widest text-white/40 px-3 mb-1 mt-3 first:mt-0">{group.section}</div>
+              {/* Section label — hidden when collapsed */}
+              {!sidebarCollapsed && (
+                <div className="text-[10px] uppercase tracking-widest text-white/40 px-3 mb-1 mt-3 first:mt-0">{group.section}</div>
+              )}
+              {sidebarCollapsed && <div className="mb-1 mt-3 first:mt-0 border-t border-white/10 mx-1" />}
+
               {group.items.filter((item) => !(item.agentHidden && user.role === "AGENT")).map(({ href, label, Icon, tag }) => {
                 const active = pathname === href || (href !== "/dashboard" && pathname?.startsWith(href));
                 const showAwaitingBadge = href === "/admin/awaiting-team" && awaitingTeamCount > 0;
                 return (
-                  <Link key={href} href={href} className={`nav-item ${active ? "active" : ""}`}>
-                    <Icon className="w-[18px] h-[18px] flex-none" strokeWidth={2} />
-                    <span>{label}</span>
-                    {showAwaitingBadge && (
-                      <span className="ml-auto text-[10px] bg-red-600 text-white px-2 py-0.5 rounded-full font-bold">
-                        {awaitingTeamCount}
-                      </span>
+                  <Link
+                    key={href}
+                    href={href}
+                    title={sidebarCollapsed ? label : undefined}
+                    className={`nav-item ${active ? "active" : ""} ${sidebarCollapsed ? "justify-center px-0 py-2" : ""}`}
+                  >
+                    {/* Icon with badge dot in collapsed mode */}
+                    <span className="relative flex-none">
+                      <Icon className="w-[18px] h-[18px]" strokeWidth={2} />
+                      {showAwaitingBadge && sidebarCollapsed && (
+                        <span className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-red-500 rounded-full" />
+                      )}
+                    </span>
+                    {/* Label + badges — only in expanded mode */}
+                    {!sidebarCollapsed && (
+                      <>
+                        <span>{label}</span>
+                        {showAwaitingBadge && (
+                          <span className="ml-auto text-[10px] bg-red-600 text-white px-2 py-0.5 rounded-full font-bold">{awaitingTeamCount}</span>
+                        )}
+                        {!showAwaitingBadge && tag && (
+                          <span className="ml-auto text-[10px] bg-[#c9a24b] text-[#0b1a33] px-2 py-0.5 rounded-full font-bold">{tag}</span>
+                        )}
+                      </>
                     )}
-                    {!showAwaitingBadge && tag && <span className="ml-auto text-[10px] bg-[#c9a24b] text-[#0b1a33] px-2 py-0.5 rounded-full font-bold">{tag}</span>}
                   </Link>
                 );
               })}
             </div>
           ))}
         </nav>
-        <div className="p-3 border-t border-white/10 space-y-2">
-          <div className="flex items-center gap-3 px-2 py-2 rounded-lg bg-white/5">
-            <Avatar user={user} initials={initials} size="w-[30px] h-[30px]" />
-            <div className="text-xs leading-tight flex-1 min-w-0">
-              <div className="font-semibold truncate">{user.name}</div>
-              <div className="text-white/60 truncate">{user.role === "ADMIN" ? "Administrator" : user.role === "MANAGER" ? "Manager" : "Sales Agent"}</div>
+
+        {/* Footer: user info + toggle + sign out */}
+        <div className={`border-t border-white/10 flex-none space-y-1 ${sidebarCollapsed ? "p-1.5" : "p-3"}`}>
+          {/* Collapse / expand toggle */}
+          <button
+            type="button"
+            onClick={toggleSidebar}
+            title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+            className={`nav-item w-full text-white/60 hover:text-white ${sidebarCollapsed ? "justify-center px-0 py-2" : ""}`}
+          >
+            {sidebarCollapsed
+              ? <ChevronRight className="w-4 h-4 flex-none" strokeWidth={2} />
+              : <><ChevronLeft className="w-4 h-4 flex-none" strokeWidth={2} /><span className="text-xs">Collapse</span></>}
+          </button>
+
+          {/* User card */}
+          {sidebarCollapsed ? (
+            <div className="flex justify-center py-1">
+              <Avatar user={user} initials={initials} size="w-7 h-7 text-[10px]" />
             </div>
-          </div>
+          ) : (
+            <div className="flex items-center gap-3 px-2 py-2 rounded-lg bg-white/5">
+              <Avatar user={user} initials={initials} size="w-[30px] h-[30px]" />
+              <div className="text-xs leading-tight flex-1 min-w-0">
+                <div className="font-semibold truncate">{user.name}</div>
+                <div className="text-white/60 truncate">{user.role === "ADMIN" ? "Administrator" : user.role === "MANAGER" ? "Manager" : "Sales Agent"}</div>
+              </div>
+            </div>
+          )}
+
+          {/* Sign out */}
           <form action="/api/logout" method="post">
-            <button type="submit" className="nav-item w-full text-left">
+            <button type="submit" title={sidebarCollapsed ? "Sign out" : undefined}
+              className={`nav-item w-full text-left ${sidebarCollapsed ? "justify-center px-0 py-2" : ""}`}>
               <LogOut className="w-[18px] h-[18px] flex-none" strokeWidth={2} />
-              <span>Sign out</span>
+              {!sidebarCollapsed && <span>Sign out</span>}
             </button>
           </form>
         </div>
@@ -271,7 +337,7 @@ export default function MobileShell({ children, user, awaitingTeamCount = 0 }: P
       {/* ─────────────────── MAIN CONTENT ─────────────────── */}
       {/* pb adds bottom-nav height (4rem) + iPhone home-indicator safe area */}
       <main
-        className="lg:ml-64 min-h-screen lg:pb-0"
+        className={`min-h-screen lg:pb-0 transition-[margin] duration-200 ${sidebarCollapsed ? "lg:ml-14" : "lg:ml-64"}`}
         style={{ paddingBottom: "calc(4rem + env(safe-area-inset-bottom))" }}
       >
         {/* Desktop topbar (search bar) */}

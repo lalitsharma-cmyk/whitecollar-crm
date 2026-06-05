@@ -11,7 +11,7 @@ export default function StageDurationBadge({ since }: Props) {
       : "bg-emerald-100 text-emerald-700";
   return (
     <span className={`text-[10px] px-1.5 py-0.5 rounded ${color}`}>
-      {days}d in stage
+      {days}d not updated
     </span>
   );
 }
