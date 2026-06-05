@@ -361,7 +361,6 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
                       <th className={sortThCls} onClick={() => router.push(sortHref("name"))}>
                         Name <SortIcon k="name" />
                       </th>
-                      <th className={`${thCls} w-24`}>Phone</th>
                       <th className={thCls}>Project</th>
                       <th className={sortThCls} onClick={() => router.push(sortHref("budget"))}>
                         Budget <SortIcon k="budget" />
@@ -382,7 +381,7 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
                   </thead>
                   <tbody>
                     {leads.length === 0 && (
-                      <tr><td colSpan={11} className="px-4 py-10 text-center text-gray-400 text-sm">No leads match these filters.</td></tr>
+                      <tr><td colSpan={10} className="px-4 py-10 text-center text-gray-400 text-sm">No leads match these filters.</td></tr>
                     )}
                     {leads.map((l, i) => (
                       <tr key={l.id}
@@ -393,9 +392,6 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
                         </td>
                         <td className="px-3 py-2 font-medium text-gray-900 dark:text-slate-100 whitespace-nowrap">
                           <Link href={`/leads/${l.id}`} onClick={e => e.stopPropagation()} className="hover:underline group-hover:text-[#0b1a33] dark:group-hover:text-blue-300">{l.name}</Link>
-                        </td>
-                        <td className="px-3 py-2 text-gray-500 dark:text-slate-400 font-mono tabular-nums whitespace-nowrap">
-                          {l.phone ? `···${l.phone.slice(-4)}` : <span className="text-gray-300">—</span>}
                         </td>
                         <td className="px-3 py-2 text-gray-700 dark:text-slate-300 max-w-[160px] truncate">
                           {l.discussedProjects[0] ?? l.interest ?? <span className="text-gray-300">—</span>}
