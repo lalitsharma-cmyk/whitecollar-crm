@@ -1,7 +1,37 @@
 "use client";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { useState, useEffect } from "react";
-import { EXCEL_STATUSES } from "@/lib/lead-statuses";
+import { EXCEL_STATUSES, BUDGET_PRESETS } from "@/lib/lead-statuses";
+
+const SRC_LABELS: Record<string, string> = {
+  WEBSITE: "Website", WHATSAPP: "WhatsApp", CSV_IMPORT: "CSV Import",
+  EVENT: "Event", REFERRAL: "Referral", INBOUND_CALL: "Inbound Call",
+  FACEBOOK_ADS: "Facebook Ads", GOOGLE_ADS: "Google Ads",
+  PORTAL_99ACRES: "99Acres", PORTAL_MAGICBRICKS: "MagicBricks",
+  PORTAL_HOUSING: "Housing.com", OTHER: "Other",
+};
+const FOLLOWUP_LABELS: Record<string, string> = {
+  today: "Follow-up: Today", tomorrow: "Follow-up: Tomorrow",
+  week: "Follow-up: This week", month: "Follow-up: This month",
+  overdue: "Follow-up: Overdue",
+};
+const POTENTIAL_LABELS: Record<string, string> = {
+  HIGH: "High Potential", MEDIUM: "Medium Potential",
+  LOW: "Low Potential", UNKNOWN: "Unknown Potential",
+};
+const FUND_LABELS: Record<string, string> = {
+  IMMEDIATE_BUYER: "Immediate Buyer", SHORT_TERM_BUYER: "Short-Term Buyer",
+  CONDITIONAL_BUYER: "Conditional Buyer", FINANCED_BUYER: "Financed Buyer",
+  FUTURE_BUYER: "Future Buyer",
+};
+const CLIENT_LABELS: Record<string, string> = {
+  INVESTOR: "Investor", END_USER: "End User", BOTH: "Investor + End User", UNCLEAR: "Unclear",
+};
+const WHEN_LABELS: Record<string, string> = {
+  IMMEDIATE: "Immediate", THIRTY_DAYS: "Within 1 Month",
+  THREE_MONTHS: "Visit Dubai First", SIX_PLUS_MONTHS: "Not in 6 Months",
+  WINDOW_SHOPPING: "Window Shopping",
+};
 
 interface Props {
   agents: { id: string; name: string }[];
@@ -11,10 +41,12 @@ interface Props {
   showSource?: boolean;
   /** DISTINCT tags from the dataset for the tag-filter dropdown. */
   distinctTags?: string[];
+  /** All projects for the project filter dropdown */
+  projects?: { id: string; name: string }[];
 }
 
 export default function LeadFilters({
-  agents, sources, statuses, showSource = true, distinctTags = [],
+  agents, sources, statuses, showSource = true, distinctTags = [], projects = [],
 }: Props) {
   const router   = useRouter();
   const pathname = usePathname();
@@ -54,6 +86,8 @@ export default function LeadFilters({
   const [draftFundReady,    setDraftFundReady]    = useState("");
   const [draftClientType,   setDraftClientType]   = useState("");
   const [draftWhenInvest,   setDraftWhenInvest]   = useState("");
+  const [draftProject,      setDraftProject]      = useState("");
+  const [draftBudgetPreset, setDraftBudgetPreset] = useState("");
 
   function openDrawer() {
     setDraftSource(sp.get("source") ?? "");
@@ -73,6 +107,8 @@ export default function LeadFilters({
     setDraftFundReady(sp.get("fundReady") ?? "");
     setDraftClientType(sp.get("clientType") ?? "");
     setDraftWhenInvest(sp.get("whenInvest") ?? "");
+    setDraftProject(sp.get("project") ?? "");
+    setDraftBudgetPreset(sp.get("budgetPreset") ?? "");
     setOpen(true);
   }
 
@@ -92,10 +128,12 @@ export default function LeadFilters({
     set("dateFrom",    draftDateFrom);
     set("dateTo",      draftDateTo);
     set("dateField",   draftDateField);
-    set("potential",   draftPotential);
-    set("fundReady",   draftFundReady);
-    set("clientType",  draftClientType);
-    set("whenInvest",  draftWhenInvest);
+    set("potential",     draftPotential);
+    set("fundReady",     draftFundReady);
+    set("clientType",    draftClientType);
+    set("whenInvest",    draftWhenInvest);
+    set("project",       draftProject);
+    set("budgetPreset",  draftBudgetPreset);
     p.delete("page");
     router.replace(`${pathname}?${p.toString()}`);
     setOpen(false);
@@ -103,7 +141,7 @@ export default function LeadFilters({
 
   function resetFilters() {
     const p = new URLSearchParams(sp);
-    ["source","status","cstatus","ai","team","owner","sort","tag","notPicked","followup","smart","filter","when","eoi","dateFrom","dateTo","dateField","potential","fundReady","clientType","whenInvest"]
+    ["source","status","cstatus","ai","team","owner","sort","tag","notPicked","followup","smart","filter","when","eoi","dateFrom","dateTo","dateField","potential","fundReady","clientType","whenInvest","project","budgetPreset"]
       .forEach(k => p.delete(k));
     p.delete("page");
     router.replace(`${pathname}?${p.toString()}`);
@@ -112,13 +150,57 @@ export default function LeadFilters({
 
   // Badge: count of active drawer-managed params
   const advancedCount = [
-    sp.get("source"),    sp.get("status"),   sp.get("cstatus"),
-    sp.get("ai"),        sp.get("team"),      sp.get("owner"),
-    sp.get("sort"),      sp.get("tag"),       sp.get("notPicked"),
-    sp.get("smart"),     sp.get("filter"),
-    sp.get("dateFrom"),  sp.get("dateTo"),
-    sp.get("potential"), sp.get("fundReady"), sp.get("clientType"), sp.get("whenInvest"),
+    sp.get("source"),      sp.get("status"),       sp.get("cstatus"),
+    sp.get("ai"),          sp.get("team"),          sp.get("owner"),
+    sp.get("sort"),        sp.get("tag"),           sp.get("notPicked"),
+    sp.get("smart"),       sp.get("filter"),
+    sp.get("dateFrom"),    sp.get("dateTo"),
+    sp.get("potential"),   sp.get("fundReady"),     sp.get("clientType"), sp.get("whenInvest"),
+    sp.get("project"),     sp.get("budgetPreset"),
   ].filter(Boolean).length;
+
+  // ── Active filter chips (shown outside the drawer, always visible) ──────────
+  // Each entry = one removable chip. Clicking × deletes just that URL param.
+  function removeParam(key: string) {
+    const p = new URLSearchParams(sp.toString());
+    p.delete(key);
+    p.delete("page");
+    router.replace(`${pathname}?${p.toString()}`);
+  }
+  function removeParamMulti(...keys: string[]) {
+    const p = new URLSearchParams(sp.toString());
+    keys.forEach(k => p.delete(k));
+    p.delete("page");
+    router.replace(`${pathname}?${p.toString()}`);
+  }
+  type Chip = { label: string; remove: () => void };
+  const activeChips: Chip[] = [];
+  if (sp.get("q"))           activeChips.push({ label: `"${sp.get("q")}"`,                          remove: () => removeParam("q") });
+  if (sp.get("project"))     activeChips.push({ label: `🏢 ${sp.get("project")}`,                    remove: () => removeParam("project") });
+  if (sp.get("cstatus"))     activeChips.push({ label: sp.get("cstatus")!,                           remove: () => removeParam("cstatus") });
+  if (sp.get("budgetPreset"))activeChips.push({ label: BUDGET_PRESETS.find(b => b.key === sp.get("budgetPreset"))?.label ?? sp.get("budgetPreset")!, remove: () => removeParam("budgetPreset") });
+  if (sp.get("potential"))   activeChips.push({ label: POTENTIAL_LABELS[sp.get("potential")!] ?? sp.get("potential")!, remove: () => removeParam("potential") });
+  if (sp.get("fundReady"))   activeChips.push({ label: FUND_LABELS[sp.get("fundReady")!] ?? sp.get("fundReady")!,     remove: () => removeParam("fundReady") });
+  if (sp.get("clientType"))  activeChips.push({ label: CLIENT_LABELS[sp.get("clientType")!] ?? sp.get("clientType")!, remove: () => removeParam("clientType") });
+  if (sp.get("whenInvest"))  activeChips.push({ label: WHEN_LABELS[sp.get("whenInvest")!] ?? sp.get("whenInvest")!,   remove: () => removeParam("whenInvest") });
+  if (sp.get("ai"))          activeChips.push({ label: `AI: ${sp.get("ai")}`,                        remove: () => removeParam("ai") });
+  if (sp.get("followup") && sp.get("followup") !== "all")
+                             activeChips.push({ label: FOLLOWUP_LABELS[sp.get("followup")!] ?? sp.get("followup")!,   remove: () => removeParam("followup") });
+  if (sp.get("notPicked"))   activeChips.push({ label: `No answer ${sp.get("notPicked")}d+`,          remove: () => removeParam("notPicked") });
+  if (sp.get("team"))        activeChips.push({ label: `Team: ${sp.get("team")}`,                    remove: () => removeParam("team") });
+  if (sp.get("owner")) {
+    const agentName = agents.find(a => a.id === sp.get("owner"))?.name ?? (sp.get("owner") === "unassigned" ? "Unassigned" : sp.get("owner")!);
+    activeChips.push({ label: `👤 ${agentName}`, remove: () => removeParam("owner") });
+  }
+  if (showSource && sp.get("source"))
+                             activeChips.push({ label: SRC_LABELS[sp.get("source")!] ?? sp.get("source")!, remove: () => removeParam("source") });
+  if (sp.get("tag"))         activeChips.push({ label: `Tag: ${sp.get("tag")}`,                      remove: () => removeParam("tag") });
+  if (sp.get("dateFrom") || sp.get("dateTo")) {
+    const field = sp.get("dateField") ?? "followupDate";
+    const fLabel = field === "createdAt" ? "Created" : field === "lastTouchedAt" ? "Activity" : "Follow-up";
+    const range = `${sp.get("dateFrom") ?? "∞"} → ${sp.get("dateTo") ?? "∞"}`;
+    activeChips.push({ label: `${fLabel}: ${range}`, remove: () => removeParamMulti("dateFrom","dateTo","dateField") });
+  }
 
   const selCls = "w-full border border-[#e5e7eb] dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 rounded-lg px-3 py-2 text-sm";
   const lblCls = "text-xs font-semibold text-gray-500 dark:text-slate-400 block mb-1";
@@ -143,9 +225,8 @@ export default function LeadFilters({
               ? "border-[#0b1a33] bg-[#0b1a33] text-white dark:border-blue-500 dark:bg-blue-700"
               : "border-[#e5e7eb] dark:border-slate-600 bg-white dark:bg-slate-800 text-gray-700 dark:text-slate-100 hover:border-gray-400 dark:hover:border-slate-400",
           ].join(" ")}
-          aria-label="Open advanced filters"
+          aria-label="Open filters"
         >
-          {/* Filter icon */}
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
             <line x1="4" y1="6" x2="20" y2="6"/>
             <line x1="4" y1="12" x2="20" y2="12"/>
@@ -160,6 +241,32 @@ export default function LeadFilters({
           )}
         </button>
       </div>
+
+      {/* ── Active filter chips (stacked AND filters, each removable) ────────── */}
+      {activeChips.length > 0 && (
+        <div className="flex flex-wrap gap-1.5 pt-0.5">
+          {activeChips.map((chip, i) => (
+            <button
+              key={i}
+              type="button"
+              onClick={chip.remove}
+              className="inline-flex items-center gap-1 pl-2.5 pr-1.5 py-1 rounded-full text-xs font-medium bg-[#0b1a33] text-white hover:bg-[#0b1a33]/80 transition-colors dark:bg-blue-700 dark:hover:bg-blue-600"
+            >
+              {chip.label}
+              <span className="inline-flex items-center justify-center w-3.5 h-3.5 rounded-full bg-white/20 hover:bg-white/30 text-[10px] font-bold leading-none ml-0.5" aria-hidden>×</span>
+            </button>
+          ))}
+          {activeChips.length > 1 && (
+            <button
+              type="button"
+              onClick={resetFilters}
+              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium text-gray-500 dark:text-slate-400 border border-gray-300 dark:border-slate-600 hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors"
+            >
+              Clear all
+            </button>
+          )}
+        </div>
+      )}
 
       {/* ── More-Filters drawer ───────────────────────────────────────────────── */}
       {open && (
@@ -195,6 +302,38 @@ export default function LeadFilters({
 
             {/* Filter controls */}
             <div className="px-5 pb-4 space-y-3 overflow-y-auto" style={{ maxHeight: "60vh" }}>
+
+              {/* ── PROJECT — primary Excel filter ── */}
+              {projects.length > 0 && (
+                <div>
+                  <label className={lblCls}>🏢 Project</label>
+                  <select value={draftProject} onChange={(e) => setDraftProject(e.target.value)} className={selCls}>
+                    <option value="">All projects</option>
+                    {projects.map(p => <option key={p.id} value={p.name}>{p.name}</option>)}
+                  </select>
+                </div>
+              )}
+
+              {/* ── BUDGET MINIMUM ── */}
+              <div>
+                <label className={lblCls}>💰 Budget (minimum)</label>
+                <select value={draftBudgetPreset} onChange={(e) => setDraftBudgetPreset(e.target.value)} className={selCls}>
+                  <option value="">Any budget</option>
+                  <optgroup label="INR">
+                    {BUDGET_PRESETS.filter(b => b.key.endsWith("_inr")).map(b =>
+                      <option key={b.key} value={b.key}>{b.label}</option>
+                    )}
+                  </optgroup>
+                  <optgroup label="AED">
+                    {BUDGET_PRESETS.filter(b => b.key.endsWith("_aed")).map(b =>
+                      <option key={b.key} value={b.key}>{b.label}</option>
+                    )}
+                  </optgroup>
+                </select>
+              </div>
+
+              {/* ── STATUS ── */}
+
               {/* Follow-up */}
               <div>
                 <label className={lblCls}>📅 Follow-up</label>

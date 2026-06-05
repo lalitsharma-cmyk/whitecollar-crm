@@ -54,6 +54,21 @@ export const EXCEL_STATUSES = [
 
 export type ExcelStatus = (typeof EXCEL_STATUSES)[number];
 
+// ─── Budget minimum presets ───────────────────────────────────────────────────
+// Shared between server (leads/page.tsx) and client (LeadFilters).
+// Key stored in ?budgetPreset= URL param; value used for the Prisma filter.
+export const BUDGET_PRESETS: Array<{ key: string; value: number; label: string }> = [
+  { key: "50l_inr",  value: 5_000_000,   label: "₹ 50L+" },
+  { key: "1cr_inr",  value: 10_000_000,  label: "₹ 1Cr+" },
+  { key: "3cr_inr",  value: 30_000_000,  label: "₹ 3Cr+" },
+  { key: "5cr_inr",  value: 50_000_000,  label: "₹ 5Cr+" },
+  { key: "10cr_inr", value: 100_000_000, label: "₹ 10Cr+" },
+  { key: "1m_aed",   value: 1_000_000,   label: "AED 1M+" },
+  { key: "2m_aed",   value: 2_000_000,   label: "AED 2M+" },
+  { key: "5m_aed",   value: 5_000_000,   label: "AED 5M+" },
+  { key: "10m_aed",  value: 10_000_000,  label: "AED 10M+" },
+];
+
 /** Map each status to a CSS chip class + a short colour hint. */
 export function excelStatusChip(s: string | null): string {
   if (!s) return "chip-new";

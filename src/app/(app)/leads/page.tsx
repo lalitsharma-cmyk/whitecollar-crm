@@ -8,7 +8,7 @@ import LeadsListClient from "@/components/LeadsListClient";
 import { runReconciler } from "@/lib/reconciler";
 import { leadScopeWhere } from "@/lib/leadScope";
 import { formatBudget } from "@/lib/budgetParse";
-import { excelStatusChip } from "@/lib/lead-statuses";
+import { excelStatusChip, BUDGET_PRESETS } from "@/lib/lead-statuses";
 
 export const dynamic = "force-dynamic";
 
@@ -101,6 +101,23 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
   if (sp.fundReady) where.fundReadiness = sp.fundReady as FundReadiness;
   if (sp.clientType) where.clientType = sp.clientType as "INVESTOR" | "END_USER" | "BOTH" | "UNCLEAR";
   if (sp.whenInvest) where.whenCanInvest = sp.whenInvest as InvestTimeline;
+  // Project filter — matches leads that discussed this project OR have interested units in it
+  if (sp.project) {
+    const projectWhere: Prisma.LeadWhereInput = {
+      OR: [
+        { discussed: { some: { project: { name: { equals: sp.project, mode: "insensitive" } } } } },
+        { interestedUnits: { some: { unit: { project: { name: { equals: sp.project, mode: "insensitive" } } } } } },
+      ],
+    };
+    where.AND = where.AND
+      ? [...(Array.isArray(where.AND) ? where.AND : [where.AND]), projectWhere]
+      : [projectWhere];
+  }
+  // Budget minimum preset filter
+  if (sp.budgetPreset) {
+    const preset = BUDGET_PRESETS.find(b => b.key === sp.budgetPreset);
+    if (preset) where.budgetMin = { gte: preset.value };
+  }
   // Agents are scoped to their own leads (leadScopeWhere above). Only ADMIN/MANAGER
   // may filter by owner — without this guard an agent could read a peer's leads by
   // hand-crafting ?owner=<id>, overriding their ownership scope.
@@ -173,7 +190,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
   // search and show all matching, not just today's.
   // nofollowup filter already sets followupDate: null, so the followup chip
   // default (today) must not compose with it — include it as an "other filter".
-  const hasOtherFilter = !!(sp.q || sp.source || sp.status || sp.cstatus || sp.owner || sp.team || sp.score || sp.notPicked || sp.eoi || sp.potential || sp.fundReady || sp.clientType || sp.whenInvest || filterTab === "nofollowup");
+  const hasOtherFilter = !!(sp.q || sp.source || sp.status || sp.cstatus || sp.owner || sp.team || sp.score || sp.notPicked || sp.eoi || sp.potential || sp.fundReady || sp.clientType || sp.whenInvest || sp.project || sp.budgetPreset || filterTab === "nofollowup");
   // Default view = ALL leads. No hidden filter is applied on a clean page load.
   // (Previously defaulted to "today" which caused "44 total, 8 matching" confusion.)
   const effectiveFollowup = sp.followup ?? "all";
@@ -374,6 +391,12 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
     .map((r) => r.tag)
     .filter((t): t is string => typeof t === "string" && t.length > 0);
 
+  // Projects list for the project filter dropdown — small table, cheap separate query.
+  const allProjects = await prisma.project.findMany({
+    select: { id: true, name: true },
+    orderBy: { name: "asc" },
+  });
+
   // Fetch intelligence match data for the current page of leads (post-join:
   // IntelligenceMatch has no FK back-relation on Lead, so we query separately).
   const leadIds = leads.map((l) => l.id);
@@ -429,6 +452,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
         statuses={Object.values(LeadStatus)}
         showSource={me.role !== "AGENT"}
         distinctTags={distinctTags}
+        projects={allProjects}
       />
 
       {/* ── Status-based filter chips (Excel/MIS values) ──────────────────── */}
@@ -507,7 +531,8 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
           sp.q || sp.source || sp.status || sp.cstatus || sp.owner || sp.team ||
           sp.ai || sp.when || sp.notPicked || sp.eoi || sp.smart ||
           sp.tag || sp.filter || (sp.followup && sp.followup !== "all") ||
-          sp.potential || sp.fundReady || sp.clientType || sp.whenInvest
+          sp.potential || sp.fundReady || sp.clientType || sp.whenInvest ||
+          sp.project || sp.budgetPreset
         );
         if (!hasActiveFilters) return null;
         return (
