@@ -228,10 +228,19 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
   // search and show all matching, not just today's.
   // nofollowup filter already sets followupDate: null, so the followup chip
   // default (today) must not compose with it — include it as an "other filter".
-  const hasOtherFilter = !!(sp.q || sp.source || sp.status || sp.cstatus || sp.owner || sp.team || sp.score || sp.notPicked || sp.eoi || sp.potential || sp.fundReady || sp.clientType || sp.whenInvest || sp.project || sp.budgetPreset || sp.budgetFrom || sp.budgetTo || sp.city || sp.category || sp.hasMeeting || sp.hasSiteVisit || filterTab === "nofollowup");
+  const hasOtherFilter = !!(sp.q || sp.source || sp.status || sp.cstatus || sp.owner || sp.team || sp.score || sp.notPicked || sp.eoi || sp.potential || sp.fundReady || sp.clientType || sp.whenInvest || sp.project || sp.budgetPreset || sp.budgetFrom || sp.budgetTo || sp.city || sp.category || sp.hasMeeting || sp.hasSiteVisit || sp.followupFrom || sp.followupTo || filterTab === "nofollowup");
   // Default view = ALL leads. No hidden filter is applied on a clean page load.
   // (Previously defaulted to "today" which caused "44 total, 8 matching" confusion.)
-  const effectiveFollowup = sp.followup ?? "all";
+  // Excel-style follow-up date range (from filter panel) — takes precedence over quick chips
+  if (sp.followupFrom || sp.followupTo) {
+    const fRange: { gte?: Date; lte?: Date } = {};
+    if (sp.followupFrom) fRange.gte = new Date(sp.followupFrom + "T00:00:00+05:30");
+    if (sp.followupTo)   fRange.lte = new Date(sp.followupTo   + "T23:59:59+05:30");
+    where.followupDate = fRange;
+  }
+
+  // Quick chip-bar shortcuts (Today/Overdue) — ignored if date range is set
+  const effectiveFollowup = (sp.followupFrom || sp.followupTo) ? "range" : (sp.followup ?? "all");
 
   if (effectiveFollowup === "today") {
     // Today in IST as a UTC window: 00:00 IST = 18:30 UTC the previous day.
@@ -249,7 +258,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
     // Next 30 days from now (inclusive of today).
     where.followupDate = { gte: new Date(), lte: new Date(Date.now() + 30 * 24 * 3600 * 1000) };
   }
-  // effectiveFollowup === "all" → no followupDate filter applied.
+  // effectiveFollowup === "all" or "range" → followupDate already set above or unset.
 
   // Smart-filter preset chips — spec §9.3. Composes via AND so it does not
   // replace existing followup / status / source filters. Each preset is a

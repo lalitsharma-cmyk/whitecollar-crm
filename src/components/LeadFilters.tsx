@@ -175,7 +175,8 @@ export default function LeadFilters({
 
   // Other filters
   const [draftTeam,         setDraftTeam]         = useState("");
-  const [draftFollowup,     setDraftFollowup]     = useState("");
+  const [draftFollowupFrom, setDraftFollowupFrom] = useState("");
+  const [draftFollowupTo,   setDraftFollowupTo]   = useState("");
   const [draftCity,         setDraftCity]         = useState("");
   const [draftFundReady,    setDraftFundReady]     = useState("");
   const [draftPotential,    setDraftPotential]    = useState("");
@@ -199,7 +200,8 @@ export default function LeadFilters({
     setBudgetFrom(sp.get("budgetFrom") ? formatBudget(Number(sp.get("budgetFrom")), "INR") : "");
     setBudgetTo(sp.get("budgetTo")     ? formatBudget(Number(sp.get("budgetTo")),   "INR") : "");
     setDraftTeam(sp.get("team") ?? "");
-    setDraftFollowup(sp.get("followup") ?? "");
+    setDraftFollowupFrom(sp.get("followupFrom") ?? "");
+    setDraftFollowupTo(sp.get("followupTo") ?? "");
     setDraftCity(sp.get("city") ?? "");
     setDraftFundReady(sp.get("fundReady") ?? "");
     setDraftPotential(sp.get("potential") ?? "");
@@ -234,7 +236,10 @@ export default function LeadFilters({
     p.delete("budgetPreset"); // legacy
 
     set("team",          draftTeam);
-    set("followup",      draftFollowup);
+    set("followupFrom",  draftFollowupFrom);
+    set("followupTo",    draftFollowupTo);
+    // If date range is set, clear the quick-chip followup param to avoid conflict
+    if (draftFollowupFrom || draftFollowupTo) p.delete("followup");
     set("city",          draftCity);
     set("fundReady",     draftFundReady);
     set("potential",     draftPotential);
@@ -255,7 +260,7 @@ export default function LeadFilters({
   function resetFilters() {
     const p = new URLSearchParams(sp.toString());
     ["project","cstatus","source","owner","whenInvest","clientType",
-     "budgetFrom","budgetTo","budgetPreset","team","followup","city",
+     "budgetFrom","budgetTo","budgetPreset","team","followup","followupFrom","followupTo","city",
      "fundReady","potential","notPicked","hasMeeting","hasSiteVisit",
      "category","tag","sort","dateFrom","dateTo","dateField",
      "status","ai","smart","filter","when","eoi",
@@ -308,7 +313,11 @@ export default function LeadFilters({
     chips.push({ key: "budget", label: `💰 ${fmtN(sp.get("budgetFrom"))} – ${fmtN(sp.get("budgetTo"))}`, remove: () => removeParam("budgetFrom","budgetTo") });
   }
   if (sp.get("team"))     chips.push({ key:"team",      label: `${sp.get("team")} team`,                            remove: () => removeParam("team") });
-  if (sp.get("followup") && sp.get("followup") !== "all")
+  // Follow-up date range (from filter panel)
+  if (sp.get("followupFrom") || sp.get("followupTo"))
+                          chips.push({ key:"followupRange", label: `📅 Follow-Up: ${sp.get("followupFrom")??"∞"} → ${sp.get("followupTo")??"∞"}`, remove: () => removeParam("followupFrom","followupTo") });
+  // Quick chip bar followup (Today/Overdue — from chip shortcuts, not panel)
+  if (sp.get("followup") && sp.get("followup") !== "all" && !sp.get("followupFrom") && !sp.get("followupTo"))
                           chips.push({ key:"followup",  label: FOLLOWUP_LABELS[sp.get("followup")!] ?? sp.get("followup")!, remove: () => removeParam("followup") });
   if (sp.get("city"))     chips.push({ key:"city",      label: `📍 ${sp.get("city")}`,                              remove: () => removeParam("city") });
   if (sp.get("fundReady"))chips.push({ key:"fr",        label: `Fund: ${sp.get("fundReady")}`,                      remove: () => removeParam("fundReady") });
@@ -435,26 +444,24 @@ export default function LeadFilters({
                 <CheckList label="👤 Assigned To" options={agentOpts} selected={ownerSel} onChange={setOwnerSel} />
               )}
 
-              {/* 6. Follow-Up Date */}
+              {/* 6. Follow-Up Date — Excel-style date range */}
               <div>
                 <div className="text-[11px] font-bold uppercase tracking-wide text-gray-500 dark:text-slate-400 mb-1">📅 Follow-Up Date</div>
-                <div className="space-y-0.5">
-                  {[
-                    { v: "", l: "Any" },
-                    { v: "overdue", l: "⏰ Overdue" },
-                    { v: "today",   l: "Today" },
-                    { v: "tomorrow",l: "Tomorrow" },
-                    { v: "week",    l: "This week" },
-                    { v: "month",   l: "This month" },
-                  ].map(o => (
-                    <label key={o.v} className="flex items-center gap-1.5 cursor-pointer group py-0.5">
-                      <input type="radio" name="followup" value={o.v}
-                        checked={draftFollowup === o.v}
-                        onChange={() => setDraftFollowup(o.v)}
-                        className="h-3.5 w-3.5 text-[#0b1a33] border-gray-300 dark:border-slate-500 focus:ring-[#0b1a33] flex-none" />
-                      <span className="text-xs text-gray-700 dark:text-slate-200 group-hover:text-[#0b1a33] dark:group-hover:text-blue-300">{o.l}</span>
-                    </label>
-                  ))}
+                <div className="space-y-1.5">
+                  <div>
+                    <label className="text-[10px] text-gray-400 dark:text-slate-500 block mb-0.5">From</label>
+                    <input type="date" value={draftFollowupFrom} onChange={e => setDraftFollowupFrom(e.target.value)}
+                      className={selCls} />
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-gray-400 dark:text-slate-500 block mb-0.5">To</label>
+                    <input type="date" value={draftFollowupTo} onChange={e => setDraftFollowupTo(e.target.value)}
+                      className={selCls} />
+                  </div>
+                  {(draftFollowupFrom || draftFollowupTo) && (
+                    <button type="button" onClick={() => { setDraftFollowupFrom(""); setDraftFollowupTo(""); }}
+                      className="text-[10px] text-blue-500 hover:underline">Clear dates</button>
+                  )}
                 </div>
               </div>
 
