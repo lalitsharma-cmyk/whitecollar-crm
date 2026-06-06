@@ -661,6 +661,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
             lastTouchedAt: l.lastTouchedAt ? l.lastTouchedAt.toISOString() : null,
             todoNext:      l.todoNext ?? null,
             followupDate:  l.followupDate ? fnsFormat(l.followupDate, "dd MMM") : null,
+            followupRaw:   l.followupDate ? fnsFormat(l.followupDate, "yyyy-MM-dd") : null,
             city:          l.city ?? null,
             whenCanInvest: l.whenCanInvest ?? null,
             remarks:       l.remarks ? l.remarks.slice(0, 120) : null,
