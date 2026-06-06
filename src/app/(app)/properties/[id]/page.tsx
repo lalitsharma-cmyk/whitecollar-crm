@@ -1,7 +1,8 @@
 import { prisma } from "@/lib/prisma";
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { UnitStatus, LeadStatus } from "@prisma/client";
+import { UnitStatus } from "@prisma/client";
+import { SUPPRESSED_STATUSES } from "@/lib/lead-statuses";
 import { requireUser } from "@/lib/auth";
 import { bestLeadsForProject } from "@/lib/leadsForProject";
 import { leadScopeWhere } from "@/lib/leadScope";
@@ -38,7 +39,7 @@ export default async function PropertyDetail({ params }: { params: Promise<{ id:
       where: {
         ...leadScope,
         discussed: { some: { projectId: id } },
-        status: { notIn: [LeadStatus.WON, LeadStatus.LOST] },
+        currentStatus: { notIn: SUPPRESSED_STATUSES },
       },
       include: { owner: true },
       orderBy: { lastTouchedAt: "desc" },

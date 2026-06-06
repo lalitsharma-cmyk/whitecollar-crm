@@ -1,9 +1,9 @@
 import { prisma } from "@/lib/prisma";
 import { notify, notifyRoles } from "@/lib/notify";
-import { LeadStatus } from "@prisma/client";
 import { chooseOwnerForNewLead } from "@/lib/assignmentWindow";
 import { getRoundRobinEnabled, getTestingModeEnabled } from "@/lib/settings";
 import { automationGate } from "@/lib/teamRouting";
+import { SUPPRESSED_STATUSES, CLOSING_STATUSES } from "@/lib/lead-statuses";
 
 // The reconciler runs on every dashboard/leads page load (cheap, deduped).
 // It enforces two SLAs without needing a separate cron service:
@@ -11,6 +11,7 @@ import { automationGate } from "@/lib/teamRouting";
 //   • 15-min call SLA: assigned lead with no call after 15 min → notify agent + admin
 //
 // Idempotent: each notification is only sent once thanks to slaEscalated / ownerId flags.
+// STATUS IS THE ONLY WORKFLOW — no stage/won/lost checks.
 
 const AUTO_ASSIGN_AFTER_MIN = 5;
 const FIRST_CALL_SLA_MIN = 15;
@@ -41,42 +42,27 @@ export async function runReconciler(): Promise<ReconcileResult> {
   const testingMode = await getTestingModeEnabled();
 
   // ── 1) Auto-assign anything unowned >5 minutes ──────────────────────
-  // Admin kill-switch: when OFF, skip just the orphan sweep (SLA escalation
-  // and "needs you" flagging in sections 2-3 still run). Used during bulk
-  // imports of existing-client data so nothing gets stolen by round-robin
-  // before admin manually routes.
-  // Testing mode also suppresses the orphan sweep.
   const roundRobinOn = !testingMode && await getRoundRobinEnabled();
   const cutoffAssign = new Date(Date.now() - AUTO_ASSIGN_AFTER_MIN * 60 * 1000);
   const orphans = roundRobinOn ? await prisma.lead.findMany({
     where: {
       ownerId: null,
       createdAt: { lte: cutoffAssign },
-      status: { notIn: [LeadStatus.WON, LeadStatus.LOST] },
-      // Cold-data imports are admin-assigned only — skip them in the 5-min auto-sweep.
+      currentStatus: { notIn: SUPPRESSED_STATUSES },
       isColdCall: false,
-      // Lalit's mandatory-team policy (2026-06): leads without a team tag
-      // must NEVER auto-route. They park in /admin/awaiting-team until an
-      // admin picks Dubai or India; once tagged, the orphan sweep picks them
-      // up on the next pass.
       forwardedTeam: { not: null },
     },
     take: 50,
   }) : [];
 
   for (const lead of orphans) {
-    // Mandatory pre-automation gate: block unclassified leads and respect testing mode.
     const gate = automationGate(lead.forwardedTeam, testingMode);
     if (!gate.ok) continue;
 
     const team = lead.forwardedTeam ?? null;
-    // Use time-window-aware chooser: 10am-7pm round-robin among present,
-    // 7-10pm → Lalit, 10pm-10am → null (skip, keep in admin's morning queue).
     const choice = await chooseOwnerForNewLead(team);
-    if (!choice.userId) {
-      // Overnight window — leave unassigned for morning admin handling
-      continue;
-    }
+    if (!choice.userId) continue;
+
     const agent = await prisma.user.findUnique({ where: { id: choice.userId } });
     if (!agent) continue;
     const now = new Date();
@@ -114,26 +100,22 @@ export async function runReconciler(): Promise<ReconcileResult> {
   }
 
   // ── 2) Escalate 15-min call SLA breaches ───────────────────────────
-  // Testing mode: skip — Lalit doesn't want fake "missed SLA" pings to clutter
-  // the bell while he's importing real client data and not actually calling.
   const overdue = testingMode ? [] : await prisma.lead.findMany({
     where: {
       slaFirstCallBy: { lte: new Date() },
       slaEscalated: false,
       ownerId: { not: null },
-      status: { notIn: [LeadStatus.WON, LeadStatus.LOST] },
+      currentStatus: { notIn: SUPPRESSED_STATUSES },
     },
     include: { owner: true, callLogs: { take: 1 } },
     take: 50,
   });
 
   for (const lead of overdue) {
-    // Mandatory pre-automation gate: block unclassified leads and respect testing mode.
     const gate = automationGate(lead.forwardedTeam, testingMode);
     if (!gate.ok) continue;
 
     if (lead.callLogs.length > 0) {
-      // Agent already called — just clear the flag
       await prisma.lead.update({ where: { id: lead.id }, data: { slaEscalated: true } });
       continue;
     }
@@ -159,12 +141,10 @@ export async function runReconciler(): Promise<ReconcileResult> {
     slaEscalated++;
   }
 
-  // ── 3) "Needs You" flag — leads where manager push could help ──
-  // Conditions: closing-stage + no contact 24h, OR 3+ consecutive not-picked attempts
-  // Testing mode: skip auto-flagging — admin sees raw data without nagging banners.
+  // ── 3) "Needs You" flag — closing-status leads idle >24h or 3+ not-picked ──
   const closingLeads = testingMode ? [] : await prisma.lead.findMany({
     where: {
-      status: { in: ["NEGOTIATION", "SITE_VISIT", "QUALIFIED"] },
+      currentStatus: { in: CLOSING_STATUSES },
       needsManagerReview: false,
       OR: [
         { lastTouchedAt: { lt: new Date(Date.now() - 24 * 3600 * 1000) } },
@@ -175,15 +155,13 @@ export async function runReconciler(): Promise<ReconcileResult> {
   });
   let flagged = 0;
   for (const lead of closingLeads) {
-    // Mandatory pre-automation gate: block unclassified leads and respect testing mode.
     const gate = automationGate(lead.forwardedTeam, testingMode);
     if (!gate.ok) continue;
 
     let reason = "";
     if (lead.lastTouchedAt && lead.lastTouchedAt < new Date(Date.now() - 24 * 3600 * 1000)) {
-      reason = `${lead.status} stage idle >24h — manager push may close`;
+      reason = `${lead.currentStatus ?? "Lead"} status idle >24h — manager push may close`;
     }
-    // Not-picked streak detection
     let streak = 0;
     for (const c of lead.callLogs) {
       if (c.outcome === "NOT_PICKED" || c.outcome === "SWITCHED_OFF" || c.outcome === "BUSY") streak++;
@@ -195,7 +173,6 @@ export async function runReconciler(): Promise<ReconcileResult> {
       where: { id: lead.id },
       data: { needsManagerReview: true, managerReviewReason: reason, flaggedAt: new Date() },
     });
-    // Notify admin/manager
     await notifyRoles(["ADMIN", "MANAGER"], {
       kind: "REMINDER",
       severity: "WARNING",

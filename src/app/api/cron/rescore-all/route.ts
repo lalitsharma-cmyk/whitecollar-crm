@@ -11,7 +11,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { rescoreLead } from "@/lib/leadRescorer";
-import { LeadStatus } from "@prisma/client";
+import { SUPPRESSED_STATUSES } from "@/lib/lead-statuses";
 import { startCronRun, finishCronRun } from "@/lib/cronRun";
 
 export const dynamic = "force-dynamic";
@@ -27,7 +27,7 @@ export async function GET(req: NextRequest) {
   try {
   // Process ids only — avoids loading whole rows just to discard them.
   const leads = await prisma.lead.findMany({
-    where: { status: { notIn: [LeadStatus.WON, LeadStatus.LOST] } },
+    where: { currentStatus: { notIn: SUPPRESSED_STATUSES } },
     select: { id: true },
   });
 

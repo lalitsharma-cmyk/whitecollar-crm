@@ -2,7 +2,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
-  LayoutDashboard, Users, KanbanSquare, Building2, CalendarDays,
+  LayoutDashboard, Users, Building2, CalendarDays,
   PhoneCall, BarChart3, Sparkles, Upload, UserCog, Settings as SettingsIcon, LogOut, Bell
 } from "lucide-react";
 
@@ -14,7 +14,6 @@ const nav = [
     { href: "/dashboard",   label: "Dashboard",   Icon: LayoutDashboard, adminOnly: false },
     { href: "/action-list", label: "Action List", Icon: Sparkles, tag: "HOT", adminOnly: false },
     { href: "/leads",       label: "Leads",       Icon: Users, badge: true, adminOnly: false },
-    { href: "/pipeline",    label: "Pipeline",    Icon: KanbanSquare, adminOnly: false },
     { href: "/properties", label: "Properties",  Icon: Building2, adminOnly: false },
     { href: "/calls",      label: "Call Records",Icon: PhoneCall, adminOnly: false, agentHidden: true },
     { href: "/reports",    label: "Reports",     Icon: BarChart3, adminOnly: false },

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth";
 import { generateText, aiEnabled } from "@/lib/ai";
 import { prisma } from "@/lib/prisma";
-import { LeadStatus } from "@prisma/client";
+import { SUPPRESSED_STATUSES } from "@/lib/lead-statuses";
 
 /**
  * GET /api/ai/morning-message
@@ -44,8 +44,8 @@ export async function GET() {
   // generic "have a great day" filler.
   const since24h = new Date(Date.now() - 24 * 3600_000);
   const [pipelineCount, hotCount, newOvernight] = await Promise.all([
-    prisma.lead.count({ where: { ownerId: me.id, status: { notIn: [LeadStatus.WON, LeadStatus.LOST] } } }),
-    prisma.lead.count({ where: { ownerId: me.id, aiScore: "HOT", status: { notIn: [LeadStatus.WON, LeadStatus.LOST] } } }),
+    prisma.lead.count({ where: { ownerId: me.id, currentStatus: { notIn: SUPPRESSED_STATUSES } } }),
+    prisma.lead.count({ where: { ownerId: me.id, aiScore: "HOT", currentStatus: { notIn: SUPPRESSED_STATUSES } } }),
     prisma.lead.count({ where: { ownerId: me.id, createdAt: { gte: since24h } } }),
   ]);
 

@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/auth";
 import { normalizeTeam } from "@/lib/teamRouting";
-import { CallOutcome, LeadStatus, Prisma } from "@prisma/client";
+import { CallOutcome, Prisma } from "@prisma/client";
 import { fmtMoneyDual } from "@/lib/money";
 import Link from "next/link";
 import ReportDateRangePicker from "@/components/ReportDateRangePicker";
@@ -86,7 +86,7 @@ async function computeTeamYtd(team: "Dubai" | "India", since: Date, until: Date)
     //    used as a proxy for "moved to WON" since we don't store a
     //    dedicated wonAt timestamp.
     prisma.lead.count({
-      where: { ...leadWhere, status: LeadStatus.WON, updatedAt: { gte: since, lte: until } },
+      where: { ...leadWhere, currentStatus: "Booked with Us", updatedAt: { gte: since, lte: until } },
     }),
     // 4. Commission booked — INVOICED + RECEIVED, period-keyed on
     //    bookingDoneAt (falling back to commissionReceivedAt / updatedAt
@@ -141,7 +141,7 @@ async function computeTeamYtd(team: "Dubai" | "India", since: Date, until: Date)
       by: ["ownerId"],
       where: {
         ...leadWhere,
-        status: LeadStatus.WON,
+        currentStatus: "Booked with Us",
         updatedAt: { gte: since, lte: until },
         ownerId: { not: null },
       },

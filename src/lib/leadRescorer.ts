@@ -29,10 +29,10 @@ import {
   CallOutcome,
   WAMessageDirection,
   BantStatus,
-  LeadStatus,
 } from "@prisma/client";
 import { notifyHotLead } from "@/lib/push";
 import { aiEnabled, aiScoreLead } from "@/lib/ai";
+import { CLOSING_STATUSES } from "@/lib/lead-statuses";
 
 const NOISE_THRESHOLD = 3;
 
@@ -52,11 +52,8 @@ const NOISE_THRESHOLD = 3;
 //           AND last touch ≤14 days.
 //   COLD := everything else, or no contact in 30+ days.
 // ─────────────────────────────────────────────────────────────────────────────
-export const HOT_STATUSES: LeadStatus[] = [
-  LeadStatus.NEGOTIATION,
-  LeadStatus.SITE_VISIT,
-  LeadStatus.BOOKING_DONE,
-];
+// No stage system — HOT is determined by currentStatus (Excel status) + BANT + timeline.
+// CLOSING_STATUSES (Meeting, Site Visit Schedule, Visit Dubai, etc.) = high-intent statuses.
 const HOT_TIMELINES = new Set(["IMMEDIATE", "THIRTY_DAYS"]);
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -64,14 +61,14 @@ export type LeadBucket = "HOT" | "WARM" | "COLD";
 
 interface BucketInputs {
   bantStatus: BantStatus | null;
-  status: LeadStatus | null;
+  currentStatus: string | null;
   whenCanInvest: string | null;
   callLogs: Array<{ outcome: CallOutcome; durationSec?: number | null; startedAt: Date }>;
   buyingSignalsCount14d: number;
   lastTouchedAt: Date;
 }
 
-/** Authoritative rule-based bucket (HOT/WARM/COLD) per Agent I spec. */
+/** Authoritative rule-based bucket (HOT/WARM/COLD). Status-only, no stages. */
 export function ruleBucket(args: BucketInputs): LeadBucket {
   const now = Date.now();
   const daysSinceTouch = (now - args.lastTouchedAt.getTime()) / DAY_MS;
@@ -80,9 +77,10 @@ export function ruleBucket(args: BucketInputs): LeadBucket {
   const hasConnectedCallEver = args.callLogs.some((c) => c.outcome === CallOutcome.CONNECTED);
 
   const qualifies = args.bantStatus === BantStatus.QUALIFIES;
-  const stageHot = args.status != null && HOT_STATUSES.includes(args.status);
+  // "Status hot" = lead is in a closing-type Excel status (Meeting, Site Visit, Visit Dubai, etc.)
+  const statusHot = args.currentStatus != null && CLOSING_STATUSES.includes(args.currentStatus);
   const timelineHot = args.whenCanInvest != null && HOT_TIMELINES.has(args.whenCanInvest);
-  if (qualifies && (stageHot || timelineHot) && args.buyingSignalsCount14d >= 1) return "HOT";
+  if (qualifies && (statusHot || timelineHot) && args.buyingSignalsCount14d >= 1) return "HOT";
 
   const bantWarm = args.bantStatus === BantStatus.QUALIFIES || args.bantStatus === BantStatus.UNDER_REVIEW;
   if (bantWarm && hasConnectedCallEver && daysSinceTouch <= 14) return "WARM";
@@ -496,7 +494,7 @@ export async function rescoreLead(leadId: string): Promise<RescoreResult> {
   const sig14d = buyingSignalsCount14d(buyingInput);
   const ruleBucketResult = ruleBucket({
     bantStatus: lead.bantStatus,
-    status: lead.status,
+    currentStatus: lead.currentStatus,
     whenCanInvest: lead.whenCanInvest as string | null,
     callLogs: lead.callLogs.map((c) => ({
       outcome: c.outcome,
@@ -529,7 +527,6 @@ export async function rescoreLead(leadId: string): Promise<RescoreResult> {
         configuration: lead.configuration,
         remarks: lead.remarks,
         currentStatus: lead.currentStatus,
-        status: lead.status,
         whenCanInvest: lead.whenCanInvest as string | null,
         potential: lead.potential as string | null,
         fundReadiness: lead.fundReadiness as string | null,

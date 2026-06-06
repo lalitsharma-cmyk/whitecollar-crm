@@ -1,7 +1,8 @@
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/auth";
 import { normalizeTeam } from "@/lib/teamRouting";
-import { LeadSource, LeadStatus } from "@prisma/client";
+import { LeadSource } from "@prisma/client";
+import { ACTIVE_PURSUIT_STATUSES, SUPPRESSED_STATUSES } from "@/lib/lead-statuses";
 import { subDays, startOfYear, startOfMonth, startOfQuarter } from "date-fns";
 import Link from "next/link";
 import ReportDateRangePicker from "@/components/ReportDateRangePicker";
@@ -35,19 +36,10 @@ interface SourceRow {
   avgAiScore: number | null;
 }
 
-// QUALIFIED-or-better — anything past the "we agreed they're worth chasing" line.
-const QUALIFIED_PLUS: LeadStatus[] = [
-  LeadStatus.QUALIFIED,
-  LeadStatus.SITE_VISIT,
-  LeadStatus.NEGOTIATION,
-  LeadStatus.BOOKING_DONE,
-  LeadStatus.WON,
-];
-
-// BOOKED — money on the table. WON kept here too because once a deal is WON
-// the booking is by definition done; treating them together avoids a row
-// where bookedPct is artificially deflated by leads that skipped BOOKING_DONE.
-const BOOKED: LeadStatus[] = [LeadStatus.BOOKING_DONE, LeadStatus.WON];
+// Active-pursuit statuses — status-only, no stage system.
+const QUALIFIED_PLUS = ACTIVE_PURSUIT_STATUSES;
+// Booked — "Booked with Us" status only.
+const BOOKED = ["Booked with Us"] as const;
 
 // Legacy enum → since-date. Kept ONLY for backwards-compat parsing of the
 // old ?range= URL: it lets us derive an initial from/to when the new
@@ -147,22 +139,22 @@ export default async function SourcesReportPage({
     }),
     prisma.lead.groupBy({
       by: ["source"],
-      where: { createdAt: { gte: since, lte: until }, status: { not: LeadStatus.NEW }, ...(managerTeam ? { forwardedTeam: managerTeam } : {}) },
+      where: { createdAt: { gte: since, lte: until }, currentStatus: { notIn: SUPPRESSED_STATUSES }, ...(managerTeam ? { forwardedTeam: managerTeam } : {}) },
       _count: { _all: true },
     }),
     prisma.lead.groupBy({
       by: ["source"],
-      where: { createdAt: { gte: since, lte: until }, status: { in: QUALIFIED_PLUS }, ...(managerTeam ? { forwardedTeam: managerTeam } : {}) },
+      where: { createdAt: { gte: since, lte: until }, currentStatus: { in: QUALIFIED_PLUS }, ...(managerTeam ? { forwardedTeam: managerTeam } : {}) },
       _count: { _all: true },
     }),
     prisma.lead.groupBy({
       by: ["source"],
-      where: { createdAt: { gte: since, lte: until }, status: { in: BOOKED }, ...(managerTeam ? { forwardedTeam: managerTeam } : {}) },
+      where: { createdAt: { gte: since, lte: until }, currentStatus: { in: [...BOOKED] }, ...(managerTeam ? { forwardedTeam: managerTeam } : {}) },
       _count: { _all: true },
     }),
     prisma.lead.groupBy({
       by: ["source"],
-      where: { createdAt: { gte: since, lte: until }, status: LeadStatus.LOST, ...(managerTeam ? { forwardedTeam: managerTeam } : {}) },
+      where: { createdAt: { gte: since, lte: until }, currentStatus: { in: SUPPRESSED_STATUSES }, ...(managerTeam ? { forwardedTeam: managerTeam } : {}) },
       _count: { _all: true },
     }),
     prisma.lead.groupBy({

@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { ActivityType, ActivityStatus, LeadStatus } from "@prisma/client";
+import { ActivityType, ActivityStatus } from "@prisma/client";
 import { loadOwnedLead } from "@/lib/leadScope";
 import { audit, reqMeta } from "@/lib/audit";
 
@@ -104,6 +104,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       developerConfirmedAt: true,
       bookingDoneAt: true,
       status: true,
+      currentStatus: true,
     },
   });
   if (!current) return NextResponse.json({ error: "Lead not found" }, { status: 404 });
@@ -235,9 +236,9 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       if (updates.bookingDoneAt === undefined && !current.bookingDoneAt) {
         updates.bookingDoneAt = now;
       }
-      // Flip Lead.status → WON. The booking funnel reaching its end IS a win.
-      if (current.status !== LeadStatus.WON) {
-        updates.status = LeadStatus.WON;
+      // Booking completed — set currentStatus to "Booked with Us" (status-only, no stage).
+      if (current.currentStatus !== "Booked with Us") {
+        updates.currentStatus = "Booked with Us";
       }
     }
   }

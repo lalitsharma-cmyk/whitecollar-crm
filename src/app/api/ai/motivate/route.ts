@@ -3,7 +3,8 @@ import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
 import { generateText, aiEnabled } from "@/lib/ai";
 import { quoteOfTheDay } from "@/lib/salesQuotes";
-import { AIScore, LeadStatus } from "@prisma/client";
+import { AIScore } from "@prisma/client";
+import { SUPPRESSED_STATUSES } from "@/lib/lead-statuses";
 
 /**
  * GET /api/ai/motivate
@@ -59,7 +60,7 @@ export async function GET() {
     where: {
       ownerId: me.id,
       aiScore: AIScore.HOT,
-      status: { notIn: [LeadStatus.WON, LeadStatus.LOST] },
+      currentStatus: { notIn: SUPPRESSED_STATUSES },
       OR: [{ lastTouchedAt: { lt: sixHoursAgo } }, { lastTouchedAt: null }],
     },
     orderBy: { createdAt: "desc" },
@@ -70,7 +71,7 @@ export async function GET() {
       configuration: true,
       budgetMin: true,
       budgetCurrency: true,
-      status: true,
+      currentStatus: true,
       whenCanInvest: true,
       lastTouchedAt: true,
     },
@@ -81,7 +82,7 @@ export async function GET() {
   const yesterdayStart = new Date(Date.now() - 24 * 3600_000);
   const [callsToday, leadsOwned] = await Promise.all([
     prisma.callLog.count({ where: { userId: me.id, startedAt: { gte: yesterdayStart } } }),
-    prisma.lead.count({ where: { ownerId: me.id, status: { notIn: [LeadStatus.WON, LeadStatus.LOST] } } }),
+    prisma.lead.count({ where: { ownerId: me.id, currentStatus: { notIn: SUPPRESSED_STATUSES } } }),
   ]);
 
   let payload: Payload;
@@ -100,7 +101,7 @@ ${hotUntouched ? `Hottest untouched lead:
   Looking for: ${hotUntouched.configuration ?? "—"}
   Budget: ${hotUntouched.budgetCurrency ?? "AED"} ${hotUntouched.budgetMin ?? "—"}
   Timeline: ${hotUntouched.whenCanInvest ?? "—"}
-  Stage: ${hotUntouched.status}
+  Status: ${hotUntouched.currentStatus ?? "—"}
   Last touched: ${hotUntouched.lastTouchedAt ? hotUntouched.lastTouchedAt.toISOString().slice(0, 10) : "never"}
   Who is the client (full situation): ${(hotUntouched.whoIsClient ?? "(no narrative)").slice(0, 800)}
 ` : "Agent has no untouched HOT leads right now."}

@@ -152,7 +152,7 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
     name: lead.name, phone: lead.phone, email: lead.email,
     city: lead.city, excludeLeadId: lead.id,
   });
-  const bookingsCount = investorMatches.filter(m => m.bookingDoneAt != null || m.status === "WON").length;
+  const bookingsCount = investorMatches.filter(m => m.bookingDoneAt != null || m.currentStatus === "Booked with Us").length;
   const matchedLeadIds = investorMatches.map(m => m.id);
 
   const lastBy = (t: string): string | null => {
@@ -216,8 +216,7 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
   // still active (not LOST or WON). Computed server-side so there's no flash.
   const followupOverdue = lead.followupDate &&
     lead.followupDate < new Date() &&
-    lead.status !== "LOST" &&
-    lead.status !== "WON";
+    !["Junk", "Invalid Number", "Pass Away", "Number Changed", "By Mistake Inquiry"].includes(lead.currentStatus ?? "");
 
   // ── JSX render consts — extracted so they can be rendered in DIFFERENT
   // positions on mobile vs desktop without duplicating ~100 lines of JSX.
@@ -735,7 +734,7 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
         {canReassign && (
           <div data-lead-section="admin" className="card p-4 space-y-3">
             <div className="text-[10px] uppercase tracking-widest text-gray-500 dark:text-slate-400 font-semibold">🛠 Lead admin</div>
-            {lead.status === "LOST" ? (
+            {lead.rejectedAt != null ? (
               <div className="text-xs text-gray-600 dark:text-slate-300">
                 Already rejected{lead.rejectionReason ? ` — ${lead.rejectionReason.replace(/_/g, " ").toLowerCase()}` : ""}.
               </div>

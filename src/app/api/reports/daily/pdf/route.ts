@@ -8,7 +8,7 @@ import { type NextRequest } from "next/server";
 import PDFDocument from "pdfkit";
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/auth";
-import { ActivityType, LeadStatus, CallOutcome } from "@prisma/client";
+import { ActivityType, CallOutcome } from "@prisma/client";
 import { audit, reqMeta } from "@/lib/audit";
 import { fmtMoney } from "@/lib/money";
 
@@ -114,15 +114,15 @@ export async function GET(req: NextRequest) {
       completedAt: { gte: dayStart, lte: dayEnd },
       type: { in: [ActivityType.SITE_VISIT, ActivityType.HOME_VISIT] },
     } }),
-    // Bookings done = leads moved into BOOKING_DONE today
+    // Bookings done = leads marked "Booked with Us" today
     prisma.lead.count({ where: {
       ownerId: userIdFilter,
-      status: LeadStatus.BOOKING_DONE,
+      currentStatus: "Booked with Us",
       updatedAt: { gte: dayStart, lte: dayEnd },
     } }),
-    // Won leads → for AED + INR pipeline value
+    // Booked leads → for AED + INR pipeline value
     prisma.lead.findMany({
-      where: { ownerId: userIdFilter, status: LeadStatus.WON, updatedAt: { gte: dayStart, lte: dayEnd } },
+      where: { ownerId: userIdFilter, currentStatus: "Booked with Us", updatedAt: { gte: dayStart, lte: dayEnd } },
       select: { budgetMin: true, budgetCurrency: true },
     }),
     // Per-agent breakdowns

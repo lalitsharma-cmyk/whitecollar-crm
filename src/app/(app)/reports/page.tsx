@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
-import { LeadStatus, CallOutcome, Prisma } from "@prisma/client";
+import { CallOutcome, Prisma } from "@prisma/client";
+import { ACTIVE_PURSUIT_STATUSES, CLOSING_STATUSES } from "@/lib/lead-statuses";
 import { startOfDay } from "date-fns";
 import SourceBarChart from "@/components/charts/SourceBarChart";
 import ConnectRateChart from "@/components/charts/ConnectRateChart";
@@ -22,13 +23,25 @@ export const dynamic = "force-dynamic";
 //   3. Stalled deal aging — money tied up in deals that haven't moved.
 // Charts below stay for the people who still want raw numbers.
 
-// Same weights used on the dashboard forecast so the numbers reconcile.
+// Forecast weights by Excel status (status-only, no stages).
+// Closing statuses = higher probability. Active = baseline.
 const FORECAST_WEIGHTS: Record<string, number> = {
-  NEGOTIATION: 0.55,
-  SITE_VISIT:  0.30,
-  QUALIFIED:   0.10,
-  CONTACTED:   0.02,
-  NEW:         0.02,
+  "Booked with Us":       1.00,
+  "Visit Dubai":          0.55,
+  "Site Visit Schedule":  0.55,
+  "Meeting":              0.40,
+  "Want Office Visit":    0.40,
+  "Zoom Meeting":         0.35,
+  "Expo Only":            0.30,
+  "Follow Up":            0.15,
+  "Long Term Follow Up":  0.08,
+  "Details Shared":       0.08,
+  "Mail Sent":            0.06,
+  "Fresh Lead":           0.04,
+  "Not Contacted":        0.02,
+  "Funds Issue":          0.05,
+  "War Fear":             0.05,
+  "Commercial Investment":0.10,
 };
 
 // Threshold for "stalled" — days since the lead last changed stage. 7d
@@ -115,13 +128,15 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
              SUM(CASE WHEN outcome::text = ${CallOutcome.CONNECTED} THEN 1 ELSE 0 END)::int as connected
       FROM "CallLog" WHERE "startedAt" >= (CURRENT_DATE - INTERVAL '13 days') GROUP BY "startedAt"::date ORDER BY "startedAt"::date ASC`,
 
+    // Status-based funnel — status-only, no stages.
+    // total → active-pursuit → closing → booked
     Promise.all([
       prisma.lead.count({ where: teamScope }),
-      prisma.lead.count({ where: { ...teamScope, status: { not: LeadStatus.NEW } } }),
-      prisma.lead.count({ where: { ...teamScope, status: { in: [LeadStatus.QUALIFIED, LeadStatus.SITE_VISIT, LeadStatus.NEGOTIATION, LeadStatus.BOOKING_DONE, LeadStatus.WON] } } }),
-      prisma.lead.count({ where: { ...teamScope, status: { in: [LeadStatus.SITE_VISIT, LeadStatus.NEGOTIATION, LeadStatus.BOOKING_DONE, LeadStatus.WON] } } }),
-      prisma.lead.count({ where: { ...teamScope, status: { in: [LeadStatus.NEGOTIATION, LeadStatus.BOOKING_DONE, LeadStatus.WON] } } }),
-      prisma.lead.count({ where: { ...teamScope, status: { in: [LeadStatus.WON, LeadStatus.BOOKING_DONE] } } }),
+      prisma.lead.count({ where: { ...teamScope, currentStatus: { in: ACTIVE_PURSUIT_STATUSES } } }),
+      prisma.lead.count({ where: { ...teamScope, currentStatus: { in: CLOSING_STATUSES } } }),
+      prisma.lead.count({ where: { ...teamScope, currentStatus: "Booked with Us" } }),
+      prisma.lead.count({ where: { ...teamScope, currentStatus: "Booked with Us" } }), // compat slot
+      prisma.lead.count({ where: { ...teamScope, currentStatus: "Booked with Us" } }), // compat slot
     ]),
 
     prisma.project.findMany({
@@ -133,9 +148,10 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
     // ── Active pipeline rows for the weighted forecast.
     // Pull only the fields we need; budgetMin can be null for un-qualified
     // leads, those contribute 0 to the forecast.
+    // Active leads for forecast — all active-pursuit and closing statuses
     prisma.lead.findMany({
-      where: { ...teamScope, status: { in: [LeadStatus.NEW, LeadStatus.CONTACTED, LeadStatus.QUALIFIED, LeadStatus.SITE_VISIT, LeadStatus.NEGOTIATION] } },
-      select: { status: true, budgetMin: true, budgetCurrency: true },
+      where: { ...teamScope, currentStatus: { in: [...ACTIVE_PURSUIT_STATUSES, ...CLOSING_STATUSES, "Booked with Us"] } },
+      select: { currentStatus: true, budgetMin: true, budgetCurrency: true },
     }),
 
     // ── Stalled-deal raw query.
@@ -158,13 +174,13 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
             ORDER BY "leadId", "createdAt" DESC
           )
           SELECT l."id" as id,
-                 l."status"::text as status,
+                 l."currentStatus" as status,
                  l."budgetMin" as budget_min,
                  l."budgetCurrency" as currency,
                  COALESCE(lc."createdAt", l."createdAt") as entered_at
           FROM "Lead" l
           LEFT JOIN latest_change lc ON lc."leadId" = l."id"
-          WHERE l."status" IN ('QUALIFIED','SITE_VISIT','NEGOTIATION')
+          WHERE l."currentStatus" IN ('Meeting','Site Visit Schedule','Visit Dubai','Want Office Visit','Zoom Meeting','Expo Only')
             AND COALESCE(lc."createdAt", l."createdAt") < NOW() - (${STALLED_DAYS} * INTERVAL '1 day')
         `
       : prisma.$queryRaw<Array<{ id: string; status: string; budget_min: number | null; currency: string | null; entered_at: Date }>>`
@@ -175,13 +191,13 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
             ORDER BY "leadId", "createdAt" DESC
           )
           SELECT l."id" as id,
-                 l."status"::text as status,
+                 l."currentStatus" as status,
                  l."budgetMin" as budget_min,
                  l."budgetCurrency" as currency,
                  COALESCE(lc."createdAt", l."createdAt") as entered_at
           FROM "Lead" l
           LEFT JOIN latest_change lc ON lc."leadId" = l."id"
-          WHERE l."status" IN ('QUALIFIED','SITE_VISIT','NEGOTIATION')
+          WHERE l."currentStatus" IN ('Meeting','Site Visit Schedule','Visit Dubai','Want Office Visit','Zoom Meeting','Expo Only')
             AND l."forwardedTeam" = ${resolvedTeam}
             AND COALESCE(lc."createdAt", l."createdAt") < NOW() - (${STALLED_DAYS} * INTERVAL '1 day')
         `),
@@ -205,8 +221,9 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
     // ── Status-level funnel for the new StatusFunnelChart at top of page.
     // AGENT role returns early above, so me.role here is ADMIN | MANAGER.
     // MANAGER: locked to their team. ADMIN: respects the current teamScope filter.
+    // Count leads by currentStatus (Excel status) — status-only, no stages.
     prisma.lead.groupBy({
-      by: ["status"],
+      by: ["currentStatus"],
       _count: { _all: true },
       where: me.role === "MANAGER"
         ? { forwardedTeam: normalizeTeam(me.team) ?? undefined }
@@ -226,37 +243,27 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
     }),
   ]);
 
-  const [tot, contacted, qualified, visit, neg] = funnel;
+  const [tot, contacted, qualified, , ] = funnel; // status-based: total, active, closing, booked(×2)
 
   // ── Build status funnel stages for StatusFunnelChart ─────────────────
-  // Stage order: NEW → WON. LOST is deliberately excluded (not a forward stage).
-  // Percent denominator = all active leads (excluding WON/LOST) so bars show
-  // "how much of the active pipeline is at this stage". WON gets its own %
-  // relative to total (active + WON) so the bar is meaningful.
-  const STATUS_ORDER: LeadStatus[] = [
-    LeadStatus.NEW,
-    LeadStatus.CONTACTED,
-    LeadStatus.QUALIFIED,
-    LeadStatus.SITE_VISIT,
-    LeadStatus.NEGOTIATION,
-    LeadStatus.EOI,
-    LeadStatus.BOOKING_DONE,
-    LeadStatus.WON,
+  // Status-only — no stage system. Show all Excel statuses by count.
+  const STATUS_ORDER = [
+    "Not Contacted", "Fresh Lead", "Follow Up", "Long Term Follow Up",
+    "Details Shared", "Mail Sent", "Meeting", "Want Office Visit",
+    "Zoom Meeting", "Site Visit Schedule", "Visit Dubai", "Expo Only",
+    "Funds Issue", "War Fear", "Commercial Investment",
+    "Booked with Us",
   ];
-  const countMap: Partial<Record<LeadStatus, number>> = {};
+  const countMap: Record<string, number> = {};
   for (const row of statusCounts) {
-    countMap[row.status] = row._count._all;
+    if (row.currentStatus) countMap[row.currentStatus] = row._count._all;
   }
-  const totalActive = STATUS_ORDER
-    .filter((s) => s !== LeadStatus.WON && s !== LeadStatus.LOST)
-    .reduce((sum, s) => sum + (countMap[s] ?? 0), 0);
-  const totalWithWon = totalActive + (countMap[LeadStatus.WON] ?? 0);
+  const totalActive = Object.values(countMap).reduce((sum, c) => sum + c, 0);
   const funnelStages = STATUS_ORDER.map((s) => {
     const count = countMap[s] ?? 0;
-    const denom = s === LeadStatus.WON ? totalWithWon : totalActive;
-    const percent = denom > 0 ? (count / denom) * 100 : 0;
-    return { label: s as string, count, percent };
-  });
+    const percent = totalActive > 0 ? (count / totalActive) * 100 : 0;
+    return { label: s, count, percent };
+  }).filter(f => f.count > 0);
 
   const conversionRates = funnelStages.slice(0, -1).map((stage, i) => {
     const next = funnelStages[i + 1];
@@ -271,7 +278,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
   let forecastInr = 0;
   for (const l of activeLeadsForForecast) {
     if (!l.budgetMin) continue;
-    const w = FORECAST_WEIGHTS[l.status] ?? 0;
+    const w = FORECAST_WEIGHTS[l.currentStatus ?? ""] ?? 0;
     const weighted = l.budgetMin * w;
     if (l.budgetCurrency === "INR") forecastInr += weighted;
     else forecastAed += weighted;
@@ -280,11 +287,11 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
   // Funnel leakage — find the biggest % drop between adjacent stages.
   // We re-use the existing funnel counts so the metric matches the chart.
   const funnelPairs: Array<{ from: string; to: string; lost: number; pct: number }> = [];
+  // Status-based funnel leakage: total → active → closing → booked
   const labels = [
-    { from: "New",        to: "Contacted",    count: tot,       next: contacted },
-    { from: "Contacted",  to: "Qualified",    count: contacted, next: qualified },
-    { from: "Qualified",  to: "Site Visit",   count: qualified, next: visit },
-    { from: "Site Visit", to: "Negotiation",  count: visit,     next: neg },
+    { from: "All Leads",     to: "Active Pursuit", count: tot,       next: contacted },
+    { from: "Active Pursuit",to: "Closing Stage",  count: contacted, next: qualified },
+    { from: "Closing Stage", to: "Booked with Us", count: qualified, next: qualified },
   ];
   for (const p of labels) {
     if (p.count === 0) continue;
@@ -483,19 +490,19 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
             Stalled deals by stage
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm">
-            {([LeadStatus.QUALIFIED, LeadStatus.SITE_VISIT, LeadStatus.NEGOTIATION] as const).map((s) => {
+            {(["Meeting", "Site Visit Schedule", "Visit Dubai"] as const).map((s) => {
               const x = stalledByStage[s];
               if (!x || x.count === 0) {
                 return (
                   <div key={s} className="p-3 rounded-lg border bg-gray-50">
-                    <div className="text-[11px] font-semibold text-gray-500">{s.replaceAll("_", " ")}</div>
+                    <div className="text-[11px] font-semibold text-gray-500">{s}</div>
                     <div className="text-lg font-bold text-gray-400 mt-1">0</div>
                   </div>
                 );
               }
               return (
                 <div key={s} className="p-3 rounded-lg border border-amber-200 bg-amber-50">
-                  <div className="text-[11px] font-semibold text-amber-900">{s.replaceAll("_", " ")}</div>
+                  <div className="text-[11px] font-semibold text-amber-900">{s}</div>
                   <div className="text-lg font-bold text-amber-900 mt-1">{x.count} <span className="text-xs font-semibold text-amber-800">stalled</span></div>
                   <div className="text-[11px] text-amber-800/80 mt-0.5">
                     Oldest: {x.oldestDays}d · {fmtMoneyDual({ aed: x.aed, inr: x.inr })}
@@ -508,7 +515,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
       )}
 
       {/* ── Conversion funnel ──────────────────────────────────────────────
-          Shows every status from NEW → WON as a horizontal bar chart so
+          Shows every Excel status as a horizontal bar chart so
           Lalit can see at a glance where leads are piling up. Rendered
           prominently above the nav links so it's the first thing visible. */}
       <div className="card p-5">
@@ -635,11 +642,9 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
           <div className="text-xs text-gray-500 tracking-widest">ALL TIME · ALL TEAMS</div>
           <div className="font-semibold mt-1">Conversion funnel</div>
           <LegacyFunnelChart data={[
-            { stage: "Leads", n: tot },
-            { stage: "Contacted", n: contacted },
-            { stage: "Qualified", n: qualified },
-            { stage: "Site Visit", n: visit },
-            { stage: "Negotiation", n: neg },
+            { stage: "All Leads", n: tot },
+            { stage: "Active Pursuit", n: contacted },
+            { stage: "Closing Stage", n: qualified },
           ]} />
           {/* Funnel-pair leakage table — exposes the same numbers powering
               the "biggest leak" card so Lalit can see all transitions, not

@@ -258,7 +258,7 @@ export async function ingestLead(input: RawLeadInput) {
     if (matches.length > 0) {
       const summary = summariseHistory(matches);
       const investorMatches = matches.filter(
-        (m) => m.status === "WON" || m.bookingDoneAt != null
+        (m) => m.currentStatus === "Booked with Us" || m.bookingDoneAt != null
       );
       // Augment with project names pulled from interestedUnits on WON matches —
       // covers the case where historical leads never had alreadyBought filled

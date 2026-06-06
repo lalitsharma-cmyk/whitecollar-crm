@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
-import { LeadStatus, AIScore, CallOutcome, ActivityStatus, ActivityType, Prisma } from "@prisma/client";
+import { AIScore, CallOutcome, ActivityStatus, ActivityType, Prisma } from "@prisma/client";
+import { SUPPRESSED_STATUSES, CLOSING_STATUSES } from "@/lib/lead-statuses";
 import { formatDistanceToNow, startOfDay } from "date-fns";
 import { fmtIST12 } from "@/lib/datetime";
 import { runReconciler } from "@/lib/reconciler";
@@ -113,7 +114,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
 
   // UPCOMING counts — activities/follow-ups scheduled after the selected period ends
   const [upcomingFollowupsCount, upcomingActivitiesCount] = await Promise.all([
-    prisma.lead.count({ where: { ...meScope, followupDate: { gte: sqlTo }, status: { notIn: [LeadStatus.WON, LeadStatus.LOST] } } }),
+    prisma.lead.count({ where: { ...meScope, followupDate: { gte: sqlTo }, currentStatus: { notIn: SUPPRESSED_STATUSES } } }),
     prisma.activity.count({ where: { ...meActWhere, status: ActivityStatus.PLANNED, scheduledAt: { gte: sqlTo } } }),
   ]);
 
@@ -127,23 +128,23 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     prisma.lead.count({
       where: {
         ...meScope, aiScore: AIScore.HOT,
-        status: { notIn: [LeadStatus.WON, LeadStatus.LOST] },
+        currentStatus: { notIn: SUPPRESSED_STATUSES },
         OR: [{ lastTouchedAt: { lt: sixHoursAgo } }, { lastTouchedAt: null }],
       },
     }),
     prisma.lead.count({
       where: {
         ...meScope, followupDate: { lt: new Date(), not: null },
-        status: { notIn: [LeadStatus.WON, LeadStatus.LOST] },
+        currentStatus: { notIn: SUPPRESSED_STATUSES },
       },
     }),
     prisma.lead.count({
-      where: { ...meScope, status: LeadStatus.NEGOTIATION, eoiStage: { not: null } },
+      where: { ...meScope, currentStatus: { in: CLOSING_STATUSES }, eoiStage: { not: null } },
     }),
     prisma.lead.count({
       where: {
         ...meScope, isColdCall: true,
-        status: { notIn: [LeadStatus.WON, LeadStatus.LOST] },
+        currentStatus: { notIn: SUPPRESSED_STATUSES },
         lastTouchedAt: { lt: thirtyDaysAgo },
         OR: [{ budgetMin: { gt: 5_000_000 } }, { aiScore: AIScore.HOT }],
       },
@@ -162,7 +163,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     // Created after 10pm yesterday IST AND still unassigned today
     const cutoff = new Date(Date.now() - 14 * 3600 * 1000); // last 14 hours
     morningQueueLeads = await prisma.lead.findMany({
-      where: { ownerId: null, isColdCall: false, createdAt: { gte: cutoff }, status: { notIn: [LeadStatus.WON, LeadStatus.LOST] } },
+      where: { ownerId: null, isColdCall: false, createdAt: { gte: cutoff }, currentStatus: { notIn: SUPPRESSED_STATUSES } },
       select: { id: true, name: true, phone: true, createdAt: true, forwardedTeam: true },
       orderBy: { createdAt: "desc" },
       take: 20,
@@ -187,7 +188,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
       COALESCE((SELECT COUNT(*) FROM "CallLog" c WHERE c."userId" = u.id AND c."startedAt" >= ${sqlFrom} AND c."startedAt" < ${sqlTo} AND c.outcome::text = 'CONNECTED'), 0) as connected,
       COALESCE((SELECT COUNT(*) FROM "Activity" a WHERE a."userId" = u.id AND a.status::text = 'PLANNED' AND a."scheduledAt" >= ${sqlFrom} AND a."scheduledAt" < ${sqlTo}), 0) as due_today,
       COALESCE((SELECT COUNT(*) FROM "Activity" a WHERE a."userId" = u.id AND a.status::text = 'PLANNED' AND a."scheduledAt" < ${todayStart}), 0) as overdue,
-      COALESCE((SELECT COUNT(*) FROM "Lead" l WHERE l."ownerId" = u.id AND l.status::text IN ('NEGOTIATION','SITE_VISIT')), 0) as closeable,
+      COALESCE((SELECT COUNT(*) FROM "Lead" l WHERE l."ownerId" = u.id AND l."currentStatus" IN ('Meeting','Site Visit Schedule','Visit Dubai','Want Office Visit','Zoom Meeting','Expo Only')), 0) as closeable,
       COALESCE((SELECT COUNT(*) FROM "Lead" l WHERE l."ownerId" = u.id AND l."needsManagerReview" = true), 0) as needs,
       COALESCE((SELECT COUNT(*) FROM "Lead" l WHERE l."ownerId" = u.id), 0) as clients
     FROM "User" u
@@ -214,7 +215,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     prisma.activity.count({ where: { userId: me.id, type: ActivityType.VIRTUAL_MEETING, scheduledAt: { gte: sqlFrom, lt: sqlTo }, status: { not: ActivityStatus.CANCELLED } } }),
     prisma.activity.count({ where: { userId: me.id, type: { in: [ActivityType.SITE_VISIT, ActivityType.HOME_VISIT, ActivityType.OFFICE_MEETING, ActivityType.EXPO_MEETING] }, scheduledAt: { gte: sqlFrom, lt: sqlTo }, status: { not: ActivityStatus.CANCELLED } } }),
     prisma.activity.count({ where: { userId: me.id, type: ActivityType.COLD_TO_LEAD, completedAt: { gte: sqlFrom, lt: sqlTo } } }),
-    prisma.lead.count({ where: { ownerId: me.id, status: LeadStatus.WON, updatedAt: { gte: sqlFrom, lt: sqlTo } } }),
+    prisma.lead.count({ where: { ownerId: me.id, currentStatus: "Booked with Us", updatedAt: { gte: sqlFrom, lt: sqlTo } } }),
   ]);
 
   // ── Per-agent morning briefing (also shown to admins) ──
@@ -241,7 +242,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
       where: {
         ownerId: me.id,
         followupDate: { gte: todayStart, lt: new Date(todayStart.getTime() + 24 * 3600_000) },
-        status: { notIn: ["WON", "LOST"] },
+        currentStatus: { notIn: SUPPRESSED_STATUSES },
       },
     }),
   ]);
@@ -279,7 +280,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
       where: {
         ...callbackScope,
         followupDate: { gte: todayStart, lt: reminderEnd },
-        status: { notIn: [LeadStatus.WON, LeadStatus.LOST] },
+        currentStatus: { notIn: SUPPRESSED_STATUSES },
       },
       orderBy: { followupDate: "asc" },
       take: 200,
@@ -360,7 +361,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
           )}
           <Link
             href="/action-list"
-            title="Ready-to-close (NEGOTIATION/SITE_VISIT) + Overdue follow-ups + Manager-flagged leads."
+            title="Ready-to-close (Meeting/Site Visit/Visit Dubai) + Overdue follow-ups + Manager-flagged leads."
             className="btn btn-gold justify-center"
           >📋 Action List</Link>
         </div>

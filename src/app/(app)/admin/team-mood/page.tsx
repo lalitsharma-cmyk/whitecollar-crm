@@ -102,10 +102,10 @@ export default async function TeamMoodPage() {
     prisma.lead.count({
       where: {
         followupDate: { lt: now, gte: since14d },
-        status: { notIn: ["WON", "LOST", "BOOKING_DONE"] },
+        currentStatus: { notIn: ["Junk", "Invalid Number", "Pass Away", "Number Changed", "By Mistake Inquiry"] },
       },
     }),
-    prisma.lead.count({ where: { status: { notIn: ["WON", "LOST"] } } }),
+    prisma.lead.count({ where: { currentStatus: { notIn: ["Junk", "Invalid Number", "Pass Away", "Number Changed", "By Mistake Inquiry"] } } }),
   ]);
   const stressIndex = activeLeadsCount === 0
     ? 0

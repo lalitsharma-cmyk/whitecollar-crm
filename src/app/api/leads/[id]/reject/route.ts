@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { LeadStatus, ActivityType, ActivityStatus } from "@prisma/client";
+import { ActivityType, ActivityStatus } from "@prisma/client";
 import { requireUser } from "@/lib/auth";
 import { canTouchLead } from "@/lib/leadScope";
 import { audit, reqMeta } from "@/lib/audit";
@@ -123,7 +123,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   await prisma.lead.update({
     where: { id },
     data: {
-      status: LeadStatus.LOST,
       rejectionReason: reason,
       rejectionNote: note || null,
       rejectedAt: now,

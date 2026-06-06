@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { ActivityType, ActivityStatus, LeadStatus, AIScore, Potential, FundReadiness, MoodStatus, InvestTimeline } from "@prisma/client";
+import { ActivityType, ActivityStatus, AIScore, Potential, FundReadiness, MoodStatus, InvestTimeline } from "@prisma/client";
 import { loadOwnedLead } from "@/lib/leadScope";
 import { rescoreLead } from "@/lib/leadRescorer";
 import { fireWorkflowTrigger } from "@/lib/workflowEngine";
@@ -151,12 +151,14 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   }
 
   // ── Gamification: status-change XP on real transitions only.
-  // Mapping: NEGOTIATION → 250, BOOKING_DONE → 500, WON → 500 (same tier).
+  // Award XP when currentStatus moves to closing or booked statuses.
   let awarded: AwardResult | null = null;
-  if ("status" in updates && updates.status !== prevStatus) {
+  if ("currentStatus" in updates && updates.currentStatus !== prevStatus) {
     let reason: XpReason | null = null;
-    if (updates.status === LeadStatus.NEGOTIATION) reason = "NEGOTIATION_STARTED";
-    else if (updates.status === LeadStatus.BOOKING_DONE || updates.status === LeadStatus.WON) reason = "BOOKING_DONE";
+    const ns = updates.currentStatus as string | null;
+    if (ns && ["Meeting", "Site Visit Schedule", "Visit Dubai", "Want Office Visit", "Zoom Meeting"].includes(ns))
+      reason = "NEGOTIATION_STARTED";
+    else if (ns === "Booked with Us") reason = "BOOKING_DONE";
     if (reason) {
       try { awarded = await awardXp(me.id, reason); } catch { /* never block save */ }
     }

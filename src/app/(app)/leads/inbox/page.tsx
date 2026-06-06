@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
-import { LeadStatus, Potential } from "@prisma/client";
+import { Potential } from "@prisma/client";
+import { ACTIVE_PURSUIT_STATUSES, statusColor } from "@/lib/lead-statuses";
 import Link from "next/link";
 import { requireUser } from "@/lib/auth";
 import { leadScopeWhere } from "@/lib/leadScope";
@@ -7,29 +8,7 @@ import InboxClient, { type InboxRow } from "@/components/InboxClient";
 
 export const dynamic = "force-dynamic";
 
-const statusChip: Record<LeadStatus, string> = {
-  NEW: "chip-new",
-  CONTACTED: "chip-warm",
-  QUALIFIED: "chip-warm",
-  SITE_VISIT: "chip-warm",
-  NEGOTIATION: "chip-warm",
-  EOI: "chip-warm",
-  BOOKING_DONE: "chip-won",
-  WON: "chip-won",
-  LOST: "chip-lost",
-};
-
-const statusLabel: Record<LeadStatus, string> = {
-  NEW: "New",
-  CONTACTED: "Contacted",
-  QUALIFIED: "Qualified",
-  SITE_VISIT: "Site Visit",
-  NEGOTIATION: "Negotiation",
-  EOI: "EOI",
-  BOOKING_DONE: "Booking Done",
-  WON: "Won",
-  LOST: "Lost",
-};
+// Status colors and labels now use statusColor() from lead-statuses.ts — no stage mapping.
 
 const potentialEmoji: Record<Potential, string> = {
   HIGH: "🔥",
@@ -47,7 +26,7 @@ export default async function GoingColdPage() {
   const leads = await prisma.lead.findMany({
     where: {
       ...scope,
-      status: { in: [LeadStatus.CONTACTED, LeadStatus.QUALIFIED, LeadStatus.SITE_VISIT, LeadStatus.NEGOTIATION] },
+      currentStatus: { in: ACTIVE_PURSUIT_STATUSES },
       OR: [
         { lastTouchedAt: { lt: threeDaysAgo } },
         { lastTouchedAt: null },
@@ -78,8 +57,8 @@ export default async function GoingColdPage() {
     email: lead.email,
     status: lead.status,
     // Show currentStatus (Excel/MIS) as the primary label; fall back to internal stage label
-    statusChip: lead.currentStatus ? "chip-warm" : statusChip[lead.status],
-    statusLabel: lead.currentStatus ?? statusLabel[lead.status],
+    statusChip: statusColor(lead.currentStatus),
+    statusLabel: lead.currentStatus ?? "—",
     potential: lead.potential,
     potentialEmoji: lead.potential ? potentialEmoji[lead.potential] : "—",
     daysCold: lead.lastTouchedAt

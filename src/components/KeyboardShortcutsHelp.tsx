@@ -58,7 +58,7 @@ const SECTIONS: Section[] = [
 const G_NAV: Record<string, string> = {
   h: "/dashboard",
   l: "/leads",
-  p: "/pipeline",
+  p: "/leads",
   c: "/cold-calls",
   a: "/action-list",
   v: "/vault",

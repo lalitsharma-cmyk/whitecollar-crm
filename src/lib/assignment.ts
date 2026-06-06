@@ -1,10 +1,11 @@
 import "server-only";
 import { prisma } from "@/lib/prisma";
 import { Role, type LeadSource } from "@prisma/client";
+import { SUPPRESSED_STATUSES } from "@/lib/lead-statuses";
 
 /**
  * Round-robin assignment: pick the active AGENT (or MANAGER) with the
- * fewest currently-owned, non-WON/LOST leads. Tie-break by oldest
+ * fewest currently-owned, non-suppressed leads. Tie-break by oldest
  * assignment timestamp so everyone takes turns.
  */
 export async function pickRoundRobinAgent(opts?: { team?: string; source?: LeadSource }) {
@@ -17,7 +18,7 @@ export async function pickRoundRobinAgent(opts?: { team?: string; source?: LeadS
     include: {
       _count: {
         select: {
-          ownedLeads: { where: { status: { notIn: ["WON", "LOST"] } } },
+          ownedLeads: { where: { currentStatus: { notIn: SUPPRESSED_STATUSES } } },
         },
       },
       assignments: { orderBy: { assignedAt: "desc" }, take: 1 },

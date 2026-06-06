@@ -6,6 +6,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { notify } from "@/lib/notify";
 import { ActivityStatus, AIScore } from "@prisma/client";
+import { SUPPRESSED_STATUSES } from "@/lib/lead-statuses";
 import { syncProjectsFromMarketingSite } from "@/lib/syncProjects";
 import { sendReportToManagers, windowsForToday } from "@/lib/reports";
 import { quoteOneLine } from "@/lib/salesQuotes";
@@ -55,7 +56,7 @@ export async function GET(req: NextRequest) {
       }),
       // Hot leads needing attention
       prisma.lead.count({
-        where: { ownerId: u.id, aiScore: AIScore.HOT, status: { notIn: ["WON", "LOST"] } },
+        where: { ownerId: u.id, aiScore: AIScore.HOT, currentStatus: { notIn: SUPPRESSED_STATUSES } },
       }),
       // New leads assigned overnight (since the previous morning cron, i.e. last 24h)
       prisma.lead.count({
@@ -71,7 +72,7 @@ export async function GET(req: NextRequest) {
         where: {
           ownerId: u.id,
           followupDate: { gte: startUTC, lte: endUTC },
-          status: { notIn: ["WON", "LOST"] },
+          currentStatus: { notIn: SUPPRESSED_STATUSES },
         },
       }),
     ]);

@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
-import { LeadStatus, Prisma } from "@prisma/client";
+import { Prisma } from "@prisma/client";
+import { SUPPRESSED_STATUSES, statusColor } from "@/lib/lead-statuses";
 import { startOfDay, startOfWeek } from "date-fns";
 import Link from "next/link";
 import ColdDataAdminControls from "@/components/ColdDataAdminControls";
@@ -24,17 +25,7 @@ export const dynamic = "force-dynamic";
 
 const COLD_DAYS = REVIVAL_MISSION.dormantDays;
 
-const statusChipMap: Record<LeadStatus, string> = {
-  NEW: "chip-new",
-  CONTACTED: "chip-warm",
-  QUALIFIED: "chip-warm",
-  SITE_VISIT: "chip-warm",
-  NEGOTIATION: "chip-warm",
-  EOI: "chip-warm",
-  BOOKING_DONE: "chip-won",
-  WON: "chip-won",
-  LOST: "chip-lost",
-};
+// Status colors come from statusColor() — no stage mapping needed.
 
 export default async function ColdDataPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const me = await requireUser();
@@ -58,7 +49,7 @@ export default async function ColdDataPage({ searchParams }: { searchParams: Pro
     statusFilter === "unassigned"
       ? unassigned
       : REVIVAL_STATUSES.some(s => s.v === statusFilter)
-        ? { status: statusFilter as LeadStatus }
+        ? { currentStatus: statusFilter }
         : {};
 
   const allCold: Prisma.LeadWhereInput = { AND: [baseScope, originCold] };
@@ -76,7 +67,7 @@ export default async function ColdDataPage({ searchParams }: { searchParams: Pro
         ],
       },
       { lastTouchedAt: { lt: cutoff } },
-      { status: { notIn: [LeadStatus.WON, LeadStatus.LOST] } },
+      { currentStatus: { notIn: SUPPRESSED_STATUSES } },
     ],
   };
 
@@ -126,7 +117,7 @@ export default async function ColdDataPage({ searchParams }: { searchParams: Pro
     }),
     // Count per status for filter tabs
     ...REVIVAL_STATUSES.map(s =>
-      prisma.lead.count({ where: { AND: [baseScope, originCold, { status: s.v as LeadStatus }] } })
+      prisma.lead.count({ where: { AND: [baseScope, originCold, { currentStatus: s.v }] } })
     ),
   ]);
 
@@ -246,7 +237,7 @@ export default async function ColdDataPage({ searchParams }: { searchParams: Pro
               isColdCall:     l.isColdCall,
               leadOrigin:     l.leadOrigin,
               status:         l.status,
-              statusChip:     statusChipMap[l.status] ?? "chip-new",
+              statusChip:     statusColor(l.currentStatus),
               lastTouchedAt:  l.lastTouchedAt,
               ownerId:        l.ownerId,
               owner:          l.owner ? { name: l.owner.name } : null,

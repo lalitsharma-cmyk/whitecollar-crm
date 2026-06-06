@@ -12,7 +12,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   // Lalit's mandatory-team policy (2026-06) parks null-team leads in this
   // queue until an admin picks Dubai or India — the badge keeps it visible.
   const awaitingTeamCount = (user.role === "ADMIN" || user.role === "MANAGER")
-    ? await prisma.lead.count({ where: { forwardedTeam: null, status: { not: "LOST" } } })
+    ? await prisma.lead.count({ where: { forwardedTeam: null, currentStatus: { notIn: ["Junk", "Invalid Number", "Pass Away", "Number Changed", "By Mistake Inquiry"] } } })
     : 0;
   return (
     <>

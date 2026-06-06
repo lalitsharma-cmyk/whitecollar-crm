@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { LeadSource, LeadStatus, AIScore, FundReadiness, InvestTimeline, Prisma } from "@prisma/client";
+import { LeadSource, AIScore, FundReadiness, InvestTimeline, Prisma } from "@prisma/client";
 import { formatDistanceToNow, format as fnsFormat } from "date-fns";
 import Link from "next/link";
 import { requireUser } from "@/lib/auth";
@@ -8,7 +8,7 @@ import LeadsListClient from "@/components/LeadsListClient";
 import { runReconciler } from "@/lib/reconciler";
 import { leadScopeWhere } from "@/lib/leadScope";
 import { formatBudget } from "@/lib/budgetParse";
-import { excelStatusChip, BUDGET_PRESETS } from "@/lib/lead-statuses";
+import { statusColor, BUDGET_PRESETS, SUPPRESSED_STATUSES, ACTIVE_PURSUIT_STATUSES, CLOSING_STATUSES } from "@/lib/lead-statuses";
 
 export const dynamic = "force-dynamic";
 
@@ -25,10 +25,7 @@ const srcLabel: Record<LeadSource, string> = {
   GOOGLE_ADS: "Google", PORTAL_99ACRES: "99acres", PORTAL_MAGICBRICKS: "MagicBricks",
   PORTAL_HOUSING: "Housing", OTHER: "Other",
 };
-const statusChip: Record<LeadStatus, string> = {
-  NEW: "chip-new", CONTACTED: "chip-warm", QUALIFIED: "chip-warm", SITE_VISIT: "chip-warm",
-  NEGOTIATION: "chip-warm", EOI: "chip-warm", BOOKING_DONE: "chip-won", WON: "chip-won", LOST: "chip-lost",
-};
+// Status colors now come from statusColor() in lead-statuses.ts — no stage mapping needed.
 
 export default async function LeadsPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const me = await requireUser();
@@ -46,41 +43,26 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
   const where: Prisma.LeadWhereInput = sp.showCold === "1"
     ? { ...scope }
     : { ...scope, isColdCall: false };
-  // ── Top-level pipeline filter tabs: ?filter=all|active|bookings|won|lost ──
-  // Applied before the per-role LOST-hide below so explicit tab selections
-  // (e.g. ?filter=lost) are respected for ADMIN/MANAGER.
+  // ── Top-level filter tabs: ?filter=all|active|booked|nofollowup ──
+  // STATUS-ONLY — no stage system. Tabs filter by currentStatus (Excel status).
   const filterTab = sp.filter ?? "all";
   if (filterTab === "active") {
-    // Active pipeline — exclude closed/booked stages
-    where.status = { notIn: [LeadStatus.WON, LeadStatus.LOST, LeadStatus.BOOKING_DONE] };
-  } else if (filterTab === "bookings") {
-    // Booking funnel — EOI or Booking Done
-    where.status = { in: [LeadStatus.EOI, LeadStatus.BOOKING_DONE] };
-  } else if (filterTab === "won") {
-    // Won deals — Booking Done or WON
-    where.status = { in: [LeadStatus.WON, LeadStatus.BOOKING_DONE] };
-  } else if (filterTab === "lost") {
-    // Lost deals
-    where.status = LeadStatus.LOST;
-  }
-  // filterTab === "all" → no status filter added here (other filters still compose)
-
-  // Quick filter: ?filter=nofollowup → active leads with no follow-up date set.
-  // Helps agents and managers surface leads that have slipped through without
-  // a scheduled next-touch. Excludes WON/LOST since closed deals don't need
-  // follow-ups.
-  if (filterTab === "nofollowup") {
+    // Active — exclude suppressed (dead) statuses
+    where.currentStatus = { notIn: SUPPRESSED_STATUSES };
+  } else if (filterTab === "booked" || filterTab === "won" || filterTab === "bookings") {
+    // Booked with Us (covers old "won" and "bookings" tabs)
+    where.currentStatus = "Booked with Us";
+  } else if (filterTab === "nofollowup") {
+    // Active leads with no follow-up date set
     where.followupDate = null;
-    where.status = { notIn: [LeadStatus.WON, LeadStatus.LOST] };
+    where.currentStatus = { notIn: SUPPRESSED_STATUSES };
   }
+  // filterTab === "all" → no currentStatus filter (show everything)
 
-  // Agents shouldn't see LOST leads they once owned in their default view —
-  // rejected leads disappear from the agent's queue, but ADMIN/MANAGER keep
-  // oversight via /admin/rejected-leads and the unfiltered list. An explicit
-  // ?status= filter (e.g. ?status=LOST) overrides this hide, so an agent
-  // who deliberately navigates "show me my rejected" still sees them.
-  if (me.role === "AGENT" && !sp.status && filterTab === "all") {
-    where.status = { not: LeadStatus.LOST };
+  // Agents: in "all" view, hide clearly-dead leads from their queue by default.
+  // An explicit ?cstatus= override lets them see any status if needed.
+  if (me.role === "AGENT" && !sp.cstatus && filterTab === "all") {
+    where.currentStatus = { notIn: SUPPRESSED_STATUSES };
   }
   if (sp.q) {
     where.OR = [
@@ -94,7 +76,8 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
   // the ?source= URL. Without this guard an agent could probe the source distribution
   // by setting the param and watching the result count, defeating the privacy policy.
   // source filter is now multi-select — handled below after Excel-field filters
-  if (sp.status) where.status = sp.status as LeadStatus;
+  // Legacy ?status= URL param — redirect to currentStatus filter for backwards compat
+  if (sp.status) where.currentStatus = sp.status;
   // ── Excel/MIS status filter (multi-select, comma-separated) ─────────────────
   if (sp.cstatus) {
     const vals = sp.cstatus.split(",").map(s => s.trim()).filter(Boolean);
@@ -271,10 +254,10 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
   } else if (sp.smart === "ghosting") {
     // 👻 Ghosting — no touch in 7+ days and still in-pipeline.
     smartAnd.push({ lastTouchedAt: { lt: new Date(Date.now() - 7 * 24 * 3600 * 1000) } });
-    smartAnd.push({ status: { notIn: [LeadStatus.WON, LeadStatus.LOST] } });
+    smartAnd.push({ currentStatus: { notIn: SUPPRESSED_STATUSES } });
   } else if (sp.smart === "visit_potential") {
-    // 🏢 Site-visit potential — qualified or already scheduled for a visit.
-    smartAnd.push({ status: { in: [LeadStatus.QUALIFIED, LeadStatus.SITE_VISIT] } });
+    // 🏢 Site-visit potential — closing statuses (meeting/visit/dubai)
+    smartAnd.push({ currentStatus: { in: CLOSING_STATUSES } });
   } else if (sp.smart === "high_budget") {
     // 💎 High budget — ≥ 5M AED or ≥ 3 Cr INR. Currency-aware OR.
     smartAnd.push({
@@ -336,7 +319,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
   // Followup windows for chip counts (scoped to visible leads — agents see
   // their own pipeline, admin sees all). Re-use istWindow() defined above.
   const todayWindow = istWindow(0);
-  const activeScope = { ...scope, status: { notIn: [LeadStatus.WON, LeadStatus.LOST] } };
+  const activeScope = { ...scope, currentStatus: { notIn: SUPPRESSED_STATUSES } };
 
   // ── Smart priority sort pre-query ─────────────────────────────────────────
   // When no explicit ?sort= is provided we sort by urgency rather than created-
@@ -507,7 +490,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
       <LeadFilters
         agents={agents.map((a) => ({ id: a.id, name: a.name }))}
         sources={Object.values(LeadSource)}
-        statuses={Object.values(LeadStatus)}
+        statuses={[]}
         showSource={me.role !== "AGENT"}
         distinctTags={distinctTags}
         projects={allProjects}
@@ -550,7 +533,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
               const isActive = sp.cstatus === label;
               // Encode the status label for URLs (handles spaces, special chars)
               const href = `/leads?cstatus=${encodeURIComponent(label)}`;
-              const chipClass = excelStatusChip(label);
+              const chipClass = statusColor(label);
               // Active: filled background; inactive: light tinted background
               const onCls  = "bg-[#0b1a33] text-white border-[#0b1a33] dark:bg-blue-700 dark:border-blue-600";
               const offCls = `bg-white dark:bg-slate-700 border-[#e5e7eb] dark:border-slate-600 text-gray-700 dark:text-slate-100 hover:bg-gray-50 dark:hover:bg-slate-600`;
@@ -654,11 +637,11 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
             phone: l.phone,
             email: l.email,
             source: l.source,
-            statusName: l.status,
+            statusName: l.currentStatus ?? "",
             currentStatus: l.currentStatus ?? null,
             srcChip: srcChip[l.source],
             srcLabel: srcLabel[l.source],
-            statusChip: statusChip[l.status],
+            statusChip: statusColor(l.currentStatus),
             aiScore: l.aiScore,
             aiScoreValue: l.aiScoreValue,
             team: l.forwardedTeam,

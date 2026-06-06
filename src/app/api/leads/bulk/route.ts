@@ -164,7 +164,6 @@ export async function POST(req: NextRequest) {
     const r = await prisma.lead.updateMany({
       where: { id: { in: visibleIds } },
       data: {
-        status: LeadStatus.LOST,
         rejectionReason: reason,
         rejectionNote: note || null,
         rejectedAt: now,

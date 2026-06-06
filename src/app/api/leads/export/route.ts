@@ -2,7 +2,8 @@ import { type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
 import { leadScopeWhere } from "@/lib/leadScope";
-import { LeadStatus, LeadSource, AIScore, Potential, Prisma } from "@prisma/client";
+import { LeadSource, AIScore, Potential, Prisma } from "@prisma/client";
+import { SUPPRESSED_STATUSES, CLOSING_STATUSES } from "@/lib/lead-statuses";
 
 // CSV export for the leads list — available to any logged-in user.
 // Results are scoped via leadScopeWhere so each role sees only what they
@@ -40,18 +41,14 @@ export async function GET(req: NextRequest) {
   // Pipeline filter tab (?filter=)
   const filterTab = sp.filter ?? "all";
   if (filterTab === "active") {
-    where.status = { notIn: [LeadStatus.WON, LeadStatus.LOST, LeadStatus.BOOKING_DONE] };
-  } else if (filterTab === "bookings") {
-    where.status = { in: [LeadStatus.EOI, LeadStatus.BOOKING_DONE] };
-  } else if (filterTab === "won") {
-    where.status = { in: [LeadStatus.WON, LeadStatus.BOOKING_DONE] };
-  } else if (filterTab === "lost") {
-    where.status = LeadStatus.LOST;
+    where.currentStatus = { notIn: SUPPRESSED_STATUSES };
+  } else if (filterTab === "bookings" || filterTab === "won") {
+    where.currentStatus = "Booked with Us";
   }
 
-  // Agents: hide LOST by default (same guard as the page)
+  // Agents: hide suppressed leads by default
   if (me.role === "AGENT" && !sp.status && filterTab === "all") {
-    where.status = { not: LeadStatus.LOST };
+    where.currentStatus = { notIn: SUPPRESSED_STATUSES };
   }
 
   if (sp.q) {
@@ -63,7 +60,7 @@ export async function GET(req: NextRequest) {
     ];
   }
 
-  if (sp.status) where.status = sp.status as LeadStatus;
+  if (sp.status) where.currentStatus = sp.status;
   if (sp.ai) where.aiScore = sp.ai as AIScore;
   if (sp.team) where.forwardedTeam = sp.team;
 
@@ -148,9 +145,9 @@ export async function GET(req: NextRequest) {
     smartAnd.push({ createdAt: { gte: istWindow(0).gte } });
   } else if (sp.smart === "ghosting") {
     smartAnd.push({ lastTouchedAt: { lt: new Date(Date.now() - 7 * 24 * 3600 * 1000) } });
-    smartAnd.push({ status: { notIn: [LeadStatus.WON, LeadStatus.LOST] } });
+    smartAnd.push({ currentStatus: { notIn: SUPPRESSED_STATUSES } });
   } else if (sp.smart === "visit_potential") {
-    smartAnd.push({ status: { in: [LeadStatus.QUALIFIED, LeadStatus.SITE_VISIT] } });
+    smartAnd.push({ currentStatus: { in: CLOSING_STATUSES } });
   } else if (sp.smart === "high_budget") {
     smartAnd.push({
       OR: [

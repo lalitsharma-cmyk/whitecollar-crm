@@ -25,7 +25,8 @@
 //     (avoid double-pitching the same prospect)
 
 import { prisma } from "@/lib/prisma";
-import { LeadStatus, AIScore, Prisma } from "@prisma/client";
+import { AIScore, Prisma } from "@prisma/client";
+import { ACTIVE_PURSUIT_STATUSES } from "@/lib/lead-statuses";
 
 export type SuggestedLead = {
   leadId: string;
@@ -36,13 +37,8 @@ export type SuggestedLead = {
   score: number;
 };
 
-const ACTIVE_STATUSES: LeadStatus[] = [
-  LeadStatus.NEW,
-  LeadStatus.CONTACTED,
-  LeadStatus.QUALIFIED,
-  LeadStatus.SITE_VISIT,
-  LeadStatus.NEGOTIATION,
-];
+// Status-based active filter — no stage system.
+const ACTIVE_STATUSES = ACTIVE_PURSUIT_STATUSES;
 
 // Score weights — see header comment for spec reference.
 const SCORE_BUDGET_MATCH = 50;
@@ -122,7 +118,7 @@ export async function bestLeadsForProject(
   const leads = await prisma.lead.findMany({
     where: {
       ...scope,
-      status: { in: ACTIVE_STATUSES },
+      currentStatus: { in: ACTIVE_STATUSES },
       forwardedTeam: team,
       budgetMin: { gte: lo, lte: hi },
       ...(excludeLeadIds.length ? { id: { notIn: excludeLeadIds } } : {}),

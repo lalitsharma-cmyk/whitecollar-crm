@@ -25,14 +25,13 @@
 // + `alreadyBought` populated so subsequent renders are fast.
 
 import { prisma } from "@/lib/prisma";
-import type { LeadStatus } from "@prisma/client";
 
 export interface MatchedLead {
   id: string;
   name: string;
   phone: string | null;
   email: string | null;
-  status: LeadStatus;
+  currentStatus: string | null;
   alreadyBought: string | null;
   bookingDoneAt: Date | null;
   createdAt: Date;
@@ -95,7 +94,7 @@ export async function findMatchingLeads(input: FindMatchingInput): Promise<Match
   const acc = new Map<string, MatchedLeadWithReason>();
 
   const baseSelect = {
-    id: true, name: true, phone: true, email: true, status: true,
+    id: true, name: true, phone: true, email: true, currentStatus: true,
     alreadyBought: true, bookingDoneAt: true, createdAt: true,
   } as const;
 
@@ -106,7 +105,7 @@ export async function findMatchingLeads(input: FindMatchingInput): Promise<Match
   // simple (Prisma's $queryRaw template tag doesn't compose well conditionally).
   if (phoneTail) {
     const rows = await prisma.$queryRaw<MatchedLead[]>`
-      SELECT "id", "name", "phone", "email", "status",
+      SELECT "id", "name", "phone", "email", "currentStatus",
              "alreadyBought", "bookingDoneAt", "createdAt"
       FROM "Lead"
       WHERE "phone" IS NOT NULL
@@ -162,10 +161,10 @@ export async function findMatchingLeads(input: FindMatchingInput): Promise<Match
 }
 
 export interface HistorySummary {
-  /** True when ≥1 matched lead is WON or has bookingDoneAt set. */
+  /** True when ≥1 matched lead is "Booked with Us" or has bookingDoneAt set. */
   isInvestor: boolean;
   evidence: {
-    /** Count of matches in WON status. */
+    /** Count of matches with "Booked with Us" status. */
     wonLeads: number;
     /** Count of matches with bookingDoneAt set (overlaps with wonLeads). */
     bookings: number;
@@ -183,12 +182,11 @@ export interface HistorySummary {
  *   investor matches, lowercased + trimmed for dedup, original casing preserved.
  */
 export function summariseHistory(matches: MatchedLead[]): HistorySummary {
-  const wonLeads = matches.filter((m) => m.status === "WON").length;
+  const wonLeads = matches.filter((m) => m.currentStatus === "Booked with Us").length;
   const bookings = matches.filter((m) => m.bookingDoneAt != null).length;
 
-  // Pull `alreadyBought` from WON / booked matches — those are the investor
-  // signals. A previous LOST inquiry doesn't prove ownership.
-  const buyers = matches.filter((m) => m.status === "WON" || m.bookingDoneAt != null);
+  // Pull `alreadyBought` from booked matches — those are the investor signals.
+  const buyers = matches.filter((m) => m.currentStatus === "Booked with Us" || m.bookingDoneAt != null);
   const seen = new Set<string>();
   const projectsBought: string[] = [];
   for (const m of buyers) {
@@ -228,7 +226,7 @@ export async function projectsFromInterestedUnits(matchedLeadIds: string[]): Pro
   const rows = await prisma.leadProperty.findMany({
     where: {
       leadId: { in: matchedLeadIds },
-      lead: { OR: [{ status: "WON" }, { bookingDoneAt: { not: null } }] },
+      lead: { OR: [{ currentStatus: "Booked with Us" }, { bookingDoneAt: { not: null } }] },
     },
     select: { unit: { select: { project: { select: { name: true } } } } },
   });

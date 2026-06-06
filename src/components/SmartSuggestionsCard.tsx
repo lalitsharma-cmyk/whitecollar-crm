@@ -152,7 +152,7 @@ export default async function SmartSuggestionsCard({ userId, role, team }: Props
         team === "India" ? "3 Cr INR" : "5M AED"
       }`,
       count: closableMoney,
-      href: "/pipeline",
+      href: "/leads?smart=visit_potential",
       tone: "emerald",
     },
     {

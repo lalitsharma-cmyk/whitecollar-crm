@@ -1,34 +1,13 @@
 import { prisma } from "@/lib/prisma";
-import { LeadStatus, Potential } from "@prisma/client";
+import { Potential } from "@prisma/client";
+import { SUPPRESSED_STATUSES, statusColor } from "@/lib/lead-statuses";
 import Link from "next/link";
 import { requireUser } from "@/lib/auth";
 import { leadScopeWhere } from "@/lib/leadScope";
 
 export const dynamic = "force-dynamic";
 
-const statusChip: Record<LeadStatus, string> = {
-  NEW: "chip-new",
-  CONTACTED: "chip-warm",
-  QUALIFIED: "chip-warm",
-  SITE_VISIT: "chip-warm",
-  NEGOTIATION: "chip-warm",
-  EOI: "chip-warm",
-  BOOKING_DONE: "chip-won",
-  WON: "chip-won",
-  LOST: "chip-lost",
-};
-
-const statusLabel: Record<LeadStatus, string> = {
-  NEW: "New",
-  CONTACTED: "Contacted",
-  QUALIFIED: "Qualified",
-  SITE_VISIT: "Site Visit",
-  NEGOTIATION: "Negotiation",
-  EOI: "EOI",
-  BOOKING_DONE: "Booking Done",
-  WON: "Won",
-  LOST: "Lost",
-};
+// Status colors and labels use statusColor() from lead-statuses.ts — no stage mapping.
 
 const potentialEmoji: Record<Potential, string> = {
   HIGH: "🔥",
@@ -46,14 +25,14 @@ export default async function OverduePage() {
     where: {
       ...scope,
       followupDate: { lt: now },
-      status: { notIn: [LeadStatus.LOST, LeadStatus.WON] },
+      currentStatus: { notIn: SUPPRESSED_STATUSES },
     },
     orderBy: { followupDate: "asc" },
     select: {
       id: true,
       name: true,
       phone: true,
-      status: true,
+      currentStatus: true,
       potential: true,
       followupDate: true,
       forwardedTeam: true,
@@ -123,9 +102,9 @@ export default async function OverduePage() {
                     )}
                   </div>
                   <span
-                    className={`chip ${statusChip[lead.status]} flex-none text-[11px] px-2 py-0.5 rounded-full font-semibold`}
+                    className={`chip ${statusColor(lead.currentStatus)} flex-none text-[11px] px-2 py-0.5 rounded-full font-semibold`}
                   >
-                    {statusLabel[lead.status]}
+                    {lead.currentStatus ?? "—"}
                   </span>
                 </div>
 
@@ -189,9 +168,9 @@ export default async function OverduePage() {
                     </td>
                     <td className="px-4 py-3">
                       <span
-                        className={`chip ${statusChip[lead.status]} text-[11px] px-2 py-0.5 rounded-full font-semibold`}
+                        className={`chip ${statusColor(lead.currentStatus)} text-[11px] px-2 py-0.5 rounded-full font-semibold`}
                       >
-                        {statusLabel[lead.status]}
+                        {lead.currentStatus ?? "—"}
                       </span>
                     </td>
                     <td className="px-4 py-3 text-base">

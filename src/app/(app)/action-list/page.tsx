@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
-import { LeadStatus } from "@prisma/client";
+import { SUPPRESSED_STATUSES, CLOSING_STATUSES } from "@/lib/lead-statuses";
 import { formatDistanceToNow } from "date-fns";
 import { runReconciler } from "@/lib/reconciler";
 import { waDraftLink } from "@/lib/wa";
@@ -135,19 +135,19 @@ export default async function ActionListPage() {
 
   const [readyToClose, overdue, needsYou] = await Promise.all([
     prisma.lead.findMany({
-      where: { ...activeScope, status: { in: [LeadStatus.NEGOTIATION, LeadStatus.SITE_VISIT] } },
+      where: { ...activeScope, currentStatus: { in: CLOSING_STATUSES } },
       orderBy: { lastTouchedAt: "desc" },
       take: 10,
       select: leadSelect,
     }),
     prisma.lead.findMany({
-      where: { ...activeScope, followupDate: { lt: new Date() }, status: { notIn: [LeadStatus.WON, LeadStatus.LOST] } },
+      where: { ...activeScope, followupDate: { lt: new Date() }, currentStatus: { notIn: SUPPRESSED_STATUSES } },
       orderBy: { followupDate: "asc" },
       take: 20,
       select: leadSelect,
     }),
     prisma.lead.findMany({
-      where: { ...activeScope, needsManagerReview: true, status: { notIn: [LeadStatus.WON, LeadStatus.LOST] } },
+      where: { ...activeScope, needsManagerReview: true, currentStatus: { notIn: SUPPRESSED_STATUSES } },
       orderBy: { flaggedAt: "desc" },
       take: 15,
       select: leadSelect,

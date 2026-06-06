@@ -17,7 +17,7 @@ export default async function ColdCallSessionPage() {
     where: {
       ownerId: me.id,
       isColdCall: true,
-      status: { notIn: ["WON", "LOST"] },
+      currentStatus: { notIn: ["Junk", "Invalid Number", "Pass Away", "Number Changed", "By Mistake Inquiry"] },
       OR: [
         { lastTouchedAt: null },
         { lastTouchedAt: { lt: cutoff } },

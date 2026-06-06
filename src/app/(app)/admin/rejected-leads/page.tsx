@@ -62,10 +62,9 @@ export default async function RejectedLeadsPage({
     sp.reason && (REASONS as readonly string[]).includes(sp.reason) ? (sp.reason as Reason) : null;
 
   // Base predicate — only rows that went through the structured reject flow.
-  // status=LOST alone would also catch the legacy "marked LOST manually" rows
-  // that don't have a reason; we want only structured rejections here.
+  // rejectedAt is set by the reject API route — no status dependency needed.
   const baseWhere = {
-    status: "LOST" as const,
+    rejectedAt: { not: null },
     rejectionReason: { not: null },
   };
 

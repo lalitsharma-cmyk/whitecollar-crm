@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/auth";
 import { normalizeTeam } from "@/lib/teamRouting";
-import { LeadStatus, Prisma } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import { fmtMoney, fmtMoneyDual } from "@/lib/money";
 import Link from "next/link";
 import ReportDateRangePicker from "@/components/ReportDateRangePicker";
@@ -78,7 +78,7 @@ function cur(c: string | null | undefined): "AED" | "INR" {
   return (c ?? "").toUpperCase() === "INR" ? "INR" : "AED";
 }
 
-const BOOKINGS: LeadStatus[] = [LeadStatus.BOOKING_DONE, LeadStatus.WON];
+// "Booked with Us" is the single booking status — no stage system.
 
 const STATUS_META: Record<
   string,
@@ -210,10 +210,10 @@ export default async function CommissionReportPage({
           ],
         };
 
-  // "Counts as a booking" — commission entered OR status is WON/BOOKING_DONE.
+  // "Counts as a booking" — commission entered OR status is "Booked with Us".
   const bookingWhere: Prisma.LeadWhereInput = {
     AND: [
-      { OR: [{ commissionAmount: { gt: 0 } }, { status: { in: BOOKINGS } }] },
+      { OR: [{ commissionAmount: { gt: 0 } }, { currentStatus: "Booked with Us" }] },
       ...(periodWhere ? [periodWhere] : []),
       ...(managerTeam ? [{ forwardedTeam: managerTeam }] : []),
     ],
@@ -511,7 +511,7 @@ export default async function CommissionReportPage({
           <div className="text-[10px] text-gray-500 leading-relaxed">
             Notes — Amounts are stored in the smallest currency unit and shown in major units. AED
             and INR are tracked as separate running totals and never summed. A lead is counted when
-            it has a commission amount &gt; 0 <em>or</em> its status is WON / BOOKING_DONE. Period is
+            it has a commission amount &gt; 0 <em>or</em> its status is "Booked with Us". Period is
             keyed off the booking date (<code className="bg-gray-100 px-1 rounded">bookingDoneAt</code>),
             falling back to <code className="bg-gray-100 px-1 rounded">commissionReceivedAt</code> then{" "}
             <code className="bg-gray-100 px-1 rounded">updatedAt</code>. Outstanding = Pending +

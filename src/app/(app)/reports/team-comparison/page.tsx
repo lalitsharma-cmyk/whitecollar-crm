@@ -1,7 +1,8 @@
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/auth";
 import { normalizeTeam } from "@/lib/teamRouting";
-import { ActivityType, CallOutcome, LeadStatus, Prisma } from "@prisma/client";
+import { ActivityType, CallOutcome, Prisma } from "@prisma/client";
+import { ACTIVE_PURSUIT_STATUSES } from "@/lib/lead-statuses";
 import { fmtMoney, type Currency } from "@/lib/money";
 import Link from "next/link";
 import ReportDateRangePicker from "@/components/ReportDateRangePicker";
@@ -36,16 +37,9 @@ const TEAM_CURRENCY: Record<Team, Currency> = {
 
 // Pipeline = active deal value, weighted-free (raw budgetMin sum across
 // in-flight stages). Matches what Lalit reads on the dashboard "pipeline" tile.
-const ACTIVE_STAGES: LeadStatus[] = [
-  LeadStatus.NEW,
-  LeadStatus.CONTACTED,
-  LeadStatus.QUALIFIED,
-  LeadStatus.SITE_VISIT,
-  LeadStatus.NEGOTIATION,
-];
-
-// "Bookings done" — anything that crossed the line. BOOKING_DONE or WON.
-const BOOKINGS: LeadStatus[] = [LeadStatus.BOOKING_DONE, LeadStatus.WON];
+// Status-only — active pursuit leads and booked leads.
+const ACTIVE_STAGES = ACTIVE_PURSUIT_STATUSES;
+const BOOKINGS = ["Booked with Us"] as const;
 
 // Date controls migrated to the shared ReportDateRangePicker (?from=&to=).
 // Legacy ?range= is still parsed for one release so old bookmarks still
@@ -125,7 +119,7 @@ async function computeTeamMetrics(team: Team, since: Date, until: Date): Promise
 
     // ACTIVE leads — currently in any in-flight stage. Independent of the
     // window — "active right now" is a snapshot, not a flow metric.
-    prisma.lead.count({ where: { ...leadWhere, status: { in: ACTIVE_STAGES } } }),
+    prisma.lead.count({ where: { ...leadWhere, currentStatus: { in: ACTIVE_STAGES } } }),
 
     // Calls made in-window.
     prisma.callLog.count({ where: { ...callWhere, startedAt: { gte: since, lte: until } } }),
@@ -169,7 +163,7 @@ async function computeTeamMetrics(team: Team, since: Date, until: Date): Promise
     prisma.lead.count({
       where: {
         ...leadWhere,
-        status: { in: BOOKINGS },
+        currentStatus: { in: [...BOOKINGS] },
         OR: [
           { bookingDoneAt: { gte: since, lte: until } },
           { updatedAt: { gte: since, lte: until } },
@@ -182,7 +176,7 @@ async function computeTeamMetrics(team: Team, since: Date, until: Date): Promise
     prisma.lead.findMany({
       where: {
         ...leadWhere,
-        status: { in: ACTIVE_STAGES },
+        currentStatus: { in: ACTIVE_STAGES },
         budgetCurrency: TEAM_CURRENCY[team],
       },
       select: { budgetMin: true },

@@ -159,12 +159,12 @@ export default async function AgentDeepDivePage({
   ] = await Promise.all([
     prisma.lead.count({ where: { ownerId: id } }),
     prisma.lead.count({
-      where: { ownerId: id, status: { notIn: ["WON", "LOST"] } },
+      where: { ownerId: id, currentStatus: { notIn: ["Junk", "Invalid Number", "Pass Away", "Number Changed", "By Mistake Inquiry"] } },
     }),
     prisma.lead.count({
       where: {
         ownerId: id,
-        status: { in: ["BOOKING_DONE", "WON"] },
+        currentStatus: "Booked with Us",
         bookingDoneAt: { gte: monthStart },
       },
     }),

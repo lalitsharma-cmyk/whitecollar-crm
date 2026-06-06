@@ -13,6 +13,7 @@
 import { prisma } from "@/lib/prisma";
 import { hourIST, presentAgentIdsToday } from "@/lib/attendance";
 import { pickRoundRobinAgent } from "@/lib/assignment";
+import { SUPPRESSED_STATUSES } from "@/lib/lead-statuses";
 
 const IST_OFFSET_MIN = 330; // +05:30 — keep consistent with src/lib/attendance.ts
 
@@ -75,7 +76,7 @@ export async function chooseOwnerForNewLead(team?: string | null, now: Date = ne
       // Strategy: pick the present agent with the fewest open leads (lightest load).
       const agents = await prisma.user.findMany({
         where: { id: { in: presentIds }, active: true, role: { in: ["AGENT", "MANAGER"] } },
-        include: { _count: { select: { ownedLeads: { where: { status: { notIn: ["WON", "LOST"] } } } } } },
+        include: { _count: { select: { ownedLeads: { where: { currentStatus: { notIn: SUPPRESSED_STATUSES } } } } } },
       });
       // Exclude any agent whose fixed weekly day off is today (IST) — they
       // shouldn't be round-robin-assigned leads on their day off.
@@ -100,7 +101,7 @@ export async function chooseOwnerForNewLead(team?: string | null, now: Date = ne
         role: { in: ["AGENT", "MANAGER"] },
         ...(team ? { team } : {}),
       },
-      include: { _count: { select: { ownedLeads: { where: { status: { notIn: ["WON", "LOST"] } } } } } },
+      include: { _count: { select: { ownedLeads: { where: { currentStatus: { notIn: SUPPRESSED_STATUSES } } } } } },
     });
     const eligible = candidates.filter((a) => !isOnWeeklyOff(a, now));
     if (eligible.length > 0) {

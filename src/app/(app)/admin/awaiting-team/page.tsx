@@ -20,7 +20,7 @@ export default async function AwaitingTeamPage() {
   const leads = await prisma.lead.findMany({
     where: {
       forwardedTeam: null,
-      status: { not: "LOST" },
+      currentStatus: { notIn: ["Junk", "Invalid Number", "Pass Away", "Number Changed", "By Mistake Inquiry"] },
     },
     orderBy: { createdAt: "desc" },
     take: 100,

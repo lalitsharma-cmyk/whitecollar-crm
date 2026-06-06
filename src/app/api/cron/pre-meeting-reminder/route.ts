@@ -20,6 +20,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { notify } from "@/lib/notify";
 import { ActivityStatus } from "@prisma/client";
+import { SUPPRESSED_STATUSES } from "@/lib/lead-statuses";
 import { fmtISTTime12 } from "@/lib/datetime";
 import { startCronRun, finishCronRun } from "@/lib/cronRun";
 
@@ -94,7 +95,7 @@ export async function GET(req: NextRequest) {
       followupDate: { gte: callbackFrom, lte: callbackTo },
       followupReminderSentAt: null,  // dedupe
       ownerId: { not: null },
-      status: { notIn: ["WON", "LOST"] },
+      currentStatus: { notIn: SUPPRESSED_STATUSES },
     },
     select: { id: true, name: true, phone: true, ownerId: true, followupDate: true },
     take: 50,

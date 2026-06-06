@@ -38,7 +38,7 @@ export default async function TeamPage() {
       by: ["ownerId"],
       where: {
         ownerId: { not: null },
-        status: { notIn: ["WON", "LOST"] },
+        currentStatus: { notIn: ["Junk", "Invalid Number", "Pass Away", "Number Changed", "By Mistake Inquiry"] },
       },
       _count: { _all: true },
     }),
@@ -46,7 +46,7 @@ export default async function TeamPage() {
       SELECT "ownerId", COALESCE("budgetCurrency", 'AED') AS currency, SUM("budgetMin")::float AS total
       FROM "Lead"
       WHERE "ownerId" IS NOT NULL
-        AND "status"::text IN ('NEW','CONTACTED','QUALIFIED','SITE_VISIT','NEGOTIATION')
+        AND "currentStatus" IS NOT NULL
         AND "budgetMin" IS NOT NULL
         AND "updatedAt" >= ${ninetyDaysAgo}
       GROUP BY "ownerId", COALESCE("budgetCurrency", 'AED')

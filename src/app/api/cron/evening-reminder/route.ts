@@ -6,6 +6,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { notify, notifyRoles } from "@/lib/notify";
 import { ActivityStatus, AIScore } from "@prisma/client";
+import { SUPPRESSED_STATUSES } from "@/lib/lead-statuses";
 import { startCronRun, finishCronRun } from "@/lib/cronRun";
 
 export const dynamic = "force-dynamic";
@@ -45,7 +46,7 @@ export async function GET(req: NextRequest) {
     });
     // Hot leads owned by this agent with no call logged today at all
     const hotOwnedLeads = await prisma.lead.findMany({
-      where: { ownerId: u.id, aiScore: AIScore.HOT, status: { notIn: ["WON", "LOST"] } },
+      where: { ownerId: u.id, aiScore: AIScore.HOT, currentStatus: { notIn: SUPPRESSED_STATUSES } },
       include: { callLogs: { where: { startedAt: { gte: startUTC } }, take: 1 } },
     });
     const uncalled = hotOwnedLeads.filter((l) => l.callLogs.length === 0).length;

@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
-import { ActivityStatus, ActivityType, AIScore, LeadStatus } from "@prisma/client";
+import { ActivityStatus, ActivityType, AIScore } from "@prisma/client";
+import { SUPPRESSED_STATUSES, CLOSING_STATUSES, statusColor } from "@/lib/lead-statuses";
 import Link from "next/link";
 import { fmtIST12, fmtISTTime12 } from "@/lib/datetime";
 import { waDraftLink, WA_TEMPLATES } from "@/lib/wa";
@@ -32,11 +33,8 @@ function fmtBudget(min: number | null, max: number | null, currency: string): st
   return fmt((min ?? max)!);
 }
 
-function statusChipClass(status: LeadStatus): string {
-  if (status === LeadStatus.WON) return "chip-won";
-  if (status === LeadStatus.LOST) return "chip-lost";
-  if (status === LeadStatus.NEW) return "chip-new";
-  return "chip-warm";
+function statusChipClass(status: string | null): string {
+  return statusColor(status);
 }
 
 // ── Row shape (normalised across leads and activities) ─────────────────
@@ -45,7 +43,7 @@ type Row = {
   leadId: string;
   leadName: string;
   phone: string | null;
-  status: LeadStatus;
+  currentStatus: string | null;
   budget: { min: number | null; max: number | null; currency: string };
   primary: string;              // big bold label (activity title / next step)
   meta: string;                 // small grey line (time, type, etc.)
@@ -55,7 +53,7 @@ type Row = {
 };
 
 function leadRow(
-  l: { id: string; name: string; phone: string | null; status: LeadStatus; budgetMin: number | null; budgetMax: number | null; budgetCurrency: string; followupDate: Date | null },
+  l: { id: string; name: string; phone: string | null; currentStatus: string | null; budgetMin: number | null; budgetMax: number | null; budgetCurrency: string; followupDate: Date | null },
   opts: { primary: string; meta: string; priority: number; keyPrefix: string },
 ): Row {
   return {
@@ -63,7 +61,7 @@ function leadRow(
     leadId: l.id,
     leadName: l.name,
     phone: l.phone,
-    status: l.status,
+    currentStatus: l.currentStatus,
     budget: { min: l.budgetMin, max: l.budgetMax, currency: l.budgetCurrency },
     primary: opts.primary,
     meta: opts.meta,
@@ -73,7 +71,7 @@ function leadRow(
 }
 
 function actRow(
-  a: { id: string; title: string; type: ActivityType; scheduledAt: Date | null; lead: { id: string; name: string; phone: string | null; status: LeadStatus; budgetMin: number | null; budgetMax: number | null; budgetCurrency: string; followupDate: Date | null } },
+  a: { id: string; title: string; type: ActivityType; scheduledAt: Date | null; lead: { id: string; name: string; phone: string | null; currentStatus: string | null; budgetMin: number | null; budgetMax: number | null; budgetCurrency: string; followupDate: Date | null } },
   opts: { priority: number; keyPrefix: string },
 ): Row {
   const when = a.scheduledAt ? `${fmtIST12(a.scheduledAt)} IST` : "no time set";
@@ -82,7 +80,7 @@ function actRow(
     leadId: a.lead.id,
     leadName: a.lead.name,
     phone: a.lead.phone,
-    status: a.lead.status,
+    currentStatus: a.lead.currentStatus,
     budget: { min: a.lead.budgetMin, max: a.lead.budgetMax, currency: a.lead.budgetCurrency },
     primary: a.title,
     meta: `${when} · ${a.type.replaceAll("_", " ")}`,
@@ -109,7 +107,7 @@ export default async function ActivitiesPage(
   const { start: dayStart, end: dayEnd } = istDayBoundaries();
 
   const leadSelect = {
-    id: true, name: true, phone: true, status: true,
+    id: true, name: true, phone: true, currentStatus: true,
     budgetMin: true, budgetMax: true, budgetCurrency: true,
     followupDate: true,
   } as const;
@@ -141,7 +139,7 @@ export default async function ActivitiesPage(
       where: {
         ...scope,
         followupDate: { lt: now },
-        status: { notIn: [LeadStatus.WON, LeadStatus.LOST] },
+        currentStatus: { notIn: SUPPRESSED_STATUSES },
       },
       orderBy: { followupDate: "asc" },
       take: 10,
@@ -163,7 +161,7 @@ export default async function ActivitiesPage(
       where: {
         ...scope,
         lastTouchedAt: { lt: fiveDaysAgo },
-        status: { notIn: [LeadStatus.WON, LeadStatus.LOST, LeadStatus.NEW] },
+        currentStatus: { notIn: SUPPRESSED_STATUSES },
       },
       orderBy: { lastTouchedAt: "asc" },
       take: 10,
@@ -195,7 +193,7 @@ export default async function ActivitiesPage(
     prisma.lead.findMany({
       where: {
         ...scope,
-        status: LeadStatus.NEGOTIATION,
+        currentStatus: { in: CLOSING_STATUSES },
         eoiStage: { not: null },
       },
       orderBy: { updatedAt: "desc" },
@@ -242,7 +240,7 @@ export default async function ActivitiesPage(
       : 999;
     return leadRow(l, {
       primary: `Slipping — no touch for ${daysSince}d`,
-      meta: `Stage: ${l.status.replaceAll("_", " ")}`,
+      meta: `Status: ${l.currentStatus ?? "—"}`,
       priority: 4,
       keyPrefix: "slip",
     });
@@ -365,8 +363,8 @@ function ActionRow({ row, compact = false }: { row: Row; compact?: boolean }) {
           <Link href={`/leads/${row.leadId}`} className="font-bold text-[#0b1a33] hover:underline truncate">
             {row.leadName}
           </Link>
-          <span className={`chip ${statusChipClass(row.status)} text-[10px]`}>
-            {row.status.replaceAll("_", " ")}
+          <span className={`chip ${statusChipClass(row.currentStatus)} text-[10px]`}>
+            {row.currentStatus ?? "—"}
           </span>
           <span className="text-xs text-gray-500">{fmtBudget(row.budget.min, row.budget.max, row.budget.currency)}</span>
         </div>

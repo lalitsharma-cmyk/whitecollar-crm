@@ -1,7 +1,8 @@
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
 import { normalizeTeam } from "@/lib/teamRouting";
-import { LeadStatus, Role } from "@prisma/client";
+import { Role } from "@prisma/client";
+import { CLOSING_STATUSES } from "@/lib/lead-statuses";
 import { subDays, startOfDay, format } from "date-fns";
 import Link from "next/link";
 import { redirect } from "next/navigation";
@@ -10,14 +11,8 @@ const AGENT_ROLES: Role[] = [Role.AGENT, Role.MANAGER];
 
 export const dynamic = "force-dynamic";
 
-const QUALIFIED_STATUSES: LeadStatus[] = [
-  LeadStatus.QUALIFIED,
-  LeadStatus.SITE_VISIT,
-  LeadStatus.NEGOTIATION,
-  LeadStatus.EOI,
-  LeadStatus.BOOKING_DONE,
-  LeadStatus.WON,
-];
+// Closing-type statuses (status-only, no stages)
+const QUALIFIED_STATUSES = CLOSING_STATUSES;
 
 const MEDAL = ["🥇", "🥈", "🥉"];
 
@@ -87,7 +82,7 @@ export default async function LeaderboardPage() {
       by: ["ownerId"],
       where: {
         ownerId: { in: agentIds },
-        status: { in: QUALIFIED_STATUSES },
+        currentStatus: { in: QUALIFIED_STATUSES },
       },
       _count: { _all: true },
     }),
@@ -97,7 +92,7 @@ export default async function LeaderboardPage() {
       by: ["ownerId"],
       where: {
         ownerId: { in: agentIds },
-        status: LeadStatus.WON,
+        currentStatus: "Booked with Us",
       },
       _count: { _all: true },
     }),

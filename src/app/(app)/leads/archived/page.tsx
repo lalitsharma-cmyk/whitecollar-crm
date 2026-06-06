@@ -20,7 +20,7 @@ export default async function ArchivedLeadsPage() {
   const scope = await leadScopeWhere(me);
 
   const leads = await prisma.lead.findMany({
-    where: { ...scope, status: "LOST" },
+    where: { ...scope, rejectedAt: { not: null } },
     orderBy: { updatedAt: "desc" },
     take: 200,
     select: {

@@ -12,11 +12,11 @@ import { prisma } from "@/lib/prisma";
 import { sendEmail, emailEnabled } from "@/lib/email";
 import { startCronRun, finishCronRun } from "@/lib/cronRun";
 import { buildWeeklyDigestHtml, type DigestBoard, type DigestStats } from "@/lib/digestEmail";
+import { ACTIVE_PURSUIT_STATUSES } from "@/lib/lead-statuses";
 import {
   ActivityType,
   ActivityStatus,
   CallOutcome,
-  LeadStatus,
   Role,
 } from "@prisma/client";
 
@@ -203,25 +203,17 @@ export async function GET(req: NextRequest) {
           scheduledAt: { gte: weekStart },
         },
       }),
+      // Bookings this week — leads marked "Booked with Us" (no stage system)
       prisma.lead.count({
         where: {
-          status: { in: [LeadStatus.BOOKING_DONE, LeadStatus.WON] },
+          currentStatus: "Booked with Us",
           updatedAt: { gte: weekStart },
         },
       }),
-      // Pipeline snapshot — open leads with budgets. Use mid-range when both
-      // min+max are present, otherwise whichever side is non-null.
+      // Pipeline snapshot — active-pursuit leads with budgets.
       prisma.lead.findMany({
         where: {
-          status: {
-            in: [
-              LeadStatus.NEW,
-              LeadStatus.CONTACTED,
-              LeadStatus.QUALIFIED,
-              LeadStatus.SITE_VISIT,
-              LeadStatus.NEGOTIATION,
-            ],
-          },
+          currentStatus: { in: ACTIVE_PURSUIT_STATUSES },
           OR: [{ budgetMin: { not: null } }, { budgetMax: { not: null } }],
         },
         select: { budgetMin: true, budgetMax: true, budgetCurrency: true },
