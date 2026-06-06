@@ -35,7 +35,7 @@ import BestCallTimeChip from "@/components/BestCallTimeChip";
 import CallStatsBar from "@/components/CallStatsBar";
 // LeadJourneyBar removed — stage pipeline bar replaced by currentStatus (Excel/MIS workflow)
 import { formatBudget } from "@/lib/budgetParse";
-import { EXCEL_STATUSES, excelStatusChip } from "@/lib/lead-statuses";
+import { EXCEL_STATUSES, statusColor } from "@/lib/lead-statuses";
 import LinkedContactsCard from "@/components/LinkedContactsCard";
 import InvestorBanner from "@/components/InvestorBanner";
 import StageDurationBadge from "@/components/StageDurationBadge";
@@ -462,6 +462,33 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
           <InlineEdit leadId={lead.id} field="potential" type="select" value={lead.potential ?? ""}
             options={[{value:"HIGH",label:"🔥 Hot"},{value:"MEDIUM",label:"🌤 Warm"},{value:"LOW",label:"❄ Cold"},{value:"UNKNOWN",label:"— Unknown"}]} />
         </div>
+        {/* §7 Configuration — Dubai uses BR types, India uses BHK types. Never mix. */}
+        <div>
+          <div className="text-xs text-gray-500 dark:text-slate-400">🏠 Configuration</div>
+          <InlineEdit leadId={lead.id} field="configuration" type="select" value={lead.configuration ?? ""}
+            options={lead.forwardedTeam === "India"
+              ? [
+                  {value:"1BHK",label:"1 BHK"},
+                  {value:"2BHK",label:"2 BHK"},
+                  {value:"3BHK",label:"3 BHK"},
+                  {value:"4BHK",label:"4 BHK"},
+                  {value:"Villa",label:"Villa"},
+                  {value:"Plot",label:"Plot"},
+                  {value:"Commercial",label:"Commercial"},
+                ]
+              : [
+                  {value:"Studio",label:"Studio"},
+                  {value:"1BR",label:"1 BR"},
+                  {value:"2BR",label:"2 BR"},
+                  {value:"3BR",label:"3 BR"},
+                  {value:"4BR",label:"4 BR"},
+                  {value:"Penthouse",label:"Penthouse"},
+                  {value:"Villa",label:"Villa"},
+                  {value:"Commercial",label:"Commercial"},
+                ]
+            }
+            placeholder="Select configuration…" />
+        </div>
         {/* LinkedIn — full URL, shown as clickable link when set */}
         <div className="sm:col-span-2">
           <div className="text-xs text-gray-500 dark:text-slate-400">🔗 LinkedIn</div>
@@ -576,7 +603,7 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
                   <h2 className="text-xl font-bold">{lead.name}{lead.altName && <span className="text-base font-medium text-gray-600"> & {lead.altName}</span>}</h2>
                 )}
                 {/* Status — primary user-facing field (Excel/MIS values). Click to change. */}
-                <span className={`chip ${excelStatusChip(lead.currentStatus)} font-semibold`}>
+                <span className={`${statusColor(lead.currentStatus)} text-xs px-2.5 py-0.5 rounded-full border font-semibold inline-flex items-center`}>
                   <InlineEdit
                     leadId={lead.id}
                     field="currentStatus"
@@ -622,7 +649,25 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
                   </>
                 )}
               </div>
-              {/* Stage pipeline bar removed — Status (currentStatus) shown in header chip above */}
+              {/* §8 Requirement Snapshot — compact one-liner below name/status, above actions */}
+              {(lead.configuration || lead.budgetMin || lead.notesShort) && (
+                <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-gray-600 dark:text-slate-300">
+                  {lead.configuration && (
+                    <span className="bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-700 px-2 py-0.5 rounded font-medium">
+                      {lead.configuration}
+                    </span>
+                  )}
+                  {lead.budgetMin && (
+                    <span className="bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-700 px-2 py-0.5 rounded font-medium">
+                      {lead.budgetCurrency} {(lead.budgetMin / 1_000_000).toFixed(1)}M
+                      {lead.budgetMax ? ` – ${(lead.budgetMax / 1_000_000).toFixed(1)}M` : "+"}
+                    </span>
+                  )}
+                  {lead.notesShort && (
+                    <span className="text-gray-500 dark:text-slate-400 truncate max-w-[200px]">{lead.notesShort}</span>
+                  )}
+                </div>
+              )}
               {/* Phone/WA action buttons — full-width block so the buttons grid
                   and alt-phone row stack vertically rather than appearing as
                   horizontal flex siblings. BestCallTimeChip sits below. */}
@@ -656,33 +701,26 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
           </div>
         </div>
 
-        {/* QUICK NOTE — fast freeform note widget for jotting context. */}
-        <div data-lead-section="timeline">
-          <QuickNoteCard leadId={lead.id} />
+        {/* BANT + Qualification — at top of left column on ALL screens (spec §8).
+            Per spec: "Keep BANT At Top. But make compact." Now shown above the
+            conversation history on both mobile and desktop. The right-column copy
+            is kept for desktop (xl:block below) to fill the rail as well. */}
+        <div className="space-y-4">
+          {bantCard}
+          {qualificationCard}
         </div>
 
-        {/* CONVERSATION STREAM — merged call + WhatsApp feed, newest first.
-            Moved above Customer Intelligence so agents see the actual
-            conversation history before the "No previous history" fallback. */}
+        {/* CONVERSATION STREAM — primary source of truth (spec §10).
+            Comes before Quick Note (voice-first: voice note > conversation > quick note). */}
         <div data-lead-section="timeline">
           <CallStatsBar callLogs={lead.callLogs.map((c) => ({ duration: c.durationSec, outcome: c.outcome, startedAt: c.startedAt }))} />
           <ConversationStreamCard callLogs={lead.callLogs} waMessages={lead.waMessages} notes={lead.notes} forwardedTeam={lead.forwardedTeam} />
         </div>
 
-        {/* EOI / Booking workflow — REMOVED by Lalit in Round 3 ("Remove EOI for now").
-            Both old EOIWorkflowCard + new Agent-K EOIPanel are off the page; bring
-            either back when the EOI process is the next feature priority. */}
-
-        {/* CustomerIntelligenceCard, clientSummaryCard, BuyingSignalsCard
-            REMOVED per Lalit's repeated request — "remove these 3 sections". */}
-
-        {/* MOBILE/TABLET-ONLY: BANT + Qualification surface near the top of the
-            page on phones + iPads (Lalit: "Qualification moving up wards in mobile").
-            On desktop (≥1280px) they live in the right column (rendered there with
-            the opposite hidden xl:block wrapper). */}
-        <div className="xl:hidden space-y-4">
-          {bantCard}
-          {qualificationCard}
+        {/* QUICK NOTE — secondary (spec §9: Quick Note is secondary, must not dominate).
+            Moved AFTER conversation history so agents see history first. */}
+        <div data-lead-section="timeline">
+          <QuickNoteCard leadId={lead.id} />
         </div>
 
         {/* Timeline removed — all activity now lives in Conversation History above. */}
@@ -719,10 +757,9 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
           initialUpdatedAt={stickyNote.updatedAt ? stickyNote.updatedAt.toISOString() : null}
         />
 
-        {/* DESKTOP-ONLY (≥1280px) BANT + Qualification (top of right column). The
-            mobile + tablet copies live near the top of the LEFT column above. */}
-        <div className="hidden xl:block space-y-4">
-          {bantCard}
+        {/* BANT is now in the left column (visible all screen sizes, spec §8).
+            Right column: qualification details only, no duplicate BANT card. */}
+        <div className="hidden xl:block">
           {qualificationCard}
         </div>
 
