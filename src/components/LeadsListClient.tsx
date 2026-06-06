@@ -143,7 +143,7 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
   const [bulkCrossTeamWarn, setBulkCrossTeamWarn] = useState<string | null>(null);
   const [pickerOpenFor, setPickerOpenFor] = useState<string | null>(null);
   const [statusOpenFor, setStatusOpenFor] = useState<string | null>(null);
-  const [reassignOpenFor, setReassignOpenFor] = useState<string | null>(null);
+  // §1: Assigned is display-only from the table — no inline reassign dropdown.
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
   const [deleteReason, setDeleteReason] = useState("NOT_INTERESTED");
   const [deleteBusy, setDeleteBusy] = useState(false);
@@ -158,16 +158,6 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
       body: JSON.stringify({ currentStatus }),
     });
     setStatusOpenFor(null);
-    router.refresh();
-  }
-
-  async function quickReassign(leadId: string, ownerId: string) {
-    await fetch(`/api/leads/${leadId}/assign`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ownerId }),
-    });
-    setReassignOpenFor(null);
     router.refresh();
   }
 
@@ -232,7 +222,6 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
       if (e.key !== "Escape") return;
       if (statusOpenFor) { setStatusOpenFor(null); return; }
       if (pickerOpenFor) { setPickerOpenFor(null); return; }
-      if (reassignOpenFor) { setReassignOpenFor(null); return; }
       if (showTagPopover || showReassignPopover || showRejectModal || showWaPopover) {
         setShowTagPopover(false);
         setShowReassignPopover(false);
@@ -248,16 +237,15 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
 
   // Click outside to close floating popovers
   useEffect(() => {
-    if (!statusOpenFor && !pickerOpenFor && !reassignOpenFor) return;
+    if (!statusOpenFor && !pickerOpenFor) return;
     const fn = (e: MouseEvent) => {
       const target = e.target as HTMLElement;
       if (!target.closest("[data-status-popover]")) setStatusOpenFor(null);
       if (!target.closest("[data-picker-popover]")) setPickerOpenFor(null);
-      if (!target.closest("[data-reassign-popover]")) setReassignOpenFor(null);
     };
     document.addEventListener("mousedown", fn);
     return () => document.removeEventListener("mousedown", fn);
-  }, [statusOpenFor, pickerOpenFor, reassignOpenFor]);
+  }, [statusOpenFor, pickerOpenFor]);
 
   function togglePickedTag(t: string) {
     setPickedTags((s) => {
@@ -391,88 +379,66 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
               const sortThCls = `${thCls} cursor-pointer hover:bg-gray-100 dark:hover:bg-slate-700/60 select-none`;
               // Total visible columns count (for colSpan on empty row)
               const colCount = 9 + (showSource ? 1 : 0);
+              // Spec §6: Name·Status·Budget·Follow-Up·Assigned·Source(admin)·LastActivity·Actions
+              // §1 Assigned=display-only · §4 C/NC removed · §5 Actions always visible
               return (
                 <table className="w-full text-xs border-collapse" style={{ tableLayout: "fixed" }}>
                   <colgroup>
-                    <col style={{ width: 32 }} />
-                    <col style={{ width: 180 }} />
-                    <col style={{ width: 130 }} />
-                    <col style={{ width: 100 }} />
-                    {/* Status — fixed width so popover doesn't resize it */}
-                    <col style={{ width: 140 }} />
-                    <col style={{ width: 100 }} />
+                    {/* checkbox */}<col style={{ width: 28 }} />
+                    {/* name     */}<col style={{ width: 170 }} />
+                    {/* status   */}<col style={{ width: 135 }} />
+                    {/* budget   */}<col style={{ width: 95 }} />
+                    {/* follow-up*/}<col style={{ width: 95 }} />
+                    {/* assigned */}<col style={{ width: 110 }} />
                     {showSource && <col style={{ width: 80 }} />}
-                    <col style={{ width: 90 }} />
-                    {/* Last Activity */}
-                    <col style={{ width: 130 }} />
-                    {/* Connected History */}
-                    <col style={{ width: 72 }} />
-                    {/* Actions */}
-                    <col style={{ width: 110 }} />
+                    {/* activity */}<col style={{ width: 130 }} />
+                    {/* actions  */}<col style={{ width: 108 }} />
                   </colgroup>
                   <thead>
                     <tr className="border-b border-gray-200 dark:border-slate-700">
                       <th className={thCls}>
                         {canBulk && <input type="checkbox" checked={allChecked} onChange={toggleAll} />}
                       </th>
-                      <th className={sortThCls} onClick={() => router.push(sortHref("name"))}>
-                        Name <SortIcon k="name" />
-                      </th>
-                      <th className={thCls}>Project</th>
-                      <th className={sortThCls} onClick={() => router.push(sortHref("budget"))}>
-                        Budget <SortIcon k="budget" />
-                      </th>
-                      <th className={sortThCls} onClick={() => router.push(sortHref("status"))}>
-                        Status <SortIcon k="status" />
-                      </th>
-                      <th className={sortThCls} onClick={() => router.push(sortHref("owner"))}>
-                        Assigned <SortIcon k="owner" />
-                      </th>
+                      <th className={sortThCls} onClick={() => router.push(sortHref("name"))}>Name <SortIcon k="name" /></th>
+                      <th className={sortThCls} onClick={() => router.push(sortHref("status"))}>Status <SortIcon k="status" /></th>
+                      <th className={sortThCls} onClick={() => router.push(sortHref("budget"))}>Budget <SortIcon k="budget" /></th>
+                      <th className={sortThCls} onClick={() => router.push(sortHref("followup"))}>Follow-Up <SortIcon k="followup" /></th>
+                      <th className={thCls}>Assigned</th>
                       {showSource && <th className={thCls}>Source</th>}
-                      <th className={sortThCls} onClick={() => router.push(sortHref("followup"))}>
-                        Follow-Up <SortIcon k="followup" />
-                      </th>
                       <th className={thCls}>Last Activity</th>
-                      <th className={thCls} title="Connected / Not Picked">C/NC</th>
                       <th className={thCls}>Actions</th>
                     </tr>
                   </thead>
                   <tbody>
                     {leads.length === 0 && (
-                      <tr><td colSpan={colCount} className="px-4 py-10 text-center text-gray-400 text-sm">No leads match these filters.</td></tr>
+                      <tr><td colSpan={7 + (showSource ? 1 : 0)} className="px-4 py-10 text-center text-gray-400 text-sm">No leads match these filters.</td></tr>
                     )}
                     {leads.map((l, i) => {
                       const lastAct = fmtLastActivity(l.lastActivityType, l.lastActivityAt);
-                      const hasHistory = l.connectedCount > 0 || l.notPickedCount > 0;
                       return (
                       <tr key={l.id}
                         onClick={() => router.push(`/leads/${l.id}`)}
-                        className={`border-b border-gray-100 dark:border-slate-700/60 cursor-pointer hover:bg-blue-50/60 dark:hover:bg-blue-900/20 transition-colors group ${i % 2 === 1 ? "bg-gray-50/30 dark:bg-slate-800/30" : "bg-white dark:bg-slate-800"}`}>
-                        {/* Checkbox */}
-                        <td className="px-3 py-1.5" onClick={e => e.stopPropagation()}>
+                        className={`border-b border-gray-100 dark:border-slate-700/60 cursor-pointer hover:bg-blue-50/60 dark:hover:bg-blue-900/20 transition-colors ${i % 2 === 1 ? "bg-gray-50/30 dark:bg-slate-800/30" : "bg-white dark:bg-slate-800"}`}>
+
+                        {/* 1. Checkbox */}
+                        <td className="px-2 py-1.5" onClick={e => e.stopPropagation()}>
                           {canBulk && <input type="checkbox" checked={selected.has(l.id)} onChange={() => toggle(l.id)} />}
                         </td>
-                        {/* Name */}
+
+                        {/* 2. Name */}
                         <td className="px-3 py-1.5 font-medium text-gray-900 dark:text-slate-100 truncate">
                           <Link href={`/leads/${l.id}`} onClick={e => e.stopPropagation()}
                             className="hover:text-[#0b1a33] dark:hover:text-blue-300 hover:underline">{l.name}</Link>
                         </td>
-                        {/* Project */}
-                        <td className="px-3 py-1.5 text-gray-600 dark:text-slate-300 truncate">
-                          {l.discussedProjects[0] ?? l.interest ?? <span className="text-gray-300">—</span>}
-                        </td>
-                        {/* Budget */}
-                        <td className="px-3 py-1.5 text-gray-700 dark:text-slate-300 whitespace-nowrap tabular-nums">
-                          {l.budgetFormatted ?? <span className="text-gray-300">—</span>}
-                        </td>
-                        {/* Status — floating popover (table layout never shifts) */}
+
+                        {/* 3. Status — floating popover, table never shifts */}
                         <td className="px-3 py-1.5" onClick={e => e.stopPropagation()}>
                           <div className="relative" data-status-popover>
                             <button type="button"
                               onClick={() => setStatusOpenFor(statusOpenFor === l.id ? null : l.id)}
-                              className={`${statusColor(l.currentStatus)} text-[10px] px-2 py-0.5 rounded-full border font-medium inline-flex items-center gap-0.5 whitespace-nowrap max-w-full truncate`}
+                              className={`${statusColor(l.currentStatus)} text-[10px] px-2 py-0.5 rounded-full border font-medium inline-flex items-center gap-0.5 max-w-full`}
                               title={l.currentStatus ?? ""}>
-                              <span className="truncate">{l.currentStatus ?? "Set status"}</span>
+                              <span className="truncate max-w-[90px]">{l.currentStatus ?? "Set status"}</span>
                               <span className="shrink-0">▾</span>
                             </button>
                             {statusOpenFor === l.id && (
@@ -489,112 +455,78 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
                             )}
                           </div>
                         </td>
-                        {/* Assigned — click to reassign (admin/manager only) */}
-                        <td className="px-3 py-1.5" onClick={e => e.stopPropagation()}>
-                          {canReassign ? (
-                            <div className="relative" data-reassign-popover>
-                              <button type="button"
-                                onClick={() => setReassignOpenFor(reassignOpenFor === l.id ? null : l.id)}
-                                className="text-gray-600 dark:text-slate-300 hover:text-[#0b1a33] dark:hover:text-white text-xs truncate flex items-center gap-0.5 max-w-full">
-                                <span className="truncate">{l.owner?.name ?? <span className="text-amber-500">Unassigned</span>}</span>
-                                <span className="shrink-0 text-gray-400">▾</span>
-                              </button>
-                              {reassignOpenFor === l.id && (
-                                <div className="absolute left-0 top-full mt-1 z-50 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-600 rounded-lg shadow-xl w-44 max-h-56 overflow-y-auto py-1"
-                                  onClick={e => e.stopPropagation()}>
-                                  {agents.map(a => (
-                                    <button key={a.id} type="button"
-                                      onClick={() => quickReassign(l.id, a.id)}
-                                      className={`w-full text-left px-3 py-1.5 text-xs hover:bg-gray-50 dark:hover:bg-slate-700 truncate
-                                        ${l.owner?.name === a.name ? "font-semibold text-[#0b1a33] dark:text-blue-300" : "text-gray-700 dark:text-slate-200"}`}>
-                                      {a.name}
-                                    </button>
-                                  ))}
-                                </div>
-                              )}
-                            </div>
-                          ) : (
-                            <span className="text-gray-600 dark:text-slate-300 text-xs truncate">
-                              {l.owner?.name ?? <span className="text-amber-500">Unassigned</span>}
-                            </span>
-                          )}
+
+                        {/* 4. Budget */}
+                        <td className="px-3 py-1.5 text-gray-700 dark:text-slate-300 whitespace-nowrap tabular-nums text-xs">
+                          {l.budgetFormatted ?? <span className="text-gray-300">—</span>}
                         </td>
-                        {/* Source (admin/manager only) */}
-                        {showSource && (
-                          <td className="px-3 py-1.5 text-gray-400 dark:text-slate-400 truncate">
-                            {l.srcLabel}
-                          </td>
-                        )}
-                        {/* Follow-Up — click to set / change date */}
+
+                        {/* 5. Follow-Up — click to change date, floating picker */}
                         <td className="px-3 py-1.5" onClick={e => e.stopPropagation()}>
                           <div className="relative" data-picker-popover>
                             <button type="button"
                               onClick={() => setPickerOpenFor(pickerOpenFor === l.id ? null : l.id)}
-                              className={`text-xs flex items-center gap-0.5 whitespace-nowrap
-                                ${l.followupDate
-                                  ? "text-emerald-700 dark:text-emerald-400 font-medium"
-                                  : "text-gray-300 hover:text-gray-400"}`}>
-                              <span>{l.followupDate ?? "Set date"}</span>
-                              <span className="text-gray-400">▾</span>
+                              className={`text-xs flex items-center gap-0.5 whitespace-nowrap ${l.followupDate ? "text-emerald-700 dark:text-emerald-400 font-medium" : "text-gray-300 hover:text-gray-400"}`}>
+                              {l.followupDate ?? "—"}
                             </button>
                             {pickerOpenFor === l.id && (
-                              <div className="absolute left-0 top-full mt-1 z-50 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-600 rounded-lg shadow-xl p-3"
+                              <div className="absolute left-0 top-full mt-1 z-50 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-600 rounded-lg shadow-xl p-3 min-w-[180px]"
                                 onClick={e => e.stopPropagation()}>
-                                <div className="text-[10px] text-gray-500 dark:text-slate-400 mb-1.5 font-medium">Follow-up date</div>
-                                <input
-                                  type="date"
-                                  autoFocus
-                                  className="text-xs border border-gray-200 dark:border-slate-600 rounded-md px-2 py-1.5 bg-white dark:bg-slate-700 dark:text-slate-100 outline-none focus:ring-2 focus:ring-blue-200"
+                                <div className="text-[10px] text-gray-500 dark:text-slate-400 mb-1.5 font-semibold">Set follow-up date</div>
+                                <input type="date" autoFocus
+                                  className="text-xs border border-gray-200 dark:border-slate-600 rounded-md px-2 py-1.5 bg-white dark:bg-slate-700 dark:text-slate-100 outline-none focus:ring-2 focus:ring-blue-200 w-full"
                                   defaultValue={l.followupRaw ?? ""}
-                                  onChange={e => e.target.value && quickSetFollowup(l.id, e.target.value)}
-                                />
+                                  onChange={e => e.target.value && quickSetFollowup(l.id, e.target.value)} />
                                 {l.followupDate && (
-                                  <button type="button"
-                                    onClick={() => quickSetFollowup(l.id, "")}
-                                    className="mt-1.5 text-[10px] text-red-500 hover:text-red-700 w-full text-left">
-                                    × Clear date
+                                  <button type="button" onClick={() => quickSetFollowup(l.id, "")}
+                                    className="mt-1.5 text-[10px] text-red-500 hover:text-red-700">
+                                    × Clear
                                   </button>
                                 )}
                               </div>
                             )}
                           </div>
                         </td>
-                        {/* Last Activity */}
-                        <td className="px-3 py-1.5 text-gray-500 dark:text-slate-400 truncate">
-                          {lastAct ?? <span className="text-gray-300">No activity</span>}
+
+                        {/* 6. Assigned — display only (§1: controlled workflow, no accidental reassign) */}
+                        <td className="px-3 py-1.5 text-gray-600 dark:text-slate-300 text-xs truncate">
+                          {l.owner?.name ?? <span className="text-amber-500 text-[10px]">Unassigned</span>}
                         </td>
-                        {/* Connected History */}
-                        <td className="px-3 py-1.5 whitespace-nowrap tabular-nums">
-                          {hasHistory ? (
-                            <span className="text-[10px]">
-                              <span className="text-emerald-600 font-semibold">{l.connectedCount}C</span>
-                              {" "}/{" "}
-                              <span className="text-gray-400">{l.notPickedCount}NC</span>
-                            </span>
-                          ) : <span className="text-gray-300">—</span>}
+
+                        {/* 7. Source — admin/manager only (§2) */}
+                        {showSource && (
+                          <td className="px-3 py-1.5 text-gray-400 dark:text-slate-400 text-xs truncate">
+                            {l.srcLabel}
+                          </td>
+                        )}
+
+                        {/* 8. Last Activity */}
+                        <td className="px-3 py-1.5 text-gray-500 dark:text-slate-400 text-xs truncate">
+                          {lastAct ?? <span className="text-gray-300">—</span>}
                         </td>
-                        {/* Actions */}
+
+                        {/* 9. Actions — ALWAYS VISIBLE (§5: no invisible hover area) */}
                         <td className="px-2 py-1.5 whitespace-nowrap" onClick={e => e.stopPropagation()}>
-                          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <div className="flex items-center gap-0.5">
                             {l.phone && (
                               <a href={`tel:${l.phone}`} title="Call"
-                                className="p-1 rounded hover:bg-emerald-50 text-gray-400 hover:text-emerald-600 transition-colors">
+                                className="p-1.5 rounded-md text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-900/30 transition-colors">
                                 <Phone className="w-3.5 h-3.5" />
                               </a>
                             )}
                             {l.phone && (
                               <a href={whatsappLink(l.phone, "")} target="_blank" rel="noreferrer" title="WhatsApp"
-                                className="p-1 rounded hover:bg-green-50 text-gray-400 hover:text-green-600 transition-colors">
+                                className="p-1.5 rounded-md text-green-600 hover:bg-green-50 dark:hover:bg-green-900/30 transition-colors">
                                 <WaIcon />
                               </a>
                             )}
-                            <button type="button" title="Schedule follow-up"
+                            <button type="button" title="Set follow-up"
                               onClick={() => setPickerOpenFor(pickerOpenFor === l.id ? null : l.id)}
-                              className="p-1 rounded hover:bg-blue-50 text-gray-400 hover:text-blue-600 transition-colors">
+                              className="p-1.5 rounded-md text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors">
                               <Calendar className="w-3.5 h-3.5" />
                             </button>
                             <Link href={`/leads/${l.id}`} title="Open lead" onClick={e => e.stopPropagation()}
-                              className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-700 transition-colors">
+                              className="p-1.5 rounded-md text-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 transition-colors">
                               <ExternalLink className="w-3.5 h-3.5" />
                             </Link>
                           </div>
@@ -607,20 +539,80 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
               );
             })()}
           </div>
-          {/* Mobile fallback — always show cards on small screens even in table mode */}
+          {/* ─── MOBILE CARDS (§7+§8) — dedicated layout, not a shrunken table ─── */}
           <div className="sm:hidden space-y-2">
-            {leads.length === 0 && <div className="card p-6 text-center text-gray-500 text-sm">No leads match these filters.</div>}
+            {leads.length === 0 && <div className="card p-5 text-center text-gray-500 text-sm">No leads match these filters.</div>}
             {leads.map(l => (
-              <div key={l.id} className="card p-3" onClick={() => router.push(`/leads/${l.id}`)}>
-                <div className="flex items-start justify-between gap-2">
-                  <div className="font-semibold text-sm text-gray-900 dark:text-slate-100 truncate">{l.name}</div>
-                  <button type="button" onClick={e => { e.stopPropagation(); setStatusOpenFor(l.id); }}
-                    className={`chip ${statusColor(l.currentStatus)} text-[9px] flex-none`}>
-                    {l.currentStatus ?? l.statusName.replaceAll("_"," ")}
-                  </button>
+              <div key={l.id} className="bg-white dark:bg-slate-800 rounded-xl border border-gray-100 dark:border-slate-700 p-3 shadow-sm">
+                {/* Row 1: Name + Status badge */}
+                <div className="flex items-center justify-between gap-2 mb-1.5">
+                  <Link href={`/leads/${l.id}`} className="font-bold text-sm text-[#0b1a33] dark:text-white truncate">
+                    {l.name}
+                  </Link>
+                  <span className={`${statusColor(l.currentStatus)} text-[10px] px-2 py-0.5 rounded-full border font-medium shrink-0`}>
+                    {l.currentStatus ?? "—"}
+                  </span>
                 </div>
-                <div className="text-xs text-gray-500 mt-0.5">{l.phone ?? "No phone"} · {l.budgetFormatted ?? "—"}</div>
-                {l.followupDate && <div className="text-[10px] text-emerald-700 mt-0.5">Follow-up: {l.followupDate}</div>}
+                {/* Row 2: Phone + Budget */}
+                <div className="flex items-center gap-3 text-xs text-gray-500 dark:text-slate-400 mb-1">
+                  {l.phone && (
+                    <span className="flex items-center gap-1 font-mono">
+                      📞 ···{l.phone.slice(-4)}
+                    </span>
+                  )}
+                  {l.budgetFormatted && (
+                    <span className="text-gray-700 dark:text-slate-300 font-medium">
+                      💰 {l.budgetFormatted}
+                    </span>
+                  )}
+                </div>
+                {/* Row 3: Follow-up date */}
+                {l.followupDate && (
+                  <div className="text-[11px] text-emerald-700 dark:text-emerald-400 mb-2">
+                    📅 Follow-up: <span className="font-medium">{l.followupDate}</span>
+                  </div>
+                )}
+                {/* Row 4: Action icons — ALWAYS VISIBLE on mobile (§8, no hover on touch) */}
+                <div className="flex items-center gap-1 pt-2 border-t border-gray-50 dark:border-slate-700">
+                  {l.phone && (
+                    <a href={`tel:${l.phone}`}
+                      className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg text-emerald-600 bg-emerald-50 dark:bg-emerald-900/20 text-xs font-medium"
+                      onClick={e => e.stopPropagation()}>
+                      <Phone className="w-3.5 h-3.5" /> Call
+                    </a>
+                  )}
+                  {l.phone && (
+                    <a href={whatsappLink(l.phone, "")} target="_blank" rel="noreferrer"
+                      className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg text-green-600 bg-green-50 dark:bg-green-900/20 text-xs font-medium"
+                      onClick={e => e.stopPropagation()}>
+                      <WaIcon /> WA
+                    </a>
+                  )}
+                  <button type="button"
+                    onClick={e => { e.stopPropagation(); setPickerOpenFor(pickerOpenFor === l.id ? null : l.id); }}
+                    className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg text-blue-600 bg-blue-50 dark:bg-blue-900/20 text-xs font-medium">
+                    <Calendar className="w-3.5 h-3.5" /> Date
+                  </button>
+                  <Link href={`/leads/${l.id}`}
+                    className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg text-indigo-600 bg-indigo-50 dark:bg-indigo-900/20 text-xs font-medium"
+                    onClick={e => e.stopPropagation()}>
+                    <ExternalLink className="w-3.5 h-3.5" /> Open
+                  </Link>
+                </div>
+                {/* Follow-up date picker (mobile) */}
+                {pickerOpenFor === l.id && (
+                  <div className="mt-2 pt-2 border-t border-gray-100 dark:border-slate-700" data-picker-popover
+                    onClick={e => e.stopPropagation()}>
+                    <input type="date" autoFocus
+                      className="text-xs border border-gray-200 dark:border-slate-600 rounded-md px-2 py-1.5 bg-white dark:bg-slate-700 dark:text-slate-100 outline-none w-full"
+                      defaultValue={l.followupRaw ?? ""}
+                      onChange={e => e.target.value && quickSetFollowup(l.id, e.target.value)} />
+                    {l.followupDate && (
+                      <button type="button" onClick={() => quickSetFollowup(l.id, "")}
+                        className="mt-1 text-[10px] text-red-500">× Clear date</button>
+                    )}
+                  </div>
+                )}
               </div>
             ))}
           </div>

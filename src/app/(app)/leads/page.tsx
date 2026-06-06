@@ -212,8 +212,19 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
   // nofollowup filter already sets followupDate: null, so the followup chip
   // default (today) must not compose with it — include it as an "other filter".
   const hasOtherFilter = !!(sp.q || sp.source || sp.status || sp.cstatus || sp.owner || sp.team || sp.score || sp.notPicked || sp.eoi || sp.potential || sp.fundReady || sp.clientType || sp.whenInvest || sp.project || sp.budgetPreset || sp.budgetFrom || sp.budgetTo || sp.city || sp.category || sp.hasMeeting || sp.hasSiteVisit || sp.followupFrom || sp.followupTo || filterTab === "nofollowup");
-  // Default view = ALL leads. No hidden filter is applied on a clean page load.
-  // (Previously defaulted to "today" which caused "44 total, 8 matching" confusion.)
+  // §12 Default view by role:
+  //   Agent   → Today's Follow-Ups (their primary daily work queue)
+  //   Manager → Today's Follow-Ups (recommended, same as agents)
+  //   Admin   → All Leads (needs full database visibility)
+  // Explicit ?followup= or any other filter in the URL overrides the default.
+  if (me.role === "AGENT" || me.role === "MANAGER") {
+    if (!hasOtherFilter && !sp.followup) {
+      // No filter set → default to today's follow-ups
+      where.followupDate = istWindow(0);
+    }
+  }
+  // Admin: no default filter — all leads visible immediately.
+
   // Excel-style follow-up date range (from filter panel) — takes precedence over quick chips
   if (sp.followupFrom || sp.followupTo) {
     const fRange: { gte?: Date; lte?: Date } = {};
@@ -222,8 +233,13 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
     where.followupDate = fRange;
   }
 
-  // Quick chip-bar shortcuts (Today/Overdue) — ignored if date range is set
+  // Quick chip-bar shortcuts (Today/Overdue) — ignored if date range is set.
+  // ?followup=all explicitly clears the agent's today-default.
   const effectiveFollowup = (sp.followupFrom || sp.followupTo) ? "range" : (sp.followup ?? "all");
+  // If agent/manager explicitly chose "all", clear the today filter we set above.
+  if (effectiveFollowup === "all" && (me.role === "AGENT" || me.role === "MANAGER")) {
+    delete where.followupDate;
+  }
 
   if (effectiveFollowup === "today") {
     // Today in IST as a UTC window: 00:00 IST = 18:30 UTC the previous day.
@@ -508,21 +524,29 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
           on:  "bg-[#0b1a33] text-white border-[#0b1a33] dark:bg-blue-700 dark:border-blue-700",
           off: "bg-white dark:bg-slate-700 border-[#e5e7eb] dark:border-slate-600 text-gray-700 dark:text-slate-100 hover:bg-gray-50 dark:hover:bg-slate-600",
         };
-        // "All" is active when no status/cstatus/follow-up/team/owner filter is set
-        const allActive = !sp.followup && !sp.ai && !sp.team && !sp.owner && !sp.smart && !sp.filter && !sp.status && !sp.cstatus;
+        // §12: For agents/managers the default is Today — so "Today" chip is highlighted
+        // when no explicit ?followup= param is set. "All" is highlighted only when ?followup=all.
+        const isAgentDefault = (me.role === "AGENT" || me.role === "MANAGER") && !sp.followup && !hasOtherFilter;
+        const todayChipActive = effectiveFollowup === "today" || isAgentDefault;
+        // "All" chip is active only when explicitly showing all (admin default, or agent picked All)
+        const allActive = !isAgentDefault && !sp.followup && !sp.ai && !sp.team && !sp.owner && !sp.smart && !sp.filter && !sp.status && !sp.cstatus;
 
         return (
           <div className="flex gap-2 overflow-x-auto pb-1 -mx-3 px-3 sm:mx-0 sm:px-0" style={{ scrollbarWidth: "thin" }}>
-            {/* All */}
-            <Link href="/leads" className={chip(allActive, neutral.on, neutral.off)}>All · {totalAll}</Link>
+            {/* All — for agents, must explicitly set followup=all to override today-default */}
+            <Link
+              href={(me.role === "AGENT" || me.role === "MANAGER") ? "/leads?followup=all" : "/leads"}
+              className={chip(allActive, neutral.on, neutral.off)}>
+              All · {totalAll}
+            </Link>
 
             {/* Follow-up time chips */}
             <Link
               href="/leads?followup=today"
-              className={chip(effectiveFollowup === "today", "bg-emerald-600 text-white border-emerald-600", "bg-emerald-50 border-emerald-300 text-emerald-800 dark:bg-emerald-950/30 dark:border-emerald-700 dark:text-emerald-200")}
+              className={chip(todayChipActive, "bg-emerald-600 text-white border-emerald-600", "bg-emerald-50 border-emerald-300 text-emerald-800 dark:bg-emerald-950/30 dark:border-emerald-700 dark:text-emerald-200")}
             >
               📅 Today
-              {followupToday > 0 && <span className={`px-1 rounded text-[10px] ${effectiveFollowup === "today" ? "bg-white/25" : "bg-emerald-200/60 dark:bg-emerald-800/60"}`}>{followupToday}</span>}
+              {followupToday > 0 && <span className={`px-1 rounded text-[10px] ${todayChipActive ? "bg-white/25" : "bg-emerald-200/60 dark:bg-emerald-800/60"}`}>{followupToday}</span>}
             </Link>
             <Link
               href="/leads?followup=overdue"
