@@ -575,13 +575,28 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
           </div>
         )}
 
+        {/* §15 FOLLOW-UP CARD — always visible when a follow-up is set */}
+        {lead.followupDate && !followupOverdue && (
+          <div className="rounded-xl border border-emerald-200 bg-emerald-50 dark:bg-emerald-900/20 px-4 py-3 flex items-center gap-3 text-sm">
+            <span className="text-emerald-600 text-base">📅</span>
+            <div className="flex-1">
+              <span className="font-semibold text-emerald-800 dark:text-emerald-200">Follow-up due: </span>
+              <span className="text-emerald-700 dark:text-emerald-300">
+                {new Date(lead.followupDate).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })}
+                {" "}·{" "}
+                {new Date(lead.followupDate).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })} IST
+              </span>
+            </div>
+          </div>
+        )}
+
         {/* FOLLOW-UP OVERDUE BANNER */}
         {followupOverdue && (
-          <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 flex items-center gap-3 text-sm">
+          <div className="rounded-xl border border-red-200 bg-red-50 dark:bg-red-900/20 px-4 py-3 flex items-center gap-3 text-sm">
             <span className="text-red-600 text-base">⚠️</span>
             <div>
-              <span className="font-semibold text-red-700">Follow-up overdue</span>
-              <span className="text-red-600 ml-2">
+              <span className="font-semibold text-red-700 dark:text-red-300">Follow-up overdue</span>
+              <span className="text-red-600 dark:text-red-400 ml-2">
                 — was due {lead.followupDate ? new Date(lead.followupDate).toLocaleDateString("en-GB", { day: "2-digit", month: "short" }) : ""}
                 . Log a call or reschedule.
               </span>
