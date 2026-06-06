@@ -14,7 +14,7 @@ function WaIcon() {
 }
 import { telLink, whatsappLink } from "@/lib/phone";
 import CopyPhoneButton from "./CopyPhoneButton";
-import { excelStatusChip } from "@/lib/lead-statuses";
+import { statusColor, EXCEL_STATUSES } from "@/lib/lead-statuses";
 
 // Preset tag vocab — mirrors what Lalit asked the team to standardise on
 // across the pipeline. Kept here (not server-fetched) so the popover renders
@@ -57,6 +57,21 @@ function idleClass(lastTouchedAt: string | null | undefined): string {
   return "text-emerald-600";
 }
 
+/** Format "Last Activity" cell — e.g. "📞 Call · 2h ago" */
+function fmtLastActivity(type: string | null, at: string | null): string | null {
+  if (!type || !at) return null;
+  const ms = Date.now() - new Date(at).getTime();
+  const mins = Math.floor(ms / 60_000);
+  const hrs = Math.floor(mins / 60);
+  const days = Math.floor(hrs / 24);
+  const ago = days >= 7 ? `${days}d` : days >= 1 ? `${days}d` : hrs >= 1 ? `${hrs}h` : `${mins}m`;
+  const icon = type === "CALL" ? "📞" : type === "WHATSAPP" ? "💬" : type === "EMAIL" ? "✉️"
+    : type === "NOTE" ? "📝" : type === "SITE_VISIT" ? "🏗" : "•";
+  const label = type === "CALL" ? "Call" : type === "WHATSAPP" ? "WhatsApp" : type === "EMAIL" ? "Email"
+    : type === "NOTE" ? "Note" : type === "SITE_VISIT" ? "Visit" : type.replace(/_/g, " ").toLowerCase();
+  return `${icon} ${label} · ${ago}`;
+}
+
 interface Row {
   id: string;
   name: string;
@@ -93,6 +108,12 @@ interface Row {
   city: string | null;
   whenCanInvest: string | null;
   remarks: string | null;
+  // Last Activity column — what happened last + when
+  lastActivityType: string | null;
+  lastActivityAt: string | null;
+  // Connected History column — e.g. 5C / 2NC
+  connectedCount: number;
+  notPickedCount: number;
 }
 
 export default function LeadsListClient({ leads, canBulk, canReassign = false, canSetStatus = false, agents, showSource = true, view = "cards", searchParamsStr = "" }: { leads: Row[]; canBulk: boolean; canReassign?: boolean; canSetStatus?: boolean; agents: { id: string; name: string; team: string | null }[]; showSource?: boolean; view?: "cards" | "table"; searchParamsStr?: string; }) {
@@ -125,19 +146,8 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
   const [deleteReason, setDeleteReason] = useState("NOT_INTERESTED");
   const [deleteBusy, setDeleteBusy] = useState(false);
 
-  // Excel/MIS status values — what agents actually use
-  const EXCEL_LEAD_STATUSES = [
-    "Not Contacted", "Fresh Lead", "Follow Up", "Long Term Followup",
-    "Details Shared", "Mail Sent", "Meeting", "Want Office Visit",
-    "Zoom Meeting", "Site Visit Schedule", "Commercial Investment",
-    "Visit Dubai", "Expo Only", "Funds Issue", "War Fear",
-    "Booked with Us", "Already Bought", "Sell Out", "Rent Out",
-    "Leasing", "Other Location", "Gurgaon", "Other Requirement",
-    "Junk", "Low Budget", "Not Interested", "Broker", "Invalid Number",
-    "Drop The Plan", "By Mistake Inquiry", "Just Searching",
-    "Never Respond Phone Calls", "Not Able To Buy", "Pass Away",
-    "Number Changed", "Repeated", "Visited With Other Broker",
-  ];
+  // Excel/MIS status values — imported from canonical source
+  const EXCEL_LEAD_STATUSES = EXCEL_STATUSES as unknown as string[];
 
   async function quickSetStatus(leadId: string, currentStatus: string) {
     await fetch(`/api/leads/${leadId}/update`, {
@@ -208,6 +218,7 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
   useEffect(() => {
     const fn = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
+      if (statusOpenFor) { setStatusOpenFor(null); return; }
       if (showTagPopover || showReassignPopover || showRejectModal || showWaPopover) {
         setShowTagPopover(false);
         setShowReassignPopover(false);
@@ -219,7 +230,18 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
     };
     window.addEventListener("keydown", fn);
     return () => window.removeEventListener("keydown", fn);
-  }, [showTagPopover, showReassignPopover, showRejectModal, showWaPopover, selected.size]);
+  }, [statusOpenFor, showTagPopover, showReassignPopover, showRejectModal, showWaPopover, selected.size]);
+
+  // Click outside to close floating status popover
+  useEffect(() => {
+    if (!statusOpenFor) return;
+    const fn = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (!target.closest("[data-status-popover]")) setStatusOpenFor(null);
+    };
+    document.addEventListener("mousedown", fn);
+    return () => document.removeEventListener("mousedown", fn);
+  }, [statusOpenFor]);
 
   function togglePickedTag(t: string) {
     setPickedTags((s) => {
@@ -349,13 +371,32 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
                 THREE_MONTHS: "✈ Visit Dubai", SIX_PLUS_MONTHS: "⏳ 6+ Months",
                 WINDOW_SHOPPING: "📆 Window Shopping",
               };
-              const thCls = "px-3 py-2.5 font-semibold text-gray-600 dark:text-slate-300 whitespace-nowrap text-left bg-gray-50 dark:bg-slate-800/60";
+              const thCls = "px-3 py-2 font-semibold text-gray-600 dark:text-slate-300 whitespace-nowrap text-left bg-gray-50 dark:bg-slate-800/60 text-[11px] uppercase tracking-wide";
               const sortThCls = `${thCls} cursor-pointer hover:bg-gray-100 dark:hover:bg-slate-700/60 select-none`;
+              // Total visible columns count (for colSpan on empty row)
+              const colCount = 9 + (showSource ? 1 : 0);
               return (
-                <table className="w-full text-xs border-collapse">
+                <table className="w-full text-xs border-collapse" style={{ tableLayout: "fixed" }}>
+                  <colgroup>
+                    <col style={{ width: 32 }} />
+                    <col style={{ width: 180 }} />
+                    <col style={{ width: 130 }} />
+                    <col style={{ width: 100 }} />
+                    {/* Status — fixed width so popover doesn't resize it */}
+                    <col style={{ width: 140 }} />
+                    <col style={{ width: 100 }} />
+                    {showSource && <col style={{ width: 80 }} />}
+                    <col style={{ width: 90 }} />
+                    {/* Last Activity */}
+                    <col style={{ width: 130 }} />
+                    {/* Connected History */}
+                    <col style={{ width: 72 }} />
+                    {/* Actions */}
+                    <col style={{ width: 110 }} />
+                  </colgroup>
                   <thead>
                     <tr className="border-b border-gray-200 dark:border-slate-700">
-                      <th className={thCls} style={{ width: 32 }}>
+                      <th className={thCls}>
                         {canBulk && <input type="checkbox" checked={allChecked} onChange={toggleAll} />}
                       </th>
                       <th className={sortThCls} onClick={() => router.push(sortHref("name"))}>
@@ -371,72 +412,126 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
                       <th className={sortThCls} onClick={() => router.push(sortHref("owner"))}>
                         Assigned <SortIcon k="owner" />
                       </th>
-                      {showSource && <th className={`${thCls}`}>Source</th>}
+                      {showSource && <th className={thCls}>Source</th>}
                       <th className={sortThCls} onClick={() => router.push(sortHref("followup"))}>
                         Follow-Up <SortIcon k="followup" />
                       </th>
-                      <th className={thCls}>Timeline</th>
-                      <th className={`${thCls} max-w-xs`}>Remarks</th>
+                      <th className={thCls}>Last Activity</th>
+                      <th className={thCls} title="Connected / Not Picked">C/NC</th>
+                      <th className={thCls}>Actions</th>
                     </tr>
                   </thead>
                   <tbody>
                     {leads.length === 0 && (
-                      <tr><td colSpan={10} className="px-4 py-10 text-center text-gray-400 text-sm">No leads match these filters.</td></tr>
+                      <tr><td colSpan={colCount} className="px-4 py-10 text-center text-gray-400 text-sm">No leads match these filters.</td></tr>
                     )}
-                    {leads.map((l, i) => (
+                    {leads.map((l, i) => {
+                      const lastAct = fmtLastActivity(l.lastActivityType, l.lastActivityAt);
+                      const hasHistory = l.connectedCount > 0 || l.notPickedCount > 0;
+                      return (
                       <tr key={l.id}
                         onClick={() => router.push(`/leads/${l.id}`)}
-                        className={`border-b border-gray-100 dark:border-slate-700/60 cursor-pointer hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors group ${i % 2 === 1 ? "bg-gray-50/40 dark:bg-slate-800/30" : "bg-white dark:bg-slate-800"}`}>
-                        <td className="px-3 py-2" onClick={e => e.stopPropagation()}>
+                        className={`border-b border-gray-100 dark:border-slate-700/60 cursor-pointer hover:bg-blue-50/60 dark:hover:bg-blue-900/20 transition-colors group ${i % 2 === 1 ? "bg-gray-50/30 dark:bg-slate-800/30" : "bg-white dark:bg-slate-800"}`}>
+                        {/* Checkbox */}
+                        <td className="px-3 py-1.5" onClick={e => e.stopPropagation()}>
                           {canBulk && <input type="checkbox" checked={selected.has(l.id)} onChange={() => toggle(l.id)} />}
                         </td>
-                        <td className="px-3 py-2 font-medium text-gray-900 dark:text-slate-100 whitespace-nowrap">
-                          <Link href={`/leads/${l.id}`} onClick={e => e.stopPropagation()} className="hover:underline group-hover:text-[#0b1a33] dark:group-hover:text-blue-300">{l.name}</Link>
+                        {/* Name */}
+                        <td className="px-3 py-1.5 font-medium text-gray-900 dark:text-slate-100 truncate">
+                          <Link href={`/leads/${l.id}`} onClick={e => e.stopPropagation()}
+                            className="hover:text-[#0b1a33] dark:hover:text-blue-300 hover:underline">{l.name}</Link>
                         </td>
-                        <td className="px-3 py-2 text-gray-700 dark:text-slate-300 max-w-[160px] truncate">
+                        {/* Project */}
+                        <td className="px-3 py-1.5 text-gray-600 dark:text-slate-300 truncate">
                           {l.discussedProjects[0] ?? l.interest ?? <span className="text-gray-300">—</span>}
                         </td>
-                        <td className="px-3 py-2 text-gray-700 dark:text-slate-300 whitespace-nowrap tabular-nums">
+                        {/* Budget */}
+                        <td className="px-3 py-1.5 text-gray-700 dark:text-slate-300 whitespace-nowrap tabular-nums">
                           {l.budgetFormatted ?? <span className="text-gray-300">—</span>}
                         </td>
-                        <td className="px-3 py-2" onClick={e => e.stopPropagation()}>
-                          {statusOpenFor === l.id ? (
-                            <select autoFocus className="text-[10px] border rounded px-1 py-0.5 bg-white dark:bg-slate-700 dark:text-slate-100"
-                              defaultValue={l.currentStatus ?? ""}
-                              onChange={e => quickSetStatus(l.id, e.target.value)}
-                              onBlur={() => setStatusOpenFor(null)}
-                            >
-                              <option value="">— set —</option>
-                              {EXCEL_LEAD_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
-                            </select>
-                          ) : (
-                            <button type="button" onClick={() => setStatusOpenFor(l.id)}
-                              className={`chip ${excelStatusChip(l.currentStatus)} text-[9px] inline-flex items-center gap-0.5 whitespace-nowrap`}>
-                              {l.currentStatus ?? l.statusName.replaceAll("_"," ")}<span>▾</span>
+                        {/* Status — floating popover (table layout never shifts) */}
+                        <td className="px-3 py-1.5" onClick={e => e.stopPropagation()}>
+                          <div className="relative" data-status-popover>
+                            <button type="button"
+                              onClick={() => setStatusOpenFor(statusOpenFor === l.id ? null : l.id)}
+                              className={`${statusColor(l.currentStatus)} text-[10px] px-2 py-0.5 rounded-full border font-medium inline-flex items-center gap-0.5 whitespace-nowrap max-w-full truncate`}
+                              title={l.currentStatus ?? ""}>
+                              <span className="truncate">{l.currentStatus ?? "Set status"}</span>
+                              <span className="shrink-0">▾</span>
                             </button>
-                          )}
+                            {statusOpenFor === l.id && (
+                              <div className="absolute left-0 top-full mt-1 z-50 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-600 rounded-lg shadow-xl w-52 max-h-72 overflow-y-auto py-1"
+                                onClick={e => e.stopPropagation()}>
+                                {EXCEL_LEAD_STATUSES.map(s => (
+                                  <button key={s} type="button"
+                                    onClick={() => quickSetStatus(l.id, s)}
+                                    className={`w-full text-left px-3 py-1.5 text-xs hover:bg-gray-50 dark:hover:bg-slate-700 flex items-center gap-2 ${l.currentStatus === s ? "font-semibold text-[#0b1a33] dark:text-blue-300" : "text-gray-700 dark:text-slate-200"}`}>
+                                    <span className={`${statusColor(s)} px-1.5 py-0.5 rounded-full text-[9px] border shrink-0`}>{s}</span>
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                          </div>
                         </td>
-                        <td className="px-3 py-2 text-gray-600 dark:text-slate-300 whitespace-nowrap">
-                          {l.owner?.name ?? <span className="text-amber-600 text-[10px]">Unassigned</span>}
+                        {/* Assigned */}
+                        <td className="px-3 py-1.5 text-gray-600 dark:text-slate-300 truncate">
+                          {l.owner?.name ?? <span className="text-amber-600">Unassigned</span>}
                         </td>
+                        {/* Source (admin/manager only) */}
                         {showSource && (
-                          <td className="px-3 py-2 text-gray-500 dark:text-slate-400 whitespace-nowrap text-[10px]">
+                          <td className="px-3 py-1.5 text-gray-400 dark:text-slate-400 truncate">
                             {l.srcLabel}
                           </td>
                         )}
-                        <td className="px-3 py-2 whitespace-nowrap">
+                        {/* Follow-Up */}
+                        <td className="px-3 py-1.5 whitespace-nowrap">
                           {l.followupDate
                             ? <span className="text-emerald-700 dark:text-emerald-400 font-medium">{l.followupDate}</span>
                             : <span className="text-gray-300">—</span>}
                         </td>
-                        <td className="px-3 py-2 text-gray-600 dark:text-slate-300 whitespace-nowrap text-[10px]">
-                          {l.whenCanInvest ? (WHEN[l.whenCanInvest] ?? l.whenCanInvest) : <span className="text-gray-300">—</span>}
+                        {/* Last Activity */}
+                        <td className="px-3 py-1.5 text-gray-500 dark:text-slate-400 truncate">
+                          {lastAct ?? <span className="text-gray-300">No activity</span>}
                         </td>
-                        <td className="px-3 py-2 text-gray-500 dark:text-slate-400 max-w-[200px] truncate text-[10px]" title={l.remarks ?? ""}>
-                          {l.remarks ?? <span className="text-gray-300">—</span>}
+                        {/* Connected History */}
+                        <td className="px-3 py-1.5 whitespace-nowrap tabular-nums">
+                          {hasHistory ? (
+                            <span className="text-[10px]">
+                              <span className="text-emerald-600 font-semibold">{l.connectedCount}C</span>
+                              {" "}/{" "}
+                              <span className="text-gray-400">{l.notPickedCount}NC</span>
+                            </span>
+                          ) : <span className="text-gray-300">—</span>}
+                        </td>
+                        {/* Actions */}
+                        <td className="px-2 py-1.5 whitespace-nowrap" onClick={e => e.stopPropagation()}>
+                          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                            {l.phone && (
+                              <a href={`tel:${l.phone}`} title="Call"
+                                className="p-1 rounded hover:bg-emerald-50 text-gray-400 hover:text-emerald-600 transition-colors">
+                                <Phone className="w-3.5 h-3.5" />
+                              </a>
+                            )}
+                            {l.phone && (
+                              <a href={whatsappLink(l.phone, "")} target="_blank" rel="noreferrer" title="WhatsApp"
+                                className="p-1 rounded hover:bg-green-50 text-gray-400 hover:text-green-600 transition-colors">
+                                <WaIcon />
+                              </a>
+                            )}
+                            <button type="button" title="Schedule follow-up"
+                              onClick={() => setPickerOpenFor(pickerOpenFor === l.id ? null : l.id)}
+                              className="p-1 rounded hover:bg-blue-50 text-gray-400 hover:text-blue-600 transition-colors">
+                              <Calendar className="w-3.5 h-3.5" />
+                            </button>
+                            <Link href={`/leads/${l.id}`} title="Open lead" onClick={e => e.stopPropagation()}
+                              className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-700 transition-colors">
+                              <ExternalLink className="w-3.5 h-3.5" />
+                            </Link>
+                          </div>
                         </td>
                       </tr>
-                    ))}
+                      );
+                    })}
                   </tbody>
                 </table>
               );
@@ -450,7 +545,7 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
                 <div className="flex items-start justify-between gap-2">
                   <div className="font-semibold text-sm text-gray-900 dark:text-slate-100 truncate">{l.name}</div>
                   <button type="button" onClick={e => { e.stopPropagation(); setStatusOpenFor(l.id); }}
-                    className={`chip ${excelStatusChip(l.currentStatus)} text-[9px] flex-none`}>
+                    className={`chip ${statusColor(l.currentStatus)} text-[9px] flex-none`}>
                     {l.currentStatus ?? l.statusName.replaceAll("_"," ")}
                   </button>
                 </div>
@@ -482,27 +577,25 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
                       <span className="font-bold text-sm text-[#0b1a33] truncate">{l.name}</span>
                       {maskedPhone && <span className="text-[10px] text-gray-400 dark:text-slate-500 font-mono flex-none">{maskedPhone}</span>}
                     </div>
-                    <div className="flex items-center gap-1 flex-none">
-                      {statusOpenFor === l.id ? (
-                        <select
-                          autoFocus
-                          className="text-[10px] border rounded px-1 py-0.5 bg-white dark:bg-slate-700 dark:text-slate-100"
-                          defaultValue={l.currentStatus ?? ""}
-                          onChange={(e) => { e.stopPropagation(); quickSetStatus(l.id, e.target.value); }}
-                          onBlur={() => setStatusOpenFor(null)}
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <option value="">— set status —</option>
-                          {EXCEL_LEAD_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
-                        </select>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={(e) => { e.stopPropagation(); e.preventDefault(); setStatusOpenFor(l.id); }}
-                          className={`chip ${excelStatusChip(l.currentStatus)} text-[9px] inline-flex items-center gap-0.5`}
-                        >
-                          {l.currentStatus ?? l.statusName.replaceAll("_", " ")}<span aria-hidden>▾</span>
-                        </button>
+                    <div className="flex items-center gap-1 flex-none relative" data-status-popover>
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); setStatusOpenFor(statusOpenFor === l.id ? null : l.id); }}
+                        className={`${statusColor(l.currentStatus)} text-[10px] px-2 py-0.5 rounded-full border font-medium inline-flex items-center gap-0.5`}
+                      >
+                        {l.currentStatus ?? "Set status"}<span aria-hidden>▾</span>
+                      </button>
+                      {statusOpenFor === l.id && (
+                        <div className="absolute right-0 top-full mt-1 z-50 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-600 rounded-lg shadow-xl w-52 max-h-72 overflow-y-auto py-1"
+                          onClick={e => e.stopPropagation()}>
+                          {EXCEL_LEAD_STATUSES.map(s => (
+                            <button key={s} type="button"
+                              onClick={() => quickSetStatus(l.id, s)}
+                              className={`w-full text-left px-3 py-1.5 text-xs hover:bg-gray-50 dark:hover:bg-slate-700 ${l.currentStatus === s ? "font-semibold" : "text-gray-700 dark:text-slate-200"}`}>
+                              {s}
+                            </button>
+                          ))}
+                        </div>
                       )}
                     </div>
                   </div>
@@ -683,28 +776,27 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
                     </div>
                   </td>
 
-                  {/* ── Status chip (Excel/MIS) ── */}
+                  {/* ── Status chip (floating popover) ── */}
                   <td className="px-3 py-3 align-top" onClick={(e) => e.stopPropagation()}>
-                    {statusOpenFor === l.id ? (
-                      <select
-                        autoFocus
-                        className="text-[10px] border rounded px-1 py-0.5 bg-white dark:bg-slate-700 dark:text-slate-100 w-full"
-                        defaultValue={l.currentStatus ?? ""}
-                        onChange={(e) => quickSetStatus(l.id, e.target.value)}
-                        onBlur={() => setStatusOpenFor(null)}
-                      >
-                        <option value="">— set status —</option>
-                        {EXCEL_LEAD_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
-                      </select>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => setStatusOpenFor(l.id)}
-                        className={`chip ${excelStatusChip(l.currentStatus)} text-[10px] inline-flex items-center gap-0.5 whitespace-nowrap`}
-                      >
-                        {l.currentStatus ?? l.statusName.replaceAll("_", " ")}<span aria-hidden>▾</span>
+                    <div className="relative" data-status-popover>
+                      <button type="button"
+                        onClick={() => setStatusOpenFor(statusOpenFor === l.id ? null : l.id)}
+                        className={`${statusColor(l.currentStatus)} text-[10px] px-2 py-0.5 rounded-full border font-medium inline-flex items-center gap-0.5 whitespace-nowrap`}>
+                        {l.currentStatus ?? "Set status"}<span aria-hidden>▾</span>
                       </button>
-                    )}
+                      {statusOpenFor === l.id && (
+                        <div className="absolute left-0 top-full mt-1 z-50 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-600 rounded-lg shadow-xl w-52 max-h-64 overflow-y-auto py-1"
+                          onClick={e => e.stopPropagation()}>
+                          {EXCEL_LEAD_STATUSES.map(s => (
+                            <button key={s} type="button"
+                              onClick={() => quickSetStatus(l.id, s)}
+                              className={`w-full text-left px-3 py-1.5 text-xs hover:bg-gray-50 dark:hover:bg-slate-700 ${l.currentStatus === s ? "font-semibold text-[#0b1a33] dark:text-blue-300" : "text-gray-700 dark:text-slate-200"}`}>
+                              {s}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   </td>
 
                   {/* ── Assigned to — admin/manager only ── */}

@@ -367,6 +367,8 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
             owner: { select: { name: true, avatarColor: true } },
             interestedUnits: { take: 1, select: { unit: { select: { configuration: true, project: { select: { name: true } } } } } },
             discussed: { take: 3, select: { project: { select: { name: true } } } },
+            callLogs: { orderBy: { startedAt: "desc" }, take: 20, select: { outcome: true, startedAt: true } },
+            activities: { orderBy: { createdAt: "desc" }, take: 1, select: { type: true, createdAt: true } },
           },
         })
       : prisma.lead.findMany({
@@ -375,6 +377,8 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
             owner: { select: { name: true, avatarColor: true } },
             interestedUnits: { take: 1, select: { unit: { select: { configuration: true, project: { select: { name: true } } } } } },
             discussed: { take: 3, select: { project: { select: { name: true } } } },
+            callLogs: { orderBy: { startedAt: "desc" }, take: 20, select: { outcome: true, startedAt: true } },
+            activities: { orderBy: { createdAt: "desc" }, take: 1, select: { type: true, createdAt: true } },
           },
         }),
     // Skip the count query when we already have the total from the pre-query.
@@ -660,6 +664,16 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
             city:          l.city ?? null,
             whenCanInvest: l.whenCanInvest ?? null,
             remarks:       l.remarks ? l.remarks.slice(0, 120) : null,
+            // Last activity for table "Last Activity" column
+            lastActivityType: l.callLogs.length > 0 ? "CALL"
+              : l.activities.length > 0 ? l.activities[0].type
+              : null,
+            lastActivityAt: l.callLogs[0]?.startedAt?.toISOString()
+              ?? l.activities[0]?.createdAt?.toISOString()
+              ?? null,
+            // Connected history for "5C / 2NC" column
+            connectedCount: l.callLogs.filter(c => ["CONNECTED","INTERESTED"].includes(c.outcome)).length,
+            notPickedCount: l.callLogs.filter(c => ["NOT_PICKED","BUSY","SWITCHED_OFF"].includes(c.outcome)).length,
             intelligenceMatch: intel ? {
               matchType: intel.matchType,
               confidence: intel.confidence,
