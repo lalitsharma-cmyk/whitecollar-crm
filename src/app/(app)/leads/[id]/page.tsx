@@ -129,6 +129,10 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
   ]);
   if (!lead) notFound();
 
+  // §14 Module context rule: cold-call records must stay inside Revival Engine.
+  // If someone navigates to /leads/:id for a cold-call lead, redirect them.
+  if (lead.isColdCall) redirect(`/revival-engine/cold-data/${id}`);
+
   // Auto-detection queries — run after notFound() guard.
   const [interestNotes, unmatchedMentions] = await Promise.all([
     prisma.leadInterestNote.findMany({ where: { leadId: id }, orderBy: { createdAt: "asc" } }),
