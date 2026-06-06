@@ -22,6 +22,59 @@ import { useBodyScrollLock } from "@/hooks/useBodyScrollLock";
 type NavItem = { href: string; label: string; Icon: React.ElementType; tag?: string; agentHidden?: boolean };
 type NavSection = { section: string; adminOnly?: boolean; managerOrAdmin?: boolean; items: NavItem[] };
 
+// §6 — Global Back button + breadcrumb. Every page has a back button that
+// preserves filters by using router.back() (keeps the full URL incl. params).
+const BACK_LABELS: Record<string, string> = {
+  "/leads":           "Leads",
+  "/dashboard":       "Dashboard",
+  "/reports":         "Reports",
+  "/cold-calls":      "Revival Engine",
+  "/properties":      "Properties",
+  "/action-list":     "Action List",
+  "/activities":      "Activities",
+  "/calls":           "Call Logs",
+  "/team":            "Team",
+  "/admin":           "Admin",
+  "/settings":        "Settings",
+};
+
+function GlobalBackButton() {
+  const pathname = usePathname();
+  const router = useRouter();
+  // Don't show on root pages (they have nothing to go back to)
+  const rootPages = ["/dashboard", "/leads", "/cold-calls", "/properties",
+    "/reports", "/action-list", "/activities", "/calls", "/settings",
+    "/notifications", "/team", "/vault", "/ai", "/help", "/leaderboards",
+    "/profile", "/admin", "/intake"];
+  const isRoot = rootPages.some(r => pathname === r);
+  if (isRoot) return null;
+
+  // Build breadcrumb label
+  const parts = pathname.split("/").filter(Boolean);
+  let backLabel = "Back";
+  if (parts.length >= 2) {
+    const parentPath = "/" + parts.slice(0, -1).join("/");
+    backLabel = BACK_LABELS[parentPath] ?? BACK_LABELS["/" + parts[0]] ?? "Back";
+  }
+  // Special cases
+  if (pathname.startsWith("/leads/")) backLabel = "Leads";
+  if (pathname.startsWith("/cold-calls/")) backLabel = "Revival Engine";
+  if (pathname.startsWith("/properties/")) backLabel = "Properties";
+  if (pathname.startsWith("/admin/")) backLabel = "Admin";
+  if (pathname.startsWith("/reports/")) backLabel = "Reports";
+  if (pathname.startsWith("/team/")) backLabel = "Team";
+
+  return (
+    <button
+      onClick={() => router.back()}
+      className="flex items-center gap-1 text-sm text-gray-500 hover:text-[#0b1a33] dark:text-slate-400 dark:hover:text-white transition-colors font-medium whitespace-nowrap flex-none px-2 py-1 rounded hover:bg-gray-100 dark:hover:bg-slate-700"
+    >
+      <ChevronLeft className="w-4 h-4" />
+      {backLabel}
+    </button>
+  );
+}
+
 const fullNav: NavSection[] = [
   { section: "WORKSPACE", items: [
     { href: "/dashboard",   label: "Dashboard",      Icon: LayoutDashboard },
@@ -341,7 +394,8 @@ export default function MobileShell({ children, user, awaitingTeamCount = 0 }: P
         style={{ paddingBottom: "calc(4rem + env(safe-area-inset-bottom))" }}
       >
         {/* Desktop topbar (search bar) */}
-        <header className="hidden lg:flex bg-white dark:bg-slate-800 border-b border-[#e5e7eb] dark:border-slate-700 px-6 py-3 items-center gap-4 sticky top-0 z-10">
+        <header className="hidden lg:flex bg-white dark:bg-slate-800 border-b border-[#e5e7eb] dark:border-slate-700 px-4 py-3 items-center gap-3 sticky top-0 z-10">
+          <GlobalBackButton />
           <div className="relative flex-1 max-w-xl">
             <input
               readOnly
