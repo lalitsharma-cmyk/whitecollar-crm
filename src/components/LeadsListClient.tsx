@@ -385,13 +385,14 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
                 <table className="w-full text-xs border-collapse" style={{ tableLayout: "fixed" }}>
                   <colgroup>
                     {/* checkbox */}<col style={{ width: 28 }} />
-                    {/* name     */}<col style={{ width: 170 }} />
-                    {/* status   */}<col style={{ width: 135 }} />
-                    {/* budget   */}<col style={{ width: 95 }} />
-                    {/* follow-up*/}<col style={{ width: 95 }} />
-                    {/* assigned */}<col style={{ width: 110 }} />
-                    {showSource && <col style={{ width: 80 }} />}
-                    {/* activity */}<col style={{ width: 130 }} />
+                    {/* name     */}<col style={{ width: 155 }} />
+                    {/* project  */}<col style={{ width: 120 }} />
+                    {/* status   */}<col style={{ width: 130 }} />
+                    {/* budget   */}<col style={{ width: 90 }} />
+                    {/* follow-up*/}<col style={{ width: 90 }} />
+                    {/* assigned */}<col style={{ width: 100 }} />
+                    {showSource && <col style={{ width: 75 }} />}
+                    {/* activity */}<col style={{ width: 120 }} />
                     {/* actions  */}<col style={{ width: 108 }} />
                   </colgroup>
                   <thead>
@@ -400,6 +401,7 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
                         {canBulk && <input type="checkbox" checked={allChecked} onChange={toggleAll} />}
                       </th>
                       <th className={sortThCls} onClick={() => router.push(sortHref("name"))}>Name <SortIcon k="name" /></th>
+                      <th className={thCls}>Project</th>
                       <th className={sortThCls} onClick={() => router.push(sortHref("status"))}>Status <SortIcon k="status" /></th>
                       <th className={sortThCls} onClick={() => router.push(sortHref("budget"))}>Budget <SortIcon k="budget" /></th>
                       <th className={sortThCls} onClick={() => router.push(sortHref("followup"))}>Follow-Up <SortIcon k="followup" /></th>
@@ -411,7 +413,7 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
                   </thead>
                   <tbody>
                     {leads.length === 0 && (
-                      <tr><td colSpan={7 + (showSource ? 1 : 0)} className="px-4 py-10 text-center text-gray-400 text-sm">No leads match these filters.</td></tr>
+                      <tr><td colSpan={8 + (showSource ? 1 : 0)} className="px-4 py-10 text-center text-gray-400 text-sm">No leads match these filters.</td></tr>
                     )}
                     {leads.map((l, i) => {
                       const lastAct = fmtLastActivity(l.lastActivityType, l.lastActivityAt);
@@ -431,7 +433,12 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
                             className="hover:text-[#0b1a33] dark:hover:text-blue-300 hover:underline">{l.name}</Link>
                         </td>
 
-                        {/* 3. Status — floating popover, table never shifts */}
+                        {/* 3. Project */}
+                        <td className="px-3 py-1.5 text-gray-500 dark:text-slate-400 text-xs truncate">
+                          {l.discussedProjects[0] ?? l.interest ?? <span className="text-gray-300">—</span>}
+                        </td>
+
+                        {/* 4. Status — floating popover, table never shifts */}
                         <td className="px-3 py-1.5" onClick={e => e.stopPropagation()}>
                           <div className="relative" data-status-popover>
                             <button type="button"
