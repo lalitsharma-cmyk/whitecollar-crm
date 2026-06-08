@@ -47,10 +47,12 @@ const TYPE_COLOR: Record<ReminderType, string> = {
   MEETING:    "#3b82f6",   // blue-500
   CALLBACK:   "#f59e0b",   // amber-500
 };
-const TYPE_VERB: Record<ReminderType, string> = {
-  SITE_VISIT: "Site Visit scheduled with",
-  MEETING:    "Meeting scheduled with",
-  CALLBACK:   "Callback due for",
+// Short reminder-type labels shown under the client name (spec format:
+// Time / Client Name / Type). Kept short so they never overflow the panel.
+const TYPE_LABEL: Record<ReminderType, string> = {
+  SITE_VISIT: "Site Visit",
+  MEETING:    "Meeting",
+  CALLBACK:   "Callback Due",
 };
 
 function addDays(isoDate: string, n: number): string {
@@ -293,37 +295,37 @@ export default function RemindersCard({ events, todayIso, showAgent }: Props) {
 
             {dayEvents.map((evt, i) => {
               const color = TYPE_COLOR[evt.type];
-              const verb  = TYPE_VERB[evt.type];
+              const typeLabel = TYPE_LABEL[evt.type];
+              // Agent shown only on the admin/manager view (first + last name).
+              const agentName = evt.agentName
+                ? evt.agentName.split(" ").slice(0, 2).join(" ")
+                : null;
               return (
                 <Link
                   key={`${evt.id}-${i}`}
                   href={`/leads/${evt.leadId}`}
-                  className="flex items-start gap-3 px-4 py-2.5 hover:opacity-80 transition-opacity"
+                  // Stacked layout (Time / Client Name / Type). Everything is
+                  // left-aligned and wraps — long names never spill outside the
+                  // panel, so nothing is truncated or cut off.
+                  className="block px-4 py-2.5 hover:opacity-80 transition-opacity"
                   style={{ borderTop: i > 0 ? "1px solid #1a2d4d" : undefined }}
                 >
-                  {/* Left: time + agent name */}
-                  <div className="w-16 shrink-0 text-left">
-                    {!isDateOnly(evt.timeIso) && (
-                      <div className="text-[11px] font-bold tabular-nums" style={{ color }}>
-                        {fmtTime(evt.timeIso)}
-                      </div>
-                    )}
-                    {showAgent && evt.agentName && (
-                      <div className="text-[10px] mt-0.5 truncate max-w-[64px]" style={{ color: "#94a3b8" }}>
-                        {evt.agentName.split(" ")[0]}{" "}
-                        {evt.agentName.split(" ")[1]?.[0] ?? ""}
-                      </div>
-                    )}
+                  {/* Time — omitted for callbacks with no specific time */}
+                  {!isDateOnly(evt.timeIso) && (
+                    <div className="text-[12px] font-bold tabular-nums" style={{ color }}>
+                      {fmtTime(evt.timeIso)}
+                    </div>
+                  )}
+                  {/* Client name — wraps inside the panel, never overflows */}
+                  <div className="text-sm font-semibold leading-snug break-words" style={{ color: "#e2e8f0" }}>
+                    {evt.leadName}
                   </div>
-
-                  {/* Right: verb + client name */}
-                  <div className="flex-1 min-w-0">
-                    <div className="text-[11px] leading-tight" style={{ color: "#94a3b8" }}>
-                      {verb}
-                    </div>
-                    <div className="text-sm font-semibold mt-0.5 truncate" style={{ color: "#e2e8f0" }}>
-                      {evt.leadName}
-                    </div>
+                  {/* Reminder type (+ agent on the admin/manager view) */}
+                  <div className="text-[11px] leading-tight mt-0.5 break-words" style={{ color }}>
+                    {typeLabel}
+                    {showAgent && agentName && (
+                      <span style={{ color: "#94a3b8" }}> · {agentName}</span>
+                    )}
                   </div>
                 </Link>
               );

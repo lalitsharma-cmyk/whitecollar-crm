@@ -717,11 +717,13 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
               return `${prefix} ${fmt}`;
             })(),
             interest: l.interestedUnits[0] ? `${l.interestedUnits[0].unit.project.name} ${l.interestedUnits[0].unit.configuration}` : null,
-            // Project column fallback chain:
+            // Project column = the actual property/project name (Excel "Project"
+            // column). Imports store that value in sourceDetail. Chain:
             // 1. Formal project link (discussed / interestedUnits)
-            // 2. notesShort (one-liner requirement often has project name)
-            // 3. configuration (e.g. "4BHK" gives type context)
-            projectHint: l.notesShort ?? l.configuration ?? null,
+            // 2. sourceDetail (imported "Project" value, e.g. "Central Park Resorts")
+            // 3. notesShort (one-liner requirement sometimes names the project)
+            // NEVER fall back to configuration ("2 BHK") — that is its own column.
+            projectHint: l.sourceDetail ?? l.notesShort ?? null,
           };
         })}
       />
