@@ -56,7 +56,8 @@ export async function POST(req: NextRequest) {
   const seenFp = new Set<string>();
 
   for (const r of rows) {
-    const name = (r.name ?? "").trim() || (r.phone ?? "").trim();
+    const phoneVal = (r.phone ?? "").trim();
+    const name = (r.name ?? "").trim() || (phoneVal ? `Candidate - ${phoneVal}` : "");
     if (!name) { failed++; continue; }
     const fp = fingerprintFor(r.phone, r.email);
     const existsId = fp ? existingByFp.get(fp) : undefined;

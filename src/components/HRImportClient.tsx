@@ -12,7 +12,6 @@ const CRM_FIELDS: [string, string][] = [
   ["currentSalary", "Current Salary"], ["expectedSalary", "Expected Salary"], ["noticePeriod", "Notice Period"],
   ["source", "Source"], ["status", "Status"], ["nextAction", "Next Action"], ["remarks", "Initial Notes"], ["resumeUrl", "Resume URL"],
 ];
-// Synonyms for auto-mapping. Order matters within each list (more specific first).
 const GUESS: Record<string, string[]> = {
   name: ["candidate name", "full name", "name"],
   phone: ["mobile number", "mobile no", "contact number", "mobile", "phone", "contact"],
@@ -34,7 +33,6 @@ const GUESS: Record<string, string[]> = {
   remarks: ["hr remarks", "remarks", "comments", "notes", "comment", "remark"],
   resumeUrl: ["resume url", "cv link", "resume link", "resume", "cv"],
 };
-
 const norm = (h: string) => h.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 function guessMapping(headers: string[]): Record<string, string> {
   const m: Record<string, string> = {};
@@ -47,6 +45,8 @@ function guessMapping(headers: string[]): Record<string, string> {
   }
   return m;
 }
+// Drop SheetJS junk (blank headers become __EMPTY, __EMPTY_1, …) so they never clutter the picker.
+const cleanHeaders = (hdrs: string[]) => hdrs.filter(h => h && h.trim() && !/^__empty/i.test(h.trim()));
 const sigOf = (headers: string[]) => "hrmap:" + headers.slice().sort().join("|");
 
 export default function HRImportClient({ agents, defaultOwnerId }: { agents: Agent[]; defaultOwnerId: string }) {
@@ -60,20 +60,24 @@ export default function HRImportClient({ agents, defaultOwnerId }: { agents: Age
   const [strategy, setStrategy] = useState<"skip" | "update" | "create">("skip");
   const [ownerId, setOwnerId] = useState(defaultOwnerId);
   const [err, setErr] = useState<string | null>(null);
+  const [note, setNote] = useState<string | null>(null);
   const [progress, setProgress] = useState({ done: 0, total: 0, imported: 0, updated: 0, skipped: 0, failed: 0 });
 
   async function onFile(file: File) {
-    setErr(null); setFileName(file.name);
+    setErr(null); setNote(null); setFileName(file.name);
     try {
       const wb = XLSX.read(await file.arrayBuffer(), { type: "array" });
       const ws = wb.Sheets[wb.SheetNames[0]];
       const json = XLSX.utils.sheet_to_json<Record<string, unknown>>(ws, { defval: "" });
       const parsed = json.map(r => Object.fromEntries(Object.entries(r).map(([k, v]) => [k, String(v ?? "").trim()])));
       if (parsed.length === 0) { setErr("That file has no data rows."); return; }
-      const hdrs = Object.keys(parsed[0]);
+      const hdrs = cleanHeaders(Object.keys(parsed[0]));
+      if (hdrs.length === 0) { setErr("No usable column headers found in the first row."); return; }
       let m: Record<string, string> = {}, fromSaved = false;
       try { const saved = localStorage.getItem(sigOf(hdrs)); if (saved) { m = JSON.parse(saved); fromSaved = true; } } catch { /* ignore */ }
       if (Object.keys(m).length === 0) m = guessMapping(hdrs);
+      // Drop any saved mapping that points at a column no longer present.
+      for (const k of Object.keys(m)) if (m[k] && !hdrs.includes(m[k])) delete m[k];
       setRows(parsed); setHeaders(hdrs); setMapping(m); setRemembered(fromSaved); setStep("map");
     } catch {
       setErr("Could not read that file. Use .xlsx or .csv.");
@@ -82,10 +86,12 @@ export default function HRImportClient({ agents, defaultOwnerId }: { agents: Age
 
   const usedCols = new Set(Object.values(mapping).filter(Boolean));
   const unmapped = headers.filter(h => !usedCols.has(h));
+  const canImport = !!mapping.name || !!mapping.phone;
+  const mappedCount = Object.values(mapping).filter(Boolean).length;
 
   async function runImport() {
-    if (!mapping.name && !mapping.phone) { setErr("Map at least Candidate Name or Phone."); return; }
-    setErr(null);
+    if (!canImport) { setErr("Cannot import — map a column to Candidate Name or Phone."); return; }
+    setErr(null); setNote("⏳ Import started…");
     try { localStorage.setItem(sigOf(headers), JSON.stringify(mapping)); } catch { /* ignore */ }
     setStep("run");
     const mapped = rows.map(r => {
@@ -93,6 +99,8 @@ export default function HRImportClient({ agents, defaultOwnerId }: { agents: Age
       for (const [field, col] of Object.entries(mapping)) if (col) o[field] = r[col] ?? "";
       return o;
     }).filter(o => (o.name ?? "").trim() || (o.phone ?? "").trim());
+
+    if (mapped.length === 0) { setErr("No rows have a Name or Phone value — nothing to import."); setNote("❌ Import failed: every row is missing both Name and Phone."); setStep("map"); return; }
 
     const BATCH = 100;
     const acc = { imported: 0, updated: 0, skipped: 0, failed: 0 };
@@ -102,22 +110,23 @@ export default function HRImportClient({ agents, defaultOwnerId }: { agents: Age
       try {
         const res = await fetch("/api/hr/candidates/import", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ rows: chunk, strategy, primaryOwnerId: ownerId }) });
         const j = await res.json();
-        if (!res.ok) { setErr(j.error ?? "Import failed."); setStep("map"); return; }
+        if (!res.ok) { setNote(`❌ Import failed: ${j.error ?? "server error"}`); setErr(j.error ?? "Import failed."); setStep("map"); return; }
         acc.imported += j.imported || 0; acc.updated += j.updated || 0; acc.skipped += j.skipped || 0; acc.failed += j.failed || 0;
       } catch { acc.failed += chunk.length; }
       setProgress({ done: Math.min(i + BATCH, mapped.length), total: mapped.length, ...acc });
     }
     try { await fetch("/api/hr/imports", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fileName, total: mapped.length, ...acc }) }); } catch { /* best-effort */ }
+    setNote(`✅ Imported ${acc.imported} candidate${acc.imported !== 1 ? "s" : ""} successfully${acc.updated ? `, ${acc.updated} updated` : ""}${acc.skipped ? `, ${acc.skipped} skipped` : ""}${acc.failed ? `, ${acc.failed} failed` : ""}.`);
     setStep("done"); router.refresh();
   }
 
   const inp = "w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm dark:bg-slate-800 dark:border-slate-600";
   const pct = progress.total ? Math.round((progress.done / progress.total) * 100) : 0;
-  const mappedCount = Object.values(mapping).filter(Boolean).length;
 
   return (
     <div className="card p-5 space-y-4">
       {err && <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded p-2">{err}</div>}
+      {note && <div className="text-sm bg-blue-50 border border-blue-200 text-blue-800 rounded p-2 dark:bg-blue-900/20 dark:border-blue-700 dark:text-blue-200">{note}</div>}
 
       {step === "upload" && (
         <label className="block border-2 border-dashed border-gray-200 dark:border-slate-600 rounded-xl p-8 text-center cursor-pointer hover:border-[#1a2e4a] transition">
@@ -140,9 +149,10 @@ export default function HRImportClient({ agents, defaultOwnerId }: { agents: Age
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             {CRM_FIELDS.map(([field, label]) => {
               const mapped = !!mapping[field];
+              const key = field === "name" || field === "phone";
               return (
                 <div key={field} className="flex items-center gap-2">
-                  <span className={`text-xs w-32 shrink-0 ${mapped ? "text-gray-700 dark:text-slate-200 font-medium" : "text-gray-400"}`}>{label}{(field === "name") && <span className="text-red-500"> *</span>}</span>
+                  <span className={`text-xs w-32 shrink-0 ${mapped ? "text-gray-700 dark:text-slate-200 font-medium" : "text-gray-400"}`}>{label}{key && <span className="text-amber-500"> ◦</span>}</span>
                   <select className={`${inp} ${mapped ? "border-green-300" : ""}`} value={mapping[field] ?? ""} onChange={e => setMapping(m => ({ ...m, [field]: e.target.value }))}>
                     <option value="">— ignore —</option>
                     {headers.map(h => <option key={h} value={h}>{h}</option>)}
@@ -156,7 +166,7 @@ export default function HRImportClient({ agents, defaultOwnerId }: { agents: Age
             <div className="text-xs bg-amber-50 border border-amber-200 rounded-lg p-2.5 dark:bg-amber-900/20 dark:border-amber-700">
               <span className="font-semibold text-amber-800 dark:text-amber-300">Unmapped columns ({unmapped.length}):</span>
               <span className="text-amber-700 dark:text-amber-200"> {unmapped.join(", ")}</span>
-              <span className="text-amber-600"> — ignored unless you map them above.</span>
+              <span className="text-amber-600"> — ignored automatically.</span>
             </div>
           )}
 
@@ -173,8 +183,22 @@ export default function HRImportClient({ agents, defaultOwnerId }: { agents: Age
             </div>
           </div>
 
+          {/* Validation status — always shows whether import can run, and why not. */}
+          {!canImport ? (
+            <div className="text-sm bg-red-50 border border-red-200 text-red-700 rounded-lg p-2.5">
+              <b>Cannot import because:</b>
+              <div className="mt-0.5">• Candidate Name <b>or</b> Phone must be mapped above.</div>
+            </div>
+          ) : (
+            <div className="text-[11px] text-green-700">✓ Ready — rows with no name will be saved as “Candidate - &lt;phone&gt;”.</div>
+          )}
+
           <div className="flex gap-2">
-            <button type="button" onClick={runImport} className="btn btn-primary justify-center">Confirm &amp; Import {rows.length}</button>
+            <button type="button" onClick={runImport} disabled={!canImport}
+              className={`btn justify-center ${canImport ? "btn-primary" : "bg-gray-200 text-gray-400 cursor-not-allowed"}`}
+              title={canImport ? "" : "Map Candidate Name or Phone first"}>
+              Confirm &amp; Import {rows.length}
+            </button>
             <button type="button" onClick={() => setStep("upload")} className="btn justify-center px-4 border border-gray-300 text-gray-600 rounded-lg text-sm">Back</button>
           </div>
         </div>
@@ -195,7 +219,7 @@ export default function HRImportClient({ agents, defaultOwnerId }: { agents: Age
           <div className="text-sm text-gray-600">✅ {progress.imported} new · 🔄 {progress.updated} updated · ⏭ {progress.skipped} skipped · ⚠ {progress.failed} failed</div>
           <div className="flex gap-2 justify-center">
             <Link href="/hr/candidates" className="btn btn-primary justify-center">View candidates</Link>
-            <button type="button" onClick={() => { setStep("upload"); setRows([]); setHeaders([]); setMapping({}); }} className="btn justify-center px-4 border border-gray-300 text-gray-600 rounded-lg text-sm">Import another</button>
+            <button type="button" onClick={() => { setStep("upload"); setRows([]); setHeaders([]); setMapping({}); setNote(null); }} className="btn justify-center px-4 border border-gray-300 text-gray-600 rounded-lg text-sm">Import another</button>
           </div>
         </div>
       )}
