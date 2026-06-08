@@ -812,25 +812,24 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
           </div>
         )}
 
-        {/* 📍 Address — the SINGLE place location appears on this page now.
-            Combines lead.city / lead.country / lead.address.
-            Duplicate-Delhi fix (Lalit's screenshot): when lead.address already
-            CONTAINS the city, skip the city/country line — otherwise we render
-            "Sector 42, Delhi" + "Delhi, India" stacked, which looks like a
-            broken duplicate. If we have a usable address, render it alone and
-            fall back to city/country only when address is empty. */}
-        {(lead.address || lead.city || lead.country) && (
-          <div data-lead-section="overview" className="card p-5">
-            <div className="font-semibold mb-2">📍 Location</div>
-            {lead.address ? (
-              <p className="text-sm text-gray-700 dark:text-slate-300">{lead.address}</p>
-            ) : (lead.city || lead.country) ? (
-              <p className="text-sm text-gray-700 dark:text-slate-300">
-                {[lead.city, lead.country].filter(Boolean).join(", ")}
-              </p>
-            ) : null}
+        {/* 📍 Location — fully editable inline (city, country, address) */}
+        <div data-lead-section="overview" className="card p-5">
+          <div className="font-semibold mb-3 dark:text-slate-100">📍 Location <span className="text-[10px] text-gray-400 font-normal">(click to edit)</span></div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+            <div>
+              <div className="text-xs text-gray-500 dark:text-slate-400 mb-0.5">City</div>
+              <InlineEdit leadId={lead.id} field="city" value={lead.city ?? ""} placeholder="e.g. Gurgaon" />
+            </div>
+            <div>
+              <div className="text-xs text-gray-500 dark:text-slate-400 mb-0.5">Country</div>
+              <InlineEdit leadId={lead.id} field="country" value={lead.country ?? ""} placeholder="e.g. India" />
+            </div>
+            <div className="sm:col-span-2">
+              <div className="text-xs text-gray-500 dark:text-slate-400 mb-0.5">Address</div>
+              <InlineEdit leadId={lead.id} field="address" value={lead.address ?? ""} placeholder="Sector 42, Dwarka Expressway…" />
+            </div>
           </div>
-        )}
+        </div>
 
         {/* 🔗 Linked contacts — alt contact on file + other Leads sharing the
             last 8 digits of phone/altPhone (likely spouse / parent / sibling /
