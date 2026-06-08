@@ -41,6 +41,8 @@ export default function HRAddCandidateForm({ agents, meId }: Props) {
   const [followDate, setFollowDate] = useState("");
   const [followTime, setFollowTime] = useState("");
   const [files, setFiles] = useState<File[]>([]);
+  const [extracting, setExtracting] = useState(false);
+  const [extractMsg, setExtractMsg] = useState<string | null>(null);
 
   const isClosed = CLOSED_SET.has(form.status);
 
@@ -68,6 +70,36 @@ export default function HRAddCandidateForm({ agents, meId }: Props) {
   function addFiles(list: FileList | null) {
     if (!list) return;
     setFiles(prev => [...prev, ...Array.from(list)]);
+  }
+
+  // AI auto-fill: read the first resume and pre-fill EMPTY fields only (user reviews before save).
+  async function extractResume() {
+    const f = files[0];
+    if (!f) return;
+    const ok = f.type === "application/pdf" || f.name.toLowerCase().endsWith(".pdf") || f.type.startsWith("image/");
+    if (!ok) { setExtractMsg("Auto-fill reads PDF or image resumes only."); return; }
+    setExtracting(true); setExtractMsg(null);
+    try {
+      const fd = new FormData(); fd.append("file", f);
+      const res = await fetch("/api/hr/extract-resume", { method: "POST", body: fd });
+      const json = await res.json();
+      if (!res.ok) { setExtractMsg(json.error ?? "Could not read the resume."); return; }
+      const x = json.fields ?? {};
+      setForm(prev => ({
+        ...prev,
+        name: prev.name || x.name || "",
+        phone: prev.phone || x.phone || "",
+        email: prev.email || x.email || "",
+        experience: prev.experience || x.experience || "",
+        currentCompany: prev.currentCompany || x.currentCompany || "",
+        currentProfile: prev.currentProfile || x.currentProfile || "",
+      }));
+      const got = [x.name, x.phone, x.email, x.experience, x.currentCompany, x.currentProfile].filter(Boolean).length;
+      if (got) setShowMore(true);
+      setExtractMsg(got ? `✨ Auto-filled ${got} field${got !== 1 ? "s" : ""} — review before saving.` : "No fields could be read — please fill manually.");
+    } catch {
+      setExtractMsg("Network error — please try again.");
+    } finally { setExtracting(false); }
   }
 
   async function submit(mode: "save" | "interview" | "followup") {
@@ -334,6 +366,15 @@ export default function HRAddCandidateForm({ agents, meId }: Props) {
                   className="text-red-500 hover:text-red-700 shrink-0">✕</button>
               </div>
             ))}
+          </div>
+        )}
+        {files.length > 0 && (
+          <div className="mt-2">
+            <button type="button" disabled={extracting} onClick={extractResume}
+              className="text-xs px-3 py-1.5 rounded-lg border border-indigo-300 text-indigo-700 hover:bg-indigo-50 disabled:opacity-50">
+              {extracting ? "Reading resume…" : "✨ Auto-fill from resume"}
+            </button>
+            {extractMsg && <span className="ml-2 text-[11px] text-gray-600">{extractMsg}</span>}
           </div>
         )}
       </div>
