@@ -36,6 +36,7 @@ export default function HRAddCandidateForm({ agents, meId }: Props) {
   const [busy, setBusy] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [showMore, setShowMore] = useState(false);
   const [dupBlock, setDupBlock] = useState<{ id: string; name: string } | null>(null);
   const [dupMatches, setDupMatches] = useState<DupMatch[]>([]);
 
@@ -84,8 +85,8 @@ export default function HRAddCandidateForm({ agents, meId }: Props) {
     setErr(null); setDupBlock(null);
     if (!form.name.trim()) { setErr("Candidate name is required."); return; }
     if (!form.status) { setErr("Status is required."); return; }
-    if (!isClosed && (!followDate || !followTime)) {
-      setErr("Next follow-up date & time are required for active candidates.");
+    if (!isClosed && (!form.nextAction.trim() || !followDate || !followTime)) {
+      setErr("Next action, follow-up date & time are required for active candidates.");
       return;
     }
     const nextActionDate = followDate && followTime ? `${followDate}T${followTime}` : "";
@@ -154,9 +155,9 @@ export default function HRAddCandidateForm({ agents, meId }: Props) {
         </div>
       )}
 
-      {/* ── Basic Details ── */}
+      {/* ── Essentials ── */}
       <div>
-        <div className={section}>Basic Details</div>
+        <div className={section}>Candidate</div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div className="sm:col-span-2">
             <label className={lbl}>Candidate Name <span className="text-red-500">*</span></label>
@@ -171,27 +172,6 @@ export default function HRAddCandidateForm({ agents, meId }: Props) {
             <input className={inp} value={form.whatsappPhone} onChange={set("whatsappPhone")} placeholder="If different from mobile" type="tel" />
           </div>
           <div>
-            <label className={lbl}>Email</label>
-            <input className={inp} value={form.email} onChange={set("email")} type="email" placeholder="candidate@email.com" />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className={lbl}>City</label>
-              <input className={inp} value={form.city} onChange={set("city")} placeholder="Home city" />
-            </div>
-            <div>
-              <label className={lbl}>Current Location</label>
-              <input className={inp} value={form.location} onChange={set("location")} placeholder="Where based now" />
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* ── Recruitment Details ── */}
-      <div>
-        <div className={section}>Recruitment Details</div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div>
             <label className={lbl}>Position Applied For</label>
             <select className={inp} value={form.positionApplied} onChange={set("positionApplied")}>
               <option value="">— Select —</option>
@@ -199,69 +179,17 @@ export default function HRAddCandidateForm({ agents, meId }: Props) {
             </select>
           </div>
           <div>
-            <label className={lbl}>Source</label>
-            <select className={inp} value={form.source} onChange={set("source")}>
-              <option value="">— Select —</option>
-              {SOURCES.map(s => <option key={s} value={s}>{s}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className={lbl}>Total Experience</label>
-            <input className={inp} value={form.experience} onChange={set("experience")} placeholder="e.g. 3 years" />
-          </div>
-          <div>
-            <label className={lbl}>Real Estate Experience</label>
-            <input className={inp} value={form.realEstateExperience} onChange={set("realEstateExperience")} placeholder="e.g. 1 year" />
-          </div>
-          <div>
-            <label className={lbl}>Current Company</label>
-            <input className={inp} value={form.currentCompany} onChange={set("currentCompany")} />
-          </div>
-          <div>
-            <label className={lbl}>Current Designation</label>
-            <input className={inp} value={form.currentProfile} onChange={set("currentProfile")} placeholder="Sales Executive" />
-          </div>
-          <div>
-            <label className={lbl}>Current Salary (₹ /month)</label>
-            <input className={inp} value={form.currentSalary} onChange={set("currentSalary")} type="number" placeholder="25000" />
-          </div>
-          <div>
-            <label className={lbl}>Expected Salary (₹ /month)</label>
-            <input className={inp} value={form.expectedSalary} onChange={set("expectedSalary")} type="number" placeholder="35000" />
-          </div>
-          <div>
-            <label className={lbl}>Notice Period</label>
-            <select className={inp} value={form.noticePeriod} onChange={set("noticePeriod")}>
-              <option value="">— Select —</option>
-              {NOTICE.map(n => <option key={n} value={n}>{n}</option>)}
-            </select>
-          </div>
-        </div>
-      </div>
-
-      {/* ── Ownership ── */}
-      <div>
-        <div className={section}>Ownership</div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div>
             <label className={lbl}>Primary Owner</label>
             <select className={inp} value={form.primaryOwnerId} onChange={set("primaryOwnerId")}>
               {agents.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
             </select>
           </div>
-          <div>
-            <label className={lbl}>Secondary Owner</label>
-            <select className={inp} value={form.secondaryOwnerId} onChange={set("secondaryOwnerId")}>
-              <option value="">— None —</option>
-              {agents.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
-            </select>
-          </div>
         </div>
       </div>
 
-      {/* ── Follow-up ── */}
+      {/* ── Follow-up (core — mandatory for active candidates) ── */}
       <div>
-        <div className={section}>Follow-up</div>
+        <div className={section}>Status &amp; Next Action</div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
             <label className={lbl}>Current Status <span className="text-red-500">*</span></label>
@@ -275,38 +203,119 @@ export default function HRAddCandidateForm({ agents, meId }: Props) {
             </select>
           </div>
           <div>
-            <label className={lbl}>Follow-up Type</label>
-            <select className={inp} value={form.followUpType} onChange={set("followUpType")}>
-              {FOLLOWUP_TYPES.map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-            </select>
-          </div>
-          <div className="sm:col-span-2">
-            <label className={lbl}>Next Action</label>
-            <input className={inp} value={form.nextAction} onChange={set("nextAction")} placeholder="e.g. Call to discuss salary & notice period" />
+            <label className={lbl}>Next Action {!isClosed && <span className="text-red-500">*</span>}</label>
+            <input className={inp} value={form.nextAction} onChange={set("nextAction")} placeholder="e.g. Call to discuss salary & notice" required={!isClosed} />
           </div>
           <div>
-            <label className={lbl}>
-              Next Follow-up Date {!isClosed && <span className="text-red-500">*</span>}
-            </label>
+            <label className={lbl}>Next Follow-up Date {!isClosed && <span className="text-red-500">*</span>}</label>
             <input className={inp} type="date" value={followDate} onChange={e => setFollowDate(e.target.value)} required={!isClosed} />
           </div>
           <div>
-            <label className={lbl}>
-              Next Follow-up Time {!isClosed && <span className="text-red-500">*</span>}
-            </label>
+            <label className={lbl}>Next Follow-up Time {!isClosed && <span className="text-red-500">*</span>}</label>
             <input className={inp} type="time" value={followTime} onChange={e => setFollowTime(e.target.value)} required={!isClosed} />
           </div>
         </div>
         {!isClosed && (
-          <p className="text-[11px] text-gray-400 mt-1.5">No active candidate is saved without a follow-up — date &amp; time are required.</p>
+          <p className="text-[11px] text-gray-400 mt-1.5">No active candidate is saved without a next action and follow-up time.</p>
         )}
       </div>
 
-      {/* ── Remarks ── */}
+      {/* ── More Details (collapsible — reduces data-entry burden) ── */}
       <div>
-        <div className={section}>Remarks</div>
-        <label className={lbl}>Initial HR Notes</label>
-        <textarea className={inp} value={form.remarks} onChange={set("remarks")} rows={3} placeholder="First impressions, screening notes, anything relevant…" />
+        <button type="button" onClick={() => setShowMore(s => !s)}
+          className="w-full flex items-center justify-between text-xs font-semibold text-gray-500 hover:text-gray-700 dark:text-slate-400 border border-dashed border-gray-200 dark:border-slate-600 rounded-lg px-3 py-2 transition">
+          <span>{showMore ? "▾" : "▸"} More Details{showMore ? "" : " — email, city, experience, salary, company…"}</span>
+          <span className="text-[10px] text-gray-400">optional</span>
+        </button>
+
+        {showMore && (
+          <div className="mt-4 space-y-5">
+            <div>
+              <div className={section}>Contact &amp; Location</div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className={lbl}>Email</label>
+                  <input className={inp} value={form.email} onChange={set("email")} type="email" placeholder="candidate@email.com" />
+                </div>
+                <div>
+                  <label className={lbl}>Source</label>
+                  <select className={inp} value={form.source} onChange={set("source")}>
+                    <option value="">— Select —</option>
+                    {SOURCES.map(s => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className={lbl}>City</label>
+                  <input className={inp} value={form.city} onChange={set("city")} placeholder="Home city" />
+                </div>
+                <div>
+                  <label className={lbl}>Current Location</label>
+                  <input className={inp} value={form.location} onChange={set("location")} placeholder="Where based now" />
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <div className={section}>Experience &amp; Compensation</div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className={lbl}>Total Experience</label>
+                  <input className={inp} value={form.experience} onChange={set("experience")} placeholder="e.g. 3 years" />
+                </div>
+                <div>
+                  <label className={lbl}>Real Estate Experience</label>
+                  <input className={inp} value={form.realEstateExperience} onChange={set("realEstateExperience")} placeholder="e.g. 1 year" />
+                </div>
+                <div>
+                  <label className={lbl}>Current Company</label>
+                  <input className={inp} value={form.currentCompany} onChange={set("currentCompany")} />
+                </div>
+                <div>
+                  <label className={lbl}>Current Designation</label>
+                  <input className={inp} value={form.currentProfile} onChange={set("currentProfile")} placeholder="Sales Executive" />
+                </div>
+                <div>
+                  <label className={lbl}>Current Salary (₹ /month)</label>
+                  <input className={inp} value={form.currentSalary} onChange={set("currentSalary")} type="number" placeholder="25000" />
+                </div>
+                <div>
+                  <label className={lbl}>Expected Salary (₹ /month)</label>
+                  <input className={inp} value={form.expectedSalary} onChange={set("expectedSalary")} type="number" placeholder="35000" />
+                </div>
+                <div>
+                  <label className={lbl}>Notice Period</label>
+                  <select className={inp} value={form.noticePeriod} onChange={set("noticePeriod")}>
+                    <option value="">— Select —</option>
+                    {NOTICE.map(n => <option key={n} value={n}>{n}</option>)}
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <div className={section}>Ownership &amp; Notes</div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className={lbl}>Secondary Owner</label>
+                  <select className={inp} value={form.secondaryOwnerId} onChange={set("secondaryOwnerId")}>
+                    <option value="">— None —</option>
+                    {agents.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className={lbl}>Follow-up Type</label>
+                  <select className={inp} value={form.followUpType} onChange={set("followUpType")}>
+                    {FOLLOWUP_TYPES.map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                  </select>
+                </div>
+                <div className="sm:col-span-2">
+                  <label className={lbl}>Initial HR Notes</label>
+                  <textarea className={inp} value={form.remarks} onChange={set("remarks")} rows={3} placeholder="First impressions, screening notes, anything relevant…" />
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* ── Resume ── */}

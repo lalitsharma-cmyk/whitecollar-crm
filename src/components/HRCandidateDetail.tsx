@@ -1,6 +1,7 @@
 "use client";
 import { useState, useTransition, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import HRResumeUploadWidget from "@/components/HRResumeUploadWidget";
 import type { HRCandidateStatus, HRActivityType, HRFollowUpType, HRInterviewType } from "@prisma/client";
 
@@ -402,6 +403,9 @@ export default function HRCandidateDetail({ candidate: init, agents, me }: Props
       {/* Timeline */}
       {tab === "timeline" && (
         <div className="space-y-2">
+          <div className="flex justify-end">
+            <Link href={`/hr/candidates/${c.id}/timeline`} className="text-xs text-blue-600 hover:underline">Open full timeline →</Link>
+          </div>
           {c.activities.length === 0 && <div className="text-sm text-gray-400 text-center py-6">No activity logged yet.</div>}
           {c.activities.map(a => (
             <div key={a.id} className="flex gap-3 text-sm">

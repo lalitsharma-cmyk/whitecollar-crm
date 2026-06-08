@@ -76,10 +76,10 @@ export async function POST(req: NextRequest) {
   const isActive = !CLOSED_STATUSES.includes(status);
   const nextActionDate = body.nextActionDate ? new Date(body.nextActionDate) : null;
 
-  // No active candidate may be saved without a follow-up.
-  if (isActive && !nextActionDate) {
+  // No active candidate may be saved without a next action + follow-up.
+  if (isActive && (!nextActionDate || !body.nextAction || !String(body.nextAction).trim())) {
     return NextResponse.json(
-      { error: "A next follow-up date & time is required for active candidates." },
+      { error: "Next action, follow-up date & time are required for active candidates." },
       { status: 400 },
     );
   }
