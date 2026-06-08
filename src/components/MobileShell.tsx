@@ -5,7 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import {
   LayoutDashboard, Users, Sparkles, Menu, X,
   Building2, BarChart3, Upload, UserCog, Settings as SettingsIcon, LogOut,
-  ChevronLeft, ChevronRight, Gem, HelpCircle, AlertTriangle, Lock, PhoneCall,
+  ChevronLeft, ChevronRight, Gem, HelpCircle, AlertTriangle, Lock, PhoneCall, Briefcase,
 } from "lucide-react";
 import GlobalDateFilter from "./GlobalDateFilter";
 import NotifBell from "./NotifBell";
@@ -36,6 +36,8 @@ const BACK_LABELS: Record<string, string> = {
   "/team":            "Team",
   "/admin":           "Admin",
   "/settings":        "Settings",
+  "/hr":              "HR Recruitment",
+  "/hr/candidates":   "Candidates",
 };
 
 function GlobalBackButton() {
@@ -45,7 +47,7 @@ function GlobalBackButton() {
   const rootPages = ["/dashboard", "/leads", "/cold-calls", "/properties",
     "/reports", "/action-list", "/activities", "/calls", "/settings",
     "/notifications", "/team", "/vault", "/ai", "/help", "/leaderboards",
-    "/profile", "/admin", "/intake"];
+    "/profile", "/admin", "/intake", "/hr", "/hr/candidates"];
   const isRoot = rootPages.some(r => pathname === r);
   if (isRoot) return null;
 
@@ -59,6 +61,7 @@ function GlobalBackButton() {
   // Special cases
   if (pathname.startsWith("/leads/")) backLabel = "Leads";
   if (pathname.startsWith("/cold-calls/")) backLabel = "Revival Engine";
+  if (pathname.startsWith("/hr/candidates/")) backLabel = "Candidates";
   if (pathname.startsWith("/properties/")) backLabel = "Properties";
   if (pathname.startsWith("/admin/")) backLabel = "Admin";
   if (pathname.startsWith("/reports/")) backLabel = "Reports";
@@ -104,6 +107,11 @@ const fullNav: NavSection[] = [
   { section: "ADMIN", adminOnly: true, items: [
     { href: "/intake",                label: "Lead Intake",        Icon: Upload },
     { href: "/admin/revival-logs",    label: "Revival Logs",       Icon: Gem },
+  ]},
+  // HR Recruitment module — visible to ADMIN + MANAGER
+  { section: "HR", managerOrAdmin: true, items: [
+    { href: "/hr",            label: "HR Dashboard",   Icon: Briefcase },
+    { href: "/hr/candidates", label: "Candidates",     Icon: Users },
   ]},
 ];
 

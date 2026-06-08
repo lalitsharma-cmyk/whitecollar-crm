@@ -96,6 +96,14 @@ model User {
   notifications Notification[]
   vaultEntries  VaultEntry[]
   stickyNotes   StickyNote[]
+
+  // ── HR Recruitment module relations ──
+  hrCandidatesPrimary   HRCandidate[] @relation("HRPrimary")
+  hrCandidatesSecondary HRCandidate[] @relation("HRSecondary")
+  hrActivities          HRActivity[]  @relation("HRActivities")
+  hrInterviews          HRInterview[] @relation("HRInterviewer")
+  hrFollowUps           HRFollowUp[]  @relation("HRFollowUps")
+  hrResumeUploads       HRResume[]    @relation("HRResumeUploads")
 }
 
 // =====================================================
@@ -1394,4 +1402,201 @@ model PropertyPortfolio {
   @@index([primaryPhone])
   @@index([ownerName])
   @@index([project])
+}
+
+// =====================================================
+// HR RECRUITMENT MODULE
+// =====================================================
+
+enum HRCandidateStatus {
+  NEW
+  NOT_CALLED
+  PIPELINE
+  VIRTUAL_INTERVIEW_SCHEDULED
+  HR_INTERVIEW_COMPLETED
+  FINAL_INTERVIEW_SCHEDULED
+  FINAL_INTERVIEW_COMPLETED
+  SHORTLISTED
+  OFFER_RELEASED
+  JOINED
+  HOLD
+  NOT_INTERESTED
+  NOT_SUITABLE
+  HIGH_SALARY
+  OTHER_PROFILE
+  REJECTED
+  OFFER_DECLINED
+  WRONG_NUMBER
+  SWITCH_OFF
+  NEVER_RESPONSE
+  NOT_RESPONDING
+}
+
+enum HRActivityType {
+  CALL_CONNECTED
+  CALL_NOT_ANSWERED
+  CALL_BUSY
+  CALL_SWITCHED_OFF
+  CALL_WRONG_NUMBER
+  CALL_LATER
+  WHATSAPP_SENT
+  WHATSAPP_RECEIVED
+  EMAIL_LOGGED
+  INTERVIEW_SCHEDULED
+  INTERVIEW_ATTENDED
+  INTERVIEW_NO_SHOW
+  INTERVIEW_RESCHEDULED
+  OFFER_RELEASED
+  OFFER_DECLINED
+  CANDIDATE_JOINED
+  FOLLOWUP_CREATED
+  FOLLOWUP_COMPLETED
+  STATUS_CHANGED
+  NOTE_ADDED
+}
+
+enum HRInterviewType {
+  VIRTUAL
+  HR
+  FINAL
+  FACE_TO_FACE
+}
+
+enum HRConfirmStatus {
+  PENDING
+  CONFIRMED
+  NOT_CONFIRMED
+  NOT_REACHABLE
+  RESCHEDULED
+  CANCELLED
+}
+
+enum HRAttendStatus {
+  SCHEDULED
+  ATTENDED
+  NO_SHOW
+  RESCHEDULED
+  CANCELLED
+}
+
+enum HRFollowUpType {
+  CALL_BACK
+  INTERVIEW_CONFIRMATION
+  REMINDER
+  WHATSAPP_FOLLOWUP
+  EMAIL_FOLLOWUP
+  SALARY_DISCUSSION
+  OFFER_DISCUSSION
+  JOINING_FOLLOWUP
+  NO_SHOW_RECOVERY
+  CUSTOM
+}
+
+model HRCandidate {
+  id               String            @id @default(cuid())
+  name             String
+  phone            String?
+  altPhone         String?
+  whatsappPhone    String?
+  email            String?
+  location         String?
+  currentCompany   String?
+  currentProfile   String?           // current designation / job title
+  experience       String?           // "2 years", "5+ years"
+  currentSalary    Float?
+  expectedSalary   Float?
+  noticePeriod     String?           // "Immediate", "30 days", "60 days", "90 days"
+  source           String?           // "LinkedIn", "Naukri", "Referral", "Walk-in", etc.
+  status           HRCandidateStatus @default(NEW)
+  remarks          String?
+  tags             String?           // comma-separated
+  nextAction       String?
+  nextActionDate   DateTime?
+  primaryOwnerId   String?
+  secondaryOwnerId String?
+  // phone||email dedup fingerprint (same logic as Lead)
+  fingerprint      String?           @unique
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  primaryOwner     User?             @relation("HRPrimary",   fields: [primaryOwnerId],   references: [id])
+  secondaryOwner   User?             @relation("HRSecondary", fields: [secondaryOwnerId], references: [id])
+  activities       HRActivity[]
+  interviews       HRInterview[]
+  followUps        HRFollowUp[]
+  resumes          HRResume[]
+
+  @@index([status])
+  @@index([primaryOwnerId])
+  @@index([nextActionDate])
+  @@index([createdAt])
+}
+
+model HRActivity {
+  id          String             @id @default(cuid())
+  candidateId String
+  candidate   HRCandidate        @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  userId      String?
+  user        User?              @relation("HRActivities", fields: [userId], references: [id])
+  type        HRActivityType
+  notes       String?            @db.Text
+  oldStatus   HRCandidateStatus?
+  newStatus   HRCandidateStatus?
+  createdAt   DateTime           @default(now())
+
+  @@index([candidateId, createdAt])
+}
+
+model HRInterview {
+  id                 String          @id @default(cuid())
+  candidateId        String
+  candidate          HRCandidate     @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  type               HRInterviewType
+  scheduledAt        DateTime
+  interviewerId      String?
+  interviewer        User?           @relation("HRInterviewer", fields: [interviewerId], references: [id])
+  confirmationStatus HRConfirmStatus @default(PENDING)
+  attendanceStatus   HRAttendStatus  @default(SCHEDULED)
+  result             String?
+  notes              String?         @db.Text
+  noShowReason       String?
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+
+  @@index([candidateId])
+  @@index([scheduledAt])
+}
+
+model HRFollowUp {
+  id          String         @id @default(cuid())
+  candidateId String
+  candidate   HRCandidate    @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  userId      String?
+  user        User?          @relation("HRFollowUps", fields: [userId], references: [id])
+  type        HRFollowUpType @default(CALL_BACK)
+  dueAt       DateTime
+  completedAt DateTime?
+  notes       String?
+  autoCreated Boolean        @default(false)
+  createdAt   DateTime       @default(now())
+
+  @@index([candidateId])
+  @@index([dueAt])
+  @@index([completedAt])
+}
+
+model HRResume {
+  id           String      @id @default(cuid())
+  candidateId  String
+  candidate    HRCandidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  url          String      // Vercel Blob URL or base64 dataURL
+  filename     String
+  mimeType     String      @default("application/pdf")
+  sizeBytes    Int?
+  isActive     Boolean     @default(true)
+  uploadedById String?
+  uploadedBy   User?       @relation("HRResumeUploads", fields: [uploadedById], references: [id])
+  createdAt    DateTime    @default(now())
+
+  @@index([candidateId])
 }
