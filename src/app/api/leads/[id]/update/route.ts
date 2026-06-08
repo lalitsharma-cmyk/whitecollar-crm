@@ -81,6 +81,18 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
   if (Object.keys(updates).length === 0) return NextResponse.json({ error: "Nothing to update" }, { status: 400 });
 
+  // §17 — Auto-fill country when city is saved and country is not explicitly set.
+  if ("city" in updates && updates.city && !("country" in updates)) {
+    const { inferCountryFromCity } = await import("@/lib/cityCountry");
+    const inferredCountry = inferCountryFromCity(updates.city as string);
+    // Only auto-fill when the lead has no country yet (don't overwrite explicit value)
+    const existing = await prisma.lead.findUnique({ where: { id }, select: { country: true } });
+    if (inferredCountry && !existing?.country) {
+      updates.country = inferredCountry;
+      activityNotes.push(`country auto-filled: ${inferredCountry}`);
+    }
+  }
+
   updates.lastTouchedAt = new Date();
   // If followupDate moved, re-arm the 10-min-before reminder so the new time gets pushed.
   if ("followupDate" in updates) updates.followupReminderSentAt = null;

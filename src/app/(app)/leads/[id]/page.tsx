@@ -401,12 +401,21 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
             <InlineEdit leadId={lead.id} field="needSummary" value={lead.needSummary ?? ""} placeholder="e.g. parents relocating, rental yield, kid's school" />
           </div>
         </div>
-        {/* T — Timeline. Backed by whenCanInvest. */}
+        {/* T — Timeline. §14: India and Dubai use DIFFERENT timeline options. */}
         <div className={`p-2.5 rounded border ${bantTClass(bantTimeFilled, bantTimeBad)}`}>
           <div className="text-[10px] font-bold tracking-widest text-gray-600 dark:text-slate-300">⏱ T · TIMELINE</div>
           <div className="text-sm mt-0.5">
             <InlineEdit leadId={lead.id} field="whenCanInvest" type="select" value={lead.whenCanInvest ?? ""}
-              options={[
+              options={lead.forwardedTeam === "India" ? [
+                {value:"IMMEDIATE",       label:"⚡ Immediate / On Spot"},
+                {value:"THIRTY_DAYS",     label:"📅 Within 1 Month"},
+                {value:"SITE_VISIT",      label:"🏠 Site Visit Planned"},
+                {value:"MEETING",         label:"🤝 Meeting Scheduled"},
+                {value:"THREE_MONTHS",    label:"📋 Evaluating Options (1–3 Months)"},
+                {value:"SIX_PLUS_MONTHS", label:"⏳ 3–6 Months"},
+                {value:"WINDOW_SHOPPING", label:"🪟 Window Shopping"},
+                {value:"UNKNOWN",         label:"❓ Not Sure / Unknown"},
+              ] : [
                 {value:"IMMEDIATE",       label:"⚡ Immediate / On Spot"},
                 {value:"THIRTY_DAYS",     label:"📅 Within 1 Month"},
                 {value:"THREE_MONTHS",    label:"✈ Will Visit Dubai First"},
@@ -647,27 +656,17 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
                   }`}>{lead.categorization}</span>
                 )}
                 {lead.moodStatus && <span className={`chip ${moodClass[lead.moodStatus] ?? "src"}`}>😊 {lead.moodStatus}</span>}
-                <span className={`chip ${lead.forwardedTeam === "India" ? "src-csv" : "src-wa"}`}>{lead.forwardedTeam ?? "—"}</span>
+                {/* §16: Show requirement location instead of India/Dubai team tag */}
+                {(() => {
+                  const loc = lead.discussed?.[0]?.project?.area
+                    ?? lead.city
+                    ?? null;
+                  return loc ? (
+                    <span className="chip bg-slate-100 text-slate-600 border border-slate-200 text-[10px]">📍 {loc}</span>
+                  ) : null;
+                })()}
               </div>
-              {/* Header sub-line — email + company. Admin/manager can inline-edit
-                  both email and phone here. Agents see read-only values with a
-                  "contact admin" note (enforced both client-side and server-side). */}
-              <div className="text-sm text-gray-500 dark:text-slate-400 mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5">
-                {(me.role === "ADMIN" || me.role === "MANAGER") ? (
-                  <>
-                    <InlineEdit leadId={lead.id} field="email" value={lead.email ?? ""} placeholder="Email (click to set)" />
-                    {lead.company && <span>· {lead.company}</span>}
-                  </>
-                ) : (
-                  <>
-                    {lead.email && <span>{lead.email}</span>}
-                    {lead.company && <span>· {lead.company}</span>}
-                    {!lead.email && (
-                      <span className="text-[10px] text-gray-400 italic">🔒 Contact admin to update email</span>
-                    )}
-                  </>
-                )}
-              </div>
+              {/* §16: Email removed from header — lives in Client Information on right sidebar */}
               {/* §8 Requirement Snapshot — compact one-liner below name/status, above actions */}
               {(lead.configuration || lead.budgetMin || lead.notesShort) && (
                 <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-gray-600 dark:text-slate-300">
@@ -678,8 +677,19 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
                   )}
                   {lead.budgetMin && (
                     <span className="bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-700 px-2 py-0.5 rounded font-medium">
-                      {lead.budgetCurrency} {(lead.budgetMin / 1_000_000).toFixed(1)}M
-                      {lead.budgetMax ? ` – ${(lead.budgetMax / 1_000_000).toFixed(1)}M` : "+"}
+                      {lead.budgetCurrency === "INR" ? "₹" : lead.budgetCurrency}{" "}
+                      {lead.budgetCurrency === "INR"
+                        ? (lead.budgetMin >= 10_000_000
+                            ? `${(lead.budgetMin/10_000_000).toFixed(1).replace(/\.0$/,"")} Cr`
+                            : `${(lead.budgetMin/100_000).toFixed(0)} L`)
+                        : `${(lead.budgetMin/1_000_000).toFixed(1).replace(/\.0$/,"")} M`}
+                      {lead.budgetMax && lead.budgetMax !== lead.budgetMin ? ` – ${
+                        lead.budgetCurrency === "INR"
+                          ? (lead.budgetMax >= 10_000_000
+                              ? `${(lead.budgetMax/10_000_000).toFixed(1).replace(/\.0$/,"")} Cr`
+                              : `${(lead.budgetMax/100_000).toFixed(0)} L`)
+                          : `${(lead.budgetMax/1_000_000).toFixed(1).replace(/\.0$/,"")} M`
+                      }` : ""}
                     </span>
                   )}
                   {lead.notesShort && (
@@ -720,13 +730,10 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
           </div>
         </div>
 
-        {/* BANT + Qualification — at top of left column on ALL screens (spec §8).
-            Per spec: "Keep BANT At Top. But make compact." Now shown above the
-            conversation history on both mobile and desktop. The right-column copy
-            is kept for desktop (xl:block below) to fill the rail as well. */}
-        <div className="space-y-4">
+        {/* BANT — at top of left column (spec §8). qualificationCard (Client Info)
+            moved to right sidebar only (spec §15: no duplicate client info). */}
+        <div>
           {bantCard}
-          {qualificationCard}
         </div>
 
         {/* CONVERSATION STREAM — primary source of truth (spec §10).
@@ -776,11 +783,9 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
           initialUpdatedAt={stickyNote.updatedAt ? stickyNote.updatedAt.toISOString() : null}
         />
 
-        {/* BANT is now in the left column (visible all screen sizes, spec §8).
-            Right column: qualification details only, no duplicate BANT card. */}
-        <div className="hidden xl:block">
-          {qualificationCard}
-        </div>
+        {/* §15: Client Information — right sidebar only, visible all screen sizes.
+            No duplicate in the left/center column. */}
+        {qualificationCard}
 
         {/* 🛠 Lead admin — Reject + Reassign in ONE compact card, near the
             top of the right column. Lalit's ask: "Pur Reject lead option
@@ -831,20 +836,8 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
           </div>
         </div>
 
-        {/* 🔗 Linked contacts — alt contact on file + other Leads sharing the
-            last 8 digits of phone/altPhone (likely spouse / parent / sibling /
-            same handset) + decision-maker hint when BANT QUALIFIES. Card hides
-            itself if there's nothing to show. */}
-        <div data-lead-section="overview">
-          <LinkedContactsCard
-            leadId={lead.id}
-            leadName={lead.name}
-            phone={lead.phone}
-            altPhone={lead.altPhone}
-            altName={lead.altName}
-            bantStatus={lead.bantStatus}
-          />
-        </div>
+        {/* §15: LinkedContactsCard removed — alt phone already in Client Information.
+            No duplicate contact display anywhere else on the page. */}
 
         <div data-lead-section="overview" className="card p-5">
           <LeadMeetingClient
