@@ -95,7 +95,7 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
   // ⚡ Parallelize all queries — was 3 sequential, now 1 round-trip via Promise.all.
   // 4th query: get-or-create the agent's sticky note for this lead. We do it
   // here so the widget can render synchronously without an extra round-trip.
-  const [lead, meetingActs, allProjects, stickyNote] = await Promise.all([
+  const [lead, meetingActs, allProjects, stickyNote, allActiveUsers] = await Promise.all([
     prisma.lead.findUnique({
       where: { id },
       include: {
@@ -126,6 +126,9 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
       create: { leadId: id, userId: me.id, body: "" },
       update: {},
     }),
+    // All active user names — passed to ConversationStreamCard for roster-based
+    // agent attribution in imported remarks.
+    prisma.user.findMany({ where: { active: true }, select: { name: true } }),
   ]);
   if (!lead) notFound();
 
@@ -746,7 +749,15 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
             Comes before Quick Note (voice-first: voice note > conversation > quick note). */}
         <div data-lead-section="timeline">
           <CallStatsBar callLogs={realCallLogs.map((c) => ({ duration: c.durationSec, outcome: c.outcome, startedAt: c.startedAt }))} />
-          <ConversationStreamCard callLogs={realCallLogs} waMessages={lead.waMessages} notes={lead.notes} forwardedTeam={lead.forwardedTeam} rawRemarks={lead.remarks} />
+          <ConversationStreamCard
+            callLogs={realCallLogs}
+            waMessages={lead.waMessages}
+            notes={lead.notes}
+            forwardedTeam={lead.forwardedTeam}
+            rawRemarks={lead.remarks}
+            leadCreatedAt={lead.createdAt}
+            agentNames={allActiveUsers.map(u => u.name)}
+          />
         </div>
 
         {/* QUICK NOTE — secondary (spec §9: Quick Note is secondary, must not dominate).
