@@ -22,12 +22,13 @@ export default async function CandidatesPage({ searchParams }: { searchParams: P
     prisma.hRCandidate.findMany({
       where,
       orderBy: [{ nextActionDate: { sort: "asc", nulls: "last" } }, { createdAt: "desc" }],
-      take: 200,
+      take: 300,
       include: {
-        primaryOwner: { select: { name: true } },
-        followUps: { where: { completedAt: null }, orderBy: { dueAt: "asc" }, take: 1 },
-        interviews: { where: { attendanceStatus: "SCHEDULED" }, orderBy: { scheduledAt: "asc" }, take: 1 },
+        primaryOwner: { select: { id: true, name: true } },
+        followUps: { where: { completedAt: null }, orderBy: { dueAt: "asc" }, take: 1, select: { dueAt: true } },
+        interviews: { orderBy: { scheduledAt: "desc" }, take: 5, select: { scheduledAt: true, type: true, confirmationStatus: true, attendanceStatus: true } },
         activities: { orderBy: { createdAt: "desc" }, take: 1, select: { type: true, createdAt: true } },
+        _count: { select: { resumes: true } },
       },
     }),
     prisma.user.findMany({ where: { active: true }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
@@ -36,6 +37,7 @@ export default async function CandidatesPage({ searchParams }: { searchParams: P
 
   const countMap: Record<string, number> = {};
   counts.forEach(r => { countMap[r.status] = r._count.id; });
+  const rows = candidates.map(c => ({ ...c, hasResume: c._count.resumes > 0 }));
 
   return (
     <div className="p-4 sm:p-6 max-w-full space-y-4">
@@ -52,7 +54,7 @@ export default async function CandidatesPage({ searchParams }: { searchParams: P
           </Link>
         </div>
       </div>
-      <HRCandidateTable candidates={candidates as never} agents={agents} countMap={countMap} meId={me.id} meRole={me.role} />
+      <HRCandidateTable candidates={rows as never} agents={agents} countMap={countMap} meId={me.id} meRole={me.role} />
     </div>
   );
 }
