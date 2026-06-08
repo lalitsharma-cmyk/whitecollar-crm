@@ -5,7 +5,7 @@ import { useState } from "react";
 import {
   LayoutDashboard, Users, CalendarDays, Clock, AlertCircle,
   FileText, BarChart3, Settings, ChevronLeft, ChevronRight,
-  Menu, X, Briefcase, LogOut,
+  Menu, X, Briefcase, LogOut, Upload,
 } from "lucide-react";
 
 type NavItem = { href: string; label: string; Icon: React.ElementType; badge?: number };
@@ -43,7 +43,12 @@ export default function HRShell({ children, user, overdueCount = 0 }: Props) {
   const [collapsed, setCollapsed] = useState(false);
 
   const initials = user.name.split(" ").map(w => w[0]).join("").slice(0, 2).toUpperCase();
-  const navItems = user.role === "ADMIN" ? [...NAV, ...ADMIN_NAV] : NAV;
+  const canImport = user.role === "ADMIN" || user.role === "MANAGER";
+  const navItems: NavItem[] = [
+    ...NAV,
+    ...(canImport ? [{ href: "/hr/import", label: "Import", Icon: Upload }] : []),
+    ...(user.role === "ADMIN" ? ADMIN_NAV : []),
+  ];
 
   function isActive(href: string) {
     if (href === "/hr") return pathname === "/hr";

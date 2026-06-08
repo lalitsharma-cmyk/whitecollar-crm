@@ -110,6 +110,7 @@ model User {
   hrInterviews          HRInterview[] @relation("HRInterviewer")
   hrFollowUps           HRFollowUp[]  @relation("HRFollowUps")
   hrResumeUploads       HRResume[]    @relation("HRResumeUploads")
+  hrImports             HRImport[]    @relation("HRImports")
 }
 
 // =====================================================
@@ -1610,6 +1611,21 @@ model HRFollowUp {
   @@index([candidateId])
   @@index([dueAt])
   @@index([completedAt])
+}
+
+model HRImport {
+  id           String   @id @default(cuid())
+  fileName     String
+  importedById String?
+  importedBy   User?    @relation("HRImports", fields: [importedById], references: [id])
+  total        Int      @default(0)
+  imported     Int      @default(0)
+  updated      Int      @default(0)
+  failed       Int      @default(0)
+  skipped      Int      @default(0)
+  createdAt    DateTime @default(now())
+
+  @@index([createdAt])
 }
 
 model HRResume {

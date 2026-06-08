@@ -48,6 +48,9 @@ export default async function CandidatesPage({ searchParams }: { searchParams: P
             className="text-xs px-3 py-1.5 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 transition">
             {showClosed ? "Show active" : "Show closed"}
           </Link>
+          {(me.role === "ADMIN" || me.role === "MANAGER") && (
+            <Link href="/hr/import" className="text-sm px-4 py-1.5 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 transition">📥 Import</Link>
+          )}
           <Link href="/hr/candidates/new"
             className="text-sm px-4 py-1.5 rounded-lg bg-[#1a2e4a] text-white font-semibold hover:bg-[#243d60] transition">
             + Add Candidate

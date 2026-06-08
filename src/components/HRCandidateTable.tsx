@@ -3,6 +3,7 @@ import { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { ACTIVE_STATUS_DEFS, CLOSED_STATUS_DEFS, CLOSED_STATUS_KEYS, statusColor, statusLabel } from "@/lib/hrStatus";
+import * as XLSX from "xlsx";
 
 const SOURCES = ["Naukri", "Indeed", "Referral", "Walk-in", "LinkedIn", "Database", "Consultant", "Email", "Whatsapp", "Other"];
 const POSITIONS = ["Sales Executive", "BDE", "BDM", "Team Leader", "Manager", "HR", "Marketing", "Other"];
@@ -59,8 +60,9 @@ function signals(c: Candidate, now: Date) {
   return { nextFU, nextIV, interviewToday, pendingConfirm, hasNoShow, fuOverdue, fuToday };
 }
 
-export default function HRCandidateTable({ candidates, agents }: Props) {
+export default function HRCandidateTable({ candidates, agents, meRole }: Props) {
   const now = new Date();
+  const canExport = meRole === "ADMIN" || meRole === "MANAGER";
   const router = useRouter();
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkStatus, setBulkStatus] = useState("");
@@ -70,6 +72,7 @@ export default function HRCandidateTable({ candidates, agents }: Props) {
   const [chip, setChip] = useState("all");
   const [view, setView] = useState<"table" | "cards">("table");
   const [showAdv, setShowAdv] = useState(false);
+  const [showExport, setShowExport] = useState(false);
 
   // Advanced filters
   const [fStatus, setFStatus] = useState("");
@@ -168,6 +171,21 @@ export default function HRCandidateTable({ candidates, agents }: Props) {
     setBulkBusy(false); setSelected(new Set()); setBulkStatus(""); setBulkOwner(""); router.refresh();
   }
 
+  function exportRows(which: "filtered" | "selected", fmt: "xlsx" | "csv") {
+    const src = which === "selected" ? candidates.filter(c => selected.has(c.id)) : filtered;
+    const data = src.map(c => ({
+      Name: c.name, Phone: c.phone ?? "", WhatsApp: c.whatsappPhone ?? "", Email: c.email ?? "",
+      "Current Profile": c.currentProfile ?? "", Position: c.positionApplied ?? "", Company: c.currentCompany ?? "",
+      "Total Experience": c.experience ?? "", "Current Salary": c.currentSalary ?? "", "Expected Salary": c.expectedSalary ?? "",
+      "Notice Period": c.noticePeriod ?? "", Status: statusLabel(c.status), "Next Action": c.nextAction ?? "",
+      Source: c.source ?? "", Owner: c.primaryOwner?.name ?? "",
+    }));
+    const ws = XLSX.utils.json_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Candidates");
+    XLSX.writeFile(wb, `candidates.${fmt}`, { bookType: fmt });
+  }
+
   const inp = "w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs dark:bg-slate-800 dark:border-slate-600";
   const lbl = "block text-[10px] font-semibold text-gray-500 mb-1 uppercase tracking-wide";
 
@@ -197,6 +215,19 @@ export default function HRCandidateTable({ candidates, agents }: Props) {
           <button type="button" onClick={() => setView("table")} className={`px-3 py-2 ${view === "table" ? "bg-[#1a2e4a] text-white" : "text-gray-600 hover:bg-gray-50"}`}>Table</button>
           <button type="button" onClick={() => setView("cards")} className={`px-3 py-2 ${view === "cards" ? "bg-[#1a2e4a] text-white" : "text-gray-600 hover:bg-gray-50"}`}>Cards</button>
         </div>
+        {canExport && (
+          <div className="relative">
+            <button type="button" onClick={() => setShowExport(s => !s)} className="px-3 py-2 rounded-xl text-sm border border-gray-300 text-gray-600 hover:bg-gray-50">⬇ Export</button>
+            {showExport && (
+              <div className="absolute right-0 mt-1 z-20 bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-xl shadow-lg py-1 text-sm w-56">
+                <button type="button" onClick={() => { exportRows("filtered", "xlsx"); setShowExport(false); }} className="block w-full text-left px-3 py-1.5 hover:bg-gray-50 dark:hover:bg-slate-800">Filtered → Excel ({filtered.length})</button>
+                <button type="button" onClick={() => { exportRows("filtered", "csv"); setShowExport(false); }} className="block w-full text-left px-3 py-1.5 hover:bg-gray-50 dark:hover:bg-slate-800">Filtered → CSV</button>
+                {selected.size > 0 && <button type="button" onClick={() => { exportRows("selected", "xlsx"); setShowExport(false); }} className="block w-full text-left px-3 py-1.5 hover:bg-gray-50 dark:hover:bg-slate-800">Selected → Excel ({selected.size})</button>}
+                <a href="/api/hr/candidates/export?format=csv" className="block w-full text-left px-3 py-1.5 hover:bg-gray-50 dark:hover:bg-slate-800 border-t border-gray-100 dark:border-slate-800">All candidates → CSV</a>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Quick filter chips */}
