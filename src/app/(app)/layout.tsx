@@ -3,9 +3,14 @@ import MobileShell from "@/components/MobileShell";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getTestingModeEnabled } from "@/lib/settings";
+import { redirect } from "next/navigation";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const user = await requireUser();
+
+  // HR-only users (e.g. Nisha, HR Intern) must not access the Sales CRM.
+  // Redirect them to the HR workspace immediately.
+  if ((user as { hrOnly?: boolean }).hrOnly) redirect("/hr");
   const testingMode = await getTestingModeEnabled();
   // Count of leads sitting in the admin "Awaiting team assignment" queue.
   // Only ADMIN + MANAGER ever see the link, so skip the query for agents.

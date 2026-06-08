@@ -87,6 +87,12 @@ model User {
   // for now this column only persists the user's choices.
   notifPrefs        String?
 
+  // ── HR-only access flag ──
+  // When true, this user can ONLY access the HR Recruitment module (/hr/*).
+  // The Sales CRM layout redirects them to /hr immediately. Use for dedicated
+  // HR staff (Nisha, HR Intern) who should never see sales leads/properties.
+  hrOnly            Boolean   @default(false)
+
   ownedLeads    Lead[]     @relation("LeadOwner")
   assignments   Assignment[]
   activities    Activity[]
