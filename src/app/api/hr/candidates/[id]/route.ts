@@ -30,9 +30,10 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const data: Record<string, unknown> = {};
-  const allowed = ["name","phone","altPhone","whatsappPhone","email","location","currentCompany",
-    "currentProfile","experience","currentSalary","expectedSalary","noticePeriod","source",
-    "status","remarks","tags","nextAction","nextActionDate","primaryOwnerId","secondaryOwnerId"];
+  const allowed = ["name","phone","altPhone","whatsappPhone","email","location","city","currentCompany",
+    "currentProfile","positionApplied","experience","realEstateExperience","currentSalary","expectedSalary",
+    "noticePeriod","source","status","remarks","tags","nextAction","nextActionDate","primaryOwnerId","secondaryOwnerId",
+    "fitExperience","fitCommunication","fitStability","fitSalary","fitNotice","interviewFeedback","joiningProbability"];
   for (const key of allowed) {
     if (key in body) {
       if (key === "currentSalary" || key === "expectedSalary") {

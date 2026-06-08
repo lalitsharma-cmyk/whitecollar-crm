@@ -1530,6 +1530,14 @@ model HRCandidate {
   tags             String?           // comma-separated
   nextAction       String?
   nextActionDate   DateTime?
+  // HR assessment (Candidate Fit) — "Good" / "Average" / "Weak" / null = Not Checked
+  fitExperience      String?
+  fitCommunication   String?
+  fitStability       String?
+  fitSalary          String?
+  fitNotice          String?
+  interviewFeedback  String?  @db.Text
+  joiningProbability String?   // High / Medium / Low
   primaryOwnerId   String?
   secondaryOwnerId String?
   // phone||email dedup fingerprint (same logic as Lead)
