@@ -1,6 +1,7 @@
 "use client";
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import HRResumeUploadWidget from "@/components/HRResumeUploadWidget";
 import type { HRCandidateStatus, HRActivityType, HRFollowUpType, HRInterviewType } from "@prisma/client";
 
 // ─── Type definitions ─────────────────────────────────────────────────────────
@@ -8,7 +9,7 @@ interface User { id: string; name: string; }
 interface Activity { id: string; type: string; notes: string|null; createdAt: string; oldStatus:string|null; newStatus:string|null; user:{name:string}|null; }
 interface Interview { id: string; type: string; scheduledAt: string; confirmationStatus: string; attendanceStatus: string; result: string|null; notes: string|null; noShowReason: string|null; interviewer: {name:string}|null; }
 interface FollowUp { id: string; type: string; dueAt: string; completedAt: string|null; notes: string|null; autoCreated: boolean; user: {name:string}|null; }
-interface Resume { id: string; filename: string; url: string; isActive: boolean; createdAt: string; }
+interface Resume { id: string; filename: string; url: string; mimeType: string; isActive: boolean; createdAt: string; }
 interface Candidate {
   id: string; name: string; phone: string|null; altPhone: string|null; whatsappPhone: string|null;
   email: string|null; location: string|null; currentCompany: string|null; currentProfile: string|null;
@@ -77,7 +78,7 @@ export default function HRCandidateDetail({ candidate: init, agents, me }: Props
   const [, startT] = useTransition();
   const [c, setC] = useState(init);
   const [busy, setBusy] = useState(false);
-  const [tab, setTab] = useState<"timeline"|"interviews"|"followups"|"profile">("timeline");
+  const [tab, setTab] = useState<"timeline"|"interviews"|"followups"|"resumes"|"profile">("timeline");
 
   // Action panel state
   const [panel, setPanel] = useState<"none"|"call"|"wa"|"followup"|"interview"|"status"|"note">("none");
@@ -381,7 +382,7 @@ export default function HRCandidateDetail({ candidate: init, agents, me }: Props
 
       {/* Tabs */}
       <div className="border-b border-gray-200 dark:border-slate-700 flex gap-0">
-        {([["timeline","Timeline"],["interviews","Interviews"],["followups","Follow-Ups"],["profile","Profile"]] as const).map(([t,label])=>(
+        {([["timeline","Timeline"],["interviews","Interviews"],["followups","Follow-Ups"],["resumes","Resumes"],["profile","Profile"]] as const).map(([t,label])=>(
           <button key={t} type="button" onClick={()=>setTab(t)}
             className={`px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition ${tab===t?"border-[#0b1a33] text-[#0b1a33] dark:border-white dark:text-white":"border-transparent text-gray-500 hover:text-gray-700"}`}>
             {label}
@@ -466,6 +467,45 @@ export default function HRCandidateDetail({ candidate: init, agents, me }: Props
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* Resumes */}
+      {tab === "resumes" && (
+        <div className="space-y-4">
+          {/* Upload — preselected to this candidate */}
+          <div className="card p-4">
+            <div className="text-xs font-semibold text-gray-700 dark:text-slate-200 mb-3">📎 Upload Resume — PDF, image, or phone photo</div>
+            <HRResumeUploadWidget candidates={[]} preselectedCandidateId={c.id} />
+          </div>
+
+          {/* Existing resumes (latest first; newest is marked Active) */}
+          {c.resumes.length === 0 ? (
+            <div className="text-sm text-gray-400 text-center py-6">No resumes uploaded yet.</div>
+          ) : (
+            <div className="space-y-2">
+              {c.resumes.map(r => (
+                <div key={r.id} className="card p-3 flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-lg bg-red-50 dark:bg-red-900/20 flex items-center justify-center shrink-0 text-lg">
+                    {r.mimeType.startsWith("image/") ? "🖼️" : "📄"}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-sm font-medium text-gray-800 dark:text-slate-200 truncate">{r.filename}</span>
+                      {r.isActive && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-green-100 text-green-700 font-semibold">Active</span>}
+                    </div>
+                    <div className="text-[11px] text-gray-400 mt-0.5">
+                      {new Date(r.createdAt).toLocaleDateString("en-IN",{day:"numeric",month:"short",year:"numeric"})}
+                    </div>
+                  </div>
+                  <a href={r.url} target="_blank" rel="noopener noreferrer" download={r.filename}
+                    className="text-[11px] px-2.5 py-1 rounded-lg border border-blue-300 text-blue-700 bg-white hover:bg-blue-50 shrink-0">
+                    {r.mimeType.startsWith("image/") ? "View" : "Download"}
+                  </a>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 

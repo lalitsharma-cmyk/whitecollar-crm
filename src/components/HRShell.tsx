@@ -12,13 +12,14 @@ type NavItem = { href: string; label: string; Icon: React.ElementType; badge?: n
 
 const NAV: NavItem[] = [
   { href: "/hr",           label: "Dashboard",       Icon: LayoutDashboard },
-  { href: "/hr/candidates",label: "Candidates",      Icon: Users },
-  { href: "/hr/interviews",label: "Interviews",      Icon: CalendarDays },
-  { href: "/hr/followups", label: "Follow Ups",      Icon: Clock },
-  { href: "/hr/missed",    label: "Missed Follow Ups",Icon: AlertCircle },
-  { href: "/hr/resume-bank",label: "Resume Bank",    Icon: FileText },
-  { href: "/hr/reports",   label: "Reports",         Icon: BarChart3 },
-  { href: "/hr/settings",  label: "Settings",        Icon: Settings },
+  { href: "/hr/candidates",  label: "Candidates",       Icon: Users },
+  { href: "/hr/interviews",  label: "Interviews",       Icon: CalendarDays },
+  { href: "/hr/followups",   label: "Follow Ups",       Icon: Clock },
+  { href: "/hr/calendar",    label: "Calendar",         Icon: CalendarDays },
+  { href: "/hr/missed",      label: "Missed Follow Ups",Icon: AlertCircle },
+  { href: "/hr/resume-bank", label: "Resume Bank",      Icon: FileText },
+  { href: "/hr/reports",     label: "Reports",          Icon: BarChart3 },
+  { href: "/hr/settings",    label: "Settings",         Icon: Settings },
 ];
 
 const BOTTOM_NAV: NavItem[] = [
