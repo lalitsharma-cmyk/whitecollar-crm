@@ -1,5 +1,6 @@
 "use client";
 import { useState, useMemo } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { ACTIVE_STATUS_DEFS, CLOSED_STATUS_DEFS, CLOSED_STATUS_KEYS, statusColor, statusLabel } from "@/lib/hrStatus";
 
@@ -60,6 +61,11 @@ function signals(c: Candidate, now: Date) {
 
 export default function HRCandidateTable({ candidates, agents }: Props) {
   const now = new Date();
+  const router = useRouter();
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulkStatus, setBulkStatus] = useState("");
+  const [bulkOwner, setBulkOwner] = useState("");
+  const [bulkBusy, setBulkBusy] = useState(false);
   const [search, setSearch] = useState("");
   const [chip, setChip] = useState("all");
   const [view, setView] = useState<"table" | "cards">("table");
@@ -150,6 +156,18 @@ export default function HRCandidateTable({ candidates, agents }: Props) {
     setFuFrom(""); setFuTo(""); setIvFrom(""); setIvTo("");
   }
 
+  function toggleSel(id: string) { setSelected(s => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; }); }
+  function toggleAll() { setSelected(s => s.size === filtered.length ? new Set() : new Set(filtered.map(c => c.id))); }
+  async function applyBulk() {
+    if (selected.size === 0 || (!bulkStatus && !bulkOwner)) return;
+    setBulkBusy(true);
+    await fetch("/api/hr/candidates/bulk", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids: [...selected], status: bulkStatus || undefined, primaryOwnerId: bulkOwner || undefined }),
+    });
+    setBulkBusy(false); setSelected(new Set()); setBulkStatus(""); setBulkOwner(""); router.refresh();
+  }
+
   const inp = "w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs dark:bg-slate-800 dark:border-slate-600";
   const lbl = "block text-[10px] font-semibold text-gray-500 mb-1 uppercase tracking-wide";
 
@@ -226,6 +244,21 @@ export default function HRCandidateTable({ candidates, agents }: Props) {
         </div>
       )}
 
+      {selected.size > 0 && (
+        <div className="flex items-center gap-2 flex-wrap bg-[#1a2e4a] text-white rounded-xl px-3 py-2 text-sm">
+          <span className="font-semibold">{selected.size} selected</span>
+          <select value={bulkStatus} onChange={e => setBulkStatus(e.target.value)} className="text-gray-800 rounded px-2 py-1 text-xs">
+            <option value="">Set status…</option>
+            {ACTIVE_STATUS_DEFS.concat(CLOSED_STATUS_DEFS).map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
+          </select>
+          <select value={bulkOwner} onChange={e => setBulkOwner(e.target.value)} className="text-gray-800 rounded px-2 py-1 text-xs">
+            <option value="">Assign owner…</option>
+            {agents.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+          </select>
+          <button type="button" disabled={bulkBusy || (!bulkStatus && !bulkOwner)} onClick={applyBulk} className="px-3 py-1 rounded bg-white text-[#1a2e4a] text-xs font-semibold disabled:opacity-50">{bulkBusy ? "Applying…" : "Apply"}</button>
+          <button type="button" onClick={() => setSelected(new Set())} className="text-xs text-white/70 hover:text-white">Clear</button>
+        </div>
+      )}
       <div className="text-xs text-gray-500">{filtered.length} candidate{filtered.length !== 1 ? "s" : ""}</div>
 
       {/* Table view — 13 columns */}
@@ -234,18 +267,20 @@ export default function HRCandidateTable({ candidates, agents }: Props) {
           <table className="min-w-[1200px] w-full text-sm">
             <thead>
               <tr className="bg-gray-50 dark:bg-slate-800 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wide">
+                <th className="px-2 py-2.5 w-8"><input type="checkbox" aria-label="Select all" checked={filtered.length > 0 && selected.size === filtered.length} onChange={toggleAll} /></th>
                 {["Candidate", "Phone", "Current Profile", "Exp", "Current ₹", "Expected ₹", "Status", "Next Action", "Follow-Up", "Interview", "Owner", "Last Activity", "Actions"].map(h => (
                   <th key={h} className="px-3 py-2.5 whitespace-nowrap">{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100 dark:divide-slate-800">
-              {filtered.length === 0 && <tr><td colSpan={13} className="px-4 py-10 text-center text-gray-400 text-xs">No candidates match these filters.</td></tr>}
+              {filtered.length === 0 && <tr><td colSpan={14} className="px-4 py-10 text-center text-gray-400 text-xs">No candidates match these filters.</td></tr>}
               {filtered.map(c => {
                 const s = signals(c, now);
                 const lastAct = c.activities[0];
                 return (
                   <tr key={c.id} className="hover:bg-gray-50/80 dark:hover:bg-slate-800/50 transition align-top">
+                    <td className="px-2 py-2.5"><input type="checkbox" aria-label="Select" checked={selected.has(c.id)} onChange={() => toggleSel(c.id)} /></td>
                     <td className="px-3 py-2.5 min-w-[150px]">
                       <Link href={`/hr/candidates/${c.id}`} className="font-semibold text-[#1a2e4a] dark:text-blue-400 hover:underline block">{c.name}</Link>
                       {c.currentCompany && <div className="text-[11px] text-gray-400 truncate max-w-[160px]">{c.currentCompany}</div>}

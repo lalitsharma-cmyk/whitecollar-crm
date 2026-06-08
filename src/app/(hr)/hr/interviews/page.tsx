@@ -1,6 +1,7 @@
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import Link from "next/link";
+import HRInterviewRowActions from "@/components/HRInterviewRowActions";
 
 export const dynamic = "force-dynamic";
 
@@ -117,8 +118,7 @@ export default async function InterviewsPage({ searchParams }: { searchParams: P
                     </td>
                     <td className="px-4 py-3 text-xs text-gray-500">{iv.candidate.primaryOwner?.name?.split(" ")[0]}</td>
                     <td className="px-4 py-3">
-                      <Link href={`/hr/candidates/${iv.candidateId}`}
-                        className="text-[11px] text-blue-600 hover:underline">Update →</Link>
+                      <HRInterviewRowActions interviewId={iv.id} candidateId={iv.candidateId} phone={iv.candidate.phone} attendanceStatus={iv.attendanceStatus} />
                     </td>
                   </tr>
                 ))}
