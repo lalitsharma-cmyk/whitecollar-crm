@@ -1,178 +1,236 @@
-// Rules-based "Next Best Action" recommendation card.
+// Status-driven Next Best Action card (Lalit spec 2026-06).
 //
-// Pure synchronous computation over fields already loaded by the lead detail
-// page — no AI, no async, server-component friendly. The card always renders
-// (worst case it falls through to the "Review notes" default) because agents
-// should ALWAYS see one clear action above the fold.
-//
-// Lead is typed loosely (`any`) for the same reason as BuyingSignalsCard: the
-// page query uses a wide Prisma `include` whose generated type would force
-// every caller into a specific shape. All field access is defensive.
+// Rule: STATUS is always the primary decision-maker, not remarks.
+// Certain statuses → dedicated read-only cards (no follow-up actions).
+// Active statuses → contextual sales action based on lifecycle stage.
 
 type Props = { lead: any };
 
 type Action = {
   headline: string;
   why: string;
+  kind: "call" | "whatsapp" | "meeting" | "review" | "none";
 };
 
-const MEETING_TYPES = ["OFFICE_MEETING", "VIRTUAL_MEETING", "SITE_VISIT"];
+type StatusCard = {
+  kind: "booked" | "junk" | "inactive";
+  title: string;
+  body: string;
+  color: string;
+  borderColor: string;
+};
+
 const DAY_MS = 24 * 60 * 60 * 1000;
+const MEETING_TYPES = ["OFFICE_MEETING", "VIRTUAL_MEETING", "SITE_VISIT"];
+
+// Statuses where the lead is permanently closed — show a read-only summary card,
+// NO follow-up actions, NO re-engage suggestions, NO escalation.
+const BOOKED_STATUSES = new Set([
+  "booked with us", "already bought", "purchased", "sold", "booking done",
+  "won", "booked", "deal closed",
+]);
+const JUNK_STATUSES = new Set([
+  "junk", "invalid number", "wrong number", "pass away", "number changed",
+  "by mistake inquiry", "spam", "invalid",
+]);
+const NOT_INTERESTED_STATUSES = new Set([
+  "not interested", "do not call", "drop",
+]);
+const LOW_BUDGET_STATUSES = new Set([
+  "low budget", "budget issue", "funds issue",
+]);
+
+function matchesSet(status: string | null | undefined, set: Set<string>): boolean {
+  if (!status) return false;
+  return set.has(status.toLowerCase().trim());
+}
+
+function getStatusCard(lead: any): StatusCard | null {
+  const status: string | undefined = lead?.currentStatus ?? lead?.status;
+  const cs = (status ?? "").toLowerCase().trim();
+
+  if (BOOKED_STATUSES.has(cs) || lead?.status === "WON" || lead?.status === "BOOKING_DONE") {
+    return {
+      kind: "booked",
+      title: "✅ Client Booked",
+      body: "This client has completed a booking. The action list is in RM (relationship management) mode — focus on payment updates, upgrade opportunities, and referrals.",
+      color: "text-emerald-800",
+      borderColor: "border-emerald-400",
+    };
+  }
+  if (matchesSet(cs, JUNK_STATUSES) || lead?.status === "LOST") {
+    return {
+      kind: "junk",
+      title: "🗑 Junk / Invalid",
+      body: "This lead is marked as junk or invalid. No follow-up actions are required.",
+      color: "text-gray-600",
+      borderColor: "border-gray-300",
+    };
+  }
+  if (matchesSet(cs, NOT_INTERESTED_STATUSES)) {
+    return {
+      kind: "inactive",
+      title: "🛑 Not Interested",
+      body: "Client has declined. You can optionally schedule a revival check-in after 3–6 months if circumstances may have changed.",
+      color: "text-red-700",
+      borderColor: "border-red-300",
+    };
+  }
+  if (matchesSet(cs, LOW_BUDGET_STATUSES)) {
+    return {
+      kind: "inactive",
+      title: "📉 Budget Gap",
+      body: "Client's current budget doesn't match available inventory. Consider suggesting alternatives or revisiting when their situation changes.",
+      color: "text-amber-700",
+      borderColor: "border-amber-300",
+    };
+  }
+  return null;
+}
+
+// Whether a site visit or meeting is upcoming (scheduled in the future)
+function hasUpcomingActivity(lead: any, now: number): boolean {
+  const activities: any[] = Array.isArray(lead?.activities) ? lead.activities : [];
+  const siteVisitMs = lead?.siteVisitDate ? new Date(lead.siteVisitDate).getTime() : null;
+  const meetingMs   = lead?.meetingDate ? new Date(lead.meetingDate).getTime() : null;
+  if (siteVisitMs != null && siteVisitMs >= now) return true;
+  if (meetingMs != null && meetingMs >= now) return true;
+  return activities.some(a => {
+    if (!MEETING_TYPES.includes(a?.type)) return false;
+    const t = a?.scheduledAt ? new Date(a.scheduledAt).getTime() : 0;
+    return t >= now && a?.status !== "DONE";
+  });
+}
 
 function computeAction(lead: any): Action {
-  const callLogs: any[] = Array.isArray(lead?.callLogs) ? lead.callLogs : [];
-  const activities: any[] = Array.isArray(lead?.activities) ? lead.activities : [];
-  const status: string | undefined = lead?.status;
+  const callLogs: any[] = (Array.isArray(lead?.callLogs) ? lead.callLogs : [])
+    .filter((c: any) => c.attributedAgentName == null); // only real calls
+  const status: string = lead?.status ?? "";
+  const currentStatus: string = (lead?.currentStatus ?? "").toLowerCase();
   const now = Date.now();
 
-  // Helper — most recent call (callLogs already ordered by startedAt desc on the page).
   const lastCall = callLogs[0];
-
-  // Helper — site visit timing
   const siteVisitMs = lead?.siteVisitDate ? new Date(lead.siteVisitDate).getTime() : null;
 
-  // Rule 1 — Negotiation without EOI started
+  // EOI / Negotiation rules
   if (status === "NEGOTIATION" && !lead?.eoiStage) {
-    return {
-      headline: "💸 Start EOI workflow now",
-      why: "Lead is in Negotiation but no EOI stage has been recorded. Lock in intent — collect the EOI today before momentum cools.",
-    };
+    return { headline: "💸 Start EOI workflow now", kind: "call",
+      why: "Lead is in Negotiation but no EOI stage has been recorded. Lock in intent — collect the EOI today before momentum cools." };
   }
-
-  // Rule 2 — Negotiation, EOI exists but stalled (no progress in 3 days).
-  // "Progress" = lastTouchedAt advanced or the EOI-related dates were updated.
   if (status === "NEGOTIATION" && lead?.eoiStage) {
-    const candidates = [
-      lead?.eoiCollectedAt,
-      lead?.kycReceivedAt,
-      lead?.bookingFormSentAt,
-      lead?.bookingFormSignedAt,
-      lead?.paymentProofReceivedAt,
-      lead?.developerConfirmedAt,
-      lead?.lastTouchedAt,
-    ]
-      .filter(Boolean)
-      .map((d: any) => new Date(d).getTime());
-    const lastProgressMs = candidates.length ? Math.max(...candidates) : null;
-    if (lastProgressMs == null || now - lastProgressMs > 3 * DAY_MS) {
-      return {
-        headline: "📞 Call to push the EOI forward",
-        why: `EOI is at "${lead.eoiStage}" but hasn't moved in 3+ days. Get on the phone, unblock whatever's stuck (KYC, payment proof, signature) and set a same-day next step.`,
-      };
+    const progress = [lead.eoiCollectedAt, lead.kycReceivedAt, lead.bookingFormSentAt,
+      lead.bookingFormSignedAt, lead.paymentProofReceivedAt, lead.developerConfirmedAt, lead.lastTouchedAt]
+      .filter(Boolean).map((d: any) => new Date(d).getTime());
+    const lastProgressMs = progress.length ? Math.max(...progress) : null;
+    if (!lastProgressMs || now - lastProgressMs > 3 * DAY_MS) {
+      return { headline: "📞 Call to push EOI forward", kind: "call",
+        why: `EOI is at "${lead.eoiStage}" but hasn't moved in 3+ days. Call now and unblock KYC, payment proof, or signature.` };
     }
   }
 
-  // Rule 3 — Site visit date has passed, no activity since the visit.
+  // Post site-visit
   if (status === "SITE_VISIT" && siteVisitMs != null && siteVisitMs < now) {
-    const sinceVisit = activities.filter((a) => {
-      const t = a?.createdAt ? new Date(a.createdAt).getTime() : 0;
-      return t > siteVisitMs;
-    });
+    const activities: any[] = Array.isArray(lead?.activities) ? lead.activities : [];
+    const sinceVisit = activities.filter(a => a?.createdAt && new Date(a.createdAt).getTime() > siteVisitMs!);
     if (sinceVisit.length === 0) {
-      return {
-        headline: "📞 Call for post-visit feedback",
-        why: "The site visit is in the past and nothing has been logged since. Get their unfiltered reaction now — first 48 hours decide the deal.",
-      };
+      return { headline: "📞 Call for post-visit feedback", kind: "call",
+        why: "The site visit has passed and nothing has been logged since. Get their reaction now — first 48 hours decide the deal." };
     }
   }
 
-  // Rule 4 — Future site visit on the calendar
+  // Upcoming site visit
   if (status === "SITE_VISIT" && siteVisitMs != null && siteVisitMs >= now) {
-    return {
-      headline: "📅 Confirm site visit slot via WhatsApp",
-      why: "A site visit is scheduled. Confirm time, location, and parking on WhatsApp so they show up — no-shows kill the week.",
-    };
+    return { headline: "📅 Confirm visit via WhatsApp", kind: "whatsapp",
+      why: "A site visit is scheduled. Confirm time, location, and any preparation on WhatsApp so they show up." };
   }
 
-  // Rule 5 — Qualified but nothing on the calendar
+  // Callback / follow-up scheduled today
+  if (currentStatus.includes("callback") || currentStatus.includes("follow-up")) {
+    return { headline: "🔁 Callback due today", kind: "call",
+      why: "Client requested a callback or follow-up was scheduled. Call now while it's expected." };
+  }
+
+  // Qualified — get something on the calendar
   if (status === "QUALIFIED") {
-    const meetingMs = lead?.meetingDate ? new Date(lead.meetingDate).getTime() : null;
-    const upcomingMeeting =
-      (meetingMs != null && meetingMs >= now) ||
-      (siteVisitMs != null && siteVisitMs >= now);
-    const upcomingMeetingActivity = activities.some((a) => {
-      if (!MEETING_TYPES.includes(a?.type)) return false;
-      const t = a?.scheduledAt ? new Date(a.scheduledAt).getTime() : 0;
-      return t >= now && a?.status !== "DONE";
-    });
-    if (!upcomingMeeting && !upcomingMeetingActivity) {
-      return {
-        headline: "🏢 Book a site visit / office meeting",
-        why: "Lead is qualified but nothing is on the calendar. Qualified leads without a meeting go cold inside a week — propose two slots today.",
-      };
+    if (!hasUpcomingActivity(lead, now)) {
+      return { headline: "🏢 Book a site visit or meeting", kind: "meeting",
+        why: "Lead is qualified but nothing is on the calendar. Propose two slots today — qualified leads without a meeting go cold in a week." };
     }
   }
 
-  // Rule 6 — Contacted, last call was not picked
+  // Contacted — last call missed
   if (status === "CONTACTED" && lastCall?.outcome === "NOT_PICKED") {
-    return {
-      headline: "📞 Try calling at a different time (use connect-rate-by-hour)",
-      why: "Last attempt didn't connect. Check the team's connect-rate-by-hour heatmap and dial in a different window — same time tomorrow is the lowest-yield choice.",
-    };
+    return { headline: "📞 Try a different time slot", kind: "call",
+      why: "Last attempt didn't connect. Call at a different time — same window tomorrow is the lowest-yield choice." };
   }
 
-  // Rule 7 — Contacted, last call connected
-  if (status === "CONTACTED" && lastCall?.outcome === "CONNECTED") {
-    return {
-      headline: "💬 Send WhatsApp with project options",
-      why: "You spoke with them — follow up while it's fresh. Send 2-3 matching projects on WhatsApp with photos, price, and a one-line reason each fits.",
-    };
+  // Contacted — last call connected
+  if (status === "CONTACTED" && (lastCall?.outcome === "CONNECTED" || lastCall?.outcome === "INTERESTED")) {
+    return { headline: "💬 Send WhatsApp with matching projects", kind: "whatsapp",
+      why: "You spoke — follow up while it's fresh. Send 2–3 matching projects with a quick reason each fits their requirement." };
   }
 
-  // Rule 8 — Brand new, no calls yet
+  // New lead with no calls
   if (status === "NEW" && callLogs.length === 0) {
-    return {
-      headline: "📞 Make first call now (SLA timer)",
-      why: "Fresh lead, zero calls. Speed-to-lead wins — first dial inside the SLA window 4x's the connect rate vs same-day-later attempts.",
-    };
+    return { headline: "📞 Make first call now (SLA timer)", kind: "call",
+      why: "Fresh lead, zero calls. Speed-to-lead wins — first dial inside the SLA window multiplies connect rate." };
   }
 
-  // Rule 9 — Stale: no touch in 14+ days
-  const lastTouchedMs = lead?.lastTouchedAt
-    ? new Date(lead.lastTouchedAt).getTime()
-    : null;
-  if (lastTouchedMs == null || now - lastTouchedMs > 14 * DAY_MS) {
-    return {
-      headline: "♻ Re-engage: send a project update or check-in WhatsApp",
-      why: "Lead hasn't been touched in 2+ weeks. Send a project update, a price-rise notice, or a simple check-in — give them a reason to reply.",
-    };
+  // Stale
+  const lastTouchedMs = lead?.lastTouchedAt ? new Date(lead.lastTouchedAt).getTime() : null;
+  if (!lastTouchedMs || now - lastTouchedMs > 14 * DAY_MS) {
+    return { headline: "♻ Re-engage — send a project update", kind: "whatsapp",
+      why: "Lead hasn't been touched in 2+ weeks. Send a project update, a price-rise notice, or a simple check-in." };
   }
 
-  // Rule 10 — Default
-  return {
-    headline: "📋 Review notes and decide next step",
-    why: "No single rule fired. Skim Call History and Notes, then set a concrete next step (call window, WhatsApp, or meeting) before closing this lead.",
-  };
+  return { headline: "📋 Review notes and decide next step", kind: "review",
+    why: "Skim Conversation History and Notes, then set a concrete next action (call window, WhatsApp, or meeting) before closing this tab." };
 }
 
 export default function NextBestActionCard({ lead }: Props) {
+  // Check for terminal-status leads first — show a read-only card, no actions.
+  const statusCard = getStatusCard(lead);
+  if (statusCard) {
+    if (statusCard.kind === "junk") return null; // junk: hide entirely
+    return (
+      <div className={`card p-4 border-l-4 ${statusCard.borderColor}`}>
+        <div className={`text-sm font-semibold ${statusCard.color}`}>{statusCard.title}</div>
+        <p className="text-xs text-gray-600 mt-1.5 leading-relaxed">{statusCard.body}</p>
+        {statusCard.kind === "booked" && (
+          <div className="mt-2.5 flex flex-wrap gap-2 text-[11px]">
+            {[
+              lead?.bookingDoneAt && `📅 Booked: ${new Date(lead.bookingDoneAt).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })}`,
+              lead?.eoiStage && `Stage: ${lead.eoiStage.replace(/_/g, " ")}`,
+              lead?.commissionStatus && `Commission: ${lead.commissionStatus.toLowerCase()}`,
+            ].filter(Boolean).map((item, i) => (
+              <span key={i} className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 font-medium">{item}</span>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
+
   const action = computeAction(lead);
+  const kindColors = {
+    call:     { border: "border-[#c9a24b]", bg: "bg-amber-50/40", icon: "📞" },
+    whatsapp: { border: "border-green-400",  bg: "bg-green-50/30",  icon: "💬" },
+    meeting:  { border: "border-blue-400",   bg: "bg-blue-50/30",   icon: "🏢" },
+    review:   { border: "border-gray-300",   bg: "bg-gray-50/20",   icon: "📋" },
+    none:     { border: "border-gray-300",   bg: "bg-gray-50/20",   icon: "•"  },
+  };
+  const { border, bg } = kindColors[action.kind] ?? kindColors.review;
 
   return (
-    <div className="card p-5 border-l-4 border-[#c9a24b] bg-amber-50/40 shadow-sm">
-      <div className="flex items-center gap-2 mb-3">
-        <span className="text-[10px] font-bold tracking-widest text-[#8a6a1f] uppercase">
-          Next best action
-        </span>
-        <span className="text-[10px] text-gray-500">— do this first</span>
+    <div className={`card p-5 border-l-4 ${border} ${bg} shadow-sm`}>
+      <div className="flex items-center gap-2 mb-2">
+        <span className="text-[10px] font-bold tracking-widest text-gray-500 uppercase">Next action</span>
+        <span className="text-[10px] text-gray-400">— do this first</span>
       </div>
-      <div className="text-lg font-bold text-gray-900 leading-snug">
-        {action.headline}
-      </div>
-      <p className="text-sm text-gray-700 mt-1.5 leading-relaxed">
-        {action.why}
-      </p>
-      <div className="mt-3">
-        <button
-          type="button"
-          className="btn btn-primary text-xs"
-          aria-label="Mark this next best action as done"
-        >
-          ✅ Mark done
-        </button>
-        <span className="text-[11px] text-gray-500 ml-2">
-          Logging a call or meeting below will count as completion.
-        </span>
+      <div className="text-base font-bold text-gray-900 leading-snug">{action.headline}</div>
+      <p className="text-sm text-gray-700 mt-1.5 leading-relaxed">{action.why}</p>
+      <div className="mt-2.5">
+        <span className="text-[11px] text-gray-500">Logging a call or activity will update this recommendation.</span>
       </div>
     </div>
   );
