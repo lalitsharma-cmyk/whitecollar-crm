@@ -14,6 +14,9 @@ export async function POST(req: NextRequest) {
   if (body.status) data.status = body.status as HRCandidateStatus;
   if (body.primaryOwnerId) data.primaryOwnerId = body.primaryOwnerId;
   if (Object.keys(data).length === 0) return NextResponse.json({ error: "Nothing to update" }, { status: 400 });
+  if (data.status === "OFFER_RELEASED" && me.role === "AGENT") {
+    return NextResponse.json({ error: "Interns can't release offers — ask a manager." }, { status: 403 });
+  }
 
   await prisma.hRCandidate.updateMany({ where: { id: { in: ids } }, data });
 

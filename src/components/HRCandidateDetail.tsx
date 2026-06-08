@@ -44,6 +44,13 @@ const NOTICE_OPTS  = ["Immediate","7 days","15 days","30 days","45 days","60 day
 const POSITION_OPTS= ["Sales Executive","BDE","BDM","Team Leader","Manager","HR","Marketing","Other"].map(s=>[s,s] as [string,string]);
 const FIT_OPTS: [string,string][]  = [["Good","🟢 Good"],["Average","🟡 Average"],["Weak","🔴 Weak"]];
 const PROB_OPTS: [string,string][] = [["High","🟢 High"],["Medium","🟡 Medium"],["Low","🔴 Low"]];
+const WA_TEMPLATES: { label: string; text: string }[] = [
+  { label: "Intro", text: "Hi {name}, this is {recruiter} from White Collar Realty regarding a job opportunity. Is now a good time to talk?" },
+  { label: "Interview", text: "Hi {name}, confirming your interview with White Collar Realty. Please reply to confirm your availability." },
+  { label: "Follow-up", text: "Hi {name}, following up on your application with White Collar Realty — are you still interested in the role?" },
+  { label: "Offer", text: "Hi {name}, great news — we'd like to discuss an offer with you. When can we connect?" },
+  { label: "Docs", text: "Hi {name}, please share your latest resume and a convenient time for a quick call." },
+];
 
 const ACT_LABEL: Record<string, string> = {
   CALL_CONNECTED:"📞 Call — Connected",CALL_NOT_ANSWERED:"📵 Call — No Answer",CALL_BUSY:"⏳ Call — Busy",
@@ -57,6 +64,12 @@ const ACT_LABEL: Record<string, string> = {
 function fmt(s: string) { return s.replace(/_/g," ").replace(/\b\w/g,c=>c.toUpperCase()); }
 function fmtDate(s: string) { return new Date(s).toLocaleDateString("en-IN",{day:"numeric",month:"short",year:"numeric",hour:"2-digit",minute:"2-digit"}); }
 function fmtSalary(n: number|null) { if(!n) return ""; return n>=100000?`₹${(n/100000).toFixed(1)}L`:`₹${(n/1000).toFixed(0)}K`; }
+function timeAgo(s: string) {
+  const m = Math.floor((Date.now() - new Date(s).getTime()) / 60000);
+  if (m < 1) return "just now"; if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60); if (h < 24) return `${h}h ago`;
+  return `${Math.floor(h / 24)}d ago`;
+}
 
 // ─── Inline-edit field (click to edit, PUTs a single field) ───────────────────
 function InlineField({ candidateId, field, value, type = "text", options, placeholder, format }: {
@@ -205,6 +218,9 @@ export default function HRCandidateDetail({ candidate: c, agents, me }: Props) {
   const waPhone = c.whatsappPhone ?? c.phone ?? "";
   const ownerOpts = agents.map(a => [a.id, a.name] as [string, string]);
   const ownerName = (id: string | number) => agents.find(a => a.id === String(id))?.name ?? "—";
+  const fillTpl = (s: string) => s.replace(/\{name\}/g, c.name.split(" ")[0]).replace(/\{recruiter\}/g, me.name.split(" ")[0]);
+  const lastAct = c.activities[0];
+  const activeStatusDefs = me.role === "AGENT" ? ACTIVE_STATUS_DEFS.filter(s => s.key !== "OFFER_RELEASED") : ACTIVE_STATUS_DEFS;
 
   const btn = "btn text-sm border rounded-lg gap-1.5";
 
@@ -232,6 +248,7 @@ export default function HRCandidateDetail({ candidate: c, agents, me }: Props) {
               {statusLabel(c.status)} ▾
             </button>
             <Link href={`/hr/candidates/${c.id}/timeline`} className="text-[11px] text-blue-600 hover:underline">Full timeline →</Link>
+            {lastAct?.user && <span className="text-[10px] text-gray-400">✎ {lastAct.user.name.split(" ")[0]} · {timeAgo(lastAct.createdAt)}</span>}
           </div>
         </div>
 
@@ -239,6 +256,7 @@ export default function HRCandidateDetail({ candidate: c, agents, me }: Props) {
         <div className="flex gap-2 mt-4 flex-wrap">
           {c.phone && <a href={`tel:${c.phone}`} className={`${btn} border-gray-300 text-gray-700 hover:bg-gray-50`}>📞 Call</a>}
           {waPhone && <a href={`https://wa.me/${waPhone.replace(/\D/g,"")}`} target="_blank" rel="noopener noreferrer" className={`${btn} border-green-300 text-green-700 hover:bg-green-50`}>💬 WhatsApp</a>}
+          {waPhone && <button type="button" onClick={() => setPanel(p => p==="wa"?"none":"wa")} className={`${btn} border-green-300 text-green-700 hover:bg-green-50`}>💬 Log WA</button>}
           {c.email && <a href={`mailto:${c.email}`} className={`${btn} border-blue-300 text-blue-700 hover:bg-blue-50`}>✉️ Email</a>}
           <button type="button" onClick={() => setPanel(p => p==="call"?"none":"call")} className={`${btn} border-blue-300 text-blue-700 hover:bg-blue-50`}>📞 Log Call</button>
           <button type="button" onClick={() => setPanel(p => p==="note"?"none":"note")} className={`${btn} border-gray-300 text-gray-700 hover:bg-gray-50`}>📝 Add Note</button>
@@ -263,6 +281,14 @@ export default function HRCandidateDetail({ candidate: c, agents, me }: Props) {
         )}
         {panel === "wa" && (
           <div className="mt-3 p-3 bg-green-50 border border-green-200 rounded-lg space-y-2">
+            <div className="text-[11px] text-green-800 font-semibold">Templates — tap to open WhatsApp &amp; pre-fill the log:</div>
+            <div className="flex flex-wrap gap-1.5">
+              {WA_TEMPLATES.map(t => (
+                <a key={t.label} href={`https://wa.me/${waPhone.replace(/\D/g,"")}?text=${encodeURIComponent(fillTpl(t.text))}`}
+                  target="_blank" rel="noopener noreferrer" onClick={() => setWaNotes(fillTpl(t.text))}
+                  className="text-[11px] px-2 py-1 rounded-full border border-green-300 bg-white text-green-700 hover:bg-green-100">{t.label}</a>
+              ))}
+            </div>
             <textarea value={waNotes} onChange={e=>setWaNotes(e.target.value)} placeholder="What was discussed / sent…" rows={2} className={inp} />
             <div className="flex gap-2">
               <button type="button" disabled={busy} onClick={() => logWA("WHATSAPP_SENT")} className="btn text-sm bg-green-600 text-white hover:bg-green-700">We Sent</button>
@@ -301,7 +327,7 @@ export default function HRCandidateDetail({ candidate: c, agents, me }: Props) {
           <div className="mt-3 p-3 bg-gray-50 border border-gray-200 rounded-lg space-y-2">
             <div className="grid grid-cols-2 gap-2">
               <div><div className="text-[10px] font-semibold text-gray-500 mb-1 uppercase">Active</div>
-                {ACTIVE_STATUS_DEFS.map(({key,label})=><button key={key} type="button" onClick={()=>setNewStatus(key)} className={`block w-full text-left px-2 py-1 rounded text-xs mb-0.5 ${newStatus===key?"bg-blue-100 text-blue-800 font-semibold":"hover:bg-gray-100 text-gray-700"}`}>{label}</button>)}
+                {activeStatusDefs.map(({key,label})=><button key={key} type="button" onClick={()=>setNewStatus(key)} className={`block w-full text-left px-2 py-1 rounded text-xs mb-0.5 ${newStatus===key?"bg-blue-100 text-blue-800 font-semibold":"hover:bg-gray-100 text-gray-700"}`}>{label}</button>)}
               </div>
               <div><div className="text-[10px] font-semibold text-gray-500 mb-1 uppercase">Closed</div>
                 {CLOSED_STATUS_DEFS.map(({key,label})=><button key={key} type="button" onClick={()=>setNewStatus(key)} className={`block w-full text-left px-2 py-1 rounded text-xs mb-0.5 ${newStatus===key?"bg-red-100 text-red-800 font-semibold":"hover:bg-gray-100 text-gray-700"}`}>{label}</button>)}

@@ -46,6 +46,10 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     }
   }
 
+  if (data.status === "OFFER_RELEASED" && me.role === "AGENT") {
+    return NextResponse.json({ error: "Interns can't release offers — ask a manager." }, { status: 403 });
+  }
+
   const updated = await prisma.hRCandidate.update({ where: { id }, data });
 
   // Log status change

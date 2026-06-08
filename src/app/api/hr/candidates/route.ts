@@ -68,6 +68,10 @@ export async function POST(req: NextRequest) {
 
   const status = (body.status as HRCandidateStatus) || "NEW";
   const isActive = !CLOSED_STATUS_KEYS.includes(status);
+
+  if (status === "OFFER_RELEASED" && me.role === "AGENT") {
+    return NextResponse.json({ error: "Interns can't release offers — ask a manager." }, { status: 403 });
+  }
   const nextActionDate = body.nextActionDate ? new Date(body.nextActionDate) : null;
 
   // No active candidate may be saved without a next action + follow-up.
