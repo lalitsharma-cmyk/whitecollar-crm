@@ -171,25 +171,68 @@ export interface SegmentEntry {
  *
  * Agents never see the source — no "Imported from Excel" labels.
  */
+// Pattern that parseRemarks() already handles — "on DD Mon YYYY (HH:MM) text"
+// Lines matching this are SKIPPED (they're already in callLogs as CallLog rows).
+const FULL_DATED_RE = /(?:[A-Z][A-Za-z]{1,15}(?:\s+[A-Z][A-Za-z]{1,15}){0,2}\s*:\s*)?[oO]n\s+[\dA-Za-z]+(?:\s+[\dA-Za-z]+){1,3}\s*\([^)]+\)/;
+
+// "on DD Mon YYYY" WITHOUT time parens — has date but not in callLogs yet.
+// Captures: (optional AgentName:) + "on" + date string + rest-of-line.
+const ON_DATE_NO_TIME = /^(?:[A-Z][A-Za-z]{1,15}(?:\s+[A-Z][A-Za-z]{1,15}){0,2}\s*:\s*)?[oO]n\s+((?:\d{1,2}\s+\w+(?:\s+\d{4})?|\d{4}-\d{2}-\d{2}|\d{1,2}[\/\-]\d{1,2}[\/\-]\d{4}))\s*(.*)/;
+
 export function extractUndatedSegments(cell: string): SegmentEntry[] {
   if (!cell || typeof cell !== "string") return [];
 
-  // Normalise separators (MIS uses ",,,,,," as line breaks)
-  const text = cell.replace(/,{2,}/g, "\n").replace(/\r\n/g, "\n").trim();
+  // Normalise separators — MIS sheets use ",,,,,," as line breaks
+  const text = cell
+    .replace(/,{2,}/g, "\n")
+    .replace(/\r\n/g, "\n")
+    .trim();
 
-  // Split on lines that START a dated entry (the pattern parseRemarks() handles).
-  const datedPattern = /(?:[A-Z][A-Za-z]{1,15}(?:\s+[A-Z][A-Za-z]{1,15}){0,2}\s*:\s*)?[oO]n\s+[\dA-Za-z]+(?:\s+[\dA-Za-z]+){1,3}\s*\([^)]+\)/;
+  // Also split on inline "on DD Mon YYYY" patterns within a line so that
+  // "On 3 Jan 2022 call not pick. On 1 Feb 2022 site visit" becomes two entries.
+  const inlineSplit = text.replace(
+    /([.!?]?\s*)([oO]n\s+\d)/g,
+    (_, sep, onPart) => `\n${onPart}`
+  );
 
-  const lines = text.split("\n").map(l => l.trim()).filter(Boolean);
+  const lines = inlineSplit.split("\n").map(l => l.trim()).filter(Boolean);
   const segments: SegmentEntry[] = [];
 
   for (const line of lines) {
-    if (datedPattern.test(line)) continue; // dated — already handled by parseRemarks()
-    if (line.length < 3) continue;         // noise
+    // Skip lines already handled by parseRemarks() (has time in parens → in callLogs)
+    if (FULL_DATED_RE.test(line)) continue;
+    if (line.length < 2) continue;
 
-    // Try to extract a date from alternative formats (no "on" prefix, slash dates, ISO, etc.)
+    // Case 1: "on DD Mon YYYY body text" — parse date, strip prefix, show clean body
+    const mOn = line.match(ON_DATE_NO_TIME);
+    if (mOn) {
+      const dateStr = mOn[1].trim();
+      const body = (mOn[2] ?? "").trim().replace(/^[,.\s]+/, "");
+      const date = tryExtractDate(dateStr) ?? tryExtractDate(line);
+      if (body.length >= 2) {
+        segments.push({ text: body, date });
+        continue;
+      }
+    }
+
+    // Case 2: try to extract any date from the line (all other formats)
     const date = tryExtractDate(line);
-    segments.push({ text: line, date });
+
+    // Strip the date part from the display text so it's not duplicated
+    let displayText = line;
+    if (date) {
+      displayText = line
+        // Remove "DD Mon YYYY" or "DD Mon" at start
+        .replace(/^\d{1,2}\s+[a-z]{3}[a-z]*(?:\s+\d{4})?\s*[:\-]?\s*/i, "")
+        // Remove ISO date at start
+        .replace(/^\d{4}-\d{2}-\d{2}\s*[:\-]?\s*/, "")
+        // Remove DD/MM/YYYY at start
+        .replace(/^\d{1,2}[\/\-]\d{1,2}[\/\-]\d{4}\s*[:\-]?\s*/, "")
+        .trim();
+    }
+
+    if (displayText.length < 2) continue;
+    segments.push({ text: displayText, date });
   }
 
   return segments;

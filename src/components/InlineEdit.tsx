@@ -95,6 +95,17 @@ export default function InlineEdit({ leadId, field, label, value, type = "text",
 
   function cancel() { setV(value == null ? "" : String(value)); setEditing(false); setErr(null); }
 
+  // For select fields: resolve the option label for the read-only view so the
+  // agent sees "30 Days" not "THIRTY_DAYS". Strip leading emoji if present.
+  const resolvedDisplay = (() => {
+    if (display) return display;
+    if (type === "select" && options && value != null && value !== "") {
+      const found = options.find(o => o.value === String(value));
+      if (found) return found.label.replace(/^[\u{1F000}-\u{1FFFF}\u{2600}-\u{27FF}\s]+/u, "").trim();
+    }
+    return null;
+  })();
+
   if (!editing) {
     // Textarea fields (remarks, whoIsClient, etc.) preserve line breaks + multi-line
     // formatting in the read-only view — otherwise multi-line imported text from
@@ -136,7 +147,7 @@ export default function InlineEdit({ leadId, field, label, value, type = "text",
       >
         {value == null || value === ""
           ? <span className="text-gray-400 italic">{placeholder ?? "Add Value"}</span>
-          : <>{prefix}{display ?? String(value)}</>}
+          : <>{prefix}{resolvedDisplay ?? String(value)}</>}
       </span>
     );
   }

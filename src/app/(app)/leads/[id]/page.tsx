@@ -408,7 +408,7 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
             <InlineEdit leadId={lead.id} field="whenCanInvest" type="select" value={lead.whenCanInvest ?? ""}
               options={lead.forwardedTeam === "India" ? [
                 {value:"IMMEDIATE",       label:"⚡ Immediate / On Spot"},
-                {value:"THIRTY_DAYS",     label:"📅 Within 1 Month"},
+                {value:"THIRTY_DAYS",     label:"📅 30 Days"},
                 {value:"SITE_VISIT",      label:"🏠 Site Visit Planned"},
                 {value:"MEETING",         label:"🤝 Meeting Scheduled"},
                 {value:"THREE_MONTHS",    label:"📋 Evaluating Options (1–3 Months)"},
@@ -417,7 +417,7 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
                 {value:"UNKNOWN",         label:"❓ Not Sure / Unknown"},
               ] : [
                 {value:"IMMEDIATE",       label:"⚡ Immediate / On Spot"},
-                {value:"THIRTY_DAYS",     label:"📅 Within 1 Month"},
+                {value:"THIRTY_DAYS",     label:"📅 30 Days"},
                 {value:"THREE_MONTHS",    label:"✈ Will Visit Dubai First"},
                 {value:"SIX_PLUS_MONTHS", label:"⏳ Not in 6 Months"},
                 {value:"WINDOW_SHOPPING", label:"📆 6+ Months / Window Shopping"},

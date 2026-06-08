@@ -411,15 +411,13 @@ export default function ConversationStreamCard({ callLogs, waMessages, notes = [
           );
           }
 
-          // ── §18 Historical remark — clean, no source badges (agents see only conversation)
+          // ── Historical remark — no source badges. Clean date header or "Historical note".
           return (
-            <div key={`imp-${idx}`} className="border-l-2 border-gray-200 dark:border-slate-600 pl-3 pr-2 py-1.5 rounded-r">
-              <div className="text-[11px] text-gray-400 dark:text-slate-500 mb-0.5">
-                {row.hasDate
-                  ? `📝 ${fmtISTDate(row.at)}`
-                  : "📝 Historical note"}
+            <div key={`imp-${idx}`} className="border-l-2 border-gray-100 dark:border-slate-700 pl-3 pr-2 py-1.5 rounded-r">
+              <div className="text-[11px] text-gray-400 dark:text-slate-500 mb-0.5 font-medium">
+                {row.hasDate ? fmtISTDate(row.at) : "Historical note"}
               </div>
-              <div className="text-xs text-gray-700 dark:text-slate-200 whitespace-pre-wrap">{row.text}</div>
+              <div className="text-xs text-gray-600 dark:text-slate-300 whitespace-pre-wrap">{row.text}</div>
             </div>
           );
         })}
