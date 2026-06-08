@@ -709,6 +709,11 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
               ? `${l.budgetCurrency} ${formatBudget(l.budgetMin, l.budgetCurrency)}`
               : null,
             interest: l.interestedUnits[0] ? `${l.interestedUnits[0].unit.project.name} ${l.interestedUnits[0].unit.configuration}` : null,
+            // Project column fallback chain:
+            // 1. Formal project link (discussed / interestedUnits)
+            // 2. notesShort (one-liner requirement often has project name)
+            // 3. configuration (e.g. "4BHK" gives type context)
+            projectHint: l.notesShort ?? l.configuration ?? null,
           };
         })}
       />

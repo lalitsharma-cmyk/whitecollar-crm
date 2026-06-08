@@ -109,6 +109,7 @@ interface Row {
   city: string | null;
   whenCanInvest: string | null;
   remarks: string | null;
+  projectHint: string | null;  // notesShort ?? configuration — fallback when no formal project linked
   // Last Activity column — what happened last + when
   lastActivityType: string | null;
   lastActivityAt: string | null;
@@ -444,9 +445,15 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
                             className="hover:text-[#0b1a33] dark:hover:text-blue-300 hover:underline">{l.name}</Link>
                         </td>
 
-                        {/* 3. Project */}
-                        <td className="px-3 py-1.5 text-gray-500 dark:text-slate-400 text-xs truncate">
-                          {l.discussedProjects[0] ?? l.interest ?? <span className="text-gray-300">—</span>}
+                        {/* 3. Project — formal link → interest unit → notesShort → configuration */}
+                        <td className="px-3 py-1.5 text-xs truncate" title={l.discussedProjects[0] ?? l.interest ?? l.projectHint ?? ""}>
+                          {l.discussedProjects[0]
+                            ? <span className="text-gray-700 dark:text-slate-200 font-medium">{l.discussedProjects[0]}</span>
+                            : l.interest
+                            ? <span className="text-gray-700 dark:text-slate-200">{l.interest}</span>
+                            : l.projectHint
+                            ? <span className="text-gray-400 dark:text-slate-500 italic">{l.projectHint}</span>
+                            : <span className="text-gray-300">—</span>}
                         </td>
 
                         {/* 4. Status — floating popover, table never shifts */}
