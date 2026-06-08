@@ -2,6 +2,7 @@ import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import Link from "next/link";
 import HRResumeUploadWidget from "@/components/HRResumeUploadWidget";
+import { CLOSED_STATUS_KEYS } from "@/lib/hrStatus";
 
 export const dynamic = "force-dynamic";
 
@@ -21,7 +22,7 @@ export default async function ResumeBankPage() {
   // All candidates — for the "attach to candidate" picker
   const [candidates, resumes] = await Promise.all([
     prisma.hRCandidate.findMany({
-      where: { ...scope, status: { notIn: ["REJECTED","OFFER_DECLINED","WRONG_NUMBER","SWITCH_OFF","NEVER_RESPONSE","NOT_RESPONDING"] as never[] } },
+      where: { ...scope, status: { notIn: CLOSED_STATUS_KEYS as never[] } },
       select: { id: true, name: true, currentProfile: true },
       orderBy: { name: "asc" },
     }),

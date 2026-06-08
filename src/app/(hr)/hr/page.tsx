@@ -2,6 +2,7 @@ import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import Link from "next/link";
 import HRFollowUpActions from "@/components/HRFollowUpActions";
+import { CLOSED_STATUS_KEYS } from "@/lib/hrStatus";
 
 export const dynamic = "force-dynamic";
 
@@ -15,11 +16,6 @@ function todayRangeIST() {
 function fmtTime(d: Date) { return d.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: true, timeZone: "Asia/Kolkata" }); }
 function fmtDay(d: Date) { return d.toLocaleDateString("en-IN", { day: "numeric", month: "short", timeZone: "Asia/Kolkata" }); }
 function fmt(s: string) { return s.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase()); }
-
-const CLOSED_OR_DONE = [
-  "NOT_INTERESTED", "NOT_SUITABLE", "HIGH_SALARY", "OTHER_PROFILE", "REJECTED",
-  "OFFER_DECLINED", "WRONG_NUMBER", "SWITCH_OFF", "NEVER_RESPONSE", "NOT_RESPONDING", "JOINED",
-];
 
 // Inline call / WhatsApp / open-profile actions for interview & no-show rows.
 function RowActions({ id, phone }: { id: string; phone: string | null }) {
@@ -90,7 +86,7 @@ export default async function HRDashboard() {
       include: { candidate: { select: { id: true, name: true, phone: true } } },
     }),
     prisma.hRInterview.findMany({
-      where: { attendanceStatus: "NO_SHOW", candidate: { ...scope, status: { notIn: CLOSED_OR_DONE as never[] } } },
+      where: { attendanceStatus: "NO_SHOW", candidate: { ...scope, status: { notIn: CLOSED_STATUS_KEYS as never[] } } },
       orderBy: { scheduledAt: "desc" }, take: 20,
       include: { candidate: { select: { id: true, name: true, phone: true } } },
     }),

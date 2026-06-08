@@ -4,13 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { HRCandidateStatus, HRFollowUpType } from "@prisma/client";
 import { fingerprintFor } from "@/lib/assignment";
 import { hrDuplicateWhere } from "@/lib/hrDuplicates";
-
-// Closed statuses — suppressed from default list view
-const CLOSED_STATUSES: HRCandidateStatus[] = [
-  "NOT_INTERESTED","NOT_SUITABLE","HIGH_SALARY","OTHER_PROFILE",
-  "REJECTED","OFFER_DECLINED","WRONG_NUMBER","SWITCH_OFF",
-  "NEVER_RESPONSE","NOT_RESPONDING",
-];
+import { CLOSED_STATUS_KEYS } from "@/lib/hrStatus";
 
 export async function GET(req: NextRequest) {
   const me = await requireUser();
@@ -26,7 +20,7 @@ export async function GET(req: NextRequest) {
   if (status) {
     where.status = status as HRCandidateStatus;
   } else if (!showClosed) {
-    where.status = { notIn: CLOSED_STATUSES };
+    where.status = { notIn: CLOSED_STATUS_KEYS };
   }
 
   if (search) {
@@ -73,7 +67,7 @@ export async function POST(req: NextRequest) {
   }
 
   const status = (body.status as HRCandidateStatus) || "NEW";
-  const isActive = !CLOSED_STATUSES.includes(status);
+  const isActive = !CLOSED_STATUS_KEYS.includes(status);
   const nextActionDate = body.nextActionDate ? new Date(body.nextActionDate) : null;
 
   // No active candidate may be saved without a next action + follow-up.

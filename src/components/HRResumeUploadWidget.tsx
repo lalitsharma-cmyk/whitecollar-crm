@@ -51,7 +51,7 @@ export default function HRResumeUploadWidget({ candidates, preselectedCandidateI
         ${file ? "border-green-400 bg-green-50/30" : "border-gray-200 hover:border-[#1a2e4a]"}`}>
         <input
           type="file"
-          accept=".pdf,.jpg,.jpeg,.png,.webp,.heic,application/pdf,image/*"
+          accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.webp,.heic,application/pdf,image/*"
           onChange={e => { setFile(e.target.files?.[0] ?? null); setErr(null); setDone(false); }}
           className="hidden"
         />
@@ -64,7 +64,7 @@ export default function HRResumeUploadWidget({ candidates, preselectedCandidateI
           <div className="text-sm text-gray-500">
             <div className="text-2xl mb-1">📎</div>
             Drop resume here or <b className="text-[#1a2e4a] dark:text-blue-400">click to browse</b>
-            <div className="text-[11px] text-gray-400 mt-0.5">PDF, JPG, PNG up to 5 MB</div>
+            <div className="text-[11px] text-gray-400 mt-0.5">PDF, DOC, or image up to 5 MB</div>
           </div>
         )}
       </label>

@@ -11,15 +11,16 @@ import {
 type NavItem = { href: string; label: string; Icon: React.ElementType; badge?: number };
 
 const NAV: NavItem[] = [
-  { href: "/hr",           label: "Dashboard",       Icon: LayoutDashboard },
-  { href: "/hr/candidates",  label: "Candidates",       Icon: Users },
-  { href: "/hr/interviews",  label: "Interviews",       Icon: CalendarDays },
-  { href: "/hr/followups",   label: "Follow Ups",       Icon: Clock },
-  { href: "/hr/calendar",    label: "Calendar",         Icon: CalendarDays },
-  { href: "/hr/missed",      label: "Missed Follow Ups",Icon: AlertCircle },
-  { href: "/hr/resume-bank", label: "Resume Bank",      Icon: FileText },
-  { href: "/hr/reports",     label: "Reports",          Icon: BarChart3 },
-  { href: "/hr/settings",    label: "Settings",         Icon: Settings },
+  { href: "/hr",             label: "Dashboard",  Icon: LayoutDashboard },
+  { href: "/hr/candidates",  label: "Candidates", Icon: Users },
+  { href: "/hr/interviews",  label: "Interviews", Icon: CalendarDays },
+  { href: "/hr/followups",   label: "Follow Ups", Icon: Clock },
+  { href: "/hr/resume-bank", label: "Resume Bank",Icon: FileText },
+];
+// Super Admin only
+const ADMIN_NAV: NavItem[] = [
+  { href: "/hr/reports",  label: "Reports",  Icon: BarChart3 },
+  { href: "/hr/settings", label: "Settings", Icon: Settings },
 ];
 
 const BOTTOM_NAV: NavItem[] = [
@@ -42,6 +43,7 @@ export default function HRShell({ children, user, overdueCount = 0 }: Props) {
   const [collapsed, setCollapsed] = useState(false);
 
   const initials = user.name.split(" ").map(w => w[0]).join("").slice(0, 2).toUpperCase();
+  const navItems = user.role === "ADMIN" ? [...NAV, ...ADMIN_NAV] : NAV;
 
   function isActive(href: string) {
     if (href === "/hr") return pathname === "/hr";
@@ -97,17 +99,7 @@ export default function HRShell({ children, user, overdueCount = 0 }: Props) {
 
         {/* Nav items */}
         <nav className={`flex-1 py-3 space-y-0.5 overflow-y-auto ${collapsed ? "px-1" : "px-3"}`}>
-          {NAV.map(item => navItem(item, collapsed))}
-
-          {/* Divider + back to Sales CRM */}
-          <div className="border-t border-white/10 my-2" />
-          <Link href="/dashboard"
-            className={`flex items-center gap-3 px-3 py-2 rounded-lg text-[11px] text-slate-400 hover:text-slate-200 hover:bg-white/10 transition
-              ${collapsed ? "justify-center px-2" : ""}`}
-            title={collapsed ? "Sales CRM" : undefined}>
-            <ChevronLeft className="w-3.5 h-3.5 shrink-0" />
-            {!collapsed && "Back to Sales CRM"}
-          </Link>
+          {navItems.map(item => navItem(item, collapsed))}
         </nav>
 
         {/* User + collapse toggle */}
@@ -156,13 +148,7 @@ export default function HRShell({ children, user, overdueCount = 0 }: Props) {
                 </button>
               </div>
               <nav className="flex-1 py-3 px-3 space-y-0.5 overflow-y-auto">
-                {NAV.map(item => navItem(item, false))}
-                <div className="border-t border-white/10 my-2" />
-                <Link href="/dashboard" onClick={() => setMobileOpen(false)}
-                  className="flex items-center gap-3 px-3 py-2 rounded-lg text-[11px] text-slate-400 hover:text-slate-200 hover:bg-white/10 transition">
-                  <ChevronLeft className="w-3.5 h-3.5" />
-                  Back to Sales CRM
-                </Link>
+                {navItems.map(item => navItem(item, false))}
               </nav>
             </div>
           </div>

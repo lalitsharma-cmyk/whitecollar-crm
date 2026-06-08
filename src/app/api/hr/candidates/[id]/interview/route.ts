@@ -6,8 +6,8 @@ import { HRInterviewType, HRCandidateStatus } from "@prisma/client";
 const STATUS_MAP: Record<HRInterviewType, HRCandidateStatus> = {
   VIRTUAL:      "VIRTUAL_INTERVIEW_SCHEDULED",
   HR:           "VIRTUAL_INTERVIEW_SCHEDULED",
-  FINAL:        "FINAL_INTERVIEW_SCHEDULED",
-  FACE_TO_FACE: "FINAL_INTERVIEW_SCHEDULED",
+  FINAL:        "F2F_INTERVIEW_SCHEDULED",
+  FACE_TO_FACE: "F2F_INTERVIEW_SCHEDULED",
 };
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -101,13 +101,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
   // Log attendance outcome
   if (body.attendanceStatus === "ATTENDED") {
-    const typeMap: Record<HRInterviewType, HRCandidateStatus> = {
-      VIRTUAL:      "HR_INTERVIEW_COMPLETED",
-      HR:           "HR_INTERVIEW_COMPLETED",
-      FINAL:        "FINAL_INTERVIEW_COMPLETED",
-      FACE_TO_FACE: "FINAL_INTERVIEW_COMPLETED",
-    };
-    const newStatus = typeMap[iv.type] ?? "PIPELINE";
+    const newStatus: HRCandidateStatus = "INTERVIEW_HELD";
     await prisma.$transaction([
       prisma.hRCandidate.update({ where: { id: candidateId }, data: { status: newStatus } }),
       prisma.hRActivity.create({
@@ -116,10 +110,28 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       }),
     ]);
   } else if (body.attendanceStatus === "NO_SHOW") {
-    await prisma.hRActivity.create({
-      data: { candidateId, userId: me.id, type: "INTERVIEW_NO_SHOW",
-        notes: `No-show: ${body.noShowReason ?? "reason unknown"}` },
-    });
+    // Mark candidate No Show and auto-create a recovery follow-up for tomorrow morning.
+    const recovery = new Date();
+    recovery.setDate(recovery.getDate() + 1);
+    recovery.setHours(10, 0, 0, 0);
+    await prisma.$transaction([
+      prisma.hRCandidate.update({
+        where: { id: candidateId },
+        data: { status: "NO_SHOW", nextAction: "No-show recovery call", nextActionDate: recovery },
+      }),
+      prisma.hRActivity.create({
+        data: { candidateId, userId: me.id, type: "INTERVIEW_NO_SHOW",
+          notes: `No-show: ${body.noShowReason ?? "reason unknown"}` },
+      }),
+      prisma.hRFollowUp.create({
+        data: { candidateId, userId: me.id, type: "NO_SHOW_RECOVERY", dueAt: recovery,
+          notes: "Candidate did not attend — recovery call", autoCreated: true },
+      }),
+      prisma.hRActivity.create({
+        data: { candidateId, userId: me.id, type: "FOLLOWUP_CREATED",
+          notes: "No-show recovery follow-up auto-created for tomorrow" },
+      }),
+    ]);
   }
 
   return NextResponse.json({ interview: iv });

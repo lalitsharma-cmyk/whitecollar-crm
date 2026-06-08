@@ -3,6 +3,7 @@ import { useState, useTransition, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import HRResumeUploadWidget from "@/components/HRResumeUploadWidget";
+import { ACTIVE_STATUS_DEFS, CLOSED_STATUS_DEFS, statusColor, statusLabel } from "@/lib/hrStatus";
 import type { HRCandidateStatus, HRActivityType, HRFollowUpType, HRInterviewType } from "@prisma/client";
 
 // ─── Type definitions ─────────────────────────────────────────────────────────
@@ -29,8 +30,6 @@ interface Props {
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
-const ACTIVE_STATUSES: HRCandidateStatus[] = ["NEW","NOT_CALLED","PIPELINE","VIRTUAL_INTERVIEW_SCHEDULED","HR_INTERVIEW_COMPLETED","FINAL_INTERVIEW_SCHEDULED","FINAL_INTERVIEW_COMPLETED","SHORTLISTED","OFFER_RELEASED","JOINED","HOLD"];
-const CLOSED_STATUSES: HRCandidateStatus[] = ["NOT_INTERESTED","NOT_SUITABLE","HIGH_SALARY","OTHER_PROFILE","REJECTED","OFFER_DECLINED","WRONG_NUMBER","SWITCH_OFF","NEVER_RESPONSE","NOT_RESPONDING"];
 
 const CALL_OUTCOMES: { type: HRActivityType; label: string; color: string }[] = [
   { type: "CALL_CONNECTED",    label: "✅ Connected",    color: "bg-emerald-100 text-emerald-800 border-emerald-300" },
@@ -44,18 +43,6 @@ const CALL_OUTCOMES: { type: HRActivityType; label: string; color: string }[] = 
 const FOLLOWUP_TYPES: HRFollowUpType[] = ["CALL_BACK","INTERVIEW_CONFIRMATION","REMINDER","WHATSAPP_FOLLOWUP","SALARY_DISCUSSION","OFFER_DISCUSSION","JOINING_FOLLOWUP","NO_SHOW_RECOVERY","CUSTOM"];
 const INTERVIEW_TYPES: HRInterviewType[] = ["VIRTUAL","HR","FINAL","FACE_TO_FACE"];
 
-const STATUS_COLOR: Record<string, string> = {
-  NEW:"bg-blue-100 text-blue-800",PIPELINE:"bg-emerald-100 text-emerald-800",
-  VIRTUAL_INTERVIEW_SCHEDULED:"bg-indigo-100 text-indigo-800",
-  HR_INTERVIEW_COMPLETED:"bg-cyan-100 text-cyan-800",
-  FINAL_INTERVIEW_SCHEDULED:"bg-purple-100 text-purple-800",
-  FINAL_INTERVIEW_COMPLETED:"bg-violet-100 text-violet-800",
-  SHORTLISTED:"bg-teal-100 text-teal-800",OFFER_RELEASED:"bg-amber-100 text-amber-800",
-  JOINED:"bg-green-100 text-green-800",HOLD:"bg-orange-100 text-orange-800",
-  NOT_INTERESTED:"bg-red-100 text-red-700",REJECTED:"bg-red-200 text-red-800",
-  NOT_SUITABLE:"bg-red-100 text-red-700",HIGH_SALARY:"bg-pink-100 text-pink-700",
-  OFFER_DECLINED:"bg-orange-200 text-orange-800",
-};
 
 const ACT_LABEL: Record<string, string> = {
   CALL_CONNECTED:"📞 Call — Connected",CALL_NOT_ANSWERED:"📵 Call — No Answer",
@@ -202,8 +189,8 @@ export default function HRCandidateDetail({ candidate: init, agents, me }: Props
             </div>
           </div>
           <div className="flex flex-col items-end gap-2">
-            <span className={`text-xs px-2.5 py-1 rounded-full font-semibold ${STATUS_COLOR[c.status] ?? "bg-gray-100 text-gray-600"}`}>
-              {fmt(c.status)}
+            <span className={`text-xs px-2.5 py-1 rounded-full font-semibold ${statusColor(c.status)}`}>
+              {statusLabel(c.status)}
             </span>
             {c.primaryOwner && <span className="text-[11px] text-gray-500">Owner: {c.primaryOwner.name}</span>}
           </div>
@@ -307,21 +294,21 @@ export default function HRCandidateDetail({ candidate: init, agents, me }: Props
             <div className="grid grid-cols-2 gap-2">
               <div>
                 <div className="text-[10px] font-semibold text-gray-500 mb-1 uppercase tracking-wide">Active</div>
-                {ACTIVE_STATUSES.map(s=>(
-                  <button key={s} type="button"
-                    onClick={()=>setNewStatus(s)}
-                    className={`block w-full text-left px-2 py-1 rounded text-xs mb-0.5 ${newStatus===s?"bg-blue-100 text-blue-800 font-semibold":"hover:bg-gray-100 text-gray-700"}`}>
-                    {fmt(s)}
+                {ACTIVE_STATUS_DEFS.map(({ key, label })=>(
+                  <button key={key} type="button"
+                    onClick={()=>setNewStatus(key)}
+                    className={`block w-full text-left px-2 py-1 rounded text-xs mb-0.5 ${newStatus===key?"bg-blue-100 text-blue-800 font-semibold":"hover:bg-gray-100 text-gray-700"}`}>
+                    {label}
                   </button>
                 ))}
               </div>
               <div>
                 <div className="text-[10px] font-semibold text-gray-500 mb-1 uppercase tracking-wide">Closed</div>
-                {CLOSED_STATUSES.map(s=>(
-                  <button key={s} type="button"
-                    onClick={()=>setNewStatus(s)}
-                    className={`block w-full text-left px-2 py-1 rounded text-xs mb-0.5 ${newStatus===s?"bg-red-100 text-red-800 font-semibold":"hover:bg-gray-100 text-gray-700"}`}>
-                    {fmt(s)}
+                {CLOSED_STATUS_DEFS.map(({ key, label })=>(
+                  <button key={key} type="button"
+                    onClick={()=>setNewStatus(key)}
+                    className={`block w-full text-left px-2 py-1 rounded text-xs mb-0.5 ${newStatus===key?"bg-red-100 text-red-800 font-semibold":"hover:bg-gray-100 text-gray-700"}`}>
+                    {label}
                   </button>
                 ))}
               </div>

@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { ACTIVE_STATUS_DEFS, CLOSED_STATUS_DEFS, CLOSED_STATUS_KEYS } from "@/lib/hrStatus";
 
 interface Agent { id: string; name: string; }
 interface Props { agents: Agent[]; meId: string; }
@@ -10,19 +11,7 @@ const POSITIONS = ["Sales Executive", "BDE", "BDM", "Team Leader", "Manager", "H
 const SOURCES   = ["Naukri", "Indeed", "Referral", "Walk-in", "LinkedIn", "Database", "Consultant", "Email", "Whatsapp", "Other"];
 const NOTICE    = ["Immediate", "7 days", "15 days", "30 days", "45 days", "60 days", "90 days", "Serving Notice"];
 
-const ACTIVE_STATUSES: [string, string][] = [
-  ["NEW", "New"], ["NOT_CALLED", "Not Called By HR"], ["PIPELINE", "Pipeline"],
-  ["VIRTUAL_INTERVIEW_SCHEDULED", "Virtual Interview Scheduled"], ["HR_INTERVIEW_COMPLETED", "HR Interview Completed"],
-  ["FINAL_INTERVIEW_SCHEDULED", "Final Interview Scheduled"], ["FINAL_INTERVIEW_COMPLETED", "Final Interview Completed"],
-  ["SHORTLISTED", "Shortlisted"], ["OFFER_RELEASED", "Offer Released"], ["JOINED", "Joined"], ["HOLD", "Hold"],
-];
-const CLOSED_STATUSES: [string, string][] = [
-  ["NOT_INTERESTED", "Not Interested"], ["NOT_SUITABLE", "Not Suitable"], ["HIGH_SALARY", "High Salary"],
-  ["OTHER_PROFILE", "Other Profile"], ["REJECTED", "Rejected"], ["OFFER_DECLINED", "Offer Declined"],
-  ["WRONG_NUMBER", "Wrong Number"], ["SWITCH_OFF", "Switch Off"], ["NEVER_RESPONSE", "Never Response"],
-  ["NOT_RESPONDING", "Not Responding"],
-];
-const CLOSED_SET = new Set(CLOSED_STATUSES.map(([k]) => k));
+const CLOSED_SET = new Set<string>(CLOSED_STATUS_KEYS);
 
 const FOLLOWUP_TYPES: [string, string][] = [
   ["CALL_BACK", "Call Back"], ["INTERVIEW_CONFIRMATION", "Interview Confirmation"], ["REMINDER", "Reminder"],
@@ -195,10 +184,10 @@ export default function HRAddCandidateForm({ agents, meId }: Props) {
             <label className={lbl}>Current Status <span className="text-red-500">*</span></label>
             <select className={inp} value={form.status} onChange={set("status")} required>
               <optgroup label="Active">
-                {ACTIVE_STATUSES.map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                {ACTIVE_STATUS_DEFS.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
               </optgroup>
               <optgroup label="Closed">
-                {CLOSED_STATUSES.map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                {CLOSED_STATUS_DEFS.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
               </optgroup>
             </select>
           </div>
@@ -324,13 +313,13 @@ export default function HRAddCandidateForm({ agents, meId }: Props) {
         <label className="block border-2 border-dashed border-gray-200 dark:border-slate-600 rounded-xl p-4 text-center cursor-pointer hover:border-[#1a2e4a] transition">
           <input
             type="file" multiple
-            accept=".pdf,.jpg,.jpeg,.png,.webp,.heic,application/pdf,image/*"
+            accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.webp,.heic,application/pdf,image/*"
             onChange={e => { addFiles(e.target.files); e.target.value = ""; }}
             className="hidden"
           />
           <div className="text-2xl mb-1">📎</div>
           <div className="text-sm text-gray-500">
-            Upload resume — PDF, image, or phone photo · <b className="text-[#1a2e4a] dark:text-blue-400">click to browse</b>
+            Upload resume — PDF, DOC, image, or phone photo · <b className="text-[#1a2e4a] dark:text-blue-400">click to browse</b>
           </div>
           <div className="text-[11px] text-gray-400 mt-0.5">You can add multiple files; the newest is marked active.</div>
         </label>

@@ -33,7 +33,7 @@ export default async function InterviewsPage({ searchParams }: { searchParams: P
   if (filter === "tomorrow") where = { ...where, scheduledAt: { gte: end, lt: tomorrow }, attendanceStatus: "SCHEDULED" };
   if (filter === "pending-confirm") where = { ...where, scheduledAt: { gte: new Date() }, confirmationStatus: "PENDING" };
   if (filter === "upcoming") where = { ...where, scheduledAt: { gte: new Date() }, attendanceStatus: "SCHEDULED" };
-  if (filter === "all")      where = { ...where, candidate: scope };
+  if (filter === "no-show-recovery") where = { ...where, attendanceStatus: "NO_SHOW" };
 
   const interviews = await prisma.hRInterview.findMany({
     where,
@@ -49,8 +49,8 @@ export default async function InterviewsPage({ searchParams }: { searchParams: P
     { key: "today",           label: "Today" },
     { key: "tomorrow",        label: "Tomorrow" },
     { key: "upcoming",        label: "Upcoming" },
-    { key: "pending-confirm", label: "Pending Confirmation" },
-    { key: "all",             label: "All" },
+    { key: "pending-confirm",  label: "Pending Confirmation" },
+    { key: "no-show-recovery", label: "No Show Recovery" },
   ];
 
   return (

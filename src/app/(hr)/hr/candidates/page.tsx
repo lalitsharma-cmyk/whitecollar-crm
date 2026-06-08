@@ -3,10 +3,9 @@ import { prisma } from "@/lib/prisma";
 import Link from "next/link";
 import type { HRCandidateStatus } from "@prisma/client";
 import HRCandidateTable from "@/components/HRCandidateTable";
+import { CLOSED_STATUS_KEYS } from "@/lib/hrStatus";
 
 export const dynamic = "force-dynamic";
-
-const CLOSED: HRCandidateStatus[] = ["NOT_INTERESTED","NOT_SUITABLE","HIGH_SALARY","OTHER_PROFILE","REJECTED","OFFER_DECLINED","WRONG_NUMBER","SWITCH_OFF","NEVER_RESPONSE","NOT_RESPONDING"];
 
 export default async function CandidatesPage({ searchParams }: { searchParams: Promise<Record<string,string>> }) {
   const me = await requireUser();
@@ -17,7 +16,7 @@ export default async function CandidatesPage({ searchParams }: { searchParams: P
   const scope = me.role === "AGENT" ? { OR: [{ primaryOwnerId: me.id }, { secondaryOwnerId: me.id }] } : {};
   const where: NonNullable<Parameters<typeof prisma.hRCandidate.findMany>[0]>["where"] = { ...scope };
   if (filterStatus) where.status = filterStatus;
-  else where.status = { notIn: showClosed ? [] : CLOSED };
+  else where.status = { notIn: showClosed ? [] : CLOSED_STATUS_KEYS };
 
   const [candidates, agents, counts] = await Promise.all([
     prisma.hRCandidate.findMany({

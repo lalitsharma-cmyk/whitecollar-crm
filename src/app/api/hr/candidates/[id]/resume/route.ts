@@ -14,9 +14,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   if (!(file instanceof File)) return NextResponse.json({ error: "No file uploaded" }, { status: 400 });
   if (file.size > MAX_BYTES) return NextResponse.json({ error: "File too large (max 5 MB)" }, { status: 413 });
 
-  const allowed = ["application/pdf", "image/jpeg", "image/png", "image/webp", "image/heic"];
-  if (!allowed.includes(file.type) && !file.name.toLowerCase().endsWith(".pdf")) {
-    return NextResponse.json({ error: "Only PDF, JPG, PNG images are supported" }, { status: 400 });
+  const allowed = ["application/pdf", "image/jpeg", "image/png", "image/webp", "image/heic",
+    "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"];
+  if (!allowed.includes(file.type) && !/\.(pdf|docx?|jpe?g|png|webp|heic)$/i.test(file.name)) {
+    return NextResponse.json({ error: "Only PDF, DOC, DOCX, or image files are supported" }, { status: 400 });
   }
 
   const bytes = await file.arrayBuffer();

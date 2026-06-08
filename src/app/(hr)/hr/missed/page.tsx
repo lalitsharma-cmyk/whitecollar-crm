@@ -2,10 +2,9 @@ import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import Link from "next/link";
 import HRFollowUpActions from "@/components/HRFollowUpActions";
+import { CLOSED_STATUS_KEYS } from "@/lib/hrStatus";
 
 export const dynamic = "force-dynamic";
-
-const CLOSED: string[] = ["NOT_INTERESTED","NOT_SUITABLE","HIGH_SALARY","OTHER_PROFILE","REJECTED","OFFER_DECLINED","WRONG_NUMBER","SWITCH_OFF","NEVER_RESPONSE","NOT_RESPONDING","JOINED"];
 
 function fmt(s:string){return s.replace(/_/g," ").replace(/\b\w/g,c=>c.toUpperCase());}
 
@@ -24,7 +23,7 @@ export default async function MissedPage({ searchParams }: { searchParams: Promi
       include: { candidate: { select: { id:true, name:true, phone:true, primaryOwner:{ select:{name:true} } } }, user: { select:{name:true} } },
     }),
     prisma.hRCandidate.findMany({
-      where: { ...scope, nextActionDate: null, status: { notIn: CLOSED as never[] } },
+      where: { ...scope, nextActionDate: null, status: { notIn: CLOSED_STATUS_KEYS as never[] } },
       orderBy: { createdAt: "asc" },
       take: 50,
       select: { id:true, name:true, phone:true, status:true, createdAt:true, primaryOwner:{ select:{name:true} } },

@@ -1,8 +1,10 @@
 import { requireUser } from "@/lib/auth";
+import { redirect } from "next/navigation";
 import Link from "next/link";
 export const dynamic = "force-dynamic";
 export default async function HRReportsPage() {
-  await requireUser();
+  const me = await requireUser();
+  if (me.role !== "ADMIN") redirect("/hr");
   return (
     <div className="p-6 max-w-3xl mx-auto text-center mt-12">
       <div className="text-5xl mb-4">📊</div>
