@@ -1,16 +1,31 @@
 import { requireUser } from "@/lib/auth";
 import { redirect } from "next/navigation";
-import Link from "next/link";
+import { prisma } from "@/lib/prisma";
+import HRUserManager from "@/components/HRUserManager";
+
 export const dynamic = "force-dynamic";
+
 export default async function HRSettingsPage() {
   const me = await requireUser();
   if (me.role !== "ADMIN") redirect("/hr");
+
+  const users = await prisma.user.findMany({
+    orderBy: [{ active: "desc" }, { name: "asc" }],
+    select: { id: true, name: true, email: true, role: true, team: true, active: true, hrOnly: true },
+  });
+
   return (
-    <div className="p-6 max-w-3xl mx-auto text-center mt-12">
-      <div className="text-5xl mb-4">⚙️</div>
-      <h1 className="text-xl font-bold mb-2">HR Settings</h1>
-      <p className="text-gray-500 text-sm mb-4">Configure HR module preferences, WhatsApp templates, and user access. Coming in Phase 2.</p>
-      <Link href="/hr" className="mt-4 inline-block text-sm text-blue-600 hover:underline">← Dashboard</Link>
+    <div className="p-4 sm:p-6 max-w-4xl mx-auto space-y-5">
+      <div>
+        <h1 className="text-xl font-bold text-gray-900 dark:text-white">Settings</h1>
+        <p className="text-sm text-gray-500">Manage users &amp; HR access</p>
+      </div>
+
+      <HRUserManager initialUsers={users as never} meId={me.id} />
+
+      <div className="card p-4 text-xs text-gray-400">
+        Statuses, sources and interview types are currently defined in code. If you want them editable here too, just say so.
+      </div>
     </div>
   );
 }
