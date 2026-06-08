@@ -162,6 +162,7 @@ export default async function ColdDataDetailPage({ params }: { params: Promise<{
         waMessages={lead.waMessages}
         notes={lead.notes}
         forwardedTeam={lead.forwardedTeam}
+        rawRemarks={lead.remarks}
       />
 
       {/* ── Quick note ── */}

@@ -105,3 +105,34 @@ export function parseRemarks(cell: string): ParsedRemark[] {
   results.sort((a, b) => a.when.getTime() - b.when.getTime());
   return results;
 }
+
+/**
+ * Extract all text segments from a remarks cell that do NOT have a
+ * parseable date — e.g. the original inquiry text, plain agent notes,
+ * WhatsApp message content without a date stamp.
+ *
+ * These are the lines that parseRemarks() silently drops. We surface
+ * them in the Conversation History as "Import note" entries so nothing
+ * is ever lost from the sheet.
+ */
+export function extractUndatedSegments(cell: string): string[] {
+  if (!cell || typeof cell !== "string") return [];
+
+  // Normalise separators (MIS uses ",,,,,," as line breaks)
+  const text = cell.replace(/,{2,}/g, "\n").replace(/\r\n/g, "\n").trim();
+
+  // Split on lines that START a dated entry. Everything before the first
+  // dated entry, and any line not consumed by the regex, is undated.
+  const datedPattern = /(?:[A-Z][A-Za-z]{1,15}(?:\s+[A-Z][A-Za-z]{1,15}){0,2}\s*:\s*)?[oO]n\s+[\dA-Za-z]+(?:\s+[\dA-Za-z]+){1,3}\s*\([^)]+\)/;
+
+  const lines = text.split("\n").map(l => l.trim()).filter(Boolean);
+  const undated: string[] = [];
+
+  for (const line of lines) {
+    if (datedPattern.test(line)) continue; // dated — already parsed into callLogs
+    if (line.length < 3) continue;         // noise
+    undated.push(line);
+  }
+
+  return undated;
+}

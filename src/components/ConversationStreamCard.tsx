@@ -11,6 +11,7 @@
 import { useState } from "react";
 import { fmtIST12Paren, fmtISTDate } from "@/lib/datetime";
 import type { CallLog, WhatsAppMessage } from "@prisma/client";
+import { extractUndatedSegments } from "@/lib/remarkParser";
 
 // Voice notes + quick text notes — all saved to the Note model via
 // /api/leads/[id]/notes. Displayed inline in the stream in IST order.
@@ -68,11 +69,10 @@ interface Props {
   callLogs: CallLogWithUser[];
   waMessages: WhatsAppMessage[];
   notes?: NoteWithUser[];
-  // Optional: when "Dubai", surface a tiny UAE-consent reminder tooltip on the
-  // audio control. UAE call-recording rules require explicit consent, so we
-  // hint to the agent that any recording here likely belongs to the India team
-  // workflow only. Caller may omit; we degrade silently.
   forwardedTeam?: string | null;
+  // Raw remarks text from the imported sheet — undated lines that the
+  // date-parser skips are shown as "Import notes" so nothing is ever lost.
+  rawRemarks?: string | null;
 }
 
 // Discriminated union — each row in the merged stream is either a call,
@@ -167,7 +167,7 @@ function buildDisplayRows(rows: StreamRow[]): DisplayRow[] {
 
 type FilterType = "ALL" | "CONNECTED" | "NO_ANSWER" | "WA";
 
-export default function ConversationStreamCard({ callLogs, waMessages, notes = [], forwardedTeam }: Props) {
+export default function ConversationStreamCard({ callLogs, waMessages, notes = [], forwardedTeam, rawRemarks }: Props) {
   const [expandedGroups, setExpandedGroups] = useState<Set<number>>(new Set());
   const [filter, setFilter] = useState<FilterType>("ALL");
 
@@ -407,13 +407,35 @@ export default function ConversationStreamCard({ callLogs, waMessages, notes = [
         <span><span className="inline-block w-2 h-2 bg-purple-400 rounded-full mr-1 align-middle" />📤 Agent WA</span>
         <span><span className="inline-block w-2 h-2 bg-amber-400 rounded-full mr-1 align-middle" />📝 Note</span>
       </div>
-      {/* Date band — first → last conversation (handy at a glance even on a
-          super long history). */}
+      {/* Date band — first → last conversation */}
       {rows.length > 1 && (
         <div className="mt-2 text-[10px] text-gray-500">
           {fmtISTDate(rows[rows.length - 1].at)} → {fmtISTDate(rows[0].at)}
         </div>
       )}
+
+      {/* ── Undated import segments ───────────────────────────────────────
+          Lines from the remarks cell that have NO date stamp — original
+          inquiry text, plain agent notes, WhatsApp snippets without a date.
+          Shown verbatim so nothing from the imported sheet is ever lost. */}
+      {rawRemarks && (() => {
+        const undated = extractUndatedSegments(rawRemarks);
+        if (undated.length === 0) return null;
+        return (
+          <div className="mt-4 pt-3 border-t border-dashed border-gray-200 dark:border-slate-700">
+            <div className="text-[10px] uppercase tracking-wide text-gray-400 dark:text-slate-500 font-semibold mb-2">
+              📋 From imported sheet (no date)
+            </div>
+            <div className="space-y-1.5">
+              {undated.map((line, i) => (
+                <div key={i} className="border-l-2 border-gray-200 dark:border-slate-600 pl-3 py-1 text-xs text-gray-600 dark:text-slate-300 whitespace-pre-wrap">
+                  {line}
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

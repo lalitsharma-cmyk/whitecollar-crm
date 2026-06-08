@@ -675,9 +675,14 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
             team: l.forwardedTeam,
             owner: l.owner ? { name: l.owner.name, avatarColor: l.owner.avatarColor ?? "bg-slate-500" } : null,
             // Command Center fields
-            budgetFormatted: formatBudget(l.budgetMin, l.budgetCurrency) !== "—"
-              ? `${l.budgetCurrency} ${formatBudget(l.budgetMin, l.budgetCurrency)}`
-              : null,
+            budgetFormatted: (() => {
+              const fmt = formatBudget(l.budgetMin, l.budgetCurrency);
+              if (fmt === "—") return null;
+              // INR → ₹ symbol; AED/other → keep currency code
+              const prefix = l.budgetCurrency === "INR" ? "₹" : l.budgetCurrency;
+              const maxFmt = l.budgetMax ? formatBudget(l.budgetMax, l.budgetCurrency) : null;
+              return maxFmt && maxFmt !== fmt ? `${prefix} ${fmt} – ${maxFmt}` : `${prefix} ${fmt}`;
+            })(),
             bantCount,
             needSummary: l.needSummary ?? null,
             discussedProjects: l.discussed.map((d) => d.project.name),
@@ -705,9 +710,12 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
               totalPropertiesFound: intel.totalPropertiesFound,
             } : null,
             // Legacy fields kept for bulk actions and mobile card
-            budget: formatBudget(l.budgetMin, l.budgetCurrency) !== "—"
-              ? `${l.budgetCurrency} ${formatBudget(l.budgetMin, l.budgetCurrency)}`
-              : null,
+            budget: (() => {
+              const fmt = formatBudget(l.budgetMin, l.budgetCurrency);
+              if (fmt === "—") return null;
+              const prefix = l.budgetCurrency === "INR" ? "₹" : l.budgetCurrency;
+              return `${prefix} ${fmt}`;
+            })(),
             interest: l.interestedUnits[0] ? `${l.interestedUnits[0].unit.project.name} ${l.interestedUnits[0].unit.configuration}` : null,
             // Project column fallback chain:
             // 1. Formal project link (discussed / interestedUnits)

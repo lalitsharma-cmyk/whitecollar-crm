@@ -733,7 +733,7 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
             Comes before Quick Note (voice-first: voice note > conversation > quick note). */}
         <div data-lead-section="timeline">
           <CallStatsBar callLogs={lead.callLogs.map((c) => ({ duration: c.durationSec, outcome: c.outcome, startedAt: c.startedAt }))} />
-          <ConversationStreamCard callLogs={lead.callLogs} waMessages={lead.waMessages} notes={lead.notes} forwardedTeam={lead.forwardedTeam} />
+          <ConversationStreamCard callLogs={lead.callLogs} waMessages={lead.waMessages} notes={lead.notes} forwardedTeam={lead.forwardedTeam} rawRemarks={lead.remarks} />
         </div>
 
         {/* QUICK NOTE — secondary (spec §9: Quick Note is secondary, must not dominate).
