@@ -35,7 +35,7 @@ import BestCallTimeChip from "@/components/BestCallTimeChip";
 import CallStatsBar from "@/components/CallStatsBar";
 // LeadJourneyBar removed — stage pipeline bar replaced by currentStatus (Excel/MIS workflow)
 import { formatBudget } from "@/lib/budgetParse";
-import { EXCEL_STATUSES, statusColor } from "@/lib/lead-statuses";
+import { statusesForTeam, statusColor } from "@/lib/lead-statuses";
 import LinkedContactsCard from "@/components/LinkedContactsCard";
 import InvestorBanner from "@/components/InvestorBanner";
 import StageDurationBadge from "@/components/StageDurationBadge";
@@ -637,7 +637,7 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
                     field="currentStatus"
                     type="select"
                     value={lead.currentStatus ?? ""}
-                    options={EXCEL_STATUSES.map(s => ({ value: s, label: s }))}
+                    options={statusesForTeam(lead.forwardedTeam).map(s => ({ value: s, label: s }))}
                     placeholder="Set status"
                   />
                 </span>

@@ -1,72 +1,124 @@
 // Excel/MIS Status values used by White Collar Realty.
-// These are the team's own status vocabulary — they come from the Excel MIS sheet
-// and should be preserved exactly.
 //
-// STATUS IS THE ONLY WORKFLOW. There is no Stage system.
-// No "won / lost / open" grouping — every status is equal.
+// TWO SEPARATE STATUS MASTERS — India team and Dubai team have completely
+// different sales workflows. Status dropdowns change dynamically based on
+// the lead's forwardedTeam. No combined list is shown anywhere.
+//
+// STATUS IS THE ONLY WORKFLOW. No stage system. No won/lost/open grouping.
 
-export const EXCEL_STATUSES = [
+// ─── India Team Status Master ────────────────────────────────────────────────
+export const INDIA_STATUSES = [
   // Active pursuit
+  "Fresh Lead",
+  "Follow Up",
   "Not Contacted",
+  "Never Contacted",
+  "Details Shared",
+  // Visits / Meetings
+  "Site Visit Schedule",
+  "Meeting",
+  // Evaluating
+  "Never Responding",
+  // Location / Requirement
+  "Other Location",
+  "Other Requirement",
+  "Commercial",
+  "Resale",
+  // Obstacles
+  "Low Budget",
+  "Funds Issue",
+  "Postponed",
+  "Just Searching",
+  // Competitor / Broker
+  "Broker",
+  "In Touch With Another Broker",
+  // Dead / Lost
+  "Not Interested",
+  "Drop The Plan",
+  "Blocked Me",
+  "Already Booked",
+  "Sell Off",
+  "Number Changed",
+  "Invalid Number",
+  "Junk",
+] as const;
+
+// ─── Dubai Team Status Master ─────────────────────────────────────────────────
+export const DUBAI_STATUSES = [
+  // Active pursuit
   "Fresh Lead",
   "Follow Up",
   "Long Term Follow Up",
-  "Details Shared",
   "Mail Sent",
-  // Meeting / Visit
-  "Meeting",
-  "Want Office Visit",
+  // Meetings / Visits
+  "Visit Dubai",
+  "Wants Office Visit",
   "Zoom Meeting",
-  "Site Visit Schedule",
+  "Meeting",
+  "Expo Only",
+  // Obstacles
+  "War Fear",
+  "Funds Issue",
+  "Not Able To Buy",
+  // Competitor / Broker
+  "Broker",
+  "Visited With Other Broker",
+  // Won
+  "Booked With Us",
+  // Sold / rented
+  "Sell Out",
+  "Leasing",
+  "Rent Out",
   // Specialised
   "Commercial Investment",
-  "Visit Dubai",
-  "Expo Only",
-  // Closed won
-  "Booked with Us",
-  // Sold / rented out
-  "Sell Out",
-  "Rent Out",
-  "Leasing",
-  // Location mismatch
-  "Other Location",
-  "Gurgaon",
-  "Other Requirement",
-  // Obstacle
-  "Funds Issue",
-  "War Fear",
-  // Already bought / elsewhere
   "Already Bought",
-  "Visited With Other Broker",
-  // Lost / dead
-  "Not Interested",
-  "Broker",
-  "Junk",
-  "Low Budget",
-  "Invalid Number",
-  "Drop The Plan",
-  "By Mistake Inquiry",
-  "Just Searching",
-  "Never Respond Phone Calls",
-  "Not Able To Buy",
-  "Pass Away",
+  // Location
+  "Other Location",
+  "Other Requirement",
+  // Dead
   "Number Changed",
-  "Repeated",
+  "Never Respond Phone Calls",
+  "Pass Away",
 ] as const;
 
-export type ExcelStatus = (typeof EXCEL_STATUSES)[number];
+export type IndiaStatus = (typeof INDIA_STATUSES)[number];
+export type DubaiStatus = (typeof DUBAI_STATUSES)[number];
+
+/**
+ * Returns the correct status list for a given team.
+ * null/unclassified → combined list so the agent can still set a status.
+ */
+export function statusesForTeam(team: string | null | undefined): readonly string[] {
+  if (team === "India") return INDIA_STATUSES;
+  if (team === "Dubai") return DUBAI_STATUSES;
+  // Unclassified lead — show union so agent can always act
+  return ALL_STATUSES;
+}
+
+// ─── Legacy combined list (kept for backward-compat imports + unclassified leads) ─
+export const EXCEL_STATUSES = [
+  ...new Set([...INDIA_STATUSES, ...DUBAI_STATUSES]),
+] as unknown as readonly string[];
+
+// Full union — used for unclassified leads and global filters
+const ALL_STATUSES: readonly string[] = EXCEL_STATUSES;
+
+export type ExcelStatus = string;
 
 // ─── Reminder suppression ─────────────────────────────────────────────────────
-// Cron jobs (morning reminder, evening reminder, pre-meeting reminder, rescore)
-// skip leads whose currentStatus is in this list.
-// These are clearly dead leads where automation adds no value.
-// Edit this list any time — no code changes required elsewhere.
+// Cron jobs skip leads whose currentStatus is in this list.
+// Covers both India and Dubai dead-end statuses.
 export const SUPPRESSED_STATUSES: string[] = [
+  // Both teams
   "Junk",
   "Invalid Number",
-  "Pass Away",
   "Number Changed",
-  "By Mistake Inquiry",
+  // Dubai
+  "Pass Away",
+  // India
+  "Blocked Me",
+  "Drop The Plan",
+  "By Mistake Inquiry", // legacy
 ];
 
 export function isReminderSuppressed(status: string | null | undefined): boolean {
@@ -88,112 +140,102 @@ export const BUDGET_PRESETS: Array<{ key: string; value: number; label: string }
 ];
 
 // ─── Per-status color classes ─────────────────────────────────────────────────
-// One specific color per status — no semantic grouping.
-// Returns a Tailwind chip class applied on both the table chip and the popover.
 const STATUS_COLORS: Record<string, string> = {
-  // Active pursuit
-  "Not Contacted":          "bg-slate-100 text-slate-600 border border-slate-200",
+  // ── Shared / common ──────────────────────────────────────────────────────
   "Fresh Lead":             "bg-blue-100 text-blue-700 border border-blue-200",
   "Follow Up":              "bg-orange-100 text-orange-700 border border-orange-200",
-  "Long Term Follow Up":    "bg-purple-100 text-purple-700 border border-purple-200",
-  "Details Shared":         "bg-sky-100 text-sky-700 border border-sky-200",
-  "Mail Sent":              "bg-indigo-100 text-indigo-700 border border-indigo-200",
-  // Meeting / Visit
   "Meeting":                "bg-teal-100 text-teal-700 border border-teal-200",
-  "Want Office Visit":      "bg-teal-100 text-teal-700 border border-teal-200",
-  "Zoom Meeting":           "bg-teal-100 text-teal-700 border border-teal-200",
-  "Site Visit Schedule":    "bg-teal-100 text-teal-700 border border-teal-200",
-  // Specialised
-  "Commercial Investment":  "bg-violet-100 text-violet-700 border border-violet-200",
-  "Visit Dubai":            "bg-teal-100 text-teal-700 border border-teal-200",
-  "Expo Only":              "bg-cyan-100 text-cyan-700 border border-cyan-200",
-  // Closed won
-  "Booked with Us":         "bg-green-100 text-green-800 border border-green-200 font-semibold",
-  // Sold / rented out
-  "Sell Out":               "bg-emerald-100 text-emerald-700 border border-emerald-200",
-  "Rent Out":               "bg-emerald-100 text-emerald-700 border border-emerald-200",
-  "Leasing":                "bg-emerald-100 text-emerald-700 border border-emerald-200",
-  // Location mismatch
-  "Other Location":         "bg-gray-100 text-gray-600 border border-gray-200",
-  "Gurgaon":                "bg-gray-100 text-gray-600 border border-gray-200",
-  "Other Requirement":      "bg-gray-100 text-gray-600 border border-gray-200",
-  // Obstacle
   "Funds Issue":            "bg-amber-100 text-amber-700 border border-amber-200",
-  "War Fear":               "bg-amber-100 text-amber-800 border border-amber-200",
-  // Already bought / elsewhere
-  "Already Bought":         "bg-rose-100 text-rose-700 border border-rose-200",
-  "Visited With Other Broker": "bg-rose-100 text-rose-700 border border-rose-200",
-  // Lost / dead
-  "Not Interested":         "bg-red-100 text-red-700 border border-red-200",
   "Broker":                 "bg-slate-100 text-slate-500 border border-slate-200",
-  "Junk":                   "bg-slate-100 text-slate-400 border border-slate-200",
-  "Low Budget":             "bg-red-100 text-red-600 border border-red-200",
-  "Invalid Number":         "bg-slate-100 text-slate-400 border border-slate-200",
-  "Drop The Plan":          "bg-slate-100 text-slate-500 border border-slate-200",
-  "By Mistake Inquiry":     "bg-slate-100 text-slate-400 border border-slate-200",
-  "Just Searching":         "bg-slate-100 text-slate-500 border border-slate-200",
-  "Never Respond Phone Calls": "bg-slate-100 text-slate-500 border border-slate-200",
-  "Not Able To Buy":        "bg-slate-100 text-slate-500 border border-slate-200",
-  "Pass Away":              "bg-slate-100 text-slate-400 border border-slate-200",
+  "Other Location":         "bg-gray-100 text-gray-600 border border-gray-200",
+  "Other Requirement":      "bg-gray-100 text-gray-600 border border-gray-200",
   "Number Changed":         "bg-slate-100 text-slate-400 border border-slate-200",
+  // ── India ─────────────────────────────────────────────────────────────────
+  "Not Contacted":          "bg-slate-100 text-slate-600 border border-slate-200",
+  "Never Contacted":        "bg-slate-100 text-slate-500 border border-slate-200",
+  "Details Shared":         "bg-sky-100 text-sky-700 border border-sky-200",
+  "Site Visit Schedule":    "bg-teal-100 text-teal-700 border border-teal-200",
+  "Never Responding":       "bg-slate-100 text-slate-500 border border-slate-200",
+  "Commercial":             "bg-violet-100 text-violet-700 border border-violet-200",
+  "Resale":                 "bg-emerald-100 text-emerald-700 border border-emerald-200",
+  "Low Budget":             "bg-red-100 text-red-600 border border-red-200",
+  "Postponed":              "bg-amber-100 text-amber-600 border border-amber-200",
+  "Just Searching":         "bg-slate-100 text-slate-500 border border-slate-200",
+  "In Touch With Another Broker": "bg-rose-100 text-rose-600 border border-rose-200",
+  "Not Interested":         "bg-red-100 text-red-700 border border-red-200",
+  "Drop The Plan":          "bg-slate-100 text-slate-500 border border-slate-200",
+  "Blocked Me":             "bg-red-100 text-red-800 border border-red-200",
+  "Already Booked":         "bg-green-100 text-green-800 border border-green-200",
+  "Sell Off":               "bg-emerald-100 text-emerald-700 border border-emerald-200",
+  "Invalid Number":         "bg-slate-100 text-slate-400 border border-slate-200",
+  "Junk":                   "bg-slate-100 text-slate-400 border border-slate-200",
+  // ── Dubai ─────────────────────────────────────────────────────────────────
+  "Long Term Follow Up":    "bg-purple-100 text-purple-700 border border-purple-200",
+  "Mail Sent":              "bg-indigo-100 text-indigo-700 border border-indigo-200",
+  "Visit Dubai":            "bg-teal-100 text-teal-700 border border-teal-200",
+  "Wants Office Visit":     "bg-teal-100 text-teal-700 border border-teal-200",
+  "Want Office Visit":      "bg-teal-100 text-teal-700 border border-teal-200", // legacy
+  "Zoom Meeting":           "bg-teal-100 text-teal-700 border border-teal-200",
+  "Expo Only":              "bg-cyan-100 text-cyan-700 border border-cyan-200",
+  "War Fear":               "bg-amber-100 text-amber-800 border border-amber-200",
+  "Not Able To Buy":        "bg-slate-100 text-slate-500 border border-slate-200",
+  "Visited With Other Broker": "bg-rose-100 text-rose-700 border border-rose-200",
+  "Booked With Us":         "bg-green-100 text-green-800 border border-green-200 font-semibold",
+  "Booked with Us":         "bg-green-100 text-green-800 border border-green-200 font-semibold", // legacy
+  "Sell Out":               "bg-emerald-100 text-emerald-700 border border-emerald-200",
+  "Leasing":                "bg-emerald-100 text-emerald-700 border border-emerald-200",
+  "Rent Out":               "bg-emerald-100 text-emerald-700 border border-emerald-200",
+  "Commercial Investment":  "bg-violet-100 text-violet-700 border border-violet-200",
+  "Already Bought":         "bg-rose-100 text-rose-700 border border-rose-200",
+  "Never Respond Phone Calls": "bg-slate-100 text-slate-500 border border-slate-200",
+  "Pass Away":              "bg-slate-100 text-slate-400 border border-slate-200",
+  // ── Legacy (old names, still in DB from previous imports) ─────────────────
+  "By Mistake Inquiry":     "bg-slate-100 text-slate-400 border border-slate-200",
+  "Gurgaon":                "bg-gray-100 text-gray-600 border border-gray-200",
   "Repeated":               "bg-slate-100 text-slate-500 border border-slate-200",
 };
 
 const FALLBACK_COLOR = "bg-slate-100 text-slate-600 border border-slate-200";
 
-/**
- * Returns Tailwind chip classes for a given currentStatus value.
- * Each status has its own specific color — no semantic grouping.
- */
+/** Returns Tailwind chip classes for a given currentStatus value. */
 export function statusColor(s: string | null | undefined): string {
   if (!s) return FALLBACK_COLOR;
   return STATUS_COLORS[s] ?? FALLBACK_COLOR;
 }
 
-/**
- * @deprecated Use statusColor() instead.
- * Kept temporarily for files not yet migrated. Will be removed.
- */
+/** @deprecated Use statusColor() */
 export function excelStatusChip(s: string | null): string {
   return statusColor(s);
 }
 
-// ─── "Booked with Us" helper ─────────────────────────────────────────────────
-// Single place to check if a lead has been booked. Used by investor detection,
-// quality score, and weekly digest. No "won" concept — just this one status name.
+// ─── Booking check ─────────────────────────────────────────────────────────
 export function isBookedStatus(currentStatus: string | null | undefined): boolean {
-  return currentStatus === "Booked with Us";
+  return currentStatus === "Booked With Us" || currentStatus === "Booked with Us";
 }
 
-// ─── Active-pursuit statuses (used by leadsForProject, quality score, etc.) ──
-// Leads in these statuses are genuinely in play and worth pitching a property to.
-// Excludes suppressed + dead statuses.
-export const ACTIVE_PURSUIT_STATUSES: string[] = [
-  "Not Contacted",
-  "Fresh Lead",
-  "Follow Up",
-  "Long Term Follow Up",
-  "Details Shared",
-  "Mail Sent",
-  "Meeting",
-  "Want Office Visit",
-  "Zoom Meeting",
-  "Site Visit Schedule",
-  "Commercial Investment",
-  "Visit Dubai",
-  "Expo Only",
-  "Funds Issue",
-  "War Fear",
+// ─── Active-pursuit statuses ──────────────────────────────────────────────
+export const INDIA_ACTIVE_STATUSES: string[] = [
+  "Fresh Lead", "Follow Up", "Not Contacted", "Never Contacted",
+  "Details Shared", "Site Visit Schedule", "Meeting",
+  "Never Responding", "Funds Issue", "Postponed",
 ];
 
-// ─── Closing-stage statuses (for manager-review flagging) ────────────────────
-// Leads in these statuses that go idle >24h get a manager flag.
+export const DUBAI_ACTIVE_STATUSES: string[] = [
+  "Fresh Lead", "Follow Up", "Long Term Follow Up", "Mail Sent",
+  "Visit Dubai", "Wants Office Visit", "Want Office Visit",
+  "Zoom Meeting", "Meeting", "Expo Only", "War Fear", "Funds Issue",
+];
+
+export const ACTIVE_PURSUIT_STATUSES: string[] = [
+  ...new Set([...INDIA_ACTIVE_STATUSES, ...DUBAI_ACTIVE_STATUSES]),
+];
+
+// ─── Closing statuses (manager-review flagging) ───────────────────────────
 export const CLOSING_STATUSES: string[] = [
-  "Meeting",
-  "Want Office Visit",
-  "Zoom Meeting",
-  "Site Visit Schedule",
-  "Visit Dubai",
-  "Expo Only",
-  "Booked with Us",
+  // India
+  "Site Visit Schedule", "Meeting",
+  // Dubai
+  "Wants Office Visit", "Want Office Visit", "Zoom Meeting",
+  "Visit Dubai", "Expo Only",
+  "Booked With Us", "Booked with Us",
 ];

@@ -14,7 +14,7 @@ function WaIcon() {
 }
 import { telLink, whatsappLink } from "@/lib/phone";
 import CopyPhoneButton from "./CopyPhoneButton";
-import { statusColor, EXCEL_STATUSES } from "@/lib/lead-statuses";
+import { statusColor, EXCEL_STATUSES, statusesForTeam } from "@/lib/lead-statuses";
 
 // Preset tag vocab — mirrors what Lalit asked the team to standardise on
 // across the pipeline. Kept here (not server-fetched) so the popover renders
@@ -469,7 +469,12 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
                             {statusOpenFor === l.id && (
                               <div className="absolute left-0 top-full mt-1 z-50 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-600 rounded-lg shadow-xl w-52 max-h-72 overflow-y-auto py-1"
                                 onClick={e => e.stopPropagation()}>
-                                {EXCEL_LEAD_STATUSES.map(s => (
+                                {l.team && (
+                                  <div className="px-3 py-1 text-[9px] font-semibold text-gray-400 uppercase tracking-wide border-b border-gray-100 dark:border-slate-700">
+                                    {l.team} statuses
+                                  </div>
+                                )}
+                                {statusesForTeam(l.team).map(s => (
                                   <button key={s} type="button"
                                     onClick={() => quickSetStatus(l.id, s)}
                                     className={`w-full text-left px-3 py-1.5 text-xs hover:bg-gray-50 dark:hover:bg-slate-700 flex items-center gap-2 ${l.currentStatus === s ? "font-semibold text-[#0b1a33] dark:text-blue-300" : "text-gray-700 dark:text-slate-200"}`}>
@@ -644,10 +649,15 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
                       {statusOpenFor === l.id && (
                         <div className="absolute right-0 top-full mt-1 z-50 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-600 rounded-lg shadow-xl w-52 max-h-72 overflow-y-auto py-1"
                           onClick={e => e.stopPropagation()}>
-                          {EXCEL_LEAD_STATUSES.map(s => (
+                          {l.team && (
+                            <div className="px-3 py-1 text-[9px] font-semibold text-gray-400 uppercase tracking-wide border-b border-gray-100 dark:border-slate-700">
+                              {l.team} statuses
+                            </div>
+                          )}
+                          {statusesForTeam(l.team).map(s => (
                             <button key={s} type="button"
                               onClick={() => quickSetStatus(l.id, s)}
-                              className={`w-full text-left px-3 py-1.5 text-xs hover:bg-gray-50 dark:hover:bg-slate-700 ${l.currentStatus === s ? "font-semibold" : "text-gray-700 dark:text-slate-200"}`}>
+                              className={`w-full text-left px-3 py-1.5 text-xs hover:bg-gray-50 dark:hover:bg-slate-700 ${l.currentStatus === s ? "font-semibold text-[#0b1a33] dark:text-blue-300" : "text-gray-700 dark:text-slate-200"}`}>
                               {s}
                             </button>
                           ))}
@@ -843,7 +853,12 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
                       {statusOpenFor === l.id && (
                         <div className="absolute left-0 top-full mt-1 z-50 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-600 rounded-lg shadow-xl w-52 max-h-64 overflow-y-auto py-1"
                           onClick={e => e.stopPropagation()}>
-                          {EXCEL_LEAD_STATUSES.map(s => (
+                          {l.team && (
+                            <div className="px-3 py-1 text-[9px] font-semibold text-gray-400 uppercase tracking-wide border-b border-gray-100 dark:border-slate-700">
+                              {l.team} statuses
+                            </div>
+                          )}
+                          {statusesForTeam(l.team).map(s => (
                             <button key={s} type="button"
                               onClick={() => quickSetStatus(l.id, s)}
                               className={`w-full text-left px-3 py-1.5 text-xs hover:bg-gray-50 dark:hover:bg-slate-700 ${l.currentStatus === s ? "font-semibold text-[#0b1a33] dark:text-blue-300" : "text-gray-700 dark:text-slate-200"}`}>
