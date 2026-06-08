@@ -56,7 +56,7 @@ export async function POST(req: NextRequest) {
   const seenFp = new Set<string>();
 
   for (const r of rows) {
-    const name = (r.name ?? "").trim();
+    const name = (r.name ?? "").trim() || (r.phone ?? "").trim();
     if (!name) { failed++; continue; }
     const fp = fingerprintFor(r.phone, r.email);
     const existsId = fp ? existingByFp.get(fp) : undefined;
@@ -78,7 +78,7 @@ export async function POST(req: NextRequest) {
 
       const forcedDup = !!existsId || (fp ? seenFp.has(fp) : false);
       if (fp && !forcedDup) seenFp.add(fp);
-      const record = { ...toData(r), status: parseStatus(r.status), primaryOwnerId: ownerId, fingerprint: forcedDup ? null : fp };
+      const record = { ...toData(r), name, status: parseStatus(r.status), primaryOwnerId: ownerId, fingerprint: forcedDup ? null : fp };
 
       if (r.resumeUrl?.trim()) {
         // needs the new id → individual create

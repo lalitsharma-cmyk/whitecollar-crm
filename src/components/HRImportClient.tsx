@@ -6,30 +6,48 @@ import * as XLSX from "xlsx";
 
 interface Agent { id: string; name: string; }
 const CRM_FIELDS: [string, string][] = [
-  ["name", "Candidate Name *"], ["phone", "Phone"], ["whatsappPhone", "WhatsApp"], ["email", "Email"],
+  ["name", "Candidate Name"], ["phone", "Phone"], ["whatsappPhone", "WhatsApp"], ["email", "Email"],
   ["location", "Location"], ["city", "City"], ["currentCompany", "Current Company"], ["currentProfile", "Current Profile"],
   ["positionApplied", "Position Applied"], ["experience", "Total Experience"], ["realEstateExperience", "RE Experience"],
   ["currentSalary", "Current Salary"], ["expectedSalary", "Expected Salary"], ["noticePeriod", "Notice Period"],
   ["source", "Source"], ["status", "Status"], ["nextAction", "Next Action"], ["remarks", "Initial Notes"], ["resumeUrl", "Resume URL"],
 ];
+// Synonyms for auto-mapping. Order matters within each list (more specific first).
 const GUESS: Record<string, string[]> = {
-  name: ["candidate name", "name", "full name"], phone: ["mobile", "phone", "contact", "number"],
-  whatsappPhone: ["whatsapp", "wa"], email: ["email", "mail"], location: ["location", "current location"], city: ["city", "home city"],
-  currentCompany: ["company", "current company"], currentProfile: ["designation", "profile", "current role", "title", "current profile"],
-  positionApplied: ["position", "applied", "role applied"], experience: ["total experience", "experience", "exp"], realEstateExperience: ["real estate", "re exp"],
-  currentSalary: ["current salary", "current ctc", "present salary"], expectedSalary: ["expected salary", "expected ctc"], noticePeriod: ["notice"],
-  source: ["source"], status: ["status"], nextAction: ["next action"], remarks: ["remark", "notes", "initial notes", "comment"], resumeUrl: ["resume", "cv", "resume url", "resume link"],
+  name: ["candidate name", "full name", "name"],
+  phone: ["mobile number", "mobile no", "contact number", "mobile", "phone", "contact"],
+  whatsappPhone: ["whatsapp number", "wa number", "whatsapp", "wa"],
+  email: ["email id", "email address", "email", "mail"],
+  location: ["current location", "location", "city"],
+  city: ["home city", "city"],
+  currentCompany: ["current company", "company"],
+  currentProfile: ["current role", "current profile", "designation", "profile", "current designation", "title"],
+  positionApplied: ["position applied", "position", "applied for", "role applied"],
+  experience: ["total experience", "experience", "exp"],
+  realEstateExperience: ["real estate experience", "re experience", "re exp"],
+  currentSalary: ["current salary", "current ctc", "present salary", "salary"],
+  expectedSalary: ["expected salary", "expected ctc", "expected"],
+  noticePeriod: ["notice period", "notice", "np"],
+  source: ["job portal", "source", "portal"],
+  status: ["current status", "status"],
+  nextAction: ["next action"],
+  remarks: ["hr remarks", "remarks", "comments", "notes", "comment", "remark"],
+  resumeUrl: ["resume url", "cv link", "resume link", "resume", "cv"],
 };
 
+const norm = (h: string) => h.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 function guessMapping(headers: string[]): Record<string, string> {
   const m: Record<string, string> = {};
+  const taken = new Set<string>();
   for (const [field] of CRM_FIELDS) {
-    const cands = GUESS[field] ?? [field];
-    const hit = headers.find(h => cands.some(c => h.toLowerCase().trim() === c)) ?? headers.find(h => cands.some(c => h.toLowerCase().includes(c)));
-    if (hit) m[field] = hit;
+    const cands = (GUESS[field] ?? [field]).map(norm);
+    const exact = headers.find(h => !taken.has(h) && cands.includes(norm(h)));
+    const loose = exact ?? headers.find(h => !taken.has(h) && cands.some(c => norm(h).includes(c)));
+    if (loose) { m[field] = loose; taken.add(loose); }
   }
   return m;
 }
+const sigOf = (headers: string[]) => "hrmap:" + headers.slice().sort().join("|");
 
 export default function HRImportClient({ agents, defaultOwnerId }: { agents: Agent[]; defaultOwnerId: string }) {
   const router = useRouter();
@@ -38,6 +56,7 @@ export default function HRImportClient({ agents, defaultOwnerId }: { agents: Age
   const [rows, setRows] = useState<Record<string, string>[]>([]);
   const [headers, setHeaders] = useState<string[]>([]);
   const [mapping, setMapping] = useState<Record<string, string>>({});
+  const [remembered, setRemembered] = useState(false);
   const [strategy, setStrategy] = useState<"skip" | "update" | "create">("skip");
   const [ownerId, setOwnerId] = useState(defaultOwnerId);
   const [err, setErr] = useState<string | null>(null);
@@ -46,27 +65,34 @@ export default function HRImportClient({ agents, defaultOwnerId }: { agents: Age
   async function onFile(file: File) {
     setErr(null); setFileName(file.name);
     try {
-      const buf = await file.arrayBuffer();
-      const wb = XLSX.read(buf, { type: "array" });
+      const wb = XLSX.read(await file.arrayBuffer(), { type: "array" });
       const ws = wb.Sheets[wb.SheetNames[0]];
       const json = XLSX.utils.sheet_to_json<Record<string, unknown>>(ws, { defval: "" });
       const parsed = json.map(r => Object.fromEntries(Object.entries(r).map(([k, v]) => [k, String(v ?? "").trim()])));
       if (parsed.length === 0) { setErr("That file has no data rows."); return; }
       const hdrs = Object.keys(parsed[0]);
-      setRows(parsed); setHeaders(hdrs); setMapping(guessMapping(hdrs)); setStep("map");
+      let m: Record<string, string> = {}, fromSaved = false;
+      try { const saved = localStorage.getItem(sigOf(hdrs)); if (saved) { m = JSON.parse(saved); fromSaved = true; } } catch { /* ignore */ }
+      if (Object.keys(m).length === 0) m = guessMapping(hdrs);
+      setRows(parsed); setHeaders(hdrs); setMapping(m); setRemembered(fromSaved); setStep("map");
     } catch {
       setErr("Could not read that file. Use .xlsx or .csv.");
     }
   }
 
+  const usedCols = new Set(Object.values(mapping).filter(Boolean));
+  const unmapped = headers.filter(h => !usedCols.has(h));
+
   async function runImport() {
-    if (!mapping.name) { setErr("Map a column to Candidate Name first."); return; }
-    setErr(null); setStep("run");
+    if (!mapping.name && !mapping.phone) { setErr("Map at least Candidate Name or Phone."); return; }
+    setErr(null);
+    try { localStorage.setItem(sigOf(headers), JSON.stringify(mapping)); } catch { /* ignore */ }
+    setStep("run");
     const mapped = rows.map(r => {
       const o: Record<string, string> = {};
       for (const [field, col] of Object.entries(mapping)) if (col) o[field] = r[col] ?? "";
       return o;
-    }).filter(o => (o.name ?? "").trim());
+    }).filter(o => (o.name ?? "").trim() || (o.phone ?? "").trim());
 
     const BATCH = 100;
     const acc = { imported: 0, updated: 0, skipped: 0, failed: 0 };
@@ -81,12 +107,13 @@ export default function HRImportClient({ agents, defaultOwnerId }: { agents: Age
       } catch { acc.failed += chunk.length; }
       setProgress({ done: Math.min(i + BATCH, mapped.length), total: mapped.length, ...acc });
     }
-    try { await fetch("/api/hr/imports", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fileName, total: mapped.length, ...acc }) }); } catch { /* log best-effort */ }
+    try { await fetch("/api/hr/imports", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fileName, total: mapped.length, ...acc }) }); } catch { /* best-effort */ }
     setStep("done"); router.refresh();
   }
 
   const inp = "w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm dark:bg-slate-800 dark:border-slate-600";
   const pct = progress.total ? Math.round((progress.done / progress.total) * 100) : 0;
+  const mappedCount = Object.values(mapping).filter(Boolean).length;
 
   return (
     <div className="card p-5 space-y-4">
@@ -97,24 +124,41 @@ export default function HRImportClient({ agents, defaultOwnerId }: { agents: Age
           <input type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={e => e.target.files?.[0] && onFile(e.target.files[0])} />
           <div className="text-3xl mb-2">📥</div>
           <div className="text-sm text-gray-600">Drop an <b>Excel (.xlsx)</b> or <b>CSV</b> file, or <b className="text-[#1a2e4a] dark:text-blue-400">click to browse</b></div>
-          <div className="text-[11px] text-gray-400 mt-1">Export your Google Sheet as .xlsx or .csv and upload it here.</div>
+          <div className="text-[11px] text-gray-400 mt-1">Columns are mapped automatically — you just review &amp; confirm.</div>
         </label>
       )}
 
       {step === "map" && (
         <div className="space-y-4">
-          <div className="text-sm text-gray-600">{rows.length} rows from <b>{fileName}</b> · map your columns to CRM fields:</div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-            {CRM_FIELDS.map(([field, label]) => (
-              <div key={field} className="flex items-center gap-2">
-                <span className="text-xs text-gray-500 w-32 shrink-0">{label}</span>
-                <select className={inp} value={mapping[field] ?? ""} onChange={e => setMapping(m => ({ ...m, [field]: e.target.value }))}>
-                  <option value="">— ignore —</option>
-                  {headers.map(h => <option key={h} value={h}>{h}</option>)}
-                </select>
-              </div>
-            ))}
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <div className="text-sm text-gray-600">
+              {rows.length} rows from <b>{fileName}</b> · {remembered ? "✨ remembered this format" : `✨ auto-mapped ${mappedCount} columns`} — review &amp; correct if needed.
+            </div>
+            <button type="button" onClick={() => { setMapping(guessMapping(headers)); setRemembered(false); }} className="text-xs px-3 py-1.5 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50">↻ Auto Map Fields</button>
           </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            {CRM_FIELDS.map(([field, label]) => {
+              const mapped = !!mapping[field];
+              return (
+                <div key={field} className="flex items-center gap-2">
+                  <span className={`text-xs w-32 shrink-0 ${mapped ? "text-gray-700 dark:text-slate-200 font-medium" : "text-gray-400"}`}>{label}{(field === "name") && <span className="text-red-500"> *</span>}</span>
+                  <select className={`${inp} ${mapped ? "border-green-300" : ""}`} value={mapping[field] ?? ""} onChange={e => setMapping(m => ({ ...m, [field]: e.target.value }))}>
+                    <option value="">— ignore —</option>
+                    {headers.map(h => <option key={h} value={h}>{h}</option>)}
+                  </select>
+                </div>
+              );
+            })}
+          </div>
+
+          {unmapped.length > 0 && (
+            <div className="text-xs bg-amber-50 border border-amber-200 rounded-lg p-2.5 dark:bg-amber-900/20 dark:border-amber-700">
+              <span className="font-semibold text-amber-800 dark:text-amber-300">Unmapped columns ({unmapped.length}):</span>
+              <span className="text-amber-700 dark:text-amber-200"> {unmapped.join(", ")}</span>
+              <span className="text-amber-600"> — ignored unless you map them above.</span>
+            </div>
+          )}
 
           <div className="border-t border-gray-100 dark:border-slate-700 pt-3 space-y-2">
             <div className="text-xs font-semibold text-gray-600">On duplicate (same phone / email):</div>
@@ -130,7 +174,7 @@ export default function HRImportClient({ agents, defaultOwnerId }: { agents: Age
           </div>
 
           <div className="flex gap-2">
-            <button type="button" onClick={runImport} className="btn btn-primary justify-center">Import {rows.length} candidates</button>
+            <button type="button" onClick={runImport} className="btn btn-primary justify-center">Confirm &amp; Import {rows.length}</button>
             <button type="button" onClick={() => setStep("upload")} className="btn justify-center px-4 border border-gray-300 text-gray-600 rounded-lg text-sm">Back</button>
           </div>
         </div>
@@ -139,9 +183,7 @@ export default function HRImportClient({ agents, defaultOwnerId }: { agents: Age
       {step === "run" && (
         <div className="space-y-3 py-4">
           <div className="text-sm font-semibold text-gray-700">Importing… {progress.done} / {progress.total}</div>
-          <div className="w-full h-3 bg-gray-100 dark:bg-slate-800 rounded-full overflow-hidden">
-            <div className="h-full bg-[#1a2e4a] transition-all" style={{ width: `${pct}%` }} />
-          </div>
+          <div className="w-full h-3 bg-gray-100 dark:bg-slate-800 rounded-full overflow-hidden"><div className="h-full bg-[#1a2e4a] transition-all" style={{ width: `${pct}%` }} /></div>
           <div className="text-[11px] text-gray-500">✅ {progress.imported} new · 🔄 {progress.updated} updated · ⏭ {progress.skipped} skipped · ⚠ {progress.failed} failed — keep this tab open.</div>
         </div>
       )}
