@@ -1,7 +1,7 @@
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import Link from "next/link";
-import { statusColor, statusLabel } from "@/lib/hrStatus";
+import { statusColor, statusLabel, CLOSED_STATUS_KEYS } from "@/lib/hrStatus";
 import HRRemindersCard, { type HRReminderEvent, type HREventType } from "@/components/HRRemindersCard";
 import HRFollowUpTabs, { type FU } from "@/components/HRFollowUpTabs";
 
@@ -36,7 +36,7 @@ export default async function HRDashboard() {
   const now = new Date();
   const weekAgo = new Date(todayStart.getTime() - 7 * 24 * 3600_000);
 
-  const [followUps, interviews, newCount, expectedList] = await Promise.all([
+  const [followUps, interviews, newCount, expectedList, noNextAction] = await Promise.all([
     prisma.hRFollowUp.findMany({
       where: { completedAt: null, candidate: scope },
       orderBy: { dueAt: "asc" }, take: 200,
@@ -52,6 +52,11 @@ export default async function HRDashboard() {
       where: { AND: [scope, { OR: [{ status: "EXPECTED_JOINING" }, { joiningDate: { not: null } }] }] },
       orderBy: { joiningDate: "asc" }, take: 20,
       select: { id: true, name: true, positionApplied: true, joiningDate: true, status: true },
+    }),
+    prisma.hRCandidate.findMany({
+      where: { AND: [scope, { nextActionDate: null, status: { notIn: CLOSED_STATUS_KEYS } }] },
+      orderBy: { createdAt: "desc" }, take: 20,
+      select: { id: true, name: true, phone: true, whatsappPhone: true, status: true, positionApplied: true, primaryOwner: { select: { name: true } } },
     }),
   ]);
 
@@ -90,6 +95,7 @@ export default async function HRDashboard() {
     { label: "Overdue Follow-Ups", n: overdueFU.length, href: "#followups", emoji: "⚠️", color: "border-red-400 text-red-700 bg-red-50" },
     { label: "No-Shows", n: noShowList.length, href: "#noshow", emoji: "🚫", color: "border-rose-400 text-rose-700 bg-rose-50" },
     { label: "Expected Joinings", n: expectedList.length, href: "#joinings", emoji: "🤝", color: "border-green-400 text-green-700 bg-green-50" },
+    { label: "No Next Action", n: noNextAction.length, href: "#nonext", emoji: "📭", color: "border-slate-400 text-slate-700 bg-slate-50" },
   ];
 
   const wa = (p: string | null, alt: string | null) => { const x = p ?? alt; return x ? `https://wa.me/${x.replace(/\D/g, "")}` : null; };
@@ -150,6 +156,31 @@ export default async function HRDashboard() {
                     })}
                   </tbody>
                 </table>
+              </div>
+            )}
+          </section>
+
+          {/* No Next Action — fresh candidates needing a first follow-up */}
+          <section id="nonext" className="bg-white dark:bg-slate-900 rounded-2xl border border-gray-200 dark:border-slate-700 overflow-hidden">
+            <div className="px-4 py-2.5 border-b border-gray-100 dark:border-slate-800 text-sm font-bold text-gray-700 dark:text-slate-200">📭 No Next Action — needs a first follow-up ({noNextAction.length})</div>
+            {noNextAction.length === 0 ? <div className="px-4 py-5 text-center text-xs text-gray-400">Every active candidate has a next action 🎉</div> : (
+              <div className="divide-y divide-gray-100 dark:divide-slate-800">
+                {noNextAction.map(c => {
+                  const waHref = wa(c.whatsappPhone, c.phone);
+                  return (
+                    <div key={c.id} className="flex items-center gap-3 px-4 py-2.5">
+                      <div className="flex-1 min-w-0">
+                        <Link href={`/hr/candidates/${c.id}`} className="text-sm font-semibold text-gray-800 dark:text-slate-100 hover:underline">{c.name}</Link>
+                        <div className="text-[11px] text-gray-500">{[c.positionApplied, statusLabel(c.status)].filter(Boolean).join(" · ") || "—"}</div>
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
+                        {c.phone && <a href={`tel:${c.phone}`} className="text-[11px] px-2 py-1 rounded-lg border border-blue-300 text-blue-700 hover:bg-blue-50">📞 Call</a>}
+                        {waHref && <a href={waHref} target="_blank" rel="noopener noreferrer" className="text-[11px] px-2 py-1 rounded-lg border border-green-300 text-green-700 hover:bg-green-50">💬 WA</a>}
+                        <Link href={`/hr/candidates/${c.id}?do=followup`} className="text-[11px] px-2 py-1 rounded-lg border border-amber-300 text-amber-700 hover:bg-amber-50">📅 Schedule</Link>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             )}
           </section>

@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { ACTIVE_STATUS_DEFS, CLOSED_STATUS_DEFS, CLOSED_STATUS_KEYS } from "@/lib/hrStatus";
+import { ACTIVE_STATUS_DEFS, CLOSED_STATUS_DEFS } from "@/lib/hrStatus";
 
 interface Agent { id: string; name: string; }
 interface Props { agents: Agent[]; meId: string; }
@@ -10,8 +10,6 @@ interface DupMatch { id: string; name: string; phone: string | null; whatsappPho
 const POSITIONS = ["Sales Executive", "BDE", "BDM", "Team Leader", "Manager", "HR", "Marketing", "Other"];
 const SOURCES   = ["Naukri", "Indeed", "Referral", "Walk-in", "LinkedIn", "Database", "Consultant", "Email", "Whatsapp", "Other"];
 const NOTICE    = ["Immediate", "7 days", "15 days", "30 days", "45 days", "60 days", "90 days", "Serving Notice"];
-
-const CLOSED_SET = new Set<string>(CLOSED_STATUS_KEYS);
 
 const FOLLOWUP_TYPES: [string, string][] = [
   ["CALL_BACK", "Call Back"], ["INTERVIEW_CONFIRMATION", "Interview Confirmation"], ["REMINDER", "Reminder"],
@@ -43,8 +41,6 @@ export default function HRAddCandidateForm({ agents, meId }: Props) {
   const [files, setFiles] = useState<File[]>([]);
   const [extracting, setExtracting] = useState(false);
   const [extractMsg, setExtractMsg] = useState<string | null>(null);
-
-  const isClosed = CLOSED_SET.has(form.status);
 
   const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) =>
     setForm(f => ({ ...f, [k]: e.target.value }));
@@ -105,11 +101,8 @@ export default function HRAddCandidateForm({ agents, meId }: Props) {
   async function submit(mode: "save" | "interview" | "followup") {
     setErr(null); setDupBlock(null);
     if (!form.name.trim()) { setErr("Candidate name is required."); return; }
-    if (!form.status) { setErr("Status is required."); return; }
-    if (!isClosed && (!form.nextAction.trim() || !followDate || !followTime)) {
-      setErr("Next action, follow-up date & time are required for active candidates.");
-      return;
-    }
+    if (!form.phone.trim()) { setErr("Mobile number is required."); return; }
+    if (!form.positionApplied) { setErr("Position applied for is required."); return; }
     const nextActionDate = followDate && followTime ? `${followDate}T${followTime}` : "";
 
     setBusy(true);
@@ -185,16 +178,16 @@ export default function HRAddCandidateForm({ agents, meId }: Props) {
             <input className={inp} value={form.name} onChange={set("name")} placeholder="Full name" required />
           </div>
           <div>
-            <label className={lbl}>Mobile Number</label>
-            <input className={inp} value={form.phone} onChange={set("phone")} placeholder="+91 98765 43210" type="tel" />
+            <label className={lbl}>Mobile Number <span className="text-red-500">*</span></label>
+            <input className={inp} value={form.phone} onChange={set("phone")} placeholder="+91 98765 43210" type="tel" required />
           </div>
           <div>
             <label className={lbl}>WhatsApp Number</label>
             <input className={inp} value={form.whatsappPhone} onChange={set("whatsappPhone")} placeholder="If different from mobile" type="tel" />
           </div>
           <div>
-            <label className={lbl}>Position Applied For</label>
-            <select className={inp} value={form.positionApplied} onChange={set("positionApplied")}>
+            <label className={lbl}>Position Applied For <span className="text-red-500">*</span></label>
+            <select className={inp} value={form.positionApplied} onChange={set("positionApplied")} required>
               <option value="">— Select —</option>
               {POSITIONS.map(p => <option key={p} value={p}>{p}</option>)}
             </select>
@@ -208,7 +201,7 @@ export default function HRAddCandidateForm({ agents, meId }: Props) {
         </div>
       </div>
 
-      {/* ── Follow-up (core — mandatory for active candidates) ── */}
+      {/* ── Status & Next Action (follow-up optional) ── */}
       <div>
         <div className={section}>Status &amp; Next Action</div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -224,21 +217,19 @@ export default function HRAddCandidateForm({ agents, meId }: Props) {
             </select>
           </div>
           <div>
-            <label className={lbl}>Next Action {!isClosed && <span className="text-red-500">*</span>}</label>
-            <input className={inp} value={form.nextAction} onChange={set("nextAction")} placeholder="e.g. Call to discuss salary & notice" required={!isClosed} />
+            <label className={lbl}>Next Action <span className="text-[10px] text-gray-400">(optional)</span></label>
+            <input className={inp} value={form.nextAction} onChange={set("nextAction")} placeholder="e.g. Call to discuss salary & notice" />
           </div>
           <div>
-            <label className={lbl}>Next Follow-up Date {!isClosed && <span className="text-red-500">*</span>}</label>
-            <input className={inp} type="date" value={followDate} onChange={e => setFollowDate(e.target.value)} required={!isClosed} />
+            <label className={lbl}>Next Follow-up Date <span className="text-[10px] text-gray-400">(optional)</span></label>
+            <input className={inp} type="date" value={followDate} onChange={e => setFollowDate(e.target.value)} />
           </div>
           <div>
-            <label className={lbl}>Next Follow-up Time {!isClosed && <span className="text-red-500">*</span>}</label>
-            <input className={inp} type="time" value={followTime} onChange={e => setFollowTime(e.target.value)} required={!isClosed} />
+            <label className={lbl}>Next Follow-up Time <span className="text-[10px] text-gray-400">(optional)</span></label>
+            <input className={inp} type="time" value={followTime} onChange={e => setFollowTime(e.target.value)} />
           </div>
         </div>
-        {!isClosed && (
-          <p className="text-[11px] text-gray-400 mt-1.5">No active candidate is saved without a next action and follow-up time.</p>
-        )}
+        <p className="text-[11px] text-gray-400 mt-1.5">Follow-up is optional — leave it blank for fresh data; the candidate then shows under “No Next Action” until you schedule one.</p>
       </div>
 
       {/* ── More Details (collapsible — reduces data-entry burden) ── */}

@@ -65,22 +65,21 @@ export async function POST(req: NextRequest) {
   if (!body.name || !String(body.name).trim()) {
     return NextResponse.json({ error: "Candidate name is required." }, { status: 400 });
   }
+  if (!body.phone || !String(body.phone).trim()) {
+    return NextResponse.json({ error: "Mobile number is required." }, { status: 400 });
+  }
+  if (!body.positionApplied || !String(body.positionApplied).trim()) {
+    return NextResponse.json({ error: "Position applied for is required." }, { status: 400 });
+  }
 
   const status = (body.status as HRCandidateStatus) || "NEW";
-  const isActive = !CLOSED_STATUS_KEYS.includes(status);
 
   if (status === "OFFER_RELEASED" && me.role === "AGENT") {
     return NextResponse.json({ error: "Interns can't release offers — ask a manager." }, { status: 403 });
   }
+  // Follow-up is OPTIONAL at creation. A candidate with no next action surfaces under
+  // "No Next Action" on the dashboard / Missed center until HR schedules the first follow-up.
   const nextActionDate = body.nextActionDate ? new Date(body.nextActionDate) : null;
-
-  // No active candidate may be saved without a next action + follow-up.
-  if (isActive && (!nextActionDate || !body.nextAction || !String(body.nextAction).trim())) {
-    return NextResponse.json(
-      { error: "Next action, follow-up date & time are required for active candidates." },
-      { status: 400 },
-    );
-  }
 
   // Duplicate check — mobile, WhatsApp, or email (last-10-digit aware).
   const dupWhere = hrDuplicateWhere(body.phone, body.whatsappPhone, body.email);
