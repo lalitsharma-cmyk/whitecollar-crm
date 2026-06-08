@@ -6,14 +6,11 @@ export const dynamic = "force-dynamic";
 
 export default async function NewCandidatePage() {
   const me = await requireUser();
-  const agents = await prisma.user.findMany({
-    where: { active: true },
-    select: { id: true, name: true },
-    orderBy: { name: "asc" },
-  });
+  const agents = await prisma.user.findMany({ where: { active: true }, select: { id: true, name: true }, orderBy: { name: "asc" } });
   return (
     <div className="p-4 sm:p-6 max-w-2xl mx-auto">
-      <h1 className="text-xl font-bold mb-4">Add Candidate</h1>
+      <h1 className="text-xl font-bold mb-1 text-gray-900 dark:text-white">Add Candidate</h1>
+      <p className="text-sm text-gray-500 mb-4">Fill in the candidate details below.</p>
       <HRAddCandidateForm agents={agents} meId={me.id} />
     </div>
   );

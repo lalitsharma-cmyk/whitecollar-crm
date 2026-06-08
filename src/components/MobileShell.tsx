@@ -47,7 +47,7 @@ function GlobalBackButton() {
   const rootPages = ["/dashboard", "/leads", "/cold-calls", "/properties",
     "/reports", "/action-list", "/activities", "/calls", "/settings",
     "/notifications", "/team", "/vault", "/ai", "/help", "/leaderboards",
-    "/profile", "/admin", "/intake", "/hr", "/hr/candidates"];
+    "/profile", "/admin", "/intake", "/hr"];
   const isRoot = rootPages.some(r => pathname === r);
   if (isRoot) return null;
 
@@ -108,10 +108,9 @@ const fullNav: NavSection[] = [
     { href: "/intake",                label: "Lead Intake",        Icon: Upload },
     { href: "/admin/revival-logs",    label: "Revival Logs",       Icon: Gem },
   ]},
-  // HR Recruitment module — visible to ADMIN + MANAGER
-  { section: "HR", managerOrAdmin: true, items: [
-    { href: "/hr",            label: "HR Dashboard",   Icon: Briefcase },
-    { href: "/hr/candidates", label: "Candidates",     Icon: Users },
+  // HR Recruitment — single entry point that opens the HR workspace
+  { section: "RECRUITMENT", managerOrAdmin: true, items: [
+    { href: "/hr", label: "HR Recruitment", Icon: Briefcase },
   ]},
 ];
 

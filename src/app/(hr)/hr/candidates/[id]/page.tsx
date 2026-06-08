@@ -5,11 +5,7 @@ import HRCandidateDetail from "@/components/HRCandidateDetail";
 
 export const dynamic = "force-dynamic";
 
-export default async function CandidateDetailPage({
-  params,
-}: {
-  params: Promise<{ id: string }>;
-}) {
+export default async function CandidatePage({ params }: { params: Promise<{ id: string }> }) {
   const me = await requireUser();
   const { id } = await params;
 
@@ -25,20 +21,10 @@ export default async function CandidateDetailPage({
         resumes:        { orderBy: { createdAt: "desc" }, take: 5 },
       },
     }),
-    prisma.user.findMany({
-      where: { active: true },
-      select: { id: true, name: true },
-      orderBy: { name: "asc" },
-    }),
+    prisma.user.findMany({ where: { active: true }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
   ]);
 
   if (!candidate) notFound();
 
-  return (
-    <HRCandidateDetail
-      candidate={candidate as never}
-      agents={agents}
-      me={{ id: me.id, name: me.name, role: me.role }}
-    />
-  );
+  return <HRCandidateDetail candidate={candidate as never} agents={agents} me={{ id: me.id, name: me.name, role: me.role }} />;
 }
