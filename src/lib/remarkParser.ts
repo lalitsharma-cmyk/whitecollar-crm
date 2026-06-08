@@ -117,19 +117,40 @@ export function guessOutcome(text: string): CallOutcome {
 
 // ─── Agent roster matching ────────────────────────────────────────────────────
 
-// Build a matcher: given a list of known agent names (from the DB), return the
-// canonical name if the prefix word(s) match, otherwise null.
-// Matching is first-name-only (case-insensitive) to handle "Tanuj:" matching
-// "Tanuj Chopra" in the DB, plus full-name direct match.
+// Build a matcher: given a list of known agent names (from the DB):
+//   1. If candidate matches a roster entry → return canonical name
+//      (e.g. "Yasir" → "Yasir Khan", "Tanuj" → "Tanuj Chopra").
+//   2. If NOT in roster but looks like a real person name (≤2 CamelCase words,
+//      no digits, ≥2 chars each) → return the candidate as-is.
+//      This preserves historical agents (Kiran, Devansh, Muskan, Nitisha, …)
+//      who were real employees but are no longer active CRM users.
+//   3. 3+ word constructs like "Expressway Gurgaon Tanuj" or "Golf Island Tanuj"
+//      → return null (these are project/place names mixed in, not person names).
+//
+// Rule: historical remarks are business records. Agent names must NEVER be
+// removed just because the person is no longer an active CRM user.
 export function buildAgentMatcher(agentNames: string[]): (candidate: string) => string | null {
   const lookup = new Map<string, string>();
   for (const name of agentNames) {
     const lower = name.toLowerCase().trim();
-    lookup.set(lower, name);          // full name
+    lookup.set(lower, name);
     const first = lower.split(" ")[0];
-    if (first && !lookup.has(first)) lookup.set(first, name); // first name only
+    if (first && !lookup.has(first)) lookup.set(first, name);
   }
-  return (candidate: string) => lookup.get(candidate.toLowerCase().trim()) ?? null;
+  return (candidate: string) => {
+    const trimmed = candidate.trim();
+    // Priority 1: known CRM user → canonical full name
+    const canonical = lookup.get(trimmed.toLowerCase());
+    if (canonical) return canonical;
+    // Priority 2: not in roster → show as-is IF it looks like a person name.
+    // Person name heuristic: 1–2 words, each starting with a capital letter,
+    // no digits, each word ≥ 2 chars. This accepts "Kiran", "Devansh", "Muskan",
+    // "Nicky Gupta", "Abhinav Singh" and rejects "Expressway Gurgaon Tanuj" (3 words).
+    const words = trimmed.split(/\s+/);
+    if (words.length < 1 || words.length > 2) return null;
+    if (words.some(w => w.length < 2 || !/^[A-Z]/.test(w) || /\d/.test(w))) return null;
+    return trimmed; // preserve as historical agent name
+  };
 }
 
 // ─── Core structured entry ────────────────────────────────────────────────────

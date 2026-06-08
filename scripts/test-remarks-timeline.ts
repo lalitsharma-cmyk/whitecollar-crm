@@ -6,6 +6,14 @@ const AGENTS = ["Lalit Sharma", "Tanuj Chopra", "Yasir Khan", "Kiran", "Mehak Mu
 
 const CASES = [
   {
+    label: "Historical agents no longer in CRM: Kiran, Devansh, Muskan, Nitisha",
+    cell: `Kiran: On 5 Jan 2024 (11:00AM) Call connected. Client interested in 2BHK in Gurgaon.
+Devansh: On 10 Feb 2024 (3:00PM) Site visit done at Windchants.
+Muskan: On 15 Mar 2024 (2:00PM) Meeting at Oberoi. Client will revert.
+Nitisha: On 2 Apr 2024 (10:00AM) Call not picked.
+Call not picked.`,
+  },
+  {
     label: "Agent ownership change: Yasir → Tanuj → Lalit",
     cell: `Yasir: On 15 Jan 2025 (2:00PM) Client interested in Trump Tower. Requested pricing.
 Call not picked.
