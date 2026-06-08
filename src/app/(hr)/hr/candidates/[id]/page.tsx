@@ -2,6 +2,7 @@ import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { notFound } from "next/navigation";
 import HRCandidateDetail from "@/components/HRCandidateDetail";
+import { getHrUsers } from "@/lib/hrUsers";
 
 export const dynamic = "force-dynamic";
 
@@ -21,7 +22,7 @@ export default async function CandidatePage({ params }: { params: Promise<{ id: 
         resumes:        { orderBy: { createdAt: "desc" }, take: 5 },
       },
     }),
-    prisma.user.findMany({ where: { active: true }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
+    getHrUsers(),
   ]);
 
   if (!candidate) notFound();

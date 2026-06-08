@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import Link from "next/link";
 import HRImportClient from "@/components/HRImportClient";
+import { getHrUsers } from "@/lib/hrUsers";
 
 export const dynamic = "force-dynamic";
 
@@ -11,7 +12,7 @@ export default async function HRImportPage() {
   if (me.role !== "ADMIN" && me.role !== "MANAGER") redirect("/hr");
 
   const [agents, history] = await Promise.all([
-    prisma.user.findMany({ where: { active: true }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
+    getHrUsers(),
     prisma.hRImport.findMany({ orderBy: { createdAt: "desc" }, take: 15, include: { importedBy: { select: { name: true } } } }),
   ]);
 

@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import Link from "next/link";
 import { statusColor, statusLabel } from "@/lib/hrStatus";
+import { getHrUsers } from "@/lib/hrUsers";
 
 export const dynamic = "force-dynamic";
 
@@ -29,7 +30,7 @@ export default async function HRReportsPage({ searchParams }: { searchParams: Pr
   const candWhere = since ? { createdAt: { gte: since } } : {};
 
   const [users, calls, added, ivSched, ivDone, shortlisted, offers, joined, funnel] = await Promise.all([
-    prisma.user.findMany({ where: { active: true }, select: { id: true, name: true } }),
+    getHrUsers(),
     prisma.hRActivity.groupBy({ by: ["userId"], where: { type: { in: CALL_TYPES as never[] }, ...actWhere }, _count: true }),
     prisma.hRCandidate.groupBy({ by: ["primaryOwnerId"], where: candWhere, _count: true }),
     prisma.hRActivity.groupBy({ by: ["userId"], where: { type: "INTERVIEW_SCHEDULED", ...actWhere }, _count: true }),

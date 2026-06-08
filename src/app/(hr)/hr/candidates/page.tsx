@@ -4,6 +4,7 @@ import Link from "next/link";
 import type { HRCandidateStatus } from "@prisma/client";
 import HRCandidateTable from "@/components/HRCandidateTable";
 import { CLOSED_STATUS_KEYS } from "@/lib/hrStatus";
+import { getHrUsers } from "@/lib/hrUsers";
 
 export const dynamic = "force-dynamic";
 
@@ -31,7 +32,7 @@ export default async function CandidatesPage({ searchParams }: { searchParams: P
         _count: { select: { resumes: true } },
       },
     }),
-    prisma.user.findMany({ where: { active: true }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
+    getHrUsers(),
     prisma.hRCandidate.groupBy({ by: ["status"], where: scope, _count: { id: true } }),
   ]);
 
