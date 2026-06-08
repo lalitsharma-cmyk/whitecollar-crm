@@ -142,6 +142,7 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
   const [bulkErr, setBulkErr] = useState<string | null>(null);
   const [bulkCrossTeamWarn, setBulkCrossTeamWarn] = useState<string | null>(null);
   const [pickerOpenFor, setPickerOpenFor] = useState<string | null>(null);
+  const [pickerPos, setPickerPos] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
   const [statusOpenFor, setStatusOpenFor] = useState<string | null>(null);
   // §1: Assigned is display-only from the table — no inline reassign dropdown.
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
@@ -159,6 +160,16 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
     });
     setStatusOpenFor(null);
     router.refresh();
+  }
+
+  function openPicker(leadId: string, e: React.MouseEvent) {
+    e.stopPropagation();
+    if (pickerOpenFor === leadId) { setPickerOpenFor(null); return; }
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    // Position below the button, aligned left. Clamp so it doesn't go off-screen right.
+    const left = Math.min(rect.left, window.innerWidth - 210);
+    setPickerPos({ top: rect.bottom + 6, left });
+    setPickerOpenFor(leadId);
   }
 
   async function quickSetFollowup(leadId: string, date: string) {
@@ -468,31 +479,13 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
                           {l.budgetFormatted ?? <span className="text-gray-300">—</span>}
                         </td>
 
-                        {/* 5. Follow-Up — click to change date, floating picker */}
+                        {/* 5. Follow-Up — click opens fixed-position picker */}
                         <td className="px-3 py-1.5" onClick={e => e.stopPropagation()}>
-                          <div className="relative" data-picker-popover>
-                            <button type="button"
-                              onClick={() => setPickerOpenFor(pickerOpenFor === l.id ? null : l.id)}
-                              className={`text-xs flex items-center gap-0.5 whitespace-nowrap ${l.followupDate ? "text-emerald-700 dark:text-emerald-400 font-medium" : "text-gray-300 hover:text-gray-400"}`}>
-                              {l.followupDate ?? "—"}
-                            </button>
-                            {pickerOpenFor === l.id && (
-                              <div className="absolute left-0 top-full mt-1 z-50 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-600 rounded-lg shadow-xl p-3 min-w-[180px]"
-                                onClick={e => e.stopPropagation()}>
-                                <div className="text-[10px] text-gray-500 dark:text-slate-400 mb-1.5 font-semibold">Set follow-up date</div>
-                                <input type="date" autoFocus
-                                  className="text-xs border border-gray-200 dark:border-slate-600 rounded-md px-2 py-1.5 bg-white dark:bg-slate-700 dark:text-slate-100 outline-none focus:ring-2 focus:ring-blue-200 w-full"
-                                  defaultValue={l.followupRaw ?? ""}
-                                  onChange={e => e.target.value && quickSetFollowup(l.id, e.target.value)} />
-                                {l.followupDate && (
-                                  <button type="button" onClick={() => quickSetFollowup(l.id, "")}
-                                    className="mt-1.5 text-[10px] text-red-500 hover:text-red-700">
-                                    × Clear
-                                  </button>
-                                )}
-                              </div>
-                            )}
-                          </div>
+                          <button type="button"
+                            onClick={e => openPicker(l.id, e)}
+                            className={`text-xs whitespace-nowrap ${l.followupDate ? "text-emerald-700 dark:text-emerald-400 font-medium" : "text-gray-300 hover:text-gray-400"}`}>
+                            {l.followupDate ?? "—"}
+                          </button>
                         </td>
 
                         {/* 6. Assigned — display only (§1: controlled workflow, no accidental reassign) */}
@@ -528,7 +521,7 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
                               </a>
                             )}
                             <button type="button" title="Set follow-up"
-                              onClick={() => setPickerOpenFor(pickerOpenFor === l.id ? null : l.id)}
+                              onClick={e => openPicker(l.id, e)}
                               className="p-1.5 rounded-md text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors">
                               <Calendar className="w-3.5 h-3.5" />
                             </button>
@@ -596,7 +589,7 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
                     </a>
                   )}
                   <button type="button"
-                    onClick={e => { e.stopPropagation(); setPickerOpenFor(pickerOpenFor === l.id ? null : l.id); }}
+                    onClick={e => openPicker(l.id, e)}
                     className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg text-blue-600 bg-blue-50 dark:bg-blue-900/20 text-xs font-medium">
                     <Calendar className="w-3.5 h-3.5" /> Date
                   </button>
@@ -606,20 +599,7 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
                     <ExternalLink className="w-3.5 h-3.5" /> Open
                   </Link>
                 </div>
-                {/* Follow-up date picker (mobile) */}
-                {pickerOpenFor === l.id && (
-                  <div className="mt-2 pt-2 border-t border-gray-100 dark:border-slate-700" data-picker-popover
-                    onClick={e => e.stopPropagation()}>
-                    <input type="date" autoFocus
-                      className="text-xs border border-gray-200 dark:border-slate-600 rounded-md px-2 py-1.5 bg-white dark:bg-slate-700 dark:text-slate-100 outline-none w-full"
-                      defaultValue={l.followupRaw ?? ""}
-                      onChange={e => e.target.value && quickSetFollowup(l.id, e.target.value)} />
-                    {l.followupDate && (
-                      <button type="button" onClick={() => quickSetFollowup(l.id, "")}
-                        className="mt-1 text-[10px] text-red-500">× Clear date</button>
-                    )}
-                  </div>
-                )}
+                {/* Picker now rendered as fixed-position portal below */}
               </div>
             ))}
           </div>
@@ -1262,6 +1242,41 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
           </div>
         </div>
       )}
+
+      {/* ── Fixed-position follow-up date picker ──────────────────────────
+          Rendered ONCE outside all tables/cards so it always appears exactly
+          below the button that opened it — no table overflow clipping. */}
+      {pickerOpenFor && (() => {
+        const row = leads.find(l => l.id === pickerOpenFor);
+        return (
+          <div
+            data-picker-popover
+            style={{ position: "fixed", top: pickerPos.top, left: pickerPos.left, zIndex: 9999 }}
+            className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-600 rounded-xl shadow-2xl p-4 w-56"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="text-[11px] font-semibold text-gray-600 dark:text-slate-300 mb-2">📅 Set follow-up date</div>
+            <input
+              type="date"
+              autoFocus
+              className="text-sm border border-gray-200 dark:border-slate-600 rounded-lg px-3 py-2 bg-white dark:bg-slate-700 dark:text-slate-100 outline-none focus:ring-2 focus:ring-blue-300 w-full"
+              defaultValue={row?.followupRaw ?? ""}
+              onChange={e => {
+                if (e.target.value) quickSetFollowup(pickerOpenFor, e.target.value);
+              }}
+            />
+            {row?.followupDate && (
+              <button
+                type="button"
+                onClick={() => quickSetFollowup(pickerOpenFor, "")}
+                className="mt-2 text-xs text-red-500 hover:text-red-700 w-full text-left"
+              >
+                × Clear date
+              </button>
+            )}
+          </div>
+        );
+      })()}
 
     </>
   );
