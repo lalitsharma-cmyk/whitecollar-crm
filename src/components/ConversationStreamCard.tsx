@@ -11,7 +11,7 @@
 import { useState } from "react";
 import { fmtIST12Paren, fmtISTDate } from "@/lib/datetime";
 import type { CallLog, WhatsAppMessage } from "@prisma/client";
-import { extractUndatedSegments } from "@/lib/remarkParser";
+import { extractUndatedSegments, type SegmentEntry } from "@/lib/remarkParser";
 
 // Voice notes + quick text notes — all saved to the Note model via
 // /api/leads/[id]/notes. Displayed inline in the stream in IST order.
@@ -82,7 +82,7 @@ type StreamRow =
   | { kind: "call"; at: Date; call: CallLogWithUser }
   | { kind: "wa"; at: Date; msg: WhatsAppMessage }
   | { kind: "note"; at: Date; note: NoteWithUser }
-  | { kind: "imported"; at: Date; text: string }; // §18: undated imported remarks
+  | { kind: "imported"; at: Date; text: string; hasDate: boolean }; // §18: historical remarks
 
 // A compressed placeholder for ≥ COMPRESS_MIN_COUNT consecutive unsuccessful
 // attempts that are all older than the threshold and have no notes/recordings.
@@ -186,18 +186,23 @@ export default function ConversationStreamCard({ callLogs, waMessages, notes = [
     ? "Recordings may exist only for India team (UAE consent rules)"
     : undefined;
 
-  // §18: undated imported remarks → added to stream with epoch 0 so they sort to bottom.
-  const undatedSegments = rawRemarks ? extractUndatedSegments(rawRemarks) : [];
-  const UNDATED_BASE = new Date(0); // epoch 0 = oldest possible, always at bottom
+  // §18: imported remarks — dated ones sort into correct position; truly undated go to bottom.
+  const segments: SegmentEntry[] = rawRemarks ? extractUndatedSegments(rawRemarks) : [];
+  const UNDATED_BASE = new Date(1); // epoch ~0 = always at bottom (below all real dates)
 
-  // Merge then sort newest-first. Stable Date comparison; ties broken by
-  // CALL > NOTE > WA so a "log call + voice note" pair shows the call first.
-  // Undated imported entries go to the very bottom (at = epoch 0).
+  // Merge then sort newest-first.
   const rows: StreamRow[] = [
     ...callLogs.map((c) => ({ kind: "call" as const, at: new Date(c.startedAt), call: c })),
     ...waMessages.map((m) => ({ kind: "wa" as const, at: new Date(m.receivedAt), msg: m })),
     ...notes.map((n) => ({ kind: "note" as const, at: new Date(n.createdAt), note: n })),
-    ...undatedSegments.map((text) => ({ kind: "imported" as const, at: UNDATED_BASE, text })),
+    // Segments with a parsed date → correct timeline position.
+    // Segments without a date → epoch bottom, labelled "Historical note".
+    ...segments.map((seg) => ({
+      kind: "imported" as const,
+      at: seg.date ?? UNDATED_BASE,
+      text: seg.text,
+      hasDate: seg.date !== null,
+    })),
   ].sort((a, b) => {
     const d = b.at.getTime() - a.at.getTime();
     if (d !== 0) return d;
@@ -406,14 +411,15 @@ export default function ConversationStreamCard({ callLogs, waMessages, notes = [
           );
           }
 
-          // ── §18 Imported remark (undated) — inside the stream, at the bottom ──
+          // ── §18 Historical remark — clean, no source badges (agents see only conversation)
           return (
-            <div key={`imp-${idx}`} className="border-l-2 border-gray-200 dark:border-slate-600 bg-gray-50/50 dark:bg-slate-800/30 pl-3 pr-2 py-1.5 rounded-r">
-              <div className="flex items-center gap-2 text-[11px] text-gray-400 dark:text-slate-500 mb-0.5">
-                <span>📋 Imported from Excel</span>
-                <span className="chip text-[9px] border border-gray-200 bg-gray-100 text-gray-400 dark:bg-slate-700 dark:text-slate-400 dark:border-slate-600">No date</span>
+            <div key={`imp-${idx}`} className="border-l-2 border-gray-200 dark:border-slate-600 pl-3 pr-2 py-1.5 rounded-r">
+              <div className="text-[11px] text-gray-400 dark:text-slate-500 mb-0.5">
+                {row.hasDate
+                  ? `📝 ${fmtISTDate(row.at)}`
+                  : "📝 Historical note"}
               </div>
-              <div className="text-xs text-gray-600 dark:text-slate-300 whitespace-pre-wrap">{row.text}</div>
+              <div className="text-xs text-gray-700 dark:text-slate-200 whitespace-pre-wrap">{row.text}</div>
             </div>
           );
         })}
@@ -435,8 +441,7 @@ export default function ConversationStreamCard({ callLogs, waMessages, notes = [
         </div>
       )}
 
-      {/* §18: Undated imported remarks are now inline in the stream above (kind="imported").
-          No separate block — everything is in one unified Conversation History. */}
+      {/* §18: Historical remarks are inline in the stream above — one unified timeline. */}
     </div>
   );
 }

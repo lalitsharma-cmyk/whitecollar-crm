@@ -106,33 +106,91 @@ export function parseRemarks(cell: string): ParsedRemark[] {
   return results;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Extended date extraction — tries multiple formats that parseRemarks() misses.
+// Used for segments that don't start with "on DD Mon YYYY (HH:MM)".
+//
+// Supported extra patterns:
+//   "3 Jan 2022"          — no "on" prefix
+//   "03 Jan"              — no year (current year assumed)
+//   "8/6/2026"            — DD/MM/YYYY or MM/DD/YYYY (prefer DD/MM for India)
+//   "08-06-2026"          — DD-MM-YYYY
+//   "2026-06-08"          — ISO YYYY-MM-DD
+// ─────────────────────────────────────────────────────────────────────────────
+function tryExtractDate(line: string): Date | null {
+  // 1. "3 Jan 2022" or "3 January 2022" — with or without "on" prefix
+  const mLong = line.match(/(?:^|[^a-z])(\d{1,2})\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*[\s,]+(\d{4})/i);
+  if (mLong) {
+    const d = parseInt(mLong[1]);
+    const mon = MONTHS[mLong[2].toLowerCase().slice(0,4)] ?? MONTHS[mLong[2].toLowerCase()];
+    const yr = parseInt(mLong[3]);
+    if (mon !== undefined) {
+      return new Date(Date.UTC(yr, mon, d, 6, 30) - IST_OFFSET_MS); // ~noon IST
+    }
+  }
+  // 2. "3 Jan" — no year, use current year
+  const mShort = line.match(/(?:^|[^a-z])(\d{1,2})\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*/i);
+  if (mShort) {
+    const d = parseInt(mShort[1]);
+    const mon = MONTHS[mShort[2].toLowerCase().slice(0,4)] ?? MONTHS[mShort[2].toLowerCase()];
+    if (mon !== undefined) {
+      const yr = new Date().getFullYear();
+      return new Date(Date.UTC(yr, mon, d, 6, 30) - IST_OFFSET_MS);
+    }
+  }
+  // 3. ISO: 2026-06-08
+  const mISO = line.match(/\b(\d{4})-(\d{2})-(\d{2})\b/);
+  if (mISO) {
+    const d = new Date(`${mISO[1]}-${mISO[2]}-${mISO[3]}T06:30:00+05:30`);
+    if (!isNaN(d.getTime())) return d;
+  }
+  // 4. DD/MM/YYYY or DD-MM-YYYY
+  const mDMY = line.match(/\b(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})\b/);
+  if (mDMY) {
+    const day = parseInt(mDMY[1]), mon = parseInt(mDMY[2]) - 1, yr = parseInt(mDMY[3]);
+    if (day >= 1 && day <= 31 && mon >= 0 && mon <= 11) {
+      return new Date(Date.UTC(yr, mon, day, 6, 30) - IST_OFFSET_MS);
+    }
+  }
+  return null;
+}
+
+export interface SegmentEntry {
+  text: string;
+  date: Date | null; // null = truly undated — show at bottom as historical note
+}
+
 /**
- * Extract all text segments from a remarks cell that do NOT have a
- * parseable date — e.g. the original inquiry text, plain agent notes,
- * WhatsApp message content without a date stamp.
+ * Extract all text segments from a remarks cell that do NOT match the
+ * primary "on DD Mon YYYY (HH:MM)" pattern used by parseRemarks().
  *
- * These are the lines that parseRemarks() silently drops. We surface
- * them in the Conversation History as "Import note" entries so nothing
- * is ever lost from the sheet.
+ * Each segment is returned with an optional date (extracted from alternative
+ * date formats or null if truly undated). The caller uses this to place the
+ * segment correctly in the conversation timeline — dated segments sort into
+ * the right position; undated ones go to the bottom.
+ *
+ * Agents never see the source — no "Imported from Excel" labels.
  */
-export function extractUndatedSegments(cell: string): string[] {
+export function extractUndatedSegments(cell: string): SegmentEntry[] {
   if (!cell || typeof cell !== "string") return [];
 
   // Normalise separators (MIS uses ",,,,,," as line breaks)
   const text = cell.replace(/,{2,}/g, "\n").replace(/\r\n/g, "\n").trim();
 
-  // Split on lines that START a dated entry. Everything before the first
-  // dated entry, and any line not consumed by the regex, is undated.
+  // Split on lines that START a dated entry (the pattern parseRemarks() handles).
   const datedPattern = /(?:[A-Z][A-Za-z]{1,15}(?:\s+[A-Z][A-Za-z]{1,15}){0,2}\s*:\s*)?[oO]n\s+[\dA-Za-z]+(?:\s+[\dA-Za-z]+){1,3}\s*\([^)]+\)/;
 
   const lines = text.split("\n").map(l => l.trim()).filter(Boolean);
-  const undated: string[] = [];
+  const segments: SegmentEntry[] = [];
 
   for (const line of lines) {
-    if (datedPattern.test(line)) continue; // dated — already parsed into callLogs
+    if (datedPattern.test(line)) continue; // dated — already handled by parseRemarks()
     if (line.length < 3) continue;         // noise
-    undated.push(line);
+
+    // Try to extract a date from alternative formats (no "on" prefix, slash dates, ISO, etc.)
+    const date = tryExtractDate(line);
+    segments.push({ text: line, date });
   }
 
-  return undated;
+  return segments;
 }
