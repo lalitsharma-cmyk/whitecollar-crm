@@ -1530,6 +1530,7 @@ model HRCandidate {
   tags             String?           // comma-separated
   nextAction       String?
   nextActionDate   DateTime?
+  joiningDate      DateTime?   // expected / confirmed joining date
   // HR assessment (Candidate Fit) — "Good" / "Average" / "Weak" / null = Not Checked
   fitExperience      String?
   fitCommunication   String?

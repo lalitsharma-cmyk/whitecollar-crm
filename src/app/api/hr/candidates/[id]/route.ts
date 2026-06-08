@@ -32,13 +32,13 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   const data: Record<string, unknown> = {};
   const allowed = ["name","phone","altPhone","whatsappPhone","email","location","city","currentCompany",
     "currentProfile","positionApplied","experience","realEstateExperience","currentSalary","expectedSalary",
-    "noticePeriod","source","status","remarks","tags","nextAction","nextActionDate","primaryOwnerId","secondaryOwnerId",
+    "noticePeriod","source","status","remarks","tags","nextAction","nextActionDate","joiningDate","primaryOwnerId","secondaryOwnerId",
     "fitExperience","fitCommunication","fitStability","fitSalary","fitNotice","interviewFeedback","joiningProbability"];
   for (const key of allowed) {
     if (key in body) {
       if (key === "currentSalary" || key === "expectedSalary") {
         data[key] = body[key] ? parseFloat(body[key]) : null;
-      } else if (key === "nextActionDate") {
+      } else if (key === "nextActionDate" || key === "joiningDate") {
         data[key] = body[key] ? new Date(body[key]) : null;
       } else {
         data[key] = body[key] || null;

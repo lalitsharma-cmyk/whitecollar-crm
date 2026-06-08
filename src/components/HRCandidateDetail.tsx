@@ -18,7 +18,7 @@ interface Candidate {
   positionApplied: string|null; experience: string|null; realEstateExperience: string|null;
   currentSalary: number|null; expectedSalary: number|null; noticePeriod: string|null;
   source: string|null; status: HRCandidateStatus; remarks: string|null; tags: string|null;
-  nextAction: string|null; nextActionDate: string|null;
+  nextAction: string|null; nextActionDate: string|null; joiningDate: string|null;
   fitExperience: string|null; fitCommunication: string|null; fitStability: string|null; fitSalary: string|null; fitNotice: string|null;
   interviewFeedback: string|null; joiningProbability: string|null;
   primaryOwnerId: string|null; secondaryOwnerId: string|null;
@@ -97,7 +97,7 @@ function InlineField({ candidateId, field, value, type = "text", options, placeh
   if (!editing) {
     const empty = value == null || value === "";
     return (
-      <button type="button" onClick={() => { setVal(value == null ? "" : String(value)); setEditing(true); }}
+      <button type="button" onClick={() => { setVal(value == null ? "" : (type === "date" ? new Date(value as string).toISOString().slice(0, 10) : String(value))); setEditing(true); }}
         className="group text-left text-sm text-gray-800 dark:text-slate-100 hover:bg-blue-50/60 dark:hover:bg-slate-800 rounded px-1 -mx-1 w-full truncate">
         <span className={empty ? "text-gray-300 italic" : ""}>{empty ? "add" : (format ? format(value as string | number) : String(value))}</span>
         <span className="opacity-0 group-hover:opacity-100 text-[10px] text-blue-500 ml-1">✎</span>
@@ -161,6 +161,7 @@ export default function HRCandidateDetail({ candidate: c, agents, me }: Props) {
     const doParam = new URLSearchParams(window.location.search).get("do");
     if (doParam === "interview") setPanel("interview");
     else if (doParam === "followup") setPanel("followup");
+    else if (doParam === "note") setPanel("note");
     else if (doParam === "resume") setTab("resumes");
   }, []);
 
@@ -465,6 +466,7 @@ export default function HRCandidateDetail({ candidate: c, agents, me }: Props) {
             <Row label="Interview"><span className="text-sm text-gray-700 dark:text-slate-200">{nextIV ? new Date(nextIV.scheduledAt).toLocaleString("en-IN",{day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"}) : "—"}</span></Row>
             <Row label="Type"><span className="text-sm text-gray-700 dark:text-slate-200">{nextIV ? fmt(nextIV.type) : "—"}</span></Row>
             <Row label="Confirm"><span className="text-sm text-gray-700 dark:text-slate-200">{nextIV ? fmt(nextIV.confirmationStatus) : "—"}</span></Row>
+            <Row label="Joining"><InlineField candidateId={c.id} field="joiningDate" value={c.joiningDate} type="date" format={v => new Date(v as string).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })} /></Row>
           </Panel>
 
           <Panel title="Resume">

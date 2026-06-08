@@ -1,209 +1,237 @@
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import Link from "next/link";
-import HRFollowUpActions from "@/components/HRFollowUpActions";
-import { CLOSED_STATUS_KEYS } from "@/lib/hrStatus";
+import { statusColor, statusLabel } from "@/lib/hrStatus";
+import HRRemindersCard, { type HRReminderEvent, type HREventType } from "@/components/HRRemindersCard";
+import HRFollowUpTabs, { type FU } from "@/components/HRFollowUpTabs";
 
 export const dynamic = "force-dynamic";
 
-function todayRangeIST() {
-  const now = new Date();
-  const istStr = now.toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
-  const start = new Date(istStr + "T00:00:00+05:30");
-  const end = new Date(start.getTime() + 24 * 3600_000);
-  return { start, end, tomorrowEnd: new Date(start.getTime() + 48 * 3600_000) };
+function istRange() {
+  const todayIso = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+  const start = new Date(todayIso + "T00:00:00+05:30");
+  return { todayIso, start, end: new Date(start.getTime() + 24 * 3600_000) };
 }
-function fmtTime(d: Date) { return d.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: true, timeZone: "Asia/Kolkata" }); }
-function fmtDay(d: Date) { return d.toLocaleDateString("en-IN", { day: "numeric", month: "short", timeZone: "Asia/Kolkata" }); }
 function fmt(s: string) { return s.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase()); }
+function fmtTime(d: Date) { return d.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: true, timeZone: "Asia/Kolkata" }); }
+function fmtDate(d: Date) { return d.toLocaleDateString("en-IN", { day: "numeric", month: "short", timeZone: "Asia/Kolkata" }); }
 
-// Inline call / WhatsApp / open-profile actions for interview & no-show rows.
-function RowActions({ id, phone }: { id: string; phone: string | null }) {
-  return (
-    <div className="flex flex-col gap-1.5 shrink-0">
-      {phone && (
-        <a href={`tel:${phone}`} className="text-[11px] px-2.5 py-1 rounded-lg border border-blue-300 bg-white text-blue-700 hover:bg-blue-50 text-center">📞 Call</a>
-      )}
-      {phone && (
-        <a href={`https://wa.me/${phone.replace(/\D/g, "")}`} target="_blank" rel="noopener noreferrer"
-          className="text-[11px] px-2.5 py-1 rounded-lg border border-green-300 bg-white text-green-700 hover:bg-green-50 text-center">💬 WA</a>
-      )}
-      <Link href={`/hr/candidates/${id}`} className="text-[11px] px-2.5 py-1 rounded-lg border border-gray-300 bg-white text-gray-600 hover:bg-gray-50 text-center">Open →</Link>
-    </div>
-  );
-}
-
-function Section({ emoji, title, count, accent, empty, moreHref, moreCount, children }: {
-  emoji: string; title: string; count: number; accent: string; empty: string;
-  moreHref?: string; moreCount?: number; children?: React.ReactNode;
-}) {
-  return (
-    <section className="bg-white dark:bg-slate-900 rounded-2xl border border-gray-200 dark:border-slate-700 overflow-hidden">
-      <div className={`flex items-center justify-between px-4 py-2.5 border-b border-gray-100 dark:border-slate-800 ${accent}`}>
-        <h2 className="text-sm font-bold flex items-center gap-2">{emoji} {title}</h2>
-        <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-white/70 dark:bg-slate-800 text-gray-700 dark:text-slate-200">{count}</span>
-      </div>
-      {count === 0 ? (
-        <div className="px-4 py-5 text-center text-xs text-gray-400">{empty}</div>
-      ) : (
-        <>
-          <div className="divide-y divide-gray-100 dark:divide-slate-800">{children}</div>
-          {moreHref && moreCount && moreCount > 0 && (
-            <Link href={moreHref} className="block text-center text-[11px] text-blue-600 hover:underline py-2 border-t border-gray-100 dark:border-slate-800">
-              View all {moreCount}+ →
-            </Link>
-          )}
-        </>
-      )}
-    </section>
-  );
-}
+const FU_EVENT: Record<string, { type: HREventType; label: string }> = {
+  CALL_BACK: { type: "FOLLOWUP", label: "Call" },
+  INTERVIEW_CONFIRMATION: { type: "CONFIRM", label: "Confirm Interview" },
+  REMINDER: { type: "FOLLOWUP", label: "Reminder" },
+  WHATSAPP_FOLLOWUP: { type: "FOLLOWUP", label: "WhatsApp" },
+  EMAIL_FOLLOWUP: { type: "FOLLOWUP", label: "Email" },
+  SALARY_DISCUSSION: { type: "FOLLOWUP", label: "Salary Discussion" },
+  OFFER_DISCUSSION: { type: "OFFER", label: "Offer Discussion" },
+  JOINING_FOLLOWUP: { type: "OFFER", label: "Joining Follow-up" },
+  NO_SHOW_RECOVERY: { type: "FOLLOWUP", label: "No-Show Recovery" },
+  CUSTOM: { type: "FOLLOWUP", label: "Follow-up" },
+};
 
 export default async function HRDashboard() {
   const me = await requireUser();
-  const { start: todayStart, end: todayEnd, tomorrowEnd } = todayRangeIST();
+  const { todayIso, start: todayStart, end: todayEnd } = istRange();
   const scope = me.role === "AGENT" ? { OR: [{ primaryOwnerId: me.id }, { secondaryOwnerId: me.id }] } : {};
+  const now = new Date();
+  const weekAgo = new Date(todayStart.getTime() - 7 * 24 * 3600_000);
 
-  const [todayInterviews, confirmSoon, dueToday, overdue, noShows, pipe] = await Promise.all([
-    prisma.hRInterview.findMany({
-      where: { scheduledAt: { gte: todayStart, lt: todayEnd }, attendanceStatus: { in: ["SCHEDULED", "RESCHEDULED"] }, candidate: scope },
-      orderBy: { scheduledAt: "asc" }, take: 30,
-      include: { candidate: { select: { id: true, name: true, phone: true } }, interviewer: { select: { name: true } } },
-    }),
-    prisma.hRInterview.findMany({
-      where: { scheduledAt: { gte: todayStart, lt: tomorrowEnd }, confirmationStatus: "PENDING", attendanceStatus: { in: ["SCHEDULED", "RESCHEDULED"] }, candidate: scope },
-      orderBy: { scheduledAt: "asc" }, take: 30,
-      include: { candidate: { select: { id: true, name: true, phone: true } } },
-    }),
+  const [followUps, interviews, newCount, expectedList] = await Promise.all([
     prisma.hRFollowUp.findMany({
-      where: { completedAt: null, dueAt: { gte: todayStart, lt: todayEnd }, candidate: scope },
-      orderBy: { dueAt: "asc" }, take: 30,
-      include: { candidate: { select: { id: true, name: true, phone: true } } },
-    }),
-    prisma.hRFollowUp.findMany({
-      where: { completedAt: null, dueAt: { lt: todayStart }, candidate: scope },
-      orderBy: { dueAt: "asc" }, take: 30,
-      include: { candidate: { select: { id: true, name: true, phone: true } } },
+      where: { completedAt: null, candidate: scope },
+      orderBy: { dueAt: "asc" }, take: 200,
+      include: { candidate: { select: { id: true, name: true, phone: true, whatsappPhone: true, status: true, nextAction: true, primaryOwner: { select: { name: true } } } } },
     }),
     prisma.hRInterview.findMany({
-      where: { attendanceStatus: "NO_SHOW", candidate: { ...scope, status: { notIn: CLOSED_STATUS_KEYS as never[] } } },
-      orderBy: { scheduledAt: "desc" }, take: 20,
-      include: { candidate: { select: { id: true, name: true, phone: true } } },
+      where: { candidate: scope, scheduledAt: { gte: weekAgo } },
+      orderBy: { scheduledAt: "asc" }, take: 200,
+      include: { candidate: { select: { id: true, name: true, phone: true, positionApplied: true, primaryOwner: { select: { name: true } } } }, interviewer: { select: { name: true } } },
     }),
-    prisma.hRCandidate.groupBy({ by: ["status"], where: scope, _count: true }),
+    prisma.hRCandidate.count({ where: { status: "NEW", ...scope } }),
+    prisma.hRCandidate.findMany({
+      where: { AND: [scope, { OR: [{ status: "EXPECTED_JOINING" }, { joiningDate: { not: null } }] }] },
+      orderBy: { joiningDate: "asc" }, take: 20,
+      select: { id: true, name: true, positionApplied: true, joiningDate: true, status: true },
+    }),
   ]);
 
-  const total = todayInterviews.length + confirmSoon.length + dueToday.length + overdue.length + noShows.length;
-  const pmap: Record<string, number> = {};
-  for (const p of pipe) pmap[p.status] = p._count;
-  const glance: [string, string][] = [["NEW", "New"], ["PIPELINE", "Pipeline"], ["SHORTLISTED", "Shortlisted"], ["OFFER_RELEASED", "Offers"], ["JOINED", "Joined"]];
+  // ── Derive follow-up buckets ──
+  const overdueFU = followUps.filter(f => new Date(f.dueAt) < todayStart);
+  const todayFU = followUps.filter(f => { const d = new Date(f.dueAt); return d >= todayStart && d < todayEnd; });
+  const upcomingFU = followUps.filter(f => new Date(f.dueAt) >= todayEnd).slice(0, 30);
+
+  // Main action list — one row per candidate needing action today (overdue + due today, soonest first).
+  const seen = new Set<string>();
+  const actionItems = [...overdueFU, ...todayFU]
+    .sort((a, b) => +new Date(a.dueAt) - +new Date(b.dueAt))
+    .filter(f => { if (seen.has(f.candidateId)) return false; seen.add(f.candidateId); return true; })
+    .slice(0, 25);
+
+  // ── Derive interview buckets ──
+  const ivToday = interviews.filter(iv => { const d = new Date(iv.scheduledAt); return d >= todayStart && d < todayEnd && (iv.attendanceStatus === "SCHEDULED" || iv.attendanceStatus === "RESCHEDULED"); });
+  const confirmPending = interviews.filter(iv => new Date(iv.scheduledAt) >= now && iv.confirmationStatus === "PENDING" && (iv.attendanceStatus === "SCHEDULED" || iv.attendanceStatus === "RESCHEDULED"));
+  const noShowSeen = new Set<string>();
+  const noShowList = interviews.filter(iv => iv.attendanceStatus === "NO_SHOW").reverse()
+    .filter(iv => { if (noShowSeen.has(iv.candidateId)) return false; noShowSeen.add(iv.candidateId); return true; }).slice(0, 10);
+
+  // ── Reminder events ──
+  const reminderEvents: HRReminderEvent[] = [
+    ...followUps.map(f => ({ id: f.id, candidateId: f.candidateId, candidateName: f.candidate.name, type: FU_EVENT[f.type]?.type ?? "FOLLOWUP", label: FU_EVENT[f.type]?.label ?? "Follow-up", timeIso: new Date(f.dueAt).toISOString(), ownerName: f.candidate.primaryOwner?.name ?? null })),
+    ...interviews.filter(iv => iv.attendanceStatus === "SCHEDULED" || iv.attendanceStatus === "RESCHEDULED").map(iv => ({ id: iv.id, candidateId: iv.candidateId, candidateName: iv.candidate.name, type: "INTERVIEW" as HREventType, label: `${fmt(iv.type)} Interview`, timeIso: new Date(iv.scheduledAt).toISOString(), ownerName: iv.candidate.primaryOwner?.name ?? null })),
+  ];
+
+  const toFU = (f: typeof followUps[number]): FU => ({ id: f.id, candidateId: f.candidateId, candidateName: f.candidate.name, phone: f.candidate.phone, type: f.type, dueAt: new Date(f.dueAt).toISOString(), notes: f.notes });
+
+  const metrics = [
+    { label: "New Candidates", n: newCount, href: "/hr/candidates?status=NEW", emoji: "🆕", color: "border-blue-400 text-blue-700 bg-blue-50" },
+    { label: "Calls Due Today", n: todayFU.length, href: "#action", emoji: "📞", color: "border-amber-400 text-amber-700 bg-amber-50" },
+    { label: "Interviews Today", n: ivToday.length, href: "#interviews", emoji: "🎯", color: "border-indigo-400 text-indigo-700 bg-indigo-50" },
+    { label: "Confirmations Pending", n: confirmPending.length, href: "#interviews", emoji: "✅", color: "border-orange-400 text-orange-700 bg-orange-50" },
+    { label: "Overdue Follow-Ups", n: overdueFU.length, href: "#followups", emoji: "⚠️", color: "border-red-400 text-red-700 bg-red-50" },
+    { label: "No-Shows", n: noShowList.length, href: "#noshow", emoji: "🚫", color: "border-rose-400 text-rose-700 bg-rose-50" },
+    { label: "Expected Joinings", n: expectedList.length, href: "#joinings", emoji: "🤝", color: "border-green-400 text-green-700 bg-green-50" },
+  ];
+
+  const wa = (p: string | null, alt: string | null) => { const x = p ?? alt; return x ? `https://wa.me/${x.replace(/\D/g, "")}` : null; };
 
   return (
-    <div className="p-4 sm:p-6 max-w-3xl mx-auto space-y-4">
-      {/* Header */}
-      <div className="flex items-center justify-between flex-wrap gap-2">
-        <div>
-          <h1 className="text-xl font-bold text-gray-900 dark:text-white">
-            {new Date().getHours() < 12 ? "Good morning" : new Date().getHours() < 17 ? "Good afternoon" : "Good evening"}, {me.name.split(" ")[0]} 👋
-          </h1>
-          <p className="text-sm text-gray-500 mt-0.5">
-            {total > 0 ? <><b className="text-gray-700 dark:text-slate-200">{total}</b> {total === 1 ? "thing needs" : "things need"} your attention today</> : "You're all caught up 🎉"}
-          </p>
-        </div>
-        <Link href="/hr/candidates/new"
-          className="inline-flex items-center gap-2 bg-[#1a2e4a] text-white text-sm font-semibold px-4 py-2 rounded-xl hover:bg-[#243d60] transition shrink-0">
-          + Add Candidate
-        </Link>
+    <div className="p-4 sm:p-6 max-w-7xl mx-auto">
+      <div className="flex items-center justify-between flex-wrap gap-2 mb-4">
+        <h1 className="text-xl font-bold text-gray-900 dark:text-white">
+          {now.getHours() < 12 ? "Good morning" : now.getHours() < 17 ? "Good afternoon" : "Good evening"}, {me.name.split(" ")[0]} 👋
+        </h1>
+        <Link href="/hr/candidates/new" className="inline-flex items-center gap-2 bg-[#1a2e4a] text-white text-sm font-semibold px-4 py-2 rounded-xl hover:bg-[#243d60] transition">+ Add Candidate</Link>
       </div>
 
-      {/* 1 — Interviews scheduled today */}
-      <Section emoji="🎯" title="Interviews Today" count={todayInterviews.length} accent="bg-indigo-50 dark:bg-indigo-900/20"
-        empty="No interviews scheduled today.">
-        {todayInterviews.map(iv => (
-          <div key={iv.id} className="flex items-center gap-3 px-4 py-2.5">
-            <div className="text-xs font-bold text-indigo-700 dark:text-indigo-300 w-16 shrink-0">{fmtTime(iv.scheduledAt)}</div>
-            <div className="flex-1 min-w-0">
-              <Link href={`/hr/candidates/${iv.candidateId}`} className="text-sm font-semibold text-gray-800 dark:text-slate-100 hover:underline">{iv.candidate.name}</Link>
-              <div className="text-[11px] text-gray-500 flex flex-wrap gap-x-2">
-                <span>{fmt(iv.type)} interview</span>
-                {iv.interviewer && <span>· {iv.interviewer.name}</span>}
-                <span className={iv.confirmationStatus === "CONFIRMED" ? "text-green-600" : "text-amber-600"}>· {fmt(iv.confirmationStatus)}</span>
+      <div className="grid lg:grid-cols-3 gap-4">
+        {/* ── LEFT: action content ── */}
+        <div className="lg:col-span-2 space-y-4">
+          {/* Top summary bar */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            {metrics.map(m => (
+              <a key={m.label} href={m.href} className={`rounded-xl border-l-4 ${m.color} p-3 hover:shadow-md transition`}>
+                <div className="text-2xl font-extrabold text-gray-800">{m.n}</div>
+                <div className="text-[10px] text-gray-600 mt-0.5">{m.emoji} {m.label}</div>
+              </a>
+            ))}
+          </div>
+
+          {/* Main action list */}
+          <section id="action" className="bg-white dark:bg-slate-900 rounded-2xl border border-gray-200 dark:border-slate-700 overflow-hidden">
+            <div className="px-4 py-2.5 border-b border-gray-100 dark:border-slate-800 text-sm font-bold text-gray-700 dark:text-slate-200">📋 Who to call now ({actionItems.length})</div>
+            {actionItems.length === 0 ? (
+              <div className="px-4 py-6 text-center text-xs text-gray-400">Nothing due — you&apos;re all caught up 🎉</div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead><tr className="bg-gray-50 dark:bg-slate-800 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide">
+                    {["Candidate", "Phone", "Status", "Next Action", "Due", "Owner", "Actions"].map(h => <th key={h} className="px-3 py-2 whitespace-nowrap">{h}</th>)}
+                  </tr></thead>
+                  <tbody className="divide-y divide-gray-100 dark:divide-slate-800">
+                    {actionItems.map(f => {
+                      const due = new Date(f.dueAt); const overdue = due < todayStart;
+                      const waHref = wa(f.candidate.whatsappPhone, f.candidate.phone);
+                      return (
+                        <tr key={f.id} className="hover:bg-gray-50/80 dark:hover:bg-slate-800/50">
+                          <td className="px-3 py-2"><Link href={`/hr/candidates/${f.candidateId}`} className="font-semibold text-[#1a2e4a] dark:text-blue-400 hover:underline">{f.candidate.name}</Link></td>
+                          <td className="px-3 py-2 text-xs text-gray-600 whitespace-nowrap">{f.candidate.phone ?? "—"}</td>
+                          <td className="px-3 py-2"><span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${statusColor(f.candidate.status)}`}>{statusLabel(f.candidate.status)}</span></td>
+                          <td className="px-3 py-2 text-xs text-gray-600 max-w-[140px] truncate">{f.candidate.nextAction ?? fmt(f.type)}</td>
+                          <td className="px-3 py-2 text-xs whitespace-nowrap"><span className={overdue ? "text-red-600 font-semibold" : "text-amber-600"}>{overdue ? "⚠ " : ""}{fmtTime(due)}</span></td>
+                          <td className="px-3 py-2 text-xs text-gray-500 whitespace-nowrap">{f.candidate.primaryOwner?.name?.split(" ")[0] ?? "—"}</td>
+                          <td className="px-3 py-2"><div className="flex items-center gap-1">
+                            {f.candidate.phone && <a href={`tel:${f.candidate.phone}`} title="Call" className="px-1 py-0.5 rounded hover:bg-blue-50 text-blue-600">📞</a>}
+                            {waHref && <a href={waHref} target="_blank" rel="noopener noreferrer" title="WhatsApp" className="px-1 py-0.5 rounded hover:bg-green-50 text-green-600">💬</a>}
+                            <Link href={`/hr/candidates/${f.candidateId}?do=interview`} title="Schedule" className="px-1 py-0.5 rounded hover:bg-purple-50 text-purple-600">📅</Link>
+                            <Link href={`/hr/candidates/${f.candidateId}?do=note`} title="Note" className="px-1 py-0.5 rounded hover:bg-gray-100 text-gray-600">📝</Link>
+                          </div></td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
               </div>
-            </div>
-            <RowActions id={iv.candidateId} phone={iv.candidate.phone} />
-          </div>
-        ))}
-      </Section>
+            )}
+          </section>
 
-      {/* 2 — Candidates requiring confirmation */}
-      <Section emoji="✅" title="Need Confirmation" count={confirmSoon.length} accent="bg-orange-50 dark:bg-orange-900/20"
-        empty="All upcoming interviews are confirmed.">
-        {confirmSoon.map(iv => (
-          <div key={iv.id} className="flex items-center gap-3 px-4 py-2.5">
-            <div className="text-[11px] font-semibold text-orange-700 dark:text-orange-300 w-16 shrink-0">{fmtDay(iv.scheduledAt)}<br />{fmtTime(iv.scheduledAt)}</div>
-            <div className="flex-1 min-w-0">
-              <Link href={`/hr/candidates/${iv.candidateId}`} className="text-sm font-semibold text-gray-800 dark:text-slate-100 hover:underline">{iv.candidate.name}</Link>
-              <div className="text-[11px] text-gray-500">{fmt(iv.type)} interview · needs confirming</div>
-            </div>
-            <RowActions id={iv.candidateId} phone={iv.candidate.phone} />
-          </div>
-        ))}
-      </Section>
+          {/* Follow-up tabs */}
+          <section id="followups"><HRFollowUpTabs today={todayFU.map(toFU)} overdue={overdueFU.map(toFU)} upcoming={upcomingFU.map(toFU)} /></section>
 
-      {/* 3 — Follow-ups due today */}
-      <Section emoji="📅" title="Follow-ups Due Today" count={dueToday.length} accent="bg-amber-50 dark:bg-amber-900/20"
-        empty="No follow-ups due today." moreHref="/hr/followups?filter=today" moreCount={dueToday.length === 30 ? 30 : 0}>
-        {dueToday.map(fu => (
-          <div key={fu.id} className="flex items-center gap-3 px-4 py-2.5">
-            <div className="text-xs font-bold text-amber-700 dark:text-amber-300 w-16 shrink-0">{fmtTime(fu.dueAt)}</div>
-            <div className="flex-1 min-w-0">
-              <Link href={`/hr/candidates/${fu.candidateId}`} className="text-sm font-semibold text-gray-800 dark:text-slate-100 hover:underline">{fu.candidate.name}</Link>
-              <div className="text-[11px] text-gray-500">{fmt(fu.type)}{fu.notes ? ` · ${fu.notes}` : ""}</div>
-            </div>
-            <HRFollowUpActions followUpId={fu.id} candidateId={fu.candidateId} phone={fu.candidate.phone} />
-          </div>
-        ))}
-      </Section>
+          {/* Today's interviews */}
+          <section id="interviews" className="bg-white dark:bg-slate-900 rounded-2xl border border-gray-200 dark:border-slate-700 overflow-hidden">
+            <div className="px-4 py-2.5 border-b border-gray-100 dark:border-slate-800 text-sm font-bold text-gray-700 dark:text-slate-200">🎯 Today&apos;s Interviews ({ivToday.length})</div>
+            {ivToday.length === 0 ? <div className="px-4 py-5 text-center text-xs text-gray-400">No interviews scheduled today.</div> : (
+              <div className="overflow-x-auto"><table className="w-full text-sm">
+                <thead><tr className="bg-gray-50 dark:bg-slate-800 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide">
+                  {["Candidate", "Position", "Time", "Interviewer", "Status"].map(h => <th key={h} className="px-3 py-2 whitespace-nowrap">{h}</th>)}
+                </tr></thead>
+                <tbody className="divide-y divide-gray-100 dark:divide-slate-800">
+                  {ivToday.map(iv => (
+                    <tr key={iv.id} className="hover:bg-gray-50/80 dark:hover:bg-slate-800/50">
+                      <td className="px-3 py-2"><Link href={`/hr/candidates/${iv.candidateId}`} className="font-medium text-[#1a2e4a] dark:text-blue-400 hover:underline">{iv.candidate.name}</Link></td>
+                      <td className="px-3 py-2 text-xs text-gray-600">{iv.candidate.positionApplied ?? "—"}</td>
+                      <td className="px-3 py-2 text-xs font-medium whitespace-nowrap">{fmtTime(new Date(iv.scheduledAt))}</td>
+                      <td className="px-3 py-2 text-xs text-gray-500">{iv.interviewer?.name?.split(" ")[0] ?? "—"}</td>
+                      <td className="px-3 py-2"><span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${iv.confirmationStatus === "CONFIRMED" ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"}`}>{fmt(iv.confirmationStatus)}</span></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table></div>
+            )}
+          </section>
 
-      {/* 4 — Overdue follow-ups */}
-      <Section emoji="⚠️" title="Overdue Follow-ups" count={overdue.length} accent="bg-red-50 dark:bg-red-900/20"
-        empty="Nothing overdue — great work." moreHref="/hr/followups?filter=overdue" moreCount={overdue.length === 30 ? 30 : 0}>
-        {overdue.map(fu => (
-          <div key={fu.id} className="flex items-center gap-3 px-4 py-2.5">
-            <div className="text-[11px] font-bold text-red-600 dark:text-red-300 w-16 shrink-0">{fmtDay(fu.dueAt)}<br />{fmtTime(fu.dueAt)}</div>
-            <div className="flex-1 min-w-0">
-              <Link href={`/hr/candidates/${fu.candidateId}`} className="text-sm font-semibold text-gray-800 dark:text-slate-100 hover:underline">{fu.candidate.name}</Link>
-              <div className="text-[11px] text-gray-500">{fmt(fu.type)}{fu.notes ? ` · ${fu.notes}` : ""}</div>
-            </div>
-            <HRFollowUpActions followUpId={fu.id} candidateId={fu.candidateId} phone={fu.candidate.phone} />
-          </div>
-        ))}
-      </Section>
+          {/* No-show recovery */}
+          <section id="noshow" className="bg-white dark:bg-slate-900 rounded-2xl border border-gray-200 dark:border-slate-700 overflow-hidden">
+            <div className="px-4 py-2.5 border-b border-gray-100 dark:border-slate-800 text-sm font-bold text-gray-700 dark:text-slate-200">🚫 No-Show Recovery ({noShowList.length})</div>
+            {noShowList.length === 0 ? <div className="px-4 py-5 text-center text-xs text-gray-400">No pending no-shows.</div> : (
+              <div className="divide-y divide-gray-100 dark:divide-slate-800">
+                {noShowList.map(iv => {
+                  const waHref = wa(iv.candidate.phone, null);
+                  return (
+                    <div key={iv.id} className="flex items-center gap-3 px-4 py-2.5">
+                      <div className="flex-1 min-w-0">
+                        <Link href={`/hr/candidates/${iv.candidateId}`} className="text-sm font-semibold text-gray-800 dark:text-slate-100 hover:underline">{iv.candidate.name}</Link>
+                        <div className="text-[11px] text-gray-500">Missed {fmt(iv.type)} on {fmtDate(new Date(iv.scheduledAt))}</div>
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
+                        {iv.candidate.phone && <a href={`tel:${iv.candidate.phone}`} className="text-[11px] px-2 py-1 rounded-lg border border-blue-300 text-blue-700 hover:bg-blue-50">📞 Call</a>}
+                        {waHref && <a href={waHref} target="_blank" rel="noopener noreferrer" className="text-[11px] px-2 py-1 rounded-lg border border-green-300 text-green-700 hover:bg-green-50">💬 WA</a>}
+                        <Link href={`/hr/candidates/${iv.candidateId}?do=interview`} className="text-[11px] px-2 py-1 rounded-lg border border-purple-300 text-purple-700 hover:bg-purple-50">↻ Reschedule</Link>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </section>
 
-      {/* 5 — No-show recovery */}
-      <Section emoji="🚫" title="No-Show Recovery" count={noShows.length} accent="bg-rose-50 dark:bg-rose-900/20"
-        empty="No pending no-shows.">
-        {noShows.map(iv => (
-          <div key={iv.id} className="flex items-center gap-3 px-4 py-2.5">
-            <div className="text-[11px] font-semibold text-rose-600 dark:text-rose-300 w-16 shrink-0">Missed<br />{fmtDay(iv.scheduledAt)}</div>
-            <div className="flex-1 min-w-0">
-              <Link href={`/hr/candidates/${iv.candidateId}`} className="text-sm font-semibold text-gray-800 dark:text-slate-100 hover:underline">{iv.candidate.name}</Link>
-              <div className="text-[11px] text-gray-500">{fmt(iv.type)} interview · no-show, needs recovery</div>
-            </div>
-            <RowActions id={iv.candidateId} phone={iv.candidate.phone} />
-          </div>
-        ))}
-      </Section>
+          {/* Expected joinings */}
+          <section id="joinings" className="bg-white dark:bg-slate-900 rounded-2xl border border-gray-200 dark:border-slate-700 overflow-hidden">
+            <div className="px-4 py-2.5 border-b border-gray-100 dark:border-slate-800 text-sm font-bold text-gray-700 dark:text-slate-200">🤝 Expected Joinings ({expectedList.length})</div>
+            {expectedList.length === 0 ? <div className="px-4 py-5 text-center text-xs text-gray-400">No expected joinings yet — set a joining date on offered candidates.</div> : (
+              <div className="overflow-x-auto"><table className="w-full text-sm">
+                <thead><tr className="bg-gray-50 dark:bg-slate-800 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide">
+                  {["Candidate", "Joining Date", "Position", "Offer Status"].map(h => <th key={h} className="px-3 py-2 whitespace-nowrap">{h}</th>)}
+                </tr></thead>
+                <tbody className="divide-y divide-gray-100 dark:divide-slate-800">
+                  {expectedList.map(c => (
+                    <tr key={c.id} className="hover:bg-gray-50/80 dark:hover:bg-slate-800/50">
+                      <td className="px-3 py-2"><Link href={`/hr/candidates/${c.id}`} className="font-medium text-[#1a2e4a] dark:text-blue-400 hover:underline">{c.name}</Link></td>
+                      <td className="px-3 py-2 text-xs font-medium whitespace-nowrap">{c.joiningDate ? fmtDate(new Date(c.joiningDate)) : "—"}</td>
+                      <td className="px-3 py-2 text-xs text-gray-600">{c.positionApplied ?? "—"}</td>
+                      <td className="px-3 py-2"><span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${statusColor(c.status)}`}>{statusLabel(c.status)}</span></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table></div>
+            )}
+          </section>
+        </div>
 
-      {/* Slim pipeline glance (secondary) */}
-      <div className="flex flex-wrap gap-2 pt-1">
-        {glance.map(([k, label]) => (
-          <Link key={k} href={`/hr/candidates?status=${k}`}
-            className="text-[11px] px-3 py-1.5 rounded-full border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-gray-600 dark:text-slate-300 hover:border-gray-300">
-            {label} <b className="text-gray-800 dark:text-white">{pmap[k] ?? 0}</b>
-          </Link>
-        ))}
-        <Link href="/hr/reports" className="text-[11px] px-3 py-1.5 rounded-full text-gray-400 hover:text-gray-600">Full reports →</Link>
+        {/* ── RIGHT: sticky reminders ── */}
+        <div className="lg:sticky lg:top-4 lg:self-start">
+          <HRRemindersCard events={reminderEvents} todayIso={todayIso} showOwner={me.role !== "AGENT"} />
+        </div>
       </div>
     </div>
   );
