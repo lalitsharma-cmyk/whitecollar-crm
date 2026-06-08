@@ -6,7 +6,7 @@ import { LeadSource, Potential, FundReadiness, MoodStatus, InvestTimeline, LeadS
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { extractFromRemarks, mergeSuggestions } from "@/lib/remarkAutofill";
-import { splitPhones } from "@/lib/phone";
+import { splitPhones, normalizePhone } from "@/lib/phone";
 import { resolveTeam, routingFieldsFor } from "@/lib/teamRouting";
 import { audit, reqMeta } from "@/lib/audit";
 // runIntelligenceCheck is called inside ingestLead() for every new (non-deduped)
@@ -227,6 +227,9 @@ function parseExcel(buf: ArrayBuffer): { rows: Row[]; sheetName: string; detecte
 
 export async function POST(req: NextRequest) {
   const me = await requireUser();
+  const url = new URL(req.url);
+  // preview=1 → dry-run only. Parse + check duplicates but write NOTHING.
+  const isDryRun = url.searchParams.get("preview") === "1";
   const fd = await req.formData();
   const file = fd.get("file");
   const campaign = (fd.get("campaign")?.toString() ?? "").trim() || undefined;
@@ -286,12 +289,78 @@ export async function POST(req: NextRequest) {
     }, { status: 422 });
   }
 
+  const detectedColumns = Object.keys(rows[0] ?? {});
+
+  // ── PREVIEW / DRY-RUN ──────────────────────────────────────────────────────
+  // preview=1: scan rows, check for duplicates and missing fields, return a
+  // summary of what WOULD happen — without writing a single row. The importer
+  // shows this to the admin who then confirms or cancels.
+  if (isDryRun) {
+    let newRows = 0, dupRows = 0, missingName = 0, missingPhone = 0, missingProject = 0;
+    const dupSamples: { name: string; phone: string; existingStatus: string }[] = [];
+    const unknownStatuses = new Set<string>();
+
+    for (const row of rows) {
+      const nameRaw = pick(row, "customer", "name", "fullname", "leadname", "customername");
+      const phoneRaw = pick(row, "mobile", "phone", "contact", "phonenumber", "whatsapp");
+      const email = pick(row, "email", "emailid", "mail");
+      if (!nameRaw && !phoneRaw && !email) continue;
+      if (!nameRaw) missingName++;
+      if (!phoneRaw) missingPhone++;
+      if (!pick(row, "project")) missingProject++;
+
+      const callStatus = pick(row, "status", "callstatus");
+      if (callStatus) unknownStatuses.add(callStatus);
+
+      if (phoneRaw) {
+        const phones = splitPhones(phoneRaw, "+91");
+        const phone = phones[0];
+        if (phone) {
+          const fp = normalizePhone(phone);
+          if (fp) {
+            const existing = await prisma.lead.findFirst({
+              where: { fingerprint: { startsWith: fp } },
+              select: { name: true, phone: true, currentStatus: true },
+            });
+            if (existing) {
+              dupRows++;
+              if (dupSamples.length < 8) {
+                dupSamples.push({
+                  name: nameRaw ?? "—",
+                  phone: phoneRaw,
+                  existingStatus: existing.currentStatus ?? existing.name,
+                });
+              }
+            } else {
+              newRows++;
+            }
+          } else { newRows++; }
+        } else { newRows++; }
+      } else { newRows++; }
+    }
+
+    return NextResponse.json({
+      preview: true,
+      totalRows: rows.length,
+      newRows, dupRows,
+      missingName, missingPhone, missingProject,
+      dupSamples,
+      uniqueStatuses: [...unknownStatuses].slice(0, 20),
+      detectedColumns,
+      fileType: isExcel ? "Excel" : "CSV",
+      sheetName: parseInfo.sheetName,
+      allSheets: parseInfo.allSheets,
+      // Automation safety status
+      automationNote: "All automation is OFF by default during import (Import Safe Mode). No WhatsApp, emails, round-robin, or SLA alerts will fire.",
+    });
+  }
+
   let created = 0, deduped = 0, enriched = 0, autofilled = 0;
   // Imports no longer create CallLog rows from remarks — always 0 now, kept so
   // the import-audit meta shape stays stable.
   const callLogsCreated = 0;
   const errors: string[] = [];
-  const detectedColumns = Object.keys(rows[0] ?? {});
+
 
   // Load all known project names once — used by remark autofill to spot
   // project mentions in free-text ("interested in Azizi Venice" → sourceDetail).
