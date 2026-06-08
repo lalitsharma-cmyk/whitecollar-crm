@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 
-interface U { id: string; name: string; email: string; role: string; team: string | null; active: boolean; hrOnly: boolean; }
+interface U { id: string; name: string; email: string; role: string; team: string | null; active: boolean; hrOnly: boolean; hrTeam: boolean; }
 
 export default function HRUserManager({ initialUsers, meId }: { initialUsers: U[]; meId: string }) {
   const router = useRouter();
@@ -61,7 +61,7 @@ export default function HRUserManager({ initialUsers, meId }: { initialUsers: U[
           <thead>
             <tr className="bg-gray-50 dark:bg-slate-800 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wide">
               <th className="px-3 py-2.5">Name</th><th className="px-3 py-2.5">Email</th><th className="px-3 py-2.5">Role</th>
-              <th className="px-3 py-2.5 text-center">HR-only</th><th className="px-3 py-2.5 text-center">Active</th>
+              <th className="px-3 py-2.5 text-center">HR-only</th><th className="px-3 py-2.5 text-center">HR Team</th><th className="px-3 py-2.5 text-center">Active</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100 dark:divide-slate-800">
@@ -75,6 +75,7 @@ export default function HRUserManager({ initialUsers, meId }: { initialUsers: U[
                   </select>
                 </td>
                 <td className="px-3 py-2.5 text-center"><input type="checkbox" disabled={busy} checked={u.hrOnly} onChange={e => patch(u.id, { hrOnly: e.target.checked })} /></td>
+                <td className="px-3 py-2.5 text-center"><input type="checkbox" disabled={busy} checked={u.hrTeam} onChange={e => patch(u.id, { hrTeam: e.target.checked })} title="Show this admin in HR owner / interviewer pickers" /></td>
                 <td className="px-3 py-2.5 text-center"><input type="checkbox" disabled={busy || u.id === meId} checked={u.active} onChange={e => patch(u.id, { active: e.target.checked })} /></td>
               </tr>
             ))}

@@ -11,7 +11,7 @@ export default async function HRSettingsPage() {
 
   const users = await prisma.user.findMany({
     orderBy: [{ active: "desc" }, { name: "asc" }],
-    select: { id: true, name: true, email: true, role: true, team: true, active: true, hrOnly: true },
+    select: { id: true, name: true, email: true, role: true, team: true, active: true, hrOnly: true, hrTeam: true },
   });
 
   return (

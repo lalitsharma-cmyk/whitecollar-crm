@@ -15,7 +15,7 @@ export async function GET() {
   if (!me) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const users = await prisma.user.findMany({
     orderBy: [{ active: "desc" }, { name: "asc" }],
-    select: { id: true, name: true, email: true, role: true, team: true, active: true, hrOnly: true },
+    select: { id: true, name: true, email: true, role: true, team: true, active: true, hrOnly: true, hrTeam: true },
   });
   return NextResponse.json({ users });
 }
@@ -54,8 +54,9 @@ export async function PATCH(req: NextRequest) {
   const id = String(body.id ?? "");
   if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
 
-  const data: { hrOnly?: boolean; active?: boolean; role?: "ADMIN" | "MANAGER" | "AGENT" } = {};
+  const data: { hrOnly?: boolean; hrTeam?: boolean; active?: boolean; role?: "ADMIN" | "MANAGER" | "AGENT" } = {};
   if (typeof body.hrOnly === "boolean") data.hrOnly = body.hrOnly;
+  if (typeof body.hrTeam === "boolean") data.hrTeam = body.hrTeam;
   if (typeof body.active === "boolean") data.active = body.active;
   if (body.role && ROLES.includes(body.role)) data.role = body.role;
   if (Object.keys(data).length === 0) return NextResponse.json({ error: "Nothing to update" }, { status: 400 });

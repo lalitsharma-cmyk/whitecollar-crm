@@ -92,6 +92,8 @@ model User {
   // The Sales CRM layout redirects them to /hr immediately. Use for dedicated
   // HR staff (Nisha, HR Intern) who should never see sales leads/properties.
   hrOnly            Boolean   @default(false)
+  // Admins who also work in HR — appear in HR pickers (owner/interviewer) without losing Sales access.
+  hrTeam            Boolean   @default(false)
 
   ownedLeads    Lead[]     @relation("LeadOwner")
   assignments   Assignment[]
