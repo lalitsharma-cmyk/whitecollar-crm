@@ -352,8 +352,8 @@ export async function ingestLead(input: RawLeadInput) {
       kind: "LEAD_ASSIGNED",
       severity: "WARNING",
       title: `⚠️ New lead needs team assignment: ${lead.name}`,
-      body: `This ${input.source} lead arrived without a team tag. Nothing will auto-route until you pick Dubai or India in the "Awaiting team assignment" queue.`,
-      linkUrl: `/admin/awaiting-team`,
+      body: `This ${input.source} lead arrived without a team tag. Open the lead and pick Dubai or India to start the round-robin.`,
+      linkUrl: `/leads/${lead.id}`,
       leadId: lead.id,
     });
   } else {
