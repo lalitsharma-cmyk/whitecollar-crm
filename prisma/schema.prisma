@@ -1505,10 +1505,13 @@ model HRCandidate {
   altPhone         String?
   whatsappPhone    String?
   email            String?
-  location         String?
+  location         String?           // current location
+  city             String?           // home city
   currentCompany   String?
   currentProfile   String?           // current designation / job title
-  experience       String?           // "2 years", "5+ years"
+  positionApplied  String?           // role being recruited for (Sales Executive, BDE, BDM, …)
+  experience       String?           // total experience — "2 years", "5+ years"
+  realEstateExperience String?       // real-estate-specific experience
   currentSalary    Float?
   expectedSalary   Float?
   noticePeriod     String?           // "Immediate", "30 days", "60 days", "90 days"

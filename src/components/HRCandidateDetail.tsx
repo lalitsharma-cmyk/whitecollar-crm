@@ -1,5 +1,5 @@
 "use client";
-import { useState, useTransition } from "react";
+import { useState, useTransition, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import HRResumeUploadWidget from "@/components/HRResumeUploadWidget";
 import type { HRCandidateStatus, HRActivityType, HRFollowUpType, HRInterviewType } from "@prisma/client";
@@ -12,8 +12,9 @@ interface FollowUp { id: string; type: string; dueAt: string; completedAt: strin
 interface Resume { id: string; filename: string; url: string; mimeType: string; isActive: boolean; createdAt: string; }
 interface Candidate {
   id: string; name: string; phone: string|null; altPhone: string|null; whatsappPhone: string|null;
-  email: string|null; location: string|null; currentCompany: string|null; currentProfile: string|null;
-  experience: string|null; currentSalary: number|null; expectedSalary: number|null; noticePeriod: string|null;
+  email: string|null; location: string|null; city: string|null; currentCompany: string|null; currentProfile: string|null;
+  positionApplied: string|null; experience: string|null; realEstateExperience: string|null;
+  currentSalary: number|null; expectedSalary: number|null; noticePeriod: string|null;
   source: string|null; status: HRCandidateStatus; remarks: string|null; tags: string|null;
   nextAction: string|null; nextActionDate: string|null;
   primaryOwner: {id:string;name:string;avatarColor:string}|null;
@@ -88,6 +89,13 @@ export default function HRCandidateDetail({ candidate: init, agents, me }: Props
   const [ivType, setIvType] = useState<HRInterviewType>("HR"); const [ivDate, setIvDate] = useState(""); const [ivInterviewer, setIvInterviewer] = useState(me.id); const [ivNotes, setIvNotes] = useState("");
   const [newStatus, setNewStatus] = useState<HRCandidateStatus>(c.status); const [statusNote, setStatusNote] = useState("");
   const [noteText, setNoteText] = useState("");
+
+  // Deep-link from the Add form's "Save & Schedule Interview" / "Save & Add Follow-up".
+  useEffect(() => {
+    const doParam = new URLSearchParams(window.location.search).get("do");
+    if (doParam === "interview") setPanel("interview");
+    else if (doParam === "followup") setPanel("followup");
+  }, []);
 
   const inp = "w-full border border-[#e5e7eb] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0b1a33]/20 dark:bg-slate-800 dark:border-slate-600 dark:text-slate-100";
 
@@ -174,6 +182,7 @@ export default function HRCandidateDetail({ candidate: init, agents, me }: Props
           <div>
             <h1 className="text-xl font-bold text-gray-900 dark:text-white">{c.name}</h1>
             <div className="text-sm text-gray-500 mt-0.5 flex items-center gap-2 flex-wrap">
+              {c.positionApplied && <span className="text-[#0b1a33] dark:text-blue-300 font-medium">Applied: {c.positionApplied}</span>}
               {c.currentProfile && <span>{c.currentProfile}</span>}
               {c.currentCompany && <span>· {c.currentCompany}</span>}
               {c.experience && <span>· {c.experience}</span>}
@@ -513,12 +522,14 @@ export default function HRCandidateDetail({ candidate: init, agents, me }: Props
       {tab === "profile" && (
         <div className="card p-4 space-y-3">
           {[
-            ["Name", c.name], ["Phone", c.phone], ["Alt Phone", c.altPhone],
-            ["WhatsApp", c.whatsappPhone], ["Email", c.email], ["Location", c.location],
-            ["Company", c.currentCompany], ["Profile / Role", c.currentProfile],
-            ["Experience", c.experience], ["Current Salary", fmtSalary(c.currentSalary)],
-            ["Expected Salary", fmtSalary(c.expectedSalary)], ["Notice Period", c.noticePeriod],
-            ["Source", c.source], ["Tags", c.tags], ["Remarks", c.remarks],
+            ["Name", c.name], ["Mobile", c.phone], ["Alt Phone", c.altPhone],
+            ["WhatsApp", c.whatsappPhone], ["Email", c.email],
+            ["City", c.city], ["Current Location", c.location],
+            ["Position Applied", c.positionApplied], ["Source", c.source],
+            ["Company", c.currentCompany], ["Current Designation", c.currentProfile],
+            ["Total Experience", c.experience], ["Real Estate Experience", c.realEstateExperience],
+            ["Current Salary", fmtSalary(c.currentSalary)], ["Expected Salary", fmtSalary(c.expectedSalary)],
+            ["Notice Period", c.noticePeriod], ["Tags", c.tags], ["Remarks", c.remarks],
             ["Primary Owner", c.primaryOwner?.name], ["Secondary Owner", c.secondaryOwner?.name],
           ].map(([label, val]) => val ? (
             <div key={label} className="flex gap-3 text-sm border-b border-gray-100 dark:border-slate-700 pb-2">
