@@ -211,8 +211,14 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
         })
     : [];
 
+  // Imported MIS remarks were stored as synthetic CallLog rows (attributedAgentName
+  // set). They are Historical Notes, not real calls — exclude them from every call
+  // count / stat on this page so only genuine dialled calls are reflected (and so
+  // the first-call SLA still counts a remark-only lead as "not yet called").
+  const realCallLogs = lead.callLogs.filter((c) => c.attributedAgentName == null);
+
   // SLA countdown — show timer if assigned recently and no call yet
-  const callsCount = lead.callLogs.length;
+  const callsCount = realCallLogs.length;
   const slaMs = lead.slaFirstCallBy ? lead.slaFirstCallBy.getTime() - Date.now() : null;
   const slaActive = lead.ownerId && callsCount === 0 && slaMs !== null && slaMs > -3600_000;
 
@@ -283,7 +289,7 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
 
   // Client Summary — auto-assembled from structured fields, all inline-editable.
   // Replaces the removed "WHO IS THE CLIENT" free-text card.
-  const lastDiscussionDate = lead.callLogs[0]?.startedAt ?? lead.lastTouchedAt ?? null;
+  const lastDiscussionDate = realCallLogs[0]?.startedAt ?? lead.lastTouchedAt ?? null;
   const lastDiscussionLabel = lastDiscussionDate
     ? new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short", year: "2-digit" }).format(new Date(lastDiscussionDate))
     : null;
@@ -739,8 +745,8 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
         {/* CONVERSATION STREAM — primary source of truth (spec §10).
             Comes before Quick Note (voice-first: voice note > conversation > quick note). */}
         <div data-lead-section="timeline">
-          <CallStatsBar callLogs={lead.callLogs.map((c) => ({ duration: c.durationSec, outcome: c.outcome, startedAt: c.startedAt }))} />
-          <ConversationStreamCard callLogs={lead.callLogs} waMessages={lead.waMessages} notes={lead.notes} forwardedTeam={lead.forwardedTeam} rawRemarks={lead.remarks} />
+          <CallStatsBar callLogs={realCallLogs.map((c) => ({ duration: c.durationSec, outcome: c.outcome, startedAt: c.startedAt }))} />
+          <ConversationStreamCard callLogs={realCallLogs} waMessages={lead.waMessages} notes={lead.notes} forwardedTeam={lead.forwardedTeam} rawRemarks={lead.remarks} />
         </div>
 
         {/* QUICK NOTE — secondary (spec §9: Quick Note is secondary, must not dominate).

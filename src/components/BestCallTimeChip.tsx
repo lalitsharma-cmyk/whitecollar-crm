@@ -56,7 +56,9 @@ export default async function BestCallTimeChip({ leadId }: { leadId: string }) {
       COUNT(*)::int AS total,
       SUM(CASE WHEN outcome::text = 'CONNECTED' THEN 1 ELSE 0 END)::int AS connected
     FROM "CallLog"
-    WHERE "leadId" = ${leadId}
+    -- Only real, agent-logged calls — imported MIS remarks (attributedAgentName
+    -- set) are Historical Notes, not dialled calls, so they must not skew best-time.
+    WHERE "leadId" = ${leadId} AND "attributedAgentName" IS NULL
     GROUP BY hour
   `;
 

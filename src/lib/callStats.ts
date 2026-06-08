@@ -14,6 +14,12 @@ export interface CallStats {
 }
 
 export function aggregateCalls(calls: CallLog[]): CallStats {
+  // Only REAL, agent-logged calls count toward statistics. Imported MIS remarks
+  // were historically stored as synthetic CallLog rows (attributedAgentName set);
+  // they are Historical Notes, never dialled calls, and must never move the
+  // connected / no-answer / last-outcome / today counters.
+  calls = calls.filter((c) => c.attributedAgentName == null);
+
   const stats: CallStats = {
     total: calls.length, connected: 0, notPicked: 0, callback: 0, other: 0,
     lastCallAt: null, lastConnectedAt: null,

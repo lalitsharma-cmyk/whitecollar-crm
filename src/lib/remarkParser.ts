@@ -171,69 +171,95 @@ export interface SegmentEntry {
  *
  * Agents never see the source — no "Imported from Excel" labels.
  */
-// Pattern that parseRemarks() already handles — "on DD Mon YYYY (HH:MM) text"
-// Lines matching this are SKIPPED (they're already in callLogs as CallLog rows).
-const FULL_DATED_RE = /(?:[A-Z][A-Za-z]{1,15}(?:\s+[A-Z][A-Za-z]{1,15}){0,2}\s*:\s*)?[oO]n\s+[\dA-Za-z]+(?:\s+[\dA-Za-z]+){1,3}\s*\([^)]+\)/;
+// "(Name:)? on DD Mon YYYY (HH:MM) body" — the pattern parseRemarks() used to
+// turn into CallLog rows. We no longer create calls from imports, so these are
+// now captured here as DATED Historical Notes. The optional agent name before
+// the colon is deliberately discarded — an imported remark must NEVER surface a
+// parsed word as a caller/agent. Groups: 1=date, 2=time, 3=body.
+const FULL_DATED_CAPTURE =
+  /^(?:[A-Z][A-Za-z]{1,15}(?:\s+[A-Z][A-Za-z]{1,15}){0,2}\s*:\s*)?[oO]n\s+(\d{1,2}\s+[A-Za-z]+(?:\s+\d{4})?)\s*\(([^)]+)\)\s*([\s\S]*)$/;
 
-// "on DD Mon YYYY" WITHOUT time parens — has date but not in callLogs yet.
-// Captures: (optional AgentName:) + "on" + date string + rest-of-line.
+// "on DD Mon YYYY" WITHOUT time parens. Captures: (optional Name:) + date + body.
 const ON_DATE_NO_TIME = /^(?:[A-Z][A-Za-z]{1,15}(?:\s+[A-Z][A-Za-z]{1,15}){0,2}\s*:\s*)?[oO]n\s+((?:\d{1,2}\s+\w+(?:\s+\d{4})?|\d{4}-\d{2}-\d{2}|\d{1,2}[\/\-]\d{1,2}[\/\-]\d{4}))\s*(.*)/;
 
+// Strip a leading "Name:" / "First Last:" attribution so imported note bodies
+// never present a parsed word as a speaker (e.g. "Tanuj: interested" → "interested").
+function stripLeadingName(s: string): string {
+  return s.replace(/^[A-Z][A-Za-z]{1,15}(?:\s+[A-Z][A-Za-z]{1,15}){0,2}\s*:\s*/, "").trim();
+}
+
+/**
+ * Turn an imported remarks cell into Historical Note segments.
+ *
+ * Every fragment becomes a note — there are NO calls, NO agent names, and NO
+ * outcomes. Dated fragments keep their date so they sort into the timeline;
+ * all truly-undated fragments are collapsed into ONE clean note (spec item §8).
+ */
 export function extractUndatedSegments(cell: string): SegmentEntry[] {
   if (!cell || typeof cell !== "string") return [];
 
-  // Normalise separators — MIS sheets use ",,,,,," as line breaks
+  // Normalise separators — MIS sheets use ",,,,,," as line breaks.
   const text = cell
     .replace(/,{2,}/g, "\n")
     .replace(/\r\n/g, "\n")
     .trim();
 
-  // Also split on inline "on DD Mon YYYY" patterns within a line so that
-  // "On 3 Jan 2022 call not pick. On 1 Feb 2022 site visit" becomes two entries.
+  // Split on inline "on DD Mon …" so multiple entries on one line separate out.
   const inlineSplit = text.replace(
     /([.!?]?\s*)([oO]n\s+\d)/g,
-    (_, sep, onPart) => `\n${onPart}`
+    (_, _sep, onPart) => `\n${onPart}`
   );
 
   const lines = inlineSplit.split("\n").map(l => l.trim()).filter(Boolean);
-  const segments: SegmentEntry[] = [];
+
+  const dated: SegmentEntry[] = [];
+  const undatedTexts: string[] = [];
+
+  // Clean a fragment (drop any leading name attribution + punctuation) and file
+  // it as a dated note or queue it for the single collapsed undated note.
+  const place = (body: string, date: Date | null) => {
+    const clean = stripLeadingName(body).replace(/^[,.\s]+/, "").trim();
+    if (clean.length < 2) return;
+    if (date) dated.push({ text: clean, date });
+    else undatedTexts.push(clean);
+  };
 
   for (const line of lines) {
-    // Skip lines already handled by parseRemarks() (has time in parens → in callLogs)
-    if (FULL_DATED_RE.test(line)) continue;
     if (line.length < 2) continue;
 
-    // Case 1: "on DD Mon YYYY body text" — parse date, strip prefix, show clean body
-    const mOn = line.match(ON_DATE_NO_TIME);
-    if (mOn) {
-      const dateStr = mOn[1].trim();
-      const body = (mOn[2] ?? "").trim().replace(/^[,.\s]+/, "");
-      const date = tryExtractDate(dateStr) ?? tryExtractDate(line);
-      if (body.length >= 2) {
-        segments.push({ text: body, date });
-        continue;
-      }
+    // Case 0: full "on DD Mon YYYY (HH:MM) body" — was a synthetic CallLog row.
+    const mFull = line.match(FULL_DATED_CAPTURE);
+    if (mFull) {
+      const date = parseDateTime(mFull[1].trim(), mFull[2].trim()) ?? tryExtractDate(mFull[1]);
+      place(mFull[3] ?? "", date);
+      continue;
     }
 
-    // Case 2: try to extract any date from the line (all other formats)
-    const date = tryExtractDate(line);
+    // Case 1: "on DD Mon YYYY body" — no time parens.
+    const mOn = line.match(ON_DATE_NO_TIME);
+    if (mOn) {
+      const date = tryExtractDate(mOn[1].trim()) ?? tryExtractDate(line);
+      place(mOn[2] ?? "", date);
+      continue;
+    }
 
-    // Strip the date part from the display text so it's not duplicated
+    // Case 2: any other date format, otherwise truly undated free text.
+    const date = tryExtractDate(line);
     let displayText = line;
     if (date) {
       displayText = line
-        // Remove "DD Mon YYYY" or "DD Mon" at start
-        .replace(/^\d{1,2}\s+[a-z]{3}[a-z]*(?:\s+\d{4})?\s*[:\-]?\s*/i, "")
-        // Remove ISO date at start
-        .replace(/^\d{4}-\d{2}-\d{2}\s*[:\-]?\s*/, "")
-        // Remove DD/MM/YYYY at start
-        .replace(/^\d{1,2}[\/\-]\d{1,2}[\/\-]\d{4}\s*[:\-]?\s*/, "")
+        .replace(/^\d{1,2}\s+[a-z]{3}[a-z]*(?:\s+\d{4})?\s*[:\-]?\s*/i, "")  // DD Mon [YYYY]
+        .replace(/^\d{4}-\d{2}-\d{2}\s*[:\-]?\s*/, "")                       // ISO
+        .replace(/^\d{1,2}[\/\-]\d{1,2}[\/\-]\d{4}\s*[:\-]?\s*/, "")         // DD/MM/YYYY
         .trim();
     }
-
-    if (displayText.length < 2) continue;
-    segments.push({ text: displayText, date });
+    place(displayText, date);
   }
 
-  return segments;
+  // spec item §8: collapse every undated fragment into ONE clean Historical Note.
+  const result = [...dated];
+  if (undatedTexts.length > 0) {
+    result.push({ text: undatedTexts.join("\n"), date: null });
+  }
+  return result;
 }

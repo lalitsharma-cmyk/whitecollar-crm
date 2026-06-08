@@ -172,6 +172,13 @@ export default function ConversationStreamCard({ callLogs, waMessages, notes = [
   const [expandedGroups, setExpandedGroups] = useState<Set<number>>(new Set());
   const [filter, setFilter] = useState<FilterType>("ALL");
 
+  // Imported MIS remarks were historically saved as synthetic CallLog rows
+  // (attributedAgentName != null). They are NOT dialled calls — they render as
+  // read-only Historical Notes (from rawRemarks, below), never as call rows and
+  // never in the connected / no-answer counts. Defensive filter: rows may still
+  // exist until the one-off import cleanup runs, and it guards future imports.
+  const realCallLogs = callLogs.filter((c) => c.attributedAgentName == null);
+
   const toggleGroup = (idx: number) =>
     setExpandedGroups(prev => {
       const next = new Set(prev);
@@ -192,7 +199,7 @@ export default function ConversationStreamCard({ callLogs, waMessages, notes = [
 
   // Merge then sort newest-first.
   const rows: StreamRow[] = [
-    ...callLogs.map((c) => ({ kind: "call" as const, at: new Date(c.startedAt), call: c })),
+    ...realCallLogs.map((c) => ({ kind: "call" as const, at: new Date(c.startedAt), call: c })),
     ...waMessages.map((m) => ({ kind: "wa" as const, at: new Date(m.receivedAt), msg: m })),
     ...notes.map((n) => ({ kind: "note" as const, at: new Date(n.createdAt), note: n })),
     // Segments with a parsed date → correct timeline position.
@@ -213,8 +220,8 @@ export default function ConversationStreamCard({ callLogs, waMessages, notes = [
 
   // Header counts — use effectiveOutcome so "Dropped Wa" entries aren't
   // miscounted as connected even though they were saved with CONNECTED in DB.
-  const connectedCount = callLogs.filter(c => CONNECTED_OUTCOMES.has(effectiveOutcome(c.outcome as string, c.notes))).length;
-  const unsuccessfulCount = callLogs.filter(c => UNSUCCESSFUL_OUTCOMES.has(effectiveOutcome(c.outcome as string, c.notes))).length;
+  const connectedCount = realCallLogs.filter(c => CONNECTED_OUTCOMES.has(effectiveOutcome(c.outcome as string, c.notes))).length;
+  const unsuccessfulCount = realCallLogs.filter(c => UNSUCCESSFUL_OUTCOMES.has(effectiveOutcome(c.outcome as string, c.notes))).length;
   const waInboundCount = waMessages.filter(m => m.direction === "INBOUND").length;
   const noteCount = notes.length;
 
@@ -415,7 +422,7 @@ export default function ConversationStreamCard({ callLogs, waMessages, notes = [
           return (
             <div key={`imp-${idx}`} className="border-l-2 border-gray-100 dark:border-slate-700 pl-3 pr-2 py-1.5 rounded-r">
               <div className="text-[11px] text-gray-400 dark:text-slate-500 mb-0.5 font-medium">
-                {row.hasDate ? fmtISTDate(row.at) : "Historical note"}
+                📋 Historical Note{row.hasDate ? ` · ${fmtISTDate(row.at)}` : ""}
               </div>
               <div className="text-xs text-gray-600 dark:text-slate-300 whitespace-pre-wrap">{row.text}</div>
             </div>

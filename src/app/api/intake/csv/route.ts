@@ -2,10 +2,9 @@ import { NextResponse, type NextRequest } from "next/server";
 import Papa from "papaparse";
 import * as XLSX from "xlsx";
 import { ingestLead } from "@/lib/leadIngest";
-import { LeadSource, Potential, FundReadiness, MoodStatus, InvestTimeline, LeadStatus, CallDirection, AIScore } from "@prisma/client";
+import { LeadSource, Potential, FundReadiness, MoodStatus, InvestTimeline, LeadStatus, AIScore } from "@prisma/client";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { parseRemarks } from "@/lib/remarkParser";
 import { extractFromRemarks, mergeSuggestions } from "@/lib/remarkAutofill";
 import { splitPhones } from "@/lib/phone";
 import { resolveTeam, routingFieldsFor } from "@/lib/teamRouting";
@@ -287,7 +286,10 @@ export async function POST(req: NextRequest) {
     }, { status: 422 });
   }
 
-  let created = 0, deduped = 0, enriched = 0, callLogsCreated = 0, autofilled = 0;
+  let created = 0, deduped = 0, enriched = 0, autofilled = 0;
+  // Imports no longer create CallLog rows from remarks — always 0 now, kept so
+  // the import-audit meta shape stays stable.
+  const callLogsCreated = 0;
   const errors: string[] = [];
   const detectedColumns = Object.keys(rows[0] ?? {});
 
@@ -295,16 +297,10 @@ export async function POST(req: NextRequest) {
   // project mentions in free-text ("interested in Azizi Venice" → sourceDetail).
   const knownProjects = (await prisma.project.findMany({ select: { name: true } })).map((p) => p.name);
 
-  // Sheet-owner attribution fallback. When admin imports Mehak's MIS sheet via
-  // the agent picker, every remark entry that DIDN'T name an agent ("on 3 May…")
-  // gets attributed to Mehak — not to "Unknown" or the importer (which used to
-  // show as "Admin"). Named remarks ("Lalit: on 3 May…") still keep their named
-  // agent — only unattributed entries fall back to the sheet owner.
-  let sheetOwnerName: string | null = null;
-  if (assignToUserId) {
-    const u = await prisma.user.findUnique({ where: { id: assignToUserId }, select: { name: true } });
-    sheetOwnerName = u?.name ?? null;
-  }
+  // NOTE: imported remark cells are no longer parsed into per-entry CallLog
+  // rows, so there's no "sheet owner" fallback to attribute unnamed entries to.
+  // The raw remark text is kept on Lead.remarks and surfaced as read-only
+  // Historical Notes. assignToUserId still assigns the imported LEAD below.
 
   for (const [i, row] of rows.entries()) {
     const nameRaw = pick(row, "customer", "name", "fullname", "leadname", "customername");
@@ -495,36 +491,16 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      // PARSE multi-line remarks into per-date CallLog rows
-      if (remarks && !r.deduped) {
-        const parsed = parseRemarks(remarks);
-        for (const p of parsed) {
-          // If the remark line had no name prefix (parser returned "Unknown")
-          // AND the import was filed under a specific agent (Mehak's sheet,
-          // Nitisha's sheet, etc.), credit her — not the literal string
-          // "Unknown" or the importing admin.
-          const attributedName = p.agentName === "Unknown" && sheetOwnerName
-            ? sheetOwnerName
-            : p.agentName;
-          await prisma.callLog.create({
-            data: {
-              leadId: r.lead.id,
-              userId: me.id, // bookkeeping — who ran the import (typically admin)
-              // The actual person who made the call lives in attributedName
-              // (parsed from the remark prefix, or the sheet owner when blank).
-              // Surface it on the call history card instead of attributing every
-              // imported call to the importer.
-              attributedAgentName: attributedName,
-              direction: CallDirection.OUTBOUND,
-              phoneNumber: phone ?? "(imported)",
-              outcome: p.outcome,
-              notes: `${attributedName}: ${p.text}`,
-              startedAt: p.when,
-            },
-          });
-          callLogsCreated++;
-        }
-      }
+      // Imported remark cells are intentionally NOT turned into CallLog rows.
+      // Doing so manufactured fake "calls" — inventing an agent name from the
+      // text and defaulting the outcome to CONNECTED — which polluted every
+      // call statistic (connected / no-answer / last-outcome / talk-time /
+      // best-time) and surfaced words like "Expressway Gurgaon Tanuj" as the
+      // caller. The full remark text is preserved on Lead.remarks (set above)
+      // and rendered as read-only "Historical Note" entries in the conversation
+      // stream via extractUndatedSegments(). Only real agent-logged calls
+      // (Log-Call UI / Acefone webhook) create CallLog rows now.
+      // (callLogsCreated stays 0 — accurate; kept for the import audit shape.)
     } catch (e) {
       errors.push(`Row ${i + 2}: ${String(e).slice(0, 200)}`);
     }
