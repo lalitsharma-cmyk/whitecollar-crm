@@ -77,7 +77,7 @@ export default function HRImportClient({ agents, defaultOwnerId }: { agents: Age
   const [mapping, setMapping] = useState<Record<string, string>>({});
   const [remembered, setRemembered] = useState(false);
   const [strategy, setStrategy] = useState<"skip" | "update" | "create">("skip");
-  const [ownerId, setOwnerId] = useState(defaultOwnerId);
+  const [ownerId, setOwnerId] = useState(agents.find(a => a.id === defaultOwnerId)?.id ?? agents[0]?.id ?? defaultOwnerId);
   const [err, setErr] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [progress, setProgress] = useState({ done: 0, total: 0, imported: 0, updated: 0, skipped: 0, failed: 0 });

@@ -32,7 +32,7 @@ export default function HRAddCandidateForm({ agents, meId }: Props) {
     city: "", location: "",
     positionApplied: "", source: "", experience: "", realEstateExperience: "",
     currentCompany: "", currentProfile: "", currentSalary: "", expectedSalary: "", noticePeriod: "",
-    primaryOwnerId: meId, secondaryOwnerId: "",
+    primaryOwnerId: agents.find(a => a.id === meId)?.id ?? agents[0]?.id ?? meId, secondaryOwnerId: "",
     status: "NEW", nextAction: "", followUpType: "CALL_BACK",
     remarks: "",
   });
