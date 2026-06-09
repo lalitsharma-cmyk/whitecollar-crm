@@ -94,6 +94,12 @@ model User {
   hrOnly            Boolean   @default(false)
   // Admins who also work in HR — appear in HR pickers (owner/interviewer) without losing Sales access.
   hrTeam            Boolean   @default(false)
+  // ── Conversation moderation (Lalit-only) ──
+  // When true, this user can hide / soft-delete / restore individual remarks in
+  // a lead's Conversation History, and hide them from specific or all agents.
+  // NOT granted by the ADMIN role — must be set explicitly (Lalit). Normal
+  // agents and even other admins never see these controls.
+  canControlConversations Boolean @default(false)
 
   ownedLeads    Lead[]     @relation("LeadOwner")
   assignments   Assignment[]
@@ -468,6 +474,53 @@ model ImportBatch {
 
   @@index([importedById])
   @@index([status])
+  @@index([createdAt])
+}
+
+// =====================================================
+// CONVERSATION MODERATION (Lalit-only) — per-remark visibility overlay + audit.
+// Imported remarks live as text inside Lead.remarks (no per-row table), so each
+// parsed entry is addressed by a stable content hash (remarkParser.remarkKeyFor).
+// RemarkVisibility is an OVERLAY — it never edits the original text (the
+// Super-Admin backup always retains the full original); it only controls who
+// SEES an entry:
+//   • deletedFromView   — soft-deleted from the CRM view (restorable)
+//   • hiddenFromAll     — hidden from every agent (controllers still see it)
+//   • hiddenFromUserIds — CSV of user ids the entry is hidden from (per-agent)
+// =====================================================
+model RemarkVisibility {
+  id                String   @id @default(cuid())
+  leadId            String
+  remarkKey         String   // stable hash of the parsed remark (date + text)
+  deletedFromView   Boolean  @default(false)
+  hiddenFromAll     Boolean  @default(false)
+  hiddenFromUserIds String?  // CSV of user ids hidden from specific agents
+  reason            String?
+  updatedById       String?  // who last changed it (plain id — name looked up)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@unique([leadId, remarkKey])
+  @@index([leadId])
+}
+
+// Append-only audit trail for every conversation-moderation action.
+model RemarkAuditLog {
+  id            String   @id @default(cuid())
+  leadId        String
+  remarkKey     String
+  action        String   // HIDE_ALL | UNHIDE_ALL | HIDE_AGENT | UNHIDE_AGENT | DELETE | RESTORE
+  actorId       String?  // who performed it
+  actorName     String?  // denormalized so the log stays readable if the user is renamed
+  targetUserId  String?  // for HIDE_AGENT / UNHIDE_AGENT — whom it was hidden from
+  targetName    String?
+  oldState      String?  // JSON snapshot of visibility before the action
+  newState      String?  // JSON snapshot after
+  reason        String?
+  createdAt     DateTime @default(now())
+
+  @@index([leadId, remarkKey])
+  @@index([leadId])
   @@index([createdAt])
 }
 

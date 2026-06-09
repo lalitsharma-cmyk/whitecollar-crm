@@ -17,11 +17,13 @@ import {
   extractSiteVisits,
   extractMeetings,
   isMissedCall,
+  remarkKeyFor,
   type DisplayEntry,
   type RemarkEntry,
   type RemarkEventType,
   type VisitSummary,
 } from "@/lib/remarkParser";
+import RemarkControlMenu, { type RemarkControlState } from "@/components/RemarkControlMenu";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -44,6 +46,17 @@ interface Props {
   leadCreatedAt?: Date | null;
   /** Active CRM agents — used for roster-based attribution in remarks */
   agentNames?: string[];
+  // ── Conversation moderation (Lalit-only) ──
+  /** Lead id — needed by the per-remark control API */
+  leadId?: string;
+  /** True only for users with canControlConversations (Lalit). Shows ⋯ controls. */
+  canControl?: boolean;
+  /** Current viewer id — used to apply per-agent hiding for non-controllers */
+  viewerId?: string;
+  /** Visibility overlays for this lead's remarks, keyed by remarkKey */
+  controls?: Array<{ remarkKey: string } & RemarkControlState>;
+  /** Agent roster (id+name) for the "hide from agent" picker */
+  agents?: { id: string; name: string }[];
 }
 
 // ─── Outcome helpers ─────────────────────────────────────────────────────────
@@ -183,6 +196,7 @@ type FilterType = "ALL" | "CONNECTED" | "NO_ANSWER" | "WA";
 
 export default function ConversationStreamCard({
   callLogs, waMessages, notes = [], forwardedTeam, rawRemarks, leadCreatedAt, agentNames = [],
+  leadId = "", canControl = false, viewerId, controls = [], agents = [],
 }: Props) {
   const [filter, setFilter] = useState<FilterType>("ALL");
   const [showSiteVisits, setShowSiteVisits] = useState(true);
@@ -193,11 +207,35 @@ export default function ConversationStreamCard({
     ? "Recordings may exist only for India team (UAE consent rules)" : undefined;
 
   // ── Parse the raw remarks into structured entries ─────────────────────────
-  const remarkEntries = useMemo(() =>
+  const allRemarkEntries = useMemo(() =>
     rawRemarks
       ? parseRemarksTimeline(rawRemarks, agentNames, leadCreatedAt ?? undefined)
       : [],
     [rawRemarks, agentNames, leadCreatedAt]);
+
+  // ── Conversation moderation overlay ───────────────────────────────────────
+  // Map remarkKey → visibility. Controllers (Lalit) see EVERY entry (moderated
+  // ones rendered greyed with a badge + ⋯ menu). Everyone else never sees an
+  // entry that was deleted-from-view, hidden-from-all, or hidden-from-them.
+  const controlByKey = useMemo(() => {
+    const m = new Map<string, RemarkControlState>();
+    for (const c of controls) m.set(c.remarkKey, { deletedFromView: c.deletedFromView, hiddenFromAll: c.hiddenFromAll, hiddenFromUserIds: c.hiddenFromUserIds });
+    return m;
+  }, [controls]);
+
+  function hiddenForViewer(e: RemarkEntry): boolean {
+    const c = controlByKey.get(remarkKeyFor(e));
+    if (!c) return false;
+    if (c.deletedFromView || c.hiddenFromAll) return true;
+    if (viewerId && (c.hiddenFromUserIds ?? "").split(",").map(s => s.trim()).includes(viewerId)) return true;
+    return false;
+  }
+
+  // Entries that drive the summaries + stream. Controllers keep the full set.
+  const remarkEntries = useMemo(
+    () => (canControl ? allRemarkEntries : allRemarkEntries.filter(e => !hiddenForViewer(e))),
+    [allRemarkEntries, canControl, controlByKey, viewerId], // eslint-disable-line react-hooks/exhaustive-deps
+  );
 
   const displayRemarkEntries = useMemo(() => groupEntries(remarkEntries), [remarkEntries]);
 
@@ -339,9 +377,15 @@ export default function ConversationStreamCard({
           const bg     = REMARK_BG[e.eventType];
           const icon   = remarkIcon(e.eventType);
           const dateStr = e.date ? fmtDateTime(e.date) : null;
+          // Moderation state — only controllers ever reach here with a hidden entry.
+          const rKey = remarkKeyFor(e);
+          const ctrl = controlByKey.get(rKey) ?? null;
+          const hiddenCount = (ctrl?.hiddenFromUserIds ?? "").split(",").map(s => s.trim()).filter(Boolean).length;
+          const moderated = !!ctrl && (ctrl.deletedFromView || ctrl.hiddenFromAll || hiddenCount > 0);
+          const modBadge = ctrl?.deletedFromView ? "deleted" : ctrl?.hiddenFromAll ? "hidden · all" : hiddenCount > 0 ? `hidden · ${hiddenCount}` : null;
 
           return (
-            <div key={key} className={`border-l-2 ${border} ${bg} pl-3 pr-2 py-1.5 rounded-r`}>
+            <div key={key} className={`border-l-2 ${border} ${bg} pl-3 pr-2 py-1.5 rounded-r ${moderated ? "opacity-60" : ""}`}>
               {/* Agent · date header */}
               <div className="flex items-center gap-1.5 text-[11px] text-gray-400 mb-0.5 flex-wrap">
                 {e.agentName && (
@@ -354,7 +398,15 @@ export default function ConversationStreamCard({
                 {!dateStr && (
                   <span className="italic opacity-50">Undated</span>
                 )}
-                <span className="ml-auto text-[10px]">{icon}</span>
+                <span className="ml-auto inline-flex items-center gap-1">
+                  {canControl && modBadge && (
+                    <span className="text-[9px] font-bold px-1 py-0.5 rounded bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">{modBadge}</span>
+                  )}
+                  <span className="text-[10px]">{icon}</span>
+                  {canControl && (
+                    <RemarkControlMenu leadId={leadId} remarkKey={rKey} control={ctrl} agents={agents} />
+                  )}
+                </span>
               </div>
               {/* Body */}
               <div className="text-xs text-gray-700 dark:text-slate-200 whitespace-pre-wrap leading-relaxed">

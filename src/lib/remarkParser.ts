@@ -168,6 +168,18 @@ export interface RemarkEntry {
   eventType: RemarkEventType;
 }
 
+// Stable identifier for a parsed remark entry — addresses an imported remark
+// for the conversation-moderation overlay (RemarkVisibility / RemarkAuditLog).
+// Derived purely from the entry's parsed date + text, both of which come from
+// the immutable Lead.remarks cell, so the key is stable across renders.
+export function remarkKeyFor(entry: { date: Date | null; text: string }): string {
+  const day = entry.date ? entry.date.toISOString().slice(0, 10) : "undated";
+  const norm = entry.text.trim().replace(/\s+/g, " ").toLowerCase();
+  let h = 5381;
+  for (let i = 0; i < norm.length; i++) h = (((h << 5) + h) + norm.charCodeAt(i)) | 0;
+  return `${day}_${(h >>> 0).toString(36)}`;
+}
+
 // ─── Main parser ──────────────────────────────────────────────────────────────
 
 // Full "on DD Mon YYYY (HH:MM) body" — previously made into synthetic CallLogs.

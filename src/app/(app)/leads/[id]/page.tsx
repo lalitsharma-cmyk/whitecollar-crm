@@ -267,6 +267,15 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
         })
     : [];
 
+  // Conversation-moderation overlays for this lead (Lalit-only feature). Cheap
+  // indexed lookup; empty for the vast majority of leads.
+  const remarkControls = lead.remarks
+    ? await prisma.remarkVisibility.findMany({
+        where: { leadId: lead.id },
+        select: { remarkKey: true, deletedFromView: true, hiddenFromAll: true, hiddenFromUserIds: true },
+      })
+    : [];
+
   // Imported MIS remarks were stored as synthetic CallLog rows (attributedAgentName
   // set). They are Historical Notes, not real calls — exclude them from every call
   // count / stat on this page so only genuine dialled calls are reflected (and so
@@ -810,6 +819,11 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
             rawRemarks={lead.remarks}
             leadCreatedAt={lead.createdAt}
             agentNames={allActiveUsers.map(u => u.name)}
+            leadId={lead.id}
+            canControl={me.canControlConversations === true}
+            viewerId={me.id}
+            controls={remarkControls}
+            agents={agents.map(a => ({ id: a.id, name: a.name }))}
           />
         </div>
 
