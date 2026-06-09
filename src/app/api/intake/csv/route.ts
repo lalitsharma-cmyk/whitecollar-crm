@@ -361,6 +361,22 @@ export async function POST(req: NextRequest) {
   const callLogsCreated = 0;
   const errors: string[] = [];
 
+  // ── Import History: create a batch row up-front so every NEW lead created
+  // below can be stamped with its id (Lead.importBatchId). Counts are finalized
+  // after the loop. Admins can later soft-delete / roll back the whole batch
+  // from the Import History screen, returning the CRM to its pre-import state.
+  const importBatch = await prisma.importBatch.create({
+    data: {
+      fileName: file.name,
+      fileSize: file.size,
+      sheetName: parseInfo.sheetName ?? null,
+      importType,
+      team: forceTeam,
+      totalRows: rows.length,
+      importedById: me.id,
+    },
+  });
+
 
   // Load all known project names once — used by remark autofill to spot
   // project mentions in free-text ("interested in Azizi Venice" → sourceDetail).
@@ -416,6 +432,10 @@ export async function POST(req: NextRequest) {
       const update: Record<string, unknown> = {};
       // Stamp the import origin on every new row — drives Leads vs Revival Engine separation.
       if (!r.deduped) update.leadOrigin = importType;
+      // Stamp the import batch on every NEW row so the whole import can be
+      // rolled back / soft-deleted later. Deduped (updated) rows are NOT
+      // stamped — they pre-existed and must survive a batch rollback.
+      if (!r.deduped) update.importBatchId = importBatch.id;
       if (altPhone) update.altPhone = altPhone;
       if (altName) update.altName = altName;
       const company = pick(row, "company"); if (company) update.company = company;
@@ -575,6 +595,20 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  // Finalize the import batch with the real counts (drives the Import History
+  // row + rollback warnings). Skipped = rows that matched nothing usable.
+  const skippedCount = Math.max(0, rows.length - created - deduped - errors.length);
+  await prisma.importBatch.update({
+    where: { id: importBatch.id },
+    data: {
+      createdCount: created,
+      updatedCount: deduped,
+      skippedCount,
+      errorCount: errors.length,
+      errors: errors.length ? JSON.stringify(errors.slice(0, 20)) : null,
+    },
+  }).catch(() => {});
+
   await audit({
     userId: me.id,
     action: "import.csv",
@@ -605,6 +639,7 @@ export async function POST(req: NextRequest) {
     allSheets: parseInfo.allSheets,
     rowsProcessed: rows.length,
     created, deduped, enriched, callLogsCreated, autofilled,
+    importBatchId: importBatch.id,
     detectedColumns,
     errors: errors.slice(0, 10),
   });

@@ -29,8 +29,17 @@ export default async function IntakePage() {
           <a href="/settings" className="underline ml-1">Change in Settings</a>
         </div>
       )}
-      <h1 className="text-2xl font-bold">Lead Intake Setup</h1>
-      <p className="text-sm text-gray-500">All sources flow into the same Leads inbox. Round-robin assigns to your active agents automatically.</p>
+      <div className="flex items-start justify-between flex-wrap gap-3">
+        <div>
+          <h1 className="text-2xl font-bold">Lead Intake Setup</h1>
+          <p className="text-sm text-gray-500">All sources flow into the same Leads inbox. Round-robin assigns to your active agents automatically.</p>
+        </div>
+        {me.role === "ADMIN" && (
+          <a href="/intake/history" className="btn btn-ghost whitespace-nowrap" title="View bulk imports — delete or roll back a batch">
+            🕑 Import History
+          </a>
+        )}
+      </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <div className="card p-5">

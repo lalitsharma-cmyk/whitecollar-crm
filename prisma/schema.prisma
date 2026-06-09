@@ -113,6 +113,10 @@ model User {
   hrFollowUps           HRFollowUp[]  @relation("HRFollowUps")
   hrResumeUploads       HRResume[]    @relation("HRResumeUploads")
   hrImports             HRImport[]    @relation("HRImports")
+
+  // ── Import History (Sales) relations ──
+  importBatches         ImportBatch[] @relation("ImportBatchImporter")
+  deletedImportBatches  ImportBatch[] @relation("ImportBatchDeleter")
 }
 
 // =====================================================
@@ -345,6 +349,19 @@ model Lead {
   fingerprint     String?     @unique  // phone||email hash for dedupe
   duplicateCount  Int         @default(0)  // times this client has re-contacted us
   lastDuplicateAt DateTime?
+
+  // ── Import provenance (Import History rollback/delete) ──
+  // Stamped on every NEW lead created by a bulk import so an admin can later
+  // soft-delete / roll back the entire batch, returning the CRM to its pre-
+  // import state. Updated/deduped leads are NOT stamped (they pre-existed) —
+  // only the batch's updatedCount records that they were touched.
+  importBatchId   String?
+  importBatch     ImportBatch? @relation(fields: [importBatchId], references: [id], onDelete: SetNull)
+  // Soft-delete (used by import rollback). NULL = live. When set, the lead is
+  // hidden from every list/count via leadScopeWhere. Reversible — restore
+  // clears it. Originals are never hard-deleted (Super-Admin only, future).
+  deletedAt       DateTime?
+  deletedById     String?
   // Set when the per-lead callback reminder (~10 min before Lead.followupDate) has
   // already fired — prevents the 5-min pre-meeting cron from re-notifying. Cleared
   // when followupDate is edited (handled by the inline-update endpoint).
@@ -412,6 +429,46 @@ model Lead {
   @@index([createdAt])
   @@index([eoiStage])
   @@index([forwardedTeam])
+  @@index([importBatchId])
+  @@index([deletedAt])
+}
+
+// =====================================================
+// IMPORT BATCH — one row per bulk CSV/Excel import. Drives the ADMIN-ONLY
+// Import History screen with per-batch rollback/delete. Stamped onto every NEW
+// lead it creates (Lead.importBatchId) so the whole batch can be soft-deleted,
+// returning the CRM to its pre-import state. SOFT-DELETE only — leads + the
+// batch are marked deleted (reversible), never hard-removed, so the original
+// data is always recoverable. Counts mirror the import response shape.
+// =====================================================
+model ImportBatch {
+  id            String    @id @default(cuid())
+  fileName      String
+  fileSize      Int?
+  sheetName     String?
+  importType    String?   // leadOrigin written by the import (ACTIVE/COLD/PORTFOLIO)
+  team          String?   // admin force-team (Dubai/India) or null
+  totalRows     Int       @default(0)
+  createdCount  Int       @default(0)   // brand-new leads stamped with this batch (deletable)
+  updatedCount  Int       @default(0)   // existing leads updated (deduped) — NOT deletable
+  skippedCount  Int       @default(0)
+  errorCount    Int       @default(0)
+  errors        String?   // JSON array of the first N error strings
+  importedById  String?
+  importedBy    User?     @relation("ImportBatchImporter", fields: [importedById], references: [id], onDelete: SetNull)
+  // Soft-delete / rollback audit trail
+  status        String    @default("ACTIVE")  // "ACTIVE" | "DELETED"
+  deletedAt     DateTime?
+  deletedById   String?
+  deletedBy     User?     @relation("ImportBatchDeleter", fields: [deletedById], references: [id], onDelete: SetNull)
+  deleteReason  String?
+  createdAt     DateTime  @default(now())
+
+  leads         Lead[]
+
+  @@index([importedById])
+  @@index([status])
+  @@index([createdAt])
 }
 
 // =====================================================

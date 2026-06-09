@@ -113,7 +113,7 @@ function buildCsvUrl(rawUrl: string): { csvUrl: string; sheetId: string; gid?: s
 }
 
 export async function POST(req: NextRequest) {
-  await requireUser();
+  const meUser = await requireUser();
   const body = await req.json().catch(() => ({}));
   const url = String(body.url ?? "").trim();
   const campaign = body.campaign ? String(body.campaign).trim() : undefined;
@@ -148,6 +148,18 @@ export async function POST(req: NextRequest) {
   const errors: string[] = [];
   const detectedColumns = Object.keys(parsed.data[0] ?? {});
 
+  // Import History batch — stamp every NEW lead so the whole sheet import can
+  // be rolled back later from the admin Import History screen.
+  const importBatch = await prisma.importBatch.create({
+    data: {
+      fileName: `Google Sheet ${built.sheetId}`,
+      sheetName: built.gid ? `gid:${built.gid}` : null,
+      importType: "ACTIVE",
+      totalRows: parsed.data.length,
+      importedById: meUser.id,
+    },
+  });
+
   for (const [i, row] of parsed.data.entries()) {
     const name = pick(row, "customer", "name", "fullname", "leadname");
     const phone = pick(row, "mobile", "phone", "contact", "whatsapp");
@@ -170,6 +182,8 @@ export async function POST(req: NextRequest) {
       if (r.deduped) deduped++; else created++;
 
       const update: Record<string, unknown> = {};
+      // Stamp the batch on NEW rows so a rollback can find + soft-delete them.
+      if (!r.deduped) update.importBatchId = importBatch.id;
       const co = pick(row, "company"); if (co) update.company = co;
       const ad = pick(row, "address"); if (ad) update.address = ad;
       const wc = pick(row, "whoisclient", "client", "clientinfo"); if (wc) update.whoIsClient = wc;
@@ -217,10 +231,23 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  const skippedCount = Math.max(0, parsed.data.length - created - deduped - errors.length);
+  await prisma.importBatch.update({
+    where: { id: importBatch.id },
+    data: {
+      createdCount: created,
+      updatedCount: deduped,
+      skippedCount,
+      errorCount: errors.length,
+      errors: errors.length ? JSON.stringify(errors.slice(0, 20)) : null,
+    },
+  }).catch(() => {});
+
   return NextResponse.json({
     ok: true, sheetId: built.sheetId, gid: built.gid,
     rowsProcessed: parsed.data.length,
     created, deduped, enriched,
+    importBatchId: importBatch.id,
     detectedColumns, errors: errors.slice(0,10),
   });
 }

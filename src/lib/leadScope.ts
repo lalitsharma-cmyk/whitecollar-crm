@@ -51,11 +51,15 @@ export async function visibleOwnerIds(me: ScopedUser): Promise<string[] | null> 
  */
 export async function leadScopeWhere(
   me: ScopedUser,
-): Promise<{ ownerId?: { in: string[] } | string; forwardedTeam?: string }> {
+): Promise<{ ownerId?: { in: string[] } | string; forwardedTeam?: string; deletedAt?: null }> {
+  // Soft-deleted leads (rolled-back imports) are hidden from EVERY scoped list
+  // and count. This single chokepoint keeps a deleted import batch invisible
+  // across leads / dashboard / reports without touching each query. Restore
+  // (clearing Lead.deletedAt) brings them straight back.
   const ids = await visibleOwnerIds(me);
   if (ids === null) {
-    // ADMIN — no restrictions at all
-    return {};
+    // ADMIN — no ownership restrictions, but still hide soft-deleted leads.
+    return { deletedAt: null };
   }
   if (me.role === "MANAGER") {
     // Team-scoped: only leads in the manager's team. If the manager has no
@@ -63,13 +67,13 @@ export async function leadScopeWhere(
     // manager still sees SOMETHING rather than an empty page.
     const team = normalizeTeam(me.team ?? undefined);
     if (team) {
-      return { forwardedTeam: team };
+      return { forwardedTeam: team, deletedAt: null };
     }
     // Fallback: no team configured — use the old owner-id scope
   }
   // AGENT or MANAGER without a team configured
-  if (ids.length === 1) return { ownerId: ids[0] };
-  return { ownerId: { in: ids } };
+  if (ids.length === 1) return { ownerId: ids[0], deletedAt: null };
+  return { ownerId: { in: ids }, deletedAt: null };
 }
 
 /** True if the user is allowed to access this specific lead. */
