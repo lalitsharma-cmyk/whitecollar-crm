@@ -239,3 +239,56 @@ export const CLOSING_STATUSES: string[] = [
   "Visit Dubai", "Expo Only",
   "Booked With Us", "Booked with Us",
 ];
+
+// ─── Agent-editable WORKING statuses ──────────────────────────────────────
+// Agents may only set day-to-day working statuses. "Fresh Lead" is system-
+// generated; outcome / classification statuses (War Fear, Funds Issue, Booked
+// With Us, Sell Out, Already Bought, Number Changed, Pass Away, …) are applied
+// only through the Reject flow / admin — they never appear in the agent
+// dropdown so casual selection can't corrupt reporting.
+export const DUBAI_AGENT_STATUSES: string[] = [
+  "Not Contacted", "Follow Up", "Long Term Follow Up", "Mail Sent",
+  "Wants Office Visit", "Zoom Meeting", "Meeting", "Visit Dubai", "Expo Only", "Not Interested",
+];
+export const INDIA_AGENT_STATUSES: string[] = [
+  "Not Contacted", "Follow Up", "Details Shared", "Site Visit Schedule", "Meeting", "Postponed", "Not Interested",
+];
+
+export function agentStatusesForTeam(team: string | null | undefined): string[] {
+  if (team === "India") return INDIA_AGENT_STATUSES;
+  if (team === "Dubai") return DUBAI_AGENT_STATUSES;
+  return [...new Set([...DUBAI_AGENT_STATUSES, ...INDIA_AGENT_STATUSES])];
+}
+
+/**
+ * Status options for the lead-detail dropdown, by role.
+ *  - AGENT:   working statuses only (no Fresh Lead, no outcomes, no Booked).
+ *  - MANAGER: full team master minus Fresh Lead + Booked With Us.
+ *  - ADMIN:   full team master (may correct Fresh Lead / set Booked With Us).
+ * The lead's CURRENT status is always included so the select reflects reality
+ * even when it's a status the role can't otherwise pick.
+ */
+export function selectableStatuses(
+  team: string | null | undefined,
+  role: string,
+  currentStatus?: string | null,
+): string[] {
+  let list: string[];
+  if (role === "AGENT") {
+    list = [...agentStatusesForTeam(team)];
+  } else if (role === "MANAGER") {
+    list = statusesForTeam(team).filter(s => s !== "Fresh Lead" && !isBookedStatus(s));
+  } else {
+    list = [...statusesForTeam(team)];
+  }
+  if (currentStatus && !list.includes(currentStatus)) list = [currentStatus, ...list];
+  return list;
+}
+
+/** Server-side guard: may this role manually set this status? */
+export function canSetStatus(role: string, status: string, team: string | null | undefined): boolean {
+  if (status === "Fresh Lead") return role === "ADMIN";  // system-generated; admin may correct
+  if (isBookedStatus(status)) return role === "ADMIN";    // booking workflow / admin only
+  if (role === "AGENT") return agentStatusesForTeam(team).includes(status);
+  return true;  // manager / admin: any non-restricted team status
+}

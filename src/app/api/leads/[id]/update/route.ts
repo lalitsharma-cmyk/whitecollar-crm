@@ -7,6 +7,7 @@ import { fireWorkflowTrigger } from "@/lib/workflowEngine";
 import { getTestingModeEnabled, getBantGateMode } from "@/lib/settings";
 import { evaluateBantGate, type BantFields } from "@/lib/bantGate";
 import { awardXp, type AwardResult, type XpReason } from "@/lib/gamification.server";
+import { canSetStatus } from "@/lib/lead-statuses";
 
 // Inline-edit endpoint — accepts one or more field updates and logs an Activity
 // for status/stage changes. Only allows whitelisted fields.
@@ -52,6 +53,18 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         { status: 403 }
       );
     }
+  }
+
+  // Status governance — "Fresh Lead" is system-generated and outcome /
+  // classification statuses (War Fear, Funds Issue, Booked With Us, Sell Out, …)
+  // are applied only via the Reject flow / admin. Block agents (and managers for
+  // Fresh Lead / Booked) from setting them directly, so reporting stays clean.
+  if (typeof body.currentStatus === "string" && body.currentStatus &&
+      !canSetStatus(me.role, body.currentStatus, scoped.lead.forwardedTeam)) {
+    return NextResponse.json(
+      { error: `"${body.currentStatus}" can't be set here — use Reject lead for outcome statuses, or ask an admin.` },
+      { status: 403 },
+    );
   }
 
   const updates: Record<string, unknown> = {};

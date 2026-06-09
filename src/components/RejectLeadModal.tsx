@@ -3,6 +3,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { XCircle } from "lucide-react";
 import { useBodyScrollLock } from "@/hooks/useBodyScrollLock";
+import { REJECT_REASONS } from "@/lib/reject-reasons";
 
 /**
  * Reject Lead — Agent J's clean-room implementation per the spec.
@@ -20,28 +21,6 @@ import { useBodyScrollLock } from "@/hooks/useBodyScrollLock";
 interface Props {
   leadId: string;
 }
-
-const REASON_OPTIONS: Array<{ value: string; label: string }> = [
-  { value: "NOT_INTERESTED",          label: "Not Interested" },
-  { value: "JUST_SEARCHING",          label: "Just Searching" },
-  { value: "BY_MISTAKE_INQUIRY",      label: "By Mistake Inquiry" },
-  { value: "DROP_THE_PLAN",           label: "Drop The Plan" },
-  { value: "LOW_BUDGET",              label: "Low Budget" },
-  { value: "FUND_ISSUE",              label: "Fund Issue" },
-  { value: "OTHER_LOCATION",          label: "Other Location" },
-  { value: "BROKER",                  label: "Broker" },
-  { value: "ALREADY_BOUGHT",          label: "Already Bought" },
-  { value: "LEASING_REQUIREMENT",     label: "Leasing Requirement" },
-  { value: "COMMERCIAL_REQUIREMENT",  label: "Commercial Requirement" },
-  { value: "INVALID_NUMBER",          label: "Invalid Number" },
-  { value: "NUMBER_CHANGED",          label: "Number Changed" },
-  { value: "NEVER_RESPONDED",         label: "Never Responded" },
-  { value: "PASSED_AWAY",             label: "Passed Away" },
-  { value: "WAR_FEAR",                label: "War / Market Fear" },
-  { value: "WAITING_FOR_PROPERTY_SALE", label: "Waiting For Property Sale" },
-  { value: "NOT_ABLE_TO_BUY",         label: "Not Able To Buy" },
-  { value: "OTHER",                   label: "Other" },
-];
 
 const NOTE_MAX = 500;
 
@@ -64,8 +43,12 @@ export default function RejectLeadModal({ leadId }: Props) {
     if (busy) return;
     setErr(null);
 
+    if (!note.trim()) {
+      setErr("Reject remarks are required — explain why this lead is being rejected.");
+      return;
+    }
     if (note.length > NOTE_MAX) {
-      setErr(`Note is too long — max ${NOTE_MAX} characters.`);
+      setErr(`Remarks are too long — max ${NOTE_MAX} characters.`);
       return;
     }
 
@@ -76,8 +59,7 @@ export default function RejectLeadModal({ leadId }: Props) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           reason,
-          // Send note only when present — server treats absent === null.
-          note: note.trim() || undefined,
+          note: note.trim(),
         }),
       });
       const data = await res.json().catch(() => ({} as { error?: string }));
@@ -147,32 +129,28 @@ export default function RejectLeadModal({ leadId }: Props) {
               disabled={busy}
               className="w-full mt-1 mb-3 border border-[#e5e7eb] rounded-lg px-3 py-2 text-sm bg-white"
             >
-              {REASON_OPTIONS.map((r) => (
+              {REJECT_REASONS.map((r) => (
                 <option key={r.value} value={r.value}>{r.label}</option>
               ))}
             </select>
 
-            {/* Optional note — only shown when OTHER. Not required. */}
-            {reason === "OTHER" && (
-              <>
-                <label htmlFor="reject-note" className="text-xs font-semibold text-gray-600">
-                  Additional note <span className="text-gray-400 font-normal">(optional)</span>
-                </label>
-                <textarea
-                  id="reject-note"
-                  value={note}
-                  onChange={(e) => setNote(e.target.value.slice(0, NOTE_MAX))}
-                  rows={2}
-                  maxLength={NOTE_MAX}
-                  disabled={busy}
-                  placeholder="Any extra context…"
-                  className="w-full mt-1 border border-[#e5e7eb] rounded-lg px-3 py-2 text-sm"
-                />
-                <div className="text-[10px] text-gray-400 mt-0.5 text-right">
-                  {note.length}/{NOTE_MAX}
-                </div>
-              </>
-            )}
+            {/* Reject remarks — ALWAYS required so we capture WHY the lead is rejected. */}
+            <label htmlFor="reject-note" className="text-xs font-semibold text-gray-600">
+              Reject Remarks / Reason Details <span className="text-red-600">*</span>
+            </label>
+            <textarea
+              id="reject-note"
+              value={note}
+              onChange={(e) => setNote(e.target.value.slice(0, NOTE_MAX))}
+              rows={3}
+              maxLength={NOTE_MAX}
+              disabled={busy}
+              placeholder="Explain why this lead is being rejected…"
+              className="w-full mt-1 border border-[#e5e7eb] rounded-lg px-3 py-2 text-sm"
+            />
+            <div className="text-[10px] text-gray-400 mt-0.5 text-right">
+              {note.length}/{NOTE_MAX}
+            </div>
 
             {err && (
               <div className="text-xs text-red-600 mt-2" role="alert">

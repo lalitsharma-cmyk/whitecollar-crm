@@ -5,6 +5,7 @@ import { requireUser } from "@/lib/auth";
 import { canTouchLead } from "@/lib/leadScope";
 import { audit, reqMeta } from "@/lib/audit";
 import { notify } from "@/lib/notify";
+import { REJECT_REASON_VALUES, rejectReasonLabel, rejectionStatusFor } from "@/lib/reject-reasons";
 
 /**
  * POST /api/leads/[id]/reject
@@ -28,58 +29,7 @@ import { notify } from "@/lib/notify";
  *   • notify() admin/manager so they have oversight
  */
 
-// Allowed reasons — kept in sync with the modal options.
-const REASONS = new Set([
-  "NOT_INTERESTED",
-  "JUST_SEARCHING",
-  "BY_MISTAKE_INQUIRY",
-  "DROP_THE_PLAN",
-  "LOW_BUDGET",
-  "FUND_ISSUE",
-  "OTHER_LOCATION",
-  "BROKER",
-  "ALREADY_BOUGHT",
-  "LEASING_REQUIREMENT",
-  "COMMERCIAL_REQUIREMENT",
-  "INVALID_NUMBER",
-  "NUMBER_CHANGED",
-  "NEVER_RESPONDED",
-  "PASSED_AWAY",
-  "WAR_FEAR",
-  "WAITING_FOR_PROPERTY_SALE",
-  "NOT_ABLE_TO_BUY",
-  "OTHER",
-  // Legacy values kept so old records remain readable
-  "LOOK_AFTER_2_YEARS",
-  "TRANSFER_TO_INDIA_TEAM",
-  "TRANSFER_TO_DUBAI_TEAM",
-]);
-
-const REASON_LABEL: Record<string, string> = {
-  NOT_INTERESTED: "Not Interested",
-  JUST_SEARCHING: "Just Searching",
-  BY_MISTAKE_INQUIRY: "By Mistake Inquiry",
-  DROP_THE_PLAN: "Drop The Plan",
-  LOW_BUDGET: "Low Budget",
-  FUND_ISSUE: "Fund Issue",
-  OTHER_LOCATION: "Other Location",
-  BROKER: "Broker",
-  ALREADY_BOUGHT: "Already Bought",
-  LEASING_REQUIREMENT: "Leasing Requirement",
-  COMMERCIAL_REQUIREMENT: "Commercial Requirement",
-  INVALID_NUMBER: "Invalid Number",
-  NUMBER_CHANGED: "Number Changed",
-  NEVER_RESPONDED: "Never Responded",
-  PASSED_AWAY: "Passed Away",
-  WAR_FEAR: "War / Market Fear",
-  WAITING_FOR_PROPERTY_SALE: "Waiting For Property Sale",
-  NOT_ABLE_TO_BUY: "Not Able To Buy",
-  OTHER: "Other",
-  LOOK_AFTER_2_YEARS: "Look after 2 years",
-  TRANSFER_TO_INDIA_TEAM: "Transfer to India Team",
-  TRANSFER_TO_DUBAI_TEAM: "Transfer to Dubai Team",
-};
-
+// Reasons + labels live in src/lib/reject-reasons.ts (shared with the modal).
 const NOTE_MAX = 500;
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -109,22 +59,32 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const reason = typeof body.reason === "string" ? body.reason.toUpperCase() : "";
   const note = typeof body.note === "string" ? body.note.trim() : "";
 
-  if (!REASONS.has(reason)) {
+  if (!REJECT_REASON_VALUES.has(reason)) {
     return NextResponse.json({ error: "Invalid reason" }, { status: 400 });
   }
+  // Remarks are now REQUIRED — we must capture WHY the lead was rejected.
+  if (!note) {
+    return NextResponse.json({ error: "Reject remarks are required." }, { status: 400 });
+  }
   if (note.length > NOTE_MAX) {
-    return NextResponse.json({ error: `Note must be ${NOTE_MAX} characters or fewer` }, { status: 400 });
+    return NextResponse.json({ error: `Remarks must be ${NOTE_MAX} characters or fewer` }, { status: 400 });
   }
 
   const now = new Date();
+  const reasonLabel = rejectReasonLabel(reason);
+  // The rejection reason is also the lead's new classification status — these
+  // outcome statuses are not agent-selectable in the normal dropdown, so the
+  // reject flow is the controlled way they get applied.
+  const newStatus = rejectionStatusFor(reason);
 
   // Single update — everything lost-related in one write. lastTouchedAt is
   // bumped so the lead doesn't get flagged as "ghosting" right after rejection.
   await prisma.lead.update({
     where: { id },
     data: {
+      currentStatus: newStatus,
       rejectionReason: reason,
-      rejectionNote: note || null,
+      rejectionNote: note,
       rejectedAt: now,
       rejectedById: me.id,
       followupDate: null,
@@ -134,7 +94,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   });
 
   // Timeline entry — type STATUS_CHANGE per spec; the title includes the
-  // human label so admins scanning the activity log see "Low budget", not
+  // human label so admins scanning the activity log see "War Fear", not
   // an enum constant.
   await prisma.activity.create({
     data: {
@@ -142,11 +102,22 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       userId: me.id,
       type: ActivityType.STATUS_CHANGE,
       status: ActivityStatus.DONE,
-      title: `Lead rejected: ${REASON_LABEL[reason] ?? reason}`,
-      description: note || null,
+      title: `Lead rejected: ${reasonLabel}`,
+      description: note,
       completedAt: now,
     },
   });
+
+  // Conversation-history entry — a NOTE (rendered in the Conversation stream
+  // with the agent's name + IST time). Added as a NEW entry; never replaces the
+  // lead's existing remarks.
+  await prisma.note.create({
+    data: {
+      leadId: id,
+      userId: me.id,
+      body: `🚫 Rejected Lead\nReason: ${reasonLabel}\nRemarks: ${note}`,
+    },
+  }).catch(() => {});
 
   // Audit — forensic trail kept independently of Activity so a deleted lead
   // still leaves a record.
@@ -177,7 +148,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   recipientIds.delete(me.id);
 
   const ownerLabel = lead.owner?.name ?? "(unassigned)";
-  const labelHuman = REASON_LABEL[reason] ?? reason;
+  const labelHuman = reasonLabel;
   for (const uid of recipientIds) {
     // Fire-and-forget per the rest of the codebase — a notify failure must
     // never roll back a legitimate rejection.
