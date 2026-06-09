@@ -524,32 +524,61 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
           on:  "bg-[#0b1a33] text-white border-[#0b1a33] dark:bg-blue-700 dark:border-blue-700",
           off: "bg-white dark:bg-slate-700 border-[#e5e7eb] dark:border-slate-600 text-gray-700 dark:text-slate-100 hover:bg-gray-50 dark:hover:bg-slate-600",
         };
+        // ── AND-logic chip hrefs ───────────────────────────────────────────
+        // Quick chips must REFINE the current result set, never reset it. Each
+        // chip preserves every active filter (panel selections, search, other
+        // chips) and only patches its own param — so Filter Panel + Quick Chips
+        // + Search Bar all combine with AND. Only "Reset All" clears everything.
+        const spToParams = () => {
+          const p = new URLSearchParams();
+          for (const [k, v] of Object.entries(sp)) {
+            if (v != null && v !== "" && k !== "page") p.set(k, String(v));
+          }
+          return p;
+        };
+        const chipHref = (patch: Record<string, string | null>) => {
+          const p = spToParams();
+          for (const [k, v] of Object.entries(patch)) {
+            if (v == null || v === "") p.delete(k); else p.set(k, v);
+          }
+          const qs = p.toString();
+          return qs ? `/leads?${qs}` : "/leads";
+        };
+        const isAgent = me.role === "AGENT" || me.role === "MANAGER";
+        // Follow-up time dimension (All / Today / Overdue) writes the `followup`
+        // param. Agents have an implicit today-default, so their "All" must set
+        // followup=all explicitly to override it; admins just drop the param.
+        const followupHref = (val: "today" | "overdue" | "all") =>
+          val === "all" ? chipHref({ followup: isAgent ? "all" : null }) : chipHref({ followup: val });
+
         // §12: For agents/managers the default is Today — so "Today" chip is highlighted
         // when no explicit ?followup= param is set. "All" is highlighted only when ?followup=all.
-        const isAgentDefault = (me.role === "AGENT" || me.role === "MANAGER") && !sp.followup && !hasOtherFilter;
+        const isAgentDefault = isAgent && !sp.followup && !hasOtherFilter;
         const todayChipActive = effectiveFollowup === "today" || isAgentDefault;
-        // "All" chip is active only when explicitly showing all (admin default, or agent picked All)
-        const allActive = !isAgentDefault && !sp.followup && !sp.ai && !sp.team && !sp.owner && !sp.smart && !sp.filter && !sp.status && !sp.cstatus;
+        // "All" (follow-up dimension) is active when not narrowed to a specific
+        // time window and not on the agent today-default. It can be highlighted
+        // alongside an active status chip — they're independent AND filters.
+        const allActive = !isAgentDefault && effectiveFollowup === "all";
 
         return (
           <div className="flex gap-2 overflow-x-auto pb-1 -mx-3 px-3 sm:mx-0 sm:px-0" style={{ scrollbarWidth: "thin" }}>
-            {/* All — for agents, must explicitly set followup=all to override today-default */}
+            {/* All — clears only the follow-up time narrowing; preserves panel/search/other chips */}
             <Link
-              href={(me.role === "AGENT" || me.role === "MANAGER") ? "/leads?followup=all" : "/leads"}
+              href={followupHref("all")}
               className={chip(allActive, neutral.on, neutral.off)}>
               All · {totalAll}
             </Link>
 
-            {/* Follow-up time chips */}
+            {/* Follow-up time chips — toggle on/off, always preserve other filters */}
             <Link
-              href="/leads?followup=today"
+              href={todayChipActive ? followupHref("all") : followupHref("today")}
               className={chip(todayChipActive, "bg-emerald-600 text-white border-emerald-600", "bg-emerald-50 border-emerald-300 text-emerald-800 dark:bg-emerald-950/30 dark:border-emerald-700 dark:text-emerald-200")}
             >
               📅 Today
               {followupToday > 0 && <span className={`px-1 rounded text-[10px] ${todayChipActive ? "bg-white/25" : "bg-emerald-200/60 dark:bg-emerald-800/60"}`}>{followupToday}</span>}
             </Link>
             <Link
-              href="/leads?followup=overdue"
+              href={effectiveFollowup === "overdue" ? followupHref("all") : followupHref("overdue")}
               className={chip(effectiveFollowup === "overdue", "bg-red-600 text-white border-red-600", "bg-red-50 border-red-300 text-red-800 dark:bg-red-950/30 dark:border-red-700 dark:text-red-200")}
             >
               ⏰ Overdue
@@ -559,9 +588,9 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
             {/* Excel/MIS status chips — one per status that has ≥1 lead, sorted by count */}
             {cstatusCounts.map(({ label, count }) => {
               const isActive = sp.cstatus === label;
-              // Encode the status label for URLs (handles spaces, special chars)
-              const href = `/leads?cstatus=${encodeURIComponent(label)}`;
-              const chipClass = statusColor(label);
+              // Toggle: clicking the active status removes it; otherwise set it.
+              // Either way every OTHER active filter is preserved (AND logic).
+              const href = chipHref({ cstatus: isActive ? null : label });
               // Active: filled background; inactive: light tinted background
               const onCls  = "bg-[#0b1a33] text-white border-[#0b1a33] dark:bg-blue-700 dark:border-blue-600";
               const offCls = `bg-white dark:bg-slate-700 border-[#e5e7eb] dark:border-slate-600 text-gray-700 dark:text-slate-100 hover:bg-gray-50 dark:hover:bg-slate-600`;
@@ -576,13 +605,13 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
             {/* Leadership-only shortcuts */}
             {me.role !== "AGENT" && (
               <>
-                <Link href="/leads?owner=unassigned" className={chip(sp.owner === "unassigned", "bg-amber-600 text-white border-amber-600", "bg-amber-50 border-amber-300 text-amber-800 dark:bg-amber-950/30 dark:border-amber-700 dark:text-amber-200")}>
+                <Link href={chipHref({ owner: sp.owner === "unassigned" ? null : "unassigned" })} className={chip(sp.owner === "unassigned", "bg-amber-600 text-white border-amber-600", "bg-amber-50 border-amber-300 text-amber-800 dark:bg-amber-950/30 dark:border-amber-700 dark:text-amber-200")}>
                   ⚠ Unassigned
                 </Link>
-                <Link href="/leads?team=Dubai" className={chip(sp.team === "Dubai", "bg-sky-600 text-white border-sky-600", "bg-sky-50 border-sky-300 text-sky-800 dark:bg-sky-950/30 dark:border-sky-700 dark:text-sky-200")}>
+                <Link href={chipHref({ team: sp.team === "Dubai" ? null : "Dubai" })} className={chip(sp.team === "Dubai", "bg-sky-600 text-white border-sky-600", "bg-sky-50 border-sky-300 text-sky-800 dark:bg-sky-950/30 dark:border-sky-700 dark:text-sky-200")}>
                   🇦🇪 Dubai
                 </Link>
-                <Link href="/leads?team=India" className={chip(sp.team === "India", "bg-orange-600 text-white border-orange-600", "bg-orange-50 border-orange-300 text-orange-800 dark:bg-orange-950/30 dark:border-orange-700 dark:text-orange-200")}>
+                <Link href={chipHref({ team: sp.team === "India" ? null : "India" })} className={chip(sp.team === "India", "bg-orange-600 text-white border-orange-600", "bg-orange-50 border-orange-300 text-orange-800 dark:bg-orange-950/30 dark:border-orange-700 dark:text-orange-200")}>
                   🇮🇳 India
                 </Link>
               </>

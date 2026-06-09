@@ -20,6 +20,7 @@ import { runReconciler } from "@/lib/reconciler";
 import InlineEdit from "@/components/InlineEdit";
 import { acefoneEnabled } from "@/lib/acefone";
 import { canTouchLead } from "@/lib/leadScope";
+import { parseRemarksTimeline } from "@/lib/remarkParser";
 import { projectWhereForUser, teamToCountry } from "@/lib/propertyScope";
 // CallHistoryCard removed — folded into ConversationStreamCard below.
 import ConversationStreamCard from "@/components/ConversationStreamCard";
@@ -162,14 +163,66 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
   const bookingsCount = investorMatches.filter(m => m.bookingDoneAt != null || m.currentStatus === "Booked with Us").length;
   const matchedLeadIds = investorMatches.map(m => m.id);
 
-  const lastBy = (t: string): string | null => {
-    const d = meetingActs.find(a => a.type === t)?.completedAt ?? meetingActs.find(a => a.type === t)?.scheduledAt ?? null;
-    return d ? d.toISOString() : null;
+  // ── Meeting intelligence (spec: "counts auto-calculated from imported
+  // remarks + CRM logged activities"). The card used to count ONLY structured
+  // Activity rows, so imported leads — whose meetings live in the remarks text —
+  // always showed 0. We now ALSO parse lead.remarks and detect Office / Virtual
+  // / Site-Visit mentions via the shared remarkParser keyword rules, then merge
+  // both sources into the counts and the history list.
+  const remarkMeetingType: Record<string, "OFFICE_MEETING" | "VIRTUAL_MEETING" | "SITE_VISIT"> = {
+    MEETING: "OFFICE_MEETING",
+    VIRTUAL_MEETING: "VIRTUAL_MEETING",
+    SITE_VISIT: "SITE_VISIT",
+  };
+  const detectedMeetings = (lead.remarks
+    ? parseRemarksTimeline(lead.remarks, allActiveUsers.map(u => u.name), lead.createdAt)
+    : []
+  )
+    .filter(e => e.eventType === "MEETING" || e.eventType === "VIRTUAL_MEETING" || e.eventType === "SITE_VISIT")
+    .map((e, i) => ({
+      id: `remark-${i}`,
+      type: remarkMeetingType[e.eventType],
+      completedAt: e.date ? e.date.toISOString() : null,
+      startedAt: null as string | null,
+      endedAt: null as string | null,
+      description: e.text,
+      isNoShow: false,
+      loggedBy: e.agentName,
+      source: "remark" as const,
+    }));
+
+  // Structured (CRM-logged) meeting activities, normalized to the same shape.
+  const loggedMeetings = meetingActs.map(a => ({
+    id: a.id,
+    type: a.type as "OFFICE_MEETING" | "VIRTUAL_MEETING" | "SITE_VISIT",
+    completedAt: a.completedAt ? a.completedAt.toISOString() : null,
+    startedAt: a.startedAt ? a.startedAt.toISOString() : null,
+    endedAt: a.endedAt ? a.endedAt.toISOString() : null,
+    description: a.description ?? null,
+    isNoShow: a.isNoShow,
+    loggedBy: a.user?.name ?? null,
+    source: "logged" as const,
+  }));
+
+  // Merge both sources, newest first (null dates sink to the bottom).
+  const allMeetings = [...loggedMeetings, ...detectedMeetings].sort((a, b) => {
+    const ta = a.completedAt ? new Date(a.completedAt).getTime() : a.startedAt ? new Date(a.startedAt).getTime() : 0;
+    const tb = b.completedAt ? new Date(b.completedAt).getTime() : b.startedAt ? new Date(b.startedAt).getTime() : 0;
+    return tb - ta;
+  });
+
+  const meetingsOfType = (t: string) => allMeetings.filter(m => m.type === t);
+  const lastAtOf = (t: string): string | null => {
+    const dates = meetingsOfType(t)
+      .map(m => m.completedAt ?? m.startedAt)
+      .filter((d): d is string => !!d)
+      .sort();
+    return dates.length ? dates[dates.length - 1] : null;
   };
   const meetingCounts = {
-    officeMeetings:  { count: meetingActs.filter(a => a.type === "OFFICE_MEETING").length,  lastAt: lastBy("OFFICE_MEETING") },
-    virtualMeetings: { count: meetingActs.filter(a => a.type === "VIRTUAL_MEETING").length, lastAt: lastBy("VIRTUAL_MEETING") },
-    siteVisits:      { count: meetingActs.filter(a => a.type === "SITE_VISIT").length,      lastAt: lastBy("SITE_VISIT") },
+    officeMeetings:  { count: meetingsOfType("OFFICE_MEETING").length,  lastAt: lastAtOf("OFFICE_MEETING") },
+    virtualMeetings: { count: meetingsOfType("VIRTUAL_MEETING").length, lastAt: lastAtOf("VIRTUAL_MEETING") },
+    siteVisits:      { count: meetingsOfType("SITE_VISIT").length,      lastAt: lastAtOf("SITE_VISIT") },
   };
 
   // Find an in-progress visit (started but not ended) attended by me — so the
@@ -861,16 +914,7 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
             leadId={lead.id}
             counts={meetingCounts}
             leadName={lead.name}
-            activities={meetingActs.map(a => ({
-              id: a.id,
-              type: a.type as string,
-              completedAt: a.completedAt ? a.completedAt.toISOString() : null,
-              startedAt: a.startedAt ? a.startedAt.toISOString() : null,
-              endedAt: a.endedAt ? a.endedAt.toISOString() : null,
-              description: a.description ?? null,
-              isNoShow: a.isNoShow,
-              loggedBy: a.user?.name ?? null,
-            }))}
+            activities={allMeetings}
           />
         </div>
 

@@ -21,6 +21,8 @@ interface MeetingActivity {
   description: string | null;
   isNoShow: boolean;
   loggedBy: string | null;
+  /** "logged" = CRM-logged Activity row · "remark" = auto-detected from imported conversation history */
+  source?: "remark" | "logged";
 }
 
 const TYPES = [
@@ -92,6 +94,9 @@ export default function LeadMeetingClient({
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [showHistory, setShowHistory] = useState(true);
+  // Clicking a count tile filters the history list to that meeting type.
+  const [typeFilter, setTypeFilter] = useState<string | null>(null);
+  const pickType = (t: string) => { setTypeFilter(f => (f === t ? null : t)); setShowHistory(true); };
 
   async function save() {
     if (remarks.trim().length < 3) { setErr("Remarks required (min 3 chars)."); return; }
@@ -127,38 +132,70 @@ export default function LeadMeetingClient({
         <button onClick={() => setOpen(true)} className="text-xs btn btn-ghost py-1">+ Log</button>
       </div>
 
-      {/* Count tiles */}
+      {/* Count tiles — click to filter the history list below by type */}
       <div className="grid grid-cols-3 gap-2 text-center text-sm">
-        <div className="p-2 border border-[#e5e7eb] rounded-lg">
-          <div className="text-[11px] text-gray-500">🏢 Office</div>
-          <div className="text-xl font-bold">{counts.officeMeetings.count}</div>
-          <div className="text-[10px] text-gray-500">last {ago(counts.officeMeetings.lastAt)}</div>
-        </div>
-        <div className="p-2 border border-[#e5e7eb] rounded-lg">
-          <div className="text-[11px] text-gray-500">🚗 Site Visit</div>
-          <div className="text-xl font-bold">{counts.siteVisits.count}</div>
-          <div className="text-[10px] text-gray-500">last {ago(counts.siteVisits.lastAt)}</div>
-        </div>
-        <div className="p-2 border border-[#e5e7eb] rounded-lg">
-          <div className="text-[11px] text-gray-500">💻 Virtual</div>
-          <div className="text-xl font-bold">{counts.virtualMeetings.count}</div>
-          <div className="text-[10px] text-gray-500">last {ago(counts.virtualMeetings.lastAt)}</div>
-        </div>
+        {([
+          { t: "OFFICE_MEETING",  emoji: "🏢", label: "Office",     c: counts.officeMeetings },
+          { t: "SITE_VISIT",      emoji: "🚗", label: "Site Visit", c: counts.siteVisits },
+          { t: "VIRTUAL_MEETING", emoji: "💻", label: "Virtual",    c: counts.virtualMeetings },
+        ] as const).map(({ t, emoji, label, c }) => {
+          const active = typeFilter === t;
+          const clickable = c.count > 0;
+          return (
+            <button
+              key={t}
+              type="button"
+              onClick={() => clickable && pickType(t)}
+              disabled={!clickable}
+              aria-pressed={active}
+              title={clickable ? `Show ${label} history` : `No ${label.toLowerCase()} entries yet`}
+              className={[
+                "p-2 border rounded-lg transition-colors",
+                active
+                  ? "border-[#0b1a33] ring-2 ring-[#0b1a33]/20 bg-[#0b1a33]/5 dark:border-blue-500 dark:bg-blue-500/10"
+                  : "border-[#e5e7eb] dark:border-slate-600",
+                clickable ? "cursor-pointer hover:border-gray-400 dark:hover:border-slate-400" : "opacity-60 cursor-default",
+              ].join(" ")}
+            >
+              <div className="text-[11px] text-gray-500 dark:text-slate-400">{emoji} {label}</div>
+              <div className="text-xl font-bold dark:text-slate-100">{c.count}</div>
+              <div className="text-[10px] text-gray-500 dark:text-slate-400">last {ago(c.lastAt)}</div>
+            </button>
+          );
+        })}
       </div>
 
-      {/* History table */}
-      {activities.length > 0 && (
+      {/* History table — reflects the active type filter (click a tile above) */}
+      {activities.length > 0 && (() => {
+        const filtered = typeFilter ? activities.filter(a => a.type === typeFilter) : activities;
+        const filterLabel = typeFilter ? (TYPE_LABEL[typeFilter] ?? typeFilter) : null;
+        return (
         <div className="mt-4">
-          <button
-            type="button"
-            onClick={() => setShowHistory(v => !v)}
-            className="flex items-center gap-1.5 text-[11px] font-semibold text-gray-500 hover:text-gray-700 dark:text-slate-400 dark:hover:text-slate-200 mb-2"
-          >
-            <span>{showHistory ? "▾" : "▸"}</span>
-            History ({activities.length})
-          </button>
+          <div className="flex items-center gap-2 mb-2">
+            <button
+              type="button"
+              onClick={() => setShowHistory(v => !v)}
+              className="flex items-center gap-1.5 text-[11px] font-semibold text-gray-500 hover:text-gray-700 dark:text-slate-400 dark:hover:text-slate-200"
+            >
+              <span>{showHistory ? "▾" : "▸"}</span>
+              History ({filtered.length})
+            </button>
+            {typeFilter && (
+              <button
+                type="button"
+                onClick={() => setTypeFilter(null)}
+                title="Clear filter"
+                className="inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-[#0b1a33] text-white dark:bg-blue-700"
+              >
+                {filterLabel} <span className="text-white/70">✕</span>
+              </button>
+            )}
+          </div>
 
           {showHistory && (
+            filtered.length === 0 ? (
+              <div className="text-xs text-gray-400 dark:text-slate-500 italic py-2">No {filterLabel} entries.</div>
+            ) : (
             <div className="overflow-x-auto -mx-1">
               <table className="w-full text-xs border-collapse min-w-[480px]">
                 <thead>
@@ -167,12 +204,12 @@ export default function LeadMeetingClient({
                     <th className="pb-1.5 pr-3 whitespace-nowrap">Date</th>
                     <th className="pb-1.5 pr-3 whitespace-nowrap">Time (IST)</th>
                     <th className="pb-1.5 pr-3 whitespace-nowrap">Duration</th>
-                    <th className="pb-1.5 pr-3 whitespace-nowrap">Logged by</th>
-                    <th className="pb-1.5">Notes</th>
+                    <th className="pb-1.5 pr-3 whitespace-nowrap">Agent</th>
+                    <th className="pb-1.5">Notes / Outcome</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {activities.map((a) => {
+                  {filtered.map((a) => {
                     const duration = fmtDuration(a.startedAt, a.endedAt);
                     const dateIso = a.completedAt ?? a.startedAt;
                     return (
@@ -185,6 +222,14 @@ export default function LeadMeetingClient({
                           {a.isNoShow && (
                             <span className="ml-1.5 text-[9px] font-bold px-1 py-0.5 rounded bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400">
                               No-show
+                            </span>
+                          )}
+                          {a.source === "remark" && (
+                            <span
+                              title="Auto-detected from imported conversation history"
+                              className="ml-1.5 text-[9px] font-bold px-1 py-0.5 rounded bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"
+                            >
+                              history
                             </span>
                           )}
                         </td>
@@ -213,9 +258,11 @@ export default function LeadMeetingClient({
                 </tbody>
               </table>
             </div>
+            )
           )}
         </div>
-      )}
+        );
+      })()}
 
       {/* Log meeting modal */}
       {open && (

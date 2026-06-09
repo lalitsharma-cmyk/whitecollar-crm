@@ -86,9 +86,9 @@ export type RemarkEventType =
 
 export function classifyText(text: string): RemarkEventType {
   const t = text.toLowerCase();
-  if (/site\s*visit|visited\s+site|visited\s+the\s+site|site\s+done|sv\s+done|went\s+to\s+site/i.test(t)) return "SITE_VISIT";
-  if (/virtual\s*meeting|zoom|teams\s+meeting|google\s+meet|video\s+call|vc\s+done/i.test(t)) return "VIRTUAL_MEETING";
-  if (/meeting\s+done|meeting\s+completed|met\s+at|visited\s+office|office\s+meeting|expo\s+meeting|met\s+client|oberoi|meeting\s+at/i.test(t)) return "MEETING";
+  if (/site\s*visit|visited\s+site|visited\s+the\s+site|site\s+visited|visited\s+(?:the\s+)?project|sample\s+flat\s+visit|site\s+done|sv\s+done|\bvisit\s+done|went\s+to\s+site/i.test(t)) return "SITE_VISIT";
+  if (/virtual\s*meeting|online\s+meeting|zoom|teams\s+meeting|google\s+meet|g-?meet|video\s+call|vc\s+done/i.test(t)) return "VIRTUAL_MEETING";
+  if (/meeting\s+done|meeting\s+completed|met\s+at|met\s+in\s+(?:the\s+)?office|came\s+to\s+(?:the\s+)?office|visited\s+office|office\s+meeting|expo\s+meeting|met\s+client|oberoi|meeting\s+at/i.test(t)) return "MEETING";
   if (/not\s*picked|did not pick|didn[''']?t pick|no answer|nai pick|not pick|not\s*connected|not\s*reachable/i.test(t)) return "CALL_NOT_PICKED";
   if (/switched\s*off|switch off/i.test(t)) return "CALL_SWITCHED_OFF";
   if (/(call\s*)?busy|in meeting/i.test(t)) return "CALL_BUSY";
