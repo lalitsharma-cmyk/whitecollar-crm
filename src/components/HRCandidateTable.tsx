@@ -2,7 +2,7 @@
 import { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ACTIVE_STATUS_DEFS, CLOSED_STATUS_DEFS, CLOSED_STATUS_KEYS, statusColor, statusLabel } from "@/lib/hrStatus";
+import { ACTIVE_STATUS_DEFS, CLOSED_STATUS_DEFS, CLOSED_STATUS_KEYS, statusColor, displayStatus } from "@/lib/hrStatus";
 import * as XLSX from "xlsx";
 
 const SOURCES = ["Naukri", "Indeed", "Referral", "Walk-in", "LinkedIn", "Database", "Consultant", "Email", "Whatsapp", "Other"];
@@ -23,7 +23,7 @@ interface Candidate {
   id: string; name: string; phone: string | null; whatsappPhone: string | null; email: string | null;
   location: string | null; currentCompany: string | null; currentProfile: string | null; positionApplied: string | null;
   experience: string | null; currentSalary: number | null; expectedSalary: number | null; noticePeriod: string | null;
-  source: string | null; status: string; nextAction: string | null; nextActionDate: string | null; createdAt: string;
+  source: string | null; status: string; originalStatus: string | null; nextAction: string | null; nextActionDate: string | null; createdAt: string;
   primaryOwner: { id: string; name: string } | null; secondaryOwnerId: string | null;
   followUps: { dueAt: string }[];
   interviews: Interview[];
@@ -171,6 +171,13 @@ export default function HRCandidateTable({ candidates, agents, meRole }: Props) 
     });
     setBulkBusy(false); setSelected(new Set()); setBulkStatus(""); setBulkOwner(""); setBulkFollowUp(""); router.refresh();
   }
+  async function bulkDelete() {
+    if (selected.size === 0) return;
+    if (!window.confirm(`Delete ${selected.size} candidate${selected.size === 1 ? "" : "s"} and ALL of their follow-ups, interviews, timeline and resumes? This cannot be undone.`)) return;
+    setBulkBusy(true);
+    await fetch("/api/hr/candidates/bulk", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: [...selected], action: "delete" }) });
+    setBulkBusy(false); setSelected(new Set()); router.refresh();
+  }
 
   function exportRows(which: "filtered" | "selected", fmt: "xlsx" | "csv") {
     const src = which === "selected" ? candidates.filter(c => selected.has(c.id)) : filtered;
@@ -178,7 +185,7 @@ export default function HRCandidateTable({ candidates, agents, meRole }: Props) 
       Name: c.name, Phone: c.phone ?? "", WhatsApp: c.whatsappPhone ?? "", Email: c.email ?? "",
       "Current Profile": c.currentProfile ?? "", Position: c.positionApplied ?? "", Company: c.currentCompany ?? "",
       "Total Experience": c.experience ?? "", "Current Salary": c.currentSalary ?? "", "Expected Salary": c.expectedSalary ?? "",
-      "Notice Period": c.noticePeriod ?? "", Status: statusLabel(c.status), "Next Action": c.nextAction ?? "",
+      "Notice Period": c.noticePeriod ?? "", Status: displayStatus(c), "Next Action": c.nextAction ?? "",
       Source: c.source ?? "", Owner: c.primaryOwner?.name ?? "",
     }));
     const ws = XLSX.utils.json_to_sheet(data);
@@ -289,6 +296,7 @@ export default function HRCandidateTable({ candidates, agents, meRole }: Props) 
           </select>
           <label className="flex items-center gap-1 text-xs" title="Set a follow-up / call-back date for all selected">📅 <input type="date" value={bulkFollowUp} onChange={e => setBulkFollowUp(e.target.value)} className="text-gray-800 rounded px-2 py-1 text-xs" /></label>
           <button type="button" disabled={bulkBusy || (!bulkStatus && !bulkOwner && !bulkFollowUp)} onClick={applyBulk} className="px-3 py-1 rounded bg-white text-[#1a2e4a] text-xs font-semibold disabled:opacity-50">{bulkBusy ? "Applying…" : "Apply"}</button>
+          {meRole === "ADMIN" && <button type="button" disabled={bulkBusy} onClick={bulkDelete} className="px-3 py-1 rounded bg-red-600 text-white text-xs font-semibold disabled:opacity-50">🗑 Delete</button>}
           <button type="button" onClick={() => setSelected(new Set())} className="text-xs text-white/70 hover:text-white">Clear</button>
         </div>
       )}
@@ -323,7 +331,7 @@ export default function HRCandidateTable({ candidates, agents, meRole }: Props) 
                     <td className="px-3 py-2.5 text-xs text-gray-600 whitespace-nowrap">{c.experience ?? "—"}</td>
                     <td className="px-3 py-2.5 text-xs text-gray-600 whitespace-nowrap">{fmtSal(c.currentSalary)}</td>
                     <td className="px-3 py-2.5 text-xs font-medium text-gray-800 dark:text-slate-200 whitespace-nowrap">{fmtSal(c.expectedSalary)}</td>
-                    <td className="px-3 py-2.5"><span className={`text-[10px] px-2 py-0.5 rounded-full font-medium whitespace-nowrap ${statusColor(c.status)}`}>{statusLabel(c.status)}</span></td>
+                    <td className="px-3 py-2.5"><span className={`text-[10px] px-2 py-0.5 rounded-full font-medium whitespace-nowrap ${statusColor(c.status)}`}>{displayStatus(c)}</span></td>
                     <td className="px-3 py-2.5 text-xs text-gray-600 max-w-[140px]"><div className="truncate">{c.nextAction ?? "—"}</div></td>
                     <td className="px-3 py-2.5 text-xs whitespace-nowrap">{s.nextFU ? <span className={s.fuOverdue ? "text-red-600 font-semibold" : "text-amber-600"}>{s.fuOverdue ? "⚠ " : ""}{fmtDate(s.nextFU)}</span> : "—"}</td>
                     <td className="px-3 py-2.5 text-xs whitespace-nowrap">{s.nextIV ? <span className="text-indigo-600">🎯 {fmtDate(s.nextIV.scheduledAt)}</span> : "—"}</td>
@@ -346,7 +354,7 @@ export default function HRCandidateTable({ candidates, agents, meRole }: Props) 
               <div key={c.id} className="bg-white dark:bg-slate-900 rounded-xl border border-gray-200 dark:border-slate-700 p-3">
                 <div className="flex items-start justify-between gap-2">
                   <Link href={`/hr/candidates/${c.id}`} className="font-semibold text-sm text-[#1a2e4a] dark:text-blue-400 hover:underline">{c.name}</Link>
-                  <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium shrink-0 ${statusColor(c.status)}`}>{statusLabel(c.status)}</span>
+                  <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium shrink-0 ${statusColor(c.status)}`}>{displayStatus(c)}</span>
                 </div>
                 <div className="text-[11px] text-gray-500 mt-0.5">{[c.currentProfile, c.currentCompany].filter(Boolean).join(" · ") || "—"}</div>
                 <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1.5 text-[11px] text-gray-500">

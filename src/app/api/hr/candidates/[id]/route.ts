@@ -50,6 +50,10 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     return NextResponse.json({ error: "Interns can't release offers — ask a manager." }, { status: 403 });
   }
 
+  // A manual status change overrides the imported original-status label so the
+  // badge reflects the new choice (the timeline still records the change).
+  if (body.status && body.status !== existing.status) data.originalStatus = null;
+
   const updated = await prisma.hRCandidate.update({ where: { id }, data });
 
   // Log status change

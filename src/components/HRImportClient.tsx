@@ -86,7 +86,7 @@ export default function HRImportClient({ agents, defaultOwnerId }: { agents: Age
   const [err, setErr] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [progress, setProgress] = useState({ done: 0, total: 0, imported: 0, updated: 0, skipped: 0, failed: 0 });
-  const [details, setDetails] = useState<{ followUpsCreated: number; interviewsCreated: number; noShowRecoveriesCreated: number; timelineEntriesCreated: number; defaultedToNew: number; missingStatus: number; unmappedStatuses: string[] } | null>(null);
+  const [details, setDetails] = useState<{ followUpsCreated: number; interviewsCreated: number; noShowRecoveriesCreated: number; timelineEntriesCreated: number; missingStatus: number; errorCount: number; batchId: string | null } | null>(null);
 
   // Re-derive headers, data rows and mapping for a chosen header row.
   function applyHeaderRow(g: string[][], hr: number) {
@@ -143,25 +143,37 @@ export default function HRImportClient({ agents, defaultOwnerId }: { agents: Age
 
     const BATCH = 100;
     const acc = { imported: 0, updated: 0, skipped: 0, failed: 0 };
-    const extra = { followUpsCreated: 0, interviewsCreated: 0, noShowRecoveriesCreated: 0, timelineEntriesCreated: 0, defaultedToNew: 0, missingStatus: 0 };
-    const unmappedStatuses = new Set<string>();
+    const extra = { followUpsCreated: 0, interviewsCreated: 0, noShowRecoveriesCreated: 0, timelineEntriesCreated: 0, missingStatus: 0 };
+    const errorRows: { row: string; reason: string }[] = [];
+
+    // Create the import batch up-front so every candidate is stamped with its
+    // id — that's what lets an admin delete the whole batch later.
+    let batchId: string | null = null;
+    try {
+      const r0 = await fetch("/api/hr/imports", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fileName, total: mapped.length }) });
+      const j0 = await r0.json(); batchId = j0.id ?? null;
+    } catch { /* best-effort — import still works unstamped */ }
+
     setProgress({ done: 0, total: mapped.length, ...acc });
     for (let i = 0; i < mapped.length; i += BATCH) {
       const chunk = mapped.slice(i, i + BATCH);
       try {
-        const res = await fetch("/api/hr/candidates/import", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ rows: chunk, strategy, primaryOwnerId: ownerId }) });
+        const res = await fetch("/api/hr/candidates/import", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ rows: chunk, strategy, primaryOwnerId: ownerId, importBatchId: batchId }) });
         const j = await res.json();
         if (!res.ok) { setNote(`❌ Import failed: ${j.error ?? "server error"}`); setErr(j.error ?? "Import failed."); setStep("map"); return; }
         acc.imported += j.imported || 0; acc.updated += j.updated || 0; acc.skipped += j.skipped || 0; acc.failed += j.failed || 0;
         extra.followUpsCreated += j.followUpsCreated || 0; extra.interviewsCreated += j.interviewsCreated || 0;
         extra.noShowRecoveriesCreated += j.noShowRecoveriesCreated || 0; extra.timelineEntriesCreated += j.timelineEntriesCreated || 0;
-        extra.defaultedToNew += j.defaultedToNew || 0; extra.missingStatus += j.missingStatus || 0;
-        (j.unmappedStatuses || []).forEach((s: string) => unmappedStatuses.add(s));
+        extra.missingStatus += j.missingStatus || 0;
+        if (Array.isArray(j.errorRows)) errorRows.push(...j.errorRows);
       } catch { acc.failed += chunk.length; }
       setProgress({ done: Math.min(i + BATCH, mapped.length), total: mapped.length, ...acc });
     }
-    setDetails({ ...extra, unmappedStatuses: [...unmappedStatuses].slice(0, 30) });
-    try { await fetch("/api/hr/imports", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fileName, total: mapped.length, imported: acc.imported, updated: acc.updated, skipped: acc.skipped, failed: acc.failed }) }); } catch { /* best-effort */ }
+    setDetails({ ...extra, errorCount: errorRows.length, batchId });
+    // Finalize the batch row with the real counts + error report.
+    if (batchId) {
+      try { await fetch(`/api/hr/imports/${batchId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ total: mapped.length, imported: acc.imported, updated: acc.updated, skipped: acc.skipped, failed: acc.failed, errors: JSON.stringify(errorRows.slice(0, 2000)) }) }); } catch { /* best-effort */ }
+    }
     setNote(`✅ Imported ${acc.imported} candidate${acc.imported !== 1 ? "s" : ""} successfully${acc.updated ? `, ${acc.updated} updated` : ""}${acc.skipped ? `, ${acc.skipped} skipped` : ""}${acc.failed ? `, ${acc.failed} failed` : ""}.`);
     setStep("done"); router.refresh();
   }
@@ -311,11 +323,12 @@ export default function HRImportClient({ agents, defaultOwnerId }: { agents: Age
                 <span>🗓 Interviews created</span><span className="text-right tabular-nums">{details.interviewsCreated}</span>
                 <span>🔁 No-show recoveries</span><span className="text-right tabular-nums">{details.noShowRecoveriesCreated}</span>
                 <span>📝 Timeline entries</span><span className="text-right tabular-nums">{details.timelineEntriesCreated}</span>
-                {details.missingStatus > 0 && (<><span>⚠ Rows with no status</span><span className="text-right tabular-nums">{details.missingStatus}</span></>)}
-                {details.defaultedToNew > 0 && (<><span>⚠ Unmapped → New</span><span className="text-right tabular-nums">{details.defaultedToNew}</span></>)}
+                {details.missingStatus > 0 && (<><span>⚠ Rows with no status (→ New)</span><span className="text-right tabular-nums">{details.missingStatus}</span></>)}
+                {details.errorCount > 0 && (<><span className="text-red-600">⚠ Failed rows</span><span className="text-right tabular-nums text-red-600">{details.errorCount}</span></>)}
               </div>
-              {details.unmappedStatuses.length > 0 && (
-                <div className="pt-1 text-amber-700 dark:text-amber-300">Unmapped statuses: {details.unmappedStatuses.join(", ")}</div>
+              <div className="pt-1 text-gray-500">Every other status was preserved exactly as in Excel and mapped to a CRM category.</div>
+              {details.errorCount > 0 && details.batchId && (
+                <a href={`/api/hr/imports/${details.batchId}`} className="inline-block pt-1 text-blue-600 hover:underline">⬇ Download error report (CSV)</a>
               )}
             </div>
           )}

@@ -16,8 +16,14 @@ export default async function CandidatesPage({ searchParams }: { searchParams: P
 
   const scope = me.role === "AGENT" ? { OR: [{ primaryOwnerId: me.id }, { secondaryOwnerId: me.id }] } : {};
   const where: NonNullable<Parameters<typeof prisma.hRCandidate.findMany>[0]>["where"] = { ...scope };
-  if (filterStatus) where.status = filterStatus;
-  else where.status = { notIn: showClosed ? [] : CLOSED_STATUS_KEYS };
+  if (sp.batch) {
+    // Viewing the records created by a specific import batch — show all statuses.
+    where.importBatchId = sp.batch;
+  } else if (filterStatus) {
+    where.status = filterStatus;
+  } else {
+    where.status = { notIn: showClosed ? [] : CLOSED_STATUS_KEYS };
+  }
 
   const [candidates, agents, counts] = await Promise.all([
     prisma.hRCandidate.findMany({

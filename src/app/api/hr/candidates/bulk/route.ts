@@ -12,6 +12,13 @@ export async function POST(req: NextRequest) {
   const ids: string[] = Array.isArray(body.ids) ? body.ids : [];
   if (ids.length === 0) return NextResponse.json({ error: "No candidates selected" }, { status: 400 });
 
+  // Bulk delete — ADMIN only. Removes the candidates + cascaded workflow records.
+  if (body.action === "delete") {
+    if (me.role !== "ADMIN") return NextResponse.json({ error: "Only an Admin can delete candidates." }, { status: 403 });
+    const del = await prisma.hRCandidate.deleteMany({ where: { id: { in: ids } } });
+    return NextResponse.json({ ok: true, deleted: del.count });
+  }
+
   const data: { status?: HRCandidateStatus; primaryOwnerId?: string } = {};
   if (body.status) data.status = body.status as HRCandidateStatus;
   if (body.primaryOwnerId) data.primaryOwnerId = body.primaryOwnerId;

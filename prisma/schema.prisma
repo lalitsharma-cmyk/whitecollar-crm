@@ -1645,6 +1645,10 @@ model HRCandidate {
   noticePeriod     String?           // "Immediate", "30 days", "60 days", "90 days"
   source           String?           // "LinkedIn", "Naukri", "Referral", "Walk-in", etc.
   status           HRCandidateStatus @default(NEW)
+  // Exact status text from the Excel import (e.g. "Rejected in HR Interview").
+  // Preserved verbatim and shown as the display status; `status` above is the
+  // mapped CRM category used for dashboards/filters. Excel is the source of truth.
+  originalStatus   String?
   remarks          String?
   tags             String?           // comma-separated
   nextAction       String?
@@ -1662,6 +1666,10 @@ model HRCandidate {
   secondaryOwnerId String?
   // phone||email dedup fingerprint (same logic as Lead)
   fingerprint      String?           @unique
+  // The bulk import batch that created this candidate — drives Import History
+  // "Delete this batch" (removes the candidate + cascaded workflow records).
+  importBatchId    String?
+  importBatch      HRImport?         @relation(fields: [importBatchId], references: [id], onDelete: SetNull)
   createdAt        DateTime          @default(now())
   updatedAt        DateTime          @updatedAt
 
@@ -1676,6 +1684,7 @@ model HRCandidate {
   @@index([primaryOwnerId])
   @@index([nextActionDate])
   @@index([createdAt])
+  @@index([importBatchId])
 }
 
 model HRActivity {
@@ -1741,7 +1750,10 @@ model HRImport {
   updated      Int      @default(0)
   failed       Int      @default(0)
   skipped      Int      @default(0)
+  errors       String?  @db.Text   // JSON array of {row, reason} for the error report
   createdAt    DateTime @default(now())
+
+  candidates   HRCandidate[]
 
   @@index([createdAt])
 }

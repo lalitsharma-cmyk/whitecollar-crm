@@ -3,39 +3,11 @@ import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { HRCandidateStatus, Prisma } from "@prisma/client";
 import { fingerprintFor } from "@/lib/assignment";
-import { HR_STATUSES } from "@/lib/hrStatus";
+import { categorizeStatus } from "@/lib/hrStatus";
 
-// ── Status lookup: enum key OR human label OR common Excel wording ───────────
-const STATUS_LOOKUP = new Map<string, HRCandidateStatus>();
-for (const s of HR_STATUSES) { STATUS_LOOKUP.set(s.key.toLowerCase(), s.key); STATUS_LOOKUP.set(s.label.toLowerCase(), s.key); }
-// Excel-wording aliases (all map onto the 24 active/closed status keys).
-const STATUS_ALIASES: Record<string, HRCandidateStatus> = {
-  "not called by hr": "NOT_CALLED", "not called": "NOT_CALLED",
-  "f2f scheduled": "F2F_INTERVIEW_SCHEDULED", "f2f interview scheduled": "F2F_INTERVIEW_SCHEDULED",
-  "interview scheduled": "F2F_INTERVIEW_SCHEDULED", "final interview scheduled": "F2F_INTERVIEW_SCHEDULED",
-  "virtual scheduled": "VIRTUAL_INTERVIEW_SCHEDULED", "virtual interview scheduled": "VIRTUAL_INTERVIEW_SCHEDULED",
-  "f2f taken": "INTERVIEW_HELD", "interview held": "INTERVIEW_HELD", "interview done": "INTERVIEW_HELD",
-  "hold": "HOLD", "on hold": "HOLD",
-  "offer decline": "OFFER_DECLINED", "offer declined": "OFFER_DECLINED",
-  "offer released": "OFFER_RELEASED", "offer": "OFFER_RELEASED",
-  "no show": "NO_SHOW", "noshow": "NO_SHOW", "did not attend": "NO_SHOW", "appear for interview": "NO_SHOW",
-  "not interested": "REJECTED", "not suitable": "NOT_SUITABLE",
-  "high salary": "HIGH_SALARY", "other profile": "OTHER_PROFILE",
-  "switch off": "SWITCH_OFF", "switched off": "SWITCH_OFF",
-  "never response": "NOT_RESPONDING", "never responded": "NOT_RESPONDING", "not responding": "NOT_RESPONDING",
-  "rejected": "REJECTED", "final interview rejected": "REJECTED",
-  "fresher": "FRESHER", "joined": "JOINED",
-  "expected joining": "EXPECTED_JOINING", "expecting joining": "EXPECTED_JOINING",
-  "pipeline": "PIPELINE", "shortlisted": "SHORTLISTED", "interested": "INTERESTED",
-};
-/** Returns the mapped status + whether the raw value actually matched something. */
-function parseStatus(v?: string): { status: HRCandidateStatus; matched: boolean; raw: string } {
-  const raw = (v ?? "").trim();
-  if (!raw) return { status: "NEW", matched: false, raw: "" };
-  const k = raw.toLowerCase();
-  const hit = STATUS_LOOKUP.get(k) ?? STATUS_ALIASES[k];
-  return { status: hit ?? "NEW", matched: !!hit, raw };
-}
+// Status handling now lives in lib/hrStatus.categorizeStatus(): the EXACT Excel
+// text is preserved on HRCandidate.originalStatus and shown to the user, while
+// `status` stores the mapped CRM category. Nothing falls through to "unmapped".
 
 function num(v?: string): number | null { if (!v) return null; const n = parseFloat(String(v).replace(/[^\d.]/g, "")); return isNaN(n) ? null : n; }
 
@@ -169,14 +141,14 @@ export async function POST(req: NextRequest) {
   const rows: Row[] = Array.isArray(body.rows) ? body.rows : [];
   const strategy: "skip" | "update" | "create" = ["skip", "update", "create"].includes(body.strategy) ? body.strategy : "skip";
   const ownerId: string = body.primaryOwnerId || me.id;
+  const importBatchId: string | null = typeof body.importBatchId === "string" && body.importBatchId ? body.importBatchId : null;
 
   const summary = {
     imported: 0, updated: 0, skipped: 0, failed: 0,
     followUpsCreated: 0, interviewsCreated: 0, noShowRecoveriesCreated: 0, timelineEntriesCreated: 0,
-    defaultedToNew: 0, missingStatus: 0, missingFollowUpDate: 0, missingInterviewDate: 0,
-    unmappedStatuses: [] as string[],
+    missingStatus: 0, missingFollowUpDate: 0, missingInterviewDate: 0,
+    errorRows: [] as { row: string; reason: string }[],
   };
-  const unmapped = new Set<string>();
   if (rows.length === 0) return NextResponse.json(summary);
 
   // One indexed lookup for the whole batch + existing-workflow counts so a
@@ -194,11 +166,11 @@ export async function POST(req: NextRequest) {
   for (const r of rows) {
     const phoneVal = (r.phone ?? "").trim();
     const name = (r.name ?? "").trim() || (phoneVal ? `Candidate - ${phoneVal}` : "");
-    if (!name) { summary.failed++; continue; }
+    if (!name) { summary.failed++; summary.errorRows.push({ row: r.email?.trim() || "(blank row)", reason: "Missing both name and phone" }); continue; }
 
-    const { status, matched, raw } = parseStatus(r.status);
-    if (!raw) summary.missingStatus++;
-    else if (!matched) { summary.defaultedToNew++; unmapped.add(raw); }
+    const rawStatus = (r.status ?? "").trim();
+    const status = categorizeStatus(rawStatus);
+    if (!rawStatus) summary.missingStatus++;
 
     const wf = buildWorkflow(r, status, ownerId);
     if (!wf.hasFollowUpDate) summary.missingFollowUpDate++;
@@ -213,6 +185,7 @@ export async function POST(req: NextRequest) {
         if (strategy === "update") {
           const d = toData(r);
           const upd: Record<string, unknown> = { status, nextActionDate: wf.nextActionDate, nextAction: wf.nextAction, joiningDate: wf.joiningDate };
+          if (rawStatus) upd.originalStatus = rawStatus;
           for (const [k, v] of Object.entries(d)) if (v !== null && v !== "" && k !== "name") upd[k] = v;
           await prisma.hRCandidate.update({ where: { id: existsRow.id }, data: upd });
 
@@ -243,7 +216,8 @@ export async function POST(req: NextRequest) {
 
       const cand = await prisma.hRCandidate.create({
         data: {
-          ...toData(r), name, status, primaryOwnerId: ownerId, fingerprint: forcedDup ? null : fp,
+          ...toData(r), name, status, originalStatus: rawStatus || null, primaryOwnerId: ownerId, fingerprint: forcedDup ? null : fp,
+          importBatchId,
           nextActionDate: wf.nextActionDate, nextAction: wf.nextAction, joiningDate: wf.joiningDate,
           followUps: wf.followUps.length ? { createMany: { data: wf.followUps } } : undefined,
           interviews: wf.interviews.length ? { createMany: { data: wf.interviews } } : undefined,
@@ -257,9 +231,8 @@ export async function POST(req: NextRequest) {
       summary.interviewsCreated += wf.interviews.length;
       summary.noShowRecoveriesCreated += wf.followUps.filter(f => f.type === "NO_SHOW_RECOVERY").length;
       summary.timelineEntriesCreated += wf.activities.length;
-    } catch { summary.failed++; }
+    } catch (e) { summary.failed++; summary.errorRows.push({ row: name, reason: String(e).slice(0, 150) }); }
   }
 
-  summary.unmappedStatuses = [...unmapped].slice(0, 30);
   return NextResponse.json(summary);
 }

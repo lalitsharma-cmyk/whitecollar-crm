@@ -65,3 +65,53 @@ export function statusLabel(s: string): string {
 export function statusColor(s: string): string {
   return HR_STATUSES.find(x => x.key === s)?.color ?? "bg-gray-100 text-gray-600";
 }
+
+// Map ANY Excel status string to a CRM category (existing status key). Excel is
+// the source of truth: the exact text is preserved on HRCandidate.originalStatus
+// and shown to the user — this only decides which bucket drives the dashboard /
+// filters. Exact key/label match first, then forgiving substring rules so real
+// phrasings ("Rejected in HR Interview", "Not Appeared for Interview",
+// "Currently not looking job", "Never Response") never fall through to New.
+export function categorizeStatus(raw?: string | null): HRCandidateStatus {
+  const s = (raw ?? "").trim().toLowerCase();
+  if (!s) return "NEW";
+  const exact = HR_STATUSES.find(x => x.key.toLowerCase() === s || x.label.toLowerCase() === s);
+  if (exact) return exact.key;
+  const has = (...w: string[]) => w.some(x => s.includes(x));
+  // Order matters — most decisive outcomes first.
+  if (has("not appeared", "did not attend", "didn't attend", "didnt attend", "no show", "noshow", "absent")) return "NO_SHOW";
+  if (has("never response", "never responded", "no response", "not responding", "not response", "unresponsive", "no reply")) return "NOT_RESPONDING";
+  if (has("switch off", "switched off", "switchedoff", "phone off")) return "SWITCH_OFF";
+  if (has("wrong number")) return "WRONG_NUMBER";
+  if (has("invalid number", "invalid no")) return "INVALID_NUMBER";
+  if (has("reject", "not selected", "did not clear", "didnt clear")) return "REJECTED";
+  if (has("not interested", "no interest")) return "REJECTED";
+  if (has("not suitable", "unsuitable", "not a fit", "not fit")) return "NOT_SUITABLE";
+  if (has("high salary", "salary high", "out of budget", "over budget")) return "HIGH_SALARY";
+  if (has("offer decline", "declined offer", "offer declined", "declined")) return "OFFER_DECLINED";
+  if (has("joined")) return "JOINED";
+  if (has("expected joining", "expecting joining", "to join", "joining on", "doj")) return "EXPECTED_JOINING";
+  if (has("offer released", "offer letter", "offered", "offer")) return "OFFER_RELEASED";
+  if (has("shortlist")) return "SHORTLISTED";
+  if (has("not looking", "currently not", "on hold", "hold", "call later", "later")) return "HOLD";
+  if (has("other profile", "different profile", "other role")) return "OTHER_PROFILE";
+  if (has("fresher")) return "FRESHER";
+  if (has("virtual") && has("schedul")) return "VIRTUAL_INTERVIEW_SCHEDULED";
+  if (has("f2f", "face to face", "face-to-face") && has("schedul")) return "F2F_INTERVIEW_SCHEDULED";
+  if (has("interview") && has("schedul", "fixed", "set")) return "F2F_INTERVIEW_SCHEDULED";
+  if (has("interview") && has("held", "done", "taken", "complete", "attended")) return "INTERVIEW_HELD";
+  if (has("interview")) return "F2F_INTERVIEW_SCHEDULED";
+  if (has("pipeline")) return "PIPELINE";
+  if (has("interested")) return "INTERESTED";
+  if (has("not called", "to call", "yet to call", "uncalled")) return "NOT_CALLED";
+  if (has("closed", "close")) return "CLOSED";
+  if (has("new", "fresh lead")) return "NEW";
+  // Genuinely unknown — keep visible for review (NOT New); the exact text lives
+  // on originalStatus for the admin to map/merge later.
+  return "HOLD";
+}
+
+// What to SHOW as the candidate's status — the exact imported text wins.
+export function displayStatus(c: { originalStatus?: string | null; status: string }): string {
+  return (c.originalStatus && c.originalStatus.trim()) || statusLabel(c.status);
+}

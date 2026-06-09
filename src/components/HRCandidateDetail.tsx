@@ -3,7 +3,7 @@ import { useState, useTransition, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import HRResumeUploadWidget from "@/components/HRResumeUploadWidget";
-import { ACTIVE_STATUS_DEFS, CLOSED_STATUS_DEFS, statusColor, statusLabel } from "@/lib/hrStatus";
+import { ACTIVE_STATUS_DEFS, CLOSED_STATUS_DEFS, statusColor, statusLabel, displayStatus } from "@/lib/hrStatus";
 import type { HRCandidateStatus, HRActivityType, HRFollowUpType, HRInterviewType } from "@prisma/client";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -17,7 +17,7 @@ interface Candidate {
   email: string|null; location: string|null; city: string|null; currentCompany: string|null; currentProfile: string|null;
   positionApplied: string|null; experience: string|null; realEstateExperience: string|null;
   currentSalary: number|null; expectedSalary: number|null; noticePeriod: string|null;
-  source: string|null; status: HRCandidateStatus; remarks: string|null; tags: string|null;
+  source: string|null; status: HRCandidateStatus; originalStatus: string|null; remarks: string|null; tags: string|null;
   nextAction: string|null; nextActionDate: string|null; joiningDate: string|null;
   fitExperience: string|null; fitCommunication: string|null; fitStability: string|null; fitSalary: string|null; fitNotice: string|null;
   interviewFeedback: string|null; joiningProbability: string|null;
@@ -246,7 +246,7 @@ export default function HRCandidateDetail({ candidate: c, agents, me }: Props) {
           <div className="flex flex-col items-end gap-2 shrink-0">
             <button type="button" onClick={() => setPanel(p => p==="status"?"none":"status")} title="Change status"
               className={`text-xs px-2.5 py-1 rounded-full font-semibold ${statusColor(c.status)} hover:opacity-80`}>
-              {statusLabel(c.status)} ▾
+              {displayStatus(c)} ▾
             </button>
             <Link href={`/hr/candidates/${c.id}/timeline`} className="text-[11px] text-blue-600 hover:underline">Full timeline →</Link>
             {lastAct?.user && <span className="text-[10px] text-gray-400">✎ {lastAct.user.name.split(" ")[0]} · {timeAgo(lastAct.createdAt)}</span>}

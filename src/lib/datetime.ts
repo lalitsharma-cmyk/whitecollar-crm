@@ -96,6 +96,14 @@ export function fmtISTLabelled(d: Date | string | number): string {
   return `${fmtIST(d)} IST`;
 }
 
+/** "09 Jun, 06:20 PM IST" — compact date+time with explicit zone (HR lists). */
+export function fmtISTShortLabelled(d: Date | string | number): string {
+  const date = d instanceof Date ? d : new Date(d);
+  const datePart = new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", timeZone: IST }).format(date);
+  const timePart = new Intl.DateTimeFormat("en-US", { hour: "2-digit", minute: "2-digit", hour12: true, timeZone: IST }).format(date);
+  return `${datePart}, ${timePart} IST`;
+}
+
 // ── datetime-local input helpers ───────────────────────────────────
 // HTML datetime-local picker is a "wall clock" string with no zone info
 // ("2026-05-26T18:00"). Browsers interpret it in the browser's local TZ when

@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import Link from "next/link";
 import HRImportClient from "@/components/HRImportClient";
+import HRImportHistory from "@/components/HRImportHistory";
 import { getHrUsers } from "@/lib/hrUsers";
 
 export const dynamic = "force-dynamic";
@@ -30,28 +31,14 @@ export default async function HRImportPage() {
 
       {history.length > 0 && (
         <div className="bg-white dark:bg-slate-900 rounded-2xl border border-gray-200 dark:border-slate-700 overflow-hidden">
-          <div className="px-4 py-2.5 border-b border-gray-100 dark:border-slate-800 text-sm font-semibold text-gray-700 dark:text-slate-200">Import History</div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead><tr className="bg-gray-50 dark:bg-slate-800 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide">
-                {["Date", "File", "By", "Total", "New", "Updated", "Skipped", "Failed"].map(h => <th key={h} className="px-3 py-2 whitespace-nowrap">{h}</th>)}
-              </tr></thead>
-              <tbody className="divide-y divide-gray-100 dark:divide-slate-800">
-                {history.map(h => (
-                  <tr key={h.id}>
-                    <td className="px-3 py-2 text-xs whitespace-nowrap">{new Date(h.createdAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</td>
-                    <td className="px-3 py-2 text-xs max-w-[140px] truncate">{h.fileName}</td>
-                    <td className="px-3 py-2 text-xs text-gray-500">{h.importedBy?.name?.split(" ")[0] ?? "—"}</td>
-                    <td className="px-3 py-2 text-xs text-center">{h.total}</td>
-                    <td className="px-3 py-2 text-xs text-center text-green-700 font-medium">{h.imported}</td>
-                    <td className="px-3 py-2 text-xs text-center text-blue-700">{h.updated}</td>
-                    <td className="px-3 py-2 text-xs text-center text-gray-500">{h.skipped}</td>
-                    <td className="px-3 py-2 text-xs text-center text-red-600">{h.failed}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <div className="px-4 py-2.5 border-b border-gray-100 dark:border-slate-800 text-sm font-semibold text-gray-700 dark:text-slate-200">Import History <span className="text-[11px] font-normal text-gray-400">— times in IST</span></div>
+          <HRImportHistory
+            isAdmin={me.role === "ADMIN"}
+            rows={history.map(h => ({
+              id: h.id, fileName: h.fileName, by: h.importedBy?.name ?? null, createdAt: h.createdAt.toISOString(),
+              total: h.total, imported: h.imported, updated: h.updated, skipped: h.skipped, failed: h.failed,
+            }))}
+          />
         </div>
       )}
     </div>
