@@ -67,6 +67,7 @@ export default function HRCandidateTable({ candidates, agents, meRole }: Props) 
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkStatus, setBulkStatus] = useState("");
   const [bulkOwner, setBulkOwner] = useState("");
+  const [bulkFollowUp, setBulkFollowUp] = useState("");
   const [bulkBusy, setBulkBusy] = useState(false);
   const [search, setSearch] = useState("");
   const [chip, setChip] = useState("all");
@@ -162,13 +163,13 @@ export default function HRCandidateTable({ candidates, agents, meRole }: Props) 
   function toggleSel(id: string) { setSelected(s => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; }); }
   function toggleAll() { setSelected(s => s.size === filtered.length ? new Set() : new Set(filtered.map(c => c.id))); }
   async function applyBulk() {
-    if (selected.size === 0 || (!bulkStatus && !bulkOwner)) return;
+    if (selected.size === 0 || (!bulkStatus && !bulkOwner && !bulkFollowUp)) return;
     setBulkBusy(true);
     await fetch("/api/hr/candidates/bulk", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ids: [...selected], status: bulkStatus || undefined, primaryOwnerId: bulkOwner || undefined }),
+      body: JSON.stringify({ ids: [...selected], status: bulkStatus || undefined, primaryOwnerId: bulkOwner || undefined, followUpDate: bulkFollowUp || undefined }),
     });
-    setBulkBusy(false); setSelected(new Set()); setBulkStatus(""); setBulkOwner(""); router.refresh();
+    setBulkBusy(false); setSelected(new Set()); setBulkStatus(""); setBulkOwner(""); setBulkFollowUp(""); router.refresh();
   }
 
   function exportRows(which: "filtered" | "selected", fmt: "xlsx" | "csv") {
@@ -286,7 +287,8 @@ export default function HRCandidateTable({ candidates, agents, meRole }: Props) 
             <option value="">Assign owner…</option>
             {agents.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
           </select>
-          <button type="button" disabled={bulkBusy || (!bulkStatus && !bulkOwner)} onClick={applyBulk} className="px-3 py-1 rounded bg-white text-[#1a2e4a] text-xs font-semibold disabled:opacity-50">{bulkBusy ? "Applying…" : "Apply"}</button>
+          <label className="flex items-center gap-1 text-xs" title="Set a follow-up / call-back date for all selected">📅 <input type="date" value={bulkFollowUp} onChange={e => setBulkFollowUp(e.target.value)} className="text-gray-800 rounded px-2 py-1 text-xs" /></label>
+          <button type="button" disabled={bulkBusy || (!bulkStatus && !bulkOwner && !bulkFollowUp)} onClick={applyBulk} className="px-3 py-1 rounded bg-white text-[#1a2e4a] text-xs font-semibold disabled:opacity-50">{bulkBusy ? "Applying…" : "Apply"}</button>
           <button type="button" onClick={() => setSelected(new Set())} className="text-xs text-white/70 hover:text-white">Clear</button>
         </div>
       )}

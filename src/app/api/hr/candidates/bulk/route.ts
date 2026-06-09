@@ -3,7 +3,9 @@ import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { HRCandidateStatus } from "@prisma/client";
 
-// Bulk update candidate status and/or owner from the Candidates list.
+// Bulk actions from the Candidates list: change status, reassign owner, and/or
+// set a follow-up date (creates a call-back task + next action for each
+// selected candidate — the fast way to put fresh imports into the work queue).
 export async function POST(req: NextRequest) {
   const me = await requireUser();
   const body = await req.json();
@@ -13,26 +15,40 @@ export async function POST(req: NextRequest) {
   const data: { status?: HRCandidateStatus; primaryOwnerId?: string } = {};
   if (body.status) data.status = body.status as HRCandidateStatus;
   if (body.primaryOwnerId) data.primaryOwnerId = body.primaryOwnerId;
-  if (Object.keys(data).length === 0) return NextResponse.json({ error: "Nothing to update" }, { status: 400 });
   if (data.status === "OFFER_RELEASED" && me.role === "AGENT") {
     return NextResponse.json({ error: "Interns can't release offers — ask a manager." }, { status: 403 });
   }
 
-  await prisma.hRCandidate.updateMany({ where: { id: { in: ids } }, data });
+  const followUpDate = typeof body.followUpDate === "string" && body.followUpDate ? new Date(body.followUpDate) : null;
+  const validFollowUp = followUpDate && !isNaN(followUpDate.getTime());
+  const followUpNote = typeof body.followUpNote === "string" ? body.followUpNote.trim() : "";
 
-  // Leave a timeline trace on each candidate.
-  const note = data.status
-    ? `Bulk update: status → ${data.status.replace(/_/g, " ")}`
-    : "Bulk update: owner reassigned";
-  await prisma.hRActivity.createMany({
-    data: ids.map(id => ({
-      candidateId: id,
-      userId: me.id,
-      type: data.status ? ("STATUS_CHANGED" as const) : ("NOTE_ADDED" as const),
-      notes: note,
-      newStatus: data.status ?? null,
-    })),
-  });
+  if (Object.keys(data).length === 0 && !validFollowUp) {
+    return NextResponse.json({ error: "Nothing to update" }, { status: 400 });
+  }
+
+  // 1. Status / owner update (+ timeline).
+  if (Object.keys(data).length > 0) {
+    await prisma.hRCandidate.updateMany({ where: { id: { in: ids } }, data });
+    const note = data.status ? `Bulk update: status → ${data.status.replace(/_/g, " ")}` : "Bulk update: owner reassigned";
+    await prisma.hRActivity.createMany({
+      data: ids.map(id => ({
+        candidateId: id, userId: me.id,
+        type: data.status ? ("STATUS_CHANGED" as const) : ("NOTE_ADDED" as const),
+        notes: note, newStatus: data.status ?? null,
+      })),
+    });
+  }
+
+  // 2. Bulk follow-up: a call-back task + next action for each candidate.
+  if (validFollowUp) {
+    const due = followUpDate as Date;
+    const noteText = followUpNote || "Follow up with candidate";
+    await prisma.hRFollowUp.createMany({ data: ids.map(id => ({ candidateId: id, dueAt: due, type: "CALL_BACK" as const, userId: me.id, notes: noteText })) });
+    await prisma.hRCandidate.updateMany({ where: { id: { in: ids } }, data: { nextActionDate: due, nextAction: noteText } });
+    const label = due.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric", timeZone: "Asia/Kolkata" });
+    await prisma.hRActivity.createMany({ data: ids.map(id => ({ candidateId: id, userId: me.id, type: "FOLLOWUP_CREATED" as const, notes: `Bulk follow-up set for ${label}` })) });
+  }
 
   return NextResponse.json({ ok: true, updated: ids.length });
 }

@@ -36,7 +36,7 @@ export default async function HRDashboard() {
   const now = new Date();
   const weekAgo = new Date(todayStart.getTime() - 7 * 24 * 3600_000);
 
-  const [followUps, interviews, newCount, expectedList, noNextAction] = await Promise.all([
+  const [followUps, interviews, newCount, expectedList, noNextAction, noNextActionCount] = await Promise.all([
     prisma.hRFollowUp.findMany({
       where: { completedAt: null, candidate: scope },
       orderBy: { dueAt: "asc" }, take: 200,
@@ -58,6 +58,7 @@ export default async function HRDashboard() {
       orderBy: { createdAt: "desc" }, take: 20,
       select: { id: true, name: true, phone: true, whatsappPhone: true, status: true, positionApplied: true, primaryOwner: { select: { name: true } } },
     }),
+    prisma.hRCandidate.count({ where: { AND: [scope, { nextActionDate: null, status: { notIn: CLOSED_STATUS_KEYS } }] } }),
   ]);
 
   // ── Derive follow-up buckets ──
@@ -95,7 +96,7 @@ export default async function HRDashboard() {
     { label: "Overdue Follow-Ups", n: overdueFU.length, href: "#followups", emoji: "⚠️", color: "border-red-400 text-red-700 bg-red-50" },
     { label: "No-Shows", n: noShowList.length, href: "#noshow", emoji: "🚫", color: "border-rose-400 text-rose-700 bg-rose-50" },
     { label: "Expected Joinings", n: expectedList.length, href: "#joinings", emoji: "🤝", color: "border-green-400 text-green-700 bg-green-50" },
-    { label: "No Next Action", n: noNextAction.length, href: "#nonext", emoji: "📭", color: "border-slate-400 text-slate-700 bg-slate-50" },
+    { label: "No Next Action", n: noNextActionCount, href: "#nonext", emoji: "📭", color: "border-slate-400 text-slate-700 bg-slate-50" },
   ];
 
   const wa = (p: string | null, alt: string | null) => { const x = p ?? alt; return x ? `https://wa.me/${x.replace(/\D/g, "")}` : null; };
@@ -162,7 +163,7 @@ export default async function HRDashboard() {
 
           {/* No Next Action — fresh candidates needing a first follow-up */}
           <section id="nonext" className="bg-white dark:bg-slate-900 rounded-2xl border border-gray-200 dark:border-slate-700 overflow-hidden">
-            <div className="px-4 py-2.5 border-b border-gray-100 dark:border-slate-800 text-sm font-bold text-gray-700 dark:text-slate-200">📭 No Next Action — needs a first follow-up ({noNextAction.length})</div>
+            <div className="px-4 py-2.5 border-b border-gray-100 dark:border-slate-800 text-sm font-bold text-gray-700 dark:text-slate-200">📭 No Next Action — needs a first follow-up ({noNextActionCount})</div>
             {noNextAction.length === 0 ? <div className="px-4 py-5 text-center text-xs text-gray-400">Every active candidate has a next action 🎉</div> : (
               <div className="divide-y divide-gray-100 dark:divide-slate-800">
                 {noNextAction.map(c => {
@@ -181,6 +182,13 @@ export default async function HRDashboard() {
                     </div>
                   );
                 })}
+              </div>
+            )}
+            {noNextActionCount > noNextAction.length && (
+              <div className="px-4 py-2 border-t border-gray-100 dark:border-slate-800 text-center">
+                <Link href="/hr/candidates" className="text-xs font-medium text-[#1a2e4a] dark:text-blue-400 hover:underline">
+                  Showing {noNextAction.length} of {noNextActionCount} — open Candidates to select all &amp; bulk-set a follow-up date →
+                </Link>
               </div>
             )}
           </section>
