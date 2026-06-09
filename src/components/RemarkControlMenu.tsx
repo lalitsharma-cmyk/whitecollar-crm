@@ -6,6 +6,7 @@ export interface RemarkControlState {
   deletedFromView: boolean;
   hiddenFromAll: boolean;
   hiddenFromUserIds: string | null;
+  hiddenFromTeams: string | null;
 }
 interface LogRow {
   id: string;
@@ -17,12 +18,14 @@ interface LogRow {
 }
 
 const ACTION_LABEL: Record<string, string> = {
-  DELETE: "Deleted from view",
+  DELETE: "Removed from view",
   RESTORE: "Restored",
-  HIDE_ALL: "Hidden from all agents",
-  UNHIDE_ALL: "Unhidden (all agents)",
+  HIDE_ALL: "Hidden from everyone (except you)",
+  UNHIDE_ALL: "Unhidden (everyone)",
   HIDE_AGENT: "Hidden from agent",
   UNHIDE_AGENT: "Unhidden for agent",
+  HIDE_TEAM: "Hidden from team",
+  UNHIDE_TEAM: "Unhidden for team",
 };
 
 /**
@@ -31,33 +34,36 @@ const ACTION_LABEL: Record<string, string> = {
  * /remark-control API, and refreshes. Never edits the original remark text.
  */
 export default function RemarkControlMenu({
-  leadId, remarkKey, control, agents,
+  leadId, remarkKey, control, agents, teams = ["Dubai", "India"],
 }: {
   leadId: string;
   remarkKey: string;
   control: RemarkControlState | null;
   agents: { id: string; name: string }[];
+  teams?: string[];
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [agentSub, setAgentSub] = useState(false);
+  const [teamSub, setTeamSub] = useState(false);
   const [busy, setBusy] = useState(false);
   const [reason, setReason] = useState("");
   const [logs, setLogs] = useState<LogRow[] | null>(null);
 
   const hiddenIds = new Set((control?.hiddenFromUserIds ?? "").split(",").map((s) => s.trim()).filter(Boolean));
+  const hiddenTeams = new Set((control?.hiddenFromTeams ?? "").split(",").map((s) => s.trim()).filter(Boolean));
   const isDeleted = !!control?.deletedFromView;
   const isHiddenAll = !!control?.hiddenFromAll;
 
-  function close() { setOpen(false); setAgentSub(false); }
+  function close() { setOpen(false); setAgentSub(false); setTeamSub(false); }
 
-  async function act(action: string, targetUserId?: string) {
+  async function act(action: string, target?: { userId?: string; team?: string }) {
     setBusy(true);
     try {
       const r = await fetch(`/api/leads/${leadId}/remark-control`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ remarkKey, action, targetUserId, reason: reason || undefined }),
+        body: JSON.stringify({ remarkKey, action, targetUserId: target?.userId, targetTeam: target?.team, reason: reason || undefined }),
       });
       if (r.ok) { close(); setReason(""); router.refresh(); }
     } finally { setBusy(false); }
@@ -106,12 +112,12 @@ export default function RemarkControlMenu({
             ) : (
               <>
                 <button type="button" disabled={busy} onClick={() => act("DELETE")} className={item}>
-                  🗑 <span>Delete from view</span>
+                  🙈 <span>Remove from view <span className="text-gray-400">(reversible)</span></span>
                 </button>
                 <button type="button" disabled={busy} onClick={() => act(isHiddenAll ? "UNHIDE_ALL" : "HIDE_ALL")} className={item}>
-                  {isHiddenAll ? "👁 Unhide from all agents" : "🙈 Hide from all agents"}
+                  {isHiddenAll ? "👁 Show to everyone again" : "🔒 Hide from everyone (only you see)"}
                 </button>
-                <button type="button" disabled={busy} onClick={() => setAgentSub((v) => !v)} className={item}>
+                <button type="button" disabled={busy} onClick={() => { setAgentSub((v) => !v); setTeamSub(false); }} className={item}>
                   👤 <span>Hide from agent…</span>
                   <span className="ml-auto text-gray-400">{agentSub ? "▾" : "▸"}</span>
                 </button>
@@ -125,7 +131,7 @@ export default function RemarkControlMenu({
                           key={a.id}
                           type="button"
                           disabled={busy}
-                          onClick={() => act(hidden ? "UNHIDE_AGENT" : "HIDE_AGENT", a.id)}
+                          onClick={() => act(hidden ? "UNHIDE_AGENT" : "HIDE_AGENT", { userId: a.id })}
                           className={item}
                         >
                           <span className={`w-3.5 ${hidden ? "text-red-500" : "text-transparent"}`}>✓</span>
@@ -136,7 +142,31 @@ export default function RemarkControlMenu({
                     })}
                   </div>
                 )}
-                {(isHiddenAll || hiddenIds.size > 0) && (
+                <button type="button" disabled={busy} onClick={() => { setTeamSub((v) => !v); setAgentSub(false); }} className={item}>
+                  👥 <span>Hide from team…</span>
+                  <span className="ml-auto text-gray-400">{teamSub ? "▾" : "▸"}</span>
+                </button>
+                {teamSub && (
+                  <div className="border-y border-gray-100 dark:border-slate-700 bg-gray-50/60 dark:bg-slate-900/40">
+                    {teams.map((t) => {
+                      const hidden = hiddenTeams.has(t);
+                      return (
+                        <button
+                          key={t}
+                          type="button"
+                          disabled={busy}
+                          onClick={() => act(hidden ? "UNHIDE_TEAM" : "HIDE_TEAM", { team: t })}
+                          className={item}
+                        >
+                          <span className={`w-3.5 ${hidden ? "text-red-500" : "text-transparent"}`}>✓</span>
+                          <span className="truncate">{t} team</span>
+                          {hidden && <span className="ml-auto text-[9px] text-red-500">hidden</span>}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+                {(isHiddenAll || hiddenIds.size > 0 || hiddenTeams.size > 0) && (
                   <button type="button" disabled={busy} onClick={() => act("RESTORE")} className={item}>
                     ♻ <span>Clear all hiding</span>
                   </button>

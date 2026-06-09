@@ -53,6 +53,8 @@ interface Props {
   canControl?: boolean;
   /** Current viewer id — used to apply per-agent hiding for non-controllers */
   viewerId?: string;
+  /** Current viewer team — used to apply per-team hiding for non-controllers */
+  viewerTeam?: string | null;
   /** Visibility overlays for this lead's remarks, keyed by remarkKey */
   controls?: Array<{ remarkKey: string } & RemarkControlState>;
   /** Agent roster (id+name) for the "hide from agent" picker */
@@ -196,7 +198,7 @@ type FilterType = "ALL" | "CONNECTED" | "NO_ANSWER" | "WA";
 
 export default function ConversationStreamCard({
   callLogs, waMessages, notes = [], forwardedTeam, rawRemarks, leadCreatedAt, agentNames = [],
-  leadId = "", canControl = false, viewerId, controls = [], agents = [],
+  leadId = "", canControl = false, viewerId, viewerTeam, controls = [], agents = [],
 }: Props) {
   const [filter, setFilter] = useState<FilterType>("ALL");
   const [showSiteVisits, setShowSiteVisits] = useState(true);
@@ -219,7 +221,7 @@ export default function ConversationStreamCard({
   // entry that was deleted-from-view, hidden-from-all, or hidden-from-them.
   const controlByKey = useMemo(() => {
     const m = new Map<string, RemarkControlState>();
-    for (const c of controls) m.set(c.remarkKey, { deletedFromView: c.deletedFromView, hiddenFromAll: c.hiddenFromAll, hiddenFromUserIds: c.hiddenFromUserIds });
+    for (const c of controls) m.set(c.remarkKey, { deletedFromView: c.deletedFromView, hiddenFromAll: c.hiddenFromAll, hiddenFromUserIds: c.hiddenFromUserIds, hiddenFromTeams: c.hiddenFromTeams });
     return m;
   }, [controls]);
 
@@ -228,13 +230,14 @@ export default function ConversationStreamCard({
     if (!c) return false;
     if (c.deletedFromView || c.hiddenFromAll) return true;
     if (viewerId && (c.hiddenFromUserIds ?? "").split(",").map(s => s.trim()).includes(viewerId)) return true;
+    if (viewerTeam && (c.hiddenFromTeams ?? "").split(",").map(s => s.trim()).includes(viewerTeam)) return true;
     return false;
   }
 
   // Entries that drive the summaries + stream. Controllers keep the full set.
   const remarkEntries = useMemo(
     () => (canControl ? allRemarkEntries : allRemarkEntries.filter(e => !hiddenForViewer(e))),
-    [allRemarkEntries, canControl, controlByKey, viewerId], // eslint-disable-line react-hooks/exhaustive-deps
+    [allRemarkEntries, canControl, controlByKey, viewerId, viewerTeam], // eslint-disable-line react-hooks/exhaustive-deps
   );
 
   const displayRemarkEntries = useMemo(() => groupEntries(remarkEntries), [remarkEntries]);
@@ -381,8 +384,9 @@ export default function ConversationStreamCard({
           const rKey = remarkKeyFor(e);
           const ctrl = controlByKey.get(rKey) ?? null;
           const hiddenCount = (ctrl?.hiddenFromUserIds ?? "").split(",").map(s => s.trim()).filter(Boolean).length;
-          const moderated = !!ctrl && (ctrl.deletedFromView || ctrl.hiddenFromAll || hiddenCount > 0);
-          const modBadge = ctrl?.deletedFromView ? "deleted" : ctrl?.hiddenFromAll ? "hidden · all" : hiddenCount > 0 ? `hidden · ${hiddenCount}` : null;
+          const teamCount = (ctrl?.hiddenFromTeams ?? "").split(",").map(s => s.trim()).filter(Boolean).length;
+          const moderated = !!ctrl && (ctrl.deletedFromView || ctrl.hiddenFromAll || hiddenCount > 0 || teamCount > 0);
+          const modBadge = ctrl?.deletedFromView ? "removed" : ctrl?.hiddenFromAll ? "hidden · all" : teamCount > 0 ? `hidden · ${teamCount} team${teamCount > 1 ? "s" : ""}` : hiddenCount > 0 ? `hidden · ${hiddenCount} agent${hiddenCount > 1 ? "s" : ""}` : null;
 
           return (
             <div key={key} className={`border-l-2 ${border} ${bg} pl-3 pr-2 py-1.5 rounded-r ${moderated ? "opacity-60" : ""}`}>

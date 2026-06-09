@@ -59,15 +59,16 @@ export default async function ImportHistoryPage() {
           </div>
           <h1 className="text-2xl font-bold mt-1">Import History</h1>
           <p className="text-sm text-gray-500 dark:text-slate-400 max-w-2xl">
-            Every bulk CSV / Excel import. <b>Delete</b> an import to soft-remove the leads it created
-            (along with their activities, follow-ups, reminders and imported conversation history) —
-            reversible from here. <b>Restore</b> brings a deleted import back. Admin only.
+            Every bulk CSV / Excel import. <b>Move to Trash</b> hides the leads an import created
+            (with their activities, follow-ups, reminders and conversation history) — they are
+            <b> not deleted</b>, just hidden, and can be <b>Restored</b> anytime. Only a
+            <b> Super Admin</b> can permanently purge from the Trash. Admin only.
           </p>
         </div>
         <Link href="/intake" className="btn btn-ghost whitespace-nowrap">← Back to Intake</Link>
       </div>
 
-      <ImportHistoryClient batches={rows} />
+      <ImportHistoryClient batches={rows} isSuperAdmin={me.isSuperAdmin} />
     </div>
   );
 }

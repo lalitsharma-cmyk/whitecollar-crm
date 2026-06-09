@@ -272,7 +272,7 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
   const remarkControls = lead.remarks
     ? await prisma.remarkVisibility.findMany({
         where: { leadId: lead.id },
-        select: { remarkKey: true, deletedFromView: true, hiddenFromAll: true, hiddenFromUserIds: true },
+        select: { remarkKey: true, deletedFromView: true, hiddenFromAll: true, hiddenFromUserIds: true, hiddenFromTeams: true },
       })
     : [];
 
@@ -822,6 +822,7 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
             leadId={lead.id}
             canControl={me.canControlConversations === true}
             viewerId={me.id}
+            viewerTeam={me.team}
             controls={remarkControls}
             agents={agents.map(a => ({ id: a.id, name: a.name }))}
           />

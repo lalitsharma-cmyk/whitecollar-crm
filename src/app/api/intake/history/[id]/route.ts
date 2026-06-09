@@ -93,5 +93,29 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     return NextResponse.json({ ok: true, leadsRestored: res.count });
   }
 
+  if (action === "purge") {
+    // Permanent, physical deletion — SUPER ADMIN ONLY. Removes the still-trashed
+    // leads this batch created (cascade-deletes their activities / calls / notes /
+    // reminders) and the batch row itself. This is the ONLY destructive path in
+    // the whole import flow; everything else is reversible.
+    if (!me.isSuperAdmin) {
+      return NextResponse.json({ error: "Only a Super Admin can permanently purge." }, { status: 403 });
+    }
+    if (batch.status !== "DELETED") {
+      return NextResponse.json({ error: "Move the import to Trash before purging it." }, { status: 400 });
+    }
+    const purged = await prisma.lead.deleteMany({ where: { importBatchId: id, deletedAt: { not: null } } });
+    await prisma.importBatch.delete({ where: { id } });
+    await audit({
+      userId: me.id,
+      action: "import.purge",
+      entity: "ImportBatch",
+      entityId: id,
+      meta: { fileName: batch.fileName, leadsPurged: purged.count },
+      request: reqMeta(req),
+    }).catch(() => {});
+    return NextResponse.json({ ok: true, leadsPurged: purged.count, purged: true });
+  }
+
   return NextResponse.json({ error: "Unknown action" }, { status: 400 });
 }

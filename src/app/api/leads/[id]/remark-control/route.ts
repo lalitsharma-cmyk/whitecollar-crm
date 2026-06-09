@@ -16,8 +16,8 @@ import { canTouchLead } from "@/lib/leadScope";
  *   Returns the audit log for the lead (optionally one remark).
  */
 
-type Action = "DELETE" | "RESTORE" | "HIDE_ALL" | "UNHIDE_ALL" | "HIDE_AGENT" | "UNHIDE_AGENT";
-const ACTIONS = new Set<Action>(["DELETE", "RESTORE", "HIDE_ALL", "UNHIDE_ALL", "HIDE_AGENT", "UNHIDE_AGENT"]);
+type Action = "DELETE" | "RESTORE" | "HIDE_ALL" | "UNHIDE_ALL" | "HIDE_AGENT" | "UNHIDE_AGENT" | "HIDE_TEAM" | "UNHIDE_TEAM";
+const ACTIONS = new Set<Action>(["DELETE", "RESTORE", "HIDE_ALL", "UNHIDE_ALL", "HIDE_AGENT", "UNHIDE_AGENT", "HIDE_TEAM", "UNHIDE_TEAM"]);
 
 function csvAdd(cur: string | null, id: string): string {
   const set = new Set((cur ?? "").split(",").map((s) => s.trim()).filter(Boolean));
@@ -49,6 +49,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const action = String(body.action ?? "") as Action;
   const reason = typeof body.reason === "string" ? body.reason.trim().slice(0, 500) : "";
   const targetUserId = typeof body.targetUserId === "string" && body.targetUserId ? body.targetUserId : null;
+  const targetTeam = typeof body.targetTeam === "string" && body.targetTeam ? body.targetTeam : null;
   const remarkKeys: string[] = Array.isArray(body.remarkKeys)
     ? (body.remarkKeys as unknown[]).filter((k): k is string => typeof k === "string" && k.length > 0)
     : typeof body.remarkKey === "string" && body.remarkKey
@@ -60,9 +61,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   if ((action === "HIDE_AGENT" || action === "UNHIDE_AGENT") && !targetUserId) {
     return NextResponse.json({ error: "Agent required for this action" }, { status: 400 });
   }
+  if ((action === "HIDE_TEAM" || action === "UNHIDE_TEAM") && !targetTeam) {
+    return NextResponse.json({ error: "Team required for this action" }, { status: 400 });
+  }
 
-  // Resolve the target agent's name once (denormalized into the audit log).
-  let targetName: string | null = null;
+  // Resolve the target name once (denormalized into the audit log).
+  let targetName: string | null = targetTeam ? `${targetTeam} team` : null;
   if (targetUserId) {
     const u = await prisma.user.findUnique({ where: { id: targetUserId }, select: { name: true } });
     targetName = u?.name ?? null;
@@ -76,15 +80,18 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       deletedFromView: existing?.deletedFromView ?? false,
       hiddenFromAll: existing?.hiddenFromAll ?? false,
       hiddenFromUserIds: existing?.hiddenFromUserIds ?? null,
+      hiddenFromTeams: existing?.hiddenFromTeams ?? null,
     };
     const next = { ...before };
     switch (action) {
       case "DELETE":       next.deletedFromView = true; break;
-      case "RESTORE":      next.deletedFromView = false; next.hiddenFromAll = false; next.hiddenFromUserIds = null; break;
+      case "RESTORE":      next.deletedFromView = false; next.hiddenFromAll = false; next.hiddenFromUserIds = null; next.hiddenFromTeams = null; break;
       case "HIDE_ALL":     next.hiddenFromAll = true; break;
       case "UNHIDE_ALL":   next.hiddenFromAll = false; break;
       case "HIDE_AGENT":   next.hiddenFromUserIds = csvAdd(next.hiddenFromUserIds, targetUserId!); break;
       case "UNHIDE_AGENT": next.hiddenFromUserIds = csvRemove(next.hiddenFromUserIds, targetUserId!); break;
+      case "HIDE_TEAM":    next.hiddenFromTeams = csvAdd(next.hiddenFromTeams, targetTeam!); break;
+      case "UNHIDE_TEAM":  next.hiddenFromTeams = csvRemove(next.hiddenFromTeams, targetTeam!); break;
     }
 
     await prisma.remarkVisibility.upsert({

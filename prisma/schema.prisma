@@ -100,6 +100,11 @@ model User {
   // NOT granted by the ADMIN role — must be set explicitly (Lalit). Normal
   // agents and even other admins never see these controls.
   canControlConversations Boolean @default(false)
+  // ── Super Admin (Lalit) ──
+  // The ONLY tier allowed to permanently purge data (e.g. empty Import Trash).
+  // Regular admins can move imports to Trash and restore them, but can never
+  // physically delete. Set explicitly — not implied by the ADMIN role.
+  isSuperAdmin            Boolean @default(false)
 
   ownedLeads    Lead[]     @relation("LeadOwner")
   assignments   Assignment[]
@@ -495,6 +500,7 @@ model RemarkVisibility {
   deletedFromView   Boolean  @default(false)
   hiddenFromAll     Boolean  @default(false)
   hiddenFromUserIds String?  // CSV of user ids hidden from specific agents
+  hiddenFromTeams   String?  // CSV of team names hidden from (e.g. "Dubai,India")
   reason            String?
   updatedById       String?  // who last changed it (plain id — name looked up)
   createdAt         DateTime @default(now())
