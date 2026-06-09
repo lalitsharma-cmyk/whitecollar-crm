@@ -10,7 +10,9 @@ const CRM_FIELDS: [string, string][] = [
   ["location", "Location"], ["city", "City"], ["currentCompany", "Current Company"], ["currentProfile", "Current Profile"],
   ["positionApplied", "Position Applied"], ["experience", "Total Experience"], ["realEstateExperience", "RE Experience"],
   ["currentSalary", "Current Salary"], ["expectedSalary", "Expected Salary"], ["noticePeriod", "Notice Period"],
-  ["source", "Source"], ["status", "Status"], ["nextAction", "Next Action"], ["remarks", "Initial Notes"], ["resumeUrl", "Resume URL"],
+  ["source", "Source"], ["status", "Status"], ["nextAction", "Next Action"],
+  ["followUpDate", "Follow-Up Date"], ["interviewDate", "Interview Date"], ["joiningDate", "Joining Date"],
+  ["remarks", "Initial Notes"], ["resumeUrl", "Resume URL"],
 ];
 const GUESS: Record<string, string[]> = {
   name: ["candidate name", "full name", "name"],
@@ -30,6 +32,9 @@ const GUESS: Record<string, string[]> = {
   source: ["job portal", "source", "portal"],
   status: ["current status", "status"],
   nextAction: ["next action"],
+  followUpDate: ["follow up date", "followup date", "next follow up", "next follow-up", "call back date", "callback date", "next call date", "fu date"],
+  interviewDate: ["interview date", "f2f date", "virtual date", "schedule date", "scheduled date", "interview schedule", "date of interview", "f2f interview date", "virtual interview date"],
+  joiningDate: ["joining date", "date of joining", "doj", "expected joining date", "tentative joining", "expected doj"],
   remarks: ["hr remarks", "remarks", "comments", "notes", "comment", "remark"],
   resumeUrl: ["resume url", "cv link", "resume link", "resume", "cv"],
 };
@@ -81,6 +86,7 @@ export default function HRImportClient({ agents, defaultOwnerId }: { agents: Age
   const [err, setErr] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [progress, setProgress] = useState({ done: 0, total: 0, imported: 0, updated: 0, skipped: 0, failed: 0 });
+  const [details, setDetails] = useState<{ followUpsCreated: number; interviewsCreated: number; noShowRecoveriesCreated: number; timelineEntriesCreated: number; defaultedToNew: number; missingStatus: number; unmappedStatuses: string[] } | null>(null);
 
   // Re-derive headers, data rows and mapping for a chosen header row.
   function applyHeaderRow(g: string[][], hr: number) {
@@ -137,6 +143,8 @@ export default function HRImportClient({ agents, defaultOwnerId }: { agents: Age
 
     const BATCH = 100;
     const acc = { imported: 0, updated: 0, skipped: 0, failed: 0 };
+    const extra = { followUpsCreated: 0, interviewsCreated: 0, noShowRecoveriesCreated: 0, timelineEntriesCreated: 0, defaultedToNew: 0, missingStatus: 0 };
+    const unmappedStatuses = new Set<string>();
     setProgress({ done: 0, total: mapped.length, ...acc });
     for (let i = 0; i < mapped.length; i += BATCH) {
       const chunk = mapped.slice(i, i + BATCH);
@@ -145,10 +153,15 @@ export default function HRImportClient({ agents, defaultOwnerId }: { agents: Age
         const j = await res.json();
         if (!res.ok) { setNote(`❌ Import failed: ${j.error ?? "server error"}`); setErr(j.error ?? "Import failed."); setStep("map"); return; }
         acc.imported += j.imported || 0; acc.updated += j.updated || 0; acc.skipped += j.skipped || 0; acc.failed += j.failed || 0;
+        extra.followUpsCreated += j.followUpsCreated || 0; extra.interviewsCreated += j.interviewsCreated || 0;
+        extra.noShowRecoveriesCreated += j.noShowRecoveriesCreated || 0; extra.timelineEntriesCreated += j.timelineEntriesCreated || 0;
+        extra.defaultedToNew += j.defaultedToNew || 0; extra.missingStatus += j.missingStatus || 0;
+        (j.unmappedStatuses || []).forEach((s: string) => unmappedStatuses.add(s));
       } catch { acc.failed += chunk.length; }
       setProgress({ done: Math.min(i + BATCH, mapped.length), total: mapped.length, ...acc });
     }
-    try { await fetch("/api/hr/imports", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fileName, total: mapped.length, ...acc }) }); } catch { /* best-effort */ }
+    setDetails({ ...extra, unmappedStatuses: [...unmappedStatuses].slice(0, 30) });
+    try { await fetch("/api/hr/imports", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fileName, total: mapped.length, imported: acc.imported, updated: acc.updated, skipped: acc.skipped, failed: acc.failed }) }); } catch { /* best-effort */ }
     setNote(`✅ Imported ${acc.imported} candidate${acc.imported !== 1 ? "s" : ""} successfully${acc.updated ? `, ${acc.updated} updated` : ""}${acc.skipped ? `, ${acc.skipped} skipped` : ""}${acc.failed ? `, ${acc.failed} failed` : ""}.`);
     setStep("done"); router.refresh();
   }
@@ -257,6 +270,15 @@ export default function HRImportClient({ agents, defaultOwnerId }: { agents: Age
             <div className="text-[11px] text-green-700">✓ Ready — {validRows} valid rows. Rows with no name save as “Candidate - &lt;phone&gt;”.</div>
           )}
 
+          {canImport && !mapping.status && (
+            <div className="text-xs bg-amber-50 border border-amber-200 text-amber-800 rounded-lg p-2.5 dark:bg-amber-900/20 dark:border-amber-700 dark:text-amber-200">
+              ⚠ <b>Status column not mapped.</b> All candidates will be imported as <b>New</b>. Map a “Status” column above to preserve each candidate’s real recruitment stage.
+            </div>
+          )}
+          {canImport && (mapping.followUpDate || mapping.interviewDate) && (
+            <div className="text-[11px] text-gray-500">📅 Follow-up / interview dates will create dashboard tasks (Calls Due, Interviews Today, No-Show Recovery) and a timeline entry per candidate.</div>
+          )}
+
           <div className="flex gap-2">
             <button type="button" onClick={runImport} disabled={!canImport}
               className={`btn justify-center ${canImport ? "btn-primary" : "bg-gray-200 text-gray-400 cursor-not-allowed"}`}
@@ -281,6 +303,22 @@ export default function HRImportClient({ agents, defaultOwnerId }: { agents: Age
           <div className="text-4xl">🎉</div>
           <div className="text-sm font-semibold text-gray-800 dark:text-slate-100">Import complete</div>
           <div className="text-sm text-gray-600">✅ {progress.imported} new · 🔄 {progress.updated} updated · ⏭ {progress.skipped} skipped · ⚠ {progress.failed} failed</div>
+          {details && (
+            <div className="mx-auto max-w-md text-left text-xs bg-gray-50 dark:bg-slate-800/60 border border-gray-200 dark:border-slate-700 rounded-lg p-3 space-y-1">
+              <div className="font-semibold text-gray-700 dark:text-slate-200 mb-1">Workflow created</div>
+              <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 text-gray-600 dark:text-slate-300">
+                <span>📞 Follow-ups created</span><span className="text-right tabular-nums">{details.followUpsCreated}</span>
+                <span>🗓 Interviews created</span><span className="text-right tabular-nums">{details.interviewsCreated}</span>
+                <span>🔁 No-show recoveries</span><span className="text-right tabular-nums">{details.noShowRecoveriesCreated}</span>
+                <span>📝 Timeline entries</span><span className="text-right tabular-nums">{details.timelineEntriesCreated}</span>
+                {details.missingStatus > 0 && (<><span>⚠ Rows with no status</span><span className="text-right tabular-nums">{details.missingStatus}</span></>)}
+                {details.defaultedToNew > 0 && (<><span>⚠ Unmapped → New</span><span className="text-right tabular-nums">{details.defaultedToNew}</span></>)}
+              </div>
+              {details.unmappedStatuses.length > 0 && (
+                <div className="pt-1 text-amber-700 dark:text-amber-300">Unmapped statuses: {details.unmappedStatuses.join(", ")}</div>
+              )}
+            </div>
+          )}
           <div className="flex gap-2 justify-center">
             <Link href="/hr/candidates" className="btn btn-primary justify-center">View candidates</Link>
             <button type="button" onClick={() => { setStep("upload"); setGrid([]); setHeaders([]); setRows([]); setMapping({}); setNote(null); }} className="btn justify-center px-4 border border-gray-300 text-gray-600 rounded-lg text-sm">Import another</button>

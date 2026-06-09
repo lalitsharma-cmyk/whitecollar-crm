@@ -431,7 +431,7 @@ export default function HRCandidateDetail({ candidate: c, agents, me }: Props) {
                   <div key={r.id} className="card p-3 flex items-center gap-3">
                     <div className="w-9 h-9 rounded-lg bg-red-50 dark:bg-red-900/20 flex items-center justify-center shrink-0 text-lg">{r.mimeType.startsWith("image/") ? "🖼️" : "📄"}</div>
                     <div className="flex-1 min-w-0"><div className="flex items-center gap-2 flex-wrap"><span className="text-sm font-medium text-gray-800 dark:text-slate-200 truncate">{r.filename}</span>{r.isActive && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-green-100 text-green-700 font-semibold">Active</span>}</div><div className="text-[11px] text-gray-400 mt-0.5">{new Date(r.createdAt).toLocaleDateString("en-IN",{day:"numeric",month:"short",year:"numeric"})}</div></div>
-                    <a href={r.url} target="_blank" rel="noopener noreferrer" download={r.filename} className="text-[11px] px-2.5 py-1 rounded-lg border border-blue-300 text-blue-700 bg-white hover:bg-blue-50 shrink-0">{r.mimeType.startsWith("image/") ? "View" : "Download"}</a>
+                    <a href={`/api/hr/candidates/${c.id}/resume?resumeId=${r.id}${r.mimeType.startsWith("image/") ? "" : "&download=1"}`} target="_blank" rel="noopener noreferrer" className="text-[11px] px-2.5 py-1 rounded-lg border border-blue-300 text-blue-700 bg-white hover:bg-blue-50 shrink-0">{r.mimeType.startsWith("image/") ? "View" : "Download"}</a>
                   </div>
                 ))}</div>
               )}
@@ -472,7 +472,7 @@ export default function HRCandidateDetail({ candidate: c, agents, me }: Props) {
           <Panel title="Resume">
             {activeResume ? (
               <div className="flex items-center gap-2">
-                <a href={activeResume.url} target="_blank" rel="noopener noreferrer" download={activeResume.filename} className="text-xs px-2.5 py-1 rounded-lg border border-blue-300 text-blue-700 bg-white hover:bg-blue-50">View Resume</a>
+                <a href={`/api/hr/candidates/${c.id}/resume?resumeId=${activeResume.id}`} target="_blank" rel="noopener noreferrer" className="text-xs px-2.5 py-1 rounded-lg border border-blue-300 text-blue-700 bg-white hover:bg-blue-50">View Resume</a>
                 <button type="button" onClick={()=>setTab("resumes")} className="text-xs px-2.5 py-1 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50">Replace</button>
               </div>
             ) : (

@@ -83,7 +83,7 @@ export default async function ResumeBankPage() {
                 </div>
                 <div className="flex gap-2 shrink-0">
                   {/* View/download */}
-                  <a href={r.url} target="_blank" rel="noopener noreferrer" download={r.filename}
+                  <a href={`/api/hr/candidates/${r.candidateId}/resume?resumeId=${r.id}${r.mimeType.startsWith("image/") ? "" : "&download=1"}`} target="_blank" rel="noopener noreferrer"
                     className="text-[11px] px-2.5 py-1 rounded-lg border border-blue-300 text-blue-700 bg-white hover:bg-blue-50">
                     {r.mimeType.startsWith("image/") ? "View" : "Download"}
                   </a>

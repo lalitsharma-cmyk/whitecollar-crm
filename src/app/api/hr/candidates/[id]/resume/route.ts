@@ -55,6 +55,50 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   return NextResponse.json({ resume: { id: resume.id, filename: resume.filename, isActive: resume.isActive } }, { status: 201 });
 }
 
+// GET — stream a stored resume so the browser reliably opens/downloads it.
+// Resumes are stored as base64 data URLs in Postgres; linking an <a href> at a
+// huge data: URL fails in Chrome (top-level data-URL navigation is blocked) and
+// import-attached rows stored the raw Excel cell as `url` (→ 404). This route
+// decodes + streams the bytes, or redirects if the value is a real http(s) URL.
+export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  await requireUser();
+  const { id: candidateId } = await params;
+  const url = new URL(req.url);
+  const resumeId = url.searchParams.get("resumeId");
+  const download = url.searchParams.get("download") === "1";
+
+  const resume = resumeId
+    ? await prisma.hRResume.findUnique({ where: { id: resumeId } })
+    : await prisma.hRResume.findFirst({ where: { candidateId, isActive: true }, orderBy: { createdAt: "desc" } });
+
+  if (!resume || resume.candidateId !== candidateId) {
+    return NextResponse.json({ error: "Resume not found" }, { status: 404 });
+  }
+
+  const val = resume.url ?? "";
+  // Real external/storage URL → redirect to it.
+  if (/^https?:\/\//i.test(val)) return NextResponse.redirect(val);
+
+  // base64 (or plain) data URL → decode + stream with the right headers.
+  const m = val.match(/^data:([^;,]*)?(;base64)?,([\s\S]*)$/);
+  if (m) {
+    const mime = resume.mimeType || m[1] || "application/octet-stream";
+    const buf = m[2] ? Buffer.from(m[3], "base64") : Buffer.from(decodeURIComponent(m[3]), "utf8");
+    const safeName = (resume.filename || "resume").replace(/[^\w.\-]+/g, "_");
+    return new Response(new Uint8Array(buf), {
+      headers: {
+        "Content-Type": mime,
+        "Content-Disposition": `${download ? "attachment" : "inline"}; filename="${safeName}"`,
+        "Content-Length": String(buf.length),
+        "Cache-Control": "private, max-age=0, must-revalidate",
+      },
+    });
+  }
+
+  // Anything else (relative path / raw Excel text) — cannot be served.
+  return NextResponse.json({ error: "Resume file link is invalid — please re-upload this resume." }, { status: 404 });
+}
+
 export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   await requireUser();
   const { id: candidateId } = await params;
