@@ -561,6 +561,20 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
                               className="p-1.5 rounded-md text-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 transition-colors">
                               <ExternalLink className="w-3.5 h-3.5" />
                             </Link>
+                            {/* Reject lead — business outcome (kept in CRM, marked Lost). Visible to all. */}
+                            <button type="button" title="Reject lead"
+                              onClick={() => { setDeleteTarget({ id: l.id, name: l.name }); setDeleteReason("NOT_INTERESTED"); setDeleteNote(""); }}
+                              className="p-1.5 rounded-md text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors">
+                              <XCircle className="w-3.5 h-3.5" />
+                            </button>
+                            {/* Delete lead — Super-Admin (Lalit) only · removes from active CRM */}
+                            {canDelete && (
+                              <button type="button" title="Delete lead (Super Admin only)"
+                                onClick={() => setDelLeadTarget({ id: l.id, name: l.name })}
+                                className="p-1.5 rounded-md text-gray-700 dark:text-slate-300 hover:bg-gray-100 dark:hover:bg-slate-700 transition-colors">
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
                           </div>
                         </td>
                       </tr>

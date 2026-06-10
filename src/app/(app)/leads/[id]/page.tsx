@@ -430,7 +430,7 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
               display={lead.budgetMin ? formatBudget(lead.budgetMin, budgetCcy) : undefined}
               parseAs="budget"
               editHint={budgetCcy === "INR" ? "type 30L · 3Cr · 500K" : "type 2.5M · 500K"}
-              placeholder={budgetCcy === "INR" ? "e.g. 3 Cr" : "e.g. 2.5M"}
+              placeholder="Add value"
             />
           </div>
           <div className="text-[10px] text-gray-600 dark:text-slate-300 mt-1">Fund: <InlineEdit leadId={lead.id} field="fundReadiness" type="select" value={lead.fundReadiness ?? ""}
@@ -469,7 +469,7 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
         <div className={`p-2.5 rounded border ${bantNClass(bantNeedFilled)}`}>
           <div className="text-[10px] font-bold tracking-widest text-gray-600 dark:text-slate-300">🎯 N · NEED</div>
           <div className="text-sm mt-0.5">
-            <InlineEdit leadId={lead.id} field="needSummary" value={lead.needSummary ?? ""} placeholder="e.g. parents relocating, rental yield, kid's school" />
+            <InlineEdit leadId={lead.id} field="needSummary" value={lead.needSummary ?? ""} placeholder="Add value" />
           </div>
         </div>
         {/* T — Timeline. §14: India and Dubai use DIFFERENT timeline options. */}
@@ -539,7 +539,7 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
         </div>
         <div>
           <div className="text-xs text-gray-500 dark:text-slate-400">🏢 Company</div>
-          <InlineEdit leadId={lead.id} field="company" value={lead.company ?? ""} placeholder="e.g. Emirates NBD" />
+          <InlineEdit leadId={lead.id} field="company" value={lead.company ?? ""} placeholder="Add value" />
         </div>
         <div>
           <div className="text-xs text-gray-500 dark:text-slate-400">Potential</div>
@@ -571,7 +571,7 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
                   {value:"Commercial",label:"Commercial"},
                 ]
             }
-            placeholder="Select configuration…" />
+            placeholder="Add value" />
         </div>
         {/* LinkedIn — full URL, shown as clickable link when set */}
         <div className="sm:col-span-2">
@@ -727,13 +727,15 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
                   }`}>{lead.categorization}</span>
                 )}
                 {lead.moodStatus && <span className={`chip ${moodClass[lead.moodStatus] ?? "src"}`}>😊 {lead.moodStatus}</span>}
-                {/* §16: Show requirement location instead of India/Dubai team tag */}
+                {/* §16: Header location = WHERE the client is looking to buy (the
+                    project's city), NOT the client's own city. Priority: linked
+                    project city → project area → interested-unit project city →
+                    client city only as a last fallback. */}
                 {(() => {
-                  const loc = lead.discussed?.[0]?.project?.area
-                    ?? lead.city
-                    ?? null;
+                  const proj = lead.discussed?.[0]?.project ?? lead.interestedUnits?.[0]?.unit?.project ?? null;
+                  const loc = proj?.city ?? proj?.area ?? lead.city ?? null;
                   return loc ? (
-                    <span className="chip bg-slate-100 text-slate-600 border border-slate-200 text-[10px]">📍 {loc}</span>
+                    <span title="Property / project location" className="chip bg-slate-100 text-slate-600 border border-slate-200 text-[10px]">📍 {loc}</span>
                   ) : null;
                 })()}
               </div>
@@ -908,15 +910,15 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
             <div>
               <div className="text-xs text-gray-500 dark:text-slate-400 mb-0.5">City</div>
-              <InlineEdit leadId={lead.id} field="city" value={lead.city ?? ""} placeholder="e.g. Gurgaon" />
+              <InlineEdit leadId={lead.id} field="city" value={lead.city ?? ""} placeholder="Add value" />
             </div>
             <div>
               <div className="text-xs text-gray-500 dark:text-slate-400 mb-0.5">Country</div>
-              <InlineEdit leadId={lead.id} field="country" value={lead.country ?? ""} placeholder="e.g. India" />
+              <InlineEdit leadId={lead.id} field="country" value={lead.country ?? ""} placeholder="Add value" />
             </div>
             <div className="sm:col-span-2">
               <div className="text-xs text-gray-500 dark:text-slate-400 mb-0.5">Address</div>
-              <InlineEdit leadId={lead.id} field="address" value={lead.address ?? ""} placeholder="Sector 42, Dwarka Expressway…" />
+              <InlineEdit leadId={lead.id} field="address" value={lead.address ?? ""} placeholder="Add value" />
             </div>
           </div>
         </div>

@@ -66,17 +66,6 @@ function fmtTime(iso: string | null): string {
   });
 }
 
-/** Duration between two ISO strings in minutes, formatted */
-function fmtDuration(start: string | null, end: string | null): string | null {
-  if (!start || !end) return null;
-  const mins = Math.round((new Date(end).getTime() - new Date(start).getTime()) / 60_000);
-  if (mins <= 0) return null;
-  if (mins < 60) return `${mins}m`;
-  const h = Math.floor(mins / 60);
-  const m = mins % 60;
-  return m > 0 ? `${h}h ${m}m` : `${h}h`;
-}
-
 export default function LeadMeetingClient({
   leadId, counts, leadName, activities = [],
 }: {
@@ -93,10 +82,16 @@ export default function LeadMeetingClient({
   const [remarks, setRemarks] = useState("");
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [showHistory, setShowHistory] = useState(true);
-  // Clicking a count tile filters the history list to that meeting type.
-  const [typeFilter, setTypeFilter] = useState<string | null>(null);
-  const pickType = (t: string) => { setTypeFilter(f => (f === t ? null : t)); setShowHistory(true); };
+  // Clicking a count tile expands that type's records below. Default to the
+  // first type that HAS records so the visit/meeting shows automatically — the
+  // user shouldn't need extra clicks just to read the remark.
+  const [typeFilter, setTypeFilter] = useState<string | null>(() => {
+    if (counts.officeMeetings.count > 0) return "OFFICE_MEETING";
+    if (counts.siteVisits.count > 0) return "SITE_VISIT";
+    if (counts.virtualMeetings.count > 0) return "VIRTUAL_MEETING";
+    return null;
+  });
+  const pickType = (t: string) => setTypeFilter(f => (f === t ? null : t));
 
   async function save() {
     if (remarks.trim().length < 3) { setErr("Remarks required (min 3 chars)."); return; }
@@ -165,102 +160,50 @@ export default function LeadMeetingClient({
         })}
       </div>
 
-      {/* History table — reflects the active type filter (click a tile above) */}
+      {/* Records — click a tile above to expand that type; the full Notes /
+          Outcome is shown (never truncated), in a scrollable box when long. */}
       {activities.length > 0 && (() => {
-        const filtered = typeFilter ? activities.filter(a => a.type === typeFilter) : activities;
+        const filtered = typeFilter ? activities.filter(a => a.type === typeFilter) : [];
         const filterLabel = typeFilter ? (TYPE_LABEL[typeFilter] ?? typeFilter) : null;
+        if (!typeFilter) {
+          return <div className="mt-3 text-[11px] text-gray-400 dark:text-slate-500 text-center py-2">Tap a tile above to see its records.</div>;
+        }
         return (
-        <div className="mt-4">
-          <div className="flex items-center gap-2 mb-2">
-            <button
-              type="button"
-              onClick={() => setShowHistory(v => !v)}
-              className="flex items-center gap-1.5 text-[11px] font-semibold text-gray-500 hover:text-gray-700 dark:text-slate-400 dark:hover:text-slate-200"
-            >
-              <span>{showHistory ? "▾" : "▸"}</span>
-              History ({filtered.length})
-            </button>
-            {typeFilter && (
-              <button
-                type="button"
-                onClick={() => setTypeFilter(null)}
-                title="Clear filter"
-                className="inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-[#0b1a33] text-white dark:bg-blue-700"
-              >
-                {filterLabel} <span className="text-white/70">✕</span>
-              </button>
-            )}
-          </div>
-
-          {showHistory && (
-            filtered.length === 0 ? (
+          <div className="mt-3">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-semibold text-gray-700 dark:text-slate-200">{filterLabel} · {filtered.length}</span>
+              <button type="button" onClick={() => setTypeFilter(null)} className="text-[11px] text-gray-400 hover:text-gray-600 dark:hover:text-slate-300">▲ collapse</button>
+            </div>
+            {filtered.length === 0 ? (
               <div className="text-xs text-gray-400 dark:text-slate-500 italic py-2">No {filterLabel} entries.</div>
             ) : (
-            <div className="overflow-x-auto -mx-1">
-              <table className="w-full text-xs border-collapse min-w-[480px]">
-                <thead>
-                  <tr className="text-left text-[10px] font-semibold text-gray-500 dark:text-slate-400 border-b border-gray-200 dark:border-slate-700">
-                    <th className="pb-1.5 pr-3 whitespace-nowrap">Type</th>
-                    <th className="pb-1.5 pr-3 whitespace-nowrap">Date</th>
-                    <th className="pb-1.5 pr-3 whitespace-nowrap">Time (IST)</th>
-                    <th className="pb-1.5 pr-3 whitespace-nowrap">Duration</th>
-                    <th className="pb-1.5 pr-3 whitespace-nowrap">Agent</th>
-                    <th className="pb-1.5">Notes / Outcome</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filtered.map((a) => {
-                    const duration = fmtDuration(a.startedAt, a.endedAt);
-                    const dateIso = a.completedAt ?? a.startedAt;
-                    return (
-                      <tr
-                        key={a.id}
-                        className="border-b border-gray-100 dark:border-slate-800 hover:bg-gray-50 dark:hover:bg-slate-800/50"
-                      >
-                        <td className="py-2 pr-3 whitespace-nowrap font-medium">
-                          {TYPE_LABEL[a.type] ?? a.type}
-                          {a.isNoShow && (
-                            <span className="ml-1.5 text-[9px] font-bold px-1 py-0.5 rounded bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400">
-                              No-show
-                            </span>
-                          )}
-                          {a.source === "remark" && (
-                            <span
-                              title="Auto-detected from imported conversation history"
-                              className="ml-1.5 text-[9px] font-bold px-1 py-0.5 rounded bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"
-                            >
-                              history
-                            </span>
-                          )}
-                        </td>
-                        <td className="py-2 pr-3 whitespace-nowrap text-gray-700 dark:text-slate-300">
-                          {fmtDate(dateIso)}
-                        </td>
-                        <td className="py-2 pr-3 whitespace-nowrap text-gray-700 dark:text-slate-300">
-                          {fmtTime(dateIso)}
-                        </td>
-                        <td className="py-2 pr-3 whitespace-nowrap text-gray-500 dark:text-slate-400">
-                          {duration ?? "—"}
-                        </td>
-                        <td className="py-2 pr-3 whitespace-nowrap text-gray-500 dark:text-slate-400">
-                          {a.loggedBy ?? "—"}
-                        </td>
-                        <td className="py-2 text-gray-600 dark:text-slate-300 max-w-[180px]">
-                          {a.description ? (
-                            <span className="line-clamp-2" title={a.description}>{a.description}</span>
-                          ) : (
-                            <span className="text-gray-400 dark:text-slate-500">—</span>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-            )
-          )}
-        </div>
+              <div className="space-y-2">
+                {filtered.map((a) => {
+                  const dateIso = a.completedAt ?? a.startedAt;
+                  return (
+                    <div key={a.id} className="border border-gray-200 dark:border-slate-700 rounded-lg p-3 bg-gray-50/50 dark:bg-slate-800/40">
+                      <div className="flex items-center gap-x-2 gap-y-0.5 text-[11px] text-gray-500 dark:text-slate-400 flex-wrap">
+                        <span className="font-semibold text-gray-700 dark:text-slate-200">{fmtDate(dateIso)}</span>
+                        <span>· {fmtTime(dateIso)} IST</span>
+                        {a.loggedBy && <span>· 👤 {a.loggedBy}</span>}
+                        {a.isNoShow && (
+                          <span className="text-[9px] font-bold px-1 py-0.5 rounded bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400">No-show</span>
+                        )}
+                      </div>
+                      <div className="mt-2 pt-2 border-t border-gray-100 dark:border-slate-700">
+                        <div className="text-[10px] font-semibold uppercase tracking-wide text-gray-400 dark:text-slate-500 mb-1">Notes / Outcome</div>
+                        {a.description ? (
+                          <div className="text-sm text-gray-700 dark:text-slate-200 whitespace-pre-wrap leading-relaxed max-h-48 overflow-y-auto pr-1">{a.description}</div>
+                        ) : (
+                          <div className="text-sm text-gray-400 dark:text-slate-500 italic">No notes recorded.</div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         );
       })()}
 

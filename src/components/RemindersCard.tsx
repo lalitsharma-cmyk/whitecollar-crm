@@ -253,27 +253,25 @@ export default function RemindersCard({ events, todayIso, showAgent }: Props) {
         </div>
       </div>
 
-      {/* ── Count summary row ── */}
+      {/* ── Count summary row ── wraps so counts never overflow the card ── */}
       <div
-        className="flex items-center gap-3 px-4 py-2.5 text-[11px] font-semibold"
+        className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2.5 text-[11px] font-semibold"
         style={{ borderTop: "1px solid #1a2d4d", borderBottom: "1px solid #1a2d4d" }}
       >
-        <span className="flex items-center gap-1.5">
-          <span className="w-2.5 h-2.5 rounded-[3px] inline-block" style={{ background: "#22c55e" }} />
-          <span style={{ color: "#e2e8f0" }}>{String(siteVisitCount).padStart(2, "0")}</span>
+        <span className="flex items-center gap-1.5 whitespace-nowrap">
+          <span className="w-2.5 h-2.5 rounded-[3px] inline-block shrink-0" style={{ background: "#22c55e" }} />
           <span style={{ color: "#64748b" }}>Site Visits</span>
+          <span style={{ color: "#e2e8f0" }}>{String(siteVisitCount).padStart(2, "0")}</span>
         </span>
-        <span style={{ color: "#1e3a5f" }}>|</span>
-        <span className="flex items-center gap-1.5">
-          <span className="w-2.5 h-2.5 rounded-[3px] inline-block" style={{ background: "#3b82f6" }} />
-          <span style={{ color: "#e2e8f0" }}>{String(meetingCount).padStart(2, "0")}</span>
+        <span className="flex items-center gap-1.5 whitespace-nowrap">
+          <span className="w-2.5 h-2.5 rounded-[3px] inline-block shrink-0" style={{ background: "#3b82f6" }} />
           <span style={{ color: "#64748b" }}>Meetings</span>
+          <span style={{ color: "#e2e8f0" }}>{String(meetingCount).padStart(2, "0")}</span>
         </span>
-        <span style={{ color: "#1e3a5f" }}>|</span>
-        <span className="flex items-center gap-1.5">
-          <span className="w-2.5 h-2.5 rounded-[3px] inline-block" style={{ background: "#f59e0b" }} />
-          <span style={{ color: "#e2e8f0" }}>{String(callbackCount).padStart(2, "0")}</span>
+        <span className="flex items-center gap-1.5 whitespace-nowrap">
+          <span className="w-2.5 h-2.5 rounded-[3px] inline-block shrink-0" style={{ background: "#f59e0b" }} />
           <span style={{ color: "#64748b" }}>Callbacks</span>
+          <span style={{ color: "#e2e8f0" }}>{String(callbackCount).padStart(2, "0")}</span>
         </span>
       </div>
 
