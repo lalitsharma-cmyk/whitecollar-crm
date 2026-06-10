@@ -479,6 +479,48 @@ export function mergeSameMoment(entries: RemarkEntry[]): RemarkEntry[] {
   return out;
 }
 
+// ─── Display normalisation ────────────────────────────────────────────────────
+// Imported MIS remarks arrive with broken line breaks, copied WhatsApp wrapping
+// and Excel row splits, so one conversation renders as many stacked lines eating
+// vertical space. Collapse a single remark block into ONE readable paragraph:
+// join the lines with sentence punctuation, tidy spacing, capitalise sentence
+// starts, and normalise real-estate config tokens (4bhk → 4 BHK).
+//
+// This is PURELY cosmetic — the raw Lead.remarks text is never mutated; only the
+// rendered string changes. We deliberately do NOT rewrite words or fix spelling:
+// these are business records, so meaning must be preserved exactly.
+export function toReadableParagraph(text: string): string {
+  if (!text) return "";
+  const lines = text
+    .replace(/\r\n?/g, "\n")
+    .replace(/(\s*,\s*){2,}/g, "\n")
+    .replace(/[ \t ]+/g, " ")
+    .split("\n")
+    .map(l => l.trim())
+    .filter(Boolean);
+  if (lines.length === 0) return "";
+
+  // End each non-final line with a full stop (unless it already ends in
+  // punctuation) so the lines flow as sentences instead of stacking.
+  let out = lines
+    .map((line, i) => (i === lines.length - 1 ? line : /[.!?,;:]$/.test(line) ? line : `${line}.`))
+    .join(" ")
+    .replace(/\s+([.,!?;:])/g, "$1")   // no space before punctuation
+    .replace(/\s{2,}/g, " ")
+    .trim();
+
+  // Capitalise the first letter overall and the first letter after . ! ?
+  out = out.replace(/(?:^|[.!?]\s+)([a-z])/g, m => m.toUpperCase());
+  // Standalone lowercase "i" → "I".
+  out = out.replace(/\bi\b/g, "I");
+  // Real-estate config tokens are always upper-case.
+  out = out
+    .replace(/\b(\d+)\s*bhk\b/gi, "$1 BHK")
+    .replace(/\b(\d+)\s*br\b/gi, "$1 BR")
+    .replace(/\b(\d+)\s*rk\b/gi, "$1 RK");
+  return out;
+}
+
 // ─── Site-visit / Meeting extraction ─────────────────────────────────────────
 
 export interface VisitSummary {

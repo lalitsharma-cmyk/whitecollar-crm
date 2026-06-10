@@ -16,6 +16,7 @@ import {
   parseRemarksTimeline,
   groupEntries,
   mergeSameMoment,
+  toReadableParagraph,
   isMissedCall,
   remarkKeyFor,
   type DisplayEntry,
@@ -417,9 +418,10 @@ export default function ConversationStreamCard({
                   )}
                 </span>
               </div>
-              {/* Body */}
-              <div className="text-xs text-gray-700 dark:text-slate-200 whitespace-pre-wrap leading-relaxed">
-                {e.text}
+              {/* Body — one merged remark block shown as a single readable
+                  paragraph (broken line breaks / Excel splits normalised). */}
+              <div className="text-xs text-gray-700 dark:text-slate-200 break-words leading-relaxed">
+                {toReadableParagraph(e.text)}
               </div>
             </div>
           );

@@ -9,6 +9,7 @@ import LeadActionsClient from "@/components/LeadActionsClient";
 import LeadProjectsClient from "@/components/LeadProjectsClient";
 import LeadInterestNotesClient from "@/components/LeadInterestNotesClient";
 import LeadMeetingClient from "@/components/LeadMeetingClient";
+import LinkedInField from "@/components/LinkedInField";
 import SiteVisitTracker from "@/components/SiteVisitTracker";
 import SiteVisitChecklist from "@/components/SiteVisitChecklist";
 // EOIWorkflowCard removed by Lalit (Round 3) — "Remove EOI for now".
@@ -314,17 +315,17 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
   const bantAuthFilled = !!(lead.authorityPerson && lead.authorityPerson.trim() && lead.authorityPerson !== "Unknown")
     || (lead.authorityLevel != null && lead.authorityLevel !== "UNKNOWN");
   const bantAuthBad = lead.authorityPerson === "Unknown" || (!lead.authorityPerson && lead.authorityLevel === "UNKNOWN");
-  const bantNeedFilled = !!(lead.needSummary && lead.needSummary.trim());
+  // §1 — Need auto-fills from Configuration. When the agent has set a configuration
+  // (e.g. "3BHK") but no explicit Need summary, surface the configuration as the
+  // Need ("3 BHK") so the BANT Need chip is never blank when we already know what
+  // the client wants. The chip editor pre-fills from this, so a save persists it.
+  const configNeed = lead.configuration
+    ? lead.configuration.replace(/^(\d+)\s*(BHK|BR|RK)$/i, "$1 $2")
+    : "";
+  const effectiveNeed = lead.needSummary && lead.needSummary.trim() ? lead.needSummary : configNeed;
+  const bantNeedFilled = !!(effectiveNeed && effectiveNeed.trim());
   const bantTimeFilled = lead.whenCanInvest != null && lead.whenCanInvest !== "UNKNOWN";
   const bantTimeBad = lead.whenCanInvest === "UNKNOWN";
-
-  // B-17 — at-a-glance qualification completeness. Lalit (Bucket B) wanted BANT
-  // "visible at a glance". The four chips below already capture each value, so
-  // rather than add a second redundant card we surface a single count of how
-  // many of Budget / Authority / Need / Timeline are filled. (We intentionally
-  // do NOT re-add the bantReason free-text row — Lalit asked to drop it in
-  // favour of the green/red signals.)
-  const bantFilledCount = [bantBudgetFilled, bantAuthFilled, bantNeedFilled, bantTimeFilled].filter(Boolean).length;
 
   // Per-letter BANT chip colour functions. Each letter gets its own colour when
   // filled so agents can tell Budget / Authority / Need / Timeline apart at a glance.
@@ -402,13 +403,6 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
         <div className="flex items-center gap-2 flex-wrap">
           <span className="text-xs font-bold tracking-widest text-gray-600 dark:text-slate-300">BANT VERDICT</span>
           <span className="text-[10px] text-gray-500 dark:text-slate-400">Budget · Authority · Need · Timeline</span>
-          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
-            bantFilledCount === 4 ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-green-400" :
-            bantFilledCount === 0 ? "bg-gray-100 text-gray-500 dark:bg-slate-700 dark:text-slate-400" :
-            "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-yellow-300"
-          }`}>
-            {bantFilledCount}/4 captured
-          </span>
         </div>
         <InlineEdit leadId={lead.id} field="bantStatus" type="select" value={lead.bantStatus}
           options={[
@@ -469,7 +463,8 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
         <div className={`p-2.5 rounded border ${bantNClass(bantNeedFilled)}`}>
           <div className="text-[10px] font-bold tracking-widest text-gray-600 dark:text-slate-300">🎯 N · NEED</div>
           <div className="text-sm mt-0.5">
-            <InlineEdit leadId={lead.id} field="needSummary" value={lead.needSummary ?? ""} placeholder="Add value" />
+            {/* Auto-filled from Configuration when no explicit Need is set yet. */}
+            <InlineEdit leadId={lead.id} field="needSummary" value={effectiveNeed} placeholder="Add value" />
           </div>
         </div>
         {/* T — Timeline. §14: India and Dubai use DIFFERENT timeline options. */}
@@ -573,34 +568,11 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
             }
             placeholder="Add value" />
         </div>
-        {/* LinkedIn — the saved value renders as a clickable link (server-side
-            <a>, opens LinkedIn) with a small "✏ edit" inline-edit beside it.
-            One always-mounted InlineEdit → no duplicate value, no layout shift,
-            no blank flash. Empty shows "Add value". (display must be a string —
-            this is a Server Component, so a JSX handler can't be passed.) */}
+        {/* LinkedIn — dedicated client field. Empty → "Add Value"; saved →
+            clickable linkedin.com/in/… link + small pencil to edit. Nothing else. */}
         <div className="sm:col-span-2">
           <div className="text-xs text-gray-500 dark:text-slate-400">🔗 LinkedIn</div>
-          <div className="flex items-center gap-2 mt-0.5 min-w-0">
-            {lead.linkedInUrl && (
-              <a
-                href={/^https?:\/\//i.test(lead.linkedInUrl) ? lead.linkedInUrl : `https://${lead.linkedInUrl}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-sm text-blue-600 hover:underline dark:text-blue-400 truncate min-w-0"
-                title={lead.linkedInUrl}
-              >
-                {lead.linkedInUrl.replace(/^https?:\/\/(www\.)?linkedin\.com\/in\//i, "linkedin.com/in/")}
-              </a>
-            )}
-            <InlineEdit
-              leadId={lead.id}
-              field="linkedInUrl"
-              value={lead.linkedInUrl ?? ""}
-              placeholder="Add value"
-              display={lead.linkedInUrl ? "✏ edit" : undefined}
-              className="flex-none text-[11px] text-gray-400"
-            />
-          </div>
+          <LinkedInField leadId={lead.id} value={lead.linkedInUrl} />
         </div>
       </div>
     </div>
