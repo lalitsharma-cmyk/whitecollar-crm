@@ -37,6 +37,9 @@ const TYPE_LABEL: Record<string, string> = {
   SITE_VISIT:      "🚗 Site Visit",
 };
 
+// Collapsed preview length — show ~1–2 lines, then "Read More".
+const PREVIEW_LEN = 180;
+
 function ago(d: string | null) {
   if (!d) return "never";
   const diff = Date.now() - new Date(d).getTime();
@@ -82,16 +85,14 @@ export default function LeadMeetingClient({
   const [remarks, setRemarks] = useState("");
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  // Clicking a count tile expands that type's records below. Default to the
-  // first type that HAS records so the visit/meeting shows automatically — the
-  // user shouldn't need extra clicks just to read the remark.
-  const [typeFilter, setTypeFilter] = useState<string | null>(() => {
-    if (counts.officeMeetings.count > 0) return "OFFICE_MEETING";
-    if (counts.siteVisits.count > 0) return "SITE_VISIT";
-    if (counts.virtualMeetings.count > 0) return "VIRTUAL_MEETING";
-    return null;
-  });
+  // Count tiles filter the list by type. null = show ALL records. Records render
+  // collapsed by default (date/time/agent/type + preview); each expands on its own.
+  const [typeFilter, setTypeFilter] = useState<string | null>(null);
   const pickType = (t: string) => setTypeFilter(f => (f === t ? null : t));
+  // Per-record expand state — independent: opening one never opens another.
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+  const toggleRecord = (id: string) =>
+    setExpandedIds(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
 
   async function save() {
     if (remarks.trim().length < 3) { setErr("Remarks required (min 3 chars)."); return; }
@@ -160,44 +161,78 @@ export default function LeadMeetingClient({
         })}
       </div>
 
-      {/* Records — click a tile above to expand that type; the full Notes /
-          Outcome is shown (never truncated), in a scrollable box when long. */}
+      {/* Records — collapsed by default. Each row shows date · time · agent · type
+          + a short preview; click to expand the full Notes / Outcome. Every record
+          toggles independently (opening one never opens others). Toggling is local
+          state so the page never jumps scroll position. */}
       {activities.length > 0 && (() => {
-        const filtered = typeFilter ? activities.filter(a => a.type === typeFilter) : [];
-        const filterLabel = typeFilter ? (TYPE_LABEL[typeFilter] ?? typeFilter) : null;
-        if (!typeFilter) {
-          return <div className="mt-3 text-[11px] text-gray-400 dark:text-slate-500 text-center py-2">Tap a tile above to see its records.</div>;
-        }
+        const list = (typeFilter ? activities.filter(a => a.type === typeFilter) : activities)
+          .slice()
+          .sort((a, b) => {
+            const da = new Date(a.completedAt ?? a.startedAt ?? 0).getTime();
+            const db = new Date(b.completedAt ?? b.startedAt ?? 0).getTime();
+            return db - da; // newest first
+          });
+        const filterLabel = typeFilter ? (TYPE_LABEL[typeFilter] ?? typeFilter) : "All";
         return (
           <div className="mt-3">
             <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-semibold text-gray-700 dark:text-slate-200">{filterLabel} · {filtered.length}</span>
-              <button type="button" onClick={() => setTypeFilter(null)} className="text-[11px] text-gray-400 hover:text-gray-600 dark:hover:text-slate-300">▲ collapse</button>
+              <span className="text-xs font-semibold text-gray-700 dark:text-slate-200">
+                {filterLabel} · {list.length} record{list.length === 1 ? "" : "s"}
+              </span>
+              {typeFilter && (
+                <button type="button" onClick={() => setTypeFilter(null)} className="text-[11px] text-gray-400 hover:text-gray-600 dark:hover:text-slate-300">Show all</button>
+              )}
             </div>
-            {filtered.length === 0 ? (
+            {list.length === 0 ? (
               <div className="text-xs text-gray-400 dark:text-slate-500 italic py-2">No {filterLabel} entries.</div>
             ) : (
               <div className="space-y-2">
-                {filtered.map((a) => {
+                {list.map((a) => {
                   const dateIso = a.completedAt ?? a.startedAt;
+                  const expanded = expandedIds.has(a.id);
+                  const desc = (a.description ?? "").trim();
+                  const isLong = desc.length > PREVIEW_LEN;
+                  const preview = isLong ? desc.slice(0, PREVIEW_LEN).replace(/\s+\S*$/, "") + "…" : desc;
                   return (
-                    <div key={a.id} className="border border-gray-200 dark:border-slate-700 rounded-lg p-3 bg-gray-50/50 dark:bg-slate-800/40">
-                      <div className="flex items-center gap-x-2 gap-y-0.5 text-[11px] text-gray-500 dark:text-slate-400 flex-wrap">
-                        <span className="font-semibold text-gray-700 dark:text-slate-200">{fmtDate(dateIso)}</span>
-                        <span>· {fmtTime(dateIso)} IST</span>
-                        {a.loggedBy && <span>· 👤 {a.loggedBy}</span>}
-                        {a.isNoShow && (
-                          <span className="text-[9px] font-bold px-1 py-0.5 rounded bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400">No-show</span>
-                        )}
-                      </div>
-                      <div className="mt-2 pt-2 border-t border-gray-100 dark:border-slate-700">
-                        <div className="text-[10px] font-semibold uppercase tracking-wide text-gray-400 dark:text-slate-500 mb-1">Notes / Outcome</div>
-                        {a.description ? (
-                          <div className="text-sm text-gray-700 dark:text-slate-200 whitespace-pre-wrap leading-relaxed max-h-48 overflow-y-auto pr-1">{a.description}</div>
-                        ) : (
-                          <div className="text-sm text-gray-400 dark:text-slate-500 italic">No notes recorded.</div>
-                        )}
-                      </div>
+                    <div key={a.id} className="border border-gray-200 dark:border-slate-700 rounded-lg bg-gray-50/50 dark:bg-slate-800/40 overflow-hidden">
+                      <button
+                        type="button"
+                        onClick={() => toggleRecord(a.id)}
+                        aria-expanded={expanded}
+                        className="w-full flex items-start gap-2 p-3 text-left hover:bg-gray-100/60 dark:hover:bg-slate-700/40 transition-colors"
+                      >
+                        <span className="flex-none w-3 mt-0.5 text-[11px] text-gray-400 dark:text-slate-500">{expanded ? "▲" : "▼"}</span>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-x-2 gap-y-0.5 text-[11px] text-gray-500 dark:text-slate-400 flex-wrap">
+                            <span className="font-semibold text-gray-700 dark:text-slate-200">{TYPE_LABEL[a.type] ?? a.type}</span>
+                            <span>· {fmtDate(dateIso)}</span>
+                            <span>· {fmtTime(dateIso)} IST</span>
+                            {a.loggedBy && <span>· 👤 {a.loggedBy}</span>}
+                            {a.source === "remark" && (
+                              <span className="text-[9px] px-1 py-0.5 rounded bg-gray-100 dark:bg-slate-700 text-gray-400 dark:text-slate-500">from remarks</span>
+                            )}
+                            {a.isNoShow && (
+                              <span className="text-[9px] font-bold px-1 py-0.5 rounded bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400">No-show</span>
+                            )}
+                          </div>
+                          {!expanded && (
+                            desc
+                              ? <div className="mt-1 text-sm text-gray-600 dark:text-slate-300 leading-snug break-words">{preview}{isLong && <span className="text-blue-600 dark:text-blue-400 font-medium"> Read More</span>}</div>
+                              : <div className="mt-1 text-xs text-gray-400 dark:text-slate-500 italic">No notes recorded.</div>
+                          )}
+                        </div>
+                      </button>
+                      {expanded && (
+                        <div className="px-3 pb-3">
+                          <div className="pt-2 border-t border-gray-100 dark:border-slate-700">
+                            <div className="text-[10px] font-semibold uppercase tracking-wide text-gray-400 dark:text-slate-500 mb-1">Notes / Outcome</div>
+                            {desc
+                              ? <div className="text-sm text-gray-700 dark:text-slate-200 whitespace-pre-wrap leading-relaxed break-words max-h-72 overflow-y-auto pr-1">{desc}</div>
+                              : <div className="text-sm text-gray-400 dark:text-slate-500 italic">No notes recorded.</div>}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   );
                 })}

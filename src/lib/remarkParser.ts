@@ -101,7 +101,7 @@ const DONE = "(?:done|completed|complete|finished|happened|conducted|concluded|w
 // "to be" / "will be" / "yet to" here — that is what blocks planning language.
 const AUX = "(?:is\\s+|was\\s+|are\\s+|were\\s+|got\\s+|has\\s+been\\s+|have\\s+been\\s+|already\\s+|just\\s+|now\\s+|successfully\\s+)?";
 
-// Confirmed SITE VISIT.
+// Confirmed SITE VISIT (with us / our project).
 const SITE_VISIT_DONE = new RegExp(
   `site\\s*visit\\s+${AUX}${DONE}`
   + `|(?:did|completed|finished|conducted|attended)\\s+(?:the\\s+|a\\s+|his\\s+|her\\s+|their\\s+)?site\\s*visit`
@@ -111,11 +111,13 @@ const SITE_VISIT_DONE = new RegExp(
   + `|came\\s+for\\s+(?:the\\s+|a\\s+)?(?:site\\s*)?visit\\b`
   + `|went\\s+to\\s+(?:the\\s+)?(?:site|project)\\b`
   + `|saw\\s+(?:the\\s+|a\\s+)?(?:sample|actual|model|show)\\s*(?:flat|apartment|apt|unit|home|villa|house|property)?\\b`
+  + `|shown\\s+(?:the\\s+|a\\s+)?(?:sample|actual|model)?\\s*(?:flat|apartment|apt|unit|home|villa|property)\\b`
+  + `|(?:sample|actual|model)\\s*(?:flat|apartment|apt|unit|home|villa)?\\s+(?:was\\s+|got\\s+)?shown\\b`
   + `|\\bsv\\s+done\\b`,
   "i",
 );
 
-// Confirmed VIRTUAL MEETING.
+// Confirmed VIRTUAL MEETING (with our team).
 const VIRTUAL_DONE = new RegExp(
   `(?:virtual\\s*meeting|online\\s+meeting|zoom(?:\\s*meeting|\\s*call)?|teams\\s+meeting|google\\s+meet|g-?meet|video\\s+call|virtual\\s+call|vc)\\s+${AUX}${DONE}`
   + `|(?:did|completed|finished|conducted|attended)\\s+(?:the\\s+|a\\s+)?(?:virtual\\s*meeting|online\\s+meeting|zoom|google\\s+meet|video\\s+call|virtual\\s+call|vc)\\b`
@@ -125,27 +127,64 @@ const VIRTUAL_DONE = new RegExp(
   "i",
 );
 
-// Confirmed OFFICE MEETING.
+// Confirmed OFFICE MEETING (with us / our agent).
 const OFFICE_DONE = new RegExp(
   `office\\s*(?:meeting|visit)\\s+${AUX}${DONE}`
   + `|meeting\\s+${AUX}${DONE}`
+  + `|team\\s+meeting\\s+${AUX}${DONE}`
   + `|(?:did|completed|finished|conducted|attended)\\s+(?:the\\s+|a\\s+|an\\s+)?(?:office\\s+)?meeting\\b`
   + `|came\\s+(?:to|down\\s+to|in(?:to)?)\\s+(?:the\\s+|our\\s+)?office`
   + `|visited\\s+(?:the\\s+|our\\s+)?office`
-  + `|met\\s+(?:him|her|them|the\\s+client|client|us|customer)?\\s*(?:at|in)\\s+(?:the\\s+|our\\s+)?office`,
+  + `|met\\s+(?:\\w+\\s+){0,6}?(?:at|in)\\s+(?:the\\s+|our\\s+)?office`
+  + `|met\\s+(?:with\\s+)?(?:us|our\\s+team)\\b`
+  + `|(?:we|our\\s+team|agent)\\s+met\\s+(?:the\\s+)?(?:client|him|her|them)\\b`,
+  "i",
+);
+
+// Third-party / not-our-meeting context. A meeting or visit must NOT be counted
+// as a WCR event when the remark is clearly about the CLIENT dealing with someone
+// else — a buyer of their own house (resale), their bank, family, another broker
+// or builder, etc. This only suppresses the Office/Site/Virtual classification;
+// the remark still shows in Conversation History as a normal note.
+// (Lalit's rule: "keyword matching is not enough — understand context; if unsure,
+// do NOT count it.")
+const THIRD_PARTY = new RegExp(
+  [
+    // Counterparty is buying/selling the CLIENT'S OWN property (resale) — not our deal.
+    "buy(?:ing|er|s)?\\s+(?:his|her|their|my|the\\s+client'?s)\\s+(?:house|home|flat|apartment|property|plot|land|shop|villa)",
+    "\\bbuyer\\s+of\\s+(?:his|her|their|my|the)\\b",
+    "(?:who|someone|person|party|guy)\\s+(?:is\\s+|who'?s\\s+)?buying\\b",
+    "sell(?:ing)?\\s+(?:his|her|their|my)\\s+(?:house|home|flat|apartment|property|plot|land|shop|villa)",
+    "\\bresale\\b",
+    // A meeting / discussion WITH an external (non-WCR) counterparty.
+    "\\bwith\\s+(?:the\\s+|a\\s+|an\\s+|his\\s+|her\\s+|their\\s+|another\\s+|other\\s+|some\\s+)?(?:builder|broker|bank|banker|seller|dealer|lawyer|advocate|accountant|\\bca\\b|another\\s+agent|other\\s+agent)\\b",
+    // Standalone third-party meeting types.
+    "\\b(?:seller|family|bank|builder|broker)\\s+meeting\\b",
+    "\\binternal\\s+(?:discussion|meeting|talk)\\b",
+    "\\b(?:another|other)\\s+(?:broker|builder|party|dealer|agent|company)\\b",
+    "\\bother\\s+party\\b",
+    // Deferring to / reporting on SOMEONE ELSE'S meeting.
+    "\\btheir\\s+meeting\\b",
+    "\\bwill\\s+update\\s+(?:you\\s+)?(?:once|after|post|when)\\b",
+    "\\b(?:meet|meeting|see|seeing)\\s+some\\s*one(?:\\s+else)?\\b",
+    "\\bsome\\s*one\\s+else\\b",
+  ].join("|"),
   "i",
 );
 
 export function classifyText(text: string): RemarkEventType {
   const t = text.toLowerCase();
 
-  // Completed events first — but ONLY when explicitly confirmed (see regexes above).
-  // Planning / proposed / future remarks fall through and are classified as a normal
-  // conversation (connected / note), so they appear in Conversation History but are
-  // NOT counted as a Site Visit / Meeting / Virtual Meeting.
-  if (SITE_VISIT_DONE.test(t)) return "SITE_VISIT";
-  if (VIRTUAL_DONE.test(t))    return "VIRTUAL_MEETING";
-  if (OFFICE_DONE.test(t))     return "MEETING";
+  // Completed events first — ONLY when explicitly confirmed (regexes above) AND the
+  // meeting/visit is OURS, not the client meeting a third party. Planning / proposed
+  // / third-party remarks fall through and are classified as a normal conversation
+  // (connected / note): they stay in Conversation History but are NOT counted as a
+  // Site Visit / Meeting / Virtual Meeting.
+  if (!THIRD_PARTY.test(t)) {
+    if (SITE_VISIT_DONE.test(t)) return "SITE_VISIT";
+    if (VIRTUAL_DONE.test(t))    return "VIRTUAL_MEETING";
+    if (OFFICE_DONE.test(t))     return "MEETING";
+  }
 
   if (/not\s*picked|did not pick|didn[''']?t pick|no answer|nai pick|not pick|not\s*connected|not\s*reachable/i.test(t)) return "CALL_NOT_PICKED";
   if (/switched\s*off|switch off/i.test(t)) return "CALL_SWITCHED_OFF";
