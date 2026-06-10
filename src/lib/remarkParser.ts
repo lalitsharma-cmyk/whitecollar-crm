@@ -84,11 +84,69 @@ export type RemarkEventType =
   | "VIRTUAL_MEETING"
   | "NOTE";
 
+// ─── Completed-event detection (Lalit's rule: "planning ≠ completed event") ────
+// A Site Visit / Office Meeting / Virtual Meeting is counted ONLY when the remark
+// confirms it actually happened. Planning / proposed / future-intent language
+// ("will plan a virtual meeting", "client may visit", "asked to schedule meeting")
+// must never be counted — it stays in Conversation History only.
+//
+// How this stays robust: completion is matched as a marker ADJACENT to the event
+// noun, and the auxiliary whitelist (AUX) deliberately excludes future words
+// ("to be", "will be", "yet to"), so "meeting to be done" / "visit will be
+// completed" structurally cannot match. If unsure, nothing matches → not counted.
+
+// Completion words, end-bounded so "completion"/"redone" don't false-trigger.
+const DONE = "(?:done|completed|complete|finished|happened|conducted|concluded|wrapped\\s*up)\\b";
+// Allowed connectors between the event noun and the completion word. NOTE: no
+// "to be" / "will be" / "yet to" here — that is what blocks planning language.
+const AUX = "(?:is\\s+|was\\s+|are\\s+|were\\s+|got\\s+|has\\s+been\\s+|have\\s+been\\s+|already\\s+|just\\s+|now\\s+|successfully\\s+)?";
+
+// Confirmed SITE VISIT.
+const SITE_VISIT_DONE = new RegExp(
+  `site\\s*visit\\s+${AUX}${DONE}`
+  + `|(?:did|completed|finished|conducted|attended)\\s+(?:the\\s+|a\\s+|his\\s+|her\\s+|their\\s+)?site\\s*visit`
+  + `|visited\\s+(?:the\\s+)?(?:site|project|property|flat|apartment|unit|sample\\s*flat|tower)`
+  + `|(?:site|project)\\s+visited`
+  + `|came\\s+(?:to|down\\s+to)\\s+(?:the\\s+)?(?:site|project)`
+  + `|came\\s+for\\s+(?:the\\s+|a\\s+)?(?:site\\s*)?visit\\b`
+  + `|went\\s+to\\s+(?:the\\s+)?(?:site|project)\\b`
+  + `|saw\\s+(?:the\\s+|a\\s+)?(?:sample|actual|model|show)\\s*(?:flat|apartment|apt|unit|home|villa|house|property)?\\b`
+  + `|\\bsv\\s+done\\b`,
+  "i",
+);
+
+// Confirmed VIRTUAL MEETING.
+const VIRTUAL_DONE = new RegExp(
+  `(?:virtual\\s*meeting|online\\s+meeting|zoom(?:\\s*meeting|\\s*call)?|teams\\s+meeting|google\\s+meet|g-?meet|video\\s+call|virtual\\s+call|vc)\\s+${AUX}${DONE}`
+  + `|(?:did|completed|finished|conducted|attended)\\s+(?:the\\s+|a\\s+)?(?:virtual\\s*meeting|online\\s+meeting|zoom|google\\s+meet|video\\s+call|virtual\\s+call|vc)\\b`
+  + `|meeting\\s+conducted\\s+virtually`
+  + `|met\\s+(?:virtually|online)\\b`
+  + `|\\bvc\\s+done\\b`,
+  "i",
+);
+
+// Confirmed OFFICE MEETING.
+const OFFICE_DONE = new RegExp(
+  `office\\s*(?:meeting|visit)\\s+${AUX}${DONE}`
+  + `|meeting\\s+${AUX}${DONE}`
+  + `|(?:did|completed|finished|conducted|attended)\\s+(?:the\\s+|a\\s+|an\\s+)?(?:office\\s+)?meeting\\b`
+  + `|came\\s+(?:to|down\\s+to|in(?:to)?)\\s+(?:the\\s+|our\\s+)?office`
+  + `|visited\\s+(?:the\\s+|our\\s+)?office`
+  + `|met\\s+(?:him|her|them|the\\s+client|client|us|customer)?\\s*(?:at|in)\\s+(?:the\\s+|our\\s+)?office`,
+  "i",
+);
+
 export function classifyText(text: string): RemarkEventType {
   const t = text.toLowerCase();
-  if (/site\s*visit|visited\s+site|visited\s+the\s+site|site\s+visited|visited\s+(?:the\s+)?project|sample\s+flat\s+visit|site\s+done|sv\s+done|\bvisit\s+done|went\s+to\s+site/i.test(t)) return "SITE_VISIT";
-  if (/virtual\s*meeting|online\s+meeting|zoom|teams\s+meeting|google\s+meet|g-?meet|video\s+call|vc\s+done/i.test(t)) return "VIRTUAL_MEETING";
-  if (/meeting\s+done|meeting\s+completed|met\s+at|met\s+in\s+(?:the\s+)?office|came\s+to\s+(?:the\s+)?office|visited\s+office|office\s+meeting|expo\s+meeting|met\s+client|oberoi|meeting\s+at/i.test(t)) return "MEETING";
+
+  // Completed events first — but ONLY when explicitly confirmed (see regexes above).
+  // Planning / proposed / future remarks fall through and are classified as a normal
+  // conversation (connected / note), so they appear in Conversation History but are
+  // NOT counted as a Site Visit / Meeting / Virtual Meeting.
+  if (SITE_VISIT_DONE.test(t)) return "SITE_VISIT";
+  if (VIRTUAL_DONE.test(t))    return "VIRTUAL_MEETING";
+  if (OFFICE_DONE.test(t))     return "MEETING";
+
   if (/not\s*picked|did not pick|didn[''']?t pick|no answer|nai pick|not pick|not\s*connected|not\s*reachable/i.test(t)) return "CALL_NOT_PICKED";
   if (/switched\s*off|switch off/i.test(t)) return "CALL_SWITCHED_OFF";
   if (/(call\s*)?busy|in meeting/i.test(t)) return "CALL_BUSY";
