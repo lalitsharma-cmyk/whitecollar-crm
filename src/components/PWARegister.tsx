@@ -53,6 +53,56 @@ export default function PWARegister() {
     return () => clearTimeout(t);
   }, []);
 
+  // ── Auto-recover from STALE-CHUNK errors ───────────────────────────────────
+  // After a deploy, the chunk hashes change. If a browser (or a service worker)
+  // is holding an old page/chunk, a route's JS/CSS fails to load with a
+  // "ChunkLoadError" / "Loading chunk failed" — the page shows the error boundary
+  // and a plain hard-refresh doesn't fix it (the SW keeps serving stale bytes).
+  // This catches those errors, purges the SW + caches, and reloads ONCE so the
+  // browser self-heals. Capped at 2 attempts/session to never loop.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const KEY = "wcr-chunk-heal-count";
+    const isChunkError = (m: string) =>
+      /ChunkLoadError|Loading chunk [\w-]+ failed|Loading CSS chunk|Failed to fetch dynamically imported module|error loading dynamically imported module|importing a module script failed/i.test(m);
+    let healing = false;
+    async function heal() {
+      if (healing) return;
+      let count = 0;
+      try { count = Number(sessionStorage.getItem(KEY) || "0"); } catch {}
+      if (count >= 2) return; // already tried — stop so we never loop
+      healing = true;
+      try { sessionStorage.setItem(KEY, String(count + 1)); } catch {}
+      try {
+        if ("serviceWorker" in navigator) {
+          const regs = await navigator.serviceWorker.getRegistrations();
+          await Promise.all(regs.map(r => r.unregister()));
+        }
+        if (typeof caches !== "undefined") {
+          const keys = await caches.keys();
+          await Promise.all(keys.map(k => caches.delete(k)));
+        }
+      } catch {}
+      window.location.reload();
+    }
+    const onError = (e: ErrorEvent) => { if (e?.message && isChunkError(e.message)) heal(); };
+    const onRejection = (e: PromiseRejectionEvent) => {
+      const r = e?.reason;
+      const m = (r && (r.message || r.name || String(r))) || "";
+      if (isChunkError(m)) heal();
+    };
+    window.addEventListener("error", onError);
+    window.addEventListener("unhandledrejection", onRejection);
+    // App stayed up for a while → clear the attempt counter so a LATER deploy can
+    // heal again on a fresh session.
+    const clear = setTimeout(() => { try { sessionStorage.removeItem(KEY); } catch {} }, 20000);
+    return () => {
+      window.removeEventListener("error", onError);
+      window.removeEventListener("unhandledrejection", onRejection);
+      clearTimeout(clear);
+    };
+  }, []);
+
   // Capture install prompt + detect installed
   useEffect(() => {
     if (typeof window === "undefined") return;
