@@ -15,14 +15,12 @@ import type { CallLog, WhatsAppMessage } from "@prisma/client";
 import {
   parseRemarksTimeline,
   groupEntries,
-  extractSiteVisits,
-  extractMeetings,
+  mergeSameMoment,
   isMissedCall,
   remarkKeyFor,
   type DisplayEntry,
   type RemarkEntry,
   type RemarkEventType,
-  type VisitSummary,
 } from "@/lib/remarkParser";
 import RemarkControlMenu, { type RemarkControlState } from "@/components/RemarkControlMenu";
 
@@ -165,33 +163,15 @@ function fmtDateTime(d: Date): string {
   });
 }
 
-// ─── Sub-components ───────────────────────────────────────────────────────────
-
-function SectionHeader({ title, count }: { title: string; count: number }) {
-  return (
-    <div className="flex items-center gap-2 mb-2 mt-1">
-      <span className="font-semibold text-xs text-gray-700 dark:text-slate-200">{title}</span>
-      <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-gray-100 dark:bg-slate-700 text-gray-500 dark:text-slate-400">{count}</span>
-    </div>
-  );
-}
-
-function VisitCard({ visit, index, type }: { visit: VisitSummary; index: number; type: "visit" | "meeting" | "virtual" }) {
-  const icon = type === "visit" ? "🏢" : type === "meeting" ? "🤝" : "💻";
-  const border = type === "visit" ? "border-green-300" : type === "meeting" ? "border-blue-300" : "border-purple-300";
-  const bg = type === "visit" ? "bg-green-50/40" : type === "meeting" ? "bg-blue-50/30" : "bg-purple-50/30";
-  return (
-    <div className={`border-l-2 ${border} ${bg} pl-3 pr-2 py-2 rounded-r mb-2`}>
-      <div className="flex items-center gap-1.5 text-[11px] text-gray-500 mb-1">
-        <span className="font-semibold text-gray-700 dark:text-slate-200">{icon} {type === "visit" ? "Visit" : type === "meeting" ? "Meeting" : "Virtual"} #{index + 1}</span>
-        {visit.date && <span className="text-gray-400">· {fmtDate(visit.date)}</span>}
-        {visit.agentName && <span className="text-gray-400">· {visit.agentName}</span>}
-        {visit.project && <span className="text-gray-400">· {visit.project}</span>}
-      </div>
-      <div className="text-xs text-gray-700 dark:text-slate-200 whitespace-pre-wrap">{visit.outcome}</div>
-    </div>
-  );
-}
+// Remark event types that represent a REAL two-way conversation vs a failed
+// call — drives the Connected / No-answer counters + filters so imported
+// conversations (not just CRM call logs) are counted.
+const CONNECTED_REMARK_TYPES = new Set<RemarkEventType>([
+  "CALL_CONNECTED", "MEETING", "VIRTUAL_MEETING", "SITE_VISIT", "CALL_NOT_INTERESTED", "NOTE",
+]);
+const NOANSWER_REMARK_TYPES = new Set<RemarkEventType>([
+  "CALL_NOT_PICKED", "CALL_BUSY", "CALL_SWITCHED_OFF", "CALL_CALLBACK",
+]);
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
@@ -202,8 +182,6 @@ export default function ConversationStreamCard({
   leadId = "", canControl = false, viewerId, viewerTeam, controls = [], agents = [],
 }: Props) {
   const [filter, setFilter] = useState<FilterType>("ALL");
-  const [showSiteVisits, setShowSiteVisits] = useState(true);
-  const [showMeetings, setShowMeetings] = useState(true);
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
 
   // ── Bulk moderation (controllers / Lalit only) ──
@@ -260,22 +238,37 @@ export default function ConversationStreamCard({
     [allRemarkEntries, canControl, controlByKey, viewerId, viewerTeam], // eslint-disable-line react-hooks/exhaustive-deps
   );
 
-  const displayRemarkEntries = useMemo(() => groupEntries(remarkEntries), [remarkEntries]);
+  // Merge entries that share the same agent + exact timestamp — one MIS remark
+  // block the parser split across several lines — into a single conversation block.
+  const mergedEntries = useMemo(() => mergeSameMoment(remarkEntries), [remarkEntries]);
 
-  const siteVisits  = useMemo(() => extractSiteVisits(remarkEntries), [remarkEntries]);
-  const meetings    = useMemo(() => extractMeetings(remarkEntries), [remarkEntries]);
-  const virtualMeetings = useMemo(() => meetings.filter(m =>
-    remarkEntries.find(e => e.text === m.outcome)?.eventType === "VIRTUAL_MEETING"), [meetings, remarkEntries]);
-  const officeMeetings = useMemo(() => meetings.filter(m =>
-    remarkEntries.find(e => e.text === m.outcome)?.eventType === "MEETING"), [meetings, remarkEntries]);
+  // Imported remarks filtered to the active chip, then grouped (consecutive missed
+  // calls collapsed). Connected / No-answer narrow by event type so the rows shown
+  // always match the counter that was clicked.
+  const filteredRemarkEntries = useMemo(() => {
+    if (filter === "CONNECTED") return mergedEntries.filter(e => CONNECTED_REMARK_TYPES.has(e.eventType));
+    if (filter === "NO_ANSWER") return mergedEntries.filter(e => NOANSWER_REMARK_TYPES.has(e.eventType));
+    if (filter === "WA")        return [];
+    return mergedEntries;
+  }, [mergedEntries, filter]);
+  const displayRemarkEntries = useMemo(() => groupEntries(filteredRemarkEntries), [filteredRemarkEntries]);
 
   // ── Counts ────────────────────────────────────────────────────────────────
-  const connectedCount    = callLogs.filter(c => CONNECTED_OUTCOMES.has(effectiveOutcome(c.outcome as string, c.notes))).length;
-  const unsuccessfulCount = callLogs.filter(c => UNSUCCESSFUL_OUTCOMES.has(effectiveOutcome(c.outcome as string, c.notes))).length;
-  const waInboundCount    = waMessages.filter(m => m.direction === "INBOUND").length;
-  const noteCount         = notes.length;
+  // Connected = real two-way conversation across ALL sources (CRM calls + imported
+  // remarks + inbound WhatsApp + notes) — not just CRM call logs (the old bug that
+  // showed 0/0 on imported leads). No-answer = failed call attempts only. Each count
+  // uses the same predicate as its filter, so the counter equals the rows shown.
+  const callConnectedCount    = callLogs.filter(c => CONNECTED_OUTCOMES.has(effectiveOutcome(c.outcome as string, c.notes))).length;
+  const callUnsuccessfulCount = callLogs.filter(c => UNSUCCESSFUL_OUTCOMES.has(effectiveOutcome(c.outcome as string, c.notes))).length;
+  const remarkConnectedCount  = mergedEntries.filter(e => CONNECTED_REMARK_TYPES.has(e.eventType)).length;
+  const remarkNoAnswerCount   = mergedEntries.filter(e => NOANSWER_REMARK_TYPES.has(e.eventType)).length;
+  const waInboundCount        = waMessages.filter(m => m.direction === "INBOUND").length;
+  const noteCount             = notes.length;
 
-  const totalEntries = callLogs.length + waMessages.length + notes.length + remarkEntries.length;
+  const connectedCount    = callConnectedCount + remarkConnectedCount + waInboundCount + noteCount;
+  const unsuccessfulCount = callUnsuccessfulCount + remarkNoAnswerCount;
+
+  const totalEntries = callLogs.length + waMessages.length + notes.length + mergedEntries.length;
 
   // ─── Filter helpers ────────────────────────────────────────────────────────
 
@@ -342,39 +335,9 @@ export default function ConversationStreamCard({
         </div>
       )}
 
-      {/* ── Site Visit Summary ── */}
-      {filter === "ALL" && siteVisits.length > 0 && (
-        <div className="mb-4">
-          <button type="button" onClick={() => setShowSiteVisits(v => !v)}
-            className="flex items-center gap-2 mb-2 w-full text-left">
-            <SectionHeader title="🏢 Site Visits" count={siteVisits.length} />
-            <span className="text-[10px] text-gray-400 ml-auto">{showSiteVisits ? "▲ hide" : "▼ show"}</span>
-          </button>
-          {showSiteVisits && siteVisits.map((v, i) => (
-            <VisitCard key={i} visit={v} index={i} type="visit" />
-          ))}
-        </div>
-      )}
-
-      {/* ── Meeting + Virtual Meeting Summary ── */}
-      {filter === "ALL" && (officeMeetings.length > 0 || virtualMeetings.length > 0) && (
-        <div className="mb-4">
-          <button type="button" onClick={() => setShowMeetings(v => !v)}
-            className="flex items-center gap-2 mb-2 w-full text-left">
-            <SectionHeader
-              title={`🤝 Meetings${virtualMeetings.length > 0 ? " & Virtual" : ""}`}
-              count={officeMeetings.length + virtualMeetings.length}
-            />
-            <span className="text-[10px] text-gray-400 ml-auto">{showMeetings ? "▲ hide" : "▼ show"}</span>
-          </button>
-          {showMeetings && (
-            <>
-              {officeMeetings.map((m, i) => <VisitCard key={`m${i}`} visit={m} index={i} type="meeting" />)}
-              {virtualMeetings.map((m, i) => <VisitCard key={`v${i}`} visit={m} index={i} type="virtual" />)}
-            </>
-          )}
-        </div>
-      )}
+      {/* Site Visits & Meetings are intentionally NOT summarised here — they live in
+          their own right-side "Meetings & Site Visits" card. Conversation History is
+          the original chronological remarks only (no duplicated grouped blocks). */}
 
       {/* ── Main stream ── */}
       <div className="space-y-1.5 text-sm max-h-[620px] overflow-y-auto pr-1">
@@ -384,8 +347,8 @@ export default function ConversationStreamCard({
           </div>
         )}
 
-        {/* ─ Imported remarks (shown in ALL mode only) ─ */}
-        {filter === "ALL" && displayRemarkEntries.map((item, idx) => {
+        {/* ─ Imported remarks (filtered to the active chip) ─ */}
+        {filter !== "WA" && displayRemarkEntries.map((item, idx) => {
           const key = `remark-${idx}`;
 
           if (item.kind === "missed_group") {
@@ -486,8 +449,11 @@ export default function ConversationStreamCard({
           );
         })}
 
-        {/* ─ WhatsApp messages ─ */}
-        {(filter === "ALL" || filter === "WA") && waMessages.map((m, idx) => {
+        {/* ─ WhatsApp messages (inbound replies are a real two-way conversation, so
+              they also appear under the Connected filter) ─ */}
+        {filter !== "NO_ANSWER" && waMessages
+          .filter(m => filter === "CONNECTED" ? m.direction === "INBOUND" : true)
+          .map((m, idx) => {
           const col = waColour(m.direction);
           return (
             <div key={`w-${m.id}`} className={`border-l-2 ${col.border} ${col.bg} pl-3 pr-2 py-1.5 rounded-r`}>
@@ -500,8 +466,8 @@ export default function ConversationStreamCard({
           );
         })}
 
-        {/* ─ Notes (voice + typed) ─ */}
-        {filter === "ALL" && notes.map((n, idx) => (
+        {/* ─ Notes (voice + typed) — real conversation records, shown under Connected too ─ */}
+        {(filter === "ALL" || filter === "CONNECTED") && notes.map((n, idx) => (
           <div key={`n-${n.id}`} className="border-l-2 border-amber-300 bg-amber-50/40 pl-3 pr-2 py-1.5 rounded-r">
             <div className="flex items-center justify-between flex-wrap gap-1 text-[11px] text-gray-500">
               <span>📝 <b>{n.user?.name ?? "Agent"}</b> · {fmtIST12Paren(n.createdAt)} IST</span>

@@ -394,6 +394,33 @@ export function groupEntries(entries: RemarkEntry[]): DisplayEntry[] {
   return result;
 }
 
+// ─── Same-moment merge ────────────────────────────────────────────────────────
+// One MIS remark block — "On 7 Jun (11:30) had words… asked me will meet… site
+// to book…" — parses into several entries (the dated line + undated follow-on
+// lines that inherit the SAME exact timestamp). They are ONE conversation, so
+// merge consecutive entries that share agent + timestamp into a single block,
+// joining the lines as paragraphs. Never splits a remark into many timeline rows.
+export function mergeSameMoment(entries: RemarkEntry[]): RemarkEntry[] {
+  const out: RemarkEntry[] = [];
+  for (const e of entries) {
+    const last = out[out.length - 1];
+    const sameMoment = !!last
+      && last.agentName === e.agentName
+      && (
+        (last.date != null && e.date != null && last.date.getTime() === e.date.getTime())
+        || (last.date == null && e.date == null)
+      );
+    if (sameMoment && last) {
+      last.text = `${last.text}\n${e.text}`.trim();
+      last.eventType = classifyText(last.text);   // strongest signal of the whole block
+      last.dateInferred = last.dateInferred && e.dateInferred;
+    } else {
+      out.push({ ...e });
+    }
+  }
+  return out;
+}
+
 // ─── Site-visit / Meeting extraction ─────────────────────────────────────────
 
 export interface VisitSummary {
