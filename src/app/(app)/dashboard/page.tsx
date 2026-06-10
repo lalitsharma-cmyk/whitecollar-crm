@@ -339,7 +339,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
       {/* ── Full-width: page title + team/action controls ── */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
-          <h1 className="text-xl sm:text-2xl font-bold">Dashboard</h1>
+          <h1 className="font-display text-xl sm:text-2xl font-bold">Dashboard</h1>
           {me.role !== "AGENT" && (
             <p className="text-xs sm:text-sm text-gray-500 dark:text-slate-400">
               {new Date().toLocaleDateString("en-US", { weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: "Asia/Kolkata" })} · {new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Kolkata" })} IST
@@ -379,7 +379,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
             <div className="flex items-start justify-between gap-3 flex-wrap">
               <div className="flex-1 min-w-0">
                 <div className="flex items-baseline gap-2 flex-wrap">
-                  <h2 className="text-base sm:text-lg font-bold text-[#0b1a33]">
+                  <h2 className="font-display text-lg sm:text-xl font-bold text-[#0b1a33]">
                     {energyEmoji} {greeting}, {me.name.split(" ")[0]}
                   </h2>
                 </div>

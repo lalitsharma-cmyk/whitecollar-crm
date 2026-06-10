@@ -40,6 +40,11 @@ export default async function LoginPage({ searchParams }: { searchParams?: Promi
             </div>
           </div>
 
+          <div className="mt-7 text-center">
+            <h1 className="font-display text-[22px] sm:text-2xl text-[#0b1a33]">Welcome back</h1>
+            <p className="mt-1 text-xs text-gray-500">Sign in to your workspace</p>
+          </div>
+
           {sp.error && (
             <div className="mt-6 text-sm bg-red-50 border border-red-200 text-red-800 rounded-lg p-2.5 text-center">{sp.error}</div>
           )}

@@ -60,8 +60,8 @@ export default function LeadHeaderFilter({
         onClick={openAt}
         title={`Filter ${label}`}
         className={showLabel
-          ? `inline-flex items-center gap-1 text-[11px] font-medium px-2.5 py-1.5 rounded-full border whitespace-nowrap transition-colors ${active ? "border-blue-400 text-blue-600 bg-blue-50 dark:bg-blue-900/20 dark:border-blue-500" : "border-gray-200 dark:border-slate-600 text-gray-600 dark:text-slate-300 hover:border-gray-400"}`
-          : `ml-0.5 leading-none text-[11px] ${active ? "text-blue-500" : "text-gray-300 hover:text-gray-500 dark:text-slate-500"}`
+          ? `inline-flex items-center gap-1 text-[11px] font-medium px-2.5 py-1.5 rounded-full border whitespace-nowrap transition-colors ${active ? "border-[#c9a24b] text-[#9a7b2e] bg-[#c9a24b]/10 dark:bg-[#c9a24b]/15 dark:border-[#c9a24b] dark:text-[#d9b765]" : "border-gray-200 dark:border-slate-600 text-gray-600 dark:text-slate-300 hover:border-gray-400"}`
+          : `ml-0.5 leading-none text-[11px] ${active ? "text-[#c9a24b]" : "text-gray-300 hover:text-gray-500 dark:text-slate-500"}`
         }
       >
         {showLabel ? <span>{label} {active ? "●" : "⏷"}</span> : (active ? "●" : "⏷")}

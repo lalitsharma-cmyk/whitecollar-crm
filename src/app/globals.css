@@ -128,6 +128,30 @@ html, body { background: var(--bg-app); color: var(--text-base); font-family: va
 }
 .login-screen input::placeholder { color: #9ca3af !important; }
 
+/* ─── Display serif — the "luxury real estate" heading voice. Applied ONLY on the
+   login + dashboard hero via .font-display; body text stays Inter for clarity. ─── */
+.font-display {
+  font-family: var(--font-serif), Georgia, "Times New Roman", serif;
+  letter-spacing: -0.01em;
+}
+
+/* ─── Brand sweep — retire decorative SaaS-blue in favour of the navy + champagne
+   gold identity. Scoped to the INTERACTIVE shades only (links / accents / edit
+   hints / active states = blue-600 / 500 / 400). Semantic STATUS blue (cold lead
+   & "Fresh Lead" = blue-100/700/800, WhatsApp channel borders) uses different
+   shades and is deliberately left intact so "cold" still reads blue. ─── */
+.text-blue-600, .text-blue-500 { color: #9a7b2e !important; }   /* champagne-dark link/accent */
+.text-blue-400                 { color: #b78f33 !important; }
+.hover\:text-blue-600:hover,
+.hover\:text-blue-700:hover    { color: #7a6024 !important; }
+[data-theme="dark"] .dark\:text-blue-400        { color: #d9b765 !important; }
+[data-theme="dark"] .dark\:hover\:text-blue-300:hover { color: #e7c97a !important; }
+[data-theme="dark"] .dark\:border-blue-400      { border-color: #d9b765 !important; }
+/* Unify the off-brand HR navy (#1a2e4a) onto the single brand navy (#0b1a33). */
+.text-\[\#1a2e4a\]   { color: #0b1a33 !important; }
+.border-\[\#1a2e4a\] { border-color: #0b1a33 !important; }
+.bg-\[\#1a2e4a\]     { background-color: #0b1a33 !important; }
+
 /* Tailwind colour-family chips — all bg-X-50 / bg-X-100 / text-X-700/800/900 / border-X-300 */
 [data-theme="dark"] .bg-amber-50,   [data-theme="dark"] .bg-amber-100    { background-color: rgba(245,158,11,0.18) !important; }
 [data-theme="dark"] .bg-red-50,     [data-theme="dark"] .bg-red-100      { background-color: rgba(239,68,68,0.18)  !important; }

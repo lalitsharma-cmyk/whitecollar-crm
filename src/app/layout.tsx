@@ -1,9 +1,12 @@
 import type { Metadata, Viewport } from "next";
-import { Inter } from "next/font/google";
+import { Inter, Playfair_Display } from "next/font/google";
 import "./globals.css";
 import PWARegister from "@/components/PWARegister";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
+// Serif display face for the "luxury real estate" voice — used ONLY on the login
+// + dashboard hero headings via the .font-display utility. Body stays Inter.
+const playfair = Playfair_Display({ subsets: ["latin"], weight: ["600", "700"], variable: "--font-serif", display: "swap" });
 
 export const metadata: Metadata = {
   title: "White Collar Realty · CRM",
@@ -56,7 +59,7 @@ const themeBootScript = `
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en" className={`${inter.variable} h-full antialiased`} suppressHydrationWarning>
+    <html lang="en" className={`${inter.variable} ${playfair.variable} h-full antialiased`} suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeBootScript }} />
       </head>
