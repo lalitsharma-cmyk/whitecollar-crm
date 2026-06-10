@@ -3,6 +3,7 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Phone, MessageCircle, Tag, RefreshCw, XCircle, X, ExternalLink, Pencil, Calendar, Mail, Trash2 } from "lucide-react";
+import { REJECT_REASONS as REJECT_REASON_LIST } from "@/lib/reject-reasons";
 
 /** Official WhatsApp logo mark (brand colour applied via parent bg) */
 function WaIcon() {
@@ -118,7 +119,7 @@ interface Row {
   notPickedCount: number;
 }
 
-export default function LeadsListClient({ leads, canBulk, canReassign = false, canSetStatus = false, agents, showSource = true, view = "cards", searchParamsStr = "" }: { leads: Row[]; canBulk: boolean; canReassign?: boolean; canSetStatus?: boolean; agents: { id: string; name: string; team: string | null }[]; showSource?: boolean; view?: "cards" | "table"; searchParamsStr?: string; }) {
+export default function LeadsListClient({ leads, canBulk, canReassign = false, canSetStatus = false, canDelete = false, agents, showSource = true, view = "cards", searchParamsStr = "" }: { leads: Row[]; canBulk: boolean; canReassign?: boolean; canSetStatus?: boolean; canDelete?: boolean; agents: { id: string; name: string; team: string | null }[]; showSource?: boolean; view?: "cards" | "table"; searchParamsStr?: string; }) {
   // showSource = false → hide the source column + chip from agents.
   // Lalit's policy: agents shouldn't see where each lead came from (avoids them
   // cherry-picking high-converting sources or gaming the round-robin pool).
@@ -148,7 +149,11 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
   // §1: Assigned is display-only from the table — no inline reassign dropdown.
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
   const [deleteReason, setDeleteReason] = useState("NOT_INTERESTED");
+  const [deleteNote, setDeleteNote] = useState("");
   const [deleteBusy, setDeleteBusy] = useState(false);
+  // Delete Lead (Super-Admin / Lalit only) — a separate action from Reject.
+  const [delLeadTarget, setDelLeadTarget] = useState<{ id: string; name: string } | null>(null);
+  const [delLeadBusy, setDelLeadBusy] = useState(false);
 
   // Excel/MIS status values — imported from canonical source
   const EXCEL_LEAD_STATUSES = EXCEL_STATUSES as unknown as string[];
@@ -185,18 +190,33 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
 
   async function quickReject() {
     if (!deleteTarget || deleteBusy) return;
+    if (!deleteNote.trim()) { alert("Reject remarks are required — explain why this lead is being rejected."); return; }
     setDeleteBusy(true);
     try {
       const r = await fetch(`/api/leads/${deleteTarget.id}/reject`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ reason: deleteReason, note: "" }),
+        body: JSON.stringify({ reason: deleteReason, note: deleteNote.trim() }),
       });
-      if (!r.ok) return;
-      setDeleteTarget(null);
+      if (!r.ok) { const j = await r.json().catch(() => ({})); alert(j.error ?? "Reject failed."); return; }
+      setDeleteTarget(null); setDeleteNote("");
       router.refresh();
     } finally {
       setDeleteBusy(false);
+    }
+  }
+
+  // Delete Lead — Super-Admin only. Soft-delete (kept in the archive, restorable).
+  async function doDeleteLead() {
+    if (!delLeadTarget || delLeadBusy) return;
+    setDelLeadBusy(true);
+    try {
+      const r = await fetch(`/api/leads/${delLeadTarget.id}/delete`, { method: "POST" });
+      if (!r.ok) { const j = await r.json().catch(() => ({})); alert(j.error ?? "Delete failed."); return; }
+      setDelLeadTarget(null);
+      router.refresh();
+    } finally {
+      setDelLeadBusy(false);
     }
   }
 
@@ -943,11 +963,18 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
                         <Pencil className="w-3.5 h-3.5" />
                       </button>
 
-                      {/* 6. Delete — admin / manager only */}
-                      {canBulk && (
-                        <button type="button" title="Reject lead"
-                          onClick={() => { setDeleteTarget({ id: l.id, name: l.name }); setDeleteReason("NOT_INTERESTED"); }}
-                          className="w-8 h-8 rounded-lg bg-red-500 hover:bg-red-600 text-white flex items-center justify-center transition-colors flex-none">
+                      {/* 6. Reject lead — business outcome (kept in CRM, marked Lost). Visible to all. */}
+                      <button type="button" title="Reject lead"
+                        onClick={() => { setDeleteTarget({ id: l.id, name: l.name }); setDeleteReason("NOT_INTERESTED"); setDeleteNote(""); }}
+                        className="w-8 h-8 rounded-lg bg-red-500 hover:bg-red-600 text-white flex items-center justify-center transition-colors flex-none">
+                        <XCircle className="w-3.5 h-3.5" />
+                      </button>
+
+                      {/* 7. Delete lead — Super-Admin (Lalit) only · removes from active CRM */}
+                      {canDelete && (
+                        <button type="button" title="Delete lead (Super Admin only)"
+                          onClick={() => setDelLeadTarget({ id: l.id, name: l.name })}
+                          className="w-8 h-8 rounded-lg bg-gray-800 hover:bg-black text-white flex items-center justify-center transition-colors flex-none">
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
                       )}
@@ -1226,31 +1253,32 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center gap-2 mb-1">
-              <Trash2 className="w-4 h-4 text-red-500 flex-none" />
-              <span className="font-semibold text-base">Reject "{deleteTarget.name}"?</span>
+              <XCircle className="w-4 h-4 text-red-500 flex-none" />
+              <span className="font-semibold text-base">Reject &quot;{deleteTarget.name}&quot;?</span>
             </div>
             <p className="text-xs text-gray-500 dark:text-slate-400 mb-3">
-              Lead will be marked Lost and removed from the active queue.
+              Lead is kept in the CRM, marked Lost, and moves out of the active queue (still searchable &amp; recoverable).
             </p>
             <label className="text-xs font-semibold text-gray-600 dark:text-slate-300">Reason</label>
             <select
               value={deleteReason}
               onChange={(e) => setDeleteReason(e.target.value)}
-              className="w-full mt-1 mb-4 border border-[#e5e7eb] dark:border-slate-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-slate-800 dark:text-slate-100"
+              className="w-full mt-1 mb-3 border border-[#e5e7eb] dark:border-slate-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-slate-800 dark:text-slate-100"
             >
-              <option value="NOT_INTERESTED">Not Interested</option>
-              <option value="LOW_BUDGET">Low Budget</option>
-              <option value="FUND_ISSUE">Fund Issue</option>
-              <option value="NEVER_RESPONDED">Never Responded</option>
-              <option value="JUST_SEARCHING">Just Searching</option>
-              <option value="DROP_THE_PLAN">Drop The Plan</option>
-              <option value="WAR_FEAR">War / Market Fear</option>
-              <option value="WAITING_FOR_PROPERTY_SALE">Waiting to Sell Own Property</option>
-              <option value="INVALID_NUMBER">Invalid Number</option>
-              <option value="OTHER">Other</option>
+              {REJECT_REASON_LIST.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
             </select>
+            <label className="text-xs font-semibold text-gray-600 dark:text-slate-300">
+              Reject Remarks / Reason Details <span className="text-red-600">*</span>
+            </label>
+            <textarea
+              value={deleteNote}
+              onChange={(e) => setDeleteNote(e.target.value.slice(0, 500))}
+              rows={3}
+              placeholder="Explain why this lead is being rejected…"
+              className="w-full mt-1 mb-4 border border-[#e5e7eb] dark:border-slate-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-slate-800 dark:text-slate-100"
+            />
             <div className="flex justify-end gap-2">
-              <button onClick={() => setDeleteTarget(null)} className="btn btn-ghost text-sm">
+              <button onClick={() => { setDeleteTarget(null); setDeleteNote(""); }} className="btn btn-ghost text-sm">
                 Cancel
               </button>
               <button
@@ -1259,6 +1287,30 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
                 className="btn bg-red-600 hover:bg-red-700 text-white text-sm"
               >
                 {deleteBusy ? "Rejecting…" : "Reject Lead"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Lead confirmation — Super-Admin (Lalit) only */}
+      {delLeadTarget && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={() => !delLeadBusy && setDelLeadTarget(null)}>
+          <div className="bg-white dark:bg-slate-900 rounded-xl max-w-sm w-full p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center gap-2 mb-1">
+              <Trash2 className="w-4 h-4 text-gray-800 dark:text-slate-200 flex-none" />
+              <span className="font-semibold text-base">Delete &quot;{delLeadTarget.name}&quot;?</span>
+            </div>
+            <p className="text-sm text-gray-600 dark:text-slate-300 mb-1">
+              Are you sure you want to permanently remove this lead from the active CRM?
+            </p>
+            <p className="text-xs text-gray-400 mb-4">
+              It moves to the Super-Admin Archive with a full snapshot (who / when) and can be restored — nothing is destroyed.
+            </p>
+            <div className="flex justify-end gap-2">
+              <button onClick={() => setDelLeadTarget(null)} disabled={delLeadBusy} className="btn btn-ghost text-sm">Cancel</button>
+              <button onClick={doDeleteLead} disabled={delLeadBusy} className="btn bg-gray-900 hover:bg-black text-white text-sm">
+                {delLeadBusy ? "Deleting…" : "Delete Lead"}
               </button>
             </div>
           </div>

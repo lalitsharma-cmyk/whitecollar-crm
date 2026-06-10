@@ -486,6 +486,9 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
           {me.role !== "AGENT" && (
             <Link href="/intake" className="btn btn-ghost flex-1 sm:flex-none justify-center">Import</Link>
           )}
+          {me.isSuperAdmin && (
+            <Link href="/leads/deleted" className="btn btn-ghost flex-1 sm:flex-none justify-center" title="Deleted leads — Super Admin archive">🗑 Deleted</Link>
+          )}
           {me.role !== "AGENT" && (() => {
             const params = new URLSearchParams({ type: "leads" });
             for (const [k, v] of Object.entries(sp)) {
@@ -674,6 +677,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
         canBulk={canBulk}
         canReassign={canBulk}
         canSetStatus={me.role === "ADMIN" || me.role === "MANAGER"}
+        canDelete={me.isSuperAdmin === true}
         showSource={me.role !== "AGENT"}
         view={viewMode}
         searchParamsStr={new URLSearchParams(Object.entries(sp).filter(([,v]) => v != null && v !== "").map(([k,v]) => [k, String(v!)])).toString()}
