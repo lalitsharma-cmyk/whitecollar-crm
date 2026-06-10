@@ -8,7 +8,7 @@
 //   • Site Visit / Meeting / Virtual Meeting summaries surfaced separately
 //   • All entries visible; nothing discarded
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, Fragment } from "react";
 import { useRouter } from "next/navigation";
 import { fmtIST12Paren, fmtISTDate } from "@/lib/datetime";
 import type { CallLog, WhatsAppMessage } from "@prisma/client";
@@ -174,6 +174,14 @@ const NOANSWER_REMARK_TYPES = new Set<RemarkEventType>([
   "CALL_NOT_PICKED", "CALL_BUSY", "CALL_SWITCHED_OFF", "CALL_CALLBACK",
 ]);
 
+// Sort key for a display item (single entry or a missed-call group). A group is
+// positioned by its most-recent attempt (`to`). Returns null only when the item
+// has no date at all → it sinks below all dated conversations.
+function displayKey(d: DisplayEntry): number | null {
+  if (d.kind === "missed_group") return d.to ? d.to.getTime() : null;
+  return d.entry.date ? d.entry.date.getTime() : null;
+}
+
 // ─── Main component ───────────────────────────────────────────────────────────
 
 type FilterType = "ALL" | "CONNECTED" | "NO_ANSWER" | "WA";
@@ -252,7 +260,27 @@ export default function ConversationStreamCard({
     if (filter === "WA")        return [];
     return mergedEntries;
   }, [mergedEntries, filter]);
-  const displayRemarkEntries = useMemo(() => groupEntries(filteredRemarkEntries), [filteredRemarkEntries]);
+
+  // Newest conversation first (like an email inbox / WhatsApp "latest update on
+  // top"). Sort by exact datetime descending. Same datetime — and same-date
+  // remarks with no real time (they all carry noon IST) — tie, and the stable
+  // sort keeps their original imported order. Truly date-less entries sink to the
+  // bottom, rendered under an "Undated Imported Remarks" header.
+  const displayRemarkEntries = useMemo(() => {
+    const grouped = groupEntries(filteredRemarkEntries);
+    return [...grouped].sort((a, b) => {
+      const ka = displayKey(a), kb = displayKey(b);
+      if (ka == null && kb == null) return 0;   // both undated → keep import order
+      if (ka == null) return 1;                 // a undated → bottom
+      if (kb == null) return -1;                // b undated → bottom
+      return kb - ka;                           // newest first
+    });
+  }, [filteredRemarkEntries]);
+  // Index where the trailing undated entries begin (for the section header).
+  const datedRemarkCount = useMemo(
+    () => displayRemarkEntries.filter(d => displayKey(d) != null).length,
+    [displayRemarkEntries],
+  );
 
   // ── Counts ────────────────────────────────────────────────────────────────
   // Connected = real two-way conversation across ALL sources (CRM calls + imported
@@ -392,7 +420,13 @@ export default function ConversationStreamCard({
           const modBadge = ctrl?.deletedFromView ? "removed" : ctrl?.hiddenFromAll ? "hidden · all" : teamCount > 0 ? `hidden · ${teamCount} team${teamCount > 1 ? "s" : ""}` : hiddenCount > 0 ? `hidden · ${hiddenCount} agent${hiddenCount > 1 ? "s" : ""}` : null;
 
           return (
-            <div key={key} className={`border-l-2 ${border} ${bg} pl-3 pr-2 py-1.5 rounded-r ${moderated ? "opacity-60" : ""} ${canControl && manageMode && selectedKeys.has(rKey) ? "ring-2 ring-[#0b1a33]/40" : ""}`}>
+            <Fragment key={key}>
+              {idx === datedRemarkCount && datedRemarkCount < displayRemarkEntries.length && (
+                <div className="mt-2 mb-1 pt-2 border-t border-dashed border-gray-300 dark:border-slate-600 text-[10px] font-semibold uppercase tracking-wide text-gray-400 dark:text-slate-500">
+                  Undated Imported Remarks
+                </div>
+              )}
+            <div className={`border-l-2 ${border} ${bg} pl-3 pr-2 py-1.5 rounded-r ${moderated ? "opacity-60" : ""} ${canControl && manageMode && selectedKeys.has(rKey) ? "ring-2 ring-[#0b1a33]/40" : ""}`}>
               {/* Agent · date header */}
               <div className="flex items-center gap-1.5 text-[11px] text-gray-400 mb-0.5 flex-wrap">
                 {canControl && manageMode && (
@@ -424,6 +458,7 @@ export default function ConversationStreamCard({
                 {toReadableParagraph(e.text)}
               </div>
             </div>
+            </Fragment>
           );
         })}
 
