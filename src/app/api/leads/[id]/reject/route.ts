@@ -44,7 +44,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       id: true,
       name: true,
       ownerId: true,
-      status: true,
+      currentStatus: true,
       owner: { select: { id: true, name: true, managerId: true } },
     },
   });
@@ -129,7 +129,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     meta: {
       reason,
       hasNote: !!note,
-      previousStatus: lead.status,
+      previousStatus: lead.currentStatus,
       ownerId: lead.ownerId,
     },
     request: { ...reqMeta(req) },

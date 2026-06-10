@@ -16,9 +16,21 @@ const PUBLIC_PATHS = [
 // after logout and the old dashboard reappears" (back/forward cache replay).
 const NO_STORE = "no-store, max-age=0, must-revalidate";
 
+// Boundary-aware public check. A bare `startsWith(p)` would let any FUTURE route
+// that merely begins with a public prefix bypass auth (e.g. /login-as-admin,
+// /api/intake-secret). Match the exact path, a path segment under it (p + "/"),
+// or a query on it — and treat entries ending in "/" as explicit prefix dirs.
+function isPublicPath(pathname: string): boolean {
+  return PUBLIC_PATHS.some((p) =>
+    p.endsWith("/")
+      ? pathname.startsWith(p)
+      : pathname === p || pathname.startsWith(p + "/") || pathname.startsWith(p + "?"),
+  );
+}
+
 export async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
-  if (PUBLIC_PATHS.some((p) => pathname.startsWith(p))) return NextResponse.next();
+  if (isPublicPath(pathname)) return NextResponse.next();
   if (pathname.startsWith("/_next") || pathname.startsWith("/favicon")) return NextResponse.next();
 
   const token = req.cookies.get(SESSION_COOKIE)?.value;

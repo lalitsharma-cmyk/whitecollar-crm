@@ -10,7 +10,7 @@
 
 import { useState, useMemo, Fragment } from "react";
 import { useRouter } from "next/navigation";
-import { fmtIST12Paren, fmtISTDate } from "@/lib/datetime";
+import { fmtIST12Paren } from "@/lib/datetime";
 import type { CallLog, WhatsAppMessage } from "@prisma/client";
 import {
   parseRemarksTimeline,
@@ -378,12 +378,26 @@ export default function ConversationStreamCard({
 
         {/* ─ Imported remarks (filtered to the active chip) ─ */}
         {filter !== "WA" && displayRemarkEntries.map((item, idx) => {
-          const key = `remark-${idx}`;
+          // Stable, CONTENT-based key so expansion state + React reconciliation track
+          // the real entry across filter changes (an array index would attach state
+          // to a position and expand the wrong row after filtering).
+          const key = item.kind === "missed_group"
+            ? `missed-${item.label}-${item.from?.getTime() ?? "x"}-${item.to?.getTime() ?? "x"}-${item.agentName ?? ""}`
+            : `entry-${remarkKeyFor(item.entry)}`;
+          // "Undated Imported Remarks" divider — rendered before the FIRST undated
+          // item regardless of its kind (single entry OR missed-call group).
+          const undatedHeader = (idx === datedRemarkCount && datedRemarkCount < displayRemarkEntries.length) ? (
+            <div className="mt-2 mb-1 pt-2 border-t border-dashed border-gray-300 dark:border-slate-600 text-[10px] font-semibold uppercase tracking-wide text-gray-400 dark:text-slate-500">
+              Undated Imported Remarks
+            </div>
+          ) : null;
 
           if (item.kind === "missed_group") {
             const expanded = expandedGroups.has(key);
             return (
-              <div key={key} className="border-l-2 border-red-200 bg-red-50/20 pl-3 pr-2 py-1.5 rounded-r">
+              <Fragment key={key}>
+                {undatedHeader}
+              <div className="border-l-2 border-red-200 bg-red-50/20 pl-3 pr-2 py-1.5 rounded-r">
                 <div className="flex items-center justify-between text-[11px] text-gray-500">
                   <span>
                     📵 <span className="font-medium">{item.label}</span>
@@ -402,6 +416,7 @@ export default function ConversationStreamCard({
                 {/* Last attempt */}
                 <div className="text-[10px] text-gray-400 mt-0.5">Last attempt: {fmtDate(item.to)}</div>
               </div>
+              </Fragment>
             );
           }
 
@@ -421,11 +436,7 @@ export default function ConversationStreamCard({
 
           return (
             <Fragment key={key}>
-              {idx === datedRemarkCount && datedRemarkCount < displayRemarkEntries.length && (
-                <div className="mt-2 mb-1 pt-2 border-t border-dashed border-gray-300 dark:border-slate-600 text-[10px] font-semibold uppercase tracking-wide text-gray-400 dark:text-slate-500">
-                  Undated Imported Remarks
-                </div>
-              )}
+              {undatedHeader}
             <div className={`border-l-2 ${border} ${bg} pl-3 pr-2 py-1.5 rounded-r ${moderated ? "opacity-60" : ""} ${canControl && manageMode && selectedKeys.has(rKey) ? "ring-2 ring-[#0b1a33]/40" : ""}`}>
               {/* Agent · date header */}
               <div className="flex items-center gap-1.5 text-[11px] text-gray-400 mb-0.5 flex-wrap">

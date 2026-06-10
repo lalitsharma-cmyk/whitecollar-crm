@@ -501,12 +501,13 @@ export function mergeSameMoment(entries: RemarkEntry[]): RemarkEntry[] {
   const out: RemarkEntry[] = [];
   for (const e of entries) {
     const last = out[out.length - 1];
+    // Same moment ONLY when both share a real (non-null) timestamp AND agent.
+    // (Two truly date-less entries must NOT merge just because both dates are
+    // null — they could be unrelated remarks.)
     const sameMoment = !!last
       && last.agentName === e.agentName
-      && (
-        (last.date != null && e.date != null && last.date.getTime() === e.date.getTime())
-        || (last.date == null && e.date == null)
-      );
+      && last.date != null && e.date != null
+      && last.date.getTime() === e.date.getTime();
     if (sameMoment && last) {
       last.text = `${last.text}\n${e.text}`.trim();
       last.eventType = classifyText(last.text);   // strongest signal of the whole block

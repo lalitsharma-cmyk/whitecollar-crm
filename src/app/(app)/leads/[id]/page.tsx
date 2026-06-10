@@ -21,7 +21,7 @@ import { runReconciler } from "@/lib/reconciler";
 import InlineEdit from "@/components/InlineEdit";
 import { acefoneEnabled } from "@/lib/acefone";
 import { canTouchLead } from "@/lib/leadScope";
-import { parseRemarksTimeline } from "@/lib/remarkParser";
+import { parseRemarksTimeline, mergeSameMoment } from "@/lib/remarkParser";
 import { projectWhereForUser, teamToCountry } from "@/lib/propertyScope";
 // CallHistoryCard removed — folded into ConversationStreamCard below.
 import ConversationStreamCard from "@/components/ConversationStreamCard";
@@ -176,7 +176,10 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
     SITE_VISIT: "SITE_VISIT",
   };
   const detectedMeetings = (lead.remarks
-    ? parseRemarksTimeline(lead.remarks, allActiveUsers.map(u => u.name), lead.createdAt)
+    // Merge same-moment fragments FIRST (same as the Conversation card) so one
+    // timestamped remark block that contains two visit phrases counts as ONE
+    // meeting/visit, not two — keeps the count tiles in sync with Conversation History.
+    ? mergeSameMoment(parseRemarksTimeline(lead.remarks, allActiveUsers.map(u => u.name), lead.createdAt))
     : []
   )
     .filter(e => e.eventType === "MEETING" || e.eventType === "VIRTUAL_MEETING" || e.eventType === "SITE_VISIT")
