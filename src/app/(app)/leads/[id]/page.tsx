@@ -573,25 +573,34 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
             }
             placeholder="Add value" />
         </div>
-        {/* LinkedIn — full URL, shown as clickable link when set */}
+        {/* LinkedIn — the saved value renders as a clickable link (server-side
+            <a>, opens LinkedIn) with a small "✏ edit" inline-edit beside it.
+            One always-mounted InlineEdit → no duplicate value, no layout shift,
+            no blank flash. Empty shows "Add value". (display must be a string —
+            this is a Server Component, so a JSX handler can't be passed.) */}
         <div className="sm:col-span-2">
           <div className="text-xs text-gray-500 dark:text-slate-400">🔗 LinkedIn</div>
-          {lead.linkedInUrl ? (
-            <div className="flex items-center gap-2 mt-0.5 min-w-0">
+          <div className="flex items-center gap-2 mt-0.5 min-w-0">
+            {lead.linkedInUrl && (
               <a
-                href={lead.linkedInUrl}
+                href={/^https?:\/\//i.test(lead.linkedInUrl) ? lead.linkedInUrl : `https://${lead.linkedInUrl}`}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-sm text-blue-600 hover:underline dark:text-blue-400 truncate max-w-xs"
+                className="text-sm text-blue-600 hover:underline dark:text-blue-400 truncate min-w-0"
                 title={lead.linkedInUrl}
               >
                 {lead.linkedInUrl.replace(/^https?:\/\/(www\.)?linkedin\.com\/in\//i, "linkedin.com/in/")}
               </a>
-              <InlineEdit leadId={lead.id} field="linkedInUrl" value={lead.linkedInUrl} placeholder="https://linkedin.com/in/…" />
-            </div>
-          ) : (
-            <InlineEdit leadId={lead.id} field="linkedInUrl" value="" placeholder="https://linkedin.com/in/…" />
-          )}
+            )}
+            <InlineEdit
+              leadId={lead.id}
+              field="linkedInUrl"
+              value={lead.linkedInUrl ?? ""}
+              placeholder="Add value"
+              display={lead.linkedInUrl ? "✏ edit" : undefined}
+              className="flex-none text-[11px] text-gray-400"
+            />
+          </div>
         </div>
       </div>
     </div>
