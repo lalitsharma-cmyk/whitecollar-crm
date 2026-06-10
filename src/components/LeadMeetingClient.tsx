@@ -37,8 +37,8 @@ const TYPE_LABEL: Record<string, string> = {
   SITE_VISIT:      "🚗 Site Visit",
 };
 
-// Collapsed preview length — show ~1–2 lines, then "Read More".
-const PREVIEW_LEN = 180;
+// Collapsed preview length — ~2 lines, then "Read More".
+const PREVIEW_LEN = 120;
 
 function ago(d: string | null) {
   if (!d) return "never";
@@ -89,10 +89,10 @@ export default function LeadMeetingClient({
   // collapsed by default (date/time/agent/type + preview); each expands on its own.
   const [typeFilter, setTypeFilter] = useState<string | null>(null);
   const pickType = (t: string) => setTypeFilter(f => (f === t ? null : t));
-  // Per-record expand state — independent: opening one never opens another.
-  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
-  const toggleRecord = (id: string) =>
-    setExpandedIds(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  // Accordion: only ONE record open at a time. Opening another auto-collapses the
+  // previous; clicking the open one collapses it. Default: all collapsed (null).
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const toggleRecord = (id: string) => setExpandedId(prev => (prev === id ? null : id));
 
   async function save() {
     if (remarks.trim().length < 3) { setErr("Remarks required (min 3 chars)."); return; }
@@ -190,10 +190,11 @@ export default function LeadMeetingClient({
               <div className="space-y-2">
                 {list.map((a) => {
                   const dateIso = a.completedAt ?? a.startedAt;
-                  const expanded = expandedIds.has(a.id);
+                  const expanded = expandedId === a.id;
                   const desc = (a.description ?? "").trim();
-                  const isLong = desc.length > PREVIEW_LEN;
-                  const preview = isLong ? desc.slice(0, PREVIEW_LEN).replace(/\s+\S*$/, "") + "…" : desc;
+                  const oneLine = desc.replace(/\s+/g, " ").trim();
+                  const isLong = oneLine.length > PREVIEW_LEN;
+                  const preview = isLong ? oneLine.slice(0, PREVIEW_LEN).replace(/\s+\S*$/, "") + "…" : oneLine;
                   return (
                     <div key={a.id} className="border border-gray-200 dark:border-slate-700 rounded-lg bg-gray-50/50 dark:bg-slate-800/40 overflow-hidden">
                       <button
@@ -209,9 +210,6 @@ export default function LeadMeetingClient({
                             <span>· {fmtDate(dateIso)}</span>
                             <span>· {fmtTime(dateIso)} IST</span>
                             {a.loggedBy && <span>· 👤 {a.loggedBy}</span>}
-                            {a.source === "remark" && (
-                              <span className="text-[9px] px-1 py-0.5 rounded bg-gray-100 dark:bg-slate-700 text-gray-400 dark:text-slate-500">from remarks</span>
-                            )}
                             {a.isNoShow && (
                               <span className="text-[9px] font-bold px-1 py-0.5 rounded bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400">No-show</span>
                             )}
@@ -223,14 +221,9 @@ export default function LeadMeetingClient({
                           )}
                         </div>
                       </button>
-                      {expanded && (
-                        <div className="px-3 pb-3">
-                          <div className="pt-2 border-t border-gray-100 dark:border-slate-700">
-                            <div className="text-[10px] font-semibold uppercase tracking-wide text-gray-400 dark:text-slate-500 mb-1">Notes / Outcome</div>
-                            {desc
-                              ? <div className="text-sm text-gray-700 dark:text-slate-200 whitespace-pre-wrap leading-relaxed break-words max-h-72 overflow-y-auto pr-1">{desc}</div>
-                              : <div className="text-sm text-gray-400 dark:text-slate-500 italic">No notes recorded.</div>}
-                          </div>
+                      {expanded && desc && (
+                        <div className="px-3 pb-3 pl-8">
+                          <div className="text-sm text-gray-700 dark:text-slate-200 whitespace-pre-wrap leading-relaxed break-words max-h-72 overflow-y-auto pr-1">{desc}</div>
                         </div>
                       )}
                     </div>
