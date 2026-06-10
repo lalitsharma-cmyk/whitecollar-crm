@@ -65,7 +65,8 @@ function formatBudget(min: number | null, max: number | null, ccy: string): stri
     if (n >= 1_000) return `${(n / 1_000).toFixed(0)}K`;
     return `${n}`;
   };
-  if (min && max && min !== max) return `${ccy} ${fmt(min)}–${fmt(max)}`;
+  // Only a real range (max strictly greater than min); garbage maxes collapse.
+  if (min && max && max > min) return `${ccy} ${fmt(min)}–${fmt(max)}`;
   return `${ccy} ${fmt(min ?? max!)}`;
 }
 

@@ -29,7 +29,9 @@ function fmtBudget(min: number | null, max: number | null, currency: string): st
     if (currency === "INR") return `₹${(v / 1e7).toFixed(1)} Cr`;
     return `${currency} ${(v / 1e6).toFixed(1)} M`;
   };
-  if (min && max) return `${fmt(min)}–${fmt(max)}`;
+  // Range only when max is a genuine upper bound (> min); garbage maxes collapse
+  // to the single value so we never show "10 M – 0 M".
+  if (min && max && max > min) return `${fmt(min)}–${fmt(max)}`;
   return fmt((min ?? max)!);
 }
 

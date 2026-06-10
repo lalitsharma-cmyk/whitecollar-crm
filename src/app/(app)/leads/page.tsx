@@ -716,8 +716,12 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
               if (fmt === "—") return null;
               // INR → ₹ symbol; AED/other → keep currency code
               const prefix = l.budgetCurrency === "INR" ? "₹" : l.budgetCurrency;
-              const maxFmt = l.budgetMax ? formatBudget(l.budgetMax, l.budgetCurrency) : null;
-              return maxFmt && maxFmt !== fmt ? `${prefix} ${fmt} – ${maxFmt}` : `${prefix} ${fmt}`;
+              // Only show a range when budgetMax is a genuine UPPER bound (> min).
+              // Garbage maxes (0, tiny, or ≤ min) collapse to the single value — no
+              // more "10 M – 0 M" / "10 M – 6 K" nonsense ranges.
+              const maxFmt = (l.budgetMax && l.budgetMin && l.budgetMax > l.budgetMin)
+                ? formatBudget(l.budgetMax, l.budgetCurrency) : null;
+              return maxFmt ? `${prefix} ${fmt} – ${maxFmt}` : `${prefix} ${fmt}`;
             })(),
             bantCount,
             needSummary: l.needSummary ?? null,

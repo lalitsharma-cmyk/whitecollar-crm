@@ -750,7 +750,7 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
                             ? `${(lead.budgetMin/10_000_000).toFixed(1).replace(/\.0$/,"")} Cr`
                             : `${(lead.budgetMin/100_000).toFixed(0)} L`)
                         : `${(lead.budgetMin/1_000_000).toFixed(1).replace(/\.0$/,"")} M`}
-                      {lead.budgetMax && lead.budgetMax !== lead.budgetMin ? ` – ${
+                      {lead.budgetMax && lead.budgetMax > lead.budgetMin ? ` – ${
                         lead.budgetCurrency === "INR"
                           ? (lead.budgetMax >= 10_000_000
                               ? `${(lead.budgetMax/10_000_000).toFixed(1).replace(/\.0$/,"")} Cr`

@@ -115,7 +115,7 @@ export default async function ColdDataDetailPage({ params }: { params: Promise<{
                 {lead.budgetMin && (
                   <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded font-medium">
                     {lead.budgetCurrency} {(lead.budgetMin / 1_000_000).toFixed(1)}M
-                    {lead.budgetMax ? ` – ${(lead.budgetMax / 1_000_000).toFixed(1)}M` : "+"}
+                    {lead.budgetMax && lead.budgetMax > lead.budgetMin ? ` – ${(lead.budgetMax / 1_000_000).toFixed(1)}M` : ""}
                   </span>
                 )}
                 {lead.notesShort && (
