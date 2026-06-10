@@ -159,6 +159,12 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
   // Excel/MIS status values — imported from canonical source
   const EXCEL_LEAD_STATUSES = EXCEL_STATUSES as unknown as string[];
 
+  // Excel-style header-filter option lists (shared by the table headers + the
+  // card-view filter toolbar).
+  const agentFilterOpts = [{ value: "unassigned", label: "⚠ Unassigned" }, ...agents.map(a => ({ value: a.id, label: a.name }))];
+  const projFilterOpts = projectOptions.map(p => ({ value: p, label: p }));
+  const statusFilterOpts = statusOptions.map(s => ({ value: s, label: s }));
+
   async function quickSetStatus(leadId: string, currentStatus: string) {
     await fetch(`/api/leads/${leadId}/update`, {
       method: "PATCH",
@@ -412,10 +418,6 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
               const sortThCls = `${thCls} cursor-pointer hover:bg-gray-100 dark:hover:bg-slate-700/60 select-none`;
               // Total visible columns count (for colSpan on empty row)
               const colCount = 9 + (showSource ? 1 : 0);
-              // Excel-style header-filter option lists.
-              const agentFilterOpts = [{ value: "unassigned", label: "⚠ Unassigned" }, ...agents.map(a => ({ value: a.id, label: a.name }))];
-              const projFilterOpts = projectOptions.map(p => ({ value: p, label: p }));
-              const statusFilterOpts = statusOptions.map(s => ({ value: s, label: s }));
               // Spec §6: Name·Status·Budget·Follow-Up·Assigned·Source(admin)·LastActivity·Actions
               // §1 Assigned=display-only · §4 C/NC removed · §5 Actions always visible
               return (
@@ -673,6 +675,22 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
             ))}
           </div>
         </>
+      )}
+
+      {/* CARD-VIEW FILTER TOOLBAR — same Excel-style column filters as the table
+          headers, exposed as labeled chips since cards have no column headers.
+          Drives the same URL params → combines with AND. */}
+      {view !== "table" && (
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 -mx-3 px-3 sm:mx-0 sm:px-0" style={{ scrollbarWidth: "thin" }}>
+          <span className="text-[11px] font-semibold text-gray-400 dark:text-slate-500 shrink-0">Filter:</span>
+          <LeadHeaderFilter showLabel kind="search" paramKey="q" label="Name" searchParamsStr={searchParamsStr} />
+          <LeadHeaderFilter showLabel kind="multi" paramKey="project" label="Project" options={projFilterOpts} searchParamsStr={searchParamsStr} />
+          <LeadHeaderFilter showLabel kind="multi" paramKey="cstatus" label="Status" options={statusFilterOpts} searchParamsStr={searchParamsStr} />
+          <LeadHeaderFilter showLabel kind="budget" label="Budget" searchParamsStr={searchParamsStr} />
+          <LeadHeaderFilter showLabel kind="followup" label="Follow-up" searchParamsStr={searchParamsStr} />
+          {showSource && <LeadHeaderFilter showLabel kind="multi" paramKey="owner" label="Assigned" options={agentFilterOpts} searchParamsStr={searchParamsStr} />}
+          <LeadHeaderFilter showLabel kind="activity" label="Last Activity" searchParamsStr={searchParamsStr} />
+        </div>
       )}
 
       {/* CARD VIEW — mobile+desktop cards when view=cards */}

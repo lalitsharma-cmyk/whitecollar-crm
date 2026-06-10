@@ -9,6 +9,7 @@
 //   • All entries visible; nothing discarded
 
 import { useState, useMemo } from "react";
+import { useRouter } from "next/navigation";
 import { fmtIST12Paren, fmtISTDate } from "@/lib/datetime";
 import type { CallLog, WhatsAppMessage } from "@prisma/client";
 import {
@@ -205,6 +206,25 @@ export default function ConversationStreamCard({
   const [showMeetings, setShowMeetings] = useState(true);
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
 
+  // ── Bulk moderation (controllers / Lalit only) ──
+  const router = useRouter();
+  const [manageMode, setManageMode] = useState(false);
+  const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const toggleSelect = (k: string) => setSelectedKeys(s => { const n = new Set(s); n.has(k) ? n.delete(k) : n.add(k); return n; });
+  async function bulkAction(action: string) {
+    if (selectedKeys.size === 0 || bulkBusy) return;
+    setBulkBusy(true);
+    try {
+      const r = await fetch(`/api/leads/${leadId}/remark-control`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ remarkKeys: [...selectedKeys], action }),
+      });
+      if (r.ok) { setSelectedKeys(new Set()); setManageMode(false); router.refresh(); }
+    } finally { setBulkBusy(false); }
+  }
+
   const audioTitle = forwardedTeam === "Dubai"
     ? "Recordings may exist only for India team (UAE consent rules)" : undefined;
 
@@ -300,8 +320,27 @@ export default function ConversationStreamCard({
           {filter !== "ALL" && (
             <button type="button" onClick={() => setFilter("ALL")} className="text-[10px] text-gray-400 hover:text-gray-600 px-1">✕ clear</button>
           )}
+          {canControl && (
+            <button type="button" onClick={() => { setManageMode(v => !v); setSelectedKeys(new Set()); }}
+              title="Select multiple remarks to hide / remove / restore at once"
+              className={`chip text-[10px] cursor-pointer ${manageMode ? "bg-[#0b1a33] text-white border border-[#0b1a33]" : "border border-gray-300 text-gray-600 hover:border-gray-400"}`}>
+              {manageMode ? "✓ Managing" : "🛡 Manage"}
+            </button>
+          )}
         </div>
       </div>
+
+      {/* ── Bulk moderation bar (controllers only, in Manage mode) ── */}
+      {canControl && manageMode && (
+        <div className="flex items-center gap-2 flex-wrap mb-3 px-3 py-2 rounded-lg bg-[#0b1a33] text-white text-xs">
+          <span className="font-semibold">{selectedKeys.size} selected</span>
+          <span className="text-white/40">·</span>
+          <button type="button" disabled={bulkBusy || selectedKeys.size === 0} onClick={() => bulkAction("DELETE")} className="px-2 py-1 rounded bg-white/15 hover:bg-white/25 disabled:opacity-40">🙈 Remove from view</button>
+          <button type="button" disabled={bulkBusy || selectedKeys.size === 0} onClick={() => bulkAction("HIDE_ALL")} className="px-2 py-1 rounded bg-white/15 hover:bg-white/25 disabled:opacity-40">🔒 Hide from everyone</button>
+          <button type="button" disabled={bulkBusy || selectedKeys.size === 0} onClick={() => bulkAction("RESTORE")} className="px-2 py-1 rounded bg-white/15 hover:bg-white/25 disabled:opacity-40">↩ Restore</button>
+          <button type="button" onClick={() => { setManageMode(false); setSelectedKeys(new Set()); }} className="ml-auto text-white/70 hover:text-white">Done</button>
+        </div>
+      )}
 
       {/* ── Site Visit Summary ── */}
       {filter === "ALL" && siteVisits.length > 0 && (
@@ -389,9 +428,12 @@ export default function ConversationStreamCard({
           const modBadge = ctrl?.deletedFromView ? "removed" : ctrl?.hiddenFromAll ? "hidden · all" : teamCount > 0 ? `hidden · ${teamCount} team${teamCount > 1 ? "s" : ""}` : hiddenCount > 0 ? `hidden · ${hiddenCount} agent${hiddenCount > 1 ? "s" : ""}` : null;
 
           return (
-            <div key={key} className={`border-l-2 ${border} ${bg} pl-3 pr-2 py-1.5 rounded-r ${moderated ? "opacity-60" : ""}`}>
+            <div key={key} className={`border-l-2 ${border} ${bg} pl-3 pr-2 py-1.5 rounded-r ${moderated ? "opacity-60" : ""} ${canControl && manageMode && selectedKeys.has(rKey) ? "ring-2 ring-[#0b1a33]/40" : ""}`}>
               {/* Agent · date header */}
               <div className="flex items-center gap-1.5 text-[11px] text-gray-400 mb-0.5 flex-wrap">
+                {canControl && manageMode && (
+                  <input type="checkbox" className="h-3.5 w-3.5 flex-none accent-[#0b1a33]" checked={selectedKeys.has(rKey)} onChange={() => toggleSelect(rKey)} />
+                )}
                 {e.agentName && (
                   <span className="font-semibold text-gray-600 dark:text-slate-300">{e.agentName}</span>
                 )}
@@ -407,7 +449,7 @@ export default function ConversationStreamCard({
                     <span className="text-[9px] font-bold px-1 py-0.5 rounded bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">{modBadge}</span>
                   )}
                   <span className="text-[10px]">{icon}</span>
-                  {canControl && (
+                  {canControl && !manageMode && (
                     <RemarkControlMenu leadId={leadId} remarkKey={rKey} control={ctrl} agents={agents} />
                   )}
                 </span>

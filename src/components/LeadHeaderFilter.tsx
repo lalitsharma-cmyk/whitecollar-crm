@@ -16,13 +16,15 @@ const clearBtn = "text-[11px] text-gray-500 dark:text-slate-400 hover:text-gray-
  * Popover is fixed-positioned so the table's overflow never clips it.
  */
 export default function LeadHeaderFilter({
-  kind, paramKey, label, options = [], searchParamsStr,
+  kind, paramKey, label, options = [], searchParamsStr, showLabel = false,
 }: {
   kind: FilterKind;
   paramKey?: string;
   label: string;
   options?: Opt[];
   searchParamsStr: string;
+  /** Render a labeled chip ("Project ⏷") instead of just the small icon — for the card-view toolbar. */
+  showLabel?: boolean;
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -57,9 +59,12 @@ export default function LeadHeaderFilter({
         type="button"
         onClick={openAt}
         title={`Filter ${label}`}
-        className={`ml-0.5 leading-none text-[11px] ${active ? "text-blue-500" : "text-gray-300 hover:text-gray-500 dark:text-slate-500"}`}
+        className={showLabel
+          ? `inline-flex items-center gap-1 text-[11px] font-medium px-2.5 py-1.5 rounded-full border whitespace-nowrap transition-colors ${active ? "border-blue-400 text-blue-600 bg-blue-50 dark:bg-blue-900/20 dark:border-blue-500" : "border-gray-200 dark:border-slate-600 text-gray-600 dark:text-slate-300 hover:border-gray-400"}`
+          : `ml-0.5 leading-none text-[11px] ${active ? "text-blue-500" : "text-gray-300 hover:text-gray-500 dark:text-slate-500"}`
+        }
       >
-        {active ? "●" : "⏷"}
+        {showLabel ? <span>{label} {active ? "●" : "⏷"}</span> : (active ? "●" : "⏷")}
       </button>
       {open && (
         <>
