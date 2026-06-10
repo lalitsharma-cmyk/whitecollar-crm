@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Inter, Playfair_Display } from "next/font/google";
 import "./globals.css";
 import PWARegister from "@/components/PWARegister";
+import WhatsAppDeepLink from "@/components/WhatsAppDeepLink";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 // Serif display face for the "luxury real estate" voice — used ONLY on the login
@@ -65,6 +66,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
       </head>
       <body className="min-h-full">
         {children}
+        <WhatsAppDeepLink />
         <PWARegister />
       </body>
     </html>
