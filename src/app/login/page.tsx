@@ -52,22 +52,28 @@ export default async function LoginPage({ searchParams }: { searchParams?: Promi
             boxShadow: "0 30px 80px -25px rgba(0,0,0,0.75)",
           }}
         >
-          {/* Logo — larger (impact) and HARD-CAPPED inline so it can never overflow.
-              Sits on a soft light halo so its white collar/shirt + "WHITE" text keep
-              contrast and don't blend into the white card. The logo already carries
-              "White Collar Realty", so the company name is NOT repeated below it. */}
+          {/* Logo — the brand mark is a DUOTONE (near-black icon + "COLLAR REALTY",
+              with a WHITE-filled "WHITE"). On a white card the white "WHITE" vanishes;
+              on a dark card the black "COLLAR REALTY" vanishes. A mid-tone slate
+              plaque (with a gold hairline + embossed depth) is the only background
+              that keeps BOTH the black and the white parts ≥4:1 contrast, so the full
+              "WHITE COLLAR REALTY" reads clearly. Logo is enlarged ~25% and inline-
+              capped so it can never overflow. The logo carries the name, so it is NOT
+              repeated below. */}
           <div
             style={{
               display: "flex", justifyContent: "center", alignItems: "center",
-              padding: "8px 0 4px", borderRadius: "14px",
-              background: "radial-gradient(130% 135% at 50% 46%, #e9edf3 0%, rgba(233,237,243,0) 70%)",
+              padding: "20px 16px", borderRadius: "16px",
+              background: "linear-gradient(140deg, #888f99 0%, #646b76 100%)",
+              border: "1px solid rgba(201,162,75,0.45)",
+              boxShadow: "inset 0 1px 0 rgba(255,255,255,0.20), 0 12px 26px -14px rgba(0,0,0,0.55)",
             }}
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src="/brand/wcr-logo.png"
               alt="White Collar Realty"
-              style={{ display: "block", height: "auto", maxHeight: "112px", maxWidth: "86%", objectFit: "contain" }}
+              style={{ display: "block", height: "auto", maxHeight: "140px", maxWidth: "90%", objectFit: "contain" }}
             />
           </div>
 
