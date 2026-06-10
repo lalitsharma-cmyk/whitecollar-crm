@@ -107,6 +107,20 @@ export default function HRShell({ children, user, overdueCount = 0 }: Props) {
           {navItems.map(item => navItem(item, collapsed))}
         </nav>
 
+        {/* Sign out */}
+        <div className={`border-t border-white/10 ${collapsed ? "px-1 py-2" : "px-3 py-2"}`}>
+          <form action="/api/logout" method="post">
+            <button
+              type="submit"
+              title="Sign out"
+              className={`flex items-center gap-3 w-full px-3 py-2 rounded-lg text-sm font-medium text-slate-300 hover:bg-white/10 hover:text-white transition-colors ${collapsed ? "justify-center px-2" : ""}`}
+            >
+              <LogOut className="w-4 h-4 shrink-0" strokeWidth={2} />
+              {!collapsed && <span>Sign out</span>}
+            </button>
+          </form>
+        </div>
+
         {/* User + collapse toggle */}
         <div className={`border-t border-white/10 p-3 ${collapsed ? "flex justify-center" : "flex items-center justify-between"}`}>
           {!collapsed && (
@@ -155,6 +169,18 @@ export default function HRShell({ children, user, overdueCount = 0 }: Props) {
               <nav className="flex-1 py-3 px-3 space-y-0.5 overflow-y-auto">
                 {navItems.map(item => navItem(item, false))}
               </nav>
+              {/* Sign out */}
+              <div className="border-t border-white/10 p-3">
+                <form action="/api/logout" method="post">
+                  <button
+                    type="submit"
+                    className="flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-sm font-medium text-slate-300 hover:bg-white/10 hover:text-white transition-colors"
+                  >
+                    <LogOut className="w-4 h-4 shrink-0" strokeWidth={2} />
+                    <span>Sign out</span>
+                  </button>
+                </form>
+              </div>
             </div>
           </div>
         )}

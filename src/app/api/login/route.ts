@@ -4,6 +4,14 @@ import { isRateLimited, clearRateLimit } from "@/lib/rateLimit";
 import { audit, reqMeta } from "@/lib/audit";
 import { autoMarkAttendanceOnLogin } from "@/lib/attendance";
 
+// Where a user lands right after a successful login. HR-only users (e.g. Nisha)
+// go straight to the HR workspace; everyone else to the main CRM dashboard, which
+// itself routes by role. (The (app)/(hr) layouts also enforce this, so this is
+// just a cleaner first hop.)
+function landingPathFor(user: { hrOnly?: boolean | null }): string {
+  return user.hrOnly ? "/hr" : "/dashboard";
+}
+
 export async function POST(req: NextRequest) {
   let email = "", password = "";
   const ct = req.headers.get("content-type") ?? "";
@@ -52,6 +60,7 @@ export async function POST(req: NextRequest) {
   // Idempotent: no-op if already marked today (admin overrides preserved).
   autoMarkAttendanceOnLogin(r.user.id).catch(() => {});
 
-  if (ct.includes("application/json")) return NextResponse.json({ ok: true });
-  return NextResponse.redirect(new URL("/dashboard", req.url), { status: 303 });
+  const landing = landingPathFor(r.user);
+  if (ct.includes("application/json")) return NextResponse.json({ ok: true, redirect: landing });
+  return NextResponse.redirect(new URL(landing, req.url), { status: 303 });
 }

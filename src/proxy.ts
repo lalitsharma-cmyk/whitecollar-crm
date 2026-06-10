@@ -12,6 +12,10 @@ const PUBLIC_PATHS = [
   "/brand/",
 ];
 
+// Never let the browser cache a private page — this is what stops "press Back
+// after logout and the old dashboard reappears" (back/forward cache replay).
+const NO_STORE = "no-store, max-age=0, must-revalidate";
+
 export async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
   if (PUBLIC_PATHS.some((p) => pathname.startsWith(p))) return NextResponse.next();
@@ -25,9 +29,15 @@ export async function proxy(req: NextRequest) {
     const url = req.nextUrl.clone();
     url.pathname = "/login";
     if (pathname !== "/") url.searchParams.set("from", pathname);
-    return NextResponse.redirect(url);
+    const res = NextResponse.redirect(url);
+    res.headers.set("Cache-Control", NO_STORE);
+    return res;
   }
-  return NextResponse.next();
+  // Authenticated private route → continue, but mark it no-store so a logged-out
+  // user can never see it again from cache.
+  const res = NextResponse.next();
+  res.headers.set("Cache-Control", NO_STORE);
+  return res;
 }
 
 export const config = {
