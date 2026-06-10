@@ -116,18 +116,6 @@ html, body { background: var(--bg-app); color: var(--text-base); font-family: va
 [data-theme="dark"] input::placeholder,
 [data-theme="dark"] textarea::placeholder { color: var(--text-muted); }
 
-/* ─── Login screen — always the LIGHT brand treatment ───────────────────────
-   The login page is pre-auth and may be seen by a returning user whose saved
-   theme is "dark" (set on <html> before paint). The global dark input rules
-   above would otherwise darken the ivory login card's fields. These higher-
-   specificity rules pin the login form to the brand-light look regardless. */
-.login-screen input {
-  background-color: #ffffff !important;
-  color: #0b1a33 !important;
-  border-color: #e3ddcf !important;
-}
-.login-screen input::placeholder { color: #9ca3af !important; }
-
 /* ─── Display serif — the "luxury real estate" heading voice. Applied ONLY on the
    login + dashboard hero via .font-display; body text stays Inter for clarity. ─── */
 .font-display {
