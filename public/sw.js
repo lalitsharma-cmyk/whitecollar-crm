@@ -7,7 +7,7 @@
 // Bump this version when shipping a UI fix that PWA users might otherwise
 // miss because their old SW kept serving the stale shell. The activate
 // handler below already deletes every old `wcr-shell-*` cache on swap.
-const CACHE = "wcr-shell-v4";
+const CACHE = "wcr-shell-v5";
 const SHELL = ["/login", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", (event) => {
@@ -33,6 +33,20 @@ self.addEventListener("fetch", (event) => {
   const url = new URL(req.url);
   if (url.origin !== self.location.origin) return;
 
+  // ── HTML navigations (incl. /login) → ALWAYS NETWORK-FIRST. ──────────────────
+  // A page's HTML references hashed CSS/JS chunks that change on every deploy.
+  // Serving a stale cached page (the old cache-first bug) pointed at purged chunks
+  // → 404 stylesheet → completely unstyled page. So navigations always hit the
+  // network; the cache is only an OFFLINE fallback.
+  const accept = req.headers.get("accept") || "";
+  if (req.mode === "navigate" || accept.includes("text/html")) {
+    event.respondWith(
+      fetch(req).catch(() => caches.match(req).then((r) => r || caches.match("/login")))
+    );
+    return;
+  }
+
+  // ── Data routes → network-first (fresh leads/dashboard). ─────────────────────
   if (url.pathname.startsWith("/api/") || url.pathname.startsWith("/dashboard") || url.pathname.startsWith("/leads") || url.pathname.startsWith("/pipeline") || url.pathname.startsWith("/reports")) {
     event.respondWith(
       fetch(req).catch(() => caches.match(req).then((r) => r ?? new Response("Offline", { status: 503 })))
@@ -40,11 +54,14 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
+  // ── Static, immutable assets only (icons / manifest) → cache-first. ──────────
+  // NOTE: hashed /_next chunks are immutable and handled by the browser's HTTP
+  // cache; we never cache HTML here anymore.
   event.respondWith(
     caches.match(req).then((cached) => {
       if (cached) return cached;
       return fetch(req).then((res) => {
-        if (res.ok && (url.pathname.endsWith(".png") || url.pathname.endsWith(".svg") || url.pathname.endsWith(".webmanifest") || url.pathname === "/login")) {
+        if (res.ok && (url.pathname.endsWith(".png") || url.pathname.endsWith(".svg") || url.pathname.endsWith(".webmanifest"))) {
           const copy = res.clone();
           caches.open(CACHE).then((c) => c.put(req, copy));
         }
