@@ -678,6 +678,9 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
         canReassign={canBulk}
         canSetStatus={me.role === "ADMIN" || me.role === "MANAGER"}
         canDelete={me.isSuperAdmin === true}
+        projectOptions={allProjects.map((p) => p.name)}
+        statusOptions={cstatusCounts.map((c) => c.label)}
+        meRole={me.role}
         showSource={me.role !== "AGENT"}
         view={viewMode}
         searchParamsStr={new URLSearchParams(Object.entries(sp).filter(([,v]) => v != null && v !== "").map(([k,v]) => [k, String(v!)])).toString()}

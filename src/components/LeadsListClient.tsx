@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Phone, MessageCircle, Tag, RefreshCw, XCircle, X, ExternalLink, Pencil, Calendar, Mail, Trash2 } from "lucide-react";
 import { REJECT_REASONS as REJECT_REASON_LIST } from "@/lib/reject-reasons";
+import LeadHeaderFilter from "@/components/LeadHeaderFilter";
 
 /** Official WhatsApp logo mark (brand colour applied via parent bg) */
 function WaIcon() {
@@ -15,7 +16,7 @@ function WaIcon() {
 }
 import { telLink, whatsappLink } from "@/lib/phone";
 import CopyPhoneButton from "./CopyPhoneButton";
-import { statusColor, EXCEL_STATUSES, statusesForTeam } from "@/lib/lead-statuses";
+import { statusColor, EXCEL_STATUSES, selectableStatuses } from "@/lib/lead-statuses";
 
 // Preset tag vocab — mirrors what Lalit asked the team to standardise on
 // across the pipeline. Kept here (not server-fetched) so the popover renders
@@ -119,7 +120,7 @@ interface Row {
   notPickedCount: number;
 }
 
-export default function LeadsListClient({ leads, canBulk, canReassign = false, canSetStatus = false, canDelete = false, agents, showSource = true, view = "cards", searchParamsStr = "" }: { leads: Row[]; canBulk: boolean; canReassign?: boolean; canSetStatus?: boolean; canDelete?: boolean; agents: { id: string; name: string; team: string | null }[]; showSource?: boolean; view?: "cards" | "table"; searchParamsStr?: string; }) {
+export default function LeadsListClient({ leads, canBulk, canReassign = false, canSetStatus = false, canDelete = false, agents, projectOptions = [], statusOptions = [], meRole = "AGENT", showSource = true, view = "cards", searchParamsStr = "" }: { leads: Row[]; canBulk: boolean; canReassign?: boolean; canSetStatus?: boolean; canDelete?: boolean; agents: { id: string; name: string; team: string | null }[]; projectOptions?: string[]; statusOptions?: string[]; meRole?: string; showSource?: boolean; view?: "cards" | "table"; searchParamsStr?: string; }) {
   // showSource = false → hide the source column + chip from agents.
   // Lalit's policy: agents shouldn't see where each lead came from (avoids them
   // cherry-picking high-converting sources or gaming the round-robin pool).
@@ -411,6 +412,10 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
               const sortThCls = `${thCls} cursor-pointer hover:bg-gray-100 dark:hover:bg-slate-700/60 select-none`;
               // Total visible columns count (for colSpan on empty row)
               const colCount = 9 + (showSource ? 1 : 0);
+              // Excel-style header-filter option lists.
+              const agentFilterOpts = [{ value: "unassigned", label: "⚠ Unassigned" }, ...agents.map(a => ({ value: a.id, label: a.name }))];
+              const projFilterOpts = projectOptions.map(p => ({ value: p, label: p }));
+              const statusFilterOpts = statusOptions.map(s => ({ value: s, label: s }));
               // Spec §6: Name·Status·Budget·Follow-Up·Assigned·Source(admin)·LastActivity·Actions
               // §1 Assigned=display-only · §4 C/NC removed · §5 Actions always visible
               return (
@@ -425,21 +430,39 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
                     {/* assigned */}<col style={{ width: 100 }} />
                     {showSource && <col style={{ width: 75 }} />}
                     {/* activity */}<col style={{ width: 120 }} />
-                    {/* actions  */}<col style={{ width: 108 }} />
+                    {/* actions  */}<col style={{ width: 150 }} />
                   </colgroup>
                   <thead>
                     <tr className="border-b border-gray-200 dark:border-slate-700">
                       <th className={thCls}>
                         {canBulk && <input type="checkbox" checked={allChecked} onChange={toggleAll} />}
                       </th>
-                      <th className={sortThCls} onClick={() => router.push(sortHref("name"))}>Name <SortIcon k="name" /></th>
-                      <th className={thCls}>Project</th>
-                      <th className={sortThCls} onClick={() => router.push(sortHref("status"))}>Status <SortIcon k="status" /></th>
-                      <th className={sortThCls} onClick={() => router.push(sortHref("budget"))}>Budget <SortIcon k="budget" /></th>
-                      <th className={sortThCls} onClick={() => router.push(sortHref("followup"))}>Follow-Up <SortIcon k="followup" /></th>
-                      <th className={thCls}>Assigned</th>
+                      <th className={sortThCls}>
+                        <span onClick={() => router.push(sortHref("name"))}>Name <SortIcon k="name" /></span>
+                        <LeadHeaderFilter kind="search" paramKey="q" label="Name / phone / email" searchParamsStr={searchParamsStr} />
+                      </th>
+                      <th className={thCls}>
+                        Project <LeadHeaderFilter kind="multi" paramKey="project" label="Project" options={projFilterOpts} searchParamsStr={searchParamsStr} />
+                      </th>
+                      <th className={sortThCls}>
+                        <span onClick={() => router.push(sortHref("status"))}>Status <SortIcon k="status" /></span>
+                        <LeadHeaderFilter kind="multi" paramKey="cstatus" label="Status" options={statusFilterOpts} searchParamsStr={searchParamsStr} />
+                      </th>
+                      <th className={sortThCls}>
+                        <span onClick={() => router.push(sortHref("budget"))}>Budget <SortIcon k="budget" /></span>
+                        <LeadHeaderFilter kind="budget" label="Budget" searchParamsStr={searchParamsStr} />
+                      </th>
+                      <th className={sortThCls}>
+                        <span onClick={() => router.push(sortHref("followup"))}>Follow-Up <SortIcon k="followup" /></span>
+                        <LeadHeaderFilter kind="followup" label="Follow-up" searchParamsStr={searchParamsStr} />
+                      </th>
+                      <th className={thCls}>
+                        Assigned {showSource && <LeadHeaderFilter kind="multi" paramKey="owner" label="Assigned to" options={agentFilterOpts} searchParamsStr={searchParamsStr} />}
+                      </th>
                       {showSource && <th className={thCls}>Source</th>}
-                      <th className={thCls}>Last Activity</th>
+                      <th className={thCls}>
+                        Last Activity <LeadHeaderFilter kind="activity" label="Last Activity" searchParamsStr={searchParamsStr} />
+                      </th>
                       <th className={thCls}>Actions</th>
                     </tr>
                   </thead>
@@ -494,7 +517,7 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
                                     {l.team} statuses
                                   </div>
                                 )}
-                                {statusesForTeam(l.team).map(s => (
+                                {selectableStatuses(l.team, meRole, l.currentStatus).map(s => (
                                   <button key={s} type="button"
                                     onClick={() => quickSetStatus(l.id, s)}
                                     className={`w-full text-left px-3 py-1.5 text-xs hover:bg-gray-50 dark:hover:bg-slate-700 flex items-center gap-2 ${l.currentStatus === s ? "font-semibold text-[#0b1a33] dark:text-blue-300" : "text-gray-700 dark:text-slate-200"}`}>
@@ -688,7 +711,7 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
                               {l.team} statuses
                             </div>
                           )}
-                          {statusesForTeam(l.team).map(s => (
+                          {selectableStatuses(l.team, meRole, l.currentStatus).map(s => (
                             <button key={s} type="button"
                               onClick={() => quickSetStatus(l.id, s)}
                               className={`w-full text-left px-3 py-1.5 text-xs hover:bg-gray-50 dark:hover:bg-slate-700 ${l.currentStatus === s ? "font-semibold text-[#0b1a33] dark:text-blue-300" : "text-gray-700 dark:text-slate-200"}`}>
@@ -892,7 +915,7 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
                               {l.team} statuses
                             </div>
                           )}
-                          {statusesForTeam(l.team).map(s => (
+                          {selectableStatuses(l.team, meRole, l.currentStatus).map(s => (
                             <button key={s} type="button"
                               onClick={() => quickSetStatus(l.id, s)}
                               className={`w-full text-left px-3 py-1.5 text-xs hover:bg-gray-50 dark:hover:bg-slate-700 ${l.currentStatus === s ? "font-semibold text-[#0b1a33] dark:text-blue-300" : "text-gray-700 dark:text-slate-200"}`}>
