@@ -63,10 +63,10 @@ export default function HRShell({ children, user, overdueCount = 0 }: Props) {
         key={item.href}
         href={item.href}
         onClick={() => setMobileOpen(false)}
-        className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors relative
+        className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors relative border-l-2
           ${active
-            ? "bg-white/15 text-white"
-            : "text-slate-300 hover:bg-white/10 hover:text-white"
+            ? "bg-[#c9a24b]/15 text-white border-[#c9a24b]"
+            : "text-slate-300 hover:bg-white/10 hover:text-white border-transparent"
           }
           ${compact ? "justify-center px-2" : ""}
         `}
@@ -89,7 +89,7 @@ export default function HRShell({ children, user, overdueCount = 0 }: Props) {
       {/* ── Desktop sidebar ── */}
       <aside className={`hidden lg:flex flex-col shrink-0 transition-[width] duration-200 overflow-hidden
         ${collapsed ? "w-14" : "w-60"}
-        bg-[#1a2e4a] text-white`}>
+        bg-[#0b1a33] text-white`}>
         {/* Logo */}
         <div className={`flex items-center border-b border-white/10 ${collapsed ? "justify-center py-4 px-1" : "px-4 py-4"}`}>
           {collapsed ? (
@@ -144,7 +144,7 @@ export default function HRShell({ children, user, overdueCount = 0 }: Props) {
       {/* ── Mobile: header + drawer ── */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* Mobile header */}
-        <header className="lg:hidden flex items-center justify-between px-4 py-3 bg-[#1a2e4a] text-white shrink-0">
+        <header className="lg:hidden flex items-center justify-between px-4 py-3 bg-[#0b1a33] text-white shrink-0">
           <button onClick={() => setMobileOpen(true)} className="p-1 rounded hover:bg-white/10">
             <Menu className="w-5 h-5" />
           </button>
@@ -156,7 +156,7 @@ export default function HRShell({ children, user, overdueCount = 0 }: Props) {
         {mobileOpen && (
           <div className="fixed inset-0 z-50 lg:hidden">
             <div className="absolute inset-0 bg-black/50" onClick={() => setMobileOpen(false)} />
-            <div className="absolute left-0 top-0 bottom-0 w-64 bg-[#1a2e4a] flex flex-col">
+            <div className="absolute left-0 top-0 bottom-0 w-64 bg-[#0b1a33] flex flex-col">
               <div className="flex items-center justify-between px-4 py-4 border-b border-white/10">
                 <div>
                   <div className="text-sm font-bold text-white">HR Recruitment</div>
