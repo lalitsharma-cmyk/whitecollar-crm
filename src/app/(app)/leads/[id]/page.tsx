@@ -10,6 +10,7 @@ import LeadProjectsClient from "@/components/LeadProjectsClient";
 import LeadInterestNotesClient from "@/components/LeadInterestNotesClient";
 import LeadMeetingClient from "@/components/LeadMeetingClient";
 import LinkedInField from "@/components/LinkedInField";
+import DeletedLeadBanner from "@/components/DeletedLeadBanner";
 import SiteVisitTracker from "@/components/SiteVisitTracker";
 import SiteVisitChecklist from "@/components/SiteVisitChecklist";
 // EOIWorkflowCard removed by Lalit (Round 3) — "Remove EOI for now".
@@ -151,6 +152,12 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
   // returns HTTP 200 — confusing for auditors. Redirect is cleaner UX too:
   // agent lands back on their own list rather than a dead end.
   if (!(await canTouchLead(me, lead))) redirect("/leads");
+
+  // Soft-deleted leads live in the Super-Admin recycle bin. Anyone who is NOT the
+  // Super Admin has no business viewing a deleted lead by direct URL → bounce them
+  // back to the active list (it's already hidden from their lists/search). The
+  // Super Admin still opens it, but with a clear "deleted" banner + Restore (below).
+  if (lead.deletedAt && !me.isSuperAdmin) redirect("/leads");
 
   // Investor-history quick counts for the banner (Agent V, Round 6).
   // Match the new lead against the existing pipeline on phone / email /
@@ -595,6 +602,9 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
           globals.css can hide non-matching [data-lead-section] cards on
           phones. Desktop ignores this entirely. */}
       <LeadMobileTabs />
+      {lead.deletedAt && (
+        <DeletedLeadBanner leadId={lead.id} deletedAtISO={lead.deletedAt.toISOString()} canRestore={me.isSuperAdmin} />
+      )}
     <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 pb-24 lg:pb-0">
       {/* Mobile back link removed — MobileShell now renders a global back
           button in the mobile header (chevron-left next to hamburger) so
