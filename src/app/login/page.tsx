@@ -46,26 +46,33 @@ export default async function LoginPage({ searchParams }: { searchParams?: Promi
         {/* card */}
         <div
           style={{
-            background: "rgba(255,253,247,0.97)",
-            backdropFilter: "blur(12px)", WebkitBackdropFilter: "blur(12px)",
+            background: "#ffffff",
             borderRadius: "0 0 16px 16px",
-            padding: "30px 26px",
+            padding: "30px 26px 32px",
             boxShadow: "0 30px 80px -25px rgba(0,0,0,0.75)",
           }}
         >
-          {/* Logo — HARD-CAPPED inline so it can never overflow the card */}
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src="/brand/wcr-logo.png"
-            alt="White Collar Realty"
-            style={{ display: "block", height: "auto", maxHeight: "84px", maxWidth: "74%", margin: "0 auto", objectFit: "contain" }}
-          />
+          {/* Logo — larger (impact) and HARD-CAPPED inline so it can never overflow.
+              Sits on a soft light halo so its white collar/shirt + "WHITE" text keep
+              contrast and don't blend into the white card. The logo already carries
+              "White Collar Realty", so the company name is NOT repeated below it. */}
+          <div
+            style={{
+              display: "flex", justifyContent: "center", alignItems: "center",
+              padding: "8px 0 4px", borderRadius: "14px",
+              background: "radial-gradient(130% 135% at 50% 46%, #e9edf3 0%, rgba(233,237,243,0) 70%)",
+            }}
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/brand/wcr-logo.png"
+              alt="White Collar Realty"
+              style={{ display: "block", height: "auto", maxHeight: "112px", maxWidth: "86%", objectFit: "contain" }}
+            />
+          </div>
 
-          <div style={{ textAlign: "center", marginTop: "8px" }}>
-            <div style={{ fontFamily: "var(--font-serif), Georgia, serif", fontSize: "19px", fontWeight: 700, color: "#0b1a33", letterSpacing: "-0.01em" }}>
-              White Collar Realty
-            </div>
-            <div style={{ fontSize: "10px", letterSpacing: "0.32em", textTransform: "uppercase", color: "#9a7b2e", marginTop: "4px" }}>
+          <div style={{ textAlign: "center", marginTop: "10px" }}>
+            <div style={{ fontSize: "10px", letterSpacing: "0.34em", textTransform: "uppercase", color: "#9a7b2e" }}>
               Client Management System
             </div>
           </div>
@@ -79,11 +86,11 @@ export default async function LoginPage({ searchParams }: { searchParams?: Promi
           <form action="/api/login" method="post" style={{ marginTop: "22px", display: "flex", flexDirection: "column", gap: "14px" }}>
             <div>
               <div style={label}>Email</div>
-              <input name="email" type="email" required autoComplete="email" placeholder="you@whitecollarrealty.com" style={input} />
+              <input name="email" type="email" required autoComplete="email" placeholder="Enter your email" style={input} />
             </div>
             <div>
               <div style={label}>Password</div>
-              <input name="password" type="password" required autoComplete="current-password" placeholder="••••••••" style={input} />
+              <input name="password" type="password" required autoComplete="current-password" placeholder="Enter your password" style={input} />
             </div>
             <button
               type="submit"
