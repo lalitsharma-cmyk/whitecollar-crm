@@ -72,25 +72,56 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     if (batch.status !== "DELETED") {
       return NextResponse.json({ error: "This import is not deleted." }, { status: 400 });
     }
-    // Restore exactly the leads this batch had soft-deleted. Lead.deletedAt is
-    // only ever set by this rollback feature, so this is a precise inverse.
-    const res = await prisma.lead.updateMany({
+    // Restore the leads this batch had soft-deleted. Fingerprint is unique among
+    // ACTIVE leads only, so if the same contact was re-imported AFTER this batch
+    // was rolled back, restoring the old copy would collide with the live one.
+    // Restore only the leads whose fingerprint is still free; skip + report the
+    // rest instead of throwing a raw unique-constraint error.
+    const toRestore = await prisma.lead.findMany({
       where: { importBatchId: id, deletedAt: { not: null } },
+      select: { id: true, fingerprint: true },
+    });
+    const wantedFps = toRestore.map(l => l.fingerprint).filter((x): x is string => !!x);
+    const takenFps = new Set(
+      (wantedFps.length
+        ? await prisma.lead.findMany({
+            where: { deletedAt: null, fingerprint: { in: wantedFps } },
+            select: { fingerprint: true },
+          })
+        : []
+      ).map(l => l.fingerprint!),
+    );
+    const restorableIds = toRestore
+      .filter(l => !l.fingerprint || !takenFps.has(l.fingerprint))
+      .map(l => l.id);
+    const blocked = toRestore.length - restorableIds.length;
+    const res = await prisma.lead.updateMany({
+      where: { id: { in: restorableIds } },
       data: { deletedAt: null, deletedById: null },
     });
+    // Only flip the batch back to ACTIVE when everything was restored. If some
+    // leads were blocked by an active duplicate, leave the batch flagged so the
+    // admin knows there's a conflict to resolve (merge).
     await prisma.importBatch.update({
       where: { id },
-      data: { status: "ACTIVE", deletedAt: null, deletedById: null, deleteReason: null },
+      data: blocked === 0
+        ? { status: "ACTIVE", deletedAt: null, deletedById: null, deleteReason: null }
+        : { deleteReason: `Partially restored — ${blocked} lead(s) skipped because an active duplicate already exists.` },
     });
     await audit({
       userId: me.id,
       action: "import.restore",
       entity: "ImportBatch",
       entityId: id,
-      meta: { fileName: batch.fileName, leadsRestored: res.count },
+      meta: { fileName: batch.fileName, leadsRestored: res.count, blocked },
       request: reqMeta(req),
     }).catch(() => {});
-    return NextResponse.json({ ok: true, leadsRestored: res.count });
+    return NextResponse.json({
+      ok: true,
+      leadsRestored: res.count,
+      blocked,
+      ...(blocked ? { warning: `${blocked} lead(s) were not restored because an active lead with the same phone/email already exists.` } : {}),
+    });
   }
 
   if (action === "purge") {
