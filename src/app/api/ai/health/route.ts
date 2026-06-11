@@ -33,11 +33,35 @@ export async function GET(req: Request) {
     });
   }
 
-  // ?list=1 → which models does THIS key support for generateContent? Used to
-  // pick a currently-available model when a default goes stale (Google retires
-  // model ids over time, e.g. gemini-1.5-flash → 404).
+  // ?list=1 → which models does THIS key support for generateContent?
   if (new URL(req.url).searchParams.get("list") === "1" && provider === "gemini") {
     return listGeminiModels();
+  }
+
+  // ?testCopilot=1 → force a direct Claude API test using ANTHROPIC_API_KEY
+  if (new URL(req.url).searchParams.get("testCopilot") === "1") {
+    const key = (process.env.ANTHROPIC_API_KEY ?? "").trim();
+    const r = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "x-api-key": key,
+        "anthropic-version": "2023-06-01",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "claude-haiku-4-5-20251001",
+        max_tokens: 10,
+        messages: [{ role: "user", content: "Reply ok" }],
+      }),
+    });
+    const body = await r.text();
+    return NextResponse.json({
+      httpStatus: r.status,
+      ok: r.ok,
+      keyPreview: copilotKeyPreview,
+      keyLength: key.length,
+      body: body.slice(0, 400),
+    });
   }
 
   if (provider === "gemini") {
