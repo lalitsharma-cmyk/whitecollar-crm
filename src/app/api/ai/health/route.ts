@@ -20,7 +20,9 @@ export async function GET(req: Request) {
   }
 
   const provider = aiProvider();
-  const copilotKeySet = !!process.env.ANTHROPIC_API_KEY?.trim();
+  const rawKey = process.env.ANTHROPIC_API_KEY ?? "";
+  const copilotKeySet = !!rawKey.trim();
+  const copilotKeyPreview = rawKey.length > 0 ? rawKey.slice(0, 12) + "..." + rawKey.slice(-4) : "(not set)";
   if (!provider) {
     return NextResponse.json({
       ok: false,
@@ -41,7 +43,7 @@ export async function GET(req: Request) {
   if (provider === "gemini") {
     const res = await testGemini();
     const body = await res.json();
-    return NextResponse.json({ ...body, copilotKeySet });
+    return NextResponse.json({ ...body, copilotKeySet, copilotKeyPreview });
   }
   if (provider === "anthropic") return testAnthropic();
   return NextResponse.json({ ok: false, provider, reason: "Unknown provider" });
