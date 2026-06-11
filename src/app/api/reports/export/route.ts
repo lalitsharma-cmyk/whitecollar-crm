@@ -42,6 +42,38 @@ function istIso(d: Date | null | undefined): string {
   return shifted.toISOString().replace(/Z$/, "+05:30");
 }
 
+// ── Master Data export — full DB, category-scoped (admin only) ──────────────
+// Mirrors src/app/(app)/master-data/page.tsx so the CSV == the on-screen view,
+// INCLUDING deleted/archived categories (the normal export forces deletedAt:null).
+const MASTER_WORKABLE_OR: Prisma.LeadWhereInput[] = [
+  { currentStatus: null }, { currentStatus: "" }, { currentStatus: { notIn: TERMINAL_STATUSES } },
+];
+function masterCatWhere(cat: string): Prisma.LeadWhereInput {
+  switch (cat) {
+    case "workable": return { deletedAt: null, OR: MASTER_WORKABLE_OR };
+    case "closed":   return { deletedAt: null, currentStatus: { in: CLOSED_OUTCOME_STATUSES } };
+    case "lost":     return { deletedAt: null, currentStatus: { in: LOST_STATUSES } };
+    case "deleted":  return { deletedAt: { not: null }, OR: [{ importBatchId: null }, { importBatch: { is: { status: { not: "DELETED" } } } }] };
+    case "archived": return { deletedAt: { not: null }, importBatch: { is: { status: "DELETED" } } };
+    default:         return {};
+  }
+}
+function masterDataWhere(sp: Record<string, string | undefined>): Prisma.LeadWhereInput {
+  const cold: Prisma.LeadWhereInput = sp.cold === "only" ? { isColdCall: true } : sp.cold === "all" ? {} : { isColdCall: false };
+  const and: Prisma.LeadWhereInput[] = [masterCatWhere(sp.cat ?? "all")];
+  if (sp.team === "India" || sp.team === "Dubai") and.push({ forwardedTeam: sp.team });
+  if (sp.owner === "unassigned") and.push({ ownerId: null });
+  else if (sp.owner) and.push({ ownerId: sp.owner });
+  if (sp.source) and.push({ source: sp.source as LeadSource });
+  if (sp.q) and.push({ OR: [
+    { name: { contains: sp.q, mode: "insensitive" } },
+    { phone: { contains: sp.q } },
+    { email: { contains: sp.q, mode: "insensitive" } },
+    { company: { contains: sp.q, mode: "insensitive" } },
+  ] });
+  return { ...cold, AND: and };
+}
+
 export async function GET(req: NextRequest) {
   const me = await requireRole("ADMIN");
   const url = new URL(req.url);
@@ -201,8 +233,11 @@ export async function GET(req: NextRequest) {
     // the default-to-today behaviour kicks in).
     appliedFilters._effectiveFollowup = effectiveFollowup;
 
+    // Master Data export (admin) bypasses the workable/seg/followup defaults and
+    // exports exactly the requested category — including deleted/archived.
+    const effectiveWhere = sp.master === "1" ? masterDataWhere(sp) : where;
     const leads = await prisma.lead.findMany({
-      where,
+      where: effectiveWhere,
       include: { owner: true },
       orderBy: { createdAt: "desc" },
     });
