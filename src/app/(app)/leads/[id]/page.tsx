@@ -44,6 +44,8 @@ import LinkedContactsCard from "@/components/LinkedContactsCard";
 import InvestorBanner from "@/components/InvestorBanner";
 import StageDurationBadge from "@/components/StageDurationBadge";
 import SchedulingField from "@/components/SchedulingField";
+import AiInsightsPanel from "@/components/AiInsightsPanel";
+import { getLatestAnalysis, openAiEnabled, isAiPilotLead } from "@/lib/ai-openai";
 
 export const dynamic = "force-dynamic";
 
@@ -249,6 +251,22 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
   // lives at the bottom of the RIGHT column (moved from header per Lalit's
   // ask: "Move this [Expo / Dubai site visit] button down.").
   const travelRatePerKmInr = await getTravelRatePerKmInr();
+
+  // AI Copilot — load latest analysis if this is a pilot-eligible lead (Lalit's)
+  const showAiPanel = openAiEnabled() && isAiPilotLead(lead.ownerId);
+  const latestAiAnalysis = showAiPanel ? await getLatestAnalysis(lead.id) : null;
+  const aiInitialAnalysis = latestAiAnalysis ? {
+    id: latestAiAnalysis.id,
+    createdAt: latestAiAnalysis.createdAt.toISOString(),
+    model: latestAiAnalysis.model,
+    inputTokens: latestAiAnalysis.inputTokens,
+    outputTokens: latestAiAnalysis.outputTokens,
+    costMicroUsd: latestAiAnalysis.costMicroUsd,
+    ok: latestAiAnalysis.ok,
+    error: latestAiAnalysis.error,
+    result: latestAiAnalysis.ok ? JSON.parse(latestAiAnalysis.resultJson) : null,
+    feedbacks: latestAiAnalysis.feedbacks,
+  } : null;
 
   // WhatsApp click-to-message link — only built when lead.phone is non-empty.
   const waPhone = formatPhoneForWA(lead.phone);
@@ -1078,6 +1096,13 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
         {/* Reassign + Reject moved UP into the "Lead admin" card at the top
             of this right column (just below Qualification). Was here at the
             bottom — too far to scroll. */}
+
+        {/* AI Copilot Insights Panel — pilot scope: Lalit's leads only, OpenAI key required */}
+        {showAiPanel && (
+          <div data-lead-section="ai" className="card p-4">
+            <AiInsightsPanel leadId={lead.id} initialAnalysis={aiInitialAnalysis} />
+          </div>
+        )}
 
         {/* Expo / Dubai-site-visit logger — Lalit's ask: "Move this button down"
             → put it at the absolute bottom of the right column. */}

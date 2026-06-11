@@ -1413,6 +1413,48 @@ model AiUsageLog {
   @@index([feature])
 }
 
+// ── AI COPILOT PILOT — GPT-4.1-mini per-lead analysis (Lalit's leads only) ──
+// AiAnalysis: one row per "Analyze Lead" / "Re-analyze" click.
+// resultJson stores the full structured JSON from GPT (see ai-openai.ts for schema).
+// NEVER modifies CRM fields automatically — output is always suggestion-only.
+model AiAnalysis {
+  id            String   @id @default(cuid())
+  leadId        String
+  triggeredBy   String   @default("manual") // "manual" | "re-analyze"
+  triggeredById String?  // User.id who clicked (no FK — admin removal must not cascade)
+  resultJson    String   @db.Text  // serialised AiAnalysisResult JSON
+  model         String   @default("gpt-4.1-mini")
+  inputTokens   Int      @default(0)
+  outputTokens  Int      @default(0)
+  costMicroUsd  Int      @default(0)
+  ok            Boolean  @default(true)
+  error         String?
+  createdAt     DateTime @default(now())
+
+  feedbacks     AiSuggestionFeedback[]
+
+  @@index([leadId, createdAt])
+}
+
+// One row per Accept/Edit/Reject action on an AI-suggested field value.
+// Builds the "AI Learning Layer" — Lalit's corrections inform prompt improvement.
+model AiSuggestionFeedback {
+  id           String     @id @default(cuid())
+  analysisId   String
+  analysis     AiAnalysis @relation(fields: [analysisId], references: [id], onDelete: Cascade)
+  leadId       String
+  fieldName    String     // "budget" | "authority" | "meetingStatus" | "nextAction" | …
+  aiValue      String     @db.Text  // what GPT suggested
+  action       String     // "ACCEPT" | "EDIT" | "REJECT"
+  editedValue  String?    @db.Text  // if EDIT, the corrected value
+  userId       String?    // who acted
+  createdAt    DateTime   @default(now())
+
+  @@index([analysisId])
+  @@index([leadId])
+  @@index([fieldName, action])
+}
+
 // ── AI EXTRACTION — per-lead structured field extraction ─────────────────
 // Each row is one extraction run (triggered manually or after an activity).
 // resultJson holds a serialised AIExtractionResult so the schema stays stable
