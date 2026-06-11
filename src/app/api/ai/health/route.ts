@@ -20,10 +20,12 @@ export async function GET(req: Request) {
   }
 
   const provider = aiProvider();
+  const copilotKeySet = !!process.env.ANTHROPIC_API_KEY?.trim();
   if (!provider) {
     return NextResponse.json({
       ok: false,
       provider: null,
+      copilotKeySet,
       reason: "No AI key configured. Set GEMINI_API_KEY (free) or ANTHROPIC_API_KEY in Vercel env vars and redeploy.",
       hint: "Vercel Project → Settings → Environment Variables → add GEMINI_API_KEY with value from https://aistudio.google.com → Save → redeploy.",
     });
@@ -36,7 +38,11 @@ export async function GET(req: Request) {
     return listGeminiModels();
   }
 
-  if (provider === "gemini") return testGemini();
+  if (provider === "gemini") {
+    const res = await testGemini();
+    const body = await res.json();
+    return NextResponse.json({ ...body, copilotKeySet });
+  }
   if (provider === "anthropic") return testAnthropic();
   return NextResponse.json({ ok: false, provider, reason: "Unknown provider" });
 }
