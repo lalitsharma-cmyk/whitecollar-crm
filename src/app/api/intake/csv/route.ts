@@ -318,8 +318,10 @@ export async function POST(req: NextRequest) {
         if (phone) {
           const fp = normalizePhone(phone);
           if (fp) {
+            // Preview dedupe count must match the real import: only ACTIVE leads
+            // count as duplicates. Soft-deleted leads are re-created on re-import.
             const existing = await prisma.lead.findFirst({
-              where: { fingerprint: { startsWith: fp } },
+              where: { fingerprint: { startsWith: fp }, deletedAt: null },
               select: { name: true, phone: true, currentStatus: true },
             });
             if (existing) {

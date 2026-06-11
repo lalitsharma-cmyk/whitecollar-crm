@@ -356,8 +356,14 @@ model Lead {
   // OR manager toggles it explicitly. Hides from main /leads list by default.
   isColdCall      Boolean     @default(false)
   coldCallReason  String?
-  // dedupe
-  fingerprint     String?     @unique  // phone||email hash for dedupe
+  // dedupe — fingerprint is phone||email hash. Uniqueness is enforced by a
+  // PARTIAL unique index ("Lead_fingerprint_active_key") that only covers
+  // ACTIVE rows (WHERE "deletedAt" IS NULL), defined in migration
+  // 20260611_fingerprint_unique_active. A soft-deleted lead keeps its
+  // fingerprint (for audit) but does NOT block re-import of the same contact
+  // and does NOT count as a duplicate. The full @unique was intentionally
+  // dropped — do NOT re-add it (it would resurrect the deleted-lead dedupe bug).
+  fingerprint     String?     // phone||email hash; unique among active leads only
   duplicateCount  Int         @default(0)  // times this client has re-contacted us
   lastDuplicateAt DateTime?
 

@@ -109,6 +109,7 @@ export async function findMatchingLeads(input: FindMatchingInput): Promise<Match
              "alreadyBought", "bookingDoneAt", "createdAt"
       FROM "Lead"
       WHERE "phone" IS NOT NULL
+        AND "deletedAt" IS NULL
         AND RIGHT(REGEXP_REPLACE("phone", '\D', '', 'g'), 10) = ${phoneTail}
       ORDER BY "createdAt" DESC
       LIMIT 20
@@ -124,6 +125,7 @@ export async function findMatchingLeads(input: FindMatchingInput): Promise<Match
     const rows = await prisma.lead.findMany({
       where: {
         email: emailLc,
+        deletedAt: null,
         ...(input.excludeLeadId ? { id: { not: input.excludeLeadId } } : {}),
       },
       select: baseSelect,
@@ -143,6 +145,7 @@ export async function findMatchingLeads(input: FindMatchingInput): Promise<Match
       where: {
         name: { equals: nameLc, mode: "insensitive" },
         city: { equals: cityLc, mode: "insensitive" },
+        deletedAt: null,
         ...(input.excludeLeadId ? { id: { not: input.excludeLeadId } } : {}),
       },
       select: baseSelect,

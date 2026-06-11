@@ -64,9 +64,14 @@ export async function ingestLead(input: RawLeadInput) {
   const fp = fingerprintFor(input.phone, input.email);
 
   // ── Duplicate path ──
+  // ONLY active leads dedupe. A soft-deleted lead (admin delete / rolled-back
+  // import) must NOT be treated as a duplicate — re-importing the same file
+  // after a delete has to recreate the records. findFirst + deletedAt:null
+  // (not findUnique) because fingerprint is now unique only among active rows
+  // (partial index Lead_fingerprint_active_key).
   if (fp) {
-    const existing = await prisma.lead.findUnique({
-      where: { fingerprint: fp },
+    const existing = await prisma.lead.findFirst({
+      where: { fingerprint: fp, deletedAt: null },
       include: { owner: true },
     });
     if (existing) {

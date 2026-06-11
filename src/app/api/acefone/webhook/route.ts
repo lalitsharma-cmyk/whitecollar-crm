@@ -61,7 +61,8 @@ async function handle(req: NextRequest) {
   let leadId: string | null = null;
   if (leadPhone) {
     const fp = fingerprintFor(leadPhone, undefined);
-    const existing = fp ? await prisma.lead.findUnique({ where: { fingerprint: fp } }) : null;
+    // Only match ACTIVE leads — a soft-deleted lead must not capture an inbound call.
+    const existing = fp ? await prisma.lead.findFirst({ where: { fingerprint: fp, deletedAt: null } }) : null;
     if (existing) {
       leadId = existing.id;
     } else if (direction === CallDirection.INBOUND && process.env.ACEFONE_AUTO_CREATE_INBOUND === "true") {
