@@ -1,21 +1,22 @@
 import "server-only";
+import Anthropic from "@anthropic-ai/sdk";
 import { prisma } from "@/lib/prisma";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// GPT-4.1-mini AI Copilot for White Collar Realty CRM
+// Claude Sonnet AI Copilot for White Collar Realty CRM
 // Pilot scope: Lalit Sharma's leads ONLY (ownerId === LALIT_ID)
 // NEVER modifies CRM fields. All output is suggestion-only.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const MODEL = "gpt-4.1-mini";
+const MODEL = "claude-sonnet-4-6";
 const LALIT_ID = "cmplo0t6v0000vpxslasvbwuq";
 
-// GPT-4.1-mini pricing (USD per 1M tokens, 2025 list)
-const COST_INPUT_PER_M  = 0.40;
-const COST_OUTPUT_PER_M = 1.60;
+// Claude Sonnet 4.6 pricing (USD per 1M tokens, Anthropic 2026 list)
+const COST_INPUT_PER_M  = 3.00;
+const COST_OUTPUT_PER_M = 15.00;
 
 export function openAiEnabled(): boolean {
-  return !!process.env.OPENAI_API_KEY?.trim();
+  return !!process.env.ANTHROPIC_API_KEY?.trim();
 }
 
 // Guard: only run AI on Lalit's leads
@@ -318,7 +319,7 @@ export async function analyzeLeadWithAI(
   triggeredById: string,
   triggeredBy: "manual" | "re-analyze" = "manual"
 ): Promise<{ analysisId: string; result: Record<string, unknown> }> {
-  if (!openAiEnabled()) throw new Error("OPENAI_API_KEY not configured");
+  if (!openAiEnabled()) throw new Error("ANTHROPIC_API_KEY not configured");
   if (!isAiPilotLead(lead.ownerId as string | undefined)) {
     throw new Error("AI pilot is only available for Lalit Sharma's leads");
   }
@@ -326,45 +327,36 @@ export async function analyzeLeadWithAI(
   const userPrompt = buildLeadPrompt(lead);
   const startMs = Date.now();
 
-  // Call OpenAI REST API directly (no SDK to keep bundle lean)
-  const response = await fetch("https://api.openai.com/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
+  const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
+
+  let msg: Awaited<ReturnType<typeof client.messages.create>>;
+  try {
+    msg = await client.messages.create({
       model: MODEL,
-      messages: [
-        { role: "system", content: SYSTEM_PROMPT },
-        { role: "user", content: userPrompt },
-      ],
-      temperature: 0.1, // low temperature for consistent structured output
       max_tokens: 8000, // full analysis with 18 fields + drafts needs room
-      response_format: { type: "json_object" },
-    }),
-  });
+      temperature: 0.1, // low temperature for consistent structured output
+      system: SYSTEM_PROMPT,
+      messages: [
+        { role: "user", content: userPrompt },
+        { role: "assistant", content: "{" }, // JSON prefill — forces response to start as JSON object
+      ],
+    });
+  } catch (e) {
+    const ms = Date.now() - startMs;
+    await prisma.aiUsageLog.create({
+      data: { provider: "anthropic", model: MODEL, feature: "copilot_analysis", leadId: lead.id, ms, ok: false },
+    }).catch(() => {});
+    throw new Error(`Anthropic API error: ${e instanceof Error ? e.message : String(e)}`);
+  }
 
   const ms = Date.now() - startMs;
 
-  if (!response.ok) {
-    const errText = await response.text();
-    // Log failure
-    await prisma.aiUsageLog.create({
-      data: { provider: "openai", model: MODEL, feature: "copilot_analysis", leadId: lead.id, ms, ok: false },
-    }).catch(() => {});
-    throw new Error(`OpenAI API error ${response.status}: ${errText}`);
-  }
+  // Prepend the prefilled "{" since Anthropic omits it from the response content
+  const rawText = msg.content.map((b) => (b.type === "text" ? b.text : "")).join("");
+  const content = "{" + rawText;
 
-  const data = await response.json() as {
-    choices: Array<{ message: { content: string } }>;
-    usage: { prompt_tokens: number; completion_tokens: number };
-  };
-
-  const content = data.choices[0]?.message?.content ?? "";
-  const usage = data.usage ?? { prompt_tokens: 0, completion_tokens: 0 };
-  const inputTokens = usage.prompt_tokens;
-  const outputTokens = usage.completion_tokens;
+  const inputTokens = msg.usage?.input_tokens ?? 0;
+  const outputTokens = msg.usage?.output_tokens ?? 0;
   const costMicroUsd = Math.round(
     (inputTokens / 1_000_000) * COST_INPUT_PER_M * 1_000_000 +
     (outputTokens / 1_000_000) * COST_OUTPUT_PER_M * 1_000_000
@@ -380,11 +372,11 @@ export async function analyzeLeadWithAI(
     result = JSON.parse(cleaned);
   } catch {
     await prisma.aiUsageLog.create({
-      data: { provider: "openai", model: MODEL, feature: "copilot_analysis", leadId: lead.id, inputTokens, outputTokens, costMicroUsd, ms, ok: false },
+      data: { provider: "anthropic", model: MODEL, feature: "copilot_analysis", leadId: lead.id, inputTokens, outputTokens, costMicroUsd, ms, ok: false },
     }).catch(() => {});
     // Surface first 200 chars so the error message in the UI is informative
     const preview = content.slice(0, 200).replace(/\n/g, " ");
-    throw new Error(`GPT returned invalid JSON. Response preview: ${preview}`);
+    throw new Error(`Claude returned invalid JSON. Response preview: ${preview}`);
   }
 
   // Save analysis + usage in a transaction
@@ -403,7 +395,7 @@ export async function analyzeLeadWithAI(
       },
     }),
     prisma.aiUsageLog.create({
-      data: { provider: "openai", model: MODEL, feature: "copilot_analysis", leadId: lead.id, inputTokens, outputTokens, costMicroUsd, ms, ok: true },
+      data: { provider: "anthropic", model: MODEL, feature: "copilot_analysis", leadId: lead.id, inputTokens, outputTokens, costMicroUsd, ms, ok: true },
     }),
   ]);
 
