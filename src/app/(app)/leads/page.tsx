@@ -55,12 +55,19 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
     where.currentStatus = { in: CLOSED_OUTCOME_STATUSES };
   } else if (filterTab === "lost" || filterTab === "rejected") {
     where.currentStatus = { in: LOST_STATUSES };
-  } else if (filterTab === "nofollowup") {
-    where.followupDate = null;
-    where.currentStatus = { notIn: TERMINAL_STATUSES };
   } else {
-    // all / active → WORKABLE ONLY (default working view, every role)
-    where.currentStatus = { notIn: TERMINAL_STATUSES };
+    if (filterTab === "nofollowup") where.followupDate = null;
+    // all / active / nofollowup → WORKABLE ONLY. SQL `NOT IN` evaluates to NULL
+    // (not true) for rows where currentStatus IS NULL, so a plain notIn would
+    // silently HIDE unclassified leads — which are FRESH and the most important
+    // to chase. OR the null/blank statuses back in. Skipped when an explicit
+    // ?cstatus=/?status= lookup is active (those set where.currentStatus below).
+    if (!sp.cstatus && !sp.status) {
+      where.AND = [
+        ...(Array.isArray(where.AND) ? where.AND : where.AND ? [where.AND] : []),
+        { OR: [{ currentStatus: null }, { currentStatus: "" }, { currentStatus: { notIn: TERMINAL_STATUSES } }] },
+      ];
+    }
   }
 
   // ── Top-level segment selector (admin/manager): My / India / Dubai / All ──
@@ -350,7 +357,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
   // Followup windows for chip counts (scoped to visible leads — agents see
   // their own pipeline, admin sees all). Re-use istWindow() defined above.
   const todayWindow = istWindow(0);
-  const activeScope = { ...scope, currentStatus: { notIn: TERMINAL_STATUSES } };
+  const activeScope = { ...scope, OR: [{ currentStatus: null }, { currentStatus: "" }, { currentStatus: { notIn: TERMINAL_STATUSES } }] };
 
   // ── Smart priority sort pre-query ─────────────────────────────────────────
   // When no explicit ?sort= is provided we sort by urgency rather than created-

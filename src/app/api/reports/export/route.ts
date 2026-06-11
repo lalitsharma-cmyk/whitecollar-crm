@@ -78,7 +78,12 @@ export async function GET(req: NextRequest) {
     } else if (filterTab === "lost" || filterTab === "rejected") {
       where.currentStatus = { in: LOST_STATUSES };
     } else {
-      where.currentStatus = { notIn: TERMINAL_STATUSES };
+      // WORKABLE default — include null/blank-status (fresh) leads. A plain
+      // notIn drops NULLs in SQL, which would hide unclassified leads.
+      where.AND = [
+        ...(Array.isArray(where.AND) ? where.AND : where.AND ? [where.AND] : []),
+        { OR: [{ currentStatus: null }, { currentStatus: "" }, { currentStatus: { notIn: TERMINAL_STATUSES } }] },
+      ];
     }
 
     if (sp.q) {
