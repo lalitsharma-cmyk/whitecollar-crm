@@ -172,6 +172,13 @@ const THIRD_PARTY = new RegExp(
   "i",
 );
 
+// Meaningful client communication → CONNECTED (see classifyText). Deliberately
+// broad: a reply, discussion, meeting update, budget/requirement talk, or
+// "he said he will come / call / visit / update" all count as a real conversation.
+const CONVERSATION_RE = /\b(?:said|says|saying|told|telling|talk(?:ed|ing)?|spoke|speak|speaking|discuss(?:ed|ing|ion)?|explain(?:ed|ing)?|confirm(?:ed|ing)?|agree(?:d|ing)?|ask(?:ed|ing)?|enquir|inquir|interested|budget|requirement|shared?|sharing|replied|reply|replies|respond(?:ed|ing)?|conversation|connected|coming|will\s*(?:come|call|visit|update|revert|confirm|meet|share|get\s*back|do|pay|book|think|decide)|meeting\s*(?:today|tomorrow|done|fixed|on|scheduled|next|happened)|met\s+(?:him|her|client|them|today|yesterday)|wants?|wanted|update[ds]?|whats?\s*app|whatsapp|negotiat|site\s*visit|paid|booked|advance|deal)\b/i;
+// Explicit negations that CANCEL a conversation word ("no further discussion").
+const NO_CONVERSATION_RE = /\bno\s*(?:further\s*)?(?:discussion|conversation|response|reply|talk|update|contact)\b|without\s*(?:conversation|talking|discussion|reply|response)|did(?:n.?t| not)\s*(?:talk|speak|discuss|respond|reply|connect)/i;
+
 export function classifyText(text: string): RemarkEventType {
   const t = text.toLowerCase();
 
@@ -186,7 +193,19 @@ export function classifyText(text: string): RemarkEventType {
     if (OFFICE_DONE.test(t))     return "MEETING";
   }
 
-  if (/not\s*picked|did not pick|didn[''']?t pick|no answer|nai pick|not pick|not\s*connected|not\s*reachable/i.test(t)) return "CALL_NOT_PICKED";
+  // ── Connected-vs-no-answer: ONE shared rule, same for every role ─────────
+  // No-answer applies ONLY when no conversation happened. The moment there is
+  // ANY meaningful client communication — discussion, a reply (incl. WhatsApp),
+  // a meeting update, "he said he will come", budget/requirement talk — it is
+  // CONNECTED, even if the same remark ALSO mentions a missed call
+  // ("not picked, later he replied on WhatsApp" → connected).
+  if (CONVERSATION_RE.test(t) && !NO_CONVERSATION_RE.test(t)) {
+    if (/not\s*interested|do not call|cancel.*query|drop.*query/i.test(t)) return "CALL_NOT_INTERESTED";
+    if (/callback|call back|call later|will call/i.test(t)) return "CALL_CALLBACK";
+    return "CALL_CONNECTED";
+  }
+
+  if (/not\s*picked|did not pick|didn[''']?t pick|no answer|nai pick|not pick|not\s*connected|not\s*reachable|unreachable|no\s*response|not\s*responding|phone\s*(?:not\s*reachable|off|unreachable)|disconnected|did(?:n.?t| not)\s*answer/i.test(t)) return "CALL_NOT_PICKED";
   if (/switched\s*off|switch off/i.test(t)) return "CALL_SWITCHED_OFF";
   if (/(call\s*)?busy|in meeting/i.test(t)) return "CALL_BUSY";
   if (/not\s*interested|do not call|cancel.*query|drop.*query/i.test(t)) return "CALL_NOT_INTERESTED";
