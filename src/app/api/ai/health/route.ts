@@ -13,7 +13,7 @@ import { aiProvider } from "@/lib/ai";
  * Direct fetch rather than going through lib/ai.generateText so we have full
  * visibility into the underlying HTTP exchange.
  */
-export async function GET() {
+export async function GET(req: Request) {
   const me = await requireUser();
   if (me.role !== "ADMIN" && me.role !== "MANAGER") {
     return NextResponse.json({ error: "Admin only" }, { status: 403 });
@@ -29,9 +29,32 @@ export async function GET() {
     });
   }
 
+  // ?list=1 → which models does THIS key support for generateContent? Used to
+  // pick a currently-available model when a default goes stale (Google retires
+  // model ids over time, e.g. gemini-1.5-flash → 404).
+  if (new URL(req.url).searchParams.get("list") === "1" && provider === "gemini") {
+    return listGeminiModels();
+  }
+
   if (provider === "gemini") return testGemini();
   if (provider === "anthropic") return testAnthropic();
   return NextResponse.json({ ok: false, provider, reason: "Unknown provider" });
+}
+
+async function listGeminiModels() {
+  const key = process.env.GEMINI_API_KEY!;
+  try {
+    const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(key)}&pageSize=200`);
+    const j = await r.json();
+    const all: { name?: string; supportedGenerationMethods?: string[] }[] = j.models ?? [];
+    const generateContentModels = all
+      .filter((m) => (m.supportedGenerationMethods ?? []).includes("generateContent"))
+      .map((m) => (m.name ?? "").replace("models/", ""))
+      .filter((n) => n.startsWith("gemini"));
+    return NextResponse.json({ ok: r.ok, count: generateContentModels.length, generateContentModels });
+  } catch (e) {
+    return NextResponse.json({ ok: false, reason: `ListModels failed: ${String(e).slice(0, 200)}` });
+  }
 }
 
 async function testGemini() {
