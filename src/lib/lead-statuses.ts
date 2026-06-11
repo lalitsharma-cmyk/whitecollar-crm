@@ -298,12 +298,18 @@ export function isWorkableStatus(status: string | null | undefined): boolean {
 // the working-view terminal/workable classification — which is an exact match —
 // never leaks. Unknown statuses are preserved (trimmed) so new values aren't
 // silently dropped.
-const ALL_KNOWN_STATUSES: string[] = [
-  ...new Set([...INDIA_STATUSES, ...DUBAI_STATUSES, ...CLOSED_OUTCOME_STATUSES, ...LOST_STATUSES]),
-];
-const CANONICAL_STATUS_BY_KEY = new Map(
-  ALL_KNOWN_STATUSES.map((s) => [s.toLowerCase().replace(/\s+/g, " ").trim(), s]),
-);
+// Build proper-casing-FIRST so a defensive lowercase variant (e.g. the
+// "Never Respond Phone calls" kept in LOST_STATUSES for the runtime exact-match
+// filter) can never become the canonical target. The team masters carry the
+// authoritative casing, so they win key collisions.
+const CANONICAL_STATUS_BY_KEY: Map<string, string> = (() => {
+  const m = new Map<string, string>();
+  for (const s of [...DUBAI_STATUSES, ...INDIA_STATUSES, ...CLOSED_OUTCOME_STATUSES, ...LOST_STATUSES]) {
+    const key = s.toLowerCase().replace(/\s+/g, " ").trim();
+    if (!m.has(key)) m.set(key, s);
+  }
+  return m;
+})();
 export function canonicalStatus(raw: string | null | undefined): string | null {
   if (raw == null) return null;
   const trimmed = raw.trim();
