@@ -1099,7 +1099,7 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
 
         {/* AI Copilot Insights Panel — pilot scope: Lalit's leads only, OpenAI key required */}
         {showAiPanel && (
-          <div data-lead-section="ai" className="card p-4">
+          <div data-lead-section="admin" className="card p-4">
             <AiInsightsPanel leadId={lead.id} initialAnalysis={aiInitialAnalysis} />
           </div>
         )}
