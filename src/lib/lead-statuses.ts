@@ -240,6 +240,57 @@ export const CLOSING_STATUSES: string[] = [
   "Booked With Us", "Booked with Us",
 ];
 
+// ─── Lead lifecycle category: WORKABLE / CLOSED / LOST ────────────────────
+// SINGLE SOURCE OF TRUTH for "is this lead still workable?". Both LOST (rejected/
+// dead) and CLOSED (booked/sold/leased) statuses are TERMINAL — they leave the
+// normal working Leads view and live in Master Data. Everything else (incl. null,
+// unknown, Fresh Lead) is WORKABLE — fail-safe so a new or mis-typed status never
+// silently hides a lead from the team.
+//
+// Driven by the Reject-modal reasons (reject-reasons.ts) so the working Leads
+// view, the agent reject flow, imports, and Master Data all agree. Lalit's rule:
+//   "Normal Leads = only leads that can be worked on."
+
+// Closed outcomes — the DEAL IS DONE (booked / sold / leased). NOT a rejection.
+export const CLOSED_OUTCOME_STATUSES: string[] = [
+  "Booked With Us", "Booked with Us",   // legacy casing
+  "Sell Out", "Sell Off",               // Sell Off = India legacy of Sell Out
+  "Leasing", "Rent Out",
+  "Already Bought", "Already Booked",    // Already Booked = India legacy
+  "Commercial Investment",
+];
+
+// Lost / rejected — non-actionable. Sourced from the Reject modal (minus the
+// closed outcomes) plus the dead-end suppressed statuses + India equivalents.
+export const LOST_STATUSES: string[] = [
+  "Not Interested", "War Fear", "Funds Issue", "Not Able To Buy",
+  "Broker", "Visited With Other Broker", "In Touch With Another Broker",
+  "Other Location", "Other Requirement", "Low Budget", "Just Searching",
+  "Drop The Plan", "Number Changed", "Invalid Number",
+  "Never Respond Phone Calls", "Never Responding", "Pass Away",
+  "Junk", "Blocked Me", "By Mistake Inquiry",
+];
+
+// Every terminal status — both CLOSED and LOST leave the working Leads view.
+export const TERMINAL_STATUSES: string[] = [
+  ...CLOSED_OUTCOME_STATUSES,
+  ...LOST_STATUSES,
+];
+
+export type LeadCategory = "WORKABLE" | "CLOSED" | "LOST";
+
+/** Classify a lead by its currentStatus. null/unknown → WORKABLE (fail-safe). */
+export function leadCategory(status: string | null | undefined): LeadCategory {
+  if (status && CLOSED_OUTCOME_STATUSES.includes(status)) return "CLOSED";
+  if (status && LOST_STATUSES.includes(status)) return "LOST";
+  return "WORKABLE";
+}
+
+/** True when the lead is still actionable (belongs in the normal Leads view). */
+export function isWorkableStatus(status: string | null | undefined): boolean {
+  return leadCategory(status) === "WORKABLE";
+}
+
 // ─── Agent-editable WORKING statuses ──────────────────────────────────────
 // Agents may only set day-to-day working statuses. "Fresh Lead" is system-
 // generated; outcome / classification statuses (War Fear, Funds Issue, Booked

@@ -8,7 +8,7 @@ import LeadsListClient from "@/components/LeadsListClient";
 import { runReconciler } from "@/lib/reconciler";
 import { leadScopeWhere } from "@/lib/leadScope";
 import { formatBudget } from "@/lib/budgetParse";
-import { statusColor, BUDGET_PRESETS, SUPPRESSED_STATUSES, ACTIVE_PURSUIT_STATUSES, CLOSING_STATUSES } from "@/lib/lead-statuses";
+import { statusColor, BUDGET_PRESETS, SUPPRESSED_STATUSES, ACTIVE_PURSUIT_STATUSES, CLOSING_STATUSES, TERMINAL_STATUSES, CLOSED_OUTCOME_STATUSES, LOST_STATUSES } from "@/lib/lead-statuses";
 
 export const dynamic = "force-dynamic";
 
@@ -43,26 +43,41 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
   const where: Prisma.LeadWhereInput = sp.showCold === "1"
     ? { ...scope }
     : { ...scope, isColdCall: false };
-  // ── Top-level filter tabs: ?filter=all|active|booked|nofollowup ──
-  // STATUS-ONLY — no stage system. Tabs filter by currentStatus (Excel status).
+  // ── Working Leads view = WORKABLE ONLY ──────────────────────────────────
+  // The normal Leads screen shows only ACTIONABLE leads. Both LOST/rejected
+  // statuses (Broker, War Fear, Not Interested, …) AND closed outcomes (Booked
+  // With Us, Sell Out, Leasing, …) are TERMINAL — they leave the working view
+  // and live in Master Data. Source of truth: TERMINAL_STATUSES (driven by the
+  // Reject-modal reasons). `?filter=closed|lost` are explicit peek views; an
+  // explicit ?cstatus= further down can still look up any single status.
   const filterTab = sp.filter ?? "all";
-  if (filterTab === "active") {
-    // Active — exclude suppressed (dead) statuses
-    where.currentStatus = { notIn: SUPPRESSED_STATUSES };
-  } else if (filterTab === "booked" || filterTab === "won" || filterTab === "bookings") {
-    // Booked with Us (covers old "won" and "bookings" tabs)
-    where.currentStatus = "Booked with Us";
+  if (filterTab === "closed" || filterTab === "booked" || filterTab === "won" || filterTab === "bookings") {
+    where.currentStatus = { in: CLOSED_OUTCOME_STATUSES };
+  } else if (filterTab === "lost" || filterTab === "rejected") {
+    where.currentStatus = { in: LOST_STATUSES };
   } else if (filterTab === "nofollowup") {
-    // Active leads with no follow-up date set
     where.followupDate = null;
-    where.currentStatus = { notIn: SUPPRESSED_STATUSES };
+    where.currentStatus = { notIn: TERMINAL_STATUSES };
+  } else {
+    // all / active → WORKABLE ONLY (default working view, every role)
+    where.currentStatus = { notIn: TERMINAL_STATUSES };
   }
-  // filterTab === "all" → no currentStatus filter (show everything)
 
-  // Agents: in "all" view, hide clearly-dead leads from their queue by default.
-  // An explicit ?cstatus= override lets them see any status if needed.
-  if (me.role === "AGENT" && !sp.cstatus && filterTab === "all") {
-    where.currentStatus = { notIn: SUPPRESSED_STATUSES };
+  // ── Top-level segment selector (admin/manager): My / India / Dubai / All ──
+  // Default = My Leads, so Lalit/admins open to their OWN pipeline, not the
+  // whole company. Agents are already restricted to their own leads by
+  // leadScopeWhere, so the selector is admin/manager-only. The advanced
+  // ?owner= / ?team= filters further down still refine/override this.
+  // ADMIN-only. Managers stay team-scoped via leadScopeWhere (they must NOT be
+  // able to pivot to another team's leads), and agents already see only their
+  // own. So the My/India/Dubai/All selector is for Lalit/admins.
+  const isAdmin = me.role === "ADMIN";
+  const seg = isAdmin ? (sp.seg ?? "mine") : "all";
+  if (isAdmin) {
+    if (seg === "mine") where.ownerId = me.id;
+    else if (seg === "india") where.forwardedTeam = "India";
+    else if (seg === "dubai") where.forwardedTeam = "Dubai";
+    // seg === "all" → no segment restriction
   }
   if (sp.q) {
     where.OR = [
@@ -335,7 +350,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
   // Followup windows for chip counts (scoped to visible leads — agents see
   // their own pipeline, admin sees all). Re-use istWindow() defined above.
   const todayWindow = istWindow(0);
-  const activeScope = { ...scope, currentStatus: { notIn: SUPPRESSED_STATUSES } };
+  const activeScope = { ...scope, currentStatus: { notIn: TERMINAL_STATUSES } };
 
   // ── Smart priority sort pre-query ─────────────────────────────────────────
   // When no explicit ?sort= is provided we sort by urgency rather than created-
@@ -508,6 +523,45 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
           <Link href="/leads/new" className="btn btn-primary flex-1 sm:flex-none justify-center">+ New Lead</Link>
         </div>
       </div>
+
+      {/* ── Segment selector: My / India / Dubai / All (admin only) ───────── */}
+      {isAdmin && (() => {
+        const SEGS: { key: string; label: string }[] = [
+          { key: "mine",  label: "My Leads" },
+          { key: "india", label: "India Team" },
+          { key: "dubai", label: "Dubai Team" },
+          { key: "all",   label: "All Leads" },
+        ];
+        const segHref = (key: string) => {
+          const p = new URLSearchParams();
+          for (const [k, v] of Object.entries(sp)) {
+            if (v != null && v !== "" && k !== "page" && k !== "seg") p.set(k, String(v));
+          }
+          if (key !== "mine") p.set("seg", key); // "mine" is the default — keep the URL clean
+          const qs = p.toString();
+          return `/leads${qs ? `?${qs}` : ""}`;
+        };
+        return (
+          <div className="flex flex-wrap gap-2">
+            {SEGS.map((s) => {
+              const active = seg === s.key;
+              return (
+                <Link
+                  key={s.key}
+                  href={segHref(s.key)}
+                  className={`px-3.5 py-1.5 rounded-lg text-sm font-semibold border min-h-9 inline-flex items-center transition-colors ${
+                    active
+                      ? "bg-[#0b1a33] text-white border-[#0b1a33] dark:bg-blue-700 dark:border-blue-700"
+                      : "bg-white dark:bg-slate-700 border-[#e5e7eb] dark:border-slate-600 text-gray-700 dark:text-slate-100 hover:bg-gray-50 dark:hover:bg-slate-600"
+                  }`}
+                >
+                  {s.label}
+                </Link>
+              );
+            })}
+          </div>
+        );
+      })()}
 
       {/* ── Search + More Filters ───────────────────────────────────────── */}
       <LeadFilters

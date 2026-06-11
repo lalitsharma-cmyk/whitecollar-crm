@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/auth";
 import { audit, reqMeta } from "@/lib/audit";
 import { leadScopeWhere } from "@/lib/leadScope";
+import { TERMINAL_STATUSES, CLOSED_OUTCOME_STATUSES, LOST_STATUSES } from "@/lib/lead-statuses";
 import { LeadSource, LeadStatus, AIScore, Prisma } from "@prisma/client";
 
 // CSV export — ADMIN ONLY. Every export is audited and the CSV is watermarked
@@ -58,6 +59,27 @@ export async function GET(req: NextRequest) {
     const where: Prisma.LeadWhereInput = sp.showCold === "1"
       ? { ...scope }
       : { ...scope, isColdCall: false };
+
+    // Mirror the working Leads view: export WORKABLE leads only by default
+    // (both rejected/lost AND closed outcomes are excluded — they belong to
+    // Master Data), and honour the My/India/Dubai/All segment selector. An
+    // explicit ?filter=closed|lost exports that bucket; ?cstatus= overrides.
+    const seg = sp.seg ?? "mine";
+    if (seg === "mine") where.ownerId = me.id;
+    else if (seg === "india") where.forwardedTeam = "India";
+    else if (seg === "dubai") where.forwardedTeam = "Dubai";
+
+    const filterTab = sp.filter ?? "all";
+    if (sp.cstatus) {
+      const vals = sp.cstatus.split(",").map((s) => s.trim()).filter(Boolean);
+      where.currentStatus = vals.length === 1 ? vals[0] : { in: vals };
+    } else if (filterTab === "closed" || filterTab === "booked" || filterTab === "won" || filterTab === "bookings") {
+      where.currentStatus = { in: CLOSED_OUTCOME_STATUSES };
+    } else if (filterTab === "lost" || filterTab === "rejected") {
+      where.currentStatus = { in: LOST_STATUSES };
+    } else {
+      where.currentStatus = { notIn: TERMINAL_STATUSES };
+    }
 
     if (sp.q) {
       where.OR = [
