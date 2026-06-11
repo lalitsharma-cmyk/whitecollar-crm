@@ -1118,32 +1118,30 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
           Safe-bottom inset so iPhone home indicator doesn't eat buttons. */}
       {canSel && selectedIds.length > 0 && (
         <>
-          <div
-            className="fixed left-0 right-0 z-50 bg-white dark:bg-slate-800 border-t border-[#e5e7eb] dark:border-slate-700 shadow-2xl px-3 py-2 safe-bottom"
-            style={{ bottom: 0 }}
-          >
-            <div className="max-w-5xl mx-auto flex items-center gap-2 flex-wrap">
-              <div className="text-xs font-semibold text-[#0b1a33] dark:text-white mr-1">
-                {selectedIds.length} selected
+          {/* Compact floating action pill — centered, fitted, premium (not a full-width white strip). */}
+          <div className="fixed inset-x-0 bottom-0 z-50 px-3 pb-3 pt-0 pointer-events-none safe-bottom">
+            <div className="pointer-events-auto mx-auto w-fit max-w-full flex items-center gap-1.5 bg-white/95 dark:bg-slate-800/95 backdrop-blur-sm border border-[#e5e7eb] dark:border-slate-700 rounded-2xl shadow-[0_10px_34px_rgba(11,26,51,0.20)] px-2.5 py-1.5 overflow-x-auto" style={{ scrollbarWidth: "none" }}>
+              <div className="text-xs font-bold text-[#0b1a33] dark:text-white whitespace-nowrap pl-1">
+                {selectedIds.length} <span className="font-medium text-gray-500 dark:text-slate-400">selected</span>
               </div>
               <button
                 onClick={clearSelection}
-                className="text-[11px] text-gray-500 dark:text-slate-400 hover:text-gray-800 dark:hover:text-slate-200 underline"
+                className="text-[11px] text-gray-400 dark:text-slate-500 hover:text-gray-800 dark:hover:text-slate-200 underline whitespace-nowrap"
               >
                 Clear
               </button>
-              <div className="w-px h-6 bg-gray-200 dark:bg-slate-600 mx-1" />
+              <div className="w-px h-5 bg-gray-200 dark:bg-slate-600 mx-0.5 flex-none" />
               {/* Follow-up — everyone (agents + admin), API scopes to own leads */}
               <button
                 onClick={() => { setShowFollowupPop(v => !v); setShowTagPopover(false); setShowWaPopover(false); setShowReassignPopover(false); setShowEditPop(false); }}
-                className="inline-flex items-center gap-1 text-xs font-semibold bg-blue-50 text-blue-800 border border-blue-300 px-3 py-2 rounded-lg min-h-11"
+                className="inline-flex items-center gap-1 text-xs font-semibold bg-blue-50 text-blue-800 border border-blue-300 px-2.5 py-1.5 rounded-lg whitespace-nowrap flex-none"
               >
                 <Calendar className="w-3.5 h-3.5" /> Follow-up
               </button>
               {canBulk && (
                 <button
                   onClick={() => { setShowTagPopover(v => !v); setShowReassignPopover(false); setShowWaPopover(false); setShowFollowupPop(false); setShowEditPop(false); }}
-                  className="inline-flex items-center gap-1 text-xs font-semibold bg-fuchsia-50 text-fuchsia-800 border border-fuchsia-300 px-3 py-2 rounded-lg min-h-11"
+                  className="inline-flex items-center gap-1 text-xs font-semibold bg-fuchsia-50 text-fuchsia-800 border border-fuchsia-300 px-2.5 py-1.5 rounded-lg whitespace-nowrap flex-none"
                 >
                   <Tag className="w-3.5 h-3.5" /> Tag
                 </button>
@@ -1151,7 +1149,7 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
               {canBulk && (
                 <button
                   onClick={() => { setShowWaPopover(v => !v); setShowTagPopover(false); setShowReassignPopover(false); setShowFollowupPop(false); setShowEditPop(false); }}
-                  className="inline-flex items-center gap-1 text-xs font-semibold bg-[#e7f9ef] text-[#0f7a3d] border border-[#9ce0bb] px-3 py-2 rounded-lg min-h-11"
+                  className="inline-flex items-center gap-1 text-xs font-semibold bg-[#e7f9ef] text-[#0f7a3d] border border-[#9ce0bb] px-2.5 py-1.5 rounded-lg whitespace-nowrap flex-none"
                 >
                   <MessageCircle className="w-3.5 h-3.5" /> WhatsApp
                 </button>
@@ -1159,7 +1157,7 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
               {isAdmin && (
                 <button
                   onClick={() => { setShowEditPop(v => !v); setShowTagPopover(false); setShowWaPopover(false); setShowReassignPopover(false); setShowFollowupPop(false); }}
-                  className="inline-flex items-center gap-1 text-xs font-semibold bg-amber-50 text-amber-800 border border-amber-300 px-3 py-2 rounded-lg min-h-11"
+                  className="inline-flex items-center gap-1 text-xs font-semibold bg-amber-50 text-amber-800 border border-amber-300 px-2.5 py-1.5 rounded-lg whitespace-nowrap flex-none"
                 >
                   <Pencil className="w-3.5 h-3.5" /> Edit fields
                 </button>
@@ -1167,7 +1165,7 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
               {canReassign && (
                 <button
                   onClick={() => { setShowReassignPopover(v => !v); setShowTagPopover(false); setShowWaPopover(false); setShowFollowupPop(false); setShowEditPop(false); }}
-                  className="inline-flex items-center gap-1 text-xs font-semibold bg-blue-50 text-blue-800 border border-blue-300 px-3 py-2 rounded-lg min-h-11"
+                  className="inline-flex items-center gap-1 text-xs font-semibold bg-blue-50 text-blue-800 border border-blue-300 px-2.5 py-1.5 rounded-lg whitespace-nowrap flex-none"
                 >
                   <RefreshCw className="w-3.5 h-3.5" /> Reassign
                 </button>
@@ -1175,7 +1173,7 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
               {canBulk && (
                 <button
                   onClick={() => { setShowRejectModal(true); setShowTagPopover(false); setShowReassignPopover(false); setShowWaPopover(false); setShowFollowupPop(false); setShowEditPop(false); }}
-                  className="inline-flex items-center gap-1 text-xs font-semibold bg-red-50 text-red-800 border border-red-300 px-3 py-2 rounded-lg min-h-11"
+                  className="inline-flex items-center gap-1 text-xs font-semibold bg-red-50 text-red-800 border border-red-300 px-2.5 py-1.5 rounded-lg whitespace-nowrap flex-none"
                 >
                   <XCircle className="w-3.5 h-3.5" /> Reject
                 </button>
@@ -1184,7 +1182,7 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
 
             {/* Follow-up popover — bulk set/clear the follow-up date. */}
             {showFollowupPop && (
-              <div className="absolute left-3 right-3 sm:left-1/2 sm:-translate-x-1/2 sm:max-w-sm bottom-full mb-2 bg-white dark:bg-slate-800 border border-[#e5e7eb] dark:border-slate-700 rounded-xl shadow-2xl p-3">
+              <div className="pointer-events-auto absolute left-3 right-3 sm:left-1/2 sm:-translate-x-1/2 sm:max-w-sm bottom-full mb-2 bg-white dark:bg-slate-800 border border-[#e5e7eb] dark:border-slate-700 rounded-xl shadow-2xl p-3">
                 <div className="flex items-center justify-between mb-2">
                   <div className="text-xs font-semibold text-[#0b1a33] dark:text-white">Set follow-up for {selectedIds.length} lead{selectedIds.length === 1 ? "" : "s"}</div>
                   <button onClick={() => setShowFollowupPop(false)} className="text-gray-400 hover:text-gray-700"><X className="w-4 h-4" /></button>
@@ -1201,7 +1199,7 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
 
             {/* Edit-fields popover (ADMIN) — Source / Budget / Project in bulk. */}
             {showEditPop && isAdmin && (
-              <div className="absolute left-3 right-3 sm:left-1/2 sm:-translate-x-1/2 sm:max-w-sm bottom-full mb-2 bg-white dark:bg-slate-800 border border-[#e5e7eb] dark:border-slate-700 rounded-xl shadow-2xl p-3">
+              <div className="pointer-events-auto absolute left-3 right-3 sm:left-1/2 sm:-translate-x-1/2 sm:max-w-sm bottom-full mb-2 bg-white dark:bg-slate-800 border border-[#e5e7eb] dark:border-slate-700 rounded-xl shadow-2xl p-3">
                 <div className="flex items-center justify-between mb-2">
                   <div className="text-xs font-semibold text-[#0b1a33] dark:text-white">Edit {selectedIds.length} lead{selectedIds.length === 1 ? "" : "s"} <span className="font-normal text-gray-400">— fill only what you want to change</span></div>
                   <button onClick={() => setShowEditPop(false)} className="text-gray-400 hover:text-gray-700"><X className="w-4 h-4" /></button>
@@ -1228,7 +1226,7 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
                 bar via absolute positioning relative to viewport (mb-2 from
                 the bar by stacking it just above with bottom-full). */}
             {showTagPopover && (
-              <div className="absolute left-3 right-3 sm:left-1/2 sm:-translate-x-1/2 sm:max-w-md bottom-full mb-2 bg-white dark:bg-slate-800 border border-[#e5e7eb] dark:border-slate-700 rounded-xl shadow-2xl p-3">
+              <div className="pointer-events-auto absolute left-3 right-3 sm:left-1/2 sm:-translate-x-1/2 sm:max-w-md bottom-full mb-2 bg-white dark:bg-slate-800 border border-[#e5e7eb] dark:border-slate-700 rounded-xl shadow-2xl p-3">
                 <div className="flex items-center justify-between mb-2">
                   <div className="text-xs font-semibold text-[#0b1a33] dark:text-white">Add tags to {selectedIds.length} lead{selectedIds.length === 1 ? "" : "s"}</div>
                   <button onClick={() => setShowTagPopover(false)} className="text-gray-400 hover:text-gray-700"><X className="w-4 h-4" /></button>
@@ -1263,7 +1261,7 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
 
             {/* Reassign popover — single-select agent dropdown. */}
             {showReassignPopover && canReassign && (
-              <div className="absolute left-3 right-3 sm:left-1/2 sm:-translate-x-1/2 sm:max-w-md bottom-full mb-2 bg-white dark:bg-slate-800 border border-[#e5e7eb] dark:border-slate-700 rounded-xl shadow-2xl p-3">
+              <div className="pointer-events-auto absolute left-3 right-3 sm:left-1/2 sm:-translate-x-1/2 sm:max-w-md bottom-full mb-2 bg-white dark:bg-slate-800 border border-[#e5e7eb] dark:border-slate-700 rounded-xl shadow-2xl p-3">
                 <div className="flex items-center justify-between mb-2">
                   <div className="text-xs font-semibold text-[#0b1a33] dark:text-white">Reassign {selectedIds.length} lead{selectedIds.length === 1 ? "" : "s"}</div>
                   <button onClick={() => setShowReassignPopover(false)} className="text-gray-400 hover:text-gray-700"><X className="w-4 h-4" /></button>
@@ -1295,7 +1293,7 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
                 WhatsApp can't be sent server-side (no Meta API), so the agent
                 opens each link one-by-one (or "Open all" with a 300ms stagger). */}
             {showWaPopover && (
-              <div className="absolute left-3 right-3 sm:left-1/2 sm:-translate-x-1/2 sm:max-w-md bottom-full mb-2 bg-white dark:bg-slate-800 border border-[#e5e7eb] dark:border-slate-700 rounded-xl shadow-2xl p-3">
+              <div className="pointer-events-auto absolute left-3 right-3 sm:left-1/2 sm:-translate-x-1/2 sm:max-w-md bottom-full mb-2 bg-white dark:bg-slate-800 border border-[#e5e7eb] dark:border-slate-700 rounded-xl shadow-2xl p-3">
                 <div className="flex items-center justify-between mb-2">
                   <div className="text-xs font-semibold text-[#0b1a33] dark:text-white inline-flex items-center gap-1.5">
                     <MessageCircle className="w-4 h-4 text-[#0f7a3d]" />
