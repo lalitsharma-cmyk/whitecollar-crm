@@ -6,7 +6,7 @@ import {
   LayoutDashboard, Users, Building2, PhoneCall,
   BarChart3, Settings as SettingsIcon, LogOut, Bell,
   Zap, Flame, ChevronRight, ChevronLeft,
-  CalendarDays, UserCog, Upload,
+  CalendarDays, UserCog, Upload, Database,
 } from "lucide-react";
 
 type NavItem = {
@@ -22,6 +22,7 @@ const nav: NavGroup[] = [
   { section: null, items: [
     { href: "/dashboard",   label: "Dashboard",      Icon: LayoutDashboard, adminOnly: false },
     { href: "/leads",       label: "Leads",          Icon: Users,           badge: true, adminOnly: false },
+    { href: "/master-data", label: "Master Data",    Icon: Database,        adminOnly: true },
     { href: "/cold-calls",  label: "Revival Engine", Icon: Flame,           adminOnly: false },
     { href: "/action-list", label: "Action List",    Icon: Zap,             adminOnly: false },
     { href: "/properties",  label: "Properties",     Icon: Building2,       adminOnly: false },
