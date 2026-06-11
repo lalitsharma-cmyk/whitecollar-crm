@@ -41,26 +41,33 @@ export async function GET(req: Request) {
   // ?testCopilot=1 → force a direct Claude API test using ANTHROPIC_API_KEY
   if (new URL(req.url).searchParams.get("testCopilot") === "1") {
     const key = (process.env.ANTHROPIC_API_KEY ?? "").trim();
-    const r = await fetch("https://api.anthropic.com/v1/messages", {
+    // Encode key as hex so hidden/invisible characters become visible
+    const keyHex = Buffer.from(key).toString("hex");
+    const keyHasOnlyPrintable = /^[!-~]+$/.test(key);
+
+    // Test 1: raw fetch with x-api-key header (standard)
+    const r1 = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
-      headers: {
-        "x-api-key": key,
-        "anthropic-version": "2023-06-01",
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "claude-haiku-4-5-20251001",
-        max_tokens: 10,
-        messages: [{ role: "user", content: "Reply ok" }],
-      }),
+      headers: { "x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json" },
+      body: JSON.stringify({ model: "claude-haiku-4-5-20251001", max_tokens: 10, messages: [{ role: "user", content: "Reply ok" }] }),
     });
-    const body = await r.text();
+    const body1 = await r1.text();
+
+    // Test 2: raw fetch with Authorization: Bearer header (alternative format)
+    const r2 = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: { "authorization": `Bearer ${key}`, "anthropic-version": "2023-06-01", "content-type": "application/json" },
+      body: JSON.stringify({ model: "claude-haiku-4-5-20251001", max_tokens: 10, messages: [{ role: "user", content: "Reply ok" }] }),
+    });
+    const body2 = await r2.text();
+
     return NextResponse.json({
-      httpStatus: r.status,
-      ok: r.ok,
       keyPreview: copilotKeyPreview,
       keyLength: key.length,
-      body: body.slice(0, 400),
+      keyHasOnlyPrintable,
+      keyHexFirst20: keyHex.slice(0, 40),  // first 20 bytes as hex
+      test1_xApiKey: { httpStatus: r1.status, ok: r1.ok, body: body1.slice(0, 200) },
+      test2_bearer:  { httpStatus: r2.status, ok: r2.ok, body: body2.slice(0, 200) },
     });
   }
 
