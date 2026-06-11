@@ -455,7 +455,17 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
   // Only statuses with at least 1 lead are included (groupBy naturally excludes zeros).
   const cstatusCounts: Array<{ label: string; count: number }> = cstatusCountRows
     .filter(r => r.currentStatus != null && r.currentStatus !== "")
-    .map(r => ({ label: r.currentStatus as string, count: r._count._all }));
+    .map(r => ({ label: r.currentStatus as string, count: r._count._all }))
+    // The working view's status chip-bar offers ONLY workable statuses — terminal
+    // ones (Broker, War Fear, Booked With Us, …) belong to Master Data, not the
+    // agent's working screen. When the user explicitly peeks at a closed/lost
+    // view, show that bucket's chips instead.
+    .filter(r =>
+      (filterTab === "closed" || filterTab === "booked" || filterTab === "won" || filterTab === "bookings")
+        ? CLOSED_OUTCOME_STATUSES.includes(r.label)
+        : (filterTab === "lost" || filterTab === "rejected")
+          ? LOST_STATUSES.includes(r.label)
+          : !TERMINAL_STATUSES.includes(r.label));
   // Also expose as a map for O(1) lookup
   const cstatusCountMap: Record<string, number> = Object.fromEntries(
     cstatusCounts.map(r => [r.label, r.count])
