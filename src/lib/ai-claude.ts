@@ -172,7 +172,6 @@ export async function analyzeLeadWithClaude(
       system: SYSTEM_PROMPT,
       messages: [
         { role: "user", content: userPrompt },
-        { role: "assistant", content: "{" },
       ],
     });
   } catch (e) {
@@ -185,7 +184,7 @@ export async function analyzeLeadWithClaude(
 
   const ms = Date.now() - startMs;
   const rawText = msg.content.map((b) => (b.type === "text" ? b.text : "")).join("");
-  const content = "{" + rawText;
+  const content = rawText;
 
   const inputTokens = msg.usage?.input_tokens ?? 0;
   const outputTokens = msg.usage?.output_tokens ?? 0;
