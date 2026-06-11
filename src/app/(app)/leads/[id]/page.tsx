@@ -10,6 +10,7 @@ import LeadProjectsClient from "@/components/LeadProjectsClient";
 import LeadInterestNotesClient from "@/components/LeadInterestNotesClient";
 import LeadMeetingClient from "@/components/LeadMeetingClient";
 import LinkedInField from "@/components/LinkedInField";
+import ContactField from "@/components/ContactField";
 import DeletedLeadBanner from "@/components/DeletedLeadBanner";
 import SiteVisitTracker from "@/components/SiteVisitTracker";
 import SiteVisitChecklist from "@/components/SiteVisitChecklist";
@@ -514,35 +515,27 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
           categorization labels) truncate within their column instead of
           overflowing into the neighbour. */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm [&>div]:min-w-0 [&>div]:overflow-hidden">
-        {/* Phone — admin/manager can edit; agent sees read-only + lock note */}
+        {/* Phone — admin/manager edit + tel:/copy; agent sees the MASKED number
+            only (PII), so no copy/dial of the real value. */}
         <div>
           <div className="text-xs text-gray-500 dark:text-slate-400">📞 Phone</div>
           {isAdminOrManager ? (
-            <InlineEdit leadId={lead.id} field="phone" type="phone" value={lead.phone ?? ""} placeholder="+91 or +971…" />
+            <ContactField leadId={lead.id} field="phone" kind="phone" value={lead.phone} editable />
           ) : (
-            <div className="flex items-center gap-1.5 mt-0.5">
-              <span className="text-sm">{lead.phone ? maskPhone(lead.phone) : <span className="text-gray-400">—</span>}</span>
-            </div>
+            <ContactField leadId={lead.id} field="phone" kind="phone" value={lead.phone} readOnlyText={lead.phone ? (maskPhone(lead.phone) ?? "") : ""} />
           )}
         </div>
+        {/* Alt phone — not PII-locked, everyone may edit + tel:/copy. */}
         <div>
           <div className="text-xs text-gray-500 dark:text-slate-400">📱 Alt phone</div>
-          <InlineEdit leadId={lead.id} field="altPhone" type="phone" value={lead.altPhone ?? ""} placeholder="+91 or +971…" />
+          <ContactField leadId={lead.id} field="altPhone" kind="phone" value={lead.altPhone} editable />
         </div>
-        {/* Email — sits beside Phone/Alt phone per Lalit's layout. Sensitive PII
-            like phone: admin/manager edit it inline, agents see it read-only.
-            Null email → InlineEdit shows the "Add value" placeholder. */}
+        {/* Email — sits beside Phone/Alt phone per Lalit's layout. mailto: link +
+            copy + ellipsis-with-tooltip so long addresses never break alignment.
+            Admin/manager edit inline; agents get the link + copy, no edit (PII). */}
         <div>
           <div className="text-xs text-gray-500 dark:text-slate-400">✉️ Email</div>
-          {isAdminOrManager ? (
-            <InlineEdit leadId={lead.id} field="email" value={lead.email ?? ""} placeholder="Add value" />
-          ) : (
-            <div className="mt-0.5">
-              {lead.email
-                ? <a href={`mailto:${lead.email}`} className="text-sm text-blue-600 dark:text-blue-400 hover:underline break-all">{lead.email}</a>
-                : <span className="text-sm text-gray-400">—</span>}
-            </div>
-          )}
+          <ContactField leadId={lead.id} field="email" kind="email" value={lead.email} editable={isAdminOrManager} />
         </div>
         <div>
           <div className="text-xs text-gray-500 dark:text-slate-400">🏢 Company</div>
