@@ -80,12 +80,14 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
   // own. So the My/India/Dubai/All selector is for Lalit/admins.
   const isAdmin = me.role === "ADMIN";
   const seg = isAdmin ? (sp.seg ?? "mine") : "all";
+  const segWhere: Prisma.LeadWhereInput = {};
   if (isAdmin) {
-    if (seg === "mine") where.ownerId = me.id;
-    else if (seg === "india") where.forwardedTeam = "India";
-    else if (seg === "dubai") where.forwardedTeam = "Dubai";
+    if (seg === "mine") segWhere.ownerId = me.id;
+    else if (seg === "india") segWhere.forwardedTeam = "India";
+    else if (seg === "dubai") segWhere.forwardedTeam = "Dubai";
     // seg === "all" → no segment restriction
   }
+  Object.assign(where, segWhere);
   if (sp.q) {
     where.OR = [
       { name: { contains: sp.q, mode: "insensitive" } },
@@ -350,7 +352,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
   // Followup windows for chip counts (scoped to visible leads — agents see
   // their own pipeline, admin sees all). Re-use istWindow() defined above.
   const todayWindow = istWindow(0);
-  const activeScope = { ...scope, OR: [{ currentStatus: null }, { currentStatus: "" }, { currentStatus: { notIn: TERMINAL_STATUSES } }] };
+  const activeScope = { ...scope, ...segWhere, OR: [{ currentStatus: null }, { currentStatus: "" }, { currentStatus: { notIn: TERMINAL_STATUSES } }] };
 
   // ── Smart priority sort pre-query ─────────────────────────────────────────
   // When no explicit ?sort= is provided we sort by urgency rather than created-
