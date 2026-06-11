@@ -7,6 +7,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/auth";
+import { leadScopeWhere } from "@/lib/leadScope";
 import { renderTemplate } from "@/lib/templates";
 import { audit, reqMeta } from "@/lib/audit";
 import { ActivityType, ActivityStatus } from "@prisma/client";
@@ -26,10 +27,14 @@ export async function POST(req: NextRequest) {
   const RESEND_FROM = process.env.RESEND_FROM ?? `WCR CRM <noreply@crm.whitecollarrealty.com>`;
   if (!RESEND_KEY) return NextResponse.json({ error: "Resend not configured — set RESEND_API_KEY in Vercel env" }, { status: 503 });
 
+  // Scope to leads the caller may see AND exclude soft-deleted leads — never
+  // email a deleted client, and never let a manager email out-of-team leads by
+  // passing their ids. Mirrors bulk-wa.
+  const scope = await leadScopeWhere(me);
   const [template, leads] = await Promise.all([
     prisma.template.findUnique({ where: { id: templateId } }),
     prisma.lead.findMany({
-      where: { id: { in: ids } },
+      where: { id: { in: ids }, ...scope },
       include: { interestedUnits: { include: { unit: { include: { project: true } } }, take: 1 } },
     }),
   ]);

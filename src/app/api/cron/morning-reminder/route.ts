@@ -56,13 +56,14 @@ export async function GET(req: NextRequest) {
       }),
       // Hot leads needing attention
       prisma.lead.count({
-        where: { ownerId: u.id, aiScore: AIScore.HOT, currentStatus: { notIn: SUPPRESSED_STATUSES } },
+        where: { ownerId: u.id, aiScore: AIScore.HOT, currentStatus: { notIn: SUPPRESSED_STATUSES }, deletedAt: null },
       }),
       // New leads assigned overnight (since the previous morning cron, i.e. last 24h)
       prisma.lead.count({
         where: {
           ownerId: u.id,
           createdAt: { gte: new Date(Date.now() - 24 * 3600_000) },
+          deletedAt: null,
         },
       }),
       // Leads with followupDate set for TODAY — these are the "client asked me to call
@@ -73,6 +74,7 @@ export async function GET(req: NextRequest) {
           ownerId: u.id,
           followupDate: { gte: startUTC, lte: endUTC },
           currentStatus: { notIn: SUPPRESSED_STATUSES },
+          deletedAt: null,
         },
       }),
     ]);

@@ -111,6 +111,10 @@ export async function GET(req: NextRequest) {
     scheduledAt: { gte: fromDate, lte: toDate },
     type: { in: ["SITE_VISIT", "OFFICE_MEETING", "VIRTUAL_MEETING", "EXPO_MEETING", "MEETING"] },
     status: { in: ["PLANNED", "OVERDUE"] },
+    // Never surface activities whose lead has been deleted — applies to all
+    // roles (the MANAGER branch below overwrites .lead with its scoped filter,
+    // which also carries deletedAt:null).
+    lead: { deletedAt: null },
   };
   if (me.role === "AGENT") {
     actWhere.userId = me.id;

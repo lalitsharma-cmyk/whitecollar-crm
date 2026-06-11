@@ -118,6 +118,7 @@ export async function bestLeadsForProject(
   const leads = await prisma.lead.findMany({
     where: {
       ...scope,
+      deletedAt: null,
       currentStatus: { in: ACTIVE_STATUSES },
       forwardedTeam: team,
       budgetMin: { gte: lo, lte: hi },

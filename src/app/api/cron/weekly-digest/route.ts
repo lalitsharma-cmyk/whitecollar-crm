@@ -186,7 +186,7 @@ export async function GET(req: NextRequest) {
       bookingsDone,
       openLeadsForPipeline,
     ] = await Promise.all([
-      prisma.lead.count({ where: { createdAt: { gte: weekStart } } }),
+      prisma.lead.count({ where: { createdAt: { gte: weekStart }, deletedAt: null } }),
       prisma.callLog.count({ where: { startedAt: { gte: weekStart } } }),
       prisma.activity.count({
         where: {

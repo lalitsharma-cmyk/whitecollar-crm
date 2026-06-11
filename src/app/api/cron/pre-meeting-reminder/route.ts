@@ -96,6 +96,7 @@ export async function GET(req: NextRequest) {
       followupReminderSentAt: null,  // dedupe
       ownerId: { not: null },
       currentStatus: { notIn: SUPPRESSED_STATUSES },
+      deletedAt: null,
     },
     select: { id: true, name: true, phone: true, ownerId: true, followupDate: true },
     take: 50,

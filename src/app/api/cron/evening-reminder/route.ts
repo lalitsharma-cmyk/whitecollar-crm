@@ -46,7 +46,7 @@ export async function GET(req: NextRequest) {
     });
     // Hot leads owned by this agent with no call logged today at all
     const hotOwnedLeads = await prisma.lead.findMany({
-      where: { ownerId: u.id, aiScore: AIScore.HOT, currentStatus: { notIn: SUPPRESSED_STATUSES } },
+      where: { ownerId: u.id, aiScore: AIScore.HOT, currentStatus: { notIn: SUPPRESSED_STATUSES }, deletedAt: null },
       include: { callLogs: { where: { startedAt: { gte: startUTC } }, take: 1 } },
     });
     const uncalled = hotOwnedLeads.filter((l) => l.callLogs.length === 0).length;
