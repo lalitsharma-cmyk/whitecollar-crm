@@ -103,6 +103,7 @@ interface Row {
   todoNext: string | null;
   followupDate: string | null;
   followupRaw: string | null;   // YYYY-MM-DD for the date input
+  enquiryDate: string | null;   // when the client enquired (createdAt)
   intelligenceMatch: {
     matchType: string;
     confidence: number;
@@ -477,6 +478,7 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
                     {/* project  */}<col style={{ width: 120 }} />
                     {/* status   */}<col style={{ width: 130 }} />
                     {/* budget   */}<col style={{ width: 90 }} />
+                    {/* enquiry  */}<col style={{ width: 78 }} />
                     {/* follow-up*/}<col style={{ width: 90 }} />
                     {!isAgent && <col style={{ width: 100 }} />}{/* assigned */}
                     {showSource && <col style={{ width: 75 }} />}
@@ -503,6 +505,7 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
                         <span onClick={() => router.push(sortHref("budget"))}>Budget <SortIcon k="budget" /></span>
                         <LeadHeaderFilter kind="budget" label="Budget" searchParamsStr={searchParamsStr} />
                       </th>
+                      <th className={thCls}>Enquiry</th>
                       <th className={sortThCls}>
                         <span onClick={() => router.push(sortHref("followup"))}>Follow-Up <SortIcon k="followup" /></span>
                         <LeadHeaderFilter kind="followup" label="Follow-up" searchParamsStr={searchParamsStr} />
@@ -590,6 +593,11 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
                         {/* 4. Budget */}
                         <td className="px-3 py-1.5 text-gray-700 dark:text-slate-300 whitespace-nowrap tabular-nums text-xs">
                           {l.budgetFormatted ?? <span className="text-gray-300">—</span>}
+                        </td>
+
+                        {/* 4b. Enquiry date — when the client came in (createdAt) */}
+                        <td className="px-3 py-1.5 text-gray-500 dark:text-slate-400 whitespace-nowrap text-xs tabular-nums">
+                          {l.enquiryDate ?? <span className="text-gray-300">—</span>}
                         </td>
 
                         {/* 5. Follow-Up — click opens fixed-position picker */}
@@ -697,12 +705,15 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
                     </span>
                   )}
                 </div>
-                {/* Row 3: Follow-up date */}
-                {l.followupDate && (
-                  <div className="text-[11px] text-emerald-700 dark:text-emerald-400 mb-2">
-                    📅 Follow-up: <span className="font-medium">{l.followupDate}</span>
-                  </div>
-                )}
+                {/* Row 3: Enquiry + Follow-up dates */}
+                <div className="flex items-center gap-3 mb-2 text-[11px] flex-wrap">
+                  {l.enquiryDate && (
+                    <span className="text-gray-500 dark:text-slate-400">📥 Enquired: <span className="font-medium">{l.enquiryDate}</span></span>
+                  )}
+                  {l.followupDate && (
+                    <span className="text-emerald-700 dark:text-emerald-400">📅 Follow-up: <span className="font-medium">{l.followupDate}</span></span>
+                  )}
+                </div>
                 {/* Row 4: Action icons — ALWAYS VISIBLE on mobile (§8, no hover on touch) */}
                 <div className="flex items-center gap-1 pt-2 border-t border-gray-50 dark:border-slate-700">
                   {l.phone && (
