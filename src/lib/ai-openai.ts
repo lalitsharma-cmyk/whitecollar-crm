@@ -340,7 +340,7 @@ export async function analyzeLeadWithAI(
         { role: "user", content: userPrompt },
       ],
       temperature: 0.1, // low temperature for consistent structured output
-      max_tokens: 4000,
+      max_tokens: 8000, // full analysis with 18 fields + drafts needs room
       response_format: { type: "json_object" },
     }),
   });
@@ -370,15 +370,21 @@ export async function analyzeLeadWithAI(
     (outputTokens / 1_000_000) * COST_OUTPUT_PER_M * 1_000_000
   );
 
-  // Validate JSON
+  // Validate JSON — strip markdown fences if the model wrapped anyway
   let result: Record<string, unknown>;
   try {
-    result = JSON.parse(content);
+    const cleaned = content
+      .replace(/^```(?:json)?\s*/i, "")
+      .replace(/\s*```\s*$/i, "")
+      .trim();
+    result = JSON.parse(cleaned);
   } catch {
     await prisma.aiUsageLog.create({
       data: { provider: "openai", model: MODEL, feature: "copilot_analysis", leadId: lead.id, inputTokens, outputTokens, costMicroUsd, ms, ok: false },
     }).catch(() => {});
-    throw new Error("GPT returned invalid JSON");
+    // Surface first 200 chars so the error message in the UI is informative
+    const preview = content.slice(0, 200).replace(/\n/g, " ");
+    throw new Error(`GPT returned invalid JSON. Response preview: ${preview}`);
   }
 
   // Save analysis + usage in a transaction
