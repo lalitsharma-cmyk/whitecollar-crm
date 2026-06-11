@@ -16,14 +16,12 @@ import { getAiEnabled, getAiTrialModeEnabled, getAiMonthlyCostCapUsd } from "@/l
 // ─────────────────────────────────────────────────────────────────────────────
 
 const ANTHROPIC_MODEL = process.env.AI_MODEL ?? "claude-haiku-4-5";
-// gemini-1.5-flash is the safest free-tier default in 2026 — Google removed
-// gemini-2.0-flash from the no-billing free tier (returns RESOURCE_EXHAUSTED
-// with "limit: 0" for accounts without billing enabled). 1.5-flash is still
-// generously free (15 req/min, 1500 req/day) and excellent for lead
-// summarisation — that's what we actually need.
-// Override via GEMINI_MODEL env var when billing is enabled and you want the
-// smarter models: "gemini-2.0-flash", "gemini-2.5-flash", "gemini-1.5-pro".
-const GEMINI_MODEL = process.env.GEMINI_MODEL ?? "gemini-1.5-flash";
+// gemini-2.5-flash — current default. Google retired gemini-1.5-flash (the old
+// default now 404s on v1beta), so we point at 2.5-flash: fast, cheap, free-tier
+// eligible, and excellent for lead summarisation. Confirmed available on our key
+// via /api/ai/health?list=1. Override via GEMINI_MODEL env var for a different
+// model ("gemini-flash-latest", "gemini-2.5-flash-lite", "gemini-2.0-flash", …).
+const GEMINI_MODEL = process.env.GEMINI_MODEL ?? "gemini-2.5-flash";
 
 type Provider = "gemini" | "anthropic" | null;
 
