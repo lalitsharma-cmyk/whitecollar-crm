@@ -45,7 +45,9 @@ import InvestorBanner from "@/components/InvestorBanner";
 import StageDurationBadge from "@/components/StageDurationBadge";
 import SchedulingField from "@/components/SchedulingField";
 import AiInsightsPanel from "@/components/AiInsightsPanel";
+import ClaudeIntelligencePanel from "@/components/ClaudeIntelligencePanel";
 import { getLatestAnalysis, openAiEnabled, isAiPilotLead } from "@/lib/ai-openai";
+import { getLatestClaudeAnalysis, claudeEnabled } from "@/lib/ai-claude";
 
 export const dynamic = "force-dynamic";
 
@@ -252,8 +254,9 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
   // ask: "Move this [Expo / Dubai site visit] button down.").
   const travelRatePerKmInr = await getTravelRatePerKmInr();
 
-  // AI Copilot — load latest analysis if this is a pilot-eligible lead (Lalit's)
-  const showAiPanel = openAiEnabled() && isAiPilotLead(lead.ownerId);
+  // AI Copilot — GPT-4.1-mini extraction panel
+  const isPilotLead = isAiPilotLead(lead.ownerId);
+  const showAiPanel = openAiEnabled() && isPilotLead;
   const latestAiAnalysis = showAiPanel ? await getLatestAnalysis(lead.id) : null;
   const aiInitialAnalysis = latestAiAnalysis ? {
     id: latestAiAnalysis.id,
@@ -266,6 +269,21 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
     error: latestAiAnalysis.error,
     result: latestAiAnalysis.ok ? JSON.parse(latestAiAnalysis.resultJson) : null,
     feedbacks: latestAiAnalysis.feedbacks,
+  } : null;
+
+  // Claude Sonnet Sales Intelligence panel
+  const showClaudePanel = claudeEnabled() && isPilotLead;
+  const latestClaudeAnalysis = showClaudePanel ? await getLatestClaudeAnalysis(lead.id) : null;
+  const claudeInitialAnalysis = latestClaudeAnalysis ? {
+    id: latestClaudeAnalysis.id,
+    createdAt: latestClaudeAnalysis.createdAt.toISOString(),
+    model: latestClaudeAnalysis.model,
+    inputTokens: latestClaudeAnalysis.inputTokens,
+    outputTokens: latestClaudeAnalysis.outputTokens,
+    costMicroUsd: latestClaudeAnalysis.costMicroUsd,
+    ok: latestClaudeAnalysis.ok,
+    error: latestClaudeAnalysis.error,
+    result: latestClaudeAnalysis.ok ? JSON.parse(latestClaudeAnalysis.resultJson) : null,
   } : null;
 
   // WhatsApp click-to-message link — only built when lead.phone is non-empty.
@@ -1097,7 +1115,14 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
             of this right column (just below Qualification). Was here at the
             bottom — too far to scroll. */}
 
-        {/* AI Copilot Insights Panel — pilot scope: Lalit's leads only, OpenAI key required */}
+        {/* Claude Sonnet Sales Intelligence — strategic layer, pilot scope */}
+        {showClaudePanel && (
+          <div data-lead-section="admin" className="card p-4">
+            <ClaudeIntelligencePanel leadId={lead.id} initialAnalysis={claudeInitialAnalysis} />
+          </div>
+        )}
+
+        {/* GPT-4.1-mini CRM Extraction Panel — field extraction, pilot scope */}
         {showAiPanel && (
           <div data-lead-section="admin" className="card p-4">
             <AiInsightsPanel leadId={lead.id} initialAnalysis={aiInitialAnalysis} />
