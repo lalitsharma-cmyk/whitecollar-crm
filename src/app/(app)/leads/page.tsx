@@ -444,10 +444,14 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
     `,
   ]);
 
-  // Counts for the Future and No-Follow-up chips (workable scope).
-  const [followupFuture, followupNone] = await Promise.all([
+  // Counts for the follow-up chips (segment-scoped, workable). Today+Overdue is
+  // the true UNION (not today+overdue summed — they overlap on earlier-today);
+  // allWorkable backs the "All Active" chip so it matches the segment, not 160.
+  const [followupTodue, followupFuture, followupNone, allWorkable] = await Promise.all([
+    prisma.lead.count({ where: { ...activeScope, followupDate: { lt: endOfTodayUTC, not: null } } }),
     prisma.lead.count({ where: { ...activeScope, followupDate: { gte: endOfTodayUTC } } }),
     prisma.lead.count({ where: { ...activeScope, followupDate: null } }),
+    prisma.lead.count({ where: activeScope }),
   ]);
 
   // Re-sort smart-sort results to match the computed priority order.
@@ -632,12 +636,12 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
 
         return (
           <div className="flex gap-2 overflow-x-auto pb-1 -mx-3 px-3 sm:mx-0 sm:px-0" style={{ scrollbarWidth: "thin" }}>
-            {fc("todue", effectiveFollowup === "todue", "🎯 Today + Overdue", followupToday + followupOverdue, "bg-[#0b1a33] text-white border-[#0b1a33] dark:bg-blue-700 dark:border-blue-700", neutral.off)}
+            {fc("todue", effectiveFollowup === "todue", "🎯 Today + Overdue", followupTodue, "bg-[#0b1a33] text-white border-[#0b1a33] dark:bg-blue-700 dark:border-blue-700", neutral.off)}
             {fc("today", effectiveFollowup === "today", "📅 Today", followupToday, "bg-emerald-600 text-white border-emerald-600", "bg-emerald-50 border-emerald-300 text-emerald-800 dark:bg-emerald-950/30 dark:border-emerald-700 dark:text-emerald-200")}
             {fc("overdue", effectiveFollowup === "overdue", "⏰ Overdue", followupOverdue, "bg-red-600 text-white border-red-600", "bg-red-50 border-red-300 text-red-800 dark:bg-red-950/30 dark:border-red-700 dark:text-red-200")}
             {fc("future", effectiveFollowup === "future", "🔮 Future", followupFuture, "bg-violet-600 text-white border-violet-600", "bg-violet-50 border-violet-300 text-violet-800 dark:bg-violet-950/30 dark:border-violet-700 dark:text-violet-200")}
             {fc("none", effectiveFollowup === "none", "🚫 No Follow-up", followupNone, "bg-slate-600 text-white border-slate-600", "bg-slate-50 border-slate-300 text-slate-700 dark:bg-slate-800 dark:border-slate-600 dark:text-slate-200")}
-            {fc("all", effectiveFollowup === "all", "All Active", totalAll, neutral.on, neutral.off)}
+            {fc("all", effectiveFollowup === "all", "All Active", allWorkable, neutral.on, neutral.off)}
 
             {/* Excel/MIS status chips — one per status that has ≥1 lead, sorted by count */}
             {cstatusCounts.map(({ label, count }) => {
