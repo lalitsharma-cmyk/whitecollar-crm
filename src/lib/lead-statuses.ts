@@ -292,6 +292,26 @@ export function isWorkableStatus(status: string | null | undefined): boolean {
   return leadCategory(status) === "WORKABLE";
 }
 
+// ─── Canonical status casing (import normalization) ───────────────────────
+// Excel sheets carry inconsistent casing ("Never Respond Phone calls",
+// "mail sent"). Imports must map any incoming status to the CANONICAL label so
+// the working-view terminal/workable classification — which is an exact match —
+// never leaks. Unknown statuses are preserved (trimmed) so new values aren't
+// silently dropped.
+const ALL_KNOWN_STATUSES: string[] = [
+  ...new Set([...INDIA_STATUSES, ...DUBAI_STATUSES, ...CLOSED_OUTCOME_STATUSES, ...LOST_STATUSES]),
+];
+const CANONICAL_STATUS_BY_KEY = new Map(
+  ALL_KNOWN_STATUSES.map((s) => [s.toLowerCase().replace(/\s+/g, " ").trim(), s]),
+);
+export function canonicalStatus(raw: string | null | undefined): string | null {
+  if (raw == null) return null;
+  const trimmed = raw.trim();
+  if (!trimmed) return trimmed;
+  const key = trimmed.toLowerCase().replace(/\s+/g, " ").trim();
+  return CANONICAL_STATUS_BY_KEY.get(key) ?? trimmed;
+}
+
 // ─── Agent-editable WORKING statuses ──────────────────────────────────────
 // Agents may only set day-to-day working statuses. "Fresh Lead" is system-
 // generated; outcome / classification statuses (War Fear, Funds Issue, Booked

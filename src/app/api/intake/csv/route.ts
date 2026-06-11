@@ -8,6 +8,7 @@ import { prisma } from "@/lib/prisma";
 import { extractFromRemarks, mergeSuggestions } from "@/lib/remarkAutofill";
 import { splitPhones, normalizePhone } from "@/lib/phone";
 import { resolveTeam, routingFieldsFor } from "@/lib/teamRouting";
+import { canonicalStatus } from "@/lib/lead-statuses";
 import { audit, reqMeta } from "@/lib/audit";
 // runIntelligenceCheck is called inside ingestLead() for every new (non-deduped)
 // lead. No explicit call needed here — the check fires sequentially, one per row,
@@ -455,7 +456,10 @@ export async function POST(req: NextRequest) {
       if (rawStatus) update.originalSheetStatus = rawStatus;
       if (stage) update.status = mapSheetStatus(stage);
       else if (callStatus) update.status = mapSheetStatus(callStatus);
-      if (callStatus) update.currentStatus = callStatus;
+      // Canonicalize casing so imports never reintroduce variants like
+      // "Never Respond Phone calls" that would leak past the exact-match
+      // terminal/workable classification.
+      if (callStatus) update.currentStatus = canonicalStatus(callStatus);
       const followup = parseDate(pick(row, "followupdate", "followup", "nextfollowup"));
       if (followup) update.followupDate = followup;
       const meeting = parseDate(pick(row, "meeting", "meetingdate"));

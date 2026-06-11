@@ -5,6 +5,7 @@ import { LeadSource, Potential, FundReadiness, MoodStatus, InvestTimeline } from
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { resolveTeam, routingFieldsFor } from "@/lib/teamRouting";
+import { canonicalStatus } from "@/lib/lead-statuses";
 // runIntelligenceCheck is called inside ingestLead() for every new (non-deduped)
 // lead. No explicit call needed here — the check fires sequentially before any
 // assignment or automation runs, satisfying the bulk-import constraint.
@@ -189,7 +190,7 @@ export async function POST(req: NextRequest) {
       const wc = pick(row, "whoisclient", "client", "clientinfo"); if (wc) update.whoIsClient = wc;
       const cat = pick(row, "categorization", "category"); if (cat) update.categorization = cat;
       const st = parseStage(pick(row, "stage")); if (st) update.status = st as any;
-      const cs = pick(row, "status"); if (cs) update.currentStatus = cs;
+      const cs = pick(row, "status"); if (cs) update.currentStatus = canonicalStatus(cs);
       const fu = parseDate(pick(row, "followupdate", "followup")); if (fu) update.followupDate = fu;
       const me = parseDate(pick(row, "meeting", "meetingdate")); if (me) update.meetingDate = me;
       const sv = parseDate(pick(row, "sitevisit")); if (sv) update.siteVisitDate = sv;
