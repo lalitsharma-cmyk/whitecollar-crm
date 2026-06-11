@@ -267,7 +267,8 @@ export const LOST_STATUSES: string[] = [
   "Broker", "Visited With Other Broker", "In Touch With Another Broker",
   "Other Location", "Other Requirement", "Low Budget", "Just Searching",
   "Drop The Plan", "Number Changed", "Invalid Number",
-  "Never Respond Phone Calls", "Never Responding", "Pass Away",
+  "Never Respond Phone Calls", "Never Respond Phone calls", // import casing variant
+  "Never Responding", "Pass Away",
   "Junk", "Blocked Me", "By Mistake Inquiry",
 ];
 

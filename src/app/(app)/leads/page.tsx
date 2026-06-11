@@ -234,52 +234,45 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
   // nofollowup filter already sets followupDate: null, so the followup chip
   // default (today) must not compose with it — include it as an "other filter".
   const hasOtherFilter = !!(sp.q || sp.source || sp.status || sp.cstatus || sp.owner || sp.team || sp.score || sp.notPicked || sp.eoi || sp.potential || sp.fundReady || sp.clientType || sp.whenInvest || sp.project || sp.budgetPreset || sp.budgetFrom || sp.budgetTo || sp.city || sp.category || sp.hasMeeting || sp.hasSiteVisit || sp.followupFrom || sp.followupTo || filterTab === "nofollowup");
-  // §12 Default view by role:
-  //   Agent   → Today's Follow-Ups (their primary daily work queue)
-  //   Manager → Today's Follow-Ups (recommended, same as agents)
-  //   Admin   → All Leads (needs full database visibility)
-  // Explicit ?followup= or any other filter in the URL overrides the default.
-  if (me.role === "AGENT" || me.role === "MANAGER") {
-    if (!hasOtherFilter && !sp.followup) {
-      // No filter set → default to today's follow-ups
-      where.followupDate = istWindow(0);
-    }
-  }
-  // Admin: no default filter — all leads visible immediately.
+  // ── DEFAULT working view = TODAY + OVERDUE follow-ups ───────────────────
+  // Lalit's rule: "Agent daily working screen should show only leads that need
+  // action NOW." Future follow-ups and no-followup leads are HIDDEN by default
+  // and reachable via the Future / No Follow-up / All chips. A targeted search
+  // (any non-followup filter in the URL) bypasses the default and shows all
+  // matching leads. Applies to EVERY role — Lalit works from "My Leads" too.
+  const endOfTodayUTC = istWindow(0).lt;  // start of tomorrow IST, as a UTC instant
+  let effectiveFollowup: string;
+  if (sp.followupFrom || sp.followupTo) effectiveFollowup = "range";
+  else if (sp.followup) effectiveFollowup = sp.followup;        // explicit chip
+  else if (filterTab === "nofollowup") effectiveFollowup = "none";
+  else if (hasOtherFilter) effectiveFollowup = "all";          // targeted search → no time narrowing
+  else effectiveFollowup = "todue";                            // ← the default
 
-  // Excel-style follow-up date range (from filter panel) — takes precedence over quick chips
-  if (sp.followupFrom || sp.followupTo) {
+  if (effectiveFollowup === "range") {
     const fRange: { gte?: Date; lte?: Date } = {};
     if (sp.followupFrom) fRange.gte = new Date(sp.followupFrom + "T00:00:00+05:30");
     if (sp.followupTo)   fRange.lte = new Date(sp.followupTo   + "T23:59:59+05:30");
     where.followupDate = fRange;
-  }
-
-  // Quick chip-bar shortcuts (Today/Overdue) — ignored if date range is set.
-  // ?followup=all explicitly clears the agent's today-default.
-  const effectiveFollowup = (sp.followupFrom || sp.followupTo) ? "range" : (sp.followup ?? "all");
-  // If agent/manager explicitly chose "all", clear the today filter we set above.
-  if (effectiveFollowup === "all" && (me.role === "AGENT" || me.role === "MANAGER")) {
-    delete where.followupDate;
-  }
-
-  if (effectiveFollowup === "today") {
-    // Today in IST as a UTC window: 00:00 IST = 18:30 UTC the previous day.
+  } else if (effectiveFollowup === "today") {
     where.followupDate = istWindow(0);
   } else if (effectiveFollowup === "tomorrow") {
-    // Tomorrow in IST — same window logic, shifted +1 day.
     where.followupDate = istWindow(1);
   } else if (effectiveFollowup === "overdue") {
-    // Past-due followups (older than now) — agent missed them.
     where.followupDate = { lt: new Date(), not: null };
+  } else if (effectiveFollowup === "todue") {
+    // Today + Overdue: every follow-up up to end of today IST (excludes future + null).
+    where.followupDate = { lt: endOfTodayUTC, not: null };
+  } else if (effectiveFollowup === "future") {
+    // Tomorrow (IST) onward.
+    where.followupDate = { gte: endOfTodayUTC };
+  } else if (effectiveFollowup === "none") {
+    where.followupDate = null;
   } else if (effectiveFollowup === "week") {
-    // Next 7 days from now (inclusive of today).
     where.followupDate = { gte: new Date(), lte: new Date(Date.now() + 7 * 24 * 3600 * 1000) };
   } else if (effectiveFollowup === "month") {
-    // Next 30 days from now (inclusive of today).
     where.followupDate = { gte: new Date(), lte: new Date(Date.now() + 30 * 24 * 3600 * 1000) };
   }
-  // effectiveFollowup === "all" or "range" → followupDate already set above or unset.
+  // effectiveFollowup === "all" → no follow-up filter (every workable lead).
 
   // Smart-filter preset chips — spec §9.3. Composes via AND so it does not
   // replace existing followup / status / source filters. Each preset is a
@@ -447,6 +440,12 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
       WHERE TRIM(t) <> ''
       ORDER BY tag ASC
     `,
+  ]);
+
+  // Counts for the Future and No-Follow-up chips (workable scope).
+  const [followupFuture, followupNone] = await Promise.all([
+    prisma.lead.count({ where: { ...activeScope, followupDate: { gte: endOfTodayUTC } } }),
+    prisma.lead.count({ where: { ...activeScope, followupDate: null } }),
   ]);
 
   // Re-sort smart-sort results to match the computed priority order.
@@ -618,46 +617,25 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
           const qs = p.toString();
           return qs ? `/leads?${qs}` : "/leads";
         };
-        const isAgent = me.role === "AGENT" || me.role === "MANAGER";
-        // Follow-up time dimension (All / Today / Overdue) writes the `followup`
-        // param. Agents have an implicit today-default, so their "All" must set
-        // followup=all explicitly to override it; admins just drop the param.
-        const followupHref = (val: "today" | "overdue" | "all") =>
-          val === "all" ? chipHref({ followup: isAgent ? "all" : null }) : chipHref({ followup: val });
-
-        // §12: For agents/managers the default is Today — so "Today" chip is highlighted
-        // when no explicit ?followup= param is set. "All" is highlighted only when ?followup=all.
-        const isAgentDefault = isAgent && !sp.followup && !hasOtherFilter;
-        const todayChipActive = effectiveFollowup === "today" || isAgentDefault;
-        // "All" (follow-up dimension) is active when not narrowed to a specific
-        // time window and not on the agent today-default. It can be highlighted
-        // alongside an active status chip — they're independent AND filters.
-        const allActive = !isAgentDefault && effectiveFollowup === "all";
+        // Follow-up dimension chips — DEFAULT = Today + Overdue (no ?followup= param).
+        // Each chip toggles: clicking an active one (other than the default) returns
+        // to the default; every OTHER active filter (status, search, panel) is preserved.
+        const fupHref = (val: string) => chipHref({ followup: val === "todue" ? null : val });
+        const fc = (val: string, active: boolean, label: string, count: number | null, on: string, off: string) => (
+          <Link href={active && val !== "todue" ? fupHref("todue") : fupHref(val)} className={chip(active, on, off)}>
+            {label}
+            {count != null && count > 0 && <span className={`px-1 rounded text-[10px] ${active ? "bg-white/25" : "bg-black/10 dark:bg-white/10"}`}>{count}</span>}
+          </Link>
+        );
 
         return (
           <div className="flex gap-2 overflow-x-auto pb-1 -mx-3 px-3 sm:mx-0 sm:px-0" style={{ scrollbarWidth: "thin" }}>
-            {/* All — clears only the follow-up time narrowing; preserves panel/search/other chips */}
-            <Link
-              href={followupHref("all")}
-              className={chip(allActive, neutral.on, neutral.off)}>
-              All · {totalAll}
-            </Link>
-
-            {/* Follow-up time chips — toggle on/off, always preserve other filters */}
-            <Link
-              href={todayChipActive ? followupHref("all") : followupHref("today")}
-              className={chip(todayChipActive, "bg-emerald-600 text-white border-emerald-600", "bg-emerald-50 border-emerald-300 text-emerald-800 dark:bg-emerald-950/30 dark:border-emerald-700 dark:text-emerald-200")}
-            >
-              📅 Today
-              {followupToday > 0 && <span className={`px-1 rounded text-[10px] ${todayChipActive ? "bg-white/25" : "bg-emerald-200/60 dark:bg-emerald-800/60"}`}>{followupToday}</span>}
-            </Link>
-            <Link
-              href={effectiveFollowup === "overdue" ? followupHref("all") : followupHref("overdue")}
-              className={chip(effectiveFollowup === "overdue", "bg-red-600 text-white border-red-600", "bg-red-50 border-red-300 text-red-800 dark:bg-red-950/30 dark:border-red-700 dark:text-red-200")}
-            >
-              ⏰ Overdue
-              {followupOverdue > 0 && <span className={`px-1 rounded text-[10px] ${effectiveFollowup === "overdue" ? "bg-white/25" : "bg-red-200/60 dark:bg-red-800/60"}`}>{followupOverdue}</span>}
-            </Link>
+            {fc("todue", effectiveFollowup === "todue", "🎯 Today + Overdue", followupToday + followupOverdue, "bg-[#0b1a33] text-white border-[#0b1a33] dark:bg-blue-700 dark:border-blue-700", neutral.off)}
+            {fc("today", effectiveFollowup === "today", "📅 Today", followupToday, "bg-emerald-600 text-white border-emerald-600", "bg-emerald-50 border-emerald-300 text-emerald-800 dark:bg-emerald-950/30 dark:border-emerald-700 dark:text-emerald-200")}
+            {fc("overdue", effectiveFollowup === "overdue", "⏰ Overdue", followupOverdue, "bg-red-600 text-white border-red-600", "bg-red-50 border-red-300 text-red-800 dark:bg-red-950/30 dark:border-red-700 dark:text-red-200")}
+            {fc("future", effectiveFollowup === "future", "🔮 Future", followupFuture, "bg-violet-600 text-white border-violet-600", "bg-violet-50 border-violet-300 text-violet-800 dark:bg-violet-950/30 dark:border-violet-700 dark:text-violet-200")}
+            {fc("none", effectiveFollowup === "none", "🚫 No Follow-up", followupNone, "bg-slate-600 text-white border-slate-600", "bg-slate-50 border-slate-300 text-slate-700 dark:bg-slate-800 dark:border-slate-600 dark:text-slate-200")}
+            {fc("all", effectiveFollowup === "all", "All Active", totalAll, neutral.on, neutral.off)}
 
             {/* Excel/MIS status chips — one per status that has ≥1 lead, sorted by count */}
             {cstatusCounts.map(({ label, count }) => {

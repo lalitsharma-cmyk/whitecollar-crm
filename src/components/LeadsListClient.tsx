@@ -17,6 +17,7 @@ function WaIcon() {
 import { telLink, whatsappLink } from "@/lib/phone";
 import CopyPhoneButton from "./CopyPhoneButton";
 import { statusColor, EXCEL_STATUSES, selectableStatuses } from "@/lib/lead-statuses";
+import { resolveProjectDisplay, prettyProjectName } from "@/lib/projectName";
 
 // Preset tag vocab — mirrors what Lalit asked the team to standardise on
 // across the pipeline. Kept here (not server-fetched) so the popover renders
@@ -490,16 +491,19 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
                             className="hover:text-[#0b1a33] dark:hover:text-blue-300 hover:underline">{l.name}</Link>
                         </td>
 
-                        {/* 3. Project — formal link → interest unit → notesShort → configuration */}
-                        <td className="px-3 py-1.5 text-xs truncate" title={l.discussedProjects[0] ?? l.interest ?? l.projectHint ?? ""}>
-                          {l.discussedProjects[0]
-                            ? <span className="text-gray-700 dark:text-slate-200 font-medium">{l.discussedProjects[0]}</span>
-                            : l.interest
-                            ? <span className="text-gray-700 dark:text-slate-200">{l.interest}</span>
-                            : l.projectHint
-                            ? <span className="text-gray-400 dark:text-slate-500 italic">{l.projectHint}</span>
-                            : <span className="text-gray-300">—</span>}
-                        </td>
+                        {/* 3. Project — real linked project only, normalized to the
+                            canonical name. A weak hint (notesShort/config like a
+                            remark or "2BHK") is NOT a project → em-dash, never italic. */}
+                        {(() => {
+                          const proj = resolveProjectDisplay(l.discussedProjects[0], l.interest, l.projectHint, projectOptions);
+                          return (
+                            <td className="px-3 py-1.5 text-xs truncate" title={proj ?? ""}>
+                              {proj
+                                ? <span className="text-gray-700 dark:text-slate-200 font-medium">{proj}</span>
+                                : <span className="text-gray-300 dark:text-slate-600">—</span>}
+                            </td>
+                          );
+                        })()}
 
                         {/* 4. Status — floating popover, table never shifts */}
                         <td className="px-3 py-1.5" onClick={e => e.stopPropagation()}>
@@ -756,10 +760,10 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
                   <div className="flex items-center gap-1 text-[10px] text-gray-500 dark:text-slate-400 mt-0.5 flex-wrap">
                     {l.discussedProjects.length > 0 ? (
                       l.discussedProjects.slice(0, 2).map((p, i) => (
-                        <span key={i} className="bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 px-1 py-0 rounded">{p}</span>
+                        <span key={i} className="bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 px-1 py-0 rounded">{prettyProjectName(p, projectOptions) ?? p}</span>
                       ))
                     ) : l.interest ? (
-                      <span className="bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 px-1 py-0 rounded truncate max-w-[120px]">{l.interest}</span>
+                      <span className="bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 px-1 py-0 rounded truncate max-w-[120px]">{prettyProjectName(l.interest, projectOptions) ?? l.interest}</span>
                     ) : null}
                     {intel?.matchType === "STRONG" && (
                       <span className="text-[9px] font-semibold px-1 py-0 rounded bg-red-100 text-red-700">🏠 Existing</span>
@@ -895,10 +899,10 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
                     <div className="flex items-center gap-1 text-[11px] text-gray-400 dark:text-slate-500 mt-0.5 flex-wrap">
                       {l.discussedProjects.length > 0 ? (
                         l.discussedProjects.slice(0, 3).map((p, i) => (
-                          <span key={i} className="bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 px-1.5 rounded text-[10px]">{p}</span>
+                          <span key={i} className="bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 px-1.5 rounded text-[10px]">{prettyProjectName(p, projectOptions) ?? p}</span>
                         ))
                       ) : l.interest ? (
-                        <span className="bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 px-1.5 rounded text-[10px] truncate max-w-[120px]">{l.interest}</span>
+                        <span className="bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 px-1.5 rounded text-[10px] truncate max-w-[120px]">{prettyProjectName(l.interest, projectOptions) ?? l.interest}</span>
                       ) : null}
                       {l.lastTouched && (
                         <span className={`${idleClass(l.lastTouchedAt as string | null)} ml-1`}>
