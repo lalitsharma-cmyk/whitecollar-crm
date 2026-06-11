@@ -128,6 +128,11 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
   const router = useRouter();
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const selectedIds = Array.from(selected);
+  // Agents see a leaner table (no Assigned/Last-Activity columns — they only ever
+  // see their own leads) but CAN still select rows to bulk-set follow-up dates.
+  const isAgent = meRole === "AGENT";
+  const canSel = canBulk || isAgent;          // who may tick row checkboxes
+  const isAdmin = meRole === "ADMIN";          // admin-only bulk field edits
 
   // Bulk action UI state. The action bar is a single sticky element at the
   // bottom; popovers/modals for each action layer on top via z-50.
@@ -140,6 +145,13 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
   const [rejectReason, setRejectReason] = useState("FUND_ISSUE");
   const [rejectNote, setRejectNote] = useState("");
   const [waTemplate, setWaTemplate] = useState("followup");
+  // Bulk follow-up (agents + admin) and bulk field-edit (admin: source/budget/project).
+  const [showFollowupPop, setShowFollowupPop] = useState(false);
+  const [bulkFollowup, setBulkFollowup] = useState("");
+  const [showEditPop, setShowEditPop] = useState(false);
+  const [editSource, setEditSource] = useState("");
+  const [editBudget, setEditBudget] = useState("");
+  const [editProject, setEditProject] = useState("");
   const [waLinks, setWaLinks] = useState<Array<{ leadId: string; name: string; phone: string; waLink: string }>>([]);
   const [waSkipped, setWaSkipped] = useState<Array<{ leadId: string; name: string; reason: string }>>([]);
   const [bulkBusy, setBulkBusy] = useState(false);
@@ -356,6 +368,42 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
     } finally { setBulkBusy(false); }
   }
 
+  // Bulk set follow-up date — agent-safe (API scopes to the caller's own leads).
+  async function applyBulkFollowup() {
+    if (bulkBusy) return;
+    setBulkBusy(true); setBulkErr(null);
+    try {
+      const r = await fetch("/api/leads/bulk", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "set_followup", leadIds: selectedIds, followupDate: bulkFollowup ? `${bulkFollowup}T18:00:00+05:30` : null }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) { setBulkErr(j.error ?? `Failed (${r.status})`); return; }
+      setShowFollowupPop(false); clearSelection(); router.refresh();
+    } catch (e) { setBulkErr(`Network error: ${String(e).slice(0, 80)}`); }
+    finally { setBulkBusy(false); }
+  }
+
+  // Bulk edit Source / Budget / Project — ADMIN only (server also enforces).
+  async function applyBulkFields() {
+    if (bulkBusy) return;
+    if (!editSource && !editBudget && !editProject) { setBulkErr("Pick at least one field to set."); return; }
+    setBulkBusy(true); setBulkErr(null);
+    try {
+      const r = await fetch("/api/leads/bulk", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "set_fields", leadIds: selectedIds,
+          ...(editSource ? { source: editSource } : {}),
+          ...(editBudget ? { budget: editBudget } : {}),
+          ...(editProject ? { project: editProject } : {}) }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) { setBulkErr(j.error ?? `Failed (${r.status})`); return; }
+      setShowEditPop(false); setEditSource(""); setEditBudget(""); setEditProject(""); clearSelection(); router.refresh();
+    } catch (e) { setBulkErr(`Network error: ${String(e).slice(0, 80)}`); }
+    finally { setBulkBusy(false); }
+  }
+
   // Bulk WhatsApp can't send server-side (no Meta API) — the endpoint returns a
   // list of wa.me draft links the agent opens one by one. Each is also logged
   // as a PLANNED activity server-side.
@@ -430,15 +478,15 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
                     {/* status   */}<col style={{ width: 130 }} />
                     {/* budget   */}<col style={{ width: 90 }} />
                     {/* follow-up*/}<col style={{ width: 90 }} />
-                    {/* assigned */}<col style={{ width: 100 }} />
+                    {!isAgent && <col style={{ width: 100 }} />}{/* assigned */}
                     {showSource && <col style={{ width: 75 }} />}
-                    {/* activity */}<col style={{ width: 120 }} />
+                    {!isAgent && <col style={{ width: 120 }} />}{/* activity */}
                     {/* actions  */}<col style={{ width: 150 }} />
                   </colgroup>
                   <thead>
                     <tr className="border-b border-gray-200 dark:border-slate-700">
                       <th className={thCls}>
-                        {canBulk && <input type="checkbox" checked={allChecked} onChange={toggleAll} />}
+                        {canSel && <input type="checkbox" checked={allChecked} onChange={toggleAll} />}
                       </th>
                       <th className={sortThCls}>
                         <span onClick={() => router.push(sortHref("name"))}>Name <SortIcon k="name" /></span>
@@ -459,13 +507,17 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
                         <span onClick={() => router.push(sortHref("followup"))}>Follow-Up <SortIcon k="followup" /></span>
                         <LeadHeaderFilter kind="followup" label="Follow-up" searchParamsStr={searchParamsStr} />
                       </th>
-                      <th className={thCls}>
-                        Assigned {showSource && <LeadHeaderFilter kind="multi" paramKey="owner" label="Assigned to" options={agentFilterOpts} searchParamsStr={searchParamsStr} />}
-                      </th>
+                      {!isAgent && (
+                        <th className={thCls}>
+                          Assigned {showSource && <LeadHeaderFilter kind="multi" paramKey="owner" label="Assigned to" options={agentFilterOpts} searchParamsStr={searchParamsStr} />}
+                        </th>
+                      )}
                       {showSource && <th className={thCls}>Source</th>}
-                      <th className={thCls}>
-                        Last Activity <LeadHeaderFilter kind="activity" label="Last Activity" searchParamsStr={searchParamsStr} />
-                      </th>
+                      {!isAgent && (
+                        <th className={thCls}>
+                          Last Activity <LeadHeaderFilter kind="activity" label="Last Activity" searchParamsStr={searchParamsStr} />
+                        </th>
+                      )}
                       <th className={thCls}>Actions</th>
                     </tr>
                   </thead>
@@ -482,7 +534,7 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
 
                         {/* 1. Checkbox */}
                         <td className="px-2 py-1.5" onClick={e => e.stopPropagation()}>
-                          {canBulk && <input type="checkbox" checked={selected.has(l.id)} onChange={() => toggle(l.id)} />}
+                          {canSel && <input type="checkbox" checked={selected.has(l.id)} onChange={() => toggle(l.id)} />}
                         </td>
 
                         {/* 2. Name */}
@@ -549,10 +601,12 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
                           </button>
                         </td>
 
-                        {/* 6. Assigned — display only (§1: controlled workflow, no accidental reassign) */}
-                        <td className="px-3 py-1.5 text-gray-600 dark:text-slate-300 text-xs truncate">
-                          {l.owner?.name ?? <span className="text-amber-500 text-[10px]">Unassigned</span>}
-                        </td>
+                        {/* 6. Assigned — hidden for agents (they only ever see their own leads) */}
+                        {!isAgent && (
+                          <td className="px-3 py-1.5 text-gray-600 dark:text-slate-300 text-xs truncate">
+                            {l.owner?.name ?? <span className="text-amber-500 text-[10px]">Unassigned</span>}
+                          </td>
+                        )}
 
                         {/* 7. Source — admin/manager only (§2) */}
                         {showSource && (
@@ -561,10 +615,12 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
                           </td>
                         )}
 
-                        {/* 8. Last Activity */}
-                        <td className="px-3 py-1.5 text-gray-500 dark:text-slate-400 text-xs truncate">
-                          {lastAct ?? <span className="text-gray-300">—</span>}
-                        </td>
+                        {/* 8. Last Activity — hidden for agents */}
+                        {!isAgent && (
+                          <td className="px-3 py-1.5 text-gray-500 dark:text-slate-400 text-xs truncate">
+                            {lastAct ?? <span className="text-gray-300">—</span>}
+                          </td>
+                        )}
 
                         {/* 9. Actions — ALWAYS VISIBLE (§5: no invisible hover area) */}
                         <td className="px-2 py-1.5 whitespace-nowrap" onClick={e => e.stopPropagation()}>
@@ -707,7 +763,7 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
           return (
             <div key={l.id} className="card p-3 active:bg-amber-50">
               <div className="flex items-start gap-2">
-                {canBulk && (
+                {canSel && (
                   <input type="checkbox" checked={selected.has(l.id)} onChange={() => toggle(l.id)} className="mt-1" />
                 )}
                 <Link href={`/leads/${l.id}`} className="flex-1 min-w-0 block">
@@ -838,7 +894,7 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
           <thead>
             <tr className="border-b border-[#e5e7eb] dark:border-slate-700 text-left text-xs font-semibold text-gray-500 dark:text-slate-400 bg-gray-50/80 dark:bg-slate-800/50">
               <th className="w-8 px-3 py-2.5">
-                {canBulk && <input type="checkbox" checked={allChecked} onChange={toggleAll} />}
+                {canSel && <input type="checkbox" checked={allChecked} onChange={toggleAll} />}
               </th>
               <th className="px-3 py-2.5">Lead</th>
               <th className="px-3 py-2.5 w-36">Status</th>
@@ -866,7 +922,7 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
                 >
                   {/* Checkbox */}
                   <td className="px-3 py-3 w-8 align-top">
-                    {canBulk && <input type="checkbox" checked={selected.has(l.id)} onChange={() => toggle(l.id)} />}
+                    {canSel && <input type="checkbox" checked={selected.has(l.id)} onChange={() => toggle(l.id)} />}
                   </td>
 
                   {/* ── Lead Name + intel ── */}
@@ -1049,7 +1105,7 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
       {/* ─── Bulk action bar (Tag · WhatsApp · Reassign · Reject) ─────
           Sticky bottom bar; appears when rows are selected.
           Safe-bottom inset so iPhone home indicator doesn't eat buttons. */}
-      {canBulk && selectedIds.length > 0 && (
+      {canSel && selectedIds.length > 0 && (
         <>
           <div
             className="fixed left-0 right-0 z-50 bg-white dark:bg-slate-800 border-t border-[#e5e7eb] dark:border-slate-700 shadow-2xl px-3 py-2 safe-bottom"
@@ -1066,33 +1122,96 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
                 Clear
               </button>
               <div className="w-px h-6 bg-gray-200 dark:bg-slate-600 mx-1" />
+              {/* Follow-up — everyone (agents + admin), API scopes to own leads */}
               <button
-                onClick={() => { setShowTagPopover(v => !v); setShowReassignPopover(false); setShowWaPopover(false); }}
-                className="inline-flex items-center gap-1 text-xs font-semibold bg-fuchsia-50 text-fuchsia-800 border border-fuchsia-300 px-3 py-2 rounded-lg min-h-11"
+                onClick={() => { setShowFollowupPop(v => !v); setShowTagPopover(false); setShowWaPopover(false); setShowReassignPopover(false); setShowEditPop(false); }}
+                className="inline-flex items-center gap-1 text-xs font-semibold bg-blue-50 text-blue-800 border border-blue-300 px-3 py-2 rounded-lg min-h-11"
               >
-                <Tag className="w-3.5 h-3.5" /> Tag
+                <Calendar className="w-3.5 h-3.5" /> Follow-up
               </button>
-              <button
-                onClick={() => { setShowWaPopover(v => !v); setShowTagPopover(false); setShowReassignPopover(false); }}
-                className="inline-flex items-center gap-1 text-xs font-semibold bg-[#e7f9ef] text-[#0f7a3d] border border-[#9ce0bb] px-3 py-2 rounded-lg min-h-11"
-              >
-                <MessageCircle className="w-3.5 h-3.5" /> WhatsApp
-              </button>
+              {canBulk && (
+                <button
+                  onClick={() => { setShowTagPopover(v => !v); setShowReassignPopover(false); setShowWaPopover(false); setShowFollowupPop(false); setShowEditPop(false); }}
+                  className="inline-flex items-center gap-1 text-xs font-semibold bg-fuchsia-50 text-fuchsia-800 border border-fuchsia-300 px-3 py-2 rounded-lg min-h-11"
+                >
+                  <Tag className="w-3.5 h-3.5" /> Tag
+                </button>
+              )}
+              {canBulk && (
+                <button
+                  onClick={() => { setShowWaPopover(v => !v); setShowTagPopover(false); setShowReassignPopover(false); setShowFollowupPop(false); setShowEditPop(false); }}
+                  className="inline-flex items-center gap-1 text-xs font-semibold bg-[#e7f9ef] text-[#0f7a3d] border border-[#9ce0bb] px-3 py-2 rounded-lg min-h-11"
+                >
+                  <MessageCircle className="w-3.5 h-3.5" /> WhatsApp
+                </button>
+              )}
+              {isAdmin && (
+                <button
+                  onClick={() => { setShowEditPop(v => !v); setShowTagPopover(false); setShowWaPopover(false); setShowReassignPopover(false); setShowFollowupPop(false); }}
+                  className="inline-flex items-center gap-1 text-xs font-semibold bg-amber-50 text-amber-800 border border-amber-300 px-3 py-2 rounded-lg min-h-11"
+                >
+                  <Pencil className="w-3.5 h-3.5" /> Edit fields
+                </button>
+              )}
               {canReassign && (
                 <button
-                  onClick={() => { setShowReassignPopover(v => !v); setShowTagPopover(false); setShowWaPopover(false); }}
+                  onClick={() => { setShowReassignPopover(v => !v); setShowTagPopover(false); setShowWaPopover(false); setShowFollowupPop(false); setShowEditPop(false); }}
                   className="inline-flex items-center gap-1 text-xs font-semibold bg-blue-50 text-blue-800 border border-blue-300 px-3 py-2 rounded-lg min-h-11"
                 >
                   <RefreshCw className="w-3.5 h-3.5" /> Reassign
                 </button>
               )}
-              <button
-                onClick={() => { setShowRejectModal(true); setShowTagPopover(false); setShowReassignPopover(false); setShowWaPopover(false); }}
-                className="inline-flex items-center gap-1 text-xs font-semibold bg-red-50 text-red-800 border border-red-300 px-3 py-2 rounded-lg min-h-11"
-              >
-                <XCircle className="w-3.5 h-3.5" /> Reject
-              </button>
+              {canBulk && (
+                <button
+                  onClick={() => { setShowRejectModal(true); setShowTagPopover(false); setShowReassignPopover(false); setShowWaPopover(false); setShowFollowupPop(false); setShowEditPop(false); }}
+                  className="inline-flex items-center gap-1 text-xs font-semibold bg-red-50 text-red-800 border border-red-300 px-3 py-2 rounded-lg min-h-11"
+                >
+                  <XCircle className="w-3.5 h-3.5" /> Reject
+                </button>
+              )}
             </div>
+
+            {/* Follow-up popover — bulk set/clear the follow-up date. */}
+            {showFollowupPop && (
+              <div className="absolute left-3 right-3 sm:left-1/2 sm:-translate-x-1/2 sm:max-w-sm bottom-full mb-2 bg-white dark:bg-slate-800 border border-[#e5e7eb] dark:border-slate-700 rounded-xl shadow-2xl p-3">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="text-xs font-semibold text-[#0b1a33] dark:text-white">Set follow-up for {selectedIds.length} lead{selectedIds.length === 1 ? "" : "s"}</div>
+                  <button onClick={() => setShowFollowupPop(false)} className="text-gray-400 hover:text-gray-700"><X className="w-4 h-4" /></button>
+                </div>
+                <input type="date" value={bulkFollowup} onChange={(e) => setBulkFollowup(e.target.value)}
+                  className="w-full border border-[#e5e7eb] dark:border-slate-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-slate-700 dark:text-slate-100 mb-3" />
+                {bulkErr && <div className="text-[11px] text-red-600 mb-2">{bulkErr}</div>}
+                <div className="flex justify-between gap-2">
+                  <button onClick={() => { setBulkFollowup(""); applyBulkFollowup(); }} disabled={bulkBusy} className="btn btn-ghost text-xs">Clear date</button>
+                  <button onClick={applyBulkFollowup} disabled={bulkBusy || !bulkFollowup} className="btn btn-primary text-xs">{bulkBusy ? "Saving…" : "Apply"}</button>
+                </div>
+              </div>
+            )}
+
+            {/* Edit-fields popover (ADMIN) — Source / Budget / Project in bulk. */}
+            {showEditPop && isAdmin && (
+              <div className="absolute left-3 right-3 sm:left-1/2 sm:-translate-x-1/2 sm:max-w-sm bottom-full mb-2 bg-white dark:bg-slate-800 border border-[#e5e7eb] dark:border-slate-700 rounded-xl shadow-2xl p-3">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="text-xs font-semibold text-[#0b1a33] dark:text-white">Edit {selectedIds.length} lead{selectedIds.length === 1 ? "" : "s"} <span className="font-normal text-gray-400">— fill only what you want to change</span></div>
+                  <button onClick={() => setShowEditPop(false)} className="text-gray-400 hover:text-gray-700"><X className="w-4 h-4" /></button>
+                </div>
+                <label className="text-[11px] font-semibold text-gray-500 dark:text-slate-400">Source</label>
+                <select value={editSource} onChange={(e) => setEditSource(e.target.value)} className="w-full border border-[#e5e7eb] dark:border-slate-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-slate-700 dark:text-slate-100 mb-2 mt-0.5">
+                  <option value="">— leave unchanged —</option>
+                  {["WEBSITE","WHATSAPP","CSV_IMPORT","EVENT","REFERRAL","INBOUND_CALL","FACEBOOK_ADS","GOOGLE_ADS","PORTAL_99ACRES","PORTAL_MAGICBRICKS","PORTAL_HOUSING","OTHER"].map(s => <option key={s} value={s}>{s.replace(/_/g," ").replace("PORTAL ","")}</option>)}
+                </select>
+                <label className="text-[11px] font-semibold text-gray-500 dark:text-slate-400">Budget</label>
+                <input value={editBudget} onChange={(e) => setEditBudget(e.target.value)} placeholder="e.g. 2.5M · 30L · 3Cr · 2000000" className="w-full border border-[#e5e7eb] dark:border-slate-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-slate-700 dark:text-slate-100 mb-2 mt-0.5" />
+                <label className="text-[11px] font-semibold text-gray-500 dark:text-slate-400">Project</label>
+                <input list="bulk-proj-list" value={editProject} onChange={(e) => setEditProject(e.target.value)} placeholder="— leave unchanged —" className="w-full border border-[#e5e7eb] dark:border-slate-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-slate-700 dark:text-slate-100 mb-3 mt-0.5" />
+                <datalist id="bulk-proj-list">{projectOptions.slice(0, 300).map(p => <option key={p} value={p} />)}</datalist>
+                {bulkErr && <div className="text-[11px] text-red-600 mb-2">{bulkErr}</div>}
+                <div className="flex justify-end gap-2">
+                  <button onClick={() => setShowEditPop(false)} className="btn btn-ghost text-xs">Cancel</button>
+                  <button onClick={applyBulkFields} disabled={bulkBusy || (!editSource && !editBudget && !editProject)} className="btn btn-primary text-xs">{bulkBusy ? "Saving…" : "Apply"}</button>
+                </div>
+              </div>
+            )}
 
             {/* Tag popover — multi-select checkbox grid. Anchored above the
                 bar via absolute positioning relative to viewport (mb-2 from

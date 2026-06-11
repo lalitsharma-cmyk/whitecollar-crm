@@ -4,8 +4,9 @@ import { requireRole, requireUser } from "@/lib/auth";
 import { assignLeadTo } from "@/lib/leadIngest";
 import { audit, reqMeta } from "@/lib/audit";
 import { leadScopeWhere } from "@/lib/leadScope";
-import { LeadStatus, ActivityType, ActivityStatus } from "@prisma/client";
+import { LeadStatus, LeadSource, ActivityType, ActivityStatus } from "@prisma/client";
 import { crossTeamWarning, normalizeTeam } from "@/lib/teamRouting";
+import { parseBudget } from "@/lib/budgetParse";
 
 // Allow-list mirrors /api/leads/[id]/reject — keep these in sync.
 const REJECT_REASONS = new Set([
@@ -234,6 +235,56 @@ export async function POST(req: NextRequest) {
       request: reqMeta(req),
     });
     return NextResponse.json({ ok: true, updated: r.count });
+  }
+
+  if (action === "set_fields") {
+    // ADMIN-only bulk edit of Source / Budget / Project. Each is optional — set
+    // only the fields provided. Scoped through leadScopeWhere like every action.
+    if (me.role !== "ADMIN") {
+      return NextResponse.json({ error: "Only an admin can bulk-edit source, budget, or project." }, { status: 403 });
+    }
+    const data: Record<string, unknown> = {};
+    if (typeof body.source === "string" && body.source) {
+      if (!(Object.values(LeadSource) as string[]).includes(body.source)) {
+        return NextResponse.json({ error: "Invalid source" }, { status: 400 });
+      }
+      data.source = body.source;
+    }
+    if (typeof body.budget === "string" && body.budget.trim()) {
+      const n = parseBudget(body.budget);
+      if (n == null) return NextResponse.json({ error: "Couldn't parse budget — try 2.5M, 30L, 3Cr, or digits." }, { status: 400 });
+      data.budgetMin = n;
+      data.budgetMax = null; // single uniform value, no garbage range
+    }
+    // Resolve the visible (scoped) lead ids once.
+    const visible = await prisma.lead.findMany({ where: { id: { in: ids }, ...scope }, select: { id: true } });
+    const visibleIds = visible.map(v => v.id);
+    let updated = 0;
+    if (Object.keys(data).length) {
+      data.lastTouchedAt = new Date();
+      const r = await prisma.lead.updateMany({ where: { id: { in: visibleIds } }, data });
+      updated = r.count;
+    }
+    // Project — link the leads to a Project (matched by name) via LeadProject.
+    let projectLinked = 0;
+    if (typeof body.project === "string" && body.project.trim()) {
+      const proj = await prisma.project.findFirst({
+        where: { name: { equals: body.project.trim(), mode: "insensitive" } },
+        select: { id: true },
+      });
+      if (!proj) return NextResponse.json({ error: `Project "${body.project}" not found.` }, { status: 400 });
+      const res = await prisma.leadProject.createMany({
+        data: visibleIds.map((leadId) => ({ leadId, projectId: proj.id, sourceType: "MANUAL" })),
+        skipDuplicates: true,
+      });
+      projectLinked = res.count;
+    }
+    if (!updated && !projectLinked) {
+      return NextResponse.json({ error: "Nothing to update — pick at least one field." }, { status: 400 });
+    }
+    await audit({ userId: me.id, action: "lead.bulk.fields", entity: "Lead",
+      meta: { count: visibleIds.length, fields: Object.keys(data), projectLinked, leadIds: visibleIds.slice(0, 50) }, request: reqMeta(req) });
+    return NextResponse.json({ ok: true, updated: Math.max(updated, projectLinked, visibleIds.length) });
   }
 
   return NextResponse.json({ error: "Unknown action" }, { status: 400 });
