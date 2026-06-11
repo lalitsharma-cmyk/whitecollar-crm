@@ -529,6 +529,25 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
           <div className="text-xs text-gray-500 dark:text-slate-400">📱 Alt phone</div>
           <InlineEdit leadId={lead.id} field="altPhone" type="phone" value={lead.altPhone ?? ""} placeholder="+91 or +971…" />
         </div>
+        {/* Email — sits beside Phone/Alt phone per Lalit's layout. Sensitive PII
+            like phone: admin/manager edit it inline, agents see it read-only.
+            Null email → InlineEdit shows the "Add value" placeholder. */}
+        <div>
+          <div className="text-xs text-gray-500 dark:text-slate-400">✉️ Email</div>
+          {isAdminOrManager ? (
+            <InlineEdit leadId={lead.id} field="email" value={lead.email ?? ""} placeholder="Add value" />
+          ) : (
+            <div className="mt-0.5">
+              {lead.email
+                ? <a href={`mailto:${lead.email}`} className="text-sm text-blue-600 dark:text-blue-400 hover:underline break-all">{lead.email}</a>
+                : <span className="text-sm text-gray-400">—</span>}
+            </div>
+          )}
+        </div>
+        <div>
+          <div className="text-xs text-gray-500 dark:text-slate-400">🏢 Company</div>
+          <InlineEdit leadId={lead.id} field="company" value={lead.company ?? ""} placeholder="Add value" />
+        </div>
         <div>
           <div className="text-xs text-gray-500 dark:text-slate-400">💼 Profession</div>
           <InlineEdit leadId={lead.id} field="profession" type="select" value={lead.profession ?? ""}
@@ -541,15 +560,6 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
               {value:"STUDENT",label:"Student"},
               {value:"OTHER",label:"Other"},
             ]} />
-        </div>
-        <div>
-          <div className="text-xs text-gray-500 dark:text-slate-400">🏢 Company</div>
-          <InlineEdit leadId={lead.id} field="company" value={lead.company ?? ""} placeholder="Add value" />
-        </div>
-        <div>
-          <div className="text-xs text-gray-500 dark:text-slate-400">Potential</div>
-          <InlineEdit leadId={lead.id} field="potential" type="select" value={lead.potential ?? ""}
-            options={[{value:"HIGH",label:"🔥 Hot"},{value:"MEDIUM",label:"🌤 Warm"},{value:"LOW",label:"❄ Cold"},{value:"UNKNOWN",label:"— Unknown"}]} />
         </div>
         {/* §7 Configuration — Dubai uses BR types, India uses BHK types. Never mix. */}
         <div>
