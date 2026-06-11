@@ -104,6 +104,7 @@ interface Row {
   followupDate: string | null;
   followupRaw: string | null;   // YYYY-MM-DD for the date input
   enquiryDate: string | null;   // when the client enquired (createdAt)
+  enquiryRaw: string | null;    // YYYY-MM-DD for the date input (admin inline edit)
   intelligenceMatch: {
     matchType: string;
     confidence: number;
@@ -161,6 +162,7 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
   const [pickerOpenFor, setPickerOpenFor] = useState<string | null>(null);
   const [pickerPos, setPickerPos] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
   const [statusOpenFor, setStatusOpenFor] = useState<string | null>(null);
+  const [enquiryEditFor, setEnquiryEditFor] = useState<string | null>(null);
   // §1: Assigned is display-only from the table — no inline reassign dropdown.
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
   const [deleteReason, setDeleteReason] = useState("NOT_INTERESTED");
@@ -206,6 +208,17 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
       body: JSON.stringify({ followupDate: date || null }),
     });
     setPickerOpenFor(null);
+    router.refresh();
+  }
+
+  async function quickSetEnquiry(leadId: string, date: string) {
+    if (!date) return;
+    await fetch(`/api/leads/${leadId}/update`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ createdAt: `${date}T00:00:00+05:30` }),
+    });
+    setEnquiryEditFor(null);
     router.refresh();
   }
 
@@ -474,11 +487,11 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
                 <table className="w-full text-xs border-collapse" style={{ tableLayout: "fixed" }}>
                   <colgroup>
                     {/* checkbox */}<col style={{ width: 28 }} />
-                    {/* name     */}<col style={{ width: 155 }} />
-                    {/* project  */}<col style={{ width: 120 }} />
-                    {/* status   */}<col style={{ width: 130 }} />
+                    {/* enquiry  */}<col style={{ width: 80 }} />
+                    {/* name     */}<col style={{ width: 150 }} />
+                    {/* project  */}<col style={{ width: 115 }} />
+                    {/* status   */}<col style={{ width: 128 }} />
                     {/* budget   */}<col style={{ width: 90 }} />
-                    {/* enquiry  */}<col style={{ width: 78 }} />
                     {/* follow-up*/}<col style={{ width: 90 }} />
                     {!isAgent && <col style={{ width: 100 }} />}{/* assigned */}
                     {showSource && <col style={{ width: 75 }} />}
@@ -489,6 +502,10 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
                     <tr className="border-b border-gray-200 dark:border-slate-700">
                       <th className={thCls}>
                         {canSel && <input type="checkbox" checked={allChecked} onChange={toggleAll} />}
+                      </th>
+                      <th className={sortThCls}>
+                        <span onClick={() => router.push(sortHref("created"))}>Enquiry <SortIcon k="created" /></span>
+                        <LeadHeaderFilter kind="enquiry" label="Enquiry Date" searchParamsStr={searchParamsStr} />
                       </th>
                       <th className={sortThCls}>
                         <span onClick={() => router.push(sortHref("name"))}>Name <SortIcon k="name" /></span>
@@ -505,7 +522,6 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
                         <span onClick={() => router.push(sortHref("budget"))}>Budget <SortIcon k="budget" /></span>
                         <LeadHeaderFilter kind="budget" label="Budget" searchParamsStr={searchParamsStr} />
                       </th>
-                      <th className={thCls}>Enquiry</th>
                       <th className={sortThCls}>
                         <span onClick={() => router.push(sortHref("followup"))}>Follow-Up <SortIcon k="followup" /></span>
                         <LeadHeaderFilter kind="followup" label="Follow-up" searchParamsStr={searchParamsStr} />
@@ -540,13 +556,43 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
                           {canSel && <input type="checkbox" checked={selected.has(l.id)} onChange={() => toggle(l.id)} />}
                         </td>
 
-                        {/* 2. Name */}
+                        {/* 2. Enquiry date — when the client came in (createdAt).
+                            Admin: click to edit inline. Agent: read-only. */}
+                        <td className="px-2 py-1.5 whitespace-nowrap text-xs tabular-nums" onClick={e => e.stopPropagation()}>
+                          {isAdmin ? (
+                            enquiryEditFor === l.id ? (
+                              <input
+                                type="date"
+                                autoFocus
+                                className="text-xs border rounded px-1 py-0.5 w-[76px] dark:bg-slate-700 dark:border-slate-500 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-blue-400"
+                                defaultValue={l.enquiryRaw ?? ""}
+                                onBlur={() => setEnquiryEditFor(null)}
+                                onChange={e => { if (e.target.value) quickSetEnquiry(l.id, e.target.value); }}
+                              />
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => setEnquiryEditFor(l.id)}
+                                className="text-gray-600 dark:text-slate-300 hover:text-blue-600 dark:hover:text-blue-400 hover:underline whitespace-nowrap"
+                                title="Click to edit enquiry date"
+                              >
+                                {l.enquiryDate ?? <span className="text-gray-300">—</span>}
+                              </button>
+                            )
+                          ) : (
+                            <span className="text-gray-500 dark:text-slate-400">
+                              {l.enquiryDate ?? <span className="text-gray-300">—</span>}
+                            </span>
+                          )}
+                        </td>
+
+                        {/* 3. Name */}
                         <td className="px-3 py-1.5 font-medium text-gray-900 dark:text-slate-100 truncate">
                           <Link href={`/leads/${l.id}`} onClick={e => e.stopPropagation()}
                             className="hover:text-[#0b1a33] dark:hover:text-blue-300 hover:underline">{l.name}</Link>
                         </td>
 
-                        {/* 3. Project — real linked project only, normalized to the
+                        {/* 4. Project — real linked project only, normalized to the
                             canonical name. A weak hint (notesShort/config like a
                             remark or "2BHK") is NOT a project → em-dash, never italic. */}
                         {(() => {
@@ -560,7 +606,7 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
                           );
                         })()}
 
-                        {/* 4. Status — floating popover, table never shifts */}
+                        {/* 5. Status — floating popover, table never shifts */}
                         <td className="px-3 py-1.5" onClick={e => e.stopPropagation()}>
                           <div className="relative" data-status-popover>
                             <button type="button"
@@ -590,17 +636,12 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
                           </div>
                         </td>
 
-                        {/* 4. Budget */}
+                        {/* 6. Budget */}
                         <td className="px-3 py-1.5 text-gray-700 dark:text-slate-300 whitespace-nowrap tabular-nums text-xs">
                           {l.budgetFormatted ?? <span className="text-gray-300">—</span>}
                         </td>
 
-                        {/* 4b. Enquiry date — when the client came in (createdAt) */}
-                        <td className="px-3 py-1.5 text-gray-500 dark:text-slate-400 whitespace-nowrap text-xs tabular-nums">
-                          {l.enquiryDate ?? <span className="text-gray-300">—</span>}
-                        </td>
-
-                        {/* 5. Follow-Up — click opens fixed-position picker */}
+                        {/* 7. Follow-Up — click opens fixed-position picker */}
                         <td className="px-3 py-1.5" onClick={e => e.stopPropagation()}>
                           <button type="button"
                             onClick={e => openPicker(l.id, e)}

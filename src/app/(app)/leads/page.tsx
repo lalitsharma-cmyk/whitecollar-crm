@@ -789,6 +789,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
             // Enquiry date — when the client came in. Imports set createdAt from the
             // sheet's Date column; manually-created leads get the creation date.
             enquiryDate:   l.createdAt ? fnsFormat(l.createdAt, "dd MMM yy") : null,
+            enquiryRaw:    l.createdAt ? fnsFormat(l.createdAt, "yyyy-MM-dd") : null,
             city:          l.city ?? null,
             whenCanInvest: l.whenCanInvest ?? null,
             remarks:       l.remarks ? l.remarks.slice(0, 120) : null,

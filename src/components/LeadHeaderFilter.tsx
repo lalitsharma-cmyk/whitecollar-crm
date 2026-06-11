@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
 
-export type FilterKind = "search" | "multi" | "budget" | "followup" | "activity";
+export type FilterKind = "search" | "multi" | "budget" | "followup" | "activity" | "enquiry";
 interface Opt { value: string; label: string }
 
 const inp = "w-full border border-gray-200 dark:border-slate-600 rounded px-2 py-1 text-xs bg-white dark:bg-slate-700 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-blue-400";
@@ -36,7 +36,8 @@ export default function LeadHeaderFilter({
     kind === "search" || kind === "multi" ? !!sp.get(paramKey!) :
     kind === "budget" ? !!(sp.get("budgetFrom") || sp.get("budgetTo")) :
     kind === "followup" ? !!(sp.get("followupFrom") || sp.get("followupTo") || (sp.get("followup") && sp.get("followup") !== "all")) :
-    kind === "activity" ? !!(sp.get("dateFrom") || sp.get("dateTo")) : false;
+    kind === "activity" ? !!(sp.get("dateField") === "lastTouchedAt" && (sp.get("dateFrom") || sp.get("dateTo"))) :
+    kind === "enquiry" ? !!(sp.get("dateField") === "createdAt" && (sp.get("dateFrom") || sp.get("dateTo"))) : false;
 
   function openAt(e: React.MouseEvent) {
     e.stopPropagation();
@@ -80,6 +81,7 @@ export default function LeadHeaderFilter({
             {kind === "budget" && <BudgetFilter sp={sp} apply={apply} />}
             {kind === "followup" && <FollowupFilter sp={sp} apply={apply} />}
             {kind === "activity" && <ActivityFilter sp={sp} apply={apply} />}
+            {kind === "enquiry" && <EnquiryFilter sp={sp} apply={apply} />}
           </div>
         </>
       )}
@@ -204,6 +206,27 @@ function ActivityFilter({ sp, apply }: { sp: URLSearchParams; apply: ApplyFn }) 
           from ? p.set("dateFrom", from) : p.delete("dateFrom");
           to ? p.set("dateTo", to) : p.delete("dateTo");
           if (from || to) p.set("dateField", "lastTouchedAt"); else p.delete("dateField");
+        })}
+      />
+    </div>
+  );
+}
+
+function EnquiryFilter({ sp, apply }: { sp: URLSearchParams; apply: ApplyFn }) {
+  const isEnquiry = sp.get("dateField") === "createdAt";
+  const [from, setFrom] = useState(isEnquiry ? (sp.get("dateFrom") ?? "") : "");
+  const [to, setTo] = useState(isEnquiry ? (sp.get("dateTo") ?? "") : "");
+  return (
+    <div className="space-y-1">
+      <div className="text-[10px] text-gray-400 dark:text-slate-500">Enquiry date between</div>
+      <input type="date" value={from} onChange={e => setFrom(e.target.value)} className={inp} />
+      <input type="date" value={to} onChange={e => setTo(e.target.value)} className={inp} />
+      <Footer
+        onClear={() => apply(p => { p.delete("dateFrom"); p.delete("dateTo"); p.delete("dateField"); })}
+        onApply={() => apply(p => {
+          from ? p.set("dateFrom", from) : p.delete("dateFrom");
+          to ? p.set("dateTo", to) : p.delete("dateTo");
+          if (from || to) p.set("dateField", "createdAt"); else p.delete("dateField");
         })}
       />
     </div>

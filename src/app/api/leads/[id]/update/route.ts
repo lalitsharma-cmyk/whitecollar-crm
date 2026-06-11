@@ -22,6 +22,8 @@ const ALLOWED: Record<string, "string" | "date" | "number" | "enum" | "bool"> = 
   clientType: "enum",
   budgetMin: "number", budgetMax: "number", budgetCurrency: "string",
   followupDate: "date", meetingDate: "date", siteVisitDate: "date",
+  // createdAt = enquiry date (admin-only inline edit — gated below in ADMIN_ONLY_FIELDS)
+  createdAt: "date",
   status: "enum", potential: "enum", fundReadiness: "enum",
   moodStatus: "enum", whenCanInvest: "enum",
   bantStatus: "enum", bantReason: "string",
@@ -43,8 +45,9 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if (!body || typeof body !== "object") return NextResponse.json({ error: "Invalid body" }, { status: 400 });
 
   // Name / phone / email are sensitive PII — only admin/manager may change them.
+  // createdAt (enquiry date) is also admin-only — prevents agents from backdating.
   // Agents see a "request admin" affordance in the UI; enforce it server-side too.
-  const ADMIN_ONLY_FIELDS = new Set(["name", "phone", "email"]);
+  const ADMIN_ONLY_FIELDS = new Set(["name", "phone", "email", "createdAt"]);
   if (me.role === "AGENT") {
     const restricted = Object.keys(body).filter(k => ADMIN_ONLY_FIELDS.has(k));
     if (restricted.length > 0) {
