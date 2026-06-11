@@ -97,9 +97,9 @@ async function computeTeamMetrics(team: Team, since: Date, until: Date): Promise
   // forwardedTeam is the canonical team marker (set at assignment time);
   // call/activity queries scope via the join because CallLog/Activity have
   // no team column of their own — they inherit from the lead.
-  const leadWhere: Prisma.LeadWhereInput = { forwardedTeam: team };
-  const callWhere: Prisma.CallLogWhereInput = { lead: { forwardedTeam: team } };
-  const actWhere: Prisma.ActivityWhereInput = { lead: { forwardedTeam: team } };
+  const leadWhere: Prisma.LeadWhereInput = { forwardedTeam: team, deletedAt: null };
+  const callWhere: Prisma.CallLogWhereInput = { lead: { forwardedTeam: team, deletedAt: null } };
+  const actWhere: Prisma.ActivityWhereInput = { lead: { forwardedTeam: team, deletedAt: null } };
 
   const [
     newLeads,
@@ -219,6 +219,7 @@ async function computeTeamMetrics(team: Team, since: Date, until: Date): Promise
       JOIN first_call fc ON fc.lead_id = l."id"
       WHERE l."createdAt" >= ${since}
         AND l."createdAt" <= ${until}
+        AND l."deletedAt" IS NULL
         AND l."forwardedTeam" = ${team}
         AND fc.first_call_at >= l."createdAt"
     `,

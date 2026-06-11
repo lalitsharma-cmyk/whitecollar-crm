@@ -129,6 +129,7 @@ export default async function CoolingLeadsReport({
         FROM "Lead" l
         INNER JOIN downgrades d ON d.lead_id = l."id"
         WHERE l."aiScore" IN ('WARM', 'COLD')
+          AND l."deletedAt" IS NULL
           AND (${scopedOwnerId}::text IS NULL OR l."ownerId" = ${scopedOwnerId})
           AND l."forwardedTeam" = ${managerTeam}
         ORDER BY d.downgraded_at DESC
@@ -164,6 +165,7 @@ export default async function CoolingLeadsReport({
         FROM "Lead" l
         INNER JOIN downgrades d ON d.lead_id = l."id"
         WHERE l."aiScore" IN ('WARM', 'COLD')
+          AND l."deletedAt" IS NULL
           AND (${scopedOwnerId}::text IS NULL OR l."ownerId" = ${scopedOwnerId})
         ORDER BY d.downgraded_at DESC
       `;

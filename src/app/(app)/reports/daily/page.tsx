@@ -55,18 +55,19 @@ export default async function DailyReportPage({ searchParams }: { searchParams: 
 
   // ── Pull actuals for the chosen day, scoped to the chosen agent ─────
   const [calls, connected, virtualDone, f2fDone, freshClients, dealsWonToday] = await Promise.all([
-    prisma.callLog.count({ where: { userId: targetUserId, startedAt: { gte: dayStart, lte: dayEnd } } }),
-    prisma.callLog.count({ where: { userId: targetUserId, startedAt: { gte: dayStart, lte: dayEnd }, outcome: CallOutcome.CONNECTED } }),
-    prisma.activity.count({ where: { userId: targetUserId, type: ActivityType.VIRTUAL_MEETING, completedAt: { gte: dayStart, lte: dayEnd } } }),
+    prisma.callLog.count({ where: { userId: targetUserId, lead: { deletedAt: null }, startedAt: { gte: dayStart, lte: dayEnd } } }),
+    prisma.callLog.count({ where: { userId: targetUserId, lead: { deletedAt: null }, startedAt: { gte: dayStart, lte: dayEnd }, outcome: CallOutcome.CONNECTED } }),
+    prisma.activity.count({ where: { userId: targetUserId, lead: { deletedAt: null }, type: ActivityType.VIRTUAL_MEETING, completedAt: { gte: dayStart, lte: dayEnd } } }),
     prisma.activity.count({ where: {
       userId: targetUserId,
+      lead: { deletedAt: null },
       type: { in: [ActivityType.OFFICE_MEETING, ActivityType.SITE_VISIT, ActivityType.HOME_VISIT, ActivityType.EXPO_MEETING] },
       completedAt: { gte: dayStart, lte: dayEnd },
     } }),
-    prisma.activity.count({ where: { userId: targetUserId, type: ActivityType.COLD_TO_LEAD, completedAt: { gte: dayStart, lte: dayEnd } } }),
+    prisma.activity.count({ where: { userId: targetUserId, lead: { deletedAt: null }, type: ActivityType.COLD_TO_LEAD, completedAt: { gte: dayStart, lte: dayEnd } } }),
     // Leads marked WON today by this owner — count + revenue
     prisma.lead.findMany({
-      where: { ownerId: targetUserId, currentStatus: "Booked with Us", updatedAt: { gte: dayStart, lte: dayEnd } },
+      where: { ownerId: targetUserId, deletedAt: null, currentStatus: "Booked with Us", updatedAt: { gte: dayStart, lte: dayEnd } },
       select: { budgetMin: true, budgetCurrency: true },
     }),
   ]);

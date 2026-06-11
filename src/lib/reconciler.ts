@@ -47,6 +47,7 @@ export async function runReconciler(): Promise<ReconcileResult> {
   const orphans = roundRobinOn ? await prisma.lead.findMany({
     where: {
       ownerId: null,
+      deletedAt: null,
       createdAt: { lte: cutoffAssign },
       currentStatus: { notIn: SUPPRESSED_STATUSES },
       isColdCall: false,
@@ -105,6 +106,7 @@ export async function runReconciler(): Promise<ReconcileResult> {
       slaFirstCallBy: { lte: new Date() },
       slaEscalated: false,
       ownerId: { not: null },
+      deletedAt: null,
       currentStatus: { notIn: SUPPRESSED_STATUSES },
     },
     include: { owner: true, callLogs: { take: 1 } },
@@ -144,6 +146,7 @@ export async function runReconciler(): Promise<ReconcileResult> {
   // ── 3) "Needs You" flag — closing-status leads idle >24h or 3+ not-picked ──
   const closingLeads = testingMode ? [] : await prisma.lead.findMany({
     where: {
+      deletedAt: null,
       currentStatus: { in: CLOSING_STATUSES },
       needsManagerReview: false,
       OR: [

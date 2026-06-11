@@ -33,10 +33,13 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
       ? (sp.team === "India" ? "India" : sp.team === "Dubai" ? "Dubai" : sp.team === "all" ? "all" : (me.team === "India" ? "India" : me.team === "Dubai" ? "Dubai" : "all"))
       : (me.team === "India" ? "India" : "Dubai"); // MANAGER + AGENT locked to own team
 
-  const teamScope: Prisma.LeadWhereInput = view === "all" ? {} : { forwardedTeam: view };
-  // For activity / call queries we need to scope through lead.forwardedTeam
-  const teamActWhere: Prisma.ActivityWhereInput = view === "all" ? {} : { lead: { forwardedTeam: view } };
-  const teamCallWhere: Prisma.CallLogWhereInput = view === "all" ? {} : { lead: { forwardedTeam: view } };
+  // Soft-deleted leads (recycle bin) must NEVER count in any active dashboard
+  // figure, so deletedAt:null is baked into every scope here — and into the
+  // `lead:` relation filter for activity/call queries. Every count below spreads
+  // one of these, so this single place keeps deleted leads out of the whole page.
+  const teamScope: Prisma.LeadWhereInput = view === "all" ? { deletedAt: null } : { forwardedTeam: view, deletedAt: null };
+  const teamActWhere: Prisma.ActivityWhereInput = view === "all" ? { lead: { deletedAt: null } } : { lead: { forwardedTeam: view, deletedAt: null } };
+  const teamCallWhere: Prisma.CallLogWhereInput = view === "all" ? { lead: { deletedAt: null } } : { lead: { forwardedTeam: view, deletedAt: null } };
 
   // ── Personal scope (audit B-03 / P1-4) ─────────────────────────────
   // An AGENT's KPI hero tiles must count THEIR OWN book — otherwise "Total
@@ -46,9 +49,9 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   // === teamScope and the dashboard is byte-for-byte unchanged. BY DESIGN these
   // stay team-wide for everyone: the team-distribution chart (leadsByTeam) and
   // the explicitly-labelled "TEAM · THIS MONTH" funnel counts.
-  const meScope: Prisma.LeadWhereInput = isAdminOrMgr ? teamScope : { ownerId: me.id };
-  const meActWhere: Prisma.ActivityWhereInput = isAdminOrMgr ? teamActWhere : { userId: me.id };
-  const meCallWhere: Prisma.CallLogWhereInput = isAdminOrMgr ? teamCallWhere : { userId: me.id };
+  const meScope: Prisma.LeadWhereInput = isAdminOrMgr ? teamScope : { ownerId: me.id, deletedAt: null };
+  const meActWhere: Prisma.ActivityWhereInput = isAdminOrMgr ? teamActWhere : { userId: me.id, lead: { deletedAt: null } };
+  const meCallWhere: Prisma.CallLogWhereInput = isAdminOrMgr ? teamCallWhere : { userId: me.id, lead: { deletedAt: null } };
 
   // IST offset (UTC+5:30) — used throughout this page
   const istOffset = 5.5 * 60 * 60 * 1000;
@@ -163,7 +166,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     // Created after 10pm yesterday IST AND still unassigned today
     const cutoff = new Date(Date.now() - 14 * 3600 * 1000); // last 14 hours
     morningQueueLeads = await prisma.lead.findMany({
-      where: { ownerId: null, isColdCall: false, createdAt: { gte: cutoff }, currentStatus: { notIn: SUPPRESSED_STATUSES } },
+      where: { ownerId: null, isColdCall: false, deletedAt: null, createdAt: { gte: cutoff }, currentStatus: { notIn: SUPPRESSED_STATUSES } },
       select: { id: true, name: true, phone: true, createdAt: true, forwardedTeam: true },
       orderBy: { createdAt: "desc" },
       take: 20,
@@ -188,9 +191,9 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
       COALESCE((SELECT COUNT(*) FROM "CallLog" c WHERE c."userId" = u.id AND c."startedAt" >= ${sqlFrom} AND c."startedAt" < ${sqlTo} AND c.outcome::text = 'CONNECTED'), 0) as connected,
       COALESCE((SELECT COUNT(*) FROM "Activity" a WHERE a."userId" = u.id AND a.status::text = 'PLANNED' AND a."scheduledAt" >= ${sqlFrom} AND a."scheduledAt" < ${sqlTo}), 0) as due_today,
       COALESCE((SELECT COUNT(*) FROM "Activity" a WHERE a."userId" = u.id AND a.status::text = 'PLANNED' AND a."scheduledAt" < ${todayStart}), 0) as overdue,
-      COALESCE((SELECT COUNT(*) FROM "Lead" l WHERE l."ownerId" = u.id AND l."currentStatus" IN ('Meeting','Site Visit Schedule','Visit Dubai','Want Office Visit','Zoom Meeting','Expo Only')), 0) as closeable,
-      COALESCE((SELECT COUNT(*) FROM "Lead" l WHERE l."ownerId" = u.id AND l."needsManagerReview" = true), 0) as needs,
-      COALESCE((SELECT COUNT(*) FROM "Lead" l WHERE l."ownerId" = u.id), 0) as clients
+      COALESCE((SELECT COUNT(*) FROM "Lead" l WHERE l."ownerId" = u.id AND l."deletedAt" IS NULL AND l."currentStatus" IN ('Meeting','Site Visit Schedule','Visit Dubai','Want Office Visit','Zoom Meeting','Expo Only')), 0) as closeable,
+      COALESCE((SELECT COUNT(*) FROM "Lead" l WHERE l."ownerId" = u.id AND l."deletedAt" IS NULL AND l."needsManagerReview" = true), 0) as needs,
+      COALESCE((SELECT COUNT(*) FROM "Lead" l WHERE l."ownerId" = u.id AND l."deletedAt" IS NULL), 0) as clients
     FROM "User" u
     WHERE u.active = true AND u.role::text IN ('AGENT','MANAGER')
     ORDER BY calls DESC
@@ -211,11 +214,11 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
 
   // Personal KPI metrics — always userId: me.id (agents AND admin/manager see their OWN numbers)
   const [connectedPersonal, virtualPersonal, f2fPersonal, freshPersonal, dealsPersonal] = await Promise.all([
-    prisma.callLog.count({ where: { userId: me.id, startedAt: { gte: sqlFrom, lt: sqlTo }, outcome: CallOutcome.CONNECTED } }),
-    prisma.activity.count({ where: { userId: me.id, type: ActivityType.VIRTUAL_MEETING, scheduledAt: { gte: sqlFrom, lt: sqlTo }, status: { not: ActivityStatus.CANCELLED } } }),
-    prisma.activity.count({ where: { userId: me.id, type: { in: [ActivityType.SITE_VISIT, ActivityType.HOME_VISIT, ActivityType.OFFICE_MEETING, ActivityType.EXPO_MEETING] }, scheduledAt: { gte: sqlFrom, lt: sqlTo }, status: { not: ActivityStatus.CANCELLED } } }),
-    prisma.activity.count({ where: { userId: me.id, type: ActivityType.COLD_TO_LEAD, completedAt: { gte: sqlFrom, lt: sqlTo } } }),
-    prisma.lead.count({ where: { ownerId: me.id, currentStatus: "Booked with Us", updatedAt: { gte: sqlFrom, lt: sqlTo } } }),
+    prisma.callLog.count({ where: { userId: me.id, lead: { deletedAt: null }, startedAt: { gte: sqlFrom, lt: sqlTo }, outcome: CallOutcome.CONNECTED } }),
+    prisma.activity.count({ where: { userId: me.id, lead: { deletedAt: null }, type: ActivityType.VIRTUAL_MEETING, scheduledAt: { gte: sqlFrom, lt: sqlTo }, status: { not: ActivityStatus.CANCELLED } } }),
+    prisma.activity.count({ where: { userId: me.id, lead: { deletedAt: null }, type: { in: [ActivityType.SITE_VISIT, ActivityType.HOME_VISIT, ActivityType.OFFICE_MEETING, ActivityType.EXPO_MEETING] }, scheduledAt: { gte: sqlFrom, lt: sqlTo }, status: { not: ActivityStatus.CANCELLED } } }),
+    prisma.activity.count({ where: { userId: me.id, lead: { deletedAt: null }, type: ActivityType.COLD_TO_LEAD, completedAt: { gte: sqlFrom, lt: sqlTo } } }),
+    prisma.lead.count({ where: { ownerId: me.id, deletedAt: null, currentStatus: "Booked with Us", updatedAt: { gte: sqlFrom, lt: sqlTo } } }),
   ]);
 
   // ── Per-agent morning briefing (also shown to admins) ──
@@ -230,10 +233,11 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   //   • Streak nudge so the daily login + follow-up streak feel rewarded.
   const since24h = new Date(Date.now() - 24 * 3600_000);
   const [myNewOvernight, myFollowupsToday, myCallbacksToday] = await Promise.all([
-    prisma.lead.count({ where: { ownerId: me.id, createdAt: { gte: since24h } } }),
+    prisma.lead.count({ where: { ownerId: me.id, deletedAt: null, createdAt: { gte: since24h } } }),
     prisma.activity.count({
       where: {
         userId: me.id,
+        lead: { deletedAt: null },
         status: ActivityStatus.PLANNED,
         scheduledAt: { gte: todayStart, lt: new Date(todayStart.getTime() + 24 * 3600_000) },
       },
@@ -241,6 +245,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     prisma.lead.count({
       where: {
         ownerId: me.id,
+        deletedAt: null,
         followupDate: { gte: todayStart, lt: new Date(todayStart.getTime() + 24 * 3600_000) },
         currentStatus: { notIn: SUPPRESSED_STATUSES },
       },
@@ -258,8 +263,8 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   // admin/manager see the whole team so they can spot double-bookings and
   // ensure every client has someone attending.
   const reminderEnd = new Date(todayStart.getTime() + 7 * 24 * 3600_000);
-  const activityScope: Prisma.ActivityWhereInput = isAdminOrMgr ? teamActWhere : { userId: me.id };
-  const callbackScope: Prisma.LeadWhereInput = isAdminOrMgr ? teamScope : { ownerId: me.id };
+  const activityScope: Prisma.ActivityWhereInput = isAdminOrMgr ? teamActWhere : { userId: me.id, lead: { deletedAt: null } };
+  const callbackScope: Prisma.LeadWhereInput = isAdminOrMgr ? teamScope : { ownerId: me.id, deletedAt: null };
 
   const [reminderActivities, reminderCallbacks] = await Promise.all([
     prisma.activity.findMany({

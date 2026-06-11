@@ -120,7 +120,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
     activeLeadsForForecast, stalledRaw, heatmapRaw,
     statusCounts, sourceByCount,
   ] = await Promise.all([
-    prisma.lead.groupBy({ by: ["source"], _count: { _all: true }, where: { ...teamScope, createdAt: { gte: today } } }),
+    prisma.lead.groupBy({ by: ["source"], _count: { _all: true }, where: { ...teamScope, deletedAt: null, createdAt: { gte: today } } }),
 
     prisma.$queryRaw<Array<{ d: string; total: number; connected: number }>>`
       SELECT to_char("startedAt"::date, 'YYYY-MM-DD') as d,
@@ -131,12 +131,12 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
     // Status-based funnel — status-only, no stages.
     // total → active-pursuit → closing → booked
     Promise.all([
-      prisma.lead.count({ where: teamScope }),
-      prisma.lead.count({ where: { ...teamScope, currentStatus: { in: ACTIVE_PURSUIT_STATUSES } } }),
-      prisma.lead.count({ where: { ...teamScope, currentStatus: { in: CLOSING_STATUSES } } }),
-      prisma.lead.count({ where: { ...teamScope, currentStatus: "Booked with Us" } }),
-      prisma.lead.count({ where: { ...teamScope, currentStatus: "Booked with Us" } }), // compat slot
-      prisma.lead.count({ where: { ...teamScope, currentStatus: "Booked with Us" } }), // compat slot
+      prisma.lead.count({ where: { ...teamScope, deletedAt: null } }),
+      prisma.lead.count({ where: { ...teamScope, deletedAt: null, currentStatus: { in: ACTIVE_PURSUIT_STATUSES } } }),
+      prisma.lead.count({ where: { ...teamScope, deletedAt: null, currentStatus: { in: CLOSING_STATUSES } } }),
+      prisma.lead.count({ where: { ...teamScope, deletedAt: null, currentStatus: "Booked with Us" } }),
+      prisma.lead.count({ where: { ...teamScope, deletedAt: null, currentStatus: "Booked with Us" } }), // compat slot
+      prisma.lead.count({ where: { ...teamScope, deletedAt: null, currentStatus: "Booked with Us" } }), // compat slot
     ]),
 
     prisma.project.findMany({
@@ -150,7 +150,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
     // leads, those contribute 0 to the forecast.
     // Active leads for forecast — all active-pursuit and closing statuses
     prisma.lead.findMany({
-      where: { ...teamScope, currentStatus: { in: [...ACTIVE_PURSUIT_STATUSES, ...CLOSING_STATUSES, "Booked with Us"] } },
+      where: { ...teamScope, deletedAt: null, currentStatus: { in: [...ACTIVE_PURSUIT_STATUSES, ...CLOSING_STATUSES, "Booked with Us"] } },
       select: { currentStatus: true, budgetMin: true, budgetCurrency: true },
     }),
 
@@ -181,6 +181,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
           FROM "Lead" l
           LEFT JOIN latest_change lc ON lc."leadId" = l."id"
           WHERE l."currentStatus" IN ('Meeting','Site Visit Schedule','Visit Dubai','Want Office Visit','Zoom Meeting','Expo Only')
+            AND l."deletedAt" IS NULL
             AND COALESCE(lc."createdAt", l."createdAt") < NOW() - (${STALLED_DAYS} * INTERVAL '1 day')
         `
       : prisma.$queryRaw<Array<{ id: string; status: string; budget_min: number | null; currency: string | null; entered_at: Date }>>`
@@ -199,6 +200,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
           LEFT JOIN latest_change lc ON lc."leadId" = l."id"
           WHERE l."currentStatus" IN ('Meeting','Site Visit Schedule','Visit Dubai','Want Office Visit','Zoom Meeting','Expo Only')
             AND l."forwardedTeam" = ${resolvedTeam}
+            AND l."deletedAt" IS NULL
             AND COALESCE(lc."createdAt", l."createdAt") < NOW() - (${STALLED_DAYS} * INTERVAL '1 day')
         `),
 
@@ -226,8 +228,8 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
       by: ["currentStatus"],
       _count: { _all: true },
       where: me.role === "MANAGER"
-        ? { forwardedTeam: normalizeTeam(me.team) ?? undefined }
-        : teamScope,
+        ? { forwardedTeam: normalizeTeam(me.team) ?? undefined, deletedAt: null }
+        : { ...teamScope, deletedAt: null },
     }),
 
     // ── Source analytics — all-time, top 12 sources by count.
@@ -237,7 +239,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
     prisma.lead.groupBy({
       by: ["source"],
       _count: { _all: true },
-      where: teamScope,
+      where: { ...teamScope, deletedAt: null },
       orderBy: { _count: { id: "desc" } },
       take: 12,
     }),

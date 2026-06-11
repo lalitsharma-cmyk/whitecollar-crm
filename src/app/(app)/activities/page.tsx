@@ -100,7 +100,7 @@ export default async function ActivitiesPage(
 
   const me = await requireUser();
   const scope = me.role === "AGENT" ? { ownerId: me.id } : {};
-  const leadScopeAsActivityFilter = me.role === "AGENT" ? { lead: { ownerId: me.id } } : {};
+  const leadScopeAsActivityFilter = me.role === "AGENT" ? { lead: { ownerId: me.id, deletedAt: null } } : { lead: { deletedAt: null } };
 
   const now = new Date();
   const in24h = new Date(now.getTime() + 24 * 60 * 60 * 1000);
@@ -140,6 +140,7 @@ export default async function ActivitiesPage(
     prisma.lead.findMany({
       where: {
         ...scope,
+        deletedAt: null,
         followupDate: { lt: now },
         currentStatus: { notIn: SUPPRESSED_STATUSES },
       },
@@ -151,6 +152,7 @@ export default async function ActivitiesPage(
     prisma.lead.findMany({
       where: {
         ...scope,
+        deletedAt: null,
         aiScore: AIScore.HOT,
         followupDate: { gte: now, lte: in24h },
       },
@@ -162,6 +164,7 @@ export default async function ActivitiesPage(
     prisma.lead.findMany({
       where: {
         ...scope,
+        deletedAt: null,
         lastTouchedAt: { lt: fiveDaysAgo },
         currentStatus: { notIn: SUPPRESSED_STATUSES },
       },
@@ -195,6 +198,7 @@ export default async function ActivitiesPage(
     prisma.lead.findMany({
       where: {
         ...scope,
+        deletedAt: null,
         currentStatus: { in: CLOSING_STATUSES },
         eoiStage: { not: null },
       },

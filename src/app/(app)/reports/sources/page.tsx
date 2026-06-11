@@ -134,32 +134,32 @@ export default async function SourcesReportPage({
   ] = await Promise.all([
     prisma.lead.groupBy({
       by: ["source"],
-      where: { createdAt: { gte: since, lte: until }, ...(managerTeam ? { forwardedTeam: managerTeam } : {}) },
+      where: { deletedAt: null, createdAt: { gte: since, lte: until }, ...(managerTeam ? { forwardedTeam: managerTeam } : {}) },
       _count: { _all: true },
     }),
     prisma.lead.groupBy({
       by: ["source"],
-      where: { createdAt: { gte: since, lte: until }, currentStatus: { notIn: SUPPRESSED_STATUSES }, ...(managerTeam ? { forwardedTeam: managerTeam } : {}) },
+      where: { deletedAt: null, createdAt: { gte: since, lte: until }, currentStatus: { notIn: SUPPRESSED_STATUSES }, ...(managerTeam ? { forwardedTeam: managerTeam } : {}) },
       _count: { _all: true },
     }),
     prisma.lead.groupBy({
       by: ["source"],
-      where: { createdAt: { gte: since, lte: until }, currentStatus: { in: QUALIFIED_PLUS }, ...(managerTeam ? { forwardedTeam: managerTeam } : {}) },
+      where: { deletedAt: null, createdAt: { gte: since, lte: until }, currentStatus: { in: QUALIFIED_PLUS }, ...(managerTeam ? { forwardedTeam: managerTeam } : {}) },
       _count: { _all: true },
     }),
     prisma.lead.groupBy({
       by: ["source"],
-      where: { createdAt: { gte: since, lte: until }, currentStatus: { in: [...BOOKED] }, ...(managerTeam ? { forwardedTeam: managerTeam } : {}) },
+      where: { deletedAt: null, createdAt: { gte: since, lte: until }, currentStatus: { in: [...BOOKED] }, ...(managerTeam ? { forwardedTeam: managerTeam } : {}) },
       _count: { _all: true },
     }),
     prisma.lead.groupBy({
       by: ["source"],
-      where: { createdAt: { gte: since, lte: until }, currentStatus: { in: SUPPRESSED_STATUSES }, ...(managerTeam ? { forwardedTeam: managerTeam } : {}) },
+      where: { deletedAt: null, createdAt: { gte: since, lte: until }, currentStatus: { in: SUPPRESSED_STATUSES }, ...(managerTeam ? { forwardedTeam: managerTeam } : {}) },
       _count: { _all: true },
     }),
     prisma.lead.groupBy({
       by: ["source"],
-      where: { createdAt: { gte: since, lte: until }, aiScoreValue: { not: null }, ...(managerTeam ? { forwardedTeam: managerTeam } : {}) },
+      where: { deletedAt: null, createdAt: { gte: since, lte: until }, aiScoreValue: { not: null }, ...(managerTeam ? { forwardedTeam: managerTeam } : {}) },
       _avg: { aiScoreValue: true },
     }),
 
@@ -186,6 +186,7 @@ export default async function SourcesReportPage({
           JOIN first_call fc ON fc.lead_id = l."id"
           WHERE l."createdAt" >= ${since}
             AND l."createdAt" <= ${until}
+            AND l."deletedAt" IS NULL
             AND l."forwardedTeam" = ${managerTeam}
             AND fc.first_call_at >= l."createdAt"
           GROUP BY l."source"
@@ -205,6 +206,7 @@ export default async function SourcesReportPage({
           JOIN first_call fc ON fc.lead_id = l."id"
           WHERE l."createdAt" >= ${since}
             AND l."createdAt" <= ${until}
+            AND l."deletedAt" IS NULL
             AND fc.first_call_at >= l."createdAt"
           GROUP BY l."source"
         `,

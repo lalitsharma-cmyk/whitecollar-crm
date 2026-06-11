@@ -121,7 +121,7 @@ export default async function ActionListPage() {
   // Scope: Admin/Manager see all; Agent sees only own
   const scope = me.role === "AGENT" ? { ownerId: me.id } : {};
 
-  const activeScope = { ...scope, leadOrigin: "ACTIVE" };
+  const activeScope = { ...scope, deletedAt: null, leadOrigin: "ACTIVE" };
   const leadSelect = {
     id: true, name: true, phone: true, status: true,
     forwardedTeam: true, lastTouchedAt: true, followupDate: true,

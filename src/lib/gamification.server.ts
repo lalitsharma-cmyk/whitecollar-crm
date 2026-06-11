@@ -183,7 +183,7 @@ export async function checkAndAwardBadges(userId: string): Promise<BadgeId[]> {
     // the activity log (COLD_TO_LEAD) + raw cold-call CallLogs as a proxy.
     if (need("cold_hunter")) {
       const cold = await prisma.callLog.count({
-        where: { userId, lead: { isColdCall: true } },
+        where: { userId, lead: { isColdCall: true, deletedAt: null } },
       });
       if (cold >= 50) newly.push("cold_hunter");
     }
@@ -191,7 +191,7 @@ export async function checkAndAwardBadges(userId: string): Promise<BadgeId[]> {
     // Revival King — 10 cold-to-lead promotions by this user.
     if (need("revival_king")) {
       const promotions = await prisma.activity.count({
-        where: { userId, type: "COLD_TO_LEAD" },
+        where: { userId, type: "COLD_TO_LEAD", lead: { deletedAt: null } },
       });
       if (promotions >= 10) newly.push("revival_king");
     }

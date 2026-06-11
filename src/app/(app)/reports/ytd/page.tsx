@@ -58,7 +58,7 @@ function toYmd(d: Date): string {
 // canonical team marker — same convention used by /reports/team-comparison.
 async function computeTeamYtd(team: "Dubai" | "India", since: Date, until: Date) {
   const leadWhere: Prisma.LeadWhereInput = { forwardedTeam: team };
-  const callWhere: Prisma.CallLogWhereInput = { lead: { forwardedTeam: team } };
+  const callWhere: Prisma.CallLogWhereInput = { lead: { forwardedTeam: team, deletedAt: null } };
 
   const [
     leadsCreated,
@@ -73,20 +73,20 @@ async function computeTeamYtd(team: "Dubai" | "India", since: Date, until: Date)
   ] = await Promise.all([
     // 1. Leads created in window
     prisma.lead.count({
-      where: { ...leadWhere, createdAt: { gte: since, lte: until } },
+      where: { ...leadWhere, deletedAt: null, createdAt: { gte: since, lte: until } },
     }),
     // 2. Bookings — leads with bookingDoneAt in window. We don't gate on
     //    status because bookingDoneAt is the explicit "booking happened"
     //    timestamp (set by the EOI workflow); a lead that later moved to
     //    WON or back to NEGOTIATION still counts as a booking that period.
     prisma.lead.count({
-      where: { ...leadWhere, bookingDoneAt: { gte: since, lte: until } },
+      where: { ...leadWhere, deletedAt: null, bookingDoneAt: { gte: since, lte: until } },
     }),
     // 3. Won deals — status WON with updatedAt in window. updatedAt is
     //    used as a proxy for "moved to WON" since we don't store a
     //    dedicated wonAt timestamp.
     prisma.lead.count({
-      where: { ...leadWhere, currentStatus: "Booked with Us", updatedAt: { gte: since, lte: until } },
+      where: { ...leadWhere, deletedAt: null, currentStatus: "Booked with Us", updatedAt: { gte: since, lte: until } },
     }),
     // 4. Commission booked — INVOICED + RECEIVED, period-keyed on
     //    bookingDoneAt (falling back to commissionReceivedAt / updatedAt
@@ -95,6 +95,7 @@ async function computeTeamYtd(team: "Dubai" | "India", since: Date, until: Date)
     prisma.lead.findMany({
       where: {
         ...leadWhere,
+        deletedAt: null,
         commissionStatus: { in: [...BOOKED_COMMISSION] },
         OR: [
           { bookingDoneAt: { gte: since, lte: until } },
@@ -115,6 +116,7 @@ async function computeTeamYtd(team: "Dubai" | "India", since: Date, until: Date)
     prisma.lead.findMany({
       where: {
         ...leadWhere,
+        deletedAt: null,
         commissionStatus: "RECEIVED",
         commissionReceivedAt: { gte: since, lte: until },
       },
@@ -131,7 +133,7 @@ async function computeTeamYtd(team: "Dubai" | "India", since: Date, until: Date)
     // 8. Top 5 sources (by lead count in-window)
     prisma.lead.groupBy({
       by: ["source"],
-      where: { ...leadWhere, createdAt: { gte: since, lte: until } },
+      where: { ...leadWhere, deletedAt: null, createdAt: { gte: since, lte: until } },
       _count: { _all: true },
       orderBy: { _count: { id: "desc" } },
       take: 5,
@@ -141,6 +143,7 @@ async function computeTeamYtd(team: "Dubai" | "India", since: Date, until: Date)
       by: ["ownerId"],
       where: {
         ...leadWhere,
+        deletedAt: null,
         currentStatus: "Booked with Us",
         updatedAt: { gte: since, lte: until },
         ownerId: { not: null },

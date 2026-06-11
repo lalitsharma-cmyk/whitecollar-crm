@@ -73,7 +73,7 @@ export default async function LeaderboardPage() {
     // Leads assigned per agent (all time — scoped to visible team)
     prisma.lead.groupBy({
       by: ["ownerId"],
-      where: { ownerId: { in: agentIds } },
+      where: { ownerId: { in: agentIds }, deletedAt: null },
       _count: { _all: true },
     }),
 
@@ -82,6 +82,7 @@ export default async function LeaderboardPage() {
       by: ["ownerId"],
       where: {
         ownerId: { in: agentIds },
+        deletedAt: null,
         currentStatus: { in: QUALIFIED_STATUSES },
       },
       _count: { _all: true },
@@ -92,6 +93,7 @@ export default async function LeaderboardPage() {
       by: ["ownerId"],
       where: {
         ownerId: { in: agentIds },
+        deletedAt: null,
         currentStatus: "Booked with Us",
       },
       _count: { _all: true },

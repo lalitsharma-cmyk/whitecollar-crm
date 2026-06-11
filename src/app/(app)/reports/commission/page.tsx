@@ -212,6 +212,7 @@ export default async function CommissionReportPage({
 
   // "Counts as a booking" — commission entered OR status is "Booked with Us".
   const bookingWhere: Prisma.LeadWhereInput = {
+    deletedAt: null,
     AND: [
       { OR: [{ commissionAmount: { gt: 0 } }, { currentStatus: "Booked with Us" }] },
       ...(periodWhere ? [periodWhere] : []),
