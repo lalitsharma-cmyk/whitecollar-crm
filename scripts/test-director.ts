@@ -5,6 +5,9 @@ import { qualificationEngine } from "../src/lib/ai/engines/qualification";
 import { coachingEngine } from "../src/lib/ai/engines/coaching";
 import { followupEngine } from "../src/lib/ai/engines/followup";
 import { inventoryEngine } from "../src/lib/ai/engines/inventory";
+import { escalationEngine } from "../src/lib/ai/engines/escalation";
+import { revivalEngine } from "../src/lib/ai/engines/revival";
+import { priorityEngine } from "../src/lib/ai/engines/priority";
 
 // Mirrors computeSalesDirectorPanel's mock path (pure engines, no server-only).
 const LEADS = [
@@ -41,6 +44,13 @@ async function main() {
     console.log(`⏱ FOLLOW-UP: ${f.lastFollowupQuality}${f.overdue ? " (overdue)" : ""} via ${f.recommendedChannel}`);
     console.log(`   Draft: "${f.draftMessage}"`);
     console.log(`🏢 INVENTORY: ${inv.matchStatus} — ${inv.suggestedProjects.map((x) => x.name).join(", ") || inv.sourcingGaps[0]}`);
+
+    const esc = escalationEngine.mock(ctx);
+    const rev = revivalEngine.mock(ctx);
+    const prio = priorityEngine.mock(ctx);
+    console.log(`🚨 ESCALATION: ${esc.shouldEscalate ? `→ ${esc.escalateTo} (${esc.urgency})` : "not needed"} — ${esc.triggers[0]}`);
+    console.log(`🔄 REVIVAL: ${rev.isWorthReviving ? `worth it · ${rev.angle}` : "low value"} — "${rev.draftMessage.slice(0, 70)}..."`);
+    console.log(`⚡ PRIORITY: ${prio.priorityScore}/100 (${prio.tier}) — ${prio.rankHint}`);
   }
 }
 

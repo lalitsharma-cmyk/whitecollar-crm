@@ -6,6 +6,9 @@ import { qualificationEngine, type QualificationResult } from "./engines/qualifi
 import { coachingEngine, type CoachingResult } from "./engines/coaching";
 import { followupEngine, type FollowupResult } from "./engines/followup";
 import { inventoryEngine, type InventoryResult } from "./engines/inventory";
+import { escalationEngine, type EscalationResult } from "./engines/escalation";
+import { revivalEngine, type RevivalResult } from "./engines/revival";
+import { priorityEngine, type PriorityResult } from "./engines/priority";
 import type { AIProviderName } from "./types";
 
 /**
@@ -22,6 +25,9 @@ export interface SalesDirectorPanelData {
   coaching: CoachingResult;
   followup: FollowupResult;
   inventory: InventoryResult;
+  escalation: EscalationResult;
+  revival: RevivalResult;
+  priority: PriorityResult;
   meta: { provider: AIProviderName; mocked: boolean };
 }
 
@@ -36,12 +42,15 @@ export async function computeSalesDirectorPanel(
   // everyone else is pinned to mock.
   const runOpts = opts?.isPilotLead ? undefined : ({ provider: "mock" as AIProviderName });
 
-  const [d, q, c, f, i] = await Promise.all([
+  const [d, q, c, f, i, e, rv, pr] = await Promise.all([
     runEngine(directorEngine, ctx, runOpts),
     runEngine(qualificationEngine, ctx, runOpts),
     runEngine(coachingEngine, ctx, runOpts),
     runEngine(followupEngine, ctx, runOpts),
     runEngine(inventoryEngine, ctx, runOpts),
+    runEngine(escalationEngine, ctx, runOpts),
+    runEngine(revivalEngine, ctx, runOpts),
+    runEngine(priorityEngine, ctx, runOpts),
   ]);
 
   return {
@@ -50,6 +59,9 @@ export async function computeSalesDirectorPanel(
     coaching: c.output,
     followup: f.output,
     inventory: i.output,
+    escalation: e.output,
+    revival: rv.output,
+    priority: pr.output,
     meta: { provider: d.provider, mocked: d.mocked },
   };
 }
