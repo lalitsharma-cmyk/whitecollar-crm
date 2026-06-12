@@ -381,6 +381,7 @@ body.modal-open {
   body[data-lead-tab="actions"]  [data-lead-section]:not([data-lead-section="actions"])  { display: none !important; }
   body[data-lead-tab="projects"] [data-lead-section]:not([data-lead-section="projects"]) { display: none !important; }
   body[data-lead-tab="admin"]    [data-lead-section]:not([data-lead-section="admin"])    { display: none !important; }
+  body[data-lead-tab="ai"]       [data-lead-section]:not([data-lead-section="ai"])       { display: none !important; }
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
