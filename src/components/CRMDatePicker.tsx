@@ -18,7 +18,7 @@
  *
  * All timezone logic targets IST (UTC+05:30).
  */
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Pure utilities
@@ -215,6 +215,15 @@ function TimePicker({
   time, onChange, disabled,
 }: { time: string; onChange: (t: string) => void; disabled?: boolean }) {
   const { h, m, ampm } = parse12h(time);
+
+  // Local draft for the minute input — prevents "0" being immediately
+  // re-padded to "00" (filling maxLength=2) and blocking the second digit.
+  const [minRaw, setMinRaw] = useState(pad(m));
+  const isMinFocused = useRef(false);
+  useEffect(() => {
+    if (!isMinFocused.current) setMinRaw(pad(m));
+  }, [m]);
+
   const inputCls = [
     "border border-gray-200 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-200",
     "rounded-lg text-sm text-center w-12 h-11",
@@ -240,12 +249,22 @@ function TimePicker({
         <span className="text-gray-400 dark:text-slate-500 font-bold select-none">:</span>
         <input
           type="text" inputMode="numeric" pattern="[0-9]*"
-          value={pad(m)} maxLength={2} aria-label="Minute" disabled={disabled}
+          value={minRaw} maxLength={2} aria-label="Minute" disabled={disabled}
           onChange={e => {
-            const n = Math.min(59, parseInt(e.target.value.replace(/\D/g, ""), 10) || 0);
+            const digits = e.target.value.replace(/\D/g, "").slice(0, 2);
+            setMinRaw(digits);
+            if (digits.length === 2) {
+              const n = parseInt(digits, 10);
+              if (n >= 0 && n <= 59) onChange(to24h(h, n, ampm));
+            }
+          }}
+          onFocus={e => { isMinFocused.current = true; e.target.select(); }}
+          onBlur={() => {
+            isMinFocused.current = false;
+            const n = Math.min(59, parseInt(minRaw.replace(/\D/g, ""), 10) || 0);
+            setMinRaw(pad(n));
             onChange(to24h(h, n, ampm));
           }}
-          onFocus={e => e.target.select()}
           className={inputCls}
         />
         <button

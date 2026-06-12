@@ -1,5 +1,5 @@
 "use client";
-import { useMemo } from "react";
+import { useMemo, useState, useRef, useEffect } from "react";
 import { nowISTLocalInput } from "@/lib/datetime";
 
 interface Props {
@@ -57,6 +57,14 @@ export default function DateTimeIST({ value, onChange, futureOnly = true, name, 
   const { h, m, ampm } = parse12h(time);
   const timeDisabled = disabled || !date;
 
+  // Local draft for the minute input — prevents "0" being immediately
+  // re-padded to "00" (filling maxLength=2) and blocking the second digit.
+  const [minRaw, setMinRaw] = useState(() => String(m).padStart(2, "0"));
+  const isMinFocused = useRef(false);
+  useEffect(() => {
+    if (!isMinFocused.current) setMinRaw(String(m).padStart(2, "0"));
+  }, [m]);
+
   function setDate(d: string) {
     if (!d) { onChange(""); return; }
     onChange(`${d}T${time || "10:00"}`);
@@ -67,13 +75,6 @@ export default function DateTimeIST({ value, onChange, futureOnly = true, name, 
     if (!clean) return;
     const n = Math.max(1, Math.min(12, parseInt(clean, 10) || 1));
     onChange(`${date || istToday}T${to24h(n, m, ampm)}`);
-  }
-
-  function setMinute(v: string) {
-    const clean = v.replace(/\D/g, "").slice(0, 2);
-    if (!clean) return;
-    const n = Math.min(59, parseInt(clean, 10) || 0);
-    onChange(`${date || istToday}T${to24h(h, n, ampm)}`);
   }
 
   function toggleAmPm() {
@@ -123,9 +124,22 @@ export default function DateTimeIST({ value, onChange, futureOnly = true, name, 
             type="text"
             inputMode="numeric"
             pattern="[0-9]*"
-            value={String(m).padStart(2, "0")}
-            onChange={(e) => setMinute(e.target.value)}
-            onFocus={(e) => e.target.select()}
+            value={minRaw}
+            onChange={(e) => {
+              const digits = e.target.value.replace(/\D/g, "").slice(0, 2);
+              setMinRaw(digits);
+              if (digits.length === 2) {
+                const n = parseInt(digits, 10);
+                if (n >= 0 && n <= 59) onChange(`${date || istToday}T${to24h(h, n, ampm)}`);
+              }
+            }}
+            onFocus={(e) => { isMinFocused.current = true; e.target.select(); }}
+            onBlur={() => {
+              isMinFocused.current = false;
+              const n = Math.min(59, parseInt(minRaw.replace(/\D/g, ""), 10) || 0);
+              setMinRaw(String(n).padStart(2, "0"));
+              onChange(`${date || istToday}T${to24h(h, n, ampm)}`);
+            }}
             disabled={timeDisabled}
             maxLength={2}
             placeholder="00"

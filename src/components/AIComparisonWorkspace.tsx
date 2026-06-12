@@ -131,7 +131,6 @@ function SectionCell({ sectionKey, r }: { sectionKey: string; r: IntelligenceRes
           <p className="font-medium text-gray-800 leading-snug">{s.oneLinerVerdict ?? s.whoIsClient}</p>
           <div className="flex gap-1 flex-wrap">
             {s.buyingJourneyStage && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-600">{s.buyingJourneyStage}</span>}
-            {s.urgencyLevel && <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${s.urgencyLevel === "High" ? "bg-red-100 text-red-700" : s.urgencyLevel === "Medium" ? "bg-amber-100 text-amber-700" : "bg-gray-100 text-gray-500"}`}>{s.urgencyLevel}</span>}
           </div>
         </div>
       );
@@ -172,8 +171,8 @@ function SectionCell({ sectionKey, r }: { sectionKey: string; r: IntelligenceRes
             <div className={`text-3xl font-black ${cls}`}>{cp.percentage}%</div>
             <div className={`text-[10px] font-bold uppercase tracking-wider ${cls}`}>{cp.classification}</div>
           </div>
-          {cp.summary && <p className="text-gray-600">{cp.summary}</p>}
-          {cp.mainRisk && <div className="bg-red-50 rounded p-1.5"><span className="text-[10px] font-semibold text-red-700">Risk: </span><span className="text-red-800">{cp.mainRisk}</span></div>}
+          {cp.reasoning && <p className="text-gray-600">{cp.reasoning}</p>}
+          {cp.negativeSignals?.[0] && <div className="bg-red-50 rounded p-1.5"><span className="text-[10px] font-semibold text-red-700">Risk: </span><span className="text-red-800">{cp.negativeSignals[0]}</span></div>}
         </div>
       );
     }
