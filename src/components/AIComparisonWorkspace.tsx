@@ -525,7 +525,7 @@ function FinalDecisionDashboard({ scores, winners }: { scores: Record<string, Mo
   if (rated === 0 && Object.keys(winners).length === 0) {
     return (
       <div className="mt-6 rounded-xl border border-dashed border-gray-200 p-4 text-center">
-        <p className="text-xs text-gray-400">Rate sections (1–10) or pick section winners to see the Final Decision Dashboard</p>
+        <p className="text-xs text-gray-400">Pick section winners (Cl/GP/Ge buttons) or rate 1–10 to build the Final Scorecard</p>
       </div>
     );
   }
@@ -533,7 +533,7 @@ function FinalDecisionDashboard({ scores, winners }: { scores: Record<string, Mo
   return (
     <div className="mt-6 rounded-xl border-2 border-[#0b1a33] overflow-hidden">
       <div className="bg-gradient-to-r from-[#0b1a33] to-[#1e3a5f] px-5 py-3 flex items-center gap-2">
-        <span className="text-sm font-bold text-white">🏆 Final Decision Dashboard</span>
+        <span className="text-sm font-bold text-white">🏆 Final Scorecard</span>
         {rated > 0 && <span className="text-[10px] text-white/50">{rated}/{SECTIONS.length} sections rated</span>}
       </div>
       <div className="p-5 bg-gradient-to-b from-[#1e3a5f]/5 to-transparent">
@@ -605,6 +605,7 @@ export default function AIComparisonWorkspace({
   const [errors, setErrors]   = useState<Record<ModelKey, string | null>>({ claude: null, gpt: null, gemini: null });
   const [syncScroll, setSyncScroll] = useState(false);
   const [mobileModel, setMobileModel] = useState<ModelKey>("claude");
+  const [activeTab, setActiveTab]     = useState<"comparison" | "consensus">("comparison");
   const [winners, setWinners] = useState<Record<string, ModelKey>>({});
   const [scores, setScores]   = useState<Record<string, ModelScore>>({});
 
@@ -705,8 +706,20 @@ export default function AIComparisonWorkspace({
         })}
       </div>
 
-      {/* ── Executive Summary ─────────────────────────────────────────────────── */}
-      {hasAny && <ExecutiveSummary results={results} />}
+      {/* ── Tab bar ─────────────────────────────────────────────────────────── */}
+      <div className="flex border-b-2 border-gray-100 mb-4">
+        <button type="button" onClick={() => setActiveTab("comparison")}
+          className={`px-4 py-2 text-sm font-semibold border-b-2 -mb-0.5 transition-colors ${activeTab === "comparison" ? "border-[#0b1a33] text-[#0b1a33]" : "border-transparent text-gray-400 hover:text-gray-600"}`}>
+          ⚡ Model Comparison
+        </button>
+        <button type="button" onClick={() => setActiveTab("consensus")}
+          className={`px-4 py-2 text-sm font-semibold border-b-2 -mb-0.5 transition-colors ${activeTab === "consensus" ? "border-[#0b1a33] text-[#0b1a33]" : "border-transparent text-gray-400 hover:text-gray-600"}`}>
+          🤝 Consensus View
+        </button>
+      </div>
+
+      {/* ── Model Comparison tab ─────────────────────────────────────────────── */}
+      {activeTab === "comparison" && <>
 
       {/* ── Comparison table ──────────────────────────────────────────────────── */}
       <div className="rounded-xl border border-gray-200 overflow-hidden">
@@ -752,11 +765,25 @@ export default function AIComparisonWorkspace({
                 {/* Main content row */}
                 <div className="grid grid-cols-[100px_1fr] md:grid-cols-[148px_1fr_1fr_1fr] border-b border-gray-100">
 
-                  {/* Section label — sticky left */}
+                  {/* Section label — sticky left + winner selector */}
                   <div className="px-3 py-3 border-r border-gray-100 bg-gray-50 sticky left-0 z-20 flex flex-col gap-1 justify-start">
                     <div className="text-xl leading-none">{emoji}</div>
                     <div className="text-xs font-semibold text-gray-700 leading-tight">{label}</div>
                     <div className="text-[10px] text-gray-400">{idx + 1}/{SECTIONS.length}</div>
+                    {/* 🏆 Winner selector — pick which model wins this section */}
+                    <div className="flex gap-0.5 mt-1.5">
+                      {MODEL_ORDER.map(m => {
+                        const cfg = MODELS[m];
+                        const isWinner = winners[sectionKey] === m;
+                        return (
+                          <button key={m} type="button" title={`${cfg.short} wins this section`}
+                            onClick={() => setWinners(prev => ({ ...prev, [sectionKey]: isWinner ? (undefined as unknown as ModelKey) : m }))}
+                            className={`text-[9px] px-1 py-0.5 rounded font-bold transition-all ${isWinner ? `${cfg.bg} ${cfg.color} border ${cfg.border}` : "bg-gray-100 text-gray-400 hover:bg-gray-200"}`}>
+                            {isWinner ? "🏆" : ""}{cfg.short.slice(0, 2)}
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
 
                   {/* Model cells — fixed 500px height */}
@@ -785,23 +812,16 @@ export default function AIComparisonWorkspace({
                   })}
                 </div>
 
-                {/* Controls row — winner + scores */}
+                {/* Score row — rate each model 1–10 */}
                 <div className="grid grid-cols-[100px_1fr] md:grid-cols-[148px_1fr_1fr_1fr] border-b border-gray-200 bg-white">
-                  <div className="px-3 py-2 border-r border-gray-100 bg-gray-50 sticky left-0 z-20">
-                    <div className="text-[9px] font-bold text-gray-300 uppercase tracking-wider">Evaluate</div>
+                  <div className="px-3 py-1.5 border-r border-gray-100 bg-gray-50 sticky left-0 z-20">
+                    <div className="text-[9px] font-bold text-gray-300 uppercase tracking-wider">Score 1–10</div>
                   </div>
                   {MODEL_ORDER.map(m => {
                     const cfg = MODELS[m];
-                    const isWinner = winners[sectionKey] === m;
                     const sectionScore = scores[sectionKey]?.[m] ?? 0;
                     return (
-                      <div key={m} className={`px-3 py-2 border-r border-gray-100 last:border-r-0 ${m !== mobileModel ? "hidden md:flex" : "flex"} flex-col gap-1.5`}>
-                        {/* Winner picker */}
-                        <button type="button" onClick={() => setWinners(prev => ({ ...prev, [sectionKey]: isWinner ? (undefined as unknown as ModelKey) : m }))}
-                          className={`text-[10px] px-2 py-1 rounded-md border font-semibold w-full text-center transition-all ${isWinner ? `${cfg.bg} ${cfg.color} ${cfg.border} ring-1 ${cfg.ring}` : "border-gray-200 text-gray-400 hover:border-gray-300 bg-white"}`}>
-                          {isWinner ? "🏆 Best" : "Best?"}
-                        </button>
-                        {/* 1-10 score */}
+                      <div key={m} className={`px-3 py-2 border-r border-gray-100 last:border-r-0 ${m !== mobileModel ? "hidden md:flex" : "flex"} flex-col gap-1`}>
                         <ScoreButtons value={sectionScore} onChange={val => setScore(sectionKey, m, val)} color={scoreColor[m]} />
                         {sectionScore > 0 && <div className={`text-[10px] font-bold ${cfg.color}`}>{sectionScore}/10</div>}
                       </div>
@@ -815,11 +835,25 @@ export default function AIComparisonWorkspace({
         </div>
       </div>
 
-      {/* ── AI Insights Panel ────────────────────────────────────────────────── */}
-      {hasAny && <AIInsightsPanel results={results} />}
-
-      {/* ── Final Decision Dashboard ─────────────────────────────────────────── */}
+      {/* ── Final Scorecard ───────────────────────────────────────────────────── */}
       <FinalDecisionDashboard scores={scores} winners={winners} />
+      </>}
+
+      {/* ── Consensus tab ─────────────────────────────────────────────────────── */}
+      {activeTab === "consensus" && (
+        <div>
+          {hasAny ? (
+            <>
+              <ExecutiveSummary results={results} />
+              <AIInsightsPanel results={results} />
+            </>
+          ) : (
+            <div className="rounded-xl border border-dashed border-gray-200 p-8 text-center">
+              <p className="text-sm text-gray-400">Run analysis on at least 2 models first to see the Consensus View</p>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

@@ -266,6 +266,52 @@ export function buildLeadPrompt(lead: LeadForAnalysis): string {
     }
   }
 
+  // Meetings & Site Visits
+  const allActs = lead.activities ?? [];
+  const meetingActs = allActs.filter(a => /MEETING|OFFICE/i.test(a.type));
+  const siteVisitActs = allActs.filter(a => /SITE_VISIT|VISIT/i.test(a.type));
+  const virtualMeetingActs = allActs.filter(a => /VIRTUAL_MEETING|VIRTUAL/i.test(a.type));
+  const today = new Date();
+  lines.push(`\n=== MEETINGS & SITE VISITS ===`);
+  // Site visits
+  const completedSVDates: string[] = [];
+  const plannedSVDates: string[] = [];
+  if (lead.siteVisitDate) {
+    const svDate = lead.siteVisitDate;
+    if (svDate <= today) completedSVDates.push(svDate.toISOString().split("T")[0] + " (CRM field)");
+    else plannedSVDates.push(svDate.toISOString().split("T")[0] + " (CRM field — planned)");
+  }
+  for (const a of siteVisitActs) {
+    const d = (a.completedAt ?? a.scheduledAt ?? a.createdAt).toISOString().split("T")[0];
+    if (a.status === "COMPLETED" || a.completedAt) completedSVDates.push(`${d} (activity: ${a.title})`);
+    else plannedSVDates.push(`${d} (activity: ${a.title} — ${a.status})`);
+  }
+  lines.push(`Completed site visits: ${completedSVDates.length ? completedSVDates.join("; ") : "None recorded"}`);
+  lines.push(`Planned site visit: ${plannedSVDates.length ? plannedSVDates.join("; ") : "None scheduled"}`);
+  // Office meetings
+  const completedOMDates: string[] = [];
+  if (lead.meetingDate) {
+    completedOMDates.push(lead.meetingDate.toISOString().split("T")[0] + " (CRM field)");
+  }
+  for (const a of meetingActs) {
+    const d = (a.completedAt ?? a.scheduledAt ?? a.createdAt).toISOString().split("T")[0];
+    if (a.status === "COMPLETED" || a.completedAt) completedOMDates.push(`${d} (activity: ${a.title})`);
+    else completedOMDates.push(`${d} (activity: ${a.title} — ${a.status})`);
+  }
+  lines.push(`Completed office meetings: ${completedOMDates.length ? completedOMDates.join("; ") : "None recorded"}`);
+  // Virtual meetings
+  const virtualDates: string[] = [];
+  if ((lead as LeadForAnalysis & { virtualMeetingDate?: Date | null }).virtualMeetingDate) {
+    const vd = (lead as LeadForAnalysis & { virtualMeetingDate?: Date | null }).virtualMeetingDate!;
+    virtualDates.push(vd.toISOString().split("T")[0] + " (CRM field)");
+  }
+  for (const a of virtualMeetingActs) {
+    const d = (a.completedAt ?? a.scheduledAt ?? a.createdAt).toISOString().split("T")[0];
+    virtualDates.push(`${d} (activity: ${a.title} — ${a.status})`);
+  }
+  lines.push(`Virtual meetings: ${virtualDates.length ? virtualDates.join("; ") : "None recorded"}`);
+  lines.push(`⚠ RULE: A "completed" meeting requires explicit evidence: "done", "completed", "met", "visited", "came to office", "SV done". Do NOT infer completion without evidence.`);
+
   // Call logs
   const realCalls = (lead.callLogs ?? []).filter(c => c.attributedAgentName == null);
   if (realCalls.length > 0) {
@@ -277,14 +323,26 @@ export function buildLeadPrompt(lead: LeadForAnalysis): string {
     }
   }
 
-  // Activities
-  const acts = (lead.activities ?? []).filter(a => a.type !== "LEAD_CREATED");
-  if (acts.length > 0) {
+  // Activities — grouped
+  const nonMeetingActs = allActs.filter(a => a.type !== "LEAD_CREATED" && !/MEETING|VISIT|VIRTUAL/i.test(a.type));
+  const meetingTypeActs = allActs.filter(a => a.type !== "LEAD_CREATED" && /MEETING|VISIT|VIRTUAL/i.test(a.type));
+  if (meetingTypeActs.length > 0 || nonMeetingActs.length > 0) {
     lines.push(`\n=== ACTIVITIES ===`);
-    for (const a of acts.slice(0, 20)) {
-      const agent = a.user?.name ?? "—";
-      const date = (a.completedAt ?? a.scheduledAt ?? a.createdAt).toISOString().split("T")[0];
-      lines.push(`[${date}] ${a.type} | ${a.status} | ${a.title}${a.description ? ` — ${a.description}` : ""} | By: ${agent}`);
+    if (meetingTypeActs.length > 0) {
+      lines.push(`Meetings/Visits:`);
+      for (const a of meetingTypeActs.slice(0, 10)) {
+        const agent = a.user?.name ?? "—";
+        const date = (a.completedAt ?? a.scheduledAt ?? a.createdAt).toISOString().split("T")[0];
+        lines.push(`  [${date}] ${a.type} | ${a.status} | ${a.title}${a.description ? ` — ${a.description}` : ""} | By: ${agent}`);
+      }
+    }
+    if (nonMeetingActs.length > 0) {
+      lines.push(`Other actions:`);
+      for (const a of nonMeetingActs.slice(0, 15)) {
+        const agent = a.user?.name ?? "—";
+        const date = (a.completedAt ?? a.scheduledAt ?? a.createdAt).toISOString().split("T")[0];
+        lines.push(`  [${date}] ${a.type} | ${a.status} | ${a.title}${a.description ? ` — ${a.description}` : ""} | By: ${agent}`);
+      }
     }
   }
 

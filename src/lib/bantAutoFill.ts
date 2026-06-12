@@ -68,6 +68,23 @@ function detectBudget(text: string): { amount: number; display: string; currency
 function detectAuthority(text: string): { value: string; confidence: BantConfidence } | null {
   const t = text.toLowerCase();
 
+  // ─── SOFT SIGNALS — person mentioned as needing to be consulted ──────────
+  const softConsultMatch = t.match(/(?:check|confirm|discuss|consult|talk|speak|ask)\s+with\s+(?:my\s+)?([a-z]+(?:\s+[a-z]+)?)/i);
+  // Only treat as authority soft signal if the match isn't already a family/business pattern handled below
+  // and the matched word is a person-like term (not "you", "them", etc.)
+  if (softConsultMatch) {
+    const person = softConsultMatch[1].trim().toLowerCase();
+    const skipWords = ["you", "them", "us", "it", "this", "that", "the", "a", "an"];
+    if (!skipWords.includes(person)) {
+      // Let the more specific patterns below override — return soft signal only if no stronger match
+      // (soft signal detection is done AFTER the stronger patterns, so we fall through)
+    }
+  }
+  if (/(?:advisor|ca\b|chartered\s*accountant|accountant|lawyer|solicitor)\s+(?:will|needs?|has\s+to)/i.test(t))
+    return { value: "Professional Advisor", confidence: "MEDIUM" };
+  if (/need(?:s?)\s+(?:my|the)?\s*(?:father|dad|mother|mom|husband|wife|partner|brother|sister|son|daughter)(?:'s)?\s+(?:approval|nod|okay|ok|sign)\b/i.test(t))
+    return { value: "Family", confidence: "MEDIUM" };
+
   // ─── SELF ──────────────────────────────────────────────────────────────────
   if (/\b(i am|i'm|myself|i will|i alone)\s*(the\s+)?(decision\s*maker|deciding|investor|buyer|investing)\b/.test(t))
     return { value: "Self", confidence: "HIGH" };
@@ -150,6 +167,17 @@ function detectAuthority(text: string): { value: string; confidence: BantConfide
   if (/\b(company|management|board)\s*(will|to)\s*(decide|approve|invest)\b/.test(t))
     return { value: "Company", confidence: "HIGH" };
 
+  // ─── SOFT CONSULT FALLBACK — generic "check/discuss with [person]" ────────
+  if (softConsultMatch) {
+    const person = softConsultMatch[1].trim();
+    const skipWords = ["you", "them", "us", "it", "this", "that", "the", "a", "an", "me"];
+    if (!skipWords.includes(person.toLowerCase())) {
+      // Capitalise first letter for display
+      const displayPerson = person.charAt(0).toUpperCase() + person.slice(1);
+      return { value: displayPerson, confidence: "MEDIUM" };
+    }
+  }
+
   return null;
 }
 
@@ -202,13 +230,19 @@ function detectTimeline(text: string): { value: string; enumValue: string; confi
   // booking-action verb.
   const immediateExplicit =
     /\b(?:immediate\s*(?:requirement|buyer|interest|purchase)|asap|ready\s*now|ready\s*to\s*buy|wants?\s*to\s*book\s*now|book\s*now|wants?\s*to\s*finaliz|finaliz(?:e|ing)\s*(?:this\s*week|now|today)|wants?\s*eoi\s*today|wants?\s*to\s*close|close\s*(?:the\s*)?deal\s*(?:now|this\s*week))\b/.test(t) ||
-    /site\s*visit\s*(?:today|tomorrow)\s*(?:for|to)\s*book|wants?\s*to\s*sign|ready\s*to\s*sign/.test(t);
+    /site\s*visit\s*(?:today|tomorrow)\s*(?:for|to)\s*book|wants?\s*to\s*sign|ready\s*to\s*sign/.test(t) ||
+    /site\s*visit\s*(?:done|completed|finished)/i.test(t) ||
+    /\bsv\s*done\b/i.test(t) ||
+    /\bafter\s*sv\b/i.test(t);
   if (immediateExplicit)
     return { value: "Immediate", enumValue: "IMMEDIATE", confidence: "HIGH" };
 
   // ─── 30 DAYS ─────────────────────────────────────────────────────────────
   if (/within\s*30\s*days?|next\s*month|by\s*(?:end\s*of\s*)?(?:this\s*)?month|30\s*days/.test(t))
     return { value: "30 days", enumValue: "THIRTY_DAYS", confidence: "HIGH" };
+  // Visiting Dubai this/next week → imminent, treat as 30-day (MEDIUM — not yet booking-action)
+  if (/(?:visiting|coming\s+to|arriving\s+in)\s+dubai\s+(?:this|next)\s+week/i.test(t))
+    return { value: "30 days", enumValue: "THIRTY_DAYS", confidence: "MEDIUM" };
 
   // ─── 2–3 MONTHS ──────────────────────────────────────────────────────────
   // "in/within/after 2-3 months", "will look after 2/3 months", "2-3 months"

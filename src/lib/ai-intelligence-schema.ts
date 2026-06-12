@@ -268,6 +268,28 @@ ${ABBREVIATIONS}
 7. For Automation Assessment — evaluate YOUR OWN capabilities as an AI system
 8. Return ONLY valid JSON. No markdown. No text outside JSON.
 
+## AUTHORITY DETECTION RULES
+- If client says "I'll check with X" / "discuss with X" / "confirm with X" / "need X's approval" → X is the authority figure (MEDIUM confidence)
+- If client mentions "my advisor", "my CA", "my accountant will handle" → Professional advisor is authority (MEDIUM confidence)
+- If client says "I decide" / "I will finalize" → Self-authority (HIGH confidence)
+- If client mentions spouse/family without explicit statement → Collaborative decision (MEDIUM confidence)
+- NEVER leave authority as Unknown if any person is referenced as an approver or decider
+
+## TIMELINE INFERENCE RULES
+- Site visit completed → Timeline is likely NOW or IMMEDIATE (HIGH confidence)
+- Site visit planned/upcoming → Timeline ≤ 30 days (HIGH confidence)
+- Client visiting Dubai → Timeline 1-3 months from visit date (MEDIUM confidence)
+- "Will decide after site visit" → Timeline = site visit date + 1-2 weeks (MEDIUM confidence)
+- Recent EOI discussion → Timeline IMMEDIATE to 30 days (MEDIUM confidence)
+- Recency matters: signals from last 7 days > last 30 days > older
+
+## INFERENCE RULE — NEVER LEAVE BLANK
+If evidence exists that partially supports a field, state the inference with confidence level:
+- HIGH: Direct explicit statement in last 7 days
+- MEDIUM: Implied by context or indirect statement
+- LOW: Mentioned once in old remarks, contradictory signals
+Do NOT return null when inference is possible. State what you can infer and your confidence.
+
 ## Output JSON Schema
 Return exactly this structure (all fields required):
 

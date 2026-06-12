@@ -287,6 +287,12 @@ export interface LeadForAI {
   callsConnected: number;
   lastTouchDaysAgo: number | null;
   interestedProject?: string | null;
+  // Extended qualification fields
+  authorityLevel?: string | null;
+  authorityPerson?: string | null;
+  meetingDate?: Date | null;
+  siteVisitDate?: Date | null;
+  recentCalls?: Array<{ outcome: string; startedAt: Date }> | null;
 }
 
 export interface AIScoreResult {
@@ -326,6 +332,16 @@ Qualification signals:
 - Fund readiness: ${lead.fundReadiness ?? "?"}
 - When can invest: ${lead.whenCanInvest ?? "?"}
 - Mood: ${lead.moodStatus ?? "?"}
+- Authority: ${lead.authorityLevel ?? "Unknown"} — decision maker: ${lead.authorityPerson ?? "Not identified"}
+- Meetings: ${lead.meetingDate ? `Office meeting: ${lead.meetingDate.toISOString().split("T")[0]}` : "No office meeting recorded"}
+- Site visit: ${lead.siteVisitDate ? `Site visit: ${lead.siteVisitDate.toISOString().split("T")[0]}` : "No site visit recorded"}
+- Last connected call: ${lead.recentCalls?.find(c => c.outcome === "CONNECTED")?.startedAt.toISOString().split("T")[0] ?? "None on record"}
+
+Weight these signals heavily:
+- Completed site visit = STRONG buying signal (push toward HOT if within 30 days)
+- Completed office meeting = positive engagement
+- Authority confirmed = decision can be made
+- Timeline stated = urgency exists
 
 Funnel:
 - Stage: ${lead.status}
