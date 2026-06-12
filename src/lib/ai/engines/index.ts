@@ -3,25 +3,36 @@
  * one import + one line — routes and UI iterate this map, so nothing else needs
  * to change when the fleet grows.
  *
- * Roadmap (each follows the qualification.ts pattern: types + buildPrompt + mock + parse):
- *   ✅ qualification        — 9-dimension qualification
- *   ⏳ coaching             — what the agent missed / questions not asked / next-best-questions
- *   ⏳ effort               — 5-level effort allocation (Ignore→Lalit intervention)
- *   ⏳ psychology           — decision style, risk, trust, urgency, price sensitivity, triggers
- *   ⏳ inventory            — requirement → available inventory match + sourcing gaps
- *   ⏳ followup             — score last follow-up (Weak/Average/Strong) + reason
- *   ⏳ escalation           — auto-escalate UHNI / AED 5M+ / existing portfolio / family office
- *   ⏳ revival              — revival with substance (new inventory / price revision), never "just checking in"
- *   ⏳ priority             — cross-lead ranking (effort vs probability)
- *   ⏳ fieldSuggestions     — CRM field updates with Accept/Edit/Reject (never auto-applied)
+ *   ✅ director         — headline verdict (missing/ask/action/channel/escalate-nurture-drop)
+ *   ✅ qualification    — 9-dimension qualification
+ *   ✅ coaching         — what the agent missed / questions not asked / next-best-questions
+ *   ✅ followup         — follow-up quality + ready-to-send next message + cadence
+ *   ✅ inventory        — requirement → sellable inventory match + sourcing gaps
+ *   ⏳ effort           — 5-level effort allocation (P1)
+ *   ⏳ psychology       — decision style / risk / trust / triggers (P1)
+ *   ⏳ escalation       — UHNI / AED 5M+ / portfolio auto-escalation (P1)
+ *   ⏳ revival          — substance-led revival, never "just checking in" (P1)
+ *   ⏳ priority         — cross-lead ranking (P1)
+ *   ⏳ fieldSuggestions — CRM field updates Accept/Edit/Reject (P1)
  */
 import type { Engine } from "../types";
+import { directorEngine } from "./director";
 import { qualificationEngine } from "./qualification";
+import { coachingEngine } from "./coaching";
+import { followupEngine } from "./followup";
+import { inventoryEngine } from "./inventory";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const ENGINES: Record<string, Engine<any>> = {
+  [directorEngine.key]: directorEngine,
   [qualificationEngine.key]: qualificationEngine,
+  [coachingEngine.key]: coachingEngine,
+  [followupEngine.key]: followupEngine,
+  [inventoryEngine.key]: inventoryEngine,
 };
+
+/** The P0 engines that render in the AI Sales Director panel, in display order. */
+export const P0_ENGINE_KEYS = ["director", "qualification", "coaching", "followup", "inventory"] as const;
 
 export type EngineKey = keyof typeof ENGINES;
 
@@ -33,4 +44,4 @@ export function listEngines(): Array<{ key: string; title: string; description: 
   return Object.values(ENGINES).map((e) => ({ key: e.key, title: e.title, description: e.description }));
 }
 
-export { qualificationEngine };
+export { directorEngine, qualificationEngine, coachingEngine, followupEngine, inventoryEngine };

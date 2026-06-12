@@ -1,5 +1,5 @@
 import type { Engine, EngineContext } from "../types";
-import { parseJsonLoose } from "../runEngine";
+import { parseJsonLoose } from "../json";
 import { WCR_PERSONA, leadBlock } from "../persona";
 
 /**

@@ -79,11 +79,6 @@ export async function runEngine<TOut>(
   }
 }
 
-/** Strip ```json fences a provider may wrap around JSON, then JSON.parse. */
-export function parseJsonLoose<T>(raw: string): T {
-  const cleaned = raw
-    .replace(/^\s*```(?:json)?\s*/i, "")
-    .replace(/\s*```\s*$/i, "")
-    .trim();
-  return JSON.parse(cleaned) as T;
-}
+// Re-exported for convenience; the implementation lives in ./json (pure, no
+// server-only) so engines can import it without pulling in this server module.
+export { parseJsonLoose } from "./json";
