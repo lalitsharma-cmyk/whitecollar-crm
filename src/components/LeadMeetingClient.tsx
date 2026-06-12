@@ -175,8 +175,8 @@ export default function LeadMeetingClient({
           });
         const filterLabel = typeFilter ? (TYPE_LABEL[typeFilter] ?? typeFilter) : "All";
         return (
-          <div className="mt-3">
-            <div className="flex items-center justify-between mb-2">
+          <div className="mt-2">
+            <div className="flex items-center justify-between mb-1.5">
               <span className="text-xs font-semibold text-gray-700 dark:text-slate-200">
                 {filterLabel} · {list.length} record{list.length === 1 ? "" : "s"}
               </span>

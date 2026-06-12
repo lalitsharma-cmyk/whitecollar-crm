@@ -540,12 +540,12 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
   const isAdminOrManager = me.role === "ADMIN" || me.role === "MANAGER";
 
   const qualificationCard = (
-    <div data-lead-section="overview" className="card p-5">
+    <div data-lead-section="overview" className="card p-4">
       <div className="font-semibold mb-3 dark:text-slate-100">Client information <span className="text-[10px] text-gray-400 dark:text-slate-500 font-normal">(click any value to edit)</span></div>
       {/* `min-w-0` on every grid cell so long values (LinkedIn URLs, long
           categorization labels) truncate within their column instead of
           overflowing into the neighbour. */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm [&>div]:min-w-0 [&>div]:overflow-hidden">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm [&>div]:min-w-0 [&>div]:overflow-hidden">
         {/* Phone — admin/manager edit + tel:/copy; agent sees the MASKED number
             only (PII), so no copy/dial of the real value. */}
         <div>
@@ -717,7 +717,7 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
             multiple section values; the CSS hide rule uses ":not(...=)" with
             an exact match, so the trick is to give the header NO data
             attribute — that exempts it from the hide rules entirely. */}
-        <div className="card p-5">
+        <div className="card p-4">
           <div className="flex items-start justify-between flex-wrap gap-3">
             <div>
               <div className="flex flex-wrap items-center gap-2">
@@ -883,7 +883,7 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
             5. Projects discussed
             ... rest unchanged
       */}
-      <div className="space-y-4">
+      <div className="space-y-3">
         {/* ── Routing info panel (small, read-only) ──
             Shows the team classification provenance so managers/admins can
             audit how this lead ended up on the current team. Hidden from
@@ -933,9 +933,9 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
         )}
 
         {/* 📍 Location — fully editable inline (city, country, address) */}
-        <div data-lead-section="overview" className="card p-5">
+        <div data-lead-section="overview" className="card p-4">
           <div className="font-semibold mb-3 dark:text-slate-100">📍 Location <span className="text-[10px] text-gray-400 font-normal">(click to edit)</span></div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
             <div>
               <div className="text-xs text-gray-500 dark:text-slate-400 mb-0.5">City</div>
               <InlineEdit leadId={lead.id} field="city" value={lead.city ?? ""} placeholder="Add value" />
@@ -954,7 +954,7 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
         {/* §15: LinkedContactsCard removed — alt phone already in Client Information.
             No duplicate contact display anywhere else on the page. */}
 
-        <div data-lead-section="overview" className="card p-5">
+        <div data-lead-section="overview" className="card p-4">
           <LeadMeetingClient
             leadId={lead.id}
             counts={meetingCounts}
@@ -995,9 +995,9 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
         {/* Scheduling & next action — Followup + To-Do FIRST per Lalit's ask
             ("Followup and to do should be on top") since those are the daily
             agent actions. Meeting + Site Visit are second-row reference dates. */}
-        <div data-lead-section="actions" className="card p-5">
+        <div data-lead-section="actions" className="card p-4">
           <div className="font-semibold mb-3 dark:text-slate-100">📅 Scheduling & next action</div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
             <SchedulingField
               leadId={lead.id}
               field="followupDate"
@@ -1026,7 +1026,7 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
           </div>
         </div>
 
-        <div data-lead-section="projects" className="card p-5">
+        <div data-lead-section="projects" className="card p-4">
           <LeadProjectsClient
             leadId={lead.id}
             initial={lead.discussed.map(d => ({
@@ -1055,7 +1055,7 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
           />
         </div>
 
-        <div data-lead-section="projects" className="card p-5">
+        <div data-lead-section="projects" className="card p-4">
           <LeadInterestNotesClient
             leadId={lead.id}
             notes={interestNotes.map(n => ({
@@ -1084,7 +1084,7 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
         {/* Assignment history — admin/manager only. Agents shouldn't see who else
             owned the lead before them (avoids inter-agent friction + cherry-picking). */}
         {(me.role === "ADMIN" || me.role === "MANAGER") && (
-          <div data-lead-section="admin" className="card p-5">
+          <div data-lead-section="admin" className="card p-4">
             <div className="font-semibold mb-2 dark:text-slate-100">Assignment history</div>
             <div className="space-y-2 text-sm">
               {lead.assignments.length === 0 && <div className="text-gray-500 dark:text-slate-400">Not assigned yet.</div>}
