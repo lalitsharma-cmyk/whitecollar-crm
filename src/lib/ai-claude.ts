@@ -62,6 +62,7 @@ export async function analyzeLeadWithClaude(
   let result: IntelligenceResult;
   try {
     const cleaned = rawText
+      .trim()
       .replace(/^```(?:json)?\s*/i, "")
       .replace(/\s*```\s*$/i, "")
       .trim();
