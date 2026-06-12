@@ -34,11 +34,16 @@ export async function analyzeLeadWithClaude(
   try {
     msg = await client.messages.create({
       model: MODEL,
-      max_tokens: 8000,
+      // The 18-section intelligence JSON runs ~7.5k tokens; 8000 truncated it
+      // mid-object → "invalid JSON". 16000 gives ample headroom.
+      max_tokens: 16000,
       temperature: 0.3,
       system: INTELLIGENCE_SYSTEM_PROMPT,
       messages: [
         { role: "user", content: userPrompt },
+        // Prefill the reply with "{" so Claude emits JSON immediately — no
+        // preamble, no ```json fences. We prepend the "{" back when parsing.
+        { role: "assistant", content: "{" },
       ],
     });
   } catch (e) {
@@ -50,7 +55,8 @@ export async function analyzeLeadWithClaude(
   }
 
   const ms = Date.now() - startMs;
-  const rawText = msg.content.map((b) => (b.type === "text" ? b.text : "")).join("");
+  // Prepend the "{" we prefilled the assistant turn with.
+  const rawText = "{" + msg.content.map((b) => (b.type === "text" ? b.text : "")).join("");
 
   const inputTokens = msg.usage?.input_tokens ?? 0;
   const outputTokens = msg.usage?.output_tokens ?? 0;
@@ -59,20 +65,18 @@ export async function analyzeLeadWithClaude(
     (outputTokens / 1_000_000) * COST_OUTPUT_PER_M * 1_000_000
   );
 
-  let result: IntelligenceResult;
-  try {
-    const cleaned = rawText
-      .trim()
-      .replace(/^```(?:json)?\s*/i, "")
-      .replace(/\s*```\s*$/i, "")
-      .trim();
-    result = JSON.parse(cleaned) as IntelligenceResult;
-  } catch {
+  const result = parseIntelligenceLoose(rawText);
+  if (!result) {
     await prisma.aiUsageLog.create({
       data: { provider: "anthropic", model: MODEL, feature: "claude_intelligence", leadId: lead.id, inputTokens, outputTokens, costMicroUsd, ms, ok: false },
     }).catch(() => {});
-    const preview = rawText.slice(0, 200).replace(/\n/g, " ");
-    throw new Error(`Claude returned invalid JSON. Preview: ${preview}`);
+    const truncated = msg.stop_reason === "max_tokens";
+    const tail = rawText.slice(-200).replace(/\n/g, " ");
+    throw new Error(
+      truncated
+        ? `Claude hit the token limit and the JSON was incomplete even after repair. Tail: …${tail}`
+        : `Claude returned invalid JSON. Tail: …${tail}`,
+    );
   }
 
   const [analysis] = await prisma.$transaction([
@@ -102,4 +106,63 @@ export async function getLatestClaudeAnalysis(leadId: string) {
     where: { leadId, model: MODEL },
     orderBy: { createdAt: "desc" },
   });
+}
+
+/**
+ * Parse Claude's JSON tolerantly. If a long response is truncated at the token
+ * limit, repair it (close open brackets / a dangling string) and keep the
+ * sections that DID complete — the War Room renders "NOT ENOUGH DATA" for any
+ * section the repair had to drop, which beats failing the whole analysis.
+ */
+function parseIntelligenceLoose(raw: string): IntelligenceResult | null {
+  const cleaned = raw.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```\s*$/i, "").trim();
+  try { return JSON.parse(cleaned) as IntelligenceResult; } catch { /* fall through to repair */ }
+  const repaired = repairTruncatedJson(cleaned);
+  if (repaired) {
+    try { return JSON.parse(repaired) as IntelligenceResult; } catch { /* unrepairable */ }
+  }
+  return null;
+}
+
+/**
+ * Best-effort repair for JSON truncated mid-stream. Scans backward from the end
+ * for a structural boundary, closes the open brackets/string for that prefix,
+ * and returns the first candidate that actually parses. Bounded so a one-off
+ * repair stays cheap.
+ */
+function repairTruncatedJson(s: string): string | null {
+  const floor = Math.max(0, s.length - 4000); // don't scan back further than the last ~section
+  for (let end = s.length; end > floor; end--) {
+    const c = s[end - 1];
+    if (c !== "}" && c !== "]" && c !== '"' && !/[0-9eltursfn]/.test(c)) continue;
+    const candidate = closeOpenBrackets(s.slice(0, end));
+    if (candidate) {
+      try { JSON.parse(candidate); return candidate; } catch { /* try an earlier boundary */ }
+    }
+  }
+  return null;
+}
+
+/** Append the closers needed to balance a (possibly mid-string) JSON prefix. */
+function closeOpenBrackets(prefix: string): string | null {
+  let inStr = false, esc = false;
+  const close: string[] = [];
+  for (let i = 0; i < prefix.length; i++) {
+    const c = prefix[i];
+    if (inStr) {
+      if (esc) esc = false;
+      else if (c === "\\") esc = true;
+      else if (c === '"') inStr = false;
+      continue;
+    }
+    if (c === '"') inStr = true;
+    else if (c === "{") close.push("}");
+    else if (c === "[") close.push("]");
+    else if (c === "}" || c === "]") close.pop();
+  }
+  if (close.length === 0 && !inStr) return null;
+  let out = prefix.replace(/[\s,]+$/, "");
+  if (inStr) out += '"';
+  for (let i = close.length - 1; i >= 0; i--) out += close[i];
+  return out;
 }

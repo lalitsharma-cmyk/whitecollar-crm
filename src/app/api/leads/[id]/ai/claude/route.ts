@@ -3,6 +3,10 @@ import { prisma } from "@/lib/prisma";
 import { analyzeLeadWithClaude, claudeEnabled, isAiPilotLead, getLatestClaudeAnalysis } from "@/lib/ai-claude";
 import { NextResponse } from "next/server";
 
+// Claude generates the full 18-section JSON slowly (~7.5k tokens ≈ 160s). Give
+// the function room so a complete (larger, now-16k-cap) response isn't killed.
+export const maxDuration = 300;
+
 export async function POST(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
