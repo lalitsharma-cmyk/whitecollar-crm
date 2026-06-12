@@ -79,13 +79,47 @@ const SCORE_CLS:   Record<string, string> = { Strong:"bg-green-100 text-green-70
 const EFFORT_CLS:  Record<string, string> = { HighEffort:"bg-red-100 text-red-700", MediumEffort:"bg-amber-100 text-amber-700", LowEffort:"bg-blue-100 text-blue-600", LongTermNurture:"bg-gray-100 text-gray-600", NoEffort:"bg-gray-100 text-gray-400" };
 const AUTO_CLS:    Record<string, string> = { Possible:"bg-green-100 text-green-700", PartiallyPossible:"bg-amber-100 text-amber-700", NotRecommended:"bg-red-100 text-red-600" };
 
+// ─── No data state ────────────────────────────────────────────────────────────
+
+const NO_DATA_HINTS: Record<string, string> = {
+  summary:                "Add call notes and lead details to enable this section.",
+  salesDirectorTest:      "Requires BANT signals and conversation history.",
+  closingProbability:     "Cannot estimate closing probability without qualification data.",
+  whyNotClosed:           "No objections or blockers found in conversation. Add detailed call notes.",
+  nextBestAction:         "Needs lead profile and recent conversation history.",
+  humanPsychology:        "Insufficient client interactions to build psychology profile.",
+  bantIntelligence:       "Budget, authority, need or timeline signals missing from remarks.",
+  effortRecommendation:   "Add qualification signals to enable effort recommendation.",
+  callStrategy:           "Needs budget, requirement and objection data to generate call guide.",
+  whatsAppDraft:          "Needs client profile and conversation context to draft message.",
+  emailDraft:             "Needs lead qualification and recent discussion to draft email.",
+  projectRecommendations: "Add budget and requirement fields to enable project matching.",
+  opportunityDiscovery:   "Needs fuller client profile to identify opportunities.",
+  revivalIntelligence:    "No previous interaction data found. Add call history first.",
+  wcrIntelligenceScore:   "Lead score cannot be computed without qualification data.",
+  capabilityDiscovery:    "Requires conversation history to assess AI capabilities.",
+  automationAssessment:   "Needs interaction data to assess automation potential.",
+  managementInsights:     "Add lead qualification data to generate management view.",
+};
+
+function NoData({ sectionKey }: { sectionKey: string }) {
+  return (
+    <div className="flex flex-col items-center justify-center h-full gap-2 py-6 text-center px-3">
+      <div className="text-[10px] font-bold text-gray-200 uppercase tracking-widest">NOT ENOUGH DATA</div>
+      <p className="text-[10px] text-gray-300 leading-relaxed">
+        {NO_DATA_HINTS[sectionKey] ?? "Insufficient conversation data to analyze this section."}
+      </p>
+    </div>
+  );
+}
+
 // ─── Per-section cell renderer ─────────────────────────────────────────────────
 
 function SectionCell({ sectionKey, r }: { sectionKey: string; r: IntelligenceResult | null }) {
-  if (!r) return <span className="text-gray-300 text-xs italic">—</span>;
+  if (!r) return <NoData sectionKey={sectionKey} />;
   switch (sectionKey) {
     case "summary": {
-      const s = r.summary; if (!s) return <span className="text-gray-300 text-xs">—</span>;
+      const s = r.summary; if (!s) return <NoData sectionKey={sectionKey} />;
       return (
         <div className="space-y-2 text-xs">
           <p className="font-semibold text-gray-900 leading-snug text-sm">{s.oneLinerVerdict ?? s.whoIsClient}</p>
@@ -97,7 +131,7 @@ function SectionCell({ sectionKey, r }: { sectionKey: string; r: IntelligenceRes
       );
     }
     case "salesDirectorTest": {
-      const sdt = r.salesDirectorTest; if (!sdt) return <span className="text-gray-300 text-xs">—</span>;
+      const sdt = r.salesDirectorTest; if (!sdt) return <NoData sectionKey={sectionKey} />;
       return (
         <div className="space-y-2 text-xs">
           <div className="bg-amber-50 border border-amber-100 rounded p-2">
@@ -123,7 +157,7 @@ function SectionCell({ sectionKey, r }: { sectionKey: string; r: IntelligenceRes
       );
     }
     case "closingProbability": {
-      const cp = r.closingProbability; if (!cp) return <span className="text-gray-300 text-xs">—</span>;
+      const cp = r.closingProbability; if (!cp) return <NoData sectionKey={sectionKey} />;
       const cls = { VeryHigh:"text-green-600", High:"text-blue-600", Medium:"text-amber-600", Low:"text-orange-600", Dead:"text-gray-400" }[cp.classification] ?? "text-gray-700";
       return (
         <div className="space-y-2 text-xs">
@@ -138,7 +172,7 @@ function SectionCell({ sectionKey, r }: { sectionKey: string; r: IntelligenceRes
       );
     }
     case "whyNotClosed": {
-      const w = r.whyNotClosed; if (!w) return <span className="text-gray-300 text-xs">—</span>;
+      const w = r.whyNotClosed; if (!w) return <NoData sectionKey={sectionKey} />;
       return (
         <div className="space-y-2 text-xs">
           <div className="bg-red-50 border border-red-100 rounded p-2 font-medium text-red-800">{w.biggestBlocker}</div>
@@ -150,7 +184,7 @@ function SectionCell({ sectionKey, r }: { sectionKey: string; r: IntelligenceRes
       );
     }
     case "nextBestAction": {
-      const n = r.nextBestAction; if (!n) return <span className="text-gray-300 text-xs">—</span>;
+      const n = r.nextBestAction; if (!n) return <NoData sectionKey={sectionKey} />;
       return (
         <div className="space-y-2 text-xs">
           <div className="flex items-center gap-1.5 flex-wrap">
@@ -164,7 +198,7 @@ function SectionCell({ sectionKey, r }: { sectionKey: string; r: IntelligenceRes
       );
     }
     case "humanPsychology": {
-      const hp = r.humanPsychology; if (!hp) return <span className="text-gray-300 text-xs">—</span>;
+      const hp = r.humanPsychology; if (!hp) return <NoData sectionKey={sectionKey} />;
       return (
         <div className="space-y-2 text-xs">
           {hp.overallPsychProfile && <p className="text-gray-700 font-medium">{hp.overallPsychProfile}</p>}
@@ -177,7 +211,7 @@ function SectionCell({ sectionKey, r }: { sectionKey: string; r: IntelligenceRes
       );
     }
     case "bantIntelligence": {
-      const b = r.bantIntelligence; if (!b) return <span className="text-gray-300 text-xs">—</span>;
+      const b = r.bantIntelligence; if (!b) return <NoData sectionKey={sectionKey} />;
       const ovCls = b.overallBANT === "Qualifies" ? "bg-green-100 text-green-700" : b.overallBANT === "NotQualified" ? "bg-red-100 text-red-700" : "bg-amber-100 text-amber-700";
       return (
         <div className="space-y-2 text-xs">
@@ -197,7 +231,7 @@ function SectionCell({ sectionKey, r }: { sectionKey: string; r: IntelligenceRes
       );
     }
     case "effortRecommendation": {
-      const e = r.effortRecommendation; if (!e) return <span className="text-gray-300 text-xs">—</span>;
+      const e = r.effortRecommendation; if (!e) return <NoData sectionKey={sectionKey} />;
       return (
         <div className="space-y-2 text-xs">
           <div className="flex gap-1.5 flex-wrap">
@@ -210,7 +244,7 @@ function SectionCell({ sectionKey, r }: { sectionKey: string; r: IntelligenceRes
       );
     }
     case "callStrategy": {
-      const c = r.callStrategy; if (!c) return <span className="text-gray-300 text-xs">—</span>;
+      const c = r.callStrategy; if (!c) return <NoData sectionKey={sectionKey} />;
       return (
         <div className="space-y-2 text-xs">
           {c.objective && <div className="bg-blue-50 border border-blue-100 rounded p-2 text-blue-900">{c.objective}</div>}
@@ -222,7 +256,7 @@ function SectionCell({ sectionKey, r }: { sectionKey: string; r: IntelligenceRes
       );
     }
     case "whatsAppDraft": {
-      if (!r.whatsAppDraft) return <span className="text-gray-300 text-xs">—</span>;
+      if (!r.whatsAppDraft) return <NoData sectionKey={sectionKey} />;
       return (
         <div className="text-xs">
           <div className="flex items-center justify-between mb-1"><span className="text-[10px] text-gray-400 font-medium">Message</span><CopyBtn text={r.whatsAppDraft} /></div>
@@ -231,7 +265,7 @@ function SectionCell({ sectionKey, r }: { sectionKey: string; r: IntelligenceRes
       );
     }
     case "emailDraft": {
-      const ed = r.emailDraft; if (!ed) return <span className="text-gray-300 text-xs">—</span>;
+      const ed = r.emailDraft; if (!ed) return <NoData sectionKey={sectionKey} />;
       const full = `Subject: ${ed.subject ?? ""}\n\n${ed.body ?? ""}\n\n${ed.cta ?? ""}`;
       return (
         <div className="space-y-2 text-xs">
@@ -242,7 +276,7 @@ function SectionCell({ sectionKey, r }: { sectionKey: string; r: IntelligenceRes
       );
     }
     case "projectRecommendations": {
-      const pr = r.projectRecommendations; if (!pr?.length) return <span className="text-gray-300 text-xs">—</span>;
+      const pr = r.projectRecommendations; if (!pr?.length) return <NoData sectionKey={sectionKey} />;
       return (
         <div className="space-y-2 text-xs">
           {pr.map((p, i) => (
@@ -256,9 +290,9 @@ function SectionCell({ sectionKey, r }: { sectionKey: string; r: IntelligenceRes
       );
     }
     case "opportunityDiscovery": {
-      const od = r.opportunityDiscovery; if (!od) return <span className="text-gray-300 text-xs">—</span>;
+      const od = r.opportunityDiscovery; if (!od) return <NoData sectionKey={sectionKey} />;
       const entries = Object.entries(od).filter(([, v]) => v);
-      if (!entries.length) return <span className="text-gray-300 text-xs">—</span>;
+      if (!entries.length) return <NoData sectionKey={sectionKey} />;
       return (
         <div className="space-y-1.5 text-xs">
           {entries.map(([k, v]) => (
@@ -268,7 +302,7 @@ function SectionCell({ sectionKey, r }: { sectionKey: string; r: IntelligenceRes
       );
     }
     case "revivalIntelligence": {
-      const rv = r.revivalIntelligence; if (!rv) return <span className="text-gray-300 text-xs">—</span>;
+      const rv = r.revivalIntelligence; if (!rv) return <NoData sectionKey={sectionKey} />;
       return (
         <div className="space-y-2 text-xs">
           <div className="flex gap-1.5 flex-wrap">
@@ -281,7 +315,7 @@ function SectionCell({ sectionKey, r }: { sectionKey: string; r: IntelligenceRes
       );
     }
     case "wcrIntelligenceScore": {
-      const wis = r.wcrIntelligenceScore; if (!wis) return <span className="text-gray-300 text-xs">—</span>;
+      const wis = r.wcrIntelligenceScore; if (!wis) return <NoData sectionKey={sectionKey} />;
       const totCls = wis.total >= 80 ? "text-green-600" : wis.total >= 60 ? "text-amber-600" : "text-red-500";
       return (
         <div className="space-y-2 text-xs">
@@ -307,7 +341,7 @@ function SectionCell({ sectionKey, r }: { sectionKey: string; r: IntelligenceRes
       );
     }
     case "capabilityDiscovery": {
-      const cd = r.capabilityDiscovery; if (!cd) return <span className="text-gray-300 text-xs">—</span>;
+      const cd = r.capabilityDiscovery; if (!cd) return <NoData sectionKey={sectionKey} />;
       return (
         <div className="space-y-2 text-xs">
           {cd.biggestOpportunity && <div className="bg-violet-50 border border-violet-100 rounded p-2 text-violet-800">{cd.biggestOpportunity}</div>}
@@ -322,7 +356,7 @@ function SectionCell({ sectionKey, r }: { sectionKey: string; r: IntelligenceRes
       );
     }
     case "automationAssessment": {
-      const aa = r.automationAssessment; if (!aa) return <span className="text-gray-300 text-xs">—</span>;
+      const aa = r.automationAssessment; if (!aa) return <NoData sectionKey={sectionKey} />;
       return (
         <div className="space-y-1.5 text-xs">
           {Object.entries(aa).map(([k, item]) => {
@@ -339,7 +373,7 @@ function SectionCell({ sectionKey, r }: { sectionKey: string; r: IntelligenceRes
       );
     }
     case "managementInsights": {
-      const mi = r.managementInsights; if (!mi) return <span className="text-gray-300 text-xs">—</span>;
+      const mi = r.managementInsights; if (!mi) return <NoData sectionKey={sectionKey} />;
       return (
         <div className="space-y-1.5 text-xs">
           <div className="flex flex-wrap gap-1">
@@ -353,7 +387,7 @@ function SectionCell({ sectionKey, r }: { sectionKey: string; r: IntelligenceRes
         </div>
       );
     }
-    default: return <span className="text-gray-300 text-xs">—</span>;
+    default: return <NoData sectionKey={sectionKey} />;
   }
 }
 
@@ -793,7 +827,7 @@ export default function AIComparisonWorkspace({
                     return (
                       <div key={m}
                         className={`px-3 py-3 border-r border-gray-100 last:border-r-0 ${colBg[m]} ${m !== mobileModel ? "hidden md:block" : ""}`}
-                        style={{ height: "500px", overflowY: "auto" }}
+                        style={{ height: "300px", overflowY: "auto" }}
                         ref={el => { if (el) cellRefs.current.set(refKey, el); else cellRefs.current.delete(refKey); }}
                         onScroll={e => handleScroll(sectionKey, m, e.currentTarget)}>
                         {loading[m] ? (
@@ -814,16 +848,14 @@ export default function AIComparisonWorkspace({
 
                 {/* Score row — rate each model 1–10 */}
                 <div className="grid grid-cols-[100px_1fr] md:grid-cols-[148px_1fr_1fr_1fr] border-b border-gray-200 bg-white">
-                  <div className="px-3 py-1.5 border-r border-gray-100 bg-gray-50 sticky left-0 z-20">
-                    <div className="text-[9px] font-bold text-gray-300 uppercase tracking-wider">Score 1–10</div>
+                  <div className="px-2 py-1 border-r border-gray-100 bg-gray-50 sticky left-0 z-20">
+                    <div className="text-[9px] text-gray-300 uppercase tracking-wider">Rate</div>
                   </div>
                   {MODEL_ORDER.map(m => {
-                    const cfg = MODELS[m];
                     const sectionScore = scores[sectionKey]?.[m] ?? 0;
                     return (
-                      <div key={m} className={`px-3 py-2 border-r border-gray-100 last:border-r-0 ${m !== mobileModel ? "hidden md:flex" : "flex"} flex-col gap-1`}>
+                      <div key={m} className={`px-2 py-1 border-r border-gray-100 last:border-r-0 ${m !== mobileModel ? "hidden md:flex" : "flex"} items-center gap-0.5`}>
                         <ScoreButtons value={sectionScore} onChange={val => setScore(sectionKey, m, val)} color={scoreColor[m]} />
-                        {sectionScore > 0 && <div className={`text-[10px] font-bold ${cfg.color}`}>{sectionScore}/10</div>}
                       </div>
                     );
                   })}
