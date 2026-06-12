@@ -49,8 +49,6 @@ import { isAiPilotLead } from "@/lib/ai-openai";
 import { getLatestClaudeAnalysis, claudeEnabled } from "@/lib/ai-claude";
 import { getLatestGptIntelligence, gptIntelligenceEnabled } from "@/lib/ai-gpt-intelligence";
 import { getLatestGeminiIntelligence, geminiIntelligenceEnabled } from "@/lib/ai-gemini-intelligence";
-import AISalesDirectorPanel from "@/components/AISalesDirectorPanel";
-import { computeSalesDirectorPanel } from "@/lib/ai/salesDirector";
 
 export const dynamic = "force-dynamic";
 
@@ -258,12 +256,6 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
   const travelRatePerKmInr = await getTravelRatePerKmInr();
 
   const isPilotLead = isAiPilotLead(lead.ownerId);
-
-  // AI Sales Director — visible to whoever can see this lead (agents included).
-  // Runs on deterministic mock today (zero cost, reads real lead data); a real
-  // provider plugs in later via AI_ENGINE_PROVIDER with no change here. Computed
-  // on every load because mock is instant; real-provider runs will be on-demand.
-  const salesDirectorData = await computeSalesDirectorPanel(lead, Date.now());
 
   // AI Intelligence Workspace — Claude, GPT, Gemini (all parallel)
   const claudeEnabledFlag = claudeEnabled();
@@ -652,13 +644,6 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
           button in the mobile header (chevron-left next to hamburger) so
           every non-root page has it, not just lead detail. */}
       <div className="lg:col-span-2 space-y-4">
-        {/* AI SALES DIRECTOR — the hero "what do I do with this lead" panel.
-            Visible to agents on their own leads (NOT pilot-gated). Mock-backed
-            today; the AI War Room (Lalit-only) stays separate, lower down. */}
-        <div data-lead-section="overview">
-          <AISalesDirectorPanel data={salesDirectorData} />
-        </div>
-
         {/* INVESTOR BANNER — Agent V (Round 6). Surfaces "returning client"
             status above everything else. Hides itself when categorization
             !== "Investor" AND no matched leads exist (the component handles it). */}
