@@ -42,7 +42,7 @@ export async function analyzeLeadWithGemini(
         contents: [{ parts: [{ text: userPrompt }] }],
         generationConfig: {
           temperature: 0.3,
-          maxOutputTokens: 8000,
+          maxOutputTokens: 32000,
           responseMimeType: "application/json",
         },
       }),
