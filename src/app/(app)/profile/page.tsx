@@ -5,6 +5,7 @@ import ProfilePasswordChange from "@/components/ProfilePasswordChange";
 import XPBar from "@/components/XPBar";
 import { format } from "date-fns";
 import { BADGES, parseBadgeIds, levelForXp } from "@/lib/gamification";
+import { ownerActiveWhere, ownerWonWhere } from "@/lib/leadScope";
 
 export const dynamic = "force-dynamic";
 
@@ -13,9 +14,9 @@ export default async function ProfilePage() {
   // Pull stats — last login, leads owned, calls this month
   const monthStart = new Date(); monthStart.setDate(1); monthStart.setHours(0, 0, 0, 0);
   const [leadsOwned, callsThisMonth, dealsThisMonth, lastLoginRow] = await Promise.all([
-    prisma.lead.count({ where: { ownerId: me.id, currentStatus: { notIn: ["Junk", "Invalid Number", "Pass Away", "Number Changed", "By Mistake Inquiry"] } } }),
+    prisma.lead.count({ where: ownerActiveWhere(me.id) }),
     prisma.callLog.count({ where: { userId: me.id, startedAt: { gte: monthStart } } }),
-    prisma.lead.count({ where: { ownerId: me.id, currentStatus: "Booked with Us", updatedAt: { gte: monthStart } } }),
+    prisma.lead.count({ where: { ...ownerWonWhere(me.id), updatedAt: { gte: monthStart } } }),
     prisma.auditLog.findFirst({ where: { userId: me.id, action: "auth.login.success" }, orderBy: { createdAt: "desc" }, skip: 1 }),
   ]);
 

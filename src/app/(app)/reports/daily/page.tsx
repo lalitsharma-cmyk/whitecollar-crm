@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
 import { normalizeTeam } from "@/lib/teamRouting";
+import { BOOKED_STATUSES } from "@/lib/lead-statuses";
 import { startOfDay, endOfDay, format, parseISO, isValid } from "date-fns";
 import Link from "next/link";
 import { ActivityType, CallOutcome, TargetMetric } from "@prisma/client";
@@ -67,7 +68,7 @@ export default async function DailyReportPage({ searchParams }: { searchParams: 
     prisma.activity.count({ where: { userId: targetUserId, lead: { deletedAt: null }, type: ActivityType.COLD_TO_LEAD, completedAt: { gte: dayStart, lte: dayEnd } } }),
     // Leads marked WON today by this owner — count + revenue
     prisma.lead.findMany({
-      where: { ownerId: targetUserId, deletedAt: null, currentStatus: "Booked with Us", updatedAt: { gte: dayStart, lte: dayEnd } },
+      where: { ownerId: targetUserId, deletedAt: null, currentStatus: { in: BOOKED_STATUSES }, updatedAt: { gte: dayStart, lte: dayEnd } },
       select: { budgetMin: true, budgetCurrency: true },
     }),
   ]);

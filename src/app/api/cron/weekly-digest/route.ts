@@ -10,6 +10,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { sendEmail, emailEnabled } from "@/lib/email";
+import { BOOKED_STATUSES } from "@/lib/lead-statuses";
 import { startCronRun, finishCronRun } from "@/lib/cronRun";
 import { buildWeeklyDigestHtml, type DigestBoard, type DigestStats } from "@/lib/digestEmail";
 import { ACTIVE_PURSUIT_STATUSES } from "@/lib/lead-statuses";
@@ -206,7 +207,7 @@ export async function GET(req: NextRequest) {
       // Bookings this week — leads marked "Booked with Us" (no stage system)
       prisma.lead.count({
         where: {
-          currentStatus: "Booked with Us",
+          currentStatus: { in: BOOKED_STATUSES },
           updatedAt: { gte: weekStart },
         },
       }),

@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { CallOutcome, Prisma } from "@prisma/client";
-import { ACTIVE_PURSUIT_STATUSES, CLOSING_STATUSES } from "@/lib/lead-statuses";
+import { ACTIVE_PURSUIT_STATUSES, CLOSING_STATUSES, BOOKED_STATUSES } from "@/lib/lead-statuses";
 import { startOfDay } from "date-fns";
 import SourceBarChart from "@/components/charts/SourceBarChart";
 import ConnectRateChart from "@/components/charts/ConnectRateChart";
@@ -27,6 +27,7 @@ export const dynamic = "force-dynamic";
 // Closing statuses = higher probability. Active = baseline.
 const FORECAST_WEIGHTS: Record<string, number> = {
   "Booked with Us":       1.00,
+  "Booked With Us":       1.00,
   "Visit Dubai":          0.55,
   "Site Visit Schedule":  0.55,
   "Meeting":              0.40,
@@ -134,9 +135,9 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
       prisma.lead.count({ where: { ...teamScope, deletedAt: null } }),
       prisma.lead.count({ where: { ...teamScope, deletedAt: null, currentStatus: { in: ACTIVE_PURSUIT_STATUSES } } }),
       prisma.lead.count({ where: { ...teamScope, deletedAt: null, currentStatus: { in: CLOSING_STATUSES } } }),
-      prisma.lead.count({ where: { ...teamScope, deletedAt: null, currentStatus: "Booked with Us" } }),
-      prisma.lead.count({ where: { ...teamScope, deletedAt: null, currentStatus: "Booked with Us" } }), // compat slot
-      prisma.lead.count({ where: { ...teamScope, deletedAt: null, currentStatus: "Booked with Us" } }), // compat slot
+      prisma.lead.count({ where: { ...teamScope, deletedAt: null, currentStatus: { in: BOOKED_STATUSES } } }),
+      prisma.lead.count({ where: { ...teamScope, deletedAt: null, currentStatus: { in: BOOKED_STATUSES } } }), // compat slot
+      prisma.lead.count({ where: { ...teamScope, deletedAt: null, currentStatus: { in: BOOKED_STATUSES } } }), // compat slot
     ]),
 
     prisma.project.findMany({
@@ -150,7 +151,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
     // leads, those contribute 0 to the forecast.
     // Active leads for forecast — all active-pursuit and closing statuses
     prisma.lead.findMany({
-      where: { ...teamScope, deletedAt: null, currentStatus: { in: [...ACTIVE_PURSUIT_STATUSES, ...CLOSING_STATUSES, "Booked with Us"] } },
+      where: { ...teamScope, deletedAt: null, currentStatus: { in: [...ACTIVE_PURSUIT_STATUSES, ...CLOSING_STATUSES, ...BOOKED_STATUSES] } },
       select: { currentStatus: true, budgetMin: true, budgetCurrency: true },
     }),
 

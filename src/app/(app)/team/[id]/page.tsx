@@ -8,6 +8,8 @@ import { ActivityType, ActivityStatus, CallOutcome } from "@prisma/client";
 import { activityVisual } from "@/lib/activityIcon";
 import { fmtMoneyDual } from "@/lib/money";
 import { fmtIST12 } from "@/lib/datetime";
+import { ownerActiveWhere, ownerTotalWhere } from "@/lib/leadScope";
+import { BOOKED_STATUSES } from "@/lib/lead-statuses";
 import {
   BADGES,
   levelForXp,
@@ -157,14 +159,15 @@ export default async function AgentDeepDivePage({
     bookingsDoneMonth,
     pipelineRows,
   ] = await Promise.all([
-    prisma.lead.count({ where: { ownerId: id } }),
+    prisma.lead.count({ where: ownerTotalWhere(id) }),
     prisma.lead.count({
-      where: { ownerId: id, currentStatus: { notIn: ["Junk", "Invalid Number", "Pass Away", "Number Changed", "By Mistake Inquiry"] } },
+      where: ownerActiveWhere(id),
     }),
     prisma.lead.count({
       where: {
         ownerId: id,
-        currentStatus: "Booked with Us",
+        deletedAt: null,
+        currentStatus: { in: BOOKED_STATUSES },
         bookingDoneAt: { gte: monthStart },
       },
     }),

@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
-import { ActivityType, ActivityStatus, CallOutcome, LeadStatus } from "@prisma/client";
+import { ActivityType, ActivityStatus, CallOutcome } from "@prisma/client";
+import { BOOKED_STATUSES } from "@/lib/lead-statuses";
 import { startOfDay } from "date-fns";
 import MissionCompleteBeacon from "@/components/MissionCompleteBeacon";
 
@@ -86,8 +87,9 @@ export default async function DailyMissionBoard({ userId }: { userId: string }) 
     prisma.lead.count({
       where: {
         ownerId: userId,
-        status: LeadStatus.WON,
+        currentStatus: { in: BOOKED_STATUSES },
         updatedAt: { gte: todayStart },
+        deletedAt: null,
       },
     }),
   ]);

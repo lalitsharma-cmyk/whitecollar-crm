@@ -9,6 +9,7 @@ import { requireUser } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { fmtIST12 } from "@/lib/datetime";
+import { SUPPRESSED_STATUSES } from "@/lib/lead-statuses";
 import AssignButtons from "./AssignButtons";
 
 export const dynamic = "force-dynamic";
@@ -19,8 +20,9 @@ export default async function AwaitingTeamPage() {
 
   const leads = await prisma.lead.findMany({
     where: {
+      deletedAt: null,
       forwardedTeam: null,
-      currentStatus: { notIn: ["Junk", "Invalid Number", "Pass Away", "Number Changed", "By Mistake Inquiry"] },
+      currentStatus: { notIn: SUPPRESSED_STATUSES },
     },
     orderBy: { createdAt: "desc" },
     take: 100,

@@ -82,6 +82,7 @@ export default async function ActivityFeedPage({
     prisma.callLog.findMany({
       where: {
         startedAt: { gte: selectedDayStart, lt: selectedDayEnd },
+        lead: { deletedAt: null },
         ...(managerTeam ? { user: { team: managerTeam } } : {}),
       },
       orderBy: { startedAt: "desc" },

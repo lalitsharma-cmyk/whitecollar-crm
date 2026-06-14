@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
-import { ActivityType, ActivityStatus, CallOutcome, LeadStatus } from "@prisma/client";
+import { ActivityType, ActivityStatus, CallOutcome } from "@prisma/client";
+import { BOOKED_STATUSES } from "@/lib/lead-statuses";
 import { startOfWeek } from "date-fns";
 import {
   levelForXp,
@@ -68,7 +69,7 @@ export default async function PersonalScoreboard({ userId }: { userId: string })
   const callsAgg = await prisma.callLog.groupBy({
     by: ["userId"],
     _count: { _all: true },
-    where: { startedAt: { gte: weekStart }, userId: { in: eligibleIds } },
+    where: { startedAt: { gte: weekStart }, userId: { in: eligibleIds }, lead: { deletedAt: null } },
     orderBy: { _count: { userId: "desc" } },
     take: SAMPLE_SIZE,
   });
@@ -84,6 +85,7 @@ export default async function PersonalScoreboard({ userId }: { userId: string })
       status: ActivityStatus.DONE,
       completedAt: { gte: weekStart },
       userId: { in: eligibleIds },
+      lead: { deletedAt: null },
     },
     orderBy: { _count: { userId: "desc" } },
     take: SAMPLE_SIZE,
@@ -99,7 +101,7 @@ export default async function PersonalScoreboard({ userId }: { userId: string })
   const totalsAgg = await prisma.callLog.groupBy({
     by: ["userId"],
     _count: { _all: true },
-    where: { startedAt: { gte: weekStart }, userId: { in: eligibleIds } },
+    where: { startedAt: { gte: weekStart }, userId: { in: eligibleIds }, lead: { deletedAt: null } },
   });
   const connectedAgg = await prisma.callLog.groupBy({
     by: ["userId"],
@@ -108,6 +110,7 @@ export default async function PersonalScoreboard({ userId }: { userId: string })
       startedAt: { gte: weekStart },
       userId: { in: eligibleIds },
       outcome: CallOutcome.CONNECTED,
+      lead: { deletedAt: null },
     },
   });
   const connectedByUser = new Map(connectedAgg.map((c) => [c.userId, c._count._all]));
@@ -132,9 +135,10 @@ export default async function PersonalScoreboard({ userId }: { userId: string })
   const topWonGroup = await prisma.lead.groupBy({
     by: ["ownerId"],
     where: {
-      status: LeadStatus.WON,
+      currentStatus: { in: BOOKED_STATUSES },
       updatedAt: { gte: monthStart },
       ownerId: { not: null },
+      deletedAt: null,
     },
     _count: { _all: true },
     orderBy: { _count: { ownerId: "desc" } },

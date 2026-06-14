@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/auth";
 import { acefoneEnabled } from "@/lib/acefone";
 import { fmtMoneyDual } from "@/lib/money";
+import { SUPPRESSED_STATUSES } from "@/lib/lead-statuses";
 import AcefoneAgentIdEdit from "@/components/AcefoneAgentIdEdit";
 import WhatsAppNumberEdit from "@/components/WhatsAppNumberEdit";
 import ManagerPicker from "@/components/ManagerPicker";
@@ -31,14 +32,15 @@ export default async function TeamPage() {
   const [users, activeLeadCounts, pipelineRows, responseRows] = await Promise.all([
     prisma.user.findMany({
       where: { active: true },
-      include: { _count: { select: { ownedLeads: true, callLogs: true } } },
+      include: { _count: { select: { ownedLeads: { where: { deletedAt: null } }, callLogs: true } } },
       orderBy: [{ team: "asc" }, { name: "asc" }],
     }),
     prisma.lead.groupBy({
       by: ["ownerId"],
       where: {
         ownerId: { not: null },
-        currentStatus: { notIn: ["Junk", "Invalid Number", "Pass Away", "Number Changed", "By Mistake Inquiry"] },
+        deletedAt: null,
+        currentStatus: { notIn: SUPPRESSED_STATUSES },
       },
       _count: { _all: true },
     }),

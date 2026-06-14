@@ -2,7 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/auth";
 import { normalizeTeam } from "@/lib/teamRouting";
 import { ActivityType, CallOutcome, Prisma } from "@prisma/client";
-import { ACTIVE_PURSUIT_STATUSES } from "@/lib/lead-statuses";
+import { ACTIVE_PURSUIT_STATUSES, BOOKED_STATUSES } from "@/lib/lead-statuses";
 import { fmtMoney, type Currency } from "@/lib/money";
 import Link from "next/link";
 import ReportDateRangePicker from "@/components/ReportDateRangePicker";
@@ -39,7 +39,7 @@ const TEAM_CURRENCY: Record<Team, Currency> = {
 // in-flight stages). Matches what Lalit reads on the dashboard "pipeline" tile.
 // Status-only — active pursuit leads and booked leads.
 const ACTIVE_STAGES = ACTIVE_PURSUIT_STATUSES;
-const BOOKINGS = ["Booked with Us"] as const;
+const BOOKINGS = BOOKED_STATUSES;
 
 // Date controls migrated to the shared ReportDateRangePicker (?from=&to=).
 // Legacy ?range= is still parsed for one release so old bookmarks still

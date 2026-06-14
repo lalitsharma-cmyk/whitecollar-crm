@@ -3,6 +3,7 @@ import { requireRole } from "@/lib/auth";
 import { normalizeTeam } from "@/lib/teamRouting";
 import { Prisma } from "@prisma/client";
 import { fmtMoney, fmtMoneyDual } from "@/lib/money";
+import { BOOKED_STATUSES } from "@/lib/lead-statuses";
 import Link from "next/link";
 import ReportDateRangePicker from "@/components/ReportDateRangePicker";
 
@@ -214,7 +215,7 @@ export default async function CommissionReportPage({
   const bookingWhere: Prisma.LeadWhereInput = {
     deletedAt: null,
     AND: [
-      { OR: [{ commissionAmount: { gt: 0 } }, { currentStatus: "Booked with Us" }] },
+      { OR: [{ commissionAmount: { gt: 0 } }, { currentStatus: { in: BOOKED_STATUSES } }] },
       ...(periodWhere ? [periodWhere] : []),
       ...(managerTeam ? [{ forwardedTeam: managerTeam }] : []),
     ],

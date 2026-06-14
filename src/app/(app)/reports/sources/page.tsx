@@ -2,7 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/auth";
 import { normalizeTeam } from "@/lib/teamRouting";
 import { LeadSource } from "@prisma/client";
-import { ACTIVE_PURSUIT_STATUSES, SUPPRESSED_STATUSES } from "@/lib/lead-statuses";
+import { ACTIVE_PURSUIT_STATUSES, SUPPRESSED_STATUSES, BOOKED_STATUSES } from "@/lib/lead-statuses";
 import { subDays, startOfYear, startOfMonth, startOfQuarter } from "date-fns";
 import Link from "next/link";
 import ReportDateRangePicker from "@/components/ReportDateRangePicker";
@@ -38,8 +38,8 @@ interface SourceRow {
 
 // Active-pursuit statuses — status-only, no stage system.
 const QUALIFIED_PLUS = ACTIVE_PURSUIT_STATUSES;
-// Booked — "Booked with Us" status only.
-const BOOKED = ["Booked with Us"] as const;
+// Booked — both DB casings of the booked status (see BOOKED_STATUSES).
+const BOOKED = BOOKED_STATUSES;
 
 // Legacy enum → since-date. Kept ONLY for backwards-compat parsing of the
 // old ?range= URL: it lets us derive an initial from/to when the new

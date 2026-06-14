@@ -2,7 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
 import { normalizeTeam } from "@/lib/teamRouting";
 import { Role } from "@prisma/client";
-import { CLOSING_STATUSES } from "@/lib/lead-statuses";
+import { CLOSING_STATUSES, BOOKED_STATUSES } from "@/lib/lead-statuses";
 import { subDays, startOfDay, format } from "date-fns";
 import Link from "next/link";
 import { redirect } from "next/navigation";
@@ -94,7 +94,7 @@ export default async function LeaderboardPage() {
       where: {
         ownerId: { in: agentIds },
         deletedAt: null,
-        currentStatus: "Booked with Us",
+        currentStatus: { in: BOOKED_STATUSES },
       },
       _count: { _all: true },
     }),

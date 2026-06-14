@@ -25,6 +25,7 @@
 // + `alreadyBought` populated so subsequent renders are fast.
 
 import { prisma } from "@/lib/prisma";
+import { BOOKED_STATUSES } from "@/lib/lead-statuses";
 
 export interface MatchedLead {
   id: string;
@@ -185,11 +186,11 @@ export interface HistorySummary {
  *   investor matches, lowercased + trimmed for dedup, original casing preserved.
  */
 export function summariseHistory(matches: MatchedLead[]): HistorySummary {
-  const wonLeads = matches.filter((m) => m.currentStatus === "Booked with Us").length;
+  const wonLeads = matches.filter((m) => BOOKED_STATUSES.includes(m.currentStatus ?? "")).length;
   const bookings = matches.filter((m) => m.bookingDoneAt != null).length;
 
   // Pull `alreadyBought` from booked matches — those are the investor signals.
-  const buyers = matches.filter((m) => m.currentStatus === "Booked with Us" || m.bookingDoneAt != null);
+  const buyers = matches.filter((m) => BOOKED_STATUSES.includes(m.currentStatus ?? "") || m.bookingDoneAt != null);
   const seen = new Set<string>();
   const projectsBought: string[] = [];
   for (const m of buyers) {
@@ -229,7 +230,7 @@ export async function projectsFromInterestedUnits(matchedLeadIds: string[]): Pro
   const rows = await prisma.leadProperty.findMany({
     where: {
       leadId: { in: matchedLeadIds },
-      lead: { OR: [{ currentStatus: "Booked with Us" }, { bookingDoneAt: { not: null } }] },
+      lead: { OR: [{ currentStatus: { in: BOOKED_STATUSES } }, { bookingDoneAt: { not: null } }] },
     },
     select: { unit: { select: { project: { select: { name: true } } } } },
   });

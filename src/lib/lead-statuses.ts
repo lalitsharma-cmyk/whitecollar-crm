@@ -208,9 +208,16 @@ export function excelStatusChip(s: string | null): string {
   return statusColor(s);
 }
 
-// ─── Booking check ─────────────────────────────────────────────────────────
+// ─── Booking / WON definition (the SINGLE source of truth for "won") ────────
+// Both DB casings: "Booked With Us" (Dubai master, canonical) + "Booked with Us"
+// (legacy import). A query matching only ONE casing silently undercounts, so
+// every "deals closed / won / bookings" KPI MUST filter on this list (or call
+// isBookedStatus). Deliberately NARROWER than CLOSED_OUTCOME_STATUSES — that
+// list also covers resale / lease / bought-elsewhere outcomes which are NOT a
+// booking and must never inflate a win count.
+export const BOOKED_STATUSES: string[] = ["Booked With Us", "Booked with Us"];
 export function isBookedStatus(currentStatus: string | null | undefined): boolean {
-  return currentStatus === "Booked With Us" || currentStatus === "Booked with Us";
+  return currentStatus != null && BOOKED_STATUSES.includes(currentStatus);
 }
 
 // ─── Active-pursuit statuses ──────────────────────────────────────────────

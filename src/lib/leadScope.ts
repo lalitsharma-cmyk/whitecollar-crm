@@ -15,6 +15,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
 import { normalizeTeam } from "@/lib/teamRouting";
+import { SUPPRESSED_STATUSES, BOOKED_STATUSES } from "@/lib/lead-statuses";
 
 export interface ScopedUser { id: string; role: Role; team?: string | null; }
 
@@ -116,4 +117,31 @@ export async function loadOwnedLead(leadId: string): Promise<
     return { error: NextResponse.json({ error: "Lead not found" }, { status: 404 }) };
   }
   return { me, lead };
+}
+
+// ─── CANONICAL COUNT HELPERS — the SINGLE source of truth for lead counts ───────
+// Every screen (Dashboard, Leads, Profile, Team, Team-detail, Reports, Scoreboards,
+// Leaderboards) MUST count "active" / "won" leads through these. No page-specific
+// denylist/allowlist, and deletedAt:null is ALWAYS applied. Use leadScopeWhere(me)
+// + ACTIVE_STATUS_WHERE for role-scoped counts, or ownerActiveWhere(id) for a
+// specific agent (Profile / Team / Team-detail / Scoreboards).
+
+/** Canonical status fragment for ACTIVE leads. Combine with a scope or an ownerId. */
+export const ACTIVE_STATUS_WHERE = { currentStatus: { notIn: SUPPRESSED_STATUSES } };
+/** Canonical status fragment for WON/booked deals — the one deal-closing definition.
+ *  Bookings only (both casings), NOT the broad CLOSED_OUTCOME lifecycle list, so a
+ *  resale / lease / bought-elsewhere outcome can never inflate a "deals closed" KPI. */
+export const WON_STATUS_WHERE = { currentStatus: { in: BOOKED_STATUSES } };
+
+/** A specific owner's ACTIVE, non-deleted leads (Profile / Team / Team-detail / Scoreboards). */
+export function ownerActiveWhere(ownerId: string) {
+  return { ownerId, deletedAt: null, currentStatus: { notIn: SUPPRESSED_STATUSES } };
+}
+/** A specific owner's total non-deleted leads, any status. */
+export function ownerTotalWhere(ownerId: string) {
+  return { ownerId, deletedAt: null };
+}
+/** A specific owner's WON/booked (both casings), non-deleted deals. */
+export function ownerWonWhere(ownerId: string) {
+  return { ownerId, deletedAt: null, currentStatus: { in: BOOKED_STATUSES } };
 }

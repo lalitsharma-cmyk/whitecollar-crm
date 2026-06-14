@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { AIScore, CallOutcome, ActivityStatus, ActivityType, Prisma } from "@prisma/client";
-import { SUPPRESSED_STATUSES, CLOSING_STATUSES } from "@/lib/lead-statuses";
+import { SUPPRESSED_STATUSES, CLOSING_STATUSES, BOOKED_STATUSES } from "@/lib/lead-statuses";
 import { formatDistanceToNow, startOfDay } from "date-fns";
 import { fmtIST12 } from "@/lib/datetime";
 import { runReconciler } from "@/lib/reconciler";
@@ -218,7 +218,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     prisma.activity.count({ where: { userId: me.id, lead: { deletedAt: null }, type: ActivityType.VIRTUAL_MEETING, scheduledAt: { gte: sqlFrom, lt: sqlTo }, status: { not: ActivityStatus.CANCELLED } } }),
     prisma.activity.count({ where: { userId: me.id, lead: { deletedAt: null }, type: { in: [ActivityType.SITE_VISIT, ActivityType.HOME_VISIT, ActivityType.OFFICE_MEETING, ActivityType.EXPO_MEETING] }, scheduledAt: { gte: sqlFrom, lt: sqlTo }, status: { not: ActivityStatus.CANCELLED } } }),
     prisma.activity.count({ where: { userId: me.id, lead: { deletedAt: null }, type: ActivityType.COLD_TO_LEAD, completedAt: { gte: sqlFrom, lt: sqlTo } } }),
-    prisma.lead.count({ where: { ownerId: me.id, deletedAt: null, currentStatus: "Booked with Us", updatedAt: { gte: sqlFrom, lt: sqlTo } } }),
+    prisma.lead.count({ where: { ownerId: me.id, deletedAt: null, currentStatus: { in: BOOKED_STATUSES }, updatedAt: { gte: sqlFrom, lt: sqlTo } } }),
   ]);
 
   // ── Per-agent morning briefing (also shown to admins) ──

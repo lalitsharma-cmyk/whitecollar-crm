@@ -9,6 +9,7 @@ import PDFDocument from "pdfkit";
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/auth";
 import { ActivityType, CallOutcome } from "@prisma/client";
+import { BOOKED_STATUSES } from "@/lib/lead-statuses";
 import { audit, reqMeta } from "@/lib/audit";
 import { fmtMoney } from "@/lib/money";
 
@@ -117,12 +118,12 @@ export async function GET(req: NextRequest) {
     // Bookings done = leads marked "Booked with Us" today
     prisma.lead.count({ where: {
       ownerId: userIdFilter,
-      currentStatus: "Booked with Us",
+      currentStatus: { in: BOOKED_STATUSES },
       updatedAt: { gte: dayStart, lte: dayEnd },
     } }),
     // Booked leads → for AED + INR pipeline value
     prisma.lead.findMany({
-      where: { ownerId: userIdFilter, currentStatus: "Booked with Us", updatedAt: { gte: dayStart, lte: dayEnd } },
+      where: { ownerId: userIdFilter, currentStatus: { in: BOOKED_STATUSES }, updatedAt: { gte: dayStart, lte: dayEnd } },
       select: { budgetMin: true, budgetCurrency: true },
     }),
     // Per-agent breakdowns

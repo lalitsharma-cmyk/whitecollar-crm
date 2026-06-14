@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { sendEmail, emailTemplate, emailEnabled } from "@/lib/email";
 import { fmtMoney } from "@/lib/money";
 import { LeadSource, LeadStatus, AIScore, CallOutcome } from "@prisma/client";
+import { BOOKED_STATUSES } from "@/lib/lead-statuses";
 
 interface Window { since: Date; until: Date; label: string; }
 
@@ -9,7 +10,7 @@ export async function buildReport(win: Window) {
   const [totalNew, hot, won, lost, calls, connected, agentTable, sourceTable, aedSum, inrSum] = await Promise.all([
     prisma.lead.count({ where: { createdAt: { gte: win.since, lte: win.until } } }),
     prisma.lead.count({ where: { aiScore: AIScore.HOT, createdAt: { gte: win.since, lte: win.until } } }),
-    prisma.lead.count({ where: { status: LeadStatus.WON, updatedAt: { gte: win.since, lte: win.until } } }),
+    prisma.lead.count({ where: { currentStatus: { in: BOOKED_STATUSES }, deletedAt: null, updatedAt: { gte: win.since, lte: win.until } } }),
     prisma.lead.count({ where: { status: LeadStatus.LOST, updatedAt: { gte: win.since, lte: win.until } } }),
     prisma.callLog.count({ where: { startedAt: { gte: win.since, lte: win.until } } }),
     prisma.callLog.count({ where: { startedAt: { gte: win.since, lte: win.until }, outcome: CallOutcome.CONNECTED } }),

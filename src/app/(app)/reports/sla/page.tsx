@@ -57,7 +57,7 @@ async function computeMonth(start: Date, end: Date, label: string, agentScope: s
       { scheduledAt: { gte: start, lte: end } },
       { completedAt: { gte: start, lte: end } },
     ],
-    ...(teamFilter ? { lead: { forwardedTeam: teamFilter } } : {}),
+    lead: { deletedAt: null, ...(teamFilter ? { forwardedTeam: teamFilter } : {}) },
   };
   if (agentScope) where.userId = agentScope;
   const activities = await prisma.activity.findMany({

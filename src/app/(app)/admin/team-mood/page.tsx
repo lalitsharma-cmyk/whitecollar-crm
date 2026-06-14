@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/auth";
+import { SUPPRESSED_STATUSES } from "@/lib/lead-statuses";
 import { format, subDays, startOfDay } from "date-fns";
 
 export const dynamic = "force-dynamic";
@@ -101,11 +102,12 @@ export default async function TeamMoodPage() {
     prisma.lead.count({ where: { rejectedAt: { gte: since14d } } }),
     prisma.lead.count({
       where: {
+        deletedAt: null,
         followupDate: { lt: now, gte: since14d },
-        currentStatus: { notIn: ["Junk", "Invalid Number", "Pass Away", "Number Changed", "By Mistake Inquiry"] },
+        currentStatus: { notIn: SUPPRESSED_STATUSES },
       },
     }),
-    prisma.lead.count({ where: { currentStatus: { notIn: ["Junk", "Invalid Number", "Pass Away", "Number Changed", "By Mistake Inquiry"] } } }),
+    prisma.lead.count({ where: { deletedAt: null, currentStatus: { notIn: SUPPRESSED_STATUSES } } }),
   ]);
   const stressIndex = activeLeadsCount === 0
     ? 0

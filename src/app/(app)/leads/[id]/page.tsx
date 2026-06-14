@@ -39,7 +39,7 @@ import BestCallTimeChip from "@/components/BestCallTimeChip";
 import CallStatsBar from "@/components/CallStatsBar";
 // LeadJourneyBar removed — stage pipeline bar replaced by currentStatus (Excel/MIS workflow)
 import { formatBudget } from "@/lib/budgetParse";
-import { selectableStatuses, statusColor } from "@/lib/lead-statuses";
+import { selectableStatuses, statusColor, BOOKED_STATUSES, SUPPRESSED_STATUSES } from "@/lib/lead-statuses";
 import LinkedContactsCard from "@/components/LinkedContactsCard";
 import InvestorBanner from "@/components/InvestorBanner";
 import StageDurationBadge from "@/components/StageDurationBadge";
@@ -174,7 +174,7 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
     name: lead.name, phone: lead.phone, email: lead.email,
     city: lead.city, excludeLeadId: lead.id,
   });
-  const bookingsCount = investorMatches.filter(m => m.bookingDoneAt != null || m.currentStatus === "Booked with Us").length;
+  const bookingsCount = investorMatches.filter(m => m.bookingDoneAt != null || BOOKED_STATUSES.includes(m.currentStatus ?? "")).length;
   const matchedLeadIds = investorMatches.map(m => m.id);
 
   // ── Meeting intelligence (spec: "counts auto-calculated from imported
@@ -336,7 +336,7 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
   // still active (not LOST or WON). Computed server-side so there's no flash.
   const followupOverdue = lead.followupDate &&
     lead.followupDate < new Date() &&
-    !["Junk", "Invalid Number", "Pass Away", "Number Changed", "By Mistake Inquiry"].includes(lead.currentStatus ?? "");
+    !SUPPRESSED_STATUSES.includes(lead.currentStatus ?? "");
 
   // ── JSX render consts — extracted so they can be rendered in DIFFERENT
   // positions on mobile vs desktop without duplicating ~100 lines of JSX.

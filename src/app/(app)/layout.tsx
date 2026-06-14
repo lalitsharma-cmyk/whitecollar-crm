@@ -2,6 +2,7 @@ import AttendancePing from "@/components/AttendancePing";
 import MobileShell from "@/components/MobileShell";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { SUPPRESSED_STATUSES } from "@/lib/lead-statuses";
 import { getTestingModeEnabled } from "@/lib/settings";
 import { redirect } from "next/navigation";
 
@@ -17,7 +18,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   // Lalit's mandatory-team policy (2026-06) parks null-team leads in this
   // queue until an admin picks Dubai or India — the badge keeps it visible.
   const awaitingTeamCount = (user.role === "ADMIN" || user.role === "MANAGER")
-    ? await prisma.lead.count({ where: { forwardedTeam: null, currentStatus: { notIn: ["Junk", "Invalid Number", "Pass Away", "Number Changed", "By Mistake Inquiry"] } } })
+    ? await prisma.lead.count({ where: { deletedAt: null, forwardedTeam: null, currentStatus: { notIn: SUPPRESSED_STATUSES } } })
     : 0;
   return (
     <>

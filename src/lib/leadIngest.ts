@@ -12,6 +12,7 @@ import { getTestingModeEnabled } from "@/lib/settings";
 import { notifyHotLead } from "@/lib/push";
 import { findMatchingLeads, summariseHistory, projectsFromInterestedUnits } from "@/lib/investorMatch";
 import { audit } from "@/lib/audit";
+import { BOOKED_STATUSES } from "@/lib/lead-statuses";
 import { resolveTeam, routingFieldsFor, automationGate } from "@/lib/teamRouting";
 import { runIntelligenceCheck } from "@/lib/intelligenceCheck";
 
@@ -263,7 +264,7 @@ export async function ingestLead(input: RawLeadInput) {
     if (matches.length > 0) {
       const summary = summariseHistory(matches);
       const investorMatches = matches.filter(
-        (m) => m.currentStatus === "Booked with Us" || m.bookingDoneAt != null
+        (m) => BOOKED_STATUSES.includes(m.currentStatus ?? "") || m.bookingDoneAt != null
       );
       // Augment with project names pulled from interestedUnits on WON matches —
       // covers the case where historical leads never had alreadyBought filled

@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
+import { SUPPRESSED_STATUSES } from "@/lib/lead-statuses";
 import ColdCallSession from "@/components/ColdCallSession";
 
 export const dynamic = "force-dynamic";
@@ -15,9 +16,10 @@ export default async function ColdCallSessionPage() {
 
   const leads = await prisma.lead.findMany({
     where: {
+      deletedAt: null,
       ownerId: me.id,
       isColdCall: true,
-      currentStatus: { notIn: ["Junk", "Invalid Number", "Pass Away", "Number Changed", "By Mistake Inquiry"] },
+      currentStatus: { notIn: SUPPRESSED_STATUSES },
       OR: [
         { lastTouchedAt: null },
         { lastTouchedAt: { lt: cutoff } },
