@@ -34,6 +34,7 @@ export default function ImportHistoryClient({ batches, isSuperAdmin = false }: {
   const [busy, setBusy] = useState(false);
   const [confirm, setConfirm] = useState<{ batch: ImportBatchRow; action: ActionKind } | null>(null);
   const [reason, setReason] = useState("");
+  const [confirmText, setConfirmText] = useState("");
   const [err, setErr] = useState<string | null>(null);
 
   const active = batches.filter((b) => b.status !== "DELETED");
@@ -50,7 +51,7 @@ export default function ImportHistoryClient({ batches, isSuperAdmin = false }: {
       });
       const j = await r.json().catch(() => ({}));
       if (!r.ok) { setErr(j.error ?? "Action failed"); return; }
-      setConfirm(null); setReason("");
+      setConfirm(null); setReason(""); setConfirmText("");
       router.refresh();
     } catch {
       setErr("Network error — please retry.");
@@ -80,7 +81,10 @@ export default function ImportHistoryClient({ batches, isSuperAdmin = false }: {
   function Cells({ b }: { b: ImportBatchRow }) {
     return (
       <>
-        <td className="px-3 py-2.5 font-medium max-w-[220px]"><span className="line-clamp-2" title={b.fileName}>{b.fileName}</span></td>
+        <td className="px-3 py-2.5 font-medium max-w-[240px]">
+          <span className="line-clamp-2" title={b.fileName}>{b.fileName}</span>
+          <span className="block text-[10px] text-gray-400 font-mono mt-0.5" title="Import Batch ID — every imported lead is traceable to this">{b.id}</span>
+        </td>
         <td className="px-3 py-2.5 whitespace-nowrap text-gray-600 dark:text-slate-300">{fmtDateTime(b.createdAt)}</td>
         <td className="px-3 py-2.5 whitespace-nowrap text-gray-600 dark:text-slate-300">{b.importedBy ?? "—"}</td>
         <td className="px-3 py-2.5 whitespace-nowrap text-gray-600 dark:text-slate-300">{b.team ?? "—"}</td>
@@ -116,6 +120,7 @@ export default function ImportHistoryClient({ batches, isSuperAdmin = false }: {
                       </span>
                     </td>
                     <td className="px-3 py-2.5 text-right whitespace-nowrap">
+                      <a href={`/master-data?batch=${b.id}&cold=all`} className="text-xs font-medium px-2.5 py-1.5 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-800 mr-2 inline-block">👁 View</a>
                       {onlyUpdates ? (
                         <span className="text-[11px] text-amber-700 dark:text-amber-400 italic max-w-[180px] inline-block" title="This import only updated existing leads — there are no new leads to move to Trash.">
                           ⚠ Updates only — cannot roll back
@@ -158,6 +163,7 @@ export default function ImportHistoryClient({ batches, isSuperAdmin = false }: {
                   </td>
                   <td className="px-3 py-2.5 text-right whitespace-nowrap">
                     <div className="inline-flex items-center gap-2">
+                      <a href={`/master-data?batch=${b.id}&cold=all`} className="text-xs font-medium px-2.5 py-1.5 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-800">👁 View</a>
                       <button type="button" onClick={() => { setErr(null); setReason(""); setConfirm({ batch: b, action: "restore" }); }}
                         className="text-xs font-medium px-2.5 py-1.5 rounded-lg border border-emerald-300 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-700 dark:text-emerald-300 dark:hover:bg-emerald-950/30">
                         ↩ Restore
@@ -179,7 +185,7 @@ export default function ImportHistoryClient({ batches, isSuperAdmin = false }: {
 
       {/* Confirmation modal */}
       {confirm && (
-        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={() => !busy && setConfirm(null)}>
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={() => { if (!busy) { setConfirm(null); setConfirmText(""); } }}>
           <div className="bg-white dark:bg-slate-900 rounded-xl max-w-md w-full p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
             {confirm.action === "delete" && (
               <>
@@ -213,6 +219,12 @@ export default function ImportHistoryClient({ batches, isSuperAdmin = false }: {
                   <b className="break-all">{confirm.batch.fileName}</b> and everything attached to them.
                 </p>
                 <p className="text-xs text-red-600 dark:text-red-400 mt-2 font-semibold">This cannot be undone. Only do this if you are sure.</p>
+                <label className="text-xs font-semibold text-gray-600 dark:text-slate-300 block mt-3 mb-1">
+                  Type <code className="px-1 py-0.5 rounded bg-red-100 dark:bg-red-950/40 text-red-700 dark:text-red-300 font-mono">DELETE {confirm.batch.createdCount} RECORDS</code> to confirm
+                </label>
+                <input type="text" value={confirmText} onChange={(e) => setConfirmText(e.target.value)} autoComplete="off"
+                  placeholder={`DELETE ${confirm.batch.createdCount} RECORDS`}
+                  className="w-full border border-red-300 dark:border-red-700 rounded-lg px-3 py-2 text-sm font-mono dark:bg-slate-800 dark:text-slate-100" />
               </>
             )}
 
@@ -227,10 +239,10 @@ export default function ImportHistoryClient({ batches, isSuperAdmin = false }: {
             {err && <div className="text-xs text-red-600 mt-2">{err}</div>}
 
             <div className="flex justify-end gap-2 mt-5">
-              <button type="button" onClick={() => setConfirm(null)} disabled={busy} className="btn btn-ghost">Cancel</button>
-              <button type="button" onClick={run} disabled={busy}
+              <button type="button" onClick={() => { setConfirm(null); setConfirmText(""); }} disabled={busy} className="btn btn-ghost">Cancel</button>
+              <button type="button" onClick={run} disabled={busy || (confirm.action === "purge" && confirmText.trim() !== `DELETE ${confirm.batch.createdCount} RECORDS`)}
                 className={confirm.action === "purge"
-                  ? "btn bg-red-600 hover:bg-red-700 text-white border-red-600"
+                  ? "btn bg-red-600 hover:bg-red-700 text-white border-red-600 disabled:opacity-40 disabled:cursor-not-allowed"
                   : confirm.action === "restore" ? "btn btn-primary" : "btn bg-amber-600 hover:bg-amber-700 text-white border-amber-600"}>
                 {busy ? "Working…" : confirm.action === "delete" ? "Move to Trash" : confirm.action === "restore" ? "Restore" : "Purge forever"}
               </button>

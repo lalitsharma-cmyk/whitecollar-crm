@@ -96,6 +96,7 @@ export default async function MasterDataPage({ searchParams }: { searchParams: P
   if (sp.owner === "unassigned") baseAnd.push({ ownerId: null });
   else if (sp.owner) baseAnd.push({ ownerId: sp.owner });
   if (sp.source) baseAnd.push({ source: sp.source as LeadSource });
+  if (sp.batch) baseAnd.push({ importBatchId: sp.batch });  // "View batch" from Import History
   if (sp.q) {
     baseAnd.push({
       OR: [
