@@ -526,6 +526,22 @@ export async function POST(req: NextRequest) {
         // also backdate lastTouchedAt so "idle 24h" flags don't fire on import day
         update.lastTouchedAt = historicDate;
       }
+      // Item 6 — "worked today" follow-up suppression (import-time decision only).
+      // If the sheet shows the lead was contacted TODAY (a last-contact column =
+      // the import date) and its follow-up is today-or-earlier, it was already
+      // worked today — clear the due date so it does NOT appear in Today's Pending
+      // / Overdue / Missed. It re-enters the queue when the agent next schedules a
+      // follow-up. Historical imports (last-contact in the past) and future
+      // follow-ups are left untouched, so genuinely-overdue leads still surface.
+      const lastContact = parseDate(pick(row, "lastcontact", "lastcontactdate", "lastcalldate", "lastcall", "calleddate", "lastcontacted"));
+      if (!r.deduped && lastContact && update.followupDate instanceof Date) {
+        const istDayKey = (d: Date) => new Date(d.getTime() + 5.5 * 3600 * 1000).toISOString().slice(0, 10);
+        const todayKey = istDayKey(new Date());
+        if (istDayKey(lastContact) === todayKey && istDayKey(update.followupDate) <= todayKey) {
+          update.followupDate = null;          // not a real pending task — worked today
+          update.lastTouchedAt = new Date();   // reflect "worked now"
+        }
+      }
       // Cold-data specific columns — what they already own + via whom
       const alreadyBought = pick(row, "alreadybought", "alreadyowns", "owns", "purchased");
       if (alreadyBought) update.alreadyBought = alreadyBought;

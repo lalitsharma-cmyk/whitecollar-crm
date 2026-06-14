@@ -234,6 +234,7 @@ export async function POST(req: NextRequest) {
     if (dateStr && isNaN(followupDate!.getTime())) {
       return NextResponse.json({ error: "Invalid followupDate" }, { status: 400 });
     }
+    const beforeFu = await prisma.lead.findMany({ where: { id: { in: ids }, ...scope }, select: { id: true, followupDate: true } });
     const r = await prisma.lead.updateMany({
       where: { id: { in: ids }, ...scope },
       data: {
@@ -241,6 +242,14 @@ export async function POST(req: NextRequest) {
         lastTouchedAt: new Date(),
       },
     });
+    // Audit history — old→new follow-up date per changed lead.
+    {
+      const newIso = followupDate ? followupDate.toISOString() : null;
+      const hist = beforeFu
+        .filter((b) => (b.followupDate ? b.followupDate.toISOString() : null) !== newIso)
+        .map((b) => ({ leadId: b.id, field: "followupDate", oldValue: b.followupDate ? b.followupDate.toISOString() : null, newValue: newIso, changedById: me.id, source: "bulk" }));
+      if (hist.length) prisma.leadFieldHistory.createMany({ data: hist }).catch(() => {});
+    }
     await audit({
       userId: me.id, action: "lead.bulk.followup", entity: "Lead",
       meta: { count: r.count, followupDate: dateStr, leadIds: ids.slice(0, 50) },
