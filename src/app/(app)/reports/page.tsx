@@ -613,6 +613,11 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
           <div className="font-bold text-sm mt-1">Activity Feed</div>
           <div className="text-[10px] text-gray-500 mt-0.5">Today&apos;s calls and lead updates by agent</div>
         </Link>
+        <Link href="/reports/changes" className="card p-4 border-l-4 border-slate-500 hover:shadow-md transition">
+          <div className="text-2xl">📜</div>
+          <div className="font-bold text-sm mt-1">Change Report</div>
+          <div className="text-[10px] text-gray-500 mt-0.5">Who changed what — field-level audit trail by user</div>
+        </Link>
       </div>
 
       {isAdmin ? (
