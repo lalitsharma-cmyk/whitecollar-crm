@@ -6,8 +6,11 @@ async function hm(k: string,m: string){const key=await crypto.subtle.importKey("
 (async()=>{
   const secret = process.env.NEXTAUTH_SECRET!;
   const p = new PrismaClient();
-  const u = await p.user.findFirst({ where: { role: "ADMIN" } });
-  if (!u) { console.error("no admin"); process.exit(1); }
+  const argId = process.argv[2];
+  const u = argId
+    ? await p.user.findUnique({ where: { id: argId } })
+    : await p.user.findFirst({ where: { role: "ADMIN" } });
+  if (!u) { console.error("no user"); process.exit(1); }
   const payload = { uid: u.id, exp: Math.floor(Date.now()/1000)+3600 };
   const pb = b64(enc.encode(JSON.stringify(payload)));
   const sb = b64(await hm(secret, pb));

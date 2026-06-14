@@ -49,7 +49,13 @@ function pick(row: Row, ...candidates: string[]): string | undefined {
     const nk = norm(k);
     for (const t of wanted) {
       if (nk === t || nk.startsWith(t) || t.startsWith(nk)) {
-        _consumedKeys.add(k);   // header matched a known CRM field → mapped, not custom
+        // Count as "mapped" (hidden from customFields) ONLY on an exact match or
+        // when the header is a PREFIX of the candidate ("mob"→"mobile"). When the
+        // header EXTENDS a candidate ("sourcecampaign" ⊃ "source", "investmenttype"
+        // ⊃ "invest", "clientcategory" ⊃ "client") it's almost always a DIFFERENT
+        // column that only prefix-collides — keep it as a preserved custom field so
+        // no sheet data (and no original value) is ever lost.
+        if (nk === t || t.startsWith(nk)) _consumedKeys.add(k);
         const v = row[k]?.toString().trim();
         if (v) return v;
       }
