@@ -5,6 +5,7 @@ import { fromISTLocalInput } from "@/lib/datetime";
 import CRMDatePicker from "./CRMDatePicker";
 import { showXpToast } from "./XPToast";
 import { showCelebration } from "@/components/DealCelebration";
+import EditableNote, { canEditLogNote } from "./EditableNote";
 
 interface Counts {
   officeMeetings: { count: number; lastAt: string | null };
@@ -21,6 +22,10 @@ interface MeetingActivity {
   description: string | null;
   isNoShow: boolean;
   loggedBy: string | null;
+  /** Activity.userId — who logged it (same-day edit gate). */
+  userId?: string | null;
+  /** Activity.createdAt ISO — when it was logged (same-day edit gate). */
+  createdAt?: string | null;
   /** "logged" = CRM-logged Activity row · "remark" = auto-detected from imported conversation history */
   source?: "remark" | "logged";
 }
@@ -70,12 +75,14 @@ function fmtTime(iso: string | null): string {
 }
 
 export default function LeadMeetingClient({
-  leadId, counts, leadName, activities = [],
+  leadId, counts, leadName, activities = [], viewerRole, viewerId,
 }: {
   leadId: string;
   counts: Counts;
   leadName?: string;
   activities?: MeetingActivity[];
+  viewerRole?: string;
+  viewerId?: string;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -221,9 +228,23 @@ export default function LeadMeetingClient({
                           )}
                         </div>
                       </button>
-                      {expanded && desc && (
+                      {expanded && (
                         <div className="px-3 pb-3 pl-8">
-                          <div className="text-sm text-gray-700 dark:text-slate-200 whitespace-pre-wrap leading-relaxed break-words max-h-72 overflow-y-auto pr-1">{desc}</div>
+                          {a.source === "logged" && canEditLogNote({ viewerRole, viewerId, entryUserId: a.userId, loggedAt: a.createdAt }) ? (
+                            <EditableNote
+                              leadId={leadId}
+                              kind="activity"
+                              entryId={a.id}
+                              note={desc || null}
+                              canEdit
+                              emptyLabel="Add what happened…"
+                              textClass="text-sm text-gray-700 dark:text-slate-200 whitespace-pre-wrap leading-relaxed break-words max-h-72 overflow-y-auto pr-1"
+                            />
+                          ) : desc ? (
+                            <div className="text-sm text-gray-700 dark:text-slate-200 whitespace-pre-wrap leading-relaxed break-words max-h-72 overflow-y-auto pr-1">{desc}</div>
+                          ) : (
+                            <div className="text-xs text-gray-400 dark:text-slate-500 italic">No notes recorded.</div>
+                          )}
                         </div>
                       )}
                     </div>

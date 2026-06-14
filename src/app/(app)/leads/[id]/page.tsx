@@ -218,6 +218,8 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
     description: a.description ?? null,
     isNoShow: a.isNoShow,
     loggedBy: a.user?.name ?? null,
+    userId: a.userId ?? null,
+    createdAt: a.createdAt ? a.createdAt.toISOString() : null,
     source: "logged" as const,
   }));
 
@@ -959,6 +961,8 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
             leadId={lead.id}
             counts={meetingCounts}
             leadName={lead.name}
+            viewerRole={me.role}
+            viewerId={me.id}
             activities={allMeetings}
           />
         </div>
