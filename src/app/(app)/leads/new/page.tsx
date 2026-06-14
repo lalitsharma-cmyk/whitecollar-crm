@@ -72,6 +72,21 @@ async function createLeadAction(formData: FormData) {
   }
   if (Object.keys(update).length) await prisma.lead.update({ where: { id: lead.id }, data: update });
 
+  // Link the lead to a discussed Project (matched by name) when one was picked.
+  // Mirrors the bulk-edit Project linking — a LeadProject row with MANUAL source.
+  const projectName = String(formData.get("project") ?? "").trim();
+  if (projectName) {
+    const proj = await prisma.project.findFirst({
+      where: { name: { equals: projectName, mode: "insensitive" } },
+      select: { id: true },
+    });
+    if (proj) {
+      await prisma.leadProject
+        .create({ data: { leadId: lead.id, projectId: proj.id, sourceType: "MANUAL" } })
+        .catch(() => {});
+    }
+  }
+
   redirect(`/leads/${lead.id}`);
 }
 
@@ -81,6 +96,7 @@ const label = "text-xs font-semibold text-gray-600";
 export default async function NewLeadPage() {
   const me = await requireUser();
   if (me.role === "AGENT") redirect("/leads");
+  const projects = await prisma.project.findMany({ select: { id: true, name: true }, orderBy: { name: "asc" } });
   const defaultCurrency = defaultCurrencyForTeam(me.team);
   const defaultTeam = me.team && (me.team === "Dubai" || me.team === "India") ? me.team : (defaultCurrency === "INR" ? "India" : "Dubai");
   return (
@@ -134,6 +150,13 @@ export default async function NewLeadPage() {
         <section>
           <div className="text-xs font-bold tracking-widest text-[#c9a24b] mb-3">REQUIREMENT</div>
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 sm:gap-4">
+            <div>
+              <label className={label}>🏢 Project</label>
+              <input name="project" list="new-lead-projects" placeholder="Start typing a project…" className={input} autoComplete="off" />
+              <datalist id="new-lead-projects">
+                {projects.map((p) => <option key={p.id} value={p.name} />)}
+              </datalist>
+            </div>
             <div><label className={label}>Configuration</label><input name="configuration" placeholder="2BR / Penthouse / Villa" className={input} /></div>
             <div>
               <label className={label}>Team / Currency</label>
