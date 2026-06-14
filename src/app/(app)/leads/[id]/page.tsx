@@ -95,8 +95,13 @@ function maskPhone(p?: string | null): string | null {
   return `+${first} ··· ${last4}`;
 }
 
-export default async function LeadDetail({ params }: { params: Promise<{ id: string }> }) {
+export default async function LeadDetail({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<Record<string, string | undefined>> }) {
   const { id } = await params;
+  const sp = await searchParams;
+  // Back target — return to the exact filtered list the caller came from (Leads,
+  // Master Data, Revival, Archived…). Only accept safe internal paths (a single
+  // leading slash) so ?back can never be used for an open-redirect.
+  const backHref = sp.back && sp.back.startsWith("/") && !sp.back.startsWith("//") ? sp.back : "/leads";
   const me = await requireUser();
   // Run reconciler in the background — non-blocking
   runReconciler().catch(() => {});
@@ -1126,7 +1131,7 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
           />
         </div>
 
-        <Link href="/leads" className="text-xs text-[#0b1a33] font-semibold inline-block">← Back to leads</Link>
+        <Link href={backHref} className="text-xs text-[#0b1a33] font-semibold inline-block">← Back</Link>
       </div>
 
       {/* Mobile Timeline removed — merged into Conversation History above. */}

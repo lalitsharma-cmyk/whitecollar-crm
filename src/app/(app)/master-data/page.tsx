@@ -174,6 +174,15 @@ export default async function MasterDataPage({ searchParams }: { searchParams: P
     return `/master-data${qs ? `?${qs}` : ""}`;
   };
 
+  // Back target for the detail page = this exact Master Data view (all current
+  // filters + category + page preserved), so its Back button returns here.
+  const backToHere = (() => {
+    const p = new URLSearchParams();
+    for (const [k, v] of Object.entries(sp)) if (v) p.set(k, String(v));
+    const qs = p.toString();
+    return `/master-data${qs ? `?${qs}` : ""}`;
+  })();
+
   const bucketOf = (l: { deletedAt: Date | null; currentStatus: string | null; importBatch: { status: string } | null }) =>
     l.deletedAt
       ? (l.importBatch?.status === "DELETED" ? "Archived" : "Deleted")
@@ -337,7 +346,7 @@ export default async function MasterDataPage({ searchParams }: { searchParams: P
               return (
                 <tr key={l.id} className="border-b border-[#f1f5f9] dark:border-slate-700 hover:bg-gray-50 dark:hover:bg-slate-700/50">
                   <td className="px-3 py-2">
-                    <Link href={`/leads/${l.id}`} className="font-semibold text-[#0b1a33] dark:text-blue-300 hover:underline">
+                    <Link href={`/master-data/${l.id}?back=${encodeURIComponent(backToHere)}`} className="font-semibold text-[#0b1a33] dark:text-blue-300 hover:underline">
                       {l.name}
                     </Link>
                   </td>
