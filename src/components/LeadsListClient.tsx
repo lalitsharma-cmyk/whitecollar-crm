@@ -140,6 +140,7 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
   // bottom; popovers/modals for each action layer on top via z-50.
   const [showTagPopover, setShowTagPopover] = useState(false);
   const [showReassignPopover, setShowReassignPopover] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showRejectModal, setShowRejectModal] = useState(false);
   const [showWaPopover, setShowWaPopover] = useState(false);
   const [pickedTags, setPickedTags] = useState<Set<string>>(new Set());
@@ -353,6 +354,25 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
       if (j.crossTeamWarningMessage) {
         setBulkCrossTeamWarn(j.crossTeamWarningMessage);
       }
+      clearSelection();
+      router.refresh();
+    } catch (e) {
+      setBulkErr(`Network error: ${String(e).slice(0, 80)}`);
+    } finally { setBulkBusy(false); }
+  }
+
+  async function applyBulkDelete() {
+    if (selectedIds.length === 0 || bulkBusy) return;
+    setBulkBusy(true); setBulkErr(null);
+    try {
+      const r = await fetch("/api/leads/bulk", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "delete", ids: selectedIds }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) { setBulkErr(j.error ?? `Failed (${r.status})`); return; }
+      setShowDeleteConfirm(false);
       clearSelection();
       router.refresh();
     } catch (e) {
@@ -1219,7 +1239,37 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
                   <XCircle className="w-3.5 h-3.5" /> Reject
                 </button>
               )}
+              {/* Bulk Delete — Super-Admin (Lalit) only. Soft delete, restorable. */}
+              {canDelete && (
+                <button
+                  onClick={() => { setShowDeleteConfirm(true); setShowTagPopover(false); setShowReassignPopover(false); setShowWaPopover(false); setShowFollowupPop(false); setShowEditPop(false); }}
+                  className="inline-flex items-center gap-1 text-xs font-semibold bg-red-600 text-white border border-red-700 px-2.5 py-1.5 rounded-lg whitespace-nowrap flex-none hover:bg-red-700"
+                  title="Soft-delete selected leads — archived & restorable (Super Admin)"
+                >
+                  <Trash2 className="w-3.5 h-3.5" /> Delete
+                </button>
+              )}
             </div>
+
+            {/* Bulk delete confirm — Super-Admin only. Soft delete (restorable). */}
+            {showDeleteConfirm && canDelete && (
+              <div className="pointer-events-auto absolute left-3 right-3 sm:left-1/2 sm:-translate-x-1/2 sm:max-w-sm bottom-full mb-2 bg-white dark:bg-slate-800 border border-red-200 dark:border-red-900/60 rounded-xl shadow-2xl p-3">
+                <div className="flex items-center justify-between mb-1">
+                  <div className="text-xs font-bold text-red-700 dark:text-red-300">Delete {selectedIds.length} lead{selectedIds.length === 1 ? "" : "s"}?</div>
+                  <button onClick={() => setShowDeleteConfirm(false)} className="text-gray-400 hover:text-gray-700"><X className="w-4 h-4" /></button>
+                </div>
+                <p className="text-[11px] text-gray-500 dark:text-slate-400 mb-2">
+                  Moves them to the archive and hides them from every list. Nothing is permanently erased — you can restore them anytime from the deleted-leads archive.
+                </p>
+                {bulkErr && <div className="text-[11px] text-red-600 mb-2">{bulkErr}</div>}
+                <div className="flex justify-end gap-2">
+                  <button onClick={() => setShowDeleteConfirm(false)} className="btn btn-ghost text-xs">Cancel</button>
+                  <button onClick={applyBulkDelete} disabled={bulkBusy} className="inline-flex items-center gap-1 text-xs font-semibold bg-red-600 text-white px-3 py-1.5 rounded-lg hover:bg-red-700 disabled:opacity-50">
+                    <Trash2 className="w-3.5 h-3.5" /> {bulkBusy ? "Deleting…" : `Delete ${selectedIds.length}`}
+                  </button>
+                </div>
+              </div>
+            )}
 
             {/* Follow-up popover — bulk set/clear the follow-up date. */}
             {showFollowupPop && (

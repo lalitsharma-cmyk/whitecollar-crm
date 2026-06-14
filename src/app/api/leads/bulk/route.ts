@@ -95,12 +95,20 @@ export async function POST(req: NextRequest) {
   }
 
   if (action === "delete") {
-    // Delete stays admin/manager only — preserves the pre-existing contract.
-    await requireRole("ADMIN", "MANAGER");
-    // Cascade delete via Prisma onDelete: Cascade on Lead-child relations
-    const r = await prisma.lead.deleteMany({ where: { id: { in: ids }, ...scope } });
+    // SOFT delete, Super-Admin (Lalit) ONLY — mirrors the single Delete Lead
+    // (/api/leads/[id]/delete). Leads are archived (deletedAt set), hidden via
+    // leadScopeWhere, and fully restorable. We NEVER hard-delete in bulk: the
+    // previous deleteMany() permanently cascaded child records — far too risky
+    // for a one-click button.
+    if (!me.isSuperAdmin) {
+      return NextResponse.json({ error: "Only the Super Admin can delete leads." }, { status: 403 });
+    }
+    const now = new Date();
+    const rows = await prisma.lead.findMany({ where: { id: { in: ids }, ...scope }, select: { id: true, name: true } });
+    const targetIds = rows.map((x) => x.id);
+    const r = await prisma.lead.updateMany({ where: { id: { in: targetIds } }, data: { deletedAt: now, deletedById: me.id } });
     await audit({ userId: me.id, action: "lead.bulk.delete", entity: "Lead",
-      meta: { count: r.count, leadIds: ids.slice(0, 50) }, request: reqMeta(req) });
+      meta: { count: r.count, soft: true, leadIds: targetIds.slice(0, 50), leadNames: rows.map((x) => x.name).slice(0, 50) }, request: reqMeta(req) });
     return NextResponse.json({ ok: true, deleted: r.count });
   }
 
