@@ -9,6 +9,7 @@ import StatusFunnelChart from "@/components/FunnelChart";
 import SourceChart from "@/components/SourceChart";
 import { requireUser } from "@/lib/auth";
 import { projectWhereForUser } from "@/lib/propertyScope";
+import { COLD_ORIGINS } from "@/lib/leadScope";
 import { fmtMoneyDual } from "@/lib/money";
 import Link from "next/link";
 import { normalizeTeam } from "@/lib/teamRouting";
@@ -132,9 +133,9 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
     // Status-based funnel — status-only, no stages.
     // total → active-pursuit → closing → booked
     Promise.all([
-      prisma.lead.count({ where: { ...teamScope, deletedAt: null } }),
-      prisma.lead.count({ where: { ...teamScope, deletedAt: null, currentStatus: { in: ACTIVE_PURSUIT_STATUSES } } }),
-      prisma.lead.count({ where: { ...teamScope, deletedAt: null, currentStatus: { in: CLOSING_STATUSES } } }),
+      prisma.lead.count({ where: { ...teamScope, deletedAt: null, leadOrigin: { notIn: COLD_ORIGINS } } }),
+      prisma.lead.count({ where: { ...teamScope, deletedAt: null, leadOrigin: { notIn: COLD_ORIGINS }, currentStatus: { in: ACTIVE_PURSUIT_STATUSES } } }),
+      prisma.lead.count({ where: { ...teamScope, deletedAt: null, leadOrigin: { notIn: COLD_ORIGINS }, currentStatus: { in: CLOSING_STATUSES } } }),
       prisma.lead.count({ where: { ...teamScope, deletedAt: null, currentStatus: { in: BOOKED_STATUSES } } }),
       prisma.lead.count({ where: { ...teamScope, deletedAt: null, currentStatus: { in: BOOKED_STATUSES } } }), // compat slot
       prisma.lead.count({ where: { ...teamScope, deletedAt: null, currentStatus: { in: BOOKED_STATUSES } } }), // compat slot
@@ -151,7 +152,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
     // leads, those contribute 0 to the forecast.
     // Active leads for forecast — all active-pursuit and closing statuses
     prisma.lead.findMany({
-      where: { ...teamScope, deletedAt: null, currentStatus: { in: [...ACTIVE_PURSUIT_STATUSES, ...CLOSING_STATUSES, ...BOOKED_STATUSES] } },
+      where: { ...teamScope, deletedAt: null, leadOrigin: { notIn: COLD_ORIGINS }, currentStatus: { in: [...ACTIVE_PURSUIT_STATUSES, ...CLOSING_STATUSES, ...BOOKED_STATUSES] } },
       select: { currentStatus: true, budgetMin: true, budgetCurrency: true },
     }),
 

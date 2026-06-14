@@ -6,7 +6,7 @@ import { requireUser } from "@/lib/auth";
 import LeadFilters from "@/components/LeadFilters";
 import LeadsListClient from "@/components/LeadsListClient";
 import { runReconciler } from "@/lib/reconciler";
-import { leadScopeWhere } from "@/lib/leadScope";
+import { leadScopeWhere, COLD_ORIGINS } from "@/lib/leadScope";
 import { formatBudget } from "@/lib/budgetParse";
 import { statusColor, BUDGET_PRESETS, SUPPRESSED_STATUSES, ACTIVE_PURSUIT_STATUSES, CLOSING_STATUSES, TERMINAL_STATUSES, CLOSED_OUTCOME_STATUSES, LOST_STATUSES } from "@/lib/lead-statuses";
 
@@ -42,7 +42,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
   const scope = await leadScopeWhere(me);
   const where: Prisma.LeadWhereInput = sp.showCold === "1"
     ? { ...scope }
-    : { ...scope, isColdCall: false };
+    : { ...scope, isColdCall: false, leadOrigin: { notIn: COLD_ORIGINS } };
   // ── Working Leads view = WORKABLE ONLY ──────────────────────────────────
   // The normal Leads screen shows only ACTIONABLE leads. Both LOST/rejected
   // statuses (Broker, War Fear, Not Interested, …) AND closed outcomes (Booked

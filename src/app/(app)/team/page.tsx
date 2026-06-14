@@ -3,6 +3,7 @@ import { requireRole } from "@/lib/auth";
 import { acefoneEnabled } from "@/lib/acefone";
 import { fmtMoneyDual } from "@/lib/money";
 import { SUPPRESSED_STATUSES } from "@/lib/lead-statuses";
+import { COLD_ORIGINS } from "@/lib/leadScope";
 import AcefoneAgentIdEdit from "@/components/AcefoneAgentIdEdit";
 import WhatsAppNumberEdit from "@/components/WhatsAppNumberEdit";
 import ManagerPicker from "@/components/ManagerPicker";
@@ -32,7 +33,7 @@ export default async function TeamPage() {
   const [users, activeLeadCounts, pipelineRows, responseRows] = await Promise.all([
     prisma.user.findMany({
       where: { active: true },
-      include: { _count: { select: { ownedLeads: { where: { deletedAt: null } }, callLogs: true } } },
+      include: { _count: { select: { ownedLeads: { where: { deletedAt: null, leadOrigin: { notIn: COLD_ORIGINS } } }, callLogs: true } } },
       orderBy: [{ team: "asc" }, { name: "asc" }],
     }),
     prisma.lead.groupBy({
@@ -40,6 +41,7 @@ export default async function TeamPage() {
       where: {
         ownerId: { not: null },
         deletedAt: null,
+        leadOrigin: { notIn: COLD_ORIGINS },
         currentStatus: { notIn: SUPPRESSED_STATUSES },
       },
       _count: { _all: true },
@@ -50,6 +52,7 @@ export default async function TeamPage() {
       WHERE "ownerId" IS NOT NULL
         AND "currentStatus" IS NOT NULL
         AND "budgetMin" IS NOT NULL
+        AND "leadOrigin" NOT IN ('COLD','REVIVAL')
         AND "updatedAt" >= ${ninetyDaysAgo}
       GROUP BY "ownerId", COALESCE("budgetCurrency", 'AED')
     `,

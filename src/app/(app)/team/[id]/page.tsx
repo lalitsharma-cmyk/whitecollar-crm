@@ -179,6 +179,7 @@ export default async function AgentDeepDivePage({
       WHERE "ownerId" = ${id}
         AND "status"::text IN ('NEW','CONTACTED','QUALIFIED','SITE_VISIT','NEGOTIATION')
         AND "budgetMin" IS NOT NULL
+        AND "leadOrigin" NOT IN ('COLD','REVIVAL')
       GROUP BY COALESCE("budgetCurrency", 'AED')
     `,
   ]);

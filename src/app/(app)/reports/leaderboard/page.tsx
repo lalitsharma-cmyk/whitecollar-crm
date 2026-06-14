@@ -3,6 +3,7 @@ import { requireUser } from "@/lib/auth";
 import { normalizeTeam } from "@/lib/teamRouting";
 import { Role } from "@prisma/client";
 import { CLOSING_STATUSES, BOOKED_STATUSES } from "@/lib/lead-statuses";
+import { COLD_ORIGINS } from "@/lib/leadScope";
 import { subDays, startOfDay, format } from "date-fns";
 import Link from "next/link";
 import { redirect } from "next/navigation";
@@ -73,7 +74,7 @@ export default async function LeaderboardPage() {
     // Leads assigned per agent (all time — scoped to visible team)
     prisma.lead.groupBy({
       by: ["ownerId"],
-      where: { ownerId: { in: agentIds }, deletedAt: null },
+      where: { ownerId: { in: agentIds }, deletedAt: null, leadOrigin: { notIn: COLD_ORIGINS } },
       _count: { _all: true },
     }),
 
@@ -83,6 +84,7 @@ export default async function LeaderboardPage() {
       where: {
         ownerId: { in: agentIds },
         deletedAt: null,
+        leadOrigin: { notIn: COLD_ORIGINS },
         currentStatus: { in: QUALIFIED_STATUSES },
       },
       _count: { _all: true },
@@ -94,6 +96,7 @@ export default async function LeaderboardPage() {
       where: {
         ownerId: { in: agentIds },
         deletedAt: null,
+        leadOrigin: { notIn: COLD_ORIGINS },
         currentStatus: { in: BOOKED_STATUSES },
       },
       _count: { _all: true },
