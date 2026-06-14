@@ -431,6 +431,10 @@ model Lead {
   createdAt       DateTime    @default(now())
   updatedAt       DateTime    @updatedAt
 
+  // Imported sheet columns with no matching CRM field (original header → value,
+  // verbatim). Preserves every Excel column for display + traceability.
+  customFields    Json?
+
   // relations
   interestedUnits LeadProperty[]
   discussed       LeadProject[]

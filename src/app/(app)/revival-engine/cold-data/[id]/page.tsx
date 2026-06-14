@@ -16,6 +16,7 @@ import LeadActionsClient from "@/components/LeadActionsClient";
 import { acefoneEnabled } from "@/lib/acefone";
 import { statusColor } from "@/lib/lead-statuses";
 import ColdDataPromoteButton from "@/components/ColdDataPromoteButton";
+import ImportedFieldsCard from "@/components/ImportedFieldsCard";
 function maskPhone(p?: string | null): string | null {
   if (!p) return null;
   const d = p.replace(/\D/g, "");
@@ -159,6 +160,9 @@ export default async function ColdDataDetailPage({ params, searchParams }: { par
         </p>
         <ColdDataPromoteButton leadId={lead.id} leadName={lead.name} />
       </div>
+
+      {/* ── Imported sheet columns (verbatim) ── */}
+      <ImportedFieldsCard customFields={lead.customFields} />
 
       {/* ── Conversation history (single source of truth) ── */}
       <ConversationStreamCard

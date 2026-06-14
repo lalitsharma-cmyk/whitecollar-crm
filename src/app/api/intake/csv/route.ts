@@ -38,6 +38,10 @@ function aiScoreFromCategorization(s?: string): { score: AIScore; value: number 
 
 type Row = Record<string, string>;
 
+// Headers consumed by pick() for the row being processed — lets the importer
+// preserve every UNMAPPED Excel column verbatim in Lead.customFields. Reset per row.
+let _consumedKeys = new Set<string>();
+
 function norm(s: string): string { return s.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ""); }
 function pick(row: Row, ...candidates: string[]): string | undefined {
   const wanted = candidates.map(norm);
@@ -45,6 +49,7 @@ function pick(row: Row, ...candidates: string[]): string | undefined {
     const nk = norm(k);
     for (const t of wanted) {
       if (nk === t || nk.startsWith(t) || t.startsWith(nk)) {
+        _consumedKeys.add(k);   // header matched a known CRM field → mapped, not custom
         const v = row[k]?.toString().trim();
         if (v) return v;
       }
@@ -391,6 +396,7 @@ export async function POST(req: NextRequest) {
   // Historical Notes. assignToUserId still assigns the imported LEAD below.
 
   for (const [i, row] of rows.entries()) {
+    _consumedKeys = new Set();   // reset mapped-header tracking for this row
     const nameRaw = pick(row, "customer", "name", "fullname", "leadname", "customername");
     const phoneRaw = pick(row, "mobile", "phone", "contact", "phonenumber", "whatsapp");
     const altPhoneRaw = pick(row, "altnumber", "altphone", "alternatephone", "alternatenumber", "phone2", "secondarynumber", "secondaryphone");
@@ -575,6 +581,23 @@ export async function POST(req: NextRequest) {
         if (budgetHeader) {
           if (/aed/i.test(budgetHeader)) update.budgetCurrency = "AED";
           else if (/inr|₹|rs/i.test(budgetHeader)) update.budgetCurrency = "INR";
+        }
+      }
+      // Preserve EVERY unmapped Excel column verbatim (original header → value) in
+      // customFields, so no sheet data is silently dropped. On a dedupe, merge with
+      // any prior import's custom fields so earlier columns survive.
+      const cf: Record<string, string> = {};
+      for (const k of Object.keys(row)) {
+        if (_consumedKeys.has(k)) continue;
+        const v = row[k]?.toString().trim();
+        if (v) cf[k] = v;
+      }
+      if (Object.keys(cf).length > 0) {
+        if (r.deduped) {
+          const prev = await prisma.lead.findUnique({ where: { id: r.lead.id }, select: { customFields: true } });
+          update.customFields = { ...((prev?.customFields as Record<string, unknown>) ?? {}), ...cf };
+        } else {
+          update.customFields = cf;
         }
       }
       if (Object.keys(update).length > 0) {

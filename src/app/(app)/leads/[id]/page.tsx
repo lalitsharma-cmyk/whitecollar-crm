@@ -47,6 +47,7 @@ import StageDurationBadge from "@/components/StageDurationBadge";
 import SchedulingField from "@/components/SchedulingField";
 import AIComparisonWorkspace from "@/components/AIComparisonWorkspace";
 import ChangeHistoryCard from "@/components/ChangeHistoryCard";
+import ImportedFieldsCard from "@/components/ImportedFieldsCard";
 import { isAiPilotLead } from "@/lib/ai-openai";
 import { getLatestClaudeAnalysis, claudeEnabled } from "@/lib/ai-claude";
 import { getLatestGptIntelligence, gptIntelligenceEnabled } from "@/lib/ai-gpt-intelligence";
@@ -966,6 +967,9 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
             </div>
           </div>
         </div>
+
+        {/* Imported sheet columns that don't map to a known CRM field — verbatim */}
+        <ImportedFieldsCard customFields={lead.customFields} />
 
         {/* §15: LinkedContactsCard removed — alt phone already in Client Information.
             No duplicate contact display anywhere else on the page. */}
