@@ -58,3 +58,19 @@ export function inferCountryFromCity(city: string | null | undefined): string | 
     .replace(/[^a-z ]/g, "");
   return CITY_COUNTRY[key] ?? null;
 }
+
+// Fuzzy DISPLAY fallback. Real city strings are messy — "DELHI AND NCR",
+// "Defence colony, Delhi", "GK1, Delhi", "Dubai Marina" — and won't exact-match
+// the map above. Scan for the major metros as substrings (UAE first so a string
+// containing "dubai" wins). RENDER-TIME ONLY — this never writes to the DB.
+const INDIA_CITY_HINTS = ["delhi", "ncr", "gurgaon", "gurugram", "noida", "pune", "bangalore", "bengaluru", "mumbai", "ghaziabad", "faridabad"];
+const UAE_CITY_HINTS = ["dubai", "abu dhabi", "abudhabi", "ras al khaimah", "sharjah", "ajman"];
+export function inferCountryFromCityFuzzy(city: string | null | undefined): string | null {
+  const exact = inferCountryFromCity(city);
+  if (exact) return exact;
+  if (!city) return null;
+  const c = city.toLowerCase();
+  if (UAE_CITY_HINTS.some((h) => c.includes(h))) return "UAE";
+  if (INDIA_CITY_HINTS.some((h) => c.includes(h))) return "India";
+  return null;
+}

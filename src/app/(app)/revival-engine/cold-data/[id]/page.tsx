@@ -34,7 +34,7 @@ export default async function ColdDataDetailPage({ params, searchParams }: { par
   const scope = await leadScopeWhere(me);
 
   const lead = await prisma.lead.findFirst({
-    where: { id, isColdCall: true, ...scope },
+    where: { id, OR: [{ isColdCall: true }, { leadOrigin: "COLD" }], ...scope },
     include: {
       owner: { select: { id: true, name: true, avatarColor: true } },
       callLogs: { orderBy: { startedAt: "desc" }, take: 50, include: { user: { select: { name: true } } } },
