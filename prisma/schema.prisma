@@ -112,6 +112,7 @@ model User {
   callLogs      CallLog[]
   notes         Note[]
   auditLogs     AuditLog[]
+  fieldChanges  LeadFieldHistory[] @relation("FieldChangedBy")
   notifications Notification[]
   vaultEntries  VaultEntry[]
   stickyNotes   StickyNote[]
@@ -439,6 +440,7 @@ model Lead {
   assignments     Assignment[]
   waMessages      WhatsAppMessage[]
   stickyNotes     StickyNote[]
+  fieldHistory    LeadFieldHistory[]
 
   @@index([status])
   @@index([source])
@@ -448,6 +450,31 @@ model Lead {
   @@index([forwardedTeam])
   @@index([importBatchId])
   @@index([deletedAt])
+}
+
+// =====================================================
+// LEAD FIELD HISTORY — financial-grade per-field audit trail. One append-only
+// row per change to a tracked field (status, budget, BANT, owner/assignment,
+// follow-up date, source, leadOrigin/section move, remarks): old→new + who +
+// when + where. Makes every change recoverable, "what did X change today" a
+// one-query report, and remark text impossible to lose. History accrues
+// FORWARD from deploy (past changes can't be reconstructed). Additive table —
+// no existing data is touched.
+// =====================================================
+model LeadFieldHistory {
+  id          String   @id @default(cuid())
+  leadId      String
+  lead        Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  field       String   // currentStatus | budgetMin | budgetMax | bantStatus | ownerId | followupDate | source | leadOrigin | remarks | …
+  oldValue    String?
+  newValue    String?
+  changedById String?
+  changedBy   User?    @relation("FieldChangedBy", fields: [changedById], references: [id], onDelete: SetNull)
+  changedAt   DateTime @default(now())
+  source      String?  // inline-edit | bulk | import | eoi | reject | move | system
+  @@index([leadId, changedAt])
+  @@index([changedById, changedAt])
+  @@index([field, changedAt])
 }
 
 // =====================================================

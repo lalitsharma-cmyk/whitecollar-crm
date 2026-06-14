@@ -8,6 +8,8 @@ import { getTestingModeEnabled, getBantGateMode } from "@/lib/settings";
 import { evaluateBantGate, type BantFields } from "@/lib/bantGate";
 import { awardXp, type AwardResult, type XpReason } from "@/lib/gamification.server";
 import { canSetStatus } from "@/lib/lead-statuses";
+import { recordFieldChanges, TRACKED_FIELDS } from "@/lib/fieldHistory";
+import type { Prisma } from "@prisma/client";
 
 // Inline-edit endpoint — accepts one or more field updates and logs an Activity
 // for status/stage changes. Only allows whitelisted fields.
@@ -145,7 +147,19 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     if (gate.warn) bantGateWarning = { message: gate.message, missing: gate.missing };
   }
 
+  // ── Audit history — capture old→new for every tracked field on this edit,
+  //    so status / budget / BANT / follow-up / source / remarks / location
+  //    changes are all recoverable and reportable. Best-effort (never blocks).
+  const trackedKeys = TRACKED_FIELDS.filter((f) => f in updates);
+  const beforeRow = trackedKeys.length
+    ? await prisma.lead.findUnique({ where: { id }, select: Object.fromEntries(trackedKeys.map((f) => [f, true])) as Prisma.LeadSelect })
+    : null;
+
   await prisma.lead.update({ where: { id }, data: updates as never });
+
+  if (beforeRow) {
+    recordFieldChanges(prisma, id, me.id, beforeRow as Record<string, unknown>, updates, "inline-edit").catch(() => {});
+  }
 
   if (activityNotes.length) {
     await prisma.activity.create({
