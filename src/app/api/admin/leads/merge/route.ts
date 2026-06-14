@@ -107,14 +107,17 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      // 4. Audit BEFORE deletion so we still have the entityId reference.
+      // 4. Snapshot the full merged-lead row + audit BEFORE deletion, so the
+      //    merged lead's OWN fields (remarks, budget, status, …) stay fully
+      //    recoverable. Its child history is already reparented to the master.
+      const snapshot = await tx.lead.findUnique({ where: { id: mergeId } });
       await tx.auditLog.create({
         data: {
           userId: me.id,
           action: "lead.merged_into.master",
           entity: "Lead",
           entityId: mergeId,
-          meta: JSON.stringify({ masterId, mergedId: mergeId }),
+          meta: JSON.stringify({ masterId, mergedId: mergeId, snapshot }),
         },
       });
 
