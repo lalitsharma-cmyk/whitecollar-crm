@@ -46,6 +46,7 @@ import InvestorBanner from "@/components/InvestorBanner";
 import StageDurationBadge from "@/components/StageDurationBadge";
 import SchedulingField from "@/components/SchedulingField";
 import AIComparisonWorkspace from "@/components/AIComparisonWorkspace";
+import ChangeHistoryCard from "@/components/ChangeHistoryCard";
 import { isAiPilotLead } from "@/lib/ai-openai";
 import { getLatestClaudeAnalysis, claudeEnabled } from "@/lib/ai-claude";
 import { getLatestGptIntelligence, gptIntelligenceEnabled } from "@/lib/ai-gpt-intelligence";
@@ -122,6 +123,8 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
         waMessages: { orderBy: { receivedAt: "desc" }, take: 20 },
         notes:      { orderBy: { createdAt: "desc" }, take: 50, include: { user: true } },
         assignments:{ orderBy: { assignedAt: "desc" }, take: 5, include: { user: true } },
+        importBatch: { select: { id: true, fileName: true, createdAt: true, importedBy: { select: { name: true } } } },
+        fieldHistory: { orderBy: { changedAt: "desc" }, take: 60, include: { changedBy: { select: { name: true } } } },
       },
     }),
     prisma.activity.findMany({
@@ -150,6 +153,11 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
   // §14 Module context rule: cold-call records must stay inside Revival Engine.
   // If someone navigates to /leads/:id for a cold-call lead, redirect them.
   if (lead.isColdCall) redirect(`/revival-engine/cold-data/${id}`);
+
+  // Resolve owner names for any ownerId-change rows in the Change-History card.
+  const ownerIdVals = [...new Set(lead.fieldHistory.filter((h) => h.field === "ownerId").flatMap((h) => [h.oldValue, h.newValue]).filter((v): v is string => !!v))];
+  const ownerNameRows = ownerIdVals.length ? await prisma.user.findMany({ where: { id: { in: ownerIdVals } }, select: { id: true, name: true } }) : [];
+  const ownerNames: Record<string, string> = Object.fromEntries(ownerNameRows.map((u) => [u.id, u.name]));
 
   // Auto-detection queries — run after notFound() guard.
   const [interestNotes, unmatchedMentions] = await Promise.all([
@@ -1106,6 +1114,11 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
               ))}
             </div>
           </div>
+        )}
+
+        {/* Field-level change history + import source — admin/manager audit view */}
+        {(me.role === "ADMIN" || me.role === "MANAGER") && (
+          <ChangeHistoryCard rows={lead.fieldHistory} importBatch={lead.importBatch} ownerNames={ownerNames} />
         )}
 
         {/* Call history MOVED to the top of the left column (right under the header).
