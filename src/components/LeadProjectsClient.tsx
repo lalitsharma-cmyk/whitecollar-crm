@@ -72,6 +72,7 @@ export default function LeadProjectsClient({
   const [query, setQuery] = useState("");
   const [highlight, setHighlight] = useState(0);
   const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
   const [scanning, setScanning] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const pickerRef = useRef<HTMLDivElement>(null);
@@ -121,18 +122,26 @@ export default function LeadProjectsClient({
   const unresolvedCount = (unmatchedMentions ?? []).filter(m => !m.resolved && !m.resolvedIgnored).length;
 
   async function addProject(projectId: string) {
-    setBusy(true);
+    if (busy) return;
+    setBusy(true); setErr(null);
     try {
       const r = await fetch(`/api/leads/${leadId}/discuss`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ projectId, status: "DISCUSSED" }),
       });
-      if (r.ok) router.refresh();
+      if (!r.ok) {
+        const j = await r.json().catch(() => ({}));
+        setErr(j.error ?? `Couldn't add project (${r.status}).`);
+        return;
+      }
       setPicking(false);
       setPicked(null);
       setQuery("");
       setHighlight(0);
+      router.refresh();
+    } catch (e) {
+      setErr(`Network error — ${String(e).slice(0, 80)}`);
     } finally { setBusy(false); }
   }
 
@@ -229,7 +238,7 @@ export default function LeadProjectsClient({
     } else if (e.key === "Enter") {
       e.preventDefault();
       const m = matches[highlight];
-      if (m) { setPicked(m); setQuery(`${m.name} (${m.city})`); }
+      if (m) addProject(m.id);
     } else if (e.key === "Escape") {
       e.preventDefault();
       setPicking(false);
@@ -319,7 +328,7 @@ export default function LeadProjectsClient({
                 {matches.map((p, idx) => (
                   <div
                     key={p.id}
-                    onMouseDown={(e) => { e.preventDefault(); setPicked(p); setQuery(`${p.name} (${p.city})`); }}
+                    onMouseDown={(e) => { e.preventDefault(); addProject(p.id); }}
                     onMouseEnter={() => setHighlight(idx)}
                     className={`px-3 py-2 text-sm cursor-pointer border-b border-[#f3f4f6] last:border-b-0 ${idx === highlight ? "bg-amber-50" : "hover:bg-gray-50"}`}
                   >
@@ -335,10 +344,11 @@ export default function LeadProjectsClient({
               </div>
             )}
           </div>
+          {err && <div className="text-[11px] text-red-600">{err}</div>}
           <div className="flex gap-2">
             <button
-              onClick={() => picked && addProject(picked.id)}
-              disabled={!picked || busy}
+              onClick={() => { const t = picked ?? matches[highlight] ?? matches[0]; if (t) addProject(t.id); }}
+              disabled={busy || (!picked && matches.length === 0)}
               className="btn btn-primary text-sm flex-1 justify-center min-h-11"
             >
               {busy ? "Adding…" : "Add"}

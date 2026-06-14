@@ -55,22 +55,28 @@ export default function LeadInterestNotesClient({
   const [adding, setAdding] = useState(false);
   const [newText, setNewText] = useState("");
   const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
   const [scanning, setScanning] = useState(false);
 
   async function addNote() {
-    if (!newText.trim()) return;
-    setBusy(true);
+    if (!newText.trim() || busy) return;
+    setBusy(true); setErr(null);
     try {
       const r = await fetch(`/api/leads/${leadId}/interest-notes`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ noteText: newText }),
       });
-      if (r.ok) {
-        setAdding(false);
-        setNewText("");
-        router.refresh();
+      if (!r.ok) {
+        const j = await r.json().catch(() => ({}));
+        setErr(j.error ?? `Couldn't add (${r.status}).`);
+        return;
       }
+      setAdding(false);
+      setNewText("");
+      router.refresh();
+    } catch (e) {
+      setErr(`Network error — ${String(e).slice(0, 80)}`);
     } finally { setBusy(false); }
   }
 
@@ -176,6 +182,7 @@ export default function LeadInterestNotesClient({
             placeholder="e.g. 2BR Business Bay under AED 2M"
             className="w-full border border-[#e5e7eb] rounded-lg px-3 py-2.5 text-sm min-h-11"
           />
+          {err && <div className="text-[11px] text-red-600">{err}</div>}
           <div className="flex gap-2">
             <button
               onClick={addNote}
