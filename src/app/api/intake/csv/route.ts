@@ -542,6 +542,11 @@ export async function POST(req: NextRequest) {
         update.ownerId = assignToUserId;
         update.assignedAt = new Date();
         update.isColdCall = false;
+        // Pre-assigned leads are ACTIVE assigned leads — never cold, even when the
+        // batch was ALSO flagged cold. Without this they kept leadOrigin=COLD and
+        // landed in /cold-calls while being assigned (the import+pre-assign bug).
+        // Pre-assign wins: cold + pre-assign → active assigned lead.
+        update.leadOrigin = "ACTIVE";
         // Bump status from NEW to CONTACTED — they're existing relationships
         update.status = "CONTACTED";
       }
