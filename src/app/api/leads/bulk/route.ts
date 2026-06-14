@@ -64,7 +64,7 @@ export async function POST(req: NextRequest) {
     // for ADMIN — scope is {} for admin so they get the full set).
     const visible = await prisma.lead.findMany({
       where: { id: { in: ids }, ...scope },
-      select: { id: true, forwardedTeam: true },
+      select: { id: true, forwardedTeam: true, ownerId: true },
     });
     const visibleIds = visible.map(v => v.id);
     let done = 0;
@@ -80,6 +80,10 @@ export async function POST(req: NextRequest) {
         const w = crossTeamWarning(me.team, lead.forwardedTeam);
         if (w) crossTeamCount++;
         await assignLeadTo(lead.id, userId, "bulk reassign");
+        // Audit history — capture the owner From → To (assignment history).
+        if (lead.ownerId !== userId) {
+          prisma.leadFieldHistory.create({ data: { leadId: lead.id, field: "ownerId", oldValue: lead.ownerId, newValue: userId, changedById: me.id, source: "reassign" } }).catch(() => {});
+        }
         done++;
       }
       catch {}
