@@ -82,7 +82,7 @@ export default async function ArchivedLeadsPage() {
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
                     <Link
-                      href={`/leads/${lead.id}`}
+                      href={`/leads/${lead.id}?back=/leads/archived`}
                       className="font-semibold text-[#0b1a33] dark:text-slate-100 hover:underline truncate block"
                     >
                       {lead.name}
@@ -157,7 +157,7 @@ export default async function ArchivedLeadsPage() {
                   >
                     <td className="px-4 py-3">
                       <Link
-                        href={`/leads/${lead.id}`}
+                        href={`/leads/${lead.id}?back=/leads/archived`}
                         className="font-medium text-[#0b1a33] dark:text-slate-100 hover:underline"
                       >
                         {lead.name}

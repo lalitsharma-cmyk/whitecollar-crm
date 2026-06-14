@@ -24,8 +24,12 @@ function maskPhone(p?: string | null): string | null {
 
 export const dynamic = "force-dynamic";
 
-export default async function ColdDataDetailPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function ColdDataDetailPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<Record<string, string | undefined>> }) {
   const { id } = await params;
+  const sp = await searchParams;
+  // Back target — return to the exact Revival list/filter the caller came from.
+  // Internal paths only (single leading slash); default to the cold-call list.
+  const backHref = sp.back && sp.back.startsWith("/") && !sp.back.startsWith("//") ? sp.back : "/cold-calls";
   const me = await requireUser();
   const scope = await leadScopeWhere(me);
 
@@ -71,9 +75,9 @@ export default async function ColdDataDetailPage({ params }: { params: Promise<{
             This is a cold prospect — <strong>not yet a lead</strong>. Use &quot;Convert to Lead&quot; once qualified. Last touched: {lastTouched}.
           </div>
         </div>
-        <Link href="/cold-calls"
+        <Link href={backHref}
           className="text-xs text-amber-700 dark:text-amber-400 hover:text-amber-900 dark:hover:text-amber-200 font-medium shrink-0 flex items-center gap-1">
-          ← Revival Engine
+          ← Back
         </Link>
       </div>
 
