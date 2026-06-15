@@ -9,7 +9,10 @@ import {
   CLOSED_OUTCOME_STATUSES,
   LOST_STATUSES,
   TERMINAL_STATUSES,
+  INDIA_STATUSES,
+  DUBAI_STATUSES,
 } from "@/lib/lead-statuses";
+import MasterDataRecordsTable, { type MDRow } from "@/components/MasterDataRecordsTable";
 
 // ── Master Data — the COMPLETE lead database (Admin / Lalit only) ───────────
 // The normal /leads view shows only WORKABLE leads. This is the full picture:
@@ -203,6 +206,32 @@ export default async function MasterDataPage({ searchParams }: { searchParams: P
     return `/api/reports/export?${p.toString()}`;
   })();
 
+  // Bulk-action support: Sales-side agents (hrOnly excluded → HR/Sales isolation)
+  // for the Assign picker, and the India+Dubai workable status sets for Set Status.
+  const assignAgents = await prisma.user.findMany({
+    where: { active: true, hrOnly: false },
+    select: { id: true, name: true },
+    orderBy: { name: "asc" },
+  });
+  const statuses = Array.from(new Set([...INDIA_STATUSES, ...DUBAI_STATUSES]));
+  const displayRows: MDRow[] = leads.map((l) => {
+    const bucket = bucketOf(l) ?? "—";
+    return {
+      id: l.id,
+      name: l.name,
+      href: `/master-data/${l.id}?back=${encodeURIComponent(backToHere)}`,
+      statusLabel: l.currentStatus ?? null,
+      statusClass: l.currentStatus ? statusColor(l.currentStatus) : "",
+      bucket,
+      bucketClass: bucketChip(bucket),
+      owner: l.owner?.name ?? "Unassigned",
+      team: l.forwardedTeam ?? "—",
+      sourceLabel: SOURCE_LABEL[l.source] ?? l.source,
+      createdLabel: fmtDate(l.createdAt),
+      importFile: l.importBatch?.fileName ?? "—",
+    };
+  });
+
   return (
     <>
       {/* ── Header ──────────────────────────────────────────────────────── */}
@@ -323,53 +352,8 @@ export default async function MasterDataPage({ searchParams }: { searchParams: P
         </div>
       )}
 
-      {/* ── Records table ───────────────────────────────────────────────── */}
-      <div className="card overflow-x-auto p-0">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="text-left text-xs text-gray-500 dark:text-slate-400 border-b border-[#e5e7eb] dark:border-slate-600">
-              <th className="px-3 py-2 font-semibold">Name</th>
-              <th className="px-3 py-2 font-semibold">Status</th>
-              <th className="px-3 py-2 font-semibold">Bucket</th>
-              <th className="px-3 py-2 font-semibold">Agent</th>
-              <th className="px-3 py-2 font-semibold">Team</th>
-              <th className="px-3 py-2 font-semibold">Source</th>
-              <th className="px-3 py-2 font-semibold">Created</th>
-              <th className="px-3 py-2 font-semibold">Import</th>
-            </tr>
-          </thead>
-          <tbody>
-            {leads.length === 0 && (
-              <tr><td colSpan={8} className="px-3 py-8 text-center text-gray-400">No records in this category.</td></tr>
-            )}
-            {leads.map((l) => {
-              const bucket = bucketOf(l);
-              return (
-                <tr key={l.id} className="border-b border-[#f1f5f9] dark:border-slate-700 hover:bg-gray-50 dark:hover:bg-slate-700/50">
-                  <td className="px-3 py-2">
-                    <Link href={`/master-data/${l.id}?back=${encodeURIComponent(backToHere)}`} className="font-semibold text-[#0b1a33] dark:text-blue-300 hover:underline">
-                      {l.name}
-                    </Link>
-                  </td>
-                  <td className="px-3 py-2">
-                    {l.currentStatus
-                      ? <span className={`text-xs px-2 py-0.5 rounded-full ${statusColor(l.currentStatus)}`}>{l.currentStatus}</span>
-                      : <span className="text-xs text-gray-400 italic">— no status —</span>}
-                  </td>
-                  <td className="px-3 py-2">
-                    <span className={`text-xs px-2 py-0.5 rounded-full border ${bucketChip(bucket)}`}>{bucket}</span>
-                  </td>
-                  <td className="px-3 py-2 text-gray-700 dark:text-slate-300 whitespace-nowrap">{l.owner?.name ?? <span className="text-gray-400">Unassigned</span>}</td>
-                  <td className="px-3 py-2 text-gray-700 dark:text-slate-300">{l.forwardedTeam ?? <span className="text-gray-400">—</span>}</td>
-                  <td className="px-3 py-2 text-gray-600 dark:text-slate-400 whitespace-nowrap">{SOURCE_LABEL[l.source] ?? l.source}</td>
-                  <td className="px-3 py-2 text-gray-600 dark:text-slate-400 whitespace-nowrap tabular-nums">{fmtDate(l.createdAt)}</td>
-                  <td className="px-3 py-2 text-gray-500 dark:text-slate-400 text-xs max-w-[140px] truncate" title={l.importBatch?.fileName ?? ""}>{l.importBatch?.fileName ?? "—"}</td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
+      {/* ── Records table (selectable + bulk actions) ──────────────────────── */}
+      <MasterDataRecordsTable rows={displayRows} agents={assignAgents} statuses={statuses} isSuperAdmin={!!me.isSuperAdmin} />
 
       {/* ── Pagination ──────────────────────────────────────────────────── */}
       {totalPages > 1 && (

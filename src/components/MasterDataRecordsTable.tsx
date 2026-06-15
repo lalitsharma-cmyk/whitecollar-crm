@@ -1,0 +1,151 @@
+"use client";
+import Link from "next/link";
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+
+export type MDRow = {
+  id: string;
+  name: string;
+  href: string;
+  statusLabel: string | null;
+  statusClass: string;
+  bucket: string;
+  bucketClass: string;
+  owner: string;
+  team: string;
+  sourceLabel: string;
+  createdLabel: string;
+  importFile: string;
+};
+
+interface Props {
+  rows: MDRow[];
+  agents: { id: string; name: string }[];
+  statuses: string[];
+  isSuperAdmin: boolean;
+}
+
+export default function MasterDataRecordsTable({ rows, agents, statuses, isSuperAdmin }: Props) {
+  const router = useRouter();
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+  const [assignTo, setAssignTo] = useState("");
+  const [statusTo, setStatusTo] = useState("");
+
+  const allOnPage = rows.length > 0 && rows.every((r) => selected.has(r.id));
+  const toggle = (id: string) => setSelected((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const toggleAll = () => setSelected((s) => (rows.every((r) => s.has(r.id)) ? new Set() : new Set(rows.map((r) => r.id))));
+  const clear = () => setSelected(new Set());
+
+  async function run(action: string, extra: Record<string, unknown> = {}) {
+    if (busy || selected.size === 0) return;
+    setBusy(true); setMsg(null);
+    try {
+      const r = await fetch("/api/master-data/bulk", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action, ids: [...selected], ...extra }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) { setMsg(j.error ?? `Failed (${r.status})`); return; }
+      const n = j.moved ?? j.assigned ?? j.updated ?? j.deleted ?? j.restored ?? 0;
+      setMsg(`Done — ${n} record(s) updated.`);
+      clear(); router.refresh();
+    } catch (e) { setMsg(`Network error: ${String(e).slice(0, 80)}`); }
+    finally { setBusy(false); }
+  }
+
+  function exportSelected() {
+    const picked = rows.filter((r) => selected.has(r.id));
+    if (picked.length === 0) return;
+    const head = ["Name", "Status", "Bucket", "Agent", "Team", "Source", "Created", "Import"];
+    const esc = (v: string) => `"${(v ?? "").replace(/"/g, '""')}"`;
+    const csv = [head.join(",")]
+      .concat(picked.map((r) => [r.name, r.statusLabel ?? "", r.bucket, r.owner, r.team, r.sourceLabel, r.createdLabel, r.importFile].map(esc).join(",")))
+      .join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `master-data-selected-${picked.length}.csv`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }
+
+  const btn = "text-xs font-semibold px-2.5 py-1.5 rounded-lg border whitespace-nowrap disabled:opacity-50";
+
+  return (
+    <div className="space-y-2">
+      {/* Bulk action bar */}
+      {selected.size > 0 && (
+        <div className="sticky top-0 z-20 card p-2.5 flex flex-wrap items-center gap-2 border border-[#c9a24b]/40 bg-amber-50/60 dark:bg-slate-800">
+          <span className="text-sm font-semibold text-gray-700 dark:text-slate-200">{selected.size} selected</span>
+          <button disabled={busy} onClick={() => run("move_to_leads")} className={`${btn} bg-emerald-50 text-emerald-800 border-emerald-300`}>→ Move to Leads</button>
+          <button disabled={busy} onClick={() => run("move_to_revival")} className={`${btn} bg-sky-50 text-sky-800 border-sky-300`}>→ Move to Revival</button>
+          <span className="inline-flex items-center gap-1">
+            <select value={assignTo} onChange={(e) => setAssignTo(e.target.value)} className="text-xs border rounded-lg px-2 py-1.5 dark:bg-slate-800 dark:border-slate-600">
+              <option value="">Assign to…</option>
+              {agents.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+            </select>
+            <button disabled={busy || !assignTo} onClick={() => run("assign", { userId: assignTo })} className={`${btn} bg-blue-50 text-blue-800 border-blue-300`}>Assign</button>
+          </span>
+          <span className="inline-flex items-center gap-1">
+            <select value={statusTo} onChange={(e) => setStatusTo(e.target.value)} className="text-xs border rounded-lg px-2 py-1.5 dark:bg-slate-800 dark:border-slate-600">
+              <option value="">Set status…</option>
+              {statuses.map((s) => <option key={s} value={s}>{s}</option>)}
+            </select>
+            <button disabled={busy || !statusTo} onClick={() => run("set_status", { status: statusTo })} className={`${btn} bg-violet-50 text-violet-800 border-violet-300`}>Set</button>
+          </span>
+          <button disabled={busy} onClick={exportSelected} className={`${btn} bg-white text-gray-700 border-gray-300`}>⤓ Export</button>
+          <button disabled={busy} onClick={() => run("restore")} className={`${btn} bg-white text-gray-700 border-gray-300`}>Restore</button>
+          {isSuperAdmin && (
+            <button disabled={busy} onClick={() => { if (confirm(`Soft-delete ${selected.size} record(s)? They move to Archived and stay recoverable.`)) run("soft_delete"); }} className={`${btn} bg-red-50 text-red-700 border-red-300`}>Delete</button>
+          )}
+          <button onClick={clear} className={`${btn} bg-white text-gray-500 border-gray-200 ml-auto`}>Clear</button>
+          {msg && <span className="text-xs text-gray-600 dark:text-slate-300 w-full">{msg}</span>}
+        </div>
+      )}
+
+      <div className="card overflow-x-auto p-0">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-left text-xs text-gray-500 dark:text-slate-400 border-b border-[#e5e7eb] dark:border-slate-600">
+              <th className="px-3 py-2 w-8"><input type="checkbox" checked={allOnPage} onChange={toggleAll} aria-label="Select all" /></th>
+              <th className="px-3 py-2 font-semibold">Name</th>
+              <th className="px-3 py-2 font-semibold">Status</th>
+              <th className="px-3 py-2 font-semibold">Bucket</th>
+              <th className="px-3 py-2 font-semibold">Agent</th>
+              <th className="px-3 py-2 font-semibold">Team</th>
+              <th className="px-3 py-2 font-semibold">Source</th>
+              <th className="px-3 py-2 font-semibold">Created</th>
+              <th className="px-3 py-2 font-semibold">Import</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.length === 0 && (
+              <tr><td colSpan={9} className="px-3 py-8 text-center text-gray-400">No records in this category.</td></tr>
+            )}
+            {rows.map((l) => (
+              <tr key={l.id} className={`border-b border-[#f1f5f9] dark:border-slate-700 hover:bg-gray-50 dark:hover:bg-slate-700/50 ${selected.has(l.id) ? "bg-amber-50/50 dark:bg-slate-700/40" : ""}`}>
+                <td className="px-3 py-2"><input type="checkbox" checked={selected.has(l.id)} onChange={() => toggle(l.id)} aria-label={`Select ${l.name}`} /></td>
+                <td className="px-3 py-2">
+                  <Link href={l.href} className="font-semibold text-[#0b1a33] dark:text-blue-300 hover:underline">{l.name}</Link>
+                </td>
+                <td className="px-3 py-2">
+                  {l.statusLabel
+                    ? <span className={`text-xs px-2 py-0.5 rounded-full ${l.statusClass}`}>{l.statusLabel}</span>
+                    : <span className="text-xs text-gray-400 italic">— no status —</span>}
+                </td>
+                <td className="px-3 py-2"><span className={`text-xs px-2 py-0.5 rounded-full border ${l.bucketClass}`}>{l.bucket}</span></td>
+                <td className="px-3 py-2 text-gray-700 dark:text-slate-300 whitespace-nowrap">{l.owner}</td>
+                <td className="px-3 py-2 text-gray-700 dark:text-slate-300">{l.team}</td>
+                <td className="px-3 py-2 text-gray-600 dark:text-slate-400 whitespace-nowrap">{l.sourceLabel}</td>
+                <td className="px-3 py-2 text-gray-600 dark:text-slate-400 whitespace-nowrap tabular-nums">{l.createdLabel}</td>
+                <td className="px-3 py-2 text-gray-500 dark:text-slate-400 text-xs max-w-[140px] truncate" title={l.importFile}>{l.importFile}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
