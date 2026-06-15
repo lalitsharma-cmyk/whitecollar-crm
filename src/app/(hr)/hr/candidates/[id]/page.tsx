@@ -20,6 +20,7 @@ export default async function CandidatePage({ params }: { params: Promise<{ id: 
         interviews:     { orderBy: { scheduledAt: "asc" }, include: { interviewer: { select: { name: true } } } },
         followUps:      { orderBy: { dueAt: "asc" }, include: { user: { select: { name: true } } } },
         resumes:        { orderBy: { createdAt: "desc" }, take: 5 },
+        applications:   { orderBy: { submittedAt: "desc" } },  // website/form application history
       },
     }),
     getHrUsers(),

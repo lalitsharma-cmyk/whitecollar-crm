@@ -1000,6 +1000,7 @@ model IntakeKey {
   key       String     @unique
   source    LeadSource
   active    Boolean    @default(true)
+  hrScope   Boolean    @default(false)  // true = authorizes the HR intake endpoint (/api/intake/hr), not Sales
   createdAt DateTime   @default(now())
   lastUsed  DateTime?
 }
@@ -1759,6 +1760,7 @@ model HRCandidate {
   interviews       HRInterview[]
   followUps        HRFollowUp[]
   resumes          HRResume[]
+  applications     HRApplication[]   // every website/form submission (re-applies append here)
 
   @@index([status])
   @@index([primaryOwnerId])
@@ -1852,4 +1854,43 @@ model HRResume {
   createdAt    DateTime    @default(now())
 
   @@index([candidateId])
+}
+
+// One row per website/form submission. A re-applying candidate (matched by
+// mobile/email) does NOT create a duplicate HRCandidate — a new HRApplication is
+// appended instead, so the profile shows the full application history + statuses.
+model HRApplication {
+  id                 String            @id @default(cuid())
+  candidateId        String
+  candidate          HRCandidate       @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  positionApplied    String
+  source             String            // Website Career Page | Website Job Application | Walk-in Form | Internship Form | HR Landing Page
+  locationPreference String?
+  experience         String?
+  resumeId           String?           // → the HRResume created for this submission (if any)
+  statusAtApply      HRCandidateStatus @default(NEW)
+  submittedAt        DateTime          // form submission timestamp (from payload, else now)
+  rawPayload         Json?             // original submission, for audit / replay
+  createdAt          DateTime          @default(now())
+
+  @@index([candidateId, submittedAt])
+  @@index([source])
+}
+
+// Delivery + failed-submission log for the real-time website→HR intake. Every
+// POST /api/intake/hr writes exactly one row (success OR failure).
+model HRIntakeLog {
+  id            String   @id @default(cuid())
+  receivedAt    DateTime @default(now())
+  source        String?
+  outcome       String   // CREATED | APPENDED | FAILED
+  httpStatus    Int
+  candidateId   String?
+  applicationId String?
+  error         String?  @db.Text
+  payload       Json?
+  ip            String?
+
+  @@index([receivedAt])
+  @@index([outcome])
 }

@@ -12,6 +12,7 @@ interface Activity { id: string; type: string; notes: string|null; createdAt: st
 interface Interview { id: string; type: string; scheduledAt: string; confirmationStatus: string; attendanceStatus: string; result: string|null; notes: string|null; noShowReason: string|null; interviewer: {name:string}|null; }
 interface FollowUp { id: string; type: string; dueAt: string; completedAt: string|null; notes: string|null; autoCreated: boolean; user: {name:string}|null; }
 interface Resume { id: string; filename: string; url: string; mimeType: string; isActive: boolean; createdAt: string; }
+interface Application { id: string; positionApplied: string; source: string; locationPreference: string|null; experience: string|null; statusAtApply: string; submittedAt: string; }
 interface Candidate {
   id: string; name: string; phone: string|null; altPhone: string|null; whatsappPhone: string|null;
   email: string|null; location: string|null; city: string|null; currentCompany: string|null; currentProfile: string|null;
@@ -24,7 +25,7 @@ interface Candidate {
   primaryOwnerId: string|null; secondaryOwnerId: string|null;
   primaryOwner: {id:string;name:string;avatarColor:string}|null;
   secondaryOwner: {id:string;name:string;avatarColor:string}|null;
-  activities: Activity[]; interviews: Interview[]; followUps: FollowUp[]; resumes: Resume[];
+  activities: Activity[]; interviews: Interview[]; followUps: FollowUp[]; resumes: Resume[]; applications?: Application[];
 }
 interface Props { candidate: Candidate; agents: User[]; me: { id: string; name: string; role: string }; }
 
@@ -147,7 +148,7 @@ export default function HRCandidateDetail({ candidate: c, agents, me }: Props) {
   const router = useRouter();
   const [, startT] = useTransition();
   const [busy, setBusy] = useState(false);
-  const [tab, setTab] = useState<"timeline"|"interviews"|"followups"|"resumes">("timeline");
+  const [tab, setTab] = useState<"timeline"|"interviews"|"followups"|"resumes"|"applications">("timeline");
   const [panel, setPanel] = useState<"none"|"call"|"wa"|"followup"|"interview"|"status"|"note">("none");
 
   const [callNotes, setCallNotes] = useState(""); const [callNext, setCallNext] = useState(""); const [callNextDate, setCallNextDate] = useState("");
@@ -366,7 +367,7 @@ export default function HRCandidateDetail({ candidate: c, agents, me }: Props) {
 
           {/* Tabs */}
           <div className="border-b border-gray-200 dark:border-slate-700 flex gap-0">
-            {([["timeline","Timeline"],["interviews","Interviews"],["followups","Follow-Ups"],["resumes","Resumes"]] as const).map(([t,label])=>(
+            {([["timeline","Timeline"],["interviews","Interviews"],["followups","Follow-Ups"],["resumes","Resumes"],...(c.applications?.length?[["applications",`Applications (${c.applications.length})`]]:[])] as [typeof tab,string][]).map(([t,label])=>(
               <button key={t} type="button" onClick={()=>setTab(t)} className={`px-4 py-2.5 text-sm font-medium border-b-2 -mb-px ${tab===t?"border-[#0b1a33] text-[#0b1a33] dark:border-white dark:text-white":"border-transparent text-gray-500 hover:text-gray-700"}`}>{label}</button>
             ))}
           </div>
@@ -421,6 +422,25 @@ export default function HRCandidateDetail({ candidate: c, agents, me }: Props) {
                   </div>
                 </div>
               ); })}
+            </div>
+          )}
+          {tab === "applications" && (
+            <div className="space-y-2">
+              {(!c.applications || c.applications.length === 0) && <div className="text-sm text-gray-400 text-center py-6">No applications recorded.</div>}
+              {c.applications?.map(ap => (
+                <div key={ap.id} className="card p-3 border border-[#e5e7eb] dark:border-slate-700">
+                  <div className="flex items-start justify-between flex-wrap gap-2">
+                    <div>
+                      <div className="font-semibold text-sm text-gray-900 dark:text-slate-100">{ap.positionApplied}</div>
+                      <div className="text-xs text-gray-500">{ap.source}{ap.locationPreference ? ` · ${ap.locationPreference}` : ""}{ap.experience ? ` · ${ap.experience}` : ""}</div>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <div className="text-[11px] text-gray-400">{new Date(ap.submittedAt).toLocaleDateString("en-IN",{day:"numeric",month:"short",year:"numeric"})} · {new Date(ap.submittedAt).toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit"})}</div>
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 font-medium dark:bg-slate-700 dark:text-slate-300">{statusLabel(ap.statusAtApply)}</span>
+                    </div>
+                  </div>
+                </div>
+              ))}
             </div>
           )}
           {tab === "resumes" && (
