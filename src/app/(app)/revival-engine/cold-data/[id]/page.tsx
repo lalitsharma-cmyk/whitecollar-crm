@@ -174,7 +174,7 @@ export default async function ColdDataDetailPage({ params, searchParams }: { par
       />
 
       {/* ── Quick note ── */}
-      <QuickNoteCard leadId={lead.id} />
+      <QuickNoteCard leadId={lead.id} isAdmin={me.role === "ADMIN"} />
 
       {/* ── Meta info ── */}
       <div className="card p-4 text-xs text-gray-500 dark:text-slate-400 space-y-1">

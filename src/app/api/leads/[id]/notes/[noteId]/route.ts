@@ -49,3 +49,54 @@ export async function DELETE(
   await prisma.note.delete({ where: { id: noteId } });
   return NextResponse.json({ ok: true });
 }
+
+/**
+ * PATCH /api/leads/[id]/notes/[noteId]   body: { content: string }
+ *
+ * Edit a remark. ADMIN / Super-Admin may edit ANY remark (incl. historical);
+ * an agent may edit only their OWN remark and only on the SAME DAY (IST). The
+ * old→new value is written to the audit trail AND LeadFieldHistory, so the
+ * historical record is always preserved.
+ */
+export async function PATCH(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string; noteId: string }> },
+) {
+  const { id, noteId } = await params;
+  const scoped = await loadOwnedLead(id);
+  if (scoped.error) return scoped.error;
+  const { me } = scoped;
+
+  const reqBody = await req.json().catch(() => ({}));
+  const newBody = String(reqBody.content ?? reqBody.body ?? "").trim();
+  if (!newBody) return NextResponse.json({ error: "Remark cannot be empty" }, { status: 400 });
+
+  const note = await prisma.note.findUnique({
+    where: { id: noteId },
+    select: { id: true, leadId: true, userId: true, body: true, createdAt: true },
+  });
+  if (!note || note.leadId !== id) return NextResponse.json({ error: "Note not found" }, { status: 404 });
+
+  const istDay = (d: Date) => new Date(d.getTime() + 5.5 * 3600 * 1000).toISOString().slice(0, 10);
+  const isAdmin = me.role === "ADMIN";
+  const sameDayOwn = note.userId === me.id && istDay(note.createdAt) === istDay(new Date());
+  if (!isAdmin && !sameDayOwn) {
+    return NextResponse.json({ error: "You can only edit your own same-day remark. Ask an admin to edit older remarks." }, { status: 403 });
+  }
+  if (note.body === newBody) return NextResponse.json({ ok: true, unchanged: true });
+
+  await audit({
+    userId: me.id,
+    action: "note.edit",
+    entity: "Note",
+    entityId: noteId,
+    meta: { leadId: id, authorId: note.userId, oldBody: note.body, newBody, createdAt: note.createdAt.toISOString() },
+    request: reqMeta(req),
+  }).catch(() => {});
+  await prisma.leadFieldHistory.create({
+    data: { leadId: id, field: "remarks", oldValue: note.body, newValue: newBody, changedById: me.id, source: "note-edit" },
+  }).catch(() => {});
+
+  await prisma.note.update({ where: { id: noteId }, data: { body: newBody } });
+  return NextResponse.json({ ok: true });
+}

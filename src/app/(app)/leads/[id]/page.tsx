@@ -48,6 +48,8 @@ import SchedulingField from "@/components/SchedulingField";
 import AIComparisonWorkspace from "@/components/AIComparisonWorkspace";
 import ChangeHistoryCard from "@/components/ChangeHistoryCard";
 import ImportedFieldsCard from "@/components/ImportedFieldsCard";
+import PreviousHistoryCard from "@/components/PreviousHistoryCard";
+import { getCustomerHistory } from "@/lib/customerHistory";
 import { isAiPilotLead } from "@/lib/ai-openai";
 import { getLatestClaudeAnalysis, claudeEnabled } from "@/lib/ai-claude";
 import { getLatestGptIntelligence, gptIntelligenceEnabled } from "@/lib/ai-gpt-intelligence";
@@ -159,6 +161,10 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
   const ownerIdVals = [...new Set(lead.fieldHistory.filter((h) => h.field === "ownerId").flatMap((h) => [h.oldValue, h.newValue]).filter((v): v is string => !!v))];
   const ownerNameRows = ownerIdVals.length ? await prisma.user.findMany({ where: { id: { in: ownerIdVals } }, select: { id: true, name: true } }) : [];
   const ownerNames: Record<string, string> = Object.fromEntries(ownerNameRows.map((u) => [u.id, u.name]));
+
+  // Previous History Found — same customer's earlier enquiries anywhere
+  // (Leads / Revival / Master Data / Closed). null when there is no prior record.
+  const customerHistory = await getCustomerHistory(lead.phone, lead.email, lead.id).catch(() => null);
 
   // Auto-detection queries — run after notFound() guard.
   const [interestNotes, unmatchedMentions] = await Promise.all([
@@ -878,7 +884,7 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
         {/* QUICK NOTE — secondary (spec §9: Quick Note is secondary, must not dominate).
             Moved AFTER conversation history so agents see history first. */}
         <div data-lead-section="timeline">
-          <QuickNoteCard leadId={lead.id} />
+          <QuickNoteCard leadId={lead.id} isAdmin={me.role === "ADMIN"} />
         </div>
 
         {/* Timeline removed — all activity now lives in Conversation History above. */}
@@ -969,6 +975,7 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
         </div>
 
         {/* Imported sheet columns that don't map to a known CRM field — verbatim */}
+        {customerHistory && <PreviousHistoryCard history={customerHistory} currentId={lead.id} />}
         <ImportedFieldsCard customFields={lead.customFields} />
 
         {/* §15: LinkedContactsCard removed — alt phone already in Client Information.
