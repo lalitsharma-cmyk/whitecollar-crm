@@ -40,14 +40,21 @@ interface Props {
 export default function HRShell({ children, user, overdueCount = 0 }: Props) {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [collapsed, setCollapsed] = useState(false);
+  // Collapsed (icons only) BY DEFAULT. Expands on hover (overlay, no reflow) or
+  // when pinned open via the toggle. Collapsed gives the candidate table the room.
+  const [collapsed, setCollapsed] = useState(true);
+  const [hovered, setHovered] = useState(false);
+  const expanded = !collapsed || hovered;
 
   const initials = user.name.split(" ").map(w => w[0]).join("").slice(0, 2).toUpperCase();
-  const canImport = user.role === "ADMIN" || user.role === "MANAGER";
+  // RBAC: HR recruiters (MANAGER/AGENT) see Dashboard, Candidates, Interviews,
+  // Follow Ups, Resume Bank. Import / Reports / Settings are Admin (Super Admin)
+  // only — gated below by role === "ADMIN".
+  const isAdmin = user.role === "ADMIN";
   const navItems: NavItem[] = [
     ...NAV,
-    ...(canImport ? [{ href: "/hr/import", label: "Import", Icon: Upload }] : []),
-    ...(user.role === "ADMIN" ? ADMIN_NAV : []),
+    ...(isAdmin ? [{ href: "/hr/import", label: "Import", Icon: Upload }] : []),
+    ...(isAdmin ? ADMIN_NAV : []),
   ];
 
   function isActive(href: string) {
@@ -86,58 +93,65 @@ export default function HRShell({ children, user, overdueCount = 0 }: Props) {
 
   return (
     <div className="flex h-screen overflow-hidden bg-[#f5f6fa] dark:bg-slate-950">
-      {/* ── Desktop sidebar ── */}
-      <aside className={`hidden lg:flex flex-col shrink-0 transition-[width] duration-200 overflow-hidden
-        ${collapsed ? "w-14" : "w-60"}
-        bg-[#0b1a33] text-white`}>
-        {/* Logo */}
-        <div className={`flex items-center border-b border-white/10 ${collapsed ? "justify-center py-4 px-1" : "px-4 py-4"}`}>
-          {collapsed ? (
-            <Briefcase className="w-6 h-6 text-white/80" />
-          ) : (
-            <div>
-              <div className="text-sm font-bold text-white leading-tight">HR Recruitment</div>
-              <div className="text-[10px] text-slate-400">White Collar Realty</div>
-            </div>
-          )}
-        </div>
-
-        {/* Nav items */}
-        <nav className={`flex-1 py-3 space-y-0.5 overflow-y-auto ${collapsed ? "px-1" : "px-3"}`}>
-          {navItems.map(item => navItem(item, collapsed))}
-        </nav>
-
-        {/* Sign out */}
-        <div className={`border-t border-white/10 ${collapsed ? "px-1 py-2" : "px-3 py-2"}`}>
-          <form action="/api/logout" method="post">
-            <button
-              type="submit"
-              title="Sign out"
-              className={`flex items-center gap-3 w-full px-3 py-2 rounded-lg text-sm font-medium text-slate-300 hover:bg-white/10 hover:text-white transition-colors ${collapsed ? "justify-center px-2" : ""}`}
-            >
-              <LogOut className="w-4 h-4 shrink-0" strokeWidth={2} />
-              {!collapsed && <span>Sign out</span>}
-            </button>
-          </form>
-        </div>
-
-        {/* User + collapse toggle */}
-        <div className={`border-t border-white/10 p-3 ${collapsed ? "flex justify-center" : "flex items-center justify-between"}`}>
-          {!collapsed && (
-            <div className="flex items-center gap-2 min-w-0">
-              <div className={`avatar ${user.avatarColor ?? "bg-indigo-500"} w-7 h-7 text-[11px] shrink-0`}>{initials}</div>
-              <div className="min-w-0">
-                <div className="text-xs font-semibold text-white truncate">{user.name}</div>
-                <div className="text-[10px] text-slate-400">HR</div>
+      {/* ── Desktop sidebar — collapsed (64px, icons only) by default. Hover to
+             peek (overlays, no reflow); toggle to pin open (240px, reflows). ── */}
+      <aside
+        className={`hidden lg:block shrink-0 relative transition-[width] duration-200 ${collapsed ? "w-16" : "w-60"}`}
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
+      >
+        <div className={`absolute inset-y-0 left-0 z-30 flex flex-col overflow-hidden bg-[#0b1a33] text-white transition-[width] duration-200
+          ${expanded ? "w-60" : "w-16"} ${collapsed && hovered ? "shadow-2xl shadow-black/40" : ""}`}>
+          {/* Logo */}
+          <div className={`flex items-center border-b border-white/10 ${!expanded ? "justify-center py-4 px-1" : "px-4 py-4"}`}>
+            {!expanded ? (
+              <Briefcase className="w-6 h-6 text-white/80" />
+            ) : (
+              <div>
+                <div className="text-sm font-bold text-white leading-tight">HR Recruitment</div>
+                <div className="text-[10px] text-slate-400">White Collar Realty</div>
               </div>
-            </div>
-          )}
-          <button
-            onClick={() => setCollapsed(c => !c)}
-            className="text-slate-400 hover:text-white transition p-1 rounded"
-          >
-            {collapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
-          </button>
+            )}
+          </div>
+
+          {/* Nav items */}
+          <nav className={`flex-1 py-3 space-y-0.5 overflow-y-auto ${!expanded ? "px-1" : "px-3"}`}>
+            {navItems.map(item => navItem(item, !expanded))}
+          </nav>
+
+          {/* Sign out */}
+          <div className={`border-t border-white/10 ${!expanded ? "px-1 py-2" : "px-3 py-2"}`}>
+            <form action="/api/logout" method="post">
+              <button
+                type="submit"
+                title="Sign out"
+                className={`flex items-center gap-3 w-full px-3 py-2 rounded-lg text-sm font-medium text-slate-300 hover:bg-white/10 hover:text-white transition-colors ${!expanded ? "justify-center px-2" : ""}`}
+              >
+                <LogOut className="w-4 h-4 shrink-0" strokeWidth={2} />
+                {expanded && <span>Sign out</span>}
+              </button>
+            </form>
+          </div>
+
+          {/* User + collapse toggle */}
+          <div className={`border-t border-white/10 p-3 ${!expanded ? "flex justify-center" : "flex items-center justify-between"}`}>
+            {expanded && (
+              <div className="flex items-center gap-2 min-w-0">
+                <div className={`avatar ${user.avatarColor ?? "bg-indigo-500"} w-7 h-7 text-[11px] shrink-0`}>{initials}</div>
+                <div className="min-w-0">
+                  <div className="text-xs font-semibold text-white truncate">{user.name}</div>
+                  <div className="text-[10px] text-slate-400">HR</div>
+                </div>
+              </div>
+            )}
+            <button
+              onClick={() => setCollapsed(c => !c)}
+              title={collapsed ? "Pin sidebar open" : "Collapse sidebar"}
+              className="text-slate-400 hover:text-white transition p-1 rounded shrink-0"
+            >
+              {collapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
+            </button>
+          </div>
         </div>
       </aside>
 
