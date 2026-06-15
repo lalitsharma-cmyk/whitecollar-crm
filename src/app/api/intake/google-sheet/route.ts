@@ -223,8 +223,12 @@ export async function POST(req: NextRequest) {
         const budgetHeader = Object.keys(row).find(k => /budget/i.test(k)) ?? "";
         const headerHint = /aed|dhs/i.test(budgetHeader) ? "AED"
           : /inr|₹|rs/i.test(budgetHeader) ? "INR" : null;
+        // Use ONLY "currency" — "budgetcurrency" fuzzy-matches the plain "Budget"
+        // column and would read the amount. Also accept a currency token embedded
+        // in the budget text ("AED 800K", "₹4 Cr").
+        const rawCcyHint = budgetInfo.raw && /(?:aed|dhs|inr|rupee|rs\b|₹)/i.test(budgetInfo.raw) ? budgetInfo.raw : undefined;
         const ccy = resolveBudgetCurrency({
-          explicit: pick(row, "currency", "budgetcurrency") ?? headerHint,
+          explicit: pick(row, "currency") ?? rawCcyHint ?? headerHint,
           country: pick(row, "country") ?? inferCountryFromCity(pick(row, "city", "location")),
           projectName: pick(row, "project") ?? (update.sourceDetail as string | undefined),
           sheetName: importBatch.fileName,

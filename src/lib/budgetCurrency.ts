@@ -136,7 +136,11 @@ export function interpretBudget(minCell?: string | null, maxCell?: string | null
   raw: string | null; min: number | null; max: number | null;
 } {
   const minS = (minCell ?? "").trim();
-  const maxS = (maxCell ?? "").trim();
+  let maxS = (maxCell ?? "").trim();
+  // A single "Budget" column gets matched as BOTH min and max by the fuzzy header
+  // picker ("budgetmax".startsWith("budget")), so an identical max is not a real
+  // upper bound — drop it (otherwise "75 Lakh" → "75 Lakh - 75 Lakh").
+  if (maxS && maxS === minS) maxS = "";
   const range = parseBudgetRange(minS);
   if (range) return { raw: minS, min: range.min, max: range.max };
   const min = minS ? parseBudget(minS) : null;
