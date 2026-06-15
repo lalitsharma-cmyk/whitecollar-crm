@@ -39,7 +39,7 @@ import LeadMobileTabs from "@/components/LeadMobileTabs";
 import BestCallTimeChip from "@/components/BestCallTimeChip";
 import CallStatsBar from "@/components/CallStatsBar";
 // LeadJourneyBar removed — stage pipeline bar replaced by currentStatus (Excel/MIS workflow)
-import { formatBudget } from "@/lib/budgetParse";
+import { displayBudget } from "@/lib/budgetParse";
 import { selectableStatuses, statusColor, BOOKED_STATUSES, SUPPRESSED_STATUSES } from "@/lib/lead-statuses";
 import LinkedContactsCard from "@/components/LinkedContactsCard";
 import InvestorBanner from "@/components/InvestorBanner";
@@ -438,7 +438,7 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
         <div className="flex items-center gap-2">
           <span className="text-[10px] font-semibold text-gray-500 dark:text-slate-400 w-32 shrink-0">Budget</span>
           <InlineEdit leadId={lead.id} field="budgetMin" value={lead.budgetMin ?? ""}
-            display={lead.budgetMin ? formatBudget(lead.budgetMin, budgetCcy) : undefined}
+            display={displayBudget(lead) === "—" ? undefined : displayBudget(lead)}
             parseAs="budget" placeholder="Not set"
             editHint={budgetCcy === "INR" ? "type 30L · 3Cr · 500K" : "type 2.5M · 500K"} />
         </div>
@@ -480,7 +480,7 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
               leadId={lead.id}
               field="budgetMin"
               value={lead.budgetMin ?? ""}
-              display={lead.budgetMin ? formatBudget(lead.budgetMin, budgetCcy) : undefined}
+              display={displayBudget(lead) === "—" ? undefined : displayBudget(lead)}
               parseAs="budget"
               editHint={budgetCcy === "INR" ? "type 30L · 3Cr · 500K" : "type 2.5M · 500K"}
               placeholder="Add value"

@@ -5,6 +5,8 @@ import { LeadSource, Potential, FundReadiness, MoodStatus, InvestTimeline } from
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { resolveTeam, routingFieldsFor } from "@/lib/teamRouting";
+import { interpretBudget, resolveBudgetCurrency } from "@/lib/budgetCurrency";
+import { inferCountryFromCity } from "@/lib/cityCountry";
 import { canonicalStatus } from "@/lib/lead-statuses";
 // runIntelligenceCheck is called inside ingestLead() for every new (non-deduped)
 // lead. No explicit call needed here — the check fires sequentially before any
@@ -32,15 +34,8 @@ function pick(row: Row, ...candidates: string[]): string | undefined {
   }
 }
 
-function parseBudget(s?: string): number | undefined {
-  if (!s) return;
-  const cleaned = s.replace(/[^\d.kKmM]/g, "");
-  const num = parseFloat(cleaned);
-  if (isNaN(num)) return;
-  if (/m/i.test(cleaned)) return num * 1_000_000;
-  if (/k/i.test(cleaned)) return num * 1_000;
-  return num < 1000 ? num * 1_000_000 : num;
-}
+// Budget parsing uses the shared currency-aware interpretBudget() — the old
+// local parser silently 10×–100× corrupted Cr/Lakh values and has been removed.
 function parseDate(s?: string) { if (!s) return; const d = new Date(s); return isNaN(d.getTime()) ? undefined : d; }
 function parseSource(s?: string): LeadSource {
   if (!s) return LeadSource.CSV_IMPORT;
@@ -167,14 +162,18 @@ export async function POST(req: NextRequest) {
     const email = pick(row, "email", "emailid");
     if (!name && !phone && !email) continue;
 
+    const budgetInfo = interpretBudget(
+      pick(row, "budgetaed", "budgetinr", "budget", "budgetmin"),
+      pick(row, "budgetmax"),
+    );
     try {
       const r = await ingestLead({
         name: name ?? phone ?? email ?? "Unknown",
         phone, email,
         city: pick(row, "city", "location"),
         configuration: pick(row, "configuration", "config", "bhk", "type"),
-        budgetMin: parseBudget(pick(row, "budgetaed", "budgetinr", "budget", "budgetmin")),
-        budgetMax: parseBudget(pick(row, "budgetmax")),
+        budgetMin: budgetInfo.min ?? undefined,
+        budgetMax: budgetInfo.max ?? undefined,
         notesShort: pick(row, "remarks", "message", "requirement"),
         tags: pick(row, "tags"),
         source: parseSource(pick(row, "source")),
@@ -217,11 +216,24 @@ export async function POST(req: NextRequest) {
           update.routingReason = rf.routingReason;
         }
       }
-      // Currency inference
-      const budgetHeader = Object.keys(row).find(k => /budget/i.test(k));
-      if (budgetHeader) {
-        if (/aed/i.test(budgetHeader)) update.budgetCurrency = "AED";
-        else if (/inr|₹|rs/i.test(budgetHeader)) update.budgetCurrency = "INR";
+      // Budget: verbatim raw + market-resolved currency (priority order; UNKNOWN
+      // when not confident). Only a row that actually carries a budget updates
+      // these — a blank never wipes an existing value on dedupe.
+      if (budgetInfo.raw) {
+        const budgetHeader = Object.keys(row).find(k => /budget/i.test(k)) ?? "";
+        const headerHint = /aed|dhs/i.test(budgetHeader) ? "AED"
+          : /inr|₹|rs/i.test(budgetHeader) ? "INR" : null;
+        const ccy = resolveBudgetCurrency({
+          explicit: pick(row, "currency", "budgetcurrency") ?? headerHint,
+          country: pick(row, "country") ?? inferCountryFromCity(pick(row, "city", "location")),
+          projectName: pick(row, "project") ?? (update.sourceDetail as string | undefined),
+          sheetName: importBatch.fileName,
+          team: (update.forwardedTeam as string | undefined) ?? pick(row, "forwardedteam", "team"),
+        });
+        update.budgetRaw = budgetInfo.raw;
+        if (budgetInfo.min != null) update.budgetMin = budgetInfo.min;
+        if (budgetInfo.max != null) update.budgetMax = budgetInfo.max;
+        update.budgetCurrency = ccy;
       }
       if (Object.keys(update).length) {
         await prisma.lead.update({ where: { id: r.lead.id }, data: update });

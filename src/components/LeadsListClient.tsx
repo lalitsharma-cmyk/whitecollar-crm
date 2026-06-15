@@ -438,6 +438,25 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
     finally { setBulkBusy(false); }
   }
 
+  // Recalculate Currency — ADMIN only (server enforces). Re-derives budgetCurrency
+  // for the selection against the current market rules / project mappings. Never
+  // touches budgetRaw or the numeric values.
+  async function recalcCurrency() {
+    if (bulkBusy) return;
+    setBulkBusy(true); setBulkErr(null);
+    try {
+      const r = await fetch("/api/leads/bulk", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "recalc_currency", leadIds: selectedIds }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) { setBulkErr(j.error ?? `Failed (${r.status})`); return; }
+      setBulkErr(`Recalculated — ${j.updated ?? 0} of ${j.scanned ?? selectedIds.length} updated.`);
+      clearSelection(); router.refresh();
+    } catch (e) { setBulkErr(`Network error: ${String(e).slice(0, 80)}`); }
+    finally { setBulkBusy(false); }
+  }
+
   // Bulk WhatsApp can't send server-side (no Meta API) — the endpoint returns a
   // list of wa.me draft links the agent opens one by one. Each is also logged
   // as a PLANNED activity server-side.
@@ -1221,6 +1240,16 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
                   className="inline-flex items-center gap-1 text-xs font-semibold bg-amber-50 text-amber-800 border border-amber-300 px-2.5 py-1.5 rounded-lg whitespace-nowrap flex-none"
                 >
                   <Pencil className="w-3.5 h-3.5" /> Edit fields
+                </button>
+              )}
+              {isAdmin && (
+                <button
+                  onClick={recalcCurrency}
+                  disabled={bulkBusy}
+                  title="Re-derive AED/INR from current market rules. Does not change the original budget text or the numbers."
+                  className="inline-flex items-center gap-1 text-xs font-semibold bg-emerald-50 text-emerald-800 border border-emerald-300 px-2.5 py-1.5 rounded-lg whitespace-nowrap flex-none disabled:opacity-50"
+                >
+                  ₹/AED Recalc currency
                 </button>
               )}
               {canReassign && (

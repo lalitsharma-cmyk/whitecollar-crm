@@ -280,7 +280,8 @@ model Lead {
   // requirements
   budgetMin       Float?      // AED for Dubai team
   budgetMax       Float?
-  budgetCurrency  String      @default("AED")
+  budgetCurrency  String      @default("AED")   // "AED" | "INR" | "UNKNOWN" (UNKNOWN = currency unresolved → show budgetRaw only, admin review)
+  budgetRaw       String?     // verbatim imported budget text ("10 Cr", "AED 800K - AED 1M") — display source of truth; never auto-converted
   configuration   String?     // "2BHK" / "Penthouse" / "Plot"
   notesShort      String?     // one-liner requirement (legacy)
   remarks         String?     // long remarks (matches sheet's Remarks column)

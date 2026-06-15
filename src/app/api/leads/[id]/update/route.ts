@@ -155,6 +155,13 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     ? await prisma.lead.findUnique({ where: { id }, select: Object.fromEntries(trackedKeys.map((f) => [f, true])) as Prisma.LeadSelect })
     : null;
 
+  // A manual numeric budget edit supersedes any imported verbatim text: clear
+  // budgetRaw so the freshly-typed value is what displays (displayBudget prefers
+  // budgetRaw). Skipped if the caller set budgetRaw explicitly.
+  if (("budgetMin" in updates || "budgetMax" in updates) && !("budgetRaw" in updates)) {
+    updates.budgetRaw = null;
+  }
+
   await prisma.lead.update({ where: { id }, data: updates as never });
 
   if (beforeRow) {

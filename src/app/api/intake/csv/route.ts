@@ -8,6 +8,8 @@ import { prisma } from "@/lib/prisma";
 import { extractFromRemarks, mergeSuggestions } from "@/lib/remarkAutofill";
 import { splitPhones, normalizePhone } from "@/lib/phone";
 import { resolveTeam, routingFieldsFor } from "@/lib/teamRouting";
+import { interpretBudget, resolveBudgetCurrency } from "@/lib/budgetCurrency";
+import { inferCountryFromCity } from "@/lib/cityCountry";
 import { canonicalStatus } from "@/lib/lead-statuses";
 import { audit, reqMeta } from "@/lib/audit";
 // runIntelligenceCheck is called inside ingestLead() for every new (non-deduped)
@@ -62,15 +64,10 @@ function pick(row: Row, ...candidates: string[]): string | undefined {
     }
   }
 }
-function parseBudget(s?: string): number | undefined {
-  if (!s) return;
-  const cleaned = s.replace(/[^\d.kKmM]/g, "");
-  const num = parseFloat(cleaned);
-  if (isNaN(num)) return;
-  if (/m/i.test(cleaned)) return num * 1_000_000;
-  if (/k/i.test(cleaned)) return num * 1_000;
-  return num < 1000 ? num * 1_000_000 : num;
-}
+// NOTE: budget parsing now uses the shared, currency-aware parser via
+// interpretBudget() from "@/lib/budgetCurrency" (handles Cr/Lakh/M/K correctly,
+// splits ranges, and preserves the verbatim text). The old local parser silently
+// 10×–100× corrupted Cr/Lakh values and has been removed.
 function parseSource(s?: string): LeadSource {
   if (!s) return LeadSource.CSV_IMPORT;
   const n = norm(s);
@@ -429,14 +426,22 @@ export async function POST(req: NextRequest) {
     // any from the Alt-Number column. Cap at one for now.
     const altPhone = phones[1] ?? altPhones.find((p) => p !== phone);
 
+    // Budget: parse with the shared currency-aware parser. interpretBudget keeps
+    // the verbatim text (budgetRaw), splits ranges ("10-12 Cr" → 10cr..12cr with
+    // unit inheritance), and never strips Cr/Lakh. Currency is resolved later
+    // (after team routing) by strict priority — see the budget block below.
+    const budgetInfo = interpretBudget(
+      pick(row, "budgetaed", "budget", "budgetmin", "minbudget"),
+      pick(row, "budgetmax", "maxbudget"),
+    );
     try {
       const r = await ingestLead({
         name: name ?? phone ?? email ?? "Unknown",
         phone, email,
         city: pick(row, "city", "location", "address"),
         configuration: pick(row, "configuration", "config", "bhk", "type"),
-        budgetMin: parseBudget(pick(row, "budgetaed", "budget", "budgetmin", "minbudget")),
-        budgetMax: parseBudget(pick(row, "budgetmax", "maxbudget")),
+        budgetMin: budgetInfo.min ?? undefined,
+        budgetMax: budgetInfo.max ?? undefined,
         notesShort: pick(row, "message", "requirement", "todo"),
         tags: pick(row, "tags", "tag"),
         source: parseSource(pick(row, "source")),
@@ -578,16 +583,27 @@ export async function POST(req: NextRequest) {
         // Bump status from NEW to CONTACTED — they're existing relationships
         update.status = "CONTACTED";
       }
-      const explicitCcy = pick(row, "currency", "budgetcurrency");
-      if (explicitCcy) {
-        const c = explicitCcy.toUpperCase();
-        if (c === "AED" || c === "INR") update.budgetCurrency = c;
-      } else {
-        const budgetHeader = Object.keys(row).find((k) => /budget/i.test(k));
-        if (budgetHeader) {
-          if (/aed/i.test(budgetHeader)) update.budgetCurrency = "AED";
-          else if (/inr|₹|rs/i.test(budgetHeader)) update.budgetCurrency = "INR";
-        }
+      // ── Budget: verbatim raw + market-resolved currency (strict priority) ──
+      // budgetRaw preserves EXACTLY what the sheet had ("10 Cr", "4 Cr - 5 Cr").
+      // Currency priority: explicit col/symbol → country → project/developer →
+      // sheet name → team → UNKNOWN (never guessed). On dedupe, only a row that
+      // actually carries a budget updates these — a blank never wipes an existing
+      // value (latest-sheet-wins, merge-safe).
+      if (budgetInfo.raw) {
+        const budgetHeader = Object.keys(row).find((k) => /budget/i.test(k)) ?? "";
+        const headerHint = /aed|dhs/i.test(budgetHeader) ? "AED"
+          : /inr|₹|rs/i.test(budgetHeader) ? "INR" : null;
+        const ccy = resolveBudgetCurrency({
+          explicit: pick(row, "currency", "budgetcurrency") ?? headerHint,
+          country: pick(row, "country") ?? inferCountryFromCity(pick(row, "city", "location")),
+          projectName: pick(row, "project") ?? (update.sourceDetail as string | undefined),
+          sheetName: importBatch.fileName,
+          team: (update.forwardedTeam as string | undefined) ?? forceTeam ?? pick(row, "forwardedteam", "team"),
+        });
+        update.budgetRaw = budgetInfo.raw;
+        if (budgetInfo.min != null) update.budgetMin = budgetInfo.min;
+        if (budgetInfo.max != null) update.budgetMax = budgetInfo.max;
+        update.budgetCurrency = ccy;
       }
       // Preserve EVERY unmapped Excel column verbatim (original header → value) in
       // customFields, so no sheet data is silently dropped. On a dedupe, merge with

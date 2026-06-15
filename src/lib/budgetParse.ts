@@ -85,3 +85,29 @@ function trimZeros(n: number): string {
   if (Number.isInteger(n)) return String(n);
   return n.toFixed(2).replace(/\.?0+$/, "");
 }
+
+/**
+ * Canonical budget display. The verbatim imported text (budgetRaw) ALWAYS wins —
+ * "10 Cr" stays "10 Cr", "AED 800K - AED 1M" stays exactly that. Only when there
+ * is no raw text do we fall back to formatting the numeric value.
+ *
+ * UNKNOWN currency: we must NOT run the currency formatter (it would imply AED),
+ * so we show the bare number tagged for review. "Wrong currency is worse than
+ * unknown currency."
+ */
+export function displayBudget(lead: {
+  budgetRaw?: string | null;
+  budgetMin?: number | null;
+  budgetMax?: number | null;
+  budgetCurrency?: string | null;
+}): string {
+  const raw = lead.budgetRaw?.trim();
+  if (raw) return raw; // verbatim original — preferred everywhere
+  const ccy = (lead.budgetCurrency || "AED").toUpperCase();
+  const min = lead.budgetMin;
+  if (min == null || min === 0) return "—";
+  if (ccy === "UNKNOWN") return `${min.toLocaleString("en-IN")} (currency?)`;
+  const lo = formatBudget(min, ccy);
+  const hi = lead.budgetMax && lead.budgetMax > min ? formatBudget(lead.budgetMax, ccy) : null;
+  return hi ? `${lo} – ${hi}` : lo;
+}

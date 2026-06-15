@@ -67,9 +67,13 @@ export async function quickCreateLeadAction(
     });
 
     // Mirror the full form: also persist remarks into the rich `remarks` column
-    // so the lead-detail page shows the captured situation immediately.
-    if (notes) {
-      await prisma.lead.update({ where: { id: lead.id }, data: { remarks: notes } });
+    // so the lead-detail page shows the captured situation immediately, and keep
+    // the budget exactly as the agent typed it (budgetRaw is the display source).
+    const post: Record<string, unknown> = {};
+    if (notes) post.remarks = notes;
+    if (budgetRaw) post.budgetRaw = budgetRaw;
+    if (Object.keys(post).length) {
+      await prisma.lead.update({ where: { id: lead.id }, data: post });
     }
 
     return { ok: true, leadId: lead.id };

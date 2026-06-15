@@ -7,6 +7,8 @@ import { leadScopeWhere } from "@/lib/leadScope";
 import { LeadStatus, LeadSource, ActivityType, ActivityStatus } from "@prisma/client";
 import { crossTeamWarning, normalizeTeam } from "@/lib/teamRouting";
 import { parseBudget } from "@/lib/budgetParse";
+import { resolveBudgetCurrency } from "@/lib/budgetCurrency";
+import { inferCountryFromCity } from "@/lib/cityCountry";
 
 // Allow-list mirrors /api/leads/[id]/reject — keep these in sync.
 const REJECT_REASONS = new Set([
@@ -256,6 +258,44 @@ export async function POST(req: NextRequest) {
       request: reqMeta(req),
     });
     return NextResponse.json({ ok: true, updated: r.count });
+  }
+
+  if (action === "recalc_currency") {
+    // ADMIN-only. Re-derive budgetCurrency for the selected leads against the
+    // CURRENT market rules / project mappings — without touching budgetRaw or the
+    // numeric values. Lets currency improve over time (fix UNKNOWN, or correct a
+    // currency after a project→market mapping is added). Only applies a CONFIDENT
+    // result that differs from the stored one; never downgrades a set currency to
+    // UNKNOWN. Every change is recorded in LeadFieldHistory.
+    if (me.role !== "ADMIN") {
+      return NextResponse.json({ error: "Only an admin can recalculate currency." }, { status: 403 });
+    }
+    const leads = await prisma.lead.findMany({
+      where: { id: { in: ids }, ...scope },
+      select: { id: true, budgetRaw: true, budgetCurrency: true, country: true, city: true, sourceDetail: true, forwardedTeam: true },
+    });
+    let updated = 0;
+    const hist: { leadId: string; field: string; oldValue: string | null; newValue: string | null; changedById: string; source: string }[] = [];
+    for (const l of leads) {
+      const ccy = resolveBudgetCurrency({
+        explicit: l.budgetRaw,                                  // ₹/AED/INR hint inside the verbatim text
+        country: l.country ?? inferCountryFromCity(l.city),
+        projectName: l.sourceDetail,
+        team: l.forwardedTeam,
+      });
+      if (ccy !== "UNKNOWN" && ccy !== l.budgetCurrency) {
+        await prisma.lead.update({ where: { id: l.id }, data: { budgetCurrency: ccy } });
+        hist.push({ leadId: l.id, field: "budgetCurrency", oldValue: l.budgetCurrency, newValue: ccy, changedById: me.id, source: "recalc-currency" });
+        updated++;
+      }
+    }
+    if (hist.length) prisma.leadFieldHistory.createMany({ data: hist }).catch(() => {});
+    await audit({
+      userId: me.id, action: "lead.bulk.recalc_currency", entity: "Lead",
+      meta: { count: updated, scanned: leads.length, leadIds: ids.slice(0, 50) },
+      request: reqMeta(req),
+    });
+    return NextResponse.json({ ok: true, updated, scanned: leads.length });
   }
 
   if (action === "set_fields") {

@@ -155,6 +155,9 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
     if (sp.budgetTo)   { const n = parseFloat(sp.budgetTo);   if (!isNaN(n)) bWhere.lte = n; }
     if (Object.keys(bWhere).length) where.budgetMin = bWhere;
   }
+  // Currency-review filter — ?ccy=unknown surfaces leads whose budget currency
+  // couldn't be resolved (need admin review / Recalculate Currency).
+  if (sp.ccy === "unknown") where.budgetCurrency = "UNKNOWN";
   // Legacy budget preset (keep backward-compatible)
   if (sp.budgetPreset) {
     const preset = BUDGET_PRESETS.find(b => b.key === sp.budgetPreset);
@@ -767,8 +770,12 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
             owner: l.owner ? { name: l.owner.name, avatarColor: l.owner.avatarColor ?? "bg-slate-500" } : null,
             // Command Center fields
             budgetFormatted: (() => {
+              // Verbatim imported text wins ("10 Cr", "AED 800K - AED 1M").
+              if (l.budgetRaw?.trim()) return l.budgetRaw.trim();
               const fmt = formatBudget(l.budgetMin, l.budgetCurrency);
               if (fmt === "—") return null;
+              // UNKNOWN currency → show the bare number, never a guessed prefix.
+              if (l.budgetCurrency === "UNKNOWN") return fmt;
               // INR → ₹ symbol; AED/other → keep currency code
               const prefix = l.budgetCurrency === "INR" ? "₹" : l.budgetCurrency;
               // Only show a range when budgetMax is a genuine UPPER bound (> min).
@@ -810,8 +817,10 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
             } : null,
             // Legacy fields kept for bulk actions and mobile card
             budget: (() => {
+              if (l.budgetRaw?.trim()) return l.budgetRaw.trim();
               const fmt = formatBudget(l.budgetMin, l.budgetCurrency);
               if (fmt === "—") return null;
+              if (l.budgetCurrency === "UNKNOWN") return fmt;
               const prefix = l.budgetCurrency === "INR" ? "₹" : l.budgetCurrency;
               return `${prefix} ${fmt}`;
             })(),

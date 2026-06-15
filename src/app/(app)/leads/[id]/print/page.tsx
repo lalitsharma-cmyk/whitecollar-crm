@@ -2,7 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { notFound, redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth";
 import { fmtIST12, fmtISTDate } from "@/lib/datetime";
-import { formatBudget } from "@/lib/budgetParse";
+import { displayBudget } from "@/lib/budgetParse";
 import PrintButton from "./PrintButton";
 
 export const dynamic = "force-dynamic";
@@ -122,7 +122,6 @@ export default async function LeadPrintPage({
 
   if (!lead) notFound();
 
-  const budgetCcy: "AED" | "INR" = lead.budgetCurrency === "INR" ? "INR" : "AED";
   const printedAt = fmtIST12(new Date());
 
   return (
@@ -207,7 +206,7 @@ export default async function LeadPrintPage({
           />
           <Row
             label="Budget"
-            value={lead.budgetMin ? formatBudget(lead.budgetMin, budgetCcy) : null}
+            value={(() => { const d = displayBudget(lead); return d === "—" ? null : d; })()}
           />
           <Row
             label="Fund Readiness"
