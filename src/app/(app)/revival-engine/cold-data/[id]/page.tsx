@@ -8,7 +8,7 @@ import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { leadScopeWhere } from "@/lib/leadScope";
+import { leadScopeWhere, COLD_ORIGINS } from "@/lib/leadScope";
 import { formatDistanceToNow, format } from "date-fns";
 import ConversationStreamCard from "@/components/ConversationStreamCard";
 import QuickNoteCard from "@/components/QuickNoteCard";
@@ -35,7 +35,7 @@ export default async function ColdDataDetailPage({ params, searchParams }: { par
   const scope = await leadScopeWhere(me);
 
   const lead = await prisma.lead.findFirst({
-    where: { id, OR: [{ isColdCall: true }, { leadOrigin: "COLD" }], ...scope },
+    where: { id, OR: [{ isColdCall: true }, { leadOrigin: { in: COLD_ORIGINS } }], ...scope },
     include: {
       owner: { select: { id: true, name: true, avatarColor: true } },
       callLogs: { orderBy: { startedAt: "desc" }, take: 50, include: { user: { select: { name: true } } } },

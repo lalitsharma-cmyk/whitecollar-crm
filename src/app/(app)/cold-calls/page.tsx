@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
 import { Prisma } from "@prisma/client";
 import { SUPPRESSED_STATUSES, statusColor } from "@/lib/lead-statuses";
+import { COLD_ORIGINS } from "@/lib/leadScope";
 import { startOfDay, startOfWeek } from "date-fns";
 import Link from "next/link";
 import ColdDataAdminControls from "@/components/ColdDataAdminControls";
@@ -41,7 +42,7 @@ export default async function ColdDataPage({ searchParams }: { searchParams: Pro
 
   // Agents only see cold data assigned to them. Admin sees everything.
   const baseScope: Prisma.LeadWhereInput = isAdminOrMgr ? {} : { ownerId: me.id };
-  const originCold: Prisma.LeadWhereInput = { leadOrigin: "COLD" };
+  const originCold: Prisma.LeadWhereInput = { leadOrigin: { in: COLD_ORIGINS } };
   const unassigned: Prisma.LeadWhereInput = { ownerId: null };
 
   // Status-based filter — "all" shows everything, "unassigned" is admin shortcut

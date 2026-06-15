@@ -451,7 +451,11 @@ export async function POST(req: NextRequest) {
 
       const update: Record<string, unknown> = {};
       // Stamp the import origin on every new row — drives Leads vs Revival Engine separation.
-      if (!r.deduped) update.leadOrigin = importType;
+      // Phase D: ALL bulk imports land in MASTER_DATA (untriaged repository).
+      // Admin then bulk Moves to Leads / Revival. No record auto-enters the
+      // active pipeline. (The batch's importType metadata still records the
+      // admin's intent for reference.)
+      if (!r.deduped) update.leadOrigin = "MASTER_DATA";
       // Stamp the import batch on every NEW row so the whole import can be
       // rolled back / soft-deleted later. Deduped (updated) rows are NOT
       // stamped — they pre-existed and must survive a batch rollback.
@@ -575,11 +579,10 @@ export async function POST(req: NextRequest) {
         update.ownerId = assignToUserId;
         update.assignedAt = new Date();
         update.isColdCall = false;
-        // Pre-assigned leads are ACTIVE assigned leads — never cold, even when the
-        // batch was ALSO flagged cold. Without this they kept leadOrigin=COLD and
-        // landed in /cold-calls while being assigned (the import+pre-assign bug).
-        // Pre-assign wins: cold + pre-assign → active assigned lead.
-        update.leadOrigin = "ACTIVE";
+        // Phase D: even pre-assigned imports land in MASTER_DATA first (intended
+        // owner is recorded, but admin must Move-to-Leads to activate). Keeps the
+        // "all imports land in Master Data; no auto-movement" rule intact.
+        update.leadOrigin = "MASTER_DATA";
         // Bump status from NEW to CONTACTED — they're existing relationships
         update.status = "CONTACTED";
       }

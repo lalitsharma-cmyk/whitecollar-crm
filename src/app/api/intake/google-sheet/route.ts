@@ -192,6 +192,8 @@ export async function POST(req: NextRequest) {
       const update: Record<string, unknown> = {};
       // Stamp the batch on NEW rows so a rollback can find + soft-delete them.
       if (!r.deduped) update.importBatchId = importBatch.id;
+      // Phase D: bulk imports land in MASTER_DATA (untriaged); admin moves them.
+      if (!r.deduped) update.leadOrigin = "MASTER_DATA";
       const co = pick(row, "company"); if (co) update.company = co;
       const ad = pick(row, "address"); if (ad) update.address = ad;
       const wc = pick(row, "whoisclient", "client", "clientinfo"); if (wc) update.whoIsClient = wc;

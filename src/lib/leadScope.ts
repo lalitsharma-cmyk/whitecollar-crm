@@ -133,8 +133,17 @@ export async function loadOwnedLead(leadId: string): Promise<
 // legacy value; "REVIVAL" is the canonical name — exclude both so the fix holds
 // across the upcoming leadOrigin migration.)
 export const COLD_ORIGINS = ["COLD", "REVIVAL"];
-/** Canonical fragment: only non-cold/revival records participate in lead metrics. */
-export const ACTIVE_ORIGIN_WHERE = { leadOrigin: { notIn: COLD_ORIGINS } };
+// Phase D vocabulary: every lead belongs to exactly ONE section by leadOrigin.
+//   ACTIVE pipeline (Leads/Dashboard/Team/Reports) → ACTIVE_LEAD (legacy "ACTIVE")
+//   Revival Engine                                  → REVIVAL    (legacy "COLD")
+//   Master Data repository ONLY (untriaged imports) → MASTER_DATA (legacy PORTFOLIO/SYSTEM)
+// We accept BOTH the legacy and the new value during/after the migration so there
+// is no breakage window. Active is now an ALLOW-LIST (not "anything but cold"),
+// so freshly-imported MASTER_DATA records stay out of Leads until explicitly moved.
+export const ACTIVE_ORIGINS = ["ACTIVE", "ACTIVE_LEAD"];
+export const MASTER_DATA_ORIGINS = ["MASTER_DATA", "PORTFOLIO", "SYSTEM"];
+/** Canonical fragment: only ACTIVE-pipeline records participate in lead metrics. */
+export const ACTIVE_ORIGIN_WHERE = { leadOrigin: { in: ACTIVE_ORIGINS } };
 
 /** Canonical status fragment for ACTIVE leads. Combine with a scope or an ownerId. */
 export const ACTIVE_STATUS_WHERE = { currentStatus: { notIn: SUPPRESSED_STATUSES } };
@@ -145,13 +154,13 @@ export const WON_STATUS_WHERE = { currentStatus: { in: BOOKED_STATUSES } };
 
 /** A specific owner's ACTIVE, non-deleted, non-cold leads (Profile / Team / Team-detail / Scoreboards). */
 export function ownerActiveWhere(ownerId: string) {
-  return { ownerId, deletedAt: null, leadOrigin: { notIn: COLD_ORIGINS }, currentStatus: { notIn: SUPPRESSED_STATUSES } };
+  return { ownerId, deletedAt: null, leadOrigin: { in: ACTIVE_ORIGINS }, currentStatus: { notIn: SUPPRESSED_STATUSES } };
 }
 /** A specific owner's total non-deleted, non-cold leads, any status (cold lives in Revival, not the agent's book). */
 export function ownerTotalWhere(ownerId: string) {
-  return { ownerId, deletedAt: null, leadOrigin: { notIn: COLD_ORIGINS } };
+  return { ownerId, deletedAt: null, leadOrigin: { in: ACTIVE_ORIGINS } };
 }
 /** A specific owner's WON/booked (both casings), non-deleted deals. */
 export function ownerWonWhere(ownerId: string) {
-  return { ownerId, deletedAt: null, leadOrigin: { notIn: COLD_ORIGINS }, currentStatus: { in: BOOKED_STATUSES } };
+  return { ownerId, deletedAt: null, leadOrigin: { in: ACTIVE_ORIGINS }, currentStatus: { in: BOOKED_STATUSES } };
 }

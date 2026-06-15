@@ -1,7 +1,7 @@
 import { type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
-import { leadScopeWhere } from "@/lib/leadScope";
+import { leadScopeWhere, ACTIVE_ORIGINS } from "@/lib/leadScope";
 import { LeadSource, AIScore, Potential, Prisma } from "@prisma/client";
 import { SUPPRESSED_STATUSES, CLOSING_STATUSES } from "@/lib/lead-statuses";
 
@@ -36,7 +36,7 @@ export async function GET(req: NextRequest) {
   const scope = await leadScopeWhere(me);
   const where: Prisma.LeadWhereInput = sp.showCold === "1"
     ? { ...scope }
-    : { ...scope, isColdCall: false, leadOrigin: "ACTIVE" };
+    : { ...scope, isColdCall: false, leadOrigin: { in: ACTIVE_ORIGINS } };
 
   // Pipeline filter tab (?filter=)
   const filterTab = sp.filter ?? "all";

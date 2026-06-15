@@ -35,13 +35,13 @@ export async function POST(req: NextRequest) {
 
   // ── Move between sections (leadOrigin flip) ──────────────────────────
   if (action === "move_to_leads" || action === "move_to_revival") {
-    const target = action === "move_to_leads" ? "ACTIVE" : "COLD";
+    const target = action === "move_to_leads" ? "ACTIVE_LEAD" : "REVIVAL";
     const before = await prisma.lead.findMany({ where: { id: { in: ids } }, select: { id: true, leadOrigin: true } });
     const changed = before.filter((b) => b.leadOrigin !== target);
     if (changed.length) {
       await prisma.lead.updateMany({
         where: { id: { in: changed.map((c) => c.id) } },
-        data: { leadOrigin: target, isColdCall: target === "COLD" },
+        data: { leadOrigin: target, isColdCall: target === "REVIVAL" },
       });
       writeHistory(changed.map((c) => ({ leadId: c.id, field: "leadOrigin", oldValue: c.leadOrigin, newValue: target, changedById: me.id, source: "master-data-bulk" })));
     }

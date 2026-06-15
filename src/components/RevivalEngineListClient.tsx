@@ -174,7 +174,7 @@ export default function RevivalEngineListClient({ leads, myId, isAdminOrMgr, cut
           const wa  = l.phone ? (whatsappLink(l.phone, `Hi ${l.name.split(" ")[0]}, this is from White Collar Realty. Just checking in — any update on your property search?`) ?? "") : "";
           const tel = l.phone ? (telLink(l.phone) ?? "") : "";
           const isSelected = selectedIds.has(l.id);
-          const isOriginCold = l.leadOrigin === "COLD";
+          const isOriginCold = l.leadOrigin === "COLD" || l.leadOrigin === "REVIVAL";
           const stale = isStale(l);
           const statusMeta = REVIVAL_STATUSES.find(s => s.v === l.status);
 
@@ -291,7 +291,7 @@ export default function RevivalEngineListClient({ leads, myId, isAdminOrMgr, cut
               const wa  = l.phone ? (whatsappLink(l.phone, `Hi ${l.name.split(" ")[0]}, this is from White Collar Realty. Just checking in — any update on your property search?`) ?? "") : "";
               const tel = l.phone ? (telLink(l.phone) ?? "") : "";
               const isSelected = selectedIds.has(l.id);
-              const isOriginCold = l.leadOrigin === "COLD";
+              const isOriginCold = l.leadOrigin === "COLD" || l.leadOrigin === "REVIVAL";
               const stale = isStale(l);
               const statusMeta = REVIVAL_STATUSES.find(s => s.v === l.status);
 

@@ -8,11 +8,12 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const me = await requireUser();
   const lead = await prisma.lead.findUnique({ where: { id }, select: { id: true, leadOrigin: true, status: true } });
   if (!lead) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  if (lead.leadOrigin !== "COLD") return NextResponse.json({ error: "Already an active lead" }, { status: 400 });
+  if (lead.leadOrigin !== "COLD" && lead.leadOrigin !== "REVIVAL") return NextResponse.json({ error: "Already an active lead" }, { status: 400 });
   await prisma.lead.update({
     where: { id },
     data: {
-      leadOrigin: "ACTIVE",
+      leadOrigin: "ACTIVE_LEAD",
+      isColdCall: false,
       lastTouchedAt: new Date(),
     },
   });

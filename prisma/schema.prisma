@@ -345,7 +345,7 @@ model Lead {
   routingMethod   String?     // "manual" | "import" | "rule" | "round_robin_pool" | "admin_queue"
   routingSource   String?     // e.g. "website:dubai-property", "csv:forceTeam", "manual_form", "whatsapp"
   routingReason   String?     // human-readable, e.g. "Dubai property page" / "agent picked India"
-  leadOrigin      String      @default("ACTIVE") // "ACTIVE" | "COLD" | "PORTFOLIO" | "SYSTEM"
+  leadOrigin      String      @default("ACTIVE_LEAD") // Phase D: ACTIVE_LEAD (Leads) | REVIVAL (Revival) | MASTER_DATA (repository). Legacy ACTIVE/COLD/PORTFOLIO/SYSTEM still honored during transition.
   // SLA reconciler
   slaFirstCallBy  DateTime?   // ownerId-set + 15 min — escalate if no call by then
   slaEscalated    Boolean     @default(false)  // already notified admin

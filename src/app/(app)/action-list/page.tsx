@@ -3,6 +3,7 @@ import { requireUser } from "@/lib/auth";
 import { SUPPRESSED_STATUSES, CLOSING_STATUSES } from "@/lib/lead-statuses";
 import { formatDistanceToNow } from "date-fns";
 import { runReconciler } from "@/lib/reconciler";
+import { ACTIVE_ORIGINS } from "@/lib/leadScope";
 import { waDraftLink } from "@/lib/wa";
 import Link from "next/link";
 import ActionCardClient from "@/components/ActionCardClient";
@@ -121,7 +122,7 @@ export default async function ActionListPage() {
   // Scope: Admin/Manager see all; Agent sees only own
   const scope = me.role === "AGENT" ? { ownerId: me.id } : {};
 
-  const activeScope = { ...scope, deletedAt: null, leadOrigin: "ACTIVE" };
+  const activeScope = { ...scope, deletedAt: null, leadOrigin: { in: ACTIVE_ORIGINS } };
   const leadSelect = {
     id: true, name: true, phone: true, status: true,
     forwardedTeam: true, lastTouchedAt: true, followupDate: true,

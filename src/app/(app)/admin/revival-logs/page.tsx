@@ -3,6 +3,7 @@ import { requireUser } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { fmtIST12 } from "@/lib/datetime";
+import { COLD_ORIGINS } from "@/lib/leadScope";
 
 export const dynamic = "force-dynamic";
 
@@ -52,7 +53,7 @@ export default async function RevivalLogsPage({
   // Activities on cold-data leads (leadOrigin = "COLD")
   const activities = await prisma.activity.findMany({
     where: {
-      lead: { leadOrigin: "COLD" },
+      lead: { leadOrigin: { in: COLD_ORIGINS } },
       ...(agentFilter !== "all" ? { userId: agentFilter } : {}),
     },
     include: {
