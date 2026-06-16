@@ -114,10 +114,10 @@ export default function MasterDataRecordsTable({ rows, agents, statuses, isSuper
               <th className="px-3 py-2 font-semibold">Status</th>
               <th className="px-3 py-2 font-semibold">Bucket</th>
               <th className="px-3 py-2 font-semibold">Agent</th>
-              <th className="px-3 py-2 font-semibold">Team</th>
-              <th className="px-3 py-2 font-semibold">Source</th>
-              <th className="px-3 py-2 font-semibold">Created</th>
-              <th className="px-3 py-2 font-semibold">Import</th>
+              <th className="px-3 py-2 font-semibold hidden sm:table-cell">Team</th>
+              <th className="px-3 py-2 font-semibold hidden md:table-cell">Source</th>
+              <th className="px-3 py-2 font-semibold hidden sm:table-cell">Created</th>
+              <th className="px-3 py-2 font-semibold hidden md:table-cell">Import</th>
             </tr>
           </thead>
           <tbody>
@@ -137,10 +137,10 @@ export default function MasterDataRecordsTable({ rows, agents, statuses, isSuper
                 </td>
                 <td className="px-3 py-2"><span className={`text-xs px-2 py-0.5 rounded-full border ${l.bucketClass}`}>{l.bucket}</span></td>
                 <td className="px-3 py-2 text-gray-700 dark:text-slate-300 whitespace-nowrap">{l.owner}</td>
-                <td className="px-3 py-2 text-gray-700 dark:text-slate-300">{l.team}</td>
-                <td className="px-3 py-2 text-gray-600 dark:text-slate-400 whitespace-nowrap">{l.sourceLabel}</td>
-                <td className="px-3 py-2 text-gray-600 dark:text-slate-400 whitespace-nowrap tabular-nums">{l.createdLabel}</td>
-                <td className="px-3 py-2 text-gray-500 dark:text-slate-400 text-xs max-w-[140px] truncate" title={l.importFile}>{l.importFile}</td>
+                <td className="px-3 py-2 text-gray-700 dark:text-slate-300 hidden sm:table-cell">{l.team}</td>
+                <td className="px-3 py-2 text-gray-600 dark:text-slate-400 whitespace-nowrap hidden md:table-cell">{l.sourceLabel}</td>
+                <td className="px-3 py-2 text-gray-600 dark:text-slate-400 whitespace-nowrap tabular-nums hidden sm:table-cell">{l.createdLabel}</td>
+                <td className="px-3 py-2 text-gray-500 dark:text-slate-400 text-xs max-w-[140px] truncate hidden md:table-cell" title={l.importFile}>{l.importFile}</td>
               </tr>
             ))}
           </tbody>

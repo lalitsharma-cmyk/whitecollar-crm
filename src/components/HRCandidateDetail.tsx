@@ -300,7 +300,7 @@ export default function HRCandidateDetail({ candidate: c, agents, me }: Props) {
         )}
         {panel === "followup" && (
           <div className="mt-3 p-3 bg-amber-50 border border-amber-200 rounded-lg space-y-2">
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               <select className={inp} value={fuType} onChange={e=>setFuType(e.target.value as HRFollowUpType)}>{FOLLOWUP_TYPES.map(t=><option key={t} value={t}>{fmt(t)}</option>)}</select>
               <input className={inp} type="datetime-local" value={fuDate} onChange={e=>setFuDate(e.target.value)} />
             </div>
@@ -327,7 +327,7 @@ export default function HRCandidateDetail({ candidate: c, agents, me }: Props) {
         )}
         {panel === "status" && (
           <div className="mt-3 p-3 bg-gray-50 border border-gray-200 rounded-lg space-y-2">
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               <div><div className="text-[10px] font-semibold text-gray-500 mb-1 uppercase">Active</div>
                 {activeStatusDefs.map(({key,label})=><button key={key} type="button" onClick={()=>setNewStatus(key)} className={`block w-full text-left px-2 py-1 rounded text-xs mb-0.5 ${newStatus===key?"bg-blue-100 text-blue-800 font-semibold":"hover:bg-gray-100 text-gray-700"}`}>{label}</button>)}
               </div>
@@ -349,8 +349,9 @@ export default function HRCandidateDetail({ candidate: c, agents, me }: Props) {
 
       {/* ── 2-column body ── */}
       <div className="grid lg:grid-cols-3 gap-4">
-        {/* Main */}
-        <div className="lg:col-span-2 space-y-4">
+        {/* Main — on mobile, push BELOW the info panels so phone users reach
+            phone/salary/owner/fit without scrolling the whole timeline first. */}
+        <div className="lg:col-span-2 space-y-4 order-2 lg:order-none">
           {pendingFollowUps.length > 0 && (
             <div className="card p-3 border-l-4 border-amber-400 bg-amber-50">
               <div className="text-xs font-semibold text-amber-800 mb-2">📅 Pending Follow-Ups ({pendingFollowUps.length})</div>

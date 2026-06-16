@@ -86,7 +86,7 @@ export default function HRRemindersCard({ events, todayIso, showOwner }: Props) 
   const label = dateLabel(selectedDate, todayIso);
 
   return (
-    <div className="rounded-2xl flex flex-col" style={{ background: "#0b1a33", color: "#fff", maxHeight: "calc(100vh - 2rem)" }}>
+    <div className="rounded-2xl flex flex-col" style={{ background: "#0b1a33", color: "#fff", maxHeight: "calc(100dvh - 2rem)" }}>
       <div className="flex items-center justify-between px-4 pt-4 pb-3">
         <span className="font-bold text-sm text-white">Today&apos;s Reminders</span>
         <div className="flex gap-2">

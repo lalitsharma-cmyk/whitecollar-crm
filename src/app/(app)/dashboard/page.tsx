@@ -449,7 +449,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
                 <div className="text-[10px] text-blue-700/70 mt-0.5">High-value dormant 30+ days</div>
               </Link>
             </div>
-            <div className="grid grid-cols-3 gap-3 mt-3">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
               <Link href="/activities?type=MEETING" className="card p-4 hover:shadow-lg transition">
                 <div className="text-3xl font-extrabold text-teal-700 dark:text-teal-300">{meetingsToday}</div>
                 <div className="text-xs font-semibold text-slate-800 dark:text-slate-200 mt-1">🤝 Meetings</div>
