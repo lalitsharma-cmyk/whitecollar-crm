@@ -101,8 +101,7 @@ export default async function TeamPage() {
   return (
     <>
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-        <h1 className="text-xl sm:text-2xl font-bold">Team & Roles</h1>
-        <button className="btn btn-primary self-start sm:self-auto justify-center">+ Invite User</button>
+        <h1 className="text-xl sm:text-2xl font-bold">Team &amp; Roles</h1>
       </div>
 
       {/* Acefone setup banner */}
