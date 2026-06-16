@@ -171,6 +171,8 @@ export default async function ColdDataDetailPage({ params, searchParams }: { par
         notes={lead.notes}
         forwardedTeam={lead.forwardedTeam}
         rawRemarks={lead.remarks}
+        isAdmin={me.role === "ADMIN"}
+        meId={me.id}
       />
 
       {/* ── Quick note ── */}

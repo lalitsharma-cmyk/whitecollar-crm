@@ -396,7 +396,6 @@ export default async function HelpPage() {
                 <ShortcutRow group="Global" keys={["?"]} label="Show this cheatsheet" />
                 <ShortcutRow group="Nav" keys={["g", "h"]} label="Dashboard (home)" />
                 <ShortcutRow group="Nav" keys={["g", "l"]} label="Leads" />
-                <ShortcutRow group="Nav" keys={["g", "p"]} label="Pipeline" />
                 <ShortcutRow group="Nav" keys={["g", "c"]} label="Cold calls / Revival Engine" />
                 <ShortcutRow group="Nav" keys={["g", "a"]} label="Action list" />
                 <ShortcutRow group="Nav" keys={["g", "v"]} label="Vault" />

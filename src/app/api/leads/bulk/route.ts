@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireRole, requireUser } from "@/lib/auth";
+import { requireUser } from "@/lib/auth";
 import { assignLeadTo } from "@/lib/leadIngest";
 import { audit, reqMeta } from "@/lib/audit";
 import { leadScopeWhere } from "@/lib/leadScope";
@@ -116,15 +116,6 @@ export async function POST(req: NextRequest) {
     await audit({ userId: me.id, action: "lead.bulk.delete", entity: "Lead",
       meta: { count: r.count, soft: true, leadIds: targetIds.slice(0, 50), leadNames: rows.map((x) => x.name).slice(0, 50) }, request: reqMeta(req) });
     return NextResponse.json({ ok: true, deleted: r.count });
-  }
-
-  if (action === "change_stage") {
-    await requireRole("ADMIN", "MANAGER");
-    const status = String(body.status ?? "");
-    const r = await prisma.lead.updateMany({ where: { id: { in: ids }, ...scope }, data: { status: status as LeadStatus } });
-    await audit({ userId: me.id, action: "lead.bulk.stage", entity: "Lead",
-      meta: { count: r.count, status, leadIds: ids.slice(0, 50) }, request: reqMeta(req) });
-    return NextResponse.json({ ok: true, updated: r.count });
   }
 
   if (action === "tag") {

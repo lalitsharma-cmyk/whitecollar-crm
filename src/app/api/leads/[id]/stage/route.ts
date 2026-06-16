@@ -14,11 +14,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const { me } = scoped;
   const body = await req.json().catch(() => ({}));
   const newStatus = String(body.status ?? "");
-  // §9.7 "What changed?" prompt: KanbanBoard sends an optional free-text note
-  // captured when the agent drops a card on a new stage. Stored in the
-  // STATUS_CHANGE activity description so the manager sees WHY the stage moved,
-  // not just THAT it did. Trimmed + capped so a paste of a giant blob doesn't
-  // bloat the timeline.
+  // Optional free-text "What changed?" note that accompanies a status change.
+  // Stored in the STATUS_CHANGE activity description so the manager sees WHY the
+  // status moved, not just THAT it did. Trimmed + capped so a paste of a giant
+  // blob doesn't bloat the timeline.
   const changeNote = String(body.changeNote ?? "").trim().slice(0, 500);
   if (!(Object.values(LeadStatus) as string[]).includes(newStatus)) {
     return NextResponse.json({ error: "Invalid stage" }, { status: 400 });

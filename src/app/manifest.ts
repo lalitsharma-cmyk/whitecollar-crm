@@ -20,7 +20,6 @@ export default function manifest(): MetadataRoute.Manifest {
     ],
     shortcuts: [
       { name: "New Lead",   short_name: "New", url: "/leads/new", icons: [{ src: "/icon-192.png", sizes: "192x192" }] },
-      { name: "Pipeline",   short_name: "Pipe", url: "/pipeline", icons: [{ src: "/icon-192.png", sizes: "192x192" }] },
       { name: "AI Assistant", short_name: "AI",  url: "/ai",      icons: [{ src: "/icon-192.png", sizes: "192x192" }] },
     ],
   };

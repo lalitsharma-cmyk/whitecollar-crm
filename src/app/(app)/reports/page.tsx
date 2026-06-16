@@ -436,7 +436,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
           "What deals are stuck?". Each links to the underlying drill-down. */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
         {/* 1. WEIGHTED REVENUE FORECAST */}
-        <Link href="/pipeline" className="card p-4 border-l-4 border-emerald-500 hover:shadow-lg transition active:bg-emerald-50">
+        <Link href="/leads" className="card p-4 border-l-4 border-emerald-500 hover:shadow-lg transition active:bg-emerald-50">
           <div className="text-[10px] uppercase tracking-widest text-emerald-700 font-bold">
             💰 Forecasted revenue
           </div>
@@ -444,7 +444,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
             {fmtMoneyDual({ aed: forecastAed, inr: forecastInr })}
           </div>
           <div className="text-[11px] text-emerald-700/70 mt-1">
-            Weighted active pipeline · all teams · open pipeline-stage moves change this
+            Weighted active pipeline · all teams · status changes update this
           </div>
         </Link>
 
@@ -471,7 +471,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
         </Link>
 
         {/* 3. STALLED DEAL AGING */}
-        <Link href="/pipeline" className="card p-4 border-l-4 border-amber-500 hover:shadow-lg transition active:bg-amber-50">
+        <Link href="/leads?when=overdue" className="card p-4 border-l-4 border-amber-500 hover:shadow-lg transition active:bg-amber-50">
           <div className="text-[10px] uppercase tracking-widest text-amber-700 font-bold">
             ⏳ Stalled deals
           </div>

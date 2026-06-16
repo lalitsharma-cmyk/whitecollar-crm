@@ -50,6 +50,8 @@ import ChangeHistoryCard from "@/components/ChangeHistoryCard";
 import ImportedFieldsCard from "@/components/ImportedFieldsCard";
 import PreviousHistoryCard from "@/components/PreviousHistoryCard";
 import { getCustomerHistory } from "@/lib/customerHistory";
+import DuplicateIntentBanner from "@/components/DuplicateIntentBanner";
+import { getDuplicateIntent } from "@/lib/duplicateIntent";
 import { isAiPilotLead } from "@/lib/ai-openai";
 import { getLatestClaudeAnalysis, claudeEnabled } from "@/lib/ai-claude";
 import { getLatestGptIntelligence, gptIntelligenceEnabled } from "@/lib/ai-gpt-intelligence";
@@ -165,6 +167,7 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
   // Previous History Found — same customer's earlier enquiries anywhere
   // (Leads / Revival / Master Data / Closed). null when there is no prior record.
   const customerHistory = await getCustomerHistory(lead.phone, lead.email, lead.id).catch(() => null);
+  const dupIntent = await getDuplicateIntent(lead.phone, lead.email, lead.id).catch(() => null);
 
   // Auto-detection queries — run after notFound() guard.
   const [interestNotes, unmatchedMentions] = await Promise.all([
@@ -878,6 +881,8 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
             viewerTeam={me.team}
             controls={remarkControls}
             agents={agents.map(a => ({ id: a.id, name: a.name }))}
+            isAdmin={me.role === "ADMIN"}
+            meId={me.id}
           />
         </div>
 
@@ -975,6 +980,7 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
         </div>
 
         {/* Imported sheet columns that don't map to a known CRM field — verbatim */}
+        <DuplicateIntentBanner intent={dupIntent} />
         {customerHistory && <PreviousHistoryCard history={customerHistory} currentId={lead.id} />}
         <ImportedFieldsCard customFields={lead.customFields} />
 

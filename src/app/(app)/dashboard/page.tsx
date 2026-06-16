@@ -438,7 +438,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
                 <div className="text-xs font-semibold text-orange-900 mt-1">⏰ Overdue follow-ups</div>
                 <div className="text-[10px] text-orange-700/70 mt-0.5">Follow-up date in the past</div>
               </Link>
-              <Link href="/pipeline" className="card p-4 border-l-4 border-emerald-500 hover:shadow-lg transition active:bg-emerald-50">
+              <Link href="/leads?status=NEGOTIATION" className="card p-4 border-l-4 border-emerald-500 hover:shadow-lg transition active:bg-emerald-50">
                 <div className="text-3xl font-extrabold text-emerald-700">{closableDeals}</div>
                 <div className="text-xs font-semibold text-emerald-900 mt-1">💎 Closable deals</div>
                 <div className="text-[10px] text-emerald-700/70 mt-0.5">Negotiation + EOI in progress</div>

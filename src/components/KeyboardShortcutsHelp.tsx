@@ -24,7 +24,6 @@ const SECTIONS: Section[] = [
       { keys: ["Cmd/Ctrl", "K"], label: "Quick search" },
       { keys: ["g", "h"], label: "Home (dashboard)" },
       { keys: ["g", "l"], label: "Leads" },
-      { keys: ["g", "p"], label: "Pipeline" },
       { keys: ["g", "c"], label: "Cold calls" },
       { keys: ["g", "a"], label: "Action list" },
       { keys: ["g", "v"], label: "Vault" },

@@ -59,6 +59,10 @@ interface Props {
   controls?: Array<{ remarkKey: string } & RemarkControlState>;
   /** Agent roster (id+name) for the "hide from agent" picker */
   agents?: { id: string; name: string }[];
+  /** True for ADMIN/Super-Admin — shows the inline ✏️ Edit affordance on notes. */
+  isAdmin?: boolean;
+  /** Current viewer's user id — reserved for future own-note gating. */
+  meId?: string;
 }
 
 // ─── Outcome helpers ─────────────────────────────────────────────────────────
@@ -189,6 +193,7 @@ type FilterType = "ALL" | "CONNECTED" | "NO_ANSWER" | "WA";
 export default function ConversationStreamCard({
   callLogs, waMessages, notes = [], forwardedTeam, rawRemarks, leadCreatedAt, agentNames = [],
   leadId = "", canControl = false, viewerId, viewerTeam, controls = [], agents = [],
+  isAdmin = false, meId,
 }: Props) {
   const [filter, setFilter] = useState<FilterType>("ALL");
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
@@ -210,6 +215,41 @@ export default function ConversationStreamCard({
       });
       if (r.ok) { setSelectedKeys(new Set()); setManageMode(false); router.refresh(); }
     } finally { setBulkBusy(false); }
+  }
+
+  // ── Inline note editing (✏️) ──
+  // Notes are the only editable stream item (calls / WhatsApp / imported remarks
+  // are records of events, not free-text the agent owns). The PATCH endpoint
+  // enforces permission (ADMIN any · agent own same-day IST); we only surface the
+  // affordance where it makes sense (isAdmin), and show its 403/error inline.
+  const [editNoteId, setEditNoteId] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState("");
+  const [editBusy, setEditBusy] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
+  function startEditNote(id: string, body: string) {
+    setEditNoteId(id); setEditDraft(body); setEditError(null);
+  }
+  function cancelEditNote() {
+    setEditNoteId(null); setEditDraft(""); setEditError(null); setEditBusy(false);
+  }
+  async function saveEditNote(id: string) {
+    const content = editDraft.trim();
+    if (!content || editBusy) return;
+    setEditBusy(true); setEditError(null);
+    try {
+      const r = await fetch(`/api/leads/${leadId}/notes/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content }),
+      });
+      if (r.ok) { cancelEditNote(); router.refresh(); return; }
+      const j = await r.json().catch(() => ({}));
+      setEditError(j.error ?? "Couldn't save the edit.");
+    } catch {
+      setEditError("Network error — couldn't save the edit.");
+    } finally {
+      setEditBusy(false);
+    }
   }
 
   const audioTitle = forwardedTeam === "Dubai"
@@ -514,16 +554,54 @@ export default function ConversationStreamCard({
           );
         })}
 
-        {/* ─ Notes (voice + typed) — real conversation records, shown under Connected too ─ */}
-        {(filter === "ALL" || filter === "CONNECTED") && notes.map((n, idx) => (
+        {/* ─ Notes (voice + typed) — real conversation records, shown under Connected too.
+              Notes are the only editable stream item: an admin (and, via the API, the
+              author on the same IST day) can ✏️ edit the remark text inline. ─ */}
+        {(filter === "ALL" || filter === "CONNECTED") && notes.map((n, idx) => {
+          const editing = editNoteId === n.id;
+          return (
           <div key={`n-${n.id}`} className="border-l-2 border-amber-300 bg-amber-50/40 pl-3 pr-2 py-1.5 rounded-r">
             <div className="flex items-center justify-between flex-wrap gap-1 text-[11px] text-gray-500">
               <span>📝 <b>{n.user?.name ?? "Agent"}</b> · {fmtIST12Paren(n.createdAt)} IST</span>
-              <span className="chip text-[9px] border border-amber-300 bg-amber-100 text-amber-700">Note</span>
+              <span className="inline-flex items-center gap-1.5">
+                {isAdmin && !editing && (
+                  <button type="button" onClick={() => startEditNote(n.id, n.body)}
+                    title="Edit this remark"
+                    className="text-[10px] text-gray-400 hover:text-gray-600">✏️ Edit</button>
+                )}
+                <span className="chip text-[9px] border border-amber-300 bg-amber-100 text-amber-700">Note</span>
+              </span>
             </div>
-            <div className="text-xs mt-1 text-gray-800 whitespace-pre-wrap">{n.body}</div>
+            {editing ? (
+              <div className="mt-1">
+                <textarea
+                  value={editDraft}
+                  onChange={(e) => setEditDraft(e.target.value)}
+                  rows={3}
+                  disabled={editBusy}
+                  autoFocus
+                  className="w-full text-xs text-gray-800 dark:text-slate-100 border border-amber-300 dark:border-amber-700 rounded p-2 bg-white dark:bg-slate-800 focus:outline-none focus:ring-1 focus:ring-amber-400 disabled:opacity-60"
+                />
+                {editError && (
+                  <div className="text-[10px] text-red-600 dark:text-red-400 mt-1">{editError}</div>
+                )}
+                <div className="flex items-center gap-2 mt-1.5">
+                  <button type="button" onClick={() => saveEditNote(n.id)} disabled={editBusy || !editDraft.trim()}
+                    className="text-[10px] px-2 py-1 rounded bg-[#0b1a33] text-white hover:bg-[#0b1a33]/90 disabled:opacity-40">
+                    {editBusy ? "Saving…" : "Save"}
+                  </button>
+                  <button type="button" onClick={cancelEditNote} disabled={editBusy}
+                    className="text-[10px] px-2 py-1 rounded border border-gray-300 text-gray-600 hover:border-gray-400 disabled:opacity-40">
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="text-xs mt-1 text-gray-800 whitespace-pre-wrap">{n.body}</div>
+            )}
           </div>
-        ))}
+          );
+        })}
       </div>
 
       {/* Legend */}
