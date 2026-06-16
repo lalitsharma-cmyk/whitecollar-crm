@@ -56,6 +56,17 @@ export default function PreviousHistoryCard({ history, currentId }: { history: C
                   {r.projects.length > 0 && <span>{r.projects.join(", ")} · </span>}
                   {r.calls}📞 · {r.notes}📝 · {r.activities} activities
                 </div>
+                {r.remarks.length > 0 && (
+                  <div className="mt-1 space-y-0.5 border-l-2 border-gray-200 dark:border-slate-600 pl-2">
+                    {r.remarks.map((m, i) => (
+                      <div key={i} className="text-[11px] text-gray-600 dark:text-slate-300 break-words">
+                        <span className="text-gray-400">{new Date(m.date).toLocaleDateString("en-IN", { day: "numeric", month: "short" })} · {m.author}:</span>{" "}
+                        {m.text}
+                      </div>
+                    ))}
+                    {r.notes > r.remarks.length && <div className="text-[10px] text-gray-400 italic">+{r.notes - r.remarks.length} more remark(s) — open to view</div>}
+                  </div>
+                )}
               </div>
               {!isCurrent && (
                 <Link href={hrefFor(r.section, r.id)} className="text-[11px] text-blue-600 hover:underline shrink-0 pt-0.5">open →</Link>

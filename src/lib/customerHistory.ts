@@ -24,6 +24,8 @@ export interface CustomerEnquiry {
   calls: number;
   activities: number;
   deleted: boolean;
+  // Verbatim recent conversation remarks from THIS prior enquiry (newest first).
+  remarks: { date: string; text: string; author: string }[];
 }
 
 export interface CustomerHistory {
@@ -66,6 +68,7 @@ export async function getCustomerHistory(
       owner: { select: { name: true } },
       interestedUnits: { select: { unit: { select: { project: { select: { name: true } } } } } },
       discussed: { select: { project: { select: { name: true } } } },
+      notes: { select: { body: true, createdAt: true, user: { select: { name: true } } }, orderBy: { createdAt: "desc" }, take: 4 },
       _count: { select: { notes: true, callLogs: true, activities: true } },
     },
     orderBy: { createdAt: "desc" },
@@ -94,6 +97,11 @@ export async function getCustomerHistory(
       calls: l._count.callLogs,
       activities: l._count.activities,
       deleted: !!l.deletedAt,
+      remarks: l.notes.map((n) => ({
+        date: n.createdAt.toISOString(),
+        text: n.body,
+        author: n.user?.name ?? "—",
+      })),
     };
   });
 
