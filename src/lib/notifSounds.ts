@@ -74,18 +74,19 @@ export function playNotifSound(severity: NotifSeverity) {
   // Resume context if browser has it suspended (autoplay policy — first user gesture needed)
   if (audio.state === "suspended") audio.resume().catch(() => {});
 
+  // Volumes raised for audibility on a busy calling floor (was 0.14–0.20).
   if (severity === "INFO") {
-    // Pleasant 2-note chime — new lead, FYI
-    tone({ freq: 587.33, type: "sine", durationMs: 180, volume: 0.16 });                     // D5
-    tone({ freq: 880.00, type: "sine", durationMs: 220, volume: 0.16, startOffsetMs: 110 }); // A5
+    // Pleasant 2-note "ting-ting" chime — new lead / comment / status change
+    tone({ freq: 587.33, type: "sine", durationMs: 180, volume: 0.30 });                     // D5
+    tone({ freq: 880.00, type: "sine", durationMs: 220, volume: 0.30, startOffsetMs: 110 }); // A5
   } else if (severity === "WARNING") {
     // Single firm ding — needs your attention soon
-    tone({ freq: 660,    type: "triangle", durationMs: 280, volume: 0.20 });
-    tone({ freq: 440,    type: "triangle", durationMs: 200, volume: 0.14, startOffsetMs: 140 });
+    tone({ freq: 660,    type: "triangle", durationMs: 280, volume: 0.34 });
+    tone({ freq: 440,    type: "triangle", durationMs: 200, volume: 0.24, startOffsetMs: 140 });
   } else {
-    // CRITICAL — urgent triple beep (SLA breach, manager intervention)
-    tone({ freq: 880, type: "square", durationMs: 100, volume: 0.20, startOffsetMs: 0 });
-    tone({ freq: 880, type: "square", durationMs: 100, volume: 0.20, startOffsetMs: 160 });
-    tone({ freq: 880, type: "square", durationMs: 130, volume: 0.20, startOffsetMs: 320 });
+    // CRITICAL — urgent triple beep (SLA breach, hot lead, manager intervention)
+    tone({ freq: 880, type: "square", durationMs: 110, volume: 0.45, startOffsetMs: 0 });
+    tone({ freq: 880, type: "square", durationMs: 110, volume: 0.45, startOffsetMs: 170 });
+    tone({ freq: 880, type: "square", durationMs: 150, volume: 0.45, startOffsetMs: 340 });
   }
 }

@@ -901,6 +901,14 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
               <div className="mt-3 w-full">
                 <VoiceNoteRecorder leadId={lead.id} />
               </div>
+              {/* Reject lead — surfaced on the ALWAYS-VISIBLE header (in addition
+                  to the Admin-tab card below) so admins/managers can reject from
+                  the main view without switching tabs. Hidden once rejected. */}
+              {canReassign && lead.rejectedAt == null && (
+                <div className="mt-3 w-full">
+                  <RejectLeadModal leadId={lead.id} />
+                </div>
+              )}
               {/* Expo / Dubai-site-visit button MOVED to the very bottom of the
                   right column (was here in the header). Reassign dropdown also
                   moved — now rendered standalone on the right rail. */}
