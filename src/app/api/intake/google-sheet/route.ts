@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import Papa from "papaparse";
 import { ingestLead } from "@/lib/leadIngest";
 import { LeadSource, Potential, FundReadiness, MoodStatus, InvestTimeline } from "@prisma/client";
-import { requireUser } from "@/lib/auth";
+import { requireRole } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { resolveTeam, routingFieldsFor } from "@/lib/teamRouting";
 import { interpretBudget, resolveBudgetCurrency } from "@/lib/budgetCurrency";
@@ -122,7 +122,10 @@ function buildCsvUrl(rawUrl: string): { csvUrl: string; sheetId: string; gid?: s
 }
 
 export async function POST(req: NextRequest) {
-  const meUser = await requireUser();
+  // SECURITY: Google-Sheet import mutates/overwrites leads — Admin/Super-Admin
+  // only, matching the CSV importer and the ADMIN-only import UI. (Was
+  // requireUser() — any agent could POST directly.)
+  const meUser = await requireRole("ADMIN");
   const body = await req.json().catch(() => ({}));
   const url = String(body.url ?? "").trim();
   const campaign = body.campaign ? String(body.campaign).trim() : undefined;

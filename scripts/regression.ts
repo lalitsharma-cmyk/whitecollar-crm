@@ -80,6 +80,26 @@ const checks: Check[] = [
   },
 
   // ───────────────────────────────────────────────────────────────────────────
+  // 0b. ENDPOINT AUTH  — the recurring "UI-gated but API-open" class.
+  //    Lead import endpoints MUST role-gate their POST (requireRole), not just
+  //    requireUser(). A static source-scan so a future refactor can't silently
+  //    re-open them to any logged-in agent (who could overwrite leads on dedupe).
+  // ───────────────────────────────────────────────────────────────────────────
+  {
+    name: "endpoint-auth — lead import endpoints are role-gated (requireRole, not open)",
+    run: async () => {
+      const fs = await import("fs");
+      for (const f of [
+        "src/app/api/intake/csv/route.ts",
+        "src/app/api/intake/google-sheet/route.ts",
+      ]) {
+        const src = fs.readFileSync(f, "utf8");
+        assert(/requireRole\(/.test(src), `${f} POST must be role-gated (requireRole) — reverted to requireUser()?`);
+      }
+    },
+  },
+
+  // ───────────────────────────────────────────────────────────────────────────
   // 1. DELETED-LEAD EXCLUSION  (project-deleted-dup-exclusion + deleted-dup)
   //    A soft-deleted lead (deletedAt != null) must NOT surface in:
   //      (a) the Previous-History query   { deletedAt: null, OR:[phone/email] }
