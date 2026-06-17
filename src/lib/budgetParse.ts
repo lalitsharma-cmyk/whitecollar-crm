@@ -102,7 +102,10 @@ export function displayBudget(lead: {
   budgetCurrency?: string | null;
 }): string {
   const raw = lead.budgetRaw?.trim();
-  if (raw) return raw; // verbatim original — preferred everywhere
+  // A budgetRaw with no digit at all is NOT a budget — it's corrupted import data
+  // (e.g. an agent name like "Lalit Sir" that leaked into the budget column).
+  // Never render it as a budget; fall through to the numeric value or "—".
+  if (raw && /\d/.test(raw)) return raw; // verbatim original — preferred everywhere
   const ccy = (lead.budgetCurrency || "AED").toUpperCase();
   const min = lead.budgetMin;
   if (min == null || min === 0) return "—";

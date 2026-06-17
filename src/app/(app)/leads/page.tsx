@@ -784,8 +784,10 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
             owner: l.owner ? { name: l.owner.name, avatarColor: l.owner.avatarColor ?? "bg-slate-500" } : null,
             // Command Center fields
             budgetFormatted: (() => {
-              // Verbatim imported text wins ("10 Cr", "AED 800K - AED 1M").
-              if (l.budgetRaw?.trim()) return l.budgetRaw.trim();
+              // Verbatim imported text wins ("10 Cr", "AED 800K - AED 1M") — but
+              // only when it actually contains a digit. A digit-less budgetRaw is
+              // corrupted import data (e.g. "Lalit Sir"), never a budget.
+              if (l.budgetRaw?.trim() && /\d/.test(l.budgetRaw)) return l.budgetRaw.trim();
               const fmt = formatBudget(l.budgetMin, l.budgetCurrency);
               if (fmt === "—") return null;
               // UNKNOWN currency → show the bare number, never a guessed prefix.

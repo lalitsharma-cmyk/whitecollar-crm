@@ -311,6 +311,34 @@ const checks: Check[] = [
       assert(owned > 0, "no live leads have a non-null ownerId — ownership scoping would be a no-op");
     },
   },
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // 7. BUDGET INTEGRITY  (no corrupted / auto-guessed budgets)
+  //    (a) No LIVE lead has a digit-less budgetRaw — that's corrupted import data
+  //        (an agent name like "Lalit Sir" leaked into the budget column), which
+  //        displayBudget() now refuses to render. The DATA must stay clean too.
+  //    (b) Budget is never silently guessed from remark prose: extractFromRemarks
+  //        must emit NO budget (the guess produced wrong bands like "12M–45M").
+  //        remarkAutofill has no "server-only" import, so we test the REAL code.
+  // ───────────────────────────────────────────────────────────────────────────
+  {
+    name: "budget-integrity — no digit-less budgetRaw on live leads + remark autofill emits no budget",
+    run: async () => {
+      const withRaw = await prisma.lead.findMany({
+        where: { deletedAt: null, budgetRaw: { not: null } },
+        select: { id: true, budgetRaw: true },
+      });
+      const junk = withRaw.filter((l) => !/\d/.test((l.budgetRaw ?? "").trim()));
+      assert(junk.length === 0, `${junk.length} live lead(s) have a digit-less budgetRaw (corrupted, e.g. "Lalit Sir") — should be 0`);
+
+      const { extractFromRemarks } = await import("../src/lib/remarkAutofill");
+      const s = extractFromRemarks("budget is 3-4 cr, AED 2.5M, around 30 lakh — please call back tomorrow");
+      assert(
+        s.budgetMin == null && s.budgetMax == null && s.budgetCurrency == null,
+        `remark autofill still emits a budget (${JSON.stringify({ min: s.budgetMin, max: s.budgetMax, ccy: s.budgetCurrency })}) — must stay blank (no guessing from prose)`,
+      );
+    },
+  },
 ];
 
 // ── runner ────────────────────────────────────────────────────────────────────

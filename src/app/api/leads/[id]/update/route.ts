@@ -24,6 +24,12 @@ const ALLOWED: Record<string, "string" | "date" | "number" | "enum" | "bool"> = 
   // ClientType: 'INVESTOR' | 'END_USER' | 'BOTH' | 'UNCLEAR' (or null to clear)
   clientType: "enum",
   budgetMin: "number", budgetMax: "number", budgetCurrency: "string",
+  // budgetRaw — the verbatim budget text; Admin / Super-Admin-only (gated below),
+  // so an admin can directly clear corrupted text ("Lalit Sir") without it being
+  // re-derived. Agents edit the numeric budget instead.
+  budgetRaw: "string",
+  // forwardedTeam (Dubai / India routing) — Admin / Manager only (gated below).
+  forwardedTeam: "enum",
   followupDate: "date", meetingDate: "date", siteVisitDate: "date",
   // createdAt = enquiry date (admin-only inline edit — gated below in ADMIN_ONLY_FIELDS)
   createdAt: "date",
@@ -68,9 +74,18 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   // Source (lead provenance) is an Admin / Super-Admin-only correction. Stricter
   // than ADMIN_ONLY_FIELDS (which allows managers): block agents AND managers.
   // role "ADMIN" covers super-admins (isSuperAdmin is a flag on an ADMIN).
-  if (("source" in body || "sourceRaw" in body) && me.role !== "ADMIN") {
+  if (("source" in body || "sourceRaw" in body || "budgetRaw" in body) && me.role !== "ADMIN") {
     return NextResponse.json(
-      { error: "Only an Admin or Super Admin can change the lead source." },
+      { error: "Only an Admin or Super Admin can change the lead source or raw budget text." },
+      { status: 403 },
+    );
+  }
+
+  // forwardedTeam (Dubai / India routing) — Admin / Manager only; block agents,
+  // who must not reroute leads between teams.
+  if ("forwardedTeam" in body && me.role === "AGENT") {
+    return NextResponse.json(
+      { error: "Only an Admin or Manager can change the lead's team." },
       { status: 403 },
     );
   }

@@ -176,10 +176,17 @@ export function extractFromRemarks(remarks: string, knownProjects: string[] = []
   if (!remarks || typeof remarks !== "string" || remarks.length < 5) return {};
   const out: Suggestions = {};
 
+  // DISABLED (2026-06-17): budget must come ONLY from the explicit budget column
+  // at import, or from a manual entry — never *guessed* from call-note prose.
+  // Parsing free text produced wrong bands (e.g. "12M–45M" pulled out of numbers
+  // that appear in a remark), so per Lalit's rule: "If the budget/band is unclear,
+  // mismatched, or not confidently detected, keep it blank instead of inserting
+  // wrong data." Same reasoning as `potential` below.
   const budget = parseBudget(remarks);
-  if (budget?.min) out.budgetMin = budget.min;
-  if (budget?.max) out.budgetMax = budget.max;
-  if (budget?.currency) out.budgetCurrency = budget.currency;
+  void budget; // intentionally not applied — see note above
+  // if (budget?.min) out.budgetMin = budget.min;
+  // if (budget?.max) out.budgetMax = budget.max;
+  // if (budget?.currency) out.budgetCurrency = budget.currency;
 
   const cfg = parseConfiguration(remarks);
   if (cfg) out.configuration = cfg;
