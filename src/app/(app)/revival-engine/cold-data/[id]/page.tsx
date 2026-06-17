@@ -162,7 +162,7 @@ export default async function ColdDataDetailPage({ params, searchParams }: { par
       </div>
 
       {/* ── Imported sheet columns (verbatim) ── */}
-      <ImportedFieldsCard customFields={lead.customFields} />
+      <ImportedFieldsCard customFields={lead.customFields} rawImport={lead.rawImport} />
 
       {/* ── Conversation history (single source of truth) ── */}
       <ConversationStreamCard
@@ -170,7 +170,7 @@ export default async function ColdDataDetailPage({ params, searchParams }: { par
         waMessages={lead.waMessages}
         notes={lead.notes}
         forwardedTeam={lead.forwardedTeam}
-        rawRemarks={lead.remarks}
+        rawRemarks={lead.rawRemarks ?? lead.remarks}
         isAdmin={me.role === "ADMIN"}
         meId={me.id}
       />

@@ -140,6 +140,8 @@ export async function findPossibleDuplicates(opts: DedupOpts): Promise<LeadWithO
   const where: Prisma.LeadWhereInput = {
     AND: [
       scope ?? {},
+      // deletedAt: null → a recycle-bin lead never raises a duplicate warning.
+      { deletedAt: null },
       { OR: orClauses },
       ...(excludeId ? [{ id: { not: excludeId } }] : []),
     ],

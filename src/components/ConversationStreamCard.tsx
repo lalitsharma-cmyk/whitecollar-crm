@@ -196,6 +196,11 @@ export default function ConversationStreamCard({
   isAdmin = false, meId,
 }: Props) {
   const [filter, setFilter] = useState<FilterType>("ALL");
+  // View mode — "raw" = Raw History (Audit Log), the verbatim imported text shown
+  // exactly as stored (DEFAULT, source of truth). "smart" = Smart Timeline
+  // (Processed View), the grouped/tidied convenience layer. Smart NEVER mutates
+  // raw; if they disagree, Raw wins (it is the stored audit trail).
+  const [viewMode, setViewMode] = useState<"raw" | "smart">("raw");
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
 
   // ── Bulk moderation (controllers / Lalit only) ──
@@ -354,11 +359,28 @@ export default function ConversationStreamCard({
     <div className="card p-5 border-l-4 border-emerald-500 bg-emerald-50/20">
       {/* Header */}
       <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
-        <div className="font-semibold flex items-center gap-2 text-base">
+        <div className="font-semibold flex items-center gap-2 text-base flex-wrap">
           💬 Conversation History
-          <span className="text-[10px] text-gray-500 font-normal">— complete lead journey</span>
+          {/* View toggle — Raw History (Audit Log) is the DEFAULT. Smart Timeline is
+              an optional processed view that never alters the raw audit trail. */}
+          <span className="inline-flex rounded-md border border-emerald-300 overflow-hidden text-[10px] font-medium">
+            <button type="button" onClick={() => setViewMode("raw")}
+              title="Exact imported text — no grouping, no dedup, no rewriting. Source of truth."
+              className={viewMode === "raw" ? "px-2 py-0.5 bg-[#0b1a33] text-white" : "px-2 py-0.5 bg-white dark:bg-slate-800 text-gray-600 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-700"}>
+              📜 Raw History
+            </button>
+            <button type="button" onClick={() => setViewMode("smart")}
+              title="Processed convenience view — grouped & tidied. Never modifies the raw audit trail."
+              className={viewMode === "smart" ? "px-2 py-0.5 bg-[#0b1a33] text-white" : "px-2 py-0.5 bg-white dark:bg-slate-800 text-gray-600 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-700"}>
+              ✨ Smart Timeline
+            </button>
+          </span>
+          <span className="text-[10px] text-gray-500 font-normal">
+            {viewMode === "raw" ? "— Raw History (Audit Log) · verbatim" : "— Smart Timeline (Processed View)"}
+          </span>
         </div>
-        {/* Filter chips */}
+        {/* Filter chips — Smart Timeline only (they operate on parsed entries) */}
+        {viewMode === "smart" && (
         <div className="flex items-center gap-1.5 text-[10px] flex-wrap">
           <button type="button" onClick={() => setFilter(f => f === "CONNECTED" ? "ALL" : "CONNECTED")}
             className={`chip chip-won cursor-pointer transition-opacity ${filter !== "ALL" && filter !== "CONNECTED" ? "opacity-30" : ""}`}>
@@ -390,6 +412,7 @@ export default function ConversationStreamCard({
             </button>
           )}
         </div>
+        )}
       </div>
 
       {/* ── Bulk moderation bar (controllers only, in Manage mode) ── */}
@@ -416,8 +439,21 @@ export default function ConversationStreamCard({
           </div>
         )}
 
-        {/* ─ Imported remarks (filtered to the active chip) ─ */}
-        {filter !== "WA" && displayRemarkEntries.map((item, idx) => {
+        {/* ─ RAW HISTORY (Audit Log) — the exact imported remark, verbatim. No
+              parser, no grouping, no dedup, no rewriting. Line breaks, dates,
+              times, agent names, emojis preserved exactly (whitespace-pre-wrap).
+              Unlimited length; the container above scrolls. ─ */}
+        {viewMode === "raw" && rawRemarks && rawRemarks.trim() && (
+          <div className="border-l-2 border-slate-400 bg-slate-50/70 dark:bg-slate-800/40 pl-3 pr-2 py-2 rounded-r">
+            <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-1.5">
+              📜 Imported Remarks — verbatim audit log
+            </div>
+            <div className="text-xs text-gray-800 dark:text-slate-200 whitespace-pre-wrap break-words leading-relaxed font-mono">{rawRemarks}</div>
+          </div>
+        )}
+
+        {/* ─ Imported remarks — SMART TIMELINE (parsed, grouped, filtered) ─ */}
+        {viewMode === "smart" && filter !== "WA" && displayRemarkEntries.map((item, idx) => {
           // Stable, CONTENT-based key so expansion state + React reconciliation track
           // the real entry across filter changes (an array index would attach state
           // to a position and expand the wrong row after filtering).

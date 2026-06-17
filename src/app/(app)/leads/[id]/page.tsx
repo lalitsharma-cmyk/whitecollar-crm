@@ -564,6 +564,24 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
   );
 
   const isAdminOrManager = me.role === "ADMIN" || me.role === "MANAGER";
+  // Source (lead provenance) is editable by Admin / Super Admin ONLY (role
+  // "ADMIN" covers super-admins via isSuperAdmin). Managers + agents see it
+  // read-only. The server enforces the same rule in /api/leads/[id]/update.
+  const canEditSource = me.role === "ADMIN";
+  const sourceOptions = [
+    { value: "WEBSITE", label: "Website" },
+    { value: "WHATSAPP", label: "WhatsApp" },
+    { value: "CSV_IMPORT", label: "CSV Import" },
+    { value: "EVENT", label: "Event" },
+    { value: "REFERRAL", label: "Referral" },
+    { value: "INBOUND_CALL", label: "Inbound Call" },
+    { value: "FACEBOOK_ADS", label: "Facebook Ads" },
+    { value: "GOOGLE_ADS", label: "Google Ads" },
+    { value: "PORTAL_99ACRES", label: "99acres" },
+    { value: "PORTAL_MAGICBRICKS", label: "MagicBricks" },
+    { value: "PORTAL_HOUSING", label: "Housing.com" },
+    { value: "OTHER", label: "Other" },
+  ];
 
   const qualificationCard = (
     <div data-lead-section="overview" className="card p-4">
@@ -597,6 +615,21 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
         <div>
           <div className="text-xs text-gray-500 dark:text-slate-400">🏢 Company</div>
           <InlineEdit leadId={lead.id} field="company" value={lead.company ?? ""} placeholder="Add value" />
+        </div>
+        {/* Source — VERBATIM lead provenance (sourceRaw), exactly as imported
+            ("Townscript", "Eventbrite"). Free-text, never a fixed enum. Admin /
+            Super Admin may edit; everyone else read-only. Falls back to a label
+            from the legacy enum for old leads that predate sourceRaw. */}
+        <div>
+          <div className="text-xs text-gray-500 dark:text-slate-400">📥 Source</div>
+          {(() => {
+            const shown = lead.sourceRaw ?? sourceOptions.find(o => o.value === lead.source)?.label ?? (lead.source ?? "");
+            return canEditSource ? (
+              <InlineEdit leadId={lead.id} field="sourceRaw" value={shown} placeholder="Set source" />
+            ) : (
+              <span className="text-gray-800 dark:text-slate-200">{shown || "—"}</span>
+            );
+          })()}
         </div>
         <div>
           <div className="text-xs text-gray-500 dark:text-slate-400">💼 Profession</div>
@@ -872,7 +905,7 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
             waMessages={lead.waMessages}
             notes={lead.notes}
             forwardedTeam={lead.forwardedTeam}
-            rawRemarks={lead.remarks}
+            rawRemarks={lead.rawRemarks ?? lead.remarks}
             leadCreatedAt={lead.createdAt}
             agentNames={allActiveUsers.map(u => u.name)}
             leadId={lead.id}
@@ -982,7 +1015,7 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
         {/* Imported sheet columns that don't map to a known CRM field — verbatim */}
         <DuplicateIntentBanner intent={dupIntent} />
         {customerHistory && <PreviousHistoryCard history={customerHistory} currentId={lead.id} />}
-        <ImportedFieldsCard customFields={lead.customFields} />
+        <ImportedFieldsCard customFields={lead.customFields} rawImport={lead.rawImport} />
 
         {/* §15: LinkedContactsCard removed — alt phone already in Client Information.
             No duplicate contact display anywhere else on the page. */}

@@ -3,25 +3,38 @@ import { sendEmail, emailTemplate, emailEnabled } from "@/lib/email";
 import { fmtMoney } from "@/lib/money";
 import { LeadSource, LeadStatus, AIScore, CallOutcome } from "@prisma/client";
 import { BOOKED_STATUSES } from "@/lib/lead-statuses";
+import { effectiveSource } from "@/lib/sourceLabel";
 
 interface Window { since: Date; until: Date; label: string; }
 
 export async function buildReport(win: Window) {
-  const [totalNew, hot, won, lost, calls, connected, agentTable, sourceTable, aedSum, inrSum] = await Promise.all([
-    prisma.lead.count({ where: { createdAt: { gte: win.since, lte: win.until } } }),
-    prisma.lead.count({ where: { aiScore: AIScore.HOT, createdAt: { gte: win.since, lte: win.until } } }),
+  const [totalNew, hot, won, lost, calls, connected, agentTable, sourceRows, aedSum, inrSum] = await Promise.all([
+    // deletedAt: null on every Lead query — recycle-bin records never count in reports/analytics.
+    prisma.lead.count({ where: { deletedAt: null, createdAt: { gte: win.since, lte: win.until } } }),
+    prisma.lead.count({ where: { deletedAt: null, aiScore: AIScore.HOT, createdAt: { gte: win.since, lte: win.until } } }),
     prisma.lead.count({ where: { currentStatus: { in: BOOKED_STATUSES }, deletedAt: null, updatedAt: { gte: win.since, lte: win.until } } }),
-    prisma.lead.count({ where: { status: LeadStatus.LOST, updatedAt: { gte: win.since, lte: win.until } } }),
+    prisma.lead.count({ where: { deletedAt: null, status: LeadStatus.LOST, updatedAt: { gte: win.since, lte: win.until } } }),
     prisma.callLog.count({ where: { startedAt: { gte: win.since, lte: win.until } } }),
     prisma.callLog.count({ where: { startedAt: { gte: win.since, lte: win.until }, outcome: CallOutcome.CONNECTED } }),
     prisma.user.findMany({
       where: { active: true, role: { in: ["AGENT", "MANAGER"] } },
       include: { _count: { select: { callLogs: { where: { startedAt: { gte: win.since, lte: win.until } } }, ownedLeads: true } } },
     }),
-    prisma.lead.groupBy({ by: ["source"], where: { createdAt: { gte: win.since, lte: win.until } }, _count: { _all: true } }),
-    prisma.lead.aggregate({ where: { budgetCurrency: "AED", createdAt: { gte: win.since, lte: win.until } }, _sum: { budgetMin: true } }),
-    prisma.lead.aggregate({ where: { budgetCurrency: "INR", createdAt: { gte: win.since, lte: win.until } }, _sum: { budgetMin: true } }),
+    // Source breakdown reads VERBATIM sourceRaw (enum label only as legacy fallback)
+    // so analytics show the real channel ("Townscript"), never corrupted "CSV_IMPORT".
+    // Grouped in JS below because the key is a coalesce of sourceRaw/source.
+    prisma.lead.findMany({ where: { deletedAt: null, createdAt: { gte: win.since, lte: win.until } }, select: { source: true, sourceRaw: true } }),
+    prisma.lead.aggregate({ where: { deletedAt: null, budgetCurrency: "AED", createdAt: { gte: win.since, lte: win.until } }, _sum: { budgetMin: true } }),
+    prisma.lead.aggregate({ where: { deletedAt: null, budgetCurrency: "INR", createdAt: { gte: win.since, lte: win.until } }, _sum: { budgetMin: true } }),
   ]);
+
+  // Group source breakdown by EFFECTIVE source (verbatim sourceRaw, else enum label).
+  const sourceCounts = new Map<string, number>();
+  for (const r of sourceRows) {
+    const key = effectiveSource(r.sourceRaw, r.source);
+    sourceCounts.set(key, (sourceCounts.get(key) ?? 0) + 1);
+  }
+  const sourceTable = [...sourceCounts.entries()].map(([source, n]) => ({ source, n })).sort((a, b) => b.n - a.n);
 
   const connectRate = calls ? Math.round((connected / calls) * 100) : 0;
   const conversionRate = totalNew ? ((won / totalNew) * 100).toFixed(1) : "0";
@@ -40,7 +53,7 @@ export async function buildReport(win: Window) {
       .map((u) => `  ${u.name.padEnd(20)} ${u._count.callLogs} calls, ${u._count.ownedLeads} active leads`),
     ``,
     `Source breakdown:`,
-    ...sourceTable.map((s) => `  ${s.source.padEnd(20)} ${s._count._all}`),
+    ...sourceTable.map((s) => `  ${s.source.padEnd(20)} ${s.n}`),
   ];
 
   return { body: lines.join("\n"), totals: { totalNew, hot, won, lost, calls, connected, connectRate, conversionRate } };

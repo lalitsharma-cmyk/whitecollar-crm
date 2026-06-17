@@ -50,6 +50,7 @@ function toData(r: Row) {
     currentSalary: num(r.currentSalary), expectedSalary: num(r.expectedSalary),
     noticePeriod: r.noticePeriod?.trim() || null, source: r.source?.trim() || "Import",
     remarks: r.remarks?.trim() || null,
+    rawRemarks: r.remarks?.trim() || null,   // immutable Raw History (verbatim)
   };
 }
 

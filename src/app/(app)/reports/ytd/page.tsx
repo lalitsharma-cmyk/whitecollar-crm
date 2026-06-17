@@ -3,6 +3,7 @@ import { requireRole } from "@/lib/auth";
 import { normalizeTeam } from "@/lib/teamRouting";
 import { CallOutcome, Prisma } from "@prisma/client";
 import { BOOKED_STATUSES } from "@/lib/lead-statuses";
+import { sourceBreakdown } from "@/lib/sourceLabel";
 import { fmtMoneyDual } from "@/lib/money";
 import Link from "next/link";
 import ReportDateRangePicker from "@/components/ReportDateRangePicker";
@@ -69,7 +70,7 @@ async function computeTeamYtd(team: "Dubai" | "India", since: Date, until: Date)
     commissionReceived,
     callsConnected,
     callsTotal,
-    topSources,
+    topSourceRows,
     topAgents,
   ] = await Promise.all([
     // 1. Leads created in window
@@ -131,13 +132,11 @@ async function computeTeamYtd(team: "Dubai" | "India", since: Date, until: Date)
     prisma.callLog.count({
       where: { ...callWhere, startedAt: { gte: since, lte: until } },
     }),
-    // 8. Top 5 sources (by lead count in-window)
-    prisma.lead.groupBy({
-      by: ["source"],
+    // 8. Top 5 sources (by lead count in-window) — read verbatim sourceRaw via
+    //    sourceBreakdown (top 5 sliced after the await).
+    prisma.lead.findMany({
       where: { ...leadWhere, deletedAt: null, createdAt: { gte: since, lte: until } },
-      _count: { _all: true },
-      orderBy: { _count: { id: "desc" } },
-      take: 5,
+      select: { source: true, sourceRaw: true },
     }),
     // 9. Top 5 agents (by WON lead count in-window, scoped to this team)
     prisma.lead.groupBy({
@@ -190,7 +189,7 @@ async function computeTeamYtd(team: "Dubai" | "India", since: Date, until: Date)
     callsConnected,
     callsTotal,
     connectRate,
-    topSources: topSources.map((s) => ({ source: s.source, count: s._count._all })),
+    topSources: sourceBreakdown(topSourceRows).slice(0, 5).map((s) => ({ source: s.source, count: s.n })),
     topAgents: topAgents.map((a) => ({
       ownerId: a.ownerId,
       name: a.ownerId ? ownerNameById.get(a.ownerId) ?? "Unknown" : "Unassigned",
@@ -344,7 +343,7 @@ function TeamColumn({
               >
                 <span className="flex items-center gap-2">
                   <span className="text-[10px] text-gray-400 tabular-nums w-4">{i + 1}.</span>
-                  <span className="font-medium">{s.source.replaceAll("_", " ")}</span>
+                  <span className="font-medium">{s.source}</span>
                 </span>
                 <span className="font-semibold tabular-nums">{s.count}</span>
               </li>

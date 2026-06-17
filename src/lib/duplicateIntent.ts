@@ -120,7 +120,8 @@ export async function getDuplicateIntent(
   if (OR.length === 0) return null;
 
   const leads = await prisma.lead.findMany({
-    where: { OR },
+    // deletedAt: null → recycle-bin records never count toward duplicate intent.
+    where: { deletedAt: null, OR },
     select: {
       createdAt: true,
       source: true,

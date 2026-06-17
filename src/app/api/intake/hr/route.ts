@@ -5,6 +5,7 @@ import { hrDuplicateWhere } from "@/lib/hrDuplicates";
 import { fingerprintFor } from "@/lib/assignment";
 import { getSetting } from "@/lib/settings";
 import { HRActivityType, type Prisma } from "@prisma/client";
+import { mergeRawRemark } from "@/lib/rawRemarks";
 
 // =====================================================================
 // REAL-TIME WEBSITE → HR CRM INTAKE
@@ -120,7 +121,7 @@ export async function POST(req: NextRequest) {
     // ── Dedup by mobile / whatsapp / email ────────────────────────────
     const dupWhere = hrDuplicateWhere(d.phone, d.whatsappPhone, d.email);
     const existing = dupWhere
-      ? await prisma.hRCandidate.findFirst({ where: dupWhere, select: { id: true, status: true } })
+      ? await prisma.hRCandidate.findFirst({ where: dupWhere, select: { id: true, status: true, rawRemarks: true } })
       : null;
 
     // ── Resume helper — attach to the profile, make it the active one ──
@@ -156,8 +157,14 @@ export async function POST(req: NextRequest) {
         },
         select: { id: true },
       });
+      // Re-applicant's remark → append verbatim to the immutable Raw History
+      // (never overwrites; full payload is also preserved on HRApplication.rawPayload).
+      if (d.remarks && d.remarks.trim()) {
+        const mergedRaw = mergeRawRemark(existing.rawRemarks, d.remarks, `re-application · ${d.source}`);
+        await prisma.hRCandidate.update({ where: { id: existing.id }, data: { rawRemarks: mergedRaw, remarks: mergedRaw } }).catch(() => {});
+      }
       await prisma.hRActivity.create({
-        data: { candidateId: existing.id, type: HRActivityType.NOTE_ADDED, notes: `Re-applied via ${d.source} for "${d.positionApplied}"` },
+        data: { candidateId: existing.id, type: HRActivityType.NOTE_ADDED, notes: `Re-applied via ${d.source} for "${d.positionApplied}"${d.remarks ? ` — ${d.remarks}` : ""}` },
       }).catch(() => {});
       await prisma.intakeKey.update({ where: { id: key.id }, data: { lastUsed: new Date() } }).catch(() => {});
       await log("APPENDED", 200, { source: d.source, candidateId: existing.id, applicationId: application.id, payload: d });
@@ -181,6 +188,7 @@ export async function POST(req: NextRequest) {
         source: d.source,
         status: "NEW",
         remarks: d.remarks || null,
+        rawRemarks: d.remarks || null,   // immutable Raw History (verbatim)
         primaryOwnerId: ownerId,
         fingerprint: fingerprintFor(d.phone, d.email),
       },

@@ -41,6 +41,8 @@ export async function runRevivalSweep(): Promise<RevivalSweepResult> {
   //    We over-fetch lightly and then filter by "was HOT in the past" below.
   const coldLeadsWithSignal = await prisma.lead.findMany({
     where: {
+      // deletedAt: null → a recycle-bin lead is never revived / suggested.
+      deletedAt: null,
       aiScore: AIScore.COLD,
       OR: [
         {

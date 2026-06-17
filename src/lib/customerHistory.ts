@@ -1,9 +1,11 @@
 import { prisma } from "@/lib/prisma";
+import { TERMINAL_STATUSES } from "@/lib/lead-statuses";
 
 // "Previous History Found" — aggregate every prior enquiry from the SAME customer
 // (matched by mobile OR email) across ALL sections: Leads, Revival, Master Data,
-// and Closed/Archived (soft-deleted). One customer can enquire many times; this
-// surfaces the full history so a re-enquiry is never a blind duplicate.
+// and Closed/Archived. DELETED / Recycle-Bin records (deletedAt) are EXCLUDED —
+// a recycle-bin record is a recoverable backup, NOT business history, so it must
+// never participate in duplicate detection / Previous History Found.
 
 function last10(s?: string | null): string {
   return (s ?? "").replace(/\D/g, "").slice(-10);
@@ -36,8 +38,10 @@ export interface CustomerHistory {
   owners: string[];         // distinct owners across all enquiries
 }
 
-function sectionOf(leadOrigin: string | null, deletedAt: Date | null): CustomerSection {
-  if (deletedAt) return "Closed/Archived";
+// Deleted leads are excluded from the query, so "Closed/Archived" now means a
+// real CLOSED/LOST terminal status — never "soft-deleted".
+function sectionOf(leadOrigin: string | null, currentStatus: string | null): CustomerSection {
+  if (currentStatus && TERMINAL_STATUSES.includes(currentStatus)) return "Closed/Archived";
   if (leadOrigin === "REVIVAL" || leadOrigin === "COLD") return "Revival";
   if (leadOrigin === "MASTER_DATA" || leadOrigin === "PORTFOLIO" || leadOrigin === "SYSTEM") return "Master Data";
   return "Leads";
@@ -61,7 +65,10 @@ export async function getCustomerHistory(
   if (OR.length === 0) return null;
 
   const leads = await prisma.lead.findMany({
-    where: { OR },
+    // deletedAt: null → recycle-bin records NEVER participate in Previous History
+    // Found / duplicate detection. Only live records (Active / Revival / Master
+    // Data / non-deleted Closed) are returned.
+    where: { deletedAt: null, OR },
     select: {
       id: true, name: true, createdAt: true, currentStatus: true, leadOrigin: true,
       source: true, deletedAt: true,
@@ -88,7 +95,7 @@ export async function getCustomerHistory(
       id: l.id,
       name: l.name,
       createdAt: l.createdAt.toISOString(),
-      section: sectionOf(l.leadOrigin, l.deletedAt),
+      section: sectionOf(l.leadOrigin, l.currentStatus),
       status: l.currentStatus,
       source: l.source,
       owner: l.owner?.name ?? "Unassigned",

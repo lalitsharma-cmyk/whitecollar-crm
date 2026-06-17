@@ -179,7 +179,6 @@ export default function LeadInterestNotesClient({
           <input
             value={newText}
             onChange={e => setNewText(e.target.value)}
-            placeholder="e.g. 2BR Business Bay under AED 2M"
             className="w-full border border-[#e5e7eb] rounded-lg px-3 py-2.5 text-sm min-h-11"
           />
           {err && <div className="text-[11px] text-red-600">{err}</div>}

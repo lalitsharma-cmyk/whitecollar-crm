@@ -6,6 +6,8 @@ import { LeadSource, Potential, FundReadiness, MoodStatus, InvestTimeline, LeadS
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { extractFromRemarks, mergeSuggestions } from "@/lib/remarkAutofill";
+import { mergeRawRemark } from "@/lib/rawRemarks";
+import { validEmail, validPhone, validBudgetRaw, looksLikeStatus } from "@/lib/importValidate";
 import { splitPhones, normalizePhone } from "@/lib/phone";
 import { resolveTeam, routingFieldsFor } from "@/lib/teamRouting";
 import { interpretBudget, resolveBudgetCurrency } from "@/lib/budgetCurrency";
@@ -45,6 +47,113 @@ type Row = Record<string, string>;
 let _consumedKeys = new Set<string>();
 
 function norm(s: string): string { return s.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ""); }
+
+// ── Canonical CRM field → header-candidate map ──────────────────────────────
+// SINGLE SOURCE OF TRUTH for both the fuzzy auto-importer (pick) AND the
+// preview "mapping" derivation + the explicit-mapping accessor. The FIRST
+// candidate in each list is the canonical/normalized header. Keep these in sync
+// with every pick(row, …) call below — the importer reads from here.
+const FIELD_CANDIDATES: Record<string, string[]> = {
+  name:            ["customer", "name", "fullname", "leadname", "customername"],
+  phone:           ["mobile", "phone", "contact", "phonenumber", "whatsapp"],
+  altPhone:        ["altnumber", "altphone", "alternatephone", "alternatenumber", "phone2", "secondarynumber", "secondaryphone"],
+  email:           ["email", "emailid", "mail"],
+  city:            ["city", "location"],
+  configuration:   ["configuration", "config", "bhk", "type"],
+  budget:          ["budgetaed", "budget", "budgetmin", "minbudget"],
+  budgetMax:       ["budgetmax", "maxbudget"],
+  currency:        ["currency"],
+  country:         ["country"],
+  source:          ["source"],
+  project:         ["project"],
+  company:         ["company"],
+  address:         ["address"],
+  whoIsClient:     ["whoisclient", "client", "clientinfo", "about"],
+  categorization:  ["categorization", "category"],
+  tags:            ["tags", "tag"],
+  message:         ["message", "requirement"],
+  remarks:         ["remarks", "remark"],
+  stage:           ["stage"],
+  status:          ["status", "callstatus"],
+  potential:       ["potential"],
+  fundReadiness:   ["fundreadiness", "fund", "funds"],
+  moodStatus:      ["moodstatus", "mood"],
+  whenCanInvest:   ["whencaninvest", "timeline", "invest"],
+  followupDate:    ["followupdate", "followup", "nextfollowup"],
+  meeting:         ["meeting", "meetingdate"],
+  siteVisit:       ["sitevisit", "sitevisitdate"],
+  date:            ["date", "leaddate", "createdon", "createddate", "entrydate"],
+  lastContact:     ["lastcontact", "lastcontactdate", "lastcalldate", "lastcall", "calleddate", "lastcontacted"],
+  detailShared:    ["detailshared", "shared"],
+  todoNext:        ["todo", "todonext", "nextaction"],
+  team:            ["forwardedteam", "team"],
+  alreadyBought:   ["alreadybought", "alreadyowns", "owns", "purchased"],
+  alreadyBoughtBy: ["alreadyboughtby", "boughtvia", "via", "broker", "boughtfrom"],
+};
+
+// Human-friendly labels for the CRM fields, surfaced in the mapping UI dropdown.
+const FIELD_LABELS: Record<string, string> = {
+  name: "Name / Customer", phone: "Phone (mobile)", altPhone: "Alt phone",
+  email: "Email", city: "City / Location", configuration: "Configuration / BHK",
+  budget: "Budget", budgetMax: "Budget (max)", currency: "Currency", country: "Country",
+  source: "Source", project: "Project", company: "Company", address: "Address",
+  whoIsClient: "Who is client", categorization: "Categorization", tags: "Tags",
+  message: "Message / Requirement", remarks: "Remarks", stage: "Stage", status: "Status / Call status",
+  potential: "Potential", fundReadiness: "Fund readiness", moodStatus: "Mood",
+  whenCanInvest: "When can invest", followupDate: "Follow-up date", meeting: "Meeting date",
+  siteVisit: "Site-visit date", date: "Lead date (historic)", lastContact: "Last contact date",
+  detailShared: "Detail shared", todoNext: "To-do / Next action", team: "Team",
+  alreadyBought: "Already bought", alreadyBoughtBy: "Already bought via",
+};
+
+// Sentinel mapping value: send this sheet column to customFields verbatim
+// (no CRM field), exactly as an unmapped column is preserved today.
+const IGNORE = "__ignore";
+
+type Confidence = "high" | "medium" | "unknown";
+
+// Score how well a sheet header matches a CRM field's candidate list, using the
+// SAME normalized-prefix logic pick() relies on. Exact normalized equality →
+// high. A prefix relation in EITHER direction (header ⊂ candidate, e.g.
+// "mob"→"mobile", or header ⊃ candidate, e.g. "sourcecampaign"⊃"source") → med.
+function matchField(header: string, candidates: string[]): Confidence | null {
+  const nk = norm(header);
+  if (!nk) return null;
+  for (const c of candidates) {
+    const t = norm(c);
+    if (nk === t) return "high";
+  }
+  for (const c of candidates) {
+    const t = norm(c);
+    if (nk.startsWith(t) || t.startsWith(nk)) return "medium";
+  }
+  return null;
+}
+
+// Build the preview mapping: for each detected column, the best CRM field +
+// confidence. A column wins a field on the strongest match; ties resolve to the
+// FIRST field declared in FIELD_CANDIDATES (declaration order = priority, same
+// as pick() which tries name→phone→… top-down). Columns matching nothing are
+// reported as { crmField: "__ignore", confidence: "unknown" } and highlighted.
+function buildMapping(columns: string[]): { column: string; crmField: string; confidence: Confidence }[] {
+  const fields = Object.entries(FIELD_CANDIDATES);
+  return columns.map((column) => {
+    let best: { crmField: string; confidence: Confidence } | null = null;
+    for (const [field, candidates] of fields) {
+      const conf = matchField(column, candidates);
+      if (!conf) continue;
+      // Prefer high over medium; on equal strength keep the earlier-declared field.
+      if (!best || (conf === "high" && best.confidence !== "high")) {
+        best = { crmField: field, confidence: conf };
+        if (conf === "high") break; // can't beat an exact match
+      }
+    }
+    return best
+      ? { column, crmField: best.crmField, confidence: best.confidence }
+      : { column, crmField: IGNORE, confidence: "unknown" as Confidence };
+  });
+}
+
 function pick(row: Row, ...candidates: string[]): string | undefined {
   const wanted = candidates.map(norm);
   for (const k of Object.keys(row)) {
@@ -64,6 +173,40 @@ function pick(row: Row, ...candidates: string[]): string | undefined {
     }
   }
 }
+
+// Explicit-mapping accessor factory. When the admin confirms a mapping in the
+// approval gate, the importer reads CRM fields THROUGH this instead of pick():
+// resolve a field → the admin-chosen sheet column → that cell's value, marking
+// the column consumed so it isn't duplicated into customFields. `__ignore`
+// columns resolve to nothing (and stay in customFields verbatim). Multiple
+// candidate field-keys may be passed (e.g. name has aliases in pick calls) —
+// the first that the mapping points at a column for wins.
+function makeMappedPick(row: Row, mapping: Record<string, string>) {
+  // Normalize the admin map once: normalized-sheet-column → crmField.
+  const byNormCol = new Map<string, string>();
+  for (const [col, field] of Object.entries(mapping)) {
+    if (field && field !== IGNORE) byNormCol.set(norm(col), field);
+  }
+  // Reverse index: crmField → actual row key(s) the admin assigned to it.
+  const fieldToKeys = new Map<string, string[]>();
+  for (const k of Object.keys(row)) {
+    const field = byNormCol.get(norm(k));
+    if (!field) continue;
+    const arr = fieldToKeys.get(field) ?? [];
+    arr.push(k);
+    fieldToKeys.set(field, arr);
+  }
+  return (field: string): string | undefined => {
+    const keys = fieldToKeys.get(field);
+    if (!keys) return undefined;
+    for (const k of keys) {
+      _consumedKeys.add(k);
+      const v = row[k]?.toString().trim();
+      if (v) return v;
+    }
+    return undefined;
+  };
+}
 // NOTE: budget parsing now uses the shared, currency-aware parser via
 // interpretBudget() from "@/lib/budgetCurrency" (handles Cr/Lakh/M/K correctly,
 // splits ranges, and preserves the verbatim text). The old local parser silently
@@ -81,7 +224,10 @@ function parseSource(s?: string): LeadSource {
   if (n.includes("99acres")) return LeadSource.PORTAL_99ACRES;
   if (n.includes("magicbricks")) return LeadSource.PORTAL_MAGICBRICKS;
   if (n.includes("housing")) return LeadSource.PORTAL_HOUSING;
-  return LeadSource.CSV_IMPORT;
+  // Unrecognized but PRESENT source ("Townscript", "Eventbrite") → OTHER bucket
+  // only. The verbatim text lives in sourceRaw and is what the CRM shows/filters.
+  // We NEVER silently relabel a real source value as "CSV".
+  return LeadSource.OTHER;
 }
 function mapSheetStatus(s?: string): LeadStatus {
   if (!s) return LeadStatus.NEW;
@@ -267,6 +413,25 @@ export async function POST(req: NextRequest) {
   // picked a team, every row in this import respects that choice.
   const forceTeamRaw = String(fd.get("forceTeam") ?? "").trim();
   const forceTeam = forceTeamRaw === "Dubai" || forceTeamRaw === "India" ? forceTeamRaw : null;
+  // OPTIONAL explicit column→CRM-field mapping from the Import Mapping Approval
+  // gate. JSON shape: { "<sheet column header>": "<crmField | __ignore>" }.
+  // When present, the importer reads every CRM field THROUGH this map instead of
+  // the fuzzy pick() auto-detection (see makeMappedPick). When absent, behaviour
+  // is byte-for-byte identical to before — fully backward compatible.
+  let explicitMapping: Record<string, string> | null = null;
+  const mappingRaw = fd.get("mapping");
+  if (typeof mappingRaw === "string" && mappingRaw.trim()) {
+    try {
+      const parsed = JSON.parse(mappingRaw);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        const clean: Record<string, string> = {};
+        for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
+          if (typeof v === "string" && v) clean[k] = v;
+        }
+        if (Object.keys(clean).length > 0) explicitMapping = clean;
+      }
+    } catch { /* malformed mapping → ignore, fall back to auto-pick */ }
+  }
   if (!(file instanceof File)) return NextResponse.json({ error: "No file uploaded" }, { status: 400 });
   if (file.size === 0) return NextResponse.json({ error: "File is empty (0 bytes)" }, { status: 400 });
 
@@ -350,6 +515,19 @@ export async function POST(req: NextRequest) {
       } else { newRows++; }
     }
 
+    // ── Import Mapping Approval gate data ────────────────────────────────────
+    // For each detected sheet column: the proposed CRM field + a confidence
+    // score (exact header match → "high"; fuzzy/prefix → "medium"; nothing →
+    // "unknown"). Derived from the SAME candidate lists pick() uses, so the
+    // proposal exactly matches what an unconfirmed auto-import would do. The
+    // admin reviews/edits this and must confirm before any write happens.
+    const mapping = buildMapping(detectedColumns);
+    // The full catalog of assignable CRM fields, for the per-column dropdown.
+    const crmFields = Object.keys(FIELD_CANDIDATES).map((field) => ({
+      field,
+      label: FIELD_LABELS[field] ?? field,
+    }));
+
     return NextResponse.json({
       preview: true,
       totalRows: rows.length,
@@ -358,6 +536,10 @@ export async function POST(req: NextRequest) {
       dupSamples,
       uniqueStatuses: [...unknownStatuses].slice(0, 20),
       detectedColumns,
+      // NEW (additive): mapping table + dropdown catalog + ignore sentinel.
+      mapping,
+      crmFields,
+      ignoreValue: IGNORE,
       fileType: isExcel ? "Excel" : "CSV",
       sheetName: parseInfo.sheetName,
       allSheets: parseInfo.allSheets,
@@ -400,10 +582,21 @@ export async function POST(req: NextRequest) {
 
   for (const [i, row] of rows.entries()) {
     _consumedKeys = new Set();   // reset mapped-header tracking for this row
-    const nameRaw = pick(row, "customer", "name", "fullname", "leadname", "customername");
-    const phoneRaw = pick(row, "mobile", "phone", "contact", "phonenumber", "whatsapp");
-    const altPhoneRaw = pick(row, "altnumber", "altphone", "alternatephone", "alternatenumber", "phone2", "secondarynumber", "secondaryphone");
-    const email = pick(row, "email", "emailid", "mail");
+    // ── Field accessor: honors an admin-confirmed mapping when present ────────
+    // With an explicit mapping, every CRM field is read from the EXACT sheet
+    // column the admin chose (mappedPick), so nothing is auto-guessed. Without a
+    // mapping, fall back to the historical fuzzy pick() over the candidate list —
+    // byte-for-byte identical to the pre-gate importer. `crmField` is the
+    // canonical key in FIELD_CANDIDATES; `fallback` are the pick() candidates.
+    const mappedPick = explicitMapping ? makeMappedPick(row, explicitMapping) : null;
+    const field = (crmField: string, ...fallback: string[]): string | undefined =>
+      mappedPick ? mappedPick(crmField) : pick(row, ...fallback);
+
+    const nameRaw = field("name", "customer", "name", "fullname", "leadname", "customername");
+    const phoneRaw = field("phone", "mobile", "phone", "contact", "phonenumber", "whatsapp");
+    const altPhoneRaw = field("altPhone", "altnumber", "altphone", "alternatephone", "alternatenumber", "phone2", "secondarynumber", "secondaryphone");
+    // VALIDATE: only an actual email — never a name/boolean from another column.
+    const email = validEmail(field("email", "email", "emailid", "mail"));
     if (!nameRaw && !phoneRaw && !email) continue;
 
     // Split the customer cell — MIS rows like "Soumya, Ayush Gupta" with two phone
@@ -421,30 +614,34 @@ export async function POST(req: NextRequest) {
     // per-team defaults this can read from the row's `forwardedTeam` / source.
     const phones = splitPhones(phoneRaw, "+91");
     const altPhones = splitPhones(altPhoneRaw, "+91");
-    const phone = phones[0];
+    // VALIDATE: reject country-code-only ("+91") and merged/over-long numbers
+    // rather than store a malformed phone.
+    const phone = validPhone(phones[0]);
     // Pick the next available phone for altPhone: rest of primary cell, then
     // any from the Alt-Number column. Cap at one for now.
-    const altPhone = phones[1] ?? altPhones.find((p) => p !== phone);
+    const altPhone = validPhone(phones[1] ?? altPhones.find((p) => p !== phone));
 
     // Budget: parse with the shared currency-aware parser. interpretBudget keeps
     // the verbatim text (budgetRaw), splits ranges ("10-12 Cr" → 10cr..12cr with
     // unit inheritance), and never strips Cr/Lakh. Currency is resolved later
     // (after team routing) by strict priority — see the budget block below.
-    const budgetInfo = interpretBudget(
-      pick(row, "budgetaed", "budget", "budgetmin", "minbudget"),
-      pick(row, "budgetmax", "maxbudget"),
-    );
+    // VALIDATE: a budget must contain a number — a digit-less value ("Lalit Sir")
+    // is never a budget; drop it instead of storing a name in the budget field.
+    const budgetColRaw = validBudgetRaw(field("budget", "budgetaed", "budget", "budgetmin", "minbudget"));
+    const budgetInfo = budgetColRaw
+      ? interpretBudget(budgetColRaw, validBudgetRaw(field("budgetMax", "budgetmax", "maxbudget")))
+      : { min: null, max: null, raw: null };
     try {
       const r = await ingestLead({
         name: name ?? phone ?? email ?? "Unknown",
         phone, email,
-        city: pick(row, "city", "location", "address"),
-        configuration: pick(row, "configuration", "config", "bhk", "type"),
+        city: field("city", "city", "location", "address"),
+        configuration: field("configuration", "configuration", "config", "bhk", "type"),
         budgetMin: budgetInfo.min ?? undefined,
         budgetMax: budgetInfo.max ?? undefined,
-        notesShort: pick(row, "message", "requirement", "todo"),
-        tags: pick(row, "tags", "tag"),
-        source: parseSource(pick(row, "source")),
+        notesShort: field("message", "message", "requirement", "todo"),
+        tags: field("tags", "tags", "tag"),
+        source: parseSource(field("source", "source")),
         sourceDetail: campaign,
       });
       if (r.deduped) deduped++; else created++;
@@ -462,55 +659,63 @@ export async function POST(req: NextRequest) {
       if (!r.deduped) update.importBatchId = importBatch.id;
       if (altPhone) update.altPhone = altPhone;
       if (altName) update.altName = altName;
-      const company = pick(row, "company"); if (company) update.company = company;
-      const address = pick(row, "address"); if (address) update.address = address;
-      const whoIsClient = pick(row, "whoisclient", "client", "clientinfo", "about");
+      const company = field("company", "company"); if (company) update.company = company;
+      const address = field("address", "address"); if (address) update.address = address;
+      const whoIsClient = field("whoIsClient", "whoisclient", "client", "clientinfo", "about");
       if (whoIsClient) update.whoIsClient = whoIsClient;
-      const project = pick(row, "project");
+      const project = field("project", "project");
       if (project) update.sourceDetail = update.sourceDetail ?? project;
-      const categorization = pick(row, "categorization", "category");
+      const categorization = field("categorization", "categorization", "category");
       if (categorization) update.categorization = categorization;
-      const stage = pick(row, "stage");
-      const callStatus = pick(row, "status", "callstatus");
+      // SOURCE FIDELITY: store the verbatim Source column exactly as written
+      // ("Townscript", "Eventbrite", "WhatsApp Campaign June"). Display + filters
+      // read this; NEVER mapped, normalized, or defaulted to "CSV".
+      const srcRaw = field("source", "source"); if (srcRaw) update.sourceRaw = srcRaw;
+      const stage = field("stage", "stage");
+      const callStatus = field("status", "status", "callstatus");
       // Preserve the raw sheet value so agents can see original vs mapped stage
       const rawStatus = callStatus || stage;
-      if (rawStatus) update.originalSheetStatus = rawStatus;
-      if (stage) update.status = mapSheetStatus(stage);
-      else if (callStatus) update.status = mapSheetStatus(callStatus);
+      // VALIDATE: only accept a real status label — never a TRUE/FALSE/numeric
+      // token leaked from a Meeting/Site-Visit column.
+      const stageOk = stage && looksLikeStatus(stage);
+      const callStatusOk = callStatus && looksLikeStatus(callStatus);
+      if (rawStatus && (stageOk || callStatusOk)) update.originalSheetStatus = rawStatus;
+      if (stageOk) update.status = mapSheetStatus(stage);
+      else if (callStatusOk) update.status = mapSheetStatus(callStatus);
       // Canonicalize casing so imports never reintroduce variants like
       // "Never Respond Phone calls" that would leak past the exact-match
       // terminal/workable classification.
-      if (callStatus) update.currentStatus = canonicalStatus(callStatus);
-      const followup = parseDate(pick(row, "followupdate", "followup", "nextfollowup"));
+      if (callStatusOk) update.currentStatus = canonicalStatus(callStatus);
+      const followup = parseDate(field("followupDate", "followupdate", "followup", "nextfollowup"));
       if (followup) update.followupDate = followup;
-      const meeting = parseDate(pick(row, "meeting", "meetingdate"));
+      const meeting = parseDate(field("meeting", "meeting", "meetingdate"));
       if (meeting) update.meetingDate = meeting;
-      const sv = parseDate(pick(row, "sitevisit", "sitevisitdate"));
+      const sv = parseDate(field("siteVisit", "sitevisit", "sitevisitdate"));
       if (sv) update.siteVisitDate = sv;
-      const detailShared = pick(row, "detailshared", "shared");
+      const detailShared = field("detailShared", "detailshared", "shared");
       if (detailShared) update.detailShared = detailShared;
-      const todo = pick(row, "todo", "todonext", "nextaction");
+      const todo = field("todoNext", "todo", "todonext", "nextaction");
       if (todo) update.todoNext = todo;
-      const potential = parsePotential(pick(row, "potential"));
+      const potential = parsePotential(field("potential", "potential"));
       if (potential && !r.deduped) update.potential = potential;
-      const fund = parseFund(pick(row, "fundreadiness", "fund", "funds"));
+      const fund = parseFund(field("fundReadiness", "fundreadiness", "fund", "funds"));
       if (fund && !r.deduped) update.fundReadiness = fund;
-      const mood = parseMood(pick(row, "moodstatus", "mood"));
+      const mood = parseMood(field("moodStatus", "moodstatus", "mood"));
       if (mood) update.moodStatus = mood;
-      const when = parseInvestTimeline(pick(row, "whencaninvest", "timeline", "invest", "whencaninvest"));
+      const when = parseInvestTimeline(field("whenCanInvest", "whencaninvest", "timeline", "invest", "whencaninvest"));
       if (when && !r.deduped) update.whenCanInvest = when;
       // Team: admin-picked override wins over per-row column. Lalit's testing
       // sheets had rows split across India + Dubai despite all being one team's
       // pipeline — forceTeam fixes that at import time.
       // Always run through resolveTeam so routing provenance columns are set.
       {
-        const rowTeamRaw = forceTeam ?? pick(row, "forwardedteam", "team") ?? null;
+        const rowTeamRaw = forceTeam ?? field("team", "forwardedteam", "team") ?? null;
         const teamResult = resolveTeam({
           forceTeam: rowTeamRaw,
           forceMethod: "import",
           sourceDetail: (update.sourceDetail as string | undefined) ?? undefined,
-          projectSlug: pick(row, "project"),
-          text: pick(row, "remarks", "remark"),
+          projectSlug: field("project", "project"),
+          text: field("remarks", "remarks", "remark"),
         });
         if (teamResult.team) {
           update.forwardedTeam = teamResult.team;
@@ -525,8 +730,8 @@ export async function POST(req: NextRequest) {
       // AI score from the MIS "Categorization" / "Status" column — sheet writes win
       // over the AI rule-engine. "Highly Responsive – picks calls regularly" → HOT,
       // "Cold / not picking" → COLD, etc.
-      const categoColumn = pick(row, "categorization", "category");
-      const callStatusColumn = pick(row, "status", "callstatus");
+      const categoColumn = field("categorization", "categorization", "category");
+      const callStatusColumn = field("status", "status", "callstatus");
       const aiFromSheet = aiScoreFromCategorization(categoColumn) ?? aiScoreFromCategorization(callStatusColumn);
       if (aiFromSheet) {
         update.aiScore = aiFromSheet.score;
@@ -534,14 +739,28 @@ export async function POST(req: NextRequest) {
         update.aiSummary = `From sheet "Categorization": ${categoColumn ?? callStatusColumn}`;
         update.aiUpdatedAt = new Date();
       }
-      const remarks = pick(row, "remarks", "remark");
-      if (remarks) update.remarks = remarks;
+      const remarks = field("remarks", "remarks", "remark");
+      if (remarks) {
+        // RAW-FIRST: the exact imported remark goes verbatim into the immutable
+        // rawRemarks audit field. On re-import it only GROWS (mergeRawRemark never
+        // overwrites or truncates) so no history is ever lost. The display copy
+        // mirrors raw for now (Display Remark == Raw Remark until enhanced later).
+        if (r.deduped) {
+          const prevR = await prisma.lead.findUnique({ where: { id: r.lead.id }, select: { rawRemarks: true } });
+          const merged = mergeRawRemark(prevR?.rawRemarks, remarks, importBatch.fileName);
+          update.rawRemarks = merged;
+          update.remarks = merged;
+        } else {
+          update.rawRemarks = remarks;
+          update.remarks = remarks;
+        }
+      }
       // Historic lead date — every MIS sheet's first column is "Date" (the day
       // the lead actually came in). Without this override every imported row
       // gets today's createdAt, which destroys the historic timeline + breaks
       // every "leads created this week" report retroactively. Lalit explicitly
       // asked for "Date in mis will be date when this lead was generated".
-      const historicDate = parseDate(pick(row, "date", "leaddate", "createdon", "createddate", "entrydate"));
+      const historicDate = parseDate(field("date", "date", "leaddate", "createdon", "createddate", "entrydate"));
       if (historicDate && !r.deduped) {
         update.createdAt = historicDate;
         // also backdate lastTouchedAt so "idle 24h" flags don't fire on import day
@@ -554,7 +773,7 @@ export async function POST(req: NextRequest) {
       // / Overdue / Missed. It re-enters the queue when the agent next schedules a
       // follow-up. Historical imports (last-contact in the past) and future
       // follow-ups are left untouched, so genuinely-overdue leads still surface.
-      const lastContact = parseDate(pick(row, "lastcontact", "lastcontactdate", "lastcalldate", "lastcall", "calleddate", "lastcontacted"));
+      const lastContact = parseDate(field("lastContact", "lastcontact", "lastcontactdate", "lastcalldate", "lastcall", "calleddate", "lastcontacted"));
       if (!r.deduped && lastContact && update.followupDate instanceof Date) {
         const istDayKey = (d: Date) => new Date(d.getTime() + 5.5 * 3600 * 1000).toISOString().slice(0, 10);
         const todayKey = istDayKey(new Date());
@@ -564,9 +783,9 @@ export async function POST(req: NextRequest) {
         }
       }
       // Cold-data specific columns — what they already own + via whom
-      const alreadyBought = pick(row, "alreadybought", "alreadyowns", "owns", "purchased");
+      const alreadyBought = field("alreadyBought", "alreadybought", "alreadyowns", "owns", "purchased");
       if (alreadyBought) update.alreadyBought = alreadyBought;
-      const alreadyBoughtBy = pick(row, "alreadyboughtby", "boughtvia", "via", "broker", "boughtfrom");
+      const alreadyBoughtBy = field("alreadyBoughtBy", "alreadyboughtby", "boughtvia", "via", "broker", "boughtfrom");
       if (alreadyBoughtBy) update.alreadyBoughtBy = alreadyBoughtBy;
       // When importing a cold-data batch: flag every new row + leave ownerId null
       if (importAsColdData && !r.deduped) {
@@ -602,11 +821,11 @@ export async function POST(req: NextRequest) {
         // column ("budgetcurrency".startsWith("budget")) and would read the amount.
         const rawCcyHint = budgetInfo.raw && /(?:aed|dhs|inr|rupee|rs\b|₹)/i.test(budgetInfo.raw) ? budgetInfo.raw : undefined;
         const ccy = resolveBudgetCurrency({
-          explicit: pick(row, "currency") ?? rawCcyHint ?? headerHint,
-          country: pick(row, "country") ?? inferCountryFromCity(pick(row, "city", "location")),
-          projectName: pick(row, "project") ?? (update.sourceDetail as string | undefined),
+          explicit: field("currency", "currency") ?? rawCcyHint ?? headerHint,
+          country: field("country", "country") ?? inferCountryFromCity(field("city", "city", "location")),
+          projectName: field("project", "project") ?? (update.sourceDetail as string | undefined),
           sheetName: importBatch.fileName,
-          team: (update.forwardedTeam as string | undefined) ?? forceTeam ?? pick(row, "forwardedteam", "team"),
+          team: (update.forwardedTeam as string | undefined) ?? forceTeam ?? field("team", "forwardedteam", "team"),
         });
         update.budgetRaw = budgetInfo.raw;
         if (budgetInfo.min != null) update.budgetMin = budgetInfo.min;
@@ -628,6 +847,21 @@ export async function POST(req: NextRequest) {
           update.customFields = { ...((prev?.customFields as Record<string, unknown>) ?? {}), ...cf };
         } else {
           update.customFields = cf;
+        }
+      }
+      // RAW IMPORT (immutable audit): the ENTIRE original row, verbatim — EVERY
+      // column, including the mapped ones consumed into derived fields above
+      // (name/phone/email/source/status/potential/dates/…). Guarantees every
+      // imported value is recoverable exactly as written. Blank cells never
+      // overwrite a prior non-blank original on re-import (merge-safe).
+      const rawRow: Record<string, string> = {};
+      for (const k of Object.keys(row)) { const v = row[k]?.toString(); if (v != null && v !== "") rawRow[k] = v; }
+      if (Object.keys(rawRow).length > 0) {
+        if (r.deduped) {
+          const prevRI = await prisma.lead.findUnique({ where: { id: r.lead.id }, select: { rawImport: true } });
+          update.rawImport = { ...((prevRI?.rawImport as Record<string, unknown>) ?? {}), ...rawRow };
+        } else {
+          update.rawImport = rawRow;
         }
       }
       if (Object.keys(update).length > 0) {

@@ -4,6 +4,7 @@ import { requireRole } from "@/lib/auth";
 import { audit, reqMeta } from "@/lib/audit";
 import { leadScopeWhere } from "@/lib/leadScope";
 import { TERMINAL_STATUSES, CLOSED_OUTCOME_STATUSES, LOST_STATUSES } from "@/lib/lead-statuses";
+import { effectiveSource } from "@/lib/sourceLabel";
 import { LeadSource, LeadStatus, AIScore, Prisma } from "@prisma/client";
 
 // CSV export — ADMIN ONLY. Every export is audited and the CSV is watermarked
@@ -253,7 +254,7 @@ export async function GET(req: NextRequest) {
       city: l.city,
       country: l.country,
       team: l.forwardedTeam,
-      source: l.source,
+      source: effectiveSource(l.sourceRaw, l.source),
       currentStatus: l.currentStatus,
       status: l.status,
       aiScore: l.aiScore,

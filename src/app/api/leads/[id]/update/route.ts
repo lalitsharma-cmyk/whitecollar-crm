@@ -28,6 +28,10 @@ const ALLOWED: Record<string, "string" | "date" | "number" | "enum" | "bool"> = 
   createdAt: "date",
   status: "enum", potential: "enum", fundReadiness: "enum",
   moodStatus: "enum", whenCanInvest: "enum",
+  // source (lead provenance / LeadSource enum) — Admin / Super-Admin-only; gated below.
+  source: "enum",
+  // sourceRaw — verbatim free-text source ("Townscript"); Admin/Super-Admin-only.
+  sourceRaw: "string",
   bantStatus: "enum", bantReason: "string",
   // BANT depth — Authority + Need.
   // authorityPerson is the new free-text "who decides" field ("Self", "Wife", etc.)
@@ -58,6 +62,16 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         { status: 403 }
       );
     }
+  }
+
+  // Source (lead provenance) is an Admin / Super-Admin-only correction. Stricter
+  // than ADMIN_ONLY_FIELDS (which allows managers): block agents AND managers.
+  // role "ADMIN" covers super-admins (isSuperAdmin is a flag on an ADMIN).
+  if (("source" in body || "sourceRaw" in body) && me.role !== "ADMIN") {
+    return NextResponse.json(
+      { error: "Only an Admin or Super Admin can change the lead source." },
+      { status: 403 },
+    );
   }
 
   // Status governance — "Fresh Lead" is system-generated and outcome /

@@ -127,11 +127,13 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
   }
   if (sp.city) where.city = { contains: sp.city, mode: "insensitive" };
   if (sp.category) where.categorization = { contains: sp.category, mode: "insensitive" };
-  // Source filter — multi-select, comma-separated
+  // Source filter — multi-select, comma-separated. Filters on the verbatim
+  // sourceRaw field (human values like "WhatsApp", "Google Ads"), not the
+  // legacy `source` enum. Dropdown options are the DISTINCT sourceRaw values.
   if (sp.source && me.role !== "AGENT") {
     const srcs = sp.source.split(",").map(s => s.trim()).filter(Boolean);
-    if (srcs.length === 1) where.source = srcs[0] as LeadSource;
-    else if (srcs.length > 1) where.source = { in: srcs as LeadSource[] };
+    if (srcs.length === 1) where.sourceRaw = srcs[0];
+    else if (srcs.length > 1) where.sourceRaw = { in: srcs };
   }
   // Project filter — multi-select: match any of the selected projects (OR within project, AND with rest)
   if (sp.project) {
@@ -496,6 +498,18 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
     orderBy: { name: "asc" },
   });
 
+  // Source filter options — DISTINCT verbatim sourceRaw values actually present
+  // in the DB. The source dropdown now reads/filters on sourceRaw (human values
+  // like "WhatsApp", "Google Ads"), not the legacy `source` enum. Corrupted
+  // leads with sourceRaw=null are excluded so we never offer a blank option.
+  const sourceRows = await prisma.lead.findMany({
+    where: { deletedAt: null, sourceRaw: { not: null } },
+    distinct: ["sourceRaw"],
+    select: { sourceRaw: true },
+    orderBy: { sourceRaw: "asc" },
+  });
+  const sourceOptions = sourceRows.map(r => r.sourceRaw!).filter(Boolean);
+
   // Fetch intelligence match data for the current page of leads (post-join:
   // IntelligenceMatch has no FK back-relation on Lead, so we query separately).
   const leadIds = leads.map((l) => l.id);
@@ -591,7 +605,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
       {/* ── Search + More Filters ───────────────────────────────────────── */}
       <LeadFilters
         agents={agents.map((a) => ({ id: a.id, name: a.name }))}
-        sources={Object.values(LeadSource)}
+        sources={sourceOptions}
         statuses={[]}
         showSource={me.role !== "AGENT"}
         distinctTags={distinctTags}

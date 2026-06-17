@@ -13,6 +13,7 @@ import { COLD_ORIGINS } from "@/lib/leadScope";
 import { fmtMoneyDual } from "@/lib/money";
 import Link from "next/link";
 import { normalizeTeam } from "@/lib/teamRouting";
+import { sourceBreakdown } from "@/lib/sourceLabel";
 import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
@@ -118,11 +119,11 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
   const scopedUserId: string | null = null;
 
   const [
-    bySource, callsByDay, funnel, topProjects,
+    bySourceRows, callsByDay, funnel, topProjects,
     activeLeadsForForecast, stalledRaw, heatmapRaw,
-    statusCounts, sourceByCount,
+    statusCounts, sourceByCountRows,
   ] = await Promise.all([
-    prisma.lead.groupBy({ by: ["source"], _count: { _all: true }, where: { ...teamScope, deletedAt: null, createdAt: { gte: today } } }),
+    prisma.lead.findMany({ where: { ...teamScope, deletedAt: null, createdAt: { gte: today } }, select: { source: true, sourceRaw: true } }),
 
     prisma.$queryRaw<Array<{ d: string; total: number; connected: number }>>`
       SELECT to_char("startedAt"::date, 'YYYY-MM-DD') as d,
@@ -234,18 +235,17 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
         : { ...teamScope, deletedAt: null },
     }),
 
-    // ── Source analytics — all-time, top 12 sources by count.
-    // Sorted desc so SourceChart renders the biggest bars first.
-    // source is a non-nullable enum (LeadSource @default WEBSITE) so no
-    // null-filter is needed; every lead has a source value.
-    prisma.lead.groupBy({
-      by: ["source"],
-      _count: { _all: true },
+    // ── Source analytics — all-time, sources by count.
+    // Read verbatim sourceRaw via sourceBreakdown (top 12 sliced below).
+    prisma.lead.findMany({
       where: { ...teamScope, deletedAt: null },
-      orderBy: { _count: { id: "desc" } },
-      take: 12,
+      select: { source: true, sourceRaw: true },
     }),
   ]);
+
+  // Group the raw {source, sourceRaw} rows into effective-source breakdowns.
+  const bySource = sourceBreakdown(bySourceRows);              // -> { source, n }[]
+  const sourceByCount = sourceBreakdown(sourceByCountRows).slice(0, 12); // top 12
 
   const [tot, contacted, qualified, , ] = funnel; // status-based: total, active, closing, booked(×2)
 
@@ -544,7 +544,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
           All-time lead counts by source, top 12, scoped to current team
           filter. Placed here so the two funnel-level views sit together. */}
       <div className="card p-5">
-        <SourceChart data={sourceByCount} />
+        <SourceChart data={sourceByCount.map(s => ({ source: s.source, _count: { _all: s.n } }))} />
       </div>
 
       {/* Primary report navigation — these are the everyday reports */}
@@ -637,7 +637,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
         <div className="card p-5">
           <div className="text-xs text-gray-500 tracking-widest">DAILY · TODAY</div>
           <div className="font-semibold mt-1">Lead intake by source</div>
-          <SourceBarChart data={bySource.map(b => ({ source: b.source, n: b._count._all }))} />
+          <SourceBarChart data={bySource} />
         </div>
         <div className="card p-5">
           <div className="text-xs text-gray-500 tracking-widest">LAST 14 DAYS</div>

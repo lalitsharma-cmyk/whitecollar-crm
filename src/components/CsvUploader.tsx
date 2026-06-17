@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import ImportMappingTable, { type MappingRow, type CrmFieldOption } from "./ImportMappingTable";
 
 interface Agent { id: string; name: string; team: string | null; }
 
@@ -15,6 +16,10 @@ interface PreviewResult {
   dupSamples: { name: string; phone: string; existingStatus: string }[];
   uniqueStatuses: string[];
   detectedColumns: string[];
+  // Import Mapping Approval gate (additive)
+  mapping?: MappingRow[];
+  crmFields?: CrmFieldOption[];
+  ignoreValue?: string;
   fileType: string;
   sheetName?: string;
   allSheets?: string[];
@@ -39,46 +44,74 @@ export default function CsvUploader({ agents = [] }: { agents?: Agent[] }) {
   const [preview, setPreview] = useState<PreviewResult | null>(null);
   const [result, setResult] = useState<ImportResult | null>(null);
   const [err, setErr] = useState<{ msg: string; hint?: string } | null>(null);
+  // Import Mapping Approval gate state.
+  // mapping: editable column→CRM-field map (seeded from the preview proposal).
+  // confirmed: the admin's explicit "I confirm this mapping" checkbox — the
+  // Import button stays disabled until this is true, so no low-confidence column
+  // is ever auto-imported into a CRM field without sign-off.
+  const [mapping, setMapping] = useState<Record<string, string>>({});
+  const [confirmed, setConfirmed] = useState(false);
 
-  function buildFormData() {
+  function buildFormData(opts?: { withMapping?: boolean }) {
     const fd = new FormData();
     fd.append("file", file!);
     if (campaign) fd.append("campaign", campaign);
     fd.append("leadOrigin", leadOrigin);
     fd.append("forceTeam", forceTeam);
     if (assignToUserId) fd.append("assignToUserId", assignToUserId);
+    // Only the real import carries the admin-confirmed mapping; the preview runs
+    // on auto-detection to produce the proposal.
+    if (opts?.withMapping && Object.keys(mapping).length > 0) {
+      fd.append("mapping", JSON.stringify(mapping));
+    }
     return fd;
   }
 
   async function runPreview() {
     if (!file) return;
     if (forceTeam === "ask") { setErr({ msg: "Pick a team first (Dubai or India)." }); return; }
-    setBusy(true); setErr(null); setPreview(null); setResult(null);
+    setBusy(true); setErr(null); setPreview(null); setResult(null); setConfirmed(false); setMapping({});
     try {
       const res = await fetch("/api/intake/csv?preview=1", { method: "POST", body: buildFormData() });
       const json = await res.json().catch(() => ({ error: "Server returned invalid response" }));
       if (!res.ok) { setErr({ msg: json.error ?? `Preview failed (HTTP ${res.status})`, hint: json.hint }); return; }
-      setPreview(json as PreviewResult);
+      const p = json as PreviewResult;
+      setPreview(p);
+      // Seed the editable mapping from the server's proposal (column → crmField).
+      if (p.mapping) {
+        const seed: Record<string, string> = {};
+        for (const m of p.mapping) seed[m.column] = m.crmField;
+        setMapping(seed);
+      }
     } catch (e) {
       setErr({ msg: `Network error: ${String(e)}` });
     } finally { setBusy(false); }
   }
 
   async function confirmImport() {
+    // Hard gate: never import without the explicit mapping confirmation.
+    if (!confirmed) { setErr({ msg: "Confirm the column mapping first." }); return; }
     setBusy(true); setErr(null);
     try {
-      const res = await fetch("/api/intake/csv", { method: "POST", body: buildFormData() });
+      const res = await fetch("/api/intake/csv", { method: "POST", body: buildFormData({ withMapping: true }) });
       const json = await res.json().catch(() => ({ error: "Server returned invalid response" }));
       if (!res.ok) { setErr({ msg: json.error ?? `Import failed (HTTP ${res.status})`, hint: json.hint }); return; }
       setResult(json as ImportResult);
-      setPreview(null);
+      setPreview(null); setConfirmed(false); setMapping({});
       router.refresh();
     } catch (e) {
       setErr({ msg: `Network error: ${String(e)}` });
     } finally { setBusy(false); }
   }
 
-  function resetAll() { setFile(null); setPreview(null); setResult(null); setErr(null); }
+  function resetAll() { setFile(null); setPreview(null); setResult(null); setErr(null); setConfirmed(false); setMapping({}); }
+
+  // Live mapping rows = server proposal columns, re-merged with the admin's edits
+  // so the confidence badge stays put while the chosen CRM field updates.
+  const liveMappingRows: MappingRow[] = (preview?.mapping ?? []).map((m) => ({
+    ...m,
+    crmField: mapping[m.column] ?? m.crmField,
+  }));
 
   return (
     <div>
@@ -220,19 +253,51 @@ export default function CsvUploader({ agents = [] }: { agents?: Agent[] }) {
             🔒 {preview.automationNote}
           </div>
 
-          {/* Detected columns */}
-          {preview.detectedColumns.length > 0 && (
-            <details className="text-[11px]">
-              <summary className="cursor-pointer text-blue-700">Mapped columns ({preview.detectedColumns.length}) ↓</summary>
-              <div className="mt-1 font-mono text-gray-600">{preview.detectedColumns.join(" · ")}</div>
-            </details>
+          {/* ── Column mapping approval gate (steps 2-5) ── */}
+          {preview.mapping && preview.crmFields && preview.ignoreValue ? (
+            <div className="rounded-lg border border-blue-100 bg-white p-3">
+              <ImportMappingTable
+                rows={liveMappingRows}
+                crmFields={preview.crmFields}
+                ignoreValue={preview.ignoreValue}
+                onChange={(column, crmField) => {
+                  setMapping((m) => ({ ...m, [column]: crmField }));
+                  // Any edit invalidates a prior confirmation — must re-confirm.
+                  setConfirmed(false);
+                }}
+              />
+            </div>
+          ) : (
+            // Fallback for an older API response shape (no mapping payload).
+            preview.detectedColumns.length > 0 && (
+              <details className="text-[11px]">
+                <summary className="cursor-pointer text-blue-700">Mapped columns ({preview.detectedColumns.length}) ↓</summary>
+                <div className="mt-1 font-mono text-gray-600">{preview.detectedColumns.join(" · ")}</div>
+              </details>
+            )
           )}
+
+          {/* ── Step 6: explicit confirmation gate ── */}
+          <label className="flex items-start gap-2 text-xs cursor-pointer bg-white border border-blue-200 rounded-lg p-2.5">
+            <input
+              type="checkbox"
+              checked={confirmed}
+              onChange={(e) => setConfirmed(e.target.checked)}
+              className="mt-0.5 accent-[#0b1a33]"
+            />
+            <span className="text-gray-700">
+              <b>I confirm this column mapping is correct.</b> Columns set to
+              <i> Ignore</i> are kept verbatim as imported fields and not written
+              to a CRM field.
+            </span>
+          </label>
 
           {/* Action buttons */}
           <div className="flex gap-2 pt-1">
-            <button onClick={confirmImport} disabled={busy}
-              className="flex-1 btn btn-primary justify-center">
-              {busy ? "Importing…" : `✅ Confirm — import ${preview.newRows} new lead${preview.newRows === 1 ? "" : "s"}`}
+            <button onClick={confirmImport} disabled={busy || !confirmed}
+              title={confirmed ? "" : "Confirm the mapping above to enable import"}
+              className="flex-1 btn btn-primary justify-center disabled:opacity-50 disabled:cursor-not-allowed">
+              {busy ? "Importing…" : `✅ Import ${preview.newRows} new lead${preview.newRows === 1 ? "" : "s"}`}
             </button>
             <button onClick={resetAll} disabled={busy}
               className="px-4 py-2 rounded-lg border border-gray-300 text-sm text-gray-600 hover:bg-gray-50">

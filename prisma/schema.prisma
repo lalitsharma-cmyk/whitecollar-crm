@@ -284,7 +284,10 @@ model Lead {
   budgetRaw       String?     // verbatim imported budget text ("10 Cr", "AED 800K - AED 1M") — display source of truth; never auto-converted
   configuration   String?     // "2BHK" / "Penthouse" / "Plot"
   notesShort      String?     // one-liner requirement (legacy)
-  remarks         String?     // long remarks (matches sheet's Remarks column)
+  remarks         String?     // long remarks (matches sheet's Remarks column) — "Display Remark" (currently == rawRemarks)
+  rawRemarks      String?     // IMMUTABLE audit source of truth: exact imported remark text, never transformed, never overwritten after first write. Conversation History "Raw History (Audit Log)" renders this verbatim.
+  rawImport       Json?       // IMMUTABLE audit source: the ENTIRE original import row, verbatim (every header→value, incl. mapped columns). Guarantees every imported value — name/phone/email/source/dates/etc. — is recoverable exactly as written, alongside the derived fields. Merged (never value-overwritten by blanks) on re-import.
+  sourceRaw       String?     // VERBATIM source value exactly as written in the sheet ("Townscript", "Eventbrite", "Dubai Property Expo This Weekend", "WhatsApp Campaign June"). NEVER mapped/normalized/defaulted. Display + filters + reports use this. The `source` enum below is only a coarse best-effort bucket for legacy charts; sourceRaw is the source of truth.
   tags            String?     // comma-separated for SQLite ("NRI,Investor")
   categorization  String?     // NRI / Resident / Investor / End-user
   language        String?     // "English,Hindi"
@@ -1730,7 +1733,8 @@ model HRCandidate {
   // Preserved verbatim and shown as the display status; `status` above is the
   // mapped CRM category used for dashboards/filters. Excel is the source of truth.
   originalStatus   String?
-  remarks          String?
+  remarks          String?           // "Display Remark" (currently == rawRemarks)
+  rawRemarks       String?           // IMMUTABLE audit source of truth: exact imported remark text, never transformed/overwritten. Shown verbatim in Raw History (Audit Log).
   tags             String?           // comma-separated
   nextAction       String?
   nextActionDate   DateTime?

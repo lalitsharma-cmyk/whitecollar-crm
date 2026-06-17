@@ -8,6 +8,9 @@ import { resolveTeam, routingFieldsFor } from "@/lib/teamRouting";
 import { interpretBudget, resolveBudgetCurrency } from "@/lib/budgetCurrency";
 import { inferCountryFromCity } from "@/lib/cityCountry";
 import { canonicalStatus } from "@/lib/lead-statuses";
+import { mergeRawRemark } from "@/lib/rawRemarks";
+import { validEmail, validBudgetRaw, looksLikeStatus, validPhone } from "@/lib/importValidate";
+import { normalizePhone } from "@/lib/phone";
 // runIntelligenceCheck is called inside ingestLead() for every new (non-deduped)
 // lead. No explicit call needed here — the check fires sequentially before any
 // assignment or automation runs, satisfying the bulk-import constraint.
@@ -54,7 +57,10 @@ function parseSource(s?: string): LeadSource {
   if (n.includes("call")) return LeadSource.INBOUND_CALL;
   if (n.includes("facebook") || n.includes("fb") || n.includes("meta")) return LeadSource.FACEBOOK_ADS;
   if (n.includes("google")) return LeadSource.GOOGLE_ADS;
-  return LeadSource.CSV_IMPORT;
+  // Unrecognized but PRESENT source (e.g. "Townscript", "Eventbrite") → OTHER as
+  // a coarse legacy bucket only. The verbatim value is preserved in sourceRaw and
+  // is what the CRM displays/filters on — we NEVER silently relabel it "CSV".
+  return LeadSource.OTHER;
 }
 function parseStage(s?: string) {
   if (!s) return;
@@ -166,14 +172,22 @@ export async function POST(req: NextRequest) {
   for (const [i, row] of parsed.data.entries()) {
     _consumedKeys = new Set();   // reset per-row: tracks headers mapped to CRM fields
     const name = pick(row, "customer", "name", "fullname", "leadname");
-    const phone = pick(row, "mobile", "phone", "contact", "whatsapp");
-    const email = pick(row, "email", "emailid");
+    // VALIDATE (same rules as CSV import): normalize to E.164 then reject
+    // malformed (country-code-only "+91", merged/over-long) → store blank rather
+    // than corrupt phone data.
+    const phoneRaw = pick(row, "mobile", "phone", "contact", "whatsapp");
+    const phone = phoneRaw ? (validPhone(normalizePhone(phoneRaw, "IN")) ?? undefined) : undefined;
+    // VALIDATE: only store an email that is actually an email — never a name or
+    // boolean leaked from an adjacent column ("tanuj", "false").
+    const email = validEmail(pick(row, "email", "emailid"));
     if (!name && !phone && !email) continue;
 
-    const budgetInfo = interpretBudget(
-      pick(row, "budgetaed", "budgetinr", "budget", "budgetmin"),
-      pick(row, "budgetmax"),
-    );
+    // VALIDATE: a budget must contain a number. A digit-less value ("Lalit Sir")
+    // is NOT a budget — drop it rather than store a name in the budget field.
+    const budgetCol = validBudgetRaw(pick(row, "budgetaed", "budgetinr", "budget", "budgetmin"));
+    const budgetInfo = budgetCol
+      ? interpretBudget(budgetCol, validBudgetRaw(pick(row, "budgetmax")))
+      : { min: null, max: null, raw: null };
     try {
       const r = await ingestLead({
         name: name ?? phone ?? email ?? "Unknown",
@@ -198,8 +212,31 @@ export async function POST(req: NextRequest) {
       const ad = pick(row, "address"); if (ad) update.address = ad;
       const wc = pick(row, "whoisclient", "client", "clientinfo"); if (wc) update.whoIsClient = wc;
       const cat = pick(row, "categorization", "category"); if (cat) update.categorization = cat;
+      // RAW-FIRST remarks (bugfix): the Sheet importer previously routed the
+      // Remarks column ONLY into notesShort, so imported history never reached
+      // Lead.remarks / Conversation History. Now the exact remark is stored
+      // verbatim in the immutable rawRemarks audit field (and mirrored to the
+      // display copy), growing — never overwriting — on re-import.
+      const sheetRemark = pick(row, "remarks", "remark");
+      if (sheetRemark) {
+        if (r.deduped) {
+          const prevR = await prisma.lead.findUnique({ where: { id: r.lead.id }, select: { rawRemarks: true } });
+          const merged = mergeRawRemark(prevR?.rawRemarks, sheetRemark, importBatch.fileName);
+          update.rawRemarks = merged;
+          update.remarks = merged;
+        } else {
+          update.rawRemarks = sheetRemark;
+          update.remarks = sheetRemark;
+        }
+      }
       const st = parseStage(pick(row, "stage")); if (st) update.status = st as any;
-      const cs = pick(row, "status"); if (cs) update.currentStatus = canonicalStatus(cs);
+      // VALIDATE: only accept a real status label — never a TRUE/FALSE/numeric
+      // token leaked from a Meeting/Site-Visit column.
+      const cs = pick(row, "status"); if (cs && looksLikeStatus(cs)) update.currentStatus = canonicalStatus(cs);
+      // SOURCE FIDELITY: store the verbatim Source column exactly as written
+      // ("Townscript", "Eventbrite", "WhatsApp Campaign June"). Display + filters
+      // read this; it is NEVER mapped, normalized, or defaulted.
+      const srcRaw = pick(row, "source"); if (srcRaw) update.sourceRaw = srcRaw;
       const fu = parseDate(pick(row, "followupdate", "followup")); if (fu) update.followupDate = fu;
       const me = parseDate(pick(row, "meeting", "meetingdate")); if (me) update.meetingDate = me;
       const sv = parseDate(pick(row, "sitevisit")); if (sv) update.siteVisitDate = sv;
@@ -263,6 +300,19 @@ export async function POST(req: NextRequest) {
           update.customFields = { ...((prev?.customFields as Record<string, unknown>) ?? {}), ...cf };
         } else {
           update.customFields = cf;
+        }
+      }
+      // RAW IMPORT (immutable audit): the ENTIRE original row verbatim — every
+      // column, incl. mapped ones — so every imported value is recoverable
+      // exactly as written. Blanks never overwrite a prior original on re-import.
+      const rawRow: Record<string, string> = {};
+      for (const k of Object.keys(row)) { const v = row[k]?.toString(); if (v != null && v !== "") rawRow[k] = v; }
+      if (Object.keys(rawRow).length > 0) {
+        if (r.deduped) {
+          const prevRI = await prisma.lead.findUnique({ where: { id: r.lead.id }, select: { rawImport: true } });
+          update.rawImport = { ...((prevRI?.rawImport as Record<string, unknown>) ?? {}), ...rawRow };
+        } else {
+          update.rawImport = rawRow;
         }
       }
       if (Object.keys(update).length) {

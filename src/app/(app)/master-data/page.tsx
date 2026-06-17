@@ -13,6 +13,7 @@ import {
   DUBAI_STATUSES,
 } from "@/lib/lead-statuses";
 import MasterDataRecordsTable, { type MDRow } from "@/components/MasterDataRecordsTable";
+import { sourceBreakdown } from "@/lib/sourceLabel";
 
 // ── Master Data — the COMPLETE lead database (Admin / Lalit only) ───────────
 // The normal /leads view shows only WORKABLE leads. This is the full picture:
@@ -126,11 +127,11 @@ export default async function MasterDataPage({ searchParams }: { searchParams: P
   const catCount: Record<Cat, number> = { all: cAll, workable: cWork, closed: cClosed, lost: cLost, deleted: cDeleted, archived: cArchived };
 
   // ── Reporting breakdowns over the CURRENT view + monthly trend (overall) ─
-  const [byTeamRows, byOwnerRows, byStatusRows, bySourceRows, agents, leads, trendRows] = await Promise.all([
+  const [byTeamRows, byOwnerRows, byStatusRows, bySourceRaw, agents, leads, trendRows] = await Promise.all([
     prisma.lead.groupBy({ by: ["forwardedTeam"], where, _count: { _all: true } }),
     prisma.lead.groupBy({ by: ["ownerId"], where, _count: { _all: true } }),
     prisma.lead.groupBy({ by: ["currentStatus"], where, _count: { _all: true } }),
-    prisma.lead.groupBy({ by: ["source"], where, _count: { _all: true } }),
+    prisma.lead.findMany({ where, select: { source: true, sourceRaw: true } }),
     prisma.user.findMany({ where: { active: true }, select: { id: true, name: true, team: true } }),
     prisma.lead.findMany({
       where,
@@ -160,9 +161,10 @@ export default async function MasterDataPage({ searchParams }: { searchParams: P
     .filter((r) => r.currentStatus)
     .map((r) => ({ label: r.currentStatus as string, count: r._count._all }))
     .sort((a, b) => b.count - a.count);
-  const bySource = bySourceRows
-    .map((r) => ({ label: SOURCE_LABEL[r.source] ?? r.source, count: r._count._all }))
-    .sort((a, b) => b.count - a.count);
+  // sourceBreakdown already groups by effective source (verbatim sourceRaw,
+  // enum-label fallback) and returns { source, n } sorted by count desc.
+  const bySource = sourceBreakdown(bySourceRaw)
+    .map((r) => ({ label: r.source, count: r.n }));
   const byTeam = byTeamRows
     .map((r) => ({ label: r.forwardedTeam ?? "Unclassified", count: r._count._all }))
     .sort((a, b) => b.count - a.count);

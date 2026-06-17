@@ -100,7 +100,9 @@ export async function POST(req: NextRequest) {
     email: prospectEmail,
     source,
     sourceDetail: detail,
-    notesShort: `${subject}\n\n${text.slice(0, 1500)}`,
+    // No truncation — store the full inbound email body verbatim (notesShort is
+    // unlimited Postgres text). Previously sliced to 1500 chars (data loss).
+    notesShort: `${subject}\n\n${text}`,
   });
 
   return NextResponse.json({ ok: true, leadId: lead.id, deduped, parsedFrom: fromRaw });

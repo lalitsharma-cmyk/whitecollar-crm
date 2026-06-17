@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/auth";
 import { normalizeTeam } from "@/lib/teamRouting";
-import { LeadSource } from "@prisma/client";
+import { sourceBreakdown, effectiveSource, sourceEnumLabel } from "@/lib/sourceLabel";
 import { ACTIVE_PURSUIT_STATUSES, SUPPRESSED_STATUSES, BOOKED_STATUSES } from "@/lib/lead-statuses";
 import { subDays, startOfYear, startOfMonth, startOfQuarter } from "date-fns";
 import Link from "next/link";
@@ -10,7 +10,8 @@ import ReportDateRangePicker from "@/components/ReportDateRangePicker";
 export const dynamic = "force-dynamic";
 
 // Lead Source Breakdown — answers "which sources are working?".
-// One row per LeadSource enum value, columns expose the full funnel
+// One row per effective source (verbatim sourceRaw, enum-label fallback),
+// columns expose the full funnel
 // (received → contacted → qualified → booked / lost) plus two
 // "operations" metrics — average minutes to the first call, and the
 // average AI lead score. This lets Lalit redirect ad spend toward the
@@ -24,7 +25,7 @@ export const dynamic = "force-dynamic";
 type Range = "30d" | "90d" | "year" | "month" | "quarter";
 
 interface SourceRow {
-  source: LeadSource;
+  source: string;
   total: number;
   contacted: number;
   qualified: number;
@@ -121,46 +122,42 @@ export default async function SourcesReportPage({
   const rangeLabel = `${toYmd(since)} → ${toYmd(until)}`;
 
   // ── Pull all the aggregations in parallel.
-  // Five Prisma groupBys + one $queryRaw — every query is bounded by
-  // `since` and grouped by source so the DB does the heavy lifting.
+  // Five lead fetches (grouped by effective source in JS via sourceBreakdown),
+  // one AI-score fetch, and one $queryRaw — every query is bounded by `since`.
   const [
-    totalByGroup,
-    contactedByGroup,
-    qualifiedByGroup,
-    bookedByGroup,
-    lostByGroup,
-    aiScoreByGroup,
+    totalRows,
+    contactedRows,
+    qualifiedRows,
+    bookedRows,
+    lostRows,
+    aiScoreRows,
     firstCallRows,
   ] = await Promise.all([
-    prisma.lead.groupBy({
-      by: ["source"],
+    prisma.lead.findMany({
       where: { deletedAt: null, createdAt: { gte: since, lte: until }, ...(managerTeam ? { forwardedTeam: managerTeam } : {}) },
-      _count: { _all: true },
+      select: { source: true, sourceRaw: true },
     }),
-    prisma.lead.groupBy({
-      by: ["source"],
+    prisma.lead.findMany({
       where: { deletedAt: null, createdAt: { gte: since, lte: until }, currentStatus: { notIn: SUPPRESSED_STATUSES }, ...(managerTeam ? { forwardedTeam: managerTeam } : {}) },
-      _count: { _all: true },
+      select: { source: true, sourceRaw: true },
     }),
-    prisma.lead.groupBy({
-      by: ["source"],
+    prisma.lead.findMany({
       where: { deletedAt: null, createdAt: { gte: since, lte: until }, currentStatus: { in: QUALIFIED_PLUS }, ...(managerTeam ? { forwardedTeam: managerTeam } : {}) },
-      _count: { _all: true },
+      select: { source: true, sourceRaw: true },
     }),
-    prisma.lead.groupBy({
-      by: ["source"],
+    prisma.lead.findMany({
       where: { deletedAt: null, createdAt: { gte: since, lte: until }, currentStatus: { in: [...BOOKED] }, ...(managerTeam ? { forwardedTeam: managerTeam } : {}) },
-      _count: { _all: true },
+      select: { source: true, sourceRaw: true },
     }),
-    prisma.lead.groupBy({
-      by: ["source"],
+    prisma.lead.findMany({
       where: { deletedAt: null, createdAt: { gte: since, lte: until }, currentStatus: { in: SUPPRESSED_STATUSES }, ...(managerTeam ? { forwardedTeam: managerTeam } : {}) },
-      _count: { _all: true },
+      select: { source: true, sourceRaw: true },
     }),
-    prisma.lead.groupBy({
-      by: ["source"],
+    // AI score avg per effective source — pull rows + reduce in JS (below) so the
+    // average keys on the verbatim source, consistent with the count breakdowns.
+    prisma.lead.findMany({
       where: { deletedAt: null, createdAt: { gte: since, lte: until }, aiScoreValue: { not: null }, ...(managerTeam ? { forwardedTeam: managerTeam } : {}) },
-      _avg: { aiScoreValue: true },
+      select: { source: true, sourceRaw: true, aiScoreValue: true },
     }),
 
     // Average minutes from lead.createdAt to the FIRST CallLog for that
@@ -212,20 +209,45 @@ export default async function SourcesReportPage({
         `,
   ]);
 
-  // Build per-source lookups for O(1) access in the render loop below.
-  const totalMap = new Map(totalByGroup.map(r => [r.source, r._count._all]));
-  const contactedMap = new Map(contactedByGroup.map(r => [r.source, r._count._all]));
-  const qualifiedMap = new Map(qualifiedByGroup.map(r => [r.source, r._count._all]));
-  const bookedMap = new Map(bookedByGroup.map(r => [r.source, r._count._all]));
-  const lostMap = new Map(lostByGroup.map(r => [r.source, r._count._all]));
-  const aiMap = new Map(aiScoreByGroup.map(r => [r.source, r._avg.aiScoreValue]));
-  const firstCallMap = new Map(
-    firstCallRows.map(r => [r.source, r.avg_mins === null ? null : Number(r.avg_mins)])
-  );
+  // Build per-source lookups for O(1) access in the render loop below. Each
+  // map is keyed by the EFFECTIVE source (verbatim sourceRaw, enum label
+  // fallback) via sourceBreakdown, so the funnel rows reflect the real channel.
+  const toMap = (rows: { source: string | null; sourceRaw: string | null }[]) =>
+    new Map(sourceBreakdown(rows).map(b => [b.source, b.n]));
+  const totalMap = toMap(totalRows);
+  const contactedMap = toMap(contactedRows);
+  const qualifiedMap = toMap(qualifiedRows);
+  const bookedMap = toMap(bookedRows);
+  const lostMap = toMap(lostRows);
 
-  // Assemble rows in stable enum order so the table doesn't reshuffle
-  // between renders when counts change.
-  const rows: SourceRow[] = (Object.values(LeadSource) as LeadSource[]).map((src) => {
+  // AI score average per effective source — reduce the pulled rows in JS so the
+  // average keys on the same effective source as the counts above.
+  const aiAgg = new Map<string, { sum: number; n: number }>();
+  for (const r of aiScoreRows) {
+    if (r.aiScoreValue == null) continue;
+    const key = effectiveSource(r.sourceRaw, r.source);
+    const cur = aiAgg.get(key) ?? { sum: 0, n: 0 };
+    cur.sum += r.aiScoreValue;
+    cur.n += 1;
+    aiAgg.set(key, cur);
+  }
+  const aiMap = new Map([...aiAgg.entries()].map(([k, v]) => [k, v.n > 0 ? v.sum / v.n : null]));
+
+  // First-call avg comes from a raw query grouped by the enum `source`; relabel
+  // its key through sourceEnumLabel so it joins the effective-source rows. (For
+  // the backfilled data sourceRaw == the enum's friendly label, so these align.)
+  const firstCallMap = new Map<string, number | null>();
+  for (const r of firstCallRows) {
+    firstCallMap.set(sourceEnumLabel(r.source), r.avg_mins === null ? null : Number(r.avg_mins));
+  }
+
+  // Assemble one row per effective source actually present in the data, sorted
+  // by total desc so the biggest channels lead the table.
+  const allSources = new Set<string>([
+    ...totalMap.keys(), ...contactedMap.keys(), ...qualifiedMap.keys(),
+    ...bookedMap.keys(), ...lostMap.keys(), ...aiMap.keys(), ...firstCallMap.keys(),
+  ]);
+  const rows: SourceRow[] = [...allSources].map((src) => {
     const total = totalMap.get(src) ?? 0;
     const qualified = qualifiedMap.get(src) ?? 0;
     const booked = bookedMap.get(src) ?? 0;
@@ -243,7 +265,7 @@ export default async function SourcesReportPage({
       avgFirstCallMins: firstCall,
       avgAiScore: avgAi === null ? null : Number(avgAi),
     };
-  });
+  }).sort((a, b) => b.total - a.total);
 
   // ── Summary tiles ────────────────────────────────────────────────
   // Only consider sources with a meaningful sample size (>=3 leads) for
@@ -295,7 +317,7 @@ export default async function SourcesReportPage({
           {bestBooking && bestBooking.bookedPct > 0 ? (
             <>
               <div className="text-base sm:text-lg font-extrabold text-emerald-800 mt-1 leading-tight">
-                {bestBooking.source.replaceAll("_", " ")}
+                {bestBooking.source}
               </div>
               <div className="text-[11px] text-emerald-700/70 mt-0.5">
                 {bestBooking.bookedPct.toFixed(1)}% · {bestBooking.booked}/{bestBooking.total} booked
@@ -313,7 +335,7 @@ export default async function SourcesReportPage({
           {bestQualified && bestQualified.qualifiedPct > 0 ? (
             <>
               <div className="text-base sm:text-lg font-extrabold text-sky-800 mt-1 leading-tight">
-                {bestQualified.source.replaceAll("_", " ")}
+                {bestQualified.source}
               </div>
               <div className="text-[11px] text-sky-700/70 mt-0.5">
                 {bestQualified.qualifiedPct.toFixed(1)}% · {bestQualified.qualified}/{bestQualified.total} qualified
@@ -331,7 +353,7 @@ export default async function SourcesReportPage({
           {fastestFirstCall ? (
             <>
               <div className="text-base sm:text-lg font-extrabold text-indigo-800 mt-1 leading-tight">
-                {fastestFirstCall.source.replaceAll("_", " ")}
+                {fastestFirstCall.source}
               </div>
               <div className="text-[11px] text-indigo-700/70 mt-0.5">
                 Avg {fmtMins(fastestFirstCall.avgFirstCallMins)} to first dial
@@ -349,7 +371,7 @@ export default async function SourcesReportPage({
           {slowestFirstCall ? (
             <>
               <div className="text-base sm:text-lg font-extrabold text-rose-800 mt-1 leading-tight">
-                {slowestFirstCall.source.replaceAll("_", " ")}
+                {slowestFirstCall.source}
               </div>
               <div className="text-[11px] text-rose-700/70 mt-0.5">
                 Avg {fmtMins(slowestFirstCall.avgFirstCallMins)} · response gap
@@ -384,7 +406,7 @@ export default async function SourcesReportPage({
           <tbody className="divide-y divide-gray-100">
             {rows.map((r) => (
               <tr key={r.source} className={r.total === 0 ? "text-gray-400" : ""}>
-                <td className="py-2 pr-2 font-medium">{r.source.replaceAll("_", " ")}</td>
+                <td className="py-2 pr-2 font-medium">{r.source}</td>
                 <td className="text-right px-2 tabular-nums">{r.total}</td>
                 <td className="text-right px-2 tabular-nums">{r.contacted}</td>
                 <td className="text-right px-2 tabular-nums">{r.qualified}</td>
