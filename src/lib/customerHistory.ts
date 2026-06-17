@@ -1,3 +1,4 @@
+import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { TERMINAL_STATUSES } from "@/lib/lead-statuses";
 
@@ -56,6 +57,12 @@ export async function getCustomerHistory(
   phone?: string | null,
   email?: string | null,
   excludeId?: string,
+  // Optional confidentiality scope. When passed (from a role-scoped caller via
+  // leadScopeWhere), it ALREADY contains deletedAt:null plus the owner/team
+  // restriction, so an Agent/Manager never sees other agents'/teams' prior
+  // enquiries. When omitted, fall back to the deletedAt:null-only default so
+  // existing admin/unscoped callers are unchanged.
+  scope?: Prisma.LeadWhereInput,
 ): Promise<CustomerHistory | null> {
   const p = last10(phone);
   const e = (email ?? "").trim().toLowerCase();
@@ -67,8 +74,10 @@ export async function getCustomerHistory(
   const leads = await prisma.lead.findMany({
     // deletedAt: null → recycle-bin records NEVER participate in Previous History
     // Found / duplicate detection. Only live records (Active / Revival / Master
-    // Data / non-deleted Closed) are returned.
-    where: { deletedAt: null, OR },
+    // Data / non-deleted Closed) are returned. When a confidentiality `scope` is
+    // supplied it stands in for the deletedAt:null default AND adds the
+    // owner/team restriction; otherwise we keep the deletedAt:null-only default.
+    where: { AND: [scope ?? { deletedAt: null }, { OR }] },
     select: {
       id: true, name: true, createdAt: true, currentStatus: true, leadOrigin: true,
       source: true, deletedAt: true,

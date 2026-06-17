@@ -22,7 +22,7 @@ import { getTravelRatePerKmInr } from "@/lib/settings";
 import { runReconciler } from "@/lib/reconciler";
 import InlineEdit from "@/components/InlineEdit";
 import { acefoneEnabled } from "@/lib/acefone";
-import { canTouchLead } from "@/lib/leadScope";
+import { canTouchLead, leadScopeWhere } from "@/lib/leadScope";
 import { parseRemarksTimeline, mergeSameMoment } from "@/lib/remarkParser";
 import { projectWhereForUser, teamToCountry } from "@/lib/propertyScope";
 import { inferCountryFromCityFuzzy } from "@/lib/cityCountry";
@@ -164,10 +164,16 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
   const ownerNameRows = ownerIdVals.length ? await prisma.user.findMany({ where: { id: { in: ownerIdVals } }, select: { id: true, name: true } }) : [];
   const ownerNames: Record<string, string> = Object.fromEntries(ownerNameRows.map((u) => [u.id, u.name]));
 
+  // Confidentiality scope (AGENT → own leads, MANAGER → own team, ADMIN → all).
+  // Passed into the history/intent/investor surfaces so an Agent/Manager never
+  // sees another agent's/team's customer records. leadScopeWhere already bakes
+  // in deletedAt:null, so recycle-bin rows stay excluded as before.
+  const scope = await leadScopeWhere(me);
+
   // Previous History Found — same customer's earlier enquiries anywhere
   // (Leads / Revival / Master Data / Closed). null when there is no prior record.
-  const customerHistory = await getCustomerHistory(lead.phone, lead.email, lead.id).catch(() => null);
-  const dupIntent = await getDuplicateIntent(lead.phone, lead.email, lead.id).catch(() => null);
+  const customerHistory = await getCustomerHistory(lead.phone, lead.email, lead.id, scope).catch(() => null);
+  const dupIntent = await getDuplicateIntent(lead.phone, lead.email, lead.id, scope).catch(() => null);
 
   // Auto-detection queries — run after notFound() guard.
   const [interestNotes, unmatchedMentions] = await Promise.all([
@@ -198,8 +204,20 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
     name: lead.name, phone: lead.phone, email: lead.email,
     city: lead.city, excludeLeadId: lead.id,
   });
-  const bookingsCount = investorMatches.filter(m => m.bookingDoneAt != null || BOOKED_STATUSES.includes(m.currentStatus ?? "")).length;
-  const matchedLeadIds = investorMatches.map(m => m.id);
+  // CONFIDENTIALITY: findMatchingLeads returns RAW matches across ALL owners/teams.
+  // Re-query through the viewer's scope (mirrors /api/leads/[id]/investor-history)
+  // so the banner only reflects prior leads this viewer may access — an Agent never
+  // sees another agent's bookings, a Manager never sees another team's. ADMIN scope
+  // is {deletedAt:null} so admins still see everything. Counts are computed from the
+  // SCOPED set only.
+  const scopedInvestorMatches = investorMatches.length > 0
+    ? await prisma.lead.findMany({
+        where: { AND: [scope, { id: { in: investorMatches.map(m => m.id) } }] },
+        select: { id: true, currentStatus: true, bookingDoneAt: true },
+      })
+    : [];
+  const bookingsCount = scopedInvestorMatches.filter(m => m.bookingDoneAt != null || BOOKED_STATUSES.includes(m.currentStatus ?? "")).length;
+  const matchedLeadIds = scopedInvestorMatches.map(m => m.id);
 
   // ── Meeting intelligence (spec: "counts auto-calculated from imported
   // remarks + CRM logged activities"). The card used to count ONLY structured

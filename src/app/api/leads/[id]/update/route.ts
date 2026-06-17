@@ -9,7 +9,8 @@ import { evaluateBantGate, type BantFields } from "@/lib/bantGate";
 import { awardXp, type AwardResult, type XpReason } from "@/lib/gamification.server";
 import { canSetStatus } from "@/lib/lead-statuses";
 import { recordFieldChanges, TRACKED_FIELDS } from "@/lib/fieldHistory";
-import type { Prisma } from "@prisma/client";
+import { notify } from "@/lib/notify";
+import { NotifKind, type Prisma } from "@prisma/client";
 
 // Inline-edit endpoint — accepts one or more field updates and logs an Activity
 // for status/stage changes. Only allows whitelisted fields.
@@ -180,6 +181,26 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
   if (beforeRow) {
     recordFieldChanges(prisma, id, me.id, beforeRow as Record<string, unknown>, updates, "inline-edit").catch(() => {});
+  }
+
+  // ── Status-changed notification — tell the lead OWNER when their lead's
+  //    currentStatus moves (e.g. an admin/manager reclassifies it). Skip when
+  //    the editor IS the owner (they already know). beforeRow selects
+  //    TRACKED_FIELDS (incl. currentStatus) so the before-value is reliable
+  //    whenever currentStatus is part of this PATCH. Fire-and-forget.
+  if (updates.currentStatus && (beforeRow as { currentStatus?: unknown } | null)?.currentStatus !== updates.currentStatus) {
+    const ownerId = scoped.lead.ownerId;
+    if (ownerId && ownerId !== me.id) {
+      notify({
+        userId: ownerId,
+        kind: NotifKind.SYSTEM,
+        severity: "INFO",
+        title: `🔁 Status → ${updates.currentStatus}`,
+        body: scoped.lead.name,
+        linkUrl: `/leads/${id}`,
+        leadId: id,
+      }).catch(() => {});
+    }
   }
 
   if (activityNotes.length) {

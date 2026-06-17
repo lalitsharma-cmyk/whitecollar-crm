@@ -25,6 +25,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const now = new Date();
   await prisma.lead.update({ where: { id }, data: { deletedAt: now, deletedById: me.id } });
 
+  // Priority-3 cleanup: a deleted lead must not exist ANYWHERE. Remove its
+  // pending in-app/push notifications (assignment, follow-up, duplicate, SLA
+  // alerts) so owners stop being pinged about a lead that's gone. Future
+  // reminders never fire — every reminder cron + dup/history/search query
+  // already filters deletedAt:null.
+  await prisma.notification.deleteMany({ where: { leadId: id } }).catch(() => {});
+
   // Super-Admin Archive — full original snapshot + who/when, for restore + audit.
   await audit({
     userId: me.id,

@@ -1,7 +1,8 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { ActivityType, ActivityStatus } from "@prisma/client";
+import { ActivityType, ActivityStatus, NotifKind } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
+import { notify } from "@/lib/notify";
 
 /**
  * POST /api/leads/[id]/note
@@ -34,7 +35,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   }
 
   // Verify the lead exists
-  const lead = await prisma.lead.findUnique({ where: { id }, select: { id: true } });
+  const lead = await prisma.lead.findUnique({ where: { id }, select: { id: true, ownerId: true, name: true } });
   if (!lead) {
     return NextResponse.json({ error: "Lead not found" }, { status: 404 });
   }
@@ -55,6 +56,20 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       completedAt: new Date(),
     },
   }).catch(() => {}); // non-fatal
+
+  // Notification trigger — "Lead Comment Added": ping the lead OWNER (in-app +
+  // web push) when someone else adds a note, so they don't miss team context.
+  if (lead.ownerId && lead.ownerId !== me.id) {
+    notify({
+      userId: lead.ownerId,
+      kind: NotifKind.SYSTEM,
+      severity: "INFO",
+      title: `💬 New note on ${lead.name}`,
+      body: text.length > 120 ? text.slice(0, 120) + "…" : text,
+      linkUrl: `/leads/${id}`,
+      leadId: id,
+    }).catch(() => {});
+  }
 
   // Bump lastTouchedAt
   await prisma.lead.update({ where: { id }, data: { lastTouchedAt: new Date() } }).catch(() => {});

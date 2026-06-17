@@ -3,7 +3,7 @@ import Papa from "papaparse";
 import * as XLSX from "xlsx";
 import { ingestLead } from "@/lib/leadIngest";
 import { LeadSource, Potential, FundReadiness, MoodStatus, InvestTimeline, LeadStatus, AIScore } from "@prisma/client";
-import { requireUser } from "@/lib/auth";
+import { requireRole } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { extractFromRemarks, mergeSuggestions } from "@/lib/remarkAutofill";
 import { mergeRawRemark } from "@/lib/rawRemarks";
@@ -381,7 +381,11 @@ function parseExcel(buf: ArrayBuffer): { rows: Row[]; sheetName: string; detecte
 }
 
 export async function POST(req: NextRequest) {
-  const me = await requireUser();
+  // SECURITY: importing/mutating leads is Admin/Super-Admin only — matches the
+  // ADMIN-only import UI. Previously this endpoint was requireUser() (any agent
+  // could POST directly and overwrite leads on dedupe). requireRole("ADMIN")
+  // covers super-admins (isSuperAdmin is a flag on an ADMIN).
+  const me = await requireRole("ADMIN");
   const url = new URL(req.url);
   // preview=1 → dry-run only. Parse + check duplicates but write NOTHING.
   const isDryRun = url.searchParams.get("preview") === "1";

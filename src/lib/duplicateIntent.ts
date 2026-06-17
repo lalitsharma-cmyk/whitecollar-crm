@@ -1,3 +1,4 @@
+import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 
 // ── Duplicate-Intent Score ──────────────────────────────────────────────────
@@ -110,6 +111,11 @@ export async function getDuplicateIntent(
   email?: string | null,
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   excludeId?: string,
+  // Optional confidentiality scope (leadScopeWhere). When passed it already
+  // includes deletedAt:null plus the owner/team restriction, so an Agent/Manager
+  // never counts other agents'/teams' enquiries toward this customer's intent.
+  // Omitted → deletedAt:null-only default, unchanged for admin/unscoped callers.
+  scope?: Prisma.LeadWhereInput,
 ): Promise<DuplicateIntent | null> {
   const p = last10(phone);
   const e = (email ?? "").trim().toLowerCase();
@@ -121,7 +127,9 @@ export async function getDuplicateIntent(
 
   const leads = await prisma.lead.findMany({
     // deletedAt: null → recycle-bin records never count toward duplicate intent.
-    where: { deletedAt: null, OR },
+    // A supplied confidentiality `scope` replaces the deletedAt:null default and
+    // also adds the owner/team restriction; otherwise keep deletedAt:null only.
+    where: { AND: [scope ?? { deletedAt: null }, { OR }] },
     select: {
       createdAt: true,
       source: true,
