@@ -2,7 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { Prisma, LeadSource } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import {
   statusColor,
   leadCategory,
@@ -11,9 +11,12 @@ import {
   TERMINAL_STATUSES,
   INDIA_STATUSES,
   DUBAI_STATUSES,
+  EXCEL_STATUSES,
 } from "@/lib/lead-statuses";
 import MasterDataRecordsTable, { type MDRow } from "@/components/MasterDataRecordsTable";
 import { sourceBreakdown } from "@/lib/sourceLabel";
+import LeadFilters from "@/components/LeadFilters";
+import { leadFilterWhere, leadFilterOrderBy } from "@/lib/leadFilterWhere";
 
 // ── Master Data — the COMPLETE lead database (Admin / Lalit only) ───────────
 // The normal /leads view shows only WORKABLE leads. This is the full picture:
@@ -94,23 +97,12 @@ export default async function MasterDataPage({ searchParams }: { searchParams: P
   const coldFilter: Prisma.LeadWhereInput =
     cold === "only" ? { isColdCall: true } : cold === "all" ? {} : { isColdCall: false };
 
-  // ── Cross-cutting filters (AND with the category) ───────────────────────
-  const baseAnd: Prisma.LeadWhereInput[] = [];
-  if (sp.team === "India" || sp.team === "Dubai") baseAnd.push({ forwardedTeam: sp.team });
-  if (sp.owner === "unassigned") baseAnd.push({ ownerId: null });
-  else if (sp.owner) baseAnd.push({ ownerId: sp.owner });
-  if (sp.source) baseAnd.push({ source: sp.source as LeadSource });
+  // ── Cross-cutting filters (AND with the category) — SAME engine as /leads ──
+  // leadFilterWhere translates the full LeadFilters panel (search, status, source,
+  // owner, budget, timeline, client type, city, category, dates, etc.) so Master
+  // Data filters identically to the Leads view.
+  const baseAnd: Prisma.LeadWhereInput[] = [...leadFilterWhere(sp)];
   if (sp.batch) baseAnd.push({ importBatchId: sp.batch });  // "View batch" from Import History
-  if (sp.q) {
-    baseAnd.push({
-      OR: [
-        { name: { contains: sp.q, mode: "insensitive" } },
-        { phone: { contains: sp.q } },
-        { email: { contains: sp.q, mode: "insensitive" } },
-        { company: { contains: sp.q, mode: "insensitive" } },
-      ],
-    });
-  }
   const whereFor = (c: Cat): Prisma.LeadWhereInput => ({ ...coldFilter, AND: [...baseAnd, catWhere(c)] });
   const where = whereFor(cat);
 
@@ -136,7 +128,7 @@ export default async function MasterDataPage({ searchParams }: { searchParams: P
     prisma.lead.findMany({
       where,
       include: { owner: { select: { name: true } }, importBatch: { select: { fileName: true, status: true } } },
-      orderBy: [{ createdAt: "desc" }],
+      orderBy: leadFilterOrderBy(sp),
       skip: (page - 1) * PAGE_SIZE,
       take: PAGE_SIZE,
     }),
@@ -216,6 +208,14 @@ export default async function MasterDataPage({ searchParams }: { searchParams: P
     orderBy: { name: "asc" },
   });
   const statuses = Array.from(new Set([...INDIA_STATUSES, ...DUBAI_STATUSES]));
+
+  // Filter-panel option lists (same UX as /leads): distinct verbatim sources + tags.
+  const [srcRows, tagRows] = await Promise.all([
+    prisma.lead.findMany({ where: { sourceRaw: { not: null } }, select: { sourceRaw: true }, distinct: ["sourceRaw"], orderBy: { sourceRaw: "asc" } }),
+    prisma.lead.findMany({ where: { tags: { not: null } }, select: { tags: true }, distinct: ["tags"], orderBy: { tags: "asc" } }),
+  ]);
+  const filterSources = srcRows.map((r) => r.sourceRaw!).filter(Boolean);
+  const filterTags = tagRows.map((r) => r.tags!).filter(Boolean).slice(0, 50);
   const displayRows: MDRow[] = leads.map((l) => {
     const bucket = bucketOf(l) ?? "—";
     return {
@@ -272,41 +272,32 @@ export default async function MasterDataPage({ searchParams }: { searchParams: P
         })}
       </div>
 
-      {/* ── Filters: search / team / owner / source / lead-type ──────────── */}
-      <form method="GET" className="flex flex-wrap items-center gap-2 text-sm">
-        <input type="hidden" name="cat" value={cat} />
-        <input
-          name="q"
-          defaultValue={sp.q ?? ""}
-          placeholder="Search name / phone / email…"
-          className="border border-[#e5e7eb] dark:border-slate-600 dark:bg-slate-700 rounded-lg px-3 py-2 text-sm min-w-[200px] flex-1"
-        />
-        <select name="team" defaultValue={sp.team ?? ""} className="border border-[#e5e7eb] dark:border-slate-600 dark:bg-slate-700 rounded-lg px-3 py-2">
-          <option value="">All teams</option>
-          <option value="Dubai">Dubai</option>
-          <option value="India">India</option>
-        </select>
-        <select name="owner" defaultValue={sp.owner ?? ""} className="border border-[#e5e7eb] dark:border-slate-600 dark:bg-slate-700 rounded-lg px-3 py-2 max-w-[160px]">
-          <option value="">All agents</option>
-          <option value="unassigned">Unassigned</option>
-          {agents.sort((a, b) => a.name.localeCompare(b.name)).map((a) => (
-            <option key={a.id} value={a.id}>{a.name}</option>
-          ))}
-        </select>
-        <select name="source" defaultValue={sp.source ?? ""} className="border border-[#e5e7eb] dark:border-slate-600 dark:bg-slate-700 rounded-lg px-3 py-2">
-          <option value="">All sources</option>
-          {Object.entries(SOURCE_LABEL).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-        </select>
-        <select name="cold" defaultValue={cold} className="border border-[#e5e7eb] dark:border-slate-600 dark:bg-slate-700 rounded-lg px-3 py-2" title="Cold-call leads live in the Revival Engine">
-          <option value="no">Sales leads</option>
-          <option value="all">+ Cold calls</option>
-          <option value="only">Cold only</option>
-        </select>
-        <button type="submit" className="btn btn-primary">Apply</button>
-        {(sp.q || sp.team || sp.owner || sp.source || cold !== "no") && (
-          <Link href={`/master-data?cat=${cat}`} className="text-xs text-gray-500 hover:underline">✕ Clear</Link>
-        )}
-      </form>
+      {/* ── Filters — SAME panel + UX as the Leads view (status, source, owner,
+          budget, timeline, client type, city, category, dates, sort, …) ──── */}
+      <LeadFilters
+        agents={agents.map((a) => ({ id: a.id, name: a.name }))}
+        sources={filterSources}
+        statuses={statuses}
+        showSource
+        distinctTags={filterTags}
+      />
+
+      {/* Lead-type toggle (Master-Data-specific) — cold-call leads live in Revival */}
+      <div className="flex flex-wrap items-center gap-1.5 text-xs">
+        <span className="text-gray-400 dark:text-slate-500">Lead type:</span>
+        {(([["no", "Sales leads"], ["all", "+ Cold calls"], ["only", "Cold only"]]) as [string, string][]).map(([v, label]) => {
+          const active = cold === v;
+          return (
+            <Link key={v} href={keep({ cat: cat === "all" ? "" : cat, cold: v === "no" ? "" : v })}
+              title="Cold-call leads live in the Revival Engine"
+              className={`px-2.5 py-1 rounded-full border font-medium transition-colors ${active
+                ? "bg-[#0b1a33] text-white border-[#0b1a33] dark:bg-blue-700 dark:border-blue-700"
+                : "bg-white dark:bg-slate-700 border-[#e5e7eb] dark:border-slate-600 text-gray-600 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-600"}`}>
+              {label}
+            </Link>
+          );
+        })}
+      </div>
 
       {/* ── Reporting breakdowns ────────────────────────────────────────── */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">

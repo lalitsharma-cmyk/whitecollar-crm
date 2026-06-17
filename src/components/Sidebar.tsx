@@ -21,8 +21,9 @@ type NavGroup = { section: string | null; items: NavItem[] };
 const nav: NavGroup[] = [
   { section: null, items: [
     { href: "/dashboard",   label: "Dashboard",      Icon: LayoutDashboard, adminOnly: false },
-    { href: "/leads",       label: "Leads",          Icon: Users,           badge: true, adminOnly: false },
+    // Master Data sits ABOVE Leads (admin/super-admin only) — Lalit's request.
     { href: "/master-data", label: "Master Data",    Icon: Database,        adminOnly: true },
+    { href: "/leads",       label: "Leads",          Icon: Users,           badge: true, adminOnly: false },
     { href: "/cold-calls",  label: "Revival Engine", Icon: Flame,           adminOnly: false },
     { href: "/action-list", label: "Action List",    Icon: Zap,             adminOnly: false },
     { href: "/properties",  label: "Properties",     Icon: Building2,       adminOnly: false },
