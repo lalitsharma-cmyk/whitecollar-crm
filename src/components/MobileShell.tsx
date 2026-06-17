@@ -5,7 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import {
   LayoutDashboard, Users, Sparkles, Menu, X,
   Building2, BarChart3, Upload, UserCog, Settings as SettingsIcon, LogOut,
-  ChevronLeft, ChevronRight, Gem, HelpCircle, AlertTriangle, Lock, PhoneCall, Briefcase,
+  ChevronLeft, ChevronRight, Gem, HelpCircle, AlertTriangle, Lock, PhoneCall, Briefcase, Database,
 } from "lucide-react";
 import GlobalDateFilter from "./GlobalDateFilter";
 import NotifBell from "./NotifBell";
@@ -19,7 +19,7 @@ import KeyboardShortcutsHelp from "./KeyboardShortcutsHelp";
 import PWAInstallNudge from "./PWAInstallNudge";
 import { useBodyScrollLock } from "@/hooks/useBodyScrollLock";
 
-type NavItem = { href: string; label: string; Icon: React.ElementType; tag?: string; agentHidden?: boolean };
+type NavItem = { href: string; label: string; Icon: React.ElementType; tag?: string; agentHidden?: boolean; adminOnly?: boolean };
 type NavSection = { section: string; adminOnly?: boolean; managerOrAdmin?: boolean; items: NavItem[] };
 
 // §6 — Global Back button + breadcrumb. Every page has a back button that
@@ -81,6 +81,7 @@ function GlobalBackButton() {
 const fullNav: NavSection[] = [
   { section: "WORKSPACE", items: [
     { href: "/dashboard",   label: "Dashboard",      Icon: LayoutDashboard },
+    { href: "/master-data", label: "Master Data",    Icon: Database, adminOnly: true },
     { href: "/leads",       label: "Leads",          Icon: Users },
     { href: "/cold-calls",  label: "Revival Engine", Icon: Gem },
     { href: "/action-list", label: "Action List",    Icon: Sparkles },
@@ -216,7 +217,7 @@ export default function MobileShell({ children, user, awaitingTeamCount = 0 }: P
               )}
               {sidebarCollapsed && <div className="mb-1 mt-3 first:mt-0 border-t border-white/10 mx-1" />}
 
-              {group.items.filter((item) => !(item.agentHidden && user.role === "AGENT")).map(({ href, label, Icon, tag }) => {
+              {group.items.filter((item) => !(item.agentHidden && user.role === "AGENT") && !(item.adminOnly && user.role !== "ADMIN")).map(({ href, label, Icon, tag }) => {
                 const active = pathname === href || (href !== "/dashboard" && pathname?.startsWith(href));
                 const showAwaitingBadge = href === "/admin/awaiting-team" && awaitingTeamCount > 0;
                 return (
@@ -356,7 +357,7 @@ export default function MobileShell({ children, user, awaitingTeamCount = 0 }: P
               }).map((group) => (
                 <div key={group.section}>
                   <div className="text-[10px] uppercase tracking-widest text-white/40 px-3 mb-1 mt-3 first:mt-0">{group.section}</div>
-                  {group.items.filter((item) => !(item.agentHidden && user.role === "AGENT")).map(({ href, label, Icon, tag }) => {
+                  {group.items.filter((item) => !(item.agentHidden && user.role === "AGENT") && !(item.adminOnly && user.role !== "ADMIN")).map(({ href, label, Icon, tag }) => {
                     const active = pathname === href || (href !== "/dashboard" && pathname?.startsWith(href));
                     const showAwaitingBadge = href === "/admin/awaiting-team" && awaitingTeamCount > 0;
                     return (
