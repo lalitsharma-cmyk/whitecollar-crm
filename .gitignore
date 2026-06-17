@@ -10,3 +10,5 @@ prisma/dev.db-journal
 .DS_Store
 *.tsbuildinfo
 .claude/
+# Local data backups (lead PII / correction snapshots) — never commit
+backups/
