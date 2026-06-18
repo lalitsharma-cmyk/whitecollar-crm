@@ -91,6 +91,7 @@ export async function POST(req: NextRequest) {
     city: d.city,
     country: d.country,
     source: key.source,
+    currentStatus: "Fresh Lead", // real-time intake → Fresh Lead (imports set their own)
     // Verbatim source: explicit payload value → key label → friendly enum label.
     // Never a raw enum token.
     sourceRaw: d.sourceRaw?.trim() || key.label || sourceEnumLabel(key.source),

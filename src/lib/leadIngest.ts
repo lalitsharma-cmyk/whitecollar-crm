@@ -26,6 +26,9 @@ export interface RawLeadInput {
   /** Verbatim free-text source ("Townscript", "Meta Lead Ad: Dubai Expo") — preserved
    *  exactly as received, per the source-fidelity rule. Falls back to the enum label. */
   sourceRaw?: string;
+  /** Excel/MIS status to stamp at creation. Real-time intake passes "Fresh Lead";
+   *  importers DON'T (they set status from the sheet post-ingest, or leave it null). */
+  currentStatus?: string;
   sourceDetail?: string;
   /** Inquired project slug/name — fed into resolveTeam for market keyword matching. */
   projectSlug?: string;
@@ -183,6 +186,9 @@ export async function ingestLead(input: RawLeadInput) {
       sourceRaw: input.sourceRaw?.trim() || null,
       sourceDetail: input.sourceDetail,
       status: LeadStatus.NEW,
+      // Excel/MIS status: real-time intake stamps "Fresh Lead"; importers leave it
+      // unset here and set their own from the sheet (so this never touches imports).
+      ...(input.currentStatus ? { currentStatus: input.currentStatus } : {}),
       configuration: input.configuration,
       budgetMin: input.budgetMin,
       budgetMax: input.budgetMax,
@@ -357,12 +363,17 @@ export async function ingestLead(input: RawLeadInput) {
   // a team, NOTHING auto-routes. The lead sits in /admin/awaiting-team
   // until an admin/manager tags it Dubai or India. The reconciler also
   // skips null-team leads in its 5-min orphan sweep.
+  // Website leads get a dedicated "please assign" alert to Admin/Super-Admin.
+  // notify() already fans out web push + the in-app bell sound; WARNING also emails.
+  const isWebLead = input.source === LeadSource.WEBSITE;
+  const webLeadBody = `New website lead received. Please assign.${lead.name && lead.name !== "Unknown" ? ` — ${lead.name}` : ""}${lead.sourceDetail ? ` (${lead.sourceDetail})` : ""}`;
+
   if (lead.forwardedTeam === null) {
     await notifyRoles(["ADMIN", "MANAGER"], {
       kind: "LEAD_ASSIGNED",
       severity: "WARNING",
-      title: `⚠️ New lead needs team assignment: ${lead.name}`,
-      body: `This ${input.source} lead arrived without a team tag. Open the lead and pick Dubai or India to start the round-robin.`,
+      title: isWebLead ? `🌐 New website lead received` : `⚠️ New lead needs team assignment: ${lead.name}`,
+      body: isWebLead ? webLeadBody : `This ${input.source} lead arrived without a team tag. Open the lead and pick Dubai or India to start the round-robin.`,
       linkUrl: `/leads/${lead.id}`,
       leadId: lead.id,
     });
@@ -375,8 +386,8 @@ export async function ingestLead(input: RawLeadInput) {
     await notifyRoles(["ADMIN", "MANAGER"], {
       kind: "LEAD_ASSIGNED",
       severity: window.kind === "OVERNIGHT_QUEUE" ? "WARNING" : "INFO",
-      title: `New ${input.source} lead: ${lead.name}`,
-      body: adminBody,
+      title: isWebLead ? `🌐 New website lead received` : `New ${input.source} lead: ${lead.name}`,
+      body: isWebLead ? webLeadBody : adminBody,
       linkUrl: `/leads/${lead.id}`,
       leadId: lead.id,
     });

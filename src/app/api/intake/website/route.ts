@@ -62,6 +62,7 @@ export async function POST(req: NextRequest) {
     city: d.city,
     country: d.country,
     source: LeadSource.WEBSITE,
+    currentStatus: "Fresh Lead",
     sourceDetail: d.utmCampaign ?? d.utmSource ?? d.project,
     configuration: d.configuration,
     budgetMin: d.budgetMin,

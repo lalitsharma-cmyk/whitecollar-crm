@@ -79,6 +79,22 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, updated: changed.length });
   }
 
+  // ── Change team (Dubai / India) ──────────────────────────────────────
+  if (action === "change_team") {
+    const team = String(body.team ?? "").trim();
+    if (team !== "Dubai" && team !== "India") {
+      return NextResponse.json({ error: "team must be Dubai or India" }, { status: 400 });
+    }
+    const before = await prisma.lead.findMany({ where: { id: { in: ids } }, select: { id: true, forwardedTeam: true } });
+    const changed = before.filter((b) => b.forwardedTeam !== team);
+    if (changed.length) {
+      await prisma.lead.updateMany({ where: { id: { in: changed.map((c) => c.id) } }, data: { forwardedTeam: team } });
+      writeHistory(changed.map((c) => ({ leadId: c.id, field: "forwardedTeam", oldValue: c.forwardedTeam, newValue: team, changedById: me.id, source: "master-data-bulk" })));
+    }
+    await audit({ userId: me.id, action: "masterdata.bulk.team", entity: "Lead", meta: { team, updated: changed.length, leadIds: ids.slice(0, 50) }, request: reqMeta(req) });
+    return NextResponse.json({ ok: true, updated: changed.length });
+  }
+
   // ── Soft delete (recoverable) — Super Admin only ─────────────────────
   if (action === "soft_delete") {
     if (!me.isSuperAdmin) return NextResponse.json({ error: "Only the Super Admin can delete records." }, { status: 403 });

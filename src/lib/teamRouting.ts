@@ -94,11 +94,19 @@ const DUBAI_TERMS = [
   "dubai marina", "marina", "downtown dubai", "business bay", "palm jumeirah",
   "jumeirah", "jbr", "jvc", "dubai creek", "dubai hills", "dubai south",
   "damac hills", "expo city", "meydan",
+  // Unambiguous Dubai developers + projects (bare "emaar"/"sobha" left OUT — they
+  // also build in India; use their Dubai-specific project names instead).
+  "damac", "danube", "nakheel", "aldar", "binghatti", "azizi", "ellington",
+  "meraas", "sobha hartland", "sobha realty", "emaar beachfront",
 ];
 const INDIA_TERMS = [
   "india", "bharat", "gurgaon", "gurugram", "noida", "greater noida",
   "delhi", "ncr", "mumbai", "navi mumbai", "pune", "bengaluru", "bangalore",
   "hyderabad", "chennai", "kolkata", "goa", "commercial-india", "india-commercial",
+  // Unambiguous India (Gurgaon/NCR) developers + projects — route by project name
+  // when the inquiry carries no city word (e.g. "Central Park Resort").
+  "central park", "m3m", "dlf", "smartworld", "tarc", "signature global",
+  "elan", "silverglades", "experion", "whiteland", "krisumi", "bptp", "godrej", "sohna",
 ];
 
 function hay(...parts: Array<string | null | undefined>): string {

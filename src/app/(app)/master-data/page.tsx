@@ -77,7 +77,9 @@ const SOURCE_LABEL: Record<string, string> = {
   GOOGLE_ADS: "Google", PORTAL_99ACRES: "99acres", PORTAL_MAGICBRICKS: "MagicBricks",
   PORTAL_HOUSING: "Housing", OTHER: "Other",
 };
-const fmtDate = (d: Date | null) => (d ? new Date(d).toISOString().slice(0, 10) : "—");
+// Created = original lead-generation date AND time, in IST.
+const fmtDateTime = (d: Date | null) =>
+  d ? new Date(d).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: true }) : "—";
 
 type TrendRow = { month: string; created: number; closed: number; lost: number; deleted: number };
 
@@ -227,9 +229,11 @@ export default async function MasterDataPage({ searchParams }: { searchParams: P
       bucket,
       bucketClass: bucketChip(bucket),
       owner: l.owner?.name ?? "Unassigned",
+      ownerId: l.ownerId ?? null,
       team: l.forwardedTeam ?? "—",
+      project: l.sourceDetail ?? "—",
       sourceLabel: SOURCE_LABEL[l.source] ?? l.source,
-      createdLabel: fmtDate(l.createdAt),
+      createdLabel: fmtDateTime(l.createdAt),
       importFile: l.importBatch?.fileName ?? "—",
     };
   });
