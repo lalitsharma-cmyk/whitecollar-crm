@@ -5,6 +5,8 @@ import { cache } from "react";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
 import { signSession, verifySession, SESSION_COOKIE, SESSION_TTL_SECS } from "@/lib/session";
+import { evaluateDevice, createSession } from "@/lib/deviceSecurity";
+import type { RequestMeta } from "@/lib/device";
 import type { Role } from "@prisma/client";
 
 function secret() {
@@ -20,6 +22,22 @@ export const getCurrentUser = cache(async () => {
   if (!payload) return null;
   const user = await prisma.user.findUnique({ where: { id: payload.uid } });
   if (!user || !user.active) return null;
+
+  // New (DB-backed) sessions carry a `sid` — verify the session row is still live
+  // so revocation / force-logout / device-block all take effect here. Legacy
+  // tokens (no sid) stay valid until they expire — back-compat so the rollout
+  // logs nobody out.
+  if (payload.sid) {
+    const s = await prisma.userSession.findUnique({
+      where: { id: payload.sid },
+      select: { userId: true, revokedAt: true, expiresAt: true, lastActiveAt: true },
+    });
+    if (!s || s.userId !== user.id || s.revokedAt || s.expiresAt < new Date()) return null;
+    // Throttled "last active" update — best-effort, never blocks the request.
+    if (Date.now() - s.lastActiveAt.getTime() > 60_000) {
+      prisma.userSession.update({ where: { id: payload.sid }, data: { lastActiveAt: new Date() } }).catch(() => {});
+    }
+  }
   return user;
 });
 
@@ -35,15 +53,36 @@ export async function requireRole(...roles: Role[]) {
   return u;
 }
 
-export async function loginWithCredentials(email: string, password: string) {
+export async function loginWithCredentials(
+  email: string,
+  password: string,
+  deviceCtx?: { deviceId: string; meta: RequestMeta },
+) {
   const user = await prisma.user.findUnique({ where: { email: email.toLowerCase().trim() } });
   if (!user || !user.active) return { ok: false as const, error: "Invalid credentials" };
   const ok = await bcrypt.compare(password, user.passwordHash);
   if (!ok) return { ok: false as const, error: "Invalid credentials" };
 
+  // ── Device-security gate (only when the client sent a device id) ──
+  let sid: string | undefined;
+  if (deviceCtx?.deviceId) {
+    const decision = await evaluateDevice({
+      user: { id: user.id, name: user.name, deviceLimitExtra: user.deviceLimitExtra, isSuperAdmin: user.isSuperAdmin },
+      deviceId: deviceCtx.deviceId,
+      meta: deviceCtx.meta,
+    });
+    if (!decision.ok) {
+      if (decision.reason === "blocked") {
+        return { ok: false as const, error: "This device is blocked. Contact your admin.", blocked: true as const };
+      }
+      return { ok: false as const, error: "This device is not approved. Access request has been sent to Admin.", pending: true as const };
+    }
+    sid = await createSession(user.id, decision.deviceRowId, deviceCtx.meta);
+  }
+
   const token = await signSession(
-    { uid: user.id, exp: Math.floor(Date.now() / 1000) + SESSION_TTL_SECS },
-    secret()
+    { uid: user.id, exp: Math.floor(Date.now() / 1000) + SESSION_TTL_SECS, ...(sid ? { sid } : {}) },
+    secret(),
   );
   const jar = await cookies();
   jar.set(SESSION_COOKIE, token, {
@@ -58,5 +97,10 @@ export async function loginWithCredentials(email: string, password: string) {
 
 export async function logout() {
   const jar = await cookies();
+  const token = jar.get(SESSION_COOKIE)?.value;
+  const payload = token ? await verifySession(token, secret()).catch(() => null) : null;
+  if (payload?.sid) {
+    await prisma.userSession.update({ where: { id: payload.sid }, data: { revokedAt: new Date(), revokedReason: "logout" } }).catch(() => {});
+  }
   jar.delete(SESSION_COOKIE);
 }

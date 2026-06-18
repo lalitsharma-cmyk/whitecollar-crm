@@ -90,6 +90,10 @@ export default async function LoginPage({ searchParams }: { searchParams?: Promi
           )}
 
           <form action="/api/login" method="post" style={{ marginTop: "22px", display: "flex", flexDirection: "column", gap: "14px" }}>
+            {/* Persistent device id (localStorage UUID) — identifies THIS browser
+                so device-security can tell e.g. Mehak's laptop from Tanuj's. Filled
+                by the inline script below before submit. */}
+            <input type="hidden" name="deviceId" id="wcr-did" />
             <div>
               <div style={label}>Email</div>
               <input name="email" type="email" required autoComplete="email" placeholder="Enter your email" style={input} />
@@ -122,6 +126,9 @@ export default async function LoginPage({ searchParams }: { searchParams?: Promi
           Premium Real Estate Advisory · India &amp; UAE
         </div>
       </div>
+
+      {/* Generate/read a stable per-browser device id and put it on the form. */}
+      <script dangerouslySetInnerHTML={{ __html: `(function(){try{var k='wcr_device_id',v=localStorage.getItem(k);if(!v){v=(window.crypto&&crypto.randomUUID)?crypto.randomUUID():(Date.now()+'-'+Math.random().toString(36).slice(2)+Math.random().toString(36).slice(2));localStorage.setItem(k,v);}var el=document.getElementById('wcr-did');if(el)el.value=v;}catch(e){}})();` }} />
     </main>
   );
 }

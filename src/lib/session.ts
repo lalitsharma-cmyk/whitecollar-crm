@@ -28,7 +28,9 @@ async function hmac(key: string, msg: string): Promise<Uint8Array> {
   return new Uint8Array(sig);
 }
 
-export type SessionPayload = { uid: string; exp: number };
+// `sid` ties the cookie to a DB-backed UserSession (device-security). Optional so
+// legacy cookies (uid+exp only) still verify during the transition window.
+export type SessionPayload = { uid: string; exp: number; sid?: string };
 
 export async function signSession(payload: SessionPayload, secret: string): Promise<string> {
   const json = JSON.stringify(payload);

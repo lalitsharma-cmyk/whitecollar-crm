@@ -106,6 +106,15 @@ model User {
   // physically delete. Set explicitly — not implied by the ADMIN role.
   isSuperAdmin            Boolean @default(false)
 
+  // ── Device-security (trusted-device binding) ──
+  // sessionEpoch: bump to instantly revoke ALL of this user's sessions (kill switch).
+  // passwordChangedAt: forces re-login everywhere after a password reset.
+  // deviceLimitExtra: extra approved-device slots beyond the default (1 mobile +
+  // 1 desktop); e.g. an admin grants a tablet → set to 1.
+  sessionEpoch            Int       @default(0)
+  passwordChangedAt       DateTime?
+  deviceLimitExtra        Int       @default(0)
+
   ownedLeads    Lead[]     @relation("LeadOwner")
   assignments   Assignment[]
   activities    Activity[]
@@ -116,6 +125,9 @@ model User {
   notifications Notification[]
   vaultEntries  VaultEntry[]
   stickyNotes   StickyNote[]
+  devices         Device[]
+  approvedDevices Device[]      @relation("DeviceApprover")
+  loginSessions   UserSession[]
 
   // ── HR Recruitment module relations ──
   hrCandidatesPrimary   HRCandidate[] @relation("HRPrimary")
@@ -991,6 +1003,55 @@ model AuditLog {
   createdAt DateTime @default(now())
   @@index([entity, entityId])
   @@index([createdAt])
+}
+
+// =====================================================
+// DEVICE SECURITY — trusted-device binding + sessions
+// =====================================================
+
+model Device {
+  id           String    @id @default(cuid())
+  userId       String
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deviceId     String    // client-generated UUID kept in the browser's localStorage
+  name         String    // e.g. "Mehak – Chrome Windows" / "Mehak – iPhone"
+  type         String    @default("desktop") // mobile | desktop | tablet
+  browser      String?
+  os           String?
+  firstIp      String?
+  lastIp       String?
+  lastCity     String?
+  lastCountry  String?
+  status       String    @default("PENDING") // PENDING | APPROVED | BLOCKED
+  approvedById String?
+  approvedBy   User?     @relation("DeviceApprover", fields: [approvedById], references: [id])
+  approvedAt   DateTime?
+  createdAt    DateTime  @default(now())
+  lastSeenAt   DateTime  @default(now())
+  sessions     UserSession[]
+  @@unique([userId, deviceId])
+  @@index([userId])
+  @@index([status])
+}
+
+model UserSession {
+  id            String    @id @default(cuid())
+  userId        String
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deviceRef     String?   // Device.id
+  device        Device?   @relation(fields: [deviceRef], references: [id], onDelete: SetNull)
+  ip            String?
+  city          String?
+  country       String?
+  userAgent     String?
+  createdAt     DateTime  @default(now()) // login time
+  lastActiveAt  DateTime  @default(now())
+  expiresAt     DateTime
+  revokedAt     DateTime?
+  revokedReason String?
+  @@index([userId])
+  @@index([expiresAt])
+  @@index([revokedAt])
 }
 
 // =====================================================

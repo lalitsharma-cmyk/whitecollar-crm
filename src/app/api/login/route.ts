@@ -3,6 +3,7 @@ import { loginWithCredentials } from "@/lib/auth";
 import { isRateLimited, clearRateLimit } from "@/lib/rateLimit";
 import { audit, reqMeta } from "@/lib/audit";
 import { autoMarkAttendanceOnLogin } from "@/lib/attendance";
+import { requestMetaFrom } from "@/lib/device";
 
 // Where a user lands right after a successful login. HR-only users (e.g. Nisha)
 // go straight to the HR workspace; everyone else to the main CRM dashboard, which
@@ -13,16 +14,18 @@ function landingPathFor(user: { hrOnly?: boolean | null }): string {
 }
 
 export async function POST(req: NextRequest) {
-  let email = "", password = "";
+  let email = "", password = "", deviceId = "";
   const ct = req.headers.get("content-type") ?? "";
   if (ct.includes("application/json")) {
     const body = await req.json().catch(() => ({} as Record<string, unknown>));
     email = String((body as { email?: string }).email ?? "");
     password = String((body as { password?: string }).password ?? "");
+    deviceId = String((body as { deviceId?: string }).deviceId ?? "");
   } else {
     const fd = await req.formData();
     email = String(fd.get("email") ?? "");
     password = String(fd.get("password") ?? "");
+    deviceId = String(fd.get("deviceId") ?? "");
   }
   if (!email || !password) return NextResponse.json({ error: "Email and password are required" }, { status: 400 });
 
@@ -37,15 +40,25 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const r = await loginWithCredentials(email, password);
+  const meta = requestMetaFrom(req.headers);
+  const r = await loginWithCredentials(email, password, deviceId ? { deviceId, meta } : undefined);
   if (!r.ok) {
+    const pending = "pending" in r && r.pending;
+    const blocked = "blocked" in r && r.blocked;
     await audit({
-      action: "auth.login.fail",
+      action: pending ? "auth.login.device_pending" : blocked ? "auth.login.device_blocked" : "auth.login.fail",
       entity: "User",
       meta: { email },
       request: reqMeta(req),
     });
-    return NextResponse.json({ error: r.error }, { status: 401 });
+    // JSON callers get a structured response; native form posts redirect back to
+    // /login?error= so the message (incl. "sent to admin") renders on the page.
+    if (ct.includes("application/json")) {
+      return NextResponse.json({ error: r.error, pending, blocked }, { status: pending || blocked ? 403 : 401 });
+    }
+    const back = new URL("/login", req.url);
+    back.searchParams.set("error", r.error);
+    return NextResponse.redirect(back, { status: 303 });
   }
 
   clearRateLimit(rlKey); // success resets counter
