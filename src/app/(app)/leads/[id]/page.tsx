@@ -170,6 +170,22 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
   // in deletedAt:null, so recycle-bin rows stay excluded as before.
   const scope = await leadScopeWhere(me);
 
+  // Routing-audit reader — the classifier stashes Matched Rule / Project /
+  // Confidence in customFields; method/reason live on their own columns.
+  const cf = (k: string): string | null => {
+    const o = lead.customFields as Record<string, unknown> | null;
+    const v = o && typeof o === "object" ? o[k] : null;
+    return v == null || v === "" ? null : String(v);
+  };
+  const routingRows: [string, string | null][] = [
+    ["Routing Method", lead.routingMethod],
+    ["Matched Rule", cf("Matched Rule")],
+    ["Matched Project", cf("Matched Project")],
+    ["Routing Confidence", cf("Routing Confidence")],
+    ["Routing Reason", lead.routingReason],
+  ];
+  const hasRouting = routingRows.some(([, v]) => v);
+
   // Previous History Found — same customer's earlier enquiries anywhere
   // (Leads / Revival / Master Data / Closed). null when there is no prior record.
   const customerHistory = await getCustomerHistory(lead.phone, lead.email, lead.id, scope).catch(() => null);
@@ -979,6 +995,19 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
             rail. Private per agent (StickyNote model, unique on leadId+userId).
             Auto-saves on blur. Lalit's ask: "give every agent a private
             scratchpad on the lead that follows them as they scroll the page". */}
+        {(me.role === "ADMIN" || me.role === "MANAGER") && hasRouting && (
+          <div data-lead-section="admin" className="card p-4">
+            <div className="text-[10px] uppercase tracking-widest text-gray-500 dark:text-slate-400 font-semibold mb-2">🧭 Routing audit</div>
+            <dl className="grid grid-cols-[130px_1fr] gap-x-3 gap-y-1.5 text-xs">
+              {routingRows.filter(([, v]) => v).map(([label, value]) => (
+                <div key={label} className="contents">
+                  <dt className="text-gray-400 dark:text-slate-500">{label}</dt>
+                  <dd className="text-gray-700 dark:text-slate-200 break-words">{value}</dd>
+                </div>
+              ))}
+            </dl>
+          </div>
+        )}
         <StickyNoteWidget
           leadId={lead.id}
           initialBody={stickyNote.body}

@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { ingestLead } from "@/lib/leadIngest";
+import { classifyForIntake } from "@/lib/classifyForIntake";
 import { LeadSource } from "@prisma/client";
 
 const Body = z.object({
@@ -55,6 +56,12 @@ export async function POST(req: NextRequest) {
   }
   const d = parsed.data;
 
+  const sourceDetail = d.utmCampaign ?? d.utmSource ?? d.project;
+  const classification = await classifyForIntake({
+    source: LeadSource.WEBSITE, sourceRaw: key.label, sourceDetail,
+    project: d.project, message: d.message, city: d.city,
+  });
+
   const { lead, deduped } = await ingestLead({
     name: d.name,
     phone: d.phone,
@@ -63,11 +70,13 @@ export async function POST(req: NextRequest) {
     country: d.country,
     source: LeadSource.WEBSITE,
     currentStatus: "Fresh Lead",
-    sourceDetail: d.utmCampaign ?? d.utmSource ?? d.project,
+    sourceDetail,
+    projectSlug: d.project,
     configuration: d.configuration,
     budgetMin: d.budgetMin,
     budgetMax: d.budgetMax,
     notesShort: d.message,
+    classification,
   });
 
   await prisma.intakeKey.update({ where: { id: key.id }, data: { lastUsed: new Date() } });

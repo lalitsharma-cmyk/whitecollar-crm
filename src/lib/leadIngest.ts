@@ -14,6 +14,7 @@ import { findMatchingLeads, summariseHistory, projectsFromInterestedUnits } from
 import { audit } from "@/lib/audit";
 import { BOOKED_STATUSES } from "@/lib/lead-statuses";
 import { resolveTeam, routingFieldsFor, automationGate } from "@/lib/teamRouting";
+import type { Classification } from "@/lib/leadClassifier";
 import { runIntelligenceCheck } from "@/lib/intelligenceCheck";
 
 export interface RawLeadInput {
@@ -40,6 +41,10 @@ export interface RawLeadInput {
   notesShort?: string;
   tags?: string;
   team?: string;
+  /** Auto-classification result — passed by WEBSITE intake only. When present it
+   *  drives forwardedTeam + routing audit + Source(Blog)/Project/Lead-Type/Event-
+   *  City. Importers & manual entry NEVER pass it, so their routing is unchanged. */
+  classification?: Classification;
 }
 
 const FIRST_CALL_SLA_MIN = 15;
@@ -146,6 +151,7 @@ export async function ingestLead(input: RawLeadInput) {
   // ── Team routing (Lead Routing Architecture) ──────────────────────────
   // Priority: explicit input.team > market keywords > null (awaiting-team).
   // HARD RULE: NEVER use phone/country/city to infer team — see teamRouting.ts.
+  const cls = input.classification;
   const routingResult = input.team
     ? resolveTeam({ forceTeam: input.team, forceMethod: "manual" })
     : resolveTeam({
@@ -155,8 +161,13 @@ export async function ingestLead(input: RawLeadInput) {
         url: input.url,
         text: input.notesShort,
       });
-  const team = routingResult.team;  // null = awaiting-team, correct
-  const routingFields = routingFieldsFor(routingResult);
+  // The website auto-classifier (project-DB-aware, never-guess) overrides keyword
+  // routing when present and no team was forced. Otherwise keep existing behavior.
+  const useCls = !!cls && !input.team;
+  const team = useCls ? cls!.team : routingResult.team;  // null = awaiting-team
+  const routingFields = useCls
+    ? { routingMethod: "rule", routingSource: cls!.auditSource, routingReason: cls!.reason }
+    : routingFieldsFor(routingResult);
 
   // Default follow-up = TODAY at 7:00pm IST (close of business). Lalit's ask:
   // "Any new lead received today should automatically have today's followup
@@ -183,8 +194,9 @@ export async function ingestLead(input: RawLeadInput) {
       city: input.city,
       country: input.country,
       source: input.source,
-      sourceRaw: input.sourceRaw?.trim() || null,
-      sourceDetail: input.sourceDetail,
+      // Classifier may relabel Source → "Blog" and fill Project (matched master).
+      sourceRaw: cls?.isBlog ? "Blog" : (input.sourceRaw?.trim() || null),
+      sourceDetail: (useCls && cls?.project) ? cls.project : input.sourceDetail,
       status: LeadStatus.NEW,
       // Excel/MIS status: real-time intake stamps "Fresh Lead"; importers leave it
       // unset here and set their own from the sheet (so this never touches imports).
@@ -199,7 +211,18 @@ export async function ingestLead(input: RawLeadInput) {
       routingSource: routingFields.routingSource,
       routingReason: routingFields.routingReason,
       notesShort: input.notesShort,
-      tags: input.tags,
+      // Lead Type (Event/Property) appended to tags; full routing audit + extras
+      // kept in customFields so the lead-detail Routing card can explain itself.
+      tags: [input.tags, useCls ? cls?.leadType : null].filter(Boolean).join(", ") || null,
+      ...(useCls && cls
+        ? { customFields: {
+            ...(cls.eventCity ? { "Event City": cls.eventCity } : {}),
+            ...(cls.leadType ? { "Lead Type": cls.leadType } : {}),
+            ...(cls.project ? { "Matched Project": cls.project } : {}),
+            "Matched Rule": cls.rule,
+            "Routing Confidence": cls.confidence,
+          } }
+        : {}),
       fingerprint: fp,
       lastTouchedAt: new Date(),
       followupDate: todayEodIST(),

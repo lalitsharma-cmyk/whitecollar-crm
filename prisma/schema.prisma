@@ -655,6 +655,10 @@ model Project {
   city          String
   area          String?        // "Dubai Marina" / "Sector 42"
   country       String         @default("UAE")
+  // Project Master "Status" (owner spec): only ACTIVE projects feed the lead
+  // auto-classifier. Set false to retire a project from routing without deleting
+  // it. Distinct from `status` below (construction stage OFF_PLAN/READY/…).
+  active        Boolean        @default(true)
   status        ProjectStatus  @default(OFF_PLAN)
   handoverDate  DateTime?
   description   String?

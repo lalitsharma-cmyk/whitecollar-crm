@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { ingestLead } from "@/lib/leadIngest";
+import { classifyForIntake } from "@/lib/classifyForIntake";
 import { sourceEnumLabel } from "@/lib/sourceLabel";
 import { validEmail } from "@/lib/importValidate";
 
@@ -83,6 +84,14 @@ export async function POST(req: NextRequest) {
   }
 
   const message = [d.message, d.notes].filter(Boolean).join(" · ") || undefined;
+  const sourceRaw = d.sourceRaw?.trim() || key.label || sourceEnumLabel(key.source);
+  const sourceDetail = d.sourceDetail ?? d.utmCampaign ?? d.utmSource ?? d.project;
+
+  // Auto-classify (project-DB-aware, never-guess) — drives team + Source/Project/
+  // Lead-Type/Event-City for NEW website-form leads.
+  const classification = await classifyForIntake({
+    source: key.source, sourceRaw, sourceDetail, project: d.project, url: d.url, message, city: d.city,
+  });
 
   const { lead, deduped } = await ingestLead({
     name: name || "Unknown",
@@ -92,10 +101,8 @@ export async function POST(req: NextRequest) {
     country: d.country,
     source: key.source,
     currentStatus: "Fresh Lead", // real-time intake → Fresh Lead (imports set their own)
-    // Verbatim source: explicit payload value → key label → friendly enum label.
-    // Never a raw enum token.
-    sourceRaw: d.sourceRaw?.trim() || key.label || sourceEnumLabel(key.source),
-    sourceDetail: d.sourceDetail ?? d.utmCampaign ?? d.utmSource ?? d.project,
+    sourceRaw,
+    sourceDetail,
     projectSlug: d.project,
     url: d.url,
     configuration: d.configuration,
@@ -103,6 +110,7 @@ export async function POST(req: NextRequest) {
     budgetMax: d.budgetMax,
     notesShort: message,
     tags: d.tags,
+    classification,
   });
 
   await prisma.intakeKey.update({ where: { id: key.id }, data: { lastUsed: new Date() } });

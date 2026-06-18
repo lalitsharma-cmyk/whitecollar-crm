@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
   LayoutDashboard, Users, Sparkles, Menu, X,
-  Building2, BarChart3, Upload, UserCog, Settings as SettingsIcon, LogOut,
+  Building2, BarChart3, Upload, UserCog, Settings as SettingsIcon, LogOut, Landmark,
   ChevronLeft, ChevronRight, Gem, HelpCircle, AlertTriangle, Lock, PhoneCall, Briefcase, Database, ShieldCheck,
 } from "lucide-react";
 import GlobalDateFilter from "./GlobalDateFilter";
@@ -107,6 +107,7 @@ const fullNav: NavSection[] = [
   // reach it multiple times per day.
   { section: "ADMIN", adminOnly: true, items: [
     { href: "/intake",                label: "Lead Intake",        Icon: Upload },
+    { href: "/admin/projects",        label: "Project Master",     Icon: Landmark },
     { href: "/admin/devices",         label: "Devices",            Icon: ShieldCheck },
     { href: "/admin/revival-logs",    label: "Revival Logs",       Icon: Gem },
   ]},
