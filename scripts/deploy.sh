@@ -31,6 +31,32 @@ if [ -z "${VERCEL_DEPLOY_HOOK_URL:-}" ]; then
   exit 1
 fi
 
+# ─── PRODUCTION SAFETY: risk classification + rollback point ──────────────────
+# "Safety First, Features Second." Mark every deploy's risk; High-risk deploys
+# require explicit approval. Flag schema changes so no migration ships silently.
+#   RISK=Safe|Low|Medium|High   (default Low)   ·   APPROVED=1 to allow High
+RISK="${RISK:-Low}"
+case "$RISK" in
+  Safe|Low|Medium) ;;
+  High)
+    if [ "${APPROVED:-}" != "1" ]; then
+      echo "⛔ RISK=High requires approval. Re-run:  APPROVED=1 RISK=High npm run push"
+      exit 1
+    fi ;;
+  *) echo "❌ RISK must be Safe|Low|Medium|High (got '$RISK')"; exit 1 ;;
+esac
+HEAD_SHA="$(git rev-parse --short HEAD)"
+PREV_SHA="$(cat .last-deploy-sha 2>/dev/null || git rev-parse --short HEAD~1 2>/dev/null || echo '')"
+CHANGED="$(git diff --name-only "${PREV_SHA:-HEAD~1}" HEAD 2>/dev/null || true)"
+SCHEMA_CHANGED="$(echo "$CHANGED" | grep -E 'prisma/(schema|migrations)' || true)"
+if [ -n "$SCHEMA_CHANGED" ]; then
+  echo "🗄  SCHEMA CHANGE in this deploy (no silent migrations — Safety Rule #8):"
+  echo "$SCHEMA_CHANGED" | sed 's/^/      /'
+  echo "    → Confirm the migration is already applied to prod + reported to the owner."
+fi
+echo "🏷  Risk: $RISK   ·   Rollback point: ${PREV_SHA:-unknown} → $HEAD_SHA"
+echo ""
+
 # ─── REGRESSION GATE ─────────────────────────────────────────────────────────
 # Run BEFORE we push / trigger Vercel. Two gates, in order:
 #   1. `tsc --noEmit`            — types/compile (catches what the editor would).
@@ -61,6 +87,16 @@ echo "✅ Regression gate passed — proceeding to deploy."
 echo ""
 # ─────────────────────────────────────────────────────────────────────────────
 
+# ─── PRE-DEPLOY BACKUP (Safety Rule #2) — abort if it fails ───────────────────
+echo "💾 Pre-deploy backup (read-only snapshot of critical tables)..."
+if ! BACKUP_OUT="$(DEPLOY_COMMIT="$HEAD_SHA" npx tsx scripts/backup.ts)"; then
+  echo "❌ BACKUP FAILED — deploy aborted (never deploy without a snapshot)."
+  exit 1
+fi
+echo "$BACKUP_OUT"
+BACKUP_DIR="$(echo "$BACKUP_OUT" | grep -oE 'BACKUP_DIR=.*' | cut -d= -f2-)"
+echo ""
+
 echo "📤 Pushing to GitHub (origin/main)..."
 git push origin main
 
@@ -68,6 +104,21 @@ echo ""
 echo "🚀 Triggering Vercel deploy of $(git rev-parse --short HEAD) ($(git log -1 --format=%s))..."
 response=$(curl -sX POST "$VERCEL_DEPLOY_HOOK_URL")
 echo "   Vercel response: $response"
+echo ""
+
+# ─── DEPLOY LOG + rollback point (Safety Rule #3 / #7) ───────────────────────
+mkdir -p docs
+{
+  echo "## $(date -u +%Y-%m-%dT%H:%M:%SZ)  ·  $HEAD_SHA  ·  risk=$RISK"
+  echo "- by:        $(git log -1 --format='%an <%ae>')"
+  echo "- subject:   $(git log -1 --format=%s)"
+  echo "- rollback→: ${PREV_SHA:-unknown}    (bash scripts/rollback.sh ${PREV_SHA:-<sha>})"
+  echo "- backup:    ${BACKUP_DIR:-none}"
+  echo "- files:     $(echo "$CHANGED" | tr '\n' ' ')"
+  echo ""
+} >> docs/DEPLOY_LOG.md
+echo "$HEAD_SHA" > .last-deploy-sha
+echo "📝 Logged to docs/DEPLOY_LOG.md  ·  rollback point: ${PREV_SHA:-unknown}"
 echo ""
 echo "📊 Watch the deploy at: https://vercel.com/lalitsharma-cmyks-projects/whitecollar-crm/deployments"
 echo "   Production URL:    https://crm.whitecollarrealty.com"

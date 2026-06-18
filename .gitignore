@@ -12,3 +12,6 @@ prisma/dev.db-journal
 .claude/
 # Local data backups (lead PII / correction snapshots) — never commit
 backups/
+# Deploy safety: local-only state + log (machine-specific)
+.last-deploy-sha
+docs/DEPLOY_LOG.md
