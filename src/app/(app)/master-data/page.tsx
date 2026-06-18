@@ -113,6 +113,21 @@ export default async function MasterDataPage({ searchParams }: { searchParams: P
   ]);
   const statuses = Array.from(new Set([...INDIA_STATUSES, ...DUBAI_STATUSES]));
 
+  // Latest conversation remark per lead — READ-ONLY (DISTINCT ON leadId, newest
+  // first). Powers the Quick-Preview drawer's "Last Remark" without opening the
+  // full lead. Falls back to lead.remarks. No writes, no migration.
+  const leadIds = leads.map((l) => l.id);
+  const recentActs = leadIds.length
+    ? await prisma.activity.findMany({
+        where: { leadId: { in: leadIds }, description: { not: null } },
+        distinct: ["leadId"],
+        orderBy: [{ leadId: "asc" }, { createdAt: "desc" }],
+        select: { leadId: true, description: true },
+      })
+    : [];
+  const lastRemarkBy: Record<string, string> = {};
+  for (const a of recentActs) if (a.description) lastRemarkBy[a.leadId] = a.description;
+
   // Filter-panel option lists.
   const [srcRows, tagRows] = await Promise.all([
     prisma.lead.findMany({ where: { sourceRaw: { not: null } }, select: { sourceRaw: true }, distinct: ["sourceRaw"], orderBy: { sourceRaw: "asc" } }),
@@ -175,6 +190,12 @@ export default async function MasterDataPage({ searchParams }: { searchParams: P
       sourceLabel: SOURCE_LABEL[l.source] ?? l.source,
       sourceRaw: l.sourceRaw ?? "",
       leadOrigin: l.leadOrigin,
+      // Read-only preview fields (Message column + Quick-Preview drawer).
+      phone: l.phone ?? "",
+      email: l.email ?? "",
+      message: (l.notesShort ?? "").slice(0, 1500),
+      lastRemark: (lastRemarkBy[l.id] ?? l.remarks ?? "").toString().slice(0, 600),
+      followupDate: l.followupDate ? fmtDate(l.followupDate) : "",
     };
   });
 
@@ -219,7 +240,7 @@ export default async function MasterDataPage({ searchParams }: { searchParams: P
       />
 
       {/* ── Excel-style operations grid ────────────────────────────────────── */}
-      <MasterDataRecordsTable rows={rows} agents={agents} statuses={statuses} isSuperAdmin={!!me.isSuperAdmin} />
+      <MasterDataRecordsTable rows={rows} agents={agents} statuses={statuses} isSuperAdmin={!!me.isSuperAdmin} viewerId={me.id} />
     </>
   );
 }

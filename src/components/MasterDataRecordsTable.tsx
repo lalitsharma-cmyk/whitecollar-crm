@@ -1,6 +1,6 @@
 "use client";
 import Link from "next/link";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 
 export type MDRow = {
@@ -22,6 +22,12 @@ export type MDRow = {
   sourceLabel: string;
   sourceRaw: string;
   leadOrigin: string;
+  // read-only preview fields
+  phone: string;
+  email: string;
+  message: string;         // notesShort — what a website lead actually wrote
+  lastRemark: string;      // latest activity remark (fallback lead.remarks)
+  followupDate: string;    // IST date string, "" if none
 };
 
 interface Props {
@@ -29,40 +35,84 @@ interface Props {
   agents: { id: string; name: string }[];
   statuses: string[];
   isSuperAdmin: boolean;
+  viewerId: string;        // per-admin localStorage scope
 }
 
-type ColKey = "createdDate" | "createdTime" | "name" | "budget" | "agent" | "team" | "project" | "source" | "status" | "bucket";
+type ColKey =
+  | "name" | "agent" | "team"
+  | "createdDate" | "createdTime" | "budget" | "project" | "source" | "message" | "status" | "bucket" | "email" | "phone";
+
 const TEAMS = ["Dubai", "India"];
 const PAGE = 50;
-const COLS: { key: ColKey; label: string; cls?: string }[] = [
+
+// Order matters: frozen identity columns first (Name/Agent/Team stay pinned while
+// the rest scroll horizontally). Everything after is scrollable + hideable.
+const COLS: { key: ColKey; label: string; frozen?: boolean; w?: number; defHidden?: boolean; wide?: boolean }[] = [
+  { key: "name", label: "Client Name", frozen: true, w: 170 },
+  { key: "agent", label: "Agent", frozen: true, w: 120 },
+  { key: "team", label: "Team", frozen: true, w: 72 },
   { key: "createdDate", label: "Created Date" },
   { key: "createdTime", label: "Created Time" },
-  { key: "name", label: "Client Name" },
   { key: "budget", label: "Budget" },
-  { key: "agent", label: "Agent" },
-  { key: "team", label: "Team", cls: "hidden sm:table-cell" },
-  { key: "project", label: "Project", cls: "hidden md:table-cell" },
-  { key: "source", label: "Source", cls: "hidden md:table-cell" },
+  { key: "project", label: "Project" },
+  { key: "source", label: "Source" },
+  { key: "message", label: "Message", wide: true },
   { key: "status", label: "Status" },
-  { key: "bucket", label: "Bucket", cls: "hidden sm:table-cell" },
+  { key: "bucket", label: "Bucket" },
+  { key: "email", label: "Email", defHidden: true },
+  { key: "phone", label: "Phone", defHidden: true },
 ];
+const HIDEABLE = COLS.filter((c) => !c.frozen).map((c) => c.key);
+const DEFAULT_HIDDEN = COLS.filter((c) => c.defHidden).map((c) => c.key);
+
+// Frozen-column left offsets (checkbox = 36px, then Name/Agent/Team widths).
+const CB_W = 36;
+const FROZEN_LEFT: Partial<Record<ColKey, number>> = (() => {
+  const out: Partial<Record<ColKey, number>> = {};
+  let acc = CB_W;
+  for (const c of COLS.filter((c) => c.frozen)) { out[c.key] = acc; acc += c.w ?? 120; }
+  return out;
+})();
 
 function valueOf(r: MDRow, c: ColKey): string {
   switch (c) {
-    case "createdDate": return r.createdDate;
-    case "createdTime": return r.createdTime;
     case "name": return r.name;
-    case "budget": return r.budget;
     case "agent": return r.owner;
     case "team": return r.team;
+    case "createdDate": return r.createdDate;
+    case "createdTime": return r.createdTime;
+    case "budget": return r.budget;
     case "project": return r.project;
     case "source": return r.sourceLabel;
+    case "message": return r.message;
     case "status": return r.statusLabel ?? "— none —";
     case "bucket": return r.bucket;
+    case "email": return r.email;
+    case "phone": return r.phone;
   }
 }
 
-export default function MasterDataRecordsTable({ rows, agents, statuses, isSuperAdmin }: Props) {
+const todayIST = () => new Date().toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short", year: "numeric" });
+
+// Default Saved Views — predicate presets over the loaded rows (owner-approved list).
+const BUILTINS: { name: string; test: (r: MDRow, today: string) => boolean }[] = [
+  { name: "New Website Leads", test: (r) => r.sourceLabel === "Website" },
+  { name: "Unassigned Leads", test: (r) => !r.ownerId },
+  { name: "Awaiting Classification", test: (r) => r.team === "—" },
+  { name: "Dubai Leads", test: (r) => r.team === "Dubai" },
+  { name: "India Leads", test: (r) => r.team === "India" },
+  { name: "Event Leads", test: (r) => r.sourceLabel === "Event" },
+  { name: "Today's Leads", test: (r, t) => r.createdDate === t },
+  { name: "Follow Up Today", test: (r, t) => r.followupDate === t },
+  { name: "Fresh Leads", test: (r) => r.statusLabel === "Fresh Lead" },
+  { name: "Workable Leads", test: (r) => r.bucket === "Workable" },
+];
+
+type SavedView = { name: string; filters: Record<string, string[]>; sort: { col: ColKey; dir: "asc" | "desc" } | null; hidden: ColKey[]; frozen: boolean };
+const serFilters = (f: Record<string, Set<string>>) => Object.fromEntries(Object.entries(f).filter(([, s]) => s.size).map(([k, s]) => [k, [...s]]));
+const deserFilters = (o: Record<string, string[]>) => Object.fromEntries(Object.entries(o || {}).map(([k, a]) => [k, new Set(a)]));
+
+export default function MasterDataRecordsTable({ rows, agents, statuses, isSuperAdmin, viewerId }: Props) {
   const router = useRouter();
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
@@ -75,11 +125,52 @@ export default function MasterDataRecordsTable({ rows, agents, statuses, isSuper
   const [sort, setSort] = useState<{ col: ColKey; dir: "asc" | "desc" } | null>(null);
   const [filters, setFilters] = useState<Record<string, Set<string>>>({});
   const [openFilter, setOpenFilter] = useState<ColKey | null>(null);
-  const [fq, setFq] = useState("");                 // filter-popover search (parent-held → no focus loss)
+  const [fq, setFq] = useState("");
   const [pageNo, setPageNo] = useState(0);
+  // new V3.1 state
+  const [hidden, setHidden] = useState<Set<ColKey>>(new Set(DEFAULT_HIDDEN));
+  const [frozen, setFrozen] = useState(true);
+  const [activeView, setActiveView] = useState<string | null>(null);
+  const [views, setViews] = useState<SavedView[]>([]);
+  const [colsOpen, setColsOpen] = useState(false);
+  const [viewsOpen, setViewsOpen] = useState(false);
+  const [preview, setPreview] = useState<MDRow | null>(null);
+  const [hydrated, setHydrated] = useState(false);
+
+  const LSKEY = `wcr_md_v31_${viewerId}`;
+  const VKEY = `wcr_md_views_${viewerId}`;
+
+  // ── Sticky state: restore last-used filters / columns / freeze / view per admin ──
+  useEffect(() => {
+    try {
+      const s = JSON.parse(localStorage.getItem(LSKEY) || "null");
+      if (s) {
+        if (Array.isArray(s.hidden)) setHidden(new Set(s.hidden));
+        if (typeof s.frozen === "boolean") setFrozen(s.frozen);
+        if (s.sort) setSort(s.sort);
+        if (s.filters) setFilters(deserFilters(s.filters));
+        if (typeof s.activeView === "string") setActiveView(s.activeView);
+      }
+      const v = JSON.parse(localStorage.getItem(VKEY) || "null");
+      if (Array.isArray(v)) setViews(v);
+    } catch { /* ignore corrupt storage */ }
+    setHydrated(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewerId]);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    try {
+      localStorage.setItem(LSKEY, JSON.stringify({ hidden: [...hidden], frozen, sort, filters: serFilters(filters), activeView }));
+    } catch { /* quota / private mode — non-fatal */ }
+  }, [hidden, frozen, sort, filters, activeView, hydrated, LSKEY]);
+
+  const persistViews = (next: SavedView[]) => { setViews(next); try { localStorage.setItem(VKEY, JSON.stringify(next)); } catch { /**/ } };
 
   const filtered = useMemo(() => {
     let out = rows;
+    const bv = BUILTINS.find((b) => b.name === activeView);
+    if (bv) { const t = todayIST(); out = out.filter((r) => bv.test(r, t)); }
     for (const [col, set] of Object.entries(filters)) {
       if (set.size === 0) continue;
       out = out.filter((r) => set.has(valueOf(r, col as ColKey)));
@@ -93,7 +184,7 @@ export default function MasterDataRecordsTable({ rows, agents, statuses, isSuper
       );
     }
     return out;
-  }, [rows, filters, sort]);
+  }, [rows, filters, sort, activeView]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE));
   const safePage = Math.min(pageNo, totalPages - 1);
@@ -128,16 +219,84 @@ export default function MasterDataRecordsTable({ rows, agents, statuses, isSuper
     finally { setBusy(false); }
   }
 
-  const distinctVals = (c: ColKey) => Array.from(new Set(rows.map((r) => valueOf(r, c)))).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+  const distinctVals = (c: ColKey) => Array.from(new Set(rows.map((r) => valueOf(r, c)))).filter((v) => v !== "").sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
   const btn = "text-xs font-semibold px-2.5 py-1.5 rounded-lg border whitespace-nowrap disabled:opacity-50";
   const openTextEdit = (id: string, field: ColKey, cur: string) => { setEdit({ id, field }); setEditVal(cur === "—" ? "" : cur); };
   const editing = (id: string, f: ColKey) => edit?.id === id && edit?.field === f;
   const openMenu = (id: string, f: ColKey) => setEdit((e) => (e?.id === id && e?.field === f ? null : { id, field: f }));
   const openFilterFor = (c: ColKey) => { setOpenFilter((o) => (o === c ? null : c)); setFq(""); };
-  const setColFilter = (c: ColKey, next: Set<string>) => setFilters((f) => ({ ...f, [c]: next }));
+  const setColFilter = (c: ColKey, next: Set<string>) => { setFilters((f) => ({ ...f, [c]: next })); setPageNo(0); };
+
+  // ── Views ──
+  const applyBuiltin = (name: string) => { setActiveView((a) => (a === name ? null : name)); setPageNo(0); };
+  const applyCustom = (v: SavedView) => { setFilters(deserFilters(v.filters)); setSort(v.sort); setHidden(new Set(v.hidden)); setFrozen(v.frozen); setActiveView(v.name); setPageNo(0); };
+  const saveCurrentView = () => {
+    const name = (window.prompt("Save current filters + columns as a view named:") || "").trim();
+    if (!name) return;
+    const v: SavedView = { name, filters: serFilters(filters), sort, hidden: [...hidden], frozen };
+    persistViews([...views.filter((x) => x.name !== name), v]);
+    setActiveView(name);
+  };
+  const deleteView = (name: string) => { persistViews(views.filter((v) => v.name !== name)); if (activeView === name) setActiveView(null); };
+  const resetAll = () => { setFilters({}); setSort(null); setActiveView(null); setPageNo(0); };
+
+  // ── Single-click row → preview drawer · double-click name → rename ──
+  const clickTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const rowClick = (l: MDRow) => { if (clickTimer.current) clearTimeout(clickTimer.current); clickTimer.current = setTimeout(() => { setPreview(l); clickTimer.current = null; }, 200); };
+  const cancelRowClick = () => { if (clickTimer.current) { clearTimeout(clickTimer.current); clickTimer.current = null; } };
+  const stop = (e: React.MouseEvent) => e.stopPropagation();
+
+  const visibleCols = COLS.filter((c) => c.frozen || !hidden.has(c.key));
+  const colSpan = visibleCols.length + 1;
+  const fStyle = (key: ColKey): React.CSSProperties | undefined => {
+    if (!frozen) return undefined;
+    const left = FROZEN_LEFT[key];
+    if (left == null) return undefined;
+    const w = COLS.find((c) => c.key === key)?.w;
+    return { position: "sticky", left, zIndex: 10, minWidth: w, maxWidth: w };
+  };
+  const fClass = (key: ColKey, sel: boolean) =>
+    frozen && FROZEN_LEFT[key] != null ? (sel ? "bg-amber-50 dark:bg-slate-800" : "bg-white dark:bg-slate-900") : "";
 
   return (
     <div className="space-y-2">
+      {/* ── Saved Views + Columns + Freeze toolbar ─────────────────────────── */}
+      <div className="flex flex-wrap items-center gap-1.5">
+        <button onClick={() => setActiveView(null)} className={`${btn} ${!activeView ? "bg-[#0b1a33] text-white border-[#0b1a33]" : "bg-white dark:bg-slate-800 border-gray-200 dark:border-slate-600 text-gray-600 dark:text-slate-300"}`}>All</button>
+        {BUILTINS.map((v) => (
+          <button key={v.name} onClick={() => applyBuiltin(v.name)} className={`${btn} ${activeView === v.name ? "bg-blue-600 text-white border-blue-600" : "bg-blue-50/60 dark:bg-slate-800 border-blue-200 dark:border-slate-600 text-blue-800 dark:text-blue-300"}`}>{v.name}</button>
+        ))}
+        {views.map((v) => (
+          <span key={v.name} className={`${btn} inline-flex items-center gap-1 ${activeView === v.name ? "bg-violet-600 text-white border-violet-600" : "bg-violet-50 dark:bg-slate-800 border-violet-200 dark:border-slate-600 text-violet-800 dark:text-violet-300"}`}>
+            <button onClick={() => applyCustom(v)}>★ {v.name}</button>
+            <button onClick={() => deleteView(v.name)} title="Delete view" className="opacity-60 hover:opacity-100">×</button>
+          </span>
+        ))}
+        <button onClick={saveCurrentView} className={`${btn} bg-white dark:bg-slate-800 border-dashed border-gray-300 dark:border-slate-600 text-gray-500`}>＋ Save view</button>
+
+        <span className="ml-auto inline-flex items-center gap-1.5">
+          <button onClick={() => setFrozen((f) => !f)} className={`${btn} ${frozen ? "bg-sky-50 text-sky-700 border-sky-300" : "bg-white dark:bg-slate-800 text-gray-500 border-gray-200 dark:border-slate-600"}`} title="Freeze Name / Agent / Team while scrolling">❄ Freeze {frozen ? "On" : "Off"}</button>
+          <span className="relative">
+            <button onClick={() => setColsOpen((o) => !o)} className={`${btn} bg-white dark:bg-slate-800 border-gray-200 dark:border-slate-600 text-gray-600 dark:text-slate-300`}>⚙ Columns</button>
+            {colsOpen && (
+              <div className="absolute right-0 z-40 mt-1 w-48 rounded-lg border border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-800 shadow-xl p-2 text-xs font-normal">
+                <div className="font-semibold text-gray-500 mb-1 px-1">Show columns</div>
+                {COLS.filter((c) => HIDEABLE.includes(c.key)).map((c) => (
+                  <label key={c.key} className="flex items-center gap-2 px-1 py-0.5 cursor-pointer hover:bg-gray-50 dark:hover:bg-slate-700 rounded">
+                    <input type="checkbox" checked={!hidden.has(c.key)} onChange={() => setHidden((h) => { const n = new Set(h); n.has(c.key) ? n.delete(c.key) : n.add(c.key); return n; })} />
+                    <span>{c.label}</span>
+                  </label>
+                ))}
+                <div className="text-[10px] text-gray-400 mt-1 px-1 border-t pt-1 border-gray-100 dark:border-slate-700">Name · Agent · Team stay frozen</div>
+              </div>
+            )}
+          </span>
+          {(Object.values(filters).some((s) => s.size) || sort || activeView) && (
+            <button onClick={resetAll} className={`${btn} bg-white dark:bg-slate-800 text-gray-400 border-gray-200 dark:border-slate-600`}>✕ Reset</button>
+          )}
+        </span>
+      </div>
+
       {selected.size > 0 && (
         <div className="sticky top-0 z-30 card p-2.5 flex flex-wrap items-center gap-2 border border-[#c9a24b]/40 bg-amber-50/60 dark:bg-slate-800">
           <span className="text-sm font-semibold text-gray-700 dark:text-slate-200">{selected.size} selected</span>
@@ -166,14 +325,17 @@ export default function MasterDataRecordsTable({ rows, agents, statuses, isSuper
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-xs text-gray-500 dark:text-slate-400 border-b border-[#e5e7eb] dark:border-slate-600">
-              <th className="px-3 py-2 w-8"><input type="checkbox" checked={allOnPage} onChange={toggleAll} aria-label="Select all" /></th>
-              {COLS.map((c) => {
+              <th className="px-3 py-2 w-8 bg-white dark:bg-slate-800" style={frozen ? { position: "sticky", left: 0, zIndex: 20 } : undefined}>
+                <input type="checkbox" checked={allOnPage} onChange={toggleAll} aria-label="Select all" />
+              </th>
+              {visibleCols.map((c) => {
                 const active = (filters[c.key]?.size ?? 0) > 0;
                 const opts = openFilter === c.key ? distinctVals(c.key) : [];
                 const shown = fq ? opts.filter((o) => o.toLowerCase().includes(fq.toLowerCase())) : opts;
                 const sel = filters[c.key] ?? new Set<string>();
+                const fz = frozen && FROZEN_LEFT[c.key] != null;
                 return (
-                  <th key={c.key} className={`px-3 py-2 font-semibold relative ${c.cls ?? ""}`}>
+                  <th key={c.key} className={`px-3 py-2 font-semibold relative ${fz ? "bg-white dark:bg-slate-800" : ""}`} style={fz ? { ...fStyle(c.key), zIndex: 20 } : undefined}>
                     <button onClick={() => openFilterFor(c.key)} className="inline-flex items-center gap-1 hover:text-[#0b1a33] dark:hover:text-blue-300">
                       {c.label}
                       <span className={`text-[9px] ${active || sort?.col === c.key ? "text-blue-600" : "text-gray-400"}`}>{sort?.col === c.key ? (sort.dir === "asc" ? "▲" : "▼") : "▾"}</span>
@@ -197,7 +359,7 @@ export default function MasterDataRecordsTable({ rows, agents, statuses, isSuper
                                 <span className="truncate">{o}</span>
                               </label>
                             ))}
-                            {shown.length === 0 && <span className="text-gray-400 italic">No match</span>}
+                            {shown.length === 0 && <span className="text-gray-400 italic">No values</span>}
                           </div>
                           <button onClick={() => { setOpenFilter(null); setPageNo(0); }} className="mt-2 w-full bg-[#0b1a33] text-white rounded py-1">Apply</button>
                         </div>
@@ -209,58 +371,107 @@ export default function MasterDataRecordsTable({ rows, agents, statuses, isSuper
             </tr>
           </thead>
           <tbody>
-            {pageRows.length === 0 && <tr><td colSpan={11} className="px-3 py-8 text-center text-gray-400">No matching records.</td></tr>}
-            {pageRows.map((l) => (
-              <tr key={l.id} className={`border-b border-[#f1f5f9] dark:border-slate-700 hover:bg-gray-50 dark:hover:bg-slate-700/50 ${selected.has(l.id) ? "bg-amber-50/50 dark:bg-slate-700/40" : ""}`}>
-                <td className="px-3 py-2"><input type="checkbox" checked={selected.has(l.id)} onChange={() => toggle(l.id)} aria-label={`Select ${l.name}`} /></td>
-                <td className="px-3 py-2 text-gray-600 dark:text-slate-400 whitespace-nowrap text-xs tabular-nums">{l.createdDate}</td>
-                <td className="px-3 py-2 text-gray-500 dark:text-slate-400 whitespace-nowrap text-xs tabular-nums">{l.createdTime}</td>
-                <td className="px-3 py-2 relative">
-                  {editing(l.id, "name")
-                    ? <InlineInput value={editVal} onChange={setEditVal} onSave={() => saveText(l.id, "name", editVal)} onCancel={() => setEdit(null)} />
-                    : <span onDoubleClick={() => openTextEdit(l.id, "name", l.name)} title="Double-click to rename"><Link href={l.href} className="font-semibold text-[#0b1a33] dark:text-blue-300 hover:underline">{l.name}</Link></span>}
+            {pageRows.length === 0 && <tr><td colSpan={colSpan} className="px-3 py-8 text-center text-gray-400">No matching records.</td></tr>}
+            {pageRows.map((l) => {
+              const sel = selected.has(l.id);
+              return (
+              <tr key={l.id} onClick={() => rowClick(l)} onDoubleClick={cancelRowClick}
+                className={`border-b border-[#f1f5f9] dark:border-slate-700 cursor-pointer hover:bg-gray-50 dark:hover:bg-slate-700/50 ${sel ? "bg-amber-50/50 dark:bg-slate-700/40" : ""}`}>
+                <td className={`px-3 py-2 ${fClass("name", sel) ? "" : ""}`} style={frozen ? { position: "sticky", left: 0, zIndex: 10 } : undefined} onClick={stop}>
+                  <span className={frozen ? (sel ? "bg-amber-50 dark:bg-slate-800" : "bg-white dark:bg-slate-900") : ""}><input type="checkbox" checked={sel} onChange={() => toggle(l.id)} aria-label={`Select ${l.name}`} /></span>
                 </td>
-                <td className="px-3 py-2 relative whitespace-nowrap">
-                  {editing(l.id, "budget")
-                    ? <InlineInput value={editVal} onChange={setEditVal} onSave={() => saveText(l.id, "budgetRaw", editVal)} onCancel={() => setEdit(null)} placeholder="e.g. 5 Cr" />
-                    : <button onClick={() => openTextEdit(l.id, "budget", l.budget)} className="text-gray-700 dark:text-slate-300 hover:underline" title="Click to edit">{l.budget}</button>}
-                </td>
-                <td className="px-3 py-2 relative whitespace-nowrap">
-                  <button onClick={() => openMenu(l.id, "agent")} className="text-gray-700 dark:text-slate-300 hover:underline">{l.owner}</button>
-                  {editing(l.id, "agent") && <Menu busy={busy} options={agents.map((a) => ({ value: a.id, label: a.name }))} onPick={(v) => bulk([l.id], "assign", { userId: v })} />}
-                </td>
-                <td className="px-3 py-2 relative hidden sm:table-cell">
-                  <button onClick={() => openMenu(l.id, "team")} className="text-gray-700 dark:text-slate-300 hover:underline">{l.team}</button>
-                  {editing(l.id, "team") && <Menu busy={busy} options={TEAMS.map((t) => ({ value: t, label: t }))} onPick={(v) => bulk([l.id], "change_team", { team: v })} />}
-                </td>
-                <td className="px-3 py-2 relative hidden md:table-cell max-w-[150px]">
-                  {editing(l.id, "project")
-                    ? <InlineInput value={editVal} onChange={setEditVal} onSave={() => saveText(l.id, "sourceDetail", editVal)} onCancel={() => setEdit(null)} />
-                    : <button onClick={() => openTextEdit(l.id, "project", l.project)} className="text-gray-600 dark:text-slate-400 hover:underline truncate block max-w-[150px]" title={l.project}>{l.project}</button>}
-                </td>
-                <td className="px-3 py-2 relative hidden md:table-cell whitespace-nowrap">
-                  {editing(l.id, "source")
-                    ? <InlineInput value={editVal} onChange={setEditVal} onSave={() => saveText(l.id, "sourceRaw", editVal)} onCancel={() => setEdit(null)} />
-                    : <button onClick={() => openTextEdit(l.id, "source", l.sourceRaw || l.sourceLabel)} className="text-gray-600 dark:text-slate-400 hover:underline">{l.sourceLabel}</button>}
-                </td>
-                <td className="px-3 py-2 relative">
-                  <button onClick={() => openMenu(l.id, "status")} title="Click to change status">
-                    {l.statusLabel ? <span className={`text-xs px-2 py-0.5 rounded-full ${l.statusClass}`}>{l.statusLabel}</span> : <span className="text-xs text-gray-400 italic">— set —</span>}
-                  </button>
-                  {editing(l.id, "status") && <Menu busy={busy} options={statuses.map((s) => ({ value: s, label: s }))} onPick={(v) => bulk([l.id], "set_status", { status: v })} />}
-                </td>
-                <td className="px-3 py-2 relative hidden sm:table-cell">
-                  <button onClick={() => openMenu(l.id, "bucket")}><span className={`text-xs px-2 py-0.5 rounded-full border ${l.bucketClass}`}>{l.bucket}</span></button>
-                  {editing(l.id, "bucket") && <Menu busy={busy} options={[{ value: "move_to_revival", label: "→ Revival (cold)" }, { value: "move_to_leads", label: "→ Active (leads)" }]} onPick={(v) => bulk([l.id], v)} />}
-                </td>
+                {visibleCols.map((c) => {
+                  const fz = frozen && FROZEN_LEFT[c.key] != null;
+                  const cellCls = `px-3 py-2 relative ${fz ? fClass(c.key, sel) : ""}`;
+                  switch (c.key) {
+                    case "name":
+                      return (
+                        <td key={c.key} className={cellCls} style={fStyle(c.key)}>
+                          {editing(l.id, "name")
+                            ? <span onClick={stop}><InlineInput value={editVal} onChange={setEditVal} onSave={() => saveText(l.id, "name", editVal)} onCancel={() => setEdit(null)} /></span>
+                            : <span onDoubleClick={(e) => { stop(e); openTextEdit(l.id, "name", l.name); }} title="Click = preview · double-click = rename" className="font-semibold text-[#0b1a33] dark:text-blue-300 hover:underline">{l.name}</span>}
+                        </td>
+                      );
+                    case "agent":
+                      return (
+                        <td key={c.key} className={`${cellCls} whitespace-nowrap`} style={fStyle(c.key)} onClick={stop}>
+                          <button onClick={() => openMenu(l.id, "agent")} className="text-gray-700 dark:text-slate-300 hover:underline">{l.owner}</button>
+                          {editing(l.id, "agent") && <Menu busy={busy} options={agents.map((a) => ({ value: a.id, label: a.name }))} onPick={(v) => bulk([l.id], "assign", { userId: v })} />}
+                        </td>
+                      );
+                    case "team":
+                      return (
+                        <td key={c.key} className={cellCls} style={fStyle(c.key)} onClick={stop}>
+                          <button onClick={() => openMenu(l.id, "team")} className="text-gray-700 dark:text-slate-300 hover:underline">{l.team}</button>
+                          {editing(l.id, "team") && <Menu busy={busy} options={TEAMS.map((t) => ({ value: t, label: t }))} onPick={(v) => bulk([l.id], "change_team", { team: v })} />}
+                        </td>
+                      );
+                    case "createdDate":
+                      return <td key={c.key} className="px-3 py-2 text-gray-600 dark:text-slate-400 whitespace-nowrap text-xs tabular-nums">{l.createdDate}</td>;
+                    case "createdTime":
+                      return <td key={c.key} className="px-3 py-2 text-gray-500 dark:text-slate-400 whitespace-nowrap text-xs tabular-nums">{l.createdTime}</td>;
+                    case "budget":
+                      return (
+                        <td key={c.key} className="px-3 py-2 relative whitespace-nowrap" onClick={stop}>
+                          {editing(l.id, "budget")
+                            ? <InlineInput value={editVal} onChange={setEditVal} onSave={() => saveText(l.id, "budgetRaw", editVal)} onCancel={() => setEdit(null)} placeholder="e.g. 5 Cr" />
+                            : <button onClick={() => openTextEdit(l.id, "budget", l.budget)} className="text-gray-700 dark:text-slate-300 hover:underline" title="Click to edit">{l.budget}</button>}
+                        </td>
+                      );
+                    case "project":
+                      return (
+                        <td key={c.key} className="px-3 py-2 relative max-w-[150px]" onClick={stop}>
+                          {editing(l.id, "project")
+                            ? <InlineInput value={editVal} onChange={setEditVal} onSave={() => saveText(l.id, "sourceDetail", editVal)} onCancel={() => setEdit(null)} />
+                            : <button onClick={() => openTextEdit(l.id, "project", l.project)} className="text-gray-600 dark:text-slate-400 hover:underline truncate block max-w-[150px]" title={l.project}>{l.project}</button>}
+                        </td>
+                      );
+                    case "source":
+                      return (
+                        <td key={c.key} className="px-3 py-2 relative whitespace-nowrap" onClick={stop}>
+                          {editing(l.id, "source")
+                            ? <InlineInput value={editVal} onChange={setEditVal} onSave={() => saveText(l.id, "sourceRaw", editVal)} onCancel={() => setEdit(null)} />
+                            : <button onClick={() => openTextEdit(l.id, "source", l.sourceRaw || l.sourceLabel)} className="text-gray-600 dark:text-slate-400 hover:underline">{l.sourceLabel}</button>}
+                        </td>
+                      );
+                    case "message":
+                      return (
+                        <td key={c.key} className="px-3 py-2 max-w-[260px]">
+                          {l.message
+                            ? <span className="text-gray-600 dark:text-slate-400 truncate block max-w-[260px]" title={l.message}>{l.message}</span>
+                            : <span className="text-gray-300 dark:text-slate-600">—</span>}
+                        </td>
+                      );
+                    case "status":
+                      return (
+                        <td key={c.key} className="px-3 py-2 relative" onClick={stop}>
+                          <button onClick={() => openMenu(l.id, "status")} title="Click to change status">
+                            {l.statusLabel ? <span className={`text-xs px-2 py-0.5 rounded-full ${l.statusClass}`}>{l.statusLabel}</span> : <span className="text-xs text-gray-400 italic">— set —</span>}
+                          </button>
+                          {editing(l.id, "status") && <Menu busy={busy} options={statuses.map((s) => ({ value: s, label: s }))} onPick={(v) => bulk([l.id], "set_status", { status: v })} />}
+                        </td>
+                      );
+                    case "bucket":
+                      return (
+                        <td key={c.key} className="px-3 py-2 relative" onClick={stop}>
+                          <button onClick={() => openMenu(l.id, "bucket")}><span className={`text-xs px-2 py-0.5 rounded-full border ${l.bucketClass}`}>{l.bucket}</span></button>
+                          {editing(l.id, "bucket") && <Menu busy={busy} options={[{ value: "move_to_revival", label: "→ Revival (cold)" }, { value: "move_to_leads", label: "→ Active (leads)" }]} onPick={(v) => bulk([l.id], v)} />}
+                        </td>
+                      );
+                    case "email":
+                      return <td key={c.key} className="px-3 py-2 text-gray-600 dark:text-slate-400 max-w-[180px]"><span className="truncate block max-w-[180px]" title={l.email}>{l.email || "—"}</span></td>;
+                    case "phone":
+                      return <td key={c.key} className="px-3 py-2 text-gray-600 dark:text-slate-400 whitespace-nowrap tabular-nums">{l.phone || "—"}</td>;
+                  }
+                })}
               </tr>
-            ))}
+            );})}
           </tbody>
         </table>
       </div>
 
       <div className="flex items-center justify-between text-xs text-gray-500 dark:text-slate-400">
-        <span>{filtered.length} of {rows.length} · double-click Name / click a cell to edit (admin)</span>
+        <span>{filtered.length} of {rows.length} · single-click = preview · double-click Name / click a cell to edit (admin)</span>
         {totalPages > 1 && (
           <div className="flex items-center gap-2">
             <button disabled={safePage === 0} onClick={() => setPageNo(Math.max(0, safePage - 1))} className="btn btn-ghost disabled:opacity-40">← Prev</button>
@@ -268,6 +479,60 @@ export default function MasterDataRecordsTable({ rows, agents, statuses, isSuper
             <button disabled={safePage >= totalPages - 1} onClick={() => setPageNo(Math.min(totalPages - 1, safePage + 1))} className="btn btn-ghost disabled:opacity-40">Next →</button>
           </div>
         )}
+      </div>
+
+      {preview && <PreviewDrawer l={preview} onClose={() => setPreview(null)} />}
+    </div>
+  );
+}
+
+function PreviewDrawer({ l, onClose }: { l: MDRow; onClose: () => void }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+  const Field = ({ label, value, mono }: { label: string; value: string; mono?: boolean }) => (
+    <div>
+      <div className="text-[11px] uppercase tracking-wide text-gray-400 dark:text-slate-500">{label}</div>
+      <div className={`text-sm text-gray-800 dark:text-slate-200 ${mono ? "tabular-nums" : ""}`}>{value || "—"}</div>
+    </div>
+  );
+  return (
+    <div className="fixed inset-0 z-50 flex justify-end" onClick={onClose}>
+      <div className="absolute inset-0 bg-black/30" />
+      <div className="relative w-full max-w-md h-full bg-white dark:bg-slate-900 shadow-2xl overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+        <div className="sticky top-0 bg-white dark:bg-slate-900 border-b border-gray-100 dark:border-slate-700 px-4 py-3 flex items-center justify-between">
+          <div>
+            <div className="text-lg font-bold text-[#0b1a33] dark:text-blue-200">{l.name}</div>
+            <div className="flex items-center gap-1.5 mt-0.5">
+              {l.statusLabel && <span className={`text-[11px] px-2 py-0.5 rounded-full ${l.statusClass}`}>{l.statusLabel}</span>}
+              <span className={`text-[11px] px-2 py-0.5 rounded-full border ${l.bucketClass}`}>{l.bucket}</span>
+            </div>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-700 dark:hover:text-slate-200 text-xl leading-none">×</button>
+        </div>
+        <div className="p-4 grid grid-cols-2 gap-3">
+          <Field label="Phone" value={l.phone} mono />
+          <Field label="Assigned Agent" value={l.owner} />
+          <Field label="Email" value={l.email} />
+          <Field label="Team" value={l.team} />
+          <Field label="Budget" value={l.budget} />
+          <Field label="Project" value={l.project} />
+          <Field label="Source" value={l.sourceLabel} />
+          <Field label="Created" value={`${l.createdDate} · ${l.createdTime}`} />
+        </div>
+        <div className="px-4 pb-2">
+          <div className="text-[11px] uppercase tracking-wide text-gray-400 dark:text-slate-500 mb-1">Message (what the client wrote)</div>
+          <div className="text-sm text-gray-800 dark:text-slate-200 whitespace-pre-wrap bg-gray-50 dark:bg-slate-800 rounded-lg p-2.5 max-h-44 overflow-y-auto">{l.message || "— no message —"}</div>
+        </div>
+        <div className="px-4 pb-4">
+          <div className="text-[11px] uppercase tracking-wide text-gray-400 dark:text-slate-500 mb-1">Last Remark</div>
+          <div className="text-sm text-gray-700 dark:text-slate-300 whitespace-pre-wrap bg-gray-50 dark:bg-slate-800 rounded-lg p-2.5 max-h-40 overflow-y-auto">{l.lastRemark || "— no remarks yet —"}</div>
+        </div>
+        <div className="px-4 pb-6">
+          <Link href={l.href} className="block w-full text-center bg-[#0b1a33] text-white rounded-lg py-2 text-sm font-semibold hover:bg-[#142a4f]">Open full lead →</Link>
+        </div>
       </div>
     </div>
   );
@@ -286,6 +551,7 @@ function Menu({ options, onPick, busy }: { options: { value: string; label: stri
 function InlineInput({ value, onChange, onSave, onCancel, placeholder }: { value: string; onChange: (v: string) => void; onSave: () => void; onCancel: () => void; placeholder?: string }) {
   return (
     <input autoFocus value={value} placeholder={placeholder}
+      onClick={(e) => e.stopPropagation()}
       onChange={(e) => onChange(e.target.value)}
       onKeyDown={(e) => { if (e.key === "Enter") onSave(); if (e.key === "Escape") onCancel(); }}
       onBlur={onSave}
