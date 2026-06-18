@@ -1135,7 +1135,12 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
               sourceText: d.sourceText,
             }))}
             allProjects={allProjects}
-            scopeCountry={teamToCountry(lead.forwardedTeam)}
+            // Admin/Manager bypass the picker's country filter (mirrors
+            // cma/route.ts + projectWhereForUser) so they can search & add ANY
+            // project on ANY lead — e.g. find "Sobha" (UAE) on an India lead.
+            // Agents stay geo-scoped. Was unconditional → regressed once leads
+            // started getting a forwardedTeam (turned the filter on).
+            scopeCountry={(me.role === "ADMIN" || me.role === "MANAGER") ? null : teamToCountry(lead.forwardedTeam)}
             unmatchedMentions={unmatchedMentions.map(m => ({
               id: m.id,
               mentionText: m.mentionText,
