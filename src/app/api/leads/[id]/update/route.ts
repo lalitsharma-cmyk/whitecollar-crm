@@ -19,6 +19,7 @@ const ALLOWED: Record<string, "string" | "date" | "number" | "enum" | "bool"> = 
   name: "string", altName: "string", phone: "string", altPhone: "string", email: "string", company: "string",
   city: "string", country: "string", address: "string",
   configuration: "string", currentStatus: "string", categorization: "string",
+  sourceDetail: "string",  // "Project" the lead came for — admin/manager editable (Master Data inline)
   tags: "string", notesShort: "string", remarks: "string",
   whoIsClient: "string", detailShared: "string", todoNext: "string",
   // ClientType: 'INVESTOR' | 'END_USER' | 'BOTH' | 'UNCLEAR' (or null to clear)
