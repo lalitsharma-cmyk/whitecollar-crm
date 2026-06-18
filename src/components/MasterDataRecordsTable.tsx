@@ -94,6 +94,18 @@ function valueOf(r: MDRow, c: ColKey): string {
 
 const todayIST = () => new Date().toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short", year: "numeric" });
 
+// Unassigned age badge (Orange ≥15m · Red ≥30m · Critical ≥60m). Computed
+// client-side from createdAt; only rendered after hydration to avoid a
+// server/client time mismatch.
+function unassignedAgeBadge(createdAtMs: number): { label: string; cls: string } | null {
+  const mins = Math.floor((Date.now() - createdAtMs) / 60000);
+  if (mins < 15) return null;
+  const age = mins >= 1440 ? `${Math.floor(mins / 1440)}d` : mins >= 60 ? `${Math.floor(mins / 60)}h` : `${mins}m`;
+  if (mins >= 60) return { label: `🔴 ${age}`, cls: "bg-red-100 text-red-700 border-red-300 dark:bg-red-900/40 dark:text-red-300" };
+  if (mins >= 30) return { label: `🟠 ${age}`, cls: "bg-orange-100 text-orange-700 border-orange-300 dark:bg-orange-900/40 dark:text-orange-300" };
+  return { label: `🟡 ${age}`, cls: "bg-amber-100 text-amber-700 border-amber-300 dark:bg-amber-900/40 dark:text-amber-300" };
+}
+
 // Default Saved Views — predicate presets over the loaded rows (owner-approved list).
 const BUILTINS: { name: string; test: (r: MDRow, today: string) => boolean }[] = [
   { name: "New Website Leads", test: (r) => r.sourceLabel === "Website" },
@@ -392,13 +404,16 @@ export default function MasterDataRecordsTable({ rows, agents, statuses, isSuper
                             : <span onDoubleClick={(e) => { stop(e); openTextEdit(l.id, "name", l.name); }} title="Click = preview · double-click = rename" className="font-semibold text-[#0b1a33] dark:text-blue-300 hover:underline">{l.name}</span>}
                         </td>
                       );
-                    case "agent":
+                    case "agent": {
+                      const ageBadge = hydrated && !l.ownerId ? unassignedAgeBadge(l.createdAtMs) : null;
                       return (
                         <td key={c.key} className={`${cellCls} whitespace-nowrap`} style={fStyle(c.key)} onClick={stop}>
                           <button onClick={() => openMenu(l.id, "agent")} className="text-gray-700 dark:text-slate-300 hover:underline">{l.owner}</button>
+                          {ageBadge && <span className={`ml-1.5 align-middle text-[9px] px-1.5 py-0.5 rounded-full border ${ageBadge.cls}`} title="Unassigned for this long — please assign">{ageBadge.label}</span>}
                           {editing(l.id, "agent") && <Menu busy={busy} options={agents.map((a) => ({ value: a.id, label: a.name }))} onPick={(v) => bulk([l.id], "assign", { userId: v })} />}
                         </td>
                       );
+                    }
                     case "team":
                       return (
                         <td key={c.key} className={cellCls} style={fStyle(c.key)} onClick={stop}>

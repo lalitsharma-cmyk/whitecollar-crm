@@ -43,6 +43,8 @@ on:
     - cron: "0 22 * * *"
     # Weekly leaderboard digest — Sunday 14:00 UTC = Sunday 19:30 IST / 18:00 GST
     - cron: "0 14 * * 0"
+    # Unassigned-lead end-of-day summary — daily 14:30 UTC = 20:00 IST
+    - cron: "30 14 * * *"
   # Allow manual trigger from the Actions tab for debugging
   workflow_dispatch:
 
@@ -69,6 +71,12 @@ jobs:
             -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
             https://crm.whitecollarrealty.com/api/cron/pre-meeting-reminder \
             || echo "::warning::pre-meeting-reminder cron failed"
+      - name: Unassigned-lead escalation (15/30/60 min)
+        run: |
+          curl -sf --max-time 60 \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            https://crm.whitecollarrealty.com/api/cron/unassigned-reminders \
+            || echo "::warning::unassigned-reminders cron failed"
 
   nightly-rescore:
     # Run on the daily 03:00 UTC schedule (and on manual dispatch)
@@ -105,6 +113,18 @@ jobs:
             -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
             https://crm.whitecollarrealty.com/api/cron/weekly-digest \
             || echo "::warning::weekly-digest cron failed"
+
+  unassigned_summary:
+    # End-of-day "still unassigned" digest to admins — 14:30 UTC = 20:00 IST.
+    if: github.event.schedule == '30 14 * * *' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Unassigned-lead end-of-day summary
+        run: |
+          curl -sf --max-time 60 \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            "https://crm.whitecollarrealty.com/api/cron/unassigned-reminders?summary=1" \
+            || echo "::warning::unassigned-summary cron failed"
 
   db_backup:
     # Daily JSON snapshot — uploads to Actions artifacts (free, 90d retention,
