@@ -19,6 +19,12 @@ export default async function IntakePage() {
   const websiteKey = keys.find(k => k.source === "WEBSITE")?.key ?? "wcr_live_••••••";
   const waKey = keys.find(k => k.source === "WHATSAPP")?.key ?? "wcr_live_wa_••••••";
   const base = process.env.NEXTAUTH_URL ?? "http://localhost:3000";
+  // Universal-endpoint keys (one per source; run scripts/seed-intake-keys.ts to mint).
+  const seedHint = "run scripts/seed-intake-keys.ts";
+  const metaKey = keys.find(k => k.source === "FACEBOOK_ADS")?.key ?? seedHint;
+  const googleKey = keys.find(k => k.source === "GOOGLE_ADS")?.key ?? seedHint;
+  const eventKey = keys.find(k => k.source === "EVENT")?.key ?? seedHint;
+  const genericKey = keys.find(k => k.source === "OTHER")?.key ?? seedHint;
   const isAdminOrMgr = me.role === "ADMIN" || me.role === "MANAGER";
 
   return (
@@ -122,6 +128,43 @@ function onFormSubmit(e) {
           <div className="flex items-center gap-2 mb-2"><span className="chip src">✉ Email</span><b>Auto-create from inbound emails</b></div>
           <p className="text-sm text-gray-600">Forward 99acres / MagicBricks / Housing / website-contact emails to a dedicated address → CRM parses + creates lead. Setup via Cloudflare Email Routing (FREE).</p>
           <div className="mt-3 text-xs text-gray-500">📑 Step-by-step in <code>EMAIL_TO_LEAD_SETUP.md</code></div>
+        </div>
+
+        <div className="card p-5">
+          <div className="flex items-center gap-2 mb-2"><span className="chip src">Meta Lead Ads</span><b>Facebook + Instagram</b></div>
+          <p className="text-sm text-gray-600">Every FB/Instagram lead-form submit → CRM in real time. Two free paths:</p>
+          <pre className="bg-[#0b1a33] text-[#e7c97a] text-xs rounded-lg p-3 mt-3 overflow-x-auto">{`Native webhook (no Zapier):
+  Callback URL:  ${base}/api/intake/meta
+  Verify token:  <your META_VERIFY_TOKEN>
+  Subscribe the Page to the "leadgen" field.
+  Needs META_APP_SECRET + META_PAGE_TOKEN env.
+
+Or via Zapier:  POST ${base}/api/intake/lead
+  X-WCR-Key: ${metaKey}`}</pre>
+          <div className="mt-2 text-xs text-gray-500">Full steps in <code>INTEGRATIONS_SETUP.md</code></div>
+        </div>
+
+        <div className="card p-5">
+          <div className="flex items-center gap-2 mb-2"><span className="chip src">Google Ads</span><b>Lead Form extensions</b></div>
+          <p className="text-sm text-gray-600">Point the Google Ads lead-form webhook (or a Zapier &quot;Google Ads&quot; zap) at:</p>
+          <pre className="bg-[#0b1a33] text-[#e7c97a] text-xs rounded-lg p-3 mt-3 overflow-x-auto">{`POST ${base}/api/intake/lead
+X-WCR-Key: ${googleKey}`}</pre>
+        </div>
+
+        <div className="card p-5">
+          <div className="flex items-center gap-2 mb-2"><span className="chip src">🎟 Townscript / Eventbrite</span><b>Event registrations</b></div>
+          <p className="text-sm text-gray-600">Expo / webinar sign-ups auto-enter. Add a webhook in the event platform (or a Zapier zap) → :</p>
+          <pre className="bg-[#0b1a33] text-[#e7c97a] text-xs rounded-lg p-3 mt-3 overflow-x-auto">{`POST ${base}/api/intake/lead
+X-WCR-Key: ${eventKey}`}</pre>
+        </div>
+
+        <div className="card p-5">
+          <div className="flex items-center gap-2 mb-2"><span className="chip src">⚡ Generic / Zapier / Make</span><b>Any other source</b></div>
+          <p className="text-sm text-gray-600">One endpoint for everything else — partner forms, portals, a spreadsheet automation. Send normalized JSON:</p>
+          <pre className="bg-[#0b1a33] text-[#e7c97a] text-xs rounded-lg p-3 mt-3 overflow-x-auto">{`POST ${base}/api/intake/lead
+X-WCR-Key: ${genericKey}
+{ "name": "...", "phone": "...", "email": "...",
+  "city": "...", "message": "...", "sourceRaw": "..." }`}</pre>
         </div>
 
         <div className="card p-5">

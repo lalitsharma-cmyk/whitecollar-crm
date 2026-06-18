@@ -23,6 +23,9 @@ export interface RawLeadInput {
   city?: string;
   country?: string;
   source: LeadSource;
+  /** Verbatim free-text source ("Townscript", "Meta Lead Ad: Dubai Expo") — preserved
+   *  exactly as received, per the source-fidelity rule. Falls back to the enum label. */
+  sourceRaw?: string;
   sourceDetail?: string;
   /** Inquired project slug/name — fed into resolveTeam for market keyword matching. */
   projectSlug?: string;
@@ -177,6 +180,7 @@ export async function ingestLead(input: RawLeadInput) {
       city: input.city,
       country: input.country,
       source: input.source,
+      sourceRaw: input.sourceRaw?.trim() || null,
       sourceDetail: input.sourceDetail,
       status: LeadStatus.NEW,
       configuration: input.configuration,
