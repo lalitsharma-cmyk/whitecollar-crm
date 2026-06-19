@@ -34,11 +34,36 @@ export function looksLikeStatus(s?: string | null): boolean {
   return true;
 }
 
-/** A budget value only if it actually contains a number. "Lalit Sir",
- *  "Tanuj", and other digit-less text are rejected (never a budget). */
+/** True when a value is formatted like a DATE (19-Jun-26, 2026-06-19, 19/06/2026,
+ *  "19 Jun 2026", ISO timestamp). Used to keep date values OUT of non-date fields
+ *  (name / company / budget / city / address / configuration / BANT) — they belong
+ *  only in date / follow-up / created columns. PURE NUMBERS are NOT dates, so a
+ *  real numeric budget ("7000000") is never rejected. Defence-in-depth on top of
+ *  the blank-header fix. */
+export function looksLikeDate(s?: string | null): boolean {
+  if (!s) return false;
+  const v = s.trim();
+  if (!v) return false;
+  const M = "(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)";
+  // dd-Mon-yy / dd Mon yyyy  (19-Jun-26, 19 Jun 2026)
+  if (new RegExp(`^\\d{1,2}[-/. ]${M}[a-z]*[-/., ]+\\d{2,4}$`, "i").test(v)) return true;
+  // Mon dd, yyyy  (Jun 19, 2026)
+  if (new RegExp(`^${M}[a-z]*[-/. ]\\d{1,2}[-/., ]+\\d{2,4}$`, "i").test(v)) return true;
+  // ISO 2026-06-19 (optionally with a clock time)
+  if (/^\d{4}-\d{2}-\d{2}([ T]\d{1,2}:\d{2})?/.test(v)) return true;
+  // dd/mm/yyyy · dd-mm-yyyy · mm/dd/yy
+  if (/^\d{1,2}[-/]\d{1,2}[-/]\d{2,4}$/.test(v)) return true;
+  // embedded "dd Mon yyyy" timestamp within a short cell
+  if (v.length < 40 && new RegExp(`\\b\\d{1,2}\\s+${M}[a-z]*\\s+\\d{2,4}\\b`, "i").test(v)) return true;
+  return false;
+}
+
+/** A budget value only if it actually contains a number AND is not a date.
+ *  "Lalit Sir" / "Tanuj" (digit-less) and "19-Jun-26" (a date) are rejected. */
 export function validBudgetRaw(s?: string | null): string | undefined {
   if (!s) return undefined;
   const v = s.trim();
   if (!v || !/\d/.test(v)) return undefined;
+  if (looksLikeDate(v)) return undefined;   // a date is never a budget
   return v;
 }

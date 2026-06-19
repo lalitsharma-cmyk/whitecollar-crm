@@ -38,6 +38,7 @@ import {
   validEmail,
   validPhone,
   looksLikeStatus,
+  looksLikeDate,
 } from "../src/lib/importValidate";
 
 // ── tiny assertion harness ──────────────────────────────────────────────────
@@ -245,6 +246,12 @@ const checks: Check[] = [
       assert(looksLikeStatus("FALSE") === false, "looksLikeStatus('FALSE') should be false");
       // ...but a real status label IS.
       assert(looksLikeStatus("Callback today") === true, "looksLikeStatus('Callback today') should be true");
+
+      // Date guard (2026-06-19): a date is never a budget, and is detected so the
+      // importer keeps it OUT of name/company/city/address/configuration/BANT.
+      assert(looksLikeDate("19-Jun-26") === true && looksLikeDate("2026-06-19") === true && looksLikeDate("19/06/2026") === true, "looksLikeDate should detect date formats");
+      assert(looksLikeDate("Mumbai") === false && looksLikeDate("7000000") === false && looksLikeDate("2 BHK") === false, "looksLikeDate must NOT flag a city / pure-number budget / config");
+      assert(validBudgetRaw("19-Jun-26") === undefined, "validBudgetRaw must reject a date value");
     },
   },
 

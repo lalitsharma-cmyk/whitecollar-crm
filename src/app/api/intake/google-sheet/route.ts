@@ -9,7 +9,11 @@ import { interpretBudget, resolveBudgetCurrency } from "@/lib/budgetCurrency";
 import { inferCountryFromCity } from "@/lib/cityCountry";
 import { canonicalStatus } from "@/lib/lead-statuses";
 import { mergeRawRemark } from "@/lib/rawRemarks";
-import { validEmail, validBudgetRaw, looksLikeStatus, validPhone } from "@/lib/importValidate";
+import { validEmail, validBudgetRaw, looksLikeStatus, validPhone, looksLikeDate } from "@/lib/importValidate";
+
+// Keep date-formatted values OUT of non-date fields (name/company/city/address/
+// configuration) — they belong only in date columns. Returns undefined for a date.
+const notDate = (v?: string): string | undefined => (v && looksLikeDate(v) ? undefined : v);
 import { normalizePhone } from "@/lib/phone";
 // runIntelligenceCheck is called inside ingestLead() for every new (non-deduped)
 // lead. No explicit call needed here — the check fires sequentially before any
@@ -180,7 +184,7 @@ export async function POST(req: NextRequest) {
 
   for (const [i, row] of parsed.data.entries()) {
     _consumedKeys = new Set();   // reset per-row: tracks headers mapped to CRM fields
-    const name = pick(row, "customer", "name", "fullname", "leadname");
+    const name = notDate(pick(row, "customer", "name", "fullname", "leadname"));
     // VALIDATE (same rules as CSV import): normalize to E.164 then reject
     // malformed (country-code-only "+91", merged/over-long) → store blank rather
     // than corrupt phone data.
@@ -201,8 +205,8 @@ export async function POST(req: NextRequest) {
       const r = await ingestLead({
         name: name ?? phone ?? email ?? "Unknown",
         phone, email,
-        city: pick(row, "city", "location"),
-        configuration: pick(row, "configuration", "config", "bhk", "type"),
+        city: notDate(pick(row, "city", "location")),
+        configuration: notDate(pick(row, "configuration", "config", "bhk", "type")),
         budgetMin: budgetInfo.min ?? undefined,
         budgetMax: budgetInfo.max ?? undefined,
         notesShort: pick(row, "remarks", "message", "requirement"),
@@ -217,8 +221,8 @@ export async function POST(req: NextRequest) {
       if (!r.deduped) update.importBatchId = importBatch.id;
       // Phase D: bulk imports land in MASTER_DATA (untriaged); admin moves them.
       if (!r.deduped) update.leadOrigin = "MASTER_DATA";
-      const co = pick(row, "company"); if (co) update.company = co;
-      const ad = pick(row, "address"); if (ad) update.address = ad;
+      const co = notDate(pick(row, "company")); if (co) update.company = co;
+      const ad = notDate(pick(row, "address")); if (ad) update.address = ad;
       const wc = pick(row, "whoisclient", "client", "clientinfo"); if (wc) update.whoIsClient = wc;
       const cat = pick(row, "categorization", "category"); if (cat) update.categorization = cat;
       // RAW-FIRST remarks (bugfix): the Sheet importer previously routed the

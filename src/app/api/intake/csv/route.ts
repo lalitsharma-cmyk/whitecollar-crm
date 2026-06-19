@@ -7,7 +7,12 @@ import { requireRole } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { extractFromRemarks, mergeSuggestions } from "@/lib/remarkAutofill";
 import { mergeRawRemark } from "@/lib/rawRemarks";
-import { validEmail, validPhone, validBudgetRaw, looksLikeStatus } from "@/lib/importValidate";
+import { validEmail, validPhone, validBudgetRaw, looksLikeStatus, looksLikeDate } from "@/lib/importValidate";
+
+// Keep date-formatted values OUT of non-date fields (name/company/city/address/
+// configuration/BANT) — they belong only in date/follow-up columns. Returns
+// undefined for a date so the importer leaves the field blank.
+const notDate = (v?: string): string | undefined => (v && looksLikeDate(v) ? undefined : v);
 import { splitPhones, normalizePhone } from "@/lib/phone";
 import { resolveTeam, routingFieldsFor } from "@/lib/teamRouting";
 import { interpretBudget, resolveBudgetCurrency } from "@/lib/budgetCurrency";
@@ -602,7 +607,7 @@ export async function POST(req: NextRequest) {
     const field = (crmField: string, ...fallback: string[]): string | undefined =>
       mappedPick ? mappedPick(crmField) : pick(row, ...fallback);
 
-    const nameRaw = field("name", "customer", "name", "fullname", "leadname", "customername");
+    const nameRaw = notDate(field("name", "customer", "name", "fullname", "leadname", "customername"));
     const phoneRaw = field("phone", "mobile", "phone", "contact", "phonenumber", "whatsapp");
     const altPhoneRaw = field("altPhone", "altnumber", "altphone", "alternatephone", "alternatenumber", "phone2", "secondarynumber", "secondaryphone");
     // VALIDATE: only an actual email — never a name/boolean from another column.
@@ -645,8 +650,8 @@ export async function POST(req: NextRequest) {
       const r = await ingestLead({
         name: name ?? phone ?? email ?? "Unknown",
         phone, email,
-        city: field("city", "city", "location", "address"),
-        configuration: field("configuration", "configuration", "config", "bhk", "type"),
+        city: notDate(field("city", "city", "location", "address")),
+        configuration: notDate(field("configuration", "configuration", "config", "bhk", "type")),
         budgetMin: budgetInfo.min ?? undefined,
         budgetMax: budgetInfo.max ?? undefined,
         notesShort: field("message", "message", "requirement", "todo"),
@@ -669,8 +674,8 @@ export async function POST(req: NextRequest) {
       if (!r.deduped) update.importBatchId = importBatch.id;
       if (altPhone) update.altPhone = altPhone;
       if (altName) update.altName = altName;
-      const company = field("company", "company"); if (company) update.company = company;
-      const address = field("address", "address"); if (address) update.address = address;
+      const company = notDate(field("company", "company")); if (company) update.company = company;
+      const address = notDate(field("address", "address")); if (address) update.address = address;
       const whoIsClient = field("whoIsClient", "whoisclient", "client", "clientinfo", "about");
       if (whoIsClient) update.whoIsClient = whoIsClient;
       const project = field("project", "project");
