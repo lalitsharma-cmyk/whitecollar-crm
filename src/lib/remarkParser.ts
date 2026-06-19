@@ -36,7 +36,10 @@ export function parseDateTime(dateStr: string, timeStr?: string): Date | null {
   const yr = parseInt(m[3]);
   let h = 12, mins = 0;
   if (timeStr) {
-    const tm = timeStr.match(/(\d{1,2}):?(\d{0,2})\s*(am|pm)?/i);
+    // Accept BOTH ":" and "." as the hour:minute separator — MIS sheets write
+    // both "9:15 PM" and "5.30 pm". Without "." the minutes + am/pm were dropped
+    // ("5.30 pm" → parsed as "5:00 am").
+    const tm = timeStr.match(/(\d{1,2})[:.]?(\d{0,2})\s*(am|pm)?/i);
     if (tm) {
       h = parseInt(tm[1]);
       mins = parseInt(tm[2] || "0");
@@ -48,24 +51,31 @@ export function parseDateTime(dateStr: string, timeStr?: string): Date | null {
   return new Date(Date.UTC(yr, mon, day, h, mins) - IST_OFFSET_MS);
 }
 
+// Date-only remarks carry NO clock time. Store them at NOON IST (= 06:30 UTC) — a
+// sentinel ConversationStreamCard.hasTime() recognises as "no real time", so it
+// renders the date alone instead of inventing a clock time. (Previously stored at
+// 01:00 UTC = 6:30 AM IST, which made every undated remark show a spurious "6:30 am".)
+function dateOnlyNoonIST(yr: number, mon: number, day: number): Date {
+  return new Date(Date.UTC(yr, mon, day, 6, 30)); // 06:30 UTC === 12:00 IST (noon)
+}
+
 function tryExtractDate(line: string): Date | null {
   const mLong = line.match(/(?:^|[^a-z])(\d{1,2})\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*[\s,]+(\d{4})/i);
   if (mLong) {
     const d = parseInt(mLong[1]);
     const mon = MONTHS[mLong[2].toLowerCase().slice(0,4)] ?? MONTHS[mLong[2].toLowerCase()];
     const yr = parseInt(mLong[3]);
-    if (mon !== undefined) return new Date(Date.UTC(yr, mon, d, 6, 30) - IST_OFFSET_MS);
+    if (mon !== undefined) return dateOnlyNoonIST(yr, mon, d);
   }
   const mISO = line.match(/\b(\d{4})-(\d{2})-(\d{2})\b/);
   if (mISO) {
-    const d = new Date(`${mISO[1]}-${mISO[2]}-${mISO[3]}T06:30:00+05:30`);
-    if (!isNaN(d.getTime())) return d;
+    return dateOnlyNoonIST(parseInt(mISO[1]), parseInt(mISO[2]) - 1, parseInt(mISO[3]));
   }
   const mDMY = line.match(/\b(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})\b/);
   if (mDMY) {
     const day = parseInt(mDMY[1]), mon = parseInt(mDMY[2]) - 1, yr = parseInt(mDMY[3]);
     if (day >= 1 && day <= 31 && mon >= 0 && mon <= 11)
-      return new Date(Date.UTC(yr, mon, day, 6, 30) - IST_OFFSET_MS);
+      return dateOnlyNoonIST(yr, mon, day);
   }
   return null;
 }

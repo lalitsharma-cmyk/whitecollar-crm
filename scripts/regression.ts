@@ -386,6 +386,34 @@ const checks: Check[] = [
       assert(leaked.length === 0, `${leaked.length} live lead(s) still carry the blank-header leak (e.g. ${leaked.slice(0, 3).map((l) => l.name).join(", ")}) — re-run scripts/repair-import-leak.ts`);
     },
   },
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // 12. REMARK TIMELINE = IST (2026-06-19)
+  //   Imported remark times are IST wall-clock. The parser must (a) keep a timed
+  //   remark at its IST instant, (b) accept "." as a time separator ("5.30 pm"),
+  //   and (c) store a DATE-ONLY remark at the noon-IST sentinel (06:30 UTC) so the
+  //   UI renders the date alone instead of a spurious "6:30 am".
+  // ───────────────────────────────────────────────────────────────────────────
+  {
+    name: "remark-timeline-IST — timed remark keeps IST instant · dotted time parses · date-only uses noon sentinel",
+    run: async () => {
+      const { parseRemarksTimeline } = await import("../src/lib/remarkParser");
+      const istHM = (d: Date) => new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Kolkata" }).format(d);
+
+      const timed = parseRemarksTimeline("On 19 Jun 2026 (9:15 PM) client will visit", [])[0];
+      assert(!!timed?.date && istHM(timed.date) === "21:15", `"(9:15 PM)" should render 21:15 IST, got ${timed?.date ? istHM(timed.date) : "∅"}`);
+
+      const dotted = parseRemarksTimeline("On 5 Jan 2025 (5.30 pm) site visit done", [])[0];
+      assert(!!dotted?.date && istHM(dotted.date) === "17:30", `"(5.30 pm)" should render 17:30 IST, got ${dotted?.date ? istHM(dotted.date) : "∅"}`);
+
+      const dateOnly = parseRemarksTimeline("On 17 Jun 2026 client called, interested in 3BHK", [])[0];
+      assert(!!dateOnly?.date, "date-only remark must still produce a date");
+      assert(
+        dateOnly!.date!.getUTCHours() === 6 && dateOnly!.date!.getUTCMinutes() === 30,
+        `date-only remark must use the noon-IST sentinel (06:30 UTC) so no spurious clock time shows — got ${dateOnly!.date!.toISOString()}`,
+      );
+    },
+  },
 ];
 
 // ── runner ────────────────────────────────────────────────────────────────────

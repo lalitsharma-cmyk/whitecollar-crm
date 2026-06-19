@@ -501,7 +501,9 @@ export default function ConversationStreamCard({
           const border = REMARK_BORDER[e.eventType];
           const bg     = REMARK_BG[e.eventType];
           const icon   = remarkIcon(e.eventType);
-          const dateStr = e.date ? fmtDateTime(e.date) : null;
+          // Append the explicit IST zone when there's a real clock time (date-only
+          // entries stay bare — "17 Jun 2026" — so we never write "… IST" on a date).
+          const dateStr = e.date ? (hasTime(e.date) ? `${fmtDateTime(e.date)} IST` : fmtDateTime(e.date)) : null;
           // Moderation state — only controllers ever reach here with a hidden entry.
           const rKey = remarkKeyFor(e);
           const ctrl = controlByKey.get(rKey) ?? null;
