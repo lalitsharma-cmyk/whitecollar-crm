@@ -145,6 +145,30 @@ export default function LeadProjectsClient({
     } finally { setBusy(false); }
   }
 
+  // Free-text add — for a project not yet in the Master. The API finds-or-creates
+  // it (inactive, so it never affects auto-routing) and links it to the lead.
+  async function addProjectByName(name: string) {
+    const projectName = name.trim();
+    if (!projectName || busy) return;
+    setBusy(true); setErr(null);
+    try {
+      const r = await fetch(`/api/leads/${leadId}/discuss`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectName, status: "DISCUSSED" }),
+      });
+      if (!r.ok) {
+        const j = await r.json().catch(() => ({}));
+        setErr(j.error ?? `Couldn't add "${projectName}" (${r.status}).`);
+        return;
+      }
+      setPicking(false); setPicked(null); setQuery(""); setHighlight(0);
+      router.refresh();
+    } catch (e) {
+      setErr(`Network error — ${String(e).slice(0, 80)}`);
+    } finally { setBusy(false); }
+  }
+
   async function removeProject(projectId: string) {
     setBusy(true);
     try {
@@ -239,6 +263,7 @@ export default function LeadProjectsClient({
       e.preventDefault();
       const m = matches[highlight];
       if (m) addProject(m.id);
+      else if (query.trim()) addProjectByName(query);   // no match → save as free-text
     } else if (e.key === "Escape") {
       e.preventDefault();
       setPicking(false);
@@ -294,7 +319,7 @@ export default function LeadProjectsClient({
 
       {/* ── Add project + scan buttons ───────────────────────────────────── */}
       <div className="flex items-center gap-3">
-        {!picking && remaining.length > 0 && (
+        {!picking && (
           <button
             onClick={() => { setPicking(true); setTimeout(() => inputRef.current?.focus(), 0); }}
             className="text-sm text-[#0b1a33] font-semibold mt-3 flex items-center gap-1.5 min-h-11 px-1"
@@ -338,17 +363,26 @@ export default function LeadProjectsClient({
                 ))}
               </div>
             )}
-            {query && matches.length === 0 && (
-              <div className="absolute left-0 right-0 top-full mt-1 px-3 py-2 text-xs text-gray-500 bg-white border border-[#e5e7eb] rounded-lg shadow-lg z-20">
-                No project matches &ldquo;{query}&rdquo;. Add it in /projects first.
+            {query.trim() && matches.length === 0 && (
+              <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-[#e5e7eb] rounded-lg shadow-lg z-20 overflow-hidden">
+                <div
+                  onMouseDown={(e) => { e.preventDefault(); addProjectByName(query); }}
+                  className="px-3 py-2.5 text-sm cursor-pointer hover:bg-amber-50"
+                >
+                  ➕ Add &ldquo;<span className="font-semibold">{query.trim()}</span>&rdquo; as a new project
+                </div>
               </div>
             )}
           </div>
           {err && <div className="text-[11px] text-red-600">{err}</div>}
           <div className="flex gap-2">
             <button
-              onClick={() => { const t = picked ?? matches[highlight] ?? matches[0]; if (t) addProject(t.id); }}
-              disabled={busy || (!picked && matches.length === 0)}
+              onClick={() => {
+                const t = picked ?? matches[highlight] ?? matches[0];
+                if (t) addProject(t.id);
+                else if (query.trim()) addProjectByName(query);   // free-text fallback
+              }}
+              disabled={busy || (matches.length === 0 && !query.trim())}
               className="btn btn-primary text-sm flex-1 justify-center min-h-11"
             >
               {busy ? "Adding…" : "Add"}

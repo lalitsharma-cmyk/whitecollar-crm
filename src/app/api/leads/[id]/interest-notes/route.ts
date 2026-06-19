@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { loadOwnedLead } from "@/lib/leadScope";
+import { ActivityType, ActivityStatus } from "@prisma/client";
 
 /**
  * GET /api/leads/[id]/interest-notes
@@ -62,6 +63,16 @@ export async function POST(
       sourceType: "MANUAL",
     },
   });
+  // Log to activity history (owner spec) + bump lastTouchedAt.
+  await prisma.activity.create({
+    data: {
+      leadId: id, userId: scoped.me.id,
+      type: ActivityType.NOTE, status: ActivityStatus.DONE,
+      title: `Interested property added: ${noteText.slice(0, 80)}`,
+      completedAt: new Date(),
+    },
+  }).catch(() => {});
+  await prisma.lead.update({ where: { id }, data: { lastTouchedAt: new Date() } }).catch(() => {});
 
   return NextResponse.json({ ok: true, note });
 }

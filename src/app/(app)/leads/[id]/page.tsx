@@ -1102,7 +1102,12 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
         {/* Imported sheet columns that don't map to a known CRM field — verbatim */}
         <DuplicateIntentBanner intent={dupIntent} />
         {customerHistory && <PreviousHistoryCard history={customerHistory} currentId={lead.id} />}
-        <ImportedFieldsCard customFields={lead.customFields} rawImport={lead.rawImport} />
+        {/* Imported Fields = raw import / audit metadata. Admin / Super-Admin / Lalit
+            only (all ADMIN). Hidden from Agents + Managers — the whole section
+            disappears (no empty card); the data stays untouched in the DB. */}
+        {me.role === "ADMIN" && (
+          <ImportedFieldsCard customFields={lead.customFields} rawImport={lead.rawImport} />
+        )}
 
         {/* §15: LinkedContactsCard removed — alt phone already in Client Information.
             No duplicate contact display anywhere else on the page. */}

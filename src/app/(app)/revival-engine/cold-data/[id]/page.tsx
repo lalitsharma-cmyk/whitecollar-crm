@@ -161,8 +161,10 @@ export default async function ColdDataDetailPage({ params, searchParams }: { par
         <ColdDataPromoteButton leadId={lead.id} leadName={lead.name} />
       </div>
 
-      {/* ── Imported sheet columns (verbatim) ── */}
-      <ImportedFieldsCard customFields={lead.customFields} rawImport={lead.rawImport} />
+      {/* ── Imported sheet columns (verbatim) — Admin/Super-Admin/Lalit only ── */}
+      {me.role === "ADMIN" && (
+        <ImportedFieldsCard customFields={lead.customFields} rawImport={lead.rawImport} />
+      )}
 
       {/* ── Conversation history (single source of truth) ── */}
       <ConversationStreamCard
