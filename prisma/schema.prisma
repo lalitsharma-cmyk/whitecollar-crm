@@ -281,7 +281,11 @@ model Lead {
   email           String?
   company         String?     // where the client works — matters for HNI profiling
   city            String?
+  state           String?     // State / Province — auto-filled from city alongside country
   country         String?
+  // true once a user manually edits Country/State → re-enrichment on a later City
+  // change must NOT overwrite their value (auto-filled values DO get refreshed).
+  locationManual  Boolean     @default(false)
   address         String?     // client's physical address (residence)
   // funnel
   source          LeadSource  @default(WEBSITE)

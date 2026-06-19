@@ -68,6 +68,56 @@ export function inferCountryFromCity(city: string | null | undefined): string | 
   return CITY_COUNTRY[key] ?? null;
 }
 
+// City → State / Province (parallel to CITY_COUNTRY). India = state, UAE = emirate,
+// Turkey = province, etc. Auto-fills the State field alongside Country.
+const CITY_STATE: Record<string, string> = {
+  // India
+  delhi: "Delhi", "new delhi": "Delhi",
+  gurgaon: "Haryana", gurugram: "Haryana", faridabad: "Haryana", manesar: "Haryana", panchkula: "Haryana",
+  noida: "Uttar Pradesh", "greater noida": "Uttar Pradesh", ghaziabad: "Uttar Pradesh",
+  lucknow: "Uttar Pradesh", kanpur: "Uttar Pradesh", agra: "Uttar Pradesh",
+  mumbai: "Maharashtra", "navi mumbai": "Maharashtra", thane: "Maharashtra", pune: "Maharashtra", nagpur: "Maharashtra",
+  bangalore: "Karnataka", bengaluru: "Karnataka",
+  hyderabad: "Telangana", secunderabad: "Telangana",
+  chennai: "Tamil Nadu", coimbatore: "Tamil Nadu",
+  kolkata: "West Bengal",
+  ahmedabad: "Gujarat", surat: "Gujarat", vadodara: "Gujarat",
+  jaipur: "Rajasthan", jodhpur: "Rajasthan", udaipur: "Rajasthan",
+  chandigarh: "Chandigarh",
+  mohali: "Punjab", amritsar: "Punjab", ludhiana: "Punjab",
+  indore: "Madhya Pradesh", bhopal: "Madhya Pradesh",
+  goa: "Goa", panaji: "Goa",
+  kochi: "Kerala", thiruvananthapuram: "Kerala",
+  bhubaneswar: "Odisha", patna: "Bihar", ranchi: "Jharkhand",
+  dehradun: "Uttarakhand", shimla: "Himachal Pradesh",
+  srinagar: "Jammu & Kashmir", jammu: "Jammu & Kashmir",
+  // UAE (emirate)
+  dubai: "Dubai", "abu dhabi": "Abu Dhabi", abudhabi: "Abu Dhabi", sharjah: "Sharjah",
+  ajman: "Ajman", "ras al khaimah": "Ras Al Khaimah", rak: "Ras Al Khaimah", rasalkhaimah: "Ras Al Khaimah",
+  fujairah: "Fujairah", "umm al quwain": "Umm Al Quwain",
+  // Turkey (province)
+  istanbul: "Istanbul", ankara: "Ankara", izmir: "Izmir", antalya: "Antalya",
+  bursa: "Bursa", adana: "Adana", gaziantep: "Gaziantep", konya: "Konya",
+  // GCC
+  riyadh: "Riyadh", jeddah: "Makkah", dammam: "Eastern Province",
+  doha: "Doha", muscat: "Muscat", "kuwait city": "Al Asimah",
+  // UK
+  london: "England", manchester: "England", birmingham: "England", leeds: "England", glasgow: "Scotland",
+  // USA
+  "new york": "New York", "los angeles": "California", "san francisco": "California", chicago: "Illinois", houston: "Texas",
+  // Australia
+  sydney: "New South Wales", melbourne: "Victoria", perth: "Western Australia",
+  // Canada
+  toronto: "Ontario", vancouver: "British Columbia", calgary: "Alberta",
+};
+
+/** City → State/Province (exact curated match). Null if unknown. */
+export function inferStateFromCity(city: string | null | undefined): string | null {
+  if (!city) return null;
+  const key = city.toLowerCase().trim().replace(/\s+/g, " ").replace(/[^a-z ]/g, "");
+  return CITY_STATE[key] ?? null;
+}
+
 // Fuzzy DISPLAY fallback. Real city strings are messy — "DELHI AND NCR",
 // "Defence colony, Delhi", "GK1, Delhi", "Dubai Marina" — and won't exact-match
 // the map above. Scan for the major metros as substrings (UAE first so a string

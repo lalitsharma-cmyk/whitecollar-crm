@@ -17,13 +17,14 @@ import { resolveTeam, routingFieldsFor, automationGate } from "@/lib/teamRouting
 import type { Classification } from "@/lib/leadClassifier";
 import { runIntelligenceCheck } from "@/lib/intelligenceCheck";
 import { inferPropertyType } from "@/lib/propertyType";
-import { inferCountryFromCity } from "@/lib/cityCountry";
+import { inferCountryFromCity, inferStateFromCity } from "@/lib/cityCountry";
 
 export interface RawLeadInput {
   name: string;
   phone?: string;
   email?: string;
   city?: string;
+  state?: string;
   country?: string;
   source: LeadSource;
   /** Verbatim free-text source ("Townscript", "Meta Lead Ad: Dubai Expo") — preserved
@@ -87,6 +88,10 @@ export async function ingestLead(input: RawLeadInput) {
   if (input.city && !input.country) {
     const inferred = inferCountryFromCity(input.city);
     if (inferred) input.country = inferred;
+  }
+  if (input.city && !input.state) {
+    const st = inferStateFromCity(input.city);
+    if (st) input.state = st;
   }
 
   // ── Duplicate path ──
@@ -222,6 +227,7 @@ export async function ingestLead(input: RawLeadInput) {
       phone: input.phone?.trim(),
       email: input.email?.toLowerCase().trim(),
       city: input.city,
+      state: input.state,
       country: input.country,
       source: input.source,
       // Classifier may relabel Source → "Blog" and fill Project (matched master).

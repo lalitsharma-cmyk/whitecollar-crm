@@ -1,6 +1,6 @@
 import "server-only";
 import { prisma } from "@/lib/prisma";
-import { inferCountryFromCityFuzzy, canonicalCountry } from "@/lib/cityCountry";
+import { inferCountryFromCityFuzzy, inferStateFromCity, canonicalCountry } from "@/lib/cityCountry";
 
 // City → Country resolver with a two-tier strategy (owner choice: no paid Google):
 //   1. Curated CRM table (cityCountry.ts) — instant, covers our markets.
@@ -18,9 +18,9 @@ export interface LocResult { country: string; state: string | null; source: "cur
 export async function lookupLocation(city: string | null | undefined): Promise<LocResult | null> {
   if (!city || !city.trim()) return null;
 
-  // 1. Curated map (fast, authoritative for our markets).
+  // 1. Curated map (fast, authoritative for our markets) — country + state.
   const curated = inferCountryFromCityFuzzy(city);
-  if (curated) return { country: curated, state: null, source: "curated" };
+  if (curated) return { country: curated, state: inferStateFromCity(city), source: "curated" };
 
   const key = cityKey(city);
   if (!key) return null;

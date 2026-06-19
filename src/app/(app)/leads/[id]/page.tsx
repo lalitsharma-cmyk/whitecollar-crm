@@ -25,7 +25,7 @@ import { acefoneEnabled } from "@/lib/acefone";
 import { canTouchLead, leadScopeWhere } from "@/lib/leadScope";
 import { parseRemarksTimeline, mergeSameMoment } from "@/lib/remarkParser";
 import { projectWhereForUser, teamToCountry } from "@/lib/propertyScope";
-import { inferCountryFromCityFuzzy } from "@/lib/cityCountry";
+import { inferCountryFromCityFuzzy, inferStateFromCity } from "@/lib/cityCountry";
 // CallHistoryCard removed — folded into ConversationStreamCard below.
 import ConversationStreamCard from "@/components/ConversationStreamCard";
 import StickyNoteWidget from "@/components/StickyNoteWidget";
@@ -1087,6 +1087,10 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
             <div>
               <div className="text-xs text-gray-500 dark:text-slate-400 mb-0.5">City</div>
               <InlineEdit leadId={lead.id} field="city" value={lead.city ?? ""} placeholder="Add value" />
+            </div>
+            <div>
+              <div className="text-xs text-gray-500 dark:text-slate-400 mb-0.5">State / Province</div>
+              <InlineEdit leadId={lead.id} field="state" value={lead.state || inferStateFromCity(lead.city) || ""} placeholder="Add value" />
             </div>
             <div>
               <div className="text-xs text-gray-500 dark:text-slate-400 mb-0.5">Country</div>

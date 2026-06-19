@@ -17,7 +17,7 @@ import { NotifKind, type Prisma } from "@prisma/client";
 
 const ALLOWED: Record<string, "string" | "date" | "number" | "enum" | "bool"> = {
   name: "string", altName: "string", phone: "string", altPhone: "string", email: "string", company: "string",
-  city: "string", country: "string", address: "string",
+  city: "string", state: "string", country: "string", address: "string",
   configuration: "string", currentStatus: "string", categorization: "string",
   // propertyType: "Residential" | "Commercial" — agent/admin/super-admin editable (not PII-locked).
   propertyType: "string",
@@ -132,19 +132,47 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
   if (Object.keys(updates).length === 0) return NextResponse.json({ error: "Nothing to update" }, { status: 400 });
 
-  // §17 — Auto-fill country when city is saved and country is not explicitly set.
-  // Curated CRM map first, then a cached OpenStreetMap/Nominatim lookup for the
-  // long tail (free, no Google). Only fills when the lead has no country yet —
-  // never overwrites an explicit value, so a manual override always wins.
-  if ("city" in updates && updates.city && !("country" in updates)) {
-    const existing = await prisma.lead.findUnique({ where: { id }, select: { country: true } });
-    if (!existing?.country) {
-      const { lookupCountry } = await import("@/lib/locationLookup");
-      const inferredCountry = await lookupCountry(updates.city as string);
-      if (inferredCountry) {
-        updates.country = inferredCountry;
-        activityNotes.push(`country auto-filled: ${inferredCountry}`);
+  // §17 — Location enrichment on City edit + manual-lock + impossible-combo guard.
+  const editingCity = "city" in updates && !!updates.city;
+  const editingCountry = "country" in updates;   // user is directly setting country
+  const editingState = "state" in updates;       // user is directly setting state
+  if (editingCity || editingCountry || editingState) {
+    const loc = await prisma.lead.findUnique({
+      where: { id },
+      select: { city: true, country: true, state: true, locationManual: true },
+    });
+    // Directly editing Country/State = the user takes manual control → lock it so a
+    // later City change won't overwrite their value.
+    if (editingCountry || editingState) updates.locationManual = true;
+
+    // On a City change, RE-ENRICH Country + State and overwrite the previously
+    // auto-filled values (fixes "Dubai→Gurgaon kept UAE"). Skip only when the
+    // location was manually locked and the user isn't also editing country/state now.
+    if (editingCity && !editingCountry && !editingState && loc?.locationManual !== true) {
+      const { lookupLocation } = await import("@/lib/locationLookup");
+      const enriched = await lookupLocation(updates.city as string);
+      if (enriched?.country) {
+        updates.country = enriched.country;
+        updates.state = enriched.state ?? null;   // refresh state too (clears stale)
+        activityNotes.push(`location re-enriched: ${enriched.state ? enriched.state + ", " : ""}${enriched.country}`);
       }
+    }
+
+    // Impossible City↔Country combo guard (e.g. Gurgaon + UAE). Only when the
+    // curated map is confident AND a non-admin is forcing a mismatch. Admins may
+    // override (logged); the auto-re-enrich above means this only bites a manual lock.
+    const { inferCountryFromCity } = await import("@/lib/cityCountry");
+    const finalCity = (("city" in updates ? updates.city : loc?.city) ?? "") as string;
+    const finalCountry = (("country" in updates ? updates.country : loc?.country) ?? "") as string;
+    const curatedCountry = inferCountryFromCity(finalCity);
+    if (curatedCountry && finalCountry && curatedCountry !== finalCountry) {
+      if (me.role !== "ADMIN") {
+        return NextResponse.json({
+          error: `"${finalCity}" is in ${curatedCountry}, not ${finalCountry}. Fix the City or Country — or ask an Admin to override.`,
+          locationConflict: true,
+        }, { status: 422 });
+      }
+      activityNotes.push(`⚠ admin override: ${finalCity} kept as ${finalCountry} (map says ${curatedCountry})`);
     }
   }
 
