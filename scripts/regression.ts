@@ -419,6 +419,13 @@ const checks: Check[] = [
         dateOnly!.date!.getUTCHours() === 6 && dateOnly!.date!.getUTCMinutes() === 30,
         `date-only remark must use the noon-IST sentinel (06:30 UTC) so no spurious clock time shows — got ${dateOnly!.date!.toISOString()}`,
       );
+
+      // Hyphenated MIS dates ("19-Jun-26") must PARSE — not become undated and fold
+      // into the previous timeline card. Two dated remarks = two independent events.
+      const hy = parseRemarksTimeline("Javed: On 17-May-26 shared district. Lalit: On 19-Jun-26 call not pick", ["Lalit Sharma", "Javed"]);
+      assert(hy.length === 2, `two hyphenated-date remarks must be 2 entries, got ${hy.length}`);
+      assert(!!hy[0]?.date && !!hy[1]?.date, "both hyphenated-date remarks must be DATED (not undated → fold-in)");
+      assert(!!hy[0]?.date && !!hy[1]?.date && hy[0].date!.getTime() !== hy[1].date!.getTime(), "the two entries must keep DIFFERENT dates (no fold-in into the older card)");
     },
   },
 

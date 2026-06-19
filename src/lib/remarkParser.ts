@@ -27,13 +27,20 @@ export const MONTHS: Record<string, number> = {
 // by treating h/m as IST and subtracting the IST offset.
 const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
 
+// Expand a 2-digit year ("26" → 2026). MIS sheets write "19-Jun-26".
+function expandYear(y: number): number { return y < 100 ? 2000 + y : y; }
+
 export function parseDateTime(dateStr: string, timeStr?: string): Date | null {
-  const m = dateStr.match(/(\d{1,2})\s+(\w+)\s+(\d{4})/);
+  // Accept space / hyphen / slash / dot between day-month-year + a 2- OR 4-digit
+  // year ("19 Jun 2026", "19-Jun-26", "19/Jun/2026"). Hyphenated month-name dates
+  // used to FAIL here → the remark became UNDATED and folded into the previous
+  // timeline card instead of starting its own dated event.
+  const m = dateStr.match(/(\d{1,2})[\s\-/.]+([A-Za-z]+)[\s\-/.]+(\d{2,4})/);
   if (!m) return null;
   const day = parseInt(m[1]);
   const mon = MONTHS[m[2].toLowerCase().slice(0, 4)] ?? MONTHS[m[2].toLowerCase()];
   if (mon === undefined) return null;
-  const yr = parseInt(m[3]);
+  const yr = expandYear(parseInt(m[3]));
   let h = 12, mins = 0;
   if (timeStr) {
     // Accept BOTH ":" and "." as the hour:minute separator — MIS sheets write
@@ -60,20 +67,20 @@ function dateOnlyNoonIST(yr: number, mon: number, day: number): Date {
 }
 
 function tryExtractDate(line: string): Date | null {
-  const mLong = line.match(/(?:^|[^a-z])(\d{1,2})\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*[\s,]+(\d{4})/i);
+  const mLong = line.match(/(?:^|[^a-z])(\d{1,2})[\s\-/.]+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*[\s\-/.,]+(\d{2,4})/i);
   if (mLong) {
     const d = parseInt(mLong[1]);
     const mon = MONTHS[mLong[2].toLowerCase().slice(0,4)] ?? MONTHS[mLong[2].toLowerCase()];
-    const yr = parseInt(mLong[3]);
+    const yr = expandYear(parseInt(mLong[3]));
     if (mon !== undefined) return dateOnlyNoonIST(yr, mon, d);
   }
   const mISO = line.match(/\b(\d{4})-(\d{2})-(\d{2})\b/);
   if (mISO) {
     return dateOnlyNoonIST(parseInt(mISO[1]), parseInt(mISO[2]) - 1, parseInt(mISO[3]));
   }
-  const mDMY = line.match(/\b(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})\b/);
+  const mDMY = line.match(/\b(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})\b/);
   if (mDMY) {
-    const day = parseInt(mDMY[1]), mon = parseInt(mDMY[2]) - 1, yr = parseInt(mDMY[3]);
+    const day = parseInt(mDMY[1]), mon = parseInt(mDMY[2]) - 1, yr = expandYear(parseInt(mDMY[3]));
     if (day >= 1 && day <= 31 && mon >= 0 && mon <= 11)
       return dateOnlyNoonIST(yr, mon, day);
   }
@@ -309,9 +316,9 @@ export function remarkKeyFor(entry: { date: Date | null; text: string }): string
 // ─── Main parser ──────────────────────────────────────────────────────────────
 
 // Full "on DD Mon YYYY (HH:MM) body" — previously made into synthetic CallLogs.
-const FULL_DATED_RE = /^(?:([A-Z][A-Za-z\s]{1,30}?)\s*:\s*)?[oO]n\s+(\d{1,2}\s+[A-Za-z]+(?:\s+\d{4})?)\s*\(([^)]+)\)\s*([\s\S]*)$/;
-// "on DD Mon YYYY body" — date but no time parens
-const ON_DATE_NO_TIME = /^(?:([A-Z][A-Za-z\s]{1,30}?)\s*:\s*)?[oO]n\s+((?:\d{1,2}\s+\w+(?:\s+\d{4})?|\d{4}-\d{2}-\d{2}|\d{1,2}[\/\-]\d{1,2}[\/\-]\d{4}))\s*(.*)/;
+const FULL_DATED_RE = /^(?:([A-Z][A-Za-z\s]{1,30}?)\s*:\s*)?[oO]n\s+(\d{1,2}[\s\-/.]+[A-Za-z]+(?:[\s\-/.]+\d{2,4})?)\s*\(([^)]+)\)\s*([\s\S]*)$/;
+// "on DD Mon YYYY body" — date but no time parens (hyphen/slash/2-digit-year tolerant)
+const ON_DATE_NO_TIME = /^(?:([A-Z][A-Za-z\s]{1,30}?)\s*:\s*)?[oO]n\s+((?:\d{1,2}[\s\-/.]+[A-Za-z]+(?:[\s\-/.]+\d{2,4})?|\d{4}-\d{2}-\d{2}|\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}))\s*(.*)/;
 // Leading "Name: " attribution (only to detect; canonical check is against roster)
 const NAME_PREFIX = /^([A-Z][A-Za-z]{1,20}(?:\s+[A-Z][A-Za-z]{1,20}){0,2})\s*:\s*/;
 
@@ -338,7 +345,11 @@ export function parseRemarksTimeline(
   const normalized = cell
     .replace(/,{2,}/g, "\n")
     .replace(/\r\n/g, "\n")
-    .replace(/([.!?]?\s*)([oO]n\s+\d)/g, (_, sep, on) => `\n${on}`)
+    // Split before "On <date>", PULLING an immediately-preceding "Name:" prefix
+    // onto the new line so the new dated entry keeps its OWN agent ("...him. Lalit:
+    // On 19 Jun..." → "Lalit: On 19 Jun...", attributed to Lalit, not the previous
+    // entry's agent).
+    .replace(/[.!?,]?\s*((?:[A-Z][A-Za-z]{1,20}\s*:\s*)?[oO]n\s+\d{1,2})/g, (_m, block) => `\n${block}`)
     .trim();
 
   const lines = normalized.split("\n").map(l => l.trim()).filter(Boolean);

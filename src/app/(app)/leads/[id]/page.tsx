@@ -754,6 +754,17 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
   // History (notes merged in) per Lalit's ask: "Keep only conversation history
   // which should have all details everything".
 
+  // §-header — the only secondary name under the lead name is a genuine JOINT-BUYER
+  // altName ("Soumya & Ayush"). NEVER an internal staff reference — a "* Sir/Sahab"
+  // honorific or a team name ("Dubai"/"India") that leaked into altName (e.g.
+  // "Lalit Sir") must not appear beneath the client's name.
+  const isInternalAltName = (a: string | null): boolean => {
+    if (!a) return false;
+    const t = a.trim().toLowerCase();
+    return /\b(sir|sahab|sahib|saab)\b/.test(t) || /^(dubai|india)$/.test(t);
+  };
+  const showAltName = !!lead.altName && !isInternalAltName(lead.altName);
+
   return (
     /* pb-24 reserves space at the bottom on mobile only for the GLOBAL bottom
        nav (~56px + safe-area). The per-lead action bar is now in-flow inside
@@ -852,10 +863,10 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
                 {(me.role === "ADMIN" || me.role === "MANAGER") ? (
                   <h2 className="text-xl font-bold">
                     <InlineEdit leadId={lead.id} field="name" value={lead.name} placeholder="Lead name" />
-                    {lead.altName && <span className="text-base font-medium text-gray-600"> & {lead.altName}</span>}
+                    {showAltName && <span className="text-base font-medium text-gray-600"> & {lead.altName}</span>}
                   </h2>
                 ) : (
-                  <h2 className="text-xl font-bold">{lead.name}{lead.altName && <span className="text-base font-medium text-gray-600"> & {lead.altName}</span>}</h2>
+                  <h2 className="text-xl font-bold">{lead.name}{showAltName && <span className="text-base font-medium text-gray-600"> & {lead.altName}</span>}</h2>
                 )}
                 {/* Status — primary user-facing field (Excel/MIS values). Click to change. */}
                 <span className={`${statusColor(lead.currentStatus)} text-xs px-2.5 py-0.5 rounded-full border font-semibold inline-flex items-center`}>
@@ -888,10 +899,16 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
                     project city → project area → interested-unit project city →
                     client city only as a last fallback. */}
                 {(() => {
+                  // WHERE the client is buying — linked project location, else the
+                  // assigned TEAM's market (Dubai/India). NEVER the client's own
+                  // residence city: showing lead.city here as a "location" badge
+                  // contradicted the team (Team=Dubai but badge=Gurgaon). The
+                  // residence city lives in Client Information → Location.
                   const proj = lead.discussed?.[0]?.project ?? lead.interestedUnits?.[0]?.unit?.project ?? null;
-                  const loc = proj?.city ?? proj?.area ?? lead.city ?? null;
+                  const teamMarket = lead.forwardedTeam === "Dubai" ? "Dubai" : lead.forwardedTeam === "India" ? "India" : null;
+                  const loc = proj?.city ?? proj?.area ?? teamMarket;
                   return loc ? (
-                    <span title="Property / project location" className="chip bg-slate-100 text-slate-600 border border-slate-200 text-[10px]">📍 {loc}</span>
+                    <span title="Buying market (project / team) — not the client's residence" className="chip bg-slate-100 text-slate-600 border border-slate-200 text-[10px]">📍 {loc}</span>
                   ) : null;
                 })()}
               </div>
@@ -1027,19 +1044,9 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
             rail. Private per agent (StickyNote model, unique on leadId+userId).
             Auto-saves on blur. Lalit's ask: "give every agent a private
             scratchpad on the lead that follows them as they scroll the page". */}
-        {(me.role === "ADMIN" || me.role === "MANAGER") && hasRouting && (
-          <div data-lead-section="admin" className="card p-4">
-            <div className="text-[10px] uppercase tracking-widest text-gray-500 dark:text-slate-400 font-semibold mb-2">🧭 Routing audit</div>
-            <dl className="grid grid-cols-[130px_1fr] gap-x-3 gap-y-1.5 text-xs">
-              {routingRows.filter(([, v]) => v).map(([label, value]) => (
-                <div key={label} className="contents">
-                  <dt className="text-gray-400 dark:text-slate-500">{label}</dt>
-                  <dd className="text-gray-700 dark:text-slate-200 break-words">{value}</dd>
-                </div>
-              ))}
-            </dl>
-          </div>
-        )}
+        {/* 🧭 Routing audit MOVED to the very bottom of the page (operational/debug
+            info — frees premium top space for client info). Rendered after Imported
+            Fields below. */}
         <StickyNoteWidget
           leadId={lead.id}
           initialBody={stickyNote.body}
@@ -1111,6 +1118,23 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
             disappears (no empty card); the data stays untouched in the DB. */}
         {me.role === "ADMIN" && (
           <ImportedFieldsCard customFields={lead.customFields} rawImport={lead.rawImport} />
+        )}
+
+        {/* 🧭 Routing audit — operational/debug provenance, moved to the BOTTOM
+            (owner spec). Admin / Super-Admin / Lalit only; hidden from Agents +
+            Managers. Kept off premium top space. */}
+        {me.role === "ADMIN" && hasRouting && (
+          <div data-lead-section="admin" className="card p-4">
+            <div className="text-[10px] uppercase tracking-widest text-gray-500 dark:text-slate-400 font-semibold mb-2">🧭 Routing audit</div>
+            <dl className="grid grid-cols-[130px_1fr] gap-x-3 gap-y-1.5 text-xs">
+              {routingRows.filter(([, v]) => v).map(([label, value]) => (
+                <div key={label} className="contents">
+                  <dt className="text-gray-400 dark:text-slate-500">{label}</dt>
+                  <dd className="text-gray-700 dark:text-slate-200 break-words">{value}</dd>
+                </div>
+              ))}
+            </dl>
+          </div>
         )}
 
         {/* §15: LinkedContactsCard removed — alt phone already in Client Information.
