@@ -133,14 +133,18 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if (Object.keys(updates).length === 0) return NextResponse.json({ error: "Nothing to update" }, { status: 400 });
 
   // §17 — Auto-fill country when city is saved and country is not explicitly set.
+  // Curated CRM map first, then a cached OpenStreetMap/Nominatim lookup for the
+  // long tail (free, no Google). Only fills when the lead has no country yet —
+  // never overwrites an explicit value, so a manual override always wins.
   if ("city" in updates && updates.city && !("country" in updates)) {
-    const { inferCountryFromCity } = await import("@/lib/cityCountry");
-    const inferredCountry = inferCountryFromCity(updates.city as string);
-    // Only auto-fill when the lead has no country yet (don't overwrite explicit value)
     const existing = await prisma.lead.findUnique({ where: { id }, select: { country: true } });
-    if (inferredCountry && !existing?.country) {
-      updates.country = inferredCountry;
-      activityNotes.push(`country auto-filled: ${inferredCountry}`);
+    if (!existing?.country) {
+      const { lookupCountry } = await import("@/lib/locationLookup");
+      const inferredCountry = await lookupCountry(updates.city as string);
+      if (inferredCountry) {
+        updates.country = inferredCountry;
+        activityNotes.push(`country auto-filled: ${inferredCountry}`);
+      }
     }
   }
 

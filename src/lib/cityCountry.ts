@@ -35,16 +35,23 @@ const CITY_COUNTRY: Record<string, string> = {
   "ras al khaimah": "UAE", rak: "UAE", rasalkhaimah: "UAE",
   fujairah: "UAE",
   "umm al quwain": "UAE",
+  // Turkey (Dubai Property Expo draws Turkish investors — Istanbul etc.)
+  istanbul: "Turkey", ankara: "Turkey", izmir: "Turkey", antalya: "Turkey",
+  bursa: "Turkey", adana: "Turkey", gaziantep: "Turkey", konya: "Turkey",
+  // Other GCC (common cross-border buyers at Dubai events)
+  riyadh: "Saudi Arabia", jeddah: "Saudi Arabia", dammam: "Saudi Arabia",
+  doha: "Qatar", muscat: "Oman", "kuwait city": "Kuwait", kuwait: "Kuwait",
+  manama: "Bahrain",
   // UK
-  london: "UK", manchester: "UK", birmingham: "UK",
+  london: "UK", manchester: "UK", birmingham: "UK", leeds: "UK", glasgow: "UK",
   // USA
-  "new york": "USA", "los angeles": "USA", "san francisco": "USA", chicago: "USA",
+  "new york": "USA", "los angeles": "USA", "san francisco": "USA", chicago: "USA", houston: "USA",
   // Singapore
   singapore: "Singapore",
   // Australia
-  sydney: "Australia", melbourne: "Australia",
+  sydney: "Australia", melbourne: "Australia", perth: "Australia",
   // Canada
-  toronto: "Canada", vancouver: "Canada",
+  toronto: "Canada", vancouver: "Canada", calgary: "Canada",
 };
 
 /**
@@ -63,8 +70,22 @@ export function inferCountryFromCity(city: string | null | undefined): string | 
 // "Defence colony, Delhi", "GK1, Delhi", "Dubai Marina" — and won't exact-match
 // the map above. Scan for the major metros as substrings (UAE first so a string
 // containing "dubai" wins). RENDER-TIME ONLY — this never writes to the DB.
-const INDIA_CITY_HINTS = ["delhi", "ncr", "gurgaon", "gurugram", "noida", "pune", "bangalore", "bengaluru", "mumbai", "ghaziabad", "faridabad"];
-const UAE_CITY_HINTS = ["dubai", "abu dhabi", "abudhabi", "ras al khaimah", "sharjah", "ajman"];
+const INDIA_CITY_HINTS = [
+  "delhi", "ncr", "gurgaon", "gurugram", "noida", "pune", "bangalore", "bengaluru",
+  "mumbai", "ghaziabad", "faridabad", "manesar", "sohna",
+  // Gurgaon / Delhi-NCR neighbourhood + sector patterns common in our data
+  "sector", "sec-", "sec ", "dlf", "sushant", "cyber", "golf course", "udyog vihar",
+  "palam vihar", "nirvana", "south city", "mg road", "rohini", "dwarka", "saket",
+  "vasant", "janakpuri", "pitampura", "rajouri", "lajpat", "greater kailash",
+];
+const UAE_CITY_HINTS = [
+  "dubai", "abu dhabi", "abudhabi", "ras al khaimah", "sharjah", "ajman", "fujairah",
+  // Dubai community / area names that appear as the "city" on event leads
+  "marina", "jumeirah", "jvc", "jbr", "business bay", "downtown dubai", "deira",
+  "bur dubai", "sheikh zayed", "silicon oasis", "international city", "motor city",
+  "sports city", "al barsha", "tecom", "difc", "damac hills", "dubai hills",
+];
+const TURKEY_CITY_HINTS = ["istanbul", "ankara", "izmir", "antalya", "bursa"];
 export function inferCountryFromCityFuzzy(city: string | null | undefined): string | null {
   const exact = inferCountryFromCity(city);
   if (exact) return exact;
@@ -72,5 +93,24 @@ export function inferCountryFromCityFuzzy(city: string | null | undefined): stri
   const c = city.toLowerCase();
   if (UAE_CITY_HINTS.some((h) => c.includes(h))) return "UAE";
   if (INDIA_CITY_HINTS.some((h) => c.includes(h))) return "India";
+  if (TURKEY_CITY_HINTS.some((h) => c.includes(h))) return "Turkey";
   return null;
+}
+
+// Normalize a free-text / Nominatim country name to the CRM's canonical short
+// form so curated and API-enriched leads never split into "UAE" vs "United Arab
+// Emirates" variants (global data-consistency rule). Unknown names pass through.
+const COUNTRY_CANON: Record<string, string> = {
+  "united arab emirates": "UAE", "u.a.e.": "UAE", uae: "UAE",
+  "united kingdom": "UK", "great britain": "UK", uk: "UK", england: "UK",
+  "türkiye": "Turkey", turkiye: "Turkey", turkey: "Turkey",
+  "united states": "USA", "united states of america": "USA", usa: "USA",
+  "kingdom of saudi arabia": "Saudi Arabia", "saudi arabia": "Saudi Arabia",
+  india: "India", qatar: "Qatar", oman: "Oman", kuwait: "Kuwait",
+  bahrain: "Bahrain", singapore: "Singapore", australia: "Australia", canada: "Canada",
+};
+export function canonicalCountry(name: string | null | undefined): string | null {
+  if (!name) return null;
+  const t = name.trim();
+  return COUNTRY_CANON[t.toLowerCase()] ?? t;
 }

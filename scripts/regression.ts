@@ -414,6 +414,24 @@ const checks: Check[] = [
       );
     },
   },
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // 13. LOCATION ENRICHMENT (2026-06-19) — curated City→Country map covers our
+  //   markets + canonicalizes country names to one CRM form (no UAE vs "United
+  //   Arab Emirates" split). Nominatim is a live, supervised fallback only.
+  // ───────────────────────────────────────────────────────────────────────────
+  {
+    name: "location-enrich — curated City→Country (Istanbul/Dubai/Gurgaon) + country canonicalization",
+    run: async () => {
+      const { inferCountryFromCity, inferCountryFromCityFuzzy, canonicalCountry } = await import("../src/lib/cityCountry");
+      assert(inferCountryFromCity("Istanbul") === "Turkey", `Istanbul should map to Turkey, got ${inferCountryFromCity("Istanbul")}`);
+      assert(inferCountryFromCity("Dubai") === "UAE", `Dubai should map to UAE, got ${inferCountryFromCity("Dubai")}`);
+      assert(inferCountryFromCity("Gurgaon") === "India", `Gurgaon should map to India, got ${inferCountryFromCity("Gurgaon")}`);
+      assert(inferCountryFromCityFuzzy("Sheikh Zayed Road") === "UAE", `messy UAE city should fuzzy-map to UAE`);
+      assert(canonicalCountry("United Arab Emirates") === "UAE", `"United Arab Emirates" must canonicalize to UAE`);
+      assert(canonicalCountry("United Kingdom") === "UK", `"United Kingdom" must canonicalize to UK`);
+    },
+  },
 ];
 
 // ── runner ────────────────────────────────────────────────────────────────────

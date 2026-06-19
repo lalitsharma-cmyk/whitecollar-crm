@@ -648,6 +648,19 @@ enum ProjectStatus {
   SOLD_OUT
 }
 
+// Location enrichment cache — City → Country/State results from OpenStreetMap /
+// Nominatim (free, no API key). Curated cityCountry.ts is tried first; this caches
+// the long-tail API lookups so we never re-hit Nominatim for the same city.
+model LocationCache {
+  id        String   @id @default(cuid())
+  cityKey   String   @unique          // normalized lowercase city ("greater noida")
+  city      String                     // verbatim-ish input for reference
+  state     String?
+  country   String                     // canonical CRM form (UAE / India / Turkey / UK …)
+  source    String   @default("nominatim")  // "nominatim" | "manual"
+  createdAt DateTime @default(now())
+}
+
 model Project {
   id            String         @id @default(cuid())
   slug          String?        @unique  // stable key for auto-sync from marketing site

@@ -17,6 +17,7 @@ import { resolveTeam, routingFieldsFor, automationGate } from "@/lib/teamRouting
 import type { Classification } from "@/lib/leadClassifier";
 import { runIntelligenceCheck } from "@/lib/intelligenceCheck";
 import { inferPropertyType } from "@/lib/propertyType";
+import { inferCountryFromCity } from "@/lib/cityCountry";
 
 export interface RawLeadInput {
   name: string;
@@ -78,6 +79,15 @@ export async function ingestLead(input: RawLeadInput) {
     if (normalized) input.phone = normalized;
   }
   const fp = fingerprintFor(input.phone, input.email);
+
+  // §17 — Auto-fill country from city (curated map, sync) when the intake didn't
+  // supply one. Applies to website + import + manual so every new lead lands with
+  // a country where the city is known (the long tail is filled by the backfill /
+  // a later manual edit, which also runs the cached Nominatim fallback).
+  if (input.city && !input.country) {
+    const inferred = inferCountryFromCity(input.city);
+    if (inferred) input.country = inferred;
+  }
 
   // ── Duplicate path ──
   // ONLY active leads dedupe. A soft-deleted lead (admin delete / rolled-back
