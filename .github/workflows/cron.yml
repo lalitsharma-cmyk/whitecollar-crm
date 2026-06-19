@@ -45,6 +45,9 @@ on:
     - cron: "0 14 * * 0"
     # Unassigned-lead end-of-day summary — daily 14:30 UTC = 20:00 IST
     - cron: "30 14 * * *"
+    # Daily DB housekeeping — 21:30 UTC = 03:00 IST, AFTER the 21:00 backup so
+    # every trimmed row is already archived in that day's Drive backup.
+    - cron: "30 21 * * *"
   # Allow manual trigger from the Actions tab for debugging
   workflow_dispatch:
 
@@ -125,6 +128,19 @@ jobs:
             -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
             "https://crm.whitecollarrealty.com/api/cron/unassigned-reminders?summary=1" \
             || echo "::warning::unassigned-summary cron failed"
+
+  cleanup:
+    # Daily DB housekeeping — 21:30 UTC = 03:00 IST (after the 21:00 backup).
+    # Trims Notification + CronRun only; reminders/leads/activities/audit untouched.
+    if: github.event.schedule == '30 21 * * *' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trim old notifications + cron logs
+        run: |
+          curl -sf --max-time 90 \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            https://crm.whitecollarrealty.com/api/cron/cleanup \
+            || echo "::warning::cleanup cron failed"
 
   db_backup:
     # Daily JSON snapshot — uploads to Actions artifacts (free, 90d retention,

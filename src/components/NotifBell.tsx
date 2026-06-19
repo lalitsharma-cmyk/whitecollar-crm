@@ -70,11 +70,21 @@ export default function NotifBell() {
     } catch {}
   }
   useEffect(() => {
+    if (open) return; // pause polling while the panel is open so the viewed list doesn't vanish mid-read
     load();
     const t = setInterval(load, 30_000); // poll every 30s
     return () => clearInterval(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [open]);
+
+  // Opening the bell = viewing your notifications → mark them read. They vanish
+  // from the bell on close/reopen (the bell shows unread only); full history
+  // stays on /notifications. Badge counts unread only.
+  function toggleOpen() {
+    const next = !open;
+    setOpen(next);
+    if (next && unread > 0) void markAllRead();
+  }
 
   function toggleSound() {
     const next = !soundOn;
@@ -96,7 +106,7 @@ export default function NotifBell() {
 
   return (
     <div className="relative">
-      <button onClick={() => setOpen((o) => !o)} className="relative p-1">
+      <button onClick={toggleOpen} className="relative p-1">
         <Bell className="w-[20px] h-[20px] text-gray-500" />
         {unread > 0 && (
           <span className="absolute -top-1 -right-2 bg-[#ef4444] text-white text-[10px] font-bold rounded-full px-1.5">{unread > 99 ? "99+" : unread}</span>

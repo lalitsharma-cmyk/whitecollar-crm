@@ -6,13 +6,18 @@ export const dynamic = "force-dynamic";
 
 export async function GET() {
   const me = await requireUser();
+  // The bell shows UNREAD only — once a notification is read it disappears from
+  // the bell immediately (full history still lives on the /notifications page).
+  // Hide snoozed-until-future rows too. Count == unread (the only count shown).
+  const now = new Date();
+  const where = {
+    userId: me.id,
+    readAt: null,
+    OR: [{ snoozedUntil: null }, { snoozedUntil: { lte: now } }],
+  };
   const [items, unread] = await Promise.all([
-    prisma.notification.findMany({
-      where: { userId: me.id },
-      orderBy: { createdAt: "desc" },
-      take: 50,
-    }),
-    prisma.notification.count({ where: { userId: me.id, readAt: null } }),
+    prisma.notification.findMany({ where, orderBy: { createdAt: "desc" }, take: 50 }),
+    prisma.notification.count({ where }),
   ]);
   return NextResponse.json({ items, unread });
 }
