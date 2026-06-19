@@ -729,6 +729,17 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
             }
             placeholder="Add value" />
         </div>
+        {/* Property Type — Residential / Commercial. Auto-filled from the matched
+            project's category or the configuration; agent/admin/super-admin editable. */}
+        <div>
+          <div className="text-xs text-gray-500 dark:text-slate-400">🏗️ Property Type</div>
+          <InlineEdit leadId={lead.id} field="propertyType" type="select" value={lead.propertyType ?? ""}
+            options={[
+              {value:"Residential",label:"Residential"},
+              {value:"Commercial",label:"Commercial"},
+            ]}
+            placeholder="Add value" />
+        </div>
         {/* LinkedIn — dedicated client field. Empty → "Add Value"; saved →
             clickable linkedin.com/in/… link + small pencil to edit. Nothing else. */}
         <div className="sm:col-span-2">

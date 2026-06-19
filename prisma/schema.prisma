@@ -295,6 +295,7 @@ model Lead {
   budgetCurrency  String      @default("AED")   // "AED" | "INR" | "UNKNOWN" (UNKNOWN = currency unresolved → show budgetRaw only, admin review)
   budgetRaw       String?     // verbatim imported budget text ("10 Cr", "AED 800K - AED 1M") — display source of truth; never auto-converted
   configuration   String?     // "2BHK" / "Penthouse" / "Plot"
+  propertyType    String?     // "Residential" | "Commercial" — auto-filled from project category / configuration, agent+admin editable
   notesShort      String?     // one-liner requirement (legacy)
   remarks         String?     // long remarks (matches sheet's Remarks column) — "Display Remark" (currently == rawRemarks)
   rawRemarks      String?     // IMMUTABLE audit source of truth: exact imported remark text, never transformed, never overwritten after first write. Conversation History "Raw History (Audit Log)" renders this verbatim.

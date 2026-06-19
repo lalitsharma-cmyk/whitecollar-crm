@@ -16,6 +16,7 @@ import { BOOKED_STATUSES } from "@/lib/lead-statuses";
 import { resolveTeam, routingFieldsFor, automationGate } from "@/lib/teamRouting";
 import type { Classification } from "@/lib/leadClassifier";
 import { runIntelligenceCheck } from "@/lib/intelligenceCheck";
+import { inferPropertyType } from "@/lib/propertyType";
 
 export interface RawLeadInput {
   name: string;
@@ -45,6 +46,9 @@ export interface RawLeadInput {
    *  drives forwardedTeam + routing audit + Source(Blog)/Project/Lead-Type/Event-
    *  City. Importers & manual entry NEVER pass it, so their routing is unchanged. */
   classification?: Classification;
+  /** Property Type ("Residential" | "Commercial") — website property page may send
+   *  it explicitly. When absent it's derived from the project category / configuration. */
+  propertyType?: string;
 }
 
 const FIRST_CALL_SLA_MIN = 15;
@@ -186,6 +190,22 @@ export async function ingestLead(input: RawLeadInput) {
     return new Date(eodIST.getTime() - istOffsetMs);
   }
 
+  // ── Property Type (Residential/Commercial) ──
+  // Explicit value (website property page) wins; else derive from the matched
+  // project's Master category, else the configuration keywords. SAME helper the
+  // historical backfill uses → old and new leads classify identically.
+  const projName = (useCls && cls?.project) ? cls.project : (input.sourceDetail ?? input.projectSlug ?? null);
+  let projectCategory: string | null = null;
+  if (projName) {
+    const proj = await prisma.project.findFirst({
+      where: { name: { equals: projName, mode: "insensitive" } },
+      select: { category: true },
+    });
+    projectCategory = proj?.category ?? null;
+  }
+  const propertyType = input.propertyType
+    ?? inferPropertyType({ projectCategory, configuration: input.configuration, projectName: projName, notes: input.notesShort });
+
   const lead = await prisma.lead.create({
     data: {
       name: input.name?.trim() || "Unknown",
@@ -202,6 +222,7 @@ export async function ingestLead(input: RawLeadInput) {
       // unset here and set their own from the sheet (so this never touches imports).
       ...(input.currentStatus ? { currentStatus: input.currentStatus } : {}),
       configuration: input.configuration,
+      propertyType,
       budgetMin: input.budgetMin,
       budgetMax: input.budgetMax,
       budgetCurrency: currency,

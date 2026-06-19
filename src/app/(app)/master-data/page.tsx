@@ -187,6 +187,7 @@ export default async function MasterDataPage({ searchParams }: { searchParams: P
       ownerId: l.ownerId ?? null,
       team: l.forwardedTeam ?? "—",
       project: l.sourceDetail ?? "—",
+      propertyType: l.propertyType ?? "",
       sourceLabel: SOURCE_LABEL[l.source] ?? l.source,
       sourceRaw: l.sourceRaw ?? "",
       leadOrigin: l.leadOrigin,

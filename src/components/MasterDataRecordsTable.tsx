@@ -19,6 +19,7 @@ export type MDRow = {
   ownerId: string | null;
   team: string;            // "Dubai" | "India" | "—"
   project: string;
+  propertyType: string;    // "Residential" | "Commercial" | ""
   sourceLabel: string;
   sourceRaw: string;
   leadOrigin: string;
@@ -40,7 +41,7 @@ interface Props {
 
 type ColKey =
   | "name" | "agent" | "team"
-  | "createdDate" | "createdTime" | "budget" | "project" | "source" | "message" | "status" | "bucket" | "email" | "phone";
+  | "createdDate" | "createdTime" | "budget" | "project" | "propertyType" | "source" | "message" | "status" | "bucket" | "email" | "phone";
 
 const TEAMS = ["Dubai", "India"];
 const PAGE = 50;
@@ -55,6 +56,7 @@ const COLS: { key: ColKey; label: string; frozen?: boolean; w?: number; minW?: n
   { key: "createdTime", label: "Created Time", minW: 80 },
   { key: "budget", label: "Budget" },
   { key: "project", label: "Project", minW: 180 },
+  { key: "propertyType", label: "Property Type", minW: 110, defHidden: true },
   { key: "source", label: "Source" },
   { key: "message", label: "Message", wide: true },
   { key: "status", label: "Status" },
@@ -83,6 +85,7 @@ function valueOf(r: MDRow, c: ColKey): string {
     case "createdTime": return r.createdTime;
     case "budget": return r.budget;
     case "project": return r.project;
+    case "propertyType": return r.propertyType || "—";
     case "source": return r.sourceLabel;
     case "message": return r.message;
     case "status": return r.statusLabel ?? "— none —";
