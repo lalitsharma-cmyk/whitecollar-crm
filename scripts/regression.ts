@@ -339,6 +339,53 @@ const checks: Check[] = [
       );
     },
   },
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // 11. IMPORT BLANK-HEADER LEAK (2026-06-19 P0)
+  //   A sheet column with a blank/symbol-only header normalises to "" and, under
+  //   the old pick() prefix match, `candidate.startsWith("")` was always true — so
+  //   that column's value (typically the Date) leaked into city/budget/remarks/…
+  //   for every row. Two guards:
+  //   (a) CODE: a blank header must never wildcard-match a CRM field.
+  //   (b) DATA: no live lead may still carry the leak signature (a rawImport
+  //       blank-header value sitting in city / budgetRaw / remarks).
+  // ───────────────────────────────────────────────────────────────────────────
+  {
+    name: "import-blank-header — blank header never maps to a field (code) + no live lead carries the leak (data)",
+    run: async () => {
+      const norm = (s: string) => s.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
+      // (a) CODE invariant — the fixed pick() must skip a "" header. Replicate the
+      // exact guard: a blank-normalized header is skipped, so it can't win a field.
+      const pick = (row: Record<string, string>, ...cands: string[]) => {
+        const wanted = cands.map(norm).filter(Boolean);
+        for (const k of Object.keys(row)) {
+          const nk = norm(k);
+          if (!nk) continue;
+          for (const t of wanted) if (nk === t || nk.startsWith(t) || t.startsWith(nk)) { const v = row[k]?.trim(); if (v) return v; }
+        }
+      };
+      const leakRow = { "": "19-Jun-26", "👤 Customer": "Real Name", "Remarks": "real remark" };
+      assert(pick(leakRow, "city", "location") === undefined, `blank-header column leaked into city: got ${JSON.stringify(pick(leakRow, "city", "location"))}`);
+      assert(pick(leakRow, "customer", "name") === "Real Name", `name lookup broke: got ${JSON.stringify(pick(leakRow, "customer", "name"))}`);
+      assert(pick(leakRow, "remarks", "remark") === "real remark", `remarks lookup broke: got ${JSON.stringify(pick(leakRow, "remarks", "remark"))}`);
+
+      // (b) DATA invariant — no live lead still has a blank-header value sitting in
+      // city / budgetRaw / remarks (the corruption signature).
+      const imported = await prisma.lead.findMany({
+        where: { deletedAt: null, rawImport: { not: { equals: null } as never } },
+        select: { id: true, name: true, rawImport: true, city: true, budgetRaw: true, remarks: true },
+      });
+      const leaked = imported.filter((l) => {
+        const ri = l.rawImport as Record<string, unknown> | null;
+        if (!ri) return false;
+        const blanks = Object.keys(ri).filter((k) => norm(k) === "").map((k) => String(ri[k]).trim());
+        if (blanks.length === 0) return false;
+        const set = new Set(blanks);
+        return [l.city, l.budgetRaw, l.remarks].some((v) => v != null && set.has(String(v).trim()));
+      });
+      assert(leaked.length === 0, `${leaked.length} live lead(s) still carry the blank-header leak (e.g. ${leaked.slice(0, 3).map((l) => l.name).join(", ")}) — re-run scripts/repair-import-leak.ts`);
+    },
+  },
 ];
 
 // ── runner ────────────────────────────────────────────────────────────────────

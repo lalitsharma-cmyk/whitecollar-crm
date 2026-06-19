@@ -155,9 +155,15 @@ function buildMapping(columns: string[]): { column: string; crmField: string; co
 }
 
 function pick(row: Row, ...candidates: string[]): string | undefined {
-  const wanted = candidates.map(norm);
+  const wanted = candidates.map(norm).filter(Boolean);
   for (const k of Object.keys(row)) {
     const nk = norm(k);
+    // A blank / symbol-only header normalizes to "" and would WILDCARD-match every
+    // field — `t.startsWith("")` is always true — so the first such column (e.g. a
+    // leading index/serial column) would leak its value into city/budget/remarks/…
+    // for EVERY row. Skip it: a column with no real header can't map to a CRM field.
+    // (It is still preserved verbatim in rawImport for audit.)
+    if (!nk) continue;
     for (const t of wanted) {
       if (nk === t || nk.startsWith(t) || t.startsWith(nk)) {
         // Count as "mapped" (hidden from customFields) ONLY on an exact match or
@@ -842,6 +848,7 @@ export async function POST(req: NextRequest) {
       const cf: Record<string, string> = {};
       for (const k of Object.keys(row)) {
         if (_consumedKeys.has(k)) continue;
+        if (!norm(k)) continue;   // blank/symbol-only header → noise, not a real "extra column" (stays in rawImport)
         const v = row[k]?.toString().trim();
         if (v) cf[k] = v;
       }
