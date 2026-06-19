@@ -309,6 +309,10 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
   );
 
   const canReassign = me.role === "ADMIN" || me.role === "MANAGER";
+  // Reject is allowed for admins/managers AND the lead's own agent (owner) —
+  // the /reject API already permits owner-reject via canTouchLead; this opens
+  // the header button to agents on their OWN leads (never Reassign).
+  const canReject = canReassign || lead.ownerId === me.id;
 
   // Travel rate fetched once — used by the AdvancedActivityLogger which now
   // lives at the bottom of the RIGHT column (moved from header per Lalit's
@@ -920,7 +924,7 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
               {/* Reject lead — surfaced on the ALWAYS-VISIBLE header (in addition
                   to the Admin-tab card below) so admins/managers can reject from
                   the main view without switching tabs. Hidden once rejected. */}
-              {canReassign && lead.rejectedAt == null && (
+              {canReject && lead.rejectedAt == null && (
                 <div className="mt-3 w-full">
                   <RejectLeadModal leadId={lead.id} />
                 </div>
