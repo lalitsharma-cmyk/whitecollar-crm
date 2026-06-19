@@ -119,6 +119,48 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   return NextResponse.json({ ok: true, count: remarkKeys.length });
 }
 
+/**
+ * PATCH /api/leads/[id]/remark-control   body: { text: string, reason?: string }
+ *
+ * Lalit-ONLY (canControlConversations) edit of the Raw History text (Lead.rawRemarks
+ * + the display mirror Lead.remarks). The ENTIRE previous text is preserved verbatim
+ * in RemarkAuditLog (action EDIT_RAW, oldState) — raw history is NEVER hard-deleted.
+ * Smart Timeline re-derives from the corrected text, and the assigned agent sees the
+ * corrected version (it's the same field everyone reads). An "Edited by Lalit" badge
+ * is shown to Admin/Super-Admin only, derived from this audit row.
+ */
+export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id: leadId } = await params;
+  const me = await requireUser();
+  if (!me.canControlConversations) {
+    return NextResponse.json({ error: "Only Lalit can edit Raw History / Smart Timeline." }, { status: 403 });
+  }
+  const lead = await prisma.lead.findUnique({
+    where: { id: leadId },
+    select: { id: true, ownerId: true, forwardedTeam: true, rawRemarks: true, remarks: true },
+  });
+  if (!lead) return NextResponse.json({ error: "Lead not found" }, { status: 404 });
+  if (!(await canTouchLead(me, lead))) return NextResponse.json({ error: "Lead not found" }, { status: 404 });
+
+  const body = await req.json().catch(() => ({}) as Record<string, unknown>);
+  const text = typeof body.text === "string" ? body.text.trim() : null;
+  if (text == null) return NextResponse.json({ error: "Missing text" }, { status: 400 });
+  const reason = typeof body.reason === "string" ? body.reason.trim().slice(0, 500) : null;
+  const oldRaw = lead.rawRemarks ?? lead.remarks ?? "";
+  if (oldRaw === text) return NextResponse.json({ ok: true, unchanged: true });
+
+  // Preserve the FULL original verbatim before overwriting (audit backup).
+  await prisma.remarkAuditLog.create({
+    data: {
+      leadId, remarkKey: "__raw__", action: "EDIT_RAW",
+      actorId: me.id, actorName: me.name,
+      oldState: oldRaw, newState: text, reason,
+    },
+  });
+  await prisma.lead.update({ where: { id: leadId }, data: { rawRemarks: text, remarks: text } });
+  return NextResponse.json({ ok: true });
+}
+
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id: leadId } = await params;
   const me = await requireUser();

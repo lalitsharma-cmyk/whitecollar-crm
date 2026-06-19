@@ -77,11 +77,12 @@ export async function PATCH(
   });
   if (!note || note.leadId !== id) return NextResponse.json({ error: "Note not found" }, { status: 404 });
 
-  const istDay = (d: Date) => new Date(d.getTime() + 5.5 * 3600 * 1000).toISOString().slice(0, 10);
-  const isAdmin = me.role === "ADMIN";
-  const sameDayOwn = note.userId === me.id && istDay(note.createdAt) === istDay(new Date());
-  if (!isAdmin && !sameDayOwn) {
-    return NextResponse.json({ error: "You can only edit your own same-day remark. Ask an admin to edit older remarks." }, { status: 403 });
+  // EDIT rights are Lalit-ONLY (Raw History / Smart Timeline / notes edit lock —
+  // owner decision 2026-06-19). Agents, managers, OTHER admins, and HR can ADD new
+  // notes/activities but may NOT edit an existing remark/note. me.canControlConversations
+  // is the Lalit flag (same gate as conversation moderation).
+  if (!me.canControlConversations) {
+    return NextResponse.json({ error: "Only Lalit can edit existing remarks/notes. You can add a new note instead." }, { status: 403 });
   }
   if (note.body === newBody) return NextResponse.json({ ok: true, unchanged: true });
 
@@ -95,6 +96,15 @@ export async function PATCH(
   }).catch(() => {});
   await prisma.leadFieldHistory.create({
     data: { leadId: id, field: "remarks", oldValue: note.body, newValue: newBody, changedById: me.id, source: "note-edit" },
+  }).catch(() => {});
+  // Conversation audit row — drives the "Edited by Lalit" badge + keeps the
+  // original note body recoverable in the same audit trail as raw-remark edits.
+  await prisma.remarkAuditLog.create({
+    data: {
+      leadId: id, remarkKey: noteId, action: "EDIT_NOTE",
+      actorId: me.id, actorName: me.name,
+      oldState: note.body, newState: newBody, reason: null,
+    },
   }).catch(() => {});
 
   await prisma.note.update({ where: { id: noteId }, data: { body: newBody } });

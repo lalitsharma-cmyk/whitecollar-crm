@@ -383,6 +383,26 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
       })
     : [];
 
+  // "Edited by Lalit" markers — derived from the append-only RemarkAuditLog (no
+  // extra columns). EDIT_RAW = Raw History text was corrected; EDIT_NOTE = a note
+  // was corrected. The badge is shown to Admin/Super-Admin only (agents just see
+  // the clean corrected text).
+  const editLogs = (lead.remarks || lead.rawRemarks)
+    ? await prisma.remarkAuditLog.findMany({
+        where: { leadId: lead.id, action: { in: ["EDIT_RAW", "EDIT_NOTE"] } },
+        orderBy: { createdAt: "desc" },
+        select: { remarkKey: true, action: true, actorName: true, createdAt: true },
+      })
+    : [];
+  const rawEditLog = editLogs.find((l) => l.action === "EDIT_RAW");
+  const rawEdit = rawEditLog ? { by: rawEditLog.actorName ?? "Lalit", at: rawEditLog.createdAt.toISOString() } : null;
+  const editedNotes: Record<string, { by: string; at: string }> = {};
+  for (const l of editLogs) {
+    if (l.action === "EDIT_NOTE" && l.remarkKey && !editedNotes[l.remarkKey]) {
+      editedNotes[l.remarkKey] = { by: l.actorName ?? "Lalit", at: l.createdAt.toISOString() };
+    }
+  }
+
   // Imported MIS remarks were stored as synthetic CallLog rows (attributedAgentName
   // set). They are Historical Notes, not real calls — exclude them from every call
   // count / stat on this page so only genuine dialled calls are reflected (and so
@@ -957,6 +977,8 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
             agents={agents.map(a => ({ id: a.id, name: a.name }))}
             isAdmin={me.role === "ADMIN"}
             meId={me.id}
+            rawEdit={rawEdit}
+            editedNotes={editedNotes}
           />
         </div>
 

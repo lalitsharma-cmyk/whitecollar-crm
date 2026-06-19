@@ -63,6 +63,10 @@ interface Props {
   isAdmin?: boolean;
   /** Current viewer's user id — reserved for future own-note gating. */
   meId?: string;
+  /** "Edited by Lalit" marker for the Raw History text (null if never edited). */
+  rawEdit?: { by: string; at: string } | null;
+  /** noteId → edit marker, for the per-note "Edited by Lalit" badge (admins only). */
+  editedNotes?: Record<string, { by: string; at: string }>;
 }
 
 // ─── Outcome helpers ─────────────────────────────────────────────────────────
@@ -193,7 +197,7 @@ type FilterType = "ALL" | "CONNECTED" | "NO_ANSWER" | "WA";
 export default function ConversationStreamCard({
   callLogs, waMessages, notes = [], forwardedTeam, rawRemarks, leadCreatedAt, agentNames = [],
   leadId = "", canControl = false, viewerId, viewerTeam, controls = [], agents = [],
-  isAdmin = false, meId,
+  isAdmin = false, meId, rawEdit = null, editedNotes = {},
 }: Props) {
   const [filter, setFilter] = useState<FilterType>("ALL");
   // View mode — "raw" = Raw History (Audit Log), the verbatim imported text shown
@@ -254,6 +258,33 @@ export default function ConversationStreamCard({
       setEditError("Network error — couldn't save the edit.");
     } finally {
       setEditBusy(false);
+    }
+  }
+
+  // ── Raw History inline edit (Lalit-only) ──
+  // Corrects the imported Raw History text (Lead.rawRemarks). The original is kept
+  // verbatim in RemarkAuditLog; Smart Timeline re-derives from the corrected text;
+  // the assigned agent sees the corrected version. PATCHes the Lalit-only endpoint.
+  const [rawEditing, setRawEditing] = useState(false);
+  const [rawDraft, setRawDraft] = useState("");
+  const [rawBusy, setRawBusy] = useState(false);
+  const [rawErr, setRawErr] = useState<string | null>(null);
+  async function saveRawEdit() {
+    if (rawBusy) return;
+    setRawBusy(true); setRawErr(null);
+    try {
+      const r = await fetch(`/api/leads/${leadId}/remark-control`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: rawDraft }),
+      });
+      if (r.ok) { setRawEditing(false); router.refresh(); return; }
+      const j = await r.json().catch(() => ({}));
+      setRawErr(j.error ?? "Couldn't save the correction.");
+    } catch {
+      setRawErr("Network error — couldn't save the correction.");
+    } finally {
+      setRawBusy(false);
     }
   }
 
@@ -445,10 +476,38 @@ export default function ConversationStreamCard({
               Unlimited length; the container above scrolls. ─ */}
         {viewMode === "raw" && rawRemarks && rawRemarks.trim() && (
           <div className="border-l-2 border-slate-400 bg-slate-50/70 dark:bg-slate-800/40 pl-3 pr-2 py-2 rounded-r">
-            <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-1.5">
+            <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-1.5 flex-wrap">
               📜 Imported Remarks — verbatim audit log
+              {/* "Edited by Lalit" — Admin/Super-Admin only. Agents just see the clean text. */}
+              {rawEdit && isAdmin && (
+                <span className="text-[9px] font-bold px-1 py-0.5 rounded bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300 normal-case"
+                  title={`Edited ${new Date(rawEdit.at).toLocaleString("en-GB", { timeZone: "Asia/Kolkata" })} IST`}>
+                  ✏️ Edited by {rawEdit.by}
+                </span>
+              )}
+              {/* Edit affordance — Lalit only (canControl). */}
+              {canControl && !rawEditing && (
+                <button type="button" onClick={() => { setRawEditing(true); setRawDraft(rawRemarks); setRawErr(null); }}
+                  title="Correct the imported Raw History text. The original is preserved in the audit log; the assigned agent will see the corrected version."
+                  className="ml-auto normal-case text-[10px] text-gray-500 hover:text-gray-800 dark:hover:text-slate-200">✏️ Edit</button>
+              )}
             </div>
-            <div className="text-xs text-gray-800 dark:text-slate-200 whitespace-pre-wrap break-words leading-relaxed font-mono">{rawRemarks}</div>
+            {rawEditing ? (
+              <div>
+                <textarea value={rawDraft} onChange={(e) => setRawDraft(e.target.value)} rows={10} disabled={rawBusy} autoFocus
+                  className="w-full text-xs text-gray-800 dark:text-slate-100 border border-slate-300 dark:border-slate-600 rounded p-2 bg-white dark:bg-slate-800 font-mono focus:outline-none focus:ring-1 focus:ring-slate-400 disabled:opacity-60" />
+                {rawErr && <div className="text-[10px] text-red-600 dark:text-red-400 mt-1">{rawErr}</div>}
+                <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                  <button type="button" onClick={saveRawEdit} disabled={rawBusy}
+                    className="text-[10px] px-2 py-1 rounded bg-[#0b1a33] text-white hover:bg-[#0b1a33]/90 disabled:opacity-40">{rawBusy ? "Saving…" : "Save correction"}</button>
+                  <button type="button" onClick={() => { setRawEditing(false); setRawErr(null); }} disabled={rawBusy}
+                    className="text-[10px] px-2 py-1 rounded border border-gray-300 text-gray-600 hover:border-gray-400 disabled:opacity-40">Cancel</button>
+                  <span className="text-[9px] text-gray-400">Original kept in the audit log · the assigned agent sees the corrected text once saved</span>
+                </div>
+              </div>
+            ) : (
+              <div className="text-xs text-gray-800 dark:text-slate-200 whitespace-pre-wrap break-words leading-relaxed font-mono">{rawRemarks}</div>
+            )}
           </div>
         )}
 
@@ -597,14 +656,20 @@ export default function ConversationStreamCard({
               author on the same IST day) can ✏️ edit the remark text inline. ─ */}
         {(filter === "ALL" || filter === "CONNECTED") && notes.map((n, idx) => {
           const editing = editNoteId === n.id;
+          const noteEdit = editedNotes[n.id];
           return (
           <div key={`n-${n.id}`} className="border-l-2 border-amber-300 bg-amber-50/40 pl-3 pr-2 py-1.5 rounded-r">
             <div className="flex items-center justify-between flex-wrap gap-1 text-[11px] text-gray-500">
               <span>📝 <b>{n.user?.name ?? "Agent"}</b> · {fmtIST12Paren(n.createdAt)} IST</span>
               <span className="inline-flex items-center gap-1.5">
-                {isAdmin && !editing && (
+                {noteEdit && isAdmin && (
+                  <span className="text-[9px] font-bold px-1 py-0.5 rounded bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300"
+                    title={`Edited ${new Date(noteEdit.at).toLocaleString("en-GB", { timeZone: "Asia/Kolkata" })} IST`}>✏️ Edited by {noteEdit.by}</span>
+                )}
+                {/* Edit = Lalit only (canControl). Agents can ADD notes, not edit. */}
+                {canControl && !editing && (
                   <button type="button" onClick={() => startEditNote(n.id, n.body)}
-                    title="Edit this remark"
+                    title="Edit this remark (Lalit only)"
                     className="text-[10px] text-gray-400 hover:text-gray-600">✏️ Edit</button>
                 )}
                 <span className="chip text-[9px] border border-amber-300 bg-amber-100 text-amber-700">Note</span>
