@@ -42,8 +42,10 @@ const CITY_COUNTRY: Record<string, string> = {
   riyadh: "Saudi Arabia", jeddah: "Saudi Arabia", dammam: "Saudi Arabia",
   doha: "Qatar", muscat: "Oman", "kuwait city": "Kuwait", kuwait: "Kuwait",
   manama: "Bahrain",
-  // UK
-  london: "UK", manchester: "UK", birmingham: "UK", leeds: "UK", glasgow: "UK",
+  // UK — canonical form is "United Kingdom" (matches the owner's wording + the
+  // majority of existing data; avoids a "UK" vs "United Kingdom" split).
+  london: "United Kingdom", manchester: "United Kingdom", birmingham: "United Kingdom",
+  leeds: "United Kingdom", glasgow: "United Kingdom",
   // USA
   "new york": "USA", "los angeles": "USA", "san francisco": "USA", chicago: "USA", houston: "USA",
   // Singapore
@@ -102,7 +104,9 @@ export function inferCountryFromCityFuzzy(city: string | null | undefined): stri
 // Emirates" variants (global data-consistency rule). Unknown names pass through.
 const COUNTRY_CANON: Record<string, string> = {
   "united arab emirates": "UAE", "u.a.e.": "UAE", uae: "UAE",
-  "united kingdom": "UK", "great britain": "UK", uk: "UK", england: "UK",
+  "united kingdom": "United Kingdom", "great britain": "United Kingdom", uk: "United Kingdom",
+  "u.k.": "United Kingdom", britain: "United Kingdom", england: "United Kingdom",
+  "united kindon": "United Kingdom", "united kindom": "United Kingdom", "uniter kingdom": "United Kingdom",
   "türkiye": "Turkey", turkiye: "Turkey", turkey: "Turkey",
   "united states": "USA", "united states of america": "USA", usa: "USA",
   "kingdom of saudi arabia": "Saudi Arabia", "saudi arabia": "Saudi Arabia",
