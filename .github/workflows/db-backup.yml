@@ -1,0 +1,114 @@
+# Complete database backup → Google Drive (daily), with rotation.
+#
+# What it does, once a day:
+#   1. pg_dump the WHOLE Neon database (schema + all tables) → gzipped .sql.gz
+#      (a complete, restorable backup — restore with: gunzip -c file | psql <url>)
+#   2. Upload to Google Drive  →  daily/
+#   3. On the 1st of each month, also keep a copy in  →  monthly/
+#   4. Rotate: keep the last 30 daily + last 12 monthly, delete older.
+#   5. Notify Admins (in-app + email) of success or failure.
+#
+# Backup-automation ONLY — it never touches CRM data (pg_dump is read-only).
+#
+# ONE-TIME SETUP (see docs/BACKUP_SETUP.md) — add these GitHub repo secrets:
+#   BACKUP_DATABASE_URL   Neon DIRECT (non-pooler) connection string, sslmode=require
+#   GDRIVE_RCLONE_TOKEN   rclone Google-Drive OAuth token JSON
+#   GDRIVE_FOLDER_ID      the Drive folder ID to store backups in
+#   CRON_SECRET           (already set) — used for the admin notification
+#
+# Until those secrets exist the job exits cleanly (no false alarm).
+
+name: Database backup (daily → Google Drive)
+
+on:
+  schedule:
+    - cron: "0 21 * * *"   # 21:00 UTC = 02:30 IST (off-hours)
+  workflow_dispatch:        # manual "Run workflow" button for testing
+
+concurrency:
+  group: db-backup
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Guard — secrets configured?
+        id: guard
+        env:
+          DB: ${{ secrets.BACKUP_DATABASE_URL }}
+          TOK: ${{ secrets.GDRIVE_RCLONE_TOKEN }}
+          FID: ${{ secrets.GDRIVE_FOLDER_ID }}
+        run: |
+          if [ -z "$DB" ] || [ -z "$TOK" ] || [ -z "$FID" ]; then
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Backup secrets not set yet — see docs/BACKUP_SETUP.md. Skipping."
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install PostgreSQL 17 client + rclone
+        if: steps.guard.outputs.configured == 'true'
+        run: |
+          set -e
+          sudo sh -c 'echo "deb https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/pgdg.gpg
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client-17
+          curl -fsSL https://rclone.org/install.sh | sudo bash
+
+      - name: Dump → upload → rotate
+        id: run
+        if: steps.guard.outputs.configured == 'true'
+        env:
+          DATABASE_URL: ${{ secrets.BACKUP_DATABASE_URL }}
+          RCLONE_CONFIG_GDRIVE_TYPE: drive
+          RCLONE_CONFIG_GDRIVE_SCOPE: drive
+          RCLONE_CONFIG_GDRIVE_TOKEN: ${{ secrets.GDRIVE_RCLONE_TOKEN }}
+          RCLONE_CONFIG_GDRIVE_ROOT_FOLDER_ID: ${{ secrets.GDRIVE_FOLDER_ID }}
+        run: |
+          set -euo pipefail
+          DATE=$(date -u +%Y-%m-%d)
+          MONTH=$(date -u +%Y-%m)
+          DAY=$(date -u +%d)
+          FILE="wcr-backup-${DATE}.sql.gz"
+
+          echo "→ pg_dump (complete, restorable)…"
+          pg_dump "$DATABASE_URL" --no-owner --no-privileges | gzip -9 > "$FILE"
+          SIZE=$(du -h "$FILE" | cut -f1)
+          BYTES=$(stat -c%s "$FILE")
+          # Sanity: a real dump is > 50 KB; fail loudly if it's tiny (auth/empty error).
+          test "$BYTES" -gt 51200
+
+          echo "→ upload daily/ ($SIZE)…"
+          rclone copyto "$FILE" "gdrive:daily/${FILE}"
+
+          if [ "$DAY" = "01" ]; then
+            echo "→ monthly snapshot…"
+            rclone copyto "$FILE" "gdrive:monthly/wcr-backup-${MONTH}.sql.gz"
+          fi
+
+          echo "→ rotate: keep 30 daily / 12 monthly…"
+          rclone lsf gdrive:daily/   2>/dev/null | sort | head -n -30 | while read -r f; do [ -n "$f" ] && rclone delete "gdrive:daily/$f"; done || true
+          rclone lsf gdrive:monthly/ 2>/dev/null | sort | head -n -12 | while read -r f; do [ -n "$f" ] && rclone delete "gdrive:monthly/$f"; done || true
+
+          DCOUNT=$(rclone lsf gdrive:daily/ 2>/dev/null | wc -l)
+          echo "SIZE=$SIZE" >> "$GITHUB_ENV"
+          echo "DCOUNT=$DCOUNT" >> "$GITHUB_ENV"
+          echo "✅ done — $FILE ($SIZE), $DCOUNT daily copies retained."
+
+      - name: Notify admin — SUCCESS
+        if: steps.guard.outputs.configured == 'true' && success()
+        run: |
+          curl -sf -X POST \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" -H "Content-Type: application/json" \
+            -d "{\"status\":\"ok\",\"detail\":\"Backup ${SIZE} uploaded to Google Drive · ${DCOUNT} daily copies retained.\"}" \
+            https://crm.whitecollarrealty.com/api/cron/backup-report || true
+
+      - name: Notify admin — FAILURE
+        if: steps.guard.outputs.configured == 'true' && failure()
+        run: |
+          curl -sf -X POST \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" -H "Content-Type: application/json" \
+            -d "{\"status\":\"fail\",\"detail\":\"Daily DB backup FAILED on $(date -u +%Y-%m-%d). Check the GitHub Actions run.\"}" \
+            https://crm.whitecollarrealty.com/api/cron/backup-report || true
