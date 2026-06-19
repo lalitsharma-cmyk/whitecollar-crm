@@ -921,14 +921,9 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
               <div className="mt-3 w-full">
                 <VoiceNoteRecorder leadId={lead.id} />
               </div>
-              {/* Reject lead — surfaced on the ALWAYS-VISIBLE header (in addition
-                  to the Admin-tab card below) so admins/managers can reject from
-                  the main view without switching tabs. Hidden once rejected. */}
-              {canReject && lead.rejectedAt == null && (
-                <div className="mt-3 w-full">
-                  <RejectLeadModal leadId={lead.id} />
-                </div>
-              )}
+              {/* Reject Lead is NOT here anymore. Single source of action: it lives
+                  ONLY in the right-side "Lead admin" card (top), for admins,
+                  managers, and the owning agent — no duplicate in the center. */}
               {/* Expo / Dubai-site-visit button MOVED to the very bottom of the
                   right column (was here in the header). Reassign dropdown also
                   moved — now rendered standalone on the right rail. */}
@@ -1027,9 +1022,9 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
             above. Right side corner is too clumsy" — moved up from the
             bottom so admins/managers can find them without scrolling. Reject
             is FIRST (the more decisive action), Reassign second. */}
-        {canReassign && (
+        {canReject && (
           <div data-lead-section="admin" className="card p-4 space-y-3">
-            <div className="text-[10px] uppercase tracking-widest text-gray-500 dark:text-slate-400 font-semibold">🛠 Lead admin</div>
+            <div className="text-[10px] uppercase tracking-widest text-gray-500 dark:text-slate-400 font-semibold">{canReassign ? "🛠 Lead admin" : "🛠 Lead actions"}</div>
             {lead.rejectedAt != null ? (
               <div className="text-xs text-gray-600 dark:text-slate-300">
                 Already rejected{lead.rejectionReason ? ` — ${lead.rejectionReason.replace(/_/g, " ").toLowerCase()}` : ""}.
