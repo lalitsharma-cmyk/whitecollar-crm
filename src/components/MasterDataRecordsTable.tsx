@@ -47,14 +47,14 @@ const PAGE = 50;
 
 // Order matters: frozen identity columns first (Name/Agent/Team stay pinned while
 // the rest scroll horizontally). Everything after is scrollable + hideable.
-const COLS: { key: ColKey; label: string; frozen?: boolean; w?: number; defHidden?: boolean; wide?: boolean }[] = [
-  { key: "name", label: "Client Name", frozen: true, w: 170 },
+const COLS: { key: ColKey; label: string; frozen?: boolean; w?: number; minW?: number; defHidden?: boolean; wide?: boolean }[] = [
+  { key: "name", label: "Client Name", frozen: true, w: 180 },
   { key: "agent", label: "Agent", frozen: true, w: 120 },
   { key: "team", label: "Team", frozen: true, w: 72 },
-  { key: "createdDate", label: "Created Date" },
-  { key: "createdTime", label: "Created Time" },
+  { key: "createdDate", label: "Created Date", minW: 100 },
+  { key: "createdTime", label: "Created Time", minW: 80 },
   { key: "budget", label: "Budget" },
-  { key: "project", label: "Project" },
+  { key: "project", label: "Project", minW: 180 },
   { key: "source", label: "Source" },
   { key: "message", label: "Message", wide: true },
   { key: "status", label: "Status" },
@@ -347,7 +347,7 @@ export default function MasterDataRecordsTable({ rows, agents, statuses, isSuper
                 const sel = filters[c.key] ?? new Set<string>();
                 const fz = frozen && FROZEN_LEFT[c.key] != null;
                 return (
-                  <th key={c.key} className={`px-3 py-2 font-semibold relative ${fz ? "bg-white dark:bg-slate-800" : ""}`} style={fz ? { ...fStyle(c.key), zIndex: 20 } : undefined}>
+                  <th key={c.key} className={`px-3 py-2 font-semibold relative ${fz ? "bg-white dark:bg-slate-800" : ""}`} style={fz ? { ...fStyle(c.key), zIndex: 20 } : (c.minW ? { minWidth: c.minW } : undefined)}>
                     <button onClick={() => openFilterFor(c.key)} className="inline-flex items-center gap-1 hover:text-[#0b1a33] dark:hover:text-blue-300">
                       {c.label}
                       <span className={`text-[9px] ${active || sort?.col === c.key ? "text-blue-600" : "text-gray-400"}`}>{sort?.col === c.key ? (sort.dir === "asc" ? "▲" : "▼") : "▾"}</span>

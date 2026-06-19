@@ -103,7 +103,8 @@ interface Row {
   todoNext: string | null;
   followupDate: string | null;
   followupRaw: string | null;   // YYYY-MM-DD for the date input
-  enquiryDate: string | null;   // when the client enquired (createdAt)
+  enquiryDate: string | null;   // enquiry DATE (createdAt) — own column
+  enquiryTime: string | null;   // enquiry TIME (createdAt) — own column
   enquiryRaw: string | null;    // YYYY-MM-DD for the date input (admin inline edit)
   intelligenceMatch: {
     matchType: string;
@@ -519,16 +520,17 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
               const thCls = "px-3 py-2 font-semibold text-gray-600 dark:text-slate-300 whitespace-nowrap text-left bg-gray-50 dark:bg-slate-800/60 text-[11px] uppercase tracking-wide";
               const sortThCls = `${thCls} cursor-pointer hover:bg-gray-100 dark:hover:bg-slate-700/60 select-none`;
               // Total visible columns count (for colSpan on empty row)
-              const colCount = 9 + (showSource ? 1 : 0);
+              const colCount = 10 + (showSource ? 1 : 0);
               // Spec §6: Name·Status·Budget·Follow-Up·Assigned·Source(admin)·LastActivity·Actions
               // §1 Assigned=display-only · §4 C/NC removed · §5 Actions always visible
               return (
-                <table className="w-full text-xs border-collapse" style={{ tableLayout: "fixed" }}>
+                <table className="w-full text-xs border-collapse" style={{ tableLayout: "fixed", minWidth: "1024px" }}>
                   <colgroup>
                     {/* checkbox */}<col style={{ width: 28 }} />
-                    {/* enquiry  */}<col style={{ width: 80 }} />
-                    {/* name     */}<col style={{ width: 150 }} />
-                    {/* project  */}<col style={{ width: 115 }} />
+                    {/* date     */}<col style={{ width: 100 }} />
+                    {/* time     */}<col style={{ width: 80 }} />
+                    {/* name     */}<col style={{ width: 180 }} />
+                    {/* project  */}<col style={{ width: 180 }} />
                     {/* status   */}<col style={{ width: 128 }} />
                     {/* budget   */}<col style={{ width: 90 }} />
                     {/* follow-up*/}<col style={{ width: 90 }} />
@@ -543,9 +545,10 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
                         {canSel && <input type="checkbox" checked={allChecked} onChange={toggleAll} />}
                       </th>
                       <th className={sortThCls}>
-                        <span onClick={() => router.push(sortHref("created"))}>Enquiry <SortIcon k="created" /></span>
+                        <span onClick={() => router.push(sortHref("created"))}>Date <SortIcon k="created" /></span>
                         <LeadHeaderFilter kind="enquiry" label="Enquiry Date" searchParamsStr={searchParamsStr} />
                       </th>
+                      <th className={thCls}>Time</th>
                       <th className={sortThCls}>
                         <span onClick={() => router.push(sortHref("name"))}>Name <SortIcon k="name" /></span>
                         <LeadHeaderFilter kind="search" paramKey="q" label="Name / phone / email" searchParamsStr={searchParamsStr} />
@@ -581,7 +584,7 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
                   </thead>
                   <tbody>
                     {leads.length === 0 && (
-                      <tr><td colSpan={8 + (showSource ? 1 : 0)} className="px-4 py-10 text-center text-gray-400 text-sm">No leads match these filters.</td></tr>
+                      <tr><td colSpan={9 + (showSource ? 1 : 0)} className="px-4 py-10 text-center text-gray-400 text-sm">No leads match these filters.</td></tr>
                     )}
                     {leads.map((l, i) => {
                       const lastAct = fmtLastActivity(l.lastActivityType, l.lastActivityAt);
@@ -595,9 +598,8 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
                           {canSel && <input type="checkbox" checked={selected.has(l.id)} onChange={() => toggle(l.id)} />}
                         </td>
 
-                        {/* 2. Enquiry date — when the client came in (createdAt).
-                            Admin: click to edit inline. Agent: read-only. */}
-                        <td className="px-2 py-1.5 whitespace-nowrap text-xs tabular-nums" onClick={e => e.stopPropagation()}>
+                        {/* 2. Enquiry DATE (own 100px column) — Admin: click to edit. */}
+                        <td className="px-3 py-1.5 whitespace-nowrap overflow-hidden text-ellipsis text-xs tabular-nums" onClick={e => e.stopPropagation()}>
                           {isAdmin ? (
                             enquiryEditFor === l.id ? (
                               <input
@@ -623,6 +625,11 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
                               {l.enquiryDate ?? <span className="text-gray-300">—</span>}
                             </span>
                           )}
+                        </td>
+
+                        {/* 2b. Enquiry TIME (own 80px column) — read-only. */}
+                        <td className="px-3 py-1.5 whitespace-nowrap overflow-hidden text-ellipsis text-xs tabular-nums text-gray-500 dark:text-slate-400" onClick={e => e.stopPropagation()}>
+                          {l.enquiryTime ?? <span className="text-gray-300">—</span>}
                         </td>
 
                         {/* 3. Name */}
