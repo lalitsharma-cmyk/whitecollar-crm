@@ -595,6 +595,15 @@ export default function ConversationStreamCard({
                     <span className="text-[9px] font-bold px-1 py-0.5 rounded bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">{modBadge}</span>
                   )}
                   <span className="text-[10px]">{icon}</span>
+                  {/* Per-entry edit (Lalit only) — routes to the Raw History editor so
+                      the correction lands on the single source; Raw History + Smart
+                      Timeline stay consistent and the entry's original date is kept. */}
+                  {canControl && !manageMode && (
+                    <button type="button"
+                      onClick={() => { setViewMode("raw"); setRawEditing(true); setRawDraft(rawRemarks ?? ""); setRawErr(null); }}
+                      title="Edit this entry in Raw History — keeps Raw History + Smart Timeline in sync; the original date/time is preserved"
+                      className="text-[10px] text-gray-400 hover:text-gray-700 dark:hover:text-slate-200">✏️ Edit</button>
+                  )}
                   {canControl && !manageMode && (
                     <RemarkControlMenu leadId={leadId} remarkKey={rKey} control={ctrl} agents={agents} />
                   )}
