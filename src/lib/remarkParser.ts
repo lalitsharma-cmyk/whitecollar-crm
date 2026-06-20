@@ -124,12 +124,17 @@ const SITE_VISIT_DONE = new RegExp(
   + `|(?:did|completed|finished|conducted|attended)\\s+(?:the\\s+|a\\s+|his\\s+|her\\s+|their\\s+)?site\\s*visit`
   + `|visited\\s+(?:the\\s+)?(?:site|project|property|flat|apartment|unit|sample\\s*flat|tower)`
   + `|(?:site|project)\\s+visited`
+  + `|(?:physical|project)\\s+visit\\s+${AUX}${DONE}`   // "physical/project visit conducted/done"
   + `|came\\s+(?:to|down\\s+to)\\s+(?:the\\s+)?(?:site|project)`
   + `|came\\s+for\\s+(?:the\\s+|a\\s+)?(?:site\\s*)?visit\\b`
   + `|went\\s+to\\s+(?:the\\s+)?(?:site|project)\\b`
-  + `|saw\\s+(?:the\\s+|a\\s+)?(?:sample|actual|model|show)\\s*(?:flat|apartment|apt|unit|home|villa|house|property)?\\b`
+  // Saw / shown the SAMPLE / MODEL flat — a physical-location noun is now REQUIRED
+  // (no trailing `?`), so a bare "saw sample" or "saw sample video" can no longer
+  // count. "show" dropped as an adjective for the same reason. The COLLATERAL_SHARE
+  // guard in classifyText() is the belt-and-suspenders backstop.
+  + `|saw\\s+(?:the\\s+|a\\s+)?(?:sample|actual|model)\\s*(?:flat|apartment|apt|unit|home|villa|house|property)\\b`
   + `|shown\\s+(?:the\\s+|a\\s+)?(?:sample|actual|model)?\\s*(?:flat|apartment|apt|unit|home|villa|property)\\b`
-  + `|(?:sample|actual|model)\\s*(?:flat|apartment|apt|unit|home|villa)?\\s+(?:was\\s+|got\\s+)?shown\\b`
+  + `|(?:sample|actual|model)\\s*(?:flat|apartment|apt|unit|home|villa)\\s+(?:was\\s+|got\\s+)?shown\\b`
   + `|\\bsv\\s+done\\b`,
   "i",
 );
@@ -189,6 +194,33 @@ const THIRD_PARTY = new RegExp(
   "i",
 );
 
+// ─── Shared-collateral guard (Lalit's rule) ──────────────────────────────────
+// Sending marketing collateral — a sample/project VIDEO, brochure, floor plan,
+// price/payment plan, location map, inventory, presentation, details/info, photos
+// or a PDF — is a NORMAL conversation, never a Site Visit or Meeting. It must not
+// increment the Site-Visit count or create a visit timeline event.
+// "Shared sample video" / "Shared brochure" / "Shared floor plan on WhatsApp" → NOTE.
+const COLLATERAL_NOUN =
+  "(?:video|brochure|broucher|floor\\s*plan|layout|price\\s*(?:list|sheet)|payment\\s*plan|cost\\s*sheet|location\\s*(?:map|pin)|google\\s*location|inventory|presentation|\\bppt\\b|\\bpdf\\b|catalogue|catalog|details?|information|\\binfo\\b|photos?|pics?|images?|material|deck|price\\s*list)";
+const SHARE_VERB =
+  "(?:shared?|sent|sending|forwarded?|share|send|whats?app(?:ed)?|mail(?:ed)?|email(?:ed)?|gave|given|provided|drop(?:ped)?)";
+const COLLATERAL_SHARE = new RegExp(
+  `\\b${SHARE_VERB}\\b[\\s\\S]{0,40}?\\b${COLLATERAL_NOUN}\\b`
+  + `|\\b${COLLATERAL_NOUN}\\b[\\s\\S]{0,25}?\\b${SHARE_VERB}\\b`,
+  "i",
+);
+// UNAMBIGUOUS physical-visit / real-meeting evidence. When BOTH this and
+// collateral-sharing appear in the same remark ("did site visit, then shared
+// brochure"), the visit still counts — the guard only suppresses the loose
+// proxy patterns, never an explicit visit.
+const STRONG_VISIT = new RegExp(
+  `\\b(?:site\\s*visit|visited\\s+(?:the\\s+)?(?:site|project|property|flat|apartment|unit|tower)`
+  + `|(?:site|project)\\s+visited|came\\s+(?:to|for|down)|went\\s+to\\s+(?:the\\s+)?(?:site|project)`
+  + `|physical\\s+visit|project\\s+visit|\\bsv\\s+done\\b|office\\s+(?:meeting|visit)`
+  + `|zoom|google\\s+meet|video\\s+call|virtual\\s+(?:meeting|call))\\b`,
+  "i",
+);
+
 // Meaningful client communication → CONNECTED (see classifyText). Deliberately
 // broad: a reply, discussion, meeting update, budget/requirement talk, or
 // "he said he will come / call / visit / update" all count as a real conversation.
@@ -199,12 +231,19 @@ const NO_CONVERSATION_RE = /\bno\s*(?:further\s*)?(?:discussion|conversation|res
 export function classifyText(text: string): RemarkEventType {
   const t = text.toLowerCase();
 
+  // Sharing marketing collateral (sample video / brochure / floor plan / price
+  // list / payment plan / location map / inventory / presentation / details) is a
+  // normal conversation — NEVER a Site Visit or Meeting — UNLESS the same remark
+  // also carries explicit physical-visit / real-meeting evidence. This is Lalit's
+  // rule: "Shared sample video must not increment Site Visit count."
+  const collateralOnly = COLLATERAL_SHARE.test(t) && !STRONG_VISIT.test(t);
+
   // Completed events first — ONLY when explicitly confirmed (regexes above) AND the
   // meeting/visit is OURS, not the client meeting a third party. Planning / proposed
-  // / third-party remarks fall through and are classified as a normal conversation
-  // (connected / note): they stay in Conversation History but are NOT counted as a
-  // Site Visit / Meeting / Virtual Meeting.
-  if (!THIRD_PARTY.test(t)) {
+  // / third-party / collateral-sharing remarks fall through and are classified as a
+  // normal conversation (connected / note): they stay in Conversation History but
+  // are NOT counted as a Site Visit / Meeting / Virtual Meeting.
+  if (!collateralOnly && !THIRD_PARTY.test(t)) {
     if (SITE_VISIT_DONE.test(t)) return "SITE_VISIT";
     if (VIRTUAL_DONE.test(t))    return "VIRTUAL_MEETING";
     if (OFFICE_DONE.test(t))     return "MEETING";

@@ -352,6 +352,33 @@ const checks: Check[] = [
   },
 
   // ───────────────────────────────────────────────────────────────────────────
+  // 3d. SITE-VISIT classification (2026-06-20) — sharing collateral (sample video,
+  //     brochure, floor plan, price/payment plan, location map, inventory,
+  //     presentation, details) must NEVER count as a Site Visit; only explicit
+  //     physical-visit evidence does.
+  // ───────────────────────────────────────────────────────────────────────────
+  {
+    name: "site-visit — shared collateral is NOT a visit; explicit visits still count",
+    run: async () => {
+      const { classifyText } = await import("../src/lib/remarkParser");
+      const notVisit = [
+        "Shared sample video", "Shared project video", "Shared brochure", "Shared floor plan",
+        "Shared price list", "Shared payment plan", "Shared location map", "Shared inventory",
+        "Shared presentation", "Shared details on WhatsApp", "Shared project information",
+        "saw sample video", "showed sample video",
+      ];
+      for (const p of notVisit) {
+        const c = classifyText(p);
+        assert(c !== "SITE_VISIT" && c !== "MEETING" && c !== "VIRTUAL_MEETING", `"${p}" must NOT be a visit/meeting (got ${c})`);
+      }
+      const isVisit = ["Site visit done", "Visited project", "Site visit completed", "Client visited site", "Physical visit conducted", "came for site visit", "saw sample flat"];
+      for (const p of isVisit) assert(classifyText(p) === "SITE_VISIT", `"${p}" must classify as SITE_VISIT (got ${classifyText(p)})`);
+      // A real visit AND a collateral mention in the same remark → still a visit.
+      assert(classifyText("site visit done, shared brochure afterwards") === "SITE_VISIT", "explicit visit + collateral mention must still count");
+    },
+  },
+
+  // ───────────────────────────────────────────────────────────────────────────
   // 4. REMARKS PRESERVATION  (project-crm-remarks-overhaul — immutable rawRemarks)
   //    Some leads carry rawRemarks, and the longest is large (proves no
   //    truncation of the imported conversation history).
