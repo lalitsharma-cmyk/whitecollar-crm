@@ -9,7 +9,7 @@ import { runReconciler } from "@/lib/reconciler";
 import { leadScopeWhere, COLD_ORIGINS } from "@/lib/leadScope";
 import { projectWhereForUser } from "@/lib/propertyScope";
 import { displayBudget } from "@/lib/budgetParse";
-import { statusColor, BUDGET_PRESETS, SUPPRESSED_STATUSES, ACTIVE_PURSUIT_STATUSES, CLOSING_STATUSES, TERMINAL_STATUSES, CLOSED_OUTCOME_STATUSES, LOST_STATUSES } from "@/lib/lead-statuses";
+import { statusColor, BUDGET_PRESETS, SUPPRESSED_STATUSES, ACTIVE_PURSUIT_STATUSES, CLOSING_STATUSES, TERMINAL_STATUSES, CLOSED_OUTCOME_STATUSES, LOST_STATUSES, leadSortTier } from "@/lib/lead-statuses";
 
 export const dynamic = "force-dynamic";
 
@@ -242,19 +242,22 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
   // nofollowup filter already sets followupDate: null, so the followup chip
   // default (today) must not compose with it — include it as an "other filter".
   const hasOtherFilter = !!(sp.q || sp.source || sp.status || sp.cstatus || sp.owner || sp.team || sp.score || sp.notPicked || sp.eoi || sp.potential || sp.fundReady || sp.clientType || sp.whenInvest || sp.project || sp.budgetPreset || sp.budgetFrom || sp.budgetTo || sp.city || sp.category || sp.hasMeeting || sp.hasSiteVisit || sp.followupFrom || sp.followupTo || filterTab === "nofollowup");
-  // ── DEFAULT working view = TODAY + OVERDUE follow-ups ───────────────────
-  // Lalit's rule: "Agent daily working screen should show only leads that need
-  // action NOW." Future follow-ups and no-followup leads are HIDDEN by default
-  // and reachable via the Future / No Follow-up / All chips. A targeted search
-  // (any non-followup filter in the URL) bypasses the default and shows all
-  // matching leads. Applies to EVERY role — Lalit works from "My Leads" too.
+  // ── DEFAULT working view = ALL workable leads (6-tier smart sorted) ─────
+  // Updated rule (Lalit, 2026-06-21): show EVERY workable lead by default,
+  // ordered by the 6-tier smart sort so today's fresh leads + today's follow-ups
+  // stay on top and future / no-follow-up leads sink to the bottom (never hidden).
+  // Explicit chips (Today / Overdue / Future / No Follow-up) still narrow on demand.
   const endOfTodayUTC = istWindow(0).lt;  // start of tomorrow IST, as a UTC instant
   let effectiveFollowup: string;
   if (sp.followupFrom || sp.followupTo) effectiveFollowup = "range";
   else if (sp.followup) effectiveFollowup = sp.followup;        // explicit chip
   else if (filterTab === "nofollowup") effectiveFollowup = "none";
   else if (hasOtherFilter) effectiveFollowup = "all";          // targeted search → no time narrowing
-  else effectiveFollowup = "todue";                            // ← the default
+  // DEFAULT (Lalit, 2026-06-21): show ALL workable leads, ordered by the 6-tier
+  // smart sort (today's fresh on top → today's follow-ups → old fresh → overdue →
+  // future → other). The smart sort keeps actionable leads at the top, so we no
+  // longer hide future / no-follow-up leads behind a chip. Applies to every role.
+  else effectiveFollowup = "all";                              // ← the default
 
   if (effectiveFollowup === "range") {
     const fRange: { gte?: Date; lte?: Date } = {};
@@ -370,25 +373,16 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
   let smartSortTotal: number | null = null;
 
   if (useSmartSort) {
-    const now = new Date();
     const priorityRows = await prisma.lead.findMany({
       where,
-      select: { id: true, status: true, followupDate: true, createdAt: true },
+      // currentStatus drives the "fresh" test (the `status` enum is vestigial).
+      select: { id: true, currentStatus: true, followupDate: true, createdAt: true },
     });
 
-    const getP = (l: { status: string; followupDate: Date | null }): number => {
-      // 0 — freshly assigned (NEW status, never contacted yet)
-      if (l.status === "NEW") return 0;
-      // 1 — follow-up is due today (IST window)
-      if (l.followupDate && l.followupDate >= todayWindow.gte && l.followupDate < todayWindow.lt) return 1;
-      // 2 — overdue follow-up (missed deadline)
-      if (l.followupDate && l.followupDate < now) return 2;
-      // 3 — everything else (future follow-ups, no follow-up set, etc.)
-      return 3;
-    };
-
+    // 6-tier default order (Lalit, 2026-06-21): today's fresh → today's follow-ups
+    // → old fresh → overdue → future → other. Today's new leads never get buried.
     priorityRows.sort((a, b) => {
-      const pa = getP(a), pb = getP(b);
+      const pa = leadSortTier(a, todayWindow), pb = leadSortTier(b, todayWindow);
       if (pa !== pb) return pa - pb;
       // Within same tier: newer lead first
       return b.createdAt.getTime() - a.createdAt.getTime();
