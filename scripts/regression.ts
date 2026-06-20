@@ -402,6 +402,26 @@ const checks: Check[] = [
   },
 
   // ───────────────────────────────────────────────────────────────────────────
+  // 3e-bis. ADMIN AI ASSISTANT SAFETY (2026-06-21) — the NL parser refuses every
+  //     destructive intent, and the planner ALWAYS forces deletedAt:null so
+  //     recycle-bin leads can never be counted or mutated.
+  // ───────────────────────────────────────────────────────────────────────────
+  {
+    name: "assistant-safety — refuses destructive commands; planner always excludes deleted",
+    run: async () => {
+      const { parseCommand } = await import("../src/lib/adminAssistant/parse");
+      const { buildWhere } = await import("../src/lib/adminAssistant/engine");
+      for (const cmd of ["delete all leads", "remove all Dubai leads permanently", "edit the remarks for india leads", "change conversation history", "backdate created date of all leads", "empty the recycle bin"]) {
+        assert(parseCommand(cmd).intent === "UNSUPPORTED", `assistant MUST refuse destructive command: "${cmd}"`);
+      }
+      assert(parseCommand("assign unassigned dubai leads to Aleena").intent === "ASSIGN", "safe ASSIGN must parse");
+      assert(parseCommand("how many india leads with no follow-up").intent === "QUERY", "safe QUERY must parse");
+      const { where } = await buildWhere({ team: "Dubai", unassigned: true });
+      assert((where as { deletedAt?: unknown }).deletedAt === null, "planner where MUST force deletedAt:null (recycle-bin leads never in scope)");
+    },
+  },
+
+  // ───────────────────────────────────────────────────────────────────────────
   // 3f. WEBSITE MESSAGE → CONVERSATION (2026-06-20) — a genuine form message
   //     becomes a dated (IST) conversation entry; the source/campaign name never
   //     does; an empty message creates nothing.

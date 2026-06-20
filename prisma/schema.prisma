@@ -147,6 +147,39 @@ model User {
   // ── Import History (Sales) relations ──
   importBatches         ImportBatch[] @relation("ImportBatchImporter")
   deletedImportBatches  ImportBatch[] @relation("ImportBatchDeleter")
+
+  assistantRuns         AssistantRun[] @relation("AssistantRunBy")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Admin AI Assistant — natural-language bulk-ops console (ADMIN-only).
+// Every command is PREVIEWED first (no silent writes). On approval it EXECUTES,
+// recording the exact before-values per lead so the whole run is REVERSIBLE.
+// The assistant may ONLY touch reversible operational fields (ownerId, tags,
+// forwardedTeam, followupDate). It can NEVER delete a lead, edit remarks /
+// conversation history, or alter historical audit data — those intents are
+// refused at parse time. Deleted / recycle-bin leads are always excluded.
+// ─────────────────────────────────────────────────────────────────────────────
+model AssistantRun {
+  id            String    @id @default(cuid())
+  command       String                 // raw natural-language text the admin typed
+  intent        String                 // QUERY | ASSIGN | TAG | SET_TEAM | SET_FOLLOWUP | UNSUPPORTED
+  field         String?                // ownerId | tags | forwardedTeam | followupDate (mutations only)
+  parsed        Json                   // full ParsedCommand (filter + action + params + explanation)
+  status        String    @default("PREVIEW") // PREVIEW | EXECUTED | UNDONE | FAILED
+  affectedCount Int       @default(0)
+  affectedIds   Json?                  // string[] of lead ids in scope at preview time
+  beforeValues  Json?                  // [{ id, old }] captured at execute time → enables undo
+  newValue      String?                // human label of the applied value (e.g. agent name, tag, team)
+  error         String?
+  createdById   String
+  createdBy     User      @relation("AssistantRunBy", fields: [createdById], references: [id])
+  createdAt     DateTime  @default(now())
+  executedAt    DateTime?
+  undoneAt      DateTime?
+
+  @@index([createdById, createdAt])
+  @@index([status])
 }
 
 // =====================================================
