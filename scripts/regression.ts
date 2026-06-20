@@ -500,6 +500,26 @@ const checks: Check[] = [
   },
 
   // ───────────────────────────────────────────────────────────────────────────
+  // 3e-sept. FOLLOW-UP AUTO-ROLLOVER (2026-06-21) — nightly cron is bearer-gated,
+  //     excludes closed/rejected/deleted/no-followup, logs to field history,
+  //     never touches remarks.
+  // ───────────────────────────────────────────────────────────────────────────
+  {
+    name: "followup-rollover — bearer-gated cron; excludes terminal/deleted/no-followup; logs to history, not remarks",
+    run: async () => {
+      const fs = await import("node:fs");
+      const route = fs.readFileSync("src/app/api/cron/followup-rollover/route.ts", "utf8");
+      assert(/CRON_SECRET/.test(route) && /Bearer/.test(route), "rollover cron MUST be bearer-gated");
+      const lib = fs.readFileSync("src/lib/followupRollover.ts", "utf8");
+      assert(/TERMINAL_STATUSES/.test(lib), "rollover MUST exclude terminal (closed+rejected) statuses");
+      assert(/deletedAt: null/.test(lib), "rollover MUST exclude deleted/recycle-bin leads");
+      assert(/followupDate: \{ not: null/.test(lib), "rollover MUST skip no-follow-up leads");
+      assert(/source: "system-rollover"/.test(lib), "rollover MUST log each move to LeadFieldHistory");
+      assert(!/rawRemarks/.test(lib) && !/\bremarks\b/.test(lib), "rollover MUST NOT touch remarks/conversation history");
+    },
+  },
+
+  // ───────────────────────────────────────────────────────────────────────────
   // 3f. WEBSITE MESSAGE → CONVERSATION (2026-06-20) — a genuine form message
   //     becomes a dated (IST) conversation entry; the source/campaign name never
   //     does; an empty message creates nothing.

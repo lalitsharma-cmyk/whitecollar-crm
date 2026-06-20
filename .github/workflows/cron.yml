@@ -48,6 +48,8 @@ on:
     # Daily DB housekeeping — 21:30 UTC = 03:00 IST, AFTER the 21:00 backup so
     # every trimmed row is already archived in that day's Drive backup.
     - cron: "30 21 * * *"
+    # Sales follow-up auto-rollover — daily 15:30 UTC = 21:00 IST (9 PM IST).
+    - cron: "30 15 * * *"
   # Allow manual trigger from the Actions tab for debugging
   workflow_dispatch:
 
@@ -141,6 +143,21 @@ jobs:
             -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
             https://crm.whitecollarrealty.com/api/cron/cleanup \
             || echo "::warning::cleanup cron failed"
+
+  followup_rollover:
+    # Sales follow-up auto-rollover — 15:30 UTC = 21:00 IST (9 PM IST). Moves
+    # every pending today-or-earlier follow-up to the next day so stale dates
+    # don't pile up. Closed/rejected/deleted/no-followup/HR excluded; remarks
+    # never touched; each move logged to LeadFieldHistory. See followupRollover.ts.
+    if: github.event.schedule == '30 15 * * *' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Roll pending overdue follow-ups to next day
+        run: |
+          curl -sf --max-time 120 \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            https://crm.whitecollarrealty.com/api/cron/followup-rollover \
+            || echo "::warning::followup-rollover cron failed"
 
   db_backup:
     # Daily JSON snapshot — uploads to Actions artifacts (free, 90d retention,

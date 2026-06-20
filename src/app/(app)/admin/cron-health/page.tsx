@@ -28,6 +28,7 @@ const CRONS: Array<{ name: string; schedule: string; purpose: string }> = [
   { name: "sync-projects", schedule: "Daily", purpose: "Resync projects from whitecollarrealty.com/locations" },
   { name: "warm", schedule: "Every 5 min", purpose: "Keep Neon DB connection warm (avoid scale-to-zero)" },
   { name: "db-backup", schedule: "Nightly", purpose: "JSON snapshot of critical tables (GitHub Actions artifact)" },
+  { name: "followup-rollover", schedule: "Daily 21:00 IST", purpose: "Move pending overdue follow-ups to next day (sales leads only)" },
 ];
 
 const STALE_MS = 25 * 60 * 60 * 1000; // 25 hours
