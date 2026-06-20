@@ -379,6 +379,27 @@ const checks: Check[] = [
   },
 
   // ───────────────────────────────────────────────────────────────────────────
+  // 3e. TEAM-AWARE BUDGET DISPLAY (2026-06-20) — India/Gurgaon must render INR
+  //     Lakh/Cr (never Millions/AED); Dubai renders AED K/M.
+  // ───────────────────────────────────────────────────────────────────────────
+  {
+    name: "budget-display — India ₹ Lakh/Cr (never M/AED); Dubai AED K/M",
+    run: async () => {
+      const { displayBudget } = await import("../src/lib/budgetParse");
+      const noMillions = (s: string) => !/\d\s*m(?:n|illion)?\b/i.test(s) && !/aed/i.test(s);
+      // India team — numeric formatted as ₹, even with a stale AED currency or an "M" raw.
+      assert(displayBudget({ forwardedTeam: "India", budgetMin: 40_000_000, budgetCurrency: "AED" }) === "₹4 Cr", `India 4Cr (stale AED) → ₹4 Cr, got ${displayBudget({ forwardedTeam: "India", budgetMin: 40_000_000, budgetCurrency: "AED" })}`);
+      assert(displayBudget({ forwardedTeam: "India", budgetRaw: "7M", budgetMin: 7_000_000, budgetCurrency: "INR" }) === "₹70 Lakh", `India raw "7M" → ₹70 Lakh, got ${displayBudget({ forwardedTeam: "India", budgetRaw: "7M", budgetMin: 7_000_000, budgetCurrency: "INR" })}`);
+      assert(noMillions(displayBudget({ forwardedTeam: "Gurgaon", budgetMin: 5_000_000, budgetCurrency: "AED" })), "Gurgaon budget must never show M/AED");
+      // INR currency with no team → still India format (covers callers that don't pass team).
+      assert(displayBudget({ budgetMin: 12_500_000, budgetCurrency: "INR" }) === "₹1.25 Cr", `INR no-team → ₹1.25 Cr, got ${displayBudget({ budgetMin: 12_500_000, budgetCurrency: "INR" })}`);
+      // Dubai — verbatim raw preserved; numeric → AED K/M.
+      assert(displayBudget({ forwardedTeam: "Dubai", budgetRaw: "AED 800K - 1M", budgetMin: 800_000 }) === "AED 800K - 1M", "Dubai verbatim raw preserved");
+      assert(displayBudget({ forwardedTeam: "Dubai", budgetMin: 1_500_000, budgetCurrency: "AED" }) === "AED 1.5 M", `Dubai 1.5M → "AED 1.5 M", got ${displayBudget({ forwardedTeam: "Dubai", budgetMin: 1_500_000, budgetCurrency: "AED" })}`);
+    },
+  },
+
+  // ───────────────────────────────────────────────────────────────────────────
   // 4. REMARKS PRESERVATION  (project-crm-remarks-overhaul — immutable rawRemarks)
   //    Some leads carry rawRemarks, and the longest is large (proves no
   //    truncation of the imported conversation history).

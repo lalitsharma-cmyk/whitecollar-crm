@@ -5,6 +5,7 @@ import { leadScopeWhere, ACTIVE_ORIGINS } from "@/lib/leadScope";
 import { LeadSource, AIScore, Potential, Prisma } from "@prisma/client";
 import { SUPPRESSED_STATUSES, CLOSING_STATUSES } from "@/lib/lead-statuses";
 import { effectiveSource } from "@/lib/sourceLabel";
+import { displayBudget } from "@/lib/budgetParse";
 
 // CSV export for the leads list — available to any logged-in user.
 // Results are scoped via leadScopeWhere so each role sees only what they
@@ -183,6 +184,7 @@ export async function GET(req: NextRequest) {
       status: true,
       potential: true,
       fundReadiness: true,
+      budgetRaw: true,
       budgetMin: true,
       budgetMax: true,
       budgetCurrency: true,
@@ -201,10 +203,9 @@ export async function GET(req: NextRequest) {
   const HEADER = "ID,Name,Phone,Email,Status,Potential,Fund Readiness,Budget,Team,Source,Follow-up Date,Last Touched,Created,Assigned To,Original Sheet Status";
 
   const rows = leads.map((l) => {
-    const budget =
-      l.budgetMin != null
-        ? `${l.budgetCurrency} ${l.budgetMin}${l.budgetMax != null ? `-${l.budgetMax}` : ""}`
-        : "";
+    // TEAM-AWARE budget in the export too: India → ₹ Lakh/Cr, Dubai → AED K/M.
+    const budgetDisp = displayBudget(l);
+    const budget = budgetDisp === "—" ? "" : budgetDisp;
     return [
       l.id,
       l.name,

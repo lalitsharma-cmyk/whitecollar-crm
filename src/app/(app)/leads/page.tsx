@@ -7,7 +7,7 @@ import LeadFilters from "@/components/LeadFilters";
 import LeadsListClient from "@/components/LeadsListClient";
 import { runReconciler } from "@/lib/reconciler";
 import { leadScopeWhere, COLD_ORIGINS } from "@/lib/leadScope";
-import { formatBudget } from "@/lib/budgetParse";
+import { displayBudget } from "@/lib/budgetParse";
 import { statusColor, BUDGET_PRESETS, SUPPRESSED_STATUSES, ACTIVE_PURSUIT_STATUSES, CLOSING_STATUSES, TERMINAL_STATUSES, CLOSED_OUTCOME_STATUSES, LOST_STATUSES } from "@/lib/lead-statuses";
 
 export const dynamic = "force-dynamic";
@@ -783,24 +783,9 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
             team: l.forwardedTeam,
             owner: l.owner ? { name: l.owner.name, avatarColor: l.owner.avatarColor ?? "bg-slate-500" } : null,
             // Command Center fields
-            budgetFormatted: (() => {
-              // Verbatim imported text wins ("10 Cr", "AED 800K - AED 1M") — but
-              // only when it actually contains a digit. A digit-less budgetRaw is
-              // corrupted import data (e.g. "Lalit Sir"), never a budget.
-              if (l.budgetRaw?.trim() && /\d/.test(l.budgetRaw)) return l.budgetRaw.trim();
-              const fmt = formatBudget(l.budgetMin, l.budgetCurrency);
-              if (fmt === "—") return null;
-              // UNKNOWN currency → show the bare number, never a guessed prefix.
-              if (l.budgetCurrency === "UNKNOWN") return fmt;
-              // INR → ₹ symbol; AED/other → keep currency code
-              const prefix = l.budgetCurrency === "INR" ? "₹" : l.budgetCurrency;
-              // Only show a range when budgetMax is a genuine UPPER bound (> min).
-              // Garbage maxes (0, tiny, or ≤ min) collapse to the single value — no
-              // more "10 M – 0 M" / "10 M – 6 K" nonsense ranges.
-              const maxFmt = (l.budgetMax && l.budgetMin && l.budgetMax > l.budgetMin)
-                ? formatBudget(l.budgetMax, l.budgetCurrency) : null;
-              return maxFmt ? `${prefix} ${fmt} – ${maxFmt}` : `${prefix} ${fmt}`;
-            })(),
+            // TEAM-AWARE budget (Lalit's rule): India → ₹ Lakh/Cr, Dubai → AED K/M.
+            // displayBudget() handles the verbatim-raw vs numeric + team currency.
+            budgetFormatted: (() => { const d = displayBudget(l); return d === "—" ? null : d; })(),
             bantCount,
             needSummary: l.needSummary ?? null,
             discussedProjects: l.discussed.map((d) => d.project.name),
@@ -832,15 +817,8 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
               confidence: intel.confidence,
               totalPropertiesFound: intel.totalPropertiesFound,
             } : null,
-            // Legacy fields kept for bulk actions and mobile card
-            budget: (() => {
-              if (l.budgetRaw?.trim()) return l.budgetRaw.trim();
-              const fmt = formatBudget(l.budgetMin, l.budgetCurrency);
-              if (fmt === "—") return null;
-              if (l.budgetCurrency === "UNKNOWN") return fmt;
-              const prefix = l.budgetCurrency === "INR" ? "₹" : l.budgetCurrency;
-              return `${prefix} ${fmt}`;
-            })(),
+            // Legacy fields kept for bulk actions and mobile card — team-aware too.
+            budget: (() => { const d = displayBudget(l); return d === "—" ? null : d; })(),
             interest: l.interestedUnits[0] ? `${l.interestedUnits[0].unit.project.name} ${l.interestedUnits[0].unit.configuration}` : null,
             // Project column = the actual property/project name (Excel "Project"
             // column). Imports store that value in sourceDetail. Chain:

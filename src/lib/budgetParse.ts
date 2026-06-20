@@ -86,31 +86,59 @@ function trimZeros(n: number): string {
   return n.toFixed(2).replace(/\.?0+$/, "");
 }
 
+/** India/Gurgaon budgets ALWAYS render in INR Lakh/Cr — never Millions/AED.
+ *  Formats the stored NUMERIC value (no blind conversion); the verbatim raw is
+ *  preserved in the DB, only the display is normalised. Returns null if there's
+ *  no usable number. Matches Lalit's examples: "₹50 Lakh", "₹1.25 Cr", "₹7 Cr". */
+function formatINR(min?: number | null, max?: number | null): string | null {
+  if (min == null || min === 0) return null;
+  const fmt = (n: number) =>
+    n >= 10_000_000 ? `₹${trimZeros(n / 10_000_000)} Cr`
+    : n >= 100_000  ? `₹${trimZeros(n / 100_000)} Lakh`
+    : n >= 1_000    ? `₹${trimZeros(n / 1_000)} K`
+    : `₹${n.toLocaleString("en-IN")}`;
+  const lo = fmt(min);
+  const hi = max && max > min ? fmt(max) : null;
+  return hi ? `${lo} – ${hi}` : lo;
+}
+
 /**
- * Canonical budget display. The verbatim imported text (budgetRaw) ALWAYS wins —
- * "10 Cr" stays "10 Cr", "AED 800K - AED 1M" stays exactly that. Only when there
- * is no raw text do we fall back to formatting the numeric value.
- *
- * UNKNOWN currency: we must NOT run the currency formatter (it would imply AED),
- * so we show the bare number tagged for review. "Wrong currency is worse than
- * unknown currency."
+ * Canonical, TEAM-AWARE budget display (Lalit's rule, 2026-06-20):
+ *   • India / Gurgaon team → INR Lakh/Cr ONLY (never "1M"/"AED"). Rendered from
+ *     the numeric value so a sheet that wrote "7M" shows "₹70 Lakh", and a lead
+ *     wrongly tagged AED still shows ₹ (team wins over a stale currency).
+ *   • Dubai (and unknown team) → verbatim raw wins ("AED 800K - 1M"), else AED K/M.
+ * Team is taken from forwardedTeam; when absent we fall back to budgetCurrency
+ * (INR ⇒ India format, AED ⇒ Dubai format) so every caller is covered.
  */
 export function displayBudget(lead: {
   budgetRaw?: string | null;
   budgetMin?: number | null;
   budgetMax?: number | null;
   budgetCurrency?: string | null;
+  forwardedTeam?: string | null;
 }): string {
+  const team = (lead.forwardedTeam ?? "").trim().toLowerCase();
+  const ccy = (lead.budgetCurrency || "").toUpperCase();
+  const isIndia = team === "india" || team === "gurgaon" || team === "gurugram" || (!team && ccy === "INR");
+
   const raw = lead.budgetRaw?.trim();
-  // A budgetRaw with no digit at all is NOT a budget — it's corrupted import data
-  // (e.g. an agent name like "Lalit Sir" that leaked into the budget column).
-  // Never render it as a budget; fall through to the numeric value or "—".
-  if (raw && /\d/.test(raw)) return raw; // verbatim original — preferred everywhere
-  const ccy = (lead.budgetCurrency || "AED").toUpperCase();
+  const rawIsBudget = !!raw && /\d/.test(raw); // a raw with no digit is corrupted (e.g. a leaked name)
+
+  if (isIndia) {
+    // INR Lakh/Cr from the numeric value; only if there's no number do we fall
+    // back to the raw text (last resort), else "—".
+    return formatINR(lead.budgetMin, lead.budgetMax) ?? (rawIsBudget ? raw! : "—");
+  }
+
+  // Dubai / unknown team — verbatim raw preferred, else AED (or stored ccy) K/M.
+  if (rawIsBudget) return raw!;
   const min = lead.budgetMin;
   if (min == null || min === 0) return "—";
-  if (ccy === "UNKNOWN") return `${min.toLocaleString("en-IN")} (currency?)`;
-  const lo = formatBudget(min, ccy);
-  const hi = lead.budgetMax && lead.budgetMax > min ? formatBudget(lead.budgetMax, ccy) : null;
-  return hi ? `${lo} – ${hi}` : lo;
+  const dispCcy = ccy && ccy !== "" ? ccy : "AED";
+  if (dispCcy === "UNKNOWN") return `${min.toLocaleString("en-IN")} (currency?)`;
+  const prefix = dispCcy === "INR" ? "₹" : dispCcy; // "AED 1.5 M", "₹ …"
+  const lo = formatBudget(min, dispCcy);
+  const hi = lead.budgetMax && lead.budgetMax > min ? formatBudget(lead.budgetMax, dispCcy) : null;
+  return hi ? `${prefix} ${lo} – ${hi}` : `${prefix} ${lo}`;
 }
