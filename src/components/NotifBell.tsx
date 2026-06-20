@@ -58,9 +58,13 @@ export default function NotifBell() {
       } else {
         const newUnread = incoming.filter((n) => !n.readAt && !seenIds.current!.has(n.id));
         if (newUnread.length > 0) {
+          // A new LEAD arriving is the one alert that must be impossible to miss:
+          // always play the urgent (double-ring, boosted-volume) alert for it,
+          // regardless of the stored severity. Other notifications use their own.
+          const isLead = newUnread.some((n) => n.kind === "LEAD_ASSIGNED" || /new lead|lead assigned|website lead|new website/i.test(n.title));
           const order: Record<string, number> = { INFO: 0, WARNING: 1, CRITICAL: 2 };
           const top = newUnread.reduce<NotifSeverity>((a, n) => (order[n.severity] > order[a] ? n.severity : a), "INFO");
-          playNotifSound(top);
+          playNotifSound(isLead ? "CRITICAL" : top);
         }
         for (const n of incoming) seenIds.current.add(n.id);
       }

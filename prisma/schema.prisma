@@ -86,6 +86,12 @@ model User {
   // NULL = defaults (everything on). Filtering at send-time is wired up later;
   // for now this column only persists the user's choices.
   notifPrefs        String?
+  // Chosen in-app alert sound id (bell|alert|chime|success|siren|premium) and
+  // volume level (low|medium|high|maximum). NULL = defaults (premium / high).
+  // Saved per user so the choice follows them across devices; the client also
+  // caches them in localStorage so the AudioContext can fire without a round-trip.
+  notifSound        String?
+  notifVolume       String?
 
   // ── HR-only access flag ──
   // When true, this user can ONLY access the HR Recruitment module (/hr/*).

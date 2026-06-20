@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
 import NotificationsClient from "./NotificationsClient";
+import NotificationSettingsCard from "@/components/NotificationSettingsCard";
 
 export const dynamic = "force-dynamic";
 
@@ -44,6 +45,7 @@ export default async function NotificationsPage() {
   return (
     <>
       <h1 className="text-2xl font-bold">Notifications</h1>
+      <NotificationSettingsCard />
       <NotificationsClient
         items={serialized}
         snoozedHiddenCount={snoozedRows.length}
