@@ -9,6 +9,7 @@ import { interpretBudget, resolveBudgetCurrency } from "@/lib/budgetCurrency";
 import { inferCountryFromCity } from "@/lib/cityCountry";
 import { canonicalStatus } from "@/lib/lead-statuses";
 import { mergeRawRemark } from "@/lib/rawRemarks";
+import { detectConversationKeyFromRows } from "@/lib/conversationColumn";
 import { validEmail, validBudgetRaw, looksLikeStatus, validPhone, looksLikeDate } from "@/lib/importValidate";
 
 // Keep date-formatted values OUT of non-date fields (name/company/city/address/
@@ -165,6 +166,18 @@ export async function POST(req: NextRequest) {
 
   const parsed = Papa.parse<Row>(text, { header: true, skipEmptyLines: true });
   if (parsed.errors.length > 5) return NextResponse.json({ error: "CSV parse errors", details: parsed.errors.slice(0,5) }, { status: 422 });
+
+  // Some MIS sheets keep call-by-call history in a column with a BLANK header
+  // (Papa maps it to the key ""). Rescue ONLY a genuine conversation column and
+  // copy it to a real "Remarks" key, so it flows to rawRemarks via pick("remarks")
+  // — never to a structured field. No-op when a labeled Remarks column exists.
+  const convKey = detectConversationKeyFromRows(parsed.data as Array<Record<string, unknown>>);
+  if (convKey) {
+    for (const row of parsed.data as Row[]) {
+      const v = String((row as Record<string, unknown>)[convKey] ?? "").trim();
+      row["Remarks"] = v || String(row["Remarks"] ?? "");   // unlabeled conversation → Remarks
+    }
+  }
 
   let created = 0, deduped = 0, enriched = 0;
   const errors: string[] = [];

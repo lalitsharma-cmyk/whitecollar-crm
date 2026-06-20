@@ -17,6 +17,7 @@ import { splitPhones, normalizePhone } from "@/lib/phone";
 import { resolveTeam, routingFieldsFor } from "@/lib/teamRouting";
 import { interpretBudget, resolveBudgetCurrency } from "@/lib/budgetCurrency";
 import { inferCountryFromCity } from "@/lib/cityCountry";
+import { detectConversationColumn } from "@/lib/conversationColumn";
 import { canonicalStatus } from "@/lib/lead-statuses";
 import { audit, reqMeta } from "@/lib/audit";
 // runIntelligenceCheck is called inside ingestLead() for every new (non-deduped)
@@ -378,12 +379,20 @@ function parseExcel(buf: ArrayBuffer): { rows: Row[]; sheetName: string; detecte
     if (headerRow === -1) continue;
 
     const headers = grid[headerRow].map((h) => String(h ?? "").trim());
-    const dataRows = grid.slice(headerRow + 1);
-    const rows: Row[] = dataRows
-      .filter((r) => r.some((c) => String(c ?? "").trim() !== ""))
-      .map((r) => {
+    const dataRows = grid.slice(headerRow + 1).filter((r) => r.some((c) => String(c ?? "").trim() !== ""));
+    // Some MIS sheets keep call-by-call history in a column with a BLANK header
+    // (e.g. Yasir, Dinesh). Blank-header columns are otherwise dropped below
+    // (`if (h)`), because a blank header used to wildcard-match every CRM field
+    // and leak dates. Rescue ONLY a genuine conversation column here and route it
+    // to "Remarks" — never to a structured field, so the date-leak cannot return.
+    const convCol = detectConversationColumn(headers, dataRows);
+    const rows: Row[] = dataRows.map((r) => {
         const obj: Row = {};
         headers.forEach((h, i) => { if (h) obj[h] = String(r[i] ?? "").trim(); });
+        if (convCol >= 0 && !obj["Remarks"]) {
+          const v = String(r[convCol] ?? "").trim();
+          if (v) obj["Remarks"] = v;   // unlabeled conversation column → Remarks
+        }
         return obj;
       });
     if (rows.length > 0) return { rows, sheetName, detectedHeaderRow: headerRow, allSheets: wb.SheetNames };

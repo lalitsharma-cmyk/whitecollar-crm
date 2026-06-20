@@ -256,6 +256,47 @@ const checks: Check[] = [
   },
 
   // ───────────────────────────────────────────────────────────────────────────
+  // 3b. UNLABELED CONVERSATION COLUMN (2026-06-20 regression)
+  //     Yasir/Dinesh MIS sheets keep call history in a BLANK-HEADER column. The
+  //     P0 date-leak fix dropped all blank-header columns, silently losing their
+  //     conversation. The importer now RESCUES a genuine conversation column to
+  //     Remarks — but ONLY a blank-header column, ONLY when no labeled Remarks
+  //     column exists, and ONLY if the content is call-log-like (never a date
+  //     column → the date-leak must not return through this path).
+  // ───────────────────────────────────────────────────────────────────────────
+  {
+    name: "conversation-column — rescue unlabeled call-log col, ignore labeled/date/short cols",
+    run: async () => {
+      const { detectConversationColumn, looksLikeConversation } = await import("../src/lib/conversationColumn");
+
+      // A real call note is conversation; a date / status / number is NOT.
+      assert(looksLikeConversation("On 25 Sep 2021 looking 4550 sqft in Trump Towers, will visit next week") === true, "a dated call note must be conversation");
+      assert(looksLikeConversation("17-Apr-26") === false, "a bare date is NOT conversation");
+      assert(looksLikeConversation("Cold") === false && looksLikeConversation("9650536365") === false, "a status word / phone number is NOT conversation");
+
+      // Yasir-shape: conversation sits under a BLANK header (index 3) → rescued.
+      const headersBlank = ["Date", "Name", "Contact", ""];
+      const rowsBlank = [
+        ["25-Sep-21", "Meena", "9650536365", "On 25 Sep 2021 looking 4550 sqft in Trump Towers, curious to see sample apartment"],
+        ["16-Oct-21", "Gagan", "9810112801", "On 16 Oct 2021 call on wait. On 17 Oct call him at 5pm, not picked"],
+        ["18-Oct-21", "Asha", "9818860113", "On 18 Oct 2021 looking for site visit, discuss 4750 and villa, will come this week"],
+        ["20-Aug-25", "Sumeet", "9810264604", "Yasir: on 20 Aug 2025 (5:55pm) not picked, WhatsApp message sent, will follow up"],
+      ];
+      assert(detectConversationColumn(headersBlank, rowsBlank) === 3, "unlabeled conversation column (idx 3) must be detected");
+
+      // Labeled "Remarks" present → normal mapping owns it, detector stays out (-1).
+      const headersLabeled = ["Date", "Name", "Remarks✍️"];
+      const rowsLabeled = rowsBlank.map((r) => [r[0], r[1], r[3]]);
+      assert(detectConversationColumn(headersLabeled, rowsLabeled) === -1, "a labeled Remarks column must keep detector OUT (-1)");
+
+      // A blank-header DATE column must NOT be mistaken for conversation (no date-leak).
+      const headersDate = ["Date", "Name", ""];
+      const rowsDate = [["25-Sep-21", "Meena", "17-Apr-26"], ["16-Oct-21", "Gagan", "22-Jun-26"], ["18-Oct-21", "Asha", "01-Jan-26"], ["20-Aug-25", "Sumeet", "05-May-26"]];
+      assert(detectConversationColumn(headersDate, rowsDate) === -1, "a blank-header DATE column must NOT be treated as conversation");
+    },
+  },
+
+  // ───────────────────────────────────────────────────────────────────────────
   // 4. REMARKS PRESERVATION  (project-crm-remarks-overhaul — immutable rawRemarks)
   //    Some leads carry rawRemarks, and the longest is large (proves no
   //    truncation of the imported conversation history).
