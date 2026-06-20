@@ -1058,37 +1058,14 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
             No duplicate in the left/center column. */}
         {qualificationCard}
 
-        {/* 🛠 Lead admin — Reject + Reassign in ONE compact card, near the
-            top of the right column. Lalit's ask: "Pur Reject lead option
-            above. Right side corner is too clumsy" — moved up from the
-            bottom so admins/managers can find them without scrolling. Reject
-            is FIRST (the more decisive action), Reassign second. */}
-        {canReject && (
-          <div data-lead-section="admin" className="card p-4 space-y-3">
-            <div className="text-[10px] uppercase tracking-widest text-gray-500 dark:text-slate-400 font-semibold">{canReassign ? "🛠 Lead admin" : "🛠 Lead actions"}</div>
-            {lead.rejectedAt != null ? (
-              <div className="text-xs text-gray-600 dark:text-slate-300">
-                Already rejected{lead.rejectionReason ? ` — ${lead.rejectionReason.replace(/_/g, " ").toLowerCase()}` : ""}.
-              </div>
-            ) : (
-              <RejectLeadModal leadId={lead.id} />
-            )}
-            {canReassign && (
-              <LeadReassignClient
-                leadId={lead.id}
-                currentOwnerId={lead.ownerId}
-                agents={agents.map(a => ({ id: a.id, name: a.name, role: a.role, team: a.team }))}
-                leadTeam={lead.forwardedTeam}
-              />
-            )}
-            {/* Copy Snapshot + Activity CSV affordances removed per Lalit's
-                ask ("remove copy snapshot and CSV functionality"). The
-                CopyLeadSnapshot component and /api/leads/[id]/activity-csv
-                route were deleted along with this block. */}
-          </div>
-        )}
+        {/* ════════════════════════════════════════════════════════════════
+            AGENT-VIEW SECTION ORDER (Lalit, 2026-06-20):
+            1 Client Info (above) · 2 Location · 3 Scheduling · 4 Start a Visit ·
+            5 Meetings & Site Visits · 6 Log Expo/Visit · 7 Reject (below working) ·
+            8 Projects Discussed · 9 Interested Properties · then admin/technical.
+            ════════════════════════════════════════════════════════════════ */}
 
-        {/* 📍 Location — fully editable inline (city, country, address) */}
+        {/* 2 · 📍 Location — fully editable inline (city/state/country/address) */}
         <div data-lead-section="overview" className="card p-4">
           <div className="font-semibold mb-3 dark:text-slate-100">📍 Location <span className="text-[10px] text-gray-400 font-normal">(click to edit)</span></div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
@@ -1111,79 +1088,8 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
           </div>
         </div>
 
-        {/* Imported sheet columns that don't map to a known CRM field — verbatim */}
-        <DuplicateIntentBanner intent={dupIntent} />
-        {customerHistory && <PreviousHistoryCard history={customerHistory} currentId={lead.id} />}
-        {/* Imported Fields = raw import / audit metadata. Admin / Super-Admin / Lalit
-            only (all ADMIN). Hidden from Agents + Managers — the whole section
-            disappears (no empty card); the data stays untouched in the DB. */}
-        {me.role === "ADMIN" && (
-          <ImportedFieldsCard customFields={lead.customFields} rawImport={lead.rawImport} />
-        )}
-
-        {/* 🧭 Routing audit — operational/debug provenance, moved to the BOTTOM
-            (owner spec). Admin / Super-Admin / Lalit only; hidden from Agents +
-            Managers. Kept off premium top space. */}
-        {me.role === "ADMIN" && hasRouting && (
-          <div data-lead-section="admin" className="card p-4">
-            <div className="text-[10px] uppercase tracking-widest text-gray-500 dark:text-slate-400 font-semibold mb-2">🧭 Routing audit</div>
-            <dl className="grid grid-cols-[130px_1fr] gap-x-3 gap-y-1.5 text-xs">
-              {routingRows.filter(([, v]) => v).map(([label, value]) => (
-                <div key={label} className="contents">
-                  <dt className="text-gray-400 dark:text-slate-500">{label}</dt>
-                  <dd className="text-gray-700 dark:text-slate-200 break-words">{value}</dd>
-                </div>
-              ))}
-            </dl>
-          </div>
-        )}
-
-        {/* §15: LinkedContactsCard removed — alt phone already in Client Information.
-            No duplicate contact display anywhere else on the page. */}
-
-        <div data-lead-section="overview" className="card p-4">
-          <LeadMeetingClient
-            leadId={lead.id}
-            counts={meetingCounts}
-            leadName={lead.name}
-            viewerRole={me.role}
-            viewerId={me.id}
-            activities={allMeetings}
-          />
-        </div>
-
-        {/* Site Visit Checklist — only renders when the lead is in SITE_VISIT
-            stage OR there's a site visit booked in the future. Pure client-side
-            with per-lead localStorage; no schema dependency. Lives directly
-            above the Tracker so the prep flow reads top-to-bottom. */}
-        {(lead.status === "SITE_VISIT" ||
-          (lead.siteVisitDate && lead.siteVisitDate.getTime() > Date.now())) && (
-          <div data-lead-section="actions">
-            <SiteVisitChecklist leadId={lead.id} />
-          </div>
-        )}
-
-        {/* Start a Site Visit — moved from header to right under meeting counts */}
-        <div data-lead-section="actions">
-        <SiteVisitTracker
-          leadId={lead.id}
-          leadName={lead.name}
-          activeVisit={activeVisit && activeVisit.startedAt && (activeVisit.type === "OFFICE_MEETING" || activeVisit.type === "SITE_VISIT") ? {
-            activityId: activeVisit.id,
-            type: activeVisit.type,
-            startedAt: activeVisit.startedAt.toISOString(),
-          } : null}
-        />
-        </div>
-
-        {/* EOI / Booking workflow MOVED to the LEFT / middle column —
-            Lalit's ask: "EOI one should be in middle section — not in
-            right corner". The card is wide (8-step stepper + many fields),
-            so the wider left column gives it room to breathe. */}
-
-        {/* Scheduling & next action — Followup + To-Do FIRST per Lalit's ask
-            ("Followup and to do should be on top") since those are the daily
-            agent actions. Meeting + Site Visit are second-row reference dates. */}
+        {/* 3 · 📅 Scheduling & next action — Follow-up / Meeting / Site Visit dates.
+            Moved UP so Client Info · Location · Scheduling are visible without scrolling. */}
         <div data-lead-section="actions" className="card p-4">
           <div className="font-semibold mb-3 dark:text-slate-100">📅 Scheduling & next action</div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
@@ -1215,6 +1121,72 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
           </div>
         </div>
 
+        {/* 4 · Start a Visit — ALWAYS above Meetings history. Checklist (when in a
+            site-visit window) then the live Site/Home/Expo/Meeting tracker. */}
+        {(lead.status === "SITE_VISIT" ||
+          (lead.siteVisitDate && lead.siteVisitDate.getTime() > Date.now())) && (
+          <div data-lead-section="actions">
+            <SiteVisitChecklist leadId={lead.id} />
+          </div>
+        )}
+        <div data-lead-section="actions">
+        <SiteVisitTracker
+          leadId={lead.id}
+          leadName={lead.name}
+          activeVisit={activeVisit && activeVisit.startedAt && (activeVisit.type === "OFFICE_MEETING" || activeVisit.type === "SITE_VISIT") ? {
+            activityId: activeVisit.id,
+            type: activeVisit.type,
+            startedAt: activeVisit.startedAt.toISOString(),
+          } : null}
+        />
+        </div>
+
+        {/* 5 · Meetings & Site Visits — office / site / virtual counts + full history */}
+        <div data-lead-section="overview" className="card p-4">
+          <LeadMeetingClient
+            leadId={lead.id}
+            counts={meetingCounts}
+            leadName={lead.name}
+            viewerRole={me.role}
+            viewerId={me.id}
+            activities={allMeetings}
+          />
+        </div>
+
+        {/* 6 · Log Expo / Visit Actions — grouped with the visit actions above. */}
+        <div data-lead-section="actions" className="card p-4">
+          <div className="text-xs font-semibold text-gray-600 dark:text-slate-300 mb-2">Log Expo / Site visit / Home visit</div>
+          <AdvancedActivityLogger
+            leadId={lead.id}
+            team={(lead.forwardedTeam === "Dubai" || lead.forwardedTeam === "India") ? lead.forwardedTeam : null}
+            travelRatePerKm={travelRatePerKmInr}
+          />
+        </div>
+
+        {/* 7 · Reject Lead — kept BELOW all working sections so agents never reject
+            by accident; Reassign rides along for admins/managers. */}
+        {canReject && (
+          <div data-lead-section="admin" className="card p-4 space-y-3">
+            <div className="text-[10px] uppercase tracking-widest text-gray-500 dark:text-slate-400 font-semibold">{canReassign ? "🛠 Lead admin" : "🛠 Lead actions"}</div>
+            {lead.rejectedAt != null ? (
+              <div className="text-xs text-gray-600 dark:text-slate-300">
+                Already rejected{lead.rejectionReason ? ` — ${lead.rejectionReason.replace(/_/g, " ").toLowerCase()}` : ""}.
+              </div>
+            ) : (
+              <RejectLeadModal leadId={lead.id} />
+            )}
+            {canReassign && (
+              <LeadReassignClient
+                leadId={lead.id}
+                currentOwnerId={lead.ownerId}
+                agents={agents.map(a => ({ id: a.id, name: a.name, role: a.role, team: a.team }))}
+                leadTeam={lead.forwardedTeam}
+              />
+            )}
+          </div>
+        )}
+
+        {/* 8 · Projects Discussed */}
         <div data-lead-section="projects" className="card p-4">
           <LeadProjectsClient
             leadId={lead.id}
@@ -1310,16 +1282,28 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
             bottom — too far to scroll. */}
 
 
-        {/* Expo / Dubai-site-visit logger — Lalit's ask: "Move this button down"
-            → put it at the absolute bottom of the right column. */}
-        <div data-lead-section="actions" className="card p-4">
-          <div className="text-xs font-semibold text-gray-600 dark:text-slate-300 mb-2">Log Expo / Site visit / Home visit</div>
-          <AdvancedActivityLogger
-            leadId={lead.id}
-            team={(lead.forwardedTeam === "Dubai" || lead.forwardedTeam === "India") ? lead.forwardedTeam : null}
-            travelRatePerKm={travelRatePerKmInr}
-          />
-        </div>
+        {/* ── Reference context (agent-visible) — kept below the working sections ── */}
+        <DuplicateIntentBanner intent={dupIntent} />
+        {customerHistory && <PreviousHistoryCard history={customerHistory} currentId={lead.id} />}
+
+        {/* ── Technical / audit — Admin / Super-Admin only, below the main working
+            area + hidden from Agents/Managers (Imported Fields + Routing audit). ── */}
+        {me.role === "ADMIN" && (
+          <ImportedFieldsCard customFields={lead.customFields} rawImport={lead.rawImport} />
+        )}
+        {me.role === "ADMIN" && hasRouting && (
+          <div data-lead-section="admin" className="card p-4">
+            <div className="text-[10px] uppercase tracking-widest text-gray-500 dark:text-slate-400 font-semibold mb-2">🧭 Routing audit</div>
+            <dl className="grid grid-cols-[130px_1fr] gap-x-3 gap-y-1.5 text-xs">
+              {routingRows.filter(([, v]) => v).map(([label, value]) => (
+                <div key={label} className="contents">
+                  <dt className="text-gray-400 dark:text-slate-500">{label}</dt>
+                  <dd className="text-gray-700 dark:text-slate-200 break-words">{value}</dd>
+                </div>
+              ))}
+            </dl>
+          </div>
+        )}
 
         <Link href={backHref} className="text-xs text-[#0b1a33] font-semibold inline-block">← Back</Link>
       </div>
