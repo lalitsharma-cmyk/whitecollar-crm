@@ -12,6 +12,7 @@ import { getTestingModeEnabled } from "@/lib/settings";
 import { notifyHotLead } from "@/lib/push";
 import { findMatchingLeads, summariseHistory, projectsFromInterestedUnits } from "@/lib/investorMatch";
 import { audit } from "@/lib/audit";
+import { websiteMessageRemark } from "@/lib/websiteRemark";
 import { BOOKED_STATUSES } from "@/lib/lead-statuses";
 import { resolveTeam, routingFieldsFor, automationGate } from "@/lib/teamRouting";
 import type { Classification } from "@/lib/leadClassifier";
@@ -275,6 +276,19 @@ export async function ingestLead(input: RawLeadInput) {
       completedAt: new Date(),
     },
   });
+
+  // ── Website/form message → Conversation History (Lalit, 2026-06-20) ──
+  // A genuine client message from the form must show in the assigned agent's
+  // Smart Timeline + Raw History, stamped at the LEAD-GENERATED time (IST). The
+  // source/campaign NAME is never inserted (helper returns null for it), and an
+  // empty message creates no entry — so no duplicate, no blank timeline row.
+  {
+    const tag = (input.source as string) === "WEBSITE" ? "Website / Client Message" : "Client Message";
+    const remark = websiteMessageRemark(input.notesShort, lead.createdAt, { tag, sourceRaw: input.sourceRaw, sourceDetail: input.sourceDetail });
+    if (remark) {
+      await prisma.lead.update({ where: { id: lead.id }, data: { rawRemarks: remark, remarks: remark } });
+    }
+  }
 
   // ── Customer Intelligence pre-assignment check ──
   // MUST complete before any round-robin / assignment / SLA step fires.

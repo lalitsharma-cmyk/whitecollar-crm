@@ -400,6 +400,35 @@ const checks: Check[] = [
   },
 
   // ───────────────────────────────────────────────────────────────────────────
+  // 3f. WEBSITE MESSAGE → CONVERSATION (2026-06-20) — a genuine form message
+  //     becomes a dated (IST) conversation entry; the source/campaign name never
+  //     does; an empty message creates nothing.
+  // ───────────────────────────────────────────────────────────────────────────
+  {
+    name: "website-remark — message → conversation (IST), source name excluded",
+    run: async () => {
+      const { websiteMessageRemark, isSourceEcho } = await import("../src/lib/websiteRemark");
+      // Source / campaign / form / event labels are NOT remarks.
+      for (const echo of ["Dubai Property Expo This Weekend", "DAMAC Expo", "Website Inquiry", "Facebook Lead Form", "Google Ads", "Inbound Call"]) {
+        assert(isSourceEcho(echo) === true, `"${echo}" must be treated as a source label, not a remark`);
+        assert(websiteMessageRemark(echo, new Date(0)) === null, `"${echo}" must NOT become a conversation entry`);
+      }
+      // The message matching the source/campaign is suppressed (no duplicate).
+      assert(websiteMessageRemark("Danube Breez", new Date(0), { sourceDetail: "Danube Breez" }) === null, "message == sourceDetail → no entry");
+      // Empty → nothing.
+      assert(websiteMessageRemark("", new Date(0)) === null && websiteMessageRemark(null, new Date(0)) === null, "blank message → no entry");
+      // A genuine message → a dated IST entry the timeline can parse.
+      const when = new Date("2026-06-20T11:05:00Z"); // 16:35 IST
+      const r = websiteMessageRemark("I am interested in a 3BHK property in Dubai.", when, { sourceDetail: "Danube Breez" });
+      assert(!!r && /On 20 Jun 2026 \(4:35\s*PM\)/i.test(r) && /Website \/ Client Message:/.test(r) && /3BHK/.test(r), `genuine message → dated IST entry, got ${JSON.stringify(r)}`);
+      const { parseRemarksTimeline } = await import("../src/lib/remarkParser");
+      const ev = parseRemarksTimeline(r!, [])[0];
+      const istHM = ev?.date ? new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Kolkata" }).format(ev.date) : "∅";
+      assert(istHM === "16:35", `timeline must date it 16:35 IST (lead-generated time), got ${istHM}`);
+    },
+  },
+
+  // ───────────────────────────────────────────────────────────────────────────
   // 4. REMARKS PRESERVATION  (project-crm-remarks-overhaul — immutable rawRemarks)
   //    Some leads carry rawRemarks, and the longest is large (proves no
   //    truncation of the imported conversation history).

@@ -200,11 +200,11 @@ export default function ConversationStreamCard({
   isAdmin = false, meId, rawEdit = null, editedNotes = {},
 }: Props) {
   const [filter, setFilter] = useState<FilterType>("ALL");
-  // View mode — "raw" = Raw History (Audit Log), the verbatim imported text shown
-  // exactly as stored (DEFAULT, source of truth). "smart" = Smart Timeline
-  // (Processed View), the grouped/tidied convenience layer. Smart NEVER mutates
-  // raw; if they disagree, Raw wins (it is the stored audit trail).
-  const [viewMode, setViewMode] = useState<"raw" | "smart">("raw");
+  // View mode — "smart" = Smart Timeline (Processed View) is the DEFAULT (Lalit,
+  // 2026-06-20) so agents see the tidy parsed conversation first. "raw" = Raw
+  // History (Audit Log), the verbatim stored text. Smart NEVER mutates raw; if
+  // they disagree, Raw wins (it is the stored audit trail), still one tap away.
+  const [viewMode, setViewMode] = useState<"raw" | "smart">("smart");
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
 
   // ── Bulk moderation (controllers / Lalit only) ──
