@@ -40,6 +40,7 @@ import BestCallTimeChip from "@/components/BestCallTimeChip";
 import CallStatsBar from "@/components/CallStatsBar";
 // LeadJourneyBar removed — stage pipeline bar replaced by currentStatus (Excel/MIS workflow)
 import { displayBudget } from "@/lib/budgetParse";
+import { cleanNeedSnapshot } from "@/lib/needSnapshot";
 import { selectableStatuses, statusColor, BOOKED_STATUSES, SUPPRESSED_STATUSES, statusesLookSame } from "@/lib/lead-statuses";
 import LinkedContactsCard from "@/components/LinkedContactsCard";
 import InvestorBanner from "@/components/InvestorBanner";
@@ -765,6 +766,10 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
     return /\b(sir|sahab|sahib|saab)\b/.test(t) || /^(dubai|india)$/.test(t);
   };
   const showAltName = !!lead.altName && !isInternalAltName(lead.altName);
+  // Clean one-line requirement for the §8 snapshot under the name — never the raw
+  // notesShort blob (comma garbage + dated call-log tail belong in Conversation
+  // History, not duplicated/messy under the name).
+  const needSnapshot = cleanNeedSnapshot(lead.notesShort);
 
   return (
     /* pb-24 reserves space at the bottom on mobile only for the GLOBAL bottom
@@ -915,7 +920,7 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
               </div>
               {/* §16: Email removed from header — lives in Client Information on right sidebar */}
               {/* §8 Requirement Snapshot — compact one-liner below name/status, above actions */}
-              {(lead.configuration || lead.budgetMin || lead.notesShort) && (
+              {(lead.configuration || lead.budgetMin || needSnapshot) && (
                 <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-gray-600 dark:text-slate-300">
                   {lead.configuration && (
                     <span className="bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-700 px-2 py-0.5 rounded font-medium">
@@ -939,8 +944,8 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
                       }` : ""}
                     </span>
                   )}
-                  {lead.notesShort && (
-                    <span className="text-gray-500 dark:text-slate-400 truncate max-w-[200px]">{lead.notesShort}</span>
+                  {needSnapshot && (
+                    <span className="text-gray-500 dark:text-slate-400 truncate max-w-[200px]" title={needSnapshot}>{needSnapshot}</span>
                   )}
                 </div>
               )}

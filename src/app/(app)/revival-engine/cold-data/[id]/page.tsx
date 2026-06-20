@@ -9,6 +9,7 @@ import Link from "next/link";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { leadScopeWhere, COLD_ORIGINS } from "@/lib/leadScope";
+import { cleanNeedSnapshot } from "@/lib/needSnapshot";
 import { formatDistanceToNow, format } from "date-fns";
 import ConversationStreamCard from "@/components/ConversationStreamCard";
 import QuickNoteCard from "@/components/QuickNoteCard";
@@ -109,8 +110,8 @@ export default async function ColdDataDetailPage({ params, searchParams }: { par
               {lead.city && <span>📍 {lead.city}</span>}
             </div>
 
-            {/* Requirement snapshot */}
-            {(lead.configuration || lead.budgetMin || lead.notesShort) && (
+            {/* Requirement snapshot — clean one-liner, never the raw notesShort blob */}
+            {(lead.configuration || lead.budgetMin || cleanNeedSnapshot(lead.notesShort)) && (
               <div className="flex flex-wrap gap-2 text-[11px] mb-3">
                 {lead.configuration && (
                   <span className="bg-indigo-50 text-indigo-700 border border-indigo-200 px-2 py-0.5 rounded font-medium">
@@ -123,8 +124,8 @@ export default async function ColdDataDetailPage({ params, searchParams }: { par
                     {lead.budgetMax && lead.budgetMax > lead.budgetMin ? ` – ${(lead.budgetMax / 1_000_000).toFixed(1)}M` : ""}
                   </span>
                 )}
-                {lead.notesShort && (
-                  <span className="text-gray-500 truncate max-w-[220px]">{lead.notesShort}</span>
+                {cleanNeedSnapshot(lead.notesShort) && (
+                  <span className="text-gray-500 truncate max-w-[220px]" title={cleanNeedSnapshot(lead.notesShort)!}>{cleanNeedSnapshot(lead.notesShort)}</span>
                 )}
               </div>
             )}

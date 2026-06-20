@@ -541,6 +541,22 @@ const checks: Check[] = [
   },
 
   // ───────────────────────────────────────────────────────────────────────────
+  // 3e-nov. NEED SNAPSHOT (2026-06-21) — the §8 one-liner under the lead name shows
+  //     a CLEAN requirement, never the raw notesShort blob (comma garbage + dated
+  //     call-log tail belong in Conversation History).
+  // ───────────────────────────────────────────────────────────────────────────
+  {
+    name: "need-snapshot — clean requirement under name, never the raw notesShort blob",
+    run: async () => {
+      const { cleanNeedSnapshot } = await import("../src/lib/needSnapshot");
+      assert(cleanNeedSnapshot("Need details for trump tower 2,,,,,Tanuj: on 24 jan 2026 (10:21am) not picked") === "Need details for trump tower 2", "strips comma garbage + dated call-log tail");
+      assert(cleanNeedSnapshot("Looking for a 3BHK in Gurgaon") === "Looking for a 3BHK in Gurgaon", "clean requirement passes through");
+      assert(cleanNeedSnapshot("On 19 Jun 2026 (3:30 pm) called, no answer") === null, "pure conversation log → no headline");
+      assert(cleanNeedSnapshot(null) === null && cleanNeedSnapshot("") === null, "empty → null");
+    },
+  },
+
+  // ───────────────────────────────────────────────────────────────────────────
   // 3f. WEBSITE MESSAGE → CONVERSATION (2026-06-20) — a genuine form message
   //     becomes a dated (IST) conversation entry; the source/campaign name never
   //     does; an empty message creates nothing.
