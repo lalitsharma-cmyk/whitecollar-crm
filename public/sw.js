@@ -7,7 +7,10 @@
 // Bump this version when shipping a UI fix that PWA users might otherwise
 // miss because their old SW kept serving the stale shell. The activate
 // handler below already deletes every old `wcr-shell-*` cache on swap.
-const CACHE = "wcr-shell-v5";
+// v6 (2026-06-21): force-refresh every client after the big UI batch — agent
+// New-Lead gate, 6-tier sort, market segregation, budget format, reminders,
+// imported-fields/routing-audit visibility, etc. Old SWs serve a stale shell.
+const CACHE = "wcr-shell-v6";
 const SHELL = ["/login", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", (event) => {
