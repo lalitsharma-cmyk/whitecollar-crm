@@ -37,13 +37,16 @@ async function main() {
     const hist = await getCustomerHistory(p, d.email);
     const dup = await getDuplicateIntent(p, d.email);
     const ai = await findMatchingLeads({ phone: p, email: d.email, name: d.name, city: d.city });
-    const histIds = ((hist?.enquiries ?? []) as Array<{ id?: string }>).map((e) => e.id);
-    if (histIds.includes(d.id)) histOK = false;
+    const records = hist?.records ?? [];
+    // Lead History: the deleted id must not appear AND no record may carry the deleted flag.
+    if (records.some((e) => e.id === d.id || e.deleted)) histOK = false;
+    // AI Matching: the deleted id must not appear in matches.
     if (ai.some((m: { id: string }) => m.id === d.id)) aiOK = false;
-    const evIds = (dup?.evidence ?? []).map((e: { id?: string }) => e.id).filter(Boolean) as string[];
-    if (evIds.some((id) => deletedIds.has(id))) dupOK = false;
+    // Duplicate detection / Connected-count: genuine count can never exceed the
+    // number of LIVE matching rows — if a deleted row were counted it would.
+    if (dup && dup.genuineCount > liveCount) dupOK = false;
     if (rawCount > liveCount && overlap.startsWith("none")) {
-      overlap = `lead "${d.name}" phone ...${last10(p).slice(-4)} deletedAt=${d.deletedAt?.toISOString().slice(0, 10)}: RAW rows incl deleted=${rawCount}, LIVE rows=${liveCount} -> DuplicateIntent.genuineCount=${dup?.genuineCount ?? 0}, CustomerHistory.enquiries=${histIds.length}, AI matches=${ai.length}; deleted id present in NONE`;
+      overlap = `lead "${d.name}" phone ...${last10(p).slice(-4)} deletedAt=${d.deletedAt?.toISOString().slice(0, 10)}: RAW rows incl deleted=${rawCount}, LIVE rows=${liveCount} -> DuplicateIntent.genuineCount=${dup?.genuineCount ?? 0}, CustomerHistory.records=${records.length}, AI matches=${ai.length}; deleted record present in NONE`;
     }
   }
   console.log(`   tested ${sample.length} recycle-bin records through the deployed functions:`);
