@@ -189,6 +189,11 @@ const STATUS_COLORS: Record<string, string> = {
   "Already Bought":         "bg-rose-100 text-rose-700 border border-rose-200",
   "Never Respond Phone Calls": "bg-slate-100 text-slate-500 border border-slate-200",
   "Pass Away":              "bg-slate-100 text-slate-400 border border-slate-200",
+  // ── Closed-elsewhere outcomes (replace the old "Booked With Us" reject) ───
+  "Purchased Elsewhere":          "bg-rose-100 text-rose-700 border border-rose-200",
+  "Booked Through Another Channel": "bg-rose-100 text-rose-700 border border-rose-200",
+  // ── Needs Review (team-status revalidation sentinel) ──────────────────────
+  "Needs Review":           "bg-yellow-100 text-yellow-800 border border-yellow-300 font-semibold",
   // ── Legacy (old names, still in DB from previous imports) ─────────────────
   "By Mistake Inquiry":     "bg-slate-100 text-slate-400 border border-slate-200",
   "Gurgaon":                "bg-gray-100 text-gray-600 border border-gray-200",
@@ -260,11 +265,14 @@ export const CLOSING_STATUSES: string[] = [
 
 // Closed outcomes — the DEAL IS DONE (booked / sold / leased). NOT a rejection.
 export const CLOSED_OUTCOME_STATUSES: string[] = [
-  "Booked With Us", "Booked with Us",   // legacy casing
+  "Booked With Us", "Booked with Us",   // legacy casing — booked WITH US (the win)
   "Sell Out", "Sell Off",               // Sell Off = India legacy of Sell Out
   "Leasing", "Rent Out",
   "Already Bought", "Already Booked",    // Already Booked = India legacy
   "Commercial Investment",
+  // Client completed a deal ELSEWHERE (not with us) — a real, non-junk outcome.
+  // Replaces the old "Booked With Us" reject reason, which wrongly inflated wins.
+  "Purchased Elsewhere", "Booked Through Another Channel",
 ];
 
 // Lost / rejected — non-actionable. Sourced from the Reject modal (minus the
@@ -284,6 +292,27 @@ export const TERMINAL_STATUSES: string[] = [
   ...CLOSED_OUTCOME_STATUSES,
   ...LOST_STATUSES,
 ];
+
+// ─── "Needs Review" sentinel (team-status revalidation) ───────────────────
+// When a lead's team changes — or an import brings a status that doesn't exist
+// in the lead's team master — we MUST NOT force a wrong-team status. We set this
+// sentinel instead, so a human re-picks the correct team status. It's valid for
+// every team, displayed with a distinct chip, and stays WORKABLE (leadCategory →
+// WORKABLE) so the lead surfaces for correction rather than hiding.
+export const NEEDS_REVIEW = "Needs Review";
+
+/**
+ * Is `status` allowed for `team`? True when it's in that team's master, OR a
+ * team-agnostic terminal outcome (a booked/lost lead shouldn't be re-flagged on
+ * a team move), OR the Needs-Review sentinel, OR there's no status yet. Used by
+ * team-change + import to decide whether to keep the status or flag it.
+ */
+export function isStatusValidForTeam(status: string | null | undefined, team: string | null | undefined): boolean {
+  if (!status) return true;
+  if (status === NEEDS_REVIEW) return true;
+  if (TERMINAL_STATUSES.includes(status)) return true;
+  return (statusesForTeam(team) as readonly string[]).includes(status);
+}
 
 export type LeadCategory = "WORKABLE" | "CLOSED" | "LOST";
 

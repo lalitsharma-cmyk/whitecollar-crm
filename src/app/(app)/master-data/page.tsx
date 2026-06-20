@@ -241,7 +241,7 @@ export default async function MasterDataPage({ searchParams }: { searchParams: P
       />
 
       {/* ── Excel-style operations grid ────────────────────────────────────── */}
-      <MasterDataRecordsTable rows={rows} agents={agents} statuses={statuses} isSuperAdmin={!!me.isSuperAdmin} viewerId={me.id} />
+      <MasterDataRecordsTable rows={rows} agents={agents} isSuperAdmin={!!me.isSuperAdmin} viewerId={me.id} />
     </>
   );
 }

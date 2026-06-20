@@ -3,6 +3,7 @@ import { requireUser } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { fmtIST12 } from "@/lib/datetime";
+import { REJECT_REASONS, REJECT_REASON_VALUES, rejectReasonLabel } from "@/lib/reject-reasons";
 
 /**
  * /admin/rejected-leads — oversight view for leads agents have rejected.
@@ -22,24 +23,13 @@ import { fmtIST12 } from "@/lib/datetime";
  */
 export const dynamic = "force-dynamic";
 
-const REASONS = [
-  "FUND_ISSUE",
-  "WAR_FEAR",
-  "LOW_BUDGET",
-  "LOOK_AFTER_2_YEARS",
-  "WAITING_FOR_PROPERTY_SALE",
-  "OTHER",
-] as const;
-type Reason = (typeof REASONS)[number];
-
-const REASON_LABEL: Record<string, string> = {
-  FUND_ISSUE: "Fund issue",
-  WAR_FEAR: "War / market fear",
-  LOW_BUDGET: "Low budget",
-  LOOK_AFTER_2_YEARS: "Look after 2 years",
-  WAITING_FOR_PROPERTY_SALE: "Waiting for property sale",
-  OTHER: "Other",
-};
+// Reason filter options + labels come from the SINGLE canonical list
+// (reject-reasons.ts) so this oversight view always matches the reject modal —
+// it now includes "Purchased Elsewhere" / "Booked Through Another Channel" and
+// never the removed "Booked With Us". rejectReasonLabel() also resolves any
+// legacy value still in the DB.
+const REASONS: string[] = REJECT_REASONS.map((r) => r.value);
+type Reason = string;
 
 function truncate(s: string | null, n: number): string {
   if (!s) return "";
@@ -59,7 +49,7 @@ export default async function RejectedLeadsPage({
 
   const sp = await searchParams;
   const reasonFilter: Reason | null =
-    sp.reason && (REASONS as readonly string[]).includes(sp.reason) ? (sp.reason as Reason) : null;
+    sp.reason && REJECT_REASON_VALUES.has(sp.reason) ? sp.reason : null;
 
   // Base predicate — only rows that went through the structured reject flow.
   // rejectedAt is set by the reject API route — no status dependency needed.
@@ -139,7 +129,7 @@ export default async function RejectedLeadsPage({
                 href={`/admin/rejected-leads?reason=${r}`}
                 className={`chip ${active ? "chip-warm" : "chip-lost"}`}
               >
-                {REASON_LABEL[r]} · {n}
+                {rejectReasonLabel(r)} · {n}
               </Link>
             );
           })}
@@ -160,7 +150,7 @@ export default async function RejectedLeadsPage({
         >
           <option value="">All reasons</option>
           {REASONS.map((r) => (
-            <option key={r} value={r}>{REASON_LABEL[r]}</option>
+            <option key={r} value={r}>{rejectReasonLabel(r)}</option>
           ))}
         </select>
         <button type="submit" className="btn btn-ghost">Apply</button>
@@ -174,7 +164,7 @@ export default async function RejectedLeadsPage({
       {/* Results table — wide on desktop, falls back to a card list on mobile. */}
       {leads.length === 0 ? (
         <div className="card p-6 text-center text-gray-500 text-sm">
-          No rejected leads {reasonFilter ? `for reason "${REASON_LABEL[reasonFilter]}"` : "yet"}.
+          No rejected leads {reasonFilter ? `for reason "${rejectReasonLabel(reasonFilter)}"` : "yet"}.
         </div>
       ) : (
         <>
@@ -210,7 +200,7 @@ export default async function RejectedLeadsPage({
                     </td>
                     <td className="px-3 py-2">
                       <span className="chip chip-lost">
-                        {l.rejectionReason ? (REASON_LABEL[l.rejectionReason] ?? l.rejectionReason) : "—"}
+                        {l.rejectionReason ? rejectReasonLabel(l.rejectionReason) : "—"}
                       </span>
                     </td>
                     <td className="px-3 py-2 text-gray-600 text-xs max-w-xs" title={l.rejectionNote ?? ""}>
@@ -231,7 +221,7 @@ export default async function RejectedLeadsPage({
                     {l.name}
                   </Link>
                   <span className="chip chip-lost text-[10px]">
-                    {l.rejectionReason ? (REASON_LABEL[l.rejectionReason] ?? l.rejectionReason) : "—"}
+                    {l.rejectionReason ? rejectReasonLabel(l.rejectionReason) : "—"}
                   </span>
                 </div>
                 <div className="text-xs text-gray-600 mt-1">

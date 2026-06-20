@@ -307,6 +307,51 @@ const checks: Check[] = [
   },
 
   // ───────────────────────────────────────────────────────────────────────────
+  // 3c. TEAM-STATUS isolation + reject-reason rework + property-type (2026-06-20)
+  //     Gurgaon (India) and Dubai status masters are never merged; "Booked With
+  //     Us" is gone from the reject dropdown (and never maps to the winning
+  //     status); Property Type allows Residential/Commercial/Mixed Use only.
+  // ───────────────────────────────────────────────────────────────────────────
+  {
+    name: "team-status isolation + reject-reasons + property-type",
+    run: async () => {
+      const { isStatusValidForTeam, NEEDS_REVIEW, statusesForTeam } = await import("../src/lib/lead-statuses");
+      const { REJECT_REASONS, rejectionStatusFor, rejectReasonLabel } = await import("../src/lib/reject-reasons");
+      const { inferPropertyType, isPropertyType, PROPERTY_TYPES } = await import("../src/lib/propertyType");
+
+      // Team isolation — a Dubai status is invalid for India and vice-versa.
+      assert(isStatusValidForTeam("Mail Sent", "Dubai") === true, "'Mail Sent' is a Dubai status");
+      assert(isStatusValidForTeam("Mail Sent", "India") === false, "'Mail Sent' (Dubai) must be INVALID for India");
+      assert(isStatusValidForTeam("Details Shared", "India") === true, "'Details Shared' is an India status");
+      assert(isStatusValidForTeam("Details Shared", "Dubai") === false, "'Details Shared' (India) must be INVALID for Dubai");
+      assert(isStatusValidForTeam("Follow Up", "India") && isStatusValidForTeam("Follow Up", "Dubai"), "shared status valid for both teams");
+      assert(isStatusValidForTeam("Booked With Us", "India") === true, "terminal outcomes are team-agnostic (booked lead not re-flagged on team move)");
+      assert(isStatusValidForTeam(NEEDS_REVIEW, "India") && isStatusValidForTeam(NEEDS_REVIEW, "Dubai"), "'Needs Review' is valid for any team");
+      // The two masters must NOT bleed into each other.
+      assert(!(statusesForTeam("India") as readonly string[]).includes("Mail Sent"), "India master must not contain Dubai-only 'Mail Sent'");
+      assert(!(statusesForTeam("Dubai") as readonly string[]).includes("Details Shared"), "Dubai master must not contain India-only 'Details Shared'");
+
+      // Reject reasons — "Booked With Us" removed from the dropdown; 2 new reasons in.
+      const vals = REJECT_REASONS.map((r) => r.value);
+      assert(!vals.includes("BOOKED_WITH_US"), "'Booked With Us' must NOT be an offered reject reason");
+      assert(!REJECT_REASONS.some((r) => /booked with us/i.test(r.label)), "no offered reason may be labeled 'Booked With Us'");
+      assert(vals.includes("PURCHASED_ELSEWHERE") && vals.includes("BOOKED_OTHER_CHANNEL"), "both closed-elsewhere reasons must be offered");
+      // Reject reason → status must NEVER be the winning "Booked With Us".
+      assert(rejectionStatusFor("PURCHASED_ELSEWHERE") === "Purchased Elsewhere", "PURCHASED_ELSEWHERE → 'Purchased Elsewhere'");
+      assert(rejectionStatusFor("BOOKED_OTHER_CHANNEL") === "Booked Through Another Channel", "BOOKED_OTHER_CHANNEL → its own status");
+      assert(rejectionStatusFor("BOOKED_WITH_US") !== "Booked With Us", "legacy reject must NOT resolve to the winning status (it inflated commission)");
+      assert(rejectReasonLabel("BOOKED_WITH_US") === "Booked With Us", "legacy value still resolves a human label for historical records");
+      assert(rejectionStatusFor("JUNK") === "Junk", "Junk Lead → canonical 'Junk' status");
+
+      // Property Type — Mixed Use is allowed; Source values are not.
+      assert(PROPERTY_TYPES.length === 3 && isPropertyType("Mixed Use"), "Mixed Use is an allowed property type");
+      assert(!isPropertyType("Import") && !isPropertyType("Google"), "Source values must NOT be valid property types");
+      assert(inferPropertyType({ projectCategory: "Mixed Use Development" }) === "Mixed Use", "category 'mixed' → Mixed Use");
+      assert(inferPropertyType({ configuration: "Office Space" }) === "Commercial", "office → Commercial (unchanged)");
+    },
+  },
+
+  // ───────────────────────────────────────────────────────────────────────────
   // 4. REMARKS PRESERVATION  (project-crm-remarks-overhaul — immutable rawRemarks)
   //    Some leads carry rawRemarks, and the longest is large (proves no
   //    truncation of the imported conversation history).

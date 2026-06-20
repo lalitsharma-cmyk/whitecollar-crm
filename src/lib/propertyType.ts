@@ -9,12 +9,21 @@
 // Used identically at intake (ingestLead) AND in the historical backfill, so old
 // and new leads classify the same way (global data-consistency rule).
 
-export type PropertyType = "Residential" | "Commercial";
+export type PropertyType = "Residential" | "Commercial" | "Mixed Use";
+
+// The ONLY allowed Property Type values (dropdowns + validation share this).
+export const PROPERTY_TYPES: PropertyType[] = ["Residential", "Commercial", "Mixed Use"];
+export function isPropertyType(v: string | null | undefined): v is PropertyType {
+  return v != null && (PROPERTY_TYPES as string[]).includes(v);
+}
 
 // Strong, end-bounded commercial / residential signals. "Plot" is intentionally
 // EXCLUDED from both — a plot can be residential or commercial, so it stays blank.
 const COMMERCIAL_RE = /\b(commercial|office|offices|shop|shops|retail|showroom|warehouse|sco|mall|workspace|work\s*space|co-?working|food\s*court|business\s*park|corporate|industrial)\b/i;
 const RESIDENTIAL_RE = /\b(residential|residence|residences|apartment|apartments|flat|flats|villa|villas|\d\s*bhk|\d\s*br|studio|penthouse|duplex|builder\s*floor|housing)\b/i;
+// Explicit mixed-use only — never inferred from "office + apartment" co-occurrence
+// (that's ambiguous, not a mixed-use development).
+const MIXED_RE = /\b(mixed[\s-]?use|mixed[\s-]?development|mix[\s-]?use)\b/i;
 
 export function inferPropertyType(s: {
   projectCategory?: string | null;
@@ -24,6 +33,7 @@ export function inferPropertyType(s: {
 }): PropertyType | null {
   // 1. Authoritative — the project's own category from Project Master.
   const cat = (s.projectCategory ?? "").toLowerCase();
+  if (cat.includes("mixed")) return "Mixed Use";
   if (cat.includes("commercial")) return "Commercial";
   if (cat.includes("residential")) return "Residential";
 
@@ -31,6 +41,7 @@ export function inferPropertyType(s: {
   //    ("Commercial" / "Office" → Commercial; "2BHK" / "Villa" → Residential).
   const hay = [s.configuration, s.projectName, s.notes].filter(Boolean).join(" ");
   if (!hay.trim()) return null;
+  if (MIXED_RE.test(hay)) return "Mixed Use";   // explicit mixed-use wins
   const isC = COMMERCIAL_RE.test(hay);
   const isR = RESIDENTIAL_RE.test(hay);
   if (isC && !isR) return "Commercial";

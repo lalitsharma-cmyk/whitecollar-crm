@@ -7,7 +7,8 @@ import { fireWorkflowTrigger } from "@/lib/workflowEngine";
 import { getTestingModeEnabled, getBantGateMode } from "@/lib/settings";
 import { evaluateBantGate, type BantFields } from "@/lib/bantGate";
 import { awardXp, type AwardResult, type XpReason } from "@/lib/gamification.server";
-import { canSetStatus } from "@/lib/lead-statuses";
+import { canSetStatus, isStatusValidForTeam, NEEDS_REVIEW } from "@/lib/lead-statuses";
+import { isPropertyType } from "@/lib/propertyType";
 import { recordFieldChanges, TRACKED_FIELDS } from "@/lib/fieldHistory";
 import { notify } from "@/lib/notify";
 import { NotifKind, type Prisma } from "@prisma/client";
@@ -105,6 +106,13 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     );
   }
 
+  // Property Type is a controlled vocabulary — Residential / Commercial / Mixed
+  // Use only (or blank to clear). Never let a Source value (Import/Google/…) land
+  // here. The dropdowns only offer valid values; this guards direct API calls.
+  if (typeof body.propertyType === "string" && body.propertyType && !isPropertyType(body.propertyType)) {
+    return NextResponse.json({ error: "Property Type must be Residential, Commercial, or Mixed Use." }, { status: 400 });
+  }
+
   const updates: Record<string, unknown> = {};
   const activityNotes: string[] = [];
 
@@ -127,6 +135,19 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     else if (kind === "enum") {
       updates[key] = raw;
       activityNotes.push(`${key} → ${raw}`);
+    }
+  }
+
+  // Team-change revalidation — if the team is changing and the caller didn't also
+  // explicitly set a status, re-check the EXISTING status against the NEW team's
+  // master. A status that doesn't exist there becomes "Needs Review" (never a
+  // forced wrong-team status). Leads keep their status unless the team changes.
+  if ("forwardedTeam" in updates && !("currentStatus" in updates)) {
+    const cur = await prisma.lead.findUnique({ where: { id }, select: { currentStatus: true, forwardedTeam: true } });
+    const newTeam = (updates.forwardedTeam as string | null) ?? null;
+    if (cur && cur.forwardedTeam !== newTeam && !isStatusValidForTeam(cur.currentStatus, newTeam)) {
+      updates.currentStatus = NEEDS_REVIEW;
+      activityNotes.push(`status → ${NEEDS_REVIEW} (team changed)`);
     }
   }
 

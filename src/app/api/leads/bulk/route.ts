@@ -9,17 +9,10 @@ import { crossTeamWarning, normalizeTeam } from "@/lib/teamRouting";
 import { parseBudget } from "@/lib/budgetParse";
 import { resolveBudgetCurrency } from "@/lib/budgetCurrency";
 import { inferCountryFromCity } from "@/lib/cityCountry";
-
-// Allow-list mirrors /api/leads/[id]/reject — keep these in sync.
-const REJECT_REASONS = new Set([
-  "NOT_INTERESTED", "JUST_SEARCHING", "BY_MISTAKE_INQUIRY", "DROP_THE_PLAN",
-  "LOW_BUDGET", "FUND_ISSUE", "OTHER_LOCATION", "BROKER", "ALREADY_BOUGHT",
-  "LEASING_REQUIREMENT", "COMMERCIAL_REQUIREMENT", "INVALID_NUMBER",
-  "NUMBER_CHANGED", "NEVER_RESPONDED", "PASSED_AWAY", "WAR_FEAR",
-  "WAITING_FOR_PROPERTY_SALE", "NOT_ABLE_TO_BUY", "OTHER",
-  // Legacy
-  "LOOK_AFTER_2_YEARS", "TRANSFER_TO_INDIA_TEAM", "TRANSFER_TO_DUBAI_TEAM",
-]);
+// SINGLE SOURCE OF TRUTH for reject reasons — shared with the modal + single-lead
+// reject route, so the bulk path can never drift (it previously had a stale,
+// divergent allow-list that didn't include the new reasons).
+import { REJECT_REASON_VALUES, rejectionStatusFor } from "@/lib/reject-reasons";
 
 export async function POST(req: NextRequest) {
   // Most actions are agent-safe (scoped to leads they own). Reassign is the
@@ -158,7 +151,7 @@ export async function POST(req: NextRequest) {
     // single-lead reject endpoint. Agents can reject their own leads.
     const reason = String(body.reason ?? "").toUpperCase();
     const note = String(body.note ?? "").trim();
-    if (!REJECT_REASONS.has(reason)) {
+    if (!REJECT_REASON_VALUES.has(reason)) {
       return NextResponse.json({ error: "Invalid reason" }, { status: 400 });
     }
     const rows = await prisma.lead.findMany({
@@ -170,6 +163,9 @@ export async function POST(req: NextRequest) {
     const r = await prisma.lead.updateMany({
       where: { id: { in: visibleIds } },
       data: {
+        // Mirror the single-lead reject: the reason's classification status is
+        // applied here too, so bulk-rejected leads aren't left on a stale status.
+        currentStatus: rejectionStatusFor(reason),
         rejectionReason: reason,
         rejectionNote: note || null,
         rejectedAt: now,

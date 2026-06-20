@@ -2,6 +2,8 @@
 import Link from "next/link";
 import { useState, useMemo, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
+import { PROPERTY_TYPES } from "@/lib/propertyType";
+import { statusesForTeam } from "@/lib/lead-statuses";
 
 export type MDRow = {
   id: string;
@@ -34,7 +36,6 @@ export type MDRow = {
 interface Props {
   rows: MDRow[];
   agents: { id: string; name: string }[];
-  statuses: string[];
   isSuperAdmin: boolean;
   viewerId: string;        // per-admin localStorage scope
 }
@@ -95,6 +96,16 @@ function valueOf(r: MDRow, c: ColKey): string {
   }
 }
 
+// Team-specific status options for a Master Data row's inline menu. NEVER a
+// combined India+Dubai list (owner rule). A teamless lead prompts for a team
+// first; the lead's CURRENT status is always kept so it can't be lost.
+function statusMenuOptions(team: string, current: string | null): { value: string; label: string }[] {
+  if (team !== "Dubai" && team !== "India") return [{ value: "", label: "⚠ Set the lead's team first" }];
+  const opts = [...statusesForTeam(team)];
+  if (current && !opts.includes(current)) opts.unshift(current);
+  return opts.map((s) => ({ value: s, label: s }));
+}
+
 const todayIST = () => new Date().toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short", year: "numeric" });
 
 // Unassigned age badge (Orange ≥15m · Red ≥30m · Critical ≥60m). Computed
@@ -127,7 +138,7 @@ type SavedView = { name: string; filters: Record<string, string[]>; sort: { col:
 const serFilters = (f: Record<string, Set<string>>) => Object.fromEntries(Object.entries(f).filter(([, s]) => s.size).map(([k, s]) => [k, [...s]]));
 const deserFilters = (o: Record<string, string[]>) => Object.fromEntries(Object.entries(o || {}).map(([k, a]) => [k, new Set(a)]));
 
-export default function MasterDataRecordsTable({ rows, agents, statuses, isSuperAdmin, viewerId }: Props) {
+export default function MasterDataRecordsTable({ rows, agents, isSuperAdmin, viewerId }: Props) {
   const router = useRouter();
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
@@ -273,6 +284,14 @@ export default function MasterDataRecordsTable({ rows, agents, statuses, isSuper
   const fClass = (key: ColKey, sel: boolean) =>
     frozen && FROZEN_LEFT[key] != null ? (sel ? "bg-amber-50 dark:bg-slate-800" : "bg-white dark:bg-slate-900") : "";
 
+  // Bulk "Set status" must use ONE team's status master — never a combined
+  // India+Dubai list (owner rule). When the selection spans teams (or includes a
+  // teamless lead), the status picker is disabled until it's narrowed to one team.
+  const selectedTeams = new Set<string>();
+  for (const r of rows) if (selected.has(r.id)) selectedTeams.add(r.team);
+  const bulkOneTeam = selectedTeams.size === 1 ? [...selectedTeams][0] : "";
+  const bulkStatusOptions = bulkOneTeam === "Dubai" || bulkOneTeam === "India" ? [...statusesForTeam(bulkOneTeam)] : [];
+
   return (
     <div className="space-y-2">
       {/* ── Saved Views + Columns + Freeze toolbar ─────────────────────────── */}
@@ -324,7 +343,7 @@ export default function MasterDataRecordsTable({ rows, agents, statuses, isSuper
             <button disabled={busy || !teamTo} onClick={() => runBulk("change_team", { team: teamTo })} className={`${btn} bg-teal-50 text-teal-800 border-teal-300`}>Change team</button>
           </span>
           <span className="inline-flex items-center gap-1">
-            <select value={statusTo} onChange={(e) => setStatusTo(e.target.value)} className="text-xs border rounded-lg px-2 py-1.5 dark:bg-slate-800 dark:border-slate-600"><option value="">Status…</option>{statuses.map((s) => <option key={s} value={s}>{s}</option>)}</select>
+            <select value={statusTo} onChange={(e) => setStatusTo(e.target.value)} disabled={bulkStatusOptions.length === 0} className="text-xs border rounded-lg px-2 py-1.5 dark:bg-slate-800 dark:border-slate-600 disabled:opacity-50" title={bulkStatusOptions.length === 0 ? "Select leads from a single team to set status" : undefined}><option value="">{bulkStatusOptions.length ? `Status… (${bulkOneTeam})` : "Status… (one team only)"}</option>{bulkStatusOptions.map((s) => <option key={s} value={s}>{s}</option>)}</select>
             <button disabled={busy || !statusTo} onClick={() => runBulk("set_status", { status: statusTo })} className={`${btn} bg-violet-50 text-violet-800 border-violet-300`}>Set</button>
           </span>
           <button disabled={busy} onClick={() => runBulk("move_to_revival")} className={`${btn} bg-sky-50 text-sky-800 border-sky-300`}>→ Revival</button>
@@ -444,6 +463,20 @@ export default function MasterDataRecordsTable({ rows, agents, statuses, isSuper
                             : <button onClick={() => openTextEdit(l.id, "project", l.project)} className="text-gray-600 dark:text-slate-400 hover:underline truncate block max-w-[150px]" title={l.project}>{l.project}</button>}
                         </td>
                       );
+                    case "propertyType":
+                      // Editable dropdown — Residential / Commercial / Mixed Use ONLY.
+                      // (Was previously MISSING, which shifted every later column left
+                      // so Source values appeared under the Property Type header.)
+                      return (
+                        <td key={c.key} className="px-3 py-2 relative whitespace-nowrap" onClick={stop}>
+                          <button onClick={() => openMenu(l.id, "propertyType")} className="text-gray-700 dark:text-slate-300 hover:underline" title="Click to set property type">
+                            {l.propertyType || <span className="text-gray-300 dark:text-slate-600">—</span>}
+                          </button>
+                          {editing(l.id, "propertyType") && (
+                            <Menu busy={busy} options={[{ value: "", label: "— clear —" }, ...PROPERTY_TYPES.map((p) => ({ value: p, label: p }))]} onPick={(v) => saveText(l.id, "propertyType", v)} />
+                          )}
+                        </td>
+                      );
                     case "source":
                       return (
                         <td key={c.key} className="px-3 py-2 relative whitespace-nowrap" onClick={stop}>
@@ -466,7 +499,7 @@ export default function MasterDataRecordsTable({ rows, agents, statuses, isSuper
                           <button onClick={() => openMenu(l.id, "status")} title="Click to change status">
                             {l.statusLabel ? <span className={`text-xs px-2 py-0.5 rounded-full ${l.statusClass}`}>{l.statusLabel}</span> : <span className="text-xs text-gray-400 italic">— set —</span>}
                           </button>
-                          {editing(l.id, "status") && <Menu busy={busy} options={statuses.map((s) => ({ value: s, label: s }))} onPick={(v) => bulk([l.id], "set_status", { status: v })} />}
+                          {editing(l.id, "status") && <Menu busy={busy} options={statusMenuOptions(l.team, l.statusLabel)} onPick={(v) => v && bulk([l.id], "set_status", { status: v })} />}
                         </td>
                       );
                     case "bucket":

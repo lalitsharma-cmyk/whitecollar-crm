@@ -7,7 +7,7 @@ import { prisma } from "@/lib/prisma";
 import { resolveTeam, routingFieldsFor } from "@/lib/teamRouting";
 import { interpretBudget, resolveBudgetCurrency } from "@/lib/budgetCurrency";
 import { inferCountryFromCity } from "@/lib/cityCountry";
-import { canonicalStatus } from "@/lib/lead-statuses";
+import { canonicalStatus, isStatusValidForTeam, NEEDS_REVIEW } from "@/lib/lead-statuses";
 import { mergeRawRemark } from "@/lib/rawRemarks";
 import { detectConversationKeyFromRows } from "@/lib/conversationColumn";
 import { validEmail, validBudgetRaw, looksLikeStatus, validPhone, looksLikeDate } from "@/lib/importValidate";
@@ -290,6 +290,15 @@ export async function POST(req: NextRequest) {
           update.routingMethod = rf.routingMethod;
           update.routingSource = rf.routingSource;
           update.routingReason = rf.routingReason;
+        }
+        // Import status validation (Issue 2, rule 5): a status that doesn't belong
+        // to THIS lead's team master is flagged "Needs Review", never mixed in.
+        if (typeof update.currentStatus === "string" && update.currentStatus) {
+          const teamForStatus = (update.forwardedTeam as string | undefined) ?? null;
+          if (!isStatusValidForTeam(update.currentStatus, teamForStatus)) {
+            update.originalSheetStatus = (update.originalSheetStatus as string | undefined) ?? update.currentStatus;
+            update.currentStatus = NEEDS_REVIEW;
+          }
         }
       }
       // Budget: verbatim raw + market-resolved currency (priority order; UNKNOWN

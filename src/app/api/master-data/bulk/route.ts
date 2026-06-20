@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
 import { audit, reqMeta } from "@/lib/audit";
+import { isStatusValidForTeam, NEEDS_REVIEW, statusesForTeam } from "@/lib/lead-statuses";
 
 // =====================================================================
 // MASTER DATA — bulk actions (ADMIN only). Master Data is the complete
@@ -69,14 +70,19 @@ export async function POST(req: NextRequest) {
   if (action === "set_status") {
     const status = String(body.status ?? "").trim();
     if (!status) return NextResponse.json({ error: "status required" }, { status: 400 });
-    const before = await prisma.lead.findMany({ where: { id: { in: ids } }, select: { id: true, currentStatus: true } });
-    const changed = before.filter((b) => b.currentStatus !== status);
+    const before = await prisma.lead.findMany({ where: { id: { in: ids } }, select: { id: true, currentStatus: true, forwardedTeam: true } });
+    // Team-strict: only apply to leads whose TEAM master includes this status —
+    // never force a Dubai status onto a Gurgaon lead (or vice-versa). The sentinel
+    // "Needs Review" is allowed for any team. Ineligible leads are skipped + counted.
+    const eligible = before.filter((b) => status === NEEDS_REVIEW || (statusesForTeam(b.forwardedTeam) as readonly string[]).includes(status));
+    const skipped = before.length - eligible.length;
+    const changed = eligible.filter((b) => b.currentStatus !== status);
     if (changed.length) {
       await prisma.lead.updateMany({ where: { id: { in: changed.map((c) => c.id) } }, data: { currentStatus: status, lastTouchedAt: new Date() } });
       writeHistory(changed.map((c) => ({ leadId: c.id, field: "currentStatus", oldValue: c.currentStatus, newValue: status, changedById: me.id, source: "master-data-bulk" })));
     }
-    await audit({ userId: me.id, action: "masterdata.bulk.status", entity: "Lead", meta: { status, updated: changed.length, leadIds: ids.slice(0, 50) }, request: reqMeta(req) });
-    return NextResponse.json({ ok: true, updated: changed.length });
+    await audit({ userId: me.id, action: "masterdata.bulk.status", entity: "Lead", meta: { status, updated: changed.length, skipped, leadIds: ids.slice(0, 50) }, request: reqMeta(req) });
+    return NextResponse.json({ ok: true, updated: changed.length, skipped });
   }
 
   // ── Change team (Dubai / India) ──────────────────────────────────────
@@ -85,14 +91,24 @@ export async function POST(req: NextRequest) {
     if (team !== "Dubai" && team !== "India") {
       return NextResponse.json({ error: "team must be Dubai or India" }, { status: 400 });
     }
-    const before = await prisma.lead.findMany({ where: { id: { in: ids } }, select: { id: true, forwardedTeam: true } });
+    const before = await prisma.lead.findMany({ where: { id: { in: ids } }, select: { id: true, forwardedTeam: true, currentStatus: true } });
     const changed = before.filter((b) => b.forwardedTeam !== team);
+    let flagged = 0;
     if (changed.length) {
       await prisma.lead.updateMany({ where: { id: { in: changed.map((c) => c.id) } }, data: { forwardedTeam: team } });
       writeHistory(changed.map((c) => ({ leadId: c.id, field: "forwardedTeam", oldValue: c.forwardedTeam, newValue: team, changedById: me.id, source: "master-data-bulk" })));
+      // Revalidate status against the NEW team's master. A status that doesn't
+      // exist for the new team becomes "Needs Review" (old value kept in history)
+      // — never silently forced onto a wrong-team status.
+      const toFlag = changed.filter((c) => !isStatusValidForTeam(c.currentStatus, team));
+      if (toFlag.length) {
+        await prisma.lead.updateMany({ where: { id: { in: toFlag.map((c) => c.id) } }, data: { currentStatus: NEEDS_REVIEW } });
+        writeHistory(toFlag.map((c) => ({ leadId: c.id, field: "currentStatus", oldValue: c.currentStatus, newValue: NEEDS_REVIEW, changedById: me.id, source: "team-change-revalidate" })));
+        flagged = toFlag.length;
+      }
     }
-    await audit({ userId: me.id, action: "masterdata.bulk.team", entity: "Lead", meta: { team, updated: changed.length, leadIds: ids.slice(0, 50) }, request: reqMeta(req) });
-    return NextResponse.json({ ok: true, updated: changed.length });
+    await audit({ userId: me.id, action: "masterdata.bulk.team", entity: "Lead", meta: { team, updated: changed.length, flaggedNeedsReview: flagged, leadIds: ids.slice(0, 50) }, request: reqMeta(req) });
+    return NextResponse.json({ ok: true, updated: changed.length, flaggedNeedsReview: flagged });
   }
 
   // ── Soft delete (recoverable) — Super Admin only ─────────────────────

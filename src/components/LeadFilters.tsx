@@ -1,7 +1,7 @@
 "use client";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { useState, useEffect } from "react";
-import { EXCEL_STATUSES } from "@/lib/lead-statuses";
+import { statusesForTeam } from "@/lib/lead-statuses";
 import { parseBudget, formatBudget } from "@/lib/budgetParse";
 
 // ─── Label maps ────────────────────────────────────────────────────────────────
@@ -348,7 +348,12 @@ export default function LeadFilters({
 
   const sourceOpts  = sources.map(s => ({ value: s, label: SRC_LABELS[s] ?? s }));
   const projectOpts = projects.map(p => ({ value: p.name, label: p.name }));
-  const statusOpts  = EXCEL_STATUSES.map(s => ({ value: s, label: s }));
+  // Status options FOLLOW the Forwarded-Team filter — Gurgaon (India) and Dubai
+  // statuses are never merged into one list. With no team chosen, the status
+  // filter stays empty (a hint points the user to pick a team first).
+  const statusOpts  = (draftTeam === "Dubai" || draftTeam === "India")
+    ? statusesForTeam(draftTeam).map(s => ({ value: s, label: s }))
+    : [];
   const agentOpts   = [
     { value: "unassigned", label: "⚠ Unassigned" },
     ...agents.map(a => ({ value: a.id, label: a.name })),
@@ -428,8 +433,10 @@ export default function LeadFilters({
                 <CheckList label="🏢 Project" options={projectOpts} selected={projectSel} onChange={setProjectSel} />
               )}
 
-              {/* 2. Status */}
-              <CheckList label="📋 Status" options={statusOpts} selected={cstatusSel} onChange={setCstatusSel} />
+              {/* 2. Status — options follow the Forwarded-Team filter (never merged) */}
+              {statusOpts.length > 0
+                ? <CheckList label="📋 Status" options={statusOpts} selected={cstatusSel} onChange={setCstatusSel} />
+                : <div className="text-[11px] text-gray-400 dark:text-slate-500 italic px-0.5">📋 Status — pick a <b>Forwarded Team</b> below first (Gurgaon &amp; Dubai statuses stay separate).</div>}
 
               {/* 3. Budget */}
               <BudgetRange rawFrom={budgetFrom} rawTo={budgetTo} onFromChange={setBudgetFrom} onToChange={setBudgetTo} />

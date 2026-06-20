@@ -16,7 +16,7 @@ function WaIcon() {
 }
 import { telLink, whatsappLink } from "@/lib/phone";
 import CopyPhoneButton from "./CopyPhoneButton";
-import { statusColor, EXCEL_STATUSES, selectableStatuses } from "@/lib/lead-statuses";
+import { statusColor, selectableStatuses } from "@/lib/lead-statuses";
 import { resolveProjectDisplay, prettyProjectName } from "@/lib/projectName";
 
 // Preset tag vocab — mirrors what Lalit asked the team to standardise on
@@ -173,9 +173,6 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
   // Delete Lead (Super-Admin / Lalit only) — a separate action from Reject.
   const [delLeadTarget, setDelLeadTarget] = useState<{ id: string; name: string } | null>(null);
   const [delLeadBusy, setDelLeadBusy] = useState(false);
-
-  // Excel/MIS status values — imported from canonical source
-  const EXCEL_LEAD_STATUSES = EXCEL_STATUSES as unknown as string[];
 
   // Excel-style header-filter option lists (shared by the table headers + the
   // card-view filter toolbar).

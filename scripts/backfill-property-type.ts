@@ -10,7 +10,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { PrismaClient } from "@prisma/client";
-import { inferPropertyType } from "../src/lib/propertyType";
+import { inferPropertyType, type PropertyType } from "../src/lib/propertyType";
 
 const APPLY = process.argv.includes("--apply");
 const env = readFileSync(new URL("../.env", import.meta.url), "utf8");
@@ -31,7 +31,7 @@ async function main() {
     select: { id: true, name: true, propertyType: true, configuration: true, sourceDetail: true, notesShort: true },
   });
 
-  const toSet: { id: string; name: string; type: "Residential" | "Commercial"; via: string }[] = [];
+  const toSet: { id: string; name: string; type: PropertyType; via: string }[] = [];
   for (const l of leads) {
     if (l.propertyType) continue; // never overwrite an existing value
     const projName = l.sourceDetail ?? null;
@@ -56,7 +56,7 @@ async function main() {
     writeFileSync(new URL("../backups/propertyType-backfill.json", import.meta.url), JSON.stringify(toSet, null, 2));
     console.log(`\n🔒 Saved set-list → backups/propertyType-backfill.json`);
     // Group by type for two bulk updates (fast).
-    for (const type of ["Residential", "Commercial"] as const) {
+    for (const type of ["Residential", "Commercial", "Mixed Use"] as const) {
       const ids = toSet.filter((x) => x.type === type).map((x) => x.id);
       if (ids.length) await prisma.lead.updateMany({ where: { id: { in: ids } }, data: { propertyType: type } });
     }

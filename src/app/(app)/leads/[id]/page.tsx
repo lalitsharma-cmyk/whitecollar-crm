@@ -737,6 +737,7 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
             options={[
               {value:"Residential",label:"Residential"},
               {value:"Commercial",label:"Commercial"},
+              {value:"Mixed Use",label:"Mixed Use"},
             ]}
             placeholder="Add value" />
         </div>

@@ -9,9 +9,13 @@ export const REJECT_REASONS: Array<{ value: string; label: string }> = [
   { value: "WAR_FEAR",                  label: "War Fear" },
   { value: "FUND_ISSUE",                label: "Funds Issue" },
   { value: "NOT_ABLE_TO_BUY",           label: "Not Able To Buy" },
-  { value: "BROKER",                    label: "Broker" },
+  { value: "BROKER",                    label: "Broker / Channel Partner" },
   { value: "VISITED_WITH_OTHER_BROKER", label: "Visited With Other Broker" },
-  { value: "BOOKED_WITH_US",            label: "Booked With Us" },
+  // "Booked With Us" REMOVED — booking WITH us is a win, not a rejection (it also
+  // wrongly inflated commission/won counts). A client who closed ELSEWHERE is a
+  // real, non-junk outcome captured by these two reasons instead:
+  { value: "PURCHASED_ELSEWHERE",       label: "Purchased Elsewhere" },
+  { value: "BOOKED_OTHER_CHANNEL",      label: "Booked Through Another Channel" },
   { value: "SELL_OUT",                  label: "Sell Out" },
   { value: "LEASING",                   label: "Leasing" },
   { value: "RENT_OUT",                  label: "Rent Out" },
@@ -26,6 +30,8 @@ export const REJECT_REASONS: Array<{ value: string; label: string }> = [
   { value: "INVALID_NUMBER",            label: "Invalid Number" },
   { value: "NEVER_RESPOND_PHONE_CALLS", label: "Never Respond Phone Calls" },
   { value: "PASS_AWAY",                 label: "Pass Away" },
+  { value: "JUNK",                      label: "Junk Lead" },
+  { value: "FAKE_INQUIRY",              label: "Fake Inquiry" },
   { value: "OTHER",                     label: "Other" },
 ];
 
@@ -33,8 +39,12 @@ export const REJECT_REASONS: Array<{ value: string; label: string }> = [
 export const REJECT_REASON_LABEL: Record<string, string> =
   Object.fromEntries(REJECT_REASONS.map(r => [r.value, r.label]));
 
-// Legacy reason values kept valid so old rejected records still resolve.
+// Legacy reason values kept valid so old rejected records still resolve their
+// human label (e.g. the Rejected-Leads admin view). BOOKED_WITH_US is here — it
+// is no longer offered in any dropdown, but historical records keep resolving
+// until the one-time backfill remaps them to the two new reasons.
 const LEGACY_REASONS: Record<string, string> = {
+  BOOKED_WITH_US: "Booked With Us",
   BY_MISTAKE_INQUIRY: "By Mistake Inquiry",
   LEASING_REQUIREMENT: "Leasing",
   COMMERCIAL_REQUIREMENT: "Commercial Investment",
@@ -57,11 +67,24 @@ export function rejectReasonLabel(value: string): string {
   return REJECT_REASON_LABEL[value] ?? LEGACY_REASONS[value] ?? value.replace(/_/g, " ");
 }
 
+// Reasons whose human label is NOT itself a CRM status (or where the status must
+// differ from the label) map explicitly here. Everything else uses its label,
+// which IS a real status. This keeps "Junk Lead" → the canonical "Junk" status,
+// and ensures the new closed-elsewhere reasons land on their own outcome status
+// (never on the winning "Booked With Us").
+const REASON_STATUS: Record<string, string> = {
+  BROKER:               "Broker",                          // label relabeled to "Broker / Channel Partner"
+  JUNK:                 "Junk",
+  FAKE_INQUIRY:         "Junk",
+  PURCHASED_ELSEWHERE:  "Purchased Elsewhere",
+  BOOKED_OTHER_CHANNEL: "Booked Through Another Channel",
+  // Legacy reject → closed-elsewhere outcome (NEVER the winning "Booked With Us").
+  BOOKED_WITH_US:       "Purchased Elsewhere",
+};
+
 /** The CRM status a rejection should move the lead to, given a reason value.
- *  Most reasons map 1:1 to a classification status; the rest fall back to a
- *  sensible closed status so the lead leaves the active workflow. */
+ *  Most reasons map 1:1 to a classification status (their label IS the status);
+ *  the exceptions are listed in REASON_STATUS above. */
 export function rejectionStatusFor(value: string): string {
-  const label = rejectReasonLabel(value);
-  // These reason labels are real CRM statuses — use them directly.
-  return label;
+  return REASON_STATUS[value] ?? rejectReasonLabel(value);
 }

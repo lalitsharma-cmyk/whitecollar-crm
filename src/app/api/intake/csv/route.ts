@@ -18,7 +18,7 @@ import { resolveTeam, routingFieldsFor } from "@/lib/teamRouting";
 import { interpretBudget, resolveBudgetCurrency } from "@/lib/budgetCurrency";
 import { inferCountryFromCity } from "@/lib/cityCountry";
 import { detectConversationColumn } from "@/lib/conversationColumn";
-import { canonicalStatus } from "@/lib/lead-statuses";
+import { canonicalStatus, isStatusValidForTeam, NEEDS_REVIEW } from "@/lib/lead-statuses";
 import { audit, reqMeta } from "@/lib/audit";
 // runIntelligenceCheck is called inside ingestLead() for every new (non-deduped)
 // lead. No explicit call needed here — the check fires sequentially, one per row,
@@ -749,6 +749,16 @@ export async function POST(req: NextRequest) {
           update.routingReason = rf.routingReason;
           // Currency follows team automatically (AED for Dubai, INR for India)
           if (!update.budgetCurrency) update.budgetCurrency = teamResult.team === "Dubai" ? "AED" : "INR";
+        }
+        // Import status validation (Issue 2, rule 5): the sheet's status must
+        // belong to THIS lead's team master. A Dubai status on a Gurgaon lead (or
+        // vice-versa) is flagged "Needs Review" rather than silently mixed in.
+        if (typeof update.currentStatus === "string" && update.currentStatus) {
+          const teamForStatus = (update.forwardedTeam as string | undefined) ?? null;
+          if (!isStatusValidForTeam(update.currentStatus, teamForStatus)) {
+            update.originalSheetStatus = update.originalSheetStatus ?? update.currentStatus;
+            update.currentStatus = NEEDS_REVIEW;
+          }
         }
       }
       // AI score from the MIS "Categorization" / "Status" column — sheet writes win
