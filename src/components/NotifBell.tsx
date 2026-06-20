@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Bell, Volume2, VolumeX } from "lucide-react";
-import { playNotifSound, isNotifSoundEnabled, setNotifSoundEnabled, type NotifSeverity } from "@/lib/notifSounds";
+import { playNotifSound, playReminderSound, isNotifSoundEnabled, setNotifSoundEnabled, type NotifSeverity } from "@/lib/notifSounds";
 
 type Notif = {
   id: string;
@@ -60,11 +60,17 @@ export default function NotifBell() {
         if (newUnread.length > 0) {
           // A new LEAD arriving is the one alert that must be impossible to miss:
           // always play the urgent (double-ring, boosted-volume) alert for it,
-          // regardless of the stored severity. Other notifications use their own.
+          // regardless of the stored severity. Meeting / Site Visit reminders get
+          // their OWN distinct tones (≠ New Lead). Other notifications use severity.
           const isLead = newUnread.some((n) => n.kind === "LEAD_ASSIGNED" || /new lead|lead assigned|website lead|new website/i.test(n.title));
+          const isSiteVisit = newUnread.some((n) => /site visit reminder/i.test(n.title));
+          const isMeeting = newUnread.some((n) => /meeting reminder/i.test(n.title));
           const order: Record<string, number> = { INFO: 0, WARNING: 1, CRITICAL: 2 };
           const top = newUnread.reduce<NotifSeverity>((a, n) => (order[n.severity] > order[a] ? n.severity : a), "INFO");
-          playNotifSound(isLead ? "CRITICAL" : top);
+          if (isLead) playNotifSound("CRITICAL");
+          else if (isSiteVisit) playReminderSound("site_visit");
+          else if (isMeeting) playReminderSound("meeting");
+          else playNotifSound(top);
         }
         for (const n of incoming) seenIds.current.add(n.id);
       }

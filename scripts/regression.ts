@@ -520,6 +520,27 @@ const checks: Check[] = [
   },
 
   // ───────────────────────────────────────────────────────────────────────────
+  // 3e-oct. MEETING / SITE-VISIT 1-HOUR REMINDER (2026-06-21) — agent + manager,
+  //     distinct sounds, re-arm on reschedule.
+  // ───────────────────────────────────────────────────────────────────────────
+  {
+    name: "meeting-reminder-1h — agent+manager, distinct titles/sounds, reschedule re-arm",
+    run: async () => {
+      const fs = await import("node:fs");
+      const cron = fs.readFileSync("src/app/api/cron/pre-meeting-reminder/route.ts", "utf8");
+      assert(/reminderSentAt1h/.test(cron) && /57\.5/.test(cron), "1-hour reminder window + dedupe flag must exist");
+      assert(/isSuperAdmin: true/.test(cron) && /manager/.test(cron), "manager (Lalit) must also be notified");
+      assert(/Site Visit Reminder/.test(cron) && /Meeting Reminder/.test(cron), "distinct reminder titles drive distinct sounds");
+      const meeting = fs.readFileSync("src/app/api/leads/[id]/meeting/route.ts", "utf8");
+      assert(/reminderSentAt1h: null/.test(meeting), "reschedule must re-arm the 1-hour reminder");
+      const sounds = fs.readFileSync("src/lib/notifSounds.ts", "utf8");
+      assert(/playReminderSound/.test(sounds), "distinct reminder-sound helper must exist");
+      const bell = fs.readFileSync("src/components/NotifBell.tsx", "utf8");
+      assert(/playReminderSound/.test(bell) && /site visit reminder/i.test(bell), "NotifBell must play distinct sound for reminders");
+    },
+  },
+
+  // ───────────────────────────────────────────────────────────────────────────
   // 3f. WEBSITE MESSAGE → CONVERSATION (2026-06-20) — a genuine form message
   //     becomes a dated (IST) conversation entry; the source/campaign name never
   //     does; an empty message creates nothing.

@@ -909,6 +909,8 @@ model Activity {
   locationTrack      String?
   /// When the 30-min-before pre-meeting reminder fired (dedupe for the 5-min cron)
   reminderSentAt     DateTime?
+  /// When the 1-HOUR-before reminder fired (agent + manager) — separate dedupe flag
+  reminderSentAt1h   DateTime?
   // ── Expo meeting fields (Dubai team — meets prospects at developer expos in IN cities) ──
   expoCity            String?    // "Gurgaon", "Delhi", "Mumbai", "Bangalore"
   expoHotel           String?    // venue name

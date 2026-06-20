@@ -193,3 +193,16 @@ export function playLeadAlert() {
   if (!isNotifSoundEnabled()) return;
   playNotifSound("CRITICAL");
 }
+
+/**
+ * Distinct reminder alerts for scheduled events (Lalit, 2026-06-21). Each uses a
+ * FIXED tone so it's audibly DIFFERENT from the New Lead alert (which plays the
+ * user's chosen sound) — meeting and site-visit also differ from each other.
+ * Respects mute + the user's volume.
+ *   meeting    → "chime"
+ *   site_visit → "siren"
+ */
+export function playReminderSound(kind: "meeting" | "site_visit") {
+  if (!isNotifSoundEnabled()) return;
+  playSound(kind === "site_visit" ? "siren" : "chime", getChosenVolume());
+}

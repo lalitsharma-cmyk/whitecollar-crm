@@ -88,6 +88,68 @@ export async function GET(req: NextRequest) {
     meetingsNotified++;
   }
 
+  // ── 1b) Meetings / site visits in ~1 HOUR — remind AGENT + MANAGER (Lalit) ──
+  // Separate dedupe flag (reminderSentAt1h) from the 30-min alert. Distinct title
+  // ("Meeting Reminder" / "Site Visit Reminder") drives a distinct in-app sound.
+  const hourFrom = new Date(now.getTime() + 57.5 * MIN);
+  const hourTo = new Date(now.getTime() + 62.5 * MIN);
+  // "For now, treat Lalit as the Manager" — the super-admin / escalation point.
+  const manager = await prisma.user.findFirst({ where: { isSuperAdmin: true, active: true }, select: { id: true } });
+  let hourNotified = 0;
+
+  const upcomingHour = await prisma.activity.findMany({
+    where: {
+      type: { in: ["SITE_VISIT", "OFFICE_MEETING", "VIRTUAL_MEETING", "EXPO_MEETING", "HOME_VISIT"] },
+      status: ActivityStatus.PLANNED,
+      scheduledAt: { gte: hourFrom, lte: hourTo },
+      reminderSentAt1h: null,
+    },
+    include: {
+      lead: { select: { id: true, name: true, phone: true, deletedAt: true, currentStatus: true } },
+      user: { select: { id: true, name: true } },
+    },
+    take: 50,
+  });
+
+  for (const m of upcomingHour) {
+    if (!m.userId || !m.scheduledAt) continue;
+    // Remove-on-cancel guard: if the lead was deleted or went terminal since the
+    // meeting was set, mark done (so we stop checking) and send nothing.
+    if (m.lead?.deletedAt || (m.lead?.currentStatus && SUPPRESSED_STATUSES.includes(m.lead.currentStatus))) {
+      await prisma.activity.update({ where: { id: m.id }, data: { reminderSentAt1h: now } });
+      continue;
+    }
+    const isVisit = m.type === "SITE_VISIT" || m.type === "HOME_VISIT";
+    const kind = isVisit ? "Site Visit Reminder" : "Meeting Reminder";
+    const icon = isVisit ? "🚗" : "🏢";
+    const when = fmtISTTime12(m.scheduledAt);
+    const client = m.lead?.name ?? "client";
+    // Agent.
+    await notify({
+      userId: m.userId,
+      kind: "REMINDER",
+      severity: "WARNING",
+      title: `${icon} ${kind}`,
+      body: `Your ${isVisit ? "site visit" : "meeting"} with ${client} is at ${when} IST — in 1 hour.${m.lead?.phone ? ` ${m.lead.phone}` : ""}`,
+      linkUrl: m.lead ? `/leads/${m.lead.id}` : "/activities",
+      leadId: m.leadId,
+    });
+    // Manager (Lalit) — skip if the agent IS the manager.
+    if (manager && manager.id !== m.userId) {
+      await notify({
+        userId: manager.id,
+        kind: "REMINDER",
+        severity: "WARNING",
+        title: `${icon} ${kind} — ${m.user?.name ?? "agent"}`,
+        body: `${m.user?.name ?? "An agent"} has a ${isVisit ? "site visit" : "meeting"} with ${client} at ${when} IST — in 1 hour.`,
+        linkUrl: m.lead ? `/leads/${m.lead.id}` : "/activities",
+        leadId: m.leadId,
+      });
+    }
+    await prisma.activity.update({ where: { id: m.id }, data: { reminderSentAt1h: now } });
+    hourNotified++;
+  }
+
   // ── 2) Lead callbacks in ~10 min ───────────────────────────────
   // "Client asked agent to call at 3pm" → reminder at 2:50pm.
   const upcomingCallbacks = await prisma.lead.findMany({
@@ -120,11 +182,12 @@ export async function GET(req: NextRequest) {
     callbacksNotified++;
   }
 
-  await finishCronRun(runId, "OK", undefined, { meetingsNotified, callbacksNotified });
+  await finishCronRun(runId, "OK", undefined, { meetingsNotified, hourNotified, callbacksNotified });
   return NextResponse.json({
     ok: true,
     now: now.toISOString(),
     meetingsNotified,
+    hourNotified,
     callbacksNotified,
     window: {
       meeting: { from: meetingFrom.toISOString(), to: meetingTo.toISOString() },
