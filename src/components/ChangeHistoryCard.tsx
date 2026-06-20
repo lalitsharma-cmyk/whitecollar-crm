@@ -32,7 +32,7 @@ export default function ChangeHistoryCard({
   const showVal = (field: string, v: string | null) => {
     if (v == null || v === "") return "—";
     if (field === "ownerId") return ownerNames?.[v] ?? "Unassigned";
-    if (field === "followupDate") { const d = new Date(v); if (!isNaN(d.getTime())) return d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }); }
+    if (field === "followupDate") { const d = new Date(v); if (!isNaN(d.getTime())) return d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" }); }
     return v.length > 44 ? v.slice(0, 44) + "…" : v;
   };
   return (

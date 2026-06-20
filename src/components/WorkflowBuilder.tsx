@@ -17,6 +17,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Plus, Trash2, Save, X, Pause, Play, Sparkles } from "lucide-react";
 import { WORKFLOW_TEMPLATES, type WorkflowTemplate } from "@/lib/workflowTemplates";
+import { fmtIST } from "@/lib/datetime";
 
 // ── Types mirrored from prisma enums (kept manual to stay a client comp) ──
 type TriggerType =
@@ -758,7 +759,7 @@ export default function WorkflowBuilderPanel({ workflows, templates }: PanelProp
               <div className="flex items-center justify-between gap-2 flex-wrap">
                 <div className="text-[10px] text-gray-400">
                   {wf.lastRunAt
-                    ? `Last run: ${wf.lastRunAt.toLocaleString()}`
+                    ? `Last run: ${fmtIST(wf.lastRunAt)}`
                     : "Never run yet"}
                 </div>
                 <div className="flex items-center gap-2">

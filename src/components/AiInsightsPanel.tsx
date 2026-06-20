@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback } from "react";
+import { fmtIST } from "@/lib/datetime";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types mirroring the JSON schema in ai-openai.ts
@@ -483,7 +484,7 @@ export default function AiInsightsPanel({
         <div className="space-y-2">
           {/* Meta info */}
           <div className="text-[10px] text-gray-400 dark:text-slate-500">
-            Analyzed {new Date(analysis.createdAt).toLocaleString("en-IN")} · {analysis.model} · {analysis.inputTokens + analysis.outputTokens} tokens · ~${((analysis.costMicroUsd) / 1_000_000).toFixed(4)} USD
+            Analyzed {fmtIST(analysis.createdAt)} · {analysis.model} · {analysis.inputTokens + analysis.outputTokens} tokens · ~${((analysis.costMicroUsd) / 1_000_000).toFixed(4)} USD
           </div>
 
           {/* 1. AI Lead Summary */}

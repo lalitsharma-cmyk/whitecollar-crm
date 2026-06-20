@@ -7,6 +7,7 @@ import { ACTIVE_ORIGINS } from "@/lib/leadScope";
 import { waDraftLink } from "@/lib/wa";
 import Link from "next/link";
 import ActionCardClient from "@/components/ActionCardClient";
+import { lastMeaningfulRemark } from "@/lib/needSnapshot";
 
 export const dynamic = "force-dynamic";
 
@@ -74,12 +75,11 @@ function aiNextStep(card: CardData): { step: string; why: string } {
   };
   if (status === "CONTACTED") {
     // Use last remark for context if available
-    const remarkHint = remarks
-      ? remarks.trim().slice(-120).replace(/\s+/g, " ") // last ~120 chars of remarks
-      : null;
+    // Clean, substantive last line — not a raw slice of the conversation blob.
+    const remarkHint = lastMeaningfulRemark(remarks);
     return {
       step: todoNext ?? (remarkHint
-        ? `Re-engage based on last conversation: "${remarkHint.slice(0, 80)}..."${ctx}`
+        ? `Re-engage based on last conversation: "${remarkHint}"${ctx}`
         : `Call and re-engage with project-specific info${ctx}.`),
       why: "Contacted but no progress — a personal follow-up helps break the silence.",
     };
@@ -302,10 +302,10 @@ export default async function ActionListPage() {
                       </div>
                     </div>
 
-                    {card.remarks && (
+                    {lastMeaningfulRemark(card.remarks) && (
                       <div className="mt-3 text-xs">
                         <div className="font-bold text-gray-600 dark:text-slate-300 mb-1">LATEST REMARK</div>
-                        <div className="text-gray-700 dark:text-slate-300 whitespace-pre-wrap line-clamp-2">{card.remarks}</div>
+                        <div className="text-gray-700 dark:text-slate-300 line-clamp-2">{lastMeaningfulRemark(card.remarks)}</div>
                       </div>
                     )}
 

@@ -12,6 +12,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { formatDistanceToNow } from "date-fns";
+import { fmtIST } from "@/lib/datetime";
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/auth";
 
@@ -209,7 +210,7 @@ export default async function WorkflowRunsPage({
                   <tr key={r.id} className="border-t border-gray-100 dark:border-gray-700">
                     <td className="px-3 py-2 whitespace-nowrap">
                       <div>{formatDistanceToNow(when, { addSuffix: true })}</div>
-                      <div className="text-[10px] text-gray-400">{when.toLocaleString()}</div>
+                      <div className="text-[10px] text-gray-400">{fmtIST(when)}</div>
                     </td>
                     <td className="px-3 py-2">
                       {lead ? (

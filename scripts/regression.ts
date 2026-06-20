@@ -557,6 +557,39 @@ const checks: Check[] = [
   },
 
   // ───────────────────────────────────────────────────────────────────────────
+  // 3e-dec. CLEAN SUMMARIES EVERYWHERE (2026-06-21 UI raw-data audit) — every
+  //     user-facing summary/preview shows a CLEAN one-liner, never the raw
+  //     remark blob. Raw text stays only in Conversation/Raw History + Audit.
+  // ───────────────────────────────────────────────────────────────────────────
+  {
+    name: "last-meaningful-remark — latest substantive line, skips call-status noise",
+    run: async () => {
+      const { lastMeaningfulRemark } = await import("../src/lib/needSnapshot");
+      const blob = "Need details,,,,on 24 jan (10:21am) he wants 30:70 plan,,,,on 26 jan (11am) not picked,,,,on 27 jan switched off";
+      assert(lastMeaningfulRemark(blob) === "he wants 30:70 plan", "returns the latest real line, skipping 'not picked'/'switched off'");
+      assert(lastMeaningfulRemark("on 5 Jun (2pm) not picked,,,,on 7 Jun (3pm) switched off") === null, "all-noise + no requirement → null");
+      assert(lastMeaningfulRemark("Need brochure,,,,on 5 Jun not picked") === "Need brochure", "all-noise → requirement headline fallback");
+      assert(lastMeaningfulRemark(null) === null && lastMeaningfulRemark("") === null, "empty → null");
+    },
+  },
+  {
+    name: "clean-summaries — no raw remark/notesShort blob in summary surfaces",
+    run: async () => {
+      const fs = await import("node:fs");
+      const has = (f: string, re: RegExp) => { try { return re.test(fs.readFileSync(f, "utf8")); } catch { return false; } };
+      // Master Data "Message" column must be cleaned, not a raw notesShort slice.
+      assert(has("src/app/(app)/master-data/page.tsx", /message:\s*cleanNeedSnapshot\(/), "Master Data 'message' uses cleanNeedSnapshot");
+      assert(!has("src/app/(app)/master-data/page.tsx", /message:\s*\(l\.notesShort/), "Master Data 'message' no longer slices raw notesShort");
+      // Duplicate-alert notification body must be cleaned (bell + push).
+      assert(has("src/lib/leadIngest.ts", /cleanNeedSnapshot\(input\.notesShort\)/), "duplicate-alert notification body is cleaned");
+      assert(!has("src/lib/leadIngest.ts", /\$\{input\.notesShort\s*\?\?\s*""\}/), "no raw notesShort in notification body");
+      // Action queue "LATEST REMARK" + cold-call "Last note" use lastMeaningfulRemark.
+      assert(has("src/app/(app)/action-list/page.tsx", /lastMeaningfulRemark\(/), "action queue uses lastMeaningfulRemark");
+      assert(has("src/components/ColdCallSession.tsx", /lastMeaningfulRemark\(lead\.remarks\)/), "cold-call 'Last note' is cleaned");
+    },
+  },
+
+  // ───────────────────────────────────────────────────────────────────────────
   // 3f. WEBSITE MESSAGE → CONVERSATION (2026-06-20) — a genuine form message
   //     becomes a dated (IST) conversation entry; the source/campaign name never
   //     does; an empty message creates nothing.

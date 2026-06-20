@@ -199,7 +199,7 @@ export default function NextBestActionCard({ lead }: Props) {
         {statusCard.kind === "booked" && (
           <div className="mt-2.5 flex flex-wrap gap-2 text-[11px]">
             {[
-              lead?.bookingDoneAt && `📅 Booked: ${new Date(lead.bookingDoneAt).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })}`,
+              lead?.bookingDoneAt && `📅 Booked: ${new Date(lead.bookingDoneAt).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}`,
               lead?.eoiStage && `Stage: ${lead.eoiStage.replace(/_/g, " ")}`,
               lead?.commissionStatus && `Commission: ${lead.commissionStatus.toLowerCase()}`,
             ].filter(Boolean).map((item, i) => (

@@ -6,6 +6,7 @@
  */
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
+import { fmtIST } from "@/lib/datetime";
 
 // ─── types matching the API / aiTrial lib ────────────────────────────────────
 
@@ -51,7 +52,7 @@ function microUsdToUsdShort(micro: number | null | undefined): string {
 
 function fmtDate(iso: string | null | undefined): string {
   if (!iso) return "—";
-  return new Date(iso).toLocaleString();
+  return fmtIST(iso);
 }
 
 // ─── feature labels ───────────────────────────────────────────────────────────

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { formatDistanceToNow } from "date-fns";
+import { fmtIST } from "@/lib/datetime";
 
 type NotifRow = {
   id: string;
@@ -144,7 +145,7 @@ export default function NotificationsClient({
         <div className="mt-3 text-xs text-gray-400 text-center">
           snoozed {snoozedHiddenCount} hidden
           {earliestSnoozedUntil && (
-            <> until {new Date(earliestSnoozedUntil).toLocaleString()}</>
+            <> until {fmtIST(earliestSnoozedUntil)}</>
           )}
         </div>
       )}

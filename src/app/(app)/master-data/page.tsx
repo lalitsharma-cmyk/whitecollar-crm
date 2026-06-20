@@ -16,6 +16,7 @@ import MasterDataRecordsTable, { type MDRow } from "@/components/MasterDataRecor
 import LeadFilters from "@/components/LeadFilters";
 import { leadFilterWhere } from "@/lib/leadFilterWhere";
 import { displayBudget } from "@/lib/budgetParse";
+import { cleanNeedSnapshot, lastMeaningfulRemark } from "@/lib/needSnapshot";
 
 // ── Master Data V3 — Admin/Super-Admin OPERATIONS CONSOLE (not a dashboard) ──
 // Excel-style ops sheet for assignment + routing. Reporting (By Team/Agent/Status/
@@ -194,8 +195,10 @@ export default async function MasterDataPage({ searchParams }: { searchParams: P
       // Read-only preview fields (Message column + Quick-Preview drawer).
       phone: l.phone ?? "",
       email: l.email ?? "",
-      message: (l.notesShort ?? "").slice(0, 1500),
-      lastRemark: (lastRemarkBy[l.id] ?? l.remarks ?? "").toString().slice(0, 600),
+      // Clean one-line summaries only — never the raw remark blob. The full
+      // verbatim text stays in Conversation History / Raw History on the lead.
+      message: cleanNeedSnapshot(l.notesShort) ?? "",
+      lastRemark: (lastRemarkBy[l.id] ?? lastMeaningfulRemark(l.remarks ?? l.notesShort) ?? "").toString().slice(0, 600),
       followupDate: l.followupDate ? fmtDate(l.followupDate) : "",
     };
   });

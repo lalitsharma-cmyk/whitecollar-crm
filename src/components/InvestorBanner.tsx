@@ -16,6 +16,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { fmtISTDate } from "@/lib/datetime";
 
 interface MatchedLeadDetail {
   id: string;
@@ -159,8 +160,8 @@ export default function InvestorBanner({
             history.map((m) => {
               const chipClass = statusChipClass[m.status] ?? "chip-new";
               const dateLabel = m.bookingDoneAt
-                ? `Booked ${new Date(m.bookingDoneAt).toLocaleDateString()}`
-                : new Date(m.createdAt).toLocaleDateString();
+                ? `Booked ${fmtISTDate(m.bookingDoneAt)}`
+                : fmtISTDate(m.createdAt);
               return (
                 <div
                   key={m.id}

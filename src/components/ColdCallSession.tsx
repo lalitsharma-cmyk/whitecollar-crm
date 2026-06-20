@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { telLink } from "@/lib/phone";
 import { showXpToast } from "@/components/XPToast";
+import { lastMeaningfulRemark } from "@/lib/needSnapshot";
 
 // Lead shape — narrow on purpose. Anything not listed here is unavailable to
 // the session UI by design; expand only when the card actually renders it.
@@ -280,11 +281,11 @@ export default function ColdCallSession({ leads }: { leads: SessionLead[] }) {
           </div>
         )}
 
-        {(lead.remarks || lead.coldCallReason) && (
+        {(lastMeaningfulRemark(lead.remarks) || lead.coldCallReason) && (
           <div className="text-sm">
             <div className="text-[10px] uppercase tracking-wide text-gray-500 font-semibold">Last note</div>
-            <div className="text-gray-800 mt-0.5 whitespace-pre-wrap italic">
-              {lead.remarks || lead.coldCallReason}
+            <div className="text-gray-800 mt-0.5 italic">
+              {lastMeaningfulRemark(lead.remarks) || lead.coldCallReason}
             </div>
           </div>
         )}

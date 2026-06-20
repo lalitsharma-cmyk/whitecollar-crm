@@ -835,9 +835,9 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
             <div className="flex-1">
               <span className="font-semibold text-emerald-800 dark:text-emerald-200">Follow-up due: </span>
               <span className="text-emerald-700 dark:text-emerald-300">
-                {new Date(lead.followupDate).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })}
+                {new Date(lead.followupDate).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}
                 {" "}·{" "}
-                {new Date(lead.followupDate).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })} IST
+                {new Date(lead.followupDate).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST
               </span>
             </div>
           </div>
@@ -850,7 +850,7 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
             <div>
               <span className="font-semibold text-red-700 dark:text-red-300">Follow-up overdue</span>
               <span className="text-red-600 dark:text-red-400 ml-2">
-                — was due {lead.followupDate ? new Date(lead.followupDate).toLocaleDateString("en-GB", { day: "2-digit", month: "short" }) : ""}
+                — was due {lead.followupDate ? new Date(lead.followupDate).toLocaleDateString("en-GB", { day: "2-digit", month: "short", timeZone: "Asia/Kolkata" }) : ""}
                 . Log a call or reschedule.
               </span>
             </div>

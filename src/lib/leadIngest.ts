@@ -16,6 +16,7 @@ import { websiteMessageRemark } from "@/lib/websiteRemark";
 import { BOOKED_STATUSES } from "@/lib/lead-statuses";
 import { resolveTeam, routingFieldsFor, automationGate } from "@/lib/teamRouting";
 import type { Classification } from "@/lib/leadClassifier";
+import { cleanNeedSnapshot } from "@/lib/needSnapshot";
 import { runIntelligenceCheck } from "@/lib/intelligenceCheck";
 import { inferPropertyType } from "@/lib/propertyType";
 import { inferCountryFromCity, inferStateFromCity } from "@/lib/cityCountry";
@@ -133,7 +134,7 @@ export async function ingestLead(input: RawLeadInput) {
         kind: "LEAD_DUPLICATE",
         severity: "WARNING",
         title: `🔁 ${existing.name} contacted us again (${(existing.duplicateCount ?? 0) + 1}x)`,
-        body: `New ${input.source} hit on existing lead. Current owner: ${existing.owner?.name ?? "Unassigned"}. ${input.notesShort ?? ""}`.trim(),
+        body: `New ${input.source} hit on existing lead. Current owner: ${existing.owner?.name ?? "Unassigned"}. ${cleanNeedSnapshot(input.notesShort) ?? ""}`.trim(),
         linkUrl: `/leads/${existing.id}`,
         leadId: existing.id,
       });
@@ -143,7 +144,7 @@ export async function ingestLead(input: RawLeadInput) {
           kind: "LEAD_DUPLICATE",
           severity: "WARNING",
           title: `Your lead ${existing.name} reached out again`,
-          body: `Source: ${input.source}. ${input.notesShort ?? ""}`.trim(),
+          body: `Source: ${input.source}. ${cleanNeedSnapshot(input.notesShort) ?? ""}`.trim(),
           linkUrl: `/leads/${existing.id}`,
           leadId: existing.id,
         });

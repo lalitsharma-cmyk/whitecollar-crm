@@ -22,6 +22,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
+import { cleanNeedSnapshot } from "@/lib/needSnapshot";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -90,6 +91,7 @@ function fmtDate(iso: string | null | undefined): string {
       day: "2-digit",
       month: "short",
       year: "numeric",
+      timeZone: "Asia/Kolkata",
     });
   } catch {
     return iso;
@@ -491,9 +493,9 @@ export default function CustomerIntelligenceCard({ leadId, leadName, currentRole
                         {fmtDate(l.createdAt)}
                         {l.agentName ? ` · ${l.agentName}` : ""}
                       </div>
-                      {l.remarks && (
+                      {cleanNeedSnapshot(l.remarks) && (
                         <div className="text-[11px] text-gray-600 mt-0.5 truncate max-w-[260px]">
-                          {truncate(l.remarks, 100)}
+                          {cleanNeedSnapshot(l.remarks)}
                         </div>
                       )}
                     </div>

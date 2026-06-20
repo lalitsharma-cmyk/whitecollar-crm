@@ -43,7 +43,7 @@ export default function PreviousHistoryCard({ history, currentId }: { history: C
           return (
             <div key={r.id} className={`flex items-start gap-2 text-sm rounded-lg px-2.5 py-1.5 ${isCurrent ? "bg-amber-50/60 dark:bg-slate-700/40" : "bg-gray-50 dark:bg-slate-800/50"}`}>
               <div className="text-[10px] text-gray-400 w-20 shrink-0 pt-0.5 tabular-nums">
-                {new Date(r.createdAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "2-digit" })}
+                {new Date(r.createdAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "2-digit", timeZone: "Asia/Kolkata" })}
               </div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-1.5 flex-wrap">
@@ -60,7 +60,7 @@ export default function PreviousHistoryCard({ history, currentId }: { history: C
                   <div className="mt-1 space-y-0.5 border-l-2 border-gray-200 dark:border-slate-600 pl-2">
                     {r.remarks.map((m, i) => (
                       <div key={i} className="text-[11px] text-gray-600 dark:text-slate-300 break-words">
-                        <span className="text-gray-400">{new Date(m.date).toLocaleDateString("en-IN", { day: "numeric", month: "short" })} · {m.author}:</span>{" "}
+                        <span className="text-gray-400">{new Date(m.date).toLocaleDateString("en-IN", { day: "numeric", month: "short", timeZone: "Asia/Kolkata" })} · {m.author}:</span>{" "}
                         {m.text}
                       </div>
                     ))}

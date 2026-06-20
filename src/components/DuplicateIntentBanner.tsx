@@ -25,7 +25,7 @@ const sourceLabel: Record<string, string> = {
 };
 
 function fmtDate(iso: string): string {
-  return new Date(iso).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "2-digit" });
+  return new Date(iso).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "2-digit", timeZone: "Asia/Kolkata" });
 }
 
 export default function DuplicateIntentBanner({ intent }: { intent: DuplicateIntent | null }) {

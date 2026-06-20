@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import type { BantSuggestion } from "@/lib/bantAutoFill";
+import { fmtISTDate } from "@/lib/datetime";
 
 interface BANTSuggestionsProps {
   leadId: string;
@@ -206,7 +207,7 @@ export default function BANTSuggestions({
 
       {suggestions?.scannedAt && (
         <div className="text-[9px] text-gray-300">
-          Last scanned {new Date(suggestions.scannedAt).toLocaleDateString()}
+          Last scanned {fmtISTDate(suggestions.scannedAt)}
         </div>
       )}
     </div>
