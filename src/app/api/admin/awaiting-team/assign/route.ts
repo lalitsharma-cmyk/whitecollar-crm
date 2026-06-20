@@ -12,10 +12,11 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/auth";
-import { chooseOwnerForNewLead } from "@/lib/assignmentWindow";
+import { chooseOwnerForNewLead, currentWindow } from "@/lib/assignmentWindow";
 import { assignLeadTo } from "@/lib/leadIngest";
 import { audit, reqMeta } from "@/lib/audit";
 import { resolveTeam, routingFieldsFor } from "@/lib/teamRouting";
+import { getRoundRobinEnabled, getTestingModeEnabled } from "@/lib/settings";
 
 const TEAMS = ["Dubai", "India"] as const;
 type Team = (typeof TEAMS)[number];
@@ -45,12 +46,17 @@ export async function POST(req: NextRequest) {
     },
   });
 
-  // Try to round-robin immediately so the agent gets pinged now rather than
-  // waiting for the reconciler's next pass. Use chooseOwnerForNewLead so the
-  // picker is SHIFT-AWARE — only PRESENT/LATE agents (per today's Attendance)
-  // are eligible. If no one is clocked-in, leave the lead unowned and let the
-  // reconciler's 5-min sweep pick it up once someone is available.
-  const choice = await chooseOwnerForNewLead(team);
+  // RESPECT THE AUTO-ASSIGN KILL-SWITCH (Lalit, 2026-06-20 audit). This action
+  // used to ALWAYS auto-pick an owner via the time-window round-robin — the one
+  // path that auto-assigned (e.g. to Lalit in the evening window) even while
+  // Round Robin was globally OFF. Now it only auto-picks when auto-assignment is
+  // actually enabled; otherwise it tags the team ONLY and leaves the lead UNOWNED
+  // for manual assignment.
+  const autoAssignOn = !(await getTestingModeEnabled()) && (await getRoundRobinEnabled());
+  const choice = autoAssignOn
+    ? await chooseOwnerForNewLead(team)
+    : { userId: null as string | null, window: currentWindow(), fallbackReason: "auto-assign disabled (round-robin off)" };
+
   let agentName: string | null = null;
   if (choice.userId) {
     await assignLeadTo(leadId, choice.userId, "auto round-robin after team tagging");
@@ -63,7 +69,7 @@ export async function POST(req: NextRequest) {
     action: "lead.team.assign",
     entity: "Lead",
     entityId: leadId,
-    meta: { team, autoAssignedTo: choice.userId ?? null, window: choice.window.kind, fallbackReason: choice.fallbackReason ?? null },
+    meta: { team, autoAssignedTo: choice.userId ?? null, window: choice.window.kind, fallbackReason: choice.fallbackReason ?? null, autoAssignEnabled: autoAssignOn },
     request: reqMeta(req),
   });
 
@@ -71,7 +77,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       ok: true,
       assignedTo: null,
-      note: "Team tagged. No agent on shift right now; reconciler will retry.",
+      note: autoAssignOn
+        ? "Team tagged. No agent on shift right now; reconciler will retry."
+        : "Team tagged. Auto-assignment is OFF — assign an owner manually.",
     });
   }
   return NextResponse.json({ ok: true, assignedTo: agentName });
