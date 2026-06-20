@@ -267,7 +267,7 @@ const checks: Check[] = [
   {
     name: "conversation-column — rescue unlabeled call-log col, ignore labeled/date/short cols",
     run: async () => {
-      const { detectConversationColumn, looksLikeConversation } = await import("../src/lib/conversationColumn");
+      const { detectConversationColumn, detectConversationKeyFromRows, looksLikeConversation } = await import("../src/lib/conversationColumn");
 
       // A real call note is conversation; a date / status / number is NOT.
       assert(looksLikeConversation("On 25 Sep 2021 looking 4550 sqft in Trump Towers, will visit next week") === true, "a dated call note must be conversation");
@@ -293,6 +293,16 @@ const checks: Check[] = [
       const headersDate = ["Date", "Name", ""];
       const rowsDate = [["25-Sep-21", "Meena", "17-Apr-26"], ["16-Oct-21", "Gagan", "22-Jun-26"], ["18-Oct-21", "Asha", "01-Jan-26"], ["20-Aug-25", "Sumeet", "05-May-26"]];
       assert(detectConversationColumn(headersDate, rowsDate) === -1, "a blank-header DATE column must NOT be treated as conversation");
+
+      // GOTCHA: Papa.parse maps a blank header to the key "" — which is FALSY.
+      // The Google-Sheet route guard MUST be `convKey !== null`, never a truthiness
+      // check, or the rescue silently no-ops on the exact case it's for. Lock it in.
+      const papaRows = [
+        { Date: "25-Sep-21", Name: "Meena", "": "On 25 Sep 2021 looking 4550 sqft in Trump Towers, will visit next week" },
+        { Date: "16-Oct-21", Name: "Gagan", "": "On 16 Oct 2021 call on wait, on 17 Oct call him at 5pm not picked busy" },
+        { Date: "18-Oct-21", Name: "Asha", "": "On 18 Oct 2021 site visit, discuss 4750 and villa, will come this week" },
+      ];
+      assert(detectConversationKeyFromRows(papaRows) === "", `Papa blank-header conversation key must be "" (falsy → route guard must be !== null), got ${JSON.stringify(detectConversationKeyFromRows(papaRows))}`);
     },
   },
 

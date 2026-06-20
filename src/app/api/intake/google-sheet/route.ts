@@ -171,8 +171,11 @@ export async function POST(req: NextRequest) {
   // (Papa maps it to the key ""). Rescue ONLY a genuine conversation column and
   // copy it to a real "Remarks" key, so it flows to rawRemarks via pick("remarks")
   // — never to a structured field. No-op when a labeled Remarks column exists.
+  // NOTE: a blank header maps to the key "" (empty string) — which is FALSY, so
+  // this MUST be `!== null`, never a truthiness check, or the rescue would skip
+  // the exact case it exists for.
   const convKey = detectConversationKeyFromRows(parsed.data as Array<Record<string, unknown>>);
-  if (convKey) {
+  if (convKey !== null) {
     for (const row of parsed.data as Row[]) {
       const v = String((row as Record<string, unknown>)[convKey] ?? "").trim();
       row["Remarks"] = v || String(row["Remarks"] ?? "");   // unlabeled conversation → Remarks
