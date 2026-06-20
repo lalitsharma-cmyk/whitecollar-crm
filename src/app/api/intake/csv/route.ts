@@ -337,6 +337,16 @@ function parseInvestTimeline(s?: string): InvestTimeline | undefined {
   if (n.includes("brows") || n.includes("explor") || n.includes("shop")) return InvestTimeline.WINDOW_SHOPPING;
   return InvestTimeline.UNKNOWN;
 }
+// Date-only imports land at 00:00 UTC, which renders as 5:30 AM IST — a
+// fabricated clock time Lalit asked us never to show. Re-anchor any midnight
+// value to noon IST (06:30 UTC) of the SAME calendar day: the date is unchanged
+// but the time reads as a neutral 12:00 PM instead of 5:30 AM.
+function noonISTifMidnight(d: Date): Date {
+  if (d.getUTCHours() === 0 && d.getUTCMinutes() === 0 && d.getUTCSeconds() === 0) {
+    return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 6, 30, 0));
+  }
+  return d;
+}
 function parseDate(s?: string): Date | undefined {
   if (!s) return;
   // Excel serial numbers (e.g. 45752 = 4 May 2025)
@@ -345,11 +355,11 @@ function parseDate(s?: string): Date | undefined {
     if (n > 1 && n < 100000) {
       // Excel epoch: Dec 30 1899
       const d = new Date(Math.round((n - 25569) * 86400 * 1000));
-      if (!isNaN(d.getTime())) return d;
+      if (!isNaN(d.getTime())) return noonISTifMidnight(d);
     }
   }
   const d = new Date(s);
-  return isNaN(d.getTime()) ? undefined : d;
+  return isNaN(d.getTime()) ? undefined : noonISTifMidnight(d);
 }
 
 // Detect if a row looks like a header row (has at least 3 of the expected column names)
@@ -573,6 +583,9 @@ export async function POST(req: NextRequest) {
   }
 
   let created = 0, deduped = 0, enriched = 0, autofilled = 0;
+  // Rows whose "Date" column was in the future — createdAt was NOT backdated;
+  // surfaced in the import summary so the importer can review/correct them.
+  const futureDateRows: { name: string; rawDate: string }[] = [];
   // Imports no longer create CallLog rows from remarks — always 0 now, kept so
   // the import-audit meta shape stays stable.
   const callLogsCreated = 0;
@@ -795,10 +808,19 @@ export async function POST(req: NextRequest) {
       // every "leads created this week" report retroactively. Lalit explicitly
       // asked for "Date in mis will be date when this lead was generated".
       const historicDate = parseDate(field("date", "date", "leaddate", "createdon", "createddate", "entrydate"));
-      if (historicDate && !r.deduped) {
+      // Guard: a lead cannot have been generated in the FUTURE. If the sheet's
+      // Date column is ahead of today (a data-entry typo, or a follow-up/target
+      // date mis-placed in the Date column), do NOT backdate createdAt into the
+      // future — that corrupts "created this week" reports, sorting and lead age.
+      // Keep the real import time and leave the raw value in rawImport for review.
+      // (24h tolerance so a lead dated "today" in another timezone isn't rejected.)
+      const dateIsFuture = !!historicDate && historicDate.getTime() > Date.now() + 24 * 3600 * 1000;
+      if (historicDate && !r.deduped && !dateIsFuture) {
         update.createdAt = historicDate;
         // also backdate lastTouchedAt so "idle 24h" flags don't fire on import day
         update.lastTouchedAt = historicDate;
+      } else if (dateIsFuture) {
+        futureDateRows.push({ name: String(field("name", "customer", "name", "fullname") ?? "—"), rawDate: field("date", "date", "leaddate", "createdon", "createddate", "entrydate") ?? "" });
       }
       // Item 6 — "worked today" follow-up suppression (import-time decision only).
       // If the sheet shows the lead was contacted TODAY (a last-contact column =
@@ -990,6 +1012,8 @@ export async function POST(req: NextRequest) {
     created, deduped, enriched, callLogsCreated, autofilled,
     importBatchId: importBatch.id,
     detectedColumns,
+    futureDateRows: futureDateRows.slice(0, 50),
+    futureDateCount: futureDateRows.length,
     errors: errors.slice(0, 10),
   });
 }

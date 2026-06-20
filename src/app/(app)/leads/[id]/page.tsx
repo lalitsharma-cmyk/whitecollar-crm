@@ -40,7 +40,7 @@ import BestCallTimeChip from "@/components/BestCallTimeChip";
 import CallStatsBar from "@/components/CallStatsBar";
 // LeadJourneyBar removed — stage pipeline bar replaced by currentStatus (Excel/MIS workflow)
 import { displayBudget } from "@/lib/budgetParse";
-import { selectableStatuses, statusColor, BOOKED_STATUSES, SUPPRESSED_STATUSES } from "@/lib/lead-statuses";
+import { selectableStatuses, statusColor, BOOKED_STATUSES, SUPPRESSED_STATUSES, statusesLookSame } from "@/lib/lead-statuses";
 import LinkedContactsCard from "@/components/LinkedContactsCard";
 import InvestorBanner from "@/components/InvestorBanner";
 import StageDurationBadge from "@/components/StageDurationBadge";
@@ -881,7 +881,7 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
                   />
                 </span>
                 <StageDurationBadge since={lead.updatedAt} />
-                {lead.originalSheetStatus && lead.originalSheetStatus !== lead.currentStatus && (
+                {lead.originalSheetStatus && !statusesLookSame(lead.originalSheetStatus, lead.currentStatus) && (
                   <span className="chip text-[10px] bg-gray-100 text-gray-500 border border-gray-300" title="Original imported status">📋 {lead.originalSheetStatus}</span>
                 )}
                 {lead.categorization && (

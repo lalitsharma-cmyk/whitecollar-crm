@@ -92,11 +92,14 @@ function trimZeros(n: number): string {
  *  no usable number. Matches Lalit's examples: "₹50 Lakh", "₹1.25 Cr", "₹7 Cr". */
 function formatINR(min?: number | null, max?: number | null): string | null {
   if (min == null || min === 0) return null;
+  // Lalit's standard (2026-06-20): "3 CR", "5.5 CR", "50 LAKH" — NO ₹ symbol, NO
+  // trailing dot, UPPERCASE unit, a single space before the unit. Display-only;
+  // the numeric value (budgetMin) is what filters/reports/sorting use.
   const fmt = (n: number) =>
-    n >= 10_000_000 ? `₹${trimZeros(n / 10_000_000)} Cr`
-    : n >= 100_000  ? `₹${trimZeros(n / 100_000)} Lakh`
-    : n >= 1_000    ? `₹${trimZeros(n / 1_000)} K`
-    : `₹${n.toLocaleString("en-IN")}`;
+    n >= 10_000_000 ? `${trimZeros(n / 10_000_000)} CR`
+    : n >= 100_000  ? `${trimZeros(n / 100_000)} LAKH`
+    : n >= 1_000    ? `${trimZeros(n / 1_000)} K`
+    : `${n.toLocaleString("en-IN")}`;
   const lo = fmt(min);
   const hi = max && max > min ? fmt(max) : null;
   return hi ? `${lo} – ${hi}` : lo;

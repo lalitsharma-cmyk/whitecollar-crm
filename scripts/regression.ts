@@ -388,11 +388,13 @@ const checks: Check[] = [
       const { displayBudget } = await import("../src/lib/budgetParse");
       const noMillions = (s: string) => !/\d\s*m(?:n|illion)?\b/i.test(s) && !/aed/i.test(s);
       // India team — numeric formatted as ₹, even with a stale AED currency or an "M" raw.
-      assert(displayBudget({ forwardedTeam: "India", budgetMin: 40_000_000, budgetCurrency: "AED" }) === "₹4 Cr", `India 4Cr (stale AED) → ₹4 Cr, got ${displayBudget({ forwardedTeam: "India", budgetMin: 40_000_000, budgetCurrency: "AED" })}`);
-      assert(displayBudget({ forwardedTeam: "India", budgetRaw: "7M", budgetMin: 7_000_000, budgetCurrency: "INR" }) === "₹70 Lakh", `India raw "7M" → ₹70 Lakh, got ${displayBudget({ forwardedTeam: "India", budgetRaw: "7M", budgetMin: 7_000_000, budgetCurrency: "INR" })}`);
+      assert(displayBudget({ forwardedTeam: "India", budgetMin: 40_000_000, budgetCurrency: "AED" }) === "4 CR", `India 4Cr (stale AED) → "4 CR", got ${displayBudget({ forwardedTeam: "India", budgetMin: 40_000_000, budgetCurrency: "AED" })}`);
+      assert(displayBudget({ forwardedTeam: "India", budgetRaw: "7M", budgetMin: 7_000_000, budgetCurrency: "INR" }) === "70 LAKH", `India raw "7M" → "70 LAKH", got ${displayBudget({ forwardedTeam: "India", budgetRaw: "7M", budgetMin: 7_000_000, budgetCurrency: "INR" })}`);
       assert(noMillions(displayBudget({ forwardedTeam: "Gurgaon", budgetMin: 5_000_000, budgetCurrency: "AED" })), "Gurgaon budget must never show M/AED");
-      // INR currency with no team → still India format (covers callers that don't pass team).
-      assert(displayBudget({ budgetMin: 12_500_000, budgetCurrency: "INR" }) === "₹1.25 Cr", `INR no-team → ₹1.25 Cr, got ${displayBudget({ budgetMin: 12_500_000, budgetCurrency: "INR" })}`);
+      // Standard India format: no ₹, uppercase CR, no trailing dot, one space.
+      assert(displayBudget({ budgetMin: 12_500_000, budgetCurrency: "INR" }) === "1.25 CR", `INR no-team → "1.25 CR", got ${displayBudget({ budgetMin: 12_500_000, budgetCurrency: "INR" })}`);
+      assert(displayBudget({ budgetMin: 30_000_000, budgetCurrency: "INR" }) === "3 CR", `30M INR → "3 CR", got ${displayBudget({ budgetMin: 30_000_000, budgetCurrency: "INR" })}`);
+      assert(!/₹/.test(displayBudget({ budgetMin: 50_000_000, budgetCurrency: "INR" })), "India budget must have NO ₹ symbol");
       // Dubai — verbatim raw preserved; numeric → AED K/M.
       assert(displayBudget({ forwardedTeam: "Dubai", budgetRaw: "AED 800K - 1M", budgetMin: 800_000 }) === "AED 800K - 1M", "Dubai verbatim raw preserved");
       assert(displayBudget({ forwardedTeam: "Dubai", budgetMin: 1_500_000, budgetCurrency: "AED" }) === "AED 1.5 M", `Dubai 1.5M → "AED 1.5 M", got ${displayBudget({ forwardedTeam: "Dubai", budgetMin: 1_500_000, budgetCurrency: "AED" })}`);

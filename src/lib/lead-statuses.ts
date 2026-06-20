@@ -354,6 +354,30 @@ export function canonicalStatus(raw: string | null | undefined): string | null {
   return CANONICAL_STATUS_BY_KEY.get(key) ?? trimmed;
 }
 
+// True when two status labels are EFFECTIVELY the same — identical after
+// normalisation, canonical-equal, or a trivial spelling/tense variant
+// ("Never Respond Phone Calls" vs "Never Responded Phone Calls"). Used to avoid
+// rendering a near-duplicate "original sheet status" badge next to currentStatus.
+export function statusesLookSame(a?: string | null, b?: string | null): boolean {
+  const norm = (s?: string | null) => (s ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
+  const x = norm(a), y = norm(b);
+  if (!x || !y) return false;
+  if (x === y) return true;
+  if (norm(canonicalStatus(a)) === norm(canonicalStatus(b))) return true;
+  if (Math.abs(x.length - y.length) > 3) return false;
+  // Levenshtein on the letters-only form — ≤3 edits ⇒ a trivial variant.
+  const row = Array.from({ length: y.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= x.length; i++) {
+    let prev = row[0]; row[0] = i;
+    for (let j = 1; j <= y.length; j++) {
+      const tmp = row[j];
+      row[j] = Math.min(row[j] + 1, row[j - 1] + 1, prev + (x[i - 1] === y[j - 1] ? 0 : 1));
+      prev = tmp;
+    }
+  }
+  return row[y.length] <= 3;
+}
+
 // ─── Agent-editable WORKING statuses ──────────────────────────────────────
 // Agents may only set day-to-day working statuses. "Fresh Lead" is system-
 // generated; outcome / classification statuses (War Fear, Funds Issue, Booked
