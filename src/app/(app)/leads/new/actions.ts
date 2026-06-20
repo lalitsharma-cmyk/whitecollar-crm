@@ -30,7 +30,9 @@ export async function quickCreateLeadAction(
 ): Promise<QuickAddResult> {
   try {
     // Server Functions are reachable via direct POST — always re-check auth here.
-    await requireUser();
+    // Lead creation is ADMIN/MANAGER only; agents must never create leads.
+    const me = await requireUser();
+    if (me.role === "AGENT") return { ok: false, error: "You don't have permission to create leads." };
 
     const name = String(formData.get("name") ?? "").trim();
     if (!name) return { ok: false, error: "Name is required." };

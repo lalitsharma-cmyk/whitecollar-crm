@@ -12,6 +12,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
 import { loadOwnedLead } from "@/lib/leadScope";
+import { projectWhereForLead } from "@/lib/propertyScope";
 import {
   detectProjectsAndInterests,
   buildSourcesFromLead,
@@ -45,8 +46,10 @@ export async function POST(
     return NextResponse.json({ error: "Lead not found" }, { status: 404 });
   }
 
-  // Load all projects for matching
+  // Load projects for matching — scoped to the lead's market so an India lead is
+  // never auto-suggested a Dubai project from a stray remark token (and vice versa).
   const allProjects = await prisma.project.findMany({
+    where: projectWhereForLead(lead, scoped.me),
     select: { id: true, name: true, city: true },
   });
 

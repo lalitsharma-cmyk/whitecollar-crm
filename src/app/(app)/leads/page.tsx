@@ -7,6 +7,7 @@ import LeadFilters from "@/components/LeadFilters";
 import LeadsListClient from "@/components/LeadsListClient";
 import { runReconciler } from "@/lib/reconciler";
 import { leadScopeWhere, COLD_ORIGINS } from "@/lib/leadScope";
+import { projectWhereForUser } from "@/lib/propertyScope";
 import { displayBudget } from "@/lib/budgetParse";
 import { statusColor, BUDGET_PRESETS, SUPPRESSED_STATUSES, ACTIVE_PURSUIT_STATUSES, CLOSING_STATUSES, TERMINAL_STATUSES, CLOSED_OUTCOME_STATUSES, LOST_STATUSES } from "@/lib/lead-statuses";
 
@@ -493,7 +494,10 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
     .filter((t): t is string => typeof t === "string" && t.length > 0);
 
   // Projects list for the project filter dropdown — small table, cheap separate query.
+  // Market-scoped: an agent only sees their own market's projects in the filter
+  // (admins/managers see all).
   const allProjects = await prisma.project.findMany({
+    where: projectWhereForUser(me),
     select: { id: true, name: true },
     orderBy: { name: "asc" },
   });
@@ -559,7 +563,9 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
               </a>
             );
           })()}
-          <Link href="/leads/new" className="btn btn-primary flex-1 sm:flex-none justify-center">+ New Lead</Link>
+          {me.role !== "AGENT" && (
+            <Link href="/leads/new" className="btn btn-primary flex-1 sm:flex-none justify-center">+ New Lead</Link>
+          )}
         </div>
       </div>
 

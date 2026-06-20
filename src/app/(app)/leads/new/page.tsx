@@ -13,7 +13,11 @@ import DedupWarning from "@/components/DedupWarning";
 
 async function createLeadAction(formData: FormData) {
   "use server";
-  await requireUser();
+  // Lead creation is ADMIN/MANAGER only. Server actions are reachable via direct
+  // POST, so the role check must live here — not just on the page/button. Agents
+  // work only the leads already assigned to them.
+  const me = await requireUser();
+  if (me.role === "AGENT") redirect("/leads");
   const sourceRaw = String(formData.get("source") ?? "WEBSITE");
   const source = (Object.values(LeadSource) as string[]).includes(sourceRaw)
     ? (sourceRaw as LeadSource) : LeadSource.OTHER;

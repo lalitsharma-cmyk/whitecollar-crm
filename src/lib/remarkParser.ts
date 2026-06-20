@@ -417,12 +417,22 @@ export function parseRemarksTimeline(
       continue;
     }
 
-    // Case 2: "on DD Mon YYYY body" — no time
+    // Case 2: "on DD Mon YYYY body" — date with no PARENTHESISED time.
     const mOn = line.match(ON_DATE_NO_TIME);
     if (mOn) {
       const candidate = mOn[1]?.trim() ?? null;
-      const date = tryExtractDate(mOn[2].trim()) ?? tryExtractDate(line);
-      const body = (mOn[3] ?? "").replace(/^[,.\s]+/, "").trim();
+      let date = tryExtractDate(mOn[2].trim()) ?? tryExtractDate(line);
+      let body = (mOn[3] ?? "").replace(/^[,.\s]+/, "").trim();
+      // The body may START with a written clock time ("On 19 Jun 2026, 3:30 PM
+      // call not picked"). The calling team writes these in IST, so PROMOTE the
+      // time to the event timestamp (via the already-correct IST parseDateTime)
+      // instead of dropping the event to a date-only noon sentinel. No timezone
+      // conversion is applied — the written wall-clock time IS the IST time.
+      const mTime = body.match(/^(\d{1,2}[:.]\d{2}(?:\s*[ap]\.?m\.?)?|\d{1,2}\s*[ap]\.?m\.?)[\s,]*/i);
+      if (mTime && date) {
+        const exact = parseDateTime(mOn[2].trim(), mTime[1].trim());
+        if (exact) { date = exact; body = body.slice(mTime[0].length).trim(); }
+      }
       if (candidate) {
         const resolved = matchAgent(candidate);
         if (resolved) currentAgent = resolved;

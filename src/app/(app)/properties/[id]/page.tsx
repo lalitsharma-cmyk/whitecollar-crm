@@ -6,6 +6,7 @@ import { SUPPRESSED_STATUSES } from "@/lib/lead-statuses";
 import { requireUser } from "@/lib/auth";
 import { bestLeadsForProject } from "@/lib/leadsForProject";
 import { leadScopeWhere } from "@/lib/leadScope";
+import { userCanAccessProjectCountry } from "@/lib/propertyScope";
 import { fmtMoney } from "@/lib/money";
 import UnitsCsvImport from "@/components/UnitsCsvImport";
 
@@ -28,6 +29,10 @@ export default async function PropertyDetail({ params }: { params: Promise<{ id:
     },
   });
   if (!project) notFound();
+  // Market guard — an AGENT must not open another market's project page, even by
+  // direct URL. 404 (not 403) so the other market's inventory isn't even revealed
+  // to exist. Admin/Manager see all markets.
+  if (!userCanAccessProjectCountry(me, project.country)) notFound();
 
   // Scope both lead lists to the viewer (audit P2-1): an AGENT sees only their
   // OWN matching leads + own active discussions — not peers' client names,

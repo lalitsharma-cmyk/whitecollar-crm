@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
 import { LeadProjectStatus, ActivityType, ActivityStatus } from "@prisma/client";
 import { loadOwnedLead } from "@/lib/leadScope";
+import { userCanAccessProjectCountry } from "@/lib/propertyScope";
 
 // Add a project to the "Projects Discussed" list on a lead.
 // Idempotent: if already added, just bumps discussedAt + (optionally) updates status.
@@ -61,6 +62,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     });
   }
   if (!project) return NextResponse.json({ error: "Project not found" }, { status: 404 });
+
+  // Market guard (server-side — UI filtering is bypassable). An AGENT may only
+  // attach a project from the lead's market; Admin/Manager may cross markets.
+  if (!userCanAccessProjectCountry(me, project.country, lead)) {
+    return NextResponse.json({ error: "That project belongs to another market and can't be added to this lead." }, { status: 403 });
+  }
 
   // Manual add or status update: suggestion=false (user explicitly chose this project)
   await prisma.leadProject.upsert({

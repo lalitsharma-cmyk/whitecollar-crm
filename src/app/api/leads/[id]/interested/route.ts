@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { LeadInterestType, ActivityType, ActivityStatus } from "@prisma/client";
 import { loadOwnedLead } from "@/lib/leadScope";
+import { userCanAccessProjectCountry } from "@/lib/propertyScope";
 
 // POST /api/leads/[id]/interested  body: { unitId, type?, notes? }
 // Adds (or upserts) a Unit into the lead's interested-properties list.
@@ -28,6 +29,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     include: { project: true },
   });
   if (!unit) return NextResponse.json({ error: "Unit not found" }, { status: 404 });
+
+  // Market guard (server-side). An AGENT may only mark interest in a unit whose
+  // project is in their market; Admin/Manager may cross markets.
+  if (!userCanAccessProjectCountry(me, unit.project.country)) {
+    return NextResponse.json({ error: "That property belongs to another market." }, { status: 403 });
+  }
 
   await prisma.leadProperty.upsert({
     where: { leadId_unitId: { leadId: id, unitId } },

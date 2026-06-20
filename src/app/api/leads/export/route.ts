@@ -25,10 +25,15 @@ function toDate(d: Date | null | undefined): string {
 }
 
 export async function GET(req: NextRequest) {
-  // Auth — any logged-in user (role-scoped via leadScopeWhere below)
+  // Auth — ADMIN/MANAGER only. Agents may NOT export leads (data-exfiltration
+  // guard), even by hitting this URL directly. Enforced here at the API, not
+  // just by hiding the button.
   const me = await getCurrentUser();
   if (!me) {
     return new Response("Unauthorized", { status: 401 });
+  }
+  if (me.role === "AGENT") {
+    return new Response("Forbidden — agents cannot export leads.", { status: 403 });
   }
 
   const url = new URL(req.url);
@@ -48,11 +53,6 @@ export async function GET(req: NextRequest) {
     where.currentStatus = "Booked with Us";
   }
 
-  // Agents: hide suppressed leads by default
-  if (me.role === "AGENT" && !sp.status && filterTab === "all") {
-    where.currentStatus = { notIn: SUPPRESSED_STATUSES };
-  }
-
   if (sp.q) {
     where.OR = [
       { name: { contains: sp.q, mode: "insensitive" } },
@@ -66,16 +66,10 @@ export async function GET(req: NextRequest) {
   if (sp.ai) where.aiScore = sp.ai as AIScore;
   if (sp.team) where.forwardedTeam = sp.team;
 
-  // Agents cannot filter by owner (same guard as the page)
-  if (me.role !== "AGENT") {
-    if (sp.owner === "unassigned") where.ownerId = null;
-    else if (sp.owner) where.ownerId = sp.owner;
-  }
-
-  // Agents cannot filter by source
-  if (sp.source && me.role !== "AGENT") {
-    where.source = sp.source as LeadSource;
-  }
+  // Owner / source filters (admin & manager only; agents already 403'd above).
+  if (sp.owner === "unassigned") where.ownerId = null;
+  else if (sp.owner) where.ownerId = sp.owner;
+  if (sp.source) where.source = sp.source as LeadSource;
 
   if (sp.potential) where.potential = sp.potential as Potential;
 

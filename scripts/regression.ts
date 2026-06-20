@@ -422,6 +422,64 @@ const checks: Check[] = [
   },
 
   // ───────────────────────────────────────────────────────────────────────────
+  // 3e-ter. PROJECT MARKET SEGREGATION (2026-06-21) — India agents see only India
+  //     projects, Dubai agents only UAE; admin/manager see all; cross-market
+  //     attach is blocked server-side.
+  // ───────────────────────────────────────────────────────────────────────────
+  {
+    name: "market-segregation — agent sees only own market; cross-market blocked; admin sees all",
+    run: async () => {
+      const { userCanAccessProjectCountry, projectWhereForUser, teamToCountry } = await import("../src/lib/propertyScope");
+      const indiaAgent = { role: "AGENT" as const, team: "India" };
+      const dubaiAgent = { role: "AGENT" as const, team: "Dubai" };
+      const admin = { role: "ADMIN" as const, team: "HQ" };
+      assert(teamToCountry("India") === "India" && teamToCountry("Dubai") === "UAE", "team→country mapping (India→India, Dubai→UAE)");
+      assert(userCanAccessProjectCountry(indiaAgent, "India") === true, "India agent → India project allowed");
+      assert(userCanAccessProjectCountry(indiaAgent, "UAE") === false, "India agent → UAE project MUST be blocked");
+      assert(userCanAccessProjectCountry(dubaiAgent, "India") === false, "Dubai agent → India project MUST be blocked");
+      assert(userCanAccessProjectCountry(dubaiAgent, "UAE") === true, "Dubai agent → UAE project allowed");
+      assert(userCanAccessProjectCountry(admin, "India") && userCanAccessProjectCountry(admin, "UAE"), "admin → all markets");
+      assert(JSON.stringify(projectWhereForUser(indiaAgent)) === JSON.stringify({ country: "India" }), "India agent project where = {country:India}");
+      assert(Object.keys(projectWhereForUser(admin)).length === 0, "admin project where = {} (all markets)");
+    },
+  },
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // 3e-quater. AGENT CANNOT CREATE LEADS (2026-06-21) — both create server-actions
+  //     + the page gate AGENT (security regression fix).
+  // ───────────────────────────────────────────────────────────────────────────
+  {
+    name: "agent-no-create — create server-actions + page block AGENT (not just the button)",
+    run: async () => {
+      const fs = await import("node:fs");
+      const action = fs.readFileSync("src/app/(app)/leads/new/actions.ts", "utf8");
+      assert(/role === "AGENT"/.test(action), "quickCreateLeadAction MUST block AGENT (direct POST vector)");
+      const page = fs.readFileSync("src/app/(app)/leads/new/page.tsx", "utf8");
+      assert(/createLeadAction/.test(page) && /role === "AGENT"/.test(page), "createLeadAction MUST block AGENT");
+      const exp = fs.readFileSync("src/app/api/leads/export/route.ts", "utf8");
+      assert(/role === "AGENT"/.test(exp) && /403/.test(exp), "lead export route MUST block AGENT");
+    },
+  },
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // 3e-quinque. REMARK INLINE-TIME IST (2026-06-21) — a written clock time in the
+  //     comma/space form promotes to the IST event time, no shift; numbers that
+  //     aren't times stay date-only.
+  // ───────────────────────────────────────────────────────────────────────────
+  {
+    name: "remark-IST-inline — comma/space clock time → IST event time (no shift); budgets stay date-only",
+    run: async () => {
+      const { parseRemarksTimeline } = await import("../src/lib/remarkParser");
+      const ev = parseRemarksTimeline("On 19 Jun 2026, 3:30 PM call not picked", [])[0];
+      const hm = new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Kolkata" }).format(ev.date!);
+      assert(hm === "15:30", `comma-form clock time must promote to 15:30 IST (no shift), got ${hm}`);
+      assert(/call not picked/.test(ev.text) && !/3:30/.test(ev.text), "promoted time is stripped from the body text");
+      const ev2 = parseRemarksTimeline("On 19 Jun 2026 discussed 3 BHK budget 2.5M", [])[0];
+      assert(ev2.date!.getUTCHours() === 6 && ev2.date!.getUTCMinutes() === 30, "non-time numbers (3 BHK / 2.5M) must NOT become a clock time — stays date-only noon");
+    },
+  },
+
+  // ───────────────────────────────────────────────────────────────────────────
   // 3f. WEBSITE MESSAGE → CONVERSATION (2026-06-20) — a genuine form message
   //     becomes a dated (IST) conversation entry; the source/campaign name never
   //     does; an empty message creates nothing.

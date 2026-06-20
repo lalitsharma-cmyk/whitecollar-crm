@@ -61,3 +61,28 @@ export function projectWhereForLead(
   if (!country) return {};
   return { country };
 }
+
+/**
+ * Server-side guard for MUTATIONS / DETAIL access (attach a project to a lead,
+ * open a project page). Returns true if `user` may touch a project of
+ * `projectCountry`. UI filtering is bypassable via direct API/URL, so the
+ * write/detail endpoints must call this.
+ *
+ *   ADMIN / MANAGER             → always true (cross-market is intentional).
+ *   AGENT                       → projectCountry must equal the agent's allowed
+ *                                 country (the lead's market if given, else the
+ *                                 agent's own team). Unknown market on either
+ *                                 side → true (fail-open, matches the where-helpers;
+ *                                 prod has no null-country projects / null-team agents).
+ */
+export function userCanAccessProjectCountry(
+  user: PropertyScopeUser,
+  projectCountry: string | null | undefined,
+  lead?: { forwardedTeam: string | null } | null,
+): boolean {
+  if (user.role === "ADMIN" || user.role === "MANAGER") return true;
+  const allowed = teamToCountry(lead?.forwardedTeam ?? null) ?? teamToCountry(user.team);
+  if (!allowed) return true;        // HQ / untagged agent → don't cripple
+  if (!projectCountry) return true; // unknown-market project → don't block (rare)
+  return projectCountry === allowed;
+}
