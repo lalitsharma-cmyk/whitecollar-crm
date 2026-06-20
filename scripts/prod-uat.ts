@@ -22,7 +22,7 @@ async function main() {
   if (del?.phone) {
     const hist = await getCustomerHistory(del.phone, del.email);
     const dup = await getDuplicateIntent(del.phone, del.email);
-    const ai = await findMatchingLeads({ phone: del.phone });
+    const ai = await findMatchingLeads({ phone: del.phone, name: del.name, email: del.email });
     const inHist = (hist?.records ?? []).some((r) => r.id === del.id || r.deleted);
     const inAI = ai.some((m) => m.id === del.id);
     const live = await prisma.lead.count({ where: { deletedAt: null, phone: { endsWith: del.phone.replace(/\D/g, "").slice(-10) } } });
