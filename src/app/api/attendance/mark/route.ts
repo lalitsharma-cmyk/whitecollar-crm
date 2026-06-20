@@ -1,73 +1,55 @@
-// Agent self-marks attendance for today. Used when auto-mark on login didn't
-// fire (rare — e.g. agent stayed logged in from yesterday).
-//
-// Round-5 extension (Agent T, Lalit's "I am here" widget):
-//   • Accepts optional JSON body { force?: boolean }. When force === true and
-//     today's row is ABSENT or ON_LEAVE, we overwrite to PRESENT (with the
-//     correct time-based status — PRESENT before 10:30 IST, LATE after).
-//     This powers the "Tap to override if you're actually here" affordance.
-//   • Default (no body / force=false) keeps the original idempotent behaviour:
-//     no-op if the day already has a row.
+// Agent "I am here" self-check-in. Distinct from the login auto-mark: this is the
+// explicit tap on the dashboard card. It ensures today's attendance row exists,
+// records the self-check-in time + device/IP (kept from the FIRST tap of the
+// day), and — with { force:true } — overrides an ABSENT/ON_LEAVE row to PRESENT.
 import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth";
-import {
-  autoMarkAttendanceOnLogin,
-  todayIST,
-  hourIST,
-  minIST,
-} from "@/lib/attendance";
+import { autoMarkAttendanceOnLogin, todayIST, hourIST, minIST } from "@/lib/attendance";
 import { prisma } from "@/lib/prisma";
 import { AttendanceStatus } from "@prisma/client";
 
 export async function POST(req: NextRequest) {
   const me = await requireUser();
 
-  // Read optional body. fetch() with no body sends Content-Length:0 — guard
-  // against the resulting JSON parse error.
   let force = false;
   try {
     const body = await req.json();
     if (body && typeof body === "object" && body.force === true) force = true;
-  } catch {
-    /* no body — fine */
-  }
+  } catch { /* no body — fine */ }
 
-  if (!force) {
-    await autoMarkAttendanceOnLogin(me.id);
-    return NextResponse.json({ ok: true });
-  }
-
-  // Force path — overwrite ABSENT / ON_LEAVE to PRESENT-or-LATE based on
-  // current IST time. Leaves an existing PRESENT/LATE alone (no-op).
+  const ip = (req.headers.get("x-forwarded-for")?.split(",")[0] ?? "").trim() || null;
+  const device = req.headers.get("user-agent") ?? null;
   const day = todayIST();
-  const existing = await prisma.attendance.findUnique({
-    where: { userId_date: { userId: me.id, date: day } },
-  });
+  const now = new Date();
 
-  if (!existing) {
-    // No row yet — fall back to the standard auto-mark.
+  // Ensure today's row exists (login auto-mark may not have fired if the agent
+  // stayed logged in from yesterday).
+  let row = await prisma.attendance.findUnique({ where: { userId_date: { userId: me.id, date: day } } });
+  if (!row) {
     await autoMarkAttendanceOnLogin(me.id);
-    return NextResponse.json({ ok: true });
+    row = await prisma.attendance.findUnique({ where: { userId_date: { userId: me.id, date: day } } });
+  }
+  if (!row) return NextResponse.json({ ok: true }); // shouldn't happen
+
+  // Force override: a self-check-in on an ABSENT / ON_LEAVE day flips to PRESENT
+  // (or LATE after 10:30 IST) — "Tap to override if you're actually here".
+  let status = row.status;
+  if (force && (row.status === AttendanceStatus.ABSENT || row.status === AttendanceStatus.ON_LEAVE)) {
+    const minutes = hourIST() * 60 + minIST();
+    status = minutes <= 10 * 60 + 30 ? AttendanceStatus.PRESENT : AttendanceStatus.LATE;
   }
 
-  if (
-    existing.status === AttendanceStatus.PRESENT ||
-    existing.status === AttendanceStatus.LATE
-  ) {
-    // Already here — nothing to do.
-    return NextResponse.json({ ok: true, alreadyHere: true });
-  }
-
-  const minutesSinceMidnight = hourIST() * 60 + minIST();
-  const cutoffPresentMin = 10 * 60 + 30; // 10:30am IST
-  const status: AttendanceStatus =
-    minutesSinceMidnight <= cutoffPresentMin
-      ? AttendanceStatus.PRESENT
-      : AttendanceStatus.LATE;
-
+  // Record the explicit self-check-in. Idempotent: the FIRST tap of the day wins
+  // for the time/device/IP, so refresh/re-login never overwrites the real moment.
   await prisma.attendance.update({
     where: { userId_date: { userId: me.id, date: day } },
-    data: { status, markedAt: new Date(), markedBy: null },
+    data: {
+      status,
+      markedAt: status !== row.status ? now : row.markedAt,
+      selfCheckedInAt: row.selfCheckedInAt ?? now,
+      checkInIp: row.checkInIp ?? ip,
+      checkInDevice: row.checkInDevice ?? device,
+    },
   });
-  return NextResponse.json({ ok: true, overridden: true });
+  return NextResponse.json({ ok: true, checkedInAt: (row.selfCheckedInAt ?? now).toISOString() });
 }

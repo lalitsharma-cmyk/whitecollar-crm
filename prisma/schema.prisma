@@ -1422,6 +1422,13 @@ model Attendance {
   markedAt  DateTime         @default(now())
   markedBy  String?          // null = self-mark / auto, else admin userId
   notes     String?
+  // ── "I am here" agent self-check-in (distinct from the login auto-mark) ──
+  // Set when the agent taps the "I'm here" button on their dashboard. The card
+  // shows until this is set, then hides for the rest of the IST day; a new date
+  // row next day resets it. checkInIp / checkInDevice captured at that tap.
+  selfCheckedInAt DateTime?
+  checkInIp       String?
+  checkInDevice   String?
   @@unique([userId, date])
   @@index([date])
 }

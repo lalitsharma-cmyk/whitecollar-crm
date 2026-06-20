@@ -1,10 +1,19 @@
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/auth";
-import { format, subDays } from "date-fns";
+import { format } from "date-fns";
 import { todayIST } from "@/lib/attendance";
+import { fmtISTTime } from "@/lib/datetime";
 import AttendanceCellEditor from "@/components/AttendanceCellEditor";
 
 export const dynamic = "force-dynamic";
+
+// Compress a raw user-agent into a readable "Browser · OS" label for the report.
+function shortDevice(ua: string | null | undefined): string {
+  if (!ua) return "—";
+  const os = /iphone|ipad/i.test(ua) ? "iOS" : /android/i.test(ua) ? "Android" : /windows/i.test(ua) ? "Windows" : /mac os/i.test(ua) ? "Mac" : /linux/i.test(ua) ? "Linux" : "";
+  const br = /edg/i.test(ua) ? "Edge" : /chrome|crios/i.test(ua) ? "Chrome" : /firefox|fxios/i.test(ua) ? "Firefox" : /safari/i.test(ua) ? "Safari" : "";
+  return [br, os].filter(Boolean).join(" · ") || ua.slice(0, 28);
+}
 
 const STATUS_VIEW: Record<string, { emoji: string; cls: string }> = {
   PRESENT:  { emoji: "✅", cls: "bg-emerald-100 text-emerald-800" },
@@ -61,6 +70,39 @@ export default async function AttendancePage() {
         <Stat label="Absent"  value={todayCounts.ABSENT}  cls="bg-red-50 text-red-800" />
         <Stat label="On leave" value={todayCounts.ON_LEAVE} cls="bg-blue-50 text-blue-800" />
         <Stat label="Not yet marked" value={todayCounts.MISSING} cls="bg-gray-50 text-gray-600" />
+      </div>
+
+      {/* ── Today's "I am here" check-ins (name · time IST · device · IP) ── */}
+      <div className="card overflow-x-auto">
+        <div className="px-3 pt-3 font-semibold text-sm">👋 Today&apos;s check-ins · {format(today, "d MMM yyyy")}</div>
+        <table className="tbl min-w-[640px] mt-2">
+          <thead>
+            <tr>
+              <th className="text-left">Agent</th>
+              <th className="text-left">Team</th>
+              <th className="text-left">Status</th>
+              <th className="text-left">Checked in (IST)</th>
+              <th className="text-left">Device</th>
+              <th className="text-left">IP</th>
+            </tr>
+          </thead>
+          <tbody>
+            {agents.map((a) => {
+              const r = idx.get(a.id)?.get(todayKey);
+              const checkedIn = !!r?.selfCheckedInAt;
+              return (
+                <tr key={a.id} className={checkedIn ? "" : "opacity-60"}>
+                  <td className="font-semibold text-sm">{a.name}</td>
+                  <td className="text-xs text-gray-500">{a.team ?? "—"}</td>
+                  <td><span className={`text-[11px] px-2 py-0.5 rounded-full ${STATUS_VIEW[r?.status ?? ""]?.cls ?? "bg-gray-100 text-gray-500"}`}>{r?.status ? `${STATUS_VIEW[r.status].emoji} ${r.status}` : "— not marked —"}</span></td>
+                  <td className="text-sm tabular-nums">{checkedIn ? `${fmtISTTime(r!.selfCheckedInAt!.toISOString())}` : <span className="text-gray-400 italic">not yet</span>}</td>
+                  <td className="text-xs text-gray-600">{shortDevice(r?.checkInDevice)}</td>
+                  <td className="text-xs text-gray-500 tabular-nums">{r?.checkInIp ?? "—"}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
       </div>
 
       {/* 14-day grid */}

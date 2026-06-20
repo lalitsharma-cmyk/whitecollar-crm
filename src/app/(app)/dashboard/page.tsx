@@ -380,6 +380,17 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         {/* ════ LEFT COLUMN — all dashboard content ════ */}
         <div className="space-y-4 min-w-0">
 
+          {/* "I am here" — agent self-check-in, at the VERY TOP of the dashboard
+              for AGENT/MANAGER. Hides once they tap it (per IST day). Not shown
+              to Admin/Super-Admin so their layout is unaffected. */}
+          {(me.role === "AGENT" || me.role === "MANAGER") && (
+            <IamHereCard
+              today={myAttendanceToday ? { status: myAttendanceToday.status, markedAt: myAttendanceToday.markedAt.toISOString() } : null}
+              checkedIn={!!myAttendanceToday?.selfCheckedInAt}
+              userName={me.name}
+            />
+          )}
+
           {/* §12.4 Morning briefing / greeting — moved to TOP so Lalit sees
               it first, before the KPI numbers */}
           <div className="card p-4 border-l-4 border-[#c9a24b] bg-gradient-to-br from-amber-50/60 to-white">
@@ -412,15 +423,6 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
               </div>
             </div>
           </div>
-
-          {/* "I am here" attendance */}
-          {me.role !== "AGENT" && (
-            <IamHereCard
-              today={myAttendanceToday ? { status: myAttendanceToday.status, markedAt: myAttendanceToday.markedAt.toISOString() } : null}
-              userId={me.id}
-              userName={me.name}
-            />
-          )}
 
           {/* ── SECTION 1: TODAY ── */}
           <div>
