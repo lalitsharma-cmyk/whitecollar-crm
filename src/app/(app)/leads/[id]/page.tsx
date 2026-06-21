@@ -985,7 +985,7 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
         {/* CONVERSATION STREAM — primary source of truth (spec §10).
             Comes before Quick Note (voice-first: voice note > conversation > quick note). */}
         <div data-lead-section="timeline">
-          <CallStatsBar callLogs={realCallLogs.map((c) => ({ duration: c.durationSec, outcome: c.outcome, startedAt: c.startedAt }))} />
+          <CallStatsBar callLogs={realCallLogs.map((c) => ({ durationSec: c.durationSec, outcome: c.outcome, notes: c.notes, startedAt: c.startedAt }))} waMessages={lead.waMessages.map((m) => ({ direction: m.direction }))} />
           <ConversationStreamCard
             callLogs={realCallLogs}
             waMessages={lead.waMessages}

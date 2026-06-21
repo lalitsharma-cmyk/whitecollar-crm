@@ -886,6 +886,16 @@ const checks: Check[] = [
       assert(s.slice(5).join(",") === "Aaa,Junk", `remaining must be A→Z, got ${s.slice(5).join(",")}`);
     },
   },
+  {
+    name: "call-outcome — WA-aware connected/unsuccessful classification (display-only)",
+    run: async () => {
+      const { effectiveOutcome, isWaInbound, isUnsuccessfulText } = await import("../src/lib/callOutcome");
+      assert(effectiveOutcome("CONNECTED", "💬 WA out — dropped wa") === "NOT_PICKED", "dropped-wa CONNECTED must downgrade");
+      assert(isWaInbound("💬 WA in — client replied") && !isWaInbound("💬 WA out — sent"), "WA inbound vs outbound");
+      assert(isUnsuccessfulText("forwarded to voicemail") && isUnsuccessfulText("not piced"), "unsuccessful free-text incl. typos");
+      assert(!isUnsuccessfulText("client picked up, interested"), "a connected note must NOT be flagged unsuccessful");
+    },
+  },
 ];
 
 // ── runner ────────────────────────────────────────────────────────────────────

@@ -17,7 +17,8 @@
 // loads the CURRENT My-Leads default ("all" workable) instead of a stale build.
 // v8 (2026-06-21): Sameer support-admin dashboard (lead-ops management view).
 // v9 (2026-06-21): canonical status filter order + Master-Data section order.
-const CACHE = "wcr-shell-v9";
+// v10 (2026-06-22): WhatsApp conversation metric + WA-aware connected/unsuccessful + talk-time fix.
+const CACHE = "wcr-shell-v10";
 const SHELL = ["/login", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", (event) => {

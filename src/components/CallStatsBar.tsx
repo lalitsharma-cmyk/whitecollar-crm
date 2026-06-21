@@ -1,14 +1,17 @@
-const CONNECTED_OUTCOMES = new Set(["CONNECTED", "INTERESTED", "NOT_INTERESTED"]);
-const UNSUCCESSFUL_OUTCOMES = new Set(["NOT_PICKED", "BUSY", "SWITCHED_OFF", "WRONG_NUMBER", "CALLBACK"]);
+import { CONNECTED_OUTCOMES, UNSUCCESSFUL_OUTCOMES, effectiveOutcome, isUnsuccessfulText, isWaNote, isWaInbound } from "@/lib/callOutcome";
 
 interface CallLog {
   durationSec?: number | null;
   outcome?: string | null;
+  notes?: string | null;
   startedAt: Date | string;
 }
 
+interface WaMsg { direction: "INBOUND" | "OUTBOUND"; }
+
 interface Props {
   callLogs: CallLog[];
+  waMessages?: WaMsg[];
 }
 
 function formatTalkTime(totalSec: number): string {
@@ -42,15 +45,29 @@ function lastOutcomeLabel(outcome: string): string {
   return map[outcome] ?? outcome.toLowerCase().replace(/_/g, " ");
 }
 
-export default function CallStatsBar({ callLogs }: Props) {
-  if (!callLogs || callLogs.length === 0) return null;
+export default function CallStatsBar({ callLogs, waMessages = [] }: Props) {
+  if ((!callLogs || callLogs.length === 0) && waMessages.length === 0) return null;
 
-  const connectedCount = callLogs.filter(c => CONNECTED_OUTCOMES.has(c.outcome ?? "")).length;
-  const unsuccessfulCount = callLogs.filter(c => UNSUCCESSFUL_OUTCOMES.has(c.outcome ?? "")).length;
+  // Connected = calls that connected, incl. a WhatsApp *call/reply* logged CONNECTED
+  // (a "💬 WA in —" reply). A one-way WA send is logged NOT_PICKED and never counts.
+  const connectedCount = callLogs.filter(c => CONNECTED_OUTCOMES.has(effectiveOutcome(c.outcome ?? "", c.notes))).length;
+  // Unsuccessful = mapped unsuccessful outcomes PLUS free-text variants (no answer /
+  // not picked / forwarded to voicemail / will call back / call later / not recieved …).
+  const unsuccessfulCount = callLogs.filter(c => {
+    const eff = effectiveOutcome(c.outcome ?? "", c.notes);
+    if (CONNECTED_OUTCOMES.has(eff)) return false; // a connected call is never "unsuccessful"
+    return UNSUCCESSFUL_OUTCOMES.has(eff) || isUnsuccessfulText(c.notes);
+  }).length;
+
+  // Two-way WhatsApp conversations = the client replied — a WA-inbound log, or a WA
+  // log that connected, plus any inbound WhatsAppMessage. One-way sends excluded.
+  const waTwoWay = callLogs.filter(c =>
+    isWaInbound(c.notes) || (isWaNote(c.notes) && effectiveOutcome(c.outcome ?? "", c.notes) === "CONNECTED")).length
+    + waMessages.filter(m => m.direction === "INBOUND").length;
 
   // Talk time — sum durationSec for connected calls only (meaningless on missed calls)
   const talkSec = callLogs
-    .filter(c => CONNECTED_OUTCOMES.has(c.outcome ?? ""))
+    .filter(c => CONNECTED_OUTCOMES.has(effectiveOutcome(c.outcome ?? "", c.notes)))
     .reduce((sum, c) => sum + (c.durationSec ?? 0), 0);
   const talkTime = formatTalkTime(talkSec);
 
@@ -87,6 +104,12 @@ export default function CallStatsBar({ callLogs }: Props) {
         <span className="font-medium text-gray-700">📵 Unsuccessful:</span>{" "}
         {unsuccessfulCount}
       </span>
+      {waTwoWay > 0 && (
+        <span>
+          <span className="font-medium text-gray-700">💬 WhatsApp:</span>{" "}
+          {waTwoWay}
+        </span>
+      )}
       <span>
         <span className="font-medium text-gray-700">Talk time:</span>{" "}
         {talkTime}
