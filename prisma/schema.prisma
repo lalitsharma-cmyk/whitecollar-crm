@@ -1028,6 +1028,9 @@ model Note {
   userId    String?
   user      User?    @relation(fields: [userId], references: [id])
   body      String
+  // Raw speech-to-text transcript for VOICE notes (audit). body holds the
+  // auto-corrected text shown to users; voiceOriginal preserves what was spoken.
+  voiceOriginal String?
   createdAt DateTime @default(now())
 
   @@index([leadId])

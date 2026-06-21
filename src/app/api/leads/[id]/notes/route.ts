@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { ActivityType, ActivityStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { loadOwnedLead } from "@/lib/leadScope";
+import { correctTranscript } from "@/lib/voiceCorrect";
 
 /**
  * POST /api/leads/[id]/notes
@@ -29,8 +30,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     return NextResponse.json({ error: "Note is too long (max 5000 chars)" }, { status: 400 });
   }
 
+  // Voice notes: auto-correct spelling/grammar/casing/punctuation (deterministic,
+  // preserves names/projects). body = corrected (shown); voiceOriginal = raw (audit).
+  const isVoice = body.voice === true;
+  const finalBody = isVoice ? (correctTranscript(content) || content) : content;
+
   const note = await prisma.note.create({
-    data: { leadId: id, userId: me.id, body: content },
+    data: { leadId: id, userId: me.id, body: finalBody, voiceOriginal: isVoice ? content : null },
     include: { user: { select: { name: true, avatarColor: true } } },
   });
 
@@ -40,8 +46,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       userId: me.id,
       type: ActivityType.NOTE,
       status: ActivityStatus.DONE,
-      title: "📝 Note added",
-      description: content.length > 200 ? content.slice(0, 200) + "…" : content,
+      title: isVoice ? "🎙 Voice note" : "📝 Note added",
+      description: finalBody.length > 200 ? finalBody.slice(0, 200) + "…" : finalBody,
     },
   }).catch(() => {}); // non-fatal — note already saved
 

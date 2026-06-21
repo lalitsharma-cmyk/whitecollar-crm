@@ -266,7 +266,7 @@ export default function VoiceNoteRecorder({ leadId, onTranscribed }: Props) {
       const r = await fetch(`/api/leads/${encodeURIComponent(leadId)}/notes`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content }),
+        body: JSON.stringify({ content, voice: true }),
       });
       if (!r.ok) {
         const j = await r.json().catch(() => ({}));
