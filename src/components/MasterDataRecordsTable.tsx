@@ -61,7 +61,7 @@ const COLS: { key: ColKey; label: string; frozen?: boolean; w?: number; minW?: n
   { key: "propertyType", label: "Property Type", minW: 110, defHidden: true },
   { key: "source", label: "Source" },
   { key: "message", label: "Message", wide: true },
-  { key: "status", label: "Status" },
+  { key: "status", label: "Status", minW: 150 },
   { key: "bucket", label: "Bucket" },
   { key: "email", label: "Email", defHidden: true },
   { key: "phone", label: "Phone", defHidden: true },
@@ -488,15 +488,15 @@ export default function MasterDataRecordsTable({ rows, agents, isSuperAdmin, vie
                       );
                     case "message":
                       return (
-                        <td key={c.key} className="px-3 py-2 max-w-[260px]">
+                        <td key={c.key} className="px-3 py-2 max-w-[200px]">
                           {l.message
-                            ? <span className="text-gray-600 dark:text-slate-400 truncate block max-w-[260px]" title={l.message}>{l.message}</span>
+                            ? <span className="text-gray-600 dark:text-slate-400 truncate block max-w-[200px]" title={l.message}>{l.message}</span>
                             : <span className="text-gray-300 dark:text-slate-600">—</span>}
                         </td>
                       );
                     case "status":
                       return (
-                        <td key={c.key} className="px-3 py-2 relative" onClick={stop}>
+                        <td key={c.key} className="px-3 py-2 relative whitespace-nowrap min-w-[150px]" onClick={stop}>
                           <button onClick={() => openMenu(l.id, "status")} title="Click to change status">
                             {l.statusLabel ? <span className={`text-xs px-2 py-0.5 rounded-full ${l.statusClass}`}>{l.statusLabel}</span> : <span className="text-xs text-gray-400 italic">— set —</span>}
                           </button>

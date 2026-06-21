@@ -527,13 +527,13 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
                     {/* date     */}<col style={{ width: 100 }} />
                     {/* time     */}<col style={{ width: 80 }} />
                     {/* name     */}<col style={{ width: 180 }} />
-                    {/* project  */}<col style={{ width: 180 }} />
-                    {/* status   */}<col style={{ width: 128 }} />
+                    {/* project  */}<col style={{ width: 160 }} />
+                    {/* status   */}<col style={{ width: 168 }} />
                     {/* budget   */}<col style={{ width: 90 }} />
                     {/* follow-up*/}<col style={{ width: 90 }} />
                     {!isAgent && <col style={{ width: 100 }} />}{/* assigned */}
                     {showSource && <col style={{ width: 75 }} />}
-                    {!isAgent && <col style={{ width: 120 }} />}{/* activity */}
+                    {!isAgent && <col style={{ width: 110 }} />}{/* activity */}
                     {/* actions  */}<col style={{ width: 150 }} />
                   </colgroup>
                   <thead>
@@ -656,7 +656,7 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
                               onClick={() => setStatusOpenFor(statusOpenFor === l.id ? null : l.id)}
                               className={`${statusColor(l.currentStatus)} text-[10px] px-2 py-0.5 rounded-full border font-medium inline-flex items-center gap-0.5 max-w-full`}
                               title={l.currentStatus ?? ""}>
-                              <span className="truncate max-w-[90px]">{l.currentStatus ?? "Set status"}</span>
+                              <span className="whitespace-nowrap">{l.currentStatus ?? "Set status"}</span>
                               <span className="shrink-0">▾</span>
                             </button>
                             {statusOpenFor === l.id && (
