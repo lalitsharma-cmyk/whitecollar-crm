@@ -81,7 +81,12 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
   // able to pivot to another team's leads), and agents already see only their
   // own. So the My/India/Dubai/All selector is for Lalit/admins.
   const isAdmin = me.role === "ADMIN";
-  const seg = isAdmin ? (sp.seg ?? "mine") : "all";
+  // Lead-Ops / Support-Admin (Sameer): a lead MANAGER, not a sales agent — owns no
+  // leads, so "My Leads" is meaningless. No "mine" segment; default to All Leads.
+  const isLeadOps = (me as { leadOpsOnly?: boolean }).leadOpsOnly === true;
+  const seg = isLeadOps
+    ? (sp.seg === "india" || sp.seg === "dubai" ? sp.seg : "all")
+    : isAdmin ? (sp.seg ?? "mine") : "all";
   const segWhere: Prisma.LeadWhereInput = {};
   if (isAdmin) {
     if (seg === "mine") segWhere.ownerId = me.id;
@@ -574,7 +579,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
       {/* ── Segment selector: My / India / Dubai / All (admin only) ───────── */}
       {isAdmin && (() => {
         const SEGS: { key: string; label: string }[] = [
-          { key: "mine",  label: "My Leads" },
+          ...(isLeadOps ? [] : [{ key: "mine", label: "My Leads" }]),
           { key: "india", label: "India Team" },
           { key: "dubai", label: "Dubai Team" },
           { key: "all",   label: "All Leads" },
@@ -584,7 +589,8 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
           for (const [k, v] of Object.entries(sp)) {
             if (v != null && v !== "" && k !== "page" && k !== "seg") p.set(k, String(v));
           }
-          if (key !== "mine") p.set("seg", key); // "mine" is the default — keep the URL clean
+          const defaultSeg = isLeadOps ? "all" : "mine"; // default seg keeps the URL clean
+          if (key !== defaultSeg) p.set("seg", key);
           const qs = p.toString();
           return `/leads${qs ? `?${qs}` : ""}`;
         };

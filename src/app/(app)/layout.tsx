@@ -23,16 +23,16 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   return (
     <>
       {testingMode && user.role !== "AGENT" && (
-        <div className="sticky top-0 z-[200] w-full bg-amber-400 text-amber-950 text-[11px] font-bold px-4 py-2 text-center flex items-center justify-center gap-2 border-b border-amber-500">
-          ⚠ TEST MODE ACTIVE
-          <span className="font-normal opacity-80 hidden sm:inline">
-            &nbsp;—&nbsp; Automation Disabled: WhatsApp · Assignment · Escalations · Notifications · Scheduled Actions
+        <div className="sticky top-0 z-[200] w-full bg-red-500 text-white text-[11px] font-bold px-4 py-2 text-center flex items-center justify-center gap-2 border-b border-red-600">
+          🧪 DESTRUCTIVE-OPS MODE
+          <span className="font-normal opacity-90 hidden sm:inline">
+            &nbsp;—&nbsp; lead-wipe enabled. Automation &amp; notifications are unaffected (Settings → Automation Controls).
           </span>
         </div>
       )}
       <AttendancePing />
       <MobileShell
-        user={{ name: user.name, role: user.role, avatarColor: user.avatarColor ?? "bg-slate-500", photoUrl: user.photoUrl, team: user.team }}
+        user={{ name: user.name, role: user.role, avatarColor: user.avatarColor ?? "bg-slate-500", photoUrl: user.photoUrl, team: user.team, leadOpsOnly: (user as { leadOpsOnly?: boolean }).leadOpsOnly }}
         awaitingTeamCount={awaitingTeamCount}
       >
         {children}

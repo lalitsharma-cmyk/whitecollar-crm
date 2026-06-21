@@ -26,7 +26,8 @@
 // v16 (2026-06-22): mobile push — iOS "Add to Home Screen" detection + guidance on /notifications.
 // v17 (2026-06-22): push enrol self-heal (always re-POST subscription) + iPhone diagnostics; Archived hidden from agents.
 // v18 (2026-06-22): Notifications decoupled from TEST MODE — Settings → Automation Controls (6 toggles, all OFF); SLA alerts fire.
-const CACHE = "wcr-shell-v18";
+// v19 (2026-06-22): Sameer (lead-ops) — hide My Leads/Action List/Lead Intake/HR Recruitment; Leads default All; banner copy fix.
+const CACHE = "wcr-shell-v19";
 const SHELL = ["/login", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", (event) => {

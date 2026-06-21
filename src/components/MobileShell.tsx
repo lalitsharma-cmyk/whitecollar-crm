@@ -19,7 +19,7 @@ import KeyboardShortcutsHelp from "./KeyboardShortcutsHelp";
 import PWAInstallNudge from "./PWAInstallNudge";
 import { useBodyScrollLock } from "@/hooks/useBodyScrollLock";
 
-type NavItem = { href: string; label: string; Icon: React.ElementType; tag?: string; agentHidden?: boolean; adminOnly?: boolean };
+type NavItem = { href: string; label: string; Icon: React.ElementType; tag?: string; agentHidden?: boolean; adminOnly?: boolean; leadOpsHidden?: boolean };
 type NavSection = { section: string; adminOnly?: boolean; managerOrAdmin?: boolean; items: NavItem[] };
 
 // §6 — Global Back button + breadcrumb. Every page has a back button that
@@ -84,7 +84,7 @@ const fullNav: NavSection[] = [
     { href: "/master-data", label: "Master Data",    Icon: Database, adminOnly: true },
     { href: "/leads",       label: "Leads",          Icon: Users },
     { href: "/cold-calls",  label: "Revival Engine", Icon: Gem },
-    { href: "/action-list", label: "Action List",    Icon: Sparkles },
+    { href: "/action-list", label: "Action List",    Icon: Sparkles, leadOpsHidden: true },
     { href: "/properties",  label: "Properties",     Icon: Building2 },
     { href: "/vault",       label: "Vault",          Icon: Lock },
     { href: "/reports",     label: "Reports",        Icon: BarChart3,  agentHidden: true },
@@ -108,14 +108,14 @@ const fullNav: NavSection[] = [
   { section: "ADMIN", adminOnly: true, items: [
     { href: "/leads?owner=unassigned&seg=all", label: "Unassigned Leads",   Icon: Inbox },
     { href: "/admin/assistant",       label: "AI Assistant",       Icon: Bot },
-    { href: "/intake",                label: "Lead Intake",        Icon: Upload },
+    { href: "/intake",                label: "Lead Intake",        Icon: Upload, leadOpsHidden: true },
     { href: "/admin/projects",        label: "Project Master",     Icon: Landmark },
     { href: "/admin/devices",         label: "Devices",            Icon: ShieldCheck },
     { href: "/admin/revival-logs",    label: "Revival Logs",       Icon: Gem },
   ]},
   // HR Recruitment — single entry point that opens the HR workspace
   { section: "RECRUITMENT", managerOrAdmin: true, items: [
-    { href: "/hr", label: "HR Recruitment", Icon: Briefcase },
+    { href: "/hr", label: "HR Recruitment", Icon: Briefcase, leadOpsHidden: true },
   ]},
 ];
 
@@ -130,7 +130,7 @@ const bottomNav = [
 
 interface Props {
   children: React.ReactNode;
-  user: { name: string; role: string; avatarColor: string; photoUrl?: string | null; team?: string | null };
+  user: { name: string; role: string; avatarColor: string; photoUrl?: string | null; team?: string | null; leadOpsOnly?: boolean };
   // Red badge count next to ADMIN → "Awaiting Team" — only ever >0 for
   // ADMIN/MANAGER. Server-fetched in (app)/layout.tsx, 0 for agents.
   awaitingTeamCount?: number;
@@ -221,7 +221,7 @@ export default function MobileShell({ children, user, awaitingTeamCount = 0 }: P
               )}
               {sidebarCollapsed && <div className="mb-1 mt-3 first:mt-0 border-t border-white/10 mx-1" />}
 
-              {group.items.filter((item) => !(item.agentHidden && user.role === "AGENT") && !(item.adminOnly && user.role !== "ADMIN")).map(({ href, label, Icon, tag }) => {
+              {group.items.filter((item) => !(item.agentHidden && user.role === "AGENT") && !(item.adminOnly && user.role !== "ADMIN") && !(item.leadOpsHidden && user.leadOpsOnly)).map(({ href, label, Icon, tag }) => {
                 const active = pathname === href || (href !== "/dashboard" && pathname?.startsWith(href));
                 const showAwaitingBadge = href === "/admin/awaiting-team" && awaitingTeamCount > 0;
                 return (
@@ -361,7 +361,7 @@ export default function MobileShell({ children, user, awaitingTeamCount = 0 }: P
               }).map((group) => (
                 <div key={group.section}>
                   <div className="text-[10px] uppercase tracking-widest text-white/40 px-3 mb-1 mt-3 first:mt-0">{group.section}</div>
-                  {group.items.filter((item) => !(item.agentHidden && user.role === "AGENT") && !(item.adminOnly && user.role !== "ADMIN")).map(({ href, label, Icon, tag }) => {
+                  {group.items.filter((item) => !(item.agentHidden && user.role === "AGENT") && !(item.adminOnly && user.role !== "ADMIN") && !(item.leadOpsHidden && user.leadOpsOnly)).map(({ href, label, Icon, tag }) => {
                     const active = pathname === href || (href !== "/dashboard" && pathname?.startsWith(href));
                     const showAwaitingBadge = href === "/admin/awaiting-team" && awaitingTeamCount > 0;
                     return (
@@ -439,7 +439,7 @@ export default function MobileShell({ children, user, awaitingTeamCount = 0 }: P
         className="lg:hidden fixed bottom-0 left-0 right-0 bg-white dark:bg-slate-800 border-t border-[#e5e7eb] dark:border-slate-700 flex z-30 shadow-[0_-2px_8px_rgba(0,0,0,0.04)]"
         style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
       >
-        {bottomNav.map(({ href, label, Icon }) => {
+        {bottomNav.filter((it) => !(user.leadOpsOnly && it.href === "/action-list")).map(({ href, label, Icon }) => {
           const active = pathname === href || (href !== "/dashboard" && pathname?.startsWith(href));
           return (
             <Link
