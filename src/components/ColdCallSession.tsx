@@ -5,6 +5,7 @@ import Link from "next/link";
 import { telLink } from "@/lib/phone";
 import { showXpToast } from "@/components/XPToast";
 import { lastMeaningfulRemark } from "@/lib/needSnapshot";
+import { formatLeadName } from "@/lib/leadName";
 
 // Lead shape — narrow on purpose. Anything not listed here is unavailable to
 // the session UI by design; expand only when the card actually renders it.
@@ -248,7 +249,7 @@ export default function ColdCallSession({ leads }: { leads: SessionLead[] }) {
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
             <Link href={`/leads/${lead.id}`} className="text-xl sm:text-2xl font-bold hover:underline truncate block">
-              {lead.name}
+              {formatLeadName(lead.name)}
             </Link>
             <div className="text-xs text-gray-500 mt-0.5">
               Budget: <span className="font-semibold text-gray-800">{formatBudget(lead.budgetMin, lead.budgetMax, lead.budgetCurrency)}</span>

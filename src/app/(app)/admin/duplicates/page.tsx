@@ -3,6 +3,7 @@ import { requireRole } from "@/lib/auth";
 import { fmtIST12 } from "@/lib/datetime";
 import Link from "next/link";
 import DuplicatesMergeClient from "@/components/DuplicatesMergeClient";
+import { formatLeadName } from "@/lib/leadName";
 
 export const dynamic = "force-dynamic";
 
@@ -185,7 +186,7 @@ export default async function DuplicatesPage() {
             <div className="mt-1 flex flex-wrap gap-2">
               {g.leads.map((l) => (
                 <Link key={l.id} href={`/leads/${l.id}`} target="_blank" className="text-[11px] underline text-[#0b1a33]">
-                  open {l.name.slice(0, 18)}…
+                  open {formatLeadName(l.name).slice(0, 18)}…
                 </Link>
               ))}
             </div>

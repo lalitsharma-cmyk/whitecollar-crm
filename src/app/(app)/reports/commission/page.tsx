@@ -6,6 +6,7 @@ import { fmtMoney, fmtMoneyDual } from "@/lib/money";
 import { BOOKED_STATUSES } from "@/lib/lead-statuses";
 import Link from "next/link";
 import ReportDateRangePicker from "@/components/ReportDateRangePicker";
+import { formatLeadName } from "@/lib/leadName";
 
 export const dynamic = "force-dynamic";
 
@@ -483,7 +484,7 @@ export default async function CommissionReportPage({
                             href={`/leads/${l.id}`}
                             className="font-medium text-[#0b1a33] hover:underline"
                           >
-                            {l.name}
+                            {formatLeadName(l.name)}
                           </Link>
                         </td>
                         <td className="px-3 py-2.5 text-gray-600">

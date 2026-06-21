@@ -4,6 +4,7 @@ import { useState, useMemo, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { PROPERTY_TYPES } from "@/lib/propertyType";
 import { statusesForTeam } from "@/lib/lead-statuses";
+import { formatLeadName } from "@/lib/leadName";
 
 export type MDRow = {
   id: string;
@@ -423,7 +424,7 @@ export default function MasterDataRecordsTable({ rows, agents, isSuperAdmin, vie
                         <td key={c.key} className={cellCls} style={fStyle(c.key)}>
                           {editing(l.id, "name")
                             ? <span onClick={stop}><InlineInput value={editVal} onChange={setEditVal} onSave={() => saveText(l.id, "name", editVal)} onCancel={() => setEdit(null)} /></span>
-                            : <span onDoubleClick={(e) => { stop(e); openTextEdit(l.id, "name", l.name); }} title="Click = preview · double-click = rename" className="font-semibold text-[#0b1a33] dark:text-blue-300 hover:underline">{l.name}</span>}
+                            : <span onDoubleClick={(e) => { stop(e); openTextEdit(l.id, "name", l.name); }} title="Click = preview · double-click = rename" className="font-semibold text-[#0b1a33] dark:text-blue-300 hover:underline">{formatLeadName(l.name)}</span>}
                         </td>
                       );
                     case "agent": {
@@ -555,7 +556,7 @@ function PreviewDrawer({ l, onClose }: { l: MDRow; onClose: () => void }) {
       <div className="relative w-full max-w-md h-full bg-white dark:bg-slate-900 shadow-2xl overflow-y-auto" onClick={(e) => e.stopPropagation()}>
         <div className="sticky top-0 bg-white dark:bg-slate-900 border-b border-gray-100 dark:border-slate-700 px-4 py-3 flex items-center justify-between">
           <div>
-            <div className="text-lg font-bold text-[#0b1a33] dark:text-blue-200">{l.name}</div>
+            <div className="text-lg font-bold text-[#0b1a33] dark:text-blue-200">{formatLeadName(l.name)}</div>
             <div className="flex items-center gap-1.5 mt-0.5">
               {l.statusLabel && <span className={`text-[11px] px-2 py-0.5 rounded-full ${l.statusClass}`}>{l.statusLabel}</span>}
               <span className={`text-[11px] px-2 py-0.5 rounded-full border ${l.bucketClass}`}>{l.bucket}</span>

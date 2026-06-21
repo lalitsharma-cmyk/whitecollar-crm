@@ -2,6 +2,7 @@ import { requireRole } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import Link from "next/link";
 import { format } from "date-fns";
+import { formatLeadName } from "@/lib/leadName";
 
 export const dynamic = "force-dynamic";
 
@@ -141,7 +142,7 @@ export default async function DedupPage() {
                               href={`/leads/${lead.id}`}
                               className="font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 hover:underline"
                             >
-                              {lead.name}
+                              {formatLeadName(lead.name)}
                             </Link>
                           </td>
 

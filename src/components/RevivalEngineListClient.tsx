@@ -22,6 +22,7 @@ import ColdDataPromoteButton from "./ColdDataPromoteButton";
 import OriginColdPromoteButton from "./OriginColdPromoteButton";
 import { whatsappLink, telLink } from "@/lib/phone";
 import { REVIVAL_STATUSES } from "@/lib/revival-constants";
+import { formatLeadName } from "@/lib/leadName";
 
 export { REVIVAL_STATUSES };
 
@@ -198,7 +199,7 @@ export default function RevivalEngineListClient({ leads, myId, isAdminOrMgr, cut
               <div className={`flex items-start justify-between gap-2 ${isAdminOrMgr ? "pl-6" : ""}`}>
                 <div className="min-w-0 flex-1">
                   <Link href={`/revival-engine/cold-data/${l.id}`} className="font-bold text-sm hover:underline truncate block text-[#0b1a33] dark:text-white">
-                    {l.name}
+                    {formatLeadName(l.name)}
                   </Link>
                   <div className="text-[11px] text-gray-500 truncate">
                     {l.phone}
@@ -315,7 +316,7 @@ export default function RevivalEngineListClient({ leads, myId, isAdminOrMgr, cut
                   {/* Lead name + phone + chips */}
                   <td className="px-3 py-3 align-top">
                     <Link href={`/revival-engine/cold-data/${l.id}`} className="font-bold text-[#0b1a33] dark:text-white hover:underline text-sm">
-                      {l.name}
+                      {formatLeadName(l.name)}
                     </Link>
                     {l.phone && (
                       <div className="text-[11px] text-gray-400 font-mono mt-0.5">

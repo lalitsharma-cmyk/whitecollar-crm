@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/auth";
 import { normalizeTeam } from "@/lib/teamRouting";
 import Link from "next/link";
+import { formatLeadName } from "@/lib/leadName";
 
 export const dynamic = "force-dynamic";
 
@@ -113,7 +114,7 @@ export default async function ActivityFeedPage({
       // the real caller is not a registered user in the system
       isHistorical: c.attributedAgentName != null,
       agentName: c.attributedAgentName ?? c.user.name,
-      leadName: c.lead?.name ?? null,
+      leadName: c.lead?.name ? formatLeadName(c.lead.name) : null,
       outcome: c.outcome,
       durationSec: c.durationSec,
     })),

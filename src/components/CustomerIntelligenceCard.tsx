@@ -23,6 +23,7 @@
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { cleanNeedSnapshot } from "@/lib/needSnapshot";
+import { formatLeadName } from "@/lib/leadName";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -487,7 +488,7 @@ export default function CustomerIntelligenceCard({ leadId, leadName, currentRole
                         href={`/leads/${l.id}`}
                         className="text-sm font-semibold text-[#0b1a33] hover:underline truncate block"
                       >
-                        {l.name}
+                        {formatLeadName(l.name)}
                       </Link>
                       <div className="text-[11px] text-gray-500">
                         {fmtDate(l.createdAt)}

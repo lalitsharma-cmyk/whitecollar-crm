@@ -6,6 +6,7 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { startOfDay, startOfWeek, startOfMonth } from "date-fns";
 import { fmtIST12 } from "@/lib/datetime";
+import { formatLeadName } from "@/lib/leadName";
 
 export const dynamic = "force-dynamic";
 
@@ -98,7 +99,7 @@ export default async function ChangesReportPage({ searchParams }: { searchParams
               <tr key={r.id} className="border-b border-[#f1f5f9] dark:border-slate-700 hover:bg-gray-50 dark:hover:bg-slate-700/50">
                 <td className="px-3 py-2 whitespace-nowrap text-gray-600 dark:text-slate-400 text-xs">{fmtIST12(r.changedAt)}</td>
                 <td className="px-3 py-2 whitespace-nowrap font-medium dark:text-slate-200">{r.changedBy?.name ?? "system"}</td>
-                <td className="px-3 py-2"><Link href={`/leads/${r.lead.id}?back=/reports/changes`} className="text-[#0b1a33] dark:text-blue-300 hover:underline">{r.lead.name}</Link></td>
+                <td className="px-3 py-2"><Link href={`/leads/${r.lead.id}?back=/reports/changes`} className="text-[#0b1a33] dark:text-blue-300 hover:underline">{formatLeadName(r.lead.name)}</Link></td>
                 <td className="px-3 py-2 whitespace-nowrap">{FIELD_LABEL[r.field] ?? r.field}</td>
                 <td className="px-3 py-2 text-xs"><span className="text-gray-400">{showVal(r.field, r.oldValue)}</span> <span className="mx-1 text-gray-400">→</span> <span className="font-medium text-[#0b1a33] dark:text-blue-300">{showVal(r.field, r.newValue)}</span></td>
                 <td className="px-3 py-2 text-[10px] text-gray-400">{r.source ?? "—"}</td>

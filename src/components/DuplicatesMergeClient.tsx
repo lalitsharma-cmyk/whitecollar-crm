@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { formatLeadName } from "@/lib/leadName";
 
 interface Lead {
   id: string;
@@ -131,7 +132,7 @@ export default function DuplicatesMergeClient({ groupKey, leads }: Props) {
                       aria-label={`Mark ${l.name} to be merged`}
                     />
                   </td>
-                  <td className="font-medium">{l.name}</td>
+                  <td className="font-medium">{formatLeadName(l.name)}</td>
                   <td className="text-[11px] text-gray-600">
                     <div>{l.phone ?? "—"}</div>
                     <div className="text-gray-400">{l.email ?? "—"}</div>
