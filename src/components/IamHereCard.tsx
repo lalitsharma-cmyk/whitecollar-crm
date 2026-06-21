@@ -47,7 +47,7 @@ export default function IamHereCard({ today, checkedIn, userName }: Props) {
       const r = await fetch("/api/attendance/mark", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ force: isAbsent }),
+        body: JSON.stringify({ selfCheckin: true, force: isAbsent }),
       });
       if (r.ok) router.refresh(); // re-renders dashboard → checkedIn true → card hides
     } finally {

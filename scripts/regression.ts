@@ -852,6 +852,17 @@ const checks: Check[] = [
       assert(displayBudget({ budgetMin: 30_000_000, budgetCurrency: "INR" }) === "3 Cr", "INR 30M must be '3 Cr', not the old '3 CR'");
     },
   },
+  {
+    name: "agent-name — Lalit cluster → 'Lalit Sharma' (display-only); non-roster names preserved",
+    run: async () => {
+      const { canonicalAgentName } = await import("../src/lib/agentName");
+      for (const v of ["Lalit", "Lalit Sir", "Shrama", "Sharma", "Lalit Shrama"]) {
+        assert(canonicalAgentName(v) === "Lalit Sharma", `"${v}" must canonicalize to "Lalit Sharma"`);
+      }
+      assert(canonicalAgentName("Kiran") === "Kiran", "non-roster historical name must be preserved");
+      assert(canonicalAgentName("Yasir", ["Yasir Khan"]) === "Yasir Khan", "roster first-name resolves to full name");
+    },
+  },
 ];
 
 // ── runner ────────────────────────────────────────────────────────────────────

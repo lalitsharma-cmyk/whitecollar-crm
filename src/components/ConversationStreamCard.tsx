@@ -11,6 +11,7 @@
 import { useState, useMemo, Fragment } from "react";
 import { useRouter } from "next/navigation";
 import { fmtIST12Paren } from "@/lib/datetime";
+import { canonicalAgentName } from "@/lib/agentName";
 import type { CallLog, WhatsAppMessage } from "@prisma/client";
 import {
   parseRemarksTimeline,
@@ -627,7 +628,7 @@ export default function ConversationStreamCard({
         {/* ─ Real CRM call logs ─ */}
         {callLogs.filter(showCallLog).map((c, idx) => {
           const col = callColour(c.outcome, c.notes);
-          const displayName = c.attributedAgentName ?? c.user.name;
+          const displayName = canonicalAgentName(c.attributedAgentName ?? c.user.name, agentNames);
           const notesClean = c.notes
             ? c.notes.replace(/^[A-Z][A-Za-z]{1,15}(?:\s+[A-Z][A-Za-z]{1,15}){0,2}\s*:\s*/, "")
             : null;

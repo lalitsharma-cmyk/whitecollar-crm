@@ -378,10 +378,9 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         {/* ════ LEFT COLUMN — all dashboard content ════ */}
         <div className="space-y-4 min-w-0">
 
-          {/* "I am here" — agent self-check-in, at the VERY TOP of the dashboard
-              for AGENT/MANAGER. Hides once they tap it (per IST day). Not shown
-              to Admin/Super-Admin so their layout is unaffected. */}
-          {(me.role === "AGENT" || me.role === "MANAGER") && (
+          {/* "I am here" — self-check-in, at the VERY TOP of the dashboard for
+              AGENT/MANAGER/ADMIN. Hides once they tap it (per IST day). */}
+          {(me.role === "AGENT" || me.role === "MANAGER" || me.role === "ADMIN") && (
             <IamHereCard
               today={myAttendanceToday ? { status: myAttendanceToday.status, markedAt: myAttendanceToday.markedAt.toISOString() } : null}
               checkedIn={!!myAttendanceToday?.selfCheckedInAt}

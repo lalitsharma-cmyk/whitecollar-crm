@@ -10,6 +10,7 @@ export default function PWARegister() {
   const [installed, setInstalled] = useState(false);
   const [hidden, setHidden] = useState(false);
   const [pushState, setPushState] = useState<PushState>("default");
+  const [pushResolved, setPushResolved] = useState(false); // true once getPushState() has actually run
   const [pushDismissed, setPushDismissed] = useState(false);
   const [enabling, setEnabling] = useState(false);
 
@@ -33,7 +34,9 @@ export default function PWARegister() {
     (async () => {
       await ensureSubscribedIfGranted();
       const s = await getPushState();
-      if (alive) setPushState(s);
+      if (alive) { setPushState(s); setPushResolved(true); }
+      // Durable suppressor: once truly enabled on this device, never auto-prompt again.
+      try { if (s === "enabled") localStorage.setItem("wcr-push-dismissed", "1"); } catch {}
       try {
         const r = await fetch("/api/me/notif-settings", { cache: "no-store" });
         if (r.ok) {
@@ -109,14 +112,20 @@ export default function PWARegister() {
 
   async function onEnablePush() {
     setEnabling(true);
-    try { setPushState(await enablePush()); }
-    finally { setEnabling(false); }
+    try {
+      const s = await enablePush();
+      setPushState(s);
+      try { if (s === "enabled") localStorage.setItem("wcr-push-dismissed", "1"); } catch {}
+    } finally { setEnabling(false); }
   }
 
   // ── PUSH ENABLE BANNER — shows on ANY browser (laptop included), not gated
   //    behind installing the PWA. Only while permission is still "default" and
   //    the user hasn't dismissed it. Once granted/subscribed → never shows again. ──
-  const showPushBanner = pushState === "default" && !pushDismissed && !hidden;
+  // Only after we KNOW the real state (pushResolved), only when permission was
+  // never asked ("default"), and only if not durably dismissed/enabled. Prevents
+  // the first-paint flash AND the "re-asks even though already enabled" loop.
+  const showPushBanner = pushResolved && pushState === "default" && !pushDismissed && !hidden;
   if (showPushBanner) {
     return (
       <div className="fixed bottom-4 right-4 z-50 max-w-xs bg-white dark:bg-slate-800 border border-[#c9a24b] shadow-2xl rounded-xl p-4">

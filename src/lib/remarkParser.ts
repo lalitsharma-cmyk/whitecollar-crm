@@ -14,6 +14,7 @@
 //      are grouped into "X times, DD Mon – DD Mon" to keep the timeline readable.
 
 import { CallOutcome } from "@prisma/client";
+import { canonicalAgentName } from "@/lib/agentName";
 
 // ─── Date/time helpers ──────────────────────────────────────────────────────
 
@@ -357,6 +358,12 @@ export function buildAgentMatcher(agentNames: string[]): (candidate: string) => 
   }
   return (candidate: string) => {
     const trimmed = candidate.trim();
+    // Priority 0: hard cluster ("Lalit"/"Lalit Sir"/"Sharma"/"Shrama" → "Lalit
+    // Sharma") + honorific strip + unambiguous first-name→full-name from roster.
+    // Only short-circuits when it actually changed the name (keeps Priority 2
+    // historical non-roster names like "Kiran" untouched).
+    const hard = canonicalAgentName(trimmed, agentNames);
+    if (hard.toLowerCase() !== trimmed.toLowerCase()) return hard;
     // Priority 1: known CRM user → canonical full name
     const canonical = lookup.get(trimmed.toLowerCase());
     if (canonical) return canonical;

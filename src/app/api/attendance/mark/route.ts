@@ -12,10 +12,14 @@ export async function POST(req: NextRequest) {
   const me = await requireUser();
 
   let force = false;
+  let selfCheckin = false;            // true ONLY for the explicit "I'm here" tap
   try {
     const body = await req.json();
-    if (body && typeof body === "object" && body.force === true) force = true;
-  } catch { /* no body — fine */ }
+    if (body && typeof body === "object") {
+      if (body.force === true) force = true;
+      if (body.selfCheckin === true) selfCheckin = true;
+    }
+  } catch { /* no body (passive AttendancePing) — auto-mark only, never stamp self-checkin */ }
 
   const ip = (req.headers.get("x-forwarded-for")?.split(",")[0] ?? "").trim() || null;
   const device = req.headers.get("user-agent") ?? null;
@@ -46,9 +50,16 @@ export async function POST(req: NextRequest) {
     data: {
       status,
       markedAt: status !== row.status ? now : row.markedAt,
-      selfCheckedInAt: row.selfCheckedInAt ?? now,
-      checkInIp: row.checkInIp ?? ip,
-      checkInDevice: row.checkInDevice ?? device,
+      // Only the explicit "I'm here" tap (or a force override) stamps the
+      // self-check-in. The passive AttendancePing must NOT — otherwise it
+      // pre-stamps on page load and the "I'm here" card never appears.
+      ...(selfCheckin || force
+        ? {
+            selfCheckedInAt: row.selfCheckedInAt ?? now,
+            checkInIp: row.checkInIp ?? ip,
+            checkInDevice: row.checkInDevice ?? device,
+          }
+        : {}),
     },
   });
   return NextResponse.json({ ok: true, checkedInAt: (row.selfCheckedInAt ?? now).toISOString() });
