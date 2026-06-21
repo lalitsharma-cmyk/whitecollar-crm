@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Bell, Volume2, VolumeX } from "lucide-react";
-import { playNotifSound, playReminderSound, isNotifSoundEnabled, setNotifSoundEnabled, type NotifSeverity } from "@/lib/notifSounds";
+import { playNotifSound, playReminderSound, playLunchSound, isNotifSoundEnabled, setNotifSoundEnabled, type NotifSeverity } from "@/lib/notifSounds";
 
 type Notif = {
   id: string;
@@ -65,11 +65,15 @@ export default function NotifBell() {
           const isLead = newUnread.some((n) => n.kind === "LEAD_ASSIGNED" || /new lead|lead assigned|website lead|new website/i.test(n.title));
           const isSiteVisit = newUnread.some((n) => /site visit reminder/i.test(n.title));
           const isMeeting = newUnread.some((n) => /meeting reminder/i.test(n.title));
+          // Lunch break = its OWN soft tone, lowest priority (only when the batch
+          // is ONLY lunch reminders — a real lead/meeting in the same poll wins).
+          const isOnlyLunch = newUnread.length > 0 && newUnread.every((n) => n.kind === "LUNCH_REMINDER");
           const order: Record<string, number> = { INFO: 0, WARNING: 1, CRITICAL: 2 };
           const top = newUnread.reduce<NotifSeverity>((a, n) => (order[n.severity] > order[a] ? n.severity : a), "INFO");
           if (isLead) playNotifSound("CRITICAL");
           else if (isSiteVisit) playReminderSound("site_visit");
           else if (isMeeting) playReminderSound("meeting");
+          else if (isOnlyLunch) playLunchSound();
           else playNotifSound(top);
         }
         for (const n of incoming) seenIds.current.add(n.id);

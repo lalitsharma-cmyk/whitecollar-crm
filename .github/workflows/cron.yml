@@ -50,6 +50,11 @@ on:
     - cron: "30 21 * * *"
     # Sales follow-up auto-rollover — daily 15:30 UTC = 21:00 IST (9 PM IST).
     - cron: "30 15 * * *"
+    # Lunch-break reminders — soft, informational. 08:30 UTC = 2:00 PM IST (start)
+    # and 08:55 UTC = 2:25 PM IST (5-min warning). May lag a few min under GitHub
+    # scheduler load — acceptable for a gentle break nudge.
+    - cron: "30 8 * * *"
+    - cron: "55 8 * * *"
   # Allow manual trigger from the Actions tab for debugging
   workflow_dispatch:
 
@@ -187,3 +192,27 @@ jobs:
           path: ${{ steps.meta.outputs.filename }}
           retention-days: 90
           if-no-files-found: error
+
+  lunch_start:
+    # Lunch Break Started — 08:30 UTC = 2:00 PM IST.
+    if: github.event.schedule == '30 8 * * *' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Lunch break started (2:00 PM IST)
+        run: |
+          curl -sf --max-time 60 \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            "https://crm.whitecollarrealty.com/api/cron/lunch-reminder?phase=start" \
+            || echo "::warning::lunch-start cron failed"
+
+  lunch_ending:
+    # Lunch Break Ending Soon — 08:55 UTC = 2:25 PM IST.
+    if: github.event.schedule == '55 8 * * *' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Lunch break ending soon (2:25 PM IST)
+        run: |
+          curl -sf --max-time 60 \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            "https://crm.whitecollarrealty.com/api/cron/lunch-reminder?phase=ending" \
+            || echo "::warning::lunch-ending cron failed"

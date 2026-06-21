@@ -1339,6 +1339,7 @@ enum NotifKind {
   AUTO_ASSIGN_FIRED   // 5 min, admin didn't assign — auto-assigned
   REMINDER            // generic follow-up reminder
   SYSTEM              // info / settings change
+  LUNCH_REMINDER      // soft lunch-break reminder (2:00 / 2:25 PM IST)
 }
 
 enum NotifSeverity {

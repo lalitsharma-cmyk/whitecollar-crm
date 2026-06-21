@@ -206,3 +206,16 @@ export function playReminderSound(kind: "meeting" | "site_visit") {
   if (!isNotifSoundEnabled()) return;
   playSound(kind === "site_visit" ? "siren" : "chime", getChosenVolume());
 }
+
+// Lunch-break reminder (Lalit, 2026-06-22): a DELIBERATELY soft, mellow two-note
+// descending chime — gentle, low, unmistakably NOT a lead / escalation / follow-up
+// alert. Its own dedicated tone, always played at LOW volume regardless of the
+// user's chosen level so it stays calm and non-urgent. Respects the mute toggle.
+const LUNCH_TONE: Tone[] = [
+  { freq: 698, type: "sine", durationMs: 520, gain: 0.40 },               // F5
+  { freq: 523, type: "sine", durationMs: 680, gain: 0.38, startMs: 300 }, // C5 (soft resolve)
+];
+export function playLunchSound() {
+  if (!isNotifSoundEnabled()) return;
+  play(LUNCH_TONE, VOL_MULT.low); // always soft/low — informational only
+}
