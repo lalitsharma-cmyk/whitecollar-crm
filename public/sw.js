@@ -22,7 +22,8 @@
 // v12 (2026-06-22): uniform budget format on ALL peripheral surfaces (reports/PDF/team/QuickSearch/Calls/ColdCall/Action-List/push).
 // v13 (2026-06-22): dashboard daily sales quote under greeting + hide morning check-in section after attendance (agents).
 // v14 (2026-06-22): lunch-break reminders (2:00/2:25 PM IST) with dedicated soft sound + LUNCH_REMINDER category.
-const CACHE = "wcr-shell-v14";
+// v15 (2026-06-22): Leads default filter → Today+Overdue + 6 perf indexes on hot filter columns.
+const CACHE = "wcr-shell-v15";
 const SHELL = ["/login", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", (event) => {

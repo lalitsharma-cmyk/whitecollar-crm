@@ -521,6 +521,16 @@ model Lead {
   @@index([forwardedTeam])
   @@index([importBatchId])
   @@index([deletedAt])
+  // Perf (2026-06-22): hot filter/sort/count columns on the Leads page — every
+  // follow-up chip count, the status groupBy, the ghosting/overdue filters, and
+  // the team/owner scopes. Created on prod via scripts/migrate-lead-indexes.ts
+  // (CREATE INDEX CONCURRENTLY — no table lock).
+  @@index([followupDate])
+  @@index([currentStatus])
+  @@index([lastTouchedAt])
+  @@index([leadOrigin])
+  @@index([ownerId, deletedAt])
+  @@index([forwardedTeam, deletedAt])
 }
 
 // =====================================================

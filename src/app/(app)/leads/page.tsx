@@ -254,11 +254,12 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
   else if (sp.followup) effectiveFollowup = sp.followup;        // explicit chip
   else if (filterTab === "nofollowup") effectiveFollowup = "none";
   else if (hasOtherFilter) effectiveFollowup = "all";          // targeted search → no time narrowing
-  // DEFAULT (Lalit, 2026-06-21): show ALL workable leads, ordered by the 6-tier
-  // smart sort (today's fresh on top → today's follow-ups → old fresh → overdue →
-  // future → other). The smart sort keeps actionable leads at the top, so we no
-  // longer hide future / no-follow-up leads behind a chip. Applies to every role.
-  else effectiveFollowup = "all";                              // ← the default
+  // DEFAULT (Lalit, 2026-06-22): open straight to "Today + Overdue" — the leads
+  // that need action NOW (today's follow-ups + every overdue one), still ordered
+  // by the 6-tier smart sort within that set. Applies to EVERY role. Future /
+  // no-follow-up leads are one chip away ("All Active" / "Future"). The "🎯 Today
+  // + Overdue" chip auto-highlights since it keys off effectiveFollowup.
+  else effectiveFollowup = "todue";                            // ← the default
 
   if (effectiveFollowup === "range") {
     const fRange: { gte?: Date; lte?: Date } = {};
