@@ -703,8 +703,11 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
               </>
             )}
 
-            {/* Nav shortcuts */}
-            <Link href="/leads/archived" className={`${base} border-[#e5e7eb] dark:border-slate-600 text-gray-500 dark:text-slate-400 hover:bg-gray-50 dark:hover:bg-slate-700`}>🗄️ Archived</Link>
+            {/* Nav shortcuts — Archived = rejected leads, NON-AGENT only (agents must
+                never see rejected leads; they live in Master Data for admin review). */}
+            {me.role !== "AGENT" && (
+              <Link href="/leads/archived" className={`${base} border-[#e5e7eb] dark:border-slate-600 text-gray-500 dark:text-slate-400 hover:bg-gray-50 dark:hover:bg-slate-700`}>🗄️ Archived</Link>
+            )}
           </div>
         );
       })()}

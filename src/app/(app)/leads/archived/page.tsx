@@ -5,6 +5,7 @@ import { formatDistanceToNow } from "date-fns";
 import { requireUser } from "@/lib/auth";
 import { leadScopeWhere } from "@/lib/leadScope";
 import ReactivateButton from "@/components/ReactivateButton";
+import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
 
@@ -17,6 +18,9 @@ const potentialEmoji: Record<Potential, string> = {
 
 export default async function ArchivedLeadsPage() {
   const me = await requireUser();
+  // Archived = REJECTED leads (rejectedAt set). Per Lalit's rule, AGENTS must not
+  // see rejected leads anywhere — they live in Master Data for admin review only.
+  if (me.role === "AGENT") redirect("/leads");
   const scope = await leadScopeWhere(me);
 
   const leads = await prisma.lead.findMany({
