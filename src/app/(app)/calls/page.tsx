@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
 import { fmtIST12 } from "@/lib/datetime";
 import CallsClient, { type CallRowData } from "@/components/CallsClient";
+import { formatLeadName } from "@/lib/leadName";
 
 export const dynamic = "force-dynamic";
 
@@ -133,7 +134,7 @@ export default async function CallsPage() {
     id: c.id,
     startedAt: c.startedAt,
     outcome: c.outcome,
-    leadName: c.lead?.name ?? c.phoneNumber ?? "—",
+    leadName: c.lead?.name ? formatLeadName(c.lead.name) : (c.phoneNumber ?? "—"),
     agent: c.attributedAgentName ?? c.user?.name ?? "—",
     score: c.outcome ? scoreCall(c.outcome, c.durationSec, c.notes) : null,
   }));

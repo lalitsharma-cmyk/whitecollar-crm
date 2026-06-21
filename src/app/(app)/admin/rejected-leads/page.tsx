@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { fmtIST12 } from "@/lib/datetime";
 import { REJECT_REASONS, REJECT_REASON_VALUES, rejectReasonLabel } from "@/lib/reject-reasons";
+import { formatLeadName } from "@/lib/leadName";
 
 /**
  * /admin/rejected-leads — oversight view for leads agents have rejected.
@@ -187,7 +188,7 @@ export default async function RejectedLeadsPage({
                   <tr key={l.id} className="border-b last:border-b-0 hover:bg-gray-50">
                     <td className="px-3 py-2">
                       <Link href={`/leads/${l.id}`} className="text-blue-700 hover:underline font-medium">
-                        {l.name}
+                        {formatLeadName(l.name)}
                       </Link>
                     </td>
                     <td className="px-3 py-2 text-gray-700 font-mono text-xs">{l.phone ?? "—"}</td>
@@ -218,7 +219,7 @@ export default async function RejectedLeadsPage({
               <div key={l.id} className="card p-3">
                 <div className="flex items-start justify-between gap-2">
                   <Link href={`/leads/${l.id}`} className="text-blue-700 hover:underline font-medium text-sm">
-                    {l.name}
+                    {formatLeadName(l.name)}
                   </Link>
                   <span className="chip chip-lost text-[10px]">
                     {l.rejectionReason ? rejectReasonLabel(l.rejectionReason) : "—"}

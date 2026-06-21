@@ -6,6 +6,7 @@
 // Role-gated to ADMIN + MANAGER (agents are redirected to /dashboard).
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
+import { formatLeadName } from "@/lib/leadName";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { fmtIST12 } from "@/lib/datetime";
@@ -67,7 +68,7 @@ export default async function AwaitingTeamPage() {
                 <tr key={l.id} className="border-b border-[#f1f3f7] last:border-0">
                   <td className="px-3 py-2">
                     <Link href={`/leads/${l.id}`} className="font-semibold text-[#0b1a33] hover:underline">
-                      {l.name}
+                      {formatLeadName(l.name)}
                     </Link>
                   </td>
                   <td className="px-3 py-2 font-mono text-xs text-gray-700">

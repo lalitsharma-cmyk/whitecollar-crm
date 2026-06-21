@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { formatLeadName } from "@/lib/leadName";
 
 export interface DeletedRow {
   id: string;
@@ -49,7 +50,7 @@ export default function DeletedLeadsClient({ rows }: { rows: DeletedRow[] }) {
         <tbody>
           {rows.map(r => (
             <tr key={r.id} className="border-b border-gray-100 dark:border-slate-800 hover:bg-gray-50 dark:hover:bg-slate-800/40">
-              <td className="px-3 py-2.5 font-medium">{r.name}<div className="text-[10px] text-gray-400 font-mono">{r.id}</div></td>
+              <td className="px-3 py-2.5 font-medium">{formatLeadName(r.name)}<div className="text-[10px] text-gray-400 font-mono">{r.id}</div></td>
               <td className="px-3 py-2.5 text-gray-600 dark:text-slate-300 whitespace-nowrap">{r.phone ?? "—"}</td>
               <td className="px-3 py-2.5 text-gray-600 dark:text-slate-300">{r.status ?? "—"}</td>
               <td className="px-3 py-2.5 text-gray-600 dark:text-slate-300">{r.team ?? "—"}</td>

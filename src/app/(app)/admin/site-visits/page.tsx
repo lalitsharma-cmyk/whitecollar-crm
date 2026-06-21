@@ -17,6 +17,7 @@ import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/auth";
 import Link from "next/link";
 import { fmtIST12 } from "@/lib/datetime";
+import { formatLeadName } from "@/lib/leadName";
 import LiveVisitsAutoRefresh from "@/components/LiveVisitsAutoRefresh";
 
 export const dynamic = "force-dynamic";
@@ -147,7 +148,7 @@ export default async function AdminSiteVisitsPage() {
                       {v.user && <span className={`avatar ${v.user.avatarColor ?? "bg-slate-500"} inline-flex w-6 h-6 text-[10px]`}>{v.user.name.split(" ").map((s) => s[0]).slice(0, 2).join("")}</span>}
                       <span>{v.user?.name ?? "Unknown agent"}</span>
                       <span className="text-gray-400">→</span>
-                      {v.lead && <Link href={`/leads/${v.lead.id}`} className="text-[#0b1a33] underline">{v.lead.name}</Link>}
+                      {v.lead && <Link href={`/leads/${v.lead.id}`} className="text-[#0b1a33] underline">{formatLeadName(v.lead.name)}</Link>}
                       <span className="chip src text-[9px]">{v.lead?.forwardedTeam ?? v.user?.team ?? "—"}</span>
                     </div>
                     <div className="text-[11px] text-gray-600 mt-1">
@@ -200,7 +201,7 @@ export default async function AdminSiteVisitsPage() {
                       {v.user && <span className={`avatar ${v.user.avatarColor ?? "bg-slate-500"} inline-flex w-6 h-6 text-[10px]`}>{v.user.name.split(" ").map((s) => s[0]).slice(0, 2).join("")}</span>}
                       <span>{v.user?.name ?? "Unknown"}</span>
                       <span className="text-gray-400">→</span>
-                      {v.lead && <Link href={`/leads/${v.lead.id}`} className="text-[#0b1a33] underline">{v.lead.name}</Link>}
+                      {v.lead && <Link href={`/leads/${v.lead.id}`} className="text-[#0b1a33] underline">{formatLeadName(v.lead.name)}</Link>}
                       {v.isNoShow && <span className="chip chip-lost text-[9px]">NO-SHOW</span>}
                     </div>
                     <div className="text-[11px] text-gray-500 mt-1">

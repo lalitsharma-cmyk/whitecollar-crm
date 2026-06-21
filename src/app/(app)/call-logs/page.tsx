@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { CallOutcome, Prisma } from "@prisma/client";
 import Link from "next/link";
 import { normalizeTeam } from "@/lib/teamRouting";
+import { formatLeadName } from "@/lib/leadName";
 
 export const dynamic = "force-dynamic";
 
@@ -306,7 +307,7 @@ export default async function CallLogsPage({
                         href={`/leads/${log.lead.id}`}
                         className="text-blue-600 dark:text-blue-400 hover:underline font-medium"
                       >
-                        {log.lead.name}
+                        {formatLeadName(log.lead.name)}
                       </Link>
                     ) : (
                       <span className="text-gray-400 dark:text-slate-500 text-xs">—</span>

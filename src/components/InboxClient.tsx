@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { formatLeadName } from "@/lib/leadName";
 import { Phone, Calendar, Mail, Pencil, Trash2 } from "lucide-react";
 import { format as fnsFormat } from "date-fns";
 import { telLink, whatsappLink } from "@/lib/phone";
@@ -177,7 +178,7 @@ export default function InboxClient({ rows, canDelete }: Props) {
               />
               <div className="min-w-0 flex-1">
                 <Link href={`/leads/${lead.id}`} className="font-semibold text-[#0b1a33] dark:text-slate-100 hover:underline truncate block">
-                  {lead.name}
+                  {formatLeadName(lead.name)}
                 </Link>
                 {lead.phone && <p className="text-xs text-gray-500 dark:text-slate-400 mt-0.5">{lead.phone}</p>}
               </div>
@@ -285,7 +286,7 @@ export default function InboxClient({ rows, canDelete }: Props) {
                 </td>
                 <td className="px-4 py-3">
                   <Link href={`/leads/${lead.id}`} className="font-medium text-[#0b1a33] dark:text-slate-100 hover:underline">
-                    {lead.name}
+                    {formatLeadName(lead.name)}
                   </Link>
                   {lead.phone && <p className="text-xs text-gray-400 dark:text-slate-500 mt-0.5">{lead.phone}</p>}
                 </td>

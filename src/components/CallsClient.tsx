@@ -2,6 +2,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { fmtIST12, fmtISTDate } from "@/lib/datetime";
+import { formatLeadName } from "@/lib/leadName";
 import { Phone, MessageCircle, X, ChevronRight } from "lucide-react";
 import { telLink, whatsappLink } from "@/lib/phone";
 import { useBodyScrollLock } from "@/hooks/useBodyScrollLock";
@@ -118,7 +119,7 @@ export default function CallsClient({ calls }: { calls: CallRowData[] }) {
                     className={`cursor-pointer transition ${active ? "bg-amber-50" : "hover:bg-gray-50"}`}
                   >
                     <td className="text-sm whitespace-nowrap">{fmtIST12(c.startedAt)} IST</td>
-                    <td className="text-sm font-medium">{c.lead?.name ?? c.phoneNumber ?? "—"}</td>
+                    <td className="text-sm font-medium">{c.lead?.name ? formatLeadName(c.lead.name) : (c.phoneNumber ?? "—")}</td>
                     <td className="text-sm">{c.attributedAgentName ?? c.agentName}</td>
                     <td><span className={`chip ${oc[c.outcome] ?? "src"} text-[10px]`}>{c.outcome.replaceAll("_"," ")}</span></td>
                     <td className="text-sm">{c.durationSec ? `${Math.floor(c.durationSec/60)}m ${c.durationSec%60}s` : "—"}</td>
@@ -149,7 +150,7 @@ function CallCard({ c, onTap }: { c: CallRowData; onTap: () => void }) {
     <button onClick={onTap} className="card block p-3 w-full text-left active:bg-amber-50">
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
-          <div className="font-bold text-sm truncate">{c.lead?.name ?? c.phoneNumber}</div>
+          <div className="font-bold text-sm truncate">{c.lead?.name ? formatLeadName(c.lead.name) : c.phoneNumber}</div>
           <div className="text-[11px] text-gray-500">{c.attributedAgentName ?? c.agentName} · {fmtIST12(c.startedAt)} IST</div>
         </div>
         <span className={`chip ${oc[c.outcome] ?? "src"} text-[9px] flex-none`}>{c.outcome.replaceAll("_"," ")}</span>
@@ -173,7 +174,7 @@ function SummaryPanel({ lead, call }: { lead: LeadSummary; call: CallRowData }) 
       <div>
         <div className="flex items-center justify-between gap-2 flex-wrap">
           <Link href={`/leads/${lead.id}`} className="font-bold text-base text-[#0b1a33] underline">
-            {lead.name}
+            {formatLeadName(lead.name)}
           </Link>
           {lead.aiScore && <span className={`chip ${aiChip} text-[10px]`}>{lead.aiScore}{lead.aiScoreValue ? ` · ${lead.aiScoreValue}` : ""}</span>}
         </div>

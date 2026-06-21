@@ -5,6 +5,7 @@ import { bestLeadsForProject, type SuggestedLead } from "@/lib/leadsForProject";
 import { projectWhereForUser } from "@/lib/propertyScope";
 import { leadScopeWhere } from "@/lib/leadScope";
 import Link from "next/link";
+import { formatLeadName } from "@/lib/leadName";
 
 export const dynamic = "force-dynamic";
 
@@ -342,7 +343,7 @@ export default async function PropertiesPage({ searchParams }: { searchParams: P
                           href={`/leads/${top.leadId}`}
                           className="underline hover:no-underline"
                         >
-                          {top.leadName}
+                          {formatLeadName(top.leadName)}
                         </Link>
                         <span className="text-gray-500"> ({fmtBudget(top.budget, top.currency, isIndia)})</span>
                         <span className="ml-1 text-gray-400 group-open:hidden">▸</span>
@@ -352,7 +353,7 @@ export default async function PropertiesPage({ searchParams }: { searchParams: P
                         {matches.map((m) => (
                           <li key={m.leadId} className="flex items-center justify-between gap-2">
                             <Link href={`/leads/${m.leadId}`} className="text-gray-800 hover:text-amber-700 truncate">
-                              {m.leadName}
+                              {formatLeadName(m.leadName)}
                             </Link>
                             <span className="flex items-center gap-2 shrink-0">
                               {m.aiScore && (

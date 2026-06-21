@@ -6,6 +6,7 @@ import { SUPPRESSED_STATUSES } from "@/lib/lead-statuses";
 import { requireUser } from "@/lib/auth";
 import { bestLeadsForProject } from "@/lib/leadsForProject";
 import { leadScopeWhere } from "@/lib/leadScope";
+import { formatLeadName } from "@/lib/leadName";
 import { userCanAccessProjectCountry } from "@/lib/propertyScope";
 import { fmtMoney } from "@/lib/money";
 import UnitsCsvImport from "@/components/UnitsCsvImport";
@@ -174,7 +175,7 @@ export default async function PropertyDetail({ params }: { params: Promise<{ id:
                   href={`/leads/${m.leadId}`}
                   className="text-sm text-gray-800 hover:text-amber-700 truncate"
                 >
-                  {m.leadName}
+                  {formatLeadName(m.leadName)}
                 </Link>
                 <div className="flex items-center gap-2 shrink-0 text-xs">
                   <span className="text-gray-600">{fmtMoney(m.budget, m.currency || currency)}</span>
@@ -219,7 +220,7 @@ export default async function PropertyDetail({ params }: { params: Promise<{ id:
                   href={`/leads/${l.id}`}
                   className="text-sm text-gray-800 hover:text-amber-700 truncate"
                 >
-                  {l.name}
+                  {formatLeadName(l.name)}
                 </Link>
                 <div className="flex items-center gap-2 shrink-0 text-xs">
                   <span className="chip src text-[10px]">{l.status.replaceAll("_", " ")}</span>

@@ -6,6 +6,7 @@ import AdminPasswordReset from "@/components/AdminPasswordReset";
 import { startOfDay, startOfWeek, startOfMonth } from "date-fns";
 import { ActivityType, ActivityStatus, CallOutcome } from "@prisma/client";
 import { activityVisual } from "@/lib/activityIcon";
+import { formatLeadName } from "@/lib/leadName";
 import { fmtMoneyDual } from "@/lib/money";
 import { fmtIST12 } from "@/lib/datetime";
 import { ownerActiveWhere, ownerTotalWhere } from "@/lib/leadScope";
@@ -700,7 +701,7 @@ export default async function AgentDeepDivePage({
                             href={`/leads/${a.lead.id}`}
                             className="hover:underline"
                           >
-                            {a.lead.name}
+                            {formatLeadName(a.lead.name)}
                           </Link>
                         ) : (
                           "—"
