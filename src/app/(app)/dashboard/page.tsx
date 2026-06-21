@@ -34,7 +34,11 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   // agent. Hide every personal-performance card; show the management queue instead.
   // Keyed off the per-user flag — NOT role (Lalit is ADMIN but not lead-ops).
   const isLeadOps = (me as { leadOpsOnly?: boolean }).leadOpsOnly === true;
-  const mgmt = isLeadOps ? await (async () => {
+  const isAdmin = me.role === "ADMIN";
+  // Assignment-queue counts: Sameer (lead-ops) gets the full management view that
+  // REPLACES personal KPIs; Lalit/admins get a compact card ADDED above their
+  // personal dashboard. Either way the same counts are computed once here.
+  const mgmt = (isLeadOps || isAdmin) ? await (async () => {
     const w = workableWhere({ deletedAt: null, isColdCall: false });
     const [unassigned, overdueUnassigned, awaitingTeam] = await Promise.all([
       prisma.lead.count({ where: { ...w, ownerId: null } }),
@@ -410,7 +414,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
                 <div className="text-xs text-gray-500 mt-0.5">Assignment queue &amp; team workload</div>
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                <Link href="/leads?owner=unassigned" className="card p-4 border-l-4 border-amber-500 hover:shadow-lg transition">
+                <Link href="/leads?owner=unassigned&seg=all" className="card p-4 border-l-4 border-amber-500 hover:shadow-lg transition">
                   <div className="text-3xl font-extrabold text-amber-700">{mgmt.unassigned}</div>
                   <div className="text-xs font-semibold text-amber-900 mt-1">📥 Unassigned Leads</div>
                   <div className="text-[10px] text-amber-700/70 mt-0.5">Need an owner</div>
@@ -420,13 +424,33 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
                   <div className="text-xs font-semibold text-purple-900 mt-1">🧭 Awaiting Team</div>
                   <div className="text-[10px] text-purple-700/70 mt-0.5">No team classified yet</div>
                 </Link>
-                <Link href="/leads?owner=unassigned&followup=overdue" className="card p-4 border-l-4 border-red-500 hover:shadow-lg transition">
+                <Link href="/leads?owner=unassigned&seg=all&followup=overdue" className="card p-4 border-l-4 border-red-500 hover:shadow-lg transition">
                   <div className="text-3xl font-extrabold text-red-700">{mgmt.overdueUnassigned}</div>
                   <div className="text-xs font-semibold text-red-900 mt-1">⏰ Overdue · Unassigned</div>
                   <div className="text-[10px] text-red-700/70 mt-0.5">Overdue &amp; still no owner</div>
                 </Link>
               </div>
             </>
+          )}
+
+          {/* Compact Assignment Queue — for Lalit/admins (NOT lead-ops Sameer, who
+              gets the full management view above). Persistent entry point into the
+              Unassigned-Leads console; mirrors the left-menu "Unassigned Leads". */}
+          {isAdmin && !isLeadOps && mgmt && (
+            <div className="grid grid-cols-3 gap-2 sm:gap-3">
+              <Link href="/leads?owner=unassigned&seg=all" className="card p-3 border-l-4 border-amber-500 hover:shadow-lg transition">
+                <div className="text-2xl font-extrabold text-amber-700">{mgmt.unassigned}</div>
+                <div className="text-[11px] font-semibold text-amber-900 mt-0.5">📥 Unassigned</div>
+              </Link>
+              <Link href="/leads?owner=unassigned&seg=all&followup=overdue" className="card p-3 border-l-4 border-red-500 hover:shadow-lg transition">
+                <div className="text-2xl font-extrabold text-red-700">{mgmt.overdueUnassigned}</div>
+                <div className="text-[11px] font-semibold text-red-900 mt-0.5">⏰ Overdue · Unassigned</div>
+              </Link>
+              <Link href="/admin/awaiting-team" className="card p-3 border-l-4 border-purple-500 hover:shadow-lg transition">
+                <div className="text-2xl font-extrabold text-purple-700">{mgmt.awaitingTeam}</div>
+                <div className="text-[11px] font-semibold text-purple-900 mt-0.5">🧭 Awaiting Team</div>
+              </Link>
+            </div>
           )}
 
           {/* Personal-performance section — hidden for lead-ops/support admins (Sameer). */}

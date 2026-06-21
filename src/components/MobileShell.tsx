@@ -5,7 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import {
   LayoutDashboard, Users, Sparkles, Menu, X,
   Building2, BarChart3, Upload, UserCog, Settings as SettingsIcon, LogOut, Landmark,
-  ChevronLeft, ChevronRight, Gem, HelpCircle, AlertTriangle, Lock, PhoneCall, Briefcase, Database, ShieldCheck, Bot,
+  ChevronLeft, ChevronRight, Gem, HelpCircle, AlertTriangle, Lock, PhoneCall, Briefcase, Database, ShieldCheck, Bot, Inbox,
 } from "lucide-react";
 import GlobalDateFilter from "./GlobalDateFilter";
 import NotifBell from "./NotifBell";
@@ -106,6 +106,7 @@ const fullNav: NavSection[] = [
   // Only Lead Intake (CSV import) stays here as a direct link since admins
   // reach it multiple times per day.
   { section: "ADMIN", adminOnly: true, items: [
+    { href: "/leads?owner=unassigned&seg=all", label: "Unassigned Leads",   Icon: Inbox },
     { href: "/admin/assistant",       label: "AI Assistant",       Icon: Bot },
     { href: "/intake",                label: "Lead Intake",        Icon: Upload },
     { href: "/admin/projects",        label: "Project Master",     Icon: Landmark },
