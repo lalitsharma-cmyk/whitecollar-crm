@@ -69,6 +69,12 @@ export async function buildWhere(filter: LeadFilter, now = new Date()): Promise<
     if (r.ok) where.ownerId = r.user.id;
     else { where.ownerId = "__no_such_owner__"; ownerNote = `No active user matches “${filter.ownerName}”.`; }
   }
+  // Single-lead targeting — EXACT (case-insensitive) match, never a partial/fuzzy
+  // expansion. ANDs with any team filter above, so "this India lead named X" stays
+  // inside the India set and never cross-matches Dubai.
+  if (filter.leadName) where.name = { equals: filter.leadName, mode: "insensitive" };
+  if (filter.email) where.email = { equals: filter.email, mode: "insensitive" };
+  if (filter.phone) where.phone = { contains: filter.phone.slice(-10) };
   return { where, ownerNote };
 }
 
@@ -86,6 +92,17 @@ export async function previewParsed(parsed: ParsedCommand, now = new Date()): Pr
     return { ok: false, intent: "UNSUPPORTED", explanation: parsed.explanation, error: parsed.reason, count: 0, sample: [], affectedIds: [], readOnly: true };
   }
   const { where, ownerNote } = await buildWhere(parsed.filter, now);
+
+  // Final safety net (defense-in-depth, independent of the parser): a MUTATING
+  // command must never run against an unbounded set. If the only constraint is the
+  // implicit deletedAt:null, refuse — narrow to a specific lead or explicit filter.
+  const mutating = parsed.intent !== "QUERY";
+  if (mutating && Object.keys(where).filter((k) => k !== "deletedAt").length === 0) {
+    return { ok: false, intent: parsed.intent, explanation: parsed.explanation,
+      error: "Refusing to modify every lead — narrow to a specific lead (name / phone / email) or an explicit filter (e.g. unassigned, a team, a status).",
+      count: 0, sample: [], affectedIds: [], readOnly: false };
+  }
+
   const count = await prisma.lead.count({ where });
   const sample = await sampleOf(where);
   const ids = (await prisma.lead.findMany({ where, select: { id: true } })).map((r) => r.id);

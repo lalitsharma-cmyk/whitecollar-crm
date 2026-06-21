@@ -24,6 +24,12 @@ export type LeadFilter = {
   createdWithinDays?: number;  // today=1, this week=7, "last N days"=N
   noFollowup?: boolean;        // leads with no follow-up date set
   origin?: "ACTIVE_LEAD" | "REVIVAL" | "MASTER_DATA";
+  // ── Single-lead targeting — EXACT match, never broadens. A command that names
+  //    one lead ("transfer Kartik Trar to Mehak") must touch only that lead, not
+  //    the whole database. See the scope guard in parseCommand.
+  leadName?: string;           // exact (case-insensitive) client-name match
+  phone?: string;              // 7–15 digit run — single-lead lookup
+  email?: string;              // email — single-lead lookup
 };
 
 export type ParsedCommand =
@@ -100,6 +106,69 @@ function detectSource(s: string): string | undefined {
   return v;
 }
 
+// ── Single-lead identifier detection ─────────────────────────────────────────
+// Words that mean "a SET of leads", never a person's name. If a captured phrase
+// contains any of these, it is a filter/bulk scope — not a single lead.
+const BULK_OR_FILTER_WORDS =
+  /\b(all|every|each|entire|bulk|unassigned|unallocated|dubai|uae|emirates|india|gurgaon|gurugram|indian|team|leads?|records?|clients?|customers?|from|via|through|channel|source|sources|status|revival|cold|master|repository|follow.?up|today|yesterday|week|month|fresh|overdue|future)\b/;
+
+function detectEmail(s: string): string | undefined {
+  const m = s.match(/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/i);
+  return m?.[0];
+}
+
+function detectPhone(s: string): string | undefined {
+  // A contiguous run of 7–15 digits (allow +, spaces, dots, dashes; then strip).
+  const m = s.match(/\+?\d[\d\s.\-]{5,15}\d/);
+  if (!m) return undefined;
+  const digits = m[0].replace(/\D/g, "");
+  return digits.length >= 7 && digits.length <= 15 ? digits : undefined;
+}
+
+// Filler words that wrap a name in a command but aren't part of it — stripped
+// from both ends of a captured subject ("india lead Rahul Verma" → "rahul verma").
+// NOTE: bulk markers (all/every/each) are deliberately NOT here, so a phrase like
+// "all unassigned dubai leads" keeps "all" and is rejected as a name.
+const NAME_FILLER = new Set([
+  "this", "that", "the", "a", "an", "lead", "leads", "client", "clients",
+  "customer", "customers", "record", "records", "new", "fresh", "unassigned",
+  "dubai", "uae", "emirates", "india", "gurgaon", "gurugram", "indian",
+  "me", "my", "us", "please", "for",
+]);
+function stripFiller(v: string): string {
+  const w = v.trim().toLowerCase().split(/\s+/);
+  while (w.length && NAME_FILLER.has(w[0])) w.shift();
+  while (w.length && NAME_FILLER.has(w[w.length - 1])) w.pop();
+  return w.join(" ");
+}
+
+// Extract a single client's NAME from a command, or undefined. Conservative on
+// purpose: after stripping filler, a phrase that still contains any bulk/filter
+// word is rejected, so "assign all unassigned Dubai leads to X" never reads as a
+// name, while "transfer Kartik Trar to Mehak" → "kartik trar".
+function detectLeadName(s: string): string | undefined {
+  const clean = (v: string) => v.trim().replace(/\s+/g, " ");
+  const looksLikeName = (v: string) =>
+    !!v && !BULK_OR_FILTER_WORDS.test(v) && !detectTeam(v) && /^[a-z][a-z .'-]+$/.test(v) && clean(v).split(" ").length <= 4;
+
+  // 1) Quoted string — highest confidence ("...", '...', “...”).
+  const q = s.match(/["'“]([a-z][a-z .'-]{1,40}?)["'”]/);
+  if (q && looksLikeName(q[1])) return clean(q[1]);
+  // 2) Explicit cue: "by the name of X", "named X", "called X", "name of X".
+  const cue = s.match(/\b(?:by the name of|by name|named as|named|called|name of|name is)\s+["'“]?([a-z][a-z .'-]{1,40}?)["'”]?(?=\s+to\b|\s+as\b|\s*$)/);
+  if (cue) { const subj = stripFiller(cue[1]); if (looksLikeName(subj)) return clean(subj); }
+  // 3) "<assign-verb> … NAME … to <agent>" — subject between verb and "to".
+  const gap = s.match(/\b(?:transfer|reassign|re-assign|assign|allocate|give|hand over|move|put)\s+(.+?)\s+to\b/);
+  if (gap) { const subj = stripFiller(gap[1]); if (looksLikeName(subj)) return clean(subj); }
+  // 3b) "tag/label NAME as ..." — single-lead tagging.
+  const tagGap = s.match(/\b(?:tag|label)\s+(.+?)\s+as\b/);
+  if (tagGap) { const subj = stripFiller(tagGap[1]); if (looksLikeName(subj)) return clean(subj); }
+  // 4) Read-only lookups: "find/show/search X" — name after the verb.
+  const look = s.match(/\b(?:find|show|search(?: for)?|look up|locate|where is)\s+(.+)$/);
+  if (look) { const subj = stripFiller(look[1]); if (looksLikeName(subj)) return clean(subj); }
+  return undefined;
+}
+
 function buildFilter(s: string): LeadFilter {
   const f: LeadFilter = {};
   const team = detectTeam(s);
@@ -110,6 +179,11 @@ function buildFilter(s: string): LeadFilter {
   const src = detectSource(s); if (src) f.source = src;
   const win = detectCreatedWindow(s); if (win) f.createdWithinDays = win;
   const origin = detectOrigin(s); if (origin) f.origin = origin;
+  const email = detectEmail(s); if (email) f.email = email;
+  const phone = detectPhone(s); if (phone) f.phone = phone;
+  // Single-lead name — but never when it merely echoes a detected status word.
+  const leadName = detectLeadName(s);
+  if (leadName && (!f.status || leadName.toLowerCase() !== f.status.toLowerCase())) f.leadName = leadName;
   // "owned by X" / "assigned to X" / "X's leads" — but NOT when X is a team
   const owned = s.match(/\b(?:owned by|belonging to|assigned to|handled by)\s+([a-z][a-z .'-]{1,30}?)(?=\s+(?:lead|leads|and|with|that|who|$)|$)/);
   if (owned && !detectTeam(owned[1])) f.ownerName = owned[1].trim();
@@ -121,6 +195,9 @@ function buildFilter(s: string): LeadFilter {
 }
 
 function filterPhrase(f: LeadFilter): string {
+  if (f.leadName) return `the lead “${f.leadName}”${f.team ? ` (${f.team})` : ""}`;
+  if (f.phone) return `the lead with phone ${f.phone}`;
+  if (f.email) return `the lead with email ${f.email}`;
   const parts: string[] = [];
   if (f.unassigned) parts.push("unassigned");
   if (f.team) parts.push(f.team);
@@ -189,6 +266,27 @@ export function parseCommand(raw: string, now: Date = new Date()): ParsedCommand
   const filter = buildFilter(s);
   const fp = filterPhrase(filter);
 
+  // ── Scope safety guard — the #1 protection against a single-lead command
+  //    (e.g. "transfer Kartik Trar to Mehak") silently mutating the whole DB.
+  //    Any MUTATING command whose scope is unbounded is REFUSED, not broadened.
+  const explicitBulk = /\b(all|every|each|entire|bulk)\b/.test(s);
+  const singleCue =
+    /\bthis (lead|client|record)\b|\bby the name of\b|\bnamed\b|\bcalled\b|["'“]/.test(s) ||
+    !!filter.phone || !!filter.email;
+  const scopeRefusal = (eff: LeadFilter): Extract<ParsedCommand, { intent: "UNSUPPORTED" }> | null => {
+    const specific = !!(eff.leadName || eff.phone || eff.email);
+    const bounded = !!(eff.team || eff.unassigned || eff.noFollowup || eff.status || eff.source || eff.createdWithinDays || eff.origin || eff.ownerName);
+    if (specific) return null;                       // exact single-lead match — safe
+    if (singleCue) return { intent: "UNSUPPORTED",
+      reason: "Tell me exactly which lead.",
+      explanation: 'Name one lead — its full client name, phone, or email. e.g. “transfer Kartik Trar to Mehak”.' };
+    if (bounded) return null;                        // bounded bulk (unassigned / team / status / …)
+    if (explicitBulk) return null;                   // user explicitly opted into “all”
+    return { intent: "UNSUPPORTED",
+      reason: "That would change every lead.",
+      explanation: 'Too broad. Name a specific lead, add a filter (e.g. “unassigned Dubai leads”), or say “all” explicitly to confirm a bulk action.' };
+  };
+
   // 2) SET_TEAM — explicit team-move ("move … to India team", "set team to Dubai")
   const teamMove = s.match(/\b(?:set|change|move|forward|put|switch|assign)\b[\s\S]*\b(?:team|to)\b[\s\S]*\b(dubai|uae|india|gurgaon|gurugram)\b/);
   const mentionsTeamWord = /\bteam\b/.test(s);
@@ -197,6 +295,7 @@ export function parseCommand(raw: string, now: Date = new Date()): ParsedCommand
     if (target) {
       // The destination team is the action, not a filter — drop it from filter.
       const f2 = { ...filter }; if (f2.team === target) delete f2.team;
+      const g = scopeRefusal(f2); if (g) return g;
       return { intent: "SET_TEAM", filter: f2, team: target,
         explanation: `Set team = ${target} on ${filterPhrase(f2) || "the matching leads"}.` };
     }
@@ -207,6 +306,7 @@ export function parseCommand(raw: string, now: Date = new Date()): ParsedCommand
     let tag = afterWord(s, "as") || afterWord(s, "tag") || afterWord(s, "label");
     if (tag) {
       tag = tag.replace(/^(a|an|the)\s+/, "").trim();
+      const g = scopeRefusal(filter); if (g) return g;
       return { intent: "TAG", filter, tag,
         explanation: `Add the tag “${tag}” to ${fp || "the matching leads"} (existing tags are kept).` };
     }
@@ -215,17 +315,21 @@ export function parseCommand(raw: string, now: Date = new Date()): ParsedCommand
   // 4) SET_FOLLOWUP — "set/schedule follow-up … to/for/on <date>"
   if (/\bfollow.?up\b/.test(s) && /\b(set|schedule|change|update|move)\b/.test(s) && !/\bno follow.?up\b/.test(s)) {
     const date = parseFollowupDate(s, now);
-    if (date) return { intent: "SET_FOLLOWUP", filter, dateISO: date.iso, dateLabel: date.label,
-      explanation: `Set follow-up = ${date.label} on ${fp || "the matching leads"}.` };
+    if (date) {
+      const g = scopeRefusal(filter); if (g) return g;
+      return { intent: "SET_FOLLOWUP", filter, dateISO: date.iso, dateLabel: date.label,
+        explanation: `Set follow-up = ${date.label} on ${fp || "the matching leads"}.` };
+    }
     return { intent: "UNSUPPORTED", reason: "I couldn't read the follow-up date.",
       explanation: 'Try a clear date, e.g. “… to tomorrow”, “… to next Monday”, or “… to 25-Jun-2026”.' };
   }
 
   // 5) ASSIGN — "assign/reassign/allocate/give … to <agent>"
-  if (/\b(assign|reassign|re-assign|allocate|give|hand over|transfer)\b/.test(s) && /\bto\b/.test(s)) {
+  if (/\b(assign|reassign|re-assign|allocate|give|hand over|transfer|move)\b/.test(s) && /\bto\b/.test(s)) {
     const target = afterWord(s, "to");
     if (target && !detectTeam(target)) {
       const agentName = target.replace(/^(agent|user)\s+/, "").trim();
+      const g = scopeRefusal(filter); if (g) return g;
       return { intent: "ASSIGN", filter, agentName,
         explanation: `Assign ${fp || "the matching leads"} to ${agentName}.` };
     }

@@ -825,6 +825,22 @@ const checks: Check[] = [
       await prisma.lead.findFirst({ select: { id: true, _count: { select: { interestedProjects: true, discussed: true } } } });
     },
   },
+  {
+    name: "assistant-scope — a single-name command targets ONE lead, never the whole DB",
+    run: async () => {
+      const { parseCommand } = await import("../src/lib/adminAssistant/parse");
+      const a = parseCommand("Transfer Kartik Trar to Mehak");
+      assert(a.intent === "ASSIGN" && (a as { filter: { leadName?: string } }).filter.leadName === "kartik trar",
+        "named transfer must capture leadName, not broaden to every lead");
+      const b = parseCommand("assign leads to mehak");
+      assert(b.intent === "UNSUPPORTED", "unscoped bulk assign must be REFUSED (no filter, no target)");
+      const c = parseCommand("assign all unassigned dubai leads to aleena");
+      assert(c.intent === "ASSIGN"
+        && (c as { filter: { unassigned?: boolean } }).filter.unassigned === true
+        && !(c as { filter: { leadName?: string } }).filter.leadName,
+        "explicit bulk-with-filter must still work");
+    },
+  },
 ];
 
 // ── runner ────────────────────────────────────────────────────────────────────
