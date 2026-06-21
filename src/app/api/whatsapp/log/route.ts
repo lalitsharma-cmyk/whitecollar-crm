@@ -12,7 +12,7 @@
 //      logging is automatic
 import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { ActivityType, ActivityStatus } from "@prisma/client";
+import { ActivityType, ActivityStatus, WAMessageDirection } from "@prisma/client";
 import { loadOwnedLead } from "@/lib/leadScope";
 
 export async function POST(req: NextRequest) {
@@ -37,6 +37,18 @@ export async function POST(req: NextRequest) {
       completedAt: new Date(),
     },
   });
+  // When the agent recorded WHAT they sent, also store it as an OUTBOUND
+  // WhatsAppMessage so the text appears in Conversation History (consistent with
+  // inbound WA), not only as a generic activity row.
+  if (message) {
+    const leadRow = await prisma.lead.findUnique({ where: { id: leadId }, select: { phone: true } });
+    if (leadRow?.phone) {
+      await prisma.whatsAppMessage.create({
+        data: { leadId, phoneNumber: leadRow.phone, direction: WAMessageDirection.OUTBOUND, body: message },
+      }).catch(() => {});
+    }
+  }
+
   await prisma.lead.update({ where: { id: leadId }, data: { lastTouchedAt: new Date() } });
 
   return NextResponse.json({ ok: true });

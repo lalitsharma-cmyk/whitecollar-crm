@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
 import { audit, reqMeta } from "@/lib/audit";
+import { ActivityType, ActivityStatus } from "@prisma/client";
 
 /**
  * POST /api/leads/[id]/reactivate
@@ -41,6 +42,20 @@ export async function POST(
       lastTouchedAt: new Date(),
     },
   });
+
+  // Log the reopen to Conversation History (Raw + Smart Timeline) — was previously
+  // only in the audit log, so reopening a lead was invisible on the timeline.
+  await prisma.activity.create({
+    data: {
+      leadId: id,
+      userId: me.id,
+      type: ActivityType.STATUS_CHANGE,
+      status: ActivityStatus.DONE,
+      title: "♻️ Lead reopened",
+      description: `Reopened by ${me.name ?? "agent"} — status set back to NEW.`,
+      completedAt: new Date(),
+    },
+  }).catch(() => {});
 
   await audit({
     userId: me.id,

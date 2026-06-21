@@ -39,10 +39,38 @@ interface NoteWithUser {
 
 type CallLogWithUser = CallLog & { user: { name: string } };
 
+// A CRM-logged Activity event (meeting/visit/status-change/reopen/…) shown in the
+// conversation stream so EVERY agent action appears in Conversation History.
+type ActivityStreamRow = {
+  id: string; type: string; title?: string | null; description?: string | null;
+  scheduledAt?: Date | null; completedAt?: Date | null; createdAt: Date;
+  user?: { name: string } | null;
+};
+// Activity types rendered in the stream. CALL / WHATSAPP / NOTE are EXCLUDED — they
+// already render via their own CallLog / WhatsAppMessage / Note rows (no double-up).
+const ACTIVITY_STREAM_TYPES = new Set([
+  "SITE_VISIT", "OFFICE_MEETING", "VIRTUAL_MEETING", "HOME_VISIT", "EXPO_MEETING",
+  "MEETING", "STATUS_CHANGE", "LEAD_CREATED", "COLD_TO_LEAD", "BROCHURE_SENT",
+  "PROJECT_DISCUSSED", "REMINDER_FIRED", "EMAIL",
+]);
+const ACTIVITY_ICON: Record<string, string> = {
+  SITE_VISIT: "🚗", OFFICE_MEETING: "🏢", VIRTUAL_MEETING: "💻", HOME_VISIT: "🏠",
+  EXPO_MEETING: "🎪", MEETING: "📅", STATUS_CHANGE: "🔄", LEAD_CREATED: "✨",
+  COLD_TO_LEAD: "🔥", BROCHURE_SENT: "📄", PROJECT_DISCUSSED: "🏗", REMINDER_FIRED: "🔔", EMAIL: "✉️",
+};
+const ACTIVITY_LABEL: Record<string, string> = {
+  SITE_VISIT: "Site Visit", OFFICE_MEETING: "Office Meeting", VIRTUAL_MEETING: "Virtual Meeting",
+  HOME_VISIT: "Home Visit", EXPO_MEETING: "Expo", MEETING: "Meeting", STATUS_CHANGE: "Status",
+  LEAD_CREATED: "Lead Created", COLD_TO_LEAD: "Revived", BROCHURE_SENT: "Brochure",
+  PROJECT_DISCUSSED: "Project", REMINDER_FIRED: "Reminder", EMAIL: "Email",
+};
+
 interface Props {
   callLogs: CallLogWithUser[];
   waMessages: WhatsAppMessage[];
   notes?: NoteWithUser[];
+  /** CRM-logged activity events — rendered in BOTH views so every action shows. */
+  activities?: ActivityStreamRow[];
   forwardedTeam?: string | null;
   rawRemarks?: string | null;
   /** Lead creation date — fallback for undated remarks with no preceding date */
@@ -200,7 +228,7 @@ function displayKey(d: DisplayEntry): number | null {
 type FilterType = "ALL" | "CONNECTED" | "NO_ANSWER" | "WA";
 
 export default function ConversationStreamCard({
-  callLogs, waMessages, notes = [], forwardedTeam, rawRemarks, leadCreatedAt, agentNames = [],
+  callLogs, waMessages, notes = [], activities = [], forwardedTeam, rawRemarks, leadCreatedAt, agentNames = [],
   leadId = "", canControl = false, viewerId, viewerTeam, controls = [], agents = [],
   isAdmin = false, meId, viewerRole, rawEdit = null, editedNotes = {},
 }: Props) {
@@ -378,7 +406,8 @@ export default function ConversationStreamCard({
   const connectedCount    = callConnectedCount + remarkConnectedCount + waInboundCount + noteCount;
   const unsuccessfulCount = callUnsuccessfulCount + remarkNoAnswerCount;
 
-  const totalEntries = callLogs.length + waMessages.length + notes.length + mergedEntries.length;
+  const streamActs = activities.filter((a) => ACTIVITY_STREAM_TYPES.has(a.type));
+  const totalEntries = callLogs.length + waMessages.length + notes.length + mergedEntries.length + streamActs.length;
 
   // ─── Filter helpers ────────────────────────────────────────────────────────
 
@@ -723,6 +752,27 @@ export default function ConversationStreamCard({
               <div className="text-xs mt-1 text-gray-800 whitespace-pre-wrap">{n.body}</div>
             )}
           </div>
+          );
+        })}
+
+        {/* ─ Activity events (meetings / visits / status changes / reopen / brochure /
+              email) — logged by CRM actions; shown in BOTH views so every action lands
+              in Conversation History. CALL / WHATSAPP / NOTE excluded (own rows above). ─ */}
+        {(filter === "ALL" || filter === "CONNECTED") && streamActs.map((a) => {
+          const when = a.completedAt ?? a.scheduledAt ?? a.createdAt;
+          const who = canonicalAgentName(a.user?.name ?? "Agent", agentNames);
+          return (
+            <div key={`a-${a.id}`} className="border-l-2 border-slate-300 bg-slate-50/70 pl-3 pr-2 py-1.5 rounded-r">
+              <div className="flex items-center justify-between flex-wrap gap-1 text-[11px] text-gray-500">
+                <span>{ACTIVITY_ICON[a.type] ?? "•"} <b>{who}</b> · {fmtIST12Paren(when)} IST</span>
+                <span className="chip text-[9px] border border-slate-300 bg-slate-100 text-slate-600">{ACTIVITY_LABEL[a.type] ?? "Activity"}</span>
+              </div>
+              {(a.title || a.description) && (
+                <div className="text-xs mt-1 text-gray-800 whitespace-pre-wrap">
+                  {a.title}{a.title && a.description ? " — " : ""}{a.description}
+                </div>
+              )}
+            </div>
           );
         })}
       </div>

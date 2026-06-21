@@ -124,7 +124,7 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
         interestedUnits: { include: { unit: { include: { project: true } } } },
         discussed:       { include: { project: true }, orderBy: { discussedAt: "desc" } },
         interestedProjects: { include: { project: true }, orderBy: { interestedAt: "desc" } },
-        activities: { orderBy: { createdAt: "desc" }, take: 25, include: { user: true } },
+        activities: { orderBy: { createdAt: "desc" }, take: 100, include: { user: true } },
         callLogs:   { orderBy: { startedAt: "desc" }, take: 50, include: { user: true } },
         waMessages: { orderBy: { receivedAt: "desc" }, take: 20 },
         notes:      { orderBy: { createdAt: "desc" }, take: 50, include: { user: true } },
@@ -990,6 +990,7 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
             callLogs={realCallLogs}
             waMessages={lead.waMessages}
             notes={lead.notes}
+            activities={lead.activities}
             forwardedTeam={lead.forwardedTeam}
             rawRemarks={lead.rawRemarks ?? lead.remarks}
             leadCreatedAt={lead.createdAt}

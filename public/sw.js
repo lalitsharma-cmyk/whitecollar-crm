@@ -27,7 +27,8 @@
 // v17 (2026-06-22): push enrol self-heal (always re-POST subscription) + iPhone diagnostics; Archived hidden from agents.
 // v18 (2026-06-22): Notifications decoupled from TEST MODE — Settings → Automation Controls (6 toggles, all OFF); SLA alerts fire.
 // v19 (2026-06-22): Sameer (lead-ops) — hide My Leads/Action List/Lead Intake/HR Recruitment; Leads default All; banner copy fix.
-const CACHE = "wcr-shell-v19";
+// v20 (2026-06-22): Conversation auto-log parity — Activity events (meetings/visits/status/reopen) now render in Raw + Smart; outbound WA + reopen logged.
+const CACHE = "wcr-shell-v20";
 const SHELL = ["/login", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", (event) => {
