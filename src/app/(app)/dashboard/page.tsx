@@ -30,6 +30,19 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   // Manager   → locked to their own team (no toggle, same as AGENT for view)
   // Agent     → locked to their team (no toggle)
   const isAdminOrMgr = me.role === "ADMIN" || me.role === "MANAGER";
+  // Lead-Ops / Support-Admin (Sameer): a lead-distribution manager, NOT a sales
+  // agent. Hide every personal-performance card; show the management queue instead.
+  // Keyed off the per-user flag — NOT role (Lalit is ADMIN but not lead-ops).
+  const isLeadOps = (me as { leadOpsOnly?: boolean }).leadOpsOnly === true;
+  const mgmt = isLeadOps ? await (async () => {
+    const w = workableWhere({ deletedAt: null, isColdCall: false });
+    const [unassigned, overdueUnassigned, awaitingTeam] = await Promise.all([
+      prisma.lead.count({ where: { ...w, ownerId: null } }),
+      prisma.lead.count({ where: { ...w, ownerId: null, followupDate: { lt: new Date(), not: null } } }),
+      prisma.lead.count({ where: { deletedAt: null, isColdCall: false, forwardedTeam: null, leadOrigin: { notIn: COLD_ORIGINS } } }),
+    ]);
+    return { unassigned, overdueUnassigned, awaitingTeam };
+  })() : null;
   const view =
     me.role === "ADMIN"
       ? (sp.team === "India" ? "India" : sp.team === "Dubai" ? "Dubai" : sp.team === "all" ? "all" : (me.team === "India" ? "India" : me.team === "Dubai" ? "Dubai" : "all"))
@@ -388,6 +401,36 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
             />
           )}
 
+          {/* Lead-Ops / Support-Admin management view (Sameer): assignment queue
+              instead of personal sales KPIs. */}
+          {isLeadOps && mgmt && (
+            <>
+              <div className="card p-4 border-l-4 border-[#0b1a33] bg-gradient-to-br from-slate-50 to-white">
+                <div className="font-display text-lg font-bold text-[#0b1a33]">🗂️ {greeting}, {me.name.split(" ")[0]} — Lead Management</div>
+                <div className="text-xs text-gray-500 mt-0.5">Assignment queue &amp; team workload</div>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                <Link href="/leads?owner=unassigned" className="card p-4 border-l-4 border-amber-500 hover:shadow-lg transition">
+                  <div className="text-3xl font-extrabold text-amber-700">{mgmt.unassigned}</div>
+                  <div className="text-xs font-semibold text-amber-900 mt-1">📥 Unassigned Leads</div>
+                  <div className="text-[10px] text-amber-700/70 mt-0.5">Need an owner</div>
+                </Link>
+                <Link href="/admin/awaiting-team" className="card p-4 border-l-4 border-purple-500 hover:shadow-lg transition">
+                  <div className="text-3xl font-extrabold text-purple-700">{mgmt.awaitingTeam}</div>
+                  <div className="text-xs font-semibold text-purple-900 mt-1">🧭 Awaiting Team</div>
+                  <div className="text-[10px] text-purple-700/70 mt-0.5">No team classified yet</div>
+                </Link>
+                <Link href="/leads?owner=unassigned&followup=overdue" className="card p-4 border-l-4 border-red-500 hover:shadow-lg transition">
+                  <div className="text-3xl font-extrabold text-red-700">{mgmt.overdueUnassigned}</div>
+                  <div className="text-xs font-semibold text-red-900 mt-1">⏰ Overdue · Unassigned</div>
+                  <div className="text-[10px] text-red-700/70 mt-0.5">Overdue &amp; still no owner</div>
+                </Link>
+              </div>
+            </>
+          )}
+
+          {/* Personal-performance section — hidden for lead-ops/support admins (Sameer). */}
+          {!isLeadOps && (<>
           {/* §12.4 Morning briefing / greeting — moved to TOP so Lalit sees
               it first, before the KPI numbers */}
           <div className="card p-4 border-l-4 border-[#c9a24b] bg-gradient-to-br from-amber-50/60 to-white">
@@ -466,6 +509,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
               </Link>
             </div>
           </div>
+          </>)}
 
           {/* Admin morning queue */}
           {me.role === "ADMIN" && morningQueueCount > 0 && (
@@ -487,6 +531,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
 
           {/* §12.4 Morning briefing — moved to TOP of page (above TODAY KPIs) */}
 
+          {!isLeadOps && (<>
           {/* ── SECTION 2: UPCOMING ── */}
           <div className="card p-5">
             <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
@@ -532,6 +577,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
               <KpiTarget label="Deals Closed" achieved={dealsPersonal} target={targets.deals} />
             </div>
           </div>
+          </>)}
 
           {/* By Salesperson table — ADMIN/MANAGER only */}
           {isAdminOrMgr && (
@@ -560,8 +606,8 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
             </div>
           )}
 
-          {/* 🎉 Party poppers */}
-          {(() => {
+          {/* 🎉 Party poppers — personal, hidden for lead-ops admins */}
+          {!isLeadOps && (() => {
             const achievedTargets = [
               todayCallsCount >= targets.calls      && "calls",
               connectedPersonal >= targets.connected && "connected",

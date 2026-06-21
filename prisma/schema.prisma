@@ -111,6 +111,12 @@ model User {
   // Regular admins can move imports to Trash and restore them, but can never
   // physically delete. Set explicitly — not implied by the ADMIN role.
   isSuperAdmin            Boolean @default(false)
+  // ── Lead-Ops / Support-Admin flag (Sameer) ──
+  // When true, this ADMIN is a lead-distribution manager, NOT a sales agent.
+  // The dashboard hides every personal-performance card (he owns no leads) and
+  // shows the management queue instead (unassigned / awaiting-team / workload).
+  // Set explicitly per user — NOT implied by the ADMIN role (Lalit is unaffected).
+  leadOpsOnly             Boolean @default(false)
 
   // ── Device-security (trusted-device binding) ──
   // sessionEpoch: bump to instantly revoke ALL of this user's sessions (kill switch).

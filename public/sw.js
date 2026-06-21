@@ -15,7 +15,8 @@
 // fixes, agent-name "Lalit Sharma", Assign-To on lead create, duration-in-minutes,
 // voice-note timeline, remark-edit permission. Ensures every client (incl. Lalit)
 // loads the CURRENT My-Leads default ("all" workable) instead of a stale build.
-const CACHE = "wcr-shell-v7";
+// v8 (2026-06-21): Sameer support-admin dashboard (lead-ops management view).
+const CACHE = "wcr-shell-v8";
 const SHELL = ["/login", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", (event) => {
