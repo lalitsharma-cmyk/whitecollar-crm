@@ -1,7 +1,7 @@
 "use client";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { useState, useEffect } from "react";
-import { statusesForTeam } from "@/lib/lead-statuses";
+import { statusesForTeam, compareStatusDisplay } from "@/lib/lead-statuses";
 import { parseBudget, formatBudget } from "@/lib/budgetParse";
 
 // ─── Label maps ────────────────────────────────────────────────────────────────
@@ -352,7 +352,7 @@ export default function LeadFilters({
   // statuses are never merged into one list. With no team chosen, the status
   // filter stays empty (a hint points the user to pick a team first).
   const statusOpts  = (draftTeam === "Dubai" || draftTeam === "India")
-    ? statusesForTeam(draftTeam).map(s => ({ value: s, label: s }))
+    ? [...statusesForTeam(draftTeam)].sort(compareStatusDisplay).map(s => ({ value: s, label: s }))
     : [];
   const agentOpts   = [
     { value: "unassigned", label: "⚠ Unassigned" },

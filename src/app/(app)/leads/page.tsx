@@ -10,7 +10,7 @@ import { leadScopeWhere, COLD_ORIGINS, workableWhere } from "@/lib/leadScope";
 import { projectWhereForUser } from "@/lib/propertyScope";
 import { displayBudget } from "@/lib/budgetParse";
 import { formatLeadName } from "@/lib/leadName";
-import { statusColor, BUDGET_PRESETS, SUPPRESSED_STATUSES, ACTIVE_PURSUIT_STATUSES, CLOSING_STATUSES, TERMINAL_STATUSES, CLOSED_OUTCOME_STATUSES, LOST_STATUSES, leadSortTier } from "@/lib/lead-statuses";
+import { statusColor, BUDGET_PRESETS, SUPPRESSED_STATUSES, ACTIVE_PURSUIT_STATUSES, CLOSING_STATUSES, TERMINAL_STATUSES, CLOSED_OUTCOME_STATUSES, LOST_STATUSES, leadSortTier, compareStatusDisplay } from "@/lib/lead-statuses";
 
 export const dynamic = "force-dynamic";
 
@@ -481,7 +481,10 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
         ? CLOSED_OUTCOME_STATUSES.includes(r.label)
         : (filterTab === "lost" || filterTab === "rejected")
           ? LOST_STATUSES.includes(r.label)
-          : !TERMINAL_STATUSES.includes(r.label));
+          : !TERMINAL_STATUSES.includes(r.label))
+    // Canonical display order (Fresh Lead → Office Visit → Follow Up → Visit Dubai
+    // → Details Shared → rest A→Z) instead of count-desc. Display-only.
+    .sort((a, b) => compareStatusDisplay(a.label, b.label));
   // Also expose as a map for O(1) lookup
   const cstatusCountMap: Record<string, number> = Object.fromEntries(
     cstatusCounts.map(r => [r.label, r.count])

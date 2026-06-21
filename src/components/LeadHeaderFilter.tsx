@@ -16,7 +16,7 @@ const clearBtn = "text-[11px] text-gray-500 dark:text-slate-400 hover:text-gray-
  * Popover is fixed-positioned so the table's overflow never clips it.
  */
 export default function LeadHeaderFilter({
-  kind, paramKey, label, options = [], searchParamsStr, showLabel = false,
+  kind, paramKey, label, options = [], searchParamsStr, showLabel = false, orderedValues = false,
 }: {
   kind: FilterKind;
   paramKey?: string;
@@ -25,6 +25,8 @@ export default function LeadHeaderFilter({
   searchParamsStr: string;
   /** Render a labeled chip ("Project ⏷") instead of just the small icon — for the card-view toolbar. */
   showLabel?: boolean;
+  /** Keep `options` in the given order (no forced A→Z) — used for the canonical status order. */
+  orderedValues?: boolean;
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -77,7 +79,7 @@ export default function LeadHeaderFilter({
           >
             <div className="text-[10px] font-semibold uppercase tracking-wide text-gray-400 dark:text-slate-500 mb-1.5 px-0.5">{label}</div>
             {kind === "search" && <SearchFilter paramKey={paramKey!} sp={sp} apply={apply} />}
-            {kind === "multi" && <MultiFilter paramKey={paramKey!} options={options} sp={sp} apply={apply} />}
+            {kind === "multi" && <MultiFilter paramKey={paramKey!} options={options} sp={sp} apply={apply} orderedValues={orderedValues} />}
             {kind === "budget" && <BudgetFilter sp={sp} apply={apply} />}
             {kind === "followup" && <FollowupFilter sp={sp} apply={apply} />}
             {kind === "activity" && <ActivityFilter sp={sp} apply={apply} />}
@@ -112,20 +114,21 @@ function SearchFilter({ paramKey, sp, apply }: { paramKey: string; sp: URLSearch
   );
 }
 
-function MultiFilter({ paramKey, options, sp, apply }: { paramKey: string; options: Opt[]; sp: URLSearchParams; apply: ApplyFn }) {
+function MultiFilter({ paramKey, options, sp, apply, orderedValues = false }: { paramKey: string; options: Opt[]; sp: URLSearchParams; apply: ApplyFn; orderedValues?: boolean }) {
   const initial = new Set((sp.get(paramKey) ?? "").split(",").map(s => s.trim()).filter(Boolean));
   const [checked, setChecked] = useState<Set<string>>(initial);
   const [q, setQ] = useState("");
-  const [dir, setDir] = useState<"az" | "za">("az");
+  // "as" = keep the caller's order (the canonical status order); A→Z/Z→A still toggleable.
+  const [dir, setDir] = useState<"az" | "za" | "as">(orderedValues ? "as" : "az");
   const shown = options
     .filter(o => o.label.toLowerCase().includes(q.toLowerCase()))
-    .sort((a, b) => dir === "az" ? a.label.localeCompare(b.label) : b.label.localeCompare(a.label));
+    .sort((a, b) => dir === "az" ? a.label.localeCompare(b.label) : dir === "za" ? b.label.localeCompare(a.label) : 0);
   const toggle = (v: string) => setChecked(s => { const n = new Set(s); n.has(v) ? n.delete(v) : n.add(v); return n; });
   return (
     <div>
       <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search…" className={inp} />
       <div className="flex items-center justify-between text-[10px] text-gray-500 dark:text-slate-400 my-1 px-0.5">
-        <button type="button" onClick={() => setDir(d => d === "az" ? "za" : "az")} className="hover:text-gray-700 dark:hover:text-slate-200">↕ Sort {dir === "az" ? "A→Z" : "Z→A"}</button>
+        <button type="button" onClick={() => setDir(d => d === "az" ? "za" : d === "za" ? (orderedValues ? "as" : "az") : "az")} className="hover:text-gray-700 dark:hover:text-slate-200">↕ Sort {dir === "as" ? "Custom" : dir === "az" ? "A→Z" : "Z→A"}</button>
         <span>{checked.size} selected</span>
       </div>
       <div className="max-h-44 overflow-y-auto space-y-0.5 pr-0.5">

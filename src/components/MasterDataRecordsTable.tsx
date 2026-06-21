@@ -3,7 +3,7 @@ import Link from "next/link";
 import { useState, useMemo, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { PROPERTY_TYPES } from "@/lib/propertyType";
-import { statusesForTeam } from "@/lib/lead-statuses";
+import { statusesForTeam, compareStatusDisplay } from "@/lib/lead-statuses";
 import { formatLeadName } from "@/lib/leadName";
 
 export type MDRow = {
@@ -97,12 +97,24 @@ function valueOf(r: MDRow, c: ColKey): string {
   }
 }
 
+// Master Data DEFAULT section order (display only): Unassigned → India → Dubai →
+// Website → Event → Others. Applied only when no explicit column sort is active;
+// any column-sort the user clicks overrides it. Pure ordering — no data change.
+function sectionRank(r: MDRow): number {
+  if (!r.ownerId) return 0;                  // 1. Unassigned Leads
+  if (r.team === "India") return 1;          // 2. India Leads
+  if (r.team === "Dubai") return 2;          // 3. Dubai Leads
+  if (r.sourceLabel === "Website") return 3; // 4. Website Leads
+  if (r.sourceLabel === "Event") return 4;   // 5. Event Leads
+  return 5;                                   // 6. Others
+}
+
 // Team-specific status options for a Master Data row's inline menu. NEVER a
 // combined India+Dubai list (owner rule). A teamless lead prompts for a team
 // first; the lead's CURRENT status is always kept so it can't be lost.
 function statusMenuOptions(team: string, current: string | null): { value: string; label: string }[] {
   if (team !== "Dubai" && team !== "India") return [{ value: "", label: "⚠ Set the lead's team first" }];
-  const opts = [...statusesForTeam(team)];
+  const opts = [...statusesForTeam(team)].sort(compareStatusDisplay);
   if (current && !opts.includes(current)) opts.unshift(current);
   return opts.map((s) => ({ value: s, label: s }));
 }
@@ -209,6 +221,10 @@ export default function MasterDataRecordsTable({ rows, agents, isSuperAdmin, vie
           ? (a.createdAtMs - b.createdAtMs) * dir
           : valueOf(a, sort.col).localeCompare(valueOf(b, sort.col), undefined, { numeric: true }) * dir,
       );
+    } else {
+      // No explicit column sort → canonical section order (Unassigned → India →
+      // Dubai → Website → Event → Others), newest-first within each section.
+      out = [...out].sort((a, b) => sectionRank(a) - sectionRank(b) || (b.createdAtMs - a.createdAtMs));
     }
     return out;
   }, [rows, filters, sort, activeView]);
@@ -291,7 +307,7 @@ export default function MasterDataRecordsTable({ rows, agents, isSuperAdmin, vie
   const selectedTeams = new Set<string>();
   for (const r of rows) if (selected.has(r.id)) selectedTeams.add(r.team);
   const bulkOneTeam = selectedTeams.size === 1 ? [...selectedTeams][0] : "";
-  const bulkStatusOptions = bulkOneTeam === "Dubai" || bulkOneTeam === "India" ? [...statusesForTeam(bulkOneTeam)] : [];
+  const bulkStatusOptions = bulkOneTeam === "Dubai" || bulkOneTeam === "India" ? [...statusesForTeam(bulkOneTeam)].sort(compareStatusDisplay) : [];
 
   return (
     <div className="space-y-2">

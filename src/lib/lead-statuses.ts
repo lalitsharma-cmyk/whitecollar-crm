@@ -466,3 +466,24 @@ export function canSetStatus(role: string, status: string, team: string | null |
   if (role === "AGENT") return agentStatusesForTeam(team).includes(status);
   return true;  // manager / admin: any non-restricted team status
 }
+
+// ─── Status DISPLAY ordering (UI only — never changes stored data) ──────────
+// Canonical priority (Lalit, 2026-06-21). "Today" is a FOLLOW-UP chip, not a
+// status, so it is intentionally absent here. Applied to whatever team-subset a
+// surface already shows (India vs Dubai stay disjoint — this only re-orders).
+export const STATUS_DISPLAY_ORDER: string[] = [
+  "Fresh Lead",
+  "Wants Office Visit", "Want Office Visit", // canonical + legacy casing
+  "Follow Up",
+  "Visit Dubai",
+  "Details Shared",
+];
+const STATUS_DISPLAY_RANK = new Map(STATUS_DISPLAY_ORDER.map((s, i) => [s.toLowerCase(), i]));
+
+/** Sort comparator: priority-listed statuses first (in order), then the rest A→Z.
+ *  Case-insensitive so "Wants Office Visit" casing variants rank alike. Display only. */
+export function compareStatusDisplay(a: string, b: string): number {
+  const ra = STATUS_DISPLAY_RANK.get((a ?? "").toLowerCase().trim()) ?? Number.MAX_SAFE_INTEGER;
+  const rb = STATUS_DISPLAY_RANK.get((b ?? "").toLowerCase().trim()) ?? Number.MAX_SAFE_INTEGER;
+  return ra !== rb ? ra - rb : (a ?? "").localeCompare(b ?? "");
+}

@@ -876,6 +876,16 @@ const checks: Check[] = [
       assert(canEditRemark(agent, { createdById: null, createdAt: null }, now) === false, "agent → cannot edit imported raw history");
     },
   },
+  {
+    name: "status-order — canonical priority (Fresh Lead → Office Visit → Follow Up → Visit Dubai → Details Shared → rest A→Z)",
+    run: async () => {
+      const { compareStatusDisplay } = await import("../src/lib/lead-statuses");
+      const s = ["Junk", "Details Shared", "Fresh Lead", "Visit Dubai", "Follow Up", "Wants Office Visit", "Aaa"].sort(compareStatusDisplay);
+      assert(s[0] === "Fresh Lead" && s[1] === "Wants Office Visit" && s[2] === "Follow Up" && s[3] === "Visit Dubai" && s[4] === "Details Shared",
+        `canonical head wrong: ${s.join(" | ")}`);
+      assert(s.slice(5).join(",") === "Aaa,Junk", `remaining must be A→Z, got ${s.slice(5).join(",")}`);
+    },
+  },
 ];
 
 // ── runner ────────────────────────────────────────────────────────────────────
