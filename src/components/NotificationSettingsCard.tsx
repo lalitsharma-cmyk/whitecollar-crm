@@ -59,6 +59,7 @@ export default function NotificationSettingsCard() {
         s === "enabled" ? "✅ Notifications enabled on this device."
         : s === "denied" ? "⛔ Blocked in your browser. Click the lock icon in the address bar → allow Notifications, then retry."
         : s === "no-vapid" ? "Push isn't configured on the server."
+        : s === "ios-needs-install" ? "📲 On iPhone/iPad: tap the Share icon → “Add to Home Screen”, open the CRM from that new icon, then tap Enable here. iOS only delivers background notifications to the installed app."
         : s === "unsupported" ? "This browser doesn't support push notifications."
         : "Couldn't enable — please try again."
       );
@@ -87,6 +88,7 @@ export default function NotificationSettingsCard() {
     push === "enabled" ? { text: "Enabled", cls: "bg-green-100 text-green-800 border-green-300" }
     : push === "denied" ? { text: "Blocked in browser", cls: "bg-red-100 text-red-700 border-red-300" }
     : push === "granted-unsubscribed" ? { text: "Finishing setup…", cls: "bg-amber-100 text-amber-800 border-amber-300" }
+    : push === "ios-needs-install" ? { text: "Add to Home Screen first", cls: "bg-amber-100 text-amber-800 border-amber-300" }
     : push === "unsupported" ? { text: "Not supported here", cls: "bg-slate-100 text-slate-500 border-slate-300" }
     : push === "no-vapid" ? { text: "Server not configured", cls: "bg-slate-100 text-slate-500 border-slate-300" }
     : { text: "Not enabled", cls: "bg-slate-100 text-slate-600 border-slate-300" };
@@ -102,9 +104,21 @@ export default function NotificationSettingsCard() {
         Get a loud alert + push the moment a new lead arrives — even when this tab is minimised or you're in another app.
       </p>
 
+      {/* iPhone/iPad: must install to Home Screen before push can be enabled. */}
+      {push === "ios-needs-install" && (
+        <div className="rounded-lg border border-amber-300 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-700 p-3 text-xs text-amber-900 dark:text-amber-200 space-y-1">
+          <div className="font-semibold">📲 iPhone / iPad — one-time setup</div>
+          <div>1. Tap the <strong>Share</strong> icon (□↑) in Safari.</div>
+          <div>2. Choose <strong>“Add to Home Screen”</strong>.</div>
+          <div>3. Open the CRM from the <strong>new home-screen icon</strong> (not Safari).</div>
+          <div>4. Come back to this screen and tap <strong>Enable</strong>.</div>
+          <div className="text-amber-700/80 dark:text-amber-300/70 pt-0.5">iOS only delivers background notifications to the installed app.</div>
+        </div>
+      )}
+
       {/* Enable push */}
       {push !== "enabled" && (
-        <button onClick={onEnable} disabled={busy || push === "unsupported" || push === "no-vapid"}
+        <button onClick={onEnable} disabled={busy || push === "unsupported" || push === "no-vapid" || push === "ios-needs-install"}
           className="btn btn-gold text-sm inline-flex items-center gap-2 disabled:opacity-50">
           <Bell className="w-4 h-4" /> Enable notifications on this device
         </button>

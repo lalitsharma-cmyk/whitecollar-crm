@@ -23,7 +23,8 @@
 // v13 (2026-06-22): dashboard daily sales quote under greeting + hide morning check-in section after attendance (agents).
 // v14 (2026-06-22): lunch-break reminders (2:00/2:25 PM IST) with dedicated soft sound + LUNCH_REMINDER category.
 // v15 (2026-06-22): Leads default filter → Today+Overdue + 6 perf indexes on hot filter columns.
-const CACHE = "wcr-shell-v15";
+// v16 (2026-06-22): mobile push — iOS "Add to Home Screen" detection + guidance on /notifications.
+const CACHE = "wcr-shell-v16";
 const SHELL = ["/login", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", (event) => {

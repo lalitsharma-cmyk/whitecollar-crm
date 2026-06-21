@@ -27,6 +27,7 @@ function urlB64ToUint8(base64: string): ArrayBuffer {
 
 export type PushState =
   | "unsupported"            // browser has no SW/Push/Notification
+  | "ios-needs-install"      // iPhone/iPad in Safari — must Add to Home Screen first
   | "no-vapid"               // server keys not exposed to the client
   | "default"                // never asked — show the Enable button
   | "denied"                 // user blocked — must un-block in browser settings
@@ -37,8 +38,22 @@ function supported(): boolean {
   return typeof window !== "undefined" && "serviceWorker" in navigator && "PushManager" in window && typeof Notification !== "undefined";
 }
 
+// iOS only exposes Web Push inside an INSTALLED PWA (Add to Home Screen, iOS 16.4+).
+// In a normal Safari tab PushManager is absent, so `supported()` is false — detect
+// that case so the UI can say "install first" instead of a dead "not supported".
+function isIOS(): boolean {
+  if (typeof navigator === "undefined") return false;
+  return /iphone|ipad|ipod/i.test(navigator.userAgent) ||
+    (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1); // iPadOS masquerades as Mac
+}
+function isStandalone(): boolean {
+  if (typeof window === "undefined") return false;
+  return window.matchMedia?.("(display-mode: standalone)").matches === true ||
+    (navigator as unknown as { standalone?: boolean }).standalone === true;
+}
+
 export async function getPushState(): Promise<PushState> {
-  if (!supported()) return "unsupported";
+  if (!supported()) return isIOS() && !isStandalone() ? "ios-needs-install" : "unsupported";
   if (!VAPID_PUB) return "no-vapid";
   const perm = Notification.permission;
   if (perm === "denied") return "denied";
@@ -54,7 +69,7 @@ export async function getPushState(): Promise<PushState> {
 
 /** Request permission (if needed) → register SW → subscribe → persist to server. */
 export async function enablePush(): Promise<PushState> {
-  if (!supported()) return "unsupported";
+  if (!supported()) return isIOS() && !isStandalone() ? "ios-needs-install" : "unsupported";
   if (!VAPID_PUB) return "no-vapid";
   const reg = await navigator.serviceWorker.register("/sw.js");
   await navigator.serviceWorker.ready;
