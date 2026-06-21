@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { loadOwnedLead } from "@/lib/leadScope";
 import { audit, reqMeta } from "@/lib/audit";
+import { canEditRemark } from "@/lib/remarkPerms";
 
 /**
  * DELETE /api/leads/[id]/notes/[noteId]
@@ -77,12 +78,11 @@ export async function PATCH(
   });
   if (!note || note.leadId !== id) return NextResponse.json({ error: "Note not found" }, { status: 404 });
 
-  // EDIT rights are Lalit-ONLY (Raw History / Smart Timeline / notes edit lock —
-  // owner decision 2026-06-19). Agents, managers, OTHER admins, and HR can ADD new
-  // notes/activities but may NOT edit an existing remark/note. me.canControlConversations
-  // is the Lalit flag (same gate as conversation moderation).
-  if (!me.canControlConversations) {
-    return NextResponse.json({ error: "Only Lalit can edit existing remarks/notes. You can add a new note instead." }, { status: 403 });
+  // EDIT rights (owner rule 2026-06-21): ADMIN / super-admin (Lalit, Samir) edit any
+  // note any time; an AGENT may edit ONLY their own note and ONLY on the IST day they
+  // wrote it. Enforced here (backend) so a hidden-button bypass still returns 403.
+  if (!canEditRemark(me, { createdById: note.userId, createdAt: note.createdAt })) {
+    return NextResponse.json({ error: "You can only edit your own note, and only on the day you created it." }, { status: 403 });
   }
   if (note.body === newBody) return NextResponse.json({ ok: true, unchanged: true });
 

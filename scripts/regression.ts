@@ -863,6 +863,19 @@ const checks: Check[] = [
       assert(canonicalAgentName("Yasir", ["Yasir Khan"]) === "Yasir Khan", "roster first-name resolves to full name");
     },
   },
+  {
+    name: "remark-perms — agent edits own same-IST-day only; admin/manager any; imported (no author) admin-only",
+    run: async () => {
+      const { canEditRemark } = await import("../src/lib/remarkPerms");
+      const now = new Date("2026-06-21T08:00:00Z");
+      const agent = { id: "a1", role: "AGENT" };
+      assert(canEditRemark(agent, { createdById: "a1", createdAt: new Date("2026-06-21T05:00:00Z") }, now) === true, "agent own+today → editable");
+      assert(canEditRemark(agent, { createdById: "a1", createdAt: new Date("2026-06-20T05:00:00Z") }, now) === false, "agent own+yesterday → locked");
+      assert(canEditRemark(agent, { createdById: "a2", createdAt: new Date("2026-06-21T05:00:00Z") }, now) === false, "agent other's note → locked");
+      assert(canEditRemark({ id: "x", role: "ADMIN" }, { createdById: null, createdAt: null }, now) === true, "admin → any (even imported)");
+      assert(canEditRemark(agent, { createdById: null, createdAt: null }, now) === false, "agent → cannot edit imported raw history");
+    },
+  },
 ];
 
 // ── runner ────────────────────────────────────────────────────────────────────

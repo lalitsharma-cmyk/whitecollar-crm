@@ -12,6 +12,7 @@ import { useState, useMemo, Fragment } from "react";
 import { useRouter } from "next/navigation";
 import { fmtIST12Paren } from "@/lib/datetime";
 import { canonicalAgentName } from "@/lib/agentName";
+import { canEditRemark } from "@/lib/remarkPerms";
 import type { CallLog, WhatsAppMessage } from "@prisma/client";
 import {
   parseRemarksTimeline,
@@ -32,6 +33,7 @@ interface NoteWithUser {
   id: string;
   body: string;
   createdAt: Date;
+  userId?: string | null;
   user: { name: string } | null;
 }
 
@@ -62,8 +64,10 @@ interface Props {
   agents?: { id: string; name: string }[];
   /** True for ADMIN/Super-Admin — shows the inline ✏️ Edit affordance on notes. */
   isAdmin?: boolean;
-  /** Current viewer's user id — reserved for future own-note gating. */
+  /** Current viewer's user id — used for own-note edit gating. */
   meId?: string;
+  /** Current viewer's role ("ADMIN" | "MANAGER" | "AGENT") — own/same-day edit gate. */
+  viewerRole?: string;
   /** "Edited by Lalit" marker for the Raw History text (null if never edited). */
   rawEdit?: { by: string; at: string } | null;
   /** noteId → edit marker, for the per-note "Edited by Lalit" badge (admins only). */
@@ -198,7 +202,7 @@ type FilterType = "ALL" | "CONNECTED" | "NO_ANSWER" | "WA";
 export default function ConversationStreamCard({
   callLogs, waMessages, notes = [], forwardedTeam, rawRemarks, leadCreatedAt, agentNames = [],
   leadId = "", canControl = false, viewerId, viewerTeam, controls = [], agents = [],
-  isAdmin = false, meId, rawEdit = null, editedNotes = {},
+  isAdmin = false, meId, viewerRole, rawEdit = null, editedNotes = {},
 }: Props) {
   const [filter, setFilter] = useState<FilterType>("ALL");
   // View mode — "smart" = Smart Timeline (Processed View) is the DEFAULT (Lalit,
@@ -486,8 +490,8 @@ export default function ConversationStreamCard({
                   ✏️ Edited by {rawEdit.by}
                 </span>
               )}
-              {/* Edit affordance — Lalit only (canControl). */}
-              {canControl && !rawEditing && (
+              {/* Edit affordance — any ADMIN (Lalit, Samir). Backend re-checks. */}
+              {isAdmin && !rawEditing && (
                 <button type="button" onClick={() => { setRawEditing(true); setRawDraft(rawRemarks); setRawErr(null); }}
                   title="Correct the imported Raw History text. The original is preserved in the audit log; the assigned agent will see the corrected version."
                   className="ml-auto normal-case text-[10px] text-gray-500 hover:text-gray-800 dark:hover:text-slate-200">✏️ Edit</button>
@@ -681,10 +685,11 @@ export default function ConversationStreamCard({
                   <span className="text-[9px] font-bold px-1 py-0.5 rounded bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300"
                     title={`Edited ${new Date(noteEdit.at).toLocaleString("en-GB", { timeZone: "Asia/Kolkata" })} IST`}>✏️ Edited by {noteEdit.by}</span>
                 )}
-                {/* Edit = Lalit only (canControl). Agents can ADD notes, not edit. */}
-                {canControl && !editing && (
+                {/* Edit: admins/managers any time; an AGENT only their OWN note on
+                    the same IST day they wrote it. Backend re-checks the same rule. */}
+                {canEditRemark({ id: meId ?? "", role: viewerRole ?? (isAdmin ? "ADMIN" : "AGENT") }, { createdById: n.userId ?? null, createdAt: n.createdAt }) && !editing && (
                   <button type="button" onClick={() => startEditNote(n.id, n.body)}
-                    title="Edit this remark (Lalit only)"
+                    title="Edit this remark"
                     className="text-[10px] text-gray-400 hover:text-gray-600">✏️ Edit</button>
                 )}
                 <span className="chip text-[9px] border border-amber-300 bg-amber-100 text-amber-700">Note</span>

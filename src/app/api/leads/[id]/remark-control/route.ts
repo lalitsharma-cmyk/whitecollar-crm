@@ -132,8 +132,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id: leadId } = await params;
   const me = await requireUser();
-  if (!me.canControlConversations) {
-    return NextResponse.json({ error: "Only Lalit can edit Raw History / Smart Timeline." }, { status: 403 });
+  // Imported Raw History has no per-line author/date, so an agent has no "own +
+  // same-day" signal — editing the raw / Smart-Timeline source stays ADMIN-only
+  // (Lalit, Samir, any ADMIN). Looser than the previous Lalit-only lock.
+  if (me.role !== "ADMIN") {
+    return NextResponse.json({ error: "Only an admin can edit Raw History / Smart Timeline." }, { status: 403 });
   }
   const lead = await prisma.lead.findUnique({
     where: { id: leadId },

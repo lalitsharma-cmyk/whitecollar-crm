@@ -1002,6 +1002,7 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
             agents={agents.map(a => ({ id: a.id, name: a.name }))}
             isAdmin={me.role === "ADMIN"}
             meId={me.id}
+            viewerRole={me.role}
             rawEdit={rawEdit}
             editedNotes={editedNotes}
           />
