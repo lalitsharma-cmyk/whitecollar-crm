@@ -641,12 +641,15 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
           const qs = p.toString();
           return qs ? `/leads?${qs}` : "/leads";
         };
-        // Follow-up dimension chips — DEFAULT = Today + Overdue (no ?followup= param).
-        // Each chip toggles: clicking an active one (other than the default) returns
-        // to the default; every OTHER active filter (status, search, panel) is preserved.
-        const fupHref = (val: string) => chipHref({ followup: val === "todue" ? null : val });
+        // Follow-up dimension chips. Each chip applies its filter via an EXPLICIT
+        // ?followup= param, so EVERY chip always navigates + re-filters — including
+        // the default "All Active" (previously a dead link because the old default
+        // was "todue"/no-param). Clicking the already-active chip returns to "All
+        // Active". The DEFAULT view (no param) equals "all". Every OTHER active
+        // filter (status, search, panel) is preserved (AND logic).
+        const fupHref = (val: string) => chipHref({ followup: val });
         const fc = (val: string, active: boolean, label: string, count: number | null, on: string, off: string) => (
-          <Link href={active && val !== "todue" ? fupHref("todue") : fupHref(val)} className={chip(active, on, off)}>
+          <Link href={active && val !== "all" ? fupHref("all") : fupHref(val)} className={chip(active, on, off)}>
             {label}
             {count != null && count > 0 && <span className={`px-1 rounded text-[10px] ${active ? "bg-white/25" : "bg-black/10 dark:bg-white/10"}`}>{count}</span>}
           </Link>
