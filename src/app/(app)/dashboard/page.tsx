@@ -12,6 +12,7 @@ import Link from "next/link";
 import IamHereCard from "@/components/IamHereCard";
 import { todayIST } from "@/lib/attendance";
 import { normalizeTeam } from "@/lib/teamRouting";
+import { formatLeadName } from "@/lib/leadName";
 import TargetCelebration from "@/components/TargetCelebration";
 import RemindersCard, { type ReminderEvent } from "@/components/RemindersCard";
 
@@ -307,7 +308,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
       .map(a => ({
         id: a.id,
         leadId: a.lead!.id,
-        leadName: a.lead!.name,
+        leadName: formatLeadName(a.lead!.name),
         type: (a.type === "SITE_VISIT" ? "SITE_VISIT" : "MEETING") as ReminderEvent["type"],
         timeIso: a.scheduledAt!.toISOString(),
         agentName: a.user?.name ?? null,
@@ -318,7 +319,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
       .map(l => ({
         id: `cb-${l.id}`,
         leadId: l.id,
-        leadName: l.name,
+        leadName: formatLeadName(l.name),
         type: "CALLBACK" as ReminderEvent["type"],
         timeIso: l.followupDate!.toISOString(),
         agentName: l.owner?.name ?? null,
@@ -480,7 +481,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
               <div className="space-y-1">
                 {morningQueueLeads.map((l) => (
                   <Link key={l.id} href={`/leads/${l.id}`} className="block text-xs p-2 rounded bg-white border border-red-200 hover:border-red-400">
-                    <b>{l.name}</b> {l.phone && <span className="text-gray-500">· {l.phone}</span>}
+                    <b>{formatLeadName(l.name)}</b> {l.phone && <span className="text-gray-500">· {l.phone}</span>}
                     <span className="text-gray-400 ml-2">{l.forwardedTeam ?? "—"} · {formatDistanceToNow(l.createdAt, { addSuffix: true })}</span>
                   </Link>
                 ))}
@@ -511,7 +512,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
               {upcoming.map((a) => (
                 <Link key={a.id} href={a.lead ? `/leads/${a.lead.id}` : "#"} className="flex items-center justify-between p-3 rounded-lg border border-[#e5e7eb] hover:border-[#c9a24b]">
                   <div>
-                    <div className="text-sm font-semibold">{a.title}{a.lead && ` · ${a.lead.name}`}</div>
+                    <div className="text-sm font-semibold">{a.title}{a.lead && ` · ${formatLeadName(a.lead.name)}`}</div>
                     <div className="text-xs text-gray-500 dark:text-slate-400">{a.scheduledAt && `${fmtIST12(a.scheduledAt)} IST`}</div>
                   </div>
                   <span className="chip chip-new">{a.type}</span>

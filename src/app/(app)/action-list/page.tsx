@@ -8,6 +8,7 @@ import { waDraftLink } from "@/lib/wa";
 import Link from "next/link";
 import ActionCardClient from "@/components/ActionCardClient";
 import { lastMeaningfulRemark } from "@/lib/needSnapshot";
+import { formatLeadName } from "@/lib/leadName";
 
 export const dynamic = "force-dynamic";
 
@@ -92,7 +93,7 @@ function aiNextStep(card: CardData): { step: string; why: string } {
 
 function makeCard(l: any, flagKind: CardData["flagKind"]): CardData {
   return {
-    id: l.id, name: l.name, phone: l.phone,
+    id: l.id, name: formatLeadName(l.name), phone: l.phone,
     team: l.forwardedTeam, ownerName: l.owner?.name ?? null,
     lastTouchedAt: l.lastTouchedAt,
     followupDate: l.followupDate,

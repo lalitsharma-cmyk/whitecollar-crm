@@ -13,7 +13,6 @@ import LinkedInField from "@/components/LinkedInField";
 import ContactField from "@/components/ContactField";
 import DeletedLeadBanner from "@/components/DeletedLeadBanner";
 import SiteVisitTracker from "@/components/SiteVisitTracker";
-import SiteVisitChecklist from "@/components/SiteVisitChecklist";
 // EOIWorkflowCard removed by Lalit (Round 3) — "Remove EOI for now".
 // EOIPanel (Agent K's replacement) is built and available in src/components/EOIPanel.tsx
 // for a future round when EOI is ready to surface again.
@@ -40,7 +39,7 @@ import BestCallTimeChip from "@/components/BestCallTimeChip";
 import CallStatsBar from "@/components/CallStatsBar";
 // LeadJourneyBar removed — stage pipeline bar replaced by currentStatus (Excel/MIS workflow)
 import { displayBudget } from "@/lib/budgetParse";
-import { cleanNeedSnapshot } from "@/lib/needSnapshot";
+import { formatLeadName } from "@/lib/leadName";
 import { selectableStatuses, statusColor, BOOKED_STATUSES, SUPPRESSED_STATUSES, statusesLookSame } from "@/lib/lead-statuses";
 import LinkedContactsCard from "@/components/LinkedContactsCard";
 import InvestorBanner from "@/components/InvestorBanner";
@@ -766,10 +765,6 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
     return /\b(sir|sahab|sahib|saab)\b/.test(t) || /^(dubai|india)$/.test(t);
   };
   const showAltName = !!lead.altName && !isInternalAltName(lead.altName);
-  // Clean one-line requirement for the §8 snapshot under the name — never the raw
-  // notesShort blob (comma garbage + dated call-log tail belong in Conversation
-  // History, not duplicated/messy under the name).
-  const needSnapshot = cleanNeedSnapshot(lead.notesShort);
 
   return (
     /* pb-24 reserves space at the bottom on mobile only for the GLOBAL bottom
@@ -872,7 +867,7 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
                     {showAltName && <span className="text-base font-medium text-gray-600"> & {lead.altName}</span>}
                   </h2>
                 ) : (
-                  <h2 className="text-xl font-bold">{lead.name}{showAltName && <span className="text-base font-medium text-gray-600"> & {lead.altName}</span>}</h2>
+                  <h2 className="text-xl font-bold">{formatLeadName(lead.name)}{showAltName && <span className="text-base font-medium text-gray-600"> & {lead.altName}</span>}</h2>
                 )}
                 {/* Status — primary user-facing field (Excel/MIS values). Click to change. */}
                 <span className={`${statusColor(lead.currentStatus)} text-xs px-2.5 py-0.5 rounded-full border font-semibold inline-flex items-center`}>
@@ -919,8 +914,9 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
                 })()}
               </div>
               {/* §16: Email removed from header — lives in Client Information on right sidebar */}
-              {/* §8 Requirement Snapshot — compact one-liner below name/status, above actions */}
-              {(lead.configuration || lead.budgetMin || needSnapshot) && (
+              {/* §8 Requirement Snapshot — Configuration + Budget chips only.
+                  (The free-text requirement line was removed per Lalit 2026-06-21.) */}
+              {(lead.configuration || lead.budgetMin) && (
                 <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-gray-600 dark:text-slate-300">
                   {lead.configuration && (
                     <span className="bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-700 px-2 py-0.5 rounded font-medium">
@@ -943,9 +939,6 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
                           : `${(lead.budgetMax/1_000_000).toFixed(1).replace(/\.0$/,"")} M`
                       }` : ""}
                     </span>
-                  )}
-                  {needSnapshot && (
-                    <span className="text-gray-500 dark:text-slate-400 truncate max-w-[200px]" title={needSnapshot}>{needSnapshot}</span>
                   )}
                 </div>
               )}
@@ -1126,14 +1119,7 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
           </div>
         </div>
 
-        {/* 4 · Start a Visit — ALWAYS above Meetings history. Checklist (when in a
-            site-visit window) then the live Site/Home/Expo/Meeting tracker. */}
-        {(lead.status === "SITE_VISIT" ||
-          (lead.siteVisitDate && lead.siteVisitDate.getTime() > Date.now())) && (
-          <div data-lead-section="actions">
-            <SiteVisitChecklist leadId={lead.id} />
-          </div>
-        )}
+        {/* 4 · Start a Visit — the live Site/Home/Expo/Meeting tracker. */}
         <div data-lead-section="actions">
         <SiteVisitTracker
           leadId={lead.id}

@@ -560,9 +560,13 @@ export default function ConversationStreamCard({
           const border = REMARK_BORDER[e.eventType];
           const bg     = REMARK_BG[e.eventType];
           const icon   = remarkIcon(e.eventType);
-          // Append the explicit IST zone when there's a real clock time (date-only
-          // entries stay bare — "17 Jun 2026" — so we never write "… IST" on a date).
-          const dateStr = e.date ? (hasTime(e.date) ? `${fmtDateTime(e.date)} IST` : fmtDateTime(e.date)) : null;
+          // Header date — "12 Apr 2025 | 11:23 AM IST" when there's a real clock
+          // time; date-only entries stay bare ("17 Jun 2026", no "… IST").
+          const dateStr = e.date
+            ? (hasTime(e.date)
+                ? `${fmtDateTime(e.date).replace(/,\s*/, " | ").replace(/\b([ap]m)\b/i, (s) => s.toUpperCase())} IST`
+                : fmtDateTime(e.date))
+            : null;
           // Moderation state — only controllers ever reach here with a hidden entry.
           const rKey = remarkKeyFor(e);
           const ctrl = controlByKey.get(rKey) ?? null;
@@ -575,22 +579,23 @@ export default function ConversationStreamCard({
             <Fragment key={key}>
               {undatedHeader}
             <div className={`border-l-2 ${border} ${bg} pl-3 pr-2 py-1.5 rounded-r ${moderated ? "opacity-60" : ""} ${canControl && manageMode && selectedKeys.has(rKey) ? "ring-2 ring-[#0b1a33]/40" : ""}`}>
-              {/* Agent · date header */}
-              <div className="flex items-center gap-1.5 text-[11px] text-gray-400 mb-0.5 flex-wrap">
-                {canControl && manageMode && (
-                  <input type="checkbox" className="h-3.5 w-3.5 flex-none accent-[#0b1a33]" checked={selectedKeys.has(rKey)} onChange={() => toggleSelect(rKey)} />
-                )}
-                {e.agentName && (
-                  <span className="font-semibold text-gray-600 dark:text-slate-300">{e.agentName}</span>
-                )}
-                {e.agentName && dateStr && <span>·</span>}
-                {dateStr && (
-                  <span className={e.dateInferred ? "italic opacity-60" : ""}>{dateStr}</span>
-                )}
-                {!dateStr && (
-                  <span className="italic opacity-50">Undated</span>
-                )}
-                <span className="ml-auto inline-flex items-center gap-1">
+              {/* Header — DATE/TIME on top, AGENT NAME on the second line, body
+                  below (Lalit's Smart-Timeline spec). Controls float on the right. */}
+              <div className="flex items-start justify-between gap-2 mb-1">
+                <div className="min-w-0 flex items-start gap-1.5">
+                  {canControl && manageMode && (
+                    <input type="checkbox" className="h-3.5 w-3.5 mt-0.5 flex-none accent-[#0b1a33]" checked={selectedKeys.has(rKey)} onChange={() => toggleSelect(rKey)} />
+                  )}
+                  <div className="min-w-0">
+                    {dateStr
+                      ? <div className={`text-[11px] font-semibold tracking-wide text-gray-500 dark:text-slate-400 ${e.dateInferred ? "italic opacity-70" : ""}`}>{dateStr}</div>
+                      : <div className="text-[11px] italic text-gray-400 opacity-60">Undated</div>}
+                    {e.agentName && (
+                      <div className="text-xs font-semibold text-gray-700 dark:text-slate-200">{e.agentName}</div>
+                    )}
+                  </div>
+                </div>
+                <span className="flex-none inline-flex items-center gap-1 pt-0.5">
                   {canControl && modBadge && (
                     <span className="text-[9px] font-bold px-1 py-0.5 rounded bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">{modBadge}</span>
                   )}
@@ -609,9 +614,9 @@ export default function ConversationStreamCard({
                   )}
                 </span>
               </div>
-              {/* Body — one merged remark block shown as a single readable
-                  paragraph (broken line breaks / Excel splits normalised). */}
-              <div className="text-xs text-gray-700 dark:text-slate-200 break-words leading-relaxed">
+              {/* Body — the remark text, preserved verbatim; only bracket/artifact
+                  noise was stripped by the parser. One remark = one card. */}
+              <div className="text-xs text-gray-700 dark:text-slate-200 break-words leading-relaxed whitespace-pre-line">
                 {toReadableParagraph(e.text)}
               </div>
             </div>

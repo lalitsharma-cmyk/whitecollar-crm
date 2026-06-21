@@ -9,6 +9,7 @@ import { runReconciler } from "@/lib/reconciler";
 import { leadScopeWhere, COLD_ORIGINS } from "@/lib/leadScope";
 import { projectWhereForUser } from "@/lib/propertyScope";
 import { displayBudget } from "@/lib/budgetParse";
+import { formatLeadName } from "@/lib/leadName";
 import { statusColor, BUDGET_PRESETS, SUPPRESSED_STATUSES, ACTIVE_PURSUIT_STATUSES, CLOSING_STATUSES, TERMINAL_STATUSES, CLOSED_OUTCOME_STATUSES, LOST_STATUSES, leadSortTier } from "@/lib/lead-statuses";
 
 export const dynamic = "force-dynamic";
@@ -769,7 +770,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
 
           return {
             id: l.id,
-            name: l.name,
+            name: formatLeadName(l.name),
             phone: l.phone,
             email: l.email,
             source: l.source,

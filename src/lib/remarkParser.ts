@@ -66,6 +66,52 @@ function dateOnlyNoonIST(yr: number, mon: number, day: number): Date {
   return new Date(Date.UTC(yr, mon, day, 6, 30)); // 06:30 UTC === 12:00 IST (noon)
 }
 
+// ── Display-only body cleanup ─────────────────────────────────────────────────
+// Imported MIS remarks arrive with parser / copy artifacts that must not appear
+// in the readable body — the date / time / name belong in the card header:
+//   • square brackets from "[date] text" tagging  → "] he said…" / "…text]"
+//   • a leading "From (Name)" / "From [date]" wrapper
+//   • empty "()" left behind after a time token was pulled out
+//   • leading stray punctuation ") not picked" / "| he said"
+// Raw History keeps the verbatim original; this only changes what is rendered.
+function cleanRemarkBody(text: string): string {
+  let t = (text ?? "").trim();
+  t = t.replace(/^from\s*[([][^)\]]*[)\]]\s*[:,\-]?\s*/i, ""); // "From (X)" / "From [X]" wrapper
+  t = t.replace(/[[\]]/g, " ");          // square brackets are always import artifacts here
+  t = t.replace(/\(\s*\)/g, " ");        // empty round parens
+  t = t.replace(/^[)(>|\s,.;:–—-]+/, ""); // leading stray bracket / punctuation
+  return t.replace(/\s{2,}/g, " ").trim();
+}
+
+// Pull a leading clock time off a body — "(3:33pm) He said…" / "10:35am called" —
+// so it becomes the entry's time (combined with its date in pass 3) and the body
+// starts at the actual words. Returns the time string + the remaining body.
+function extractLeadingTime(body: string): { timeStr: string | null; rest: string } {
+  const m = body.match(/^[([]?\s*(\d{1,2}[:.]\d{2}\s*[ap]\.?\s*m\.?|\d{1,2}\s*[ap]\.?\s*m\.?|\d{1,2}[:.]\d{2})\s*[)\]]?[\s,:\-]*/i);
+  if (m && m[1]) return { timeStr: m[1].replace(/\s+/g, ""), rest: body.slice(m[0].length) };
+  return { timeStr: null, rest: body };
+}
+
+// Combine a base date (any UTC instant) with an IST wall-clock time string,
+// returning the precise UTC instant for that IST date + time.
+function withISTTime(baseDate: Date, timeStr: string): Date | null {
+  const tm = timeStr.match(/(\d{1,2})[:.]?(\d{0,2})\s*(am|pm)?/i);
+  if (!tm) return null;
+  let h = parseInt(tm[1]); const mins = parseInt(tm[2] || "0");
+  const ampm = (tm[3] ?? "").toLowerCase();
+  if (ampm === "pm" && h < 12) h += 12;
+  if (ampm === "am" && h === 12) h = 0;
+  if (h > 23 || mins > 59) return null;
+  const ist = new Date(baseDate.getTime() + IST_OFFSET_MS);
+  return new Date(Date.UTC(ist.getUTCFullYear(), ist.getUTCMonth(), ist.getUTCDate(), h, mins) - IST_OFFSET_MS);
+}
+
+// Date-only noon sentinel (06:30 UTC = 12:00 IST): the entry has NO real clock
+// time, so two such entries on the same day are DISTINCT remarks — never merged.
+function isNoonSentinel(d: Date): boolean {
+  return d.getUTCHours() === 6 && d.getUTCMinutes() === 30;
+}
+
 function tryExtractDate(line: string): Date | null {
   const mLong = line.match(/(?:^|[^a-z])(\d{1,2})[\s\-/.]+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*[\s\-/.,]+(\d{2,4})/i);
   if (mLong) {
@@ -394,7 +440,7 @@ export function parseRemarksTimeline(
   const lines = normalized.split("\n").map(l => l.trim()).filter(Boolean);
 
   // Raw entries before we apply the undated → inferred-date pass
-  interface RawEntry { date: Date | null; agentCandidate: string | null; text: string }
+  interface RawEntry { date: Date | null; agentCandidate: string | null; text: string; timeStr?: string | null }
   const raw: RawEntry[] = [];
   let currentAgent: string | null = null; // last known-roster agent seen
 
@@ -406,7 +452,7 @@ export function parseRemarksTimeline(
     if (mFull) {
       const candidate = mFull[1]?.trim() ?? null;
       const date = parseDateTime(mFull[2].trim(), mFull[3].trim());
-      const body = (mFull[4] ?? "").replace(/^[,.\s]+/, "").trim();
+      const body = cleanRemarkBody((mFull[4] ?? "").replace(/^[,.\s]+/, "").trim());
       if (candidate) {
         const resolved = matchAgent(candidate);
         if (resolved) currentAgent = resolved;
@@ -433,6 +479,7 @@ export function parseRemarksTimeline(
         const exact = parseDateTime(mOn[2].trim(), mTime[1].trim());
         if (exact) { date = exact; body = body.slice(mTime[0].length).trim(); }
       }
+      body = cleanRemarkBody(body);
       if (candidate) {
         const resolved = matchAgent(candidate);
         if (resolved) currentAgent = resolved;
@@ -459,7 +506,9 @@ export function parseRemarksTimeline(
           .replace(/^\d{1,2}[\/\-]\d{1,2}[\/\-]\d{4}\s*[:\-]?\s*/, "")
           .trim();
       }
-      if (displayText.length >= 2) raw.push({ date, agentCandidate: candidate, text: displayText });
+      const t3 = extractLeadingTime(displayText);
+      displayText = cleanRemarkBody(t3.rest);
+      if (displayText.length >= 2) raw.push({ date, agentCandidate: candidate, text: displayText, timeStr: t3.timeStr });
       continue;
     }
 
@@ -474,7 +523,9 @@ export function parseRemarksTimeline(
         .trim();
     }
     displayText = displayText.replace(/^[,.\s]+/, "").trim();
-    if (displayText.length >= 2) raw.push({ date, agentCandidate: null, text: displayText });
+    const t4 = extractLeadingTime(displayText);
+    displayText = cleanRemarkBody(t4.rest);
+    if (displayText.length >= 2) raw.push({ date, agentCandidate: null, text: displayText, timeStr: t4.timeStr });
   }
 
   // ── Pass 2: resolve agent for each entry (sticky ownership) ────────────────
@@ -494,18 +545,17 @@ export function parseRemarksTimeline(
   // as inferred. If none exists, use leadCreatedAt.
   let lastKnownDate: Date | null = leadCreatedAt ?? null;
   const entries: RemarkEntry[] = withAgent.map(e => {
-    if (e.date) {
-      lastKnownDate = e.date;
-      return { date: e.date, dateInferred: false, agentName: e.resolvedAgent, text: e.text, eventType: classifyText(e.text) };
+    let date: Date | null = e.date;
+    let inferred = false;
+    if (date) { lastKnownDate = date; }
+    else { date = lastKnownDate; inferred = true; }
+    // Promote a body-leading clock time ("(3:33pm) he said…") onto the entry's
+    // date — even when that date was inferred from the previous dated entry.
+    if (e.timeStr && date) {
+      const withT = withISTTime(date, e.timeStr);
+      if (withT) { date = withT; if (!e.date) lastKnownDate = withT; }
     }
-    // Undated → infer
-    return {
-      date: lastKnownDate,
-      dateInferred: true,
-      agentName: e.resolvedAgent,
-      text: e.text,
-      eventType: classifyText(e.text),
-    };
+    return { date, dateInferred: inferred, agentName: e.resolvedAgent, text: e.text, eventType: classifyText(e.text) };
   });
 
   // Sort chronologically (oldest first, matching original Excel order).
@@ -596,7 +646,8 @@ export function mergeSameMoment(entries: RemarkEntry[]): RemarkEntry[] {
     const sameMoment = !!last
       && last.agentName === e.agentName
       && last.date != null && e.date != null
-      && last.date.getTime() === e.date.getTime();
+      && last.date.getTime() === e.date.getTime()
+      && !isNoonSentinel(e.date); // date-only entries (noon sentinel) are distinct remarks — never merge
     if (sameMoment && last) {
       last.text = `${last.text}\n${e.text}`.trim();
       last.eventType = classifyText(last.text);   // strongest signal of the whole block
