@@ -7,7 +7,7 @@ import { fmtMoney } from "@/lib/money";
 import { requireUser } from "@/lib/auth";
 import LeadActionsClient from "@/components/LeadActionsClient";
 import LeadProjectsClient from "@/components/LeadProjectsClient";
-import LeadInterestNotesClient from "@/components/LeadInterestNotesClient";
+import LeadInterestedClient from "@/components/LeadInterestedClient";
 import LeadMeetingClient from "@/components/LeadMeetingClient";
 import LinkedInField from "@/components/LinkedInField";
 import ContactField from "@/components/ContactField";
@@ -123,6 +123,7 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
         owner: true,
         interestedUnits: { include: { unit: { include: { project: true } } } },
         discussed:       { include: { project: true }, orderBy: { discussedAt: "desc" } },
+        interestedProjects: { include: { project: true }, orderBy: { interestedAt: "desc" } },
         activities: { orderBy: { createdAt: "desc" }, take: 25, include: { user: true } },
         callLogs:   { orderBy: { startedAt: "desc" }, take: 50, include: { user: true } },
         waMessages: { orderBy: { receivedAt: "desc" }, take: 20 },
@@ -1178,7 +1179,7 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
           </div>
         )}
 
-        {/* 8 · Projects Discussed */}
+        {/* 8 · Properties Discussed */}
         <div data-lead-section="projects" className="card p-4">
           <LeadProjectsClient
             leadId={lead.id}
@@ -1214,15 +1215,29 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
         </div>
 
         <div data-lead-section="projects" className="card p-4">
-          <LeadInterestNotesClient
+          <LeadInterestedClient
             leadId={lead.id}
-            notes={interestNotes.map(n => ({
+            initial={lead.interestedProjects.map(d => ({
+              projectId: d.projectId,
+              interestedAt: d.interestedAt.toISOString(),
+              project: { name: d.project.name, city: d.project.city },
+              autoDetected: d.autoDetected,
+              suggestion: d.suggestion,
+              sourceType: d.sourceType,
+              sourceDate: d.sourceDate?.toISOString() ?? null,
+              sourceText: d.sourceText,
+            }))}
+            allProjects={allProjects}
+            // Admin/Manager bypass the picker's country filter (same as Properties
+            // Discussed) so they can search & add ANY market on ANY lead; agents
+            // stay geo-scoped to the lead's market.
+            scopeCountry={(me.role === "ADMIN" || me.role === "MANAGER") ? null : teamToCountry(lead.forwardedTeam)}
+            legacyNotes={interestNotes.map(n => ({
               id: n.id,
               noteText: n.noteText,
               autoDetected: n.autoDetected,
               sourceType: n.sourceType ?? null,
               sourceDate: n.sourceDate?.toISOString() ?? null,
-              createdAt: n.createdAt.toISOString(),
             }))}
             interestedUnits={lead.interestedUnits.map(p => ({
               id: p.id,
@@ -1231,11 +1246,9 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
                 id: p.unit.id,
                 code: p.unit.code,
                 configuration: p.unit.configuration,
-                priceBase: p.unit.priceBase,
                 project: { name: p.unit.project.name, country: p.unit.project.country },
               },
             }))}
-            userRole={me.role}
           />
         </div>
 

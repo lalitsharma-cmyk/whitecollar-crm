@@ -3,34 +3,37 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { X, Plus, Check } from "lucide-react";
 
+// "Interested Properties" — the SAME picker toolkit as "Properties Discussed"
+// (LeadProjectsClient): search existing project, free-text manual add, scan from
+// conversation, accept/reject suggestions, remove. It saves to its OWN store
+// (LeadInterestedProject via /interested-projects) so the two lists stay
+// independent: a client may have discussed 10 properties but be interested in 2.
+// Legacy free-text interest notes + matched units are still shown (and removable)
+// beneath so no historical data is lost.
+
 interface Project { id: string; name: string; city: string; country?: string; }
-interface Discussion {
+interface InterestedItem {
   projectId: string;
-  status: "DISCUSSED" | "SHORTLISTED" | "SITE_VISITED" | "RULED_OUT";
   project: { name: string; city: string };
-  discussedAt: string;
+  interestedAt: string;
   autoDetected?: boolean;
   suggestion?: boolean;
   sourceType?: string | null;
   sourceDate?: string | null;
   sourceText?: string | null;
 }
-interface UnmatchedMention {
+interface LegacyNote {
   id: string;
-  mentionText: string;
-  sourceType: string;
+  noteText: string;
+  autoDetected: boolean;
+  sourceType: string | null;
   sourceDate: string | null;
-  sourceText: string | null;
-  resolved: boolean;
-  resolvedIgnored: boolean;
 }
-
-const statusChip: Record<string, string> = {
-  DISCUSSED:    "src",
-  SHORTLISTED:  "chip-warm",
-  SITE_VISITED: "chip-won",
-  RULED_OUT:    "chip-lost",
-};
+interface LegacyUnit {
+  id: string;
+  type: string;
+  unit: { id: string; code: string; configuration: string; project: { name: string; country: string } };
+}
 
 function norm(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -50,25 +53,25 @@ function fmtDate(iso: string): string {
   } catch { return ""; }
 }
 
-export default function LeadProjectsClient({
+export default function LeadInterestedClient({
   leadId,
   initial,
   allProjects,
   scopeCountry,
-  unmatchedMentions,
-  userRole,
+  legacyNotes,
+  interestedUnits,
 }: {
   leadId: string;
-  initial: Discussion[];
+  initial: InterestedItem[];
   allProjects: Project[];
   scopeCountry?: string | null;
-  unmatchedMentions?: UnmatchedMention[];
-  userRole?: "ADMIN" | "MANAGER" | "AGENT";
+  legacyNotes: LegacyNote[];
+  interestedUnits: LegacyUnit[];
 }) {
   const router = useRouter();
   const [items, setItems] = useState(initial);
+  const [notes, setNotes] = useState(legacyNotes);
   const [picking, setPicking] = useState(false);
-  const [picked, setPicked] = useState<Project | null>(null);
   const [query, setQuery] = useState("");
   const [highlight, setHighlight] = useState(0);
   const [busy, setBusy] = useState(false);
@@ -82,13 +85,11 @@ export default function LeadProjectsClient({
     if (!picking) return;
     function handleOutside(e: MouseEvent) {
       if (pickerRef.current && !pickerRef.current.contains(e.target as Node)) {
-        setPicking(false); setPicked(null); setQuery(""); setHighlight(0);
+        setPicking(false); setQuery(""); setHighlight(0);
       }
     }
     function handleEscape(e: KeyboardEvent) {
-      if (e.key === "Escape") {
-        setPicking(false); setPicked(null); setQuery(""); setHighlight(0);
-      }
+      if (e.key === "Escape") { setPicking(false); setQuery(""); setHighlight(0); }
     }
     document.addEventListener("mousedown", handleOutside);
     document.addEventListener("keydown", handleEscape);
@@ -98,7 +99,6 @@ export default function LeadProjectsClient({
     };
   }, [picking]);
 
-  // Split into confirmed (user accepted or manually added) vs suggested (auto-detected pending)
   const confirmed = items.filter(it => !it.suggestion);
   const suggested = items.filter(it => it.suggestion);
 
@@ -114,55 +114,48 @@ export default function LeadProjectsClient({
   const matches = useMemo(() => {
     const q = norm(query);
     if (!q) return remaining.slice(0, 50);
-    return remaining
-      .filter((p) => norm(`${p.name} ${p.city}`).includes(q))
-      .slice(0, 50);
+    return remaining.filter((p) => norm(`${p.name} ${p.city}`).includes(q)).slice(0, 50);
   }, [remaining, query]);
-
-  const unresolvedCount = (unmatchedMentions ?? []).filter(m => !m.resolved && !m.resolvedIgnored).length;
 
   async function addProject(projectId: string) {
     if (busy) return;
     setBusy(true); setErr(null);
     try {
-      const r = await fetch(`/api/leads/${leadId}/discuss`, {
+      const r = await fetch(`/api/leads/${leadId}/interested-projects`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectId, status: "DISCUSSED" }),
+        body: JSON.stringify({ projectId }),
       });
       if (!r.ok) {
         const j = await r.json().catch(() => ({}));
-        setErr(j.error ?? `Couldn't add project (${r.status}).`);
+        setErr(j.error ?? `Couldn't add property (${r.status}).`);
         return;
       }
-      setPicking(false);
-      setPicked(null);
-      setQuery("");
-      setHighlight(0);
+      setPicking(false); setQuery(""); setHighlight(0);
       router.refresh();
     } catch (e) {
       setErr(`Network error — ${String(e).slice(0, 80)}`);
     } finally { setBusy(false); }
   }
 
-  // Free-text add — for a project not yet in the Master. The API finds-or-creates
+  // Free-text add — for a property not yet in the Master. The API finds-or-creates
   // it (inactive, so it never affects auto-routing) and links it to the lead.
   async function addProjectByName(name: string) {
     const projectName = name.trim();
     if (!projectName || busy) return;
     setBusy(true); setErr(null);
     try {
-      const r = await fetch(`/api/leads/${leadId}/discuss`, {
+      const r = await fetch(`/api/leads/${leadId}/interested-projects`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectName, status: "DISCUSSED" }),
+        body: JSON.stringify({ projectName }),
       });
       if (!r.ok) {
         const j = await r.json().catch(() => ({}));
         setErr(j.error ?? `Couldn't add "${projectName}" (${r.status}).`);
         return;
       }
-      setPicking(false); setPicked(null); setQuery(""); setHighlight(0);
+      setPicking(false); setQuery(""); setHighlight(0);
       router.refresh();
     } catch (e) {
       setErr(`Network error — ${String(e).slice(0, 80)}`);
@@ -172,7 +165,7 @@ export default function LeadProjectsClient({
   async function removeProject(projectId: string) {
     setBusy(true);
     try {
-      const r = await fetch(`/api/leads/${leadId}/discuss`, {
+      const r = await fetch(`/api/leads/${leadId}/interested-projects`, {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ projectId }),
@@ -184,22 +177,10 @@ export default function LeadProjectsClient({
     } finally { setBusy(false); }
   }
 
-  async function changeStatus(projectId: string, status: string) {
-    setBusy(true);
-    try {
-      await fetch(`/api/leads/${leadId}/discuss`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectId, status }),
-      });
-      router.refresh();
-    } finally { setBusy(false); }
-  }
-
   async function acceptSuggestion(projectId: string) {
     setBusy(true);
     try {
-      const r = await fetch(`/api/leads/${leadId}/discuss`, {
+      const r = await fetch(`/api/leads/${leadId}/interested-projects`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ projectId, action: "accept" }),
@@ -214,7 +195,7 @@ export default function LeadProjectsClient({
   async function rejectSuggestion(projectId: string) {
     setBusy(true);
     try {
-      const r = await fetch(`/api/leads/${leadId}/discuss`, {
+      const r = await fetch(`/api/leads/${leadId}/interested-projects`, {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ projectId }),
@@ -226,28 +207,23 @@ export default function LeadProjectsClient({
     } finally { setBusy(false); }
   }
 
-  async function linkMention(id: string, projectId: string) {
-    await fetch(`/api/admin/unmatched-mentions/${id}`, {
-      method: "PATCH",
+  async function removeLegacyNote(id: string) {
+    const r = await fetch(`/api/leads/${leadId}/interest-notes`, {
+      method: "DELETE",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "link", projectId }),
+      body: JSON.stringify({ id }),
     });
-    router.refresh();
-  }
-
-  async function ignoreMention(id: string) {
-    await fetch(`/api/admin/unmatched-mentions/${id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "ignore" }),
-    });
-    router.refresh();
+    if (r.ok) { setNotes((arr) => arr.filter((n) => n.id !== id)); router.refresh(); }
   }
 
   async function runScan() {
     setScanning(true);
     try {
-      await fetch(`/api/leads/${leadId}/detect-projects`, { method: "POST" });
+      await fetch(`/api/leads/${leadId}/detect-projects`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ target: "interested" }),
+      });
       router.refresh();
     } finally { setScanning(false); }
   }
@@ -266,17 +242,21 @@ export default function LeadProjectsClient({
       else if (query.trim()) addProjectByName(query);   // no match → save as free-text
     } else if (e.key === "Escape") {
       e.preventDefault();
-      setPicking(false);
-      setPicked(null);
-      setQuery("");
+      setPicking(false); setQuery("");
     }
   }
 
+  const totalCount = confirmed.length + notes.length + interestedUnits.length;
+
   return (
     <div>
-      {/* ── Confirmed projects ───────────────────────────────────────────── */}
-      <div className="font-semibold mb-2">Properties discussed</div>
-      {confirmed.length === 0 && <div className="text-sm text-gray-500 mb-2">None yet — add a project once it&apos;s mentioned.</div>}
+      {/* ── Confirmed interested properties ──────────────────────────────── */}
+      <div className="font-semibold mb-2 flex items-center gap-2">
+        Interested properties
+        <span className="chip src text-[10px]">({totalCount})</span>
+      </div>
+      {totalCount === 0 && <div className="text-sm text-gray-500 mb-2">None yet — add the properties this client is genuinely interested in.</div>}
+
       <div className="space-y-2">
         {confirmed.map((it) => (
           <div key={it.projectId} className="flex flex-col sm:flex-row sm:items-center gap-2 p-2.5 border border-[#e5e7eb] rounded-lg text-sm">
@@ -292,39 +272,26 @@ export default function LeadProjectsClient({
                 <div className="text-[10px] text-gray-400 italic mt-0.5 truncate">&ldquo;{it.sourceText}&rdquo;</div>
               )}
             </div>
-            <div className="flex items-center gap-2 flex-none">
-              <select
-                value={it.status}
-                onChange={(e) => changeStatus(it.projectId, e.target.value)}
-                disabled={busy}
-                className={`chip ${statusChip[it.status]} border-0 outline-none text-[10px] flex-1 sm:flex-none min-h-11 sm:min-h-0`}
-              >
-                <option value="DISCUSSED">Discussed</option>
-                <option value="SHORTLISTED">Shortlisted</option>
-                <option value="SITE_VISITED">Site visited</option>
-                <option value="RULED_OUT">Ruled out</option>
-              </select>
-              <button
-                onClick={() => removeProject(it.projectId)}
-                disabled={busy}
-                aria-label="Remove project"
-                className="text-gray-400 hover:text-red-500 p-2 -m-2 flex-none min-w-11 min-h-11 flex items-center justify-center"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
+            <button
+              onClick={() => removeProject(it.projectId)}
+              disabled={busy}
+              aria-label="Remove interested property"
+              className="text-gray-400 hover:text-red-500 p-2 -m-2 flex-none min-w-11 min-h-11 flex items-center justify-center self-end sm:self-auto"
+            >
+              <X className="w-4 h-4" />
+            </button>
           </div>
         ))}
       </div>
 
-      {/* ── Add project + scan buttons ───────────────────────────────────── */}
+      {/* ── Add property + scan buttons ──────────────────────────────────── */}
       <div className="flex items-center gap-3">
         {!picking && (
           <button
             onClick={() => { setPicking(true); setTimeout(() => inputRef.current?.focus(), 0); }}
             className="text-sm text-[#0b1a33] font-semibold mt-3 flex items-center gap-1.5 min-h-11 px-1"
           >
-            <Plus className="w-4 h-4" /> Add project
+            <Plus className="w-4 h-4" /> Add property
           </button>
         )}
         <button
@@ -332,7 +299,7 @@ export default function LeadProjectsClient({
           disabled={scanning}
           className="text-sm text-amber-700 font-semibold mt-2 flex items-center gap-1.5 min-h-11 px-1"
         >
-          {scanning ? "Scanning…" : "🔍 Scan for projects"}
+          {scanning ? "Scanning…" : "🔍 Scan for properties"}
         </button>
       </div>
 
@@ -342,13 +309,13 @@ export default function LeadProjectsClient({
             <input
               ref={inputRef}
               value={query}
-              onChange={(e) => { setQuery(e.target.value); setPicked(null); setHighlight(0); }}
+              onChange={(e) => { setQuery(e.target.value); setHighlight(0); }}
               onKeyDown={onKey}
-              placeholder="Type project or city — e.g. 'Marina', 'Gurgaon', 'Burj'"
+              placeholder="Type property or city — e.g. 'Marina', 'Gurgaon', 'Burj'"
               className="w-full border border-[#e5e7eb] rounded-lg px-3 py-2.5 text-sm min-h-11"
               autoComplete="off"
             />
-            {matches.length > 0 && !picked && (
+            {matches.length > 0 && (
               <div className="absolute left-0 right-0 top-full mt-1 max-h-64 overflow-y-auto bg-white border border-[#e5e7eb] rounded-lg shadow-lg z-20">
                 {matches.map((p, idx) => (
                   <div
@@ -369,7 +336,7 @@ export default function LeadProjectsClient({
                   onMouseDown={(e) => { e.preventDefault(); addProjectByName(query); }}
                   className="px-3 py-2.5 text-sm cursor-pointer hover:bg-amber-50"
                 >
-                  ➕ Add &ldquo;<span className="font-semibold">{query.trim()}</span>&rdquo; as a new project
+                  ➕ Add &ldquo;<span className="font-semibold">{query.trim()}</span>&rdquo; as a new property
                 </div>
               </div>
             )}
@@ -378,7 +345,7 @@ export default function LeadProjectsClient({
           <div className="flex gap-2">
             <button
               onClick={() => {
-                const t = picked ?? matches[highlight] ?? matches[0];
+                const t = matches[highlight] ?? matches[0];
                 if (t) addProject(t.id);
                 else if (query.trim()) addProjectByName(query);   // free-text fallback
               }}
@@ -388,7 +355,7 @@ export default function LeadProjectsClient({
               {busy ? "Adding…" : "Add"}
             </button>
             <button
-              onClick={() => { setPicking(false); setPicked(null); setQuery(""); }}
+              onClick={() => { setPicking(false); setQuery(""); }}
               className="btn btn-ghost text-sm flex-1 justify-center min-h-11"
             >
               Cancel
@@ -397,14 +364,14 @@ export default function LeadProjectsClient({
         </div>
       )}
 
-      {/* ── Suggested projects (auto-detected, pending review) ───────────── */}
+      {/* ── Suggested (auto-detected via Scan, pending review) ───────────── */}
       {suggested.length > 0 && (
         <div className="mt-5 pt-4 border-t border-dashed border-blue-200">
           <div className="text-[10px] font-semibold text-blue-700 uppercase tracking-widest mb-2">
             🔍 Suggested — auto-detected from history ({suggested.length})
           </div>
           <div className="text-[10px] text-gray-500 mb-3">
-            These project names were found in call notes, remarks, or WhatsApp. Review each one and Accept or Reject.
+            These property names were found in call notes, remarks, or WhatsApp. Accept the ones the client is genuinely interested in.
           </div>
           <div className="space-y-2">
             {suggested.map((it) => (
@@ -428,7 +395,7 @@ export default function LeadProjectsClient({
                     <button
                       onClick={() => acceptSuggestion(it.projectId)}
                       disabled={busy}
-                      title="Accept — add to Properties Discussed"
+                      title="Accept — add to Interested Properties"
                       className="flex items-center gap-0.5 text-[10px] px-2 py-1 rounded bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50 min-h-8"
                     >
                       <Check className="w-3 h-3" /> Accept
@@ -449,39 +416,51 @@ export default function LeadProjectsClient({
         </div>
       )}
 
-      {/* ── Unmatched mentions — ADMIN / MANAGER only ────────────────────── */}
-      {unmatchedMentions && unmatchedMentions.length > 0 && (userRole === "ADMIN" || userRole === "MANAGER") && unresolvedCount > 0 && (
-        <div className="mt-4 pt-4 border-t border-dashed border-amber-200">
-          <div className="text-[10px] font-semibold text-amber-700 uppercase tracking-widest mb-2">
-            ⚠️ Unmatched project mentions ({unresolvedCount})
-          </div>
-          {unmatchedMentions.filter(m => !m.resolved && !m.resolvedIgnored).map(m => (
-            <div key={m.id} className="flex flex-col gap-1 p-2 border border-amber-200 bg-amber-50 rounded-lg mb-2">
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-semibold text-amber-800">&ldquo;{m.mentionText}&rdquo;</span>
-                <span className="text-[10px] text-gray-500">{sourceLabel(m.sourceType)}</span>
-              </div>
-              {m.sourceText && <div className="text-[10px] text-gray-500 italic">…{m.sourceText}…</div>}
-              <div className="flex gap-2 mt-1">
-                <select
-                  className="text-xs border border-amber-300 rounded px-1 py-0.5 flex-1 bg-white"
-                  defaultValue=""
-                  onChange={(e) => e.target.value && linkMention(m.id, e.target.value)}
-                >
-                  <option value="">Link to project…</option>
-                  {allProjects
-                    .filter(p => !scopeCountry || !p.country || p.country === scopeCountry)
-                    .map(p => <option key={p.id} value={p.id}>{p.name} ({p.city})</option>)}
-                </select>
+      {/* ── Earlier interest notes (legacy free-text) — preserved + removable ── */}
+      {notes.length > 0 && (
+        <div className="mt-5 pt-4 border-t border-dashed border-gray-200">
+          <div className="text-[10px] font-semibold text-gray-500 uppercase tracking-widest mb-2">Earlier notes</div>
+          <div className="space-y-2">
+            {notes.map(n => (
+              <div key={n.id} className="flex items-start justify-between border border-[#e5e7eb] rounded-lg p-2.5 text-sm">
+                <div className="flex-1 min-w-0">
+                  <div className="font-medium">{n.noteText}</div>
+                  {n.autoDetected && n.sourceType && (
+                    <div className="text-[10px] text-amber-600 mt-0.5">
+                      🔍 {sourceLabel(n.sourceType)}{n.sourceDate ? ` · ${fmtDate(n.sourceDate)}` : ""}
+                    </div>
+                  )}
+                </div>
                 <button
-                  onClick={() => ignoreMention(m.id)}
-                  className="text-[10px] text-gray-500 hover:text-red-500 px-2 py-0.5 border border-gray-200 rounded"
+                  onClick={() => removeLegacyNote(n.id)}
+                  className="text-gray-400 hover:text-red-500 ml-2 flex-none"
+                  aria-label="Remove interest note"
                 >
-                  Ignore
+                  <X className="w-4 h-4" />
                 </button>
               </div>
-            </div>
-          ))}
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ── Matched inventory (specific units) — read-only reference ──────── */}
+      {interestedUnits.length > 0 && (
+        <div className="mt-5 pt-4 border-t border-dashed border-gray-200">
+          <div className="text-[10px] font-semibold text-gray-500 uppercase tracking-widest mb-2">Matched inventory</div>
+          <div className="space-y-2">
+            {interestedUnits.map(p => (
+              <div key={p.id} className="flex items-center justify-between border border-[#e5e7eb] rounded-lg p-2 text-sm">
+                <div>
+                  <div className="font-semibold">{p.unit.project.name} {p.unit.configuration}</div>
+                  <div className="text-xs text-gray-500">{p.unit.code}</div>
+                </div>
+                <span className={`chip ${p.type === "PRIMARY" ? "chip-hot" : p.type === "COMPARE" ? "chip-warm" : "chip-lost"}`}>
+                  {p.type}
+                </span>
+              </div>
+            ))}
+          </div>
         </div>
       )}
     </div>

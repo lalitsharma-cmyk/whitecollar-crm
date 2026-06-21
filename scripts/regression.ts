@@ -812,6 +812,19 @@ const checks: Check[] = [
       assert(canonicalCountry("UK") === "United Kingdom" && canonicalCountry("United Kingdom") === "United Kingdom", `UK variants must canonicalize to "United Kingdom"`);
     },
   },
+  {
+    name: "interested-properties — LeadInterestedProject store exists + Lead relation queryable (separate from Properties Discussed)",
+    run: async () => {
+      // Selecting from a missing table throws — so this proves the additive
+      // migration is applied in prod. Empty is fine; the guard's job is to abort a
+      // future deploy if the independent Interested-Properties table ever vanishes.
+      const n = await prisma.leadInterestedProject.count();
+      assert(n >= 0, "leadInterestedProject.count() should return a number");
+      // The Lead → interestedProjects relation must resolve (include must not throw)
+      // and is a SEPARATE store from `discussed` (Properties Discussed).
+      await prisma.lead.findFirst({ select: { id: true, _count: { select: { interestedProjects: true, discussed: true } } } });
+    },
+  },
 ];
 
 // ── runner ────────────────────────────────────────────────────────────────────

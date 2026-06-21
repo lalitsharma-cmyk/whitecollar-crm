@@ -19,10 +19,16 @@ import {
 } from "@/lib/projectDetector";
 
 export async function POST(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
+
+  // Scan target: "discussed" (default → LeadProject) or "interested"
+  // (→ LeadInterestedProject). Lets the Interested Properties card reuse the same
+  // detector while writing suggestions to its own independent store.
+  const body = await req.json().catch(() => ({} as Record<string, unknown>));
+  const target = String((body as { target?: unknown })?.target ?? "discussed");
 
   // Auth + ownership check
   const scoped = await loadOwnedLead(id);
@@ -64,6 +70,36 @@ export async function POST(
 
   const { projectMatches, unmatchedMentions, interestNotes } =
     detectProjectsAndInterests(sources, allProjects);
+
+  // ── Interested-Properties scan ──────────────────────────────────────────
+  // Same detection, but suggestions land in the INDEPENDENT LeadInterestedProject
+  // store (pending accept/reject in the Interested card). Only project matches are
+  // added here — unmatched mentions / free-text interest notes stay on the
+  // Properties-Discussed flow so the two lists never cross-contaminate.
+  if (target === "interested") {
+    let added = 0;
+    for (const match of projectMatches) {
+      await prisma.leadInterestedProject.upsert({
+        where: { leadId_projectId: { leadId: id, projectId: match.projectId } },
+        create: {
+          leadId: id,
+          projectId: match.projectId,
+          autoDetected: true,
+          suggestion: true,
+          sourceType: match.sourceType,
+          sourceDate: match.sourceDate,
+          sourceText: match.sourceText.slice(0, 200),
+        },
+        update: {
+          sourceType: match.sourceType,
+          sourceDate: match.sourceDate,
+          sourceText: match.sourceText.slice(0, 200),
+        },
+      });
+      added++;
+    }
+    return NextResponse.json({ projectsAdded: added, target: "interested" });
+  }
 
   // ---------------------------------------------------------------------------
   // 1. Upsert LeadProject rows

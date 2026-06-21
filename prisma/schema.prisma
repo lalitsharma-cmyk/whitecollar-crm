@@ -498,6 +498,7 @@ model Lead {
   // relations
   interestedUnits LeadProperty[]
   discussed       LeadProject[]
+  interestedProjects LeadInterestedProject[]
   activities      Activity[]
   callLogs        CallLog[]
   notes           Note[]
@@ -731,6 +732,7 @@ model Project {
 
   units         Unit[]
   discussedBy   LeadProject[]
+  interestedInBy LeadInterestedProject[]
 
   @@index([city])
   @@index([status])
@@ -759,6 +761,29 @@ model LeadProject {
   suggestion   Boolean        @default(false) // true = auto-detected, pending accept/reject
   lead      Lead              @relation(fields: [leadId], references: [id], onDelete: Cascade)
   project   Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  @@unique([leadId, projectId])
+  @@index([leadId])
+  @@index([projectId])
+}
+
+// "Interested Properties" — a SEPARATE, independent store from LeadProject
+// ("Properties Discussed"). Same project-picker toolkit (search / scan / manual),
+// but its own table so the two lists never affect each other: a client may have
+// discussed 10 projects yet be interested in only 2. Purely additive — no existing
+// query reads or writes LeadProject because of this model.
+model LeadInterestedProject {
+  id           String    @id @default(cuid())
+  leadId       String
+  projectId    String
+  notes        String?
+  autoDetected Boolean   @default(false)
+  sourceType   String?   // "REMARK" | "CALL_NOTE" | "WA_MESSAGE" | "NOTE" | "MANUAL"
+  sourceDate   DateTime?
+  sourceText   String?   // ≤200-char excerpt from source text
+  suggestion   Boolean   @default(false) // true = auto-detected via Scan, pending accept/reject
+  interestedAt DateTime  @default(now())
+  lead    Lead    @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
   @@unique([leadId, projectId])
   @@index([leadId])
   @@index([projectId])

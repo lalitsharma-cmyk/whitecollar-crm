@@ -604,9 +604,9 @@ export default function AiInsightsPanel({
             </CollapsibleSection>
           )}
 
-          {/* 5. Projects Discussed */}
+          {/* 5. Properties Discussed */}
           {r.projectsDiscussed && r.projectsDiscussed.length > 0 && (
-            <CollapsibleSection title="Projects Discussed" icon="🏗️">
+            <CollapsibleSection title="Properties Discussed" icon="🏗️">
               <div className="space-y-2">
                 {r.projectsDiscussed.map((p, i) => (
                   <div key={i} className="p-2 rounded border border-gray-100 dark:border-slate-700 text-xs">
