@@ -245,8 +245,10 @@ export default function LeadActionsClient({ leadId, phone, altPhone, email, curr
     try {
       // Duration only matters for connected-style outcomes on PHONE calls.
       // WhatsApp text exchanges don't have a measurable duration → always 0.
+      // The duration field is entered in MINUTES; store seconds (×60) so all
+      // reporting / talk-time (which read durationSec in seconds) stay correct.
       const durationToSend = logChannel === "WHATSAPP" ? 0
-                          : (showDurationField ? (Number(duration) || 0) : 0);
+                          : (showDurationField ? Math.round((Number(duration) || 0) * 60) : 0);
       // Prefix the remarks so Call History can show the right icon + the
       // channel/direction context. Backend stores everything in notes.
       const remarksPrefix = logChannel === "WHATSAPP"
@@ -459,7 +461,7 @@ export default function LeadActionsClient({ leadId, phone, altPhone, email, curr
                 busy / wrong-number where duration is always 0. */}
             {showDurationField && (
               <>
-                <label className="text-xs font-semibold text-gray-600">Duration (seconds, optional)</label>
+                <label className="text-xs font-semibold text-gray-600">Duration (minutes, optional)</label>
                 <input
                   type="number"
                   value={duration}
@@ -479,7 +481,7 @@ export default function LeadActionsClient({ leadId, phone, altPhone, email, curr
                   min={0}
                   step={1}
                   inputMode="numeric"
-                  placeholder="e.g. 240"
+                  placeholder="e.g. 4"
                   className="w-full mt-1 mb-3 border border-[#e5e7eb] rounded-lg px-3 py-2 text-sm min-h-11"
                 />
               </>

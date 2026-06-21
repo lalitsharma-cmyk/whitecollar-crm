@@ -24,6 +24,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Mic } from "lucide-react";
+import { useRouter } from "next/navigation";
 
 interface Props {
   leadId: string;
@@ -61,6 +62,7 @@ interface SRInstance {
 type SRCtor = new () => SRInstance;
 
 export default function VoiceNoteRecorder({ leadId, onTranscribed }: Props) {
+  const router = useRouter();
   const [phase, setPhase] = useState<Phase>("idle");
   const [elapsedSec, setElapsedSec] = useState(0);
   // finalTranscript = locked-in pieces; interim = current word(s) still being
@@ -271,6 +273,9 @@ export default function VoiceNoteRecorder({ leadId, onTranscribed }: Props) {
         throw new Error(j.error ?? `HTTP ${r.status}`);
       }
       onTranscribed?.(content);
+      // Re-fetch the server component so the just-saved Note appears in the Smart
+      // Timeline immediately (it's a Note row; without this it only shows on reload).
+      router.refresh();
       setEditableTranscript("");
       setFinalTranscript("");
       setInterimTranscript("");
