@@ -91,7 +91,7 @@ export default async function ColdDataPage({ searchParams }: { searchParams: Pro
     prisma.lead.count({ where: allCold }),
     isAdminOrMgr ? prisma.lead.count({ where: { AND: [originCold, unassigned] } }) : Promise.resolve(0),
     isAdminOrMgr
-      ? prisma.user.findMany({ where: { active: true, role: { in: ["AGENT", "MANAGER", "ADMIN"] } }, orderBy: { name: "asc" } })
+      ? prisma.user.findMany({ where: { active: true, hrOnly: false, role: { in: ["AGENT", "MANAGER", "ADMIN"] } }, orderBy: { name: "asc" } })
       : Promise.resolve([]),
     prisma.activity.count({
       where: {

@@ -21,7 +21,7 @@ export default async function TeamDailyTargetTile({
   if (team === "all") return null;
 
   const teamUsers = await prisma.user.findMany({
-    where: { team, active: true, role: { in: ["AGENT", "MANAGER"] } },
+    where: { team, active: true, hrOnly: false, role: { in: ["AGENT", "MANAGER"] } },
     select: { id: true, dailyCallTarget: true },
   });
 

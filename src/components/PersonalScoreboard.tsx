@@ -60,7 +60,7 @@ export default async function PersonalScoreboard({ userId }: { userId: string })
   // Same eligibility filter as /leaderboards — only active sales-floor users
   // count toward the rankings.
   const eligibleUsers = await prisma.user.findMany({
-    where: { active: true, role: { in: ["AGENT", "MANAGER"] } },
+    where: { active: true, hrOnly: false, role: { in: ["AGENT", "MANAGER"] } },
     select: { id: true },
   });
   const eligibleIds = eligibleUsers.map((u) => u.id);

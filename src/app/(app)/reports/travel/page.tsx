@@ -98,7 +98,7 @@ export default async function TravelReportPage({ searchParams }: { searchParams:
     compute(primaryStart, primaryEnd, agentScope, managerTeam),
     compute(prevStart, prevEnd, agentScope, managerTeam),
     getTravelRatePerKmInr(),
-    prisma.user.findMany({ where: { active: true, role: { in: ["AGENT", "MANAGER"] }, ...(managerTeam ? { team: managerTeam } : {}) }, orderBy: { name: "asc" } }),
+    prisma.user.findMany({ where: { active: true, hrOnly: false, role: { in: ["AGENT", "MANAGER"] }, ...(managerTeam ? { team: managerTeam } : {}) }, orderBy: { name: "asc" } }),
   ]);
 
   const thisTotal = thisM.reduce((s, r) => s + r.amount, 0);

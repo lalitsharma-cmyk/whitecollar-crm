@@ -93,7 +93,7 @@ export default async function LeaderboardsPage({
 
   // Active sales-floor users — the only people eligible for any board.
   const eligibleUsers = await prisma.user.findMany({
-    where: { active: true, role: { in: ["AGENT", "MANAGER"] } },
+    where: { active: true, hrOnly: false, role: { in: ["AGENT", "MANAGER"] } },
     select: { id: true, name: true, dailyStreak: true },
   });
   const eligibleIds = eligibleUsers.map((u) => u.id);

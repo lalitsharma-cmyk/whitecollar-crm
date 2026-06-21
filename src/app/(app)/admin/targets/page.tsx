@@ -21,7 +21,7 @@ const METRICS: { key: TargetMetric; label: string; helper: string }[] = [
 export default async function AdminTargetsPage() {
   await requireRole("ADMIN");
   const [users, allTargets] = await Promise.all([
-    prisma.user.findMany({ where: { active: true, role: { in: ["AGENT", "MANAGER"] } }, orderBy: [{ team: "asc" }, { name: "asc" }] }),
+    prisma.user.findMany({ where: { active: true, hrOnly: false, role: { in: ["AGENT", "MANAGER"] } }, orderBy: [{ team: "asc" }, { name: "asc" }] }),
     prisma.target.findMany({ where: { period: "DAILY" }, orderBy: { startDate: "desc" } }),
   ]);
 

@@ -42,7 +42,7 @@ export async function GET(req: NextRequest) {
 
     // ── Eligible agents for the boards (active AGENT/MANAGER) ──
     const eligibleUsers = await prisma.user.findMany({
-      where: { active: true, role: { in: [Role.AGENT, Role.MANAGER] } },
+      where: { active: true, hrOnly: false, role: { in: [Role.AGENT, Role.MANAGER] } },
       select: { id: true, name: true },
     });
     const eligibleIds = eligibleUsers.map((u) => u.id);
@@ -237,6 +237,7 @@ export async function GET(req: NextRequest) {
     const recipients = await prisma.user.findMany({
       where: {
         active: true,
+        hrOnly: false,
         role: { in: [Role.ADMIN, Role.MANAGER] },
         email: { not: "" },
       },

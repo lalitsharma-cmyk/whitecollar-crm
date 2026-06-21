@@ -110,7 +110,7 @@ export default async function DailyReportPage({ searchParams }: { searchParams: 
   // Agents list for admin/manager dropdown
   // MANAGER sees only agents from their own team; ADMIN sees all.
   const agents = isAdminOrMgr
-    ? await prisma.user.findMany({ where: { active: true, role: { in: ["AGENT", "MANAGER"] }, ...(me.role === "MANAGER" && managerTeam ? { team: managerTeam } : {}) }, orderBy: { name: "asc" } })
+    ? await prisma.user.findMany({ where: { active: true, hrOnly: false, role: { in: ["AGENT", "MANAGER"] }, ...(me.role === "MANAGER" && managerTeam ? { team: managerTeam } : {}) }, orderBy: { name: "asc" } })
     : [];
 
   return (

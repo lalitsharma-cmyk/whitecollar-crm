@@ -154,7 +154,7 @@ export default async function SlaReportPage({ searchParams }: { searchParams: Pr
   const [thisM, lastM, agents] = await Promise.all([
     computeMonth(primaryStart, primaryEnd, primaryLabel, agentScope, managerTeam),
     computeMonth(prevStart, prevEnd, prevLabel, agentScope, managerTeam),
-    prisma.user.findMany({ where: { active: true, role: { in: ["AGENT", "MANAGER"] }, ...(managerTeam ? { team: managerTeam } : {}) }, orderBy: { name: "asc" } }),
+    prisma.user.findMany({ where: { active: true, hrOnly: false, role: { in: ["AGENT", "MANAGER"] }, ...(managerTeam ? { team: managerTeam } : {}) }, orderBy: { name: "asc" } }),
   ]);
 
   return (

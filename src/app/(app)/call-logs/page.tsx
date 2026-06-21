@@ -112,6 +112,7 @@ export default async function CallLogsPage({
   // ── Fetch agents for the filter dropdown ───────────────────────────────
   const agentsQuery: Prisma.UserWhereInput = {
     active: true,
+    hrOnly: false,
     role: { in: ["AGENT", "MANAGER"] },
   };
   if (me.role === "MANAGER") {

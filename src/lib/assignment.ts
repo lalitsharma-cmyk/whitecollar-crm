@@ -12,6 +12,7 @@ export async function pickRoundRobinAgent(opts?: { team?: string; source?: LeadS
   const candidates = await prisma.user.findMany({
     where: {
       active: true,
+      hrOnly: false,
       role: { in: [Role.AGENT, Role.MANAGER] },
       ...(opts?.team ? { team: opts.team } : {}),
     },

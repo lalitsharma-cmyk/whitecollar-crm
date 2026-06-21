@@ -361,6 +361,7 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
       ? await prisma.user.findMany({
           where: {
             active: true,
+            hrOnly: false,
             OR: [
               { role: { in: ["AGENT", "MANAGER"] }, team: lead.forwardedTeam },
               { role: "ADMIN" },
@@ -369,7 +370,7 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
           orderBy: { name: "asc" },
         })
       : await prisma.user.findMany({
-          where: { active: true, role: { in: ["AGENT", "MANAGER", "ADMIN"] } },
+          where: { active: true, hrOnly: false, role: { in: ["AGENT", "MANAGER", "ADMIN"] } },
           orderBy: { name: "asc" },
         })
     : [];

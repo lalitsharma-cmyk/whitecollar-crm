@@ -46,6 +46,7 @@ export default async function AdminQualityPage({
   const isAdmin = me.role === "ADMIN";
   const baseWhere = {
     active: true,
+    hrOnly: false,
     role: { in: [Role.AGENT, Role.MANAGER] },
     ...(team !== "all" ? { team } : {}),
   };

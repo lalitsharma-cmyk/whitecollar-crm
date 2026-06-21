@@ -51,7 +51,7 @@ export default async function TeamMoodPage() {
   const prev7dEnd   = subDays(today, 7);
 
   const [agents, moodsRaw] = await Promise.all([
-    prisma.user.findMany({ where: { active: true, role: { in: ["AGENT", "MANAGER"] } }, orderBy: { name: "asc" } }),
+    prisma.user.findMany({ where: { active: true, hrOnly: false, role: { in: ["AGENT", "MANAGER"] } }, orderBy: { name: "asc" } }),
     prisma.dailyMood.findMany({ where: { date: { gte: firstDay } } }),
   ]);
   // Manual join — DailyMood doesn't declare a Prisma relation to User

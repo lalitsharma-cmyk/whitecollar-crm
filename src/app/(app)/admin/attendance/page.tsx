@@ -33,7 +33,7 @@ export default async function AttendancePage() {
   });
 
   const [agents, rows] = await Promise.all([
-    prisma.user.findMany({ where: { active: true, role: { in: ["AGENT", "MANAGER"] } }, orderBy: { name: "asc" } }),
+    prisma.user.findMany({ where: { active: true, hrOnly: false, role: { in: ["AGENT", "MANAGER"] } }, orderBy: { name: "asc" } }),
     prisma.attendance.findMany({ where: { date: { gte: days[0] } } }),
   ]);
 

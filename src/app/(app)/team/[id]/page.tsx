@@ -194,7 +194,7 @@ export default async function AgentDeepDivePage({
 
   // ── Leaderboard ranks (this week, mirrors leaderboards/page.tsx patterns) ──
   const eligibleUsers = await prisma.user.findMany({
-    where: { active: true, role: { in: ["AGENT", "MANAGER"] } },
+    where: { active: true, hrOnly: false, role: { in: ["AGENT", "MANAGER"] } },
     select: { id: true, dailyStreak: true },
   });
   const eligibleIds = eligibleUsers.map((u) => u.id);

@@ -45,6 +45,7 @@ export default async function RevivalLogsPage({
     where: {
       role: { in: ["AGENT", "MANAGER", "ADMIN"] },
       active: true,
+      hrOnly: false,
     },
     orderBy: { name: "asc" },
     select: { id: true, name: true },

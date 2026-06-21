@@ -17,7 +17,7 @@ export async function buildReport(win: Window) {
     prisma.callLog.count({ where: { startedAt: { gte: win.since, lte: win.until } } }),
     prisma.callLog.count({ where: { startedAt: { gte: win.since, lte: win.until }, outcome: CallOutcome.CONNECTED } }),
     prisma.user.findMany({
-      where: { active: true, role: { in: ["AGENT", "MANAGER"] } },
+      where: { active: true, hrOnly: false, role: { in: ["AGENT", "MANAGER"] } },
       include: { _count: { select: { callLogs: { where: { startedAt: { gte: win.since, lte: win.until } } }, ownedLeads: true } } },
     }),
     // Source breakdown reads VERBATIM sourceRaw (enum label only as legacy fallback)
@@ -63,7 +63,7 @@ export async function sendReportToManagers(win: Window) {
   const report = await buildReport(win);
   if (!emailEnabled()) return { ok: false, reason: "email-not-configured" };
   const recipients = await prisma.user.findMany({
-    where: { active: true, role: { in: ["ADMIN", "MANAGER"] } },
+    where: { active: true, hrOnly: false, role: { in: ["ADMIN", "MANAGER"] } },
     select: { email: true, name: true },
   });
   let sent = 0;

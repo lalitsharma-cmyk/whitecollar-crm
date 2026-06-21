@@ -75,7 +75,7 @@ export async function chooseOwnerForNewLead(team?: string | null, now: Date = ne
       // Reuse the existing pickRoundRobinAgent but constrained to present agents.
       // Strategy: pick the present agent with the fewest open leads (lightest load).
       const agents = await prisma.user.findMany({
-        where: { id: { in: presentIds }, active: true, role: { in: ["AGENT", "MANAGER"] } },
+        where: { id: { in: presentIds }, active: true, hrOnly: false, role: { in: ["AGENT", "MANAGER"] } },
         include: { _count: { select: { ownedLeads: { where: { currentStatus: { notIn: SUPPRESSED_STATUSES } } } } } },
       });
       // Exclude any agent whose fixed weekly day off is today (IST) — they
@@ -98,6 +98,7 @@ export async function chooseOwnerForNewLead(team?: string | null, now: Date = ne
     const candidates = await prisma.user.findMany({
       where: {
         active: true,
+        hrOnly: false,
         role: { in: ["AGENT", "MANAGER"] },
         ...(team ? { team } : {}),
       },

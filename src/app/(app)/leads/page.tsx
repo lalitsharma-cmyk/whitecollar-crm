@@ -420,7 +420,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
     prisma.lead.count({ where: { ...scope, aiScore: AIScore.HOT } }),
     prisma.lead.count({ where: { ...scope, createdAt: { gte: new Date(Date.now() - 24 * 3600 * 1000) } } }),
     prisma.lead.count({ where: scope }),
-    prisma.user.findMany({ where: { active: true, role: { in: ["AGENT", "MANAGER", "ADMIN"] } }, orderBy: { name: "asc" } }),
+    prisma.user.findMany({ where: { active: true, hrOnly: false, role: { in: ["AGENT", "MANAGER", "ADMIN"] } }, orderBy: { name: "asc" } }),
     prisma.lead.count({ where: { ...activeScope, followupDate: todayWindow } }),
     prisma.lead.count({ where: { ...activeScope, followupDate: { lt: new Date(), not: null } } }),
     // Per-currentStatus lead counts for the Excel-status chip bar.

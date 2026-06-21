@@ -52,6 +52,7 @@ export async function GET(req: NextRequest) {
     prisma.user.findMany({
       where: {
         active: true,
+        hrOnly: false,
         role: { in: ["AGENT", "MANAGER"] },
         OR: [
           { name: { contains: q, mode: "insensitive" } },

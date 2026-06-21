@@ -25,7 +25,7 @@ export default async function ChangesReportPage({ searchParams }: { searchParams
   const since = period === "week" ? startOfWeek(new Date(), { weekStartsOn: 1 }) : period === "month" ? startOfMonth(new Date()) : startOfDay(new Date());
   const periodLabel = period === "week" ? "This week" : period === "month" ? "This month" : "Today";
 
-  const users = await prisma.user.findMany({ where: { active: true, role: { in: ["AGENT", "MANAGER", "ADMIN"] } }, select: { id: true, name: true }, orderBy: { name: "asc" } });
+  const users = await prisma.user.findMany({ where: { active: true, hrOnly: false, role: { in: ["AGENT", "MANAGER", "ADMIN"] } }, select: { id: true, name: true }, orderBy: { name: "asc" } });
   const userFilter = sp.user && sp.user !== "all" ? sp.user : null;
 
   const rows = await prisma.leadFieldHistory.findMany({

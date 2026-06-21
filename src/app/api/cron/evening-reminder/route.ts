@@ -31,7 +31,7 @@ export async function GET(req: NextRequest) {
   const runId = await startCronRun("evening-reminder");
   try {
   const { startUTC, now } = todayWindowIST();
-  const agents = await prisma.user.findMany({ where: { active: true, role: { in: ["AGENT", "MANAGER"] } } });
+  const agents = await prisma.user.findMany({ where: { active: true, hrOnly: false, role: { in: ["AGENT", "MANAGER"] } } });
   let notified = 0;
   const missesByAgent: Array<{ name: string; missed: number; uncalled: number }> = [];
 

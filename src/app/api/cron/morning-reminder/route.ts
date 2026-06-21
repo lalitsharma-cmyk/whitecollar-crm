@@ -38,7 +38,7 @@ export async function GET(req: NextRequest) {
   const { startUTC, endUTC } = todayWindowIST();
 
   // Per active agent: today's followups + hot leads that need attention
-  const agents = await prisma.user.findMany({ where: { active: true, role: { in: ["AGENT", "MANAGER", "ADMIN"] } } });
+  const agents = await prisma.user.findMany({ where: { active: true, hrOnly: false, role: { in: ["AGENT", "MANAGER", "ADMIN"] } } });
   let notified = 0;
 
   // One quote for everyone today (deterministic by day-of-year)

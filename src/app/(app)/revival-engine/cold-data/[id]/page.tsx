@@ -54,7 +54,7 @@ export default async function ColdDataDetailPage({ params, searchParams }: { par
   }
 
   const agents = await prisma.user.findMany({
-    where: { active: true, role: { in: ["AGENT", "MANAGER", "ADMIN"] } },
+    where: { active: true, hrOnly: false, role: { in: ["AGENT", "MANAGER", "ADMIN"] } },
     orderBy: { name: "asc" },
     select: { id: true, name: true, role: true, team: true, avatarColor: true },
   });
