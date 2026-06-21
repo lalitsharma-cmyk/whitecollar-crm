@@ -10,7 +10,12 @@
 // v6 (2026-06-21): force-refresh every client after the big UI batch — agent
 // New-Lead gate, 6-tier sort, market segregation, budget format, reminders,
 // imported-fields/routing-audit visibility, etc. Old SWs serve a stale shell.
-const CACHE = "wcr-shell-v6";
+// v7 (2026-06-21): force-refresh after the second UI batch — Interested Properties,
+// "Property Enquired" rename, uniform budget format, I-Am-Here + notification-prompt
+// fixes, agent-name "Lalit Sharma", Assign-To on lead create, duration-in-minutes,
+// voice-note timeline, remark-edit permission. Ensures every client (incl. Lalit)
+// loads the CURRENT My-Leads default ("all" workable) instead of a stale build.
+const CACHE = "wcr-shell-v7";
 const SHELL = ["/login", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", (event) => {
