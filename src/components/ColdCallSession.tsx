@@ -6,6 +6,7 @@ import { telLink } from "@/lib/phone";
 import { showXpToast } from "@/components/XPToast";
 import { lastMeaningfulRemark } from "@/lib/needSnapshot";
 import { formatLeadName } from "@/lib/leadName";
+import { displayBudget } from "@/lib/budgetParse";
 
 // Lead shape — narrow on purpose. Anything not listed here is unavailable to
 // the session UI by design; expand only when the card actually renders it.
@@ -59,17 +60,9 @@ function toEnumOutcome(k: OutcomeKey): string {
   return k;
 }
 
+// Canonical house format (Dubai "2M AED" / India "21 Cr", range-aware) via displayBudget.
 function formatBudget(min: number | null, max: number | null, ccy: string): string {
-  if (!min && !max) return "—";
-  const fmt = (n: number) => {
-    if (n >= 10_000_000) return `${(n / 10_000_000).toFixed(1)}Cr`;
-    if (n >= 100_000) return `${(n / 100_000).toFixed(1)}L`;
-    if (n >= 1_000) return `${(n / 1_000).toFixed(0)}K`;
-    return `${n}`;
-  };
-  // Only a real range (max strictly greater than min); garbage maxes collapse.
-  if (min && max && max > min) return `${ccy} ${fmt(min)}–${fmt(max)}`;
-  return `${ccy} ${fmt(min ?? max!)}`;
+  return displayBudget({ budgetMin: min, budgetMax: max, budgetCurrency: ccy });
 }
 
 export default function ColdCallSession({ leads }: { leads: SessionLead[] }) {

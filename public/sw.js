@@ -19,7 +19,8 @@
 // v9 (2026-06-21): canonical status filter order + Master-Data section order.
 // v10 (2026-06-22): WhatsApp conversation metric + WA-aware connected/unsuccessful + talk-time fix.
 // v11 (2026-06-22): Unassigned-Leads admin menu (left-nav item + dashboard assignment card for Lalit).
-const CACHE = "wcr-shell-v11";
+// v12 (2026-06-22): uniform budget format on ALL peripheral surfaces (reports/PDF/team/QuickSearch/Calls/ColdCall/Action-List/push).
+const CACHE = "wcr-shell-v12";
 const SHELL = ["/login", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", (event) => {

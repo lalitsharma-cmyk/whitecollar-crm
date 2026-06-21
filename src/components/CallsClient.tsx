@@ -3,6 +3,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { fmtIST12, fmtISTDate } from "@/lib/datetime";
 import { formatLeadName } from "@/lib/leadName";
+import { formatBudgetAmount } from "@/lib/budgetParse";
 import { Phone, MessageCircle, X, ChevronRight } from "lucide-react";
 import { telLink, whatsappLink } from "@/lib/phone";
 import { useBodyScrollLock } from "@/hooks/useBodyScrollLock";
@@ -280,13 +281,7 @@ function SummaryPanel({ lead, call }: { lead: LeadSummary; call: CallRowData }) 
   );
 }
 
+// Canonical house format (Dubai "2M AED" / India "21 Cr") — single source of truth.
 function formatBudgetInline(n: number, currency: "AED" | "INR"): string {
-  if (currency === "INR") {
-    if (n >= 1e7) return `${(n / 1e7).toFixed(2).replace(/\.?0+$/, "")} Cr`;
-    if (n >= 1e5) return `${(n / 1e5).toFixed(2).replace(/\.?0+$/, "")} L`;
-    return `₹${n.toLocaleString("en-IN")}`;
-  }
-  if (n >= 1e6) return `${(n / 1e6).toFixed(2).replace(/\.?0+$/, "")}M AED`;
-  if (n >= 1e3) return `${(n / 1e3).toFixed(0)}K AED`;
-  return `AED ${n.toLocaleString("en-US")}`;
+  return formatBudgetAmount(n, currency === "INR" ? "INDIA" : "DUBAI");
 }

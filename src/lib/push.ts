@@ -1,5 +1,6 @@
 import webpush from "web-push";
 import { prisma } from "@/lib/prisma";
+import { displayBudget } from "@/lib/budgetParse";
 
 // FREE web push using browser-native APIs (Apple/Google push servers).
 // VAPID keys generated once with `npx web-push generate-vapid-keys`.
@@ -123,23 +124,12 @@ interface HotLeadInput {
   budgetCurrency?: string | null;
 }
 
+// Canonical house format (Dubai "2M AED" / India "21 Cr", range-aware) via displayBudget;
+// keep the "budget TBD" copy when no number is known (reads better in a push body).
 function formatBudget(lead: HotLeadInput): string {
-  const ccy = lead.budgetCurrency ?? "AED";
-  const min = lead.budgetMin;
-  const max = lead.budgetMax;
-  if (!min && !max) return "budget TBD";
-  const fmt = (n: number) => {
-    if (ccy === "INR") {
-      if (n >= 1e7) return `₹${(n / 1e7).toFixed(1)} Cr`;
-      if (n >= 1e5) return `₹${(n / 1e5).toFixed(1)} L`;
-      return `₹${Math.round(n).toLocaleString("en-IN")}`;
-    }
-    if (n >= 1e6) return `${ccy} ${(n / 1e6).toFixed(1)}M`;
-    if (n >= 1e3) return `${ccy} ${(n / 1e3).toFixed(0)}K`;
-    return `${ccy} ${Math.round(n)}`;
-  };
-  if (min && max && min !== max) return `${fmt(min)}–${fmt(max)}`;
-  return fmt(min ?? max ?? 0);
+  if (!lead.budgetMin && !lead.budgetMax) return "budget TBD";
+  const s = displayBudget(lead);
+  return s === "—" ? "budget TBD" : s;
 }
 
 /**

@@ -5,6 +5,7 @@
 // Pure formatter tests, no DB.
 // ────────────────────────────────────────────────────────────────────────────
 import { formatBudgetAmount, displayBudget } from "../src/lib/budgetParse";
+import { fmtMoney, fmtMoneyDual } from "../src/lib/money";
 
 let pass = 0, fail = 0;
 function eq(name: string, got: string, want: string): void {
@@ -38,6 +39,17 @@ eq("unparseable raw WITH digit → trimmed raw", displayBudget({ budgetRaw: "80-
 eq("no-digit raw → dash", displayBudget({ budgetRaw: "call for price", budgetMin: null }), "—");
 eq("empty → dash", displayBudget({ budgetMin: null, budgetRaw: null }), "—");
 eq("unknown ccy keeps cue", displayBudget({ budgetMin: 5_000_000, budgetCurrency: "UNKNOWN" }), "5M AED (currency?)");
+
+// ── money.ts fmtMoney/fmtMoneyDual now DELEGATE to the canonical house format ──
+// (peripheral surfaces: reports, PDFs, team pages, lead detail, properties,
+// templates, QuickSearch). Guards against anyone re-introducing "AED 2.5 M" / "₹3 Cr".
+eq("money AED 2M", fmtMoney(2_000_000, "AED"), "2M AED");
+eq("money AED 600K", fmtMoney(600_000, "AED"), "600K AED");
+eq("money INR 21Cr (no ₹)", fmtMoney(210_000_000, "INR"), "21 Cr");
+eq("money INR 50L (no ₹)", fmtMoney(5_000_000, "INR"), "50 L");
+eq("money null → dash", fmtMoney(null, "AED"), "—");
+eq("moneyDual both", fmtMoneyDual({ aed: 2_000_000, inr: 30_000_000 }), "2M AED + 3 Cr");
+eq("moneyDual aed only", fmtMoneyDual({ aed: 1_000_000, inr: 0 }), "1M AED");
 
 console.log(`\nBUDGET-DISPLAY: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

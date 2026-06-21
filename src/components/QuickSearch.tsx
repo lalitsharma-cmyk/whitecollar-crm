@@ -7,6 +7,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { formatBudgetAmount } from "@/lib/budgetParse";
 
 interface LeadHit {
   id: string;
@@ -42,11 +43,11 @@ interface FlatItem {
 
 const EMPTY: SearchResults = { leads: [], projects: [], users: [] };
 
+// Canonical house format (Dubai "2M AED" / India "21 Cr"); "" when no budget so
+// the meta line drops it via filter(Boolean).
 function formatMoney(amount: number | null, currency: string): string {
-  if (amount == null) return "";
-  if (amount >= 1_000_000) return `${currency} ${(amount / 1_000_000).toFixed(1)}M`;
-  if (amount >= 1_000) return `${currency} ${(amount / 1_000).toFixed(0)}K`;
-  return `${currency} ${amount}`;
+  if (amount == null || amount <= 0) return "";
+  return formatBudgetAmount(amount, (currency ?? "").toUpperCase() === "INR" ? "INDIA" : "DUBAI");
 }
 
 export default function QuickSearch() {

@@ -1,6 +1,13 @@
 // Currency formatting that respects each lead's team.
-//   Dubai team → AED   (display as "AED 2.5M", "AED 850K")
-//   India team → INR   (display as "₹3.2 Cr", "₹85 L")
+//   Dubai team → AED   (display as "2M AED", "850K AED")
+//   India team → INR   (display as "21 Cr", "50 L" — no ₹)
+//
+// House format (Lalit's 2026-06-21 standardisation): both fmtAED/fmtINR now
+// delegate to the ONE canonical formatter in budgetParse.ts so EVERY money
+// surface (reports, PDFs, team pages, lead detail, properties, templates,
+// QuickSearch, etc.) renders identically to the Leads table / Master Data.
+// Display-only — stored values, sums, filters, and reports math are unchanged.
+import { formatBudgetAmount } from "./budgetParse";
 
 export type Currency = "AED" | "INR";
 
@@ -25,18 +32,13 @@ export function fmtMoney(amount?: number | null, currency: Currency | string | n
   return fmtAED(amount);
 }
 
+// Canonical house format: Dubai "2M AED" / "850K AED", India "21 Cr" / "50 L".
 function fmtAED(v: number): string {
-  if (v >= 1e9) return `AED ${(v / 1e9).toFixed(2)} B`;
-  if (v >= 1e6) return `AED ${(v / 1e6).toFixed(1)} M`;
-  if (v >= 1e3) return `AED ${(v / 1e3).toFixed(0)} K`;
-  return `AED ${v.toLocaleString()}`;
+  return formatBudgetAmount(v, "DUBAI");
 }
 
 function fmtINR(v: number): string {
-  if (v >= 1e7) return `₹ ${(v / 1e7).toFixed(2)} Cr`;
-  if (v >= 1e5) return `₹ ${(v / 1e5).toFixed(1)} L`;
-  if (v >= 1e3) return `₹ ${(v / 1e3).toFixed(0)} K`;
-  return `₹ ${v.toLocaleString("en-IN")}`;
+  return formatBudgetAmount(v, "INDIA");
 }
 
 // Aggregate sum showing both totals separately (for dashboards with mixed leads)

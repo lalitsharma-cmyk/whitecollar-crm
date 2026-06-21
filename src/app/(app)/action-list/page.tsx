@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
 import { SUPPRESSED_STATUSES, CLOSING_STATUSES } from "@/lib/lead-statuses";
+import { formatBudget } from "@/lib/budgetParse";
 import { formatDistanceToNow } from "date-fns";
 import { runReconciler } from "@/lib/reconciler";
 import { ACTIVE_ORIGINS } from "@/lib/leadScope";
@@ -33,10 +34,10 @@ interface CardData {
   potential: string | null;
 }
 
+// Canonical house format (Dubai "2M AED" / India "21 Cr") — single source of truth.
 function fmtAEDInr(min: number | null, currency: string) {
   if (!min) return "—";
-  if (currency === "INR") return `₹ ${(min/1e7).toFixed(1)} Cr`;
-  return `AED ${(min/1e6).toFixed(1)} M`;
+  return formatBudget(min, currency);
 }
 
 // AI reason text per stage (the master spec § 9.2 calls for "AI reason text"
@@ -46,9 +47,7 @@ function aiNextStep(card: CardData): { step: string; why: string } {
   const team = forwardedTeam ?? "Dubai";
 
   // Build context snippets for the step text
-  const budgetStr = budget.min ? (budget.currency === "INR"
-    ? `${(budget.min/10_000_000).toFixed(1)} Cr`
-    : `AED ${(budget.min/1_000_000).toFixed(1)}M`) : null;
+  const budgetStr = budget.min ? formatBudget(budget.min, budget.currency) : null;
   const configStr = configuration ?? null;
   const needStr = needSummary ?? null;
   const timeline = whenCanInvest ? whenCanInvest.replace("_", " ").toLowerCase() : null;
@@ -191,9 +190,7 @@ export default async function ActionListPage() {
   function buildWaDraft(card: CardData): string {
     const firstName = card.name.split(" ")[0];
     const team = card.team ?? "Dubai";
-    const budgetStr = card.budget.min ? (card.budget.currency === "INR"
-      ? `${(card.budget.min/10_000_000).toFixed(1)} Cr`
-      : `AED ${(card.budget.min/1_000_000).toFixed(1)}M`) : null;
+    const budgetStr = card.budget.min ? formatBudget(card.budget.min, card.budget.currency) : null;
     const config = card.configuration;
 
     // Build personalised opening lines
