@@ -54,3 +54,63 @@ export function quoteOneLine(d: Date = new Date()): string {
   const q = quoteOfTheDay(d);
   return `💡 ${q.text} — ${q.author}`;
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DASHBOARD daily quote (shown under the "Good Morning, {name}" greeting).
+// Separate from the morning-reminder set above: real-estate / luxury-sales
+// themed, original one-liners (no author attribution), pure + deterministic so
+// the whole team sees the SAME quote all day and a NEW one next IST day.
+// ─────────────────────────────────────────────────────────────────────────────
+export const RE_SALES_QUOTES: string[] = [
+  "Fortune is in the follow-up. Every call moves a client closer to closing.",
+  "The deal you don't follow up on is the deal your competitor closes.",
+  "Luxury sells to those who feel understood, not those who feel sold to.",
+  "Discipline in the morning becomes commission in the evening.",
+  "A 'maybe' is just a 'yes' that hasn't been followed up enough times.",
+  "You don't close clients — you close doubts. Answer the next one.",
+  "Consistency beats intensity. One steady call a day builds an empire.",
+  "Every unanswered message is a relationship waiting to be restarted.",
+  "Sell the lifestyle, not the square footage.",
+  "The best time to follow up was yesterday. The second best is now.",
+  "Clients buy certainty. Be the calmest, clearest voice they hear today.",
+  "Slow replies lose fast deals. Speed is a sales skill.",
+  "A full pipeline is built one disciplined follow-up at a time.",
+  "Premium buyers remember how you made them feel, long after the price.",
+  "Objections aren't walls — they're the client telling you what to solve.",
+  "Show up daily and the market eventually shows up for you.",
+  "The follow-up is where amateurs quit and professionals get paid.",
+  "Treat every lead like it's already a client and it usually becomes one.",
+  "Closing is not a moment — it's the sum of every touchpoint before it.",
+  "Your next big closing is hiding inside a follow-up you haven't made.",
+  "Trust is the real currency of luxury real estate. Earn it on every call.",
+  "Be relentless on follow-up and gentle on the client. Both win deals.",
+  "A booked site visit beats a hundred 'just thinking about it' chats.",
+  "Momentum loves consistency. Make the call before you feel ready.",
+  "People don't buy property — they buy a better version of their life.",
+  "The agent who follows up first is remembered first.",
+  "Discipline is choosing the dial over the distraction.",
+  "Warm leads go cold in silence. Keep the conversation alive.",
+  "Confidence closes. Preparation creates confidence.",
+  "Every 'no today' is data for the 'yes' you'll earn tomorrow.",
+  "Luxury is patience plus persistence. Stay in the deal longer than doubt.",
+  "Sell with questions, close with clarity, keep with service.",
+  "The strongest follow-up isn't pushy — it's genuinely helpful.",
+  "Big closings are small habits repeated without skipping a day.",
+  "Make one more call than yesterday. That's how pipelines grow.",
+  "Your calendar is your conversion rate. Fill it with follow-ups.",
+  "Turn 'let me think about it' into 'let's schedule a visit.'",
+  "Quiet markets reward loud discipline. Keep dialing.",
+];
+
+/** Whole days since the Unix epoch in IST (UTC+5:30) — same for every request
+ *  on a given IST day, advances by one each IST midnight. */
+export function istDayNumber(nowMs: number): number {
+  return Math.floor((nowMs + 5.5 * 3600 * 1000) / 86_400_000);
+}
+
+/** The real-estate dashboard quote for a given IST day (stable all day). */
+export function dashboardQuoteOfTheDay(istDay: number): string {
+  const n = RE_SALES_QUOTES.length;
+  const i = ((Math.floor(istDay) % n) + n) % n;
+  return RE_SALES_QUOTES[i];
+}

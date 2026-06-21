@@ -20,7 +20,8 @@
 // v10 (2026-06-22): WhatsApp conversation metric + WA-aware connected/unsuccessful + talk-time fix.
 // v11 (2026-06-22): Unassigned-Leads admin menu (left-nav item + dashboard assignment card for Lalit).
 // v12 (2026-06-22): uniform budget format on ALL peripheral surfaces (reports/PDF/team/QuickSearch/Calls/ColdCall/Action-List/push).
-const CACHE = "wcr-shell-v12";
+// v13 (2026-06-22): dashboard daily sales quote under greeting + hide morning check-in section after attendance (agents).
+const CACHE = "wcr-shell-v13";
 const SHELL = ["/login", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", (event) => {

@@ -4,6 +4,7 @@ import { SUPPRESSED_STATUSES, CLOSING_STATUSES, BOOKED_STATUSES } from "@/lib/le
 import { COLD_ORIGINS, workableWhere } from "@/lib/leadScope";
 import { formatDistanceToNow, startOfDay } from "date-fns";
 import { fmtIST12 } from "@/lib/datetime";
+import { dashboardQuoteOfTheDay, istDayNumber } from "@/lib/salesQuotes";
 import { runReconciler } from "@/lib/reconciler";
 import { getTestingModeEnabled } from "@/lib/settings";
 import { requireUser } from "@/lib/auth";
@@ -274,6 +275,17 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   const greeting = "Good morning";
   const energyEmoji = "☀️";
 
+  // Daily real-estate sales-motivation quote (one per IST day, same all day).
+  const dailyQuote = dashboardQuoteOfTheDay(istDayNumber(Date.now()));
+
+  // Hide the morning check-in section (greeting + quote) once a SALES user has
+  // marked "I Am Here" for the day. The IamHereCard already self-hides on
+  // check-in; this hides the greeting card alongside it. Admins/lead-ops keep
+  // their greeting (the request scopes this to agents / sales users).
+  const isSalesUser = me.role === "AGENT" || me.role === "MANAGER";
+  const checkedInToday = !!myAttendanceToday?.selfCheckedInAt;
+  const hideMorningGreeting = isSalesUser && checkedInToday;
+
   // ── Reminders widget data ────────────────────────────────────────────
   // Fetch the next 7 days of: scheduled activities (site visits, meetings)
   // + follow-up callbacks (lead.followupDate). Agents see their own;
@@ -455,8 +467,9 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
 
           {/* Personal-performance section — hidden for lead-ops/support admins (Sameer). */}
           {!isLeadOps && (<>
-          {/* §12.4 Morning briefing / greeting — moved to TOP so Lalit sees
-              it first, before the KPI numbers */}
+          {/* §12.4 Morning briefing / greeting + daily sales quote — at the TOP.
+              Hidden for sales users (agents/managers) once they mark "I Am Here". */}
+          {!hideMorningGreeting && (
           <div className="card p-4 border-l-4 border-[#c9a24b] bg-gradient-to-br from-amber-50/60 to-white">
             <div className="flex items-start justify-between gap-3 flex-wrap">
               <div className="flex-1 min-w-0">
@@ -465,6 +478,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
                     {energyEmoji} {greeting}, {me.name.split(" ")[0]}
                   </h2>
                 </div>
+                <p className="mt-1.5 text-sm italic text-[#6b5a2e] dark:text-amber-200/80">&ldquo;{dailyQuote}&rdquo;</p>
                 {hasMorningWork && (
                   <div className="flex flex-wrap gap-2 mt-3 text-sm">
                     {myNewOvernight > 0 && (
@@ -487,6 +501,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
               </div>
             </div>
           </div>
+          )}
 
           {/* ── SECTION 1: TODAY ── */}
           <div>
