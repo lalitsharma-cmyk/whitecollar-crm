@@ -4,7 +4,7 @@ import { ActivityType, ActivityStatus, AIScore, Potential, FundReadiness, MoodSt
 import { loadOwnedLead } from "@/lib/leadScope";
 import { rescoreLead } from "@/lib/leadRescorer";
 import { fireWorkflowTrigger } from "@/lib/workflowEngine";
-import { getTestingModeEnabled, getBantGateMode } from "@/lib/settings";
+import { getScheduledActionsEnabled, getBantGateMode } from "@/lib/settings";
 import { evaluateBantGate, type BantFields } from "@/lib/bantGate";
 import { awardXp, type AwardResult, type XpReason } from "@/lib/gamification.server";
 import { canSetStatus, isStatusValidForTeam, NEEDS_REVIEW } from "@/lib/lead-statuses";
@@ -295,8 +295,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   // Workflow engine — BANT/status changes are common triggers that can send
   // WhatsApp/email via workflow actions. Gate behind testing-mode so we don't
   // ping real client numbers during go-live data testing.
-  const testingMode = await getTestingModeEnabled();
-  if (!testingMode) {
+  const scheduledOn = await getScheduledActionsEnabled();
+  if (scheduledOn) {
     if ("bantStatus" in updates) {
       fireWorkflowTrigger("BANT_CHANGED", id, { newBant: updates.bantStatus }).catch(() => {});
     }

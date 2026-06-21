@@ -195,13 +195,13 @@ export interface AutomationGate {
 }
 export function automationGate(
   forwardedTeam: string | null | undefined,
-  testingModeEnabled: boolean,
+  automationDisabled: boolean,
 ): AutomationGate {
   if (!isTeamClassified(forwardedTeam)) {
     return { ok: false, reason: "awaiting team classification — automation suppressed until a team is assigned" };
   }
-  if (testingModeEnabled) {
-    return { ok: false, reason: "testing mode is ON — automation paused globally" };
+  if (automationDisabled) {
+    return { ok: false, reason: "this automation is turned off in Settings → Automation Controls" };
   }
   return { ok: true, reason: null };
 }

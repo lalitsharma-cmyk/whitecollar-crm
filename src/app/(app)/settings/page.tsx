@@ -3,11 +3,12 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { getTravelRatePerKmInr, getSpeedToLeadEnabled, getRoundRobinEnabled, getTestingModeEnabled, getMotivationPilotEnabled, getMotivationPilotTeam, getBantGateMode, getAiEnabled, getAiTrialModeEnabled, getAiMonthlyCostCapUsd } from "@/lib/settings";
+import { getTravelRatePerKmInr, getSpeedToLeadEnabled, getRoundRobinEnabled, getTestingModeEnabled, getMotivationPilotEnabled, getMotivationPilotTeam, getBantGateMode, getAiEnabled, getAiTrialModeEnabled, getAiMonthlyCostCapUsd, getAutomationFlags } from "@/lib/settings";
 import TravelRateEditor from "@/components/TravelRateEditor";
 import SpeedToLeadToggle from "@/components/SpeedToLeadToggle";
 import RoundRobinToggle from "@/components/RoundRobinToggle";
 import TestingModeToggle from "@/components/TestingModeToggle";
+import AutomationControlsCard from "@/components/AutomationControlsCard";
 import BantGateToggle from "@/components/BantGateToggle";
 import MotivationPilotToggle from "@/components/MotivationPilotToggle";
 import FestivalAdminPanel from "@/components/FestivalAdminPanel";
@@ -50,7 +51,7 @@ function buildIcsUrl(userId: string): string {
 export default async function SettingsPage() {
   const me = await requireUser();
   if (me.role === "AGENT") redirect("/leads");
-  const [travelRate, speedToLeadOn, roundRobinOn, testingModeOn, motivationPilotOn, motivationPilotTeam, bantGateMode, pushSubCount, aiEnabledOn, aiTrialModeOn, aiMonthlyCostCapUsd] = await Promise.all([
+  const [travelRate, speedToLeadOn, roundRobinOn, testingModeOn, motivationPilotOn, motivationPilotTeam, bantGateMode, pushSubCount, aiEnabledOn, aiTrialModeOn, aiMonthlyCostCapUsd, automationFlags] = await Promise.all([
     getTravelRatePerKmInr(),
     getSpeedToLeadEnabled(),
     getRoundRobinEnabled(),
@@ -62,6 +63,7 @@ export default async function SettingsPage() {
     getAiEnabled(),
     getAiTrialModeEnabled(),
     getAiMonthlyCostCapUsd(),
+    getAutomationFlags(),
   ]);
   const isAdmin = me.role === "ADMIN";
   const currentTargets = isAdmin ? await getDailyTargets() : null;
@@ -103,23 +105,18 @@ export default async function SettingsPage() {
         </div>
       )}
 
-      {/* MASTER kill-switch — pauses every auto-action. Admin only. */}
+      {/* Automation Controls — per-feature toggles (all default OFF). Notifications,
+          reminders, and escalation ALERTS always fire, independent of these. */}
+      {isAdmin && <AutomationControlsCard flags={automationFlags} canEdit={isAdmin} />}
+
+      {/* Developer / destructive-ops guard. testingMode NO LONGER gates automation or
+          notifications (decoupled 2026-06-22) — it ONLY unlocks the lead-wipe dev tool. */}
       {isAdmin && (
-        <div className={`card p-5 max-w-2xl border-l-4 ${testingModeOn ? "border-amber-500 bg-amber-50" : "border-emerald-500"}`}>
-          <div className="font-semibold flex items-center gap-2 text-base">🧪 Testing mode (master switch)</div>
+        <div className={`card p-5 max-w-2xl border-l-4 ${testingModeOn ? "border-red-500 bg-red-50" : "border-gray-300"}`}>
+          <div className="font-semibold flex items-center gap-2 text-base">🧪 Developer / destructive-ops mode</div>
           <p className="text-xs text-gray-600 mt-1">
-            Flip ON while loading real client data so nothing leaks out or nags the team.
-            <b className="text-amber-800"> One toggle pauses ALL of these at once:</b>
-          </p>
-          <ul className="text-xs text-gray-700 mt-2 list-disc list-inside space-y-0.5">
-            <li>🔁 Round-robin auto-assign (5-min orphan sweep)</li>
-            <li>⏱ 15-min call SLA escalation (no admin/agent alerts)</li>
-            <li>🚩 "Needs You" auto-flagging (no banners on stale leads)</li>
-            <li>🌙 Overnight auto-WhatsApp welcome (10pm-10am IST)</li>
-            <li>🚀 Speed-to-lead first-touch WA + email</li>
-          </ul>
-          <p className="text-[11px] text-gray-500 mt-2">
-            Manual actions (logging calls, clicking Call/WhatsApp/Email buttons) still work normally. Flip OFF for go-live.
+            Only unlocks the <b>danger-zone lead-wipe</b> tool. It does <b>NOT</b> affect notifications,
+            reminders, or any automation — those live in <b>Automation Controls</b> above (alerts always fire). Keep OFF.
           </p>
           <TestingModeToggle initial={testingModeOn} canEdit={isAdmin} />
         </div>

@@ -8,20 +8,24 @@ const DEFAULTS = {
   "speedToLead.enabled": "true", // auto-WA + email on every new lead (admin kill-switch)
   // Round-robin auto-assign kill-switch. When OFF, the 5-min reconciler skips
   // every orphan — every new lead stays unassigned until admin manually routes.
-  // Flip OFF before bulk imports of existing-client data.
-  "roundRobin.enabled": "true",
-  // MASTER TESTING-MODE KILL-SWITCH. When ON, every automated outbound action
-  // and every nagging escalation pauses — for using the CRM with real client
-  // data without spamming them or filling everyone's bell with fake SLA breaches.
-  // Specifically suppresses:
-  //   • 15-min call SLA escalation (reconciler section 2)
-  //   • "Needs You" auto-flagging (reconciler section 3)
-  //   • Overnight auto-WA welcome (leadIngest)
-  //   • Speed-to-lead first-touch WA + email (speedToLead)
-  //   • Round-robin auto-assign (reconciler section 1)
-  // Default ON — stays ON through go-live; Lalit flips OFF only after
-  // confirming all automated outbound (WA, email, round-robin, SLA) is safe.
-  "testingMode.enabled": "true",
+  // Default OFF (Lalit, 2026-06-22) — one of the Automation Controls toggles;
+  // every new lead stays unassigned until an admin turns this on.
+  "roundRobin.enabled": "false",
+  // LEGACY testingMode — as of 2026-06-22 it NO LONGER gates notifications OR
+  // automation (those are decoupled below). It survives ONLY as the safety guard
+  // for the destructive /api/admin/wipe-leads dev tool (refuses unless ON).
+  // Default OFF so wipe is refused in normal operation.
+  "testingMode.enabled": "false",
+  // ── AUTOMATION CONTROLS (Lalit, 2026-06-22) — NOTIFICATIONS ≠ AUTOMATION ──────
+  // Notifications/reminders/escalation-alerts ALWAYS fire now. These flags govern
+  // ONLY automated ACTIONS, each independently, and ALL DEFAULT OFF — an admin must
+  // opt in per feature from /settings before any automatic outbound/movement runs.
+  // (Round-robin keeps its own existing flag `roundRobin.enabled`, also OFF.)
+  "automation.autoAssignment": "false",   // assign orphan leads to an owner automatically
+  "automation.whatsapp": "false",         // automated outbound WhatsApp (welcome / speed-to-lead / workflow)
+  "automation.email": "false",            // automated outbound email (speed-to-lead / workflow)
+  "automation.autoEscalation": "false",   // automatic escalation ACTIONS (e.g. auto "Needs You" flagging) — NOT the alerts
+  "automation.scheduledActions": "false", // workflow-engine scheduled/drip automated actions
   // ── B-20 voice / motivation pilot (Bucket H) ──
   // The voice + daily-motivation surface is partially specced but NOT yet
   // validated for tone/usefulness, so it ships behind a flag and is piloted
@@ -97,14 +101,53 @@ export async function getSpeedToLeadEnabled(): Promise<boolean> {
 
 export async function getRoundRobinEnabled(): Promise<boolean> {
   const raw = await getSetting("roundRobin.enabled");
-  if (!raw) return true; // default ON
-  return raw.toLowerCase() !== "false";
+  return raw.toLowerCase() === "true"; // default OFF (Automation Control)
 }
 
 export async function getTestingModeEnabled(): Promise<boolean> {
   const raw = await getSetting("testingMode.enabled");
   if (!raw) return false; // default OFF
   return raw.toLowerCase() === "true";
+}
+
+// ── AUTOMATION CONTROLS (decoupled from notifications) ──────────────────
+// Every flag defaults OFF: an automated action runs ONLY when its flag is
+// explicitly "true". Notifications never consult these — they always fire.
+// Round-robin keeps its own getRoundRobinEnabled() (also default OFF).
+export type AutomationKey =
+  | "automation.autoAssignment"
+  | "automation.whatsapp"
+  | "automation.email"
+  | "automation.autoEscalation"
+  | "automation.scheduledActions";
+
+export const AUTOMATION_KEYS: AutomationKey[] = [
+  "automation.autoAssignment",
+  "automation.whatsapp",
+  "automation.email",
+  "automation.autoEscalation",
+  "automation.scheduledActions",
+];
+
+async function getAutomationFlag(key: AutomationKey): Promise<boolean> {
+  const raw = await getSetting(key);
+  return raw.toLowerCase() === "true"; // default OFF
+}
+export const getAutoAssignmentEnabled = () => getAutomationFlag("automation.autoAssignment");
+export const getWhatsappAutomationEnabled = () => getAutomationFlag("automation.whatsapp");
+export const getEmailAutomationEnabled = () => getAutomationFlag("automation.email");
+export const getAutoEscalationEnabled = () => getAutomationFlag("automation.autoEscalation");
+export const getScheduledActionsEnabled = () => getAutomationFlag("automation.scheduledActions");
+
+/** All automation flags (incl. round-robin) for the Settings UI. */
+export async function getAutomationFlags(): Promise<Record<string, boolean>> {
+  const [flags, roundRobin] = await Promise.all([
+    Promise.all(AUTOMATION_KEYS.map((k) => getAutomationFlag(k))),
+    getRoundRobinEnabled(),
+  ]);
+  const out: Record<string, boolean> = { "roundRobin.enabled": roundRobin };
+  AUTOMATION_KEYS.forEach((k, i) => { out[k] = flags[i]; });
+  return out;
 }
 
 // ── AI kill-switch accessors ───────────────────────────────────────────

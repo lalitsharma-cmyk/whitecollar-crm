@@ -1,8 +1,8 @@
 import { prisma } from "@/lib/prisma";
 import { notify, notifyRoles } from "@/lib/notify";
 import { chooseOwnerForNewLead } from "@/lib/assignmentWindow";
-import { getRoundRobinEnabled, getTestingModeEnabled } from "@/lib/settings";
-import { automationGate } from "@/lib/teamRouting";
+import { getRoundRobinEnabled, getAutoAssignmentEnabled, getAutoEscalationEnabled } from "@/lib/settings";
+import { isTeamClassified } from "@/lib/teamRouting";
 import { SUPPRESSED_STATUSES, CLOSING_STATUSES } from "@/lib/lead-statuses";
 
 // The reconciler runs on every dashboard/leads page load (cheap, deduped).
@@ -36,13 +36,14 @@ export async function runReconciler(): Promise<ReconcileResult> {
 
   let autoAssigned = 0, slaEscalated = 0;
 
-  // MASTER TESTING-MODE switch — when ON, every auto-action in this reconciler
-  // is paused (orphan sweep, SLA escalation, needs-you flagging). Lalit flips it
-  // while loading real client data so nothing nags the team or leaks to clients.
-  const testingMode = await getTestingModeEnabled();
+  // Notifications + escalation ALERTS always fire here now. Only the automated
+  // ACTIONS are gated by their per-feature Automation Controls flag (default OFF).
+  const [autoAssignmentOn, roundRobinFlag, autoEscalationOn] = await Promise.all([
+    getAutoAssignmentEnabled(), getRoundRobinEnabled(), getAutoEscalationEnabled(),
+  ]);
 
-  // ── 1) Auto-assign anything unowned >5 minutes ──────────────────────
-  const roundRobinOn = !testingMode && await getRoundRobinEnabled();
+  // ── 1) Auto-assign anything unowned >5 minutes (AUTOMATION — gated) ──
+  const roundRobinOn = autoAssignmentOn && roundRobinFlag;
   const cutoffAssign = new Date(Date.now() - AUTO_ASSIGN_AFTER_MIN * 60 * 1000);
   const orphans = roundRobinOn ? await prisma.lead.findMany({
     where: {
@@ -57,8 +58,7 @@ export async function runReconciler(): Promise<ReconcileResult> {
   }) : [];
 
   for (const lead of orphans) {
-    const gate = automationGate(lead.forwardedTeam, testingMode);
-    if (!gate.ok) continue;
+    if (!isTeamClassified(lead.forwardedTeam)) continue;
 
     const team = lead.forwardedTeam ?? null;
     const choice = await chooseOwnerForNewLead(team);
@@ -100,8 +100,8 @@ export async function runReconciler(): Promise<ReconcileResult> {
     autoAssigned++;
   }
 
-  // ── 2) Escalate 15-min call SLA breaches ───────────────────────────
-  const overdue = testingMode ? [] : await prisma.lead.findMany({
+  // ── 2) Escalate 15-min call SLA breaches (NOTIFICATION — always fires) ──
+  const overdue = await prisma.lead.findMany({
     where: {
       slaFirstCallBy: { lte: new Date() },
       slaEscalated: false,
@@ -114,8 +114,7 @@ export async function runReconciler(): Promise<ReconcileResult> {
   });
 
   for (const lead of overdue) {
-    const gate = automationGate(lead.forwardedTeam, testingMode);
-    if (!gate.ok) continue;
+    if (!isTeamClassified(lead.forwardedTeam)) continue;
 
     if (lead.callLogs.length > 0) {
       await prisma.lead.update({ where: { id: lead.id }, data: { slaEscalated: true } });
@@ -143,8 +142,9 @@ export async function runReconciler(): Promise<ReconcileResult> {
     slaEscalated++;
   }
 
-  // ── 3) "Needs You" flag — closing-status leads idle >24h or 3+ not-picked ──
-  const closingLeads = testingMode ? [] : await prisma.lead.findMany({
+  // ── 3) "Needs You" AUTO-flagging — an automatic escalation ACTION (it mutates
+  //       needsManagerReview), so it's gated OFF by default behind autoEscalation. ──
+  const closingLeads = autoEscalationOn ? await prisma.lead.findMany({
     where: {
       deletedAt: null,
       currentStatus: { in: CLOSING_STATUSES },
@@ -155,11 +155,10 @@ export async function runReconciler(): Promise<ReconcileResult> {
     },
     include: { callLogs: { orderBy: { startedAt: "desc" }, take: 10 } },
     take: 100,
-  });
+  }) : [];
   let flagged = 0;
   for (const lead of closingLeads) {
-    const gate = automationGate(lead.forwardedTeam, testingMode);
-    if (!gate.ok) continue;
+    if (!isTeamClassified(lead.forwardedTeam)) continue;
 
     let reason = "";
     if (lead.lastTouchedAt && lead.lastTouchedAt < new Date(Date.now() - 24 * 3600 * 1000)) {

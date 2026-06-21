@@ -28,7 +28,7 @@ import { renderTemplate, type TemplateContext } from "@/lib/templates";
 import { whatsappEnabled } from "@/lib/whatsappOutbound";
 import { currentWindow } from "@/lib/assignmentWindow";
 import { audit } from "@/lib/audit";
-import { getSetting, getTestingModeEnabled } from "@/lib/settings";
+import { getSetting, getWhatsappAutomationEnabled, getEmailAutomationEnabled } from "@/lib/settings";
 
 const FROM_NUMBER = "8810286629"; // company main WA display number (informational)
 const META_BASE = "https://graph.facebook.com/v21.0";
@@ -43,10 +43,12 @@ export async function sendSpeedToLeadResponses(leadId: string): Promise<{
   emailSent: boolean;
   skipped?: string;
 }> {
-  // 0. Testing-mode kill-switch — suppresses all automated outbound
-  const testingMode = await getTestingModeEnabled();
-  if (testingMode) {
-    return { ok: true, waSent: false, emailSent: false, skipped: "testing mode — automation suppressed" };
+  // 0. Automation gate — first-touch WA + email each need their own flag (default OFF).
+  const [waAutomationOn, emailAutomationOn] = await Promise.all([
+    getWhatsappAutomationEnabled(), getEmailAutomationEnabled(),
+  ]);
+  if (!waAutomationOn && !emailAutomationOn) {
+    return { ok: true, waSent: false, emailSent: false, skipped: "WhatsApp + Email automation OFF (Settings → Automation Controls)" };
   }
 
   // 1. Admin kill-switch
@@ -102,7 +104,7 @@ export async function sendSpeedToLeadResponses(leadId: string): Promise<{
   // 5. WhatsApp send — skip if we're in the OVERNIGHT_QUEUE window (the
   //    dedicated after-hours welcome already handles that case) or if any
   //    outbound WA was already logged for this lead in the last 30 min.
-  if (waTpl && lead.phone) {
+  if (waAutomationOn && waTpl && lead.phone) {
     const window = currentWindow();
     const recentAutoWA = await prisma.whatsAppMessage.findFirst({
       where: {
@@ -128,7 +130,7 @@ export async function sendSpeedToLeadResponses(leadId: string): Promise<{
   }
 
   // 6. Email send — Resend
-  if (emailTpl && lead.email) {
+  if (emailAutomationOn && emailTpl && lead.email) {
     emailSent = await sendSpeedEmail(
       lead.id,
       lead.email,

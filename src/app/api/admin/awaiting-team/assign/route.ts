@@ -16,7 +16,7 @@ import { chooseOwnerForNewLead, currentWindow } from "@/lib/assignmentWindow";
 import { assignLeadTo } from "@/lib/leadIngest";
 import { audit, reqMeta } from "@/lib/audit";
 import { resolveTeam, routingFieldsFor } from "@/lib/teamRouting";
-import { getRoundRobinEnabled, getTestingModeEnabled } from "@/lib/settings";
+import { getRoundRobinEnabled, getAutoAssignmentEnabled } from "@/lib/settings";
 
 const TEAMS = ["Dubai", "India"] as const;
 type Team = (typeof TEAMS)[number];
@@ -52,7 +52,7 @@ export async function POST(req: NextRequest) {
   // Round Robin was globally OFF. Now it only auto-picks when auto-assignment is
   // actually enabled; otherwise it tags the team ONLY and leaves the lead UNOWNED
   // for manual assignment.
-  const autoAssignOn = !(await getTestingModeEnabled()) && (await getRoundRobinEnabled());
+  const autoAssignOn = (await getAutoAssignmentEnabled()) && (await getRoundRobinEnabled());
   const choice = autoAssignOn
     ? await chooseOwnerForNewLead(team)
     : { userId: null as string | null, window: currentWindow(), fallbackReason: "auto-assign disabled (round-robin off)" };

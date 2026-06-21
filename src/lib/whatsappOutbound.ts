@@ -18,7 +18,7 @@
 import { prisma } from "@/lib/prisma";
 import { WAMessageDirection } from "@prisma/client";
 import { audit } from "@/lib/audit";
-import { getTestingModeEnabled } from "@/lib/settings";
+import { getWhatsappAutomationEnabled } from "@/lib/settings";
 
 const FROM_NUMBER = "8810286629";              // company main WA number (display)
 const META_BASE = "https://graph.facebook.com/v21.0";
@@ -39,8 +39,8 @@ export function whatsappEnabled(): boolean {
  * Returns success even in stub mode (so the caller pipeline doesn't break).
  */
 export async function sendAfterHoursWelcome(leadId: string, leadPhone: string, leadName: string): Promise<SendResult> {
-  const testingMode = await getTestingModeEnabled();
-  if (testingMode) return { ok: true, mode: "stub", error: "testing mode — send suppressed" };
+  const waOn = await getWhatsappAutomationEnabled();
+  if (!waOn) return { ok: true, mode: "stub", error: "WhatsApp automation is OFF (Settings → Automation Controls)" };
 
   const cleanPhone = leadPhone.replace(/[^\d]/g, "");
   if (!cleanPhone) return { ok: false, mode: "stub", error: "no phone" };

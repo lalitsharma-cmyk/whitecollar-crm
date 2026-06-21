@@ -8,7 +8,7 @@ import { currentWindow } from "@/lib/assignmentWindow";
 import { sendAfterHoursWelcome } from "@/lib/whatsappOutbound";
 import { sendSpeedToLeadResponses } from "@/lib/speedToLead";
 import { fireWorkflowTrigger } from "@/lib/workflowEngine";
-import { getTestingModeEnabled } from "@/lib/settings";
+import { getWhatsappAutomationEnabled } from "@/lib/settings";
 import { notifyHotLead } from "@/lib/push";
 import { findMatchingLeads, summariseHistory, projectsFromInterestedUnits } from "@/lib/investorMatch";
 import { audit } from "@/lib/audit";
@@ -424,9 +424,9 @@ export async function ingestLead(input: RawLeadInput) {
   // Testing-mode kill-switch: skip — Lalit doesn't want overnight auto-WA going
   // to real client numbers while he's importing existing-client data for testing.
   const window = currentWindow();
-  const testingMode = await getTestingModeEnabled();
-  // Automation gate: no automation until team is classified AND testing mode is OFF.
-  const gate = automationGate(lead.forwardedTeam, testingMode);
+  const waOn = await getWhatsappAutomationEnabled();
+  // Automation gate: no auto-WA until team is classified AND WhatsApp automation is ON.
+  const gate = automationGate(lead.forwardedTeam, !waOn);
   if (window.kind === "OVERNIGHT_QUEUE" && lead.phone && gate.ok) {
     sendAfterHoursWelcome(lead.id, lead.phone, lead.name).catch(() => {});
   } else if (window.kind === "OVERNIGHT_QUEUE" && lead.phone && !gate.ok) {
