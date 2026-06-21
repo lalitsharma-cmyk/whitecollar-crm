@@ -691,6 +691,14 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
             );
           })()}
         </div>
+        {/* Property Enquired — the property/project the client originally enquired
+            for (lead-level sourceDetail). Same field shown as "Property Enquired" on
+            the Leads table + Master Data. Editable inline by anyone who can edit this
+            lead (agents on owned leads; admin/manager any) — enforced server-side. */}
+        <div>
+          <div className="text-xs text-gray-500 dark:text-slate-400">🏢 Property Enquired</div>
+          <InlineEdit leadId={lead.id} field="sourceDetail" value={lead.sourceDetail ?? ""} placeholder="Add value" />
+        </div>
         <div>
           <div className="text-xs text-gray-500 dark:text-slate-400">💼 Profession</div>
           <InlineEdit leadId={lead.id} field="profession" type="select" value={lead.profession ?? ""}
@@ -927,19 +935,7 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
                   )}
                   {lead.budgetMin && (
                     <span className="bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-700 px-2 py-0.5 rounded font-medium">
-                      {lead.budgetCurrency === "INR" ? "₹" : lead.budgetCurrency}{" "}
-                      {lead.budgetCurrency === "INR"
-                        ? (lead.budgetMin >= 10_000_000
-                            ? `${(lead.budgetMin/10_000_000).toFixed(1).replace(/\.0$/,"")} Cr`
-                            : `${(lead.budgetMin/100_000).toFixed(0)} L`)
-                        : `${(lead.budgetMin/1_000_000).toFixed(1).replace(/\.0$/,"")} M`}
-                      {lead.budgetMax && lead.budgetMax > lead.budgetMin ? ` – ${
-                        lead.budgetCurrency === "INR"
-                          ? (lead.budgetMax >= 10_000_000
-                              ? `${(lead.budgetMax/10_000_000).toFixed(1).replace(/\.0$/,"")} Cr`
-                              : `${(lead.budgetMax/100_000).toFixed(0)} L`)
-                          : `${(lead.budgetMax/1_000_000).toFixed(1).replace(/\.0$/,"")} M`
-                      }` : ""}
+                      {displayBudget(lead)}
                     </span>
                   )}
                 </div>

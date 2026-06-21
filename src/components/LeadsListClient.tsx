@@ -551,7 +551,7 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
                         <LeadHeaderFilter kind="search" paramKey="q" label="Name / phone / email" searchParamsStr={searchParamsStr} />
                       </th>
                       <th className={thCls}>
-                        Project <LeadHeaderFilter kind="multi" paramKey="project" label="Project" options={projFilterOpts} searchParamsStr={searchParamsStr} />
+                        Property Enquired <LeadHeaderFilter kind="multi" paramKey="project" label="Property Enquired" options={projFilterOpts} searchParamsStr={searchParamsStr} />
                       </th>
                       <th className={sortThCls}>
                         <span onClick={() => router.push(sortHref("status"))}>Status <SortIcon k="status" /></span>
@@ -839,7 +839,7 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
         <div className="flex items-center gap-1.5 overflow-x-auto pb-1 -mx-3 px-3 sm:mx-0 sm:px-0" style={{ scrollbarWidth: "thin" }}>
           <span className="text-[11px] font-semibold text-gray-400 dark:text-slate-500 shrink-0">Filter:</span>
           <LeadHeaderFilter showLabel kind="search" paramKey="q" label="Name" searchParamsStr={searchParamsStr} />
-          <LeadHeaderFilter showLabel kind="multi" paramKey="project" label="Project" options={projFilterOpts} searchParamsStr={searchParamsStr} />
+          <LeadHeaderFilter showLabel kind="multi" paramKey="project" label="Property Enquired" options={projFilterOpts} searchParamsStr={searchParamsStr} />
           <LeadHeaderFilter showLabel kind="multi" paramKey="cstatus" label="Status" options={statusFilterOpts} searchParamsStr={searchParamsStr} />
           <LeadHeaderFilter showLabel kind="budget" label="Budget" searchParamsStr={searchParamsStr} />
           <LeadHeaderFilter showLabel kind="followup" label="Follow-up" searchParamsStr={searchParamsStr} />

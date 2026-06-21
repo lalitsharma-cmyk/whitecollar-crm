@@ -57,7 +57,7 @@ const COLS: { key: ColKey; label: string; frozen?: boolean; w?: number; minW?: n
   { key: "createdDate", label: "Created Date", minW: 100 },
   { key: "createdTime", label: "Created Time", minW: 80 },
   { key: "budget", label: "Budget" },
-  { key: "project", label: "Project", minW: 180 },
+  { key: "project", label: "Property Enquired", minW: 180 },
   { key: "propertyType", label: "Property Type", minW: 110, defHidden: true },
   { key: "source", label: "Source" },
   { key: "message", label: "Message", wide: true },
@@ -570,7 +570,7 @@ function PreviewDrawer({ l, onClose }: { l: MDRow; onClose: () => void }) {
           <Field label="Email" value={l.email} />
           <Field label="Team" value={l.team} />
           <Field label="Budget" value={l.budget} />
-          <Field label="Project" value={l.project} />
+          <Field label="Property Enquired" value={l.project} />
           <Field label="Source" value={l.sourceLabel} />
           <Field label="Created" value={`${l.createdDate} · ${l.createdTime}`} />
         </div>

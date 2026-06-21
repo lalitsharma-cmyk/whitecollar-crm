@@ -64,20 +64,36 @@ export function parseBudget(raw: string | number | null | undefined): number | n
  *   AED 2,500,000 → "2.5M AED"
  *   INR 30,000,000 → "3 Cr"
  */
+export type BudgetMarket = "DUBAI" | "INDIA";
+
+/** Dubai/UAE house format: "2M AED", "600K AED" — value+unit glued, single space,
+ *  AED at the END. M/K/AED uppercase, no dots, no extra spaces. */
+function fmtDubai(n: number): string {
+  if (n >= 1_000_000_000) return `${trimZeros(n / 1_000_000_000)}B AED`;
+  if (n >= 1_000_000)     return `${trimZeros(n / 1_000_000)}M AED`;
+  if (n >= 1_000)         return `${trimZeros(n / 1_000)}K AED`;
+  return `${trimZeros(n)} AED`;
+}
+/** India house format: "21 Cr", "50 L" — value SPACE unit; "Cr" = capital-C small-r,
+ *  "L" capital; no ₹, no dots, no forced decimals. */
+function fmtIndia(n: number): string {
+  if (n >= 10_000_000) return `${trimZeros(n / 10_000_000)} Cr`;
+  if (n >= 100_000)    return `${trimZeros(n / 100_000)} L`;
+  if (n >= 1_000)      return `${trimZeros(n / 1_000)} K`;
+  return `${trimZeros(n)}`;
+}
+
+/** THE canonical numeric→display formatter. Dubai → "2M AED"; India → "21 Cr". */
+export function formatBudgetAmount(amount: number | null | undefined, market: BudgetMarket): string {
+  if (amount == null || !isFinite(amount) || amount <= 0) return "—";
+  return market === "INDIA" ? fmtIndia(amount) : fmtDubai(amount);
+}
+
+/** Back-compat shim: legacy callers pass a currency string. Routes to the
+ *  canonical formatter so every budget renders in the uniform house format
+ *  (Dubai "2M AED", India "21 Cr") instead of the old "2.5 M" / "3 Cr". */
 export function formatBudget(n: number | null | undefined, currency: "AED" | "INR" | string = "AED"): string {
-  if (n == null || !isFinite(n) || n === 0) return "—";
-  const isINR = currency === "INR";
-  if (isINR) {
-    if (n >= 10_000_000) return `${trimZeros(n / 10_000_000)} Cr`;
-    if (n >= 100_000)    return `${trimZeros(n / 100_000)} L`;
-    if (n >= 1_000)      return `${trimZeros(n / 1_000)} K`;
-    return `${n.toLocaleString("en-IN")}`;
-  }
-  // AED / USD / other — use M/K
-  if (n >= 1_000_000_000) return `${trimZeros(n / 1_000_000_000)} Bn`;
-  if (n >= 1_000_000)     return `${trimZeros(n / 1_000_000)} M`;
-  if (n >= 1_000)         return `${trimZeros(n / 1_000)} K`;
-  return `${n.toLocaleString("en-US")}`;
+  return formatBudgetAmount(n ?? null, currency === "INR" ? "INDIA" : "DUBAI");
 }
 
 function trimZeros(n: number): string {
@@ -86,33 +102,16 @@ function trimZeros(n: number): string {
   return n.toFixed(2).replace(/\.?0+$/, "");
 }
 
-/** India/Gurgaon budgets ALWAYS render in INR Lakh/Cr — never Millions/AED.
- *  Formats the stored NUMERIC value (no blind conversion); the verbatim raw is
- *  preserved in the DB, only the display is normalised. Returns null if there's
- *  no usable number. Matches Lalit's examples: "₹50 Lakh", "₹1.25 Cr", "₹7 Cr". */
-function formatINR(min?: number | null, max?: number | null): string | null {
-  if (min == null || min === 0) return null;
-  // Lalit's standard (2026-06-20): "3 CR", "5.5 CR", "50 LAKH" — NO ₹ symbol, NO
-  // trailing dot, UPPERCASE unit, a single space before the unit. Display-only;
-  // the numeric value (budgetMin) is what filters/reports/sorting use.
-  const fmt = (n: number) =>
-    n >= 10_000_000 ? `${trimZeros(n / 10_000_000)} CR`
-    : n >= 100_000  ? `${trimZeros(n / 100_000)} LAKH`
-    : n >= 1_000    ? `${trimZeros(n / 1_000)} K`
-    : `${n.toLocaleString("en-IN")}`;
-  const lo = fmt(min);
-  const hi = max && max > min ? fmt(max) : null;
-  return hi ? `${lo} – ${hi}` : lo;
-}
-
 /**
- * Canonical, TEAM-AWARE budget display (Lalit's rule, 2026-06-20):
- *   • India / Gurgaon team → INR Lakh/Cr ONLY (never "1M"/"AED"). Rendered from
- *     the numeric value so a sheet that wrote "7M" shows "₹70 Lakh", and a lead
- *     wrongly tagged AED still shows ₹ (team wins over a stale currency).
- *   • Dubai (and unknown team) → verbatim raw wins ("AED 800K - 1M"), else AED K/M.
- * Team is taken from forwardedTeam; when absent we fall back to budgetCurrency
- * (INR ⇒ India format, AED ⇒ Dubai format) so every caller is covered.
+ * THE canonical, TEAM-AWARE budget display (uniform house format, 2026-06-21):
+ *   • Dubai / UAE / unknown team → "2M AED", "600K AED" (value+unit, space, AED end).
+ *   • India / Gurgaon team       → "21 Cr", "50 L" (value, space, Cr/L; no ₹/dots).
+ * Market: forwardedTeam first, else budgetCurrency (INR ⇒ India).
+ *
+ * DISPLAY-ONLY — stored budgetMin/Max/Raw/Currency, filters, reports, and sorting
+ * are NEVER changed. budgetRaw is a parse SOURCE only; it is no longer echoed
+ * verbatim (verbatim raw is what produced "AED 2 M", "2 M AED", "21CR", "21.0 Cr").
+ * Supersedes the earlier "show raw verbatim" rule per Lalit's standardisation spec.
  */
 export function displayBudget(lead: {
   budgetRaw?: string | null;
@@ -123,25 +122,30 @@ export function displayBudget(lead: {
 }): string {
   const team = (lead.forwardedTeam ?? "").trim().toLowerCase();
   const ccy = (lead.budgetCurrency || "").toUpperCase();
-  const isIndia = team === "india" || team === "gurgaon" || team === "gurugram" || (!team && ccy === "INR");
+  const market: BudgetMarket =
+    team === "india" || team === "gurgaon" || team === "gurugram" ? "INDIA"
+    : team === "dubai" ? "DUBAI"
+    : ccy === "INR" ? "INDIA"
+    : "DUBAI";
 
-  const raw = lead.budgetRaw?.trim();
-  const rawIsBudget = !!raw && /\d/.test(raw); // a raw with no digit is corrupted (e.g. a leaked name)
-
-  if (isIndia) {
-    // INR Lakh/Cr from the numeric value; only if there's no number do we fall
-    // back to the raw text (last resort), else "—".
-    return formatINR(lead.budgetMin, lead.budgetMax) ?? (rawIsBudget ? raw! : "—");
+  // Prefer the parsed numeric value; else re-parse the raw cell into a number.
+  const min = (lead.budgetMin != null && lead.budgetMin > 0) ? lead.budgetMin : parseBudget(lead.budgetRaw);
+  if (min == null || min <= 0) {
+    // No usable number anywhere. Never blank out a budget that has SOME number —
+    // show the trimmed raw as a last resort; otherwise "—".
+    const raw = lead.budgetRaw?.trim();
+    return raw && /\d/.test(raw) ? raw : "—";
   }
-
-  // Dubai / unknown team — verbatim raw preferred, else AED (or stored ccy) K/M.
-  if (rawIsBudget) return raw!;
-  const min = lead.budgetMin;
-  if (min == null || min === 0) return "—";
-  const dispCcy = ccy && ccy !== "" ? ccy : "AED";
-  if (dispCcy === "UNKNOWN") return `${min.toLocaleString("en-IN")} (currency?)`;
-  const prefix = dispCcy === "INR" ? "₹" : dispCcy; // "AED 1.5 M", "₹ …"
-  const lo = formatBudget(min, dispCcy);
-  const hi = lead.budgetMax && lead.budgetMax > min ? formatBudget(lead.budgetMax, dispCcy) : null;
-  return hi ? `${prefix} ${lo} – ${hi}` : `${prefix} ${lo}`;
+  const max = (lead.budgetMax != null && lead.budgetMax > min) ? lead.budgetMax : null;
+  const lo = formatBudgetAmount(min, market);
+  if (max) {
+    if (market === "DUBAI") {
+      // Keep a single trailing "AED" on a Dubai range: "1M – 2M AED".
+      const loN = lo.replace(/\s*AED$/, "");
+      const hiN = formatBudgetAmount(max, market).replace(/\s*AED$/, "");
+      return `${loN} – ${hiN} AED`;
+    }
+    return `${lo} – ${formatBudgetAmount(max, market)}`;
+  }
+  return ccy === "UNKNOWN" ? `${lo} (currency?)` : lo;
 }

@@ -383,21 +383,22 @@ const checks: Check[] = [
   //     Lakh/Cr (never Millions/AED); Dubai renders AED K/M.
   // ───────────────────────────────────────────────────────────────────────────
   {
-    name: "budget-display — India ₹ Lakh/Cr (never M/AED); Dubai AED K/M",
+    name: "budget-display — uniform: India '4 Cr'/'70 L' (no ₹/CR/LAKH), Dubai '1.5M AED' (AED at end, no verbatim raw)",
     run: async () => {
       const { displayBudget } = await import("../src/lib/budgetParse");
-      const noMillions = (s: string) => !/\d\s*m(?:n|illion)?\b/i.test(s) && !/aed/i.test(s);
-      // India team — numeric formatted as ₹, even with a stale AED currency or an "M" raw.
-      assert(displayBudget({ forwardedTeam: "India", budgetMin: 40_000_000, budgetCurrency: "AED" }) === "4 CR", `India 4Cr (stale AED) → "4 CR", got ${displayBudget({ forwardedTeam: "India", budgetMin: 40_000_000, budgetCurrency: "AED" })}`);
-      assert(displayBudget({ forwardedTeam: "India", budgetRaw: "7M", budgetMin: 7_000_000, budgetCurrency: "INR" }) === "70 LAKH", `India raw "7M" → "70 LAKH", got ${displayBudget({ forwardedTeam: "India", budgetRaw: "7M", budgetMin: 7_000_000, budgetCurrency: "INR" })}`);
+      const noMillions = (s: string) => !/\bm\b/i.test(s) && !/aed/i.test(s);
+      // India team — numeric formatted as Cr/L, even with a stale AED currency or an "M" raw.
+      assert(displayBudget({ forwardedTeam: "India", budgetMin: 40_000_000, budgetCurrency: "AED" }) === "4 Cr", `India 4Cr (stale AED) → "4 Cr", got ${displayBudget({ forwardedTeam: "India", budgetMin: 40_000_000, budgetCurrency: "AED" })}`);
+      assert(displayBudget({ forwardedTeam: "India", budgetRaw: "7M", budgetMin: 7_000_000, budgetCurrency: "INR" }) === "70 L", `India 7M → "70 L", got ${displayBudget({ forwardedTeam: "India", budgetRaw: "7M", budgetMin: 7_000_000, budgetCurrency: "INR" })}`);
       assert(noMillions(displayBudget({ forwardedTeam: "Gurgaon", budgetMin: 5_000_000, budgetCurrency: "AED" })), "Gurgaon budget must never show M/AED");
-      // Standard India format: no ₹, uppercase CR, no trailing dot, one space.
-      assert(displayBudget({ budgetMin: 12_500_000, budgetCurrency: "INR" }) === "1.25 CR", `INR no-team → "1.25 CR", got ${displayBudget({ budgetMin: 12_500_000, budgetCurrency: "INR" })}`);
-      assert(displayBudget({ budgetMin: 30_000_000, budgetCurrency: "INR" }) === "3 CR", `30M INR → "3 CR", got ${displayBudget({ budgetMin: 30_000_000, budgetCurrency: "INR" })}`);
+      // India format: no ₹, 'Cr' capital-C small-r / 'L' capital, no trailing dot, one space, never 'CR'/'LAKH'.
+      assert(displayBudget({ budgetMin: 12_500_000, budgetCurrency: "INR" }) === "1.25 Cr", `INR no-team → "1.25 Cr", got ${displayBudget({ budgetMin: 12_500_000, budgetCurrency: "INR" })}`);
+      assert(displayBudget({ budgetMin: 30_000_000, budgetCurrency: "INR" }) === "3 Cr", `30M INR → "3 Cr" (not "3 CR"), got ${displayBudget({ budgetMin: 30_000_000, budgetCurrency: "INR" })}`);
       assert(!/₹/.test(displayBudget({ budgetMin: 50_000_000, budgetCurrency: "INR" })), "India budget must have NO ₹ symbol");
-      // Dubai — verbatim raw preserved; numeric → AED K/M.
-      assert(displayBudget({ forwardedTeam: "Dubai", budgetRaw: "AED 800K - 1M", budgetMin: 800_000 }) === "AED 800K - 1M", "Dubai verbatim raw preserved");
-      assert(displayBudget({ forwardedTeam: "Dubai", budgetMin: 1_500_000, budgetCurrency: "AED" }) === "AED 1.5 M", `Dubai 1.5M → "AED 1.5 M", got ${displayBudget({ forwardedTeam: "Dubai", budgetMin: 1_500_000, budgetCurrency: "AED" })}`);
+      assert(!/\b(CR|LAKH)\b/.test(displayBudget({ budgetMin: 50_000_000, budgetCurrency: "INR" })), "India must use 'Cr'/'L', never 'CR'/'LAKH'");
+      // Dubai — AED at the END, value glued to M/K, no verbatim raw echo.
+      assert(displayBudget({ forwardedTeam: "Dubai", budgetMin: 800_000, budgetMax: 1_000_000, budgetCurrency: "AED" }) === "800K – 1M AED", `Dubai range → "800K – 1M AED", got ${displayBudget({ forwardedTeam: "Dubai", budgetMin: 800_000, budgetMax: 1_000_000, budgetCurrency: "AED" })}`);
+      assert(displayBudget({ forwardedTeam: "Dubai", budgetMin: 1_500_000, budgetCurrency: "AED" }) === "1.5M AED", `Dubai 1.5M → "1.5M AED", got ${displayBudget({ forwardedTeam: "Dubai", budgetMin: 1_500_000, budgetCurrency: "AED" })}`);
     },
   },
 
@@ -839,6 +840,16 @@ const checks: Check[] = [
         && (c as { filter: { unassigned?: boolean } }).filter.unassigned === true
         && !(c as { filter: { leadName?: string } }).filter.leadName,
         "explicit bulk-with-filter must still work");
+    },
+  },
+  {
+    name: "budget-format — uniform display: Dubai '2M AED' / India '21 Cr' (no verbatim raw, no 'CR'/'LAKH')",
+    run: async () => {
+      const { formatBudgetAmount, displayBudget } = await import("../src/lib/budgetParse");
+      assert(formatBudgetAmount(2_000_000, "DUBAI") === "2M AED", "Dubai 2_000_000 must be '2M AED'");
+      assert(formatBudgetAmount(210_000_000, "INDIA") === "21 Cr", "India 210M must be '21 Cr' (capital-C small-r, not 'CR')");
+      assert(displayBudget({ budgetRaw: "AED 2 M", budgetMin: null }) === "2M AED", "raw 'AED 2 M' must re-parse to '2M AED', not echo verbatim");
+      assert(displayBudget({ budgetMin: 30_000_000, budgetCurrency: "INR" }) === "3 Cr", "INR 30M must be '3 Cr', not the old '3 CR'");
     },
   },
 ];
