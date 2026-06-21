@@ -6,7 +6,7 @@ import { requireUser } from "@/lib/auth";
 import LeadFilters from "@/components/LeadFilters";
 import LeadsListClient from "@/components/LeadsListClient";
 import { runReconciler } from "@/lib/reconciler";
-import { leadScopeWhere, COLD_ORIGINS } from "@/lib/leadScope";
+import { leadScopeWhere, COLD_ORIGINS, workableWhere } from "@/lib/leadScope";
 import { projectWhereForUser } from "@/lib/propertyScope";
 import { displayBudget } from "@/lib/budgetParse";
 import { formatLeadName } from "@/lib/leadName";
@@ -362,7 +362,10 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
   // Followup windows for chip counts (scoped to visible leads — agents see
   // their own pipeline, admin sees all). Re-use istWindow() defined above.
   const todayWindow = istWindow(0);
-  const activeScope = { ...scope, ...segWhere, OR: [{ currentStatus: null }, { currentStatus: "" }, { currentStatus: { notIn: TERMINAL_STATUSES } }] };
+  // Single source of truth for "active workable" — same envelope the Dashboard
+  // follow-up tiles use, so the chip counts reconcile 1:1 (incl. cold/revival
+  // exclusion that was previously missing here).
+  const activeScope = workableWhere({ ...scope, ...segWhere });
 
   // ── Smart priority sort pre-query ─────────────────────────────────────────
   // When no explicit ?sort= is provided we sort by urgency rather than created-

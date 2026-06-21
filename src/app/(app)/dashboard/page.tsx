@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { AIScore, CallOutcome, ActivityStatus, ActivityType, Prisma } from "@prisma/client";
 import { SUPPRESSED_STATUSES, CLOSING_STATUSES, BOOKED_STATUSES } from "@/lib/lead-statuses";
-import { COLD_ORIGINS } from "@/lib/leadScope";
+import { COLD_ORIGINS, workableWhere } from "@/lib/leadScope";
 import { formatDistanceToNow, startOfDay } from "date-fns";
 import { fmtIST12 } from "@/lib/datetime";
 import { runReconciler } from "@/lib/reconciler";
@@ -119,7 +119,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
 
   // UPCOMING counts — activities/follow-ups scheduled after the selected period ends
   const [upcomingFollowupsCount, upcomingActivitiesCount] = await Promise.all([
-    prisma.lead.count({ where: { ...meScope, followupDate: { gte: sqlTo }, currentStatus: { notIn: SUPPRESSED_STATUSES } } }),
+    prisma.lead.count({ where: { ...workableWhere(meScope), followupDate: { gte: sqlTo } } }),
     prisma.activity.count({ where: { ...meActWhere, status: ActivityStatus.PLANNED, scheduledAt: { gte: sqlTo } } }),
   ]);
 
@@ -138,10 +138,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
       },
     }),
     prisma.lead.count({
-      where: {
-        ...meScope, followupDate: { lt: new Date(), not: null },
-        currentStatus: { notIn: SUPPRESSED_STATUSES },
-      },
+      where: { ...workableWhere(meScope), followupDate: { lt: new Date(), not: null } },
     }),
     prisma.lead.count({
       where: { ...meScope, currentStatus: { in: CLOSING_STATUSES }, eoiStage: { not: null } },

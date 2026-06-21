@@ -10,12 +10,12 @@
 // Anything outside that scope is treated as not-found (404) rather than
 // forbidden (403), so the API doesn't confirm existence to outsiders.
 
-import type { Role } from "@prisma/client";
+import type { Prisma, Role } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
 import { normalizeTeam } from "@/lib/teamRouting";
-import { SUPPRESSED_STATUSES, BOOKED_STATUSES } from "@/lib/lead-statuses";
+import { SUPPRESSED_STATUSES, TERMINAL_STATUSES, BOOKED_STATUSES } from "@/lib/lead-statuses";
 
 export interface ScopedUser { id: string; role: Role; team?: string | null; }
 
@@ -163,4 +163,20 @@ export function ownerTotalWhere(ownerId: string) {
 /** A specific owner's WON/booked (both casings), non-deleted deals. */
 export function ownerWonWhere(ownerId: string) {
   return { ownerId, deletedAt: null, leadOrigin: { in: ACTIVE_ORIGINS }, currentStatus: { in: BOOKED_STATUSES } };
+}
+
+// ── Follow-up reconciliation (Dashboard ⇄ Leads — single counting source) ──────
+// "Workable" = a scope + non-cold/revival origin + a status that is NOT closed/lost
+// (TERMINAL_STATUSES). The Dashboard follow-up tiles (Overdue / Upcoming) and the
+// Leads follow-up chip counts MUST both count through this identical envelope so an
+// agent's "Overdue" tile equals the Leads "Overdue" chip 1:1. The 53-vs-33 mismatch
+// was: the Dashboard excluded only the 7 SUPPRESSED statuses while Leads excluded
+// the ~40 TERMINAL ones, and the Leads chips were missing the cold/revival exclusion.
+export const WORKABLE_STATUS_OR = [
+  { currentStatus: null },
+  { currentStatus: "" },
+  { currentStatus: { notIn: TERMINAL_STATUSES } },
+];
+export function workableWhere<T extends Prisma.LeadWhereInput>(scope: T): Prisma.LeadWhereInput {
+  return { ...scope, leadOrigin: { notIn: COLD_ORIGINS }, OR: WORKABLE_STATUS_OR };
 }
