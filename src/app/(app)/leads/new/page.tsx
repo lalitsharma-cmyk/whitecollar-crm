@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { ingestLead } from "@/lib/leadIngest";
+import { ingestLead, assignLeadTo } from "@/lib/leadIngest";
 import { LeadSource, Potential, FundReadiness, MoodStatus, InvestTimeline, Profession } from "@prisma/client";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
@@ -10,6 +10,7 @@ import { fromISTLocalInput } from "@/lib/datetime";
 import BudgetInput from "@/components/BudgetInput";
 import FormDateTimeIST from "@/components/FormDateTimeIST";
 import DedupWarning from "@/components/DedupWarning";
+import AssignToSelect from "@/components/AssignToSelect";
 
 async function createLeadAction(formData: FormData) {
   "use server";
@@ -91,6 +92,16 @@ async function createLeadAction(formData: FormData) {
     }
   }
 
+  // Assign the lead to the chosen owner at creation time (mandatory in the form).
+  // Reuses the canonical assignLeadTo() → sets ownerId + assignedAt + SLA, writes
+  // an Assignment history row, and notifies the new owner. Validated against the
+  // active, non-HR roster so a tampered POST can't target an inactive/HR user.
+  const ownerId = String(formData.get("ownerId") ?? "").trim();
+  if (ownerId) {
+    const owner = await prisma.user.findFirst({ where: { id: ownerId, active: true, hrOnly: false }, select: { id: true } });
+    if (owner) await assignLeadTo(lead.id, owner.id, "manual creation");
+  }
+
   redirect(`/leads/${lead.id}`);
 }
 
@@ -101,6 +112,12 @@ export default async function NewLeadPage() {
   const me = await requireUser();
   if (me.role === "AGENT") redirect("/leads");
   const projects = await prisma.project.findMany({ select: { id: true, name: true }, orderBy: { name: "asc" } });
+  // Active, non-HR roster for the "Assign To" picker (HR users never appear in Sales).
+  const assignableUsers = await prisma.user.findMany({
+    where: { active: true, hrOnly: false },
+    select: { id: true, name: true, team: true, role: true, isSuperAdmin: true },
+    orderBy: { name: "asc" },
+  });
   const defaultCurrency = defaultCurrencyForTeam(me.team);
   const defaultTeam = me.team && (me.team === "Dubai" || me.team === "India") ? me.team : (defaultCurrency === "INR" ? "India" : "Dubai");
   return (
@@ -169,6 +186,11 @@ export default async function NewLeadPage() {
                 <option value="India">India (₹)</option>
               </select>
               <input type="hidden" name="budgetCurrency" defaultValue={defaultCurrency} />
+            </div>
+            <div>
+              <label className={label}>👤 Assign To *</label>
+              <AssignToSelect users={assignableUsers} initialTeam={defaultTeam} />
+              <p className="text-[10px] text-gray-500 mt-0.5">Lead is created directly under this agent. List filters by the selected team.</p>
             </div>
             <div>
               <label className={label}>💰 Budget min</label>
