@@ -180,12 +180,16 @@ export default async function NewLeadPage() {
             </div>
             <div><label className={label}>Configuration</label><input name="configuration" placeholder="2BR / Penthouse / Villa" className={input} /></div>
             <div>
-              <label className={label}>Team / Currency</label>
-              <select name="forwardedTeam" defaultValue={defaultTeam} className={input}>
+              <label className={label}>Team / Currency *</label>
+              <select name="forwardedTeam" required className={input} onChange={(e) => {
+                const currency = e.target.value === "Dubai" ? "AED" : e.target.value === "India" ? "INR" : "";
+                document.querySelector('input[name="budgetCurrency"]').value = currency;
+              }}>
+                <option value="">— Select team —</option>
                 <option value="Dubai">Dubai (AED)</option>
                 <option value="India">India (₹)</option>
               </select>
-              <input type="hidden" name="budgetCurrency" defaultValue={defaultCurrency} />
+              <input type="hidden" name="budgetCurrency" defaultValue="" />
             </div>
             <div>
               <label className={label}>👤 Assign To *</label>
