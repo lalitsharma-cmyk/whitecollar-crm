@@ -17,13 +17,15 @@ export const dynamic = "force-dynamic";
 const PAGE_SIZE = 50;
 
 const srcChip: Record<LeadSource, string> = {
-  WEBSITE: "src-web", WHATSAPP: "src-wa", CSV_IMPORT: "src-csv", EVENT: "src-event",
+  WEBSITE: "src-web", WCR_WEBSITE: "src-web", WCR_EVENT: "src-event", LANDING_PAGE: "src-web",
+  WHATSAPP: "src-wa", CSV_IMPORT: "src-csv", EVENT: "src-event",
   REFERRAL: "src", INBOUND_CALL: "src-call", FACEBOOK_ADS: "src-web", GOOGLE_ADS: "src-csv",
   PORTAL_99ACRES: "src", PORTAL_MAGICBRICKS: "src", PORTAL_HOUSING: "src", OTHER: "src",
 };
 const srcLabel: Record<LeadSource, string> = {
-  WEBSITE: "Website", WHATSAPP: "WhatsApp", CSV_IMPORT: "CSV", EVENT: "Event",
-  REFERRAL: "Referral", INBOUND_CALL: "Inbound Call", FACEBOOK_ADS: "Facebook",
+  WEBSITE: "Website", WCR_WEBSITE: "WCR-Website", WCR_EVENT: "WCR-Event", LANDING_PAGE: "Landing Page",
+  WHATSAPP: "WhatsApp", CSV_IMPORT: "CSV", EVENT: "Event",
+  REFERRAL: "Referral", INBOUND_CALL: "Call", FACEBOOK_ADS: "Facebook",
   GOOGLE_ADS: "Google", PORTAL_99ACRES: "99acres", PORTAL_MAGICBRICKS: "MagicBricks",
   PORTAL_HOUSING: "Housing", OTHER: "Other",
 };
