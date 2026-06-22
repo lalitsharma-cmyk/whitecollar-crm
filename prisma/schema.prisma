@@ -194,6 +194,9 @@ model AssistantRun {
 
 enum LeadSource {
   WEBSITE
+  WCR_WEBSITE
+  WCR_EVENT
+  LANDING_PAGE
   WHATSAPP
   CSV_IMPORT
   EVENT

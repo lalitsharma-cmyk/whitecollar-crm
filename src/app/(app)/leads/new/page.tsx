@@ -216,7 +216,18 @@ export default async function NewLeadPage() {
             </div>
             <div>
               <label className={label}>Source</label>
-              <select name="source" className={input}>{Object.values(LeadSource).map(s => <option key={s} value={s}>{s.replaceAll("_"," ")}</option>)}</select>
+              <select name="source" className={input}>
+                {Object.values(LeadSource).map(s => {
+                  const labels: Record<string, string> = {
+                    "WCR_WEBSITE": "WCR-Website",
+                    "WCR_EVENT": "WCR-Event",
+                    "LANDING_PAGE": "Landing Page",
+                    "INBOUND_CALL": "Call",
+                  };
+                  const display = labels[s] || s.replaceAll("_", " ");
+                  return <option key={s} value={s}>{display}</option>;
+                })}
+              </select>
             </div>
           </div>
         </section>
