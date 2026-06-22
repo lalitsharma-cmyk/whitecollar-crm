@@ -106,10 +106,13 @@ export default function NotifPrefsEditor({ initialPrefs }: Props) {
               className="flex items-center justify-between gap-3 p-2.5 border border-gray-200 rounded cursor-pointer hover:bg-gray-50"
             >
               <span className="text-sm">{o.label}</span>
+              {/* Visual switch only — DO NOT add onClick here. This span sits inside
+                  the <label>, so a click already activates the hidden checkbox below
+                  (firing its onChange → toggle once). An onClick here fired toggle a
+                  SECOND time, so the two cancelled out and the switch "did nothing". */}
               <span
                 role="switch"
                 aria-checked={on}
-                onClick={() => toggle(o.key)}
                 className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors ${on ? "bg-emerald-500" : "bg-gray-300"}`}
               >
                 <span

@@ -29,7 +29,8 @@
 // v19 (2026-06-22): Sameer (lead-ops) — hide My Leads/Action List/Lead Intake/HR Recruitment; Leads default All; banner copy fix.
 // v20 (2026-06-22): Conversation auto-log parity — Activity events (meetings/visits/status/reopen) now render in Raw + Smart; outbound WA + reopen logged.
 // v21 (2026-06-22): Voice-note auto-correct (spelling/grammar/caps/punct; preserves names); raw transcript kept for audit.
-const CACHE = "wcr-shell-v21";
+// v22 (2026-06-22): fix Notification-preference toggles (double-fire) + force refresh so mobile shows Conversation History; pause SLA-breach.
+const CACHE = "wcr-shell-v22";
 const SHELL = ["/login", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", (event) => {
