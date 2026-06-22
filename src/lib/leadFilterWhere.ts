@@ -71,6 +71,22 @@ export function leadFilterWhere(sp: SP): Prisma.LeadWhereInput[] {
   if (srcs.length === 1) and.push({ sourceRaw: srcs[0] });
   else if (srcs.length > 1) and.push({ sourceRaw: { in: srcs } });
 
+  // Medium — contact channel (Call, WhatsApp, Email, or custom), multi.
+  // For custom mediums, we need to check both medium="Other" AND mediumOther field.
+  const meds = split(sp.medium);
+  if (meds.length) {
+    const or: Prisma.LeadWhereInput[] = [];
+    for (const m of meds) {
+      if (m === "Other") {
+        or.push({ medium: "Other", mediumOther: { not: null } });
+      } else {
+        or.push({ medium: m });
+      }
+    }
+    if (or.length === 1) and.push(or[0]);
+    else if (or.length > 1) and.push({ OR: or });
+  }
+
   // Owner — multi, with "unassigned" → ownerId null.
   const owners = split(sp.owner);
   if (owners.length) {

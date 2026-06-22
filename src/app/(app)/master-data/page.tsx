@@ -185,6 +185,8 @@ export default async function MasterDataPage({ searchParams }: { searchParams: P
       propertyType: l.propertyType ?? "",
       sourceLabel: SOURCE_LABEL[l.source] ?? l.source,
       sourceRaw: l.sourceRaw ?? "",
+      medium: (l as any).medium ?? "",
+      mediumOther: (l as any).mediumOther ?? null,
       leadOrigin: l.leadOrigin,
       // Read-only preview fields (Message column + Quick-Preview drawer).
       phone: l.phone ?? "",

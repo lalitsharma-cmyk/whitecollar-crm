@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
 import { audit, reqMeta } from "@/lib/audit";
 import { isStatusValidForTeam, NEEDS_REVIEW, statusesForTeam } from "@/lib/lead-statuses";
+import { validateMedium } from "@/lib/mediumManager";
 
 // =====================================================================
 // MASTER DATA — bulk actions (ADMIN only). Master Data is the complete
@@ -125,6 +126,45 @@ export async function POST(req: NextRequest) {
     const r = await prisma.lead.updateMany({ where: { id: { in: ids }, deletedAt: { not: null } }, data: { deletedAt: null, deletedById: null } });
     await audit({ userId: me.id, action: "masterdata.bulk.restore", entity: "Lead", meta: { count: r.count, leadIds: ids.slice(0, 50) }, request: reqMeta(req) });
     return NextResponse.json({ ok: true, restored: r.count });
+  }
+
+  // ── Set arbitrary fields (medium, sourceDetail, etc) ──────────────────
+  if (action === "set_fields") {
+    const fields: Record<string, unknown> = {};
+
+    // Medium validation and preparation
+    if (body.medium) {
+      try {
+        const { medium: m, mediumOther: mo } = validateMedium(body.medium, body.mediumOther);
+        if (m) fields.medium = m;
+        if (mo) fields.mediumOther = mo;
+      } catch (e) {
+        return NextResponse.json({ error: `Invalid medium: ${String(e).slice(0, 100)}` }, { status: 400 });
+      }
+    }
+
+    // Other simple string fields
+    if (typeof body.sourceDetail === "string") fields.sourceDetail = body.sourceDetail || null;
+
+    if (Object.keys(fields).length === 0) {
+      return NextResponse.json({ error: "No fields to update" }, { status: 400 });
+    }
+
+    const r = await prisma.lead.updateMany({
+      where: { id: { in: ids } },
+      data: fields,
+    });
+
+    // Write history for tracked fields
+    const histRows: HistRow[] = [];
+    if (body.medium) {
+      const before = await prisma.lead.findMany({ where: { id: { in: ids } }, select: { id: true, medium: true } });
+      histRows.push(...before.map((b) => ({ leadId: b.id, field: "medium", oldValue: b.medium, newValue: fields.medium as string, changedById: me.id, source: "master-data-bulk" })));
+    }
+    writeHistory(histRows);
+
+    await audit({ userId: me.id, action: "masterdata.bulk.set_fields", entity: "Lead", meta: { fields: Object.keys(fields), updated: r.count, leadIds: ids.slice(0, 50) }, request: reqMeta(req) });
+    return NextResponse.json({ ok: true, updated: r.count });
   }
 
   return NextResponse.json({ error: "Unknown action" }, { status: 400 });

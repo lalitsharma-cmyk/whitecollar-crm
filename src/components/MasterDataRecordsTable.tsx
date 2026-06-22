@@ -25,6 +25,8 @@ export type MDRow = {
   propertyType: string;    // "Residential" | "Commercial" | ""
   sourceLabel: string;
   sourceRaw: string;
+  medium: string;          // "Call", "WhatsApp", "Email", or custom
+  mediumOther: string | null;  // custom medium value if medium="Other"
   leadOrigin: string;
   // read-only preview fields
   phone: string;
@@ -43,7 +45,7 @@ interface Props {
 
 type ColKey =
   | "name" | "agent" | "team"
-  | "createdDate" | "createdTime" | "budget" | "project" | "propertyType" | "source" | "message" | "status" | "bucket" | "email" | "phone";
+  | "createdDate" | "createdTime" | "budget" | "project" | "propertyType" | "source" | "medium" | "message" | "status" | "bucket" | "email" | "phone";
 
 const TEAMS = ["Dubai", "India"];
 const PAGE = 50;
@@ -60,6 +62,7 @@ const COLS: { key: ColKey; label: string; frozen?: boolean; w?: number; minW?: n
   { key: "project", label: "Property Enquired", minW: 180 },
   { key: "propertyType", label: "Property Type", minW: 110, defHidden: true },
   { key: "source", label: "Source" },
+  { key: "medium", label: "Medium", minW: 100 },
   { key: "message", label: "Message", wide: true },
   { key: "status", label: "Status", minW: 150 },
   { key: "bucket", label: "Bucket" },
@@ -89,6 +92,7 @@ function valueOf(r: MDRow, c: ColKey): string {
     case "project": return r.project;
     case "propertyType": return r.propertyType || "—";
     case "source": return r.sourceLabel;
+    case "medium": return r.medium === "Other" && r.mediumOther ? r.mediumOther : (r.medium || "—");
     case "message": return r.message;
     case "status": return r.statusLabel ?? "— none —";
     case "bucket": return r.bucket;

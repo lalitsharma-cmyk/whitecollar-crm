@@ -5,12 +5,14 @@ import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { defaultCurrencyForTeam } from "@/lib/money";
 import { defaultDialForTeam, toE164 } from "@/lib/phone";
+import { validateMedium } from "@/lib/mediumManager";
 import PhoneInput from "@/components/PhoneInput";
 import { fromISTLocalInput } from "@/lib/datetime";
 import BudgetInput from "@/components/BudgetInput";
 import FormDateTimeIST from "@/components/FormDateTimeIST";
 import DedupWarning from "@/components/DedupWarning";
 import AssignToSelect from "@/components/AssignToSelect";
+import MediumSelect from "@/components/MediumSelect";
 
 async function createLeadAction(formData: FormData) {
   "use server";
@@ -81,6 +83,14 @@ async function createLeadAction(formData: FormData) {
     if (/^https?:\/\//i.test(linkedInUrl)) update.linkedInUrl = linkedInUrl;
   }
   const remarks = opt<string>(formData.get("remarks")); if (remarks) update.remarks = remarks;
+  // Medium field (with optional custom value when medium="Other")
+  const medium = opt<string>(formData.get("medium"));
+  const mediumOther = opt<string>(formData.get("mediumOther"));
+  if (medium || mediumOther) {
+    const { medium: m, mediumOther: mo } = validateMedium(medium, mediumOther);
+    if (m) update.medium = m;
+    if (mo) update.mediumOther = mo;
+  }
   // WCR Event fields (shown only when source = WCR_EVENT)
   const eventName = opt<string>(formData.get("eventName")); if (eventName) update.eventName = eventName;
   const eventCountry = opt<string>(formData.get("eventCountry")); if (eventCountry) update.eventCountry = eventCountry;
@@ -146,6 +156,9 @@ export default async function NewLeadPage() {
     <>
       <h1 className="text-xl sm:text-2xl font-bold">New Lead</h1>
       <form id="new-lead-form" action={createLeadAction} className="card p-4 sm:p-6 max-w-4xl space-y-5 sm:space-y-6">
+        {/* Hidden inputs for medium — captured by MediumSelect onChange above */}
+        <input type="hidden" name="medium" defaultValue="" />
+        <input type="hidden" name="mediumOther" defaultValue="" />
         {/* Identity */}
         <section>
           <div className="text-xs font-bold tracking-widest text-[#c9a24b] mb-3">IDENTITY</div>
@@ -279,6 +292,18 @@ export default async function NewLeadPage() {
               </select>
             </div>
             <div><label className={label}>Source Detail</label><input name="sourceDetail" placeholder="e.g. campaign code, event name" className={input} /></div>
+            <div>
+              <label className={label}>Medium</label>
+              <div className="mt-1">
+                <MediumSelect value={null} customValue={null} onChange={(medium, custom) => {
+                  // This is a dummy onChange; the actual value is captured via form submission
+                  const hiddenMedium = document.querySelector('input[name="medium"]') as HTMLInputElement;
+                  const hiddenCustom = document.querySelector('input[name="mediumOther"]') as HTMLInputElement;
+                  if (hiddenMedium) hiddenMedium.value = medium ?? "";
+                  if (hiddenCustom) hiddenCustom.value = custom ?? "";
+                }} />
+              </div>
+            </div>
 
             {/* WCR Event conditional fields */}
             <div id="wcr-event-fields" className="md:col-span-3 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4 hidden">

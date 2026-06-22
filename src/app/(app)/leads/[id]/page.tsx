@@ -56,6 +56,7 @@ import { isAiPilotLead } from "@/lib/ai-openai";
 import { getLatestClaudeAnalysis, claudeEnabled } from "@/lib/ai-claude";
 import { getLatestGptIntelligence, gptIntelligenceEnabled } from "@/lib/ai-gpt-intelligence";
 import { getLatestGeminiIntelligence, geminiIntelligenceEnabled } from "@/lib/ai-gemini-intelligence";
+import { formatMedium, getAvailableMediums } from "@/lib/mediumManager";
 
 export const dynamic = "force-dynamic";
 
@@ -116,7 +117,8 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
   // ⚡ Parallelize all queries — was 3 sequential, now 1 round-trip via Promise.all.
   // 4th query: get-or-create the agent's sticky note for this lead. We do it
   // here so the widget can render synchronously without an extra round-trip.
-  const [lead, meetingActs, allProjects, stickyNote, allActiveUsers] = await Promise.all([
+  // Also fetch available mediums for the inline edit component.
+  const [lead, meetingActs, allProjects, stickyNote, allActiveUsers, availableMediums] = await Promise.all([
     prisma.lead.findUnique({
       where: { id },
       include: {
@@ -153,6 +155,8 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
     // All active user names — passed to ConversationStreamCard for roster-based
     // agent attribution in imported remarks.
     prisma.user.findMany({ where: { active: true }, select: { name: true } }),
+    // Get available mediums for inline edit display
+    getAvailableMediums(),
   ]);
   if (!lead) notFound();
 
@@ -698,6 +702,30 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
         <div>
           <div className="text-xs text-gray-500 dark:text-slate-400">🏢 Property Enquired</div>
           <InlineEdit leadId={lead.id} field="sourceDetail" value={lead.sourceDetail ?? ""} placeholder="Add value" />
+        </div>
+
+        {/* Medium — communication channel (Call, WhatsApp, Email, or custom) */}
+        <div>
+          <div className="text-xs text-gray-500 dark:text-slate-400">📞 Medium</div>
+          <InlineEdit
+            leadId={lead.id}
+            field="medium"
+            value={(lead as any).medium ?? ""}
+            type="select"
+            options={availableMediums.map((m) => ({ value: m, label: m }))}
+            placeholder="Select medium"
+          />
+          {(lead as any).medium === "Other" && (lead as any).mediumOther && (
+            <div className="mt-2 pt-2 border-t border-gray-100 dark:border-slate-700">
+              <div className="text-xs text-gray-500 dark:text-slate-400 mb-1">Custom Medium</div>
+              <InlineEdit
+                leadId={lead.id}
+                field="mediumOther"
+                value={(lead as any).mediumOther ?? ""}
+                placeholder="Custom medium name"
+              />
+            </div>
+          )}
         </div>
 
         {/* WCR Event fields — shown only when source = WCR_EVENT */}
