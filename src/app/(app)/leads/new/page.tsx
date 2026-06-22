@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { ingestLead, assignLeadTo } from "@/lib/leadIngest";
-import { LeadSource, Potential, FundReadiness, MoodStatus, InvestTimeline, Profession } from "@prisma/client";
+import { LeadSource, Profession, ClientType, AuthorityLevel, BantStatus } from "@prisma/client";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { defaultCurrencyForTeam } from "@/lib/money";
@@ -19,8 +19,8 @@ async function createLeadAction(formData: FormData) {
   // work only the leads already assigned to them.
   const me = await requireUser();
   if (me.role === "AGENT") redirect("/leads");
-  const sourceRaw = String(formData.get("source") ?? "WEBSITE");
-  const source = (Object.values(LeadSource) as string[]).includes(sourceRaw)
+  const sourceRaw = String(formData.get("source") ?? "").trim();
+  const source = sourceRaw && (Object.values(LeadSource) as string[]).includes(sourceRaw)
     ? (sourceRaw as LeadSource) : LeadSource.OTHER;
 
   // PhoneInput posts already-E164'd value; normalise anyway as defence
@@ -57,34 +57,37 @@ async function createLeadAction(formData: FormData) {
   const update: Record<string, unknown> = {};
   const team = String(formData.get("forwardedTeam") ?? "");
   if (team) update.forwardedTeam = team;
-  // Set currency based on selected team
-  const currency = team === "Dubai" ? "AED" : team === "India" ? "INR" : "";
-  if (currency) update.budgetCurrency = currency;
+  // Currency is now selected independently
+  const currency = String(formData.get("budgetCurrency") ?? "").trim();
+  if (currency && ["AED", "INR", "GBP", "USD"].includes(currency)) {
+    update.budgetCurrency = currency;
+  }
   const company = opt<string>(formData.get("company")); if (company) update.company = company;
+  const city = opt<string>(formData.get("city")); if (city) update.city = city;
+  const state = opt<string>(formData.get("state")); if (state) update.state = state;
+  const country = opt<string>(formData.get("country")); if (country) update.country = country;
   const address = opt<string>(formData.get("address")); if (address) update.address = address;
-  const whoIsClient = opt<string>(formData.get("whoIsClient")); if (whoIsClient) update.whoIsClient = whoIsClient;
+  const propertyType = opt<string>(formData.get("propertyType")); if (propertyType) update.propertyType = propertyType;
+  const sourceDetail = opt<string>(formData.get("sourceDetail")); if (sourceDetail) update.sourceDetail = sourceDetail;
+  const currentStatus = opt<string>(formData.get("currentStatus")); if (currentStatus) update.currentStatus = currentStatus;
   const categorization = opt<string>(formData.get("categorization")); if (categorization) update.categorization = categorization;
-  const potential = opt<Potential>(formData.get("potential")); if (potential) update.potential = potential;
-  const fundReadiness = opt<FundReadiness>(formData.get("fundReadiness")); if (fundReadiness) update.fundReadiness = fundReadiness;
-  const moodStatus = opt<MoodStatus>(formData.get("moodStatus")); if (moodStatus) update.moodStatus = moodStatus;
-  const whenCanInvest = opt<InvestTimeline>(formData.get("whenCanInvest")); if (whenCanInvest) update.whenCanInvest = whenCanInvest;
+  const clientType = opt<ClientType>(formData.get("clientType")); if (clientType) update.clientType = clientType;
+  const authorityLevel = opt<AuthorityLevel>(formData.get("authorityLevel")); if (authorityLevel) update.authorityLevel = authorityLevel;
+  const bantStatus = opt<BantStatus>(formData.get("bantStatus")); if (bantStatus) update.bantStatus = bantStatus;
   const profession = opt<Profession>(formData.get("profession")); if (profession) update.profession = profession;
   const linkedInUrl = opt<string>(formData.get("linkedInUrl"));
   if (linkedInUrl) {
     // Basic URL validation — reject anything not http(s)
     if (/^https?:\/\//i.test(linkedInUrl)) update.linkedInUrl = linkedInUrl;
   }
-  const todoNext = opt<string>(formData.get("todoNext")); if (todoNext) update.todoNext = todoNext;
   const remarks = opt<string>(formData.get("remarks")); if (remarks) update.remarks = remarks;
-  const detailShared = opt<string>(formData.get("detailShared")); if (detailShared) update.detailShared = detailShared;
-  // Parse follow-up datetime-local input as IST wall-clock (the picker is IST-labelled).
-  // Without explicit IST offset, `new Date("2026-05-26T18:00")` on Vercel (UTC) becomes
-  // 18:00 UTC = 23:30 IST — 5.5 hours off what the agent typed.
-  const followupRaw = formData.get("followupDate")?.toString();
-  if (followupRaw) {
-    const d = fromISTLocalInput(followupRaw);
-    if (d && d.getTime() > Date.now()) update.followupDate = d;
-  }
+  // WCR Event fields (shown only when source = WCR_EVENT)
+  const eventName = opt<string>(formData.get("eventName")); if (eventName) update.eventName = eventName;
+  const eventCountry = opt<string>(formData.get("eventCountry")); if (eventCountry) update.eventCountry = eventCountry;
+  const eventState = opt<string>(formData.get("eventState")); if (eventState) update.eventState = eventState;
+  const eventCity = opt<string>(formData.get("eventCity")); if (eventCity) update.eventCity = eventCity;
+  // Referral field (shown only when source = REFERRAL)
+  const referralName = opt<string>(formData.get("referralName")); if (referralName) update.referralName = referralName;
   if (Object.keys(update).length) await prisma.lead.update({ where: { id: lead.id }, data: update });
 
   // Link the lead to a discussed Project (matched by name) when one was picked.
@@ -121,7 +124,16 @@ const label = "text-xs font-semibold text-gray-600";
 export default async function NewLeadPage() {
   const me = await requireUser();
   if (me.role === "AGENT") redirect("/leads");
-  const projects = await prisma.project.findMany({ select: { id: true, name: true }, orderBy: { name: "asc" } });
+  const dubaiProjects = await prisma.project.findMany({
+    where: { country: "AE" },
+    select: { id: true, name: true },
+    orderBy: { name: "asc" }
+  });
+  const indiaProjects = await prisma.project.findMany({
+    where: { country: "IN" },
+    select: { id: true, name: true },
+    orderBy: { name: "asc" }
+  });
   // Active, non-HR roster for the "Assign To" picker (HR users never appear in Sales).
   const assignableUsers = await prisma.user.findMany({
     where: { active: true, hrOnly: false },
@@ -133,7 +145,6 @@ export default async function NewLeadPage() {
   return (
     <>
       <h1 className="text-xl sm:text-2xl font-bold">New Lead</h1>
-      <p className="text-xs sm:text-sm text-gray-500">Mirror of your Dubai team sheet — capture the FULL situation, not keywords.</p>
       <form id="new-lead-form" action={createLeadAction} className="card p-4 sm:p-6 max-w-4xl space-y-5 sm:space-y-6">
         {/* Identity */}
         <section>
@@ -181,7 +192,9 @@ export default async function NewLeadPage() {
               <input name="linkedInUrl" type="url" placeholder="https://linkedin.com/in/…" className={input} />
             </div>
             <div><label className={label}>City</label><input name="city" className={input} /></div>
-            <div><label className={label}>Address</label><input name="address" className={input} /></div>
+            <div><label className={label}>State / Province</label><input name="state" className={input} /></div>
+            <div><label className={label}>Country</label><input name="country" className={input} /></div>
+            <div className="md:col-span-3"><label className={label}>Address</label><input name="address" className={input} /></div>
           </div>
         </section>
 
@@ -190,36 +203,43 @@ export default async function NewLeadPage() {
           <div className="text-xs font-bold tracking-widest text-[#c9a24b] mb-3">REQUIREMENT</div>
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 sm:gap-4">
             <div>
-              <label className={label}>🏢 Project</label>
-              <input name="project" list="new-lead-projects" placeholder="Start typing a project…" className={input} autoComplete="off" />
-              <datalist id="new-lead-projects">
-                {projects.map((p) => <option key={p.id} value={p.name} />)}
-              </datalist>
+              <label className={label}>🏢 Project (discussed after intake)</label>
+              <input name="project" placeholder="Marina Bay, Silverglades..." className={input} />
             </div>
             <div><label className={label}>Configuration</label><input name="configuration" placeholder="2BR / Penthouse / Villa" className={input} /></div>
             <div>
-              <label className={label}>Team / Currency *</label>
+              <label className={label}>Team *</label>
               <select name="forwardedTeam" required className={input}>
                 <option value="">— Select team —</option>
-                <option value="Dubai">Dubai (AED)</option>
-                <option value="India">India (₹)</option>
+                <option value="Dubai">Dubai</option>
+                <option value="India">India</option>
+              </select>
+            </div>
+            <div>
+              <label className={label}>Currency *</label>
+              <select name="budgetCurrency" required className={input}>
+                <option value="">— Select currency —</option>
+                <option value="AED">AED (United Arab Emirates)</option>
+                <option value="INR">INR (India)</option>
+                <option value="GBP">GBP (United Kingdom)</option>
+                <option value="USD">USD (United States)</option>
               </select>
             </div>
             <div>
               <label className={label}>👤 Assign To *</label>
-              <AssignToSelect users={assignableUsers} initialTeam={defaultTeam} />
+              <AssignToSelect users={assignableUsers} initialTeam="" />
               <p className="text-[10px] text-gray-500 mt-0.5">Lead is created directly under this agent. List filters by the selected team.</p>
             </div>
             <div>
               <label className={label}>💰 Budget min</label>
               <div className="mt-1">
-                <BudgetInput name="budgetMin" currency={defaultCurrency as "AED" | "INR"} />
+                <BudgetInput name="budgetMin" currency="AED" />
               </div>
             </div>
             <div>
               <label className={label}>💰 Budget max</label>
               <div className="mt-1">
-                <BudgetInput name="budgetMax" currency={defaultCurrency as "AED" | "INR"} />
+                <BudgetInput name="budgetMax" currency="AED" />
               </div>
             </div>
             <div>
@@ -233,85 +253,107 @@ export default async function NewLeadPage() {
             </div>
             <div>
               <label className={label}>Source</label>
-              <select name="source" className={input}>
+              <select name="source" id="sourceSelect" className={input}>
+                <option value="">— Select source —</option>
                 {Object.values(LeadSource).map(s => {
                   const labels: Record<string, string> = {
-                    "WCR_WEBSITE": "WCR-Website",
-                    "WCR_EVENT": "WCR-Event",
+                    "WEBSITE": "Website",
+                    "WCR_WEBSITE": "Website",
+                    "WCR_EVENT": "WCR Event",
                     "LANDING_PAGE": "Landing Page",
+                    "WHATSAPP": "WhatsApp",
+                    "CSV_IMPORT": "CSV Import",
+                    "EVENT": "Event",
+                    "REFERRAL": "Referral",
                     "INBOUND_CALL": "Call",
+                    "FACEBOOK_ADS": "Facebook Ads",
+                    "GOOGLE_ADS": "Google Ads",
+                    "PORTAL_99ACRES": "Portal 99acres",
+                    "PORTAL_MAGICBRICKS": "Portal MagicBricks",
+                    "PORTAL_HOUSING": "Portal Housing",
+                    "OTHER": "Other",
                   };
                   const display = labels[s] || s.replaceAll("_", " ");
                   return <option key={s} value={s}>{display}</option>;
                 })}
               </select>
             </div>
+            <div><label className={label}>Source Detail</label><input name="sourceDetail" placeholder="e.g. campaign code, event name" className={input} /></div>
+
+            {/* WCR Event conditional fields */}
+            <div id="wcr-event-fields" className="md:col-span-3 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4 hidden">
+              <div><label className={label}>Event Name</label><input name="eventName" className={input} /></div>
+              <div><label className={label}>Event Country</label><input name="eventCountry" className={input} /></div>
+              <div><label className={label}>Event State</label><input name="eventState" className={input} /></div>
+              <div><label className={label}>Event City</label><input name="eventCity" className={input} /></div>
+            </div>
+
+            {/* Referral conditional field */}
+            <div id="referral-fields" className="md:col-span-3 hidden">
+              <div><label className={label}>Referrer Name</label><input name="referralName" placeholder="Name of the person who referred this lead" className={input} /></div>
+            </div>
+
+            <script dangerouslySetInnerHTML={{__html: `
+              const sourceSelect = document.getElementById('sourceSelect');
+              const wcrEventFields = document.getElementById('wcr-event-fields');
+              const referralFields = document.getElementById('referral-fields');
+
+              function updateConditionalFields() {
+                const source = sourceSelect.value;
+                wcrEventFields.classList.toggle('hidden', source !== 'WCR_EVENT');
+                referralFields.classList.toggle('hidden', source !== 'REFERRAL');
+              }
+
+              sourceSelect.addEventListener('change', updateConditionalFields);
+              updateConditionalFields();
+            `}} />
+            <div><label className={label}>Property Type</label><input name="propertyType" placeholder="e.g. Residential, Commercial" className={input} /></div>
+            <div><label className={label}>Current Status</label><input name="currentStatus" placeholder="e.g. Not reached, Callback today" className={input} /></div>
           </div>
         </section>
 
-        {/* Qualification — Dubai depth fields */}
+        {/* Client Profiling — Quick qualification */}
         <section>
-          <div className="text-xs font-bold tracking-widest text-[#c9a24b] mb-3">QUALIFICATION</div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
+          <div className="text-xs font-bold tracking-widest text-[#c9a24b] mb-3">CLIENT PROFILE</div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 sm:gap-4">
             <div>
-              <label className={label}>Potential</label>
-              <select name="potential" className={input}>
+              <label className={label}>Client Type</label>
+              <select name="clientType" className={input}>
                 <option value="">—</option>
-                <option value="HIGH">High</option><option value="MEDIUM">Medium</option><option value="LOW">Low</option><option value="UNKNOWN">Unknown</option>
+                <option value="INVESTOR">Investor</option>
+                <option value="END_USER">End-user</option>
+                <option value="BOTH">Both investor & end-user</option>
+                <option value="UNCLEAR">Unclear</option>
               </select>
             </div>
             <div>
-              <label className={label}>Fund Readiness</label>
-              <select name="fundReadiness" className={input}>
+              <label className={label}>Authority Level</label>
+              <select name="authorityLevel" className={input}>
                 <option value="">—</option>
-                <option value="CASH_READY">Cash ready</option>
-                <option value="BANK_APPROVED">Bank pre-approved</option>
-                <option value="FINANCING_NEEDED">Financing needed</option>
-                <option value="NOT_DISCUSSED">Not yet discussed</option>
-              </select>
-            </div>
-            <div>
-              <label className={label}>When can invest</label>
-              <select name="whenCanInvest" className={input}>
-                <option value="">—</option>
-                <option value="IMMEDIATE">This week</option>
-                <option value="THIRTY_DAYS">Within 30 days</option>
-                <option value="THREE_MONTHS">3 months</option>
-                <option value="SIX_PLUS_MONTHS">6+ months</option>
-                <option value="WINDOW_SHOPPING">Just browsing</option>
+                <option value="DECISION_MAKER">Decision maker</option>
+                <option value="INFLUENCER">Influencer</option>
+                <option value="GATEKEEPER">Gatekeeper</option>
                 <option value="UNKNOWN">Unknown</option>
               </select>
             </div>
             <div>
-              <label className={label}>Mood</label>
-              <select name="moodStatus" className={input}>
+              <label className={label}>BANT Status</label>
+              <select name="bantStatus" className={input}>
                 <option value="">—</option>
-                <option value="EXCITED">😀 Excited</option><option value="INTERESTED">🙂 Interested</option>
-                <option value="NEUTRAL">😐 Neutral</option><option value="HESITANT">🤔 Hesitant</option>
-                <option value="COLD">🧊 Cold</option><option value="CONFUSED">😵 Confused</option>
-                <option value="ANGRY">😠 Angry</option>
+                <option value="UNDER_REVIEW">Under review</option>
+                <option value="QUALIFIES">Qualifies</option>
+                <option value="NOT_QUALIFIED">Not qualified</option>
               </select>
             </div>
           </div>
         </section>
 
-        {/* DEPTH — the field that matters most */}
+        {/* Notes */}
         <section>
-          <div className="text-xs font-bold tracking-widest text-[#c9a24b] mb-3">WHO IS THE CLIENT — full situation, not keywords</div>
-          <textarea name="whoIsClient" rows={6} placeholder="e.g. NRI from Mumbai based in Dubai 6+ years. Senior Director at consulting firm. Husband already owns at Burj Vista. Looking for parents who'll relocate next year. Wife is decision maker, needs to fly in. Concerned about service charges. Budget flexible if right unit." className={`${input} font-mono text-[13px] leading-relaxed`}></textarea>
-        </section>
-
-        {/* Action / scheduling */}
-        <section>
-          <div className="text-xs font-bold tracking-widest text-[#c9a24b] mb-3">ACTION & SCHEDULING</div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 sm:gap-4">
-            <div className="md:col-span-2">
-              <label className={label}>🔁 Follow-up date</label>
-              <div className="mt-1"><FormDateTimeIST name="followupDate" futureOnly /></div>
-            </div>
-            <div className="md:col-span-2"><label className={label}>✅ To Do — next action</label><input name="todoNext" placeholder="e.g. Send AED brochure & payment plan" className={input} /></div>
-            <div className="md:col-span-3"><label className={label}>📤 Detail shared with client</label><input name="detailShared" placeholder="e.g. Brochure v3 + payment plan + RERA note" className={input} /></div>
-            <div className="md:col-span-3"><label className={label}>📝 Remarks</label><textarea name="remarks" rows={3} className={input}></textarea></div>
+          <div className="text-xs font-bold tracking-widest text-[#c9a24b] mb-3">NOTES</div>
+          <div>
+            <label className={label}>📝 Remarks</label>
+            <textarea name="remarks" rows={3} placeholder="Any notes about this lead..." className={input}></textarea>
           </div>
         </section>
 

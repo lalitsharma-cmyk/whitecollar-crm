@@ -224,23 +224,30 @@ function makeMappedPick(row: Row, mapping: Record<string, string>) {
 // interpretBudget() from "@/lib/budgetCurrency" (handles Cr/Lakh/M/K correctly,
 // splits ranges, and preserves the verbatim text). The old local parser silently
 // 10×–100× corrupted Cr/Lakh values and has been removed.
-function parseSource(s?: string): LeadSource {
-  if (!s) return LeadSource.CSV_IMPORT;
+// Parse source column and return both source and medium
+// Call/WhatsApp/Email are now mapped to WEBSITE + medium instead of their own source values
+function parseSourceAndMedium(s?: string): { source: LeadSource; medium?: string } {
+  if (!s) return { source: LeadSource.CSV_IMPORT };
   const n = norm(s);
-  if (n.includes("whatsapp")) return LeadSource.WHATSAPP;
-  if (n.includes("website") || n.includes("web")) return LeadSource.WEBSITE;
-  if (n.includes("event") || n.includes("expo")) return LeadSource.EVENT;
-  if (n.includes("referral")) return LeadSource.REFERRAL;
-  if (n.includes("call")) return LeadSource.INBOUND_CALL;
-  if (n.includes("facebook") || n.includes("fb") || n.includes("meta")) return LeadSource.FACEBOOK_ADS;
-  if (n.includes("google")) return LeadSource.GOOGLE_ADS;
-  if (n.includes("99acres")) return LeadSource.PORTAL_99ACRES;
-  if (n.includes("magicbricks")) return LeadSource.PORTAL_MAGICBRICKS;
-  if (n.includes("housing")) return LeadSource.PORTAL_HOUSING;
+  // Call → WEBSITE + Call medium
+  if (n.includes("call")) return { source: LeadSource.WEBSITE, medium: "Call" };
+  // WhatsApp → WEBSITE + WhatsApp medium
+  if (n.includes("whatsapp")) return { source: LeadSource.WEBSITE, medium: "WhatsApp" };
+  // Email → WEBSITE + Email medium
+  if (n.includes("email")) return { source: LeadSource.WEBSITE, medium: "Email" };
+  // Other sources
+  if (n.includes("website") || n.includes("web")) return { source: LeadSource.WEBSITE };
+  if (n.includes("event") || n.includes("expo")) return { source: LeadSource.EVENT };
+  if (n.includes("referral")) return { source: LeadSource.REFERRAL };
+  if (n.includes("facebook") || n.includes("fb") || n.includes("meta")) return { source: LeadSource.FACEBOOK_ADS };
+  if (n.includes("google")) return { source: LeadSource.GOOGLE_ADS };
+  if (n.includes("99acres")) return { source: LeadSource.PORTAL_99ACRES };
+  if (n.includes("magicbricks")) return { source: LeadSource.PORTAL_MAGICBRICKS };
+  if (n.includes("housing")) return { source: LeadSource.PORTAL_HOUSING };
   // Unrecognized but PRESENT source ("Townscript", "Eventbrite") → OTHER bucket
   // only. The verbatim text lives in sourceRaw and is what the CRM shows/filters.
   // We NEVER silently relabel a real source value as "CSV".
-  return LeadSource.OTHER;
+  return { source: LeadSource.OTHER };
 }
 function mapSheetStatus(s?: string): LeadStatus {
   if (!s) return LeadStatus.NEW;
@@ -646,6 +653,7 @@ export async function POST(req: NextRequest) {
       ? interpretBudget(budgetColRaw, validBudgetRaw(field("budgetMax", "budgetmax", "maxbudget")))
       : { min: null, max: null, raw: null };
     try {
+      const sourceAndMedium = parseSourceAndMedium(field("source", "source"));
       const r = await ingestLead({
         name: name ?? phone ?? email ?? "Unknown",
         phone, email,
@@ -655,7 +663,7 @@ export async function POST(req: NextRequest) {
         budgetMax: budgetInfo.max ?? undefined,
         notesShort: field("message", "message", "requirement", "todo"),
         tags: field("tags", "tags", "tag"),
-        source: parseSource(field("source", "source")),
+        source: sourceAndMedium.source,
         sourceDetail: campaign,
       });
       if (r.deduped) deduped++; else created++;
@@ -671,6 +679,8 @@ export async function POST(req: NextRequest) {
       // rolled back / soft-deleted later. Deduped (updated) rows are NOT
       // stamped — they pre-existed and must survive a batch rollback.
       if (!r.deduped) update.importBatchId = importBatch.id;
+      // Add medium from parsed source
+      if (sourceAndMedium.medium) update.medium = sourceAndMedium.medium;
       if (altPhone) update.altPhone = altPhone;
       if (altName) update.altName = altName;
       const company = notDate(field("company", "company")); if (company) update.company = company;

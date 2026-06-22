@@ -21,10 +21,7 @@ import { formatDistanceToNow } from "date-fns";
 import ColdDataPromoteButton from "./ColdDataPromoteButton";
 import OriginColdPromoteButton from "./OriginColdPromoteButton";
 import { whatsappLink, telLink } from "@/lib/phone";
-import { REVIVAL_STATUSES } from "@/lib/revival-constants";
 import { formatLeadName } from "@/lib/leadName";
-
-export { REVIVAL_STATUSES };
 
 const REJECT_REASONS = [
   { value: "NOT_INTERESTED",            label: "Not Interested" },
@@ -177,7 +174,6 @@ export default function RevivalEngineListClient({ leads, myId, isAdminOrMgr, cut
           const isSelected = selectedIds.has(l.id);
           const isOriginCold = l.leadOrigin === "COLD" || l.leadOrigin === "REVIVAL";
           const stale = isStale(l);
-          const statusMeta = REVIVAL_STATUSES.find(s => s.v === l.status);
 
           return (
             <div
@@ -210,9 +206,7 @@ export default function RevivalEngineListClient({ leads, myId, isAdminOrMgr, cut
 
               {/* Status + stale chips */}
               <div className="flex flex-wrap gap-1 mt-2">
-                {statusMeta && (
-                  <span className={`chip ${statusMeta.chip} text-[10px]`}>{statusMeta.label}</span>
-                )}
+                <span className={`chip ${l.statusChip} text-[10px]`}>{l.status}</span>
                 {stale && (
                   <span className="chip chip-warm text-[9px]">{coldDays}d+ stale</span>
                 )}
@@ -294,7 +288,6 @@ export default function RevivalEngineListClient({ leads, myId, isAdminOrMgr, cut
               const isSelected = selectedIds.has(l.id);
               const isOriginCold = l.leadOrigin === "COLD" || l.leadOrigin === "REVIVAL";
               const stale = isStale(l);
-              const statusMeta = REVIVAL_STATUSES.find(s => s.v === l.status);
 
               return (
                 <tr
@@ -342,11 +335,7 @@ export default function RevivalEngineListClient({ leads, myId, isAdminOrMgr, cut
 
                   {/* Status */}
                   <td className="px-3 py-3 align-top">
-                    {statusMeta ? (
-                      <span className={`chip ${statusMeta.chip} text-[10px]`}>{statusMeta.label}</span>
-                    ) : (
-                      <span className="chip chip-new text-[10px]">{l.status}</span>
-                    )}
+                    <span className={`chip ${l.statusChip} text-[10px]`}>{l.status}</span>
                   </td>
 
                   {/* Owner */}

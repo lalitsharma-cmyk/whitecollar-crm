@@ -154,6 +154,9 @@ model User {
   importBatches         ImportBatch[] @relation("ImportBatchImporter")
   deletedImportBatches  ImportBatch[] @relation("ImportBatchDeleter")
 
+  // ── Buyer Data module relations ──
+  buyerImports          BuyerImportBatch[] @relation("BuyerImports")
+
   assistantRuns         AssistantRun[] @relation("AssistantRunBy")
 }
 
@@ -197,11 +200,11 @@ enum LeadSource {
   WCR_WEBSITE
   WCR_EVENT
   LANDING_PAGE
-  WHATSAPP
+  WHATSAPP         // ⚠️ DEPRECATED FOR LEADS — use WEBSITE + medium:"WhatsApp" instead. Kept for IntakeKey backward compat.
   CSV_IMPORT
   EVENT
   REFERRAL
-  INBOUND_CALL
+  INBOUND_CALL     // ⚠️ DEPRECATED FOR LEADS — use WEBSITE + medium:"Call" instead. Kept for IntakeKey backward compat.
   FACEBOOK_ADS
   GOOGLE_ADS
   PORTAL_99ACRES
@@ -339,6 +342,10 @@ model Lead {
   // funnel
   source          LeadSource  @default(WEBSITE)
   sourceDetail    String?     // "marina-may-26" campaign code
+  // medium — the communication channel/method (how they came, e.g. "Call", "WhatsApp", "Email")
+  // Fixed standards: "Call", "WhatsApp", "Email". Custom mediums stored in mediumOther.
+  medium          String?     // "Call" | "WhatsApp" | "Email" | "Other"
+  mediumOther     String?     // When medium = "Other", stores the custom name
   status          LeadStatus  @default(NEW)        // = Stage (funnel position)
   currentStatus        String?     // = Status (current state: "Not reached", "Callback today", etc.)
   originalSheetStatus  String?     // raw value from "Status" column during Excel/CSV import
@@ -495,6 +502,15 @@ model Lead {
   eoiApprovalRequired       Boolean     @default(false)
   eoiApprovedById           String?
   eoiApprovedAt             DateTime?
+
+  // ── Conditional source fields ──
+  // WCR Event source details
+  eventName       String?     // event name when source = WCR_EVENT
+  eventCountry    String?     // event country
+  eventState      String?     // event state / province
+  eventCity       String?     // event city
+  // Referral source details
+  referralName    String?     // referrer's name when source = REFERRAL
 
   // timestamps
   lastTouchedAt   DateTime?
@@ -2077,4 +2093,79 @@ model HRIntakeLog {
 
   @@index([receivedAt])
   @@index([outcome])
+}
+
+// =====================================================
+// BUYER DATA MODULE — TRANSACTION & PROPERTY RECORDS
+// =====================================================
+
+// Buyer record — transaction-level data for properties sold/under agreement.
+// ADMIN-only gate: contains passport & financial data.
+// buyerKey = normalized (name/phone) for repeat-buyer rollup detection.
+model BuyerRecord {
+  id                String   @id @default(cuid())
+  // Client info
+  clientName        String   // Primary buyer name
+  coBuyerNames      String?  // JSON: ["Name 1", "Name 2"] — co-buyers / family members
+  phones            String?  // JSON: ["+9711234567", "..."] — all contact phones
+  emails            String?  // JSON: ["email@example.com"] — email addresses
+  passport          String?  // Passport number (sensitive data — ADMIN only)
+  nationality       String?  // e.g. "Indian", "UAE National"
+  // Property details
+  projectName       String?  // e.g. "Burj Vista", "Godrej Properties Mumbai"
+  tower             String?  // Tower / Building name
+  unitNumber        String?  // Unit/Apartment/Villa number
+  propertyType      String?  // "Residential", "Commercial", "Plot"
+  configuration     String?  // e.g. "2BR", "3BR+M", "Shop"
+  // Transaction details
+  transactionValue  Float?   // Deal price in market currency
+  pricePerSqFt      Float?   // Price / sqft (useful for comparables)
+  transactionDate   DateTime? // Date of transaction / agreement
+  transactionId     String?  // Deal ID / Transaction reference number
+  // Agent & source
+  agentName         String?  // Sales agent name (may differ from system User)
+  source            String?  // "Sheet import", "Manual entry", "Excel batch"
+  sourceFile        String?  // Original filename (if imported)
+  // Flexibility — preserve unmapped columns from import sheets as JSON
+  extraFields       Json?    // { "fieldName": "value", ... } for custom sheet columns
+  // Repeat-buyer detection
+  buyerKey          String?  // Normalized (fname+lname+phone hash) for rollup. Index for dedup.
+  // Metadata
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  importBatchId     String?  // Link to BuyerImportBatch (when bulk-imported)
+
+  @@index([buyerKey])
+  @@index([projectName])
+  @@index([transactionDate])
+  @@index([createdAt])
+  @@index([importBatchId])
+}
+
+// Bulk import batches — track where BuyerRecords came from (Google Sheet, Excel, etc.)
+model BuyerImportBatch {
+  id            String   @id @default(cuid())
+  source        String   // "Google Sheet", "Excel file", etc.
+  sourceRef     String?  // URL or file name
+  recordCount   Int      @default(0)  // Number of rows imported
+  successCount  Int      @default(0)  // Rows created/updated successfully
+  errorCount    Int      @default(0)  // Rows failed (logged in BuyerImportLog)
+  importedAt    DateTime @default(now())
+  importedById  String?  // User who ran the import
+  importedBy    User?    @relation("BuyerImports", fields: [importedById], references: [id])
+  rawPayload    Json?    // Original sheet data (for audit / replay)
+
+  @@index([importedAt])
+}
+
+// Import error log — one row per failed record during BuyerImportBatch
+model BuyerImportLog {
+  id        String   @id @default(cuid())
+  batchId   String   // Reference to BuyerImportBatch
+  rowNum    Int      // Row number in source sheet
+  error     String   @db.Text  // Error message (missing required field, invalid date, etc.)
+  rawRow    Json?    // Original row data
+  createdAt DateTime @default(now())
+
+  @@index([batchId])
 }

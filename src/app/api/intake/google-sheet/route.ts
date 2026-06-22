@@ -58,20 +58,27 @@ function pick(row: Row, ...candidates: string[]): string | undefined {
 
 // Budget parsing uses the shared currency-aware interpretBudget() — the old
 // local parser silently 10×–100× corrupted Cr/Lakh values and has been removed.
-function parseSource(s?: string): LeadSource {
-  if (!s) return LeadSource.CSV_IMPORT;
+// Parse source column and return both source and medium
+// Call/WhatsApp/Email are now mapped to WEBSITE + medium instead of their own source values
+function parseSourceAndMedium(s?: string): { source: LeadSource; medium?: string } {
+  if (!s) return { source: LeadSource.CSV_IMPORT };
   const n = norm(s);
-  if (n.includes("whatsapp") || n.includes("wa")) return LeadSource.WHATSAPP;
-  if (n.includes("website") || n.includes("web")) return LeadSource.WEBSITE;
-  if (n.includes("event") || n.includes("expo")) return LeadSource.EVENT;
-  if (n.includes("referral")) return LeadSource.REFERRAL;
-  if (n.includes("call")) return LeadSource.INBOUND_CALL;
-  if (n.includes("facebook") || n.includes("fb") || n.includes("meta")) return LeadSource.FACEBOOK_ADS;
-  if (n.includes("google")) return LeadSource.GOOGLE_ADS;
+  // Call → WEBSITE + Call medium
+  if (n.includes("call")) return { source: LeadSource.WEBSITE, medium: "Call" };
+  // WhatsApp → WEBSITE + WhatsApp medium
+  if (n.includes("whatsapp") || n.includes("wa")) return { source: LeadSource.WEBSITE, medium: "WhatsApp" };
+  // Email → WEBSITE + Email medium
+  if (n.includes("email")) return { source: LeadSource.WEBSITE, medium: "Email" };
+  // Other sources
+  if (n.includes("website") || n.includes("web")) return { source: LeadSource.WEBSITE };
+  if (n.includes("event") || n.includes("expo")) return { source: LeadSource.EVENT };
+  if (n.includes("referral")) return { source: LeadSource.REFERRAL };
+  if (n.includes("facebook") || n.includes("fb") || n.includes("meta")) return { source: LeadSource.FACEBOOK_ADS };
+  if (n.includes("google")) return { source: LeadSource.GOOGLE_ADS };
   // Unrecognized but PRESENT source (e.g. "Townscript", "Eventbrite") → OTHER as
   // a coarse legacy bucket only. The verbatim value is preserved in sourceRaw and
   // is what the CRM displays/filters on — we NEVER silently relabel it "CSV".
-  return LeadSource.OTHER;
+  return { source: LeadSource.OTHER };
 }
 function parseStage(s?: string) {
   if (!s) return;
@@ -242,6 +249,7 @@ export async function POST(req: NextRequest) {
         leadDate = undefined; // fallback to import time
       }
 
+      const sourceAndMedium = parseSourceAndMedium(pick(row, "source"));
       const r = await ingestLead({
         name: name ?? phone ?? email ?? "Unknown",
         phone, email,
@@ -251,7 +259,7 @@ export async function POST(req: NextRequest) {
         budgetMax: budgetInfo.max ?? undefined,
         notesShort: pick(row, "remarks", "message", "requirement"),
         tags: pick(row, "tags"),
-        source: parseSource(pick(row, "source")),
+        source: sourceAndMedium.source,
         sourceDetail: campaign,
         createdAt: leadDate,
       });
@@ -262,6 +270,8 @@ export async function POST(req: NextRequest) {
       if (!r.deduped) update.importBatchId = importBatch.id;
       // Phase D: bulk imports land in MASTER_DATA (untriaged); admin moves them.
       if (!r.deduped) update.leadOrigin = "MASTER_DATA";
+      // Add medium from parsed source
+      if (sourceAndMedium.medium) update.medium = sourceAndMedium.medium;
       const co = notDate(pick(row, "company")); if (co) update.company = co;
       const ad = notDate(pick(row, "address")); if (ad) update.address = ad;
       const wc = pick(row, "whoisclient", "client", "clientinfo"); if (wc) update.whoIsClient = wc;

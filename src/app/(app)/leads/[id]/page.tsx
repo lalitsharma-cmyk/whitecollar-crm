@@ -699,6 +699,45 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
           <div className="text-xs text-gray-500 dark:text-slate-400">🏢 Property Enquired</div>
           <InlineEdit leadId={lead.id} field="sourceDetail" value={lead.sourceDetail ?? ""} placeholder="Add value" />
         </div>
+
+        {/* WCR Event fields — shown only when source = WCR_EVENT */}
+        {lead.source === "WCR_EVENT" && (
+          <>
+            {(lead as any).eventName && (
+              <div>
+                <div className="text-xs text-gray-500 dark:text-slate-400">🎪 Event Name</div>
+                <InlineEdit leadId={lead.id} field="eventName" value={(lead as any).eventName ?? ""} placeholder="Add event name" />
+              </div>
+            )}
+            {(lead as any).eventCountry && (
+              <div>
+                <div className="text-xs text-gray-500 dark:text-slate-400">🌍 Event Country</div>
+                <InlineEdit leadId={lead.id} field="eventCountry" value={(lead as any).eventCountry ?? ""} placeholder="Add country" />
+              </div>
+            )}
+            {(lead as any).eventState && (
+              <div>
+                <div className="text-xs text-gray-500 dark:text-slate-400">📍 Event State</div>
+                <InlineEdit leadId={lead.id} field="eventState" value={(lead as any).eventState ?? ""} placeholder="Add state" />
+              </div>
+            )}
+            {(lead as any).eventCity && (
+              <div>
+                <div className="text-xs text-gray-500 dark:text-slate-400">🏙 Event City</div>
+                <InlineEdit leadId={lead.id} field="eventCity" value={(lead as any).eventCity ?? ""} placeholder="Add city" />
+              </div>
+            )}
+          </>
+        )}
+
+        {/* Referral field — shown only when source = REFERRAL */}
+        {lead.source === "REFERRAL" && (lead as any).referralName && (
+          <div>
+            <div className="text-xs text-gray-500 dark:text-slate-400">👤 Referred By</div>
+            <InlineEdit leadId={lead.id} field="referralName" value={(lead as any).referralName ?? ""} placeholder="Add referrer name" />
+          </div>
+        )}
+
         <div>
           <div className="text-xs text-gray-500 dark:text-slate-400">💼 Profession</div>
           <InlineEdit leadId={lead.id} field="profession" type="select" value={lead.profession ?? ""}

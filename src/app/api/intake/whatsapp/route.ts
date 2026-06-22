@@ -62,8 +62,16 @@ export async function POST(req: NextRequest) {
     if (!phone) continue;
 
     const { lead, deduped } = await ingestLead({
-      name, phone, source: LeadSource.WHATSAPP, notesShort: text,
+      name, phone, source: LeadSource.WEBSITE, notesShort: text,
     });
+
+    // Add WhatsApp medium
+    if (lead) {
+      await prisma.lead.update({
+        where: { id: lead.id },
+        data: { medium: "WhatsApp" },
+      });
+    }
 
     await prisma.whatsAppMessage.create({
       data: {

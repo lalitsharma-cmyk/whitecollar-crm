@@ -69,9 +69,16 @@ async function handle(req: NextRequest) {
       const r = await ingestLead({
         name: `Inbound caller ${leadPhone.slice(-4)}`,
         phone: leadPhone,
-        source: LeadSource.INBOUND_CALL,
+        source: LeadSource.WEBSITE,
         sourceDetail: "Acefone inbound call",
       });
+      // Add Call medium for inbound calls
+      if (r.lead) {
+        await prisma.lead.update({
+          where: { id: r.lead.id },
+          data: { medium: "Call" },
+        });
+      }
       leadId = r.lead.id;
     }
   }

@@ -7,14 +7,8 @@
 // with client references at the module boundary), leading to the "Something
 // hiccuped" crash on /cold-calls.
 
-export const REVIVAL_STATUSES: Array<{ v: string; label: string; chip: string }> = [
-  { v: "NEW",          label: "New",         chip: "chip-new" },
-  { v: "CONTACTED",    label: "Contacted",   chip: "chip-warm" },
-  { v: "QUALIFIED",    label: "Qualified",   chip: "chip-warm" },
-  { v: "SITE_VISIT",   label: "Site Visit",  chip: "chip-warm" },
-  { v: "NEGOTIATION",  label: "Negotiation", chip: "chip-warm" },
-  { v: "EOI",          label: "EOI",         chip: "chip-warm" },
-  { v: "BOOKING_DONE", label: "Booked",      chip: "chip-won" },
-  { v: "WON",          label: "Won",         chip: "chip-won" },
-  { v: "LOST",         label: "Lost",        chip: "chip-lost" },
-];
+// Revival Engine now uses the same status system as Leads module.
+// Statuses come from INDIA_STATUSES and DUBAI_STATUSES in lead-statuses.ts
+// No separate stage enum — this constant is kept for backward compat but is unused.
+// TODO: Remove this constant after front-end refs are updated to use statusColor() directly.
+export const REVIVAL_STATUSES: Array<{ v: string; label: string; chip: string }> = [];

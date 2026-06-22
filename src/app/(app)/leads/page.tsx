@@ -23,11 +23,11 @@ const srcChip: Record<LeadSource, string> = {
   PORTAL_99ACRES: "src", PORTAL_MAGICBRICKS: "src", PORTAL_HOUSING: "src", OTHER: "src",
 };
 const srcLabel: Record<LeadSource, string> = {
-  WEBSITE: "Website", WCR_WEBSITE: "WCR-Website", WCR_EVENT: "WCR-Event", LANDING_PAGE: "Landing Page",
-  WHATSAPP: "WhatsApp", CSV_IMPORT: "CSV", EVENT: "Event",
-  REFERRAL: "Referral", INBOUND_CALL: "Call", FACEBOOK_ADS: "Facebook",
-  GOOGLE_ADS: "Google", PORTAL_99ACRES: "99acres", PORTAL_MAGICBRICKS: "MagicBricks",
-  PORTAL_HOUSING: "Housing", OTHER: "Other",
+  WEBSITE: "Website", WCR_WEBSITE: "Website", WCR_EVENT: "WCR Event", LANDING_PAGE: "Landing Page",
+  WHATSAPP: "WhatsApp", CSV_IMPORT: "CSV Import", EVENT: "Event",
+  REFERRAL: "Referral", INBOUND_CALL: "Call", FACEBOOK_ADS: "Facebook Ads",
+  GOOGLE_ADS: "Google Ads", PORTAL_99ACRES: "Portal 99acres", PORTAL_MAGICBRICKS: "Portal MagicBricks",
+  PORTAL_HOUSING: "Portal Housing", OTHER: "Other",
 };
 // Status colors now come from statusColor() in lead-statuses.ts — no stage mapping needed.
 
