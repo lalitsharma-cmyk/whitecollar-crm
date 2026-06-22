@@ -8,6 +8,7 @@ import { prisma } from "@/lib/prisma";
 import { extractFromRemarks, mergeSuggestions } from "@/lib/remarkAutofill";
 import { mergeRawRemark } from "@/lib/rawRemarks";
 import { validEmail, validPhone, validBudgetRaw, looksLikeStatus, looksLikeDate } from "@/lib/importValidate";
+import { parseImportDate, applyTimeToDate } from "@/lib/parseImportDate";
 
 // Keep date-formatted values OUT of non-date fields (name/company/city/address/
 // configuration/BANT) — they belong only in date/follow-up columns. Returns
@@ -336,30 +337,6 @@ function parseInvestTimeline(s?: string): InvestTimeline | undefined {
   if (n.includes("30") || n.includes("month")) return InvestTimeline.THIRTY_DAYS;
   if (n.includes("brows") || n.includes("explor") || n.includes("shop")) return InvestTimeline.WINDOW_SHOPPING;
   return InvestTimeline.UNKNOWN;
-}
-// Date-only imports land at 00:00 UTC, which renders as 5:30 AM IST — a
-// fabricated clock time Lalit asked us never to show. Re-anchor any midnight
-// value to noon IST (06:30 UTC) of the SAME calendar day: the date is unchanged
-// but the time reads as a neutral 12:00 PM instead of 5:30 AM.
-function noonISTifMidnight(d: Date): Date {
-  if (d.getUTCHours() === 0 && d.getUTCMinutes() === 0 && d.getUTCSeconds() === 0) {
-    return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 6, 30, 0));
-  }
-  return d;
-}
-function parseDate(s?: string): Date | undefined {
-  if (!s) return;
-  // Excel serial numbers (e.g. 45752 = 4 May 2025)
-  if (/^\d+(\.\d+)?$/.test(s)) {
-    const n = parseFloat(s);
-    if (n > 1 && n < 100000) {
-      // Excel epoch: Dec 30 1899
-      const d = new Date(Math.round((n - 25569) * 86400 * 1000));
-      if (!isNaN(d.getTime())) return noonISTifMidnight(d);
-    }
-  }
-  const d = new Date(s);
-  return isNaN(d.getTime()) ? undefined : noonISTifMidnight(d);
 }
 
 // Detect if a row looks like a header row (has at least 3 of the expected column names)
@@ -723,11 +700,11 @@ export async function POST(req: NextRequest) {
       // "Never Respond Phone calls" that would leak past the exact-match
       // terminal/workable classification.
       if (callStatusOk) update.currentStatus = canonicalStatus(callStatus);
-      const followup = parseDate(field("followupDate", "followupdate", "followup", "nextfollowup"));
+      const followup = parseImportDate(field("followupDate", "followupdate", "followup", "nextfollowup"));
       if (followup) update.followupDate = followup;
-      const meeting = parseDate(field("meeting", "meeting", "meetingdate"));
+      const meeting = parseImportDate(field("meeting", "meeting", "meetingdate"));
       if (meeting) update.meetingDate = meeting;
-      const sv = parseDate(field("siteVisit", "sitevisit", "sitevisitdate"));
+      const sv = parseImportDate(field("siteVisit", "sitevisit", "sitevisitdate"));
       if (sv) update.siteVisitDate = sv;
       const detailShared = field("detailShared", "detailshared", "shared");
       if (detailShared) update.detailShared = detailShared;
@@ -807,7 +784,7 @@ export async function POST(req: NextRequest) {
       // gets today's createdAt, which destroys the historic timeline + breaks
       // every "leads created this week" report retroactively. Lalit explicitly
       // asked for "Date in mis will be date when this lead was generated".
-      const historicDate = parseDate(field("date", "date", "leaddate", "createdon", "createddate", "entrydate"));
+      const historicDate = parseImportDate(field("date", "date", "leaddate", "createdon", "createddate", "entrydate"));
       // Guard: a lead cannot have been generated in the FUTURE. If the sheet's
       // Date column is ahead of today (a data-entry typo, or a follow-up/target
       // date mis-placed in the Date column), do NOT backdate createdAt into the
@@ -829,7 +806,7 @@ export async function POST(req: NextRequest) {
       // / Overdue / Missed. It re-enters the queue when the agent next schedules a
       // follow-up. Historical imports (last-contact in the past) and future
       // follow-ups are left untouched, so genuinely-overdue leads still surface.
-      const lastContact = parseDate(field("lastContact", "lastcontact", "lastcontactdate", "lastcalldate", "lastcall", "calleddate", "lastcontacted"));
+      const lastContact = parseImportDate(field("lastContact", "lastcontact", "lastcontactdate", "lastcalldate", "lastcall", "calleddate", "lastcontacted"));
       if (!r.deduped && lastContact && update.followupDate instanceof Date) {
         const istDayKey = (d: Date) => new Date(d.getTime() + 5.5 * 3600 * 1000).toISOString().slice(0, 10);
         const todayKey = istDayKey(new Date());

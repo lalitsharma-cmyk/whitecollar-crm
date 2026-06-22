@@ -11,6 +11,7 @@ import { canonicalStatus, isStatusValidForTeam, NEEDS_REVIEW } from "@/lib/lead-
 import { mergeRawRemark } from "@/lib/rawRemarks";
 import { detectConversationKeyFromRows } from "@/lib/conversationColumn";
 import { validEmail, validBudgetRaw, looksLikeStatus, validPhone, looksLikeDate } from "@/lib/importValidate";
+import { parseImportDate, detectDateColumn, detectTimeColumn, applyTimeToDate } from "@/lib/parseImportDate";
 
 // Keep date-formatted values OUT of non-date fields (name/company/city/address/
 // configuration) — they belong only in date columns. Returns undefined for a date.
@@ -57,7 +58,6 @@ function pick(row: Row, ...candidates: string[]): string | undefined {
 
 // Budget parsing uses the shared currency-aware interpretBudget() — the old
 // local parser silently 10×–100× corrupted Cr/Lakh values and has been removed.
-function parseDate(s?: string) { if (!s) return; const d = new Date(s); return isNaN(d.getTime()) ? undefined : d; }
 function parseSource(s?: string): LeadSource {
   if (!s) return LeadSource.CSV_IMPORT;
   const n = norm(s);
@@ -185,6 +185,11 @@ export async function POST(req: NextRequest) {
   let created = 0, deduped = 0, enriched = 0;
   const errors: string[] = [];
   const detectedColumns = Object.keys(parsed.data[0] ?? {});
+  const futureDateRows: { name: string; rawDate: string }[] = [];
+
+  // Detect date and time columns for this sheet (fixed once, used for every row)
+  const dateColumn = detectDateColumn(detectedColumns);
+  const timeColumn = detectTimeColumn(detectedColumns);
 
   // Import History batch — stamp every NEW lead so the whole sheet import can
   // be rolled back later from the admin Import History screen.
@@ -218,7 +223,25 @@ export async function POST(req: NextRequest) {
       ? interpretBudget(budgetCol, validBudgetRaw(pick(row, "budgetmax")))
       : { min: null, max: null, raw: null };
     try {
-      const leadDate = parseDate(pick(row, "date", "created", "dategenerated", "leaddate", "generateddate"));
+      // Parse date from detected date column, apply time if available
+      let leadDate: Date | undefined;
+      if (dateColumn) {
+        const dateRaw = row[dateColumn];
+        leadDate = parseImportDate(dateRaw);
+        if (leadDate && timeColumn) {
+          const timeRaw = row[timeColumn];
+          leadDate = applyTimeToDate(leadDate, timeRaw);
+        }
+      }
+
+      // Guard: reject future-dated leads (data-entry typos, follow-up dates misplaced)
+      // 24h tolerance for timezone differences
+      const dateIsFuture = !!leadDate && leadDate.getTime() > Date.now() + 24 * 3600 * 1000;
+      if (dateIsFuture) {
+        futureDateRows.push({ name: name ?? phone ?? email ?? "—", rawDate: dateColumn ? row[dateColumn] ?? "" : "" });
+        leadDate = undefined; // fallback to import time
+      }
+
       const r = await ingestLead({
         name: name ?? phone ?? email ?? "Unknown",
         phone, email,
@@ -268,9 +291,9 @@ export async function POST(req: NextRequest) {
       // ("Townscript", "Eventbrite", "WhatsApp Campaign June"). Display + filters
       // read this; it is NEVER mapped, normalized, or defaulted.
       const srcRaw = pick(row, "source"); if (srcRaw) update.sourceRaw = srcRaw;
-      const fu = parseDate(pick(row, "followupdate", "followup")); if (fu) update.followupDate = fu;
-      const me = parseDate(pick(row, "meeting", "meetingdate")); if (me) update.meetingDate = me;
-      const sv = parseDate(pick(row, "sitevisit")); if (sv) update.siteVisitDate = sv;
+      const fu = parseImportDate(pick(row, "followupdate", "followup")); if (fu) update.followupDate = fu;
+      const me = parseImportDate(pick(row, "meeting", "meetingdate")); if (me) update.meetingDate = me;
+      const sv = parseImportDate(pick(row, "sitevisit")); if (sv) update.siteVisitDate = sv;
       const td = pick(row, "todo", "todonext", "nextaction"); if (td) update.todoNext = td;
       const ds = pick(row, "detailshared"); if (ds) update.detailShared = ds;
       const po = parsePotential(pick(row, "potential")); if (po) update.potential = po;
@@ -382,6 +405,11 @@ export async function POST(req: NextRequest) {
     rowsProcessed: parsed.data.length,
     created, deduped, enriched,
     importBatchId: importBatch.id,
-    detectedColumns, errors: errors.slice(0,10),
+    detectedColumns,
+    dateColumnDetected: !!dateColumn,
+    timeColumnDetected: !!timeColumn,
+    futureDateRows: futureDateRows.slice(0, 20),
+    futureDateCount: futureDateRows.length,
+    errors: errors.slice(0,10),
   });
 }
