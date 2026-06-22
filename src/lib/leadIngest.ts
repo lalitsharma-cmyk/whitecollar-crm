@@ -282,16 +282,17 @@ export async function ingestLead(input: RawLeadInput) {
     },
   });
 
-  // ── Website/form message → Conversation History (Lalit, 2026-06-20) ──
-  // A genuine client message from the form must show in the assigned agent's
-  // Smart Timeline + Raw History, stamped at the LEAD-GENERATED time (IST). The
-  // source/campaign NAME is never inserted (helper returns null for it), and an
-  // empty message creates no entry — so no duplicate, no blank timeline row.
+  // ── Website/form message → Raw History ONLY (Lalit, 2026-06-20) ──
+  // A genuine client message from the form is stored in rawRemarks only (immutable
+  // imported archive). It does NOT populate remarks (which is reserved for CRM ops).
+  // Stamped at the LEAD-GENERATED time (IST). The source/campaign NAME is never
+  // inserted (helper returns null for it), and an empty message creates no entry —
+  // so no duplicate, no blank timeline row.
   {
     const tag = (input.source as string) === "WEBSITE" ? "Website / Client Message" : "Client Message";
     const remark = websiteMessageRemark(input.notesShort, lead.createdAt, { tag, sourceRaw: input.sourceRaw, sourceDetail: input.sourceDetail });
     if (remark) {
-      await prisma.lead.update({ where: { id: lead.id }, data: { rawRemarks: remark, remarks: remark } });
+      await prisma.lead.update({ where: { id: lead.id }, data: { rawRemarks: remark } });
     }
   }
 

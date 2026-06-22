@@ -324,7 +324,9 @@ export default function ConversationStreamCard({
   const audioTitle = forwardedTeam === "Dubai"
     ? "Recordings may exist only for India team (UAE consent rules)" : undefined;
 
-  // ── Parse the raw remarks into structured entries ─────────────────────────
+  // ── Parse the raw remarks into structured entries (Raw History ONLY) ───────
+  // These entries are ONLY for the Raw History tab (immutable imported text).
+  // Smart Timeline does NOT use these — it reads from Activity records instead.
   const allRemarkEntries = useMemo(() =>
     rawRemarks
       ? parseRemarksTimeline(rawRemarks, agentNames, leadCreatedAt ?? undefined)
@@ -545,7 +547,10 @@ export default function ConversationStreamCard({
           </div>
         )}
 
-        {/* ─ Imported remarks — SMART TIMELINE (parsed, grouped, filtered) ─ */}
+        {/* ─ Imported remarks — SMART TIMELINE (parsed, grouped, filtered) ─
+            These are the imported remarks from rawRemarks, shown in the Smart
+            Timeline ONLY when in Smart view. Raw History tab shows rawRemarks
+            verbatim (unprocessed). No duplication: each appears once. */}
         {viewMode === "smart" && filter !== "WA" && displayRemarkEntries.map((item, idx) => {
           // Stable, CONTENT-based key so expansion state + React reconciliation track
           // the real entry across filter changes (an array index would attach state

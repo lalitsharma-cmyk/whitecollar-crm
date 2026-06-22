@@ -23,7 +23,10 @@ const ALLOWED: Record<string, "string" | "date" | "number" | "enum" | "bool"> = 
   // propertyType: "Residential" | "Commercial" — agent/admin/super-admin editable (not PII-locked).
   propertyType: "string",
   sourceDetail: "string",  // "Project" the lead came for — admin/manager editable (Master Data inline)
-  tags: "string", notesShort: "string", remarks: "string",
+  tags: "string", notesShort: "string",
+  // remarks: editable by agents. When edited, an Activity record is created (see line ~287).
+  // rawRemarks MUST NOT be in ALLOWED — it is the immutable imported archive, never edited here.
+  remarks: "string",
   whoIsClient: "string", detailShared: "string", todoNext: "string",
   // ClientType: 'INVESTOR' | 'END_USER' | 'BOTH' | 'UNCLEAR' (or null to clear)
   clientType: "enum",
