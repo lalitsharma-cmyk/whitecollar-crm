@@ -338,7 +338,15 @@ export default function LeadActionsClient({ leadId, phone, altPhone, email, curr
         </button>
         <button
           onClick={() => window.dispatchEvent(new CustomEvent(`open-sticky-${leadId}`))}
-          className="flex items-center justify-center gap-1.5 py-2.5 rounded-lg bg-yellow-300 text-yellow-900 text-sm font-semibold hover:bg-yellow-400 transition shadow-sm min-h-11"
+          // Contrast fix (iPad/Apple): the old `bg-yellow-300 text-yellow-900`
+          // turned INVISIBLE in dark mode — globals.css force-overrides
+          // .text-yellow-900 → bright #fde047 while bg-yellow-300 is NOT
+          // overridden, so it was yellow-on-yellow. Pin both colours with
+          // explicit hex (dark-navy ink on amber, matching the sticky-note
+          // widget + Log Call button) so no global rule can hijack it. The
+          // arbitrary `text-[#…]` / `bg-[#…]` classes aren't touched by the
+          // dark colour-family overrides, keeping AA contrast in BOTH themes.
+          className="flex items-center justify-center gap-1.5 py-2.5 rounded-lg bg-[#fcd34d] text-[#3a2c00] text-sm font-semibold hover:bg-[#fbbf24] transition shadow-sm min-h-11"
           title="Open private sticky note"
         >
           🗒 Note
