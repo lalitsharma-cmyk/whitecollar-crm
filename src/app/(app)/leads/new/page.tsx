@@ -5,14 +5,12 @@ import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { defaultCurrencyForTeam } from "@/lib/money";
 import { defaultDialForTeam, toE164 } from "@/lib/phone";
-import { validateMedium } from "@/lib/mediumManager";
+import { validateMedium, getAvailableMediums } from "@/lib/mediumManager";
 import PhoneInput from "@/components/PhoneInput";
-import { fromISTLocalInput } from "@/lib/datetime";
 import BudgetInput from "@/components/BudgetInput";
-import FormDateTimeIST from "@/components/FormDateTimeIST";
 import DedupWarning from "@/components/DedupWarning";
 import AssignToSelect from "@/components/AssignToSelect";
-import MediumSelect from "@/components/MediumSelect";
+import LeadSourceMediumFields from "@/components/LeadSourceMediumFields";
 
 async function createLeadAction(formData: FormData) {
   "use server";
@@ -150,15 +148,15 @@ export default async function NewLeadPage() {
     select: { id: true, name: true, team: true, role: true, isSuperAdmin: true },
     orderBy: { name: "asc" },
   });
+  // Available mediums fetched on the server and passed down as a prop. NEVER let
+  // a client component import getAvailableMediums — it pulls Prisma into the bundle.
+  const availableMediums = await getAvailableMediums();
   const defaultCurrency = defaultCurrencyForTeam(me.team);
   const defaultTeam = me.team && (me.team === "Dubai" || me.team === "India") ? me.team : (defaultCurrency === "INR" ? "India" : "Dubai");
   return (
     <>
       <h1 className="text-xl sm:text-2xl font-bold">New Lead</h1>
       <form id="new-lead-form" action={createLeadAction} className="card p-4 sm:p-6 max-w-4xl space-y-5 sm:space-y-6">
-        {/* Hidden inputs for medium — captured by MediumSelect onChange above */}
-        <input type="hidden" name="medium" defaultValue="" />
-        <input type="hidden" name="mediumOther" defaultValue="" />
         {/* Identity */}
         <section>
           <div className="text-xs font-bold tracking-widest text-[#c9a24b] mb-3">IDENTITY</div>
@@ -264,74 +262,7 @@ export default async function NewLeadPage() {
                 <option>International Investor</option><option>First-time buyer</option>
               </select>
             </div>
-            <div>
-              <label className={label}>Source</label>
-              <select name="source" id="sourceSelect" className={input}>
-                <option value="">— Select source —</option>
-                {Object.values(LeadSource).map(s => {
-                  const labels: Record<string, string> = {
-                    "WEBSITE": "Website",
-                    "WCR_WEBSITE": "Website",
-                    "WCR_EVENT": "WCR Event",
-                    "LANDING_PAGE": "Landing Page",
-                    "WHATSAPP": "WhatsApp",
-                    "CSV_IMPORT": "CSV Import",
-                    "EVENT": "Event",
-                    "REFERRAL": "Referral",
-                    "INBOUND_CALL": "Call",
-                    "FACEBOOK_ADS": "Facebook Ads",
-                    "GOOGLE_ADS": "Google Ads",
-                    "PORTAL_99ACRES": "Portal 99acres",
-                    "PORTAL_MAGICBRICKS": "Portal MagicBricks",
-                    "PORTAL_HOUSING": "Portal Housing",
-                    "OTHER": "Other",
-                  };
-                  const display = labels[s] || s.replaceAll("_", " ");
-                  return <option key={s} value={s}>{display}</option>;
-                })}
-              </select>
-            </div>
-            <div><label className={label}>Source Detail</label><input name="sourceDetail" placeholder="e.g. campaign code, event name" className={input} /></div>
-            <div>
-              <label className={label}>Medium</label>
-              <div className="mt-1">
-                <MediumSelect value={null} customValue={null} onChange={(medium, custom) => {
-                  // This is a dummy onChange; the actual value is captured via form submission
-                  const hiddenMedium = document.querySelector('input[name="medium"]') as HTMLInputElement;
-                  const hiddenCustom = document.querySelector('input[name="mediumOther"]') as HTMLInputElement;
-                  if (hiddenMedium) hiddenMedium.value = medium ?? "";
-                  if (hiddenCustom) hiddenCustom.value = custom ?? "";
-                }} />
-              </div>
-            </div>
-
-            {/* WCR Event conditional fields */}
-            <div id="wcr-event-fields" className="md:col-span-3 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4 hidden">
-              <div><label className={label}>Event Name</label><input name="eventName" className={input} /></div>
-              <div><label className={label}>Event Country</label><input name="eventCountry" className={input} /></div>
-              <div><label className={label}>Event State</label><input name="eventState" className={input} /></div>
-              <div><label className={label}>Event City</label><input name="eventCity" className={input} /></div>
-            </div>
-
-            {/* Referral conditional field */}
-            <div id="referral-fields" className="md:col-span-3 hidden">
-              <div><label className={label}>Referrer Name</label><input name="referralName" placeholder="Name of the person who referred this lead" className={input} /></div>
-            </div>
-
-            <script dangerouslySetInnerHTML={{__html: `
-              const sourceSelect = document.getElementById('sourceSelect');
-              const wcrEventFields = document.getElementById('wcr-event-fields');
-              const referralFields = document.getElementById('referral-fields');
-
-              function updateConditionalFields() {
-                const source = sourceSelect.value;
-                wcrEventFields.classList.toggle('hidden', source !== 'WCR_EVENT');
-                referralFields.classList.toggle('hidden', source !== 'REFERRAL');
-              }
-
-              sourceSelect.addEventListener('change', updateConditionalFields);
-              updateConditionalFields();
-            `}} />
+            <LeadSourceMediumFields sources={Object.values(LeadSource)} mediums={availableMediums} />
             <div><label className={label}>Property Type</label><input name="propertyType" placeholder="e.g. Residential, Commercial" className={input} /></div>
             <div><label className={label}>Current Status</label><input name="currentStatus" placeholder="e.g. Not reached, Callback today" className={input} /></div>
           </div>
