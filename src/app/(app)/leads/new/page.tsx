@@ -46,10 +46,11 @@ async function createLeadAction(formData: FormData) {
   };
 
   const update: Record<string, unknown> = {};
-  const currency = String(formData.get("budgetCurrency") ?? "");
-  if (currency === "AED" || currency === "INR") update.budgetCurrency = currency;
   const team = String(formData.get("forwardedTeam") ?? "");
   if (team) update.forwardedTeam = team;
+  // Set currency based on selected team
+  const currency = team === "Dubai" ? "AED" : team === "India" ? "INR" : "";
+  if (currency) update.budgetCurrency = currency;
   const company = opt<string>(formData.get("company")); if (company) update.company = company;
   const address = opt<string>(formData.get("address")); if (address) update.address = address;
   const whoIsClient = opt<string>(formData.get("whoIsClient")); if (whoIsClient) update.whoIsClient = whoIsClient;
@@ -181,15 +182,11 @@ export default async function NewLeadPage() {
             <div><label className={label}>Configuration</label><input name="configuration" placeholder="2BR / Penthouse / Villa" className={input} /></div>
             <div>
               <label className={label}>Team / Currency *</label>
-              <select name="forwardedTeam" required className={input} onChange={(e) => {
-                const currency = e.target.value === "Dubai" ? "AED" : e.target.value === "India" ? "INR" : "";
-                document.querySelector('input[name="budgetCurrency"]').value = currency;
-              }}>
+              <select name="forwardedTeam" required className={input}>
                 <option value="">— Select team —</option>
                 <option value="Dubai">Dubai (AED)</option>
                 <option value="India">India (₹)</option>
               </select>
-              <input type="hidden" name="budgetCurrency" defaultValue="" />
             </div>
             <div>
               <label className={label}>👤 Assign To *</label>
