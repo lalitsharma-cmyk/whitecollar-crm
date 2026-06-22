@@ -53,6 +53,9 @@ export interface RawLeadInput {
   /** Property Type ("Residential" | "Commercial") — website property page may send
    *  it explicitly. When absent it's derived from the project category / configuration. */
   propertyType?: string;
+  /** When the lead was actually generated (from import Date column). If provided,
+   *  used as the lead's createdAt instead of the current timestamp. */
+  createdAt?: Date;
 }
 
 const FIRST_CALL_SLA_MIN = 15;
@@ -265,6 +268,7 @@ export async function ingestLead(input: RawLeadInput) {
       fingerprint: fp,
       lastTouchedAt: new Date(),
       followupDate: todayEodIST(),
+      ...(input.createdAt ? { createdAt: input.createdAt } : {}),
     },
   });
   await prisma.activity.create({

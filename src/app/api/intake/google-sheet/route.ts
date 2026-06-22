@@ -218,6 +218,7 @@ export async function POST(req: NextRequest) {
       ? interpretBudget(budgetCol, validBudgetRaw(pick(row, "budgetmax")))
       : { min: null, max: null, raw: null };
     try {
+      const leadDate = parseDate(pick(row, "date", "created", "dategenerated", "leaddate", "generateddate"));
       const r = await ingestLead({
         name: name ?? phone ?? email ?? "Unknown",
         phone, email,
@@ -229,6 +230,7 @@ export async function POST(req: NextRequest) {
         tags: pick(row, "tags"),
         source: parseSource(pick(row, "source")),
         sourceDetail: campaign,
+        createdAt: leadDate,
       });
       if (r.deduped) deduped++; else created++;
 
