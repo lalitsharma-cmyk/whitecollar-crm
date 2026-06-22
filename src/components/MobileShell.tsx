@@ -303,7 +303,7 @@ export default function MobileShell({ children, user, awaitingTeamCount = 0 }: P
         className="lg:hidden sticky top-0 z-20 bg-[#0b1a33] text-white flex items-center px-3 py-2 gap-2 shadow"
         style={{ paddingTop: "calc(0.5rem + env(safe-area-inset-top))" }}
       >
-        <button onClick={() => setOpen(true)} aria-label="Open menu" className="p-2 rounded hover:bg-white/10 min-w-11 min-h-11 flex items-center justify-center">
+        <button onClick={() => setOpen(true)} aria-label="Open menu" className="p-2 rounded hover:bg-white/10 w-11 h-11 flex items-center justify-center flex-shrink-0">
           <Menu className="w-6 h-6" />
         </button>
         {/* Global mobile back button — shows on every non-root page so the
@@ -313,7 +313,7 @@ export default function MobileShell({ children, user, awaitingTeamCount = 0 }: P
           <button
             onClick={goBack}
             aria-label="Back"
-            className="p-2 rounded hover:bg-white/10 min-w-11 min-h-11 flex items-center justify-center -ml-1"
+            className="p-2 rounded hover:bg-white/10 w-11 h-11 flex items-center justify-center -ml-1 flex-shrink-0"
           >
             <ChevronLeft className="w-6 h-6" />
           </button>
@@ -328,7 +328,7 @@ export default function MobileShell({ children, user, awaitingTeamCount = 0 }: P
         </Suspense>
         <NotifBell />
         {user.role !== "AGENT" && (
-          <Link href="/leads/new" aria-label="New lead" className="p-2 rounded hover:bg-white/10 min-w-11 min-h-11 flex items-center justify-center">
+          <Link href="/leads/new" aria-label="New lead" className="p-2 rounded hover:bg-white/10 w-11 h-11 flex items-center justify-center flex-shrink-0">
             <span className="text-xl font-bold leading-none">+</span>
           </Link>
         )}
