@@ -17,6 +17,7 @@ import LeadFilters from "@/components/LeadFilters";
 import { leadFilterWhere } from "@/lib/leadFilterWhere";
 import { displayBudget } from "@/lib/budgetParse";
 import { cleanNeedSnapshot, lastMeaningfulRemark } from "@/lib/needSnapshot";
+import { countMasterDataCategories, countAssignmentQueues } from "@/lib/leadCounts";
 
 // ── Master Data V3 — Admin/Super-Admin OPERATIONS CONSOLE (not a dashboard) ──
 // Excel-style ops sheet for assignment + routing. Reporting (By Team/Agent/Status/
@@ -53,7 +54,7 @@ function catWhere(cat: Cat): Prisma.LeadWhereInput {
     case "lost":     return { deletedAt: null, currentStatus: { in: LOST_STATUSES } };
     case "deleted":  return DELETED_WHERE;
     case "archived": return ARCHIVED_WHERE;
-    default:         return {};
+    default:         return { deletedAt: null };
   }
 }
 
@@ -89,17 +90,10 @@ export default async function MasterDataPage({ searchParams }: { searchParams: P
   const where = whereFor(cat);
 
   // Category-tab counts + operations counters (unassigned agent / awaiting team).
-  const [cAll, cWork, cClosed, cLost, cDeleted, cArchived, unassignedAgent, awaitingTeam] = await Promise.all([
-    prisma.lead.count({ where: whereFor("all") }),
-    prisma.lead.count({ where: whereFor("workable") }),
-    prisma.lead.count({ where: whereFor("closed") }),
-    prisma.lead.count({ where: whereFor("lost") }),
-    prisma.lead.count({ where: whereFor("deleted") }),
-    prisma.lead.count({ where: whereFor("archived") }),
-    prisma.lead.count({ where: { ...where, ownerId: null } }),
-    prisma.lead.count({ where: { ...where, forwardedTeam: null } }),
-  ]);
-  const catCount: Record<Cat, number> = { all: cAll, workable: cWork, closed: cClosed, lost: cLost, deleted: cDeleted, archived: cArchived };
+  // Using unified leadCounts module for consistency across the CRM.
+  const categories = await countMasterDataCategories();
+  const { unassigned: unassignedAgent, awaitingTeam } = await countAssignmentQueues();
+  const catCount: Record<Cat, number> = { all: categories.all, workable: categories.workable, closed: categories.closed, lost: categories.lost, deleted: categories.deleted, archived: categories.archived };
 
   // Load the FULL category set (no server pagination) — the table sorts /
   // filters / paginates client-side, Excel-style. Capped for safety.

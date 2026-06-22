@@ -16,6 +16,7 @@ import { normalizeTeam } from "@/lib/teamRouting";
 import { formatLeadName } from "@/lib/leadName";
 import TargetCelebration from "@/components/TargetCelebration";
 import RemindersCard, { type ReminderEvent } from "@/components/RemindersCard";
+import { countUnassignedLeads, countAwaitingTeamLeads } from "@/lib/leadCounts";
 
 export const dynamic = "force-dynamic";
 
@@ -39,13 +40,16 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   // Assignment-queue counts: Sameer (lead-ops) gets the full management view that
   // REPLACES personal KPIs; Lalit/admins get a compact card ADDED above their
   // personal dashboard. Either way the same counts are computed once here.
+  // Using unified leadCounts module for consistency with Master Data.
   const mgmt = (isLeadOps || isAdmin) ? await (async () => {
     const w = workableWhere({ deletedAt: null, isColdCall: false });
-    const [unassigned, overdueUnassigned, awaitingTeam] = await Promise.all([
-      prisma.lead.count({ where: { ...w, ownerId: null } }),
-      prisma.lead.count({ where: { ...w, ownerId: null, followupDate: { lt: new Date(), not: null } } }),
-      prisma.lead.count({ where: { deletedAt: null, isColdCall: false, forwardedTeam: null, leadOrigin: { notIn: COLD_ORIGINS } } }),
+    const [unassigned, awaitingTeam] = await Promise.all([
+      countUnassignedLeads(),
+      countAwaitingTeamLeads(),
     ]);
+    const overdueUnassigned = await prisma.lead.count({
+      where: { ...w, ownerId: null, followupDate: { lt: new Date(), not: null } }
+    });
     return { unassigned, overdueUnassigned, awaitingTeam };
   })() : null;
   const view =

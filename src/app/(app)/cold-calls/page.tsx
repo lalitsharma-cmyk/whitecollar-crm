@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
 import { Prisma } from "@prisma/client";
-import { SUPPRESSED_STATUSES, statusColor } from "@/lib/lead-statuses";
+import { SUPPRESSED_STATUSES, statusColor, INDIA_STATUSES, DUBAI_STATUSES } from "@/lib/lead-statuses";
 import { COLD_ORIGINS } from "@/lib/leadScope";
 import { startOfDay, startOfWeek } from "date-fns";
 import Link from "next/link";
@@ -10,7 +10,6 @@ import HiddenGemsBanner, { type HiddenGem } from "@/components/HiddenGemsBanner"
 import DailyRevivalMission from "@/components/DailyRevivalMission";
 import RevivalLeaderboard, { type LeaderboardRow } from "@/components/RevivalLeaderboard";
 import RevivalEngineListClient from "@/components/RevivalEngineListClient";
-import { REVIVAL_STATUSES } from "@/lib/revival-constants";
 import { REVIVAL_MISSION } from "@/lib/missions";
 
 export const dynamic = "force-dynamic";
@@ -21,10 +20,13 @@ export const dynamic = "force-dynamic";
 // their assigned rows. "Promote to Lead" flips leadOrigin → "ACTIVE" and
 // the row moves into /leads.
 //
-// Filter tabs are now STATUS-based (NEW, CONTACTED, QUALIFIED…) matching the
-// same statuses used in the main /leads pipeline. "Stages" concept removed.
+// Filter tabs use the SAME statuses as the main /leads pipeline (INDIA_STATUSES + DUBAI_STATUSES).
+// "Stages" concept removed — Revival Engine is status-aligned with Leads.
 
 const COLD_DAYS = REVIVAL_MISSION.dormantDays;
+
+// All possible statuses across both teams — Revival Engine serves cold data from both.
+const ALL_POSSIBLE_STATUSES = new Set([...INDIA_STATUSES, ...DUBAI_STATUSES]);
 
 // Status colors come from statusColor() — no stage mapping needed.
 
@@ -46,10 +48,11 @@ export default async function ColdDataPage({ searchParams }: { searchParams: Pro
   const unassigned: Prisma.LeadWhereInput = { ownerId: null };
 
   // Status-based filter — "all" shows everything, "unassigned" is admin shortcut
+  // Now uses actual status text (e.g., "Fresh Lead", "Follow Up") instead of obsolete enum values
   const statusWhere: Prisma.LeadWhereInput =
     statusFilter === "unassigned"
       ? unassigned
-      : REVIVAL_STATUSES.some(s => s.v === statusFilter)
+      : statusFilter !== "all" && ALL_POSSIBLE_STATUSES.has(statusFilter as any)
         ? { currentStatus: statusFilter }
         : {};
 
@@ -89,7 +92,7 @@ export default async function ColdDataPage({ searchParams }: { searchParams: Pro
       take: 200,
     }),
     prisma.lead.count({ where: allCold }),
-    isAdminOrMgr ? prisma.lead.count({ where: { AND: [originCold, unassigned] } }) : Promise.resolve(0),
+    isAdminOrMgr ? prisma.lead.count({ where: { AND: [originCold, unassigned, { deletedAt: null }] } }) : Promise.resolve(0),
     isAdminOrMgr
       ? prisma.user.findMany({ where: { active: true, hrOnly: false, role: { in: ["AGENT", "MANAGER", "ADMIN"] } }, orderBy: { name: "asc" } })
       : Promise.resolve([]),
@@ -116,16 +119,18 @@ export default async function ColdDataPage({ searchParams }: { searchParams: Pro
       orderBy: { _count: { userId: "desc" } },
       take: 5,
     }),
-    // Count per status for filter tabs
-    ...REVIVAL_STATUSES.map(s =>
-      prisma.lead.count({ where: { AND: [baseScope, originCold, { currentStatus: s.v }] } })
+    // Count per status for filter tabs — use actual status text
+    // CRITICAL: Include deletedAt: null to exclude archived/deleted cold leads from counts
+    ...Array.from(ALL_POSSIBLE_STATUSES).map(s =>
+      prisma.lead.count({ where: { AND: [baseScope, originCold, { deletedAt: null }, { currentStatus: s }] } })
     ),
   ]);
 
-  // Build statusCounts map: { NEW: 5, CONTACTED: 12, … }
+  // Build statusCounts map: { "Fresh Lead": 5, "Follow Up": 12, … }
   const statusCounts: Record<string, number> = {};
-  REVIVAL_STATUSES.forEach((s, i) => {
-    statusCounts[s.v] = (statusCountResults[i] as number) ?? 0;
+  const statusArray = Array.from(ALL_POSSIBLE_STATUSES);
+  statusArray.forEach((s, i) => {
+    statusCounts[s] = (statusCountResults[i] as number) ?? 0;
   });
 
   // Leaderboard name resolution
@@ -211,13 +216,13 @@ export default async function ColdDataPage({ searchParams }: { searchParams: Pro
                 ⚠ Unassigned · {unassignedCount}
               </Link>
             )}
-            {REVIVAL_STATUSES.map(s => (
+            {statusArray.map(s => (
               <Link
-                key={s.v}
-                href={`/cold-calls?status=${s.v}`}
-                className={statusFilter === s.v ? "on" : ""}
+                key={s}
+                href={`/cold-calls?status=${s}`}
+                className={statusFilter === s ? "on" : ""}
               >
-                {s.label} · {statusCounts[s.v] ?? 0}
+                {s} · {statusCounts[s] ?? 0}
               </Link>
             ))}
           </div>
