@@ -26,6 +26,8 @@ async function createLeadAction(formData: FormData) {
   // PhoneInput posts already-E164'd value; normalise anyway as defence
   const rawPhone = String(formData.get("phone") ?? "").trim();
   const phone = toE164(rawPhone) ?? undefined;
+  const rawAltPhone = String(formData.get("altPhone") ?? "").trim();
+  const altPhone = rawAltPhone ? (toE164(rawAltPhone) ?? undefined) : undefined;
 
   const { lead } = await ingestLead({
     name: String(formData.get("name") ?? "").trim(),
@@ -38,6 +40,13 @@ async function createLeadAction(formData: FormData) {
     notesShort: String(formData.get("remarks") ?? "").trim() || undefined,
     source,
   });
+
+  // Add alternative contact info after lead creation
+  const altName = String(formData.get("altName") ?? "").trim() || undefined;
+  const altEmail = String(formData.get("altEmail") ?? "").trim() || undefined;
+  if (altName || altPhone || altEmail) {
+    await prisma.lead.update({ where: { id: lead.id }, data: { altName, altPhone, altEmail } });
+  }
 
   // Enrich with Dubai depth fields
   const opt = <T,>(v: FormDataEntryValue | null): T | undefined => {
@@ -139,6 +148,14 @@ export default async function NewLeadPage() {
               <p className="text-[10px] text-gray-500 mt-0.5">Pick country flag · WhatsApp/Call buttons stop working without the right code</p>
             </div>
             <div><label className={label}>✉ E-mail</label><input name="email" type="email" className={input} /></div>
+            <div><label className={label}>👤 Alternative name</label><input name="altName" placeholder="Co-buyer, spouse" className={input} /></div>
+            <div>
+              <label className={label}>📞 Alternative mobile</label>
+              <div className="mt-1">
+                <PhoneInput name="altPhone" defaultDial={defaultDialForTeam(me.team)} placeholder="50 123 4567" />
+              </div>
+            </div>
+            <div><label className={label}>✉ Alternative email</label><input name="altEmail" type="email" className={input} /></div>
           </div>
           {/* Dedup warning — non-blocking; appears after the user enters phone/email */}
           <div className="mt-3">

@@ -327,6 +327,7 @@ model Lead {
   // Lead detail renders separate Call + WhatsApp buttons for it.
   altPhone        String?
   email           String?
+  altEmail        String?     // Second email address
   company         String?     // where the client works — matters for HNI profiling
   city            String?
   state           String?     // State / Province — auto-filled from city alongside country
