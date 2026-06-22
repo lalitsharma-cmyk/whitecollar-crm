@@ -26,6 +26,9 @@ const DEFAULTS = {
   "automation.email": "false",            // automated outbound email (speed-to-lead / workflow)
   "automation.autoEscalation": "false",   // automatic escalation ACTIONS (e.g. auto "Needs You" flagging) — NOT the alerts
   "automation.scheduledActions": "false", // workflow-engine scheduled/drip automated actions
+  // 15-min Call-SLA breach ESCALATION alert (reconciler §2). Paused by Lalit
+  // 2026-06-22 — default OFF; flip to "true" to resume the "no call in 15 min" nudge.
+  "slaBreach.enabled": "false",
   // ── B-20 voice / motivation pilot (Bucket H) ──
   // The voice + daily-motivation surface is partially specced but NOT yet
   // validated for tone/usefulness, so it ships behind a flag and is piloted
@@ -138,6 +141,13 @@ export const getWhatsappAutomationEnabled = () => getAutomationFlag("automation.
 export const getEmailAutomationEnabled = () => getAutomationFlag("automation.email");
 export const getAutoEscalationEnabled = () => getAutomationFlag("automation.autoEscalation");
 export const getScheduledActionsEnabled = () => getAutomationFlag("automation.scheduledActions");
+
+// 15-min Call-SLA breach escalation alert. Default OFF (paused). Notification, not
+// automation — kept separate so it can be resumed without touching the others.
+export async function getSlaBreachEnabled(): Promise<boolean> {
+  const raw = await getSetting("slaBreach.enabled");
+  return raw.toLowerCase() === "true"; // default OFF
+}
 
 /** All automation flags (incl. round-robin) for the Settings UI. */
 export async function getAutomationFlags(): Promise<Record<string, boolean>> {

@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { notify, notifyRoles } from "@/lib/notify";
 import { chooseOwnerForNewLead } from "@/lib/assignmentWindow";
-import { getRoundRobinEnabled, getAutoAssignmentEnabled, getAutoEscalationEnabled } from "@/lib/settings";
+import { getRoundRobinEnabled, getAutoAssignmentEnabled, getAutoEscalationEnabled, getSlaBreachEnabled } from "@/lib/settings";
 import { isTeamClassified } from "@/lib/teamRouting";
 import { SUPPRESSED_STATUSES, CLOSING_STATUSES } from "@/lib/lead-statuses";
 
@@ -38,8 +38,8 @@ export async function runReconciler(): Promise<ReconcileResult> {
 
   // Notifications + escalation ALERTS always fire here now. Only the automated
   // ACTIONS are gated by their per-feature Automation Controls flag (default OFF).
-  const [autoAssignmentOn, roundRobinFlag, autoEscalationOn] = await Promise.all([
-    getAutoAssignmentEnabled(), getRoundRobinEnabled(), getAutoEscalationEnabled(),
+  const [autoAssignmentOn, roundRobinFlag, autoEscalationOn, slaBreachOn] = await Promise.all([
+    getAutoAssignmentEnabled(), getRoundRobinEnabled(), getAutoEscalationEnabled(), getSlaBreachEnabled(),
   ]);
 
   // ── 1) Auto-assign anything unowned >5 minutes (AUTOMATION — gated) ──
@@ -100,10 +100,12 @@ export async function runReconciler(): Promise<ReconcileResult> {
     autoAssigned++;
   }
 
-  // ── 2) Escalate 15-min call SLA breaches (NOTIFICATION — always fires) ──
-  const overdue = await prisma.lead.findMany({
+  // ── 2) Escalate 15-min call SLA breaches — PAUSED by default (Lalit 2026-06-22).
+  //       Resume via Settings `slaBreach.enabled`. Bounded to breaches in the last
+  //       6h so a resume can NEVER re-alert an ancient backlog. ──
+  const overdue = slaBreachOn ? await prisma.lead.findMany({
     where: {
-      slaFirstCallBy: { lte: new Date() },
+      slaFirstCallBy: { lte: new Date(), gte: new Date(Date.now() - 6 * 3600 * 1000) },
       slaEscalated: false,
       ownerId: { not: null },
       deletedAt: null,
@@ -111,7 +113,7 @@ export async function runReconciler(): Promise<ReconcileResult> {
     },
     include: { owner: true, callLogs: { take: 1 } },
     take: 50,
-  });
+  }) : [];
 
   for (const lead of overdue) {
     if (!isTeamClassified(lead.forwardedTeam)) continue;
