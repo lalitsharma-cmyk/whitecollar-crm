@@ -1,0 +1,135 @@
+import { requireUser } from "@/lib/auth";
+import { normalizeTeam } from "@/lib/teamRouting";
+import Link from "next/link";
+import {
+  buildAgentReport,
+  resolveDateRange,
+  type ReportScope,
+} from "@/lib/agentPerformance";
+import AgentPerformanceTable from "@/components/AgentPerformanceTable";
+import AgentRankings from "@/components/AgentRankings";
+import ConversionFunnel, { aggregateFunnel } from "@/components/ConversionFunnel";
+import AgentPerfRangeSelector from "@/components/AgentPerfRangeSelector";
+
+export const dynamic = "force-dynamic";
+
+// ─────────────────────────────────────────────────────────────────────────
+// /reports/agent-performance — Agent Lead Performance report.
+//   ADMIN   → all agents, optional team filter (All | Dubai | India).
+//   MANAGER → agents on their own team only (team filter locked).
+//   AGENT   → only their own row (no team filter, no rankings drill of peers).
+// All metrics respect the ?range=… time window (IST day boundaries).
+// ─────────────────────────────────────────────────────────────────────────
+
+export default async function AgentPerformancePage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | undefined>>;
+}) {
+  const me = await requireUser();
+  const sp = await searchParams;
+
+  const range = resolveDateRange(sp.range, sp.from, sp.to);
+
+  // Team scope: ADMIN free choice; MANAGER locked to own team; AGENT n/a.
+  const resolvedTeam: "India" | "Dubai" | null = (() => {
+    if (me.role === "MANAGER") return (normalizeTeam(me.team) as "India" | "Dubai" | null) ?? null;
+    if (me.role === "ADMIN") {
+      if (sp.team === "India" || sp.team === "Dubai") return sp.team;
+      return null;
+    }
+    return null;
+  })();
+
+  const scope: ReportScope = {
+    role: me.role as ReportScope["role"],
+    meId: me.id,
+    team: resolvedTeam,
+  };
+
+  const rows = await buildAgentReport(range, scope);
+  const overallFunnel = aggregateFunnel(rows);
+
+  // Thread the active filters onto links (detail view + export) so they open
+  // in the same window/scope.
+  const qs = new URLSearchParams();
+  qs.set("range", range.preset);
+  if (range.preset === "custom") {
+    if (sp.from) qs.set("from", sp.from);
+    if (sp.to) qs.set("to", sp.to);
+  }
+  if (resolvedTeam) qs.set("team", resolvedTeam);
+  const query = `?${qs.toString()}`;
+
+  const isAgent = me.role === "AGENT";
+  const isAdmin = me.role === "ADMIN";
+
+  return (
+    <>
+      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+        <div>
+          <Link href="/reports" className="text-xs text-gray-500 hover:underline">
+            ← Back to reports
+          </Link>
+          <h1 className="text-xl sm:text-2xl font-bold">📈 Agent Lead Performance</h1>
+          <p className="text-xs sm:text-sm text-gray-500">
+            {range.label}
+            {resolvedTeam ? ` · ${resolvedTeam} team` : me.role === "ADMIN" ? " · all teams" : ""}
+            {isAgent ? " · your performance" : ""}
+          </p>
+        </div>
+
+        {/* Team filter — ADMIN interactive, MANAGER locked, AGENT hidden */}
+        {!isAgent && (
+          <div className="flex items-center gap-2 self-start sm:self-auto">
+            {me.role === "MANAGER" ? (
+              <div className="seg opacity-60 cursor-not-allowed" title="Locked to your team">
+                <span className="pointer-events-none on">{resolvedTeam ?? "Your team"}</span>
+              </div>
+            ) : (
+              <div className="seg">
+                <Link href={`/reports/agent-performance?range=${range.preset}&team=Dubai`} className={resolvedTeam === "Dubai" ? "on" : ""}>🇦🇪 Dubai</Link>
+                <Link href={`/reports/agent-performance?range=${range.preset}&team=India`} className={resolvedTeam === "India" ? "on" : ""}>🇮🇳 India</Link>
+                <Link href={`/reports/agent-performance?range=${range.preset}`} className={!resolvedTeam ? "on" : ""}>All</Link>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Time window selector */}
+      <AgentPerfRangeSelector current={range.preset} from={sp.from} to={sp.to} />
+
+      {/* Export (CSV) — admin gets a watermarked extract; others see a note */}
+      {isAdmin ? (
+        <div className="flex flex-wrap gap-2 items-center">
+          <span className="text-xs text-gray-500">Export:</span>
+          <a href={`/api/reports/agent-performance/export${query}&format=csv`} className="btn btn-ghost text-xs">⬇️ CSV</a>
+          <a href={`/api/reports/agent-performance/export${query}&format=xlsx`} className="btn btn-ghost text-xs">⬇️ Excel</a>
+        </div>
+      ) : (
+        <div className="text-[11px] text-gray-500 italic">CSV/Excel export is Admin-only.</div>
+      )}
+
+      {/* Per-agent metrics table */}
+      <AgentPerformanceTable rows={rows} query={query} />
+
+      {/* Conversion funnel (overall / scope) */}
+      <ConversionFunnel
+        stages={overallFunnel}
+        title={isAgent ? "Your conversion funnel" : `Conversion funnel — ${resolvedTeam ?? "all agents"}`}
+      />
+
+      {/* Manager rankings — hidden for AGENT (single-row scope) */}
+      {!isAgent && rows.length > 1 && <AgentRankings rows={rows} />}
+
+      <div className="card p-3 bg-blue-50 border-l-4 border-blue-400 text-[11px] text-blue-800 leading-relaxed">
+        <strong>How to read this:</strong> Assignment metrics use the <strong>assignment history</strong> (the agent who held the lead
+        when it was assigned in the period) — so a lead reassigned later still counts for whoever worked it. Rejected leads are
+        included in handled volume. Deleted / recycle-bin leads are never counted. Every metric respects the period filter, and the
+        counts reconcile 1:1 with the lead lists they link to. Revenue / brokerage / booking-value tracking can be layered on later
+        without changing this report.
+      </div>
+    </>
+  );
+}

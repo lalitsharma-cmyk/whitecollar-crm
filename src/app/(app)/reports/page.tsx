@@ -76,6 +76,11 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
             <div className="font-bold text-sm mt-1">Daily Report</div>
             <div className="text-[10px] text-gray-500 mt-0.5">Target vs Achieved vs Pending — your numbers, per day</div>
           </Link>
+          <Link href="/reports/agent-performance" className="card p-4 border-l-4 border-blue-600 hover:shadow-md transition">
+            <div className="text-2xl">📈</div>
+            <div className="font-bold text-sm mt-1">My Performance</div>
+            <div className="text-[10px] text-gray-500 mt-0.5">Your leads, outcomes, calls, meetings &amp; funnel</div>
+          </Link>
         </div>
 
         <div className="card p-4 bg-blue-50 border-l-4 border-blue-400 text-sm text-blue-800">
@@ -549,6 +554,11 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
 
       {/* Primary report navigation — these are the everyday reports */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+        <Link href="/reports/agent-performance" className="card p-4 border-l-4 border-blue-600 hover:shadow-md transition">
+          <div className="text-2xl">📈</div>
+          <div className="font-bold text-sm mt-1">Agent Performance</div>
+          <div className="text-[10px] text-gray-500 mt-0.5">Per-agent leads, outcomes, calls, meetings, funnel · by assignment history</div>
+        </Link>
         <Link href="/reports/daily" className="card p-4 border-l-4 border-emerald-500 hover:shadow-md transition">
           <div className="text-2xl">📅</div>
           <div className="font-bold text-sm mt-1">Daily Report</div>

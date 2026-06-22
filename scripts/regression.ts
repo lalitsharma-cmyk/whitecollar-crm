@@ -896,6 +896,63 @@ const checks: Check[] = [
       assert(!isUnsuccessfulText("client picked up, interested"), "a connected note must NOT be flagged unsuccessful");
     },
   },
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // 14. AGENT PERFORMANCE (2026-06-23) — the report counts leads by ASSIGNMENT
+  //   HISTORY (Assignment table), not just current owner, and NEVER counts
+  //   deleted leads. Mirrors src/lib/agentPerformance.ts buildAgentReport()
+  //   totalAssigned + drilldownWhere("totalAssigned") inline (server-only lib
+  //   can't be imported under bare tsx). Invariants:
+  //    (a) the count-side (distinct leads via Assignment in window) == the
+  //        drill-side (Lead where assignments.some) for a real agent.
+  //    (b) a soft-deleted lead with an assignment in window is EXCLUDED.
+  // ───────────────────────────────────────────────────────────────────────────
+  {
+    name: "agent-performance — assignment-history attribution reconciles + excludes deleted",
+    run: async () => {
+      // Pick an agent who actually holds assignment history.
+      const withAsg = await prisma.assignment.findFirst({
+        where: { lead: { deletedAt: null } },
+        select: { userId: true, assignedAt: true },
+        orderBy: { assignedAt: "asc" },
+      });
+      if (!withAsg) {
+        results.push({ name: "  ↳ note", ok: true, detail: "no assignment history present — attribution check skipped" });
+        return;
+      }
+      const agentId = withAsg.userId;
+      // Wide window covering all assignment history.
+      const gte = new Date("2000-01-01T00:00:00Z");
+      const lt = new Date("2999-01-01T00:00:00Z");
+      const win = { gte, lt };
+
+      // COUNT side: distinct leads assigned to this agent in window, lead not deleted.
+      const asgRows = await prisma.assignment.findMany({
+        where: { userId: agentId, assignedAt: win, lead: { deletedAt: null } },
+        select: { leadId: true },
+      });
+      const distinctLeadIds = new Set(asgRows.map((r) => r.leadId));
+      const countSide = distinctLeadIds.size;
+
+      // DRILL side: leads where an assignment to this agent exists in window (deleted excluded).
+      const drillSide = await prisma.lead.count({
+        where: { deletedAt: null, assignments: { some: { userId: agentId, assignedAt: win } } },
+      });
+      assert(countSide === drillSide,
+        `assignment-history count must reconcile with the drill-down query (count=${countSide}, drill=${drillSide})`);
+
+      // Deleted-exclusion: a deleted lead with an assignment must NOT be counted.
+      // Baseline (no deletedAt filter) >= filtered, and any deleted-with-assignment drops out.
+      const drillNoDelFilter = await prisma.lead.count({
+        where: { assignments: { some: { userId: agentId, assignedAt: win } } },
+      });
+      const deletedWithAsg = await prisma.lead.count({
+        where: { deletedAt: { not: null }, assignments: { some: { userId: agentId, assignedAt: win } } },
+      });
+      assert(drillNoDelFilter - deletedWithAsg === drillSide,
+        `deletedAt:null must remove exactly the deleted-with-assignment leads (all=${drillNoDelFilter}, deleted=${deletedWithAsg}, filtered=${drillSide})`);
+    },
+  },
 ];
 
 // ── runner ────────────────────────────────────────────────────────────────────
