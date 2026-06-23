@@ -158,6 +158,8 @@ model User {
   buyerImports          BuyerImportBatch[] @relation("BuyerImports")
 
   assistantRuns         AssistantRun[] @relation("AssistantRunBy")
+
+  agentStatusEvents     AgentStatusEvent[]
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1377,6 +1379,7 @@ enum NotifKind {
   REMINDER            // generic follow-up reminder
   SYSTEM              // info / settings change
   LUNCH_REMINDER      // soft lunch-break reminder (2:00 / 2:25 PM IST)
+  AGENT_STATUS        // field-movement check-in (I'm here / meeting / site visit) → manager
 }
 
 enum NotifSeverity {
@@ -1535,6 +1538,49 @@ model Attendance {
   checkInDevice   String?
   @@unique([userId, date])
   @@index([date])
+}
+
+// =====================================================
+// AGENT FIELD-MOVEMENT STATUS — agents tap a button on their phone to log
+// where they are: arrived / left office / going-or-back-from a meeting or
+// site visit. Manager (Lalit) is notified on every event, with the duration
+// computed on the "Returned" tap. Distinct from Attendance (1 row/day, drives
+// round-robin); this is an append-only event log (many rows/day).
+//
+// PAIR MODEL — start/end events are linked on the row that CLOSES them:
+//   • A "Going …" event is created OPEN (endedAt = null, durationMin = null).
+//   • The matching "Returned …" event is created CLOSED at the same instant
+//     (endedAt = startedAt) AND back-fills the open "Going" row's endedAt +
+//     durationMin (so the opening row carries the duration too, and is no
+//     longer "open"). The "Returned" row stores the same durationMin + a
+//     pairedEventId pointing back at the "Going" row it closed.
+//   • HERE / LEAVING_OFFICE are standalone point events (always closed,
+//     durationMin = null).
+// "Currently OUT" = a GOING_* row with endedAt IS NULL.
+// =====================================================
+enum AgentStatusKind {
+  HERE                 // "I Am Here" — arrival / check-in (also marks Attendance self-check-in)
+  LEAVING_OFFICE       // left the office for the day
+  GOING_MEETING        // heading out to a meeting (start)
+  RETURNED_MEETING     // back from the meeting (end → duration)
+  GOING_SITE_VISIT     // heading out to a site visit (start)
+  RETURNED_SITE_VISIT  // back from the site visit (end → duration)
+}
+
+model AgentStatusEvent {
+  id            String          @id @default(cuid())
+  userId        String
+  user          User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  status        AgentStatusKind
+  startedAt     DateTime        @default(now())
+  endedAt       DateTime?       // set on the closing ("Returned") row AND back-filled onto the opening ("Going") row
+  durationMin   Int?            // minutes between the Going start and the Returned tap (on both paired rows)
+  pairedEventId String?         // on a "Returned" row → the id of the "Going" row it closed
+  note          String?
+  createdAt     DateTime        @default(now())
+  @@index([userId, createdAt])
+  @@index([userId, status])
+  @@index([userId, status, endedAt]) // fast "open Going event for this user" lookup
 }
 
 // =====================================================

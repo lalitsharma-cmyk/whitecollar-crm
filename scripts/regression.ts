@@ -1067,6 +1067,43 @@ const checks: Check[] = [
       }
     },
   },
+  {
+    // Agent field-movement status — proves the migration is live in prod
+    // (table selectable) AND the pairing/duration invariant holds: every
+    // closed event with a durationMin is non-negative and equals the rounded
+    // minute diff between startedAt and endedAt (the math logAgentStatus writes).
+    name: "agent-status — AgentStatusEvent table exists + durationMin consistent with start/end (no negatives)",
+    run: async () => {
+      // (a) selectable → migration applied in prod (throws if table/columns missing).
+      const total = await prisma.agentStatusEvent.count();
+      assert(typeof total === "number" && total >= 0, "agentStatusEvent.count() must return a non-negative number");
+
+      // (b) duration consistency across all closed rows that carry a duration.
+      const closed = await prisma.agentStatusEvent.findMany({
+        where: { durationMin: { not: null }, endedAt: { not: null } },
+        select: { id: true, startedAt: true, endedAt: true, durationMin: true },
+        take: 2000,
+      });
+      for (const r of closed) {
+        assert((r.durationMin as number) >= 0, `durationMin must be >=0 (row ${r.id} = ${r.durationMin})`);
+        const expected = Math.max(0, Math.round((r.endedAt!.getTime() - r.startedAt!.getTime()) / 60_000));
+        assert(
+          r.durationMin === expected,
+          `durationMin (${r.durationMin}) must equal rounded(end-start)=${expected} for row ${r.id}`,
+        );
+      }
+
+      // (c) a "Returned" row that carries a duration must point at its opening row.
+      const returnedPaired = await prisma.agentStatusEvent.findMany({
+        where: { status: { in: ["RETURNED_MEETING", "RETURNED_SITE_VISIT"] }, durationMin: { not: null } },
+        select: { id: true, pairedEventId: true },
+        take: 2000,
+      });
+      for (const r of returnedPaired) {
+        assert(!!r.pairedEventId, `Returned row ${r.id} with a duration must have pairedEventId set`);
+      }
+    },
+  },
 ];
 
 // ── runner ────────────────────────────────────────────────────────────────────

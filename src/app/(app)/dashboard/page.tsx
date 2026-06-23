@@ -11,6 +11,8 @@ import { requireUser } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import IamHereCard from "@/components/IamHereCard";
+import AgentStatusBar from "@/components/AgentStatusBar";
+import { todaysEvents, openGoingEvent } from "@/lib/agentStatus";
 import { todayIST } from "@/lib/attendance";
 import { normalizeTeam } from "@/lib/teamRouting";
 import { formatLeadName } from "@/lib/leadName";
@@ -179,6 +181,30 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   const myAttendanceToday = await prisma.attendance.findUnique({
     where: { userId_date: { userId: me.id, date: todayIST() } },
   });
+
+  // ── Field-movement status widget data (this user's own events) ──
+  const [myStatusEventsRaw, myOpenGoingRaw] = await Promise.all([
+    todaysEvents(me.id),
+    openGoingEvent(me.id),
+  ]);
+  const myStatusEvents = myStatusEventsRaw.map((e) => ({
+    id: e.id,
+    status: e.status,
+    startedAt: e.startedAt.toISOString(),
+    endedAt: e.endedAt ? e.endedAt.toISOString() : null,
+    durationMin: e.durationMin,
+    pairedEventId: e.pairedEventId,
+  }));
+  const myOpenGoing = myOpenGoingRaw
+    ? {
+        id: myOpenGoingRaw.id,
+        status: myOpenGoingRaw.status,
+        startedAt: myOpenGoingRaw.startedAt.toISOString(),
+        endedAt: myOpenGoingRaw.endedAt ? myOpenGoingRaw.endedAt.toISOString() : null,
+        durationMin: myOpenGoingRaw.durationMin,
+        pairedEventId: myOpenGoingRaw.pairedEventId,
+      }
+    : null;
 
   // ADMIN-only morning-window widget: overnight leads waiting for assign
   let morningQueueCount = 0;
@@ -419,6 +445,13 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
               checkedIn={!!myAttendanceToday?.selfCheckedInAt}
               userName={me.name}
             />
+          )}
+
+          {/* Field-movement status buttons — agents tap these on their phone in
+              the field (arrival / leaving / meeting / site visit). Manager gets
+              notified with the duration. Shown to AGENT/MANAGER/ADMIN. */}
+          {(me.role === "AGENT" || me.role === "MANAGER" || me.role === "ADMIN") && (
+            <AgentStatusBar initialEvents={myStatusEvents} initialOpenGoing={myOpenGoing} />
           )}
 
           {/* Lead-Ops / Support-Admin management view (Sameer): assignment queue

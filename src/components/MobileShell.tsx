@@ -5,7 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import {
   LayoutDashboard, Users, Sparkles, Menu, X,
   Building2, BarChart3, Upload, UserCog, Settings as SettingsIcon, LogOut, Landmark,
-  ChevronLeft, ChevronRight, Gem, HelpCircle, AlertTriangle, Lock, PhoneCall, Briefcase, Database, ShieldCheck, Bot, Inbox, BadgeDollarSign,
+  ChevronLeft, ChevronRight, Gem, HelpCircle, AlertTriangle, Lock, PhoneCall, Briefcase, Database, ShieldCheck, Bot, Inbox, BadgeDollarSign, MapPin,
 } from "lucide-react";
 import GlobalDateFilter from "./GlobalDateFilter";
 import NotifBell from "./NotifBell";
@@ -107,6 +107,7 @@ const fullNav: NavSection[] = [
   { section: "TEAM", managerOrAdmin: true, items: [
     { href: "/team",                label: "Team & Roles",  Icon: UserCog,       tag: undefined as string | undefined },
     { href: "/admin/awaiting-team", label: "Awaiting Team", Icon: AlertTriangle, tag: undefined as string | undefined },
+    { href: "/admin/field-status",  label: "Field Status",  Icon: MapPin,        tag: undefined as string | undefined },
   ]},
   // ADMIN-only section — all config/system tools live under /settings.
   // Only Lead Intake (CSV import) stays here as a direct link since admins
