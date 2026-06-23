@@ -1,8 +1,11 @@
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
 import { Prisma } from "@prisma/client";
-import { SUPPRESSED_STATUSES, statusColor, INDIA_STATUSES, DUBAI_STATUSES } from "@/lib/lead-statuses";
+import { SUPPRESSED_STATUSES, statusColor, INDIA_STATUSES, DUBAI_STATUSES, compareStatusDisplay } from "@/lib/lead-statuses";
 import { COLD_ORIGINS } from "@/lib/leadScope";
+import { leadFilterWhere, leadFilterOrderBy } from "@/lib/leadFilterWhere";
+import { getAvailableMediums } from "@/lib/mediumManager";
+import { projectWhereForUser } from "@/lib/propertyScope";
 import { startOfDay, startOfWeek } from "date-fns";
 import Link from "next/link";
 import ColdDataAdminControls from "@/components/ColdDataAdminControls";
@@ -10,56 +13,83 @@ import HiddenGemsBanner, { type HiddenGem } from "@/components/HiddenGemsBanner"
 import DailyRevivalMission from "@/components/DailyRevivalMission";
 import RevivalLeaderboard, { type LeaderboardRow } from "@/components/RevivalLeaderboard";
 import RevivalEngineListClient from "@/components/RevivalEngineListClient";
+import LeadFilters from "@/components/LeadFilters";
+import SavedFiltersBar from "@/components/SavedFiltersBar";
 import { REVIVAL_MISSION } from "@/lib/missions";
 
 export const dynamic = "force-dynamic";
 
-// 💎 REVIVAL ENGINE — cold data pipeline with status-based filtering.
+// 💎 REVIVAL ENGINE — cold data pipeline with the SAME list experience as /leads.
 //
-// Leads with leadOrigin="COLD" are shown here exclusively. Agents see only
-// their assigned rows. "Promote to Lead" flips leadOrigin → "ACTIVE" and
-// the row moves into /leads.
+// Leads with leadOrigin in COLD_ORIGINS (or isColdCall) are shown here exclusively.
+// Agents see only their assigned rows. "Promote to Lead" flips leadOrigin → ACTIVE
+// and the row moves into /leads.
 //
-// Filter tabs use the SAME statuses as the main /leads pipeline (INDIA_STATUSES + DUBAI_STATUSES).
+// PARITY (DRY — reuses the Leads building blocks):
+//   • Filters  → shared <LeadFilters> panel + leadFilterWhere() (team/owner/status/
+//                source/medium/tags/date/follow-up/search), scoped to cold/revival data.
+//   • Saved Views → shared <SavedFiltersBar> (URL-query Smart Lists, /api/saved-filters).
+//   • Bulk actions → assign / team / status / reject / export via /api/leads/bulk
+//                    (reassign routes through assignLeadTo → Assignment row + notify).
+//   • Search → the LeadFilters search box (?q=) translated by leadFilterWhere.
+//   • Columns → same column set as Leads (Lead/Status/Owner/Last touch/Source/Medium),
+//               sortable, plus Revival-only bits (stale badge, cold reason, promote).
+//
+// Status filter tabs use the SAME statuses as /leads (INDIA_STATUSES + DUBAI_STATUSES).
 // "Stages" concept removed — Revival Engine is status-aligned with Leads.
 
 const COLD_DAYS = REVIVAL_MISSION.dormantDays;
 
-// All possible statuses across both teams — Revival Engine serves cold data from both.
+// All possible statuses across both teams — Revival serves cold data from both.
 const ALL_POSSIBLE_STATUSES = new Set([...INDIA_STATUSES, ...DUBAI_STATUSES]);
 
-// Status colors come from statusColor() — no stage mapping needed.
+const PAGE_SIZE = 200;
 
 export default async function ColdDataPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const me = await requireUser();
   const sp = await searchParams;
 
-  // Active status filter — "all" means no status restriction
+  // Active status filter — "all" means no status restriction. Kept as a top-level
+  // param (?status=) for the chip-tab UX, AND-composed with the shared filters.
   const statusFilter = sp.status ?? "all";
   const cutoff = new Date(Date.now() - COLD_DAYS * 86400 * 1000);
   const todayStart = startOfDay(new Date());
   const weekStart = startOfWeek(new Date(), { weekStartsOn: 1 });
 
   const isAdminOrMgr = me.role === "ADMIN" || me.role === "MANAGER";
+  const isAgent = me.role === "AGENT";
 
-  // Agents only see cold data assigned to them. Admin sees everything.
+  // Agents only see cold data assigned to them. Admin/manager see everything.
   const baseScope: Prisma.LeadWhereInput = isAdminOrMgr ? {} : { ownerId: me.id };
   const originCold: Prisma.LeadWhereInput = { leadOrigin: { in: COLD_ORIGINS } };
   const unassigned: Prisma.LeadWhereInput = { ownerId: null };
 
-  // Status-based filter — "all" shows everything, "unassigned" is admin shortcut
-  // Now uses actual status text (e.g., "Fresh Lead", "Follow Up") instead of obsolete enum values
+  // ── Shared filter translation (same engine as /leads + /master-data) ────────
+  // leadFilterWhere() turns the LeadFilters panel params (q, cstatus, source,
+  // medium, owner, team, project, budget, follow-up, date range, tags, …) into an
+  // AND-composed array. Role-gating is the caller's job: AGENTs can't filter by
+  // owner or source, so we strip those params before translation.
+  const filterSp = { ...sp };
+  if (isAgent) {
+    delete filterSp.owner;
+    delete filterSp.source;
+  }
+  const sharedAnd = leadFilterWhere(filterSp);
+
+  // Status-tab filter — "all" shows everything, "unassigned" is an admin shortcut.
+  // Uses actual status text (e.g., "Fresh Lead", "Follow Up").
   const statusWhere: Prisma.LeadWhereInput =
     statusFilter === "unassigned"
       ? unassigned
-      : statusFilter !== "all" && ALL_POSSIBLE_STATUSES.has(statusFilter as any)
+      : statusFilter !== "all" && (ALL_POSSIBLE_STATUSES as Set<string>).has(statusFilter)
         ? { currentStatus: statusFilter }
         : {};
 
+  // allCold = everything in scope (for the "All" tab + total). where = the active view.
   const allCold: Prisma.LeadWhereInput = { AND: [baseScope, originCold] };
-  const where: Prisma.LeadWhereInput = { AND: [baseScope, originCold, statusWhere] };
+  const where: Prisma.LeadWhereInput = { AND: [baseScope, originCold, statusWhere, ...sharedAnd] };
 
-  // Hidden-gem filter: high-value dormant leads
+  // Hidden-gem filter: high-value dormant leads (Revival-specific — preserved).
   const hiddenGemsWhere: Prisma.LeadWhereInput = {
     AND: [
       baseScope,
@@ -75,9 +105,16 @@ export default async function ColdDataPage({ searchParams }: { searchParams: Pro
     ],
   };
 
+  // Sort — honour the shared ?sort= (LeadFilters "Sort By"); default = stalest-first
+  // (oldest lastTouchedAt), which is the Revival working order (chase dormant first).
+  const orderBy: Prisma.LeadOrderByWithRelationInput[] = sp.sort
+    ? leadFilterOrderBy(sp)
+    : [{ lastTouchedAt: "asc" }];
+
   const [
     leads,
     totalCount,
+    filteredCount,
     unassignedCount,
     agents,
     convertedTodayCount,
@@ -88,10 +125,11 @@ export default async function ColdDataPage({ searchParams }: { searchParams: Pro
     prisma.lead.findMany({
       where,
       include: { owner: true },
-      orderBy: { lastTouchedAt: "asc" },
-      take: 200,
+      orderBy,
+      take: PAGE_SIZE,
     }),
     prisma.lead.count({ where: allCold }),
+    prisma.lead.count({ where }),
     isAdminOrMgr ? prisma.lead.count({ where: { AND: [originCold, unassigned, { deletedAt: null }] } }) : Promise.resolve(0),
     isAdminOrMgr
       ? prisma.user.findMany({ where: { active: true, hrOnly: false, role: { in: ["AGENT", "MANAGER", "ADMIN"] } }, orderBy: { name: "asc" } })
@@ -119,10 +157,12 @@ export default async function ColdDataPage({ searchParams }: { searchParams: Pro
       orderBy: { _count: { userId: "desc" } },
       take: 5,
     }),
-    // Count per status for filter tabs — use actual status text
-    // CRITICAL: Include deletedAt: null to exclude archived/deleted cold leads from counts
+    // Count per status for filter tabs — counts respect the SHARED filters too, so
+    // a chip's number == the rows returned when that status is applied on top of
+    // the current filter set (same reconciliation invariant as Leads/Master Data).
+    // CRITICAL: deletedAt:null excludes archived/deleted cold leads from counts.
     ...Array.from(ALL_POSSIBLE_STATUSES).map(s =>
-      prisma.lead.count({ where: { AND: [baseScope, originCold, { deletedAt: null }, { currentStatus: s }] } })
+      prisma.lead.count({ where: { AND: [baseScope, originCold, { deletedAt: null }, ...sharedAnd, { currentStatus: s }] } })
     ),
   ]);
 
@@ -132,6 +172,11 @@ export default async function ColdDataPage({ searchParams }: { searchParams: Pro
   statusArray.forEach((s, i) => {
     statusCounts[s] = (statusCountResults[i] as number) ?? 0;
   });
+  // Only show status chips that have at least one lead in the current filter set,
+  // ordered canonically (Fresh Lead → Office Visit → Follow Up → …). Mirrors Leads.
+  const statusChips = statusArray
+    .filter(s => (statusCounts[s] ?? 0) > 0)
+    .sort(compareStatusDisplay);
 
   // Leaderboard name resolution
   const leaderboardUserIds = weeklyRevivals.map(r => r.userId).filter((id): id is string => id != null);
@@ -156,6 +201,51 @@ export default async function ColdDataPage({ searchParams }: { searchParams: Pro
 
   const streak = me.coldCallStreak ?? 0;
 
+  // ── Filter-panel option lists (cold/revival-scoped) ─────────────────────────
+  // Source + Medium dropdowns + projects, same shape the Leads/Master-Data panels
+  // use. Sources are DISTINCT verbatim sourceRaw values seen on cold/revival leads.
+  const [sourceRows, mediumOptions, allProjects] = await Promise.all([
+    isAgent
+      ? Promise.resolve([] as { sourceRaw: string | null }[])
+      : prisma.lead.findMany({
+          where: { ...originCold, deletedAt: null, sourceRaw: { not: null } },
+          distinct: ["sourceRaw"],
+          select: { sourceRaw: true },
+          orderBy: { sourceRaw: "asc" },
+        }),
+    getAvailableMediums(),
+    prisma.project.findMany({
+      where: projectWhereForUser(me),
+      select: { id: true, name: true },
+      orderBy: { name: "asc" },
+    }),
+  ]);
+  const sourceOptions = sourceRows.map(r => r.sourceRaw!).filter(Boolean);
+
+  // DISTINCT tag list over cold/revival leads for the More-Filters tag dropdown.
+  const tagRows = await prisma.$queryRaw<Array<{ tag: string }>>`
+    SELECT DISTINCT TRIM(t) AS tag
+    FROM (
+      SELECT UNNEST(string_to_array(tags, ',')) AS t
+      FROM "Lead"
+      WHERE tags IS NOT NULL AND tags <> ''
+        AND ("leadOrigin" IN ('COLD','REVIVAL') OR "isColdCall" = true)
+        AND "deletedAt" IS NULL
+    ) AS s
+    WHERE TRIM(t) <> ''
+    ORDER BY tag ASC
+  `;
+  const distinctTags = tagRows.map(r => r.tag).filter((t): t is string => typeof t === "string" && t.length > 0);
+
+  // Build a query-string of the CURRENT params for the export / bulk-export link.
+  const currentParams = (() => {
+    const p = new URLSearchParams();
+    for (const [k, v] of Object.entries(sp)) if (v != null && v !== "" && k !== "page") p.set(k, String(v));
+    return p.toString();
+  })();
+
+  const isFiltered = filteredCount !== totalCount;
+
   return (
     <>
       {/* ───────── COLD DATA NOTICE ───────── */}
@@ -169,8 +259,9 @@ export default async function ColdDataPage({ searchParams }: { searchParams: Pro
         <div>
           <h1 className="text-xl sm:text-2xl font-bold">💎 Revival Engine</h1>
           <p className="text-xs sm:text-sm text-gray-500">
-            Convert dormant leads into active deals
-            {isAdminOrMgr ? " · admin view (all agents)" : ""}
+            {isFiltered
+              ? <><span className="font-semibold text-[#0b1a33] dark:text-blue-300">{filteredCount} filtered</span> · {totalCount} total cold</>
+              : <>Convert dormant leads into active deals{isAdminOrMgr ? " · admin view (all agents)" : ""}</>}
           </p>
           <div className="mt-1 text-[11px] text-emerald-700 font-semibold">
             🎯 {convertedTodayCount} promoted to Lead today {isAdminOrMgr ? "(team)" : "(you)"}
@@ -206,25 +297,58 @@ export default async function ColdDataPage({ searchParams }: { searchParams: Pro
         {/* ─── LEFT: leads list ─── */}
         <div className="space-y-3 min-w-0">
 
-          {/* Status-based filter tabs */}
-          <div className="seg flex-wrap">
-            <Link href="/cold-calls" className={statusFilter === "all" ? "on" : ""}>
-              All · {totalCount}
-            </Link>
-            {isAdminOrMgr && (
-              <Link href="/cold-calls?status=unassigned" className={statusFilter === "unassigned" ? "on" : ""}>
-                ⚠ Unassigned · {unassignedCount}
-              </Link>
-            )}
-            {statusArray.map(s => (
-              <Link
-                key={s}
-                href={`/cold-calls?status=${s}`}
-                className={statusFilter === s ? "on" : ""}
-              >
-                {s} · {statusCounts[s] ?? 0}
-              </Link>
-            ))}
+          {/* Saved Views — same Smart Lists mechanism as Leads/Master Data */}
+          <SavedFiltersBar isAdmin={me.role === "ADMIN"} />
+
+          {/* Shared filter panel (search + team/owner/status/source/medium/tags/date) */}
+          <LeadFilters
+            agents={agents.map((a) => ({ id: a.id, name: a.name }))}
+            sources={sourceOptions}
+            statuses={[]}
+            showSource={!isAgent}
+            distinctTags={distinctTags}
+            projects={allProjects}
+            mediums={mediumOptions}
+          />
+
+          {/* Status-based filter tabs (Excel/MIS values) — chip count == records applied */}
+          <div className="flex gap-2 overflow-x-auto pb-1 -mx-3 px-3 sm:mx-0 sm:px-0" style={{ scrollbarWidth: "thin" }}>
+            {(() => {
+              const base = "px-3 py-2 rounded-full text-xs font-semibold border min-h-11 inline-flex items-center gap-1 flex-none whitespace-nowrap";
+              const on = "bg-[#0b1a33] text-white border-[#0b1a33] dark:bg-blue-700 dark:border-blue-700";
+              const off = "bg-white dark:bg-slate-700 border-[#e5e7eb] dark:border-slate-600 text-gray-700 dark:text-slate-100 hover:bg-gray-50 dark:hover:bg-slate-600";
+              const spToParams = () => {
+                const p = new URLSearchParams();
+                for (const [k, v] of Object.entries(sp)) if (v != null && v !== "" && k !== "page") p.set(k, String(v));
+                return p;
+              };
+              const chipHref = (patch: Record<string, string | null>) => {
+                const p = spToParams();
+                for (const [k, v] of Object.entries(patch)) { if (v == null || v === "") p.delete(k); else p.set(k, v); }
+                const qs = p.toString();
+                return qs ? `/cold-calls?${qs}` : "/cold-calls";
+              };
+              return (
+                <>
+                  <Link href={chipHref({ status: null })} className={`${base} ${statusFilter === "all" ? on : off}`}>
+                    All <span className={`px-1 rounded text-[10px] ${statusFilter === "all" ? "bg-white/25" : "bg-black/10 dark:bg-white/10"}`}>{filteredCount}</span>
+                  </Link>
+                  {isAdminOrMgr && (
+                    <Link href={chipHref({ status: statusFilter === "unassigned" ? null : "unassigned" })} className={`${base} ${statusFilter === "unassigned" ? "bg-amber-600 text-white border-amber-600" : "bg-amber-50 border-amber-300 text-amber-800 dark:bg-amber-950/30 dark:border-amber-700 dark:text-amber-200"}`}>
+                      ⚠ Unassigned <span className={`px-1 rounded text-[10px] ${statusFilter === "unassigned" ? "bg-white/25" : "bg-black/10 dark:bg-white/10"}`}>{unassignedCount}</span>
+                    </Link>
+                  )}
+                  {statusChips.map(s => {
+                    const active = statusFilter === s;
+                    return (
+                      <Link key={s} href={chipHref({ status: active ? null : s })} className={`${base} ${active ? on : off}`}>
+                        {s} <span className={`px-1 rounded text-[10px] ${active ? "bg-white/25" : "bg-black/10 dark:bg-white/10"}`}>{statusCounts[s] ?? 0}</span>
+                      </Link>
+                    );
+                  })}
+                </>
+              );
+            })()}
           </div>
 
           {statusFilter === "unassigned" && isAdminOrMgr && leads.length === 0 && (
@@ -243,7 +367,12 @@ export default async function ColdDataPage({ searchParams }: { searchParams: Pro
               isColdCall:     l.isColdCall,
               leadOrigin:     l.leadOrigin,
               status:         l.status,
+              currentStatus:  l.currentStatus ?? null,
               statusChip:     statusColor(l.currentStatus),
+              sourceRaw:      l.sourceRaw ?? null,
+              medium:         l.medium ?? null,
+              mediumOther:    l.mediumOther ?? null,
+              team:           l.forwardedTeam ?? null,
               lastTouchedAt:  l.lastTouchedAt,
               ownerId:        l.ownerId,
               owner:          l.owner ? { name: l.owner.name } : null,
@@ -253,8 +382,12 @@ export default async function ColdDataPage({ searchParams }: { searchParams: Pro
             }))}
             myId={me.id}
             isAdminOrMgr={isAdminOrMgr}
+            canExport={!isAgent}
+            agents={agents.map(a => ({ id: a.id, name: a.name, team: a.team }))}
             cutoffMs={cutoff.getTime()}
             coldDays={COLD_DAYS}
+            exportParams={currentParams}
+            showSource={!isAgent}
           />
         </div>
 

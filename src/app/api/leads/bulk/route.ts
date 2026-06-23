@@ -5,6 +5,7 @@ import { assignLeadTo } from "@/lib/leadIngest";
 import { audit, reqMeta } from "@/lib/audit";
 import { leadScopeWhere } from "@/lib/leadScope";
 import { LeadStatus, LeadSource, ActivityType, ActivityStatus } from "@prisma/client";
+import { isStatusValidForTeam, NEEDS_REVIEW, statusesForTeam } from "@/lib/lead-statuses";
 import { crossTeamWarning, normalizeTeam } from "@/lib/teamRouting";
 import { parseBudget } from "@/lib/budgetParse";
 import { resolveBudgetCurrency } from "@/lib/budgetCurrency";
@@ -333,6 +334,81 @@ export async function POST(req: NextRequest) {
     await audit({ userId: me.id, action: "lead.bulk.fields", entity: "Lead",
       meta: { count: visibleIds.length, fields: Object.keys(data), projectLinked, leadIds: visibleIds.slice(0, 50) }, request: reqMeta(req) });
     return NextResponse.json({ ok: true, updated: Math.max(updated, projectLinked, visibleIds.length) });
+  }
+
+  if (action === "set_current_status") {
+    // Set the user-facing Excel/MIS status (currentStatus) in bulk. ADMIN/MANAGER
+    // only. Team-strict: only applies to leads whose TEAM master includes the
+    // status (never forces a Dubai status onto a Gurgaon lead). "Needs Review" is
+    // allowed for any team. Mirrors /api/master-data/bulk set_status, but scoped
+    // through leadScopeWhere so a manager only touches their own team. Writes
+    // LeadFieldHistory (currentStatus old→new) per changed lead.
+    if (me.role !== "ADMIN" && me.role !== "MANAGER") {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+    const status = String(body.status ?? "").trim();
+    if (!status) return NextResponse.json({ error: "status required" }, { status: 400 });
+    const before = await prisma.lead.findMany({
+      where: { id: { in: ids }, ...scope },
+      select: { id: true, currentStatus: true, forwardedTeam: true },
+    });
+    const eligible = before.filter((b) => status === NEEDS_REVIEW || (statusesForTeam(b.forwardedTeam) as readonly string[]).includes(status));
+    const skipped = before.length - eligible.length;
+    const changed = eligible.filter((b) => b.currentStatus !== status);
+    if (changed.length) {
+      await prisma.lead.updateMany({ where: { id: { in: changed.map((c) => c.id) } }, data: { currentStatus: status, lastTouchedAt: new Date() } });
+      prisma.leadFieldHistory.createMany({
+        data: changed.map((c) => ({ leadId: c.id, field: "currentStatus", oldValue: c.currentStatus, newValue: status, changedById: me.id, source: "bulk" })),
+      }).catch(() => {});
+    }
+    await audit({ userId: me.id, action: "lead.bulk.current_status", entity: "Lead",
+      meta: { status, updated: changed.length, skipped, leadIds: changed.map((c) => c.id).slice(0, 50) }, request: reqMeta(req) });
+    return NextResponse.json({ ok: true, updated: changed.length, skipped });
+  }
+
+  if (action === "set_team") {
+    // Set forwardedTeam (Dubai / India) in bulk. ADMIN/MANAGER only. Scoped
+    // through leadScopeWhere. Revalidates each lead's status against the NEW
+    // team's master — a status that doesn't exist for the new team becomes
+    // "Needs Review" (old value kept in history). Mirrors /api/master-data/bulk
+    // change_team so the two paths can't drift.
+    if (me.role !== "ADMIN" && me.role !== "MANAGER") {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+    const team = String(body.team ?? "").trim();
+    if (team !== "Dubai" && team !== "India") {
+      return NextResponse.json({ error: "team must be Dubai or India" }, { status: 400 });
+    }
+    // A team-scoped MANAGER cannot move leads OUT of their own team.
+    if (me.role === "MANAGER") {
+      const meTeam = normalizeTeam(me.team);
+      if (meTeam && meTeam !== team) {
+        return NextResponse.json({ error: "Managers can only set leads to their own team." }, { status: 403 });
+      }
+    }
+    const before = await prisma.lead.findMany({
+      where: { id: { in: ids }, ...scope },
+      select: { id: true, forwardedTeam: true, currentStatus: true },
+    });
+    const changed = before.filter((b) => b.forwardedTeam !== team);
+    let flagged = 0;
+    if (changed.length) {
+      await prisma.lead.updateMany({ where: { id: { in: changed.map((c) => c.id) } }, data: { forwardedTeam: team } });
+      prisma.leadFieldHistory.createMany({
+        data: changed.map((c) => ({ leadId: c.id, field: "forwardedTeam", oldValue: c.forwardedTeam, newValue: team, changedById: me.id, source: "bulk" })),
+      }).catch(() => {});
+      const toFlag = changed.filter((c) => !isStatusValidForTeam(c.currentStatus, team));
+      if (toFlag.length) {
+        await prisma.lead.updateMany({ where: { id: { in: toFlag.map((c) => c.id) } }, data: { currentStatus: NEEDS_REVIEW } });
+        prisma.leadFieldHistory.createMany({
+          data: toFlag.map((c) => ({ leadId: c.id, field: "currentStatus", oldValue: c.currentStatus, newValue: NEEDS_REVIEW, changedById: me.id, source: "team-change-revalidate" })),
+        }).catch(() => {});
+        flagged = toFlag.length;
+      }
+    }
+    await audit({ userId: me.id, action: "lead.bulk.team", entity: "Lead",
+      meta: { team, updated: changed.length, flaggedNeedsReview: flagged, leadIds: changed.map((c) => c.id).slice(0, 50) }, request: reqMeta(req) });
+    return NextResponse.json({ ok: true, updated: changed.length, flaggedNeedsReview: flagged });
   }
 
   return NextResponse.json({ error: "Unknown action" }, { status: 400 });
