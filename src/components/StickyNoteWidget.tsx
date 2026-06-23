@@ -6,11 +6,16 @@ interface Props {
   leadId: string;
   initialBody: string;
   initialUpdatedAt: string | null;
+  /** API base for the sticky-note PUT. Defaults to "/api/leads" (the Lead view).
+   *  Buyer Data passes "/api/buyer-data" to reuse this exact widget against its own
+   *  per-user-per-buyer sticky note. The trigger event name + localStorage keys are
+   *  derived from leadId so two records never collide. */
+  apiBase?: string;
 }
 
 type SaveStatus = "idle" | "saving" | "saved" | "error";
 
-export default function StickyNoteWidget({ leadId, initialBody, initialUpdatedAt }: Props) {
+export default function StickyNoteWidget({ leadId, initialBody, initialUpdatedAt, apiBase = "/api/leads" }: Props) {
   const [visible, setVisible]       = useState(false);
   const [minimized, setMinimized]   = useState(false);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
@@ -56,14 +61,14 @@ export default function StickyNoteWidget({ leadId, initialBody, initialUpdatedAt
   }, [leadId, LS_VIS, LS_MIN]);
 
   const saveToServer = useCallback((value: string) => {
-    fetch(`/api/leads/${leadId}/sticky-note`, {
+    fetch(`${apiBase}/${leadId}/sticky-note`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ body: value }),
     })
       .then(r => setSaveStatus(r.ok ? "saved" : "error"))
       .catch(() => setSaveStatus("error"));
-  }, [leadId]);
+  }, [leadId, apiBase]);
 
   function handleChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
     const value = e.target.value;

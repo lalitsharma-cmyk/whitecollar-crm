@@ -1039,6 +1039,58 @@ const checks: Check[] = [
   },
 
   // ───────────────────────────────────────────────────────────────────────────
+  // BUYER DETAIL = LEAD VIEW (layout unification) — the new detail-field columns +
+  // per-user sticky note exist in prod, the unified page reuses the Lead shell
+  // (mobile tabs + sticky widget + buyer admin panel), the new fields are inline-
+  // editable via the whitelisted PATCH (still canTouchBuyer-gated), and the buyer
+  // sticky-note API is scoped (no leak). Static + live so a refactor can't silently
+  // (i) drop a column, (ii) un-gate the sticky note, or (iii) regress the parity wiring.
+  // ───────────────────────────────────────────────────────────────────────────
+  {
+    name: "buyer-detail-unification — new columns + BuyerStickyNote live; page reuses Lead shell; sticky/PATCH gated",
+    run: async () => {
+      // (a) New BuyerRecord detail columns are live in prod (selecting them throws
+      //     if any column is missing → migration not applied).
+      await prisma.buyerRecord.findFirst({
+        select: {
+          id: true, passportExpiry: true, ownerName: true, country: true,
+          size: true, actualSize: true, area: true, transactionType: true, role: true,
+        },
+      });
+      // (b) BuyerStickyNote table exists + is selectable (migration applied).
+      const sc = await prisma.buyerStickyNote.count();
+      assert(typeof sc === "number" && sc >= 0, "buyerStickyNote.count() must return a non-negative number");
+
+      const fs = await import("node:fs");
+      const read = (f: string) => fs.readFileSync(f, "utf8");
+
+      // (c) The detail page reuses the Lead layout shell — same mobile tab bar +
+      //     the shared StickyNoteWidget (pointed at the buyer API) + the buyer admin
+      //     panel. Guards the "buyer detail looks like the lead view" mandate.
+      const page = read("src/app/(app)/buyer-data/[id]/page.tsx");
+      assert(/LeadMobileTabs/.test(page), "buyer detail MUST render LeadMobileTabs (mobile-tab parity with the Lead view)");
+      assert(/StickyNoteWidget/.test(page) && /apiBase="\/api\/buyer-data"/.test(page), "buyer detail MUST reuse StickyNoteWidget with apiBase=/api/buyer-data");
+      assert(/lg:grid-cols-3/.test(page), "buyer detail MUST use the Lead 3-col grid shell (main + right rail)");
+      assert(/BuyerAdminPanel/.test(page), "buyer detail MUST render the right-rail BuyerAdminPanel (convert/assign/reject/attempt/transfer)");
+
+      // (d) The shared StickyNoteWidget must NOT have hard-coded the lead API — it
+      //     uses the apiBase prop so the buyer reuse actually hits the buyer route.
+      assert(/\$\{apiBase\}\/\$\{leadId\}\/sticky-note/.test(read("src/components/StickyNoteWidget.tsx")), "StickyNoteWidget MUST use the apiBase prop for the sticky-note PUT (not a hard-coded /api/leads)");
+
+      // (e) The buyer sticky-note API is SCOPED (canTouchBuyer) — a private note must
+      //     not be writable by someone who can't see the buyer.
+      assert(/canTouchBuyer/.test(read("src/app/api/buyer-data/[id]/sticky-note/route.ts")), "buyer sticky-note route MUST gate via canTouchBuyer");
+
+      // (f) The PATCH whitelist exposes the new editable detail fields (so inline-edit
+      //     persists) — and is still canTouchBuyer-gated (asserted in buyer-module above).
+      const upd = read("src/app/api/buyer-data/[id]/update/route.ts");
+      for (const f of ["passportExpiry", "ownerName", "country", "size", "actualSize", "area", "transactionType", "role"]) {
+        assert(new RegExp(`${f}:\\s*"(string|number|date)"`).test(upd), `buyer update whitelist MUST allow editing "${f}"`);
+      }
+    },
+  },
+
+  // ───────────────────────────────────────────────────────────────────────────
   // WEBSITE AUTO-ASSIGN + PROPERTY-ENQUIRED MAPPING (Lalit 2026-06-24)
   // ───────────────────────────────────────────────────────────────────────────
   {
@@ -1264,14 +1316,22 @@ const checks: Check[] = [
       const cronYml = read(".github/workflows/cron.yml");
       assert(/api\/cron\/buyer-distribute/.test(cronYml), "buyer-distribute MUST be wired into .github/workflows/cron.yml");
 
-      // (e) detail page renders Imported Fields BETWEEN Notes and Conversation.
-      //     Match the JSX RENDER tags ("<Component"), not the top-of-file imports.
+      // (e) detail page renders Notes + ImportedFields + Conversation.
+      //     SUPERSEDED ORDER (v36 — Buyer detail = Lead View unification): the
+      //     detail page was rebuilt to mirror the Lead master template, where
+      //     Conversation History sits high in the MAIN column (right after the
+      //     header + intelligence) and the buyer-specific extra section — incl.
+      //     Imported Fields — lives BELOW the Quick Note. So Conversation now
+      //     precedes Imported Fields (the old "Notes → Imported → Conversation"
+      //     order no longer applies). BuyerNotesCard moved to the right rail
+      //     (shared working notes) and is still rendered. We assert the new
+      //     parity order: Conversation History BEFORE Imported Fields, all present.
       const detail = read("src/app/(app)/buyer-data/[id]/page.tsx");
       const iNotes = detail.indexOf("<BuyerNotesCard");
       const iImported = detail.indexOf("<ImportedFieldsCard customFields");
       const iConvo = detail.indexOf("<BuyerActivityTimeline");
       assert(iNotes > 0 && iImported > 0 && iConvo > 0, "detail page must render Notes + ImportedFields + Conversation");
-      assert(iNotes < iImported && iImported < iConvo, "Imported Fields MUST sit between Notes and the Conversation timeline");
+      assert(iConvo < iImported, "Conversation History MUST come before Imported Fields (Lead-view parity: timeline high in the main column, extra section below Quick Note)");
     },
   },
 

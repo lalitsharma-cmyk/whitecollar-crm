@@ -48,7 +48,7 @@ const ATTEMPT_BTNS: { type: string; label: string }[] = [
   { type: "ATTEMPT_WA_NO_RESPONSE", label: "WA No Response" },
 ];
 
-export default function BuyerActivityTimeline({ buyerId, canLog, isAdmin }: { buyerId: string; canLog: boolean; isAdmin: boolean }) {
+export default function BuyerActivityTimeline({ buyerId, canLog, isAdmin, rawRemarks }: { buyerId: string; canLog: boolean; isAdmin: boolean; rawRemarks?: string | null }) {
   const router = useRouter();
   const [data, setData] = useState<HistoryResp | null>(null);
   const [loading, setLoading] = useState(true);
@@ -56,6 +56,9 @@ export default function BuyerActivityTimeline({ buyerId, canLog, isAdmin }: { bu
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
+  const [showRaw, setShowRaw] = useState(false);
+  const rawText = (rawRemarks ?? "").trim();
+  const hasRaw = rawText.length > 0;
 
   const load = useCallback(async () => {
     try {
@@ -87,15 +90,36 @@ export default function BuyerActivityTimeline({ buyerId, canLog, isAdmin }: { bu
   }
 
   return (
-    <div className="card p-4 border-l-4 border-emerald-500" data-lead-section="conversation">
+    <div className="card p-4 border-l-4 border-emerald-500" data-lead-section="timeline">
       <div className="flex items-center justify-between gap-2 mb-3">
-        <div className="font-semibold dark:text-slate-100">💬 Conversation &amp; Activity</div>
+        <div className="font-semibold dark:text-slate-100">💬 Conversation History</div>
         {isAssigned && (
           <span className={`text-xs font-medium ${attemptCount >= 4 ? "text-red-600" : attemptCount >= 3 ? "text-amber-600" : "text-gray-500 dark:text-slate-400"}`}>
             {attemptCount}/5 attempts{attemptCount >= 3 && attemptCount < 5 ? ` · ${5 - attemptCount} left before auto-return` : ""}
           </span>
         )}
       </div>
+
+      {/* RAW HISTORY — imported remarks shown verbatim (parity with the Lead view's
+          Raw History). Collapsed by default; only rendered when the buyer carries
+          imported remark text. The Smart Timeline below is the CRM-activity stream. */}
+      {hasRaw && (
+        <div className="mb-3">
+          <button type="button" onClick={() => setShowRaw((s) => !s)}
+            className="flex items-center gap-1.5 text-xs font-semibold text-gray-600 dark:text-slate-300 hover:text-gray-800 dark:hover:text-slate-100">
+            <span>{showRaw ? "▾" : "▸"}</span> 📜 Raw History <span className="text-[10px] font-normal text-gray-400">— imported remarks, verbatim</span>
+          </button>
+          {showRaw && (
+            <div className="mt-2 rounded-lg border border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-800/40 p-3 text-sm text-gray-700 dark:text-slate-300 whitespace-pre-wrap break-words max-h-72 overflow-y-auto">
+              {rawText}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* SMART TIMELINE label — present so the two streams read distinctly, exactly
+          like the Lead Conversation History (Raw History + Smart Timeline). */}
+      <div className="text-[10px] uppercase tracking-widest text-gray-400 dark:text-slate-500 font-semibold mb-2">⚡ Smart Timeline</div>
 
       {/* Log controls (assigned agent / admin only, on an ASSIGNED buyer) */}
       {canLog && isAssigned && (

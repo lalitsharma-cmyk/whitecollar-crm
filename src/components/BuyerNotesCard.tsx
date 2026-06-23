@@ -32,7 +32,7 @@ export default function BuyerNotesCard({ buyerId, initial, canEdit }: { buyerId:
   }
 
   return (
-    <div className="card p-4" data-lead-section="notes">
+    <div className="card p-4" data-lead-section="overview">
       <div className="flex items-center justify-between gap-2 mb-2">
         <div className="font-semibold dark:text-slate-100">🗒️ Notes <span className="text-[10px] text-gray-400 font-normal">— working notes, kept across reassignments</span></div>
         {canEdit && !editing && (

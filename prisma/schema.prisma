@@ -159,6 +159,7 @@ model User {
   buyersOwned           BuyerRecord[]      @relation("BuyerOwner")
   buyerAssignments      BuyerAssignment[]  @relation("BuyerAssignmentAgent")
   buyerActivities       BuyerActivity[]    @relation("BuyerActivityUser")
+  buyerStickyNotes      BuyerStickyNote[]  @relation("BuyerStickyNoteUser")
 
   assistantRuns         AssistantRun[] @relation("AssistantRunBy")
 
@@ -2166,17 +2167,25 @@ model BuyerRecord {
   emails            String?  // JSON: ["email@example.com"] — email addresses
   passport          String?  // Passport number (sensitive data — ADMIN only)
   nationality       String?  // e.g. "Indian", "UAE National"
+  passportExpiry    String?  // Passport expiry (free text — sheets store dd/mm/yyyy etc.; kept verbatim)
+  ownerName         String?  // Registered owner name (may differ from the buyer/client)
+  country           String?  // Property / buyer country (e.g. "UAE", "India")
   // Property details
   projectName       String?  // e.g. "Burj Vista", "Godrej Properties Mumbai"
   tower             String?  // Tower / Building name
   unitNumber        String?  // Unit/Apartment/Villa number
   propertyType      String?  // "Residential", "Commercial", "Plot"
   configuration     String?  // e.g. "2BR", "3BR+M", "Shop"
+  size              String?  // Size as written on the sheet (e.g. "1,250 sq.ft", "120 sqm")
+  actualSize        String?  // Actual / carpet size (verbatim) when the sheet distinguishes it
+  area              String?  // Locality / community / area (e.g. "Downtown", "Sector 150")
   // Transaction details
   transactionValue  Float?   // Deal price in market currency
   pricePerSqFt      Float?   // Price / sqft (useful for comparables)
   transactionDate   DateTime? // Date of transaction / agreement
   transactionId     String?  // Deal ID / Transaction reference number
+  transactionType   String?  // "Primary", "Resale", "Rent", "Off-plan", etc.
+  role              String?  // Buyer's role in the deal (e.g. "Buyer", "Seller", "Investor")
   // Agent & source
   agentName         String?  // Sales agent name (may differ from system User)
   source            String?  // "Sheet import", "Manual entry", "Excel batch"
@@ -2219,6 +2228,7 @@ model BuyerRecord {
   // Agent-handling history (who worked it, attempts, returns) + buyer-scoped activity log.
   assignments       BuyerAssignment[]
   activities        BuyerActivity[]
+  stickyNotes       BuyerStickyNote[]
 
   @@index([buyerKey])
   @@index([projectName])
@@ -2274,6 +2284,24 @@ model BuyerActivity {
   @@index([buyerId])
   @@index([userId])
   @@index([buyerId, createdAt])
+}
+
+// ── BuyerStickyNote — per-agent private scratchpad on a buyer ─────────────────
+// Mirrors StickyNote (the Lead one): unique on (buyerId, userId) so every user
+// gets exactly one private note per buyer. Never shown to other users. Powers the
+// buyer-detail Quick Note widget at parity with the Lead view.
+model BuyerStickyNote {
+  id        String      @id @default(cuid())
+  buyerId   String
+  buyer     BuyerRecord @relation(fields: [buyerId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User        @relation("BuyerStickyNoteUser", fields: [userId], references: [id], onDelete: Cascade)
+  body      String      @default("")
+  updatedAt DateTime    @updatedAt
+  createdAt DateTime    @default(now())
+
+  @@unique([buyerId, userId])
+  @@index([userId])
 }
 
 // Bulk import batches — track where BuyerRecords came from (Google Sheet, Excel, etc.)
