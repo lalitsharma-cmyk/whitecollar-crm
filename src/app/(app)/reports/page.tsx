@@ -606,6 +606,11 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
           <div className="font-bold text-sm mt-1">Agent Performance</div>
           <div className="text-[10px] text-gray-500 mt-0.5">Per-agent leads, outcomes, calls, meetings, funnel · by assignment history</div>
         </Link>
+        <Link href="/reports/buyer-performance" className="card p-4 border-l-4 border-blue-400 hover:shadow-md transition">
+          <div className="text-2xl">🤝</div>
+          <div className="font-bold text-sm mt-1">Buyer Data Performance</div>
+          <div className="text-[10px] text-gray-500 mt-0.5">Per-agent buyers assigned, converted, returned, attempts &amp; funnel · pool health</div>
+        </Link>
         <Link href="/reports/daily" className="card p-4 border-l-4 border-emerald-500 hover:shadow-md transition">
           <div className="text-2xl">📅</div>
           <div className="font-bold text-sm mt-1">Daily Report</div>

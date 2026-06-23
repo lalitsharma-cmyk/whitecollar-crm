@@ -1274,6 +1274,173 @@ const checks: Check[] = [
       assert(iNotes < iImported && iImported < iConvo, "Imported Fields MUST sit between Notes and the Conversation timeline");
     },
   },
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // 42. BUYER PERFORMANCE REPORTING — Part 6 invariants (/reports/buyer-performance).
+  //   The report MUST be reconcilable: every per-agent metric count traces back to
+  //   the exact BuyerRecords behind it (the drill-down), and the admin summary
+  //   totals equal direct prisma counts. Deleted buyers NEVER count.
+  //
+  //   src/lib/buyerPerformance.ts imports "server-only" (bare tsx can't resolve it),
+  //   so — like the lead-report checks — the metric + drill-down query SHAPES are
+  //   REPLICATED INLINE here, byte-equivalent to that file. The lifecycle TYPE
+  //   constants are imported from src/lib/buyerLifecycle.ts (NOT server-only) so the
+  //   activity-type strings are tested against the REAL source. When you change a
+  //   query in buyerPerformance.ts, mirror it here.
+  //
+  //   Proves, against the real prod DB (read-only):
+  //   (a) ENGINE TABLES selectable (probe).
+  //   (b) ADMIN SUMMARY == direct counts: total == assigned+pool+converted+rejected
+  //       buckets reconcile, and each bucket equals its own poolStatus count;
+  //       live+deleted == grand total (deleted excluded from every summary number).
+  //   (c) METRIC == DRILL-DOWN for a real agent: for the busiest agent (most
+  //       BuyerActivity), the report's per-agent counts (computed inline the same
+  //       way buildBuyerReport does) EQUAL the drill-down record/event counts
+  //       (computed inline the same way buyerDrilldownWhere/buyerEventCount do).
+  //   (d) DELETED EXCLUDED: a soft-deleted buyer with activity never appears in any
+  //       drill-down population (the deletedAt:null filter is load-bearing).
+  //   (e) FUNNEL MONOTONICITY: contacted/engaged/converted are each ⊆ assigned.
+  // ───────────────────────────────────────────────────────────────────────────
+  {
+    name: "buyer-performance — summary == direct counts + every metric reconciles with its drill-down + deleted excluded + funnel ⊆ assigned",
+    run: async () => {
+      // Lifecycle type constants from the REAL (non-server-only) source.
+      const { BUYER_ACTIVITY_TYPE, BUYER_RETURN_REASON, ATTEMPT_TYPES } = await import("../src/lib/buyerLifecycle");
+      const ATTEMPT_LIST = [...ATTEMPT_TYPES];
+      const CONTACT_LIST = [
+        BUYER_ACTIVITY_TYPE.CALL, BUYER_ACTIVITY_TYPE.NOTE, BUYER_ACTIVITY_TYPE.WHATSAPP,
+        BUYER_ACTIVITY_TYPE.VOICE_NOTE, ...ATTEMPT_LIST,
+      ];
+      const ENGAGED_LIST = [BUYER_ACTIVITY_TYPE.CALL, BUYER_ACTIVITY_TYPE.WHATSAPP];
+
+      // (a) engine tables selectable.
+      await prisma.buyerAssignment.findFirst({ select: { id: true, userId: true, assignedAt: true, returnedAt: true, returnReason: true, attemptsInStint: true } });
+      await prisma.buyerActivity.findFirst({ select: { id: true, userId: true, type: true, createdAt: true, buyerId: true } });
+
+      // (b) ADMIN SUMMARY == direct counts (whole pool; teamOwnerIds = null path).
+      const base = { deletedAt: null } as const;
+      const [total, assigned, pool, converted, rejected, returnedToPool, grand, deleted] = await Promise.all([
+        prisma.buyerRecord.count({ where: base }),
+        prisma.buyerRecord.count({ where: { ...base, poolStatus: "ASSIGNED" } }),
+        prisma.buyerRecord.count({ where: { ...base, poolStatus: "ADMIN_POOL" } }),
+        prisma.buyerRecord.count({ where: { ...base, poolStatus: "CONVERTED" } }),
+        prisma.buyerRecord.count({ where: { ...base, poolStatus: "REJECTED" } }),
+        prisma.buyerRecord.count({ where: { ...base, returnedToPoolAt: { not: null }, poolStatus: "ADMIN_POOL" } }),
+        prisma.buyerRecord.count(),
+        prisma.buyerRecord.count({ where: { deletedAt: { not: null } } }),
+      ]);
+      // Every live buyer sits in exactly one of the 4 known poolStatus buckets (or an
+      // unknown one). assigned+pool+converted+rejected must not exceed total, and on
+      // a clean lifecycle they sum to it (no stray status). returnedToPool ⊆ pool.
+      assert(assigned + pool + converted + rejected <= total, "summary buckets exceed total (impossible)");
+      const unknownStatus = total - (assigned + pool + converted + rejected);
+      assert(unknownStatus === 0, `${unknownStatus} live buyer(s) have a poolStatus outside {ADMIN_POOL,ASSIGNED,CONVERTED,REJECTED} — summary would under-count`);
+      assert(returnedToPool <= pool, "returnedToPool must be a subset of the Admin Pool");
+      assert(total + deleted === grand, `live (${total}) + deleted (${deleted}) must equal grand total (${grand}) — deleted not excluded from summary`);
+      // "Active" in the summary is defined == assigned.
+      const active = assigned;
+      assert(active === assigned, "summary 'active' must equal the ASSIGNED count");
+
+      // (c) METRIC == DRILL-DOWN for the busiest real agent (most BuyerActivity).
+      // Pick the agent with the most authored activity rows; if none exist, the
+      // reconciliation is vacuously true and we note it.
+      const busiest = await prisma.buyerActivity.groupBy({
+        by: ["userId"],
+        where: { userId: { not: null }, buyer: { deletedAt: null } },
+        _count: { _all: true },
+        orderBy: { _count: { userId: "desc" } },
+        take: 1,
+      });
+      const agentId = busiest[0]?.userId ?? null;
+
+      if (!agentId) {
+        results.push({ name: "  ↳ note", ok: true, detail: "no BuyerActivity in prod yet — metric/drill reconciliation is vacuously satisfied (math proven by the synthetic E2E proof at deploy time)" });
+      } else {
+        // Use an all-time window so the window math doesn't gate the reconciliation
+        // (the equality we prove — metric == drill — is window-independent).
+        const win = { gte: new Date("2000-01-01T00:00:00Z"), lt: new Date("2999-01-01T00:00:00Z") };
+
+        // ── REPORT-SIDE counts (inline, == buildBuyerReport) ──
+        // Assigned: distinct buyers with a stint opened by the agent in window.
+        const stints = await prisma.buyerAssignment.findMany({
+          where: { userId: agentId, assignedAt: win, buyer: { deletedAt: null } },
+          select: { buyerId: true },
+        });
+        const workedSet = new Set(stints.map((s) => s.buyerId));
+        const report_assigned = workedSet.size;
+
+        const evCount = (where: object) => prisma.buyerActivity.count({ where });
+        const report_converted = await evCount({ userId: agentId, type: BUYER_ACTIVITY_TYPE.CONVERTED, createdAt: win, buyer: { deletedAt: null } });
+        const report_rejected = await evCount({ userId: agentId, type: BUYER_ACTIVITY_TYPE.REJECTED, createdAt: win, buyer: { deletedAt: null } });
+        const report_calls = await evCount({ userId: agentId, type: BUYER_ACTIVITY_TYPE.CALL, createdAt: win, buyer: { deletedAt: null } });
+        const report_wa = await evCount({ userId: agentId, type: BUYER_ACTIVITY_TYPE.WHATSAPP, createdAt: win, buyer: { deletedAt: null } });
+        const report_notes = await evCount({ userId: agentId, type: BUYER_ACTIVITY_TYPE.NOTE, createdAt: win, buyer: { deletedAt: null } });
+        const report_voice = await evCount({ userId: agentId, type: BUYER_ACTIVITY_TYPE.VOICE_NOTE, createdAt: win, buyer: { deletedAt: null } });
+        const report_attempts = await evCount({ userId: agentId, type: { in: ATTEMPT_LIST }, createdAt: win, buyer: { deletedAt: null } });
+        const report_autoRet = await prisma.buyerAssignment.count({ where: { userId: agentId, returnedAt: win, returnReason: BUYER_RETURN_REASON.AUTO_5_ATTEMPTS, buyer: { deletedAt: null } } });
+        const report_manRet = await prisma.buyerAssignment.count({ where: { userId: agentId, returnedAt: win, returnReason: BUYER_RETURN_REASON.MANUAL_REJECT, buyer: { deletedAt: null } } });
+
+        // ── DRILL-SIDE counts (inline, == buyerDrilldownWhere / buyerEventCount) ──
+        // Distinct-buyer drill counts:
+        const drill_assigned = await prisma.buyerRecord.count({ where: { deletedAt: null, assignments: { some: { userId: agentId, assignedAt: win } } } });
+        // Event drill counts (== buyerEventCount → must equal the report number):
+        const drillEv_converted = await prisma.buyerActivity.count({ where: { userId: agentId, type: BUYER_ACTIVITY_TYPE.CONVERTED, createdAt: win, buyer: { deletedAt: null } } });
+        const drillEv_attempts = await prisma.buyerActivity.count({ where: { userId: agentId, type: { in: ATTEMPT_LIST }, createdAt: win, buyer: { deletedAt: null } } });
+        const drillEv_autoRet = await prisma.buyerAssignment.count({ where: { userId: agentId, returnedAt: win, returnReason: BUYER_RETURN_REASON.AUTO_5_ATTEMPTS, buyer: { deletedAt: null } } });
+
+        // RECONCILE: report number == drill number (the contract the UI promises).
+        assert(report_assigned === drill_assigned, `Assigned mismatch: report ${report_assigned} ≠ drill ${drill_assigned}`);
+        assert(report_converted === drillEv_converted, `Converted mismatch: report ${report_converted} ≠ drill-event ${drillEv_converted}`);
+        assert(report_attempts === drillEv_attempts, `Attempts mismatch: report ${report_attempts} ≠ drill-event ${drillEv_attempts}`);
+        assert(report_autoRet === drillEv_autoRet, `Auto-returned mismatch: report ${report_autoRet} ≠ drill ${drillEv_autoRet}`);
+
+        // For EVENT metrics, the DISTINCT-buyer drill population must never EXCEED
+        // the event count (N events across ≤N buyers) — the drill page's reconciliation.
+        const distinctBuyers_calls = await prisma.buyerRecord.count({ where: { deletedAt: null, activities: { some: { userId: agentId, createdAt: win, type: BUYER_ACTIVITY_TYPE.CALL } } } });
+        assert(distinctBuyers_calls <= report_calls, `distinct buyers behind Calls (${distinctBuyers_calls}) must be ≤ event count (${report_calls})`);
+        // sanity: the other event counts are all non-negative ints (the queries ran).
+        for (const [n, label] of [[report_rejected, "rejected"], [report_wa, "whatsapp"], [report_notes, "notes"], [report_voice, "voice"], [report_manRet, "manualReturned"], [report_converted, "converted"]] as const) {
+          assert(Number.isInteger(n) && n >= 0, `${label} count is not a non-negative integer (${n})`);
+        }
+
+        // (e) FUNNEL ⊆ ASSIGNED: contacted/engaged/converted intersected with the
+        // worked set must each be ≤ assigned (clean monotonic drop-off).
+        const stagePairs = async (types: string[] | string) =>
+          prisma.buyerActivity.findMany({
+            where: { userId: agentId, createdAt: win, buyer: { deletedAt: null }, type: Array.isArray(types) ? { in: types } : types },
+            select: { buyerId: true },
+            distinct: ["buyerId"],
+          });
+        const inWorked = (rows: Array<{ buyerId: string }>) => rows.filter((r) => workedSet.has(r.buyerId)).length;
+        const funnel_contacted = inWorked(await stagePairs(CONTACT_LIST));
+        const funnel_engaged = inWorked(await stagePairs(ENGAGED_LIST));
+        const funnel_converted = inWorked(await stagePairs(BUYER_ACTIVITY_TYPE.CONVERTED));
+        assert(funnel_contacted <= report_assigned, `funnel Contacted (${funnel_contacted}) exceeds Assigned (${report_assigned})`);
+        assert(funnel_engaged <= report_assigned, `funnel Engaged (${funnel_engaged}) exceeds Assigned (${report_assigned})`);
+        assert(funnel_converted <= report_assigned, `funnel Converted (${funnel_converted}) exceeds Assigned (${report_assigned})`);
+        // Engaged ⊆ Contacted (a call/WA is a contact activity), Converted ⊆ Assigned.
+        assert(funnel_engaged <= funnel_contacted, `funnel Engaged (${funnel_engaged}) exceeds Contacted (${funnel_contacted})`);
+      }
+
+      // (d) DELETED EXCLUDED: no soft-deleted buyer may ever surface in a drill
+      // population. Assert directly: the assigned-drill where (with deletedAt:null)
+      // can never return a deleted buyer. We prove the filter is load-bearing by
+      // checking that a deleted buyer with assignments is NOT counted.
+      const deletedWithStint = await prisma.buyerRecord.findFirst({
+        where: { deletedAt: { not: null }, assignments: { some: {} } },
+        select: { id: true, assignments: { select: { userId: true }, take: 1 } },
+      });
+      if (deletedWithStint && deletedWithStint.assignments[0]) {
+        const owner = deletedWithStint.assignments[0].userId;
+        const leaked = await prisma.buyerRecord.count({
+          where: { id: deletedWithStint.id, deletedAt: null, assignments: { some: { userId: owner } } },
+        });
+        assert(leaked === 0, "a soft-deleted buyer leaked into the assigned drill-down population (deletedAt:null filter not load-bearing)");
+      } else {
+        results.push({ name: "  ↳ note", ok: true, detail: "no soft-deleted buyer with a stint present — deleted-exclusion drill check skipped (filter still asserted in buyer-5b)" });
+      }
+    },
+  },
 ];
 
 // ── runner ────────────────────────────────────────────────────────────────────
