@@ -34,7 +34,8 @@
 // v24 (2026-06-23): Agent Lead Performance report (/reports/agent-performance) — per-agent assignment-history metrics, rankings, funnel, drill-down, CSV/Excel export.
 // v25 (2026-06-23): Buyer Data module (/buyer-data) — admin-only transaction records, repeat-buyer rollups, Excel import, CSV export, project-buyers section.
 // v26 (2026-06-23): New-Lead form overhaul — dedup fires only on contact fields, all-country phone, free-text profession (enum→TEXT), Country→State→City cascade, Team-first Requirement order with team-reactive Assign-To/Interested-Properties/Currency, Source/Medium cleanup (single "Website", WCR Event kept), WCR-Event field order + Event-Name dropdown, Client Profile section removed.
-const CACHE = "wcr-shell-v26";
+// v27 (2026-06-24): Dubai-team INR budgets convert to AED on Lead View/List at fixed rate 1 AED = 26 INR (display-only; stored values + reports unchanged).
+const CACHE = "wcr-shell-v27";
 const SHELL = ["/login", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", (event) => {

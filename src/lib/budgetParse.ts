@@ -59,6 +59,18 @@ export function parseBudget(raw: string | number | null | undefined): number | n
   return value * mult;
 }
 
+// Fixed internal AED⇄INR conversion rate (Lalit, 2026-06-23): 1 AED = 26 INR.
+// Used ONLY to render a Dubai-team lead's INR-entered budget in AED on Lead
+// View / List (task 10). DISPLAY-ONLY: stored budgetMin/Max/Currency are never
+// mutated, and reports aggregate AED/INR SEPARATELY (fmtMoneyDual) — they do not
+// use this. To change the rate, edit this single constant.
+export const AED_INR_RATE = 26;
+
+/** Convert an INR amount to AED at the fixed internal rate. Display-only. */
+export function inrToAed(inr: number): number {
+  return inr / AED_INR_RATE;
+}
+
 /**
  * Render a number back in the most natural unit for the given currency.
  *   AED 2,500,000 → "2.5M AED"
@@ -129,14 +141,24 @@ export function displayBudget(lead: {
     : "DUBAI";
 
   // Prefer the parsed numeric value; else re-parse the raw cell into a number.
-  const min = (lead.budgetMin != null && lead.budgetMin > 0) ? lead.budgetMin : parseBudget(lead.budgetRaw);
+  let min = (lead.budgetMin != null && lead.budgetMin > 0) ? lead.budgetMin : parseBudget(lead.budgetRaw);
   if (min == null || min <= 0) {
     // No usable number anywhere. Never blank out a budget that has SOME number —
     // show the trimmed raw as a last resort; otherwise "—".
     const raw = lead.budgetRaw?.trim();
     return raw && /\d/.test(raw) ? raw : "—";
   }
-  const max = (lead.budgetMax != null && lead.budgetMax > min) ? lead.budgetMax : null;
+  let max = (lead.budgetMax != null && lead.budgetMax > min) ? lead.budgetMax : null;
+
+  // Dubai-team lead whose budget was ENTERED in INR → convert INR→AED for display
+  // at the fixed internal rate (1 AED = 26 INR, task 10). Only this case: market
+  // resolves to DUBAI but the stored currency is INR. Display-only — the stored
+  // INR value is untouched; the agent's edit field still shows the raw INR.
+  if (market === "DUBAI" && ccy === "INR") {
+    min = inrToAed(min);
+    if (max != null) max = inrToAed(max);
+  }
+
   const lo = formatBudgetAmount(min, market);
   if (max) {
     if (market === "DUBAI") {
