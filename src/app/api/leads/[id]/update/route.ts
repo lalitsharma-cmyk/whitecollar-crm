@@ -11,6 +11,7 @@ import { canSetStatus, isStatusValidForTeam, NEEDS_REVIEW } from "@/lib/lead-sta
 import { isPropertyType } from "@/lib/propertyType";
 import { recordFieldChanges, TRACKED_FIELDS } from "@/lib/fieldHistory";
 import { notify } from "@/lib/notify";
+import { assignLeadTo } from "@/lib/leadIngest";
 import { NotifKind, type Prisma } from "@prisma/client";
 
 // Inline-edit endpoint — accepts one or more field updates and logs an Activity
@@ -37,6 +38,11 @@ const ALLOWED: Record<string, "string" | "date" | "number" | "enum" | "bool"> = 
   budgetRaw: "string",
   // forwardedTeam (Dubai / India routing) — Admin / Manager only (gated below).
   forwardedTeam: "enum",
+  // ownerId — lead ASSIGNMENT. Handled SPECIALLY before the generic loop: it
+  // routes through assignLeadTo() (Assignment history row + notify + SLA), never
+  // a bare ownerId set. Admin / Manager only (gated below). Listed here only so
+  // the "Nothing to update" guard counts it; the generic loop skips it.
+  ownerId: "string",
   followupDate: "date", meetingDate: "date", siteVisitDate: "date",
   // createdAt = enquiry date (admin-only inline edit — gated below in ADMIN_ONLY_FIELDS)
   createdAt: "date",
@@ -101,6 +107,45 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       { error: "Only an Admin or Manager can change the lead's team." },
       { status: 403 },
     );
+  }
+
+  // ── ownerId — lead ASSIGNMENT (Admin / Manager only) ─────────────────────────
+  // Handled here, BEFORE the generic field loop, and routed through assignLeadTo()
+  // so every assignment (incl. Master Data inline-assign) writes an Assignment
+  // history row, sets the SLA clock, and NOTIFIES the new owner. A bare ownerId
+  // updateMany would skip all three — which is what kept Master Data assigns
+  // invisible to the Agent Performance report (it counts by Assignment history).
+  // This branch returns immediately; ownerId is never re-applied via the loop.
+  if ("ownerId" in body) {
+    if (me.role === "AGENT") {
+      return NextResponse.json(
+        { error: "Only an Admin or Manager can assign leads.", adminOnly: true },
+        { status: 403 },
+      );
+    }
+    const newOwnerId = body.ownerId == null || body.ownerId === "" ? null : String(body.ownerId);
+    const cur = await prisma.lead.findUnique({ where: { id }, select: { ownerId: true } });
+    if (newOwnerId === null) {
+      // Unassign — clear owner + SLA. No assignLeadTo (there's no owner to notify).
+      if (cur?.ownerId != null) {
+        await prisma.lead.update({
+          where: { id },
+          data: { ownerId: null, assignedAt: null, slaFirstCallBy: null, slaEscalated: false, lastTouchedAt: new Date() },
+        });
+        recordFieldChanges(prisma, id, me.id, { ownerId: cur.ownerId }, { ownerId: null }, "inline-edit").catch(() => {});
+      }
+      return NextResponse.json({ ok: true, assigned: false, unassigned: true });
+    }
+    // Manager may only assign WITHIN their team scope — canTouchLead already
+    // verified they can see this lead; also verify the target user is active +
+    // non-HR so we never assign to a deactivated / recruitment account.
+    const target = await prisma.user.findFirst({ where: { id: newOwnerId, active: true, hrOnly: false }, select: { id: true } });
+    if (!target) return NextResponse.json({ error: "Target agent not found or inactive." }, { status: 404 });
+    if (cur?.ownerId !== newOwnerId) {
+      await assignLeadTo(id, newOwnerId, `Reassigned by ${me.role === "ADMIN" ? "admin" : "manager"} (inline edit)`);
+      recordFieldChanges(prisma, id, me.id, { ownerId: cur?.ownerId ?? null }, { ownerId: newOwnerId }, "inline-edit").catch(() => {});
+    }
+    return NextResponse.json({ ok: true, assigned: true });
   }
 
   // Status governance — "Fresh Lead" is system-generated and outcome /

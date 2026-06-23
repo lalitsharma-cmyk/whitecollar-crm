@@ -124,12 +124,17 @@ export default async function MasterDataPage({ searchParams }: { searchParams: P
   for (const a of recentActs) if (a.description) lastRemarkBy[a.leadId] = a.description;
 
   // Filter-panel option lists.
-  const [srcRows, tagRows] = await Promise.all([
+  const [srcRows, tagRows, projectRows] = await Promise.all([
     prisma.lead.findMany({ where: { sourceRaw: { not: null } }, select: { sourceRaw: true }, distinct: ["sourceRaw"], orderBy: { sourceRaw: "asc" } }),
     prisma.lead.findMany({ where: { tags: { not: null } }, select: { tags: true }, distinct: ["tags"], orderBy: { tags: "asc" } }),
+    // Project Master for the inline "Property Enquired" picker. Admin sees ALL
+    // markets (Master Data is admin-only). Active-first so live projects rank up,
+    // but inactive/manual ad-hoc names are still searchable.
+    prisma.project.findMany({ select: { id: true, name: true, city: true, country: true }, orderBy: [{ active: "desc" }, { name: "asc" }] }),
   ]);
   const filterSources = srcRows.map((r) => r.sourceRaw!).filter(Boolean);
   const filterTags = tagRows.map((r) => r.tags!).filter(Boolean).slice(0, 50);
+  const projectOptions = projectRows.map((p) => ({ id: p.id, name: p.name, city: p.city ?? "", country: p.country ?? "" }));
 
   const keep = (next: Partial<Record<string, string>>) => {
     const p = new URLSearchParams();
@@ -240,7 +245,7 @@ export default async function MasterDataPage({ searchParams }: { searchParams: P
       />
 
       {/* ── Excel-style operations grid ────────────────────────────────────── */}
-      <MasterDataRecordsTable rows={rows} agents={agents} isSuperAdmin={!!me.isSuperAdmin} viewerId={me.id} />
+      <MasterDataRecordsTable rows={rows} agents={agents} projects={projectOptions} isSuperAdmin={!!me.isSuperAdmin} viewerId={me.id} />
     </>
   );
 }

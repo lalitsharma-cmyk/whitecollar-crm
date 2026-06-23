@@ -1,10 +1,34 @@
 "use client";
 import Link from "next/link";
+import { createPortal } from "react-dom";
 import { useState, useMemo, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { PROPERTY_TYPES } from "@/lib/propertyType";
 import { statusesForTeam, compareStatusDisplay } from "@/lib/lead-statuses";
 import { formatLeadName } from "@/lib/leadName";
+import { parseBudget } from "@/lib/budgetParse";
+
+// Cleaned-up Source list — mirrors ALLOWED_SOURCES in LeadSourceMediumFields.tsx
+// (single "Website"; no Call/WhatsApp/Email/Event; WCR Event kept). The label
+// is what we store in sourceRaw; the value is the LeadSource enum sent to the
+// update route so `source` + `sourceRaw` stay consistent. Master Data is
+// admin-only, so source is editable here (route enforces Admin/Super-Admin).
+const SOURCE_OPTIONS: { value: string; label: string }[] = [
+  { value: "WEBSITE", label: "Website" },
+  { value: "WCR_EVENT", label: "WCR Event" },
+  { value: "LANDING_PAGE", label: "Landing Page" },
+  { value: "REFERRAL", label: "Referral" },
+  { value: "FACEBOOK_ADS", label: "Facebook Ads" },
+  { value: "GOOGLE_ADS", label: "Google Ads" },
+  { value: "PORTAL_99ACRES", label: "Portal 99acres" },
+  { value: "PORTAL_MAGICBRICKS", label: "Portal MagicBricks" },
+  { value: "PORTAL_HOUSING", label: "Portal Housing" },
+  { value: "OTHER", label: "Other" },
+];
+
+// Standard contact mediums (matches STANDARD_MEDIUMS in mediumManager.ts) + the
+// always-present "Other" so an admin can type the first custom medium inline.
+const MEDIUM_OPTIONS = ["Call", "WhatsApp", "Email", "Other"];
 
 export type MDRow = {
   id: string;
@@ -39,6 +63,7 @@ export type MDRow = {
 interface Props {
   rows: MDRow[];
   agents: { id: string; name: string }[];
+  projects: { id: string; name: string; city: string; country: string }[];
   isSuperAdmin: boolean;
   viewerId: string;        // per-admin localStorage scope
 }
@@ -155,7 +180,7 @@ type SavedView = { name: string; filters: Record<string, string[]>; sort: { col:
 const serFilters = (f: Record<string, Set<string>>) => Object.fromEntries(Object.entries(f).filter(([, s]) => s.size).map(([k, s]) => [k, [...s]]));
 const deserFilters = (o: Record<string, string[]>) => Object.fromEntries(Object.entries(o || {}).map(([k, a]) => [k, new Set(a)]));
 
-export default function MasterDataRecordsTable({ rows, agents, isSuperAdmin, viewerId }: Props) {
+export default function MasterDataRecordsTable({ rows, agents, projects, isSuperAdmin, viewerId }: Props) {
   const router = useRouter();
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
@@ -256,14 +281,35 @@ export default function MasterDataRecordsTable({ rows, agents, isSuperAdmin, vie
   const runBulk = (action: string, extra: Record<string, unknown> = {}) => bulk([...selected], action, extra).then(() => { if (action !== "restore") clear(); });
 
   async function saveText(id: string, field: string, value: string) {
-    if (busy) return;
+    return saveFields(id, { [field]: value });
+  }
+
+  // THE canonical inline-save: PATCHes /api/leads/[id]/update with an arbitrary
+  // field map and, on success, router.refresh() so the force-dynamic page
+  // re-pulls from the DB (counts / filters / unassigned-counter all recompute).
+  // On failure it surfaces the server error and LEAVES edit mode open so the
+  // cell reverts to the DB value (no optimistic/fake save). ownerId routes
+  // through assignLeadTo() server-side (Assignment row + notify).
+  async function saveFields(id: string, fields: Record<string, unknown>): Promise<boolean> {
+    if (busy) return false;
     setBusy(true); setMsg(null);
     try {
-      const r = await fetch(`/api/leads/${id}/update`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ [field]: value }) });
-      if (!r.ok) { const j = await r.json().catch(() => ({})); setMsg(j.error ?? `Failed (${r.status})`); return; }
+      const r = await fetch(`/api/leads/${id}/update`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(fields) });
+      if (!r.ok) { const j = await r.json().catch(() => ({})); setMsg(j.error ?? `Failed (${r.status})`); return false; }
       setEdit(null); router.refresh();
-    } catch (e) { setMsg(`Network error: ${String(e).slice(0, 80)}`); }
+      return true;
+    } catch (e) { setMsg(`Network error: ${String(e).slice(0, 80)}`); return false; }
     finally { setBusy(false); }
+  }
+
+  // Budget inline-save: parse "2.5M"/"30L"/"3Cr"/digits → raw number, save to
+  // budgetMin (the RAW stored value, NOT the converted display). Empty clears it.
+  async function saveBudget(id: string, value: string) {
+    const v = value.trim();
+    if (!v) return saveFields(id, { budgetMin: null });
+    const parsed = parseBudget(v);
+    if (parsed == null) { setMsg("Couldn't parse budget — try 2.5M, 30L, 3Cr, or digits."); return; }
+    return saveFields(id, { budgetMin: parsed });
   }
 
   const distinctVals = (c: ColKey) => Array.from(new Set(rows.map((r) => valueOf(r, c)))).filter((v) => v !== "").sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
@@ -449,19 +495,31 @@ export default function MasterDataRecordsTable({ rows, agents, isSuperAdmin, vie
                       );
                     case "agent": {
                       const ageBadge = hydrated && !l.ownerId ? unassignedAgeBadge(l.createdAtMs) : null;
+                      // Inline-assign routes through ownerId on the update route →
+                      // assignLeadTo() (Assignment history row + notify + SLA), so
+                      // the Agent Performance report (assignment-history attribution)
+                      // and the new owner's notification both stay correct.
+                      const agentOpts = [
+                        { value: "", label: l.ownerId ? "⚠ Unassign" : "— Unassigned —" },
+                        ...agents.map((a) => ({ value: a.id, label: a.name })),
+                      ];
                       return (
                         <td key={c.key} className={`${cellCls} whitespace-nowrap`} style={fStyle(c.key)} onClick={stop}>
-                          <button onClick={() => openMenu(l.id, "agent")} className="text-gray-700 dark:text-slate-300 hover:underline">{l.owner}</button>
+                          <button onClick={() => openMenu(l.id, "agent")} className="text-gray-700 dark:text-slate-300 hover:underline" title="Click to assign">{l.owner}</button>
                           {ageBadge && <span className={`ml-1.5 align-middle text-[9px] px-1.5 py-0.5 rounded-full border ${ageBadge.cls}`} title="Unassigned for this long — please assign">{ageBadge.label}</span>}
-                          {editing(l.id, "agent") && <Menu busy={busy} options={agents.map((a) => ({ value: a.id, label: a.name }))} onPick={(v) => bulk([l.id], "assign", { userId: v })} />}
+                          {editing(l.id, "agent") && <Menu busy={busy} options={agentOpts} onPick={(v) => saveText(l.id, "ownerId", v)} />}
                         </td>
                       );
                     }
                     case "team":
+                      // forwardedTeam via the update route — it re-validates the
+                      // existing status against the NEW team's master (→ Needs Review
+                      // if invalid), same rule as the bulk endpoint. router.refresh
+                      // after so counts/filters update.
                       return (
                         <td key={c.key} className={cellCls} style={fStyle(c.key)} onClick={stop}>
-                          <button onClick={() => openMenu(l.id, "team")} className="text-gray-700 dark:text-slate-300 hover:underline">{l.team}</button>
-                          {editing(l.id, "team") && <Menu busy={busy} options={TEAMS.map((t) => ({ value: t, label: t }))} onPick={(v) => bulk([l.id], "change_team", { team: v })} />}
+                          <button onClick={() => openMenu(l.id, "team")} className="text-gray-700 dark:text-slate-300 hover:underline" title="Click to set team">{l.team}</button>
+                          {editing(l.id, "team") && <Menu busy={busy} options={TEAMS.map((t) => ({ value: t, label: t }))} onPick={(v) => saveText(l.id, "forwardedTeam", v)} />}
                         </td>
                       );
                     case "createdDate":
@@ -469,19 +527,38 @@ export default function MasterDataRecordsTable({ rows, agents, isSuperAdmin, vie
                     case "createdTime":
                       return <td key={c.key} className="px-3 py-2 text-gray-500 dark:text-slate-400 whitespace-nowrap text-xs tabular-nums">{l.createdTime}</td>;
                     case "budget":
+                      // Read view = displayBudget() (already computed in l.budget;
+                      // Dubai-team INR converts to AED). Edit operates on the RAW
+                      // stored budgetMin — saveBudget parses 2.5M/30L/3Cr→number and
+                      // saves budgetMin (no double-convert). Edit field starts EMPTY
+                      // (the read cell shows a converted/formatted string, not the
+                      // raw number, so pre-filling it would be misleading).
                       return (
                         <td key={c.key} className="px-3 py-2 relative whitespace-nowrap" onClick={stop}>
                           {editing(l.id, "budget")
-                            ? <InlineInput value={editVal} onChange={setEditVal} onSave={() => saveText(l.id, "budgetRaw", editVal)} onCancel={() => setEdit(null)} placeholder="e.g. 5 Cr" />
-                            : <button onClick={() => openTextEdit(l.id, "budget", l.budget)} className="text-gray-700 dark:text-slate-300 hover:underline" title="Click to edit">{l.budget}</button>}
+                            ? <InlineInput value={editVal} onChange={setEditVal} onSave={() => saveBudget(l.id, editVal)} onCancel={() => setEdit(null)} placeholder="e.g. 5 Cr / 2.5M / 30L" />
+                            : <button onClick={() => { setEdit({ id: l.id, field: "budget" }); setEditVal(""); }} className="text-gray-700 dark:text-slate-300 hover:underline" title="Click to edit (type 2.5M · 30L · 3Cr · digits)">{l.budget}</button>}
                         </td>
                       );
                     case "project":
+                      // Property Enquired = free-text sourceDetail. The picker SEARCHES
+                      // the Project Master (team-aware) to help pick a known name, but
+                      // also accepts manual free-text when the project isn't found —
+                      // the chosen NAME is stored in sourceDetail (never a forced Project
+                      // mapping). Dropdown renders via a PORTAL so the grid's horizontal
+                      // scroll/overflow never clips it.
                       return (
-                        <td key={c.key} className="px-3 py-2 relative max-w-[150px]" onClick={stop}>
+                        <td key={c.key} className="px-3 py-2 relative max-w-[180px]" onClick={stop}>
                           {editing(l.id, "project")
-                            ? <InlineInput value={editVal} onChange={setEditVal} onSave={() => saveText(l.id, "sourceDetail", editVal)} onCancel={() => setEdit(null)} />
-                            : <button onClick={() => openTextEdit(l.id, "project", l.project)} className="text-gray-600 dark:text-slate-400 hover:underline truncate block max-w-[150px]" title={l.project}>{l.project}</button>}
+                            ? <ProjectPickerCell
+                                team={l.team}
+                                projects={projects}
+                                initial={l.project === "—" ? "" : l.project}
+                                busy={busy}
+                                onSave={(name) => saveFields(l.id, { sourceDetail: name || null })}
+                                onCancel={() => setEdit(null)}
+                              />
+                            : <button onClick={() => openTextEdit(l.id, "project", l.project)} className="text-gray-600 dark:text-slate-400 hover:underline truncate block max-w-[180px]" title={l.project}>{l.project}</button>}
                         </td>
                       );
                     case "propertyType":
@@ -499,11 +576,36 @@ export default function MasterDataRecordsTable({ rows, agents, isSuperAdmin, vie
                         </td>
                       );
                     case "source":
+                      // Cleaned Source list (single "Website"; no Call/WhatsApp/Email/
+                      // Event; WCR Event kept). Saves BOTH the LeadSource enum (source)
+                      // and the human label (sourceRaw) so they stay consistent. The
+                      // update route gates source/sourceRaw to Admin/Super-Admin — fine,
+                      // Master Data is admin-only.
                       return (
                         <td key={c.key} className="px-3 py-2 relative whitespace-nowrap" onClick={stop}>
-                          {editing(l.id, "source")
-                            ? <InlineInput value={editVal} onChange={setEditVal} onSave={() => saveText(l.id, "sourceRaw", editVal)} onCancel={() => setEdit(null)} />
-                            : <button onClick={() => openTextEdit(l.id, "source", l.sourceRaw || l.sourceLabel)} className="text-gray-600 dark:text-slate-400 hover:underline">{l.sourceLabel}</button>}
+                          <button onClick={() => openMenu(l.id, "source")} className="text-gray-600 dark:text-slate-400 hover:underline" title="Click to set source">{l.sourceLabel}</button>
+                          {editing(l.id, "source") && (
+                            <Menu busy={busy} options={SOURCE_OPTIONS} onPick={(v) => {
+                              const opt = SOURCE_OPTIONS.find((s) => s.value === v);
+                              saveFields(l.id, { source: v, sourceRaw: opt?.label ?? v });
+                            }} />
+                          )}
+                        </td>
+                      );
+                    case "medium":
+                      // Contact medium (Call / WhatsApp / Email / Other + custom). "Other"
+                      // opens a free-text input for a custom medium (stored in mediumOther).
+                      return (
+                        <td key={c.key} className="px-3 py-2 relative whitespace-nowrap" onClick={stop}>
+                          {editing(l.id, "medium")
+                            ? <MediumPickerCell
+                                initialMedium={l.medium}
+                                initialOther={l.mediumOther ?? ""}
+                                busy={busy}
+                                onSave={(medium, mediumOther) => saveFields(l.id, { medium: medium || null, mediumOther: medium === "Other" ? mediumOther : null })}
+                                onCancel={() => setEdit(null)}
+                              />
+                            : <button onClick={() => openMenu(l.id, "medium")} className="text-gray-600 dark:text-slate-400 hover:underline" title="Click to set medium">{valueOf(l, "medium")}</button>}
                         </td>
                       );
                     case "message":
@@ -628,5 +730,182 @@ function InlineInput({ value, onChange, onSave, onCancel, placeholder }: { value
       onKeyDown={(e) => { if (e.key === "Enter") onSave(); if (e.key === "Escape") onCancel(); }}
       onBlur={onSave}
       className="w-full min-w-[90px] px-2 py-1 text-sm border border-blue-400 rounded dark:bg-slate-700" />
+  );
+}
+
+// ── Property-Enquired picker ──────────────────────────────────────────────────
+// Searchable Project-Master picker with a free-text fallback. The dropdown is
+// rendered in a PORTAL (document.body) and positioned from the input's
+// bounding rect, so the grid's overflow-x-auto can NEVER clip it (the old bug:
+// the menu was absolute inside an overflow:hidden cell and got cut off). The
+// VALUE stored is always the project NAME string → sourceDetail (free-text);
+// selecting a master project just fills that name. Manual typing + Enter saves
+// the typed text verbatim — no forced Project mapping.
+function ProjectPickerCell({
+  team, projects, initial, busy, onSave, onCancel,
+}: {
+  team: string;
+  projects: { id: string; name: string; city: string; country: string }[];
+  initial: string;
+  busy: boolean;
+  onSave: (name: string) => void;
+  onCancel: () => void;
+}) {
+  const [q, setQ] = useState(initial);
+  const [rect, setRect] = useState<{ left: number; top: number; width: number } | null>(null);
+  const [highlight, setHighlight] = useState(0);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  // Team → country, so an admin editing an India lead sees India projects first
+  // (admin sees ALL markets — we don't HIDE, just rank the lead's market up).
+  const leadCountry = team === "Dubai" ? "UAE" : team === "India" ? "India" : "";
+
+  const measure = () => {
+    const el = inputRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    setRect({ left: r.left, top: r.bottom, width: Math.max(r.width, 220) });
+  };
+  useEffect(() => {
+    measure();
+    setTimeout(() => inputRef.current?.focus(), 0);
+    window.addEventListener("scroll", measure, true);
+    window.addEventListener("resize", measure);
+    return () => { window.removeEventListener("scroll", measure, true); window.removeEventListener("resize", measure); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+  const matches = useMemo(() => {
+    const nq = norm(q);
+    const ranked = [...projects].sort((a, b) => {
+      // lead-market projects first, then by name
+      const am = leadCountry && a.country === leadCountry ? 0 : 1;
+      const bm = leadCountry && b.country === leadCountry ? 0 : 1;
+      return am !== bm ? am - bm : a.name.localeCompare(b.name);
+    });
+    if (!nq) return ranked.slice(0, 50);
+    return ranked.filter((p) => norm(`${p.name} ${p.city}`).includes(nq)).slice(0, 50);
+  }, [projects, q, leadCountry]);
+
+  const exactExists = matches.some((m) => m.name.toLowerCase() === q.trim().toLowerCase());
+
+  function onKey(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key === "ArrowDown") { e.preventDefault(); setHighlight((h) => Math.min(matches.length - 1, h + 1)); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); setHighlight((h) => Math.max(0, h - 1)); }
+    else if (e.key === "Enter") {
+      e.preventDefault();
+      const m = matches[highlight];
+      // Prefer the highlighted match's NAME; else save the raw typed text (free-text).
+      onSave((m && q.trim() && norm(`${m.name} ${m.city}`).includes(norm(q)) ? m.name : q).trim());
+    } else if (e.key === "Escape") { e.preventDefault(); onCancel(); }
+  }
+
+  return (
+    <>
+      <input
+        ref={inputRef}
+        value={q}
+        disabled={busy}
+        onClick={(e) => e.stopPropagation()}
+        onChange={(e) => { setQ(e.target.value); setHighlight(0); }}
+        onKeyDown={onKey}
+        placeholder="Search project or type a name…"
+        className="w-full min-w-[120px] px-2 py-1 text-sm border border-blue-400 rounded dark:bg-slate-700"
+        autoComplete="off"
+      />
+      {rect && typeof document !== "undefined" && createPortal(
+        <div
+          className="fixed z-[100] max-h-64 overflow-y-auto rounded-lg border border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-800 shadow-2xl text-sm"
+          style={{ left: rect.left, top: rect.top + 2, width: rect.width }}
+          onMouseDown={(e) => e.preventDefault()}
+        >
+          {matches.map((p, idx) => (
+            <button
+              key={p.id}
+              onClick={() => onSave(p.name)}
+              onMouseEnter={() => setHighlight(idx)}
+              className={`block w-full text-left px-3 py-1.5 border-b border-gray-50 dark:border-slate-700 last:border-b-0 ${idx === highlight ? "bg-amber-50 dark:bg-slate-700" : "hover:bg-gray-50 dark:hover:bg-slate-700/60"}`}
+            >
+              <div className="font-medium text-gray-800 dark:text-slate-200 truncate">{p.name}</div>
+              <div className="text-[10px] text-gray-400">{[p.city, p.country].filter(Boolean).join(" · ")}</div>
+            </button>
+          ))}
+          {q.trim() && !exactExists && (
+            <button
+              onClick={() => onSave(q.trim())}
+              className="block w-full text-left px-3 py-2 text-blue-700 dark:text-blue-300 hover:bg-amber-50 dark:hover:bg-slate-700"
+            >
+              ➕ Use &ldquo;<span className="font-semibold">{q.trim()}</span>&rdquo; (custom)
+            </button>
+          )}
+          {matches.length === 0 && !q.trim() && (
+            <div className="px-3 py-2 text-gray-400 italic">Type to search or add a custom name</div>
+          )}
+          <div className="flex border-t border-gray-100 dark:border-slate-700">
+            {q.trim() && (
+              <button onClick={() => onSave("")} className="flex-1 px-3 py-1.5 text-[11px] text-gray-500 hover:bg-gray-50 dark:hover:bg-slate-700">Clear</button>
+            )}
+            <button onClick={onCancel} className="flex-1 px-3 py-1.5 text-[11px] text-gray-500 hover:bg-gray-50 dark:hover:bg-slate-700">Cancel</button>
+          </div>
+        </div>,
+        document.body,
+      )}
+    </>
+  );
+}
+
+// ── Medium picker ─────────────────────────────────────────────────────────────
+// Call / WhatsApp / Email / Other(+custom). "Other" reveals a free-text input
+// for a custom medium (stored in mediumOther). Saves on ✓ / Enter.
+function MediumPickerCell({
+  initialMedium, initialOther, busy, onSave, onCancel,
+}: {
+  initialMedium: string;
+  initialOther: string;
+  busy: boolean;
+  onSave: (medium: string, mediumOther: string) => void;
+  onCancel: () => void;
+}) {
+  // If the stored medium isn't one of the standard 4 (a pre-existing custom one),
+  // treat it as "Other" with the value pre-filled so it round-trips.
+  const isStd = MEDIUM_OPTIONS.includes(initialMedium);
+  const [medium, setMedium] = useState(isStd ? initialMedium : (initialMedium ? "Other" : ""));
+  const [other, setOther] = useState(!isStd && initialMedium ? initialMedium : initialOther);
+
+  const commit = () => {
+    if (medium === "Other") {
+      const t = other.trim();
+      if (!t) { onCancel(); return; }   // no custom value → no-op, revert
+      onSave("Other", t);
+    } else {
+      onSave(medium, "");
+    }
+  };
+
+  return (
+    <span className="inline-flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+      <select
+        autoFocus
+        value={medium}
+        disabled={busy}
+        onChange={(e) => setMedium(e.target.value)}
+        className="min-w-[90px] px-2 py-1 text-sm border border-blue-400 rounded dark:bg-slate-700"
+      >
+        <option value="">— clear —</option>
+        {MEDIUM_OPTIONS.map((m) => <option key={m} value={m}>{m}</option>)}
+      </select>
+      {medium === "Other" && (
+        <input
+          value={other}
+          onChange={(e) => setOther(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") commit(); if (e.key === "Escape") onCancel(); }}
+          placeholder="custom…"
+          className="w-24 px-2 py-1 text-sm border border-blue-400 rounded dark:bg-slate-700"
+        />
+      )}
+      <button onClick={commit} disabled={busy} aria-label="Save" className="text-emerald-600 hover:bg-emerald-50 rounded px-1.5 py-1 text-sm">✓</button>
+      <button onClick={onCancel} aria-label="Cancel" className="text-red-600 hover:bg-red-50 rounded px-1.5 py-1 text-sm">✕</button>
+    </span>
   );
 }
