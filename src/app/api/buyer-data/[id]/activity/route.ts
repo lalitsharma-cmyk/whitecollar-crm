@@ -38,7 +38,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   const buyer = await prisma.buyerRecord.findUnique({ where: { id } });
   if (!buyer) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  if (!(await canTouchBuyer(me, { ownerId: buyer.ownerId, poolStatus: buyer.poolStatus }))) {
+  if (!(await canTouchBuyer(me, { ownerId: buyer.ownerId, poolStatus: buyer.poolStatus, deletedAt: buyer.deletedAt }))) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
   if (buyer.poolStatus !== BUYER_POOL_STATUS.ASSIGNED) {

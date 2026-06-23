@@ -22,12 +22,12 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       id: true, clientName: true, poolStatus: true, ownerId: true, assignedAt: true,
       attemptCount: true, remarks: true, convertedLeadId: true, convertedAt: true,
       convertedById: true, rejectedAt: true, rejectedById: true, rejectionReason: true,
-      returnedToPoolAt: true,
+      returnedToPoolAt: true, deletedAt: true,
       owner: { select: { id: true, name: true } },
     },
   });
   if (!buyer) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  if (!(await canTouchBuyer(me, { ownerId: buyer.ownerId, poolStatus: buyer.poolStatus }))) {
+  if (!(await canTouchBuyer(me, { ownerId: buyer.ownerId, poolStatus: buyer.poolStatus, deletedAt: buyer.deletedAt }))) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 

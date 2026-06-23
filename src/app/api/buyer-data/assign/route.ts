@@ -48,7 +48,7 @@ export async function POST(req: NextRequest) {
   // terminal; an ASSIGNED buyer would be a reassign, which assignBuyerInTx handles
   // but we surface as a separate count).
   const buyers = await prisma.buyerRecord.findMany({
-    where: { id: { in: buyerIds } },
+    where: { id: { in: buyerIds }, deletedAt: null }, // never assign a recycle-bin buyer
     select: { id: true, clientName: true, poolStatus: true, ownerId: true },
   });
   const byId = new Map(buyers.map((b) => [b.id, b]));

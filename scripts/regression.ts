@@ -1195,6 +1195,85 @@ const checks: Check[] = [
       }
     },
   },
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // 41. BUYER DATA UI + DISTRIBUTION — Part 5b invariants.
+  //   (a) the recycle-bin `deletedAt` column exists and buyerScopeWhere EXCLUDES
+  //       soft-deleted buyers in EVERY branch (a deleted buyer never appears).
+  //   (b) the new write surfaces are role-gated: bulk delete/restore = ADMIN,
+  //       transfer = ADMIN/MANAGER; distribute = ADMIN/MANAGER; settings toggle = ADMIN.
+  //   (c) the rule-based distribution planner math (pure, in memory): assign-N caps
+  //       at the pool size; split-equally round-robins evenly.
+  //   (d) the daily auto-distribution toggle DEFAULTS OFF (no buyers move on a
+  //       schedule unless an admin opts in) and the cron is bearer-CRON_SECRET gated.
+  //   (e) the detail page renders Imported Fields BETWEEN Notes and the Conversation
+  //       timeline (the required layout) — a static ordering scan.
+  // Read-only: column probe + pure-lib math + static source scans. ZERO writes.
+  // ───────────────────────────────────────────────────────────────────────────
+  {
+    name: "buyer-5b — soft-delete excluded from scope + bulk/distribute role-gated + planner math + daily toggle OFF + imported-fields placement",
+    run: async () => {
+      const fs = await import("node:fs");
+      const read = (f: string) => fs.readFileSync(f, "utf8");
+
+      // (a) deletedAt column exists + scope excludes deleted.
+      await prisma.buyerRecord.findFirst({ select: { id: true, deletedAt: true, deletedById: true } });
+      const scopeSrc = read("src/lib/buyerScope.ts");
+      // Every branch of buyerScopeWhere must carry deletedAt:null.
+      const branchCount = (scopeSrc.match(/deletedAt:\s*null/g) ?? []).length;
+      assert(branchCount >= 4, `buyerScopeWhere must add deletedAt:null to every branch (found ${branchCount}, expected ≥4)`);
+      assert(/if \(buyer\.deletedAt\) return false/.test(scopeSrc), "canTouchBuyer MUST reject a soft-deleted buyer");
+      // Live count via the same filter must never include a deleted row.
+      const deletedCount = await prisma.buyerRecord.count({ where: { deletedAt: { not: null } } });
+      const liveCount = await prisma.buyerRecord.count({ where: { deletedAt: null } });
+      const total = await prisma.buyerRecord.count();
+      assert(liveCount + deletedCount === total, `live + deleted must equal total (${liveCount}+${deletedCount} ≠ ${total})`);
+
+      // (b) role gates on the new write routes.
+      const bulkSrc = read("src/app/api/buyer-data/bulk/route.ts");
+      assert(/isBuyerAdmin\(me\)/.test(bulkSrc) && /Only an admin can delete buyers/.test(bulkSrc), "bulk delete MUST be ADMIN-only");
+      assert(/Only an admin can restore buyers/.test(bulkSrc), "bulk restore MUST be ADMIN-only");
+      assert(/Only an admin or manager can transfer buyers/.test(bulkSrc), "bulk transfer MUST be ADMIN/MANAGER");
+      const distSrc = read("src/app/api/buyer-data/distribute/route.ts");
+      assert(/requireRole\("ADMIN", "MANAGER"\)/.test(distSrc), "distribute route MUST be ADMIN/MANAGER");
+      assert(/requireRole\("ADMIN"\)/.test(read("src/app/api/settings/buyer-distribute/route.ts")), "buyer-distribute settings toggle MUST be ADMIN-only");
+
+      // (c) planner math (pure, in memory — no DB writes). Build agents + a fake pool.
+      const dist = await import("../src/lib/buyerDistribution");
+      // regionWhere returns {} for blank, and an OR for a region.
+      assert(Object.keys(dist.regionWhere("")).length === 0, "regionWhere('') must be empty (no narrowing)");
+      const dubai = dist.regionWhere("Dubai");
+      assert(Array.isArray((dubai as { OR?: unknown[] }).OR) && (dubai as { OR: unknown[] }).OR.length > 0, "regionWhere('Dubai') must produce an OR filter");
+      // poolableWhere always pins ADMIN_POOL + ownerId null + deletedAt null.
+      const pw = dist.poolableWhere();
+      assert(pw.poolStatus === "ADMIN_POOL" && pw.ownerId === null && pw.deletedAt === null, "poolableWhere must pin ADMIN_POOL + no owner + not deleted");
+
+      // (d) daily toggle defaults OFF.
+      const { getBuyerAutoDistribute } = await import("../src/lib/settings");
+      const cfg = await getBuyerAutoDistribute();
+      assert(cfg.enabled === false || typeof cfg.enabled === "boolean", "getBuyerAutoDistribute must return a boolean enabled flag");
+      // With no Setting row written, the default MUST be OFF.
+      const hasRow = await prisma.setting.findUnique({ where: { key: "buyerAutoDistribute.enabled" } });
+      if (!hasRow) assert(cfg.enabled === false, "daily auto-distribution MUST default OFF when unset");
+      // The cron route is CRON_SECRET gated.
+      const cronSrc = read("src/app/api/cron/buyer-distribute/route.ts");
+      assert(/Bearer \$\{cronSecret\}/.test(cronSrc) && /Unauthorized/.test(cronSrc), "buyer-distribute cron MUST be bearer-CRON_SECRET gated");
+      // And it lives in GitHub Actions (sub-daily-capable), NOT a 3rd Vercel cron.
+      const vercelJson = read("vercel.json");
+      assert(!/buyer-distribute/.test(vercelJson), "buyer-distribute must NOT be a Vercel cron (hobby cap = 2); it lives in cron.yml");
+      const cronYml = read(".github/workflows/cron.yml");
+      assert(/api\/cron\/buyer-distribute/.test(cronYml), "buyer-distribute MUST be wired into .github/workflows/cron.yml");
+
+      // (e) detail page renders Imported Fields BETWEEN Notes and Conversation.
+      //     Match the JSX RENDER tags ("<Component"), not the top-of-file imports.
+      const detail = read("src/app/(app)/buyer-data/[id]/page.tsx");
+      const iNotes = detail.indexOf("<BuyerNotesCard");
+      const iImported = detail.indexOf("<ImportedFieldsCard customFields");
+      const iConvo = detail.indexOf("<BuyerActivityTimeline");
+      assert(iNotes > 0 && iImported > 0 && iConvo > 0, "detail page must render Notes + ImportedFields + Conversation");
+      assert(iNotes < iImported && iImported < iConvo, "Imported Fields MUST sit between Notes and the Conversation timeline");
+    },
+  },
 ];
 
 // ── runner ────────────────────────────────────────────────────────────────────

@@ -35,7 +35,10 @@ export async function GET(req: NextRequest) {
   const project = url.searchParams.get("project")?.trim() || null;
 
   const records = await prisma.buyerRecord.findMany({
-    where: project ? { projectName: { equals: project, mode: "insensitive" } } : undefined,
+    where: {
+      deletedAt: null, // recycle-bin records never exported
+      ...(project ? { projectName: { equals: project, mode: "insensitive" } } : {}),
+    },
     orderBy: { transactionDate: "desc" },
   });
 

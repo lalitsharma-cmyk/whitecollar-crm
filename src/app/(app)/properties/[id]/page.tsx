@@ -63,7 +63,7 @@ export default async function PropertyDetail({ params }: { params: Promise<{ id:
   // never see this section.
   const projectBuyers = me.role === "ADMIN"
     ? await prisma.buyerRecord.findMany({
-        where: { projectName: { equals: project.name, mode: "insensitive" } },
+        where: { projectName: { equals: project.name, mode: "insensitive" }, deletedAt: null },
         orderBy: { transactionDate: "desc" },
         take: 200,
       })

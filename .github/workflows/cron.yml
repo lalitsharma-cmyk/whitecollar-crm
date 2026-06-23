@@ -55,6 +55,10 @@ on:
     # scheduler load — acceptable for a gentle break nudge.
     - cron: "30 8 * * *"
     - cron: "55 8 * * *"
+    # Daily buyer auto-distribution — 06:30 UTC = 12:00 noon IST. Round-robins the
+    # Admin Buyer Pool across the active team ONLY when the admin toggle is ON
+    # (idempotent: only ADMIN_POOL buyers move). Off by default → a no-op until enabled.
+    - cron: "30 6 * * *"
   # Allow manual trigger from the Actions tab for debugging
   workflow_dispatch:
 
@@ -216,3 +220,17 @@ jobs:
             -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
             "https://crm.whitecollarrealty.com/api/cron/lunch-reminder?phase=ending" \
             || echo "::warning::lunch-ending cron failed"
+
+  buyer_distribute:
+    # Daily buyer auto-distribution — 06:30 UTC = 12:00 noon IST. No-op unless the
+    # admin toggle is ON; then it round-robins the Admin Buyer Pool across the active
+    # team (idempotent — only ADMIN_POOL buyers move). See src/lib/buyerDistribution.ts.
+    if: github.event.schedule == '30 6 * * *' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Distribute Admin-Pool buyers to the active team
+        run: |
+          curl -sf --max-time 120 \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            https://crm.whitecollarrealty.com/api/cron/buyer-distribute \
+            || echo "::warning::buyer-distribute cron failed"

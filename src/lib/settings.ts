@@ -89,6 +89,16 @@ const DEFAULTS = {
     Dubai: "cmpidrrjp0002vphgqb432xq7", // Mehak Mukhija
     India: "cmpidrs1n0005vphgg1tj84pj", // Tanuj Chopra
   }),
+  // ── BUYER DATA daily auto-distribution (Part 5b) ─────────────────────────────
+  // When ON, the daily cron (/api/cron/buyer-distribute) round-robins every
+  // ADMIN_POOL buyer across the active calling team. DEFAULT OFF (an automation
+  // ACTION, like every other automation toggle) — an admin must opt in from the
+  // Buyer Data distribution console before any buyers move on a schedule. The job
+  // is idempotent (only touches ADMIN_POOL buyers) + safe (skips if OFF / empty).
+  "buyerAutoDistribute.enabled": "false",
+  // Optional team filter — empty = the whole active AGENT/MANAGER roster; a team
+  // string scopes the daily round-robin to that team's agents only.
+  "buyerAutoDistribute.team": "",
 };
 
 export async function getSetting(key: string): Promise<string> {
@@ -259,6 +269,21 @@ export async function getWebsiteAutoAssign(): Promise<WebsiteAutoAssign> {
     assignees = {}; // malformed → no auto-assign (safe)
   }
   return { enabled, assignees };
+}
+
+// ── Buyer Data daily auto-distribution accessor (Part 5b) ────────────────────
+// Returns the master ON/OFF flag (default OFF) + an optional team scope. The
+// daily cron consults this; nothing distributes on a schedule unless enabled.
+export type BuyerAutoDistribute = { enabled: boolean; team: string };
+export async function getBuyerAutoDistribute(): Promise<BuyerAutoDistribute> {
+  const [rawEnabled, rawTeam] = await Promise.all([
+    getSetting("buyerAutoDistribute.enabled"),
+    getSetting("buyerAutoDistribute.team"),
+  ]);
+  return {
+    enabled: rawEnabled.toLowerCase() === "true", // default OFF
+    team: (rawTeam ?? "").trim(),
+  };
 }
 
 // One-stop eligibility check used by the MotivationPilot component. Returns

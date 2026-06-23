@@ -46,33 +46,39 @@ export async function visibleBuyerOwnerIds(me: BuyerScopedUser): Promise<string[
 export interface BuyerScopeWhere {
   ownerId?: { in: string[] } | string;
   poolStatus?: string;
+  deletedAt?: null;
 }
 
 /**
  * Prisma where-fragment to scope a BuyerRecord list/count to what `me` may see.
- *   ADMIN   → {} (all buyers, incl. the unassigned Admin Pool)
- *   MANAGER → { ownerId: { in: <org subtree> } } (their agents' buyers)
- *   AGENT   → { ownerId: me.id, poolStatus: "ASSIGNED" } (own assigned only)
+ *   ADMIN   → { deletedAt: null } (all live buyers, incl. the unassigned Admin Pool)
+ *   MANAGER → { ownerId: { in: <org subtree> }, deletedAt: null } (their agents' buyers)
+ *   AGENT   → { ownerId: me.id, poolStatus: "ASSIGNED", deletedAt: null } (own assigned only)
  *
- * Use this in EVERY buyer read so an agent can reach /buyer-data for their
- * assigned buyers without ever seeing the pool or a colleague's buyer.
+ * EVERY branch excludes soft-deleted (recycle-bin) records — a deleted buyer never
+ * appears in any list / pool / count / rollup. Use this in EVERY buyer read so an
+ * agent can reach /buyer-data for their assigned buyers without ever seeing the
+ * pool, a colleague's buyer, or a deleted one.
  */
 export async function buyerScopeWhere(me: BuyerScopedUser): Promise<BuyerScopeWhere> {
-  if (me.role === "ADMIN") return {};
-  if (me.role === "AGENT") return { ownerId: me.id, poolStatus: "ASSIGNED" };
+  if (me.role === "ADMIN") return { deletedAt: null };
+  if (me.role === "AGENT") return { ownerId: me.id, poolStatus: "ASSIGNED", deletedAt: null };
   // MANAGER — their org subtree's owned buyers (any pool status).
   const ids = await visibleBuyerOwnerIds(me);
-  if (ids === null) return {};
-  if (ids.length === 1) return { ownerId: ids[0] };
-  return { ownerId: { in: ids } };
+  if (ids === null) return { deletedAt: null };
+  if (ids.length === 1) return { ownerId: ids[0], deletedAt: null };
+  return { ownerId: { in: ids }, deletedAt: null };
 }
 
 /** True if `me` may access this specific buyer. Same rules as buyerScopeWhere,
- *  evaluated against one loaded record. */
+ *  evaluated against one loaded record. A soft-deleted (recycle-bin) buyer is
+ *  untouchable by everyone — restoring it goes through the dedicated bulk
+ *  restore path, not the normal detail/edit/lifecycle routes. */
 export async function canTouchBuyer(
   me: BuyerScopedUser,
-  buyer: { ownerId: string | null; poolStatus: string },
+  buyer: { ownerId: string | null; poolStatus: string; deletedAt?: Date | null },
 ): Promise<boolean> {
+  if (buyer.deletedAt) return false;
   if (me.role === "ADMIN") return true;
   if (me.role === "AGENT") return buyer.ownerId === me.id && buyer.poolStatus === "ASSIGNED";
   // MANAGER — owner must be in their org subtree.

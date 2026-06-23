@@ -2210,6 +2210,11 @@ model BuyerRecord {
   rejectedById      String?  // agent who rejected/returned
   rejectionReason   String?
   returnedToPoolAt  DateTime? // when it last went back to the Admin Pool (reject OR auto-5-attempts)
+  // Recycle-bin (Part 5b) — admin bulk-delete is REVERSIBLE. A soft-deleted buyer
+  // is excluded from every list/pool/rollup/dedup read (deletedAt:null filter) but
+  // the row + its assignment/activity history are retained and can be restored.
+  deletedAt         DateTime?
+  deletedById       String?  // admin who soft-deleted it
 
   // Agent-handling history (who worked it, attempts, returns) + buyer-scoped activity log.
   assignments       BuyerAssignment[]
@@ -2223,6 +2228,7 @@ model BuyerRecord {
   @@index([ownerId])
   @@index([poolStatus])
   @@index([ownerId, poolStatus])
+  @@index([deletedAt])
 }
 
 // ── BuyerAssignment — agent-handling history ─────────────────────────────────
