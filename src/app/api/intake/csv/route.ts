@@ -55,6 +55,11 @@ let _consumedKeys = new Set<string>();
 
 function norm(s: string): string { return s.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ""); }
 
+// Property-Enquired (→ Lead.sourceDetail) header candidates. Shared by the fuzzy
+// pick() fallback so every project/property column variant maps even WITHOUT an
+// explicit admin mapping. Mirrors FIELD_CANDIDATES.project below. (Lalit 2026-06-24)
+const PROJECT_PICK = ["project", "projectname", "property", "propertyname", "enquiredproperty", "interestedproject", "requirementproject", "towerproject", "tower"];
+
 // ── Canonical CRM field → header-candidate map ──────────────────────────────
 // SINGLE SOURCE OF TRUTH for both the fuzzy auto-importer (pick) AND the
 // preview "mapping" derivation + the explicit-mapping accessor. The FIRST
@@ -72,7 +77,12 @@ const FIELD_CANDIDATES: Record<string, string[]> = {
   currency:        ["currency"],
   country:         ["country"],
   source:          ["source"],
-  project:         ["project"],
+  // Property Enquired (→ Lead.sourceDetail). Broadened (Lalit 2026-06-24) to detect
+  // every common spreadsheet header for the interested project/property. norm()
+  // strips spaces/punctuation, so "Project Name"→projectname, "Tower/Project"→
+  // towerproject, "Enquired Property"→enquiredproperty, etc. Order matters: the
+  // canonical "project" stays first so prefix-matching still maps "Project Name".
+  project:         ["project", "projectname", "property", "propertyname", "enquiredproperty", "interestedproject", "requirementproject", "towerproject", "tower"],
   company:         ["company"],
   address:         ["address"],
   whoIsClient:     ["whoisclient", "client", "clientinfo", "about"],
@@ -499,7 +509,7 @@ export async function POST(req: NextRequest) {
       if (!nameRaw && !phoneRaw && !email) continue;
       if (!nameRaw) missingName++;
       if (!phoneRaw) missingPhone++;
-      if (!pick(row, "project")) missingProject++;
+      if (!pick(row, ...PROJECT_PICK)) missingProject++;
 
       const callStatus = pick(row, "status", "callstatus");
       if (callStatus) unknownStatuses.add(callStatus);
@@ -687,7 +697,7 @@ export async function POST(req: NextRequest) {
       const address = notDate(field("address", "address")); if (address) update.address = address;
       const whoIsClient = field("whoIsClient", "whoisclient", "client", "clientinfo", "about");
       if (whoIsClient) update.whoIsClient = whoIsClient;
-      const project = field("project", "project");
+      const project = field("project", ...PROJECT_PICK);
       if (project) update.sourceDetail = update.sourceDetail ?? project;
       const categorization = field("categorization", "categorization", "category");
       if (categorization) update.categorization = categorization;
@@ -738,7 +748,7 @@ export async function POST(req: NextRequest) {
           forceTeam: rowTeamRaw,
           forceMethod: "import",
           sourceDetail: (update.sourceDetail as string | undefined) ?? undefined,
-          projectSlug: field("project", "project"),
+          projectSlug: field("project", ...PROJECT_PICK),
           text: field("remarks", "remarks", "remark"),
         });
         if (teamResult.team) {
@@ -866,7 +876,7 @@ export async function POST(req: NextRequest) {
         const ccy = resolveBudgetCurrency({
           explicit: field("currency", "currency") ?? rawCcyHint ?? headerHint,
           country: field("country", "country") ?? inferCountryFromCity(field("city", "city", "location")),
-          projectName: field("project", "project") ?? (update.sourceDetail as string | undefined),
+          projectName: field("project", ...PROJECT_PICK) ?? (update.sourceDetail as string | undefined),
           sheetName: importBatch.fileName,
           team: (update.forwardedTeam as string | undefined) ?? forceTeam ?? field("team", "forwardedteam", "team"),
         });

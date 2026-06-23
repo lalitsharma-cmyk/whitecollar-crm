@@ -36,7 +36,8 @@
 // v26 (2026-06-23): New-Lead form overhaul — dedup fires only on contact fields, all-country phone, free-text profession (enum→TEXT), Country→State→City cascade, Team-first Requirement order with team-reactive Assign-To/Interested-Properties/Currency, Source/Medium cleanup (single "Website", WCR Event kept), WCR-Event field order + Event-Name dropdown, Client Profile section removed.
 // v27 (2026-06-24): Dubai-team INR budgets convert to AED on Lead View/List at fixed rate 1 AED = 26 INR (display-only; stored values + reports unchanged).
 // v28 (2026-06-24): Master Data inline editing — every business field editable from the grid: Agent (routes through assignLeadTo → Assignment-history row + notify, so Agent Performance stays correct), Team, Property Enquired (portal-rendered project search + free-text → sourceDetail), Source (cleaned list) + Medium (Call/WhatsApp/Email/Other+custom), Budget (raw budgetMin via 2.5M/30L/3Cr parse; display converts Dubai+INR→AED). Real persistence + router.refresh; filters/counts already shared with Leads.
-const CACHE = "wcr-shell-v28";
+// v29 (2026-06-24): Lead intake batch — NEW website leads auto-assign by team (Dubai→Mehak, India→Tanuj) via assignLeadTo (Assignment-history + notify), toggleable in /settings; manual New-Lead remarks now attribute the "Lead Created" Smart-Timeline entry to the creator (date+time+user, no duplication); CSV+Google-Sheet imports map every project/property header variant (Project Name/Property/Enquired Property/Interested Project/Tower etc.) → Property Enquired; backfilled 19 existing leads' Property Enquired + corrected 27 genuinely mis-dated imported leads to their true sheet date.
+const CACHE = "wcr-shell-v29";
 const SHELL = ["/login", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", (event) => {

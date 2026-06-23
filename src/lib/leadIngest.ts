@@ -8,7 +8,7 @@ import { currentWindow } from "@/lib/assignmentWindow";
 import { sendAfterHoursWelcome } from "@/lib/whatsappOutbound";
 import { sendSpeedToLeadResponses } from "@/lib/speedToLead";
 import { fireWorkflowTrigger } from "@/lib/workflowEngine";
-import { getWhatsappAutomationEnabled } from "@/lib/settings";
+import { getWhatsappAutomationEnabled, getWebsiteAutoAssign } from "@/lib/settings";
 import { notifyHotLead } from "@/lib/push";
 import { findMatchingLeads, summariseHistory, projectsFromInterestedUnits } from "@/lib/investorMatch";
 import { audit } from "@/lib/audit";
@@ -56,6 +56,11 @@ export interface RawLeadInput {
   /** When the lead was actually generated (from import Date column). If provided,
    *  used as the lead's createdAt instead of the current timestamp. */
   createdAt?: Date;
+  /** Manual New-Lead form ONLY: the id of the admin/manager creating the lead.
+   *  When present, the LEAD_CREATED Activity is attributed to them so the initial
+   *  remark renders in Smart Timeline with date + time + USER (not an anonymous
+   *  system row). Importers & website intake DON'T pass it → unchanged. */
+  createdByUserId?: string;
 }
 
 const FIRST_CALL_SLA_MIN = 15;
@@ -274,10 +279,19 @@ export async function ingestLead(input: RawLeadInput) {
   await prisma.activity.create({
     data: {
       leadId: lead.id,
+      // ITEM 2 (manual New-Lead form): the form passes createdByUserId so this
+      // creation event is ATTRIBUTED to the creator → it renders in Smart Timeline
+      // with date + time + USER ("✨ Lead Created · <name> · <IST time>"). The
+      // remark text itself already appears once as a dated Conversation-History
+      // entry (the websiteMessageRemark → rawRemarks block just below, which fires
+      // for any genuine message), so we DROP the remark from this event's
+      // description on the manual path to avoid showing the same text twice.
+      // Website/import set no creator → unchanged (anonymous event, remark kept).
+      userId: input.createdByUserId ?? null,
       type: ActivityType.LEAD_CREATED,
       status: ActivityStatus.DONE,
       title: `Lead created from ${input.source}`,
-      description: input.notesShort,
+      description: input.createdByUserId ? null : input.notesShort,
       completedAt: new Date(),
     },
   });
@@ -438,6 +452,38 @@ export async function ingestLead(input: RawLeadInput) {
     console.log("[ingestLead] after-hours welcome suppressed:", gate.reason);
   }
 
+  // ── Website lead auto-assignment (TEMPORARY — Lalit 2026-06-24) ───────────
+  // NEW website-form leads auto-assign by team: Dubai → Mehak, India → Tanuj,
+  // "until manually disabled" (toggle websiteAutoAssignEnabled in /settings).
+  // GUARDS (all must hold): source is WEBSITE · toggle ON · a team was resolved ·
+  // the lead is still unassigned · a valid, active, non-HR assignee is mapped for
+  // that team. Uses the canonical assignLeadTo() so the Assignment-history row +
+  // owner notification fire (Agent Performance + notifications stay correct).
+  // NEVER touches imports / manual creation / existing leads (only this fresh
+  // WEBSITE intake path). Best-effort: a failure here never blocks lead creation.
+  const isWebLead = input.source === LeadSource.WEBSITE;
+  let autoAssigned = false;
+  if (isWebLead && lead.forwardedTeam) {
+    try {
+      const cfg = await getWebsiteAutoAssign();
+      const targetUserId = cfg.assignees[lead.forwardedTeam];
+      if (cfg.enabled && targetUserId && !lead.ownerId) {
+        // Validate the mapped user is real, active and not HR-only before assigning.
+        const assignee = await prisma.user.findFirst({
+          where: { id: targetUserId, active: true, hrOnly: false },
+          select: { id: true },
+        });
+        if (assignee) {
+          await assignLeadTo(lead.id, assignee.id, `website auto-assign (${lead.forwardedTeam} team)`);
+          lead.ownerId = assignee.id; // reflect locally so the alert block below adapts
+          autoAssigned = true;
+        }
+      }
+    } catch (err) {
+      console.error("[ingestLead] website auto-assign failed for lead", lead.id, err);
+    }
+  }
+
   // Admin alert — they have 5 minutes to assign manually
   // Lalit's mandatory-team policy (2026-06): when the intake doesn't supply
   // a team, NOTHING auto-routes. The lead sits in /admin/awaiting-team
@@ -445,8 +491,9 @@ export async function ingestLead(input: RawLeadInput) {
   // skips null-team leads in its 5-min orphan sweep.
   // Website leads get a dedicated "please assign" alert to Admin/Super-Admin.
   // notify() already fans out web push + the in-app bell sound; WARNING also emails.
-  const isWebLead = input.source === LeadSource.WEBSITE;
-  const webLeadBody = `New website lead received. Please assign.${lead.name && lead.name !== "Unknown" ? ` — ${lead.name}` : ""}${lead.sourceDetail ? ` (${lead.sourceDetail})` : ""}`;
+  const webLeadBody = autoAssigned
+    ? `New website lead auto-assigned to the ${lead.forwardedTeam} team.${lead.name && lead.name !== "Unknown" ? ` — ${lead.name}` : ""}${lead.sourceDetail ? ` (${lead.sourceDetail})` : ""}`
+    : `New website lead received. Please assign.${lead.name && lead.name !== "Unknown" ? ` — ${lead.name}` : ""}${lead.sourceDetail ? ` (${lead.sourceDetail})` : ""}`;
 
   if (lead.forwardedTeam === null) {
     await notifyRoles(["ADMIN", "MANAGER"], {
@@ -466,7 +513,9 @@ export async function ingestLead(input: RawLeadInput) {
     await notifyRoles(["ADMIN", "MANAGER"], {
       kind: "LEAD_ASSIGNED",
       severity: window.kind === "OVERNIGHT_QUEUE" ? "WARNING" : "INFO",
-      title: isWebLead ? `🌐 New website lead received` : `New ${input.source} lead: ${lead.name}`,
+      title: isWebLead
+        ? (autoAssigned ? `🌐 New website lead auto-assigned (${lead.forwardedTeam})` : `🌐 New website lead received`)
+        : `New ${input.source} lead: ${lead.name}`,
       body: isWebLead ? webLeadBody : adminBody,
       linkUrl: `/leads/${lead.id}`,
       leadId: lead.id,

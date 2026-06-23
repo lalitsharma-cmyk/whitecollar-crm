@@ -73,6 +73,22 @@ const DEFAULTS = {
   //   leads BEFORE enabling batch auto-fill. Budget and status fields are NEVER
   //   auto-applied regardless of this flag.
   "ai.extraction.autoApply": "false",
+  // ── WEBSITE LEAD AUTO-ASSIGNMENT (Lalit, 2026-06-24) — TEMPORARY ──────────────
+  // NEW website-form leads auto-assign by team: Dubai → Mehak, India → Tanuj —
+  // "until manually disabled". Default ON. Flip to "false" in /settings (or via
+  // setSetting) to revert to the awaiting-team/manual-route behaviour. ONLY new
+  // WEBSITE-source leads with a resolved team and no owner are touched — never
+  // imports, manual creation, or existing leads. The assignee user-IDs live in
+  // `websiteLeadAssignees` (JSON) so they can be re-pointed without a code change.
+  "websiteAutoAssignEnabled": "true",
+  // JSON: { "Dubai": "<userId>", "India": "<userId>" }. Resolved 2026-06-24 from
+  // the active roster — Mehak Mukhija (Dubai) + Tanuj Chopra (India). Editable from
+  // /settings later; an empty / missing team key just means "don't auto-assign that
+  // team" (the lead falls through to the normal awaiting-team flow).
+  "websiteLeadAssignees": JSON.stringify({
+    Dubai: "cmpidrrjp0002vphgqb432xq7", // Mehak Mukhija
+    India: "cmpidrs1n0005vphgg1tj84pj", // Tanuj Chopra
+  }),
 };
 
 export async function getSetting(key: string): Promise<string> {
@@ -215,6 +231,34 @@ export async function getMotivationPilotEnabled(): Promise<boolean> {
 export async function getMotivationPilotTeam(): Promise<string> {
   const raw = await getSetting("motivationPilot.team");
   return (raw ?? "").trim();
+}
+
+// ── Website lead auto-assignment (temporary; Lalit 2026-06-24) ───────────────
+// Returns the master ON/OFF flag (default ON) plus the team→userId mapping for
+// the two auto-assignees. A malformed/empty mapping JSON resolves to {} so a
+// bad value can NEVER crash intake — it just disables auto-assign until fixed.
+export type WebsiteAutoAssign = {
+  enabled: boolean;
+  assignees: Record<string, string>; // e.g. { Dubai: "<id>", India: "<id>" }
+};
+export async function getWebsiteAutoAssign(): Promise<WebsiteAutoAssign> {
+  const [rawEnabled, rawMap] = await Promise.all([
+    getSetting("websiteAutoAssignEnabled"),
+    getSetting("websiteLeadAssignees"),
+  ]);
+  const enabled = (rawEnabled || "true").toLowerCase() !== "false"; // default ON
+  let assignees: Record<string, string> = {};
+  try {
+    const parsed = JSON.parse(rawMap || "{}");
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
+        if (typeof v === "string" && v.trim()) assignees[k] = v.trim();
+      }
+    }
+  } catch {
+    assignees = {}; // malformed → no auto-assign (safe)
+  }
+  return { enabled, assignees };
 }
 
 // One-stop eligibility check used by the MotivationPilot component. Returns

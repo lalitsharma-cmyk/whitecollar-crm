@@ -30,6 +30,7 @@ async function createLeadAction(formData: FormData) {
   const rawAltPhone = String(formData.get("altPhone") ?? "").trim();
   const altPhone = rawAltPhone ? (toE164(rawAltPhone) ?? undefined) : undefined;
 
+  const remarksText = String(formData.get("remarks") ?? "").trim() || undefined;
   const { lead } = await ingestLead({
     name: String(formData.get("name") ?? "").trim(),
     phone,
@@ -38,8 +39,14 @@ async function createLeadAction(formData: FormData) {
     configuration: String(formData.get("configuration") ?? "").trim() || undefined,
     budgetMin: Number(formData.get("budgetMin")) || undefined,
     budgetMax: Number(formData.get("budgetMax")) || undefined,
-    notesShort: String(formData.get("remarks") ?? "").trim() || undefined,
+    notesShort: remarksText,
     source,
+    // ITEM 2: attribute the LEAD_CREATED Activity to the creator so the initial
+    // remark shows in Smart Timeline with date + time + USER. The remark text
+    // itself renders once as a dated Conversation-History entry (leadIngest's
+    // websiteMessageRemark → rawRemarks), and this flag adds the "✨ Lead Created
+    // · <creator> · <IST time>" row — no duplication. See leadIngest.ts.
+    createdByUserId: me.id,
   });
 
   // Add alternative contact info after lead creation

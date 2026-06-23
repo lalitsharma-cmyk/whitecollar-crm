@@ -1026,6 +1026,47 @@ const checks: Check[] = [
       }
     },
   },
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // WEBSITE AUTO-ASSIGN + PROPERTY-ENQUIRED MAPPING (Lalit 2026-06-24)
+  // ───────────────────────────────────────────────────────────────────────────
+  {
+    name: "website-auto-assign — toggle ON by default + both assignees resolve to active non-HR users",
+    run: async () => {
+      const { getWebsiteAutoAssign } = await import("../src/lib/settings");
+      const cfg = await getWebsiteAutoAssign();
+      assert(typeof cfg.enabled === "boolean", "getWebsiteAutoAssign must return a boolean enabled flag");
+      // The mapping must carry BOTH teams and each must point at a real, active,
+      // non-HR user (so a fresh website lead can actually be assigned).
+      for (const team of ["Dubai", "India"]) {
+        const id = cfg.assignees[team];
+        assert(!!id, `websiteLeadAssignees must map ${team} → a userId`);
+        const u = await prisma.user.findFirst({ where: { id, active: true, hrOnly: false }, select: { id: true } });
+        assert(!!u, `${team} assignee (${id}) must be an active, non-HR user`);
+      }
+      // The hook must route through the canonical assignLeadTo() (Assignment-history
+      // + notify) — guards Agent Performance. Static source scan so a refactor can't
+      // silently bypass it.
+      const fs = await import("node:fs");
+      const ingest = fs.readFileSync("src/lib/leadIngest.ts", "utf8");
+      assert(/getWebsiteAutoAssign/.test(ingest), "leadIngest must consult getWebsiteAutoAssign");
+      assert(/assignLeadTo\(lead\.id,\s*assignee\.id/.test(ingest), "website auto-assign MUST use assignLeadTo() (history + notify)");
+    },
+  },
+  {
+    name: "property-enquired — importers detect every project/property header variant (→ sourceDetail)",
+    run: async () => {
+      const fs = await import("node:fs");
+      // Both importers must carry the broadened candidate list AND map it to sourceDetail.
+      for (const f of ["src/app/api/intake/csv/route.ts", "src/app/api/intake/google-sheet/route.ts"]) {
+        const src = fs.readFileSync(f, "utf8");
+        for (const cand of ["enquiredproperty", "interestedproject", "requirementproject", "towerproject", "propertyname"]) {
+          assert(src.includes(cand), `${f} must detect "${cand}" as a Property-Enquired header`);
+        }
+        assert(/update\.sourceDetail = update\.sourceDetail \?\?/.test(src), `${f} must map the project/property column into sourceDetail (never overwrite)`);
+      }
+    },
+  },
 ];
 
 // ── runner ────────────────────────────────────────────────────────────────────

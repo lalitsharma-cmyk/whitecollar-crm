@@ -30,6 +30,10 @@ type Row = Record<string, string>;
 function norm(s: string): string {
   return s.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
 }
+
+// Property-Enquired (→ Lead.sourceDetail) header candidates — every common
+// project/property column variant. Mirrors the CSV importer. (Lalit 2026-06-24)
+const PROJECT_PICK = ["project", "projectname", "property", "propertyname", "enquiredproperty", "interestedproject", "requirementproject", "towerproject", "tower"];
 // Tracks which sheet headers were mapped to a known CRM field for the current
 // row, so every OTHER column is preserved verbatim in customFields. Reset per row.
 let _consumedKeys = new Set<string>();
@@ -276,6 +280,12 @@ export async function POST(req: NextRequest) {
       const ad = notDate(pick(row, "address")); if (ad) update.address = ad;
       const wc = pick(row, "whoisclient", "client", "clientinfo"); if (wc) update.whoIsClient = wc;
       const cat = pick(row, "categorization", "category"); if (cat) update.categorization = cat;
+      // Property Enquired (→ sourceDetail). The Sheet importer previously dropped
+      // the project/property column (it only used it for routing/currency) — now it
+      // maps into Property Enquired like the CSV importer. campaign (passed as
+      // sourceDetail to ingestLead) wins; a manually-set value is never overwritten.
+      const sheetProject = pick(row, ...PROJECT_PICK);
+      if (sheetProject) update.sourceDetail = update.sourceDetail ?? sheetProject;
       // RAW-FIRST remarks (bugfix): the Sheet importer previously routed the
       // Remarks column ONLY into notesShort, so imported history never reached
       // Lead.remarks / Conversation History. Now the exact remark is stored
@@ -316,7 +326,7 @@ export async function POST(req: NextRequest) {
           forceTeam: rowTeamRaw,
           forceMethod: "import",
           sourceDetail: campaign,
-          projectSlug: pick(row, "project"),
+          projectSlug: pick(row, ...PROJECT_PICK),
           text: pick(row, "remarks", "message", "requirement"),
         });
         if (teamResult.team) {
@@ -350,7 +360,7 @@ export async function POST(req: NextRequest) {
         const ccy = resolveBudgetCurrency({
           explicit: pick(row, "currency") ?? rawCcyHint ?? headerHint,
           country: pick(row, "country") ?? inferCountryFromCity(pick(row, "city", "location")),
-          projectName: pick(row, "project") ?? (update.sourceDetail as string | undefined),
+          projectName: pick(row, ...PROJECT_PICK) ?? (update.sourceDetail as string | undefined),
           sheetName: importBatch.fileName,
           team: (update.forwardedTeam as string | undefined) ?? pick(row, "forwardedteam", "team"),
         });
