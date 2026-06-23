@@ -156,6 +156,9 @@ model User {
 
   // ── Buyer Data module relations ──
   buyerImports          BuyerImportBatch[] @relation("BuyerImports")
+  buyersOwned           BuyerRecord[]      @relation("BuyerOwner")
+  buyerAssignments      BuyerAssignment[]  @relation("BuyerAssignmentAgent")
+  buyerActivities       BuyerActivity[]    @relation("BuyerActivityUser")
 
   assistantRuns         AssistantRun[] @relation("AssistantRunBy")
 
@@ -538,6 +541,8 @@ model Lead {
   waMessages      WhatsAppMessage[]
   stickyNotes     StickyNote[]
   fieldHistory    LeadFieldHistory[]
+  // Buyer-data conversions that produced THIS lead (normally 0 or 1).
+  buyerConversions BuyerRecord[]     @relation("BuyerConvertedLead")
 
   @@index([status])
   @@index([source])
@@ -2185,11 +2190,84 @@ model BuyerRecord {
   updatedAt         DateTime @updatedAt
   importBatchId     String?  // Link to BuyerImportBatch (when bulk-imported)
 
+  // ── Lifecycle / worked-pipeline (Part 5a) ──────────────────────────────────
+  // BuyerRecord is no longer a flat admin repository — it is a lightweight Leads-
+  // style pipeline: Admin Pool → assigned to an agent → CONVERTED (became a real
+  // Lead) or REJECTED/returned to the pool. ownerId null ⇒ sitting in the pool.
+  ownerId           String?  // agent currently working this buyer (null = Admin Buyer Pool)
+  owner             User?    @relation("BuyerOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  assignedAt        DateTime? // when ownerId was last set
+  poolStatus        String   @default("ADMIN_POOL") // ADMIN_POOL | ASSIGNED | CONVERTED | REJECTED
+  attemptCount      Int      @default(0) // contact attempts (No Answer / Not Picked / WA No Response). Auto-return to pool at 5.
+  remarks           String?  // free-text working notes — RETAINED across reassignments
+  // Conversion → a real Lead.
+  convertedLeadId   String?  // FK → Lead (the created lead). SetNull so deleting the lead doesn't delete the buyer.
+  convertedLead     Lead?    @relation("BuyerConvertedLead", fields: [convertedLeadId], references: [id], onDelete: SetNull)
+  convertedAt       DateTime?
+  convertedById     String?  // user who converted
+  // Rejection / return to pool.
+  rejectedAt        DateTime?
+  rejectedById      String?  // agent who rejected/returned
+  rejectionReason   String?
+  returnedToPoolAt  DateTime? // when it last went back to the Admin Pool (reject OR auto-5-attempts)
+
+  // Agent-handling history (who worked it, attempts, returns) + buyer-scoped activity log.
+  assignments       BuyerAssignment[]
+  activities        BuyerActivity[]
+
   @@index([buyerKey])
   @@index([projectName])
   @@index([transactionDate])
   @@index([createdAt])
   @@index([importBatchId])
+  @@index([ownerId])
+  @@index([poolStatus])
+  @@index([ownerId, poolStatus])
+}
+
+// ── BuyerAssignment — agent-handling history ─────────────────────────────────
+// One row per "stint": the period a single agent held a buyer. Opened on assign,
+// closed (returnedAt set) on reject / auto-5-attempts / admin reassign. This is
+// the admin-visible audit of WHO handled a buyer, HOW MANY attempts they logged
+// in that stint, and WHY it came back. History is never deleted on reassignment.
+model BuyerAssignment {
+  id              String      @id @default(cuid())
+  buyerId         String
+  buyer           BuyerRecord @relation(fields: [buyerId], references: [id], onDelete: Cascade)
+  userId          String      // agent who held the buyer for this stint
+  user            User        @relation("BuyerAssignmentAgent", fields: [userId], references: [id])
+  assignedAt      DateTime    @default(now())
+  assignedById    String?     // admin/manager who made the assignment
+  returnedAt      DateTime?   // null = still the active stint
+  returnReason    String?     // MANUAL_REJECT | AUTO_5_ATTEMPTS | ADMIN_REASSIGN
+  attemptsInStint Int         @default(0) // contact attempts logged DURING this stint
+  createdAt       DateTime    @default(now())
+
+  @@index([buyerId])
+  @@index([userId])
+}
+
+// ── BuyerActivity — buyer-scoped timeline / activity log ─────────────────────
+// Calls, notes, WhatsApp, voice notes, attempts, and lifecycle transitions
+// (ASSIGNED / RETURNED / CONVERTED / REJECTED). Powers the buyer's conversation
+// timeline (5b) and the buyer reports (6) — calls logged, WA interactions, notes,
+// voice notes, attempt counts. type is a free string (mirrors the Activity model's
+// string-typed buyer side) so new kinds don't need a migration.
+model BuyerActivity {
+  id          String      @id @default(cuid())
+  buyerId     String
+  buyer       BuyerRecord @relation(fields: [buyerId], references: [id], onDelete: Cascade)
+  userId      String?     // who logged it (null for system rows)
+  user        User?       @relation("BuyerActivityUser", fields: [userId], references: [id])
+  // CALL | NOTE | WHATSAPP | VOICE_NOTE | ATTEMPT_NO_ANSWER | ATTEMPT_NOT_PICKED |
+  // ATTEMPT_WA_NO_RESPONSE | ASSIGNED | RETURNED | CONVERTED | REJECTED
+  type        String
+  description String?
+  createdAt   DateTime    @default(now())
+
+  @@index([buyerId])
+  @@index([userId])
+  @@index([buyerId, createdAt])
 }
 
 // Bulk import batches — track where BuyerRecords came from (Google Sheet, Excel, etc.)

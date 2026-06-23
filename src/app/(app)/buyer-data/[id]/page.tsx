@@ -1,9 +1,10 @@
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
-import { redirect, notFound } from "next/navigation";
+import { notFound } from "next/navigation";
 import Link from "next/link";
 import ImportedFieldsCard from "@/components/ImportedFieldsCard";
 import BuyerInlineEdit from "@/components/BuyerInlineEdit";
+import { canTouchBuyer } from "@/lib/buyerScope";
 import {
   parseJsonArray,
   rollupForRecords,
@@ -11,10 +12,11 @@ import {
   inferBuyerCurrency,
 } from "@/lib/buyerIntelligence";
 
-// ── Buyer Data detail — ADMIN ONLY ───────────────────────────────────────────
+// ── Buyer Data detail — scoped (admin = any; agent = own ASSIGNED) ───────────
 // Full transaction record + repeat-buyer intelligence + "other properties by
-// this buyer" (rollup on buyerKey). Key fields are inline-editable (admin-gated
-// PATCH with a field whitelist); the imported sheet columns show verbatim.
+// this buyer" (rollup on buyerKey). Key fields are inline-editable (PATCH with a
+// field whitelist); the imported sheet columns show verbatim. Access is gated by
+// canTouchBuyer so an agent reaching a buyer they don't own gets a 404.
 export const dynamic = "force-dynamic";
 
 const fmtDate = (d: Date | null) =>
@@ -24,11 +26,12 @@ const toDateInput = (d: Date | null) =>
 
 export default async function BuyerDetail({ params }: { params: Promise<{ id: string }> }) {
   const me = await requireUser();
-  if (me.role !== "ADMIN") redirect("/dashboard");
   const { id } = await params;
 
   const rec = await prisma.buyerRecord.findUnique({ where: { id } });
   if (!rec) notFound();
+  // 404 (not 403) if this user can't see this buyer — don't confirm existence.
+  if (!(await canTouchBuyer(me, { ownerId: rec.ownerId, poolStatus: rec.poolStatus }))) notFound();
 
   // Repeat-buyer rollup: all records sharing this buyerKey (incl. this one).
   const siblings = rec.buyerKey

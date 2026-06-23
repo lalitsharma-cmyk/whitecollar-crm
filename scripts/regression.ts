@@ -963,7 +963,7 @@ const checks: Check[] = [
   //   and static-scans the route/page sources. ZERO writes.
   // ───────────────────────────────────────────────────────────────────────────
   {
-    name: "buyer-module — tables exist + rollup math correct + every page/route ADMIN-gated",
+    name: "buyer-module — tables exist + rollup math correct + import/export ADMIN-only + list/detail scoped (no agent leak)",
     run: async () => {
       // (a) TABLES EXIST — selecting the buyer models must not throw (column /
       //     table presence probe; proves the migration applied in prod).
@@ -1001,29 +1001,40 @@ const checks: Check[] = [
       const groups = groupByBuyerKey([{ id: "1", buyerKey: "k" }, { id: "2", buyerKey: "k" }, { id: "3", buyerKey: null }, { id: "4", buyerKey: "" }] as never[]);
       assert(groups.size === 3, `k(×2) + 2 solo = 3 groups, got ${groups.size}`);
 
-      // (c) ADMIN-GATING — every buyer page + API route must enforce ADMIN. A
-      //     static source-scan so a refactor can't silently open passport/financial
-      //     data to agents or managers.
+      // (c) ACCESS GATING — passport/financial data must never be open to the
+      //     wrong user. As of Part 5a the buyer module is a WORKED PIPELINE:
+      //       • Pool management (import / export) stays ADMIN-ONLY.
+      //       • The list + detail + inline-edit are SCOPED (admin = all + pool;
+      //         assigned agent = ONLY their own ASSIGNED buyers) via buyerScopeWhere
+      //         / canTouchBuyer — NOT a blanket ADMIN gate.
+      //     A static source-scan so a refactor can't silently (i) open the pool /
+      //     export to agents, or (ii) drop the scope guard and leak every agent's
+      //     buyers to each other.
       const fs = await import("node:fs");
-      const adminGated = (f: string, re: RegExp) => {
-        const src = fs.readFileSync(f, "utf8");
-        assert(re.test(src), `${f} MUST gate on ADMIN (passport + financial data) — gate missing/reverted?`);
-      };
-      // Pages: requireUser() + redirect non-admins.
-      for (const p of [
-        "src/app/(app)/buyer-data/page.tsx",
-        "src/app/(app)/buyer-data/[id]/page.tsx",
-        "src/app/(app)/buyer-data/import/page.tsx",
-      ]) adminGated(p, /role !== "ADMIN"/);
-      // API routes: requireUser() + 403 for non-admins.
+      const read = (f: string) => fs.readFileSync(f, "utf8");
+      // Import/export = ADMIN-ONLY (pool management).
       for (const r of [
         "src/app/api/buyer-data/import/route.ts",
         "src/app/api/buyer-data/export/route.ts",
-        "src/app/api/buyer-data/[id]/update/route.ts",
       ]) {
-        const src = fs.readFileSync(r, "utf8");
-        assert(/role !== "ADMIN"/.test(src) && /403/.test(src), `${r} MUST 403 non-admins`);
+        const src = read(r);
+        assert(/role !== "ADMIN"/.test(src) && /403/.test(src), `${r} MUST stay ADMIN-only (pool management)`);
       }
+      assert(/role !== "ADMIN"/.test(read("src/app/(app)/buyer-data/import/page.tsx")), "import page MUST stay ADMIN-only");
+      // List + detail = SCOPED reads (must call buyerScopeWhere / canTouchBuyer).
+      assert(/buyerScopeWhere/.test(read("src/app/(app)/buyer-data/page.tsx")), "buyer list page MUST scope via buyerScopeWhere (no blanket admin gate, no leak)");
+      assert(/canTouchBuyer/.test(read("src/app/(app)/buyer-data/[id]/page.tsx")), "buyer detail page MUST gate via canTouchBuyer");
+      assert(/canTouchBuyer/.test(read("src/app/api/buyer-data/[id]/update/route.ts")), "buyer update route MUST gate via canTouchBuyer");
+      // Lifecycle write routes must exist + be scope/role gated.
+      assert(/requireRole\("ADMIN", "MANAGER"\)/.test(read("src/app/api/buyer-data/assign/route.ts")), "assign route MUST be ADMIN/MANAGER only");
+      for (const r of [
+        "src/app/api/buyer-data/[id]/convert/route.ts",
+        "src/app/api/buyer-data/[id]/reject/route.ts",
+        "src/app/api/buyer-data/[id]/activity/route.ts",
+      ]) assert(/canTouchBuyer/.test(read(r)), `${r} MUST gate via canTouchBuyer`);
+      // The scope helper itself: AGENT must be restricted to own + ASSIGNED.
+      const scopeSrc = read("src/lib/buyerScope.ts");
+      assert(/ownerId: me\.id, poolStatus: "ASSIGNED"/.test(scopeSrc), "buyerScopeWhere AGENT branch MUST be { ownerId: me.id, poolStatus: 'ASSIGNED' }");
     },
   },
 
@@ -1101,6 +1112,86 @@ const checks: Check[] = [
       });
       for (const r of returnedPaired) {
         assert(!!r.pairedEventId, `Returned row ${r.id} with a duration must have pairedEventId set`);
+      }
+    },
+  },
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // 40. BUYER LIFECYCLE — the worked-pipeline invariants (Part 5a).
+  //   (a) the new columns + tables exist (selecting them must not throw → proves
+  //       the 20260624130000_buyer_lifecycle migration is applied in prod).
+  //   (b) AUTO-RETURN rule holds in DATA: no ASSIGNED buyer may sit at
+  //       attemptCount >= 5 — at the 5th attempt it MUST have been returned to the
+  //       Admin Pool (event-driven, no cron). A counter-example means the
+  //       auto-return path regressed.
+  //   (c) assignment-history is captured: every non-pool buyer (ASSIGNED /
+  //       CONVERTED / REJECTED-with-an-owner-history) that has any BuyerActivity
+  //       has at least one BuyerAssignment stint — history is never lost.
+  //   (d) buyerScopeWhere(agent) EXCLUDES other agents + the pool: the agent
+  //       where-clause (replicated inline, byte-equivalent to src/lib/buyerScope.ts)
+  //       must never select a buyer this agent doesn't own or one not ASSIGNED.
+  // ───────────────────────────────────────────────────────────────────────────
+  {
+    name: "buyer-lifecycle — columns/tables exist + auto-return-at-5 + assignment-history captured + agent scope excludes others",
+    run: async () => {
+      // (a) column / table presence probes (SELECT must not throw).
+      const probe = await prisma.buyerRecord.findFirst({
+        select: {
+          id: true, ownerId: true, poolStatus: true, attemptCount: true, remarks: true,
+          convertedLeadId: true, convertedAt: true, convertedById: true,
+          rejectedAt: true, rejectedById: true, rejectionReason: true, returnedToPoolAt: true,
+        },
+      });
+      void probe; // may be null on empty data — the point is selectability.
+      // New tables must be queryable.
+      const aCount = await prisma.buyerAssignment.count();
+      const evCount = await prisma.buyerActivity.count();
+      assert(typeof aCount === "number" && aCount >= 0, "buyerAssignment.count() failed");
+      assert(typeof evCount === "number" && evCount >= 0, "buyerActivity.count() failed");
+
+      // (b) AUTO-RETURN: zero ASSIGNED buyers with attemptCount >= 5.
+      const stuck = await prisma.buyerRecord.count({
+        where: { poolStatus: "ASSIGNED", attemptCount: { gte: 5 } },
+      });
+      assert(stuck === 0, `auto-return regressed: ${stuck} ASSIGNED buyer(s) with attemptCount >= 5 (should be back in the pool)`);
+
+      // Also: any ASSIGNED buyer MUST have an owner (poolStatus/ownerId coherence).
+      const assignedNoOwner = await prisma.buyerRecord.count({
+        where: { poolStatus: "ASSIGNED", ownerId: null },
+      });
+      assert(assignedNoOwner === 0, `${assignedNoOwner} ASSIGNED buyer(s) have no ownerId (incoherent lifecycle state)`);
+      // A CONVERTED buyer must carry its convertedLeadId.
+      const convertedNoLead = await prisma.buyerRecord.count({
+        where: { poolStatus: "CONVERTED", convertedLeadId: null },
+      });
+      assert(convertedNoLead === 0, `${convertedNoLead} CONVERTED buyer(s) missing convertedLeadId`);
+
+      // (c) assignment-history captured: any buyer that has been worked (has a
+      // BuyerActivity of a lifecycle/contact kind) and is not still in the pool
+      // must have >= 1 BuyerAssignment stint. We check the converted set (a buyer
+      // can only be CONVERTED after being assigned), which must always have a stint.
+      const convertedBuyers = await prisma.buyerRecord.findMany({
+        where: { poolStatus: "CONVERTED" },
+        select: { id: true, _count: { select: { assignments: true } } },
+        take: 2000,
+      });
+      for (const b of convertedBuyers) {
+        assert(b._count.assignments >= 1, `CONVERTED buyer ${b.id} has no BuyerAssignment stint (history lost)`);
+      }
+
+      // (d) buyerScopeWhere(AGENT) excludes others + the pool. Replicated inline:
+      //     AGENT → { ownerId: me.id, poolStatus: "ASSIGNED" }.
+      const sampleAgent = await prisma.user.findFirst({ where: { role: "AGENT" }, select: { id: true } });
+      if (sampleAgent) {
+        const agentWhere = { ownerId: sampleAgent.id, poolStatus: "ASSIGNED" as const };
+        const scoped = await prisma.buyerRecord.findMany({ where: agentWhere, select: { ownerId: true, poolStatus: true }, take: 2000 });
+        for (const r of scoped) {
+          assert(r.ownerId === sampleAgent.id, "agent scope leaked a buyer owned by someone else");
+          assert(r.poolStatus === "ASSIGNED", "agent scope leaked a non-ASSIGNED buyer (pool/converted/rejected)");
+        }
+        // The agent scope count must never exceed the agent's owned-AND-assigned count.
+        const ownedAssigned = await prisma.buyerRecord.count({ where: agentWhere });
+        assert(scoped.length <= ownedAssigned, "agent scope returned more than owned+assigned");
       }
     },
   },

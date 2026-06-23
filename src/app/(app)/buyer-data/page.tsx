@@ -1,8 +1,8 @@
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
-import { redirect } from "next/navigation";
 import Link from "next/link";
 import BuyerRecordsTable, { type BuyerRow } from "@/components/BuyerRecordsTable";
+import { buyerScopeWhere } from "@/lib/buyerScope";
 import {
   groupByBuyerKey,
   rollupForRecords,
@@ -10,11 +10,15 @@ import {
   inferBuyerCurrency,
 } from "@/lib/buyerIntelligence";
 
-// ── Buyer Data — ADMIN/super-admin ONLY operations console ───────────────────
-// Transaction-level property records (who bought what, for how much). Contains
-// passport + financial data → admin-gated on EVERY page + API route. Repeat-buyer
-// rollups (properties owned / total invested / repeat flag) are COMPUTED here by
-// grouping the loaded rows on buyerKey — never stored, never stale.
+// ── Buyer Data — worked pipeline (Part 5a) ───────────────────────────────────
+// Transaction-level property records that are now WORKED like a lightweight
+// Leads: Admin Pool → assigned to an agent → CONVERTED / REJECTED. Contains
+// passport + financial data, so reads are SCOPED via buyerScopeWhere:
+//   ADMIN   → every buyer (pool + all agents').
+//   AGENT   → ONLY their own currently-ASSIGNED buyers.
+//   MANAGER → their team's agents' buyers.
+// Repeat-buyer rollups are COMPUTED here by grouping the loaded rows on buyerKey.
+// Import / Export / pool-assignment remain admin-only.
 export const dynamic = "force-dynamic";
 
 const fmtDate = (d: Date | null) =>
@@ -22,12 +26,14 @@ const fmtDate = (d: Date | null) =>
 
 export default async function BuyerDataPage() {
   const me = await requireUser();
-  // Admin / super-admin only — passport + financial data.
-  if (me.role !== "ADMIN") redirect("/dashboard");
+  const isAdmin = me.role === "ADMIN";
+  // Scope to what this user may see (admin = all + pool; agent = own ASSIGNED).
+  const scope = await buyerScopeWhere(me);
 
-  // Load the full set (server-capped) — the table filters / sorts / paginates
+  // Load the scoped set (server-capped) — the table filters / sorts / paginates
   // client-side, Excel-style. 3000 is a safe cap for the current data volume.
   const records = await prisma.buyerRecord.findMany({
+    where: scope,
     orderBy: { transactionDate: "desc" },
     take: 3000,
   });
@@ -110,14 +116,16 @@ export default async function BuyerDataPage() {
         <div>
           <h1 className="text-xl sm:text-2xl font-bold">Buyer Data</h1>
           <p className="text-xs sm:text-sm text-gray-500 dark:text-slate-400">
-            Transaction & property ownership records · <span className="font-semibold">{totalRecords}</span> in view ·
-            {" "}<span className="text-amber-600 dark:text-amber-400">admin-only</span> (passport &amp; financial data)
+            {isAdmin ? "Transaction & property ownership records" : "Buyers assigned to you"} · <span className="font-semibold">{totalRecords}</span> in view ·
+            {" "}<span className="text-amber-600 dark:text-amber-400">{isAdmin ? "admin pool + all agents" : "your assigned buyers"}</span> (passport &amp; financial data)
           </p>
         </div>
-        <div className="flex items-center gap-2 self-start sm:self-auto">
-          <Link href="/buyer-data/import" className="btn btn-primary" title="Import buyer transaction data">⬆ Import</Link>
-          <a href="/api/buyer-data/export" className="btn btn-ghost" title="Export buyer data to CSV">⬇ Export CSV</a>
-        </div>
+        {isAdmin && (
+          <div className="flex items-center gap-2 self-start sm:self-auto">
+            <Link href="/buyer-data/import" className="btn btn-primary" title="Import buyer transaction data">⬆ Import</Link>
+            <a href="/api/buyer-data/export" className="btn btn-ghost" title="Export buyer data to CSV">⬇ Export CSV</a>
+          </div>
+        )}
       </div>
 
       {/* ── Summary stats ─────────────────────────────────────────────────── */}

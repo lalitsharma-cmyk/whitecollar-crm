@@ -2,11 +2,15 @@ import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
 import { normalizeBuyerKey, primaryPhone } from "@/lib/buyerIntelligence";
+import { canTouchBuyer } from "@/lib/buyerScope";
 import { audit, reqMeta } from "@/lib/audit";
 
-// Buyer record inline-edit — ADMIN ONLY (passport + financial data). Accepts one
-// or more whitelisted field updates. Anything not in ALLOWED is ignored, so a
-// crafted payload can't write to columns we don't expose (e.g. buyerKey, ids).
+// Buyer record inline-edit — SCOPED (admin = any buyer; assigned agent = their
+// own ASSIGNED buyer). Accepts one or more whitelisted field updates. Anything
+// not in ALLOWED is ignored, so a crafted payload can't write to columns we don't
+// expose (e.g. buyerKey, ids, poolStatus — lifecycle transitions go through the
+// dedicated assign/convert/reject endpoints, never this generic editor). `remarks`
+// is the agent's free-text working notes (retained across reassignments).
 
 const ALLOWED: Record<string, "string" | "number" | "date"> = {
   clientName: "string",
@@ -22,15 +26,20 @@ const ALLOWED: Record<string, "string" | "number" | "date"> = {
   transactionDate: "date",
   transactionId: "string",
   agentName: "string",
+  remarks: "string",
 };
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const me = await requireUser();
-  if (me.role !== "ADMIN") return NextResponse.json({ error: "Admin only" }, { status: 403 });
   const { id } = await params;
 
   const existing = await prisma.buyerRecord.findUnique({ where: { id } });
   if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  // Scoped: admin any; assigned agent only their own ASSIGNED buyer. 404 (not
+  // 403) for outsiders so existence isn't confirmed.
+  if (!(await canTouchBuyer(me, { ownerId: existing.ownerId, poolStatus: existing.poolStatus }))) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
 
   const body = await req.json().catch(() => ({}));
   const data: Record<string, unknown> = {};
