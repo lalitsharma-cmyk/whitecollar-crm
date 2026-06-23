@@ -9,6 +9,7 @@ import { runReconciler } from "@/lib/reconciler";
 import { leadScopeWhere, COLD_ORIGINS, workableWhere } from "@/lib/leadScope";
 import { projectWhereForUser } from "@/lib/propertyScope";
 import { displayBudget } from "@/lib/budgetParse";
+import { getAvailableMediums } from "@/lib/mediumManager";
 import { formatLeadName } from "@/lib/leadName";
 import { statusColor, BUDGET_PRESETS, SUPPRESSED_STATUSES, ACTIVE_PURSUIT_STATUSES, CLOSING_STATUSES, TERMINAL_STATUSES, CLOSED_OUTCOME_STATUSES, LOST_STATUSES, leadSortTier, compareStatusDisplay } from "@/lib/lead-statuses";
 
@@ -523,6 +524,11 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
   });
   const sourceOptions = sourceRows.map(r => r.sourceRaw!).filter(Boolean);
 
+  // Medium filter options — standard channels (Call/WhatsApp/Email) + any custom
+  // mediums seen on leads + "Other". Same list the New-Lead form uses, so the
+  // filter offers exactly what can be set. leadFilterWhere translates ?medium=.
+  const mediumOptions = await getAvailableMediums();
+
   // Fetch intelligence match data for the current page of leads (post-join:
   // IntelligenceMatch has no FK back-relation on Lead, so we query separately).
   const leadIds = leads.map((l) => l.id);
@@ -626,6 +632,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
         showSource={me.role !== "AGENT"}
         distinctTags={distinctTags}
         projects={allProjects}
+        mediums={mediumOptions}
       />
 
       {/* ── Status-based filter chips (Excel/MIS values) ──────────────────── */}

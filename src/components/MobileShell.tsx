@@ -83,6 +83,12 @@ const fullNav: NavSection[] = [
     { href: "/dashboard",   label: "Dashboard",      Icon: LayoutDashboard },
     { href: "/master-data", label: "Master Data",    Icon: Database, adminOnly: true },
     { href: "/leads",       label: "Leads",          Icon: Users },
+    // Buyer Data is a PRIMARY module — sits immediately after Leads so it ranks
+    // high in the nav (Dashboard → [Master Data] → Leads → Buyer Data → rest).
+    // Still admin-gated today (passport/financial data); when agent buyer-access
+    // lands (Buyer lifecycle expansion), relax `adminOnly` here and agents see
+    // Dashboard → Leads → Buyer Data → rest with no further reordering.
+    { href: "/buyer-data",  label: "Buyer Data",     Icon: BadgeDollarSign, adminOnly: true },
     { href: "/cold-calls",  label: "Revival Engine", Icon: Gem },
     { href: "/action-list", label: "Action List",    Icon: Sparkles, leadOpsHidden: true },
     { href: "/properties",  label: "Properties",     Icon: Building2 },
@@ -110,7 +116,6 @@ const fullNav: NavSection[] = [
     { href: "/admin/assistant",       label: "AI Assistant",       Icon: Bot },
     { href: "/intake",                label: "Lead Intake",        Icon: Upload, leadOpsHidden: true },
     { href: "/admin/projects",        label: "Project Master",     Icon: Landmark },
-    { href: "/buyer-data",            label: "Buyer Data",         Icon: BadgeDollarSign },
     { href: "/admin/devices",         label: "Devices",            Icon: ShieldCheck },
     { href: "/admin/revival-logs",    label: "Revival Logs",       Icon: Gem },
   ]},

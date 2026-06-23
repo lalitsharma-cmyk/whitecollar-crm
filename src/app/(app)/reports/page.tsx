@@ -14,6 +14,7 @@ import { fmtMoneyDual } from "@/lib/money";
 import Link from "next/link";
 import { normalizeTeam } from "@/lib/teamRouting";
 import { sourceBreakdown } from "@/lib/sourceLabel";
+import { formatMedium } from "@/lib/mediumManager";
 import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
@@ -242,15 +243,29 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
 
     // ── Source analytics — all-time, sources by count.
     // Read verbatim sourceRaw via sourceBreakdown (top 12 sliced below).
+    // Also pulls medium/mediumOther so the Leads-by-Medium card below reuses
+    // this same scoped fetch (no extra query).
     prisma.lead.findMany({
       where: { ...teamScope, deletedAt: null },
-      select: { source: true, sourceRaw: true },
+      select: { source: true, sourceRaw: true, medium: true, mediumOther: true },
     }),
   ]);
 
   // Group the raw {source, sourceRaw} rows into effective-source breakdowns.
   const bySource = sourceBreakdown(bySourceRows);              // -> { source, n }[]
   const sourceByCount = sourceBreakdown(sourceByCountRows).slice(0, 12); // top 12
+
+  // Leads-by-medium (contact channel) — all-time, same team scope as sources.
+  // Custom mediums resolve via formatMedium; null medium → "—". Sorted desc.
+  const mediumCounts = new Map<string, number>();
+  for (const r of sourceByCountRows) {
+    const key = r.medium ? formatMedium(r.medium, r.mediumOther) : "—";
+    mediumCounts.set(key, (mediumCounts.get(key) ?? 0) + 1);
+  }
+  const byMedium = [...mediumCounts.entries()]
+    .map(([medium, n]) => ({ medium, n }))
+    .sort((a, b) => b.n - a.n);
+  const byMediumTotal = byMedium.reduce((s, m) => s + m.n, 0);
 
   const [tot, contacted, qualified, , ] = funnel; // status-based: total, active, closing, booked(×2)
 
@@ -551,6 +566,38 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
       <div className="card p-5">
         <SourceChart data={sourceByCount.map(s => ({ source: s.source, _count: { _all: s.n } }))} />
       </div>
+
+      {/* ── Leads by Medium (contact channel) ─────────────────────────────
+          All-time counts by the channel the lead came through (Call/WhatsApp/
+          Email + customs), same team scope as the source chart. Compact bar
+          list — the full medium funnel (conversion %) lives in /reports/sources. */}
+      {byMedium.length > 0 && (
+        <div className="card p-5">
+          <div className="flex items-baseline justify-between mb-3">
+            <h2 className="font-display text-base sm:text-lg font-bold text-[#0b1a33]">Leads by Medium</h2>
+            <Link href="/reports/sources" className="text-[11px] text-violet-600 hover:underline">Full funnel →</Link>
+          </div>
+          <div className="space-y-2">
+            {byMedium.map((m) => {
+              const pct = byMediumTotal > 0 ? (m.n / byMediumTotal) * 100 : 0;
+              return (
+                <div key={m.medium} className="flex items-center gap-3">
+                  <div className="w-24 sm:w-28 text-xs text-gray-600 dark:text-slate-300 truncate" title={m.medium}>{m.medium}</div>
+                  <div className="flex-1 h-5 bg-gray-100 dark:bg-slate-700 rounded overflow-hidden">
+                    <div className="h-full bg-violet-500/80 rounded" style={{ width: `${Math.max(pct, 2)}%` }} />
+                  </div>
+                  <div className="w-20 text-right text-xs tabular-nums text-gray-700 dark:text-slate-200">
+                    {m.n} <span className="text-gray-400">({pct.toFixed(0)}%)</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <div className="mt-3 text-[10px] text-gray-400">
+            {byMediumTotal} leads · channel set on the lead (Call · WhatsApp · Email · custom). &ldquo;—&rdquo; = no medium recorded.
+          </div>
+        </div>
+      )}
 
       {/* Primary report navigation — these are the everyday reports */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">

@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/auth";
 import { normalizeTeam } from "@/lib/teamRouting";
 import { sourceBreakdown, effectiveSource, sourceEnumLabel } from "@/lib/sourceLabel";
+import { formatMedium } from "@/lib/mediumManager";
 import { ACTIVE_PURSUIT_STATUSES, SUPPRESSED_STATUSES, BOOKED_STATUSES } from "@/lib/lead-statuses";
 import { subDays, startOfYear, startOfMonth, startOfQuarter } from "date-fns";
 import Link from "next/link";
@@ -35,6 +36,34 @@ interface SourceRow {
   bookedPct: number;      // booked / total * 100
   avgFirstCallMins: number | null;
   avgAiScore: number | null;
+}
+
+// Medium = the contact channel (Call / WhatsApp / Email + customs). Same funnel
+// slice as the source table (total → contacted → qualified → booked / lost) so
+// Lalit can compare "which CHANNEL converts" the same way as "which SOURCE".
+interface MediumRow {
+  medium: string;
+  total: number;
+  contacted: number;
+  qualified: number;
+  booked: number;
+  lost: number;
+  qualifiedPct: number;
+  bookedPct: number;
+}
+
+// Group rows by effective medium (formatMedium resolves custom "Other" →
+// mediumOther). Leads with no medium set are bucketed under "—" so the totals
+// reconcile with the source table's grand total.
+function mediumBreakdown(
+  rows: { medium: string | null; mediumOther: string | null }[],
+): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const r of rows) {
+    const key = r.medium ? formatMedium(r.medium, r.mediumOther) : "—";
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  return counts;
 }
 
 // Active-pursuit statuses — status-only, no stage system.
@@ -135,23 +164,23 @@ export default async function SourcesReportPage({
   ] = await Promise.all([
     prisma.lead.findMany({
       where: { deletedAt: null, createdAt: { gte: since, lte: until }, ...(managerTeam ? { forwardedTeam: managerTeam } : {}) },
-      select: { source: true, sourceRaw: true },
+      select: { source: true, sourceRaw: true, medium: true, mediumOther: true },
     }),
     prisma.lead.findMany({
       where: { deletedAt: null, createdAt: { gte: since, lte: until }, currentStatus: { notIn: SUPPRESSED_STATUSES }, ...(managerTeam ? { forwardedTeam: managerTeam } : {}) },
-      select: { source: true, sourceRaw: true },
+      select: { source: true, sourceRaw: true, medium: true, mediumOther: true },
     }),
     prisma.lead.findMany({
       where: { deletedAt: null, createdAt: { gte: since, lte: until }, currentStatus: { in: QUALIFIED_PLUS }, ...(managerTeam ? { forwardedTeam: managerTeam } : {}) },
-      select: { source: true, sourceRaw: true },
+      select: { source: true, sourceRaw: true, medium: true, mediumOther: true },
     }),
     prisma.lead.findMany({
       where: { deletedAt: null, createdAt: { gte: since, lte: until }, currentStatus: { in: [...BOOKED] }, ...(managerTeam ? { forwardedTeam: managerTeam } : {}) },
-      select: { source: true, sourceRaw: true },
+      select: { source: true, sourceRaw: true, medium: true, mediumOther: true },
     }),
     prisma.lead.findMany({
       where: { deletedAt: null, createdAt: { gte: since, lte: until }, currentStatus: { in: SUPPRESSED_STATUSES }, ...(managerTeam ? { forwardedTeam: managerTeam } : {}) },
-      select: { source: true, sourceRaw: true },
+      select: { source: true, sourceRaw: true, medium: true, mediumOther: true },
     }),
     // AI score avg per effective source — pull rows + reduce in JS (below) so the
     // average keys on the verbatim source, consistent with the count breakdowns.
@@ -266,6 +295,36 @@ export default async function SourcesReportPage({
       avgAiScore: avgAi === null ? null : Number(avgAi),
     };
   }).sort((a, b) => b.total - a.total);
+
+  // ── Medium (contact-channel) breakdown ───────────────────────────
+  // Built from the SAME scoped row fetches as the source table (no extra
+  // queries — the five funnel fetches now also select medium/mediumOther),
+  // so date/team/deletedAt scoping is identical and the totals reconcile.
+  const medTotalMap     = mediumBreakdown(totalRows);
+  const medContactedMap = mediumBreakdown(contactedRows);
+  const medQualifiedMap = mediumBreakdown(qualifiedRows);
+  const medBookedMap    = mediumBreakdown(bookedRows);
+  const medLostMap      = mediumBreakdown(lostRows);
+  const allMediums = new Set<string>([
+    ...medTotalMap.keys(), ...medContactedMap.keys(), ...medQualifiedMap.keys(),
+    ...medBookedMap.keys(), ...medLostMap.keys(),
+  ]);
+  const mediumRows: MediumRow[] = [...allMediums].map((m) => {
+    const total = medTotalMap.get(m) ?? 0;
+    const qualified = medQualifiedMap.get(m) ?? 0;
+    const booked = medBookedMap.get(m) ?? 0;
+    return {
+      medium: m,
+      total,
+      contacted: medContactedMap.get(m) ?? 0,
+      qualified,
+      booked,
+      lost: medLostMap.get(m) ?? 0,
+      qualifiedPct: total > 0 ? (qualified / total) * 100 : 0,
+      bookedPct: total > 0 ? (booked / total) * 100 : 0,
+    };
+  }).sort((a, b) => b.total - a.total);
+  const mediumGrandTotal = mediumRows.reduce((s, r) => s + r.total, 0);
 
   // ── Summary tiles ────────────────────────────────────────────────
   // Only consider sources with a meaningful sample size (>=3 leads) for
@@ -442,6 +501,66 @@ export default async function SourcesReportPage({
           <span className="px-1 rounded bg-amber-50 text-amber-800 ml-1">&gt;10%</span> amber ·
           <span className="px-1 rounded bg-rose-50 text-rose-800 ml-1">≤10%</span> red.
           First call = average wall-clock minutes from lead creation to the first logged dial (leads with no call excluded).
+        </p>
+      </div>
+
+      {/* ── Medium (contact-channel) breakdown ──────────────────────────────
+          Same scoped data + funnel slice as the source table, grouped by the
+          channel the lead came through (Call / WhatsApp / Email + customs). */}
+      <div className="card p-4 overflow-x-auto">
+        <div className="text-xs uppercase tracking-widest text-gray-500 font-semibold mb-3">
+          Medium funnel · {rangeLabel} · {mediumGrandTotal} leads
+        </div>
+        <table className="w-full text-sm min-w-[640px]">
+          <thead>
+            <tr className="text-xs text-gray-500 border-b border-gray-200">
+              <th className="text-left py-2 pr-2">Medium</th>
+              <th className="text-right py-2 px-2">Total</th>
+              <th className="text-right py-2 px-2">Contacted</th>
+              <th className="text-right py-2 px-2">Qualified</th>
+              <th className="text-right py-2 px-2">Booked</th>
+              <th className="text-right py-2 px-2">Lost</th>
+              <th className="text-right py-2 px-2">→ Qualified</th>
+              <th className="text-right py-2 pl-2">→ Booking</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100">
+            {mediumRows.map((r) => (
+              <tr key={r.medium} className={r.total === 0 ? "text-gray-400" : ""}>
+                <td className="py-2 pr-2 font-medium">{r.medium}</td>
+                <td className="text-right px-2 tabular-nums">{r.total}</td>
+                <td className="text-right px-2 tabular-nums">{r.contacted}</td>
+                <td className="text-right px-2 tabular-nums">{r.qualified}</td>
+                <td className="text-right px-2 tabular-nums font-semibold">{r.booked}</td>
+                <td className="text-right px-2 tabular-nums">{r.lost}</td>
+                <td className={`text-right px-2 tabular-nums rounded ${r.total === 0 ? "text-gray-300" : pctClass(r.qualifiedPct)}`}>
+                  {r.total === 0 ? "—" : `${r.qualifiedPct.toFixed(1)}%`}
+                </td>
+                <td className={`text-right pl-2 tabular-nums rounded ${r.total === 0 ? "text-gray-300" : pctClass(r.bookedPct)}`}>
+                  {r.total === 0 ? "—" : `${r.bookedPct.toFixed(1)}%`}
+                </td>
+              </tr>
+            ))}
+            {mediumRows.length === 0 && (
+              <tr><td colSpan={8} className="py-4 text-center text-gray-400 text-xs">No leads in this window.</td></tr>
+            )}
+          </tbody>
+          {mediumRows.length > 0 && (
+            <tfoot>
+              <tr className="border-t-2 border-gray-300 font-semibold">
+                <td className="py-2 pr-2">Total</td>
+                <td className="text-right px-2 tabular-nums">{mediumRows.reduce((s, r) => s + r.total, 0)}</td>
+                <td className="text-right px-2 tabular-nums">{mediumRows.reduce((s, r) => s + r.contacted, 0)}</td>
+                <td className="text-right px-2 tabular-nums">{mediumRows.reduce((s, r) => s + r.qualified, 0)}</td>
+                <td className="text-right px-2 tabular-nums">{mediumRows.reduce((s, r) => s + r.booked, 0)}</td>
+                <td className="text-right px-2 tabular-nums">{mediumRows.reduce((s, r) => s + r.lost, 0)}</td>
+                <td colSpan={2}></td>
+              </tr>
+            </tfoot>
+          )}
+        </table>
+        <p className="text-[10px] text-gray-500 mt-3">
+          Medium = the channel the lead arrived / is worked through (Call · WhatsApp · Email · custom). Leads with no medium set are grouped under &ldquo;—&rdquo;. Same date / team scope as the source table above.
         </p>
       </div>
     </>

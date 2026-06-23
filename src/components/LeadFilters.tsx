@@ -33,6 +33,10 @@ interface Props {
   showSource?: boolean;
   distinctTags?: string[];
   projects?: { id: string; name: string }[];
+  // Contact-channel options (Call / WhatsApp / Email / custom). Custom mediums
+  // come through verbatim (the display label == the filter value). Server-side
+  // translation lives in leadFilterWhere (?medium=), shared by /leads + /master-data.
+  mediums?: string[];
 }
 
 // ── Shared helpers ────────────────────────────────────────────────────────────
@@ -139,7 +143,7 @@ function SectionHead({ label, open, toggle, count }: { label: string; open: bool
 
 // ── Main component ────────────────────────────────────────────────────────────
 export default function LeadFilters({
-  agents, sources, statuses, showSource = true, distinctTags = [], projects = [],
+  agents, sources, statuses, showSource = true, distinctTags = [], projects = [], mediums = [],
 }: Props) {
   const router   = useRouter();
   const pathname = usePathname();
@@ -165,6 +169,7 @@ export default function LeadFilters({
   const [projectSel,  setProjectSel]  = useState<Set<string>>(new Set());
   const [cstatusSel,  setCstatusSel]  = useState<Set<string>>(new Set());
   const [sourceSel,   setSourceSel]   = useState<Set<string>>(new Set());
+  const [mediumSel,   setMediumSel]   = useState<Set<string>>(new Set());
   const [ownerSel,    setOwnerSel]    = useState<Set<string>>(new Set());
   const [timelineSel, setTimelineSel] = useState<Set<string>>(new Set());
   const [clientSel,   setClientSel]   = useState<Set<string>>(new Set());
@@ -194,6 +199,7 @@ export default function LeadFilters({
     setProjectSel(new Set(splitParam(sp.get("project"))));
     setCstatusSel(new Set(splitParam(sp.get("cstatus"))));
     setSourceSel(new Set(splitParam(sp.get("source"))));
+    setMediumSel(new Set(splitParam(sp.get("medium"))));
     setOwnerSel(new Set(splitParam(sp.get("owner"))));
     setTimelineSel(new Set(splitParam(sp.get("whenInvest"))));
     setClientSel(new Set(splitParam(sp.get("clientType"))));
@@ -224,6 +230,7 @@ export default function LeadFilters({
     setMs("project",    projectSel);
     setMs("cstatus",    cstatusSel);
     setMs("source",     sourceSel);
+    setMs("medium",     mediumSel);
     setMs("owner",      ownerSel);
     setMs("whenInvest", timelineSel);
     setMs("clientType", clientSel);
@@ -259,7 +266,7 @@ export default function LeadFilters({
 
   function resetFilters() {
     const p = new URLSearchParams(sp.toString());
-    ["project","cstatus","source","owner","whenInvest","clientType",
+    ["project","cstatus","source","medium","owner","whenInvest","clientType",
      "budgetFrom","budgetTo","budgetPreset","team","followup","followupFrom","followupTo","city",
      "fundReady","potential","notPicked","hasMeeting","hasSiteVisit",
      "category","tag","sort","dateFrom","dateTo","dateField",
@@ -296,6 +303,8 @@ export default function LeadFilters({
     chips.push({ key: `cs:${v}`, label: v, remove: () => removeFromMulti("cstatus", v) }));
   if (showSource) splitParam(sp.get("source")).forEach(v =>
     chips.push({ key: `src:${v}`, label: SRC_LABELS[v] ?? v, remove: () => removeFromMulti("source", v) }));
+  if (showSource) splitParam(sp.get("medium")).forEach(v =>
+    chips.push({ key: `med:${v}`, label: `📡 ${v}`, remove: () => removeFromMulti("medium", v) }));
   splitParam(sp.get("owner")).forEach(v => {
     const n = v === "unassigned" ? "⚠ Unassigned" : (agents.find(a => a.id === v)?.name ?? v);
     chips.push({ key: `own:${v}`, label: `👤 ${n}`, remove: () => removeFromMulti("owner", v) });
@@ -347,6 +356,9 @@ export default function LeadFilters({
   const cntMs = (param: string) => splitParam(sp.get(param)).length;
 
   const sourceOpts  = sources.map(s => ({ value: s, label: SRC_LABELS[s] ?? s }));
+  // Medium options — verbatim channel names (Call/WhatsApp/Email + customs).
+  // Value == label since mediums are stored as plain strings, not enum tokens.
+  const mediumOpts  = mediums.map(m => ({ value: m, label: m }));
   const projectOpts = projects.map(p => ({ value: p.name, label: p.name }));
   // Status options FOLLOW the Forwarded-Team filter — Gurgaon (India) and Dubai
   // statuses are never merged into one list. With no team chosen, the status
@@ -444,6 +456,12 @@ export default function LeadFilters({
               {/* 4. Source */}
               {showSource && (
                 <CheckList label="🌐 Source" options={sourceOpts} selected={sourceSel} onChange={setSourceSel} />
+              )}
+
+              {/* 4b. Medium — contact channel (Call/WhatsApp/Email + customs).
+                  Shown alongside Source; same showSource gating. */}
+              {showSource && mediumOpts.length > 0 && (
+                <CheckList label="📡 Medium" options={mediumOpts} selected={mediumSel} onChange={setMediumSel} />
               )}
 
               {/* 5. Assigned To */}
