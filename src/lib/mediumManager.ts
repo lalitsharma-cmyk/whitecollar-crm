@@ -25,7 +25,11 @@ export async function getAvailableMediums(): Promise<string[]> {
   return [
     ...STANDARD_MEDIUMS,
     ...Array.from(customSet).sort(),
-    ...(customSet.size > 0 ? ["Other"] : []),
+    // "Other" is ALWAYS appended (even with zero existing custom mediums) so the
+    // user can add the FIRST custom medium. Without this it was a chicken-and-egg
+    // bug: "Other" only showed once a custom medium already existed, so it could
+    // never be created. Mirrors getAvailableEventNames().
+    "Other",
   ];
 }
 

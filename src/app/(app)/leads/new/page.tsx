@@ -1,16 +1,17 @@
 import { redirect } from "next/navigation";
 import { ingestLead, assignLeadTo } from "@/lib/leadIngest";
-import { LeadSource, Profession, ClientType, AuthorityLevel, BantStatus } from "@prisma/client";
+import { LeadSource } from "@prisma/client";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { defaultCurrencyForTeam } from "@/lib/money";
 import { defaultDialForTeam, toE164 } from "@/lib/phone";
 import { validateMedium, getAvailableMediums } from "@/lib/mediumManager";
+import { getAvailableEventNames } from "@/lib/eventNameManager";
 import PhoneInput from "@/components/PhoneInput";
-import BudgetInput from "@/components/BudgetInput";
 import DedupWarning from "@/components/DedupWarning";
-import AssignToSelect from "@/components/AssignToSelect";
 import LeadSourceMediumFields from "@/components/LeadSourceMediumFields";
+import LocationSelect from "@/components/LocationSelect";
+import RequirementSection from "@/components/RequirementSection";
 
 async function createLeadAction(formData: FormData) {
   "use server";
@@ -48,7 +49,7 @@ async function createLeadAction(formData: FormData) {
     await prisma.lead.update({ where: { id: lead.id }, data: { altName, altPhone, altEmail } });
   }
 
-  // Enrich with Dubai depth fields
+  // Enrich with depth fields. opt() trims + drops blanks.
   const opt = <T,>(v: FormDataEntryValue | null): T | undefined => {
     const s = (v ?? "").toString().trim();
     return s ? (s as unknown as T) : undefined;
@@ -57,7 +58,8 @@ async function createLeadAction(formData: FormData) {
   const update: Record<string, unknown> = {};
   const team = String(formData.get("forwardedTeam") ?? "");
   if (team) update.forwardedTeam = team;
-  // Currency is now selected independently
+  // Currency is selected on the form (reacts to team; INR for India, AED/INR for
+  // Dubai). NOTE: budget values are stored as entered — no FX conversion.
   const currency = String(formData.get("budgetCurrency") ?? "").trim();
   if (currency && ["AED", "INR", "GBP", "USD"].includes(currency)) {
     update.budgetCurrency = currency;
@@ -71,10 +73,8 @@ async function createLeadAction(formData: FormData) {
   const sourceDetail = opt<string>(formData.get("sourceDetail")); if (sourceDetail) update.sourceDetail = sourceDetail;
   const currentStatus = opt<string>(formData.get("currentStatus")); if (currentStatus) update.currentStatus = currentStatus;
   const categorization = opt<string>(formData.get("categorization")); if (categorization) update.categorization = categorization;
-  const clientType = opt<ClientType>(formData.get("clientType")); if (clientType) update.clientType = clientType;
-  const authorityLevel = opt<AuthorityLevel>(formData.get("authorityLevel")); if (authorityLevel) update.authorityLevel = authorityLevel;
-  const bantStatus = opt<BantStatus>(formData.get("bantStatus")); if (bantStatus) update.bantStatus = bantStatus;
-  const profession = opt<Profession>(formData.get("profession")); if (profession) update.profession = profession;
+  // profession is now free TEXT (enum widened — migration 20260623170000).
+  const profession = opt<string>(formData.get("profession")); if (profession) update.profession = profession;
   const linkedInUrl = opt<string>(formData.get("linkedInUrl"));
   if (linkedInUrl) {
     // Basic URL validation — reject anything not http(s)
@@ -89,7 +89,8 @@ async function createLeadAction(formData: FormData) {
     if (m) update.medium = m;
     if (mo) update.mediumOther = mo;
   }
-  // WCR Event fields (shown only when source = WCR_EVENT)
+  // WCR Event fields (shown only when source = WCR_EVENT). eventName posts the
+  // resolved value (a picked platform OR a typed custom name).
   const eventName = opt<string>(formData.get("eventName")); if (eventName) update.eventName = eventName;
   const eventCountry = opt<string>(formData.get("eventCountry")); if (eventCountry) update.eventCountry = eventCountry;
   const eventState = opt<string>(formData.get("eventState")); if (eventState) update.eventState = eventState;
@@ -100,6 +101,8 @@ async function createLeadAction(formData: FormData) {
 
   // Link the lead to a discussed Project (matched by name) when one was picked.
   // Mirrors the bulk-edit Project linking — a LeadProject row with MANUAL source.
+  // When the typed property name matches no Project, we DON'T force a wrong link;
+  // the name is still preserved as the lead's sourceDetail (Interested Property).
   const projectName = String(formData.get("project") ?? "").trim();
   if (projectName) {
     const proj = await prisma.project.findFirst({
@@ -110,6 +113,10 @@ async function createLeadAction(formData: FormData) {
       await prisma.leadProject
         .create({ data: { leadId: lead.id, projectId: proj.id, sourceType: "MANUAL" } })
         .catch(() => {});
+    } else if (!update.sourceDetail) {
+      // Unmatched custom property name → keep it as the Interested Property text
+      // (sourceDetail), but never overwrite an explicit Source Detail entry.
+      await prisma.lead.update({ where: { id: lead.id }, data: { sourceDetail: projectName } }).catch(() => {});
     }
   }
 
@@ -128,6 +135,18 @@ async function createLeadAction(formData: FormData) {
 
 const input = "w-full mt-1 border border-[#e5e7eb] rounded-lg px-3 py-2 text-sm";
 const label = "text-xs font-semibold text-gray-600";
+
+// Common profession suggestions for the free-text datalist (task 3). The field
+// accepts ANY typed value — these are just convenient starting points.
+const PROFESSION_SUGGESTIONS = [
+  "Job / Salaried",
+  "Self-employed",
+  "Business owner",
+  "Investor",
+  "Retired",
+  "Student",
+  "Other",
+];
 
 export default async function NewLeadPage() {
   const me = await requireUser();
@@ -148,9 +167,11 @@ export default async function NewLeadPage() {
     select: { id: true, name: true, team: true, role: true, isSuperAdmin: true },
     orderBy: { name: "asc" },
   });
-  // Available mediums fetched on the server and passed down as a prop. NEVER let
-  // a client component import getAvailableMediums — it pulls Prisma into the bundle.
+  // Available mediums + event names fetched on the server and passed as props.
+  // NEVER let a client component import these helpers — they pull Prisma into
+  // the bundle (server/client boundary violation).
   const availableMediums = await getAvailableMediums();
+  const availableEventNames = await getAvailableEventNames();
   const defaultCurrency = defaultCurrencyForTeam(me.team);
   const defaultTeam = me.team && (me.team === "Dubai" || me.team === "India") ? me.team : (defaultCurrency === "INR" ? "India" : "Dubai");
   return (
@@ -165,142 +186,63 @@ export default async function NewLeadPage() {
             <div>
               <label className={label}>📞 Mobile</label>
               <div className="mt-1">
-                <PhoneInput name="phone" defaultDial={defaultDialForTeam(me.team)} placeholder="50 123 4567" />
+                <PhoneInput name="phone" defaultDial={defaultDialForTeam(me.team)} />
               </div>
-              <p className="text-[10px] text-gray-500 mt-0.5">Pick country flag · WhatsApp/Call buttons stop working without the right code</p>
+              <p className="text-[10px] text-gray-500 mt-0.5">Pick the country flag · WhatsApp/Call buttons need the right code</p>
             </div>
             <div><label className={label}>✉ E-mail</label><input name="email" type="email" className={input} /></div>
-            <div><label className={label}>👤 Alternative name</label><input name="altName" placeholder="Co-buyer, spouse" className={input} /></div>
+            <div><label className={label}>👤 Alternative name</label><input name="altName" className={input} /></div>
             <div>
               <label className={label}>📞 Alternative mobile</label>
               <div className="mt-1">
-                <PhoneInput name="altPhone" defaultDial={defaultDialForTeam(me.team)} placeholder="50 123 4567" />
+                <PhoneInput name="altPhone" defaultDial={defaultDialForTeam(me.team)} />
               </div>
             </div>
             <div><label className={label}>✉ Alternative email</label><input name="altEmail" type="email" className={input} /></div>
           </div>
-          {/* Dedup warning — non-blocking; appears after the user enters phone/email */}
+          {/* Dedup warning — non-blocking; fires ONLY on phone/altPhone/email/altEmail */}
           <div className="mt-3">
             <DedupWarning formId="new-lead-form" />
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 sm:gap-4 mt-3">
-            <div><label className={label}>🏢 Company</label><input name="company" placeholder="e.g. Emirates NBD, TCS" className={input} /></div>
+            <div><label className={label}>🏢 Company</label><input name="company" className={input} /></div>
             <div>
               <label className={label}>💼 Profession</label>
-              <select name="profession" className={input} defaultValue="">
-                <option value="">—</option>
-                <option value="JOB">Job (salaried)</option>
-                <option value="SELF_EMPLOYED">Self-employed</option>
-                <option value="BUSINESS_OWNER">Business owner</option>
-                <option value="INVESTOR">Investor</option>
-                <option value="RETIRED">Retired</option>
-                <option value="STUDENT">Student</option>
-                <option value="OTHER">Other</option>
-              </select>
+              <input name="profession" className={input} list="profession-suggestions" autoComplete="off" />
+              <datalist id="profession-suggestions">
+                {PROFESSION_SUGGESTIONS.map((p) => <option key={p} value={p} />)}
+              </datalist>
             </div>
             <div>
               <label className={label}>🔗 LinkedIn URL</label>
-              <input name="linkedInUrl" type="url" placeholder="https://linkedin.com/in/…" className={input} />
+              <input name="linkedInUrl" type="url" className={input} />
             </div>
-            <div><label className={label}>City</label><input name="city" className={input} /></div>
-            <div><label className={label}>State / Province</label><input name="state" className={input} /></div>
-            <div><label className={label}>Country</label><input name="country" className={input} /></div>
-            <div className="md:col-span-3"><label className={label}>Address</label><input name="address" className={input} /></div>
+          </div>
+          {/* Location — Country → State/Province → City → Address, cascading
+              suggestions with free typing (task 5). */}
+          <div className="mt-3">
+            <LocationSelect names={{ country: "country", state: "state", city: "city", address: "address" }} />
           </div>
         </section>
 
-        {/* Requirement */}
+        {/* Requirement — Team first; Assign-To / Interested Properties / Currency
+            react to the selected team (tasks 6-10). */}
         <section>
           <div className="text-xs font-bold tracking-widest text-[#c9a24b] mb-3">REQUIREMENT</div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 sm:gap-4">
-            <div>
-              <label className={label}>🏢 Project (discussed after intake)</label>
-              <input name="project" placeholder="Marina Bay, Silverglades..." className={input} />
-            </div>
-            <div><label className={label}>Configuration</label><input name="configuration" placeholder="2BR / Penthouse / Villa" className={input} /></div>
-            <div>
-              <label className={label}>Team *</label>
-              <select name="forwardedTeam" required className={input}>
-                <option value="">— Select team —</option>
-                <option value="Dubai">Dubai</option>
-                <option value="India">India</option>
-              </select>
-            </div>
-            <div>
-              <label className={label}>Currency *</label>
-              <select name="budgetCurrency" required className={input}>
-                <option value="">— Select currency —</option>
-                <option value="AED">AED (United Arab Emirates)</option>
-                <option value="INR">INR (India)</option>
-                <option value="GBP">GBP (United Kingdom)</option>
-                <option value="USD">USD (United States)</option>
-              </select>
-            </div>
-            <div>
-              <label className={label}>👤 Assign To *</label>
-              <AssignToSelect users={assignableUsers} initialTeam="" />
-              <p className="text-[10px] text-gray-500 mt-0.5">Lead is created directly under this agent. List filters by the selected team.</p>
-            </div>
-            <div>
-              <label className={label}>💰 Budget min</label>
-              <div className="mt-1">
-                <BudgetInput name="budgetMin" currency="AED" />
-              </div>
-            </div>
-            <div>
-              <label className={label}>💰 Budget max</label>
-              <div className="mt-1">
-                <BudgetInput name="budgetMax" currency="AED" />
-              </div>
-            </div>
-            <div>
-              <label className={label}>Categorization</label>
-              <select name="categorization" className={input}>
-                <option value="">—</option>
-                <option>NRI Investor</option><option>NRI End-user</option>
-                <option>UAE Resident Investor</option><option>UAE Resident End-user</option>
-                <option>International Investor</option><option>First-time buyer</option>
-              </select>
-            </div>
-            <LeadSourceMediumFields sources={Object.values(LeadSource)} mediums={availableMediums} />
-            <div><label className={label}>Property Type</label><input name="propertyType" placeholder="e.g. Residential, Commercial" className={input} /></div>
-            <div><label className={label}>Current Status</label><input name="currentStatus" placeholder="e.g. Not reached, Callback today" className={input} /></div>
-          </div>
-        </section>
-
-        {/* Client Profiling — Quick qualification */}
-        <section>
-          <div className="text-xs font-bold tracking-widest text-[#c9a24b] mb-3">CLIENT PROFILE</div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 sm:gap-4">
-            <div>
-              <label className={label}>Client Type</label>
-              <select name="clientType" className={input}>
-                <option value="">—</option>
-                <option value="INVESTOR">Investor</option>
-                <option value="END_USER">End-user</option>
-                <option value="BOTH">Both investor & end-user</option>
-                <option value="UNCLEAR">Unclear</option>
-              </select>
-            </div>
-            <div>
-              <label className={label}>Authority Level</label>
-              <select name="authorityLevel" className={input}>
-                <option value="">—</option>
-                <option value="DECISION_MAKER">Decision maker</option>
-                <option value="INFLUENCER">Influencer</option>
-                <option value="GATEKEEPER">Gatekeeper</option>
-                <option value="UNKNOWN">Unknown</option>
-              </select>
-            </div>
-            <div>
-              <label className={label}>BANT Status</label>
-              <select name="bantStatus" className={input}>
-                <option value="">—</option>
-                <option value="UNDER_REVIEW">Under review</option>
-                <option value="QUALIFIES">Qualifies</option>
-                <option value="NOT_QUALIFIED">Not qualified</option>
-              </select>
-            </div>
+          <RequirementSection
+            users={assignableUsers}
+            dubaiProjects={dubaiProjects}
+            indiaProjects={indiaProjects}
+            defaultTeam={defaultTeam}
+            defaultCurrency={defaultCurrency}
+          />
+          {/* Source + Medium (+ WCR Event / Referral conditionals) */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 sm:gap-4 mt-3">
+            <LeadSourceMediumFields
+              sources={Object.values(LeadSource)}
+              mediums={availableMediums}
+              eventNames={availableEventNames}
+            />
           </div>
         </section>
 
@@ -309,7 +251,7 @@ export default async function NewLeadPage() {
           <div className="text-xs font-bold tracking-widest text-[#c9a24b] mb-3">NOTES</div>
           <div>
             <label className={label}>📝 Remarks</label>
-            <textarea name="remarks" rows={3} placeholder="Any notes about this lead..." className={input}></textarea>
+            <textarea name="remarks" rows={3} className={input}></textarea>
           </div>
         </section>
 

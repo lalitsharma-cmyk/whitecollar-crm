@@ -768,16 +768,11 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
 
         <div>
           <div className="text-xs text-gray-500 dark:text-slate-400">💼 Profession</div>
-          <InlineEdit leadId={lead.id} field="profession" type="select" value={lead.profession ?? ""}
-            options={[
-              {value:"JOB",label:"Job (salaried)"},
-              {value:"SELF_EMPLOYED",label:"Self-employed"},
-              {value:"BUSINESS_OWNER",label:"Business owner"},
-              {value:"INVESTOR",label:"Investor"},
-              {value:"RETIRED",label:"Retired"},
-              {value:"STUDENT",label:"Student"},
-              {value:"OTHER",label:"Other"},
-            ]} />
+          {/* profession is free TEXT now (enum widened — migration 20260623170000).
+              Legacy enum tokens (JOB, SELF_EMPLOYED…) display verbatim; click to
+              type any value. */}
+          <InlineEdit leadId={lead.id} field="profession" type="text" value={lead.profession ?? ""}
+            placeholder="Add profession" />
         </div>
         {/* §7 Configuration — Dubai uses BR types, India uses BHK types. Never mix. */}
         <div>

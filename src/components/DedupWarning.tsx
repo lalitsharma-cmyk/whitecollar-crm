@@ -2,22 +2,24 @@
 // DedupWarning — non-blocking duplicate detection UI (B-01 dedup groundwork)
 //
 // BEHAVIOUR:
-//   • Listens for "change" events on the phone hidden input (name="phone") and
-//     the email input (name="email") within the nearest ancestor <form>.
-//   • After the user stops typing (400 ms debounce), hits GET /api/leads/check-duplicate.
-//   • If matches are returned, shows an amber informational banner:
-//       "⚠ Possible duplicate of <name> (<STATUS> · owner <ownerName>)"
-//   • NON-BLOCKING: the banner is purely informational. The submit button
-//     is not disabled; the user can proceed and create the lead anyway.
+//   • Watches ONLY the four contact fields by name:
+//       phone, altPhone (hidden E.164 inputs from PhoneInput) and
+//       email, altEmail (visible text inputs).
+//   • It NEVER reacts to name/company/profession/city/country/project/source/
+//     etc. — a change anywhere else in the form does not trigger a check
+//     (task 1). Listeners are attached to the specific contact inputs, and the
+//     check is additionally gated on at least one contact value being present.
+//   • After the user stops typing (400 ms debounce), it hits
+//     GET /api/leads/check-duplicate with whatever contact values exist.
+//   • If matches are returned, shows an amber informational banner.
+//   • NON-BLOCKING: purely informational; the submit button is never disabled.
 //
 // INTEGRATION:
-//   Drop <DedupWarning formId="new-lead-form" /> anywhere INSIDE the form
-//   (or adjacent to it). The component uses document.querySelector to find the
-//   relevant inputs by name within document scope (the form is server-rendered
-//   so we can't pass refs).
-//
-// IMPORTANT: this component is safe to render inside a Next.js Server Component
-// page — it is marked "use client" and has no server-only imports.
+//   Drop <DedupWarning formId="new-lead-form" /> anywhere INSIDE/adjacent to the
+//   form. The component uses document.getElementById(formId) + querySelector to
+//   find the contact inputs by name (the form is server-rendered, so refs can't
+//   be passed). Safe in a Server Component page — marked "use client", no
+//   server-only imports.
 
 import { useEffect, useRef, useState } from "react";
 import type { DuplicateMatch } from "@/app/api/leads/check-duplicate/route";
@@ -38,31 +40,37 @@ const STATUS_LABEL: Record<string, string> = {
   LOST: "Lost",
 };
 
+// The ONLY fields that may trigger a duplicate check. Anything else is ignored.
+const CONTACT_FIELDS = ["phone", "altPhone", "email", "altEmail"] as const;
+
 export default function DedupWarning({ formId }: DedupWarningProps) {
   const [matches, setMatches] = useState<DuplicateMatch[]>([]);
   const [loading, setLoading] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    // We need to find the form AFTER it mounts.  The component renders adjacent
-    // to the form in the server-rendered page, so the form is in the DOM.
     const form = document.getElementById(formId) as HTMLFormElement | null;
     if (!form) return;
 
-    // The PhoneInput component stores the final E.164 value in a hidden input
-    // with name="phone".  Plain text inputs use name="email".
-    function getValues() {
-      const phoneInput = form!.querySelector<HTMLInputElement>('input[name="phone"]');
-      const emailInput = form!.querySelector<HTMLInputElement>('input[name="email"]');
+    // Read the current values of the four contact fields. PhoneInput stores the
+    // final E.164 value in hidden inputs name="phone"/"altPhone"; emails are
+    // plain inputs name="email"/"altEmail".
+    function getContactValues() {
+      const val = (n: string) =>
+        form!.querySelector<HTMLInputElement>(`input[name="${n}"]`)?.value?.trim() ?? "";
       return {
-        phone: phoneInput?.value?.trim() ?? "",
-        email: emailInput?.value?.trim() ?? "",
+        phone: val("phone"),
+        altPhone: val("altPhone"),
+        email: val("email"),
+        altEmail: val("altEmail"),
       };
     }
 
     async function checkDuplicates() {
-      const { phone, email } = getValues();
-      if (!phone && !email) {
+      const { phone, altPhone, email, altEmail } = getContactValues();
+      // GATE: only check when at least one CONTACT field is non-blank. With all
+      // four empty, show nothing — never warn off non-contact fields (task 1).
+      if (!phone && !altPhone && !email && !altEmail) {
         setMatches([]);
         return;
       }
@@ -70,13 +78,15 @@ export default function DedupWarning({ formId }: DedupWarningProps) {
       try {
         const params = new URLSearchParams();
         if (phone) params.set("phone", phone);
+        if (altPhone) params.set("altPhone", altPhone);
         if (email) params.set("email", email);
+        if (altEmail) params.set("altEmail", altEmail);
         const res = await fetch(`/api/leads/check-duplicate?${params.toString()}`);
         if (!res.ok) return;
-        const data = await res.json() as { duplicates: DuplicateMatch[] };
+        const data = (await res.json()) as { duplicates: DuplicateMatch[] };
         setMatches(data.duplicates ?? []);
       } catch {
-        // Silently swallow — this is an informational feature, never block the form.
+        // Silently swallow — informational feature, never blocks the form.
       } finally {
         setLoading(false);
       }
@@ -87,14 +97,23 @@ export default function DedupWarning({ formId }: DedupWarningProps) {
       debounceRef.current = setTimeout(checkDuplicates, 400);
     }
 
-    // Listen on the whole form — catches both the hidden phone input and the
-    // visible email input without attaching to each individually.
-    form.addEventListener("change", scheduleCheck);
-    form.addEventListener("input", scheduleCheck);
+    // Attach listeners to the SPECIFIC contact inputs only — not the whole form.
+    // A change/input on any other field therefore can't schedule a check.
+    const watched: HTMLInputElement[] = [];
+    for (const name of CONTACT_FIELDS) {
+      const el = form.querySelector<HTMLInputElement>(`input[name="${name}"]`);
+      if (el) {
+        el.addEventListener("change", scheduleCheck);
+        el.addEventListener("input", scheduleCheck);
+        watched.push(el);
+      }
+    }
 
     return () => {
-      form.removeEventListener("change", scheduleCheck);
-      form.removeEventListener("input", scheduleCheck);
+      for (const el of watched) {
+        el.removeEventListener("change", scheduleCheck);
+        el.removeEventListener("input", scheduleCheck);
+      }
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
   }, [formId]);

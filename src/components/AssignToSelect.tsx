@@ -4,28 +4,45 @@ import { useEffect, useMemo, useRef, useState } from "react";
 interface U { id: string; name: string; team: string | null; role: string; isSuperAdmin: boolean; }
 
 // Mandatory, searchable "Assign To" picker for the New Lead form. It filters the
-// roster by the team currently chosen in the sibling <select name="forwardedTeam">:
-// that team's active agents PLUS cross-team owners (admins like Lalit/Samir) PLUS
-// unteamed users. HR/inactive/deleted users are never passed in (filtered server-
-// side). Enforces a selection via setCustomValidity so the form cannot submit
-// without an owner. Posts the chosen user id as hidden input `ownerId`.
-export default function AssignToSelect({ users, initialTeam }: { users: U[]; initialTeam: string }) {
-  const [team, setTeam] = useState(initialTeam);
+// roster by the currently-selected team: that team's active agents PLUS
+// cross-team owners (admins like Lalit/Samir) PLUS unteamed users. HR/inactive/
+// deleted users are never passed in (filtered server-side). Enforces a selection
+// via setCustomValidity so the form cannot submit without an owner. Posts the
+// chosen user id as hidden input `ownerId`.
+//
+// TEAM SOURCE: when a controlled `team` prop is passed (RequirementSection owns
+// Team in React state), this component uses it directly and re-filters reactively
+// — no DOM listening. When `team` is undefined (standalone use), it falls back to
+// watching the sibling <select name="forwardedTeam"> change events.
+export default function AssignToSelect({ users, initialTeam, team: teamProp }: { users: U[]; initialTeam: string; team?: string }) {
+  const controlled = teamProp !== undefined;
+  const [team, setTeam] = useState(controlled ? (teamProp as string) : initialTeam);
   const [query, setQuery] = useState("");
   const [picked, setPicked] = useState<U | null>(null);
   const [open, setOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const boxRef = useRef<HTMLDivElement>(null);
 
-  // Follow the sibling Team select so the agent list re-filters on team change.
+  // Controlled mode: track the prop. Changing team also resets the current pick
+  // (a teammate from the old team shouldn't stay selected).
   useEffect(() => {
+    if (!controlled) return;
+    setTeam(teamProp as string);
+    setPicked(null);
+    setQuery("");
+  }, [controlled, teamProp]);
+
+  // Uncontrolled fallback: follow the sibling Team select so the agent list
+  // re-filters on team change.
+  useEffect(() => {
+    if (controlled) return;
     const sel = document.querySelector('select[name="forwardedTeam"]') as HTMLSelectElement | null;
     if (!sel) return;
     setTeam(sel.value);
     const onChange = () => { setTeam(sel.value); setPicked(null); setQuery(""); };
     sel.addEventListener("change", onChange);
     return () => sel.removeEventListener("change", onChange);
-  }, []);
+  }, [controlled]);
 
   // Close the dropdown on an outside click.
   useEffect(() => {
@@ -65,7 +82,7 @@ export default function AssignToSelect({ users, initialTeam }: { users: U[]; ini
         required
         autoComplete="off"
         className={cls}
-        placeholder={`Search ${team} agents…`}
+        placeholder={team ? `Search ${team} agents…` : "Select a team first…"}
         value={picked ? picked.name : query}
         onFocus={() => setOpen(true)}
         onChange={(e) => { setPicked(null); setQuery(e.target.value); setOpen(true); }}

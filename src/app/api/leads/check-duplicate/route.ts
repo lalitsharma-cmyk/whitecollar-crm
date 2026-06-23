@@ -37,8 +37,11 @@ export async function GET(req: NextRequest) {
   const { searchParams } = req.nextUrl;
   const phone = searchParams.get("phone") ?? undefined;
   const email = searchParams.get("email") ?? undefined;
+  const altPhone = searchParams.get("altPhone") ?? undefined;
+  const altEmail = searchParams.get("altEmail") ?? undefined;
 
-  if (!phone && !email) {
+  // Only contact fields drive the probe (task 1). With none present, no match.
+  if (!phone && !email && !altPhone && !altEmail) {
     return NextResponse.json({ duplicates: [] });
   }
 
@@ -46,7 +49,7 @@ export async function GET(req: NextRequest) {
   // AGENT → only their own leads, MANAGER → own + report tree, ADMIN → all.
   // This stops the dedup warning from disclosing a teammate's lead name/owner.
   const scope = await leadScopeWhere(me);
-  const leads = await findPossibleDuplicates({ phone, email, scope });
+  const leads = await findPossibleDuplicates({ phone, email, altPhone, altEmail, scope });
 
   const duplicates: DuplicateMatch[] = leads.map((l) => ({
     id: l.id,

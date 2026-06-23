@@ -390,7 +390,11 @@ model Lead {
   needSummary          String?
   bantSuggestionsJson  String?   // JSON: BantSuggestions (auto-detected from history)
   // Profile depth
-  profession      Profession?
+  // profession was widened enum Profession -> TEXT (migration 20260623170000)
+  // so Sales can type ANY profession. Legacy enum tokens (JOB, SELF_EMPLOYED…)
+  // are preserved verbatim as strings. The Profession enum below is kept only
+  // for backward reference; this column no longer uses it.
+  profession      String?
   linkedInUrl     String?     // full https://linkedin.com/in/... URL
   // Purchase history — captured at intake for cold data or filled after qualification
   alreadyBought   String?     // comma-separated project names client already owns

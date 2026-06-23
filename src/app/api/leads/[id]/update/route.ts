@@ -52,7 +52,7 @@ const ALLOWED: Record<string, "string" | "date" | "number" | "enum" | "bool"> = 
   // authorityLevel (enum) kept for backward compat with existing data.
   authorityLevel: "enum", authorityPerson: "string", needSummary: "string",
   isColdCall: "bool", coldCallReason: "string",
-  profession: "enum", linkedInUrl: "string",
+  profession: "string", linkedInUrl: "string",
   // WCR Event conditional fields (shown when source = WCR_EVENT)
   eventName: "string", eventCountry: "string", eventState: "string", eventCity: "string",
   // Referral source field (shown when source = REFERRAL)

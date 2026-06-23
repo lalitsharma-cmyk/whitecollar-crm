@@ -51,6 +51,10 @@ export interface DedupOpts {
   phone?: string | null;
   /** Email address from the form. May be null/undefined. */
   email?: string | null;
+  /** Alternative phone from the form (matched the same way as `phone`). */
+  altPhone?: string | null;
+  /** Alternative email from the form (matched the same way as `email`). */
+  altEmail?: string | null;
   /** Exclude this lead ID from results (used on edit forms to ignore self). */
   excludeId?: string;
   /**
@@ -72,65 +76,76 @@ export interface DedupOpts {
  * Returns an empty array when both phone and email are absent.
  */
 export async function findPossibleDuplicates(opts: DedupOpts): Promise<LeadWithOwner[]> {
-  const { phone, email, excludeId, scope } = opts;
-
-  // Normalise the submitted phone so we can match it against stored E.164 values.
-  // We also keep the raw form in case the stored value is un-normalised (legacy rows).
-  const normPhone = phone ? normalizePhone(phone) : null;
+  const { phone, email, altPhone, altEmail, excludeId, scope } = opts;
 
   // Build the OR clauses for the Prisma query.
   // Each clause is only added when the relevant input is present.
   const orClauses: Prisma.LeadWhereInput[] = [];
 
-  if (normPhone || phone) {
-    // Match against: normalised form (future rows) OR the raw submitted value
-    // (handles cases where the stored value equals what the agent typed).
+  // Phone matching is identical for the primary and alternative phone, and each
+  // is matched against BOTH the stored phone AND altPhone columns. Process every
+  // distinct phone value the form supplied.
+  const phoneValues = [phone, altPhone]
+    .map((p) => p?.trim())
+    .filter((p): p is string => !!p);
+  const seenPhones = new Set<string>();
+  for (const pv of phoneValues) {
+    if (seenPhones.has(pv)) continue;
+    seenPhones.add(pv);
+
+    // Normalise so we can match against stored E.164 values; keep the raw form
+    // too in case the stored value is un-normalised (legacy rows).
+    const normPhone = normalizePhone(pv);
     if (normPhone) {
       orClauses.push({ phone: normPhone });
       orClauses.push({ altPhone: normPhone });
     }
-    const trimmedPhone = phone?.trim();
-    if (trimmedPhone && trimmedPhone !== normPhone) {
-      orClauses.push({ phone: trimmedPhone });
-      orClauses.push({ altPhone: trimmedPhone });
+    if (pv !== normPhone) {
+      orClauses.push({ phone: pv });
+      orClauses.push({ altPhone: pv });
     }
 
     // Canonical last-10-digits probe (additive, read-only). Strip every
-    // non-digit from the submitted number and take its last 10 digits. Only
-    // proceed with a FULL 10-digit canonical key — never match on shorter
-    // fragments, which would over-match (e.g. a 4-digit extension).
-    if (phone) {
-      const digits = phone.replace(/\D/g, "");
-      const last10 = digits.slice(-10);
-      if (last10.length === 10) {
-        // Compare against the digit-only RIGHTmost-10 of stored phone/altPhone.
-        // REGEXP_REPLACE expression copied verbatim from the admin duplicates
-        // page so escaping is proven in prod Postgres. ${last10} is a Prisma
-        // bound parameter — safe from injection. Wrapped in try/catch so dev
-        // DBs lacking REGEXP_REPLACE (SQLite) just skip this enhancement.
-        let idsFromDigits: string[] = [];
-        try {
-          const rows = await prisma.$queryRaw<{ id: string }[]>`
-            SELECT id FROM "Lead"
-            WHERE RIGHT(REGEXP_REPLACE(COALESCE(phone, ''), '\D', '', 'g'), 10) = ${last10}
-               OR RIGHT(REGEXP_REPLACE(COALESCE("altPhone", ''), '\D', '', 'g'), 10) = ${last10}
-            LIMIT 50`;
-          idsFromDigits = rows.map((r) => r.id);
-        } catch {
-          // Fall back silently to the exact-string clauses already pushed above.
-          idsFromDigits = [];
-        }
-        if (idsFromDigits.length > 0) {
-          // These IDs are still AND-ed under `scope` in the final `where`, so we
-          // never reveal a lead the caller couldn't already see.
-          orClauses.push({ id: { in: idsFromDigits } });
-        }
+    // non-digit and take the last 10 digits. Only proceed with a FULL 10-digit
+    // canonical key — never match on shorter fragments (would over-match).
+    const digits = pv.replace(/\D/g, "");
+    const last10 = digits.slice(-10);
+    if (last10.length === 10) {
+      // Compare against the digit-only RIGHTmost-10 of stored phone/altPhone.
+      // REGEXP_REPLACE expression copied verbatim from the admin duplicates page
+      // so escaping is proven in prod Postgres. ${last10} is a Prisma bound
+      // parameter — safe from injection. Wrapped in try/catch so dev DBs lacking
+      // REGEXP_REPLACE (SQLite) just skip this enhancement.
+      let idsFromDigits: string[] = [];
+      try {
+        const rows = await prisma.$queryRaw<{ id: string }[]>`
+          SELECT id FROM "Lead"
+          WHERE RIGHT(REGEXP_REPLACE(COALESCE(phone, ''), '\D', '', 'g'), 10) = ${last10}
+             OR RIGHT(REGEXP_REPLACE(COALESCE("altPhone", ''), '\D', '', 'g'), 10) = ${last10}
+          LIMIT 50`;
+        idsFromDigits = rows.map((r) => r.id);
+      } catch {
+        idsFromDigits = [];
+      }
+      if (idsFromDigits.length > 0) {
+        // These IDs are still AND-ed under `scope` below, so we never reveal a
+        // lead the caller couldn't already see.
+        orClauses.push({ id: { in: idsFromDigits } });
       }
     }
   }
 
-  if (email && email.trim()) {
-    orClauses.push({ email: { equals: email.trim(), mode: "insensitive" } });
+  // Email matching: case-insensitive exact match against the stored email, for
+  // both the primary and alternative email values.
+  const emailValues = [email, altEmail]
+    .map((e) => e?.trim())
+    .filter((e): e is string => !!e);
+  const seenEmails = new Set<string>();
+  for (const ev of emailValues) {
+    const key = ev.toLowerCase();
+    if (seenEmails.has(key)) continue;
+    seenEmails.add(key);
+    orClauses.push({ email: { equals: ev, mode: "insensitive" } });
   }
 
   if (orClauses.length === 0) return [];
