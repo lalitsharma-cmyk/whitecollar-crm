@@ -953,6 +953,79 @@ const checks: Check[] = [
         `deletedAt:null must remove exactly the deleted-with-assignment leads (all=${drillNoDelFilter}, deleted=${deletedWithAsg}, filtered=${drillSide})`);
     },
   },
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // 15. BUYER DATA MODULE (2026-06-23) — three additive tables (BuyerRecord,
+  //   BuyerImportBatch, BuyerImportLog) live in prod; the repeat-buyer rollup math
+  //   is correct (computed, not stored); and EVERY buyer page + API route is
+  //   ADMIN-gated (passport + financial data must never leak to agents/managers).
+  //   Read-only: probes columns via SELECT, tests the pure rollup lib in memory,
+  //   and static-scans the route/page sources. ZERO writes.
+  // ───────────────────────────────────────────────────────────────────────────
+  {
+    name: "buyer-module — tables exist + rollup math correct + every page/route ADMIN-gated",
+    run: async () => {
+      // (a) TABLES EXIST — selecting the buyer models must not throw (column /
+      //     table presence probe; proves the migration applied in prod).
+      const bc = await prisma.buyerRecord.count();
+      assert(typeof bc === "number" && bc >= 0, "buyerRecord.count() must return a non-negative number");
+      await prisma.buyerImportBatch.count();
+      await prisma.buyerImportLog.count();
+      // Column-presence probe — a select of every mapped column must not throw.
+      await prisma.buyerRecord.findFirst({
+        select: { id: true, clientName: true, buyerKey: true, transactionValue: true, transactionDate: true, passport: true, extraFields: true, importBatchId: true },
+      });
+
+      // (b) ROLLUP MATH — the pure lib (no server-only) tested in memory.
+      const { normalizeBuyerKey, rollupForRecords, groupByBuyerKey } = await import("../src/lib/buyerIntelligence");
+      // Same human → same key (honorific + phone-format insensitive).
+      assert(
+        normalizeBuyerKey("Mr. Rajesh Kumar", "+971 50 123 4567") === normalizeBuyerKey("Rajesh Kumar", "0501234567"),
+        "normalizeBuyerKey must collapse honorific + phone formatting to one key",
+      );
+      assert(normalizeBuyerKey("", null) === null, "no name + no phone → null key (never a junk collision)");
+      // Repeat buyer rollup: 3 records, one with a null value, two dates.
+      const recs = [
+        { buyerKey: "k", transactionValue: 1_000_000, transactionDate: new Date("2022-03-01") },
+        { buyerKey: "k", transactionValue: 2_000_000, transactionDate: new Date("2024-07-15") },
+        { buyerKey: "k", transactionValue: null, transactionDate: new Date("2021-01-01") },
+      ];
+      const roll = rollupForRecords(recs);
+      assert(roll.totalPropertiesOwned === 3, `rollup count must be 3, got ${roll.totalPropertiesOwned}`);
+      assert(roll.totalInvestmentValue === 3_000_000, `rollup sum must ignore null (=3,000,000), got ${roll.totalInvestmentValue}`);
+      assert(!!roll.firstPurchaseDate && roll.firstPurchaseDate.getUTCFullYear() === 2021, "first purchase = min date (2021)");
+      assert(!!roll.latestPurchaseDate && roll.latestPurchaseDate.getUTCFullYear() === 2024, "latest purchase = max date (2024)");
+      assert(roll.repeatBuyerStatus === true, "3 records sharing a key → repeatBuyerStatus true");
+      assert(rollupForRecords([recs[0]]).repeatBuyerStatus === false, "single record → repeatBuyerStatus false");
+      // Null/blank keys must each stay a solo group (never merge into a junk bucket).
+      const groups = groupByBuyerKey([{ id: "1", buyerKey: "k" }, { id: "2", buyerKey: "k" }, { id: "3", buyerKey: null }, { id: "4", buyerKey: "" }] as never[]);
+      assert(groups.size === 3, `k(×2) + 2 solo = 3 groups, got ${groups.size}`);
+
+      // (c) ADMIN-GATING — every buyer page + API route must enforce ADMIN. A
+      //     static source-scan so a refactor can't silently open passport/financial
+      //     data to agents or managers.
+      const fs = await import("node:fs");
+      const adminGated = (f: string, re: RegExp) => {
+        const src = fs.readFileSync(f, "utf8");
+        assert(re.test(src), `${f} MUST gate on ADMIN (passport + financial data) — gate missing/reverted?`);
+      };
+      // Pages: requireUser() + redirect non-admins.
+      for (const p of [
+        "src/app/(app)/buyer-data/page.tsx",
+        "src/app/(app)/buyer-data/[id]/page.tsx",
+        "src/app/(app)/buyer-data/import/page.tsx",
+      ]) adminGated(p, /role !== "ADMIN"/);
+      // API routes: requireUser() + 403 for non-admins.
+      for (const r of [
+        "src/app/api/buyer-data/import/route.ts",
+        "src/app/api/buyer-data/export/route.ts",
+        "src/app/api/buyer-data/[id]/update/route.ts",
+      ]) {
+        const src = fs.readFileSync(r, "utf8");
+        assert(/role !== "ADMIN"/.test(src) && /403/.test(src), `${r} MUST 403 non-admins`);
+      }
+    },
+  },
 ];
 
 // ── runner ────────────────────────────────────────────────────────────────────

@@ -10,6 +10,7 @@ import { formatLeadName } from "@/lib/leadName";
 import { userCanAccessProjectCountry } from "@/lib/propertyScope";
 import { fmtMoney } from "@/lib/money";
 import UnitsCsvImport from "@/components/UnitsCsvImport";
+import { formatTxnValue, inferBuyerCurrency, rollupForRecords } from "@/lib/buyerIntelligence";
 
 export const dynamic = "force-dynamic";
 
@@ -57,6 +58,17 @@ export default async function PropertyDetail({ params }: { params: Promise<{ id:
   const availableCount = project.units.filter((u) => u.status === UnitStatus.AVAILABLE).length;
   const soldCount = project.units.filter((u) => u.status === UnitStatus.SOLD).length;
 
+  // "Buyers of this project" — ADMIN ONLY (buyer data carries passport + financial
+  // info). Match BuyerRecords on projectName (case-insensitive). Agents/managers
+  // never see this section.
+  const projectBuyers = me.role === "ADMIN"
+    ? await prisma.buyerRecord.findMany({
+        where: { projectName: { equals: project.name, mode: "insensitive" } },
+        orderBy: { transactionDate: "desc" },
+        take: 200,
+      })
+    : [];
+
   return (
     <>
       {/* Header card */}
@@ -99,6 +111,54 @@ export default async function PropertyDetail({ params }: { params: Promise<{ id:
           </Link>
         </div>
       </div>
+
+      {/* Section: Buyers of this project — ADMIN ONLY (passport + financial data) */}
+      {me.role === "ADMIN" && projectBuyers.length > 0 && (() => {
+        const totalInvested = rollupForRecords(projectBuyers).totalInvestmentValue;
+        const invCcy = inferBuyerCurrency({ projectName: project.name, nationality: projectBuyers[0]?.nationality });
+        return (
+          <section className="card p-4 mt-4">
+            <div className="flex items-center justify-between mb-3 gap-2 flex-wrap">
+              <h2 className="font-semibold flex items-center gap-2">💳 Buyers of this project
+                <span className="text-xs font-normal text-amber-600 dark:text-amber-400">admin-only</span></h2>
+              <div className="text-xs text-gray-500 dark:text-slate-400">
+                {projectBuyers.length} record{projectBuyers.length === 1 ? "" : "s"} · {formatTxnValue(totalInvested, invCcy)} total ·
+                {" "}<a href={`/api/buyer-data/export?project=${encodeURIComponent(project.name)}`} className="text-blue-600 hover:underline">⬇ CSV</a>
+              </div>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-left text-xs text-gray-500 dark:text-slate-400 border-b dark:border-slate-700">
+                    <th className="py-2 pr-3">Buyer</th>
+                    <th className="py-2 pr-3">Tower / Unit</th>
+                    <th className="py-2 pr-3">Config</th>
+                    <th className="py-2 pr-3 text-right">Value</th>
+                    <th className="py-2 pr-3">Date</th>
+                    <th className="py-2 pr-3">Nationality</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100 dark:divide-slate-800">
+                  {projectBuyers.map((b) => {
+                    const bCcy = inferBuyerCurrency({ projectName: b.projectName, nationality: b.nationality, source: b.source });
+                    const tu = [b.tower, b.unitNumber].map((x) => (x ?? "").trim()).filter(Boolean).join(" · ");
+                    return (
+                      <tr key={b.id} className="hover:bg-gray-50 dark:hover:bg-slate-800/50">
+                        <td className="py-2 pr-3"><Link href={`/buyer-data/${b.id}`} className="text-[#0b1a33] dark:text-blue-300 hover:underline font-medium">{b.clientName}</Link></td>
+                        <td className="py-2 pr-3 text-gray-600 dark:text-slate-400 whitespace-nowrap">{tu || "—"}</td>
+                        <td className="py-2 pr-3 text-gray-600 dark:text-slate-400">{b.configuration || "—"}</td>
+                        <td className="py-2 pr-3 text-right tabular-nums text-gray-800 dark:text-slate-200 whitespace-nowrap">{formatTxnValue(b.transactionValue, bCcy)}</td>
+                        <td className="py-2 pr-3 text-gray-600 dark:text-slate-400 whitespace-nowrap">{b.transactionDate ? new Date(b.transactionDate).toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short", year: "numeric" }) : "—"}</td>
+                        <td className="py-2 pr-3 text-gray-600 dark:text-slate-400">{b.nationality || "—"}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        );
+      })()}
 
       {/* Bulk import — admin/manager only, sits just above the Inventory table */}
       {canImportUnits && <UnitsCsvImport projectId={id} />}

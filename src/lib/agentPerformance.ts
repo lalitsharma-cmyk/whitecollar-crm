@@ -251,7 +251,7 @@ export interface AgentMetrics {
   websiteAssigned: number;
   eventAssigned: number;
   revivalAssigned: number;
-  buyerAssigned: number; // BuyerRecord module not yet migrated → always 0 (see note)
+  buyerAssigned: number; // BuyerRecord uses free-text agentName (no User FK) → always 0 (see note)
 
   // ── Lead Outcomes (current owner, status-bucketed; rejected by rejectedAt in window) ──
   rejected: number;
@@ -373,7 +373,8 @@ export async function buildAgentReport(range: DateRange, scope: ReportScope): Pr
     if (WEBSITE_SOURCE_LABELS.has(l.source)) m.websiteAssigned += 1;
     if (EVENT_SOURCE_LABELS.has(l.source)) m.eventAssigned += 1;
     if (REVIVAL_ORIGINS.includes(l.leadOrigin) || l.isColdCall) m.revivalAssigned += 1;
-    // buyerAssigned stays 0 — BuyerRecord module not yet migrated to prod.
+    // buyerAssigned stays 0 — BuyerRecord exists but records carry a free-text
+    // agentName (no User FK), so per-agent attribution would be fuzzy. Left 0 by design.
   }
 
   // ── 2. OUTCOMES (by CURRENT owner — "what is the state of this agent's book") ──

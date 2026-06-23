@@ -5,7 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import {
   LayoutDashboard, Users, Sparkles, Menu, X,
   Building2, BarChart3, Upload, UserCog, Settings as SettingsIcon, LogOut, Landmark,
-  ChevronLeft, ChevronRight, Gem, HelpCircle, AlertTriangle, Lock, PhoneCall, Briefcase, Database, ShieldCheck, Bot, Inbox,
+  ChevronLeft, ChevronRight, Gem, HelpCircle, AlertTriangle, Lock, PhoneCall, Briefcase, Database, ShieldCheck, Bot, Inbox, BadgeDollarSign,
 } from "lucide-react";
 import GlobalDateFilter from "./GlobalDateFilter";
 import NotifBell from "./NotifBell";
@@ -110,6 +110,7 @@ const fullNav: NavSection[] = [
     { href: "/admin/assistant",       label: "AI Assistant",       Icon: Bot },
     { href: "/intake",                label: "Lead Intake",        Icon: Upload, leadOpsHidden: true },
     { href: "/admin/projects",        label: "Project Master",     Icon: Landmark },
+    { href: "/buyer-data",            label: "Buyer Data",         Icon: BadgeDollarSign },
     { href: "/admin/devices",         label: "Devices",            Icon: ShieldCheck },
     { href: "/admin/revival-logs",    label: "Revival Logs",       Icon: Gem },
   ]},

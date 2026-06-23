@@ -32,7 +32,8 @@
 // v22 (2026-06-22): fix Notification-preference toggles (double-fire) + force refresh so mobile shows Conversation History; pause SLA-breach.
 // v23 (2026-06-23): contrast fix — Note action button was invisible in dark mode on iPad (yellow-on-yellow). Pinned ink/bg colours; CSS-only.
 // v24 (2026-06-23): Agent Lead Performance report (/reports/agent-performance) — per-agent assignment-history metrics, rankings, funnel, drill-down, CSV/Excel export.
-const CACHE = "wcr-shell-v24";
+// v25 (2026-06-23): Buyer Data module (/buyer-data) — admin-only transaction records, repeat-buyer rollups, Excel import, CSV export, project-buyers section.
+const CACHE = "wcr-shell-v25";
 const SHELL = ["/login", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", (event) => {
