@@ -19,6 +19,7 @@ import { formatLeadName } from "@/lib/leadName";
 import TargetCelebration from "@/components/TargetCelebration";
 import RemindersCard, { type ReminderEvent } from "@/components/RemindersCard";
 import { countUnassignedLeads, countAwaitingTeamLeads } from "@/lib/leadCounts";
+import { hotUntouchedWhere } from "@/lib/dashboardWidgets";
 import DashboardAssignmentWidget from "@/components/DashboardAssignmentWidget";
 import DashboardGreeting from "@/components/DashboardGreeting";
 import { tzForTeam, greetingFor } from "@/lib/datetime";
@@ -152,23 +153,29 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
 
   // ── "Today's situation" Command Center hero strip (master spec §9.1) ──
   // Action-first tiles answering: what needs attention RIGHT NOW?
-  const sixHoursAgo = new Date(Date.now() - 6 * 3600 * 1000);
   const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 3600 * 1000);
-  // These "needs attention RIGHT NOW" hero counts are personal for an agent
-  // (their own urgent items) and team-wide for leadership (audit B-03).
+  // ── HERO "needs attention RIGHT NOW" counts — count == drill (single source) ──
+  // Each count below uses a CANONICAL where that the card's /leads href reproduces
+  // exactly, so the number shown == the rows that open on click == a direct DB
+  // count. Personal for an agent (own book via meScope); team-wide for leadership.
+  //   • Hot Untouched   → hotUntouchedWhere(): HOT + workable + UNTOUCHED (no
+  //                       contact/meeting/site-visit logged). Drill: /leads?ai=HOT
+  //                       &untouched=1&followup=all (+ seg=mine for admin).
+  //   • Overdue         → workable + followupDate in the past. Drill: ?followup=overdue.
+  //   • Closable deals  → workable + status in CLOSING_STATUSES. Drill: ?smart=visit_potential.
+  //   • Cold revival    → cold pool (isColdCall), high-value dormant — drills to
+  //                       /cold-calls (its OWN scope), so its count mirrors that page.
   const [hotUntouched, overdueFollowups, closableDeals, coldRevivalOps] = await Promise.all([
-    prisma.lead.count({
-      where: {
-        ...meScope, aiScore: AIScore.HOT,
-        currentStatus: { notIn: SUPPRESSED_STATUSES },
-        OR: [{ lastTouchedAt: { lt: sixHoursAgo } }, { lastTouchedAt: null }],
-      },
-    }),
+    prisma.lead.count({ where: hotUntouchedWhere(meScope) }),
     prisma.lead.count({
       where: { ...workableWhere(meScope), followupDate: { lt: new Date(), not: null } },
     }),
+    // Closable = workable leads at a closing stage (meeting / visit / dubai / EOI
+    // stages). Reconciles with /leads?smart=visit_potential (currentStatus IN
+    // CLOSING_STATUSES, workable). Dropped the eoiStage gate so the count matches
+    // the drill (the smart chip has no eoiStage condition).
     prisma.lead.count({
-      where: { ...meScope, currentStatus: { in: CLOSING_STATUSES }, eoiStage: { not: null } },
+      where: { ...workableWhere(meScope), currentStatus: { in: CLOSING_STATUSES } },
     }),
     prisma.lead.count({
       where: {
@@ -403,6 +410,25 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   const istOffset2 = 5.5 * 60 * 60 * 1000;
   const todayIsoIST = new Date(Date.now() + istOffset2).toISOString().slice(0, 10);
 
+  // ── Scope-matched drill href builder (count == drill) ──────────────────────
+  // A hero card's count is computed over `meScope` (agent → own; admin/manager →
+  // teamScope). The /leads drill MUST reproduce that SAME scope or the number
+  // won't equal the rows that open. So we pack the right scope params:
+  //   • AGENT   → /leads is already owner-scoped (leadScopeWhere) — no seg needed.
+  //   • MANAGER → /leads is locked to their team (leadScopeWhere) — no seg needed.
+  //   • ADMIN   → must override the /leads "My Leads" default: seg=all for the
+  //               "all" view, or seg=india/dubai to match the team toggle.
+  const scopeParams = (): Record<string, string> => {
+    if (me.role !== "ADMIN") return {};
+    if (view === "India") return { seg: "india" };
+    if (view === "Dubai") return { seg: "dubai" };
+    return { seg: "all" };
+  };
+  const leadsDrill = (params: Record<string, string>): string => {
+    const p = new URLSearchParams({ ...scopeParams(), ...params });
+    return `/leads?${p.toString()}`;
+  };
+
   return (
     <>
       {/* ── Full-width: testing mode banner ── */}
@@ -580,20 +606,20 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
               📅 {periodSection}
             </div>
             <div className="grid grid-cols-2 gap-3">
-              <Link href="/leads?ai=HOT&when=overdue" className="card p-4 border-l-4 border-red-500 hover:shadow-lg transition active:bg-red-50">
+              <Link href={leadsDrill({ ai: "HOT", untouched: "1", followup: "all" })} className="card p-4 border-l-4 border-red-500 hover:shadow-lg transition active:bg-red-50">
                 <div className="text-3xl font-extrabold text-red-700">{hotUntouched}</div>
                 <div className="text-xs font-semibold text-red-900 mt-1">🔥 Hot leads untouched</div>
-                <div className="text-[10px] text-red-700/70 mt-0.5">No agent activity in 6+ hours</div>
+                <div className="text-[10px] text-red-700/70 mt-0.5">Hot · no contact logged yet</div>
               </Link>
-              <Link href="/leads?followup=overdue" className="card p-4 border-l-4 border-orange-500 hover:shadow-lg transition active:bg-orange-50">
+              <Link href={leadsDrill({ followup: "overdue" })} className="card p-4 border-l-4 border-orange-500 hover:shadow-lg transition active:bg-orange-50">
                 <div className="text-3xl font-extrabold text-orange-700">{overdueFollowups}</div>
                 <div className="text-xs font-semibold text-orange-900 mt-1">⏰ Overdue follow-ups</div>
                 <div className="text-[10px] text-orange-700/70 mt-0.5">Follow-up date in the past</div>
               </Link>
-              <Link href="/leads?status=NEGOTIATION" className="card p-4 border-l-4 border-emerald-500 hover:shadow-lg transition active:bg-emerald-50">
+              <Link href={leadsDrill({ smart: "visit_potential", followup: "all" })} className="card p-4 border-l-4 border-emerald-500 hover:shadow-lg transition active:bg-emerald-50">
                 <div className="text-3xl font-extrabold text-emerald-700">{closableDeals}</div>
                 <div className="text-xs font-semibold text-emerald-900 mt-1">💎 Closable deals</div>
-                <div className="text-[10px] text-emerald-700/70 mt-0.5">Negotiation + EOI in progress</div>
+                <div className="text-[10px] text-emerald-700/70 mt-0.5">Meeting / visit stage</div>
               </Link>
               <Link href="/cold-calls" className="card p-4 border-l-4 border-blue-500 hover:shadow-lg transition active:bg-blue-50">
                 <div className="text-3xl font-extrabold text-blue-700">{coldRevivalOps}</div>
@@ -602,7 +628,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
               </Link>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
-              <Link href="/activities?type=MEETING" className="card p-4 hover:shadow-lg transition">
+              <Link href="/activities?type=EXPO_MEETING,OFFICE_MEETING,HOME_VISIT" className="card p-4 hover:shadow-lg transition">
                 <div className="text-3xl font-extrabold text-teal-700 dark:text-teal-300">{meetingsToday}</div>
                 <div className="text-xs font-semibold text-slate-800 dark:text-slate-200 mt-1">🤝 Meetings</div>
                 <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">expo / office / home · today</div>

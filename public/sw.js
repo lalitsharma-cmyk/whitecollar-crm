@@ -245,7 +245,22 @@
 // altPhone/altEmail/linkedInUrl/sourceDetail/propertyType/configuration/BANT/meeting/
 // site-visit + customFields.<key> — field/old/new/by/when. Force a refresh so PWA
 // clients pick up the reopenable dropdowns + new editors.
-const CACHE = "wcr-shell-v57";
+// v58 (2026-06-24): Dashboard data integrity — count == drill-down on every widget.
+// (1) Fixed the "Hot Leads Untouched = 8 but click shows 0" bug: the card count and
+// the card's /leads link were two different queries. Every hero card now uses ONE
+// canonical where for BOTH its number and its drill (count == rows opened == DB).
+// (2) "Hot Lead Untouched" REDEFINED — was a 6h-stale-touch threshold; now = Hot +
+// assigned + workable + NO contact logged yet (no call/WhatsApp/email/meeting/site-
+// visit Activity). New /leads?untouched=1 filter reproduces it exactly. (3) Closable-
+// deals card no longer links to a non-existent status=NEGOTIATION (drills to the
+// closing-stage smart filter). (4) Meetings/Site-Visits/Virtual cards drill to the
+// matching activity bucket for today. (5) Every agent widget stays owner-scoped
+// (own book only — no deleted, no cold/buyer-pool, no cross-user). (6) "I Am Here"
+// duplicates cleaned (kept the first check-in per IST day); the movement feed no
+// longer repeats "I Am Here … I Am Here" — single current status; daily reset
+// (yesterday's check-in never shows as today's). Force a refresh so PWA clients get
+// the corrected dashboard numbers + links.
+const CACHE = "wcr-shell-v58";
 const SHELL = ["/login", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", (event) => {

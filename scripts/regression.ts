@@ -2879,6 +2879,165 @@ const checks: Check[] = [
       results.push({ name: "  ↳ note", ok: true, detail: "completion gate + helper + popup + report wired" });
     },
   },
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // 45. DASHBOARD COUNT == DRILL-DOWN (2026-06-24). The recurring class where a
+  //     KPI card's COUNT query drifts from the FILTER its click applies (reported:
+  //     "Hot Leads Untouched = 8" but the drill opened 0 leads). Invariants:
+  //   (a) DEFINITION — the canonical hotUntouchedWhere is HOT + workable +
+  //       UNTOUCHED (no CallLog, no contact-type Activity) — a STATE, not a stale-
+  //       time threshold. The /leads ?untouched=1 filter reproduces UNTOUCHED_WHERE.
+  //   (b) RECONCILIATION on REAL DATA — for every active sales agent, per widget,
+  //       CARD count == the /leads drill where == an independent direct DB count.
+  //       Proven for Hot-Untouched, Overdue, and Closable (the three lead-count
+  //       hero cards). The company-wide totals must reconcile too.
+  //   (c) SCOPE (no contamination) — the widget where is owner-scoped and ALWAYS
+  //       carries deletedAt:null + isColdCall:false + non-cold origin (no admin/
+  //       cold/buyer-pool, no recycle-bin, no cross-user leakage).
+  //   (d) SOURCE — the dashboard card hrefs carry the reconciling params and the
+  //       /leads page handles ?untouched=1 with the same contact-activity set.
+  // ───────────────────────────────────────────────────────────────────────────
+  {
+    name: "dashboard-reconcile — hot-untouched definition + every widget count==drill==db + agent scope + no contamination",
+    run: async () => {
+      const fs = await import("node:fs");
+      const { hotUntouchedWhere, CONTACT_ACTIVITY_TYPES, UNTOUCHED_WHERE } = await import("../src/lib/dashboardWidgets");
+      const { CLOSING_STATUSES, TERMINAL_STATUSES } = await import("../src/lib/lead-statuses");
+
+      const COLD = ["COLD", "REVIVAL"];
+      const WORKABLE_OR = [
+        { currentStatus: null },
+        { currentStatus: "" },
+        { currentStatus: { notIn: TERMINAL_STATUSES } },
+      ];
+      type LW = import("@prisma/client").Prisma.LeadWhereInput;
+
+      // (a) DEFINITION — UNTOUCHED_WHERE is no-CallLog + no contact-Activity, and the
+      //     contact set covers calls/WA/email/meetings/site-visits (not NOTE/TASK/etc).
+      assert(JSON.stringify((UNTOUCHED_WHERE as { callLogs?: unknown }).callLogs) === JSON.stringify({ none: {} }),
+        "UNTOUCHED_WHERE must require callLogs none {}");
+      for (const t of ["CALL", "WHATSAPP", "EMAIL", "SITE_VISIT", "OFFICE_MEETING", "VIRTUAL_MEETING"]) {
+        assert((CONTACT_ACTIVITY_TYPES as string[]).includes(t), `CONTACT_ACTIVITY_TYPES must include ${t}`);
+      }
+      for (const t of ["NOTE", "TASK", "STATUS_CHANGE", "ASSIGNMENT", "LEAD_CREATED"]) {
+        assert(!(CONTACT_ACTIVITY_TYPES as string[]).includes(t), `CONTACT_ACTIVITY_TYPES must NOT include non-contact ${t}`);
+      }
+
+      // The /leads page reproduces the SAME drill where for the card params. Mirror
+      // it inline (byte-equivalent to src/app/(app)/leads/page.tsx working view).
+      const drillWhere = (ownerId: string, params: Record<string, string>): LW => {
+        const where: LW = { ownerId, deletedAt: null, isColdCall: false, leadOrigin: { notIn: COLD } };
+        const and: LW[] = [{ OR: WORKABLE_OR }];
+        if (params.ai) where.aiScore = params.ai as import("@prisma/client").AIScore;
+        if (params.untouched === "1") {
+          where.callLogs = { none: {} };
+          where.activities = { none: { type: { in: CONTACT_ACTIVITY_TYPES } } };
+        }
+        if (params.smart === "visit_potential") and.push({ currentStatus: { in: CLOSING_STATUSES } });
+        if (params.followup === "overdue") where.followupDate = { lt: new Date(), not: null };
+        where.AND = and;
+        return where;
+      };
+      const workable = (scope: LW): LW => ({ ...scope, leadOrigin: { notIn: COLD }, OR: WORKABLE_OR });
+
+      // (b)+(c) RECONCILIATION on real data, per agent. Owner-scoped (no contamination).
+      const agents = await prisma.user.findMany({
+        where: { active: true, role: { in: ["AGENT", "MANAGER", "ADMIN"] }, hrOnly: false },
+        select: { id: true, name: true },
+      });
+      let totCard = 0, totDrill = 0, totDb = 0;
+      for (const u of agents) {
+        const meScope: LW = { ownerId: u.id, deletedAt: null, leadOrigin: { notIn: COLD } };
+
+        // Hot Untouched
+        const hotCard = await prisma.lead.count({ where: hotUntouchedWhere(meScope) });
+        const hotDrill = await prisma.lead.count({ where: drillWhere(u.id, { ai: "HOT", untouched: "1", followup: "all" }) });
+        const hotDb = await prisma.lead.count({
+          where: {
+            ownerId: u.id, deletedAt: null, isColdCall: false, leadOrigin: { notIn: COLD },
+            aiScore: "HOT", callLogs: { none: {} },
+            activities: { none: { type: { in: CONTACT_ACTIVITY_TYPES } } }, AND: [{ OR: WORKABLE_OR }],
+          },
+        });
+        assert(hotCard === hotDrill && hotDrill === hotDb,
+          `Hot-Untouched count!=drill!=db for ${u.name}: card=${hotCard} drill=${hotDrill} db=${hotDb}`);
+
+        // Overdue follow-ups
+        const ovCard = await prisma.lead.count({ where: { ...workable(meScope), followupDate: { lt: new Date(), not: null } } });
+        const ovDrill = await prisma.lead.count({ where: drillWhere(u.id, { followup: "overdue" }) });
+        assert(ovCard === ovDrill, `Overdue count!=drill for ${u.name}: card=${ovCard} drill=${ovDrill}`);
+
+        // Closable deals
+        const clCard = await prisma.lead.count({ where: { ...workable(meScope), currentStatus: { in: CLOSING_STATUSES } } });
+        const clDrill = await prisma.lead.count({ where: drillWhere(u.id, { smart: "visit_potential", followup: "all" }) });
+        assert(clCard === clDrill, `Closable count!=drill for ${u.name}: card=${clCard} drill=${clDrill}`);
+
+        totCard += hotCard; totDrill += hotDrill; totDb += hotDb;
+      }
+      assert(totCard === totDrill && totDrill === totDb,
+        `company-wide Hot-Untouched must reconcile: card=${totCard} drill=${totDrill} db=${totDb}`);
+
+      // (c-ii) NO CONTAMINATION — hotUntouchedWhere keeps the scope's deletedAt/owner
+      //        and never counts deleted/cold. Build a scope and assert the keys survive.
+      const probe = hotUntouchedWhere({ ownerId: "X", deletedAt: null, leadOrigin: { notIn: COLD } }) as Record<string, unknown>;
+      assert(probe.ownerId === "X" && probe.deletedAt === null, "hotUntouchedWhere must preserve ownerId + deletedAt:null scope");
+      assert((probe.aiScore as string) === "HOT", "hotUntouchedWhere must pin aiScore HOT");
+
+      // (d) SOURCE — dashboard card hrefs carry the reconciling params; /leads handles
+      //     ?untouched=1 with the SAME contact-activity set (no drift).
+      const dash = fs.readFileSync("src/app/(app)/dashboard/page.tsx", "utf8");
+      assert(/hotUntouchedWhere\(meScope\)/.test(dash), "dashboard must count Hot-Untouched via hotUntouchedWhere(meScope)");
+      assert(/ai:\s*"HOT",\s*untouched:\s*"1"/.test(dash), "Hot-Untouched card href must drill to ai=HOT&untouched=1");
+      assert(!/\/leads\?ai=HOT&when=overdue/.test(dash), "the old broken ai=HOT&when=overdue Hot card href must be gone");
+      assert(!/status=NEGOTIATION/.test(dash), "the old broken status=NEGOTIATION Closable href (no such status) must be gone");
+      const leadsPage = fs.readFileSync("src/app/(app)/leads/page.tsx", "utf8");
+      assert(/sp\.untouched === "1"/.test(leadsPage), "/leads must handle ?untouched=1");
+      assert(/CONTACT_ACTIVITY_TYPES/.test(leadsPage), "/leads ?untouched= must use the shared CONTACT_ACTIVITY_TYPES set");
+
+      results.push({ name: "  ↳ note", ok: true, detail: `dashboard widgets reconcile (count==drill==db) for ${agents.length} agents; company Hot-Untouched=${totCard}` });
+    },
+  },
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // 46. I-AM-HERE ONCE-PER-DAY + DAILY RESET (2026-06-24). The field-status "I Am
+  //     Here" check-in is once-per-IST-day and the feed never repeats it.
+  //   (a) DATA — after the dedup cleanup, NO (user, IST-day) bucket has >1 HERE
+  //       (hard assert — the legacy duplicates were removed, kept earliest).
+  //   (b) SOURCE — AgentStatusBar de-duplicates the movement feed (single HERE) and
+  //       the dashboard derives "checked in today" from TODAY's IST events only.
+  // ───────────────────────────────────────────────────────────────────────────
+  {
+    name: "iamhere-dedup — ≤1 HERE per user per IST-day (post-cleanup) + feed dedup + daily reset",
+    run: async () => {
+      const fs = await import("node:fs");
+      // (a) DATA — hard assert no duplicate HERE bucket remains (cleanup ran).
+      const heres = await prisma.agentStatusEvent.findMany({
+        where: { status: "HERE" }, select: { userId: true, startedAt: true }, take: 10000,
+      });
+      const seen = new Map<string, number>();
+      for (const h of heres) {
+        const key = `${h.userId}|${istDateKey(h.startedAt)}`;
+        seen.set(key, (seen.get(key) ?? 0) + 1);
+      }
+      const dupes = [...seen.entries()].filter(([, n]) => n > 1);
+      assert(dupes.length === 0,
+        `${dupes.length} (user, IST-day) bucket(s) STILL have >1 HERE — run scripts/cleanup-duplicate-here.ts --apply: ${dupes.map(([k]) => k).join(", ")}`);
+
+      // (b) SOURCE — the feed is de-duplicated (single HERE; no repeated "I Am Here").
+      const bar = fs.readFileSync("src/components/AgentStatusBar.tsx", "utf8");
+      assert(/dedupedEvents/.test(bar), "AgentStatusBar must de-duplicate the movement feed (dedupedEvents)");
+      assert(/firstHereId/.test(bar) && /e\.status === "HERE" && e\.id !== firstHereId/.test(bar),
+        "AgentStatusBar feed must keep only the FIRST HERE (drop later duplicate HERE rows)");
+      // Daily reset — the lock derives from TODAY's IST HERE event only (todaysHereEvent).
+      const dash = fs.readFileSync("src/app/(app)/dashboard/page.tsx", "utf8");
+      assert(/todaysHereEvent/.test(dash) && /myCheckedInToday/.test(dash),
+        "dashboard must derive checked-in state from TODAY's IST HERE event (daily reset)");
+      // The admin field-status feed is IST-today-scoped (yesterday never shows as today).
+      const adminFs = fs.readFileSync("src/app/(app)/admin/field-status/page.tsx", "utf8");
+      assert(/istDayBoundsUTC/.test(adminFs) && /startedAt:\s*\{\s*gte:\s*start,\s*lt:\s*end\s*\}/.test(adminFs),
+        "admin field-status must scope today's movements to the IST day (daily reset)");
+    },
+  },
 ];
 
 // ── runner ────────────────────────────────────────────────────────────────────

@@ -96,7 +96,14 @@ export default async function ActivitiesPage(
   { searchParams }: { searchParams: Promise<Record<string, string | undefined>> }
 ) {
   const sp = await searchParams;
-  const typeFilter = (sp.type ?? null) as ActivityType | null;
+  // ?type= accepts a SINGLE type OR a comma-separated multi-type bucket (so the
+  // Dashboard "Meetings" card — which aggregates EXPO_MEETING/OFFICE_MEETING/
+  // HOME_VISIT — can drill to the exact same set its count was built from).
+  const typeList = (sp.type ?? "").split(",").map(s => s.trim()).filter(Boolean) as ActivityType[];
+  const typeFilter: ActivityType | null = typeList.length === 1 ? typeList[0] : null;
+  const typeWhere = typeList.length === 1 ? { type: typeList[0] }
+    : typeList.length > 1 ? { type: { in: typeList } }
+    : {};
 
   const me = await requireUser();
   const scope = me.role === "AGENT" ? { ownerId: me.id } : {};
@@ -183,15 +190,17 @@ export default async function ActivitiesPage(
       take: 10,
       include: activityInclude,
     }),
-    // 5. Scheduled today (IST window) — optionally filtered by type
+    // 5. Scheduled today (IST window) — optionally filtered by type (single OR
+    //    multi). This is the set the Dashboard meeting/site-visit/virtual cards
+    //    count, so when a type filter is active its length == the card number.
     prisma.activity.findMany({
       where: {
         ...leadScopeAsActivityFilter,
         scheduledAt: { gte: dayStart, lt: dayEnd },
-        ...(typeFilter ? { type: typeFilter } : {}),
+        ...typeWhere,
       },
       orderBy: { scheduledAt: "asc" },
-      take: 15,
+      take: 100,
       include: activityInclude,
     }),
     // 6. Potential closures — NEGOTIATION with eoiStage set
@@ -306,10 +315,10 @@ export default async function ActivitiesPage(
       </div>
 
       {/* ── Type filter banner ──────────────────────────────────────── */}
-      {typeFilter && (
+      {typeList.length > 0 && (
         <div className="flex items-center gap-2 p-3 bg-blue-50 border border-blue-200 rounded-lg mb-2">
           <span className="text-sm font-semibold text-blue-800">
-            Filtering: {typeFilter.replace(/_/g, " ")} activities
+            {todayScheduled.length} {typeList.map(t => t.replace(/_/g, " ").toLowerCase()).join(" / ")} scheduled today
           </span>
           <a href="/activities" className="ml-auto text-xs text-blue-600 hover:underline">Clear filter ×</a>
         </div>

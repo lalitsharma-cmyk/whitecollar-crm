@@ -175,6 +175,25 @@ export default function AgentStatusBar({ initialEvents, initialOpenGoing, alread
   const siteOpen = openGoing?.status === "GOING_SITE_VISIT";
   const outMin = openGoing ? elapsedMin(openGoing.startedAt, nowMs) : 0;
 
+  // ── Feed de-duplication (display only) ──────────────────────────────────────
+  // The "Today's movements" list must never read "I Am Here … I Am Here". HERE is
+  // a once-per-day check-in, so we keep only the FIRST HERE (mirrors the server's
+  // keep-earliest rule + the dedup script) and drop any later HERE rows. Other
+  // movements (meeting / site-visit / leaving) are all kept. We also collapse any
+  // accidental back-to-back identical statuses. `events` arrives newest-first, so
+  // the LAST HERE in iteration order is the earliest — that's the one we keep.
+  const dedupedEvents = (() => {
+    const firstHereId = [...events].reverse().find((e) => e.status === "HERE")?.id ?? null;
+    const out: StatusEvent[] = [];
+    for (const e of events) {
+      if (e.status === "HERE" && e.id !== firstHereId) continue; // drop duplicate HERE
+      // collapse consecutive identical statuses (e.g. two LEAVING in a row)
+      if (out.length > 0 && out[out.length - 1].status === e.status && e.status !== "GOING_MEETING" && e.status !== "GOING_SITE_VISIT") continue;
+      out.push(e);
+    }
+    return out;
+  })();
+
   // Per-button enable/label tweaks. Tones for the meeting / site-visit actions
   // are aligned with the central Action Design System (src/lib/actionDesign.ts):
   // meeting = purple, siteVisit = indigo — so these status buttons share the same
@@ -247,14 +266,14 @@ export default function AgentStatusBar({ initialEvents, initialOpenGoing, alread
         <div className="mt-2 text-center text-xs font-semibold text-emerald-700 dark:text-emerald-300">{toast}</div>
       )}
 
-      {/* Today's movements */}
-      {events.length > 0 && (
+      {/* Today's movements (deduped — single HERE, no repeated "I Am Here") */}
+      {dedupedEvents.length > 0 && (
         <div className="mt-3 border-t border-[#eef0f3] dark:border-slate-700 pt-2">
           <div className="text-[10px] font-bold tracking-widest text-gray-400 dark:text-slate-500 uppercase mb-1.5">
             Today&apos;s movements
           </div>
           <ul className="space-y-1">
-            {events.map((e) => (
+            {dedupedEvents.map((e) => (
               <li key={e.id} className="flex items-center justify-between gap-2 text-xs">
                 <span className="flex items-center gap-1.5 min-w-0">
                   <span>{ICON[e.status]}</span>

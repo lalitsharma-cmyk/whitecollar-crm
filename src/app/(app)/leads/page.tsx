@@ -8,6 +8,7 @@ import LeadsListClient from "@/components/LeadsListClient";
 import { runReconciler } from "@/lib/reconciler";
 import { leadScopeWhere, COLD_ORIGINS, workableWhere } from "@/lib/leadScope";
 import { contactActivityByLeadToday } from "@/lib/followupGate";
+import { CONTACT_ACTIVITY_TYPES } from "@/lib/dashboardWidgets";
 import { projectWhereForUser } from "@/lib/propertyScope";
 import { PROPERTY_TYPES } from "@/lib/propertyType";
 import { displayBudget } from "@/lib/budgetParse";
@@ -124,6 +125,14 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
     else if (vals.length > 1) where.currentStatus = { in: vals };
   }
   if (sp.ai) where.aiScore = sp.ai as AIScore;
+  // ── "Untouched" filter (?untouched=1) — reproduces the Dashboard "Hot Leads
+  // Untouched" widget drill: leads with ZERO meaningful contact logged (no
+  // CallLog, no contact-type Activity). Same UNTOUCHED_WHERE the dashboard count
+  // uses, so the card number == the rows that open here (count == drill).
+  if (sp.untouched === "1") {
+    where.callLogs = { none: {} };
+    where.activities = { none: { type: { in: CONTACT_ACTIVITY_TYPES } } };
+  }
   // Team filter — now multi-select (comma-separated) so the Excel "Team" column
   // header filter can tick India + Dubai together. Single value stays a plain
   // equals (keeps the legacy Dubai/India quick-chips + filter-panel working).
@@ -288,7 +297,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
   // search and show all matching, not just today's.
   // nofollowup filter already sets followupDate: null, so the followup chip
   // default (today) must not compose with it — include it as an "other filter".
-  const hasOtherFilter = !!(sp.q || sp.source || sp.status || sp.cstatus || sp.owner || sp.team || sp.score || sp.notPicked || sp.eoi || sp.potential || sp.fundReady || sp.clientType || sp.whenInvest || sp.project || sp.propertyType || sp.budgetPreset || sp.budgetFrom || sp.budgetTo || sp.city || sp.category || sp.hasMeeting || sp.hasSiteVisit || sp.followupFrom || sp.followupTo || filterTab === "nofollowup");
+  const hasOtherFilter = !!(sp.q || sp.source || sp.status || sp.cstatus || sp.owner || sp.team || sp.score || sp.ai || sp.untouched || sp.when || sp.notPicked || sp.eoi || sp.smart || sp.potential || sp.fundReady || sp.clientType || sp.whenInvest || sp.project || sp.propertyType || sp.budgetPreset || sp.budgetFrom || sp.budgetTo || sp.city || sp.category || sp.hasMeeting || sp.hasSiteVisit || sp.followupFrom || sp.followupTo || filterTab === "nofollowup");
   // ── DEFAULT working view = ALL workable leads (6-tier smart sorted) ─────
   // Updated rule (Lalit, 2026-06-21): show EVERY workable lead by default,
   // ordered by the 6-tier smart sort so today's fresh leads + today's follow-ups
@@ -777,7 +786,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
       {(() => {
         const hasActiveFilters = !!(
           sp.q || sp.source || sp.status || sp.cstatus || sp.owner || sp.team ||
-          sp.ai || sp.when || sp.notPicked || sp.eoi || sp.smart ||
+          sp.ai || sp.untouched || sp.when || sp.notPicked || sp.eoi || sp.smart ||
           sp.tag || sp.filter || (sp.followup && sp.followup !== "all") ||
           sp.potential || sp.fundReady || sp.clientType || sp.whenInvest ||
           sp.project || sp.propertyType || sp.budgetPreset || sp.city || sp.category ||
