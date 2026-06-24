@@ -56,7 +56,22 @@
 // buyerKey/phone/email so re-import never silently creates duplicates. Retroactively backfilled
 // the 4 existing buyers (remarks + timeline, idempotent). Additive migration (rawImport JSONB)
 // applied to prod. Regression +1 (buyer-import-history → 44). Additive/reversible.
-const CACHE = "wcr-shell-v38";
+// v39 (2026-06-24): Import Mapping Wizard for ALL lead importers. The 3 importers that
+// previously POSTed straight to the engine with no preview/mapping (Google-Sheet,
+// Pre-assigned MIS, Cold-data/Revival) now run the SAME shared Import-Mapping-Approval
+// wizard the main CSV uploader uses (new src/components/LeadImportWizard.tsx reusing
+// ImportMappingTable): upload/connect → preview detected columns → suggested CRM-field
+// mapping (auto-detect as a SUGGESTION) → per-column confirm / re-map / ignore(→customFields)
+// → 10-row data preview with duplicate flags → DUPLICATE-HANDLING choice (Merge / Skip /
+// Update / Create new / Add as conversation) → import + full report. Mapping config +
+// fuzzy pick + makeMappedPick + buildMapping extracted to a shared src/lib/importMapping.ts
+// (DRY — CSV + Google-Sheet routes + regression all use it). Engine: /api/intake/google-sheet
+// gained ?preview + explicit mapping + dupMode (parity with /api/intake/csv); both routes now
+// accept dupMode; ingestLead gained skipDedup for "Create new anyway" (null fingerprint, no
+// index collision). importer-specific presets preserved (assignToUserId / isColdCall ride
+// along on preview + import). Additive/backward-compatible — absent mapping/dupMode = legacy
+// behaviour. Regression +2 (import-mapping toolkit + import-wizard-parity → 47 checks).
+const CACHE = "wcr-shell-v39";
 const SHELL = ["/login", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", (event) => {

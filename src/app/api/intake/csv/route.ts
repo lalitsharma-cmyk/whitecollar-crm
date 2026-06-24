@@ -14,7 +14,8 @@ import { parseImportDate, applyTimeToDate } from "@/lib/parseImportDate";
 // configuration/BANT) — they belong only in date/follow-up columns. Returns
 // undefined for a date so the importer leaves the field blank.
 const notDate = (v?: string): string | undefined => (v && looksLikeDate(v) ? undefined : v);
-import { splitPhones, normalizePhone } from "@/lib/phone";
+import { splitPhones, normalizePhone, toE164 } from "@/lib/phone";
+import { fingerprintFor } from "@/lib/assignment";
 import { resolveTeam, routingFieldsFor } from "@/lib/teamRouting";
 import { interpretBudget, resolveBudgetCurrency } from "@/lib/budgetCurrency";
 import { inferCountryFromCity } from "@/lib/cityCountry";
@@ -47,189 +48,43 @@ function aiScoreFromCategorization(s?: string): { score: AIScore; value: number 
   return null;
 }
 
-type Row = Record<string, string>;
+// Mapping toolkit (FIELD_CANDIDATES / labels / fuzzy pick / explicit-mapping
+// accessor / preview builder) now lives in the SHARED lib so the Google-Sheet
+// route + the regression suite use the exact same logic. Thin per-route wrappers
+// below bind the module-global `_consumedKeys` so call sites stay unchanged.
+import {
+  type Row,
+  type Confidence,
+  type MappingRow,
+  IGNORE,
+  norm,
+  PROJECT_PICK,
+  FIELD_CANDIDATES,
+  FIELD_LABELS,
+  crmFieldOptions,
+  buildMapping,
+  parseClientMapping,
+  parseDupMode,
+  type DupMode,
+  pick as pickShared,
+  makeMappedPick as makeMappedPickShared,
+} from "@/lib/importMapping";
 
 // Headers consumed by pick() for the row being processed — lets the importer
 // preserve every UNMAPPED Excel column verbatim in Lead.customFields. Reset per row.
 let _consumedKeys = new Set<string>();
 
-function norm(s: string): string { return s.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ""); }
-
-// Property-Enquired (→ Lead.sourceDetail) header candidates. Shared by the fuzzy
-// pick() fallback so every project/property column variant maps even WITHOUT an
-// explicit admin mapping. Mirrors FIELD_CANDIDATES.project below. (Lalit 2026-06-24)
-const PROJECT_PICK = ["project", "projectname", "property", "propertyname", "enquiredproperty", "interestedproject", "requirementproject", "towerproject", "tower"];
-
-// ── Canonical CRM field → header-candidate map ──────────────────────────────
-// SINGLE SOURCE OF TRUTH for both the fuzzy auto-importer (pick) AND the
-// preview "mapping" derivation + the explicit-mapping accessor. The FIRST
-// candidate in each list is the canonical/normalized header. Keep these in sync
-// with every pick(row, …) call below — the importer reads from here.
-const FIELD_CANDIDATES: Record<string, string[]> = {
-  name:            ["customer", "name", "fullname", "leadname", "customername"],
-  phone:           ["mobile", "phone", "contact", "phonenumber", "whatsapp"],
-  altPhone:        ["altnumber", "altphone", "alternatephone", "alternatenumber", "phone2", "secondarynumber", "secondaryphone"],
-  email:           ["email", "emailid", "mail"],
-  city:            ["city", "location"],
-  configuration:   ["configuration", "config", "bhk", "type"],
-  budget:          ["budgetaed", "budget", "budgetmin", "minbudget"],
-  budgetMax:       ["budgetmax", "maxbudget"],
-  currency:        ["currency"],
-  country:         ["country"],
-  source:          ["source"],
-  // Property Enquired (→ Lead.sourceDetail). Broadened (Lalit 2026-06-24) to detect
-  // every common spreadsheet header for the interested project/property. norm()
-  // strips spaces/punctuation, so "Project Name"→projectname, "Tower/Project"→
-  // towerproject, "Enquired Property"→enquiredproperty, etc. Order matters: the
-  // canonical "project" stays first so prefix-matching still maps "Project Name".
-  project:         ["project", "projectname", "property", "propertyname", "enquiredproperty", "interestedproject", "requirementproject", "towerproject", "tower"],
-  company:         ["company"],
-  address:         ["address"],
-  whoIsClient:     ["whoisclient", "client", "clientinfo", "about"],
-  categorization:  ["categorization", "category"],
-  tags:            ["tags", "tag"],
-  message:         ["message", "requirement"],
-  remarks:         ["remarks", "remark"],
-  stage:           ["stage"],
-  status:          ["status", "callstatus"],
-  potential:       ["potential"],
-  fundReadiness:   ["fundreadiness", "fund", "funds"],
-  moodStatus:      ["moodstatus", "mood"],
-  whenCanInvest:   ["whencaninvest", "timeline", "invest"],
-  followupDate:    ["followupdate", "followup", "nextfollowup"],
-  meeting:         ["meeting", "meetingdate"],
-  siteVisit:       ["sitevisit", "sitevisitdate"],
-  date:            ["date", "leaddate", "createdon", "createddate", "entrydate"],
-  lastContact:     ["lastcontact", "lastcontactdate", "lastcalldate", "lastcall", "calleddate", "lastcontacted"],
-  detailShared:    ["detailshared", "shared"],
-  todoNext:        ["todo", "todonext", "nextaction"],
-  team:            ["forwardedteam", "team"],
-  alreadyBought:   ["alreadybought", "alreadyowns", "owns", "purchased"],
-  alreadyBoughtBy: ["alreadyboughtby", "boughtvia", "via", "broker", "boughtfrom"],
-};
-
-// Human-friendly labels for the CRM fields, surfaced in the mapping UI dropdown.
-const FIELD_LABELS: Record<string, string> = {
-  name: "Name / Customer", phone: "Phone (mobile)", altPhone: "Alt phone",
-  email: "Email", city: "City / Location", configuration: "Configuration / BHK",
-  budget: "Budget", budgetMax: "Budget (max)", currency: "Currency", country: "Country",
-  source: "Source", project: "Project", company: "Company", address: "Address",
-  whoIsClient: "Who is client", categorization: "Categorization", tags: "Tags",
-  message: "Message / Requirement", remarks: "Remarks", stage: "Stage", status: "Status / Call status",
-  potential: "Potential", fundReadiness: "Fund readiness", moodStatus: "Mood",
-  whenCanInvest: "When can invest", followupDate: "Follow-up date", meeting: "Meeting date",
-  siteVisit: "Site-visit date", date: "Lead date (historic)", lastContact: "Last contact date",
-  detailShared: "Detail shared", todoNext: "To-do / Next action", team: "Team",
-  alreadyBought: "Already bought", alreadyBoughtBy: "Already bought via",
-};
-
-// Sentinel mapping value: send this sheet column to customFields verbatim
-// (no CRM field), exactly as an unmapped column is preserved today.
-const IGNORE = "__ignore";
-
-type Confidence = "high" | "medium" | "unknown";
-
-// Score how well a sheet header matches a CRM field's candidate list, using the
-// SAME normalized-prefix logic pick() relies on. Exact normalized equality →
-// high. A prefix relation in EITHER direction (header ⊂ candidate, e.g.
-// "mob"→"mobile", or header ⊃ candidate, e.g. "sourcecampaign"⊃"source") → med.
-function matchField(header: string, candidates: string[]): Confidence | null {
-  const nk = norm(header);
-  if (!nk) return null;
-  for (const c of candidates) {
-    const t = norm(c);
-    if (nk === t) return "high";
-  }
-  for (const c of candidates) {
-    const t = norm(c);
-    if (nk.startsWith(t) || t.startsWith(nk)) return "medium";
-  }
-  return null;
-}
-
-// Build the preview mapping: for each detected column, the best CRM field +
-// confidence. A column wins a field on the strongest match; ties resolve to the
-// FIRST field declared in FIELD_CANDIDATES (declaration order = priority, same
-// as pick() which tries name→phone→… top-down). Columns matching nothing are
-// reported as { crmField: "__ignore", confidence: "unknown" } and highlighted.
-function buildMapping(columns: string[]): { column: string; crmField: string; confidence: Confidence }[] {
-  const fields = Object.entries(FIELD_CANDIDATES);
-  return columns.map((column) => {
-    let best: { crmField: string; confidence: Confidence } | null = null;
-    for (const [field, candidates] of fields) {
-      const conf = matchField(column, candidates);
-      if (!conf) continue;
-      // Prefer high over medium; on equal strength keep the earlier-declared field.
-      if (!best || (conf === "high" && best.confidence !== "high")) {
-        best = { crmField: field, confidence: conf };
-        if (conf === "high") break; // can't beat an exact match
-      }
-    }
-    return best
-      ? { column, crmField: best.crmField, confidence: best.confidence }
-      : { column, crmField: IGNORE, confidence: "unknown" as Confidence };
-  });
-}
-
+// Thin wrappers binding the module-global consumed-set, so existing call sites
+// (pick(row, …) / makeMappedPick(row, mapping)) keep working verbatim.
 function pick(row: Row, ...candidates: string[]): string | undefined {
-  const wanted = candidates.map(norm).filter(Boolean);
-  for (const k of Object.keys(row)) {
-    const nk = norm(k);
-    // A blank / symbol-only header normalizes to "" and would WILDCARD-match every
-    // field — `t.startsWith("")` is always true — so the first such column (e.g. a
-    // leading index/serial column) would leak its value into city/budget/remarks/…
-    // for EVERY row. Skip it: a column with no real header can't map to a CRM field.
-    // (It is still preserved verbatim in rawImport for audit.)
-    if (!nk) continue;
-    for (const t of wanted) {
-      if (nk === t || nk.startsWith(t) || t.startsWith(nk)) {
-        // Count as "mapped" (hidden from customFields) ONLY on an exact match or
-        // when the header is a PREFIX of the candidate ("mob"→"mobile"). When the
-        // header EXTENDS a candidate ("sourcecampaign" ⊃ "source", "investmenttype"
-        // ⊃ "invest", "clientcategory" ⊃ "client") it's almost always a DIFFERENT
-        // column that only prefix-collides — keep it as a preserved custom field so
-        // no sheet data (and no original value) is ever lost.
-        if (nk === t || t.startsWith(nk)) _consumedKeys.add(k);
-        const v = row[k]?.toString().trim();
-        if (v) return v;
-      }
-    }
-  }
+  return pickShared(row, _consumedKeys, ...candidates);
+}
+function makeMappedPick(row: Row, mapping: Record<string, string>) {
+  return makeMappedPickShared(row, mapping, _consumedKeys);
 }
 
-// Explicit-mapping accessor factory. When the admin confirms a mapping in the
-// approval gate, the importer reads CRM fields THROUGH this instead of pick():
-// resolve a field → the admin-chosen sheet column → that cell's value, marking
-// the column consumed so it isn't duplicated into customFields. `__ignore`
-// columns resolve to nothing (and stay in customFields verbatim). Multiple
-// candidate field-keys may be passed (e.g. name has aliases in pick calls) —
-// the first that the mapping points at a column for wins.
-function makeMappedPick(row: Row, mapping: Record<string, string>) {
-  // Normalize the admin map once: normalized-sheet-column → crmField.
-  const byNormCol = new Map<string, string>();
-  for (const [col, field] of Object.entries(mapping)) {
-    if (field && field !== IGNORE) byNormCol.set(norm(col), field);
-  }
-  // Reverse index: crmField → actual row key(s) the admin assigned to it.
-  const fieldToKeys = new Map<string, string[]>();
-  for (const k of Object.keys(row)) {
-    const field = byNormCol.get(norm(k));
-    if (!field) continue;
-    const arr = fieldToKeys.get(field) ?? [];
-    arr.push(k);
-    fieldToKeys.set(field, arr);
-  }
-  return (field: string): string | undefined => {
-    const keys = fieldToKeys.get(field);
-    if (!keys) return undefined;
-    for (const k of keys) {
-      _consumedKeys.add(k);
-      const v = row[k]?.toString().trim();
-      if (v) return v;
-    }
-    return undefined;
-  };
-}
+// (Mapping config + matchField/buildMapping/pick/makeMappedPick moved to
+//  src/lib/importMapping.ts — imported above. Wrappers bind _consumedKeys.)
 // NOTE: budget parsing now uses the shared, currency-aware parser via
 // interpretBudget() from "@/lib/budgetCurrency" (handles Cr/Lakh/M/K correctly,
 // splits ranges, and preserves the verbatim text). The old local parser silently
@@ -446,20 +301,11 @@ export async function POST(req: NextRequest) {
   // When present, the importer reads every CRM field THROUGH this map instead of
   // the fuzzy pick() auto-detection (see makeMappedPick). When absent, behaviour
   // is byte-for-byte identical to before — fully backward compatible.
-  let explicitMapping: Record<string, string> | null = null;
-  const mappingRaw = fd.get("mapping");
-  if (typeof mappingRaw === "string" && mappingRaw.trim()) {
-    try {
-      const parsed = JSON.parse(mappingRaw);
-      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-        const clean: Record<string, string> = {};
-        for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
-          if (typeof v === "string" && v) clean[k] = v;
-        }
-        if (Object.keys(clean).length > 0) explicitMapping = clean;
-      }
-    } catch { /* malformed mapping → ignore, fall back to auto-pick */ }
-  }
+  const explicitMapping = parseClientMapping(fd.get("mapping"));
+  // OPTIONAL duplicate-handling mode from the wizard. Default "merge" =
+  // legacy behaviour (enrich existing active lead). skip/update/create/
+  // conversation expose the admin's choice. See applyDupMode below.
+  const dupMode: DupMode = parseDupMode(fd.get("dupMode"));
   if (!(file instanceof File)) return NextResponse.json({ error: "No file uploaded" }, { status: 400 });
   if (file.size === 0) return NextResponse.json({ error: "File is empty (0 bytes)" }, { status: 400 });
 
@@ -551,10 +397,19 @@ export async function POST(req: NextRequest) {
     // admin reviews/edits this and must confirm before any write happens.
     const mapping = buildMapping(detectedColumns);
     // The full catalog of assignable CRM fields, for the per-column dropdown.
-    const crmFields = Object.keys(FIELD_CANDIDATES).map((field) => ({
-      field,
-      label: FIELD_LABELS[field] ?? field,
-    }));
+    const crmFields = crmFieldOptions();
+    // Step 5 data-preview: the first ~10 rows verbatim (header → cell), so the
+    // wizard can render mapped CRM fields + blanks + per-row duplicate flags
+    // WITHOUT writing anything. dupFlag mirrors the same fingerprint check used
+    // for the counts above so the preview rows agree with the dup count.
+    const sampleRows = rows.slice(0, 10).map((row) => {
+      const cells: Record<string, string> = {};
+      for (const k of detectedColumns) {
+        const v = row[k]?.toString() ?? "";
+        if (v !== "") cells[k] = v;
+      }
+      return cells;
+    });
 
     return NextResponse.json({
       preview: true,
@@ -568,6 +423,8 @@ export async function POST(req: NextRequest) {
       mapping,
       crmFields,
       ignoreValue: IGNORE,
+      // NEW (additive): verbatim first-10-rows for the data-preview step.
+      sampleRows,
       fileType: isExcel ? "Excel" : "CSV",
       sheetName: parseInfo.sheetName,
       allSheets: parseInfo.allSheets,
@@ -577,6 +434,9 @@ export async function POST(req: NextRequest) {
   }
 
   let created = 0, deduped = 0, enriched = 0, autofilled = 0;
+  // Duplicate-mode counters (only move off 0 under skip / conversation modes).
+  let skippedDup = 0;            // dupMode="skip": existing lead left untouched
+  let conversationAppended = 0;  // dupMode="conversation": remark appended only
   // Rows whose "Date" column was in the future — createdAt was NOT backdated;
   // surfaced in the import summary so the importer can review/correct them.
   const futureDateRows: { name: string; rawDate: string }[] = [];
@@ -664,6 +524,42 @@ export async function POST(req: NextRequest) {
       : { min: null, max: null, raw: null };
     try {
       const sourceAndMedium = parseSourceAndMedium(field("source", "source"));
+
+      // ── Duplicate-handling mode (wizard choice) ──────────────────────────
+      // Find a pre-existing ACTIVE lead by the SAME fingerprint ingestLead would
+      // use (E.164-normalized phone + lowercased email), so skip/conversation
+      // can act without touching ingestLead's internals, and "create" can force
+      // a brand-new record. "merge"/"update" fall through to the normal path.
+      if (dupMode !== "merge" && dupMode !== "update") {
+        const fpPhone = phone ? (toE164(phone) ?? phone) : phone;
+        const fp = fingerprintFor(fpPhone, email);
+        const existingDup = fp
+          ? await prisma.lead.findFirst({ where: { fingerprint: fp, deletedAt: null }, select: { id: true, rawRemarks: true } })
+          : null;
+        if (existingDup) {
+          if (dupMode === "skip") {
+            // Leave the existing lead 100% untouched. Counts as a duplicate.
+            skippedDup++; deduped++;
+            continue;
+          }
+          if (dupMode === "conversation") {
+            // Append the row's remark to the existing lead's raw history only —
+            // touch no structured field. Uses the SAME merge helper the dedupe
+            // enrich path uses, so the timeline format is identical.
+            const remarkText = field("remarks", "remarks", "remark") ?? field("message", "message", "requirement");
+            if (remarkText) {
+              const merged = mergeRawRemark(existingDup.rawRemarks, remarkText, importBatch.fileName);
+              await prisma.lead.update({ where: { id: existingDup.id }, data: { rawRemarks: merged, remarks: merged } });
+              conversationAppended++;
+            }
+            deduped++;
+            continue;
+          }
+          // dupMode === "create" → fall through with skipDedup so ingestLead
+          // creates a brand-new lead (null fingerprint) instead of merging.
+        }
+      }
+
       const r = await ingestLead({
         name: name ?? phone ?? email ?? "Unknown",
         phone, email,
@@ -675,6 +571,8 @@ export async function POST(req: NextRequest) {
         tags: field("tags", "tags", "tag"),
         source: sourceAndMedium.source,
         sourceDetail: campaign,
+        // "Create new anyway" bypasses the duplicate merge for this row.
+        skipDedup: dupMode === "create",
       });
       if (r.deduped) deduped++; else created++;
 
@@ -995,6 +893,8 @@ export async function POST(req: NextRequest) {
       importType,
       assignToUserId: assignToUserId ?? null,
       forceTeam: forceTeam ?? null,
+      dupMode,
+      mappingConfirmed: !!explicitMapping,
     },
     request: reqMeta(req),
   }).catch(() => {}); // non-fatal
@@ -1007,6 +907,16 @@ export async function POST(req: NextRequest) {
     allSheets: parseInfo.allSheets,
     rowsProcessed: rows.length,
     created, deduped, enriched, callLogsCreated, autofilled,
+    // Duplicate-mode outcome (drives the import report's "duplicates" line).
+    dupMode, skippedDup, conversationAppended,
+    // Whether the admin-confirmed mapping was applied (vs fuzzy auto-detect).
+    mappingConfirmed: !!explicitMapping,
+    customFieldsCreated: detectedColumns.filter((c) => {
+      // Columns NOT mapped to a CRM field → preserved as custom fields.
+      if (!explicitMapping) return false; // fuzzy path: report omitted (engine-implicit)
+      const v = explicitMapping[c];
+      return !v || v === IGNORE;
+    }).length,
     importBatchId: importBatch.id,
     detectedColumns,
     futureDateRows: futureDateRows.slice(0, 50),

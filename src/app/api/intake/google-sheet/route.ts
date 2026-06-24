@@ -16,7 +16,7 @@ import { parseImportDate, detectDateColumn, detectTimeColumn, applyTimeToDate } 
 // Keep date-formatted values OUT of non-date fields (name/company/city/address/
 // configuration) — they belong only in date columns. Returns undefined for a date.
 const notDate = (v?: string): string | undefined => (v && looksLikeDate(v) ? undefined : v);
-import { normalizePhone } from "@/lib/phone";
+import { normalizePhone, toE164 } from "@/lib/phone";
 // runIntelligenceCheck is called inside ingestLead() for every new (non-deduped)
 // lead. No explicit call needed here — the check fires sequentially before any
 // assignment or automation runs, satisfying the bulk-import constraint.
@@ -25,39 +25,33 @@ import { normalizePhone } from "@/lib/phone";
 // Extracts the sheet ID and (optional) gid (per-tab), then fetches the public
 // CSV export. No OAuth needed — the sheet must be shared as "Anyone with the link".
 
-type Row = Record<string, string>;
+// Mapping toolkit (FIELD_CANDIDATES / fuzzy pick / explicit-mapping accessor /
+// preview builder / dup-mode) is shared with the CSV route via the lib, so this
+// importer now offers the SAME Import-Mapping-Approval wizard + dup choices.
+import {
+  type Row,
+  IGNORE,
+  norm,
+  PROJECT_PICK,
+  crmFieldOptions,
+  buildMapping,
+  parseClientMapping,
+  parseDupMode,
+  type DupMode,
+  pick as pickShared,
+  makeMappedPick as makeMappedPickShared,
+} from "@/lib/importMapping";
+import { fingerprintFor } from "@/lib/assignment";
 
-function norm(s: string): string {
-  return s.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
-}
-
-// Property-Enquired (→ Lead.sourceDetail) header candidates — every common
-// project/property column variant. Mirrors the CSV importer. (Lalit 2026-06-24)
-const PROJECT_PICK = ["project", "projectname", "property", "propertyname", "enquiredproperty", "interestedproject", "requirementproject", "towerproject", "tower"];
 // Tracks which sheet headers were mapped to a known CRM field for the current
 // row, so every OTHER column is preserved verbatim in customFields. Reset per row.
 let _consumedKeys = new Set<string>();
+// Thin wrappers binding the module-global consumed-set (call sites unchanged).
 function pick(row: Row, ...candidates: string[]): string | undefined {
-  const wanted = candidates.map(norm).filter(Boolean);
-  for (const k of Object.keys(row)) {
-    const nk = norm(k);
-    // A blank / symbol-only header normalizes to "" and would WILDCARD-match every
-    // field — `t.startsWith("")` is always true — so the first such column (e.g. a
-    // leading index/serial column) would leak its value into city/budget/remarks/…
-    // for EVERY row. Skip it: a column with no real header can't map to a CRM field.
-    // (It is still preserved verbatim in rawImport for audit.)
-    if (!nk) continue;
-    for (const t of wanted) {
-      if (nk === t || nk.startsWith(t) || t.startsWith(nk)) {
-        // Mark "mapped" (hidden from customFields) only on an exact match or when
-        // the header is a PREFIX of the candidate ("mob"→"mobile"). Headers that
-        // EXTEND a candidate ("sourcecampaign" ⊃ "source") stay as custom fields.
-        if (nk === t || t.startsWith(nk)) _consumedKeys.add(k);
-        const v = row[k]?.toString().trim();
-        if (v) return v;
-      }
-    }
-  }
+  return pickShared(row, _consumedKeys, ...candidates);
+}
+function makeMappedPick(row: Row, mapping: Record<string, string>) {
+  return makeMappedPickShared(row, mapping, _consumedKeys);
 }
 
 // Budget parsing uses the shared currency-aware interpretBudget() — the old
@@ -151,6 +145,17 @@ export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => ({}));
   const url = String(body.url ?? "").trim();
   const campaign = body.campaign ? String(body.campaign).trim() : undefined;
+  // preview=true → dry-run: fetch + parse + check dups + propose mapping, but
+  // write NOTHING. Mirrors /api/intake/csv?preview=1. Additive: legacy callers
+  // that omit `preview`/`mapping`/`dupMode` behave byte-for-byte as before.
+  const isDryRun = body.preview === true || body.preview === "1";
+  // OPTIONAL admin-confirmed column→CRM-field mapping (same shape + sentinel as
+  // the CSV route). When present the importer reads every field THROUGH it.
+  const explicitMapping = parseClientMapping(
+    typeof body.mapping === "string" ? body.mapping : (body.mapping ? JSON.stringify(body.mapping) : undefined),
+  );
+  // OPTIONAL duplicate-handling mode (merge|skip|update|create|conversation).
+  const dupMode: DupMode = parseDupMode(body.dupMode);
   if (!url) return NextResponse.json({ error: "Missing sheet URL" }, { status: 400 });
 
   const built = buildCsvUrl(url);
@@ -194,6 +199,7 @@ export async function POST(req: NextRequest) {
   }
 
   let created = 0, deduped = 0, enriched = 0;
+  let skippedDup = 0, conversationAppended = 0;
   const errors: string[] = [];
   const detectedColumns = Object.keys(parsed.data[0] ?? {});
   const futureDateRows: { name: string; rawDate: string }[] = [];
@@ -201,6 +207,60 @@ export async function POST(req: NextRequest) {
   // Detect date and time columns for this sheet (fixed once, used for every row)
   const dateColumn = detectDateColumn(detectedColumns);
   const timeColumn = detectTimeColumn(detectedColumns);
+
+  // ── PREVIEW / DRY-RUN ───────────────────────────────────────────────────
+  // preview=true: scan rows for dup/missing counts + propose a column mapping,
+  // write NOTHING. Same response shape as /api/intake/csv?preview=1 so the
+  // shared LeadImportWizard renders identically for the sheet importer.
+  if (isDryRun) {
+    let pNew = 0, pDup = 0, pMissingName = 0, pMissingPhone = 0, pMissingProject = 0;
+    const dupSamples: { name: string; phone: string; existingStatus: string }[] = [];
+    const unknownStatuses = new Set<string>();
+    for (const row of parsed.data as Row[]) {
+      _consumedKeys = new Set();
+      const nm = pick(row, "customer", "name", "fullname", "leadname");
+      const ph = pick(row, "mobile", "phone", "contact", "whatsapp");
+      const em = pick(row, "email", "emailid");
+      if (!nm && !ph && !em) continue;
+      if (!nm) pMissingName++;
+      if (!ph) pMissingPhone++;
+      if (!pick(row, ...PROJECT_PICK)) pMissingProject++;
+      const cs = pick(row, "status", "callstatus");
+      if (cs) unknownStatuses.add(cs);
+      const fpPhone = ph ? (toE164(normalizePhone(ph, "IN") ?? ph) ?? ph) : ph;
+      const fp = fingerprintFor(fpPhone, em);
+      const existing = fp
+        ? await prisma.lead.findFirst({ where: { fingerprint: { startsWith: fp }, deletedAt: null }, select: { name: true, phone: true, currentStatus: true } })
+        : null;
+      if (existing) {
+        pDup++;
+        if (dupSamples.length < 8) dupSamples.push({ name: nm ?? "—", phone: ph ?? "", existingStatus: existing.currentStatus ?? existing.name });
+      } else { pNew++; }
+    }
+    const sampleRows = (parsed.data as Row[]).slice(0, 10).map((row) => {
+      const cells: Record<string, string> = {};
+      for (const k of detectedColumns) { const v = row[k]?.toString() ?? ""; if (v !== "") cells[k] = v; }
+      return cells;
+    });
+    return NextResponse.json({
+      preview: true,
+      totalRows: parsed.data.length,
+      newRows: pNew, dupRows: pDup,
+      missingName: pMissingName, missingPhone: pMissingPhone, missingProject: pMissingProject,
+      dupSamples,
+      uniqueStatuses: [...unknownStatuses].slice(0, 20),
+      detectedColumns,
+      mapping: buildMapping(detectedColumns),
+      crmFields: crmFieldOptions(),
+      ignoreValue: IGNORE,
+      sampleRows,
+      fileType: "Google Sheet",
+      sheetName: built.gid ? `gid:${built.gid}` : built.sheetId,
+      dateColumnDetected: !!dateColumn,
+      timeColumnDetected: !!timeColumn,
+      automationNote: "All automation is OFF during import (Import Safe Mode). No WhatsApp, emails, round-robin, or SLA alerts will fire.",
+    });
+  }
 
   // Import History batch — stamp every NEW lead so the whole sheet import can
   // be rolled back later from the admin Import History screen.
@@ -216,24 +276,51 @@ export async function POST(req: NextRequest) {
 
   for (const [i, row] of parsed.data.entries()) {
     _consumedKeys = new Set();   // reset per-row: tracks headers mapped to CRM fields
-    const name = notDate(pick(row, "customer", "name", "fullname", "leadname"));
+    // Field accessor honouring an admin-confirmed mapping (reads the EXACT chosen
+    // column) — else the fuzzy pick() fallback. Identical pattern to the CSV route.
+    const mappedPick = explicitMapping ? makeMappedPick(row, explicitMapping) : null;
+    const field = (crmField: string, ...fallback: string[]): string | undefined =>
+      mappedPick ? mappedPick(crmField) : pick(row, ...fallback);
+    const name = notDate(field("name", "customer", "name", "fullname", "leadname"));
     // VALIDATE (same rules as CSV import): normalize to E.164 then reject
     // malformed (country-code-only "+91", merged/over-long) → store blank rather
     // than corrupt phone data.
-    const phoneRaw = pick(row, "mobile", "phone", "contact", "whatsapp");
+    const phoneRaw = field("phone", "mobile", "phone", "contact", "whatsapp");
     const phone = phoneRaw ? (validPhone(normalizePhone(phoneRaw, "IN")) ?? undefined) : undefined;
     // VALIDATE: only store an email that is actually an email — never a name or
     // boolean leaked from an adjacent column ("tanuj", "false").
-    const email = validEmail(pick(row, "email", "emailid"));
+    const email = validEmail(field("email", "email", "emailid"));
     if (!name && !phone && !email) continue;
 
     // VALIDATE: a budget must contain a number. A digit-less value ("Lalit Sir")
     // is NOT a budget — drop it rather than store a name in the budget field.
-    const budgetCol = validBudgetRaw(pick(row, "budgetaed", "budgetinr", "budget", "budgetmin"));
+    const budgetCol = validBudgetRaw(field("budget", "budgetaed", "budgetinr", "budget", "budgetmin"));
     const budgetInfo = budgetCol
-      ? interpretBudget(budgetCol, validBudgetRaw(pick(row, "budgetmax")))
+      ? interpretBudget(budgetCol, validBudgetRaw(field("budgetMax", "budgetmax")))
       : { min: null, max: null, raw: null };
     try {
+      // ── Duplicate-handling mode (wizard choice) ──────────────────────────
+      if (dupMode !== "merge" && dupMode !== "update") {
+        const fpPhone = phone ? (toE164(phone) ?? phone) : phone;
+        const fp = fingerprintFor(fpPhone, email);
+        const existingDup = fp
+          ? await prisma.lead.findFirst({ where: { fingerprint: fp, deletedAt: null }, select: { id: true, rawRemarks: true } })
+          : null;
+        if (existingDup) {
+          if (dupMode === "skip") { skippedDup++; deduped++; continue; }
+          if (dupMode === "conversation") {
+            const remarkText = field("remarks", "remarks", "remark") ?? field("message", "message", "requirement");
+            if (remarkText) {
+              const merged = mergeRawRemark(existingDup.rawRemarks, remarkText, importBatch.fileName);
+              await prisma.lead.update({ where: { id: existingDup.id }, data: { rawRemarks: merged, remarks: merged } });
+              conversationAppended++;
+            }
+            deduped++;
+            continue;
+          }
+          // dupMode === "create" → fall through with skipDedup below.
+        }
+      }
       // Parse date from detected date column, apply time if available
       let leadDate: Date | undefined;
       if (dateColumn) {
@@ -253,19 +340,21 @@ export async function POST(req: NextRequest) {
         leadDate = undefined; // fallback to import time
       }
 
-      const sourceAndMedium = parseSourceAndMedium(pick(row, "source"));
+      const sourceAndMedium = parseSourceAndMedium(field("source", "source"));
       const r = await ingestLead({
         name: name ?? phone ?? email ?? "Unknown",
         phone, email,
-        city: notDate(pick(row, "city", "location")),
-        configuration: notDate(pick(row, "configuration", "config", "bhk", "type")),
+        city: notDate(field("city", "city", "location")),
+        configuration: notDate(field("configuration", "configuration", "config", "bhk", "type")),
         budgetMin: budgetInfo.min ?? undefined,
         budgetMax: budgetInfo.max ?? undefined,
-        notesShort: pick(row, "remarks", "message", "requirement"),
-        tags: pick(row, "tags"),
+        notesShort: field("message", "remarks", "message", "requirement"),
+        tags: field("tags", "tags"),
         source: sourceAndMedium.source,
         sourceDetail: campaign,
         createdAt: leadDate,
+        // "Create new anyway" bypasses the duplicate merge for this row.
+        skipDedup: dupMode === "create",
       });
       if (r.deduped) deduped++; else created++;
 
@@ -276,22 +365,22 @@ export async function POST(req: NextRequest) {
       if (!r.deduped) update.leadOrigin = "MASTER_DATA";
       // Add medium from parsed source
       if (sourceAndMedium.medium) update.medium = sourceAndMedium.medium;
-      const co = notDate(pick(row, "company")); if (co) update.company = co;
-      const ad = notDate(pick(row, "address")); if (ad) update.address = ad;
-      const wc = pick(row, "whoisclient", "client", "clientinfo"); if (wc) update.whoIsClient = wc;
-      const cat = pick(row, "categorization", "category"); if (cat) update.categorization = cat;
+      const co = notDate(field("company", "company")); if (co) update.company = co;
+      const ad = notDate(field("address", "address")); if (ad) update.address = ad;
+      const wc = field("whoIsClient", "whoisclient", "client", "clientinfo"); if (wc) update.whoIsClient = wc;
+      const cat = field("categorization", "categorization", "category"); if (cat) update.categorization = cat;
       // Property Enquired (→ sourceDetail). The Sheet importer previously dropped
       // the project/property column (it only used it for routing/currency) — now it
       // maps into Property Enquired like the CSV importer. campaign (passed as
       // sourceDetail to ingestLead) wins; a manually-set value is never overwritten.
-      const sheetProject = pick(row, ...PROJECT_PICK);
+      const sheetProject = field("project", ...PROJECT_PICK);
       if (sheetProject) update.sourceDetail = update.sourceDetail ?? sheetProject;
       // RAW-FIRST remarks (bugfix): the Sheet importer previously routed the
       // Remarks column ONLY into notesShort, so imported history never reached
       // Lead.remarks / Conversation History. Now the exact remark is stored
       // verbatim in the immutable rawRemarks audit field (and mirrored to the
       // display copy), growing — never overwriting — on re-import.
-      const sheetRemark = pick(row, "remarks", "remark");
+      const sheetRemark = field("remarks", "remarks", "remark");
       if (sheetRemark) {
         if (r.deduped) {
           const prevR = await prisma.lead.findUnique({ where: { id: r.lead.id }, select: { rawRemarks: true } });
@@ -303,31 +392,31 @@ export async function POST(req: NextRequest) {
           update.remarks = sheetRemark;
         }
       }
-      const st = parseStage(pick(row, "stage")); if (st) update.status = st as any;
+      const st = parseStage(field("stage", "stage")); if (st) update.status = st as any;
       // VALIDATE: only accept a real status label — never a TRUE/FALSE/numeric
       // token leaked from a Meeting/Site-Visit column.
-      const cs = pick(row, "status"); if (cs && looksLikeStatus(cs)) update.currentStatus = canonicalStatus(cs);
+      const cs = field("status", "status"); if (cs && looksLikeStatus(cs)) update.currentStatus = canonicalStatus(cs);
       // SOURCE FIDELITY: store the verbatim Source column exactly as written
       // ("Townscript", "Eventbrite", "WhatsApp Campaign June"). Display + filters
       // read this; it is NEVER mapped, normalized, or defaulted.
-      const srcRaw = pick(row, "source"); if (srcRaw) update.sourceRaw = srcRaw;
-      const fu = parseImportDate(pick(row, "followupdate", "followup")); if (fu) update.followupDate = fu;
-      const me = parseImportDate(pick(row, "meeting", "meetingdate")); if (me) update.meetingDate = me;
-      const sv = parseImportDate(pick(row, "sitevisit")); if (sv) update.siteVisitDate = sv;
-      const td = pick(row, "todo", "todonext", "nextaction"); if (td) update.todoNext = td;
-      const ds = pick(row, "detailshared"); if (ds) update.detailShared = ds;
-      const po = parsePotential(pick(row, "potential")); if (po) update.potential = po;
-      const fd = parseFund(pick(row, "fundreadiness", "fund")); if (fd) update.fundReadiness = fd;
-      const md = parseMood(pick(row, "moodstatus", "mood")); if (md) update.moodStatus = md;
-      const tl = parseTimeline(pick(row, "whencaninvest", "timeline")); if (tl) update.whenCanInvest = tl;
+      const srcRaw = field("source", "source"); if (srcRaw) update.sourceRaw = srcRaw;
+      const fu = parseImportDate(field("followupDate", "followupdate", "followup")); if (fu) update.followupDate = fu;
+      const me = parseImportDate(field("meeting", "meeting", "meetingdate")); if (me) update.meetingDate = me;
+      const sv = parseImportDate(field("siteVisit", "sitevisit")); if (sv) update.siteVisitDate = sv;
+      const td = field("todoNext", "todo", "todonext", "nextaction"); if (td) update.todoNext = td;
+      const ds = field("detailShared", "detailshared"); if (ds) update.detailShared = ds;
+      const po = parsePotential(field("potential", "potential")); if (po) update.potential = po;
+      const fd = parseFund(field("fundReadiness", "fundreadiness", "fund")); if (fd) update.fundReadiness = fd;
+      const md = parseMood(field("moodStatus", "moodstatus", "mood")); if (md) update.moodStatus = md;
+      const tl = parseTimeline(field("whenCanInvest", "whencaninvest", "timeline")); if (tl) update.whenCanInvest = tl;
       {
-        const rowTeamRaw = pick(row, "forwardedteam", "team") ?? null;
+        const rowTeamRaw = field("team", "forwardedteam", "team") ?? null;
         const teamResult = resolveTeam({
           forceTeam: rowTeamRaw,
           forceMethod: "import",
           sourceDetail: campaign,
-          projectSlug: pick(row, ...PROJECT_PICK),
-          text: pick(row, "remarks", "message", "requirement"),
+          projectSlug: field("project", ...PROJECT_PICK),
+          text: field("message", "remarks", "message", "requirement"),
         });
         if (teamResult.team) {
           update.forwardedTeam = teamResult.team;
@@ -358,11 +447,11 @@ export async function POST(req: NextRequest) {
         // in the budget text ("AED 800K", "₹4 Cr").
         const rawCcyHint = budgetInfo.raw && /(?:aed|dhs|inr|rupee|rs\b|₹)/i.test(budgetInfo.raw) ? budgetInfo.raw : undefined;
         const ccy = resolveBudgetCurrency({
-          explicit: pick(row, "currency") ?? rawCcyHint ?? headerHint,
-          country: pick(row, "country") ?? inferCountryFromCity(pick(row, "city", "location")),
-          projectName: pick(row, ...PROJECT_PICK) ?? (update.sourceDetail as string | undefined),
+          explicit: field("currency", "currency") ?? rawCcyHint ?? headerHint,
+          country: field("country", "country") ?? inferCountryFromCity(field("city", "city", "location")),
+          projectName: field("project", ...PROJECT_PICK) ?? (update.sourceDetail as string | undefined),
           sheetName: importBatch.fileName,
-          team: (update.forwardedTeam as string | undefined) ?? pick(row, "forwardedteam", "team"),
+          team: (update.forwardedTeam as string | undefined) ?? field("team", "forwardedteam", "team"),
         });
         update.budgetRaw = budgetInfo.raw;
         if (budgetInfo.min != null) update.budgetMin = budgetInfo.min;
@@ -422,8 +511,14 @@ export async function POST(req: NextRequest) {
 
   return NextResponse.json({
     ok: true, sheetId: built.sheetId, gid: built.gid,
+    fileType: "Google Sheet",
     rowsProcessed: parsed.data.length,
     created, deduped, enriched,
+    dupMode, skippedDup, conversationAppended,
+    mappingConfirmed: !!explicitMapping,
+    customFieldsCreated: explicitMapping
+      ? detectedColumns.filter((c) => { const v = explicitMapping[c]; return !v || v === IGNORE; }).length
+      : 0,
     importBatchId: importBatch.id,
     detectedColumns,
     dateColumnDetected: !!dateColumn,

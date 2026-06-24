@@ -61,6 +61,12 @@ export interface RawLeadInput {
    *  remark renders in Smart Timeline with date + time + USER (not an anonymous
    *  system row). Importers & website intake DON'T pass it → unchanged. */
   createdByUserId?: string;
+  /** Import wizard "Create new anyway" duplicate mode ONLY: when true, the
+   *  phone+email duplicate check is skipped and a NEW lead is always created,
+   *  even if an active lead with the same fingerprint exists. Defaults false →
+   *  every other caller (website / manual / merge-mode import) dedupes exactly
+   *  as before. */
+  skipDedup?: boolean;
 }
 
 const FIRST_CALL_SLA_MIN = 15;
@@ -110,7 +116,7 @@ export async function ingestLead(input: RawLeadInput) {
   // after a delete has to recreate the records. findFirst + deletedAt:null
   // (not findUnique) because fingerprint is now unique only among active rows
   // (partial index Lead_fingerprint_active_key).
-  if (fp) {
+  if (fp && !input.skipDedup) {
     const existing = await prisma.lead.findFirst({
       where: { fingerprint: fp, deletedAt: null },
       include: { owner: true },
@@ -270,7 +276,11 @@ export async function ingestLead(input: RawLeadInput) {
             "Routing Confidence": cls.confidence,
           } }
         : {}),
-      fingerprint: fp,
+      // "Create new anyway" (skipDedup): store a NULL fingerprint so this
+      // intentional duplicate does not collide with the partial-unique index
+      // Lead_fingerprint_active_key (active rows) and does not silently swallow
+      // future imports of the same contact. phone/email are still stored.
+      fingerprint: input.skipDedup ? null : fp,
       lastTouchedAt: new Date(),
       followupDate: todayEodIST(),
       ...(input.createdAt ? { createdAt: input.createdAt } : {}),

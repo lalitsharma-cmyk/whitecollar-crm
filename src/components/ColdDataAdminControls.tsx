@@ -2,12 +2,15 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Upload, Users, X } from "lucide-react";
+import LeadImportWizard from "./LeadImportWizard";
 
 interface Agent { id: string; name: string; team: string | null; }
 
 /**
  * Admin/Manager bar above the Cold Data list:
- *  - Import CSV/Excel — uploads file with isColdCall=true preset
+ *  - Import CSV/Excel — runs the shared Import-Mapping-Approval wizard with the
+ *    isColdCall=true preset (preview → confirm mapping → data preview + dup flags
+ *    → dup choice → report). Every imported row is cold + left unassigned.
  *  - Bulk assign unassigned cold data to a chosen agent (round-robin
  *    within team also supported via a quick-pick)
  */
@@ -17,27 +20,10 @@ export default function ColdDataAdminControls({ agents }: { agents: Agent[] }) {
   const [showAssign, setShowAssign] = useState(false);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
-  const [file, setFile] = useState<File | null>(null);
   const [assignTo, setAssignTo] = useState<string>(agents[0]?.id ?? "");
   const [assignTeam, setAssignTeam] = useState<"" | "Dubai" | "India">("");
   const [assignCount, setAssignCount] = useState(20);
   const [crossTeamWarn, setCrossTeamWarn] = useState<string | null>(null);
-
-  async function doImport() {
-    if (!file || busy) return;
-    setBusy(true); setMsg(null);
-    try {
-      const fd = new FormData();
-      fd.set("file", file);
-      fd.set("isColdCall", "true");
-      const r = await fetch("/api/intake/csv", { method: "POST", body: fd });
-      const j = await r.json();
-      if (!r.ok) { setMsg(j.error ?? "Import failed"); return; }
-      setMsg(`✓ Imported ${j.created ?? 0} new + skipped ${j.deduped ?? 0} duplicates. Now assign them below.`);
-      setFile(null);
-      router.refresh();
-    } finally { setBusy(false); }
-  }
 
   async function doBulkAssign() {
     if (!assignTo || busy) return;
@@ -65,36 +51,27 @@ export default function ColdDataAdminControls({ agents }: { agents: Agent[] }) {
       {msg && <div className={`text-[11px] mt-2 w-full ${msg.startsWith("✓") ? "text-emerald-700" : "text-red-700"}`}>{msg}</div>}
       {crossTeamWarn && <div className="text-[11px] mt-1 w-full text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1">⚠️ {crossTeamWarn}</div>}
 
-      {/* Import modal */}
+      {/* Import modal — shared mapping wizard, cold-data preset */}
       {showImport && (
-        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={() => !busy && setShowImport(false)}>
-          <div className="bg-white rounded-xl max-w-md w-full p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={() => setShowImport(false)}>
+          <div className="bg-white rounded-xl max-w-lg w-full p-5 shadow-2xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-3">
               <div className="font-semibold text-lg">Import cold-data batch</div>
               <button onClick={() => setShowImport(false)} className="text-gray-400 hover:text-gray-700"><X className="w-5 h-5" /></button>
             </div>
             <p className="text-xs text-gray-600 mb-3">
-              Upload an Excel (.xlsx) or CSV file. Columns we auto-detect:
-              <code className="text-[10px] block mt-1 bg-gray-50 p-2 rounded">name, phone, email, city, configuration, budget, source, whoIsClient, alreadyBought, alreadyBoughtBy</code>
-              Every imported row is marked as cold data and left unassigned.
+              Upload an Excel (.xlsx) or CSV file, then review the column mapping and a data preview before importing.
+              Every imported row is marked as cold data and left unassigned (assign them below afterwards).
             </p>
-            <label className="block cursor-pointer">
-              <input
-                type="file"
-                accept=".csv,.xlsx,.xlsm"
-                className="sr-only"
-                onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-              />
-              <span className="flex items-center justify-center gap-2 w-full rounded-lg border-2 border-dashed border-gray-300 bg-gray-50 px-4 py-3 text-sm text-gray-600 hover:border-blue-400 hover:bg-blue-50 transition-colors">
-                <Upload className="w-4 h-4 flex-shrink-0" />
-                {file ? file.name : "Choose file (CSV or Excel)…"}
-              </span>
-            </label>
-            {file && <div className="text-[11px] mt-1 text-gray-500">{(file.size/1024).toFixed(0)} KB selected</div>}
-            <div className="flex gap-2 mt-4 justify-end">
-              <button onClick={() => setShowImport(false)} disabled={busy} className="btn btn-ghost text-sm">Cancel</button>
-              <button onClick={doImport} disabled={busy || !file} className="btn btn-primary text-sm">{busy ? "Uploading…" : "Import"}</button>
-            </div>
+            {/* isColdCall=true rides along on preview + import. defaultDupMode
+                "skip" — cold lists are often re-uploaded; don't disturb existing. */}
+            <LeadImportWizard
+              mode="csv"
+              extraFields={{ isColdCall: "true" }}
+              defaultDupMode="skip"
+              compact
+              onDone={() => router.refresh()}
+            />
           </div>
         </div>
       )}

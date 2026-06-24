@@ -40,6 +40,16 @@ import {
   looksLikeStatus,
   looksLikeDate,
 } from "../src/lib/importValidate";
+// Shared import-mapping toolkit (pure, no "server-only") — assert the REAL code
+// the CSV + Google-Sheet importers + the wizard all run through.
+import {
+  IGNORE,
+  buildMapping,
+  makeMappedPick,
+  parseDupMode,
+  parseClientMapping,
+  crmFieldOptions,
+} from "../src/lib/importMapping";
 
 // ── tiny assertion harness ──────────────────────────────────────────────────
 type Check = { name: string; run: () => Promise<void> };
@@ -1120,13 +1130,18 @@ const checks: Check[] = [
     name: "property-enquired — importers detect every project/property header variant (→ sourceDetail)",
     run: async () => {
       const fs = await import("node:fs");
-      // Both importers must carry the broadened candidate list AND map it to sourceDetail.
+      // The broadened candidate list now lives in the SHARED mapping lib (single
+      // source of truth for both importers). Assert it carries every variant…
+      const lib = fs.readFileSync("src/lib/importMapping.ts", "utf8");
+      for (const cand of ["enquiredproperty", "interestedproject", "requirementproject", "towerproject", "propertyname"]) {
+        assert(lib.includes(cand), `src/lib/importMapping.ts (PROJECT_PICK/FIELD_CANDIDATES) must detect "${cand}" as a Property-Enquired header`);
+      }
+      // …and BOTH importers must still map the project/property column into
+      // sourceDetail (never overwriting a manual value).
       for (const f of ["src/app/api/intake/csv/route.ts", "src/app/api/intake/google-sheet/route.ts"]) {
         const src = fs.readFileSync(f, "utf8");
-        for (const cand of ["enquiredproperty", "interestedproject", "requirementproject", "towerproject", "propertyname"]) {
-          assert(src.includes(cand), `${f} must detect "${cand}" as a Property-Enquired header`);
-        }
         assert(/update\.sourceDetail = update\.sourceDetail \?\?/.test(src), `${f} must map the project/property column into sourceDetail (never overwrite)`);
+        assert(/PROJECT_PICK/.test(src), `${f} must use the shared PROJECT_PICK candidate list`);
       }
     },
   },
@@ -1685,6 +1700,88 @@ const checks: Check[] = [
         active === totalAssigned - terminalInWindow - otherTerminal,
         `active identity broken: active(${active}) != assigned(${totalAssigned}) - terminalCols(${terminalInWindow}) - otherTerminal(${otherTerminal})`,
       );
+    },
+  },
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // 26. IMPORT MAPPING TOOLKIT  (shared lib used by CSV + Google-Sheet + wizard)
+  //    The Import-Mapping-Approval wizard depends on the shared toolkit behaving
+  //    identically across importers. Assert the REAL pure functions:
+  //      • buildMapping proposes the right CRM field per header (high/medium/unknown)
+  //      • unknown headers fall to IGNORE (→ preserved as customFields)
+  //      • makeMappedPick reads a field THROUGH the admin's chosen column
+  //      • parseDupMode defaults to "merge" (legacy) and accepts the 4 choices
+  //      • parseClientMapping rejects malformed input (falls back to auto-detect)
+  // ───────────────────────────────────────────────────────────────────────────
+  {
+    name: "import-mapping — buildMapping/makeMappedPick/parseDupMode behave (shared toolkit)",
+    run: async () => {
+      // buildMapping: exact header → high confidence on the right field.
+      const m = buildMapping(["Mobile No.", "Customer Name", "Some Weird Col", "Project Name"]);
+      const byCol = new Map(m.map((r) => [r.column, r]));
+      assert(byCol.get("Customer Name")?.crmField === "name", "‘Customer Name’ should map to name");
+      assert(byCol.get("Mobile No.")?.crmField === "phone", "‘Mobile No.’ should map to phone (prefix of mobileno → mobile)");
+      assert(byCol.get("Project Name")?.crmField === "project", "‘Project Name’ should map to project (Property Enquired)");
+      // Unknown header → IGNORE sentinel + unknown confidence.
+      const weird = byCol.get("Some Weird Col");
+      assert(!!weird && weird.crmField === IGNORE && weird.confidence === "unknown",
+        "an unrecognised column must map to IGNORE/unknown (preserved as a custom field)");
+
+      // makeMappedPick: an explicit mapping reads the EXACT chosen column.
+      const consumed = new Set<string>();
+      const row = { "Col A": "Ravi", "Col B": "9811122233", "Junk": "x" };
+      const mapped = makeMappedPick(row, { "Col A": "name", "Col B": "phone", "Junk": IGNORE }, consumed);
+      assert(mapped("name") === "Ravi", "mapped name must read Col A");
+      assert(mapped("phone") === "9811122233", "mapped phone must read Col B");
+      assert(mapped("email") === undefined, "unmapped field must resolve to undefined");
+      assert(consumed.has("Col A") && consumed.has("Col B") && !consumed.has("Junk"),
+        "mapped columns are consumed; IGNORE/unmapped columns stay for customFields");
+
+      // parseDupMode: legacy default + the four explicit choices.
+      assert(parseDupMode(undefined) === "merge", "absent dupMode must default to merge (legacy)");
+      assert(parseDupMode("") === "merge", "blank dupMode must default to merge");
+      for (const v of ["skip", "update", "create", "conversation"] as const) {
+        assert(parseDupMode(v) === v, `dupMode “${v}” must round-trip`);
+      }
+
+      // parseClientMapping: malformed input → null (engine falls back to auto-detect).
+      assert(parseClientMapping(undefined) === null, "absent mapping → null");
+      assert(parseClientMapping("not json") === null, "malformed mapping JSON → null");
+      assert(parseClientMapping(JSON.stringify(["array"])) === null, "array mapping → null");
+      const ok = parseClientMapping(JSON.stringify({ "Col A": "name", "blank": "" }));
+      assert(!!ok && ok["Col A"] === "name" && !("blank" in ok), "valid mapping parses; empty values dropped");
+
+      // The dropdown catalog must be non-empty and include the core fields.
+      const cat = crmFieldOptions();
+      const fields = new Set(cat.map((c) => c.field));
+      assert(fields.has("name") && fields.has("phone") && fields.has("project"),
+        "crmFieldOptions must expose the core CRM fields for the mapping dropdown");
+    },
+  },
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // 27. IMPORT WIZARD PARITY  (source-scan — the "UI gained, engine didn't" class)
+  //    Both lead-import routes must support the wizard contract so the shared
+  //    LeadImportWizard works on all importers:
+  //      • accept an explicit `mapping`  (parseClientMapping)
+  //      • accept a duplicate mode `dupMode` (parseDupMode)
+  //      • offer a preview/dry-run        (?preview=1 for CSV; preview for sheet)
+  //    A static scan so a future refactor can't silently drop preview/mapping from
+  //    the Google-Sheet route (which historically had neither).
+  // ───────────────────────────────────────────────────────────────────────────
+  {
+    name: "import-wizard-parity — csv + google-sheet routes accept mapping + dupMode + preview",
+    run: async () => {
+      const fs = await import("fs");
+      for (const f of [
+        "src/app/api/intake/csv/route.ts",
+        "src/app/api/intake/google-sheet/route.ts",
+      ]) {
+        const src = fs.readFileSync(f, "utf8");
+        assert(/parseClientMapping\(/.test(src), `${f} must consume an explicit mapping (parseClientMapping)`);
+        assert(/parseDupMode\(/.test(src), `${f} must accept a duplicate mode (parseDupMode)`);
+        assert(/preview/.test(src) && /buildMapping\(/.test(src), `${f} must offer a preview that proposes a mapping (buildMapping)`);
+      }
     },
   },
 ];

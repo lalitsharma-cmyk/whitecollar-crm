@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import LeadImportWizard from "./LeadImportWizard";
 
 interface Agent { id: string; name: string; team: string | null; }
 
@@ -8,30 +8,14 @@ interface Agent { id: string; name: string; team: string | null; }
  * Pre-assigned CSV/Excel import — admin uploads an agent's existing-client
  * list (e.g. "Mehak MIS.xlsx") and every row gets pre-assigned to that agent.
  * No round-robin. Status bumped to CONTACTED on intake.
+ *
+ * Now runs the shared Import-Mapping-Approval wizard (preview → confirm mapping
+ * → data preview + dup flags → dup choice → report). The picked agent rides
+ * along as `assignToUserId` on both the preview and the import request, so the
+ * pre-assign behaviour is unchanged.
  */
 export default function PreAssignedImporter({ agents }: { agents: Agent[] }) {
-  const router = useRouter();
   const [agentId, setAgentId] = useState(agents[0]?.id ?? "");
-  const [file, setFile] = useState<File | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [msg, setMsg] = useState<string | null>(null);
-
-  async function upload() {
-    if (!file || !agentId || busy) return;
-    setBusy(true); setMsg(null);
-    try {
-      const fd = new FormData();
-      fd.set("file", file);
-      fd.set("assignToUserId", agentId);
-      const r = await fetch("/api/intake/csv", { method: "POST", body: fd });
-      const j = await r.json();
-      if (!r.ok) { setMsg(j.error ?? "Failed"); return; }
-      const agentName = agents.find(a => a.id === agentId)?.name ?? "agent";
-      setMsg(`✓ Created ${j.created ?? 0} new + skipped ${j.deduped ?? 0} duplicates — all assigned to ${agentName}.`);
-      setFile(null);
-      router.refresh();
-    } finally { setBusy(false); }
-  }
 
   return (
     <div className="space-y-2">
@@ -41,14 +25,15 @@ export default function PreAssignedImporter({ agents }: { agents: Agent[] }) {
           {agents.map((a) => <option key={a.id} value={a.id}>{a.name} ({a.team ?? "—"})</option>)}
         </select>
       </div>
-      <div>
-        <input type="file" accept=".csv,.xlsx,.xlsm" onChange={(e) => setFile(e.target.files?.[0] ?? null)} className="text-sm w-full" />
-        {file && <div className="text-[10px] text-gray-600 mt-1">Selected: {file.name} ({(file.size/1024).toFixed(0)}kb)</div>}
-      </div>
-      <button onClick={upload} disabled={!file || !agentId || busy} className="btn btn-primary text-xs w-full justify-center">
-        {busy ? "Uploading…" : "Import + pre-assign"}
-      </button>
-      {msg && <div className={`text-[11px] ${msg.startsWith("✓") ? "text-emerald-700" : "text-red-700"}`}>{msg}</div>}
+      {/* defaultDupMode "skip" — pre-assigned MIS lists are existing clients; the
+          common intent is to add the agent's NEW rows and not disturb existing
+          leads. Admin can switch to merge/update in the wizard. */}
+      <LeadImportWizard
+        mode="csv"
+        extraFields={agentId ? { assignToUserId: agentId } : {}}
+        defaultDupMode="skip"
+        compact
+      />
     </div>
   );
 }
