@@ -290,7 +290,14 @@
 // Buyer-only extras (Property/Transaction details + multi-property table) remain the
 // ONLY addition, below Quick Note, in the SAME card style. Render-only; the Lead view
 // is untouched. Force a fresh shell so PWA clients see the unified buyer detail.
-const CACHE = "wcr-shell-v61";
+// v62 (2026-06-25): HR fully excluded from SALES surfaces. The Team scoreboard roster
+// (/team) and the Agent Leaderboard (/reports/leaderboard) now filter hrOnly:false, so
+// an HR/non-sales user (Nisha, an hrOnly MANAGER) can no longer appear among sales
+// agents with call/pipeline/leaderboard stats. The Master-Data and Cold-Data bulk-assign
+// server guards also reject an hrOnly target (defense-in-depth; the pickers already hid
+// them). Driven off the canonical hrOnly flag, not a name. Data/roster-only; force a
+// fresh shell so cached client bundles pick up the corrected rosters.
+const CACHE = "wcr-shell-v62";
 const SHELL = ["/login", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", (event) => {

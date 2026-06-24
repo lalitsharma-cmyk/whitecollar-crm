@@ -55,7 +55,9 @@ export async function POST(req: NextRequest) {
   if (action === "assign") {
     const userId = String(body.userId ?? "").trim();
     if (!userId) return NextResponse.json({ error: "userId required" }, { status: 400 });
-    const target = await prisma.user.findFirst({ where: { id: userId, active: true }, select: { id: true } });
+    // hrOnly:false — never let leads be bulk-assigned to an HR/non-sales user
+    // (the picker already excludes them; this hardens the server path too).
+    const target = await prisma.user.findFirst({ where: { id: userId, active: true, hrOnly: false }, select: { id: true } });
     if (!target) return NextResponse.json({ error: "Target user not found" }, { status: 404 });
     const before = await prisma.lead.findMany({ where: { id: { in: ids } }, select: { id: true, ownerId: true } });
     const changed = before.filter((b) => b.ownerId !== userId);

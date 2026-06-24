@@ -29,12 +29,13 @@ export default async function LeaderboardPage() {
   const rangeEnd = new Date();
   const rangeStart = startOfDay(subDays(rangeEnd, 90));
 
-  // Agent scope
+  // Agent scope — hrOnly:false keeps HR/non-sales users (e.g. Nisha) off the
+  // leaderboard; driven off the canonical hrOnly flag, not a name.
   const agentWhere =
     me.role === "ADMIN"
-      ? { role: { in: AGENT_ROLES }, active: true }
+      ? { role: { in: AGENT_ROLES }, active: true, hrOnly: false }
       : me.role === "MANAGER" && managerTeam
-      ? { role: { in: AGENT_ROLES }, active: true, team: managerTeam }
+      ? { role: { in: AGENT_ROLES }, active: true, hrOnly: false, team: managerTeam }
       : { id: me.id };
 
   const agents = await prisma.user.findMany({

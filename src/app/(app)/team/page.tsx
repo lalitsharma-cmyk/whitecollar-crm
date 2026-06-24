@@ -31,8 +31,11 @@ export default async function TeamPage() {
   const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
 
   const [users, activeLeadCounts, pipelineRows, responseRows] = await Promise.all([
+    // SALES roster only — HR/non-sales users (hrOnly, e.g. Nisha) NEVER appear on
+    // the Team scoreboard (call counts / pipeline / response times are sales data).
+    // Driven off the canonical hrOnly flag, not a name. Admins stay (cross-team owners).
     prisma.user.findMany({
-      where: { active: true },
+      where: { active: true, hrOnly: false },
       include: { _count: { select: { ownedLeads: { where: { deletedAt: null, leadOrigin: { notIn: COLD_ORIGINS } } }, callLogs: true } } },
       orderBy: [{ team: "asc" }, { name: "asc" }],
     }),

@@ -15,9 +15,10 @@ export async function POST(req: NextRequest) {
 
   if (!userId) return NextResponse.json({ error: "userId required" }, { status: 400 });
 
-  // Verify the target user exists and is active
+  // Verify the target user exists, is active, and is a SALES user (never HR).
+  // hrOnly excludes non-sales staff (e.g. Nisha) from cold-data assignment.
   const target = await prisma.user.findUnique({ where: { id: userId } });
-  if (!target || !target.active) return NextResponse.json({ error: "Target user not found or inactive" }, { status: 404 });
+  if (!target || !target.active || target.hrOnly) return NextResponse.json({ error: "Target user not found or inactive" }, { status: 404 });
 
   // Pick N oldest unassigned cold-data rows
   const candidates = await prisma.lead.findMany({

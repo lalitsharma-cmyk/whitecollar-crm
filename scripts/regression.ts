@@ -3160,6 +3160,90 @@ const checks: Check[] = [
       results.push({ name: "  ↳ note", ok: true, detail: `names cased (${leads.length} leads, ${buyers.length} buyers) · 0 legacy source · buyer property columns mapped` });
     },
   },
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // 3f. HR EXCLUDED FROM ALL SALES SURFACES (2026-06-25) — an hrOnly user (Nisha,
+  //     an active MANAGER on the HR side) must NEVER appear in any sales roster,
+  //     count, or assignment dropdown, and must NEVER be a valid assignment target
+  //     — yet MUST still appear in the HR roster. Driven off the canonical hrOnly
+  //     flag, not a name. Proves the FILTER is what excludes them (baseline w/o
+  //     hrOnly may include them; filtered must include zero), and SOURCE-scans the
+  //     surfaces fixed/hardened this batch so a refactor can't silently re-include.
+  // ───────────────────────────────────────────────────────────────────────────
+  {
+    name: "hr-exclusion — hrOnly user absent from every sales roster/count/assign-target; present in HR; sources guarded",
+    run: async () => {
+      const fs = await import("node:fs");
+
+      // The canonical HR population. If none exists right now, the filter math is
+      // still proven structurally below, but skip the data assertions gracefully.
+      const hrUsers = await prisma.user.findMany({
+        where: { active: true, hrOnly: true },
+        select: { id: true, name: true, role: true, team: true },
+      });
+      const hrIds = new Set(hrUsers.map((u) => u.id));
+
+      // ── (a) FILTER MATH per sales-roster shape: filtered == baseline − hrOnly,
+      //        and ZERO hrOnly users survive the filtered roster. Each tuple mirrors
+      //        a real roster query used by a sales surface.
+      const rosters: Array<{ label: string; base: Record<string, unknown> }> = [
+        { label: "sales board / agent-performance (active AGENT/MANAGER)", base: { active: true, role: { in: ["AGENT", "MANAGER"] } } },
+        { label: "leaderboards (active AGENT/MANAGER)", base: { active: true, role: { in: ["AGENT", "MANAGER"] } } },
+        { label: "assign dropdowns (active AGENT/MANAGER/ADMIN)", base: { active: true, role: { in: ["AGENT", "MANAGER", "ADMIN"] } } },
+        { label: "team page scoreboard (all active)", base: { active: true } },
+      ];
+      for (const r of rosters) {
+        const baseline = await prisma.user.count({ where: r.base });
+        const filtered = await prisma.user.count({ where: { ...r.base, hrOnly: false } });
+        const hrInBase = await prisma.user.count({ where: { ...r.base, hrOnly: true } });
+        assert(filtered === baseline - hrInBase, `${r.label}: filter math broken (filtered=${filtered}, baseline=${baseline}, hrOnly=${hrInBase})`);
+        // No hrOnly user may remain after the filter.
+        const survivors = await prisma.user.findMany({ where: { ...r.base, hrOnly: false }, select: { id: true } });
+        assert(survivors.every((u) => !hrIds.has(u.id)), `${r.label}: an hrOnly user survived the hrOnly:false filter`);
+      }
+
+      // ── (b) HR users counted ZERO sales work — no owned (non-cold) leads, no
+      //        call logs, no activities. (They're HR; if this trips, an HR account
+      //        is being used for sales and the exclusion is cosmetic.)
+      if (hrIds.size > 0) {
+        const ids = [...hrIds];
+        const ownedSales = await prisma.lead.count({ where: { ownerId: { in: ids }, deletedAt: null, leadOrigin: { notIn: ["COLD", "REVIVAL"] } } });
+        const calls = await prisma.callLog.count({ where: { userId: { in: ids } } });
+        const acts = await prisma.activity.count({ where: { userId: { in: ids } } });
+        assert(ownedSales === 0, `hrOnly user(s) own ${ownedSales} sales lead(s) — HR must hold no sales pipeline`);
+        assert(calls === 0, `hrOnly user(s) have ${calls} call log(s) tallied as sales activity`);
+        assert(acts === 0, `hrOnly user(s) have ${acts} activit(y/ies) tallied as sales activity`);
+      }
+
+      // ── (c) HR roster STILL includes them — hrUsers.ts is { active, OR:[hrOnly,hrTeam] }.
+      //        Mirror that where and assert every hrOnly user is returned.
+      const hrRoster = await prisma.user.findMany({
+        where: { active: true, OR: [{ hrOnly: true }, { hrTeam: true }] },
+        select: { id: true },
+      });
+      const hrRosterIds = new Set(hrRoster.map((u) => u.id));
+      for (const u of hrUsers) assert(hrRosterIds.has(u.id), `hrOnly user ${u.name} missing from the HR roster — they must remain in /hr`);
+
+      // ── (d) SOURCE GUARDS — the rosters/targets fixed or hardened this batch must
+      //        keep the hrOnly filter (a refactor dropping it is a silent regression).
+      const teamPage = fs.readFileSync("src/app/(app)/team/page.tsx", "utf8");
+      assert(/where:\s*\{\s*active:\s*true,\s*hrOnly:\s*false\s*\}/.test(teamPage), "team page roster must filter hrOnly:false (no HR on the sales scoreboard)");
+      const lb = fs.readFileSync("src/app/(app)/reports/leaderboard/page.tsx", "utf8");
+      assert((lb.match(/hrOnly:\s*false/g) ?? []).length >= 2, "/reports leaderboard ADMIN+MANAGER roster branches must both filter hrOnly:false");
+      const mdBulk = fs.readFileSync("src/app/api/master-data/bulk/route.ts", "utf8");
+      assert(/hrOnly:\s*false/.test(mdBulk), "master-data bulk-assign target lookup must reject hrOnly users");
+      const coldBulk = fs.readFileSync("src/app/api/cold-data/bulk-assign/route.ts", "utf8");
+      assert(/target\.hrOnly/.test(coldBulk), "cold-data bulk-assign must reject an hrOnly target");
+
+      results.push({
+        name: "  ↳ note",
+        ok: true,
+        detail: hrIds.size > 0
+          ? `${hrIds.size} active hrOnly user(s) [${hrUsers.map((u) => u.name).join(", ")}] excluded from 4 sales-roster shapes + 2 bulk-assign guards; present in HR roster; 0 sales leads/calls/activities`
+          : "no active hrOnly user present — filter math + source guards still asserted structurally",
+      });
+    },
+  },
 ];
 
 // ── runner ────────────────────────────────────────────────────────────────────
