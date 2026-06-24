@@ -71,7 +71,18 @@
 // index collision). importer-specific presets preserved (assignToUserId / isColdCall ride
 // along on preview + import). Additive/backward-compatible — absent mapping/dupMode = legacy
 // behaviour. Regression +2 (import-mapping toolkit + import-wizard-parity → 47 checks).
-const CACHE = "wcr-shell-v39";
+// v40 (2026-06-24): New-Lead form corrections — Property Type is now a REQUIRED
+// dropdown (Residential/Commercial/Mixed Use, blocks submit if empty) + added as a
+// multi-select to the Lead/Master-Data/Revival filter panels (?propertyType=, shared
+// leadFilterWhere + Leads inline where) and to Reports (a Property-Type funnel on
+// /reports/sources + a "Leads by Property Type" bar card on /reports). Interested
+// Properties upgraded from a weak <datalist> to a TRUE searchable combobox
+// (ProjectSelect — styled, keyboard-navigable, team-filtered + saves a custom typed
+// name → sourceDetail). Title-Case labels (Customer Name, Alternative Name/Mobile/Email,
+// Budget Min/Max, Medium→"Medium of Source", Assignment History). Assign-To helper text
+// removed. Master Data Property Type column un-hidden by default. Display/filter-only —
+// no schema or data changes; Current Status field untouched.
+const CACHE = "wcr-shell-v40";
 const SHELL = ["/login", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", (event) => {

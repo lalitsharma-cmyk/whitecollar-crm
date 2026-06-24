@@ -1316,7 +1316,7 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
             owned the lead before them (avoids inter-agent friction + cherry-picking). */}
         {(me.role === "ADMIN" || me.role === "MANAGER") && (
           <div data-lead-section="admin" className="card p-4">
-            <div className="font-semibold mb-2 dark:text-slate-100">Assignment history</div>
+            <div className="font-semibold mb-2 dark:text-slate-100">Assignment History</div>
             <div className="space-y-2 text-sm">
               {lead.assignments.length === 0 && <div className="text-gray-500 dark:text-slate-400">Not assigned yet.</div>}
               {lead.assignments.map(a => (

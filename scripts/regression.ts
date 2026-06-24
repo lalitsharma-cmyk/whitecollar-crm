@@ -362,6 +362,44 @@ const checks: Check[] = [
   },
 
   // ───────────────────────────────────────────────────────────────────────────
+  // 3c-ii. PROPERTY-TYPE FILTER (2026-06-24) — the shared leadFilterWhere engine
+  //     (used by Master Data / Revival) must translate ?propertyType= into a
+  //     real Lead.propertyType where condition (single → equals, multi → in),
+  //     and a live count through that where must reconcile 1:1 with a direct
+  //     prisma count on the same value. Proves the filter actually narrows.
+  // ───────────────────────────────────────────────────────────────────────────
+  {
+    name: "property-type-filter — leadFilterWhere(?propertyType=) → Lead.propertyType clause; count==direct",
+    run: async () => {
+      const { leadFilterWhere } = await import("../src/lib/leadFilterWhere");
+
+      // Single value → { propertyType: "Residential" }.
+      const oneAnd = leadFilterWhere({ propertyType: "Residential" });
+      const oneClause = oneAnd.find((c) => "propertyType" in c) as { propertyType?: unknown } | undefined;
+      assert(!!oneClause && oneClause.propertyType === "Residential", "single ?propertyType= must produce { propertyType: <value> }");
+
+      // Multi value → { propertyType: { in: [...] } }.
+      const multiAnd = leadFilterWhere({ propertyType: "Residential,Commercial" });
+      const multiClause = multiAnd.find((c) => "propertyType" in c) as { propertyType?: { in?: string[] } } | undefined;
+      assert(
+        !!multiClause && Array.isArray(multiClause.propertyType?.in) &&
+          multiClause.propertyType!.in!.length === 2 &&
+          multiClause.propertyType!.in!.includes("Residential") &&
+          multiClause.propertyType!.in!.includes("Commercial"),
+        "multi ?propertyType= must produce { propertyType: { in: [...] } }",
+      );
+
+      // No param → no propertyType clause (filter is opt-in).
+      assert(!leadFilterWhere({}).some((c) => "propertyType" in c), "no ?propertyType= must not add a propertyType clause");
+
+      // Reconciliation: count via the filter where == direct count on that value.
+      const viaFilter = await prisma.lead.count({ where: { deletedAt: null, AND: leadFilterWhere({ propertyType: "Residential" }) } });
+      const direct = await prisma.lead.count({ where: { deletedAt: null, propertyType: "Residential" } });
+      assert(viaFilter === direct, `property-type filter count (${viaFilter}) must equal direct count (${direct})`);
+    },
+  },
+
+  // ───────────────────────────────────────────────────────────────────────────
   // 3d. SITE-VISIT classification (2026-06-20) — sharing collateral (sample video,
   //     brochure, floor plan, price/payment plan, location map, inventory,
   //     presentation, details) must NEVER count as a Site Visit; only explicit

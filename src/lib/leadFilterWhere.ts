@@ -71,6 +71,11 @@ export function leadFilterWhere(sp: SP): Prisma.LeadWhereInput[] {
   if (srcs.length === 1) and.push({ sourceRaw: srcs[0] });
   else if (srcs.length > 1) and.push({ sourceRaw: { in: srcs } });
 
+  // Property Type — Residential / Commercial / Mixed Use, multi.
+  const ptypes = split(sp.propertyType);
+  if (ptypes.length === 1) and.push({ propertyType: ptypes[0] });
+  else if (ptypes.length > 1) and.push({ propertyType: { in: ptypes } });
+
   // Medium — contact channel (Call, WhatsApp, Email, or custom), multi.
   // For custom mediums, we need to check both medium="Other" AND mediumOther field.
   const meds = split(sp.medium);

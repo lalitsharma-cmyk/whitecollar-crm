@@ -85,7 +85,7 @@ const COLS: { key: ColKey; label: string; frozen?: boolean; w?: number; minW?: n
   { key: "createdTime", label: "Created Time", minW: 80 },
   { key: "budget", label: "Budget" },
   { key: "project", label: "Property Enquired", minW: 180 },
-  { key: "propertyType", label: "Property Type", minW: 110, defHidden: true },
+  { key: "propertyType", label: "Property Type", minW: 110 },
   { key: "source", label: "Source" },
   { key: "medium", label: "Medium", minW: 100 },
   { key: "message", label: "Message", wide: true },

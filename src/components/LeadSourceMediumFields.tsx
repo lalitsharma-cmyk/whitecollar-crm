@@ -122,9 +122,9 @@ export default function LeadSourceMediumFields({ sources, mediums, eventNames }:
         </select>
       </div>
 
-      {/* 2. Medium (always second — directly after Source) */}
+      {/* 2. Medium of Source (always second — directly after Source) */}
       <div>
-        <label className={label}>Medium</label>
+        <label className={label}>Medium of Source</label>
         <select
           className={input}
           value={medium}

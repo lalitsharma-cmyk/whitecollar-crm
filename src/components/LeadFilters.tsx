@@ -37,6 +37,10 @@ interface Props {
   // come through verbatim (the display label == the filter value). Server-side
   // translation lives in leadFilterWhere (?medium=), shared by /leads + /master-data.
   mediums?: string[];
+  // Property-type options (Residential / Commercial / Mixed Use). Server-side
+  // translation lives in leadFilterWhere (?propertyType=) + the /leads inline where,
+  // shared by /leads + /master-data.
+  propertyTypes?: string[];
 }
 
 // ── Shared helpers ────────────────────────────────────────────────────────────
@@ -143,7 +147,7 @@ function SectionHead({ label, open, toggle, count }: { label: string; open: bool
 
 // ── Main component ────────────────────────────────────────────────────────────
 export default function LeadFilters({
-  agents, sources, statuses, showSource = true, distinctTags = [], projects = [], mediums = [],
+  agents, sources, statuses, showSource = true, distinctTags = [], projects = [], mediums = [], propertyTypes = [],
 }: Props) {
   const router   = useRouter();
   const pathname = usePathname();
@@ -170,6 +174,7 @@ export default function LeadFilters({
   const [cstatusSel,  setCstatusSel]  = useState<Set<string>>(new Set());
   const [sourceSel,   setSourceSel]   = useState<Set<string>>(new Set());
   const [mediumSel,   setMediumSel]   = useState<Set<string>>(new Set());
+  const [ptypeSel,    setPtypeSel]    = useState<Set<string>>(new Set());
   const [ownerSel,    setOwnerSel]    = useState<Set<string>>(new Set());
   const [timelineSel, setTimelineSel] = useState<Set<string>>(new Set());
   const [clientSel,   setClientSel]   = useState<Set<string>>(new Set());
@@ -200,6 +205,7 @@ export default function LeadFilters({
     setCstatusSel(new Set(splitParam(sp.get("cstatus"))));
     setSourceSel(new Set(splitParam(sp.get("source"))));
     setMediumSel(new Set(splitParam(sp.get("medium"))));
+    setPtypeSel(new Set(splitParam(sp.get("propertyType"))));
     setOwnerSel(new Set(splitParam(sp.get("owner"))));
     setTimelineSel(new Set(splitParam(sp.get("whenInvest"))));
     setClientSel(new Set(splitParam(sp.get("clientType"))));
@@ -231,6 +237,7 @@ export default function LeadFilters({
     setMs("cstatus",    cstatusSel);
     setMs("source",     sourceSel);
     setMs("medium",     mediumSel);
+    setMs("propertyType", ptypeSel);
     setMs("owner",      ownerSel);
     setMs("whenInvest", timelineSel);
     setMs("clientType", clientSel);
@@ -266,7 +273,7 @@ export default function LeadFilters({
 
   function resetFilters() {
     const p = new URLSearchParams(sp.toString());
-    ["project","cstatus","source","medium","owner","whenInvest","clientType",
+    ["project","cstatus","source","medium","propertyType","owner","whenInvest","clientType",
      "budgetFrom","budgetTo","budgetPreset","team","followup","followupFrom","followupTo","city",
      "fundReady","potential","notPicked","hasMeeting","hasSiteVisit",
      "category","tag","sort","dateFrom","dateTo","dateField",
@@ -305,6 +312,8 @@ export default function LeadFilters({
     chips.push({ key: `src:${v}`, label: SRC_LABELS[v] ?? v, remove: () => removeFromMulti("source", v) }));
   if (showSource) splitParam(sp.get("medium")).forEach(v =>
     chips.push({ key: `med:${v}`, label: `📡 ${v}`, remove: () => removeFromMulti("medium", v) }));
+  splitParam(sp.get("propertyType")).forEach(v =>
+    chips.push({ key: `pt:${v}`, label: `🏠 ${v}`, remove: () => removeFromMulti("propertyType", v) }));
   splitParam(sp.get("owner")).forEach(v => {
     const n = v === "unassigned" ? "⚠ Unassigned" : (agents.find(a => a.id === v)?.name ?? v);
     chips.push({ key: `own:${v}`, label: `👤 ${n}`, remove: () => removeFromMulti("owner", v) });
@@ -359,6 +368,8 @@ export default function LeadFilters({
   // Medium options — verbatim channel names (Call/WhatsApp/Email + customs).
   // Value == label since mediums are stored as plain strings, not enum tokens.
   const mediumOpts  = mediums.map(m => ({ value: m, label: m }));
+  // Property-type options (Residential / Commercial / Mixed Use). Value == label.
+  const ptypeOpts   = propertyTypes.map(t => ({ value: t, label: t }));
   const projectOpts = projects.map(p => ({ value: p.name, label: p.name }));
   // Status options FOLLOW the Forwarded-Team filter — Gurgaon (India) and Dubai
   // statuses are never merged into one list. With no team chosen, the status
@@ -462,6 +473,12 @@ export default function LeadFilters({
                   Shown alongside Source; same showSource gating. */}
               {showSource && mediumOpts.length > 0 && (
                 <CheckList label="📡 Medium" options={mediumOpts} selected={mediumSel} onChange={setMediumSel} />
+              )}
+
+              {/* 4c. Property Type — Residential / Commercial / Mixed Use. Not
+                  source-sensitive, so shown for every role (no showSource gate). */}
+              {ptypeOpts.length > 0 && (
+                <CheckList label="🏠 Property Type" options={ptypeOpts} selected={ptypeSel} onChange={setPtypeSel} />
               )}
 
               {/* 5. Assigned To */}

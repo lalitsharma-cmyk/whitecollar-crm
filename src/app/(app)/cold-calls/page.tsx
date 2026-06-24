@@ -6,6 +6,7 @@ import { COLD_ORIGINS } from "@/lib/leadScope";
 import { leadFilterWhere, leadFilterOrderBy } from "@/lib/leadFilterWhere";
 import { getAvailableMediums } from "@/lib/mediumManager";
 import { projectWhereForUser } from "@/lib/propertyScope";
+import { PROPERTY_TYPES } from "@/lib/propertyType";
 import { startOfDay, startOfWeek } from "date-fns";
 import Link from "next/link";
 import ColdDataAdminControls from "@/components/ColdDataAdminControls";
@@ -309,6 +310,7 @@ export default async function ColdDataPage({ searchParams }: { searchParams: Pro
             distinctTags={distinctTags}
             projects={allProjects}
             mediums={mediumOptions}
+            propertyTypes={PROPERTY_TYPES}
           />
 
           {/* Status-based filter tabs (Excel/MIS values) — chip count == records applied */}

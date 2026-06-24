@@ -189,7 +189,7 @@ export default async function NewLeadPage() {
         <section>
           <div className="text-xs font-bold tracking-widest text-[#c9a24b] mb-3">IDENTITY</div>
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 sm:gap-4">
-            <div><label className={label}>👤 Customer name *</label><input name="name" required className={input} /></div>
+            <div><label className={label}>👤 Customer Name *</label><input name="name" required className={input} /></div>
             <div>
               <label className={label}>📞 Mobile</label>
               <div className="mt-1">
@@ -198,14 +198,14 @@ export default async function NewLeadPage() {
               <p className="text-[10px] text-gray-500 mt-0.5">Pick the country flag · WhatsApp/Call buttons need the right code</p>
             </div>
             <div><label className={label}>✉ E-mail</label><input name="email" type="email" className={input} /></div>
-            <div><label className={label}>👤 Alternative name</label><input name="altName" className={input} /></div>
+            <div><label className={label}>👤 Alternative Name</label><input name="altName" className={input} /></div>
             <div>
-              <label className={label}>📞 Alternative mobile</label>
+              <label className={label}>📞 Alternative Mobile</label>
               <div className="mt-1">
                 <PhoneInput name="altPhone" defaultDial={defaultDialForTeam(me.team)} />
               </div>
             </div>
-            <div><label className={label}>✉ Alternative email</label><input name="altEmail" type="email" className={input} /></div>
+            <div><label className={label}>✉ Alternative Email</label><input name="altEmail" type="email" className={input} /></div>
           </div>
           {/* Dedup warning — non-blocking; fires ONLY on phone/altPhone/email/altEmail */}
           <div className="mt-3">

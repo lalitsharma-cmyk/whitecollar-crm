@@ -15,6 +15,7 @@ import {
 import MasterDataRecordsTable, { type MDRow } from "@/components/MasterDataRecordsTable";
 import LeadFilters from "@/components/LeadFilters";
 import { leadFilterWhere } from "@/lib/leadFilterWhere";
+import { PROPERTY_TYPES } from "@/lib/propertyType";
 import { getAvailableMediums } from "@/lib/mediumManager";
 import { displayBudget } from "@/lib/budgetParse";
 import { cleanNeedSnapshot, lastMeaningfulRemark } from "@/lib/needSnapshot";
@@ -246,6 +247,7 @@ export default async function MasterDataPage({ searchParams }: { searchParams: P
         showSource
         distinctTags={filterTags}
         mediums={mediumOptions}
+        propertyTypes={PROPERTY_TYPES}
       />
 
       {/* ── Excel-style operations grid ────────────────────────────────────── */}

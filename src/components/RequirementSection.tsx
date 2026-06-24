@@ -1,8 +1,10 @@
 "use client";
 
-import { useId, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import AssignToSelect from "@/components/AssignToSelect";
+import ProjectSelect from "@/components/ProjectSelect";
 import BudgetInput from "@/components/BudgetInput";
+import { PROPERTY_TYPES } from "@/lib/propertyType";
 
 // Team-reactive REQUIREMENT block for the New-Lead form. Team is the single
 // source of truth, held in React state here, and the dependent fields filter /
@@ -18,8 +20,9 @@ import BudgetInput from "@/components/BudgetInput";
 //
 // Reactivity:
 //   • Assign To   → filters the roster to the selected team (task 7).
-//   • Interested Properties → suggests that team's projects (Dubai vs India,
-//     task 9) via a datalist, while still accepting a typed custom name.
+//   • Interested Properties → a TRUE searchable combobox (ProjectSelect) showing
+//     that team's projects (Dubai vs India), keyboard-navigable, while still
+//     accepting + saving a typed custom name (unmatched → sourceDetail server-side).
 //   • Currency    → India defaults INR; Dubai defaults AED and may switch to
 //     INR (task 10). Budget Min/Max inputs render in the chosen currency.
 
@@ -44,7 +47,6 @@ function currencyForTeam(team: string, fallback: string): string {
 }
 
 export default function RequirementSection({ users, dubaiProjects, indiaProjects, defaultTeam, defaultCurrency }: Props) {
-  const uid = useId().replace(/[:]/g, "");
   const [team, setTeam] = useState(defaultTeam);
   // Currency follows the team but stays user-overridable. We track whether the
   // user has manually picked a currency; until then it auto-derives from team.
@@ -68,8 +70,6 @@ export default function RequirementSection({ users, dubaiProjects, indiaProjects
     if (team === "India") return indiaProjects;
     return [] as ProjOption[];
   }, [team, dubaiProjects, indiaProjects]);
-
-  const projListId = `proj-${uid}`;
 
   function onTeamChange(v: string) {
     setTeam(v);
@@ -101,30 +101,25 @@ export default function RequirementSection({ users, dubaiProjects, indiaProjects
       <div>
         <label className={label}>👤 Assign To *</label>
         <AssignToSelect users={users} initialTeam={team} team={team} />
-        <p className="text-[10px] text-gray-500 mt-0.5">Lead is created directly under this agent. List filters by the selected team.</p>
       </div>
 
-      {/* 3. Interested Properties — team-filtered suggestions + manual entry */}
+      {/* 3. Interested Properties — TRUE searchable combobox (ProjectSelect):
+          team-filtered project list + custom-name typing (saved verbatim). */}
       <div>
         <label className={label}>🏢 Interested Properties</label>
-        <input
-          name="project"
-          className={input}
-          list={projListId}
-          autoComplete="off"
-        />
-        <datalist id={projListId}>
-          {projectOptions.map((p) => (
-            <option key={p.id} value={p.name} />
-          ))}
-        </datalist>
+        <ProjectSelect options={projectOptions} team={team} />
         <p className="text-[10px] text-gray-500 mt-0.5">Pick a {team || "team"} property or type a custom name.</p>
       </div>
 
-      {/* 4. Property Type */}
+      {/* 4. Property Type — REQUIRED dropdown (Residential / Commercial / Mixed Use) */}
       <div>
-        <label className={label}>Property Type</label>
-        <input name="propertyType" className={input} />
+        <label className={label}>Property Type *</label>
+        <select name="propertyType" required className={input} defaultValue="">
+          <option value="" disabled>— Select property type —</option>
+          {PROPERTY_TYPES.map((t) => (
+            <option key={t} value={t}>{t}</option>
+          ))}
+        </select>
       </div>
 
       {/* 5. Configuration */}
@@ -153,7 +148,7 @@ export default function RequirementSection({ users, dubaiProjects, indiaProjects
 
       {/* 7. Budget Min — in the chosen currency */}
       <div>
-        <label className={label}>💰 Budget min</label>
+        <label className={label}>💰 Budget Min</label>
         <div className="mt-1">
           <BudgetInput name="budgetMin" currency={effectiveCurrency === "INR" ? "INR" : "AED"} />
         </div>
@@ -161,7 +156,7 @@ export default function RequirementSection({ users, dubaiProjects, indiaProjects
 
       {/* 8. Budget Max — in the chosen currency */}
       <div>
-        <label className={label}>💰 Budget max</label>
+        <label className={label}>💰 Budget Max</label>
         <div className="mt-1">
           <BudgetInput name="budgetMax" currency={effectiveCurrency === "INR" ? "INR" : "AED"} />
         </div>

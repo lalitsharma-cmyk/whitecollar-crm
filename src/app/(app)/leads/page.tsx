@@ -8,6 +8,7 @@ import LeadsListClient from "@/components/LeadsListClient";
 import { runReconciler } from "@/lib/reconciler";
 import { leadScopeWhere, COLD_ORIGINS, workableWhere } from "@/lib/leadScope";
 import { projectWhereForUser } from "@/lib/propertyScope";
+import { PROPERTY_TYPES } from "@/lib/propertyType";
 import { displayBudget } from "@/lib/budgetParse";
 import { getAvailableMediums } from "@/lib/mediumManager";
 import { formatLeadName } from "@/lib/leadName";
@@ -137,6 +138,13 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
   }
   if (sp.city) where.city = { contains: sp.city, mode: "insensitive" };
   if (sp.category) where.categorization = { contains: sp.category, mode: "insensitive" };
+  // Property type — multi-select (Residential / Commercial / Mixed Use). Not
+  // source-sensitive, so every role may filter (agents stay scoped to own leads).
+  if (sp.propertyType) {
+    const pts = sp.propertyType.split(",").map(s => s.trim()).filter(Boolean);
+    if (pts.length === 1) where.propertyType = pts[0];
+    else if (pts.length > 1) where.propertyType = { in: pts };
+  }
   // Source filter — multi-select, comma-separated. Filters on the verbatim
   // sourceRaw field (human values like "WhatsApp", "Google Ads"), not the
   // legacy `source` enum. Dropdown options are the DISTINCT sourceRaw values.
@@ -250,7 +258,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
   // search and show all matching, not just today's.
   // nofollowup filter already sets followupDate: null, so the followup chip
   // default (today) must not compose with it — include it as an "other filter".
-  const hasOtherFilter = !!(sp.q || sp.source || sp.status || sp.cstatus || sp.owner || sp.team || sp.score || sp.notPicked || sp.eoi || sp.potential || sp.fundReady || sp.clientType || sp.whenInvest || sp.project || sp.budgetPreset || sp.budgetFrom || sp.budgetTo || sp.city || sp.category || sp.hasMeeting || sp.hasSiteVisit || sp.followupFrom || sp.followupTo || filterTab === "nofollowup");
+  const hasOtherFilter = !!(sp.q || sp.source || sp.status || sp.cstatus || sp.owner || sp.team || sp.score || sp.notPicked || sp.eoi || sp.potential || sp.fundReady || sp.clientType || sp.whenInvest || sp.project || sp.propertyType || sp.budgetPreset || sp.budgetFrom || sp.budgetTo || sp.city || sp.category || sp.hasMeeting || sp.hasSiteVisit || sp.followupFrom || sp.followupTo || filterTab === "nofollowup");
   // ── DEFAULT working view = ALL workable leads (6-tier smart sorted) ─────
   // Updated rule (Lalit, 2026-06-21): show EVERY workable lead by default,
   // ordered by the 6-tier smart sort so today's fresh leads + today's follow-ups
@@ -633,6 +641,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
         distinctTags={distinctTags}
         projects={allProjects}
         mediums={mediumOptions}
+        propertyTypes={PROPERTY_TYPES}
       />
 
       {/* ── Status-based filter chips (Excel/MIS values) ──────────────────── */}
@@ -734,7 +743,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
           sp.ai || sp.when || sp.notPicked || sp.eoi || sp.smart ||
           sp.tag || sp.filter || (sp.followup && sp.followup !== "all") ||
           sp.potential || sp.fundReady || sp.clientType || sp.whenInvest ||
-          sp.project || sp.budgetPreset || sp.city || sp.category ||
+          sp.project || sp.propertyType || sp.budgetPreset || sp.city || sp.category ||
           sp.hasMeeting || sp.hasSiteVisit
         );
         if (!hasActiveFilters) return null;

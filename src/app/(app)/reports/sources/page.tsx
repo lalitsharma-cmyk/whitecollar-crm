@@ -66,6 +66,31 @@ function mediumBreakdown(
   return counts;
 }
 
+// Property Type = the asset class (Residential / Commercial / Mixed Use). Same
+// funnel slice as the source/medium tables so Lalit can compare "which TYPE
+// converts". Leads with no type set bucket under "—" so totals reconcile.
+interface PropertyTypeRow {
+  type: string;
+  total: number;
+  contacted: number;
+  qualified: number;
+  booked: number;
+  lost: number;
+  qualifiedPct: number;
+  bookedPct: number;
+}
+
+function propertyTypeBreakdown(
+  rows: { propertyType: string | null }[],
+): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const r of rows) {
+    const key = r.propertyType && r.propertyType.trim() ? r.propertyType : "—";
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  return counts;
+}
+
 // Active-pursuit statuses — status-only, no stage system.
 const QUALIFIED_PLUS = ACTIVE_PURSUIT_STATUSES;
 // Booked — both DB casings of the booked status (see BOOKED_STATUSES).
@@ -164,23 +189,23 @@ export default async function SourcesReportPage({
   ] = await Promise.all([
     prisma.lead.findMany({
       where: { deletedAt: null, createdAt: { gte: since, lte: until }, ...(managerTeam ? { forwardedTeam: managerTeam } : {}) },
-      select: { source: true, sourceRaw: true, medium: true, mediumOther: true },
+      select: { source: true, sourceRaw: true, medium: true, mediumOther: true, propertyType: true },
     }),
     prisma.lead.findMany({
       where: { deletedAt: null, createdAt: { gte: since, lte: until }, currentStatus: { notIn: SUPPRESSED_STATUSES }, ...(managerTeam ? { forwardedTeam: managerTeam } : {}) },
-      select: { source: true, sourceRaw: true, medium: true, mediumOther: true },
+      select: { source: true, sourceRaw: true, medium: true, mediumOther: true, propertyType: true },
     }),
     prisma.lead.findMany({
       where: { deletedAt: null, createdAt: { gte: since, lte: until }, currentStatus: { in: QUALIFIED_PLUS }, ...(managerTeam ? { forwardedTeam: managerTeam } : {}) },
-      select: { source: true, sourceRaw: true, medium: true, mediumOther: true },
+      select: { source: true, sourceRaw: true, medium: true, mediumOther: true, propertyType: true },
     }),
     prisma.lead.findMany({
       where: { deletedAt: null, createdAt: { gte: since, lte: until }, currentStatus: { in: [...BOOKED] }, ...(managerTeam ? { forwardedTeam: managerTeam } : {}) },
-      select: { source: true, sourceRaw: true, medium: true, mediumOther: true },
+      select: { source: true, sourceRaw: true, medium: true, mediumOther: true, propertyType: true },
     }),
     prisma.lead.findMany({
       where: { deletedAt: null, createdAt: { gte: since, lte: until }, currentStatus: { in: SUPPRESSED_STATUSES }, ...(managerTeam ? { forwardedTeam: managerTeam } : {}) },
-      select: { source: true, sourceRaw: true, medium: true, mediumOther: true },
+      select: { source: true, sourceRaw: true, medium: true, mediumOther: true, propertyType: true },
     }),
     // AI score avg per effective source — pull rows + reduce in JS (below) so the
     // average keys on the verbatim source, consistent with the count breakdowns.
@@ -325,6 +350,36 @@ export default async function SourcesReportPage({
     };
   }).sort((a, b) => b.total - a.total);
   const mediumGrandTotal = mediumRows.reduce((s, r) => s + r.total, 0);
+
+  // ── Property Type breakdown ──────────────────────────────────────
+  // Built from the SAME scoped row fetches as the source/medium tables (the five
+  // funnel fetches now also select propertyType), so date/team/deletedAt scoping
+  // is identical and the totals reconcile.
+  const ptTotalMap     = propertyTypeBreakdown(totalRows);
+  const ptContactedMap = propertyTypeBreakdown(contactedRows);
+  const ptQualifiedMap = propertyTypeBreakdown(qualifiedRows);
+  const ptBookedMap    = propertyTypeBreakdown(bookedRows);
+  const ptLostMap      = propertyTypeBreakdown(lostRows);
+  const allPropertyTypes = new Set<string>([
+    ...ptTotalMap.keys(), ...ptContactedMap.keys(), ...ptQualifiedMap.keys(),
+    ...ptBookedMap.keys(), ...ptLostMap.keys(),
+  ]);
+  const propertyTypeRows: PropertyTypeRow[] = [...allPropertyTypes].map((t) => {
+    const total = ptTotalMap.get(t) ?? 0;
+    const qualified = ptQualifiedMap.get(t) ?? 0;
+    const booked = ptBookedMap.get(t) ?? 0;
+    return {
+      type: t,
+      total,
+      contacted: ptContactedMap.get(t) ?? 0,
+      qualified,
+      booked,
+      lost: ptLostMap.get(t) ?? 0,
+      qualifiedPct: total > 0 ? (qualified / total) * 100 : 0,
+      bookedPct: total > 0 ? (booked / total) * 100 : 0,
+    };
+  }).sort((a, b) => b.total - a.total);
+  const propertyTypeGrandTotal = propertyTypeRows.reduce((s, r) => s + r.total, 0);
 
   // ── Summary tiles ────────────────────────────────────────────────
   // Only consider sources with a meaningful sample size (>=3 leads) for
@@ -561,6 +616,66 @@ export default async function SourcesReportPage({
         </table>
         <p className="text-[10px] text-gray-500 mt-3">
           Medium = the channel the lead arrived / is worked through (Call · WhatsApp · Email · custom). Leads with no medium set are grouped under &ldquo;—&rdquo;. Same date / team scope as the source table above.
+        </p>
+      </div>
+
+      {/* ── Property Type breakdown ─────────────────────────────────────────
+          Same scoped data + funnel slice as the source/medium tables, grouped by
+          the asset class (Residential / Commercial / Mixed Use). */}
+      <div className="card p-4 overflow-x-auto">
+        <div className="text-xs uppercase tracking-widest text-gray-500 font-semibold mb-3">
+          Property type funnel · {rangeLabel} · {propertyTypeGrandTotal} leads
+        </div>
+        <table className="w-full text-sm min-w-[640px]">
+          <thead>
+            <tr className="text-xs text-gray-500 border-b border-gray-200">
+              <th className="text-left py-2 pr-2">Property Type</th>
+              <th className="text-right py-2 px-2">Total</th>
+              <th className="text-right py-2 px-2">Contacted</th>
+              <th className="text-right py-2 px-2">Qualified</th>
+              <th className="text-right py-2 px-2">Booked</th>
+              <th className="text-right py-2 px-2">Lost</th>
+              <th className="text-right py-2 px-2">→ Qualified</th>
+              <th className="text-right py-2 pl-2">→ Booking</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100">
+            {propertyTypeRows.map((r) => (
+              <tr key={r.type} className={r.total === 0 ? "text-gray-400" : ""}>
+                <td className="py-2 pr-2 font-medium">{r.type}</td>
+                <td className="text-right px-2 tabular-nums">{r.total}</td>
+                <td className="text-right px-2 tabular-nums">{r.contacted}</td>
+                <td className="text-right px-2 tabular-nums">{r.qualified}</td>
+                <td className="text-right px-2 tabular-nums font-semibold">{r.booked}</td>
+                <td className="text-right px-2 tabular-nums">{r.lost}</td>
+                <td className={`text-right px-2 tabular-nums rounded ${r.total === 0 ? "text-gray-300" : pctClass(r.qualifiedPct)}`}>
+                  {r.total === 0 ? "—" : `${r.qualifiedPct.toFixed(1)}%`}
+                </td>
+                <td className={`text-right pl-2 tabular-nums rounded ${r.total === 0 ? "text-gray-300" : pctClass(r.bookedPct)}`}>
+                  {r.total === 0 ? "—" : `${r.bookedPct.toFixed(1)}%`}
+                </td>
+              </tr>
+            ))}
+            {propertyTypeRows.length === 0 && (
+              <tr><td colSpan={8} className="py-4 text-center text-gray-400 text-xs">No leads in this window.</td></tr>
+            )}
+          </tbody>
+          {propertyTypeRows.length > 0 && (
+            <tfoot>
+              <tr className="border-t-2 border-gray-300 font-semibold">
+                <td className="py-2 pr-2">Total</td>
+                <td className="text-right px-2 tabular-nums">{propertyTypeRows.reduce((s, r) => s + r.total, 0)}</td>
+                <td className="text-right px-2 tabular-nums">{propertyTypeRows.reduce((s, r) => s + r.contacted, 0)}</td>
+                <td className="text-right px-2 tabular-nums">{propertyTypeRows.reduce((s, r) => s + r.qualified, 0)}</td>
+                <td className="text-right px-2 tabular-nums">{propertyTypeRows.reduce((s, r) => s + r.booked, 0)}</td>
+                <td className="text-right px-2 tabular-nums">{propertyTypeRows.reduce((s, r) => s + r.lost, 0)}</td>
+                <td colSpan={2}></td>
+              </tr>
+            </tfoot>
+          )}
+        </table>
+        <p className="text-[10px] text-gray-500 mt-3">
+          Property Type = the asset class set on the lead (Residential · Commercial · Mixed Use). Leads with no type set are grouped under &ldquo;—&rdquo;. Same date / team scope as the source table above.
         </p>
       </div>
     </>

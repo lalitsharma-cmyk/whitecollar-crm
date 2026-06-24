@@ -247,7 +247,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
     // this same scoped fetch (no extra query).
     prisma.lead.findMany({
       where: { ...teamScope, deletedAt: null },
-      select: { source: true, sourceRaw: true, medium: true, mediumOther: true },
+      select: { source: true, sourceRaw: true, medium: true, mediumOther: true, propertyType: true },
     }),
   ]);
 
@@ -266,6 +266,18 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
     .map(([medium, n]) => ({ medium, n }))
     .sort((a, b) => b.n - a.n);
   const byMediumTotal = byMedium.reduce((s, m) => s + m.n, 0);
+
+  // Leads-by-property-type (asset class) — all-time, same team scope as sources.
+  // Leads with no type set → "—". Sorted desc.
+  const ptCounts = new Map<string, number>();
+  for (const r of sourceByCountRows) {
+    const key = r.propertyType && r.propertyType.trim() ? r.propertyType : "—";
+    ptCounts.set(key, (ptCounts.get(key) ?? 0) + 1);
+  }
+  const byPropertyType = [...ptCounts.entries()]
+    .map(([type, n]) => ({ type, n }))
+    .sort((a, b) => b.n - a.n);
+  const byPropertyTypeTotal = byPropertyType.reduce((s, p) => s + p.n, 0);
 
   const [tot, contacted, qualified, , ] = funnel; // status-based: total, active, closing, booked(×2)
 
@@ -595,6 +607,38 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
           </div>
           <div className="mt-3 text-[10px] text-gray-400">
             {byMediumTotal} leads · channel set on the lead (Call · WhatsApp · Email · custom). &ldquo;—&rdquo; = no medium recorded.
+          </div>
+        </div>
+      )}
+
+      {/* ── Leads by Property Type (asset class) ──────────────────────────
+          All-time counts by the asset class (Residential / Commercial / Mixed
+          Use), same team scope as the source chart. Compact bar list — the full
+          property-type funnel (conversion %) lives in /reports/sources. */}
+      {byPropertyType.length > 0 && (
+        <div className="card p-5">
+          <div className="flex items-baseline justify-between mb-3">
+            <h2 className="font-display text-base sm:text-lg font-bold text-[#0b1a33]">Leads by Property Type</h2>
+            <Link href="/reports/sources" className="text-[11px] text-emerald-600 hover:underline">Full funnel →</Link>
+          </div>
+          <div className="space-y-2">
+            {byPropertyType.map((p) => {
+              const pct = byPropertyTypeTotal > 0 ? (p.n / byPropertyTypeTotal) * 100 : 0;
+              return (
+                <div key={p.type} className="flex items-center gap-3">
+                  <div className="w-24 sm:w-28 text-xs text-gray-600 dark:text-slate-300 truncate" title={p.type}>{p.type}</div>
+                  <div className="flex-1 h-5 bg-gray-100 dark:bg-slate-700 rounded overflow-hidden">
+                    <div className="h-full bg-emerald-500/80 rounded" style={{ width: `${Math.max(pct, 2)}%` }} />
+                  </div>
+                  <div className="w-20 text-right text-xs tabular-nums text-gray-700 dark:text-slate-200">
+                    {p.n} <span className="text-gray-400">({pct.toFixed(0)}%)</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <div className="mt-3 text-[10px] text-gray-400">
+            {byPropertyTypeTotal} leads · asset class set on the lead (Residential · Commercial · Mixed Use). &ldquo;—&rdquo; = no type recorded.
           </div>
         </div>
       )}
