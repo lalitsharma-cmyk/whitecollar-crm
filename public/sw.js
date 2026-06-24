@@ -82,7 +82,13 @@
 // Budget Min/Max, Medium→"Medium of Source", Assignment History). Assign-To helper text
 // removed. Master Data Property Type column un-hidden by default. Display/filter-only —
 // no schema or data changes; Current Status field untouched.
-const CACHE = "wcr-shell-v40";
+// v41 (2026-06-24): Gallery / Resource Library module — new /gallery nav item +
+// page (upload images/PDF ≤5MB, URL links, text templates; categorize; search;
+// multi-select; share via WhatsApp/Email with public file links; share tracking).
+// Lead-detail "Share Resource" affordance + per-lead share history; gallery
+// resources surfaced in the WhatsApp/Email template picker. Public token-gated
+// download endpoint streams file bytes to clients without login.
+const CACHE = "wcr-shell-v41";
 const SHELL = ["/login", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", (event) => {

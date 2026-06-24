@@ -5,7 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import {
   LayoutDashboard, Users, Sparkles, Menu, X,
   Building2, BarChart3, Upload, UserCog, Settings as SettingsIcon, LogOut, Landmark,
-  ChevronLeft, ChevronRight, Gem, HelpCircle, AlertTriangle, Lock, PhoneCall, Briefcase, Database, ShieldCheck, Bot, Inbox, BadgeDollarSign, MapPin,
+  ChevronLeft, ChevronRight, Gem, HelpCircle, AlertTriangle, Lock, PhoneCall, Briefcase, Database, ShieldCheck, Bot, Inbox, BadgeDollarSign, MapPin, Images,
 } from "lucide-react";
 import GlobalDateFilter from "./GlobalDateFilter";
 import NotifBell from "./NotifBell";
@@ -92,6 +92,9 @@ const fullNav: NavSection[] = [
     { href: "/cold-calls",  label: "Revival Engine", Icon: Gem },
     { href: "/action-list", label: "Action List",    Icon: Sparkles, leadOpsHidden: true },
     { href: "/properties",  label: "Properties",     Icon: Building2 },
+    // Gallery / Resource Library — shareable collateral. Visible to everyone;
+    // upload/manage is gated inside the page (ADMIN/MANAGER only).
+    { href: "/gallery",     label: "Gallery",        Icon: Images },
     { href: "/vault",       label: "Vault",          Icon: Lock },
     { href: "/reports",     label: "Reports",        Icon: BarChart3,  agentHidden: true },
     { href: "/call-logs",   label: "Call Logs",      Icon: PhoneCall,  agentHidden: true },

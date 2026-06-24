@@ -1822,6 +1822,68 @@ const checks: Check[] = [
       }
     },
   },
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // 28. RESOURCE LIBRARY / GALLERY (2026-06-24) — new module. Invariants:
+  //     (a) Resource + ResourceShare tables exist with fileData as BYTEA.
+  //     (b) ResourceShare.leadId FK wires share-tracking to a Lead.
+  //     (c) The size/MIME cap helpers enforce ≤5 MB + image/pdf-only.
+  //     (d) The list/search route + the /gallery page NEVER select fileData
+  //         (bytes only stream from the public download route).
+  //     (e) Upload/edit/delete are role-gated (canManageResources / ADMIN+MANAGER);
+  //         the public file route is intentionally auth-free (capability = cuid).
+  // ───────────────────────────────────────────────────────────────────────────
+  {
+    name: "resource-library — tables(+bytea)+share-FK+size/mime cap+list-never-selects-fileData+role gates",
+    run: async () => {
+      const fs = await import("node:fs");
+
+      // (a) Tables + fileData column type.
+      const tbls = await prisma.$queryRaw<{ table_name: string }[]>`
+        SELECT table_name FROM information_schema.tables
+        WHERE table_schema = 'public' AND table_name IN ('Resource', 'ResourceShare')`;
+      assert(tbls.length === 2, `Resource + ResourceShare tables must exist (found ${tbls.length})`);
+      const fd = await prisma.$queryRaw<{ data_type: string }[]>`
+        SELECT data_type FROM information_schema.columns
+        WHERE table_schema='public' AND table_name='Resource' AND column_name='fileData'`;
+      assert(fd[0]?.data_type === "bytea", `Resource.fileData must be bytea (got ${fd[0]?.data_type})`);
+
+      // (b) Share-tracking FK: ResourceShare.leadId → Lead.
+      const fk = await prisma.$queryRaw<{ constraint_name: string }[]>`
+        SELECT constraint_name FROM information_schema.table_constraints
+        WHERE table_schema='public' AND table_name='ResourceShare'
+          AND constraint_type='FOREIGN KEY' AND constraint_name='ResourceShare_leadId_fkey'`;
+      assert(fk.length === 1, "ResourceShare.leadId FK (which file → which client) must exist");
+
+      // Prisma client sees the tables (counts work, no throw).
+      const [rc, sc] = await Promise.all([prisma.resource.count(), prisma.resourceShare.count()]);
+      assert(typeof rc === "number" && typeof sc === "number", "resource/share counts must work via Prisma client");
+
+      // (c) Size + MIME cap helpers (test the REAL pure code).
+      const { MAX_FILE_BYTES, isAllowedMime, canManageResources } = await import("../src/lib/resources");
+      assert(MAX_FILE_BYTES === 5 * 1024 * 1024, `upload cap must be 5 MB (got ${MAX_FILE_BYTES})`);
+      assert(isAllowedMime("image/png") && isAllowedMime("image/jpeg") && isAllowedMime("application/pdf"), "image/* + application/pdf must be allowed");
+      assert(!isAllowedMime("application/zip") && !isAllowedMime("text/html") && !isAllowedMime("application/x-msdownload") && !isAllowedMime(null), "non-image/pdf MIME must be rejected");
+      assert(canManageResources("ADMIN") && canManageResources("MANAGER") && !canManageResources("AGENT"), "manage = ADMIN/MANAGER only");
+
+      // (d) List route + gallery page must NOT select fileData (only the download route may).
+      const listRoute = fs.readFileSync("src/app/api/resources/route.ts", "utf8");
+      assert(!/fileData:\s*true/.test(listRoute), "list/search route must NEVER select fileData (bytes stay out of list payloads)");
+      assert(/canManageResources\(/.test(listRoute) && /multipart\/form-data/.test(listRoute) && /MAX_FILE_BYTES/.test(listRoute) && /isAllowedMime\(/.test(listRoute), "upload route must role-gate + enforce size + MIME cap");
+      const page = fs.readFileSync("src/app/(app)/gallery/page.tsx", "utf8");
+      assert(!/fileData:\s*true/.test(page), "/gallery page must NEVER select fileData");
+      const fileRoute = fs.readFileSync("src/app/api/resources/[id]/file/route.ts", "utf8");
+      assert(/fileData:\s*true/.test(fileRoute), "the download route IS the only place fileData is selected");
+      assert(/deletedAt/.test(fileRoute), "download route must refuse soft-deleted resources");
+
+      // (e) Mutating routes role-gated; share route writes a ResourceShare.
+      const idRoute = fs.readFileSync("src/app/api/resources/[id]/route.ts", "utf8");
+      assert(/canManageResources\(/.test(idRoute), "edit/delete route must role-gate (ADMIN/MANAGER)");
+      assert(/deletedAt: new Date\(\)/.test(idRoute), "delete must be a SOFT delete (reversible)");
+      const shareRoute = fs.readFileSync("src/app/api/resources/share/route.ts", "utf8");
+      assert(/resourceShare\.create\(/.test(shareRoute), "share route must record a ResourceShare row (tracking)");
+    },
+  },
 ];
 
 // ── runner ────────────────────────────────────────────────────────────────────

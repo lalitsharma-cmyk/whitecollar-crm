@@ -1,7 +1,8 @@
 "use client";
 import { useEffect, useState } from "react";
-import { MessageCircle, Mail, X, Sparkles, PenLine } from "lucide-react";
+import { MessageCircle, Mail, X, Sparkles, PenLine, FolderOpen } from "lucide-react";
 import { whatsappLink } from "@/lib/phone";
+import { buildShareMessage, type ResourceTypeStr } from "@/lib/resources";
 import { useBodyScrollLock } from "@/hooks/useBodyScrollLock";
 
 interface Lead { id: string; name: string; phone: string | null; email: string | null; }
@@ -10,6 +11,10 @@ interface Tpl {
   subject: string | null; body: string;
   /** Rendered preview from the server, with placeholders substituted for THIS lead. */
   rendered: { body: string; subject: string | null };
+}
+interface GalleryRes {
+  id: string; title: string; category: string; type: ResourceTypeStr;
+  fileUrl: string | null; textContent: string | null;
 }
 
 interface Props {
@@ -40,18 +45,35 @@ export default function TemplatePickerButton({ lead, kind, suggestedTrigger, com
   const [typing, setTyping] = useState(false);
   const [freeText, setFreeText] = useState("");
   const [freeSubject, setFreeSubject] = useState("");
+  // Gallery / Resource Library — shareable files + URL links + text templates,
+  // surfaced so the agent can insert a resource into the message they compose.
+  const [resources, setResources] = useState<GalleryRes[]>([]);
 
   useEffect(() => {
     if (!open || loaded) return;
     (async () => {
-      const r = await fetch(`/api/templates/render?leadId=${lead.id}&kind=${kind}`);
-      if (r.ok) {
-        const j = await r.json();
-        setTpls(j.items ?? []);
-        setLoaded(true);
-      }
+      const [tr, rr] = await Promise.all([
+        fetch(`/api/templates/render?leadId=${lead.id}&kind=${kind}`),
+        fetch(`/api/resources`, { cache: "no-store" }),
+      ]);
+      if (tr.ok) { const j = await tr.json(); setTpls(j.items ?? []); }
+      if (rr.ok) { const j = await rr.json(); setResources(j.items ?? []); }
+      setLoaded(true);
     })();
   }, [open, loaded, lead.id, kind]);
+
+  // Insert a gallery resource: its share message becomes the body, and we record
+  // a ResourceShare(leadId) so admin tracks which file went to which client.
+  function pickResource(r: GalleryRes) {
+    const origin = typeof window !== "undefined" ? window.location.origin : "";
+    const body = buildShareMessage(origin, r);
+    fetch("/api/resources/share", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ resourceId: r.id, leadId: lead.id, channel: kind === "WHATSAPP" ? "WHATSAPP" : "EMAIL" }),
+    }).catch(() => {});
+    sendMessage(body, r.title, undefined);
+  }
 
   function pick(t: Tpl) {
     sendMessage(t.rendered.body, t.rendered.subject ?? "", t.id);
@@ -175,6 +197,31 @@ export default function TemplatePickerButton({ lead, kind, suggestedTrigger, com
                     <div className="text-xs text-emerald-700">Skip templates — write a one-off message right here.</div>
                   </div>
                 </button>
+              )}
+
+              {/* From the Gallery / Resource Library — insert a shareable
+                  brochure / link / saved template into this message. */}
+              {!typing && resources.length > 0 && (
+                <>
+                  <div className="text-[10px] uppercase font-bold tracking-widest text-gray-500 pt-2 pb-1 flex items-center gap-1">
+                    <FolderOpen className="w-3 h-3" /> From Gallery
+                  </div>
+                  <div className="space-y-1.5">
+                    {resources.slice(0, 8).map((r) => (
+                      <button
+                        key={r.id}
+                        onClick={() => pickResource(r)}
+                        className="w-full text-left p-2.5 border border-[#e5e7eb] rounded-lg hover:border-[#c9a24b] transition flex items-center gap-2"
+                      >
+                        <FolderOpen className="w-3.5 h-3.5 text-gray-400 flex-none" />
+                        <div className="flex-1 min-w-0">
+                          <div className="font-semibold text-sm truncate">{r.title}</div>
+                          <div className="text-[11px] text-gray-500">{r.category} · {r.type === "TEXT" ? "Template" : r.type === "URL" ? "Link" : "File"}</div>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </>
               )}
 
               {!typing && <div className="text-[10px] uppercase font-bold tracking-widest text-gray-500 pt-2 pb-1">Or pick a template</div>}

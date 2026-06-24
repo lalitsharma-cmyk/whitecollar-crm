@@ -30,6 +30,7 @@ import ConversationStreamCard from "@/components/ConversationStreamCard";
 import StickyNoteWidget from "@/components/StickyNoteWidget";
 import BuyingSignalsCard from "@/components/BuyingSignalsCard";
 import VoiceNoteRecorder from "@/components/VoiceNoteRecorder";
+import LeadResourceShare from "@/components/LeadResourceShare";
 import QuickNoteCard from "@/components/QuickNoteCard";
 import LeadReassignClient from "@/components/LeadReassignClient";
 import RejectLeadModal from "@/components/RejectLeadModal";
@@ -1027,6 +1028,17 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
                   without scrolling. */}
               <div className="mt-3 w-full">
                 <VoiceNoteRecorder leadId={lead.id} />
+              </div>
+              {/* Share Resource from the Gallery / Resource Library — pick
+                  brochures/payment-plans/creatives/templates and send to this
+                  lead via WhatsApp/Email; every share is tracked + shows here. */}
+              <div className="w-full">
+                <LeadResourceShare
+                  leadId={lead.id}
+                  leadName={lead.name}
+                  phone={lead.phone}
+                  email={lead.email}
+                />
               </div>
               {/* Reject Lead is NOT here anymore. Single source of action: it lives
                   ONLY in the right-side "Lead admin" card (top), for admins,

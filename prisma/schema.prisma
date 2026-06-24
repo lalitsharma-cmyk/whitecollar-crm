@@ -164,6 +164,10 @@ model User {
   assistantRuns         AssistantRun[] @relation("AssistantRunBy")
 
   agentStatusEvents     AgentStatusEvent[]
+
+  // ── Gallery / Resource Library relations ──
+  uploadedResources     Resource[]      @relation("ResourceUploader")
+  resourceShares        ResourceShare[] @relation("ResourceSharedBy")
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -544,6 +548,8 @@ model Lead {
   fieldHistory    LeadFieldHistory[]
   // Buyer-data conversions that produced THIS lead (normally 0 or 1).
   buyerConversions BuyerRecord[]     @relation("BuyerConvertedLead")
+  // Gallery resources shared with this lead (tracking — which file → which client).
+  resourceShares  ResourceShare[]   @relation("ResourceShareLead")
 
   @@index([status])
   @@index([source])
@@ -2337,4 +2343,89 @@ model BuyerImportLog {
   createdAt DateTime @default(now())
 
   @@index([batchId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GALLERY / RESOURCE LIBRARY — client-shareable content (brochures, payment
+// plans, creatives, images, PDFs, text templates). Admin/Manager upload;
+// agents view + share. Each resource is EXACTLY ONE of:
+//   • FILE — uploaded bytes (≤5 MB image/* or application/pdf) in fileData.
+//   • URL  — externally-hosted file; admin pastes a link in fileUrl (no upload).
+//   • TEXT — a text template in textContent (no file).
+//
+// STORAGE NOTE: there is NO blob backend (@vercel/blob/S3/Cloudinary) in this
+// app, so uploaded files live in Postgres bytea (fileData). The size cap keeps
+// rows small; fileData is NEVER selected in list queries — only streamed by the
+// public download endpoint. For large-file / high-volume use, provisioning
+// Vercel Blob (BLOB_READ_WRITE_TOKEN + @vercel/blob) is the recommended future
+// upgrade — an infra/billing decision, not done here.
+// ─────────────────────────────────────────────────────────────────────────────
+enum ResourceType {
+  FILE   // uploaded bytes stored in fileData
+  URL    // external link in fileUrl
+  TEXT   // text template in textContent
+}
+
+enum ResourceShareChannel {
+  WHATSAPP
+  EMAIL
+  ATTACH   // attached to in-CRM lead communication (no external send)
+}
+
+model Resource {
+  id           String       @id @default(cuid())
+  title        String
+  // Flexible category string (Brochure | Payment Plan | Creative | Image | PDF |
+  // Template | Other …). Kept a free string so admins can add categories without
+  // a migration. UI offers the common set + free entry.
+  category     String       @default("Other")
+  type         ResourceType
+  // ── FILE fields (type = FILE) ──
+  fileName     String?
+  mimeType     String?
+  fileSize     Int?         // bytes — display + cap enforcement
+  // Raw bytes. NEVER selected in list/search queries (only the download route
+  // selects it). Nullable so URL/TEXT rows carry no blob.
+  fileData     Bytes?
+  // ── URL field (type = URL) ──
+  fileUrl      String?
+  // ── TEXT field (type = TEXT) ──
+  textContent  String?      @db.Text
+  // Optional association tags.
+  projectName  String?      // associate with a project (free string)
+  tags         String?      // comma-separated tags for search
+  uploadedById String?
+  uploadedBy   User?        @relation("ResourceUploader", fields: [uploadedById], references: [id], onDelete: SetNull)
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+  deletedAt    DateTime?    // soft-delete (recycle, reversible)
+
+  shares       ResourceShare[]
+
+  @@index([category])
+  @@index([type])
+  @@index([createdAt])
+  @@index([deletedAt])
+  @@index([projectName])
+}
+
+// One row per share event — "which file was shared with which client, how".
+model ResourceShare {
+  id          String               @id @default(cuid())
+  resourceId  String
+  resource    Resource             @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+  // Nullable — a share may be ad-hoc (copied a link from the gallery with no lead).
+  leadId      String?
+  lead        Lead?                @relation("ResourceShareLead", fields: [leadId], references: [id], onDelete: SetNull)
+  sharedById  String?
+  sharedBy    User?                @relation("ResourceSharedBy", fields: [sharedById], references: [id], onDelete: SetNull)
+  channel     ResourceShareChannel
+  recipient   String?              // phone / email captured at share time
+  note        String?
+  sharedAt    DateTime             @default(now())
+
+  @@index([resourceId])
+  @@index([leadId])
+  @@index([sharedById])
+  @@index([sharedAt])
 }
