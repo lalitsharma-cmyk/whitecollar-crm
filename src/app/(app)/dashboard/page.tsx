@@ -63,6 +63,14 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
       ? (sp.team === "India" ? "India" : sp.team === "Dubai" ? "Dubai" : sp.team === "all" ? "all" : (me.team === "India" ? "India" : me.team === "Dubai" ? "Dubai" : "all"))
       : (me.team === "India" ? "India" : "Dubai"); // MANAGER + AGENT locked to own team
 
+  // Team param threaded onto the meetings/site-visit/virtual drill hrefs so the
+  // /activities "Scheduled Today" list reproduces the tile's team-scoped where.
+  // Only meaningful for ADMIN/MANAGER (their tiles count `teamActWhere`, which is
+  // team-filtered); AGENT tiles count by userId so the drill ignores ?view= for
+  // them — we omit it to keep the agent URL clean. "all" needs no team filter.
+  // (isAdminOrMgr is defined above.)
+  const tileViewParam = isAdminOrMgr && (view === "India" || view === "Dubai") ? `&view=${view}` : "";
+
   // Soft-deleted leads (recycle bin) must NEVER count in any active dashboard
   // figure, so deletedAt:null is baked into every scope here — and into the
   // `lead:` relation filter for activity/call queries. Every count below spreads
@@ -628,17 +636,21 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
               </Link>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
-              <Link href="/activities?type=EXPO_MEETING,OFFICE_MEETING,HOME_VISIT" className="card p-4 hover:shadow-lg transition">
+              {/* Drill targets carry planned=1 (+ view= for the admin team selector)
+                  so /activities "Scheduled Today" reproduces this tile's EXACT
+                  where (meActWhere attribution + status:PLANNED + IST-day window).
+                  count == drill — see activities/page.tsx todayScheduledWhere. */}
+              <Link href={`/activities?type=EXPO_MEETING,OFFICE_MEETING,HOME_VISIT&planned=1${tileViewParam}`} className="card p-4 hover:shadow-lg transition">
                 <div className="text-3xl font-extrabold text-teal-700 dark:text-teal-300">{meetingsToday}</div>
                 <div className="text-xs font-semibold text-slate-800 dark:text-slate-200 mt-1">🤝 Meetings</div>
                 <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">expo / office / home · today</div>
               </Link>
-              <Link href="/activities?type=SITE_VISIT" className="card p-4 hover:shadow-lg transition">
+              <Link href={`/activities?type=SITE_VISIT&planned=1${tileViewParam}`} className="card p-4 hover:shadow-lg transition">
                 <div className="text-3xl font-extrabold text-green-700 dark:text-green-300">{siteVisitsToday}</div>
                 <div className="text-xs font-semibold text-slate-800 dark:text-slate-200 mt-1">🏗️ Site visits</div>
                 <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">scheduled · today</div>
               </Link>
-              <Link href="/activities?type=VIRTUAL_MEETING" className="card p-4 hover:shadow-lg transition">
+              <Link href={`/activities?type=VIRTUAL_MEETING&planned=1${tileViewParam}`} className="card p-4 hover:shadow-lg transition">
                 <div className="text-3xl font-extrabold text-sky-700 dark:text-sky-300">{virtualMeetingsToday}</div>
                 <div className="text-xs font-semibold text-slate-800 dark:text-slate-200 mt-1">💻 Virtual meets</div>
                 <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">scheduled · today</div>

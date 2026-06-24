@@ -119,7 +119,7 @@ async function main() {
 
   // 2,16,23,24,25,13,18 — deployed-code gates (role/UI; need agent login to SEE)
   add("2", "Agent New Lead button hidden", grep("src/app/(app)/leads/page.tsx", /role !== "AGENT"[\s\S]*New Lead/) || grep("src/app/(app)/leads/page.tsx", /me\.role !== "AGENT"/), `button gated + createLeadAction/quickCreateLeadAction block AGENT (live code) — VISIBLE ONLY AS AGENT`);
-  add("16", "Agent permission restrictions", grep("src/app/(app)/leads/new/actions.ts", /role === "AGENT"/) && grep("src/app/api/leads/export/route.ts", /role === "AGENT"/), `create/export/import/delete all gated server-side (live) — VISIBLE ONLY AS AGENT`);
+  add("16", "Agent permission restrictions", grep("src/app/(app)/leads/new/actions.ts", /role === "AGENT"/) && grep("src/app/api/reports/export/route.ts", /requireRole\("ADMIN"\)/), `create gated server-side; export = /api/reports/export ADMIN-only+watermarked+audited (orphan /api/leads/export removed); import/delete gated (live) — VISIBLE ONLY AS AGENT`);
   add("23", "Imported Fields hidden from agents", grep("src/app/(app)/leads/[id]/page.tsx", /ImportedFieldsCard/) , `ImportedFieldsCard admin-only (aa5543f, live) — Admin/Lalit STILL SEE it (correct); hidden for agents`);
   add("24", "Routing Audit moved down / hidden from agents", grep("src/app/(app)/leads/[id]/page.tsx", /[Rr]outing/), `Routing card moved to bottom + admin-only (e4b5d21, live) — VISIBLE ONLY AS AGENT difference`);
   add("25", "Client info/location/scheduling layout order", grep("src/app/(app)/leads/[id]/page.tsx", /qualificationCard|SiteVisitChecklist|LeadMeetingClient/), `agent-view section order reworked (914c7c0, live)`);

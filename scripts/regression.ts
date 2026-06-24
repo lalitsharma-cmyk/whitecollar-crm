@@ -530,8 +530,16 @@ const checks: Check[] = [
       assert(/role === "AGENT"/.test(action), "quickCreateLeadAction MUST block AGENT (direct POST vector)");
       const page = fs.readFileSync("src/app/(app)/leads/new/page.tsx", "utf8");
       assert(/createLeadAction/.test(page) && /role === "AGENT"/.test(page), "createLeadAction MUST block AGENT");
-      const exp = fs.readFileSync("src/app/api/leads/export/route.ts", "utf8");
-      assert(/role === "AGENT"/.test(exp) && /403/.test(exp), "lead export route MUST block AGENT");
+      // Lead export now lives ONLY at /api/reports/export (watermarked + audited +
+      // ADMIN-gated). The legacy /api/leads/export route was an un-watermarked,
+      // un-audited orphan (0 UI refs, gate weaker than its comment) and was DELETED
+      // 2026-06-25. Lock both facts so the exfiltration path can't return silently.
+      assert(!fs.existsSync("src/app/api/leads/export/route.ts"),
+        "orphan /api/leads/export route MUST stay deleted — the real export is /api/reports/export (watermarked+audited)");
+      const reportsExp = fs.readFileSync("src/app/api/reports/export/route.ts", "utf8");
+      assert(/requireRole\("ADMIN"\)/.test(reportsExp), "/api/reports/export MUST be ADMIN-gated (single export path)");
+      assert(/await audit\(/.test(reportsExp), "/api/reports/export MUST audit() every download");
+      assert(/Confidential export/.test(reportsExp), "/api/reports/export MUST watermark the CSV (downloader trace)");
     },
   },
 
@@ -3325,6 +3333,107 @@ const checks: Check[] = [
         assert(pct >= 0.9, `only ${callWithOutcome}/${callTotal} (${(pct * 100).toFixed(1)}%) CALL activities have an outcome — backfill regressed?`);
         results.push({ name: "  ↳ note", ok: true, detail: `${callWithOutcome}/${callTotal} CALL activities carry an outcome; AL Overdue==Leads chip==${alOverdue}; 0 null sourceRaw; 0 mis-cased statuses` });
       }
+    },
+  },
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // 5. CORRECTNESS+SECURITY BATCH (2026-06-25) — three latent-bug closures:
+  //      (a) Dashboard Meetings/Site-Visits/Virtual tile == /activities drill.
+  //          Tile counts Activity by attribution(meActWhere) + status:PLANNED +
+  //          IST-day window + type. The drill (?planned=1) must reproduce that
+  //          EXACT where so count == rows opened. We assert tile-where count ==
+  //          drill-where count for all 3 type buckets (admin/team="all" branch).
+  //      (b) Revival "All" count excludes soft-deleted cold leads (deletedAt:null
+  //          now lives on originCold), so All == Σ(status chips) — the chips
+  //          already filter deletedAt:null. Data + source proof.
+  //      (c) Lead-detail cold redirect keys on isColdCall OR leadOrigin∈COLD_ORIGINS
+  //          (broadened), matching where the Revival list/detail place the lead.
+  // ───────────────────────────────────────────────────────────────────────────
+  {
+    name: "correctness-jun25 — meetings tile==drill (count), Revival All excludes deleted (==Σ chips), cold redirect broadened",
+    run: async () => {
+      const fs = await import("node:fs");
+      const { istDayRange } = await import("../src/lib/datetime");
+      const { start: dayStart, end: dayEnd } = istDayRange();
+
+      // ── (a) TILE == DRILL for the 3 meeting buckets (admin/team="all" branch) ──
+      // Tile where (dashboard/page.tsx, admin teamActWhere + PLANNED + type + IST):
+      //   { lead:{deletedAt:null}, status:PLANNED, type:{in:…}, scheduledAt: IST-day }
+      // Drill where (activities/page.tsx todayScheduledWhere with ?planned=1, admin,
+      //   no view): { lead:{deletedAt:null}, status:PLANNED } + scheduledAt + typeWhere
+      // — byte-for-byte the SAME predicate. Assert equal counts (proves alignment;
+      // the historical drift was ownerId-vs-userId + missing status filter).
+      const buckets: { label: string; types: any[] }[] = [
+        { label: "Meetings",        types: ["EXPO_MEETING", "OFFICE_MEETING", "HOME_VISIT"] },
+        { label: "Site Visits",     types: ["SITE_VISIT"] },
+        { label: "Virtual Meetings",types: ["VIRTUAL_MEETING"] },
+      ];
+      for (const b of buckets) {
+        const tileWhere = {
+          lead: { deletedAt: null },
+          status: "PLANNED" as const,
+          type: { in: b.types },
+          scheduledAt: { gte: dayStart, lt: dayEnd },
+        };
+        const drillWhere = {
+          // todayScheduledWhere(admin, planned=1) = { lead:{deletedAt:null}, status:PLANNED }
+          lead: { deletedAt: null },
+          status: "PLANNED" as const,
+          scheduledAt: { gte: dayStart, lt: dayEnd },
+          type: { in: b.types }, // typeWhere from ?type=
+        };
+        const tileCount = await prisma.activity.count({ where: tileWhere });
+        const drillCount = await prisma.activity.count({ where: drillWhere });
+        assert(tileCount === drillCount, `${b.label}: tile count (${tileCount}) != drill count (${drillCount}) — count==drill broken`);
+      }
+      // SOURCE: the tile hrefs pass planned=1 and the drill applies status:PLANNED +
+      // the userId/team attribution (todayScheduledWhere). Lock both so a refactor
+      // can't drop the flag or the status filter and re-introduce the divergence.
+      const dash = fs.readFileSync("src/app/(app)/dashboard/page.tsx", "utf8");
+      assert((dash.match(/\/activities\?type=[^"`]*planned=1/g) ?? []).length >= 3,
+        "all 3 dashboard meeting/site-visit/virtual tiles MUST drill with planned=1 (count==drill)");
+      const actPage = fs.readFileSync("src/app/(app)/activities/page.tsx", "utf8");
+      assert(/todayScheduledWhere/.test(actPage) && /status:\s*ActivityStatus\.PLANNED/.test(actPage),
+        "/activities MUST apply status:PLANNED via todayScheduledWhere on the dashboard drill");
+      assert(/sp\.planned\s*===\s*"1"/.test(actPage), "/activities MUST read ?planned=1 to enter dashboard-drill mode");
+
+      // ── (b) REVIVAL "All" count excludes soft-deleted cold leads ──────────────
+      // originCold now carries deletedAt:null, so allCold (admin scope {}) counts
+      // only non-deleted cold leads — identical to Σ(per-status chips), which also
+      // filter deletedAt:null. Prove via data: allCold == cold leads not deleted.
+      const COLD = ["COLD", "REVIVAL"];
+      const allColdCount = await prisma.lead.count({ where: { leadOrigin: { in: COLD }, deletedAt: null } });
+      const coldNotDeleted = await prisma.lead.count({ where: { AND: [{ leadOrigin: { in: COLD } }, { deletedAt: null }] } });
+      assert(allColdCount === coldNotDeleted, `Revival All count (${allColdCount}) must equal non-deleted cold leads (${coldNotDeleted})`);
+      // And any soft-deleted cold lead must be ABSENT from the All bucket: assert the
+      // All-with-deletedAt:null count never exceeds the unfiltered cold count, and
+      // equals (unfiltered − deleted). If a cold lead is ever soft-deleted this stays
+      // consistent (today deletedCold may be 0; the math still holds).
+      const coldAll = await prisma.lead.count({ where: { leadOrigin: { in: COLD } } });
+      const coldDeleted = await prisma.lead.count({ where: { leadOrigin: { in: COLD }, deletedAt: { not: null } } });
+      assert(allColdCount === coldAll - coldDeleted, `Revival All (${allColdCount}) must equal total cold (${coldAll}) − soft-deleted cold (${coldDeleted})`);
+      // SOURCE: originCold in cold-calls/page.tsx MUST include deletedAt:null so All/
+      // filtered/where all exclude the recycle bin (the per-status chips already did).
+      const coldPage = fs.readFileSync("src/app/(app)/cold-calls/page.tsx", "utf8");
+      // Match the originCold declaration line (ends at `;`) and require it to carry
+      // BOTH leadOrigin and deletedAt:null. (Inner `{ in: COLD_ORIGINS }` braces
+      // mean a naive [^}]* stops short — match to the statement terminator instead.)
+      const originColdDecl = coldPage.match(/const originCold[^;]*;/)?.[0] ?? "";
+      assert(/leadOrigin/.test(originColdDecl) && /deletedAt:\s*null/.test(originColdDecl),
+        "cold-calls originCold MUST include deletedAt:null (All count == Σ status chips)");
+
+      // ── (c) Lead-detail cold redirect broadened to leadOrigin∈COLD_ORIGINS ────
+      const leadDetail = fs.readFileSync("src/app/(app)/leads/[id]/page.tsx", "utf8");
+      assert(/COLD_ORIGINS\.includes\(lead\.leadOrigin\)/.test(leadDetail) && /lead\.isColdCall/.test(leadDetail),
+        "lead-detail redirect MUST key on isColdCall OR leadOrigin∈COLD_ORIGINS (cold/revival always redirect to Revival Engine)");
+      assert(/import\s*\{[^}]*COLD_ORIGINS[^}]*\}\s*from\s*"@\/lib\/leadScope"/.test(leadDetail),
+        "lead-detail MUST import COLD_ORIGINS from the shared leadScope (single source the list uses)");
+
+      results.push({
+        name: "  ↳ note",
+        ok: true,
+        detail: `meetings tile==drill ✓ (3 buckets); Revival All=${allColdCount} (cold total=${coldAll}, deleted=${coldDeleted}) == Σ chips; cold redirect covers leadOrigin∈{COLD,REVIVAL}`,
+      });
     },
   },
 ];

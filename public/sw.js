@@ -309,7 +309,20 @@
 // them. (4) 22 mis-cased statuses folded to canonical ("Long Term Followup" etc →
 // "Long Term Follow Up"; "Fund Issue" → "Funds Issue") so each shows under one
 // chip. Data + filter changes — force a fresh shell so chips/counts refresh.
-const CACHE = "wcr-shell-v63";
+// v64 (2026-06-25): Correctness + security batch (code-only). (1) Deleted the
+// orphan /api/leads/export route — an un-watermarked, un-audited, weakly-gated
+// data-exfiltration path with ZERO UI references; the sole export is now
+// /api/reports/export (ADMIN-only + watermarked + audited). (2) Dashboard
+// Meetings / Site Visits / Virtual Meetings tiles now drill to /activities with
+// planned=1 (+view= for the admin team selector) and the /activities "Scheduled
+// Today" list reproduces the tile's EXACT where (userId/team attribution +
+// status:PLANNED + IST-day window) — count == drill (was userId-vs-ownerId +
+// missing status filter). (3) Revival Engine: the "All" chip / totals now exclude
+// soft-deleted cold leads (deletedAt:null on originCold) so All == Σ status chips;
+// and the /leads/:id cold redirect keys on isColdCall OR leadOrigin∈{COLD,REVIVAL}
+// so cold/revival records always land in Revival Engine. Bump to refresh the shell
+// so the corrected tile drill-hrefs are served.
+const CACHE = "wcr-shell-v64";
 const SHELL = ["/login", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", (event) => {

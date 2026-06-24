@@ -97,7 +97,7 @@
 | `/api/admin/users/[id]/toggle-active` | PATCH | Deactivate/reactivate user (ADMIN) |
 | `/api/call-logs/export` | GET | CSV export of call logs (role-scoped) |
 | `/api/leads/[id]/stage` | POST | Move lead to a new pipeline stage |
-| `/api/leads/export` | GET | Lead list CSV export |
+| `/api/reports/export` | GET | Lead/Master-Data/Calls CSV export — ADMIN-only, watermarked + audited (sole export path; orphan `/api/leads/export` removed 2026-06-25) |
 | `/api/intake/csv` | POST | CSV/Excel lead import |
 | `/api/settings/*` | POST/PATCH | Toggle admin settings |
 | `/api/push/subscribe` | POST | Register browser push subscription |

@@ -69,7 +69,7 @@ All 16 code bugs from the previous audit are confirmed resolved. See `CRM_BUG_RE
 | BANT fields visible and editable | PASS | |
 | Stage change from detail page | PASS | "What changed?" modal fires |
 | Reassign owner (ADMIN/MANAGER) | PASS | |
-| Export CSV | PASS | /api/leads/export |
+| Export CSV | PASS | /api/reports/export (ADMIN-only, watermarked + audited; orphan /api/leads/export removed 2026-06-25) |
 | AGENT scope (own leads only) | PASS | leadScopeWhere enforced server-side |
 
 ### Pipeline (`/pipeline`)

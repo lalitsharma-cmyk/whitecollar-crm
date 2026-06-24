@@ -63,8 +63,12 @@ async function main() {
   console.log(`   active AGENT users: ${agents.map((a) => `${a.name}(${a.team})`).join(", ")}`);
   const createAct = fs.readFileSync("src/app/(app)/leads/new/actions.ts", "utf8");
   const createPage = fs.readFileSync("src/app/(app)/leads/new/page.tsx", "utf8");
-  const exportR = fs.readFileSync("src/app/api/leads/export/route.ts", "utf8");
-  console.log(`   quickCreateLeadAction blocks AGENT: [${mark(/role === "AGENT"/.test(createAct))}] · createLeadAction blocks AGENT: [${mark(/role === "AGENT"/.test(createPage))}] · export route 403s AGENT: [${mark(/role === "AGENT"/.test(exportR) && /403/.test(exportR))}]\n`);
+  // The orphan /api/leads/export was deleted 2026-06-25; the sole export path is
+  // now /api/reports/export (ADMIN-gated + watermarked + audited).
+  const orphanGone = !fs.existsSync("src/app/api/leads/export/route.ts");
+  const reportsExp = fs.readFileSync("src/app/api/reports/export/route.ts", "utf8");
+  const exportSecured = orphanGone && /requireRole\("ADMIN"\)/.test(reportsExp) && /await audit\(/.test(reportsExp) && /Confidential export/.test(reportsExp);
+  console.log(`   quickCreateLeadAction blocks AGENT: [${mark(/role === "AGENT"/.test(createAct))}] · createLeadAction blocks AGENT: [${mark(/role === "AGENT"/.test(createPage))}] · export = /api/reports/export ADMIN-only+watermarked+audited, orphan removed: [${mark(exportSecured)}]\n`);
 
   // 4. INDIA / DUBAI SEGREGATION
   console.log("4) INDIA / DUBAI PROJECT SEGREGATION (live counts + guards)");

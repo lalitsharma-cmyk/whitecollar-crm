@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
-import { ActivityStatus, ActivityType, AIScore } from "@prisma/client";
+import { ActivityStatus, ActivityType, AIScore, Prisma } from "@prisma/client";
 import { SUPPRESSED_STATUSES, CLOSING_STATUSES, statusColor } from "@/lib/lead-statuses";
 import Link from "next/link";
 import { fmtIST12, fmtISTTime12 } from "@/lib/datetime";
@@ -106,8 +106,33 @@ export default async function ActivitiesPage(
     : {};
 
   const me = await requireUser();
+  const isAdminOrMgr = me.role === "ADMIN" || me.role === "MANAGER";
   const scope = me.role === "AGENT" ? { ownerId: me.id } : {};
   const leadScopeAsActivityFilter = me.role === "AGENT" ? { lead: { ownerId: me.id, deletedAt: null } } : { lead: { deletedAt: null } };
+
+  // ── Dashboard "Scheduled Today" drill alignment (count == drill) ──────────
+  // The Dashboard Meetings / Site Visits / Virtual Meetings tiles count Activity
+  // by the SAME attribution `meActWhere` uses (dashboard/page.tsx):
+  //   • AGENT          → userId = me.id (who LOGGED the activity)
+  //   • ADMIN/MANAGER  → lead's team (the ?view= selector), no userId
+  // …PLUS status:PLANNED and the IST-day scheduledAt window. The generic
+  // /activities "Scheduled Today" section historically scoped by lead.ownerId
+  // with no status filter, so its length diverged from the tile (806 of 3,685
+  // activities have userId≠ownerId). When the tile links here it passes
+  // ?planned=1 (+ &view= for admin), and we reproduce the tile's EXACT where so
+  // the number shown == the rows opened. Without the flag the page keeps its
+  // original behaviour (general action board).
+  const dashDrill = sp.planned === "1";
+  const teamView = sp.view === "India" || sp.view === "Dubai" ? sp.view : null;
+  // Attribution that mirrors dashboard `meActWhere` for THIS user.
+  const tileAttribution: Prisma.ActivityWhereInput = isAdminOrMgr
+    ? { lead: { deletedAt: null, ...(teamView ? { forwardedTeam: teamView } : {}) } }
+    : { userId: me.id, lead: { deletedAt: null } };
+  // "Scheduled Today" where: dashboard-drill mode reproduces the tile (attribution
+  // + PLANNED); otherwise the legacy lead-ownerId scope with no status filter.
+  const todayScheduledWhere: Prisma.ActivityWhereInput = dashDrill
+    ? { ...tileAttribution, status: ActivityStatus.PLANNED }
+    : { ...leadScopeAsActivityFilter };
 
   const now = new Date();
   const in24h = new Date(now.getTime() + 24 * 60 * 60 * 1000);
@@ -192,15 +217,18 @@ export default async function ActivitiesPage(
     }),
     // 5. Scheduled today (IST window) — optionally filtered by type (single OR
     //    multi). This is the set the Dashboard meeting/site-visit/virtual cards
-    //    count, so when a type filter is active its length == the card number.
+    //    count: with the dashboard drill flag (?planned=1) `todayScheduledWhere`
+    //    reproduces the tile's EXACT where (userId/team attribution + PLANNED),
+    //    so its length == the tile number. take:200 ≥ any realistic daily count
+    //    so the rendered list can't silently truncate below the tile's count.
     prisma.activity.findMany({
       where: {
-        ...leadScopeAsActivityFilter,
+        ...todayScheduledWhere,
         scheduledAt: { gte: dayStart, lt: dayEnd },
         ...typeWhere,
       },
       orderBy: { scheduledAt: "asc" },
-      take: 100,
+      take: 200,
       include: activityInclude,
     }),
     // 6. Potential closures — NEGOTIATION with eoiStage set

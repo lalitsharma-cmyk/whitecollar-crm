@@ -62,7 +62,13 @@ export default async function ColdDataPage({ searchParams }: { searchParams: Pro
 
   // Agents only see cold data assigned to them. Admin/manager see everything.
   const baseScope: Prisma.LeadWhereInput = isAdminOrMgr ? {} : { ownerId: me.id };
-  const originCold: Prisma.LeadWhereInput = { leadOrigin: { in: COLD_ORIGINS } };
+  // CRITICAL: deletedAt:null lives on originCold so EVERY count built on it (All
+  // tab via allCold, filteredCount via where, the per-status chips) excludes
+  // soft-deleted cold leads consistently. Without it, the "All" count would
+  // exceed Σ(status chips) — which DO filter deletedAt:null (line ~166) — the
+  // moment any cold lead is soft-deleted. Matches the rest of the CRM (recycle
+  // bin is never counted).
+  const originCold: Prisma.LeadWhereInput = { leadOrigin: { in: COLD_ORIGINS }, deletedAt: null };
   const unassigned: Prisma.LeadWhereInput = { ownerId: null };
 
   // ── Shared filter translation (same engine as /leads + /master-data) ────────

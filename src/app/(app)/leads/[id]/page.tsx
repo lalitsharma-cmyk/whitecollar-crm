@@ -22,7 +22,7 @@ import { getTravelRatePerKmInr } from "@/lib/settings";
 import { runReconciler } from "@/lib/reconciler";
 import InlineEdit from "@/components/InlineEdit";
 import { acefoneEnabled } from "@/lib/acefone";
-import { canTouchLead, leadScopeWhere } from "@/lib/leadScope";
+import { canTouchLead, leadScopeWhere, COLD_ORIGINS } from "@/lib/leadScope";
 import { hasContactActivityToday } from "@/lib/followupGate";
 import { parseRemarksTimeline, mergeSameMoment } from "@/lib/remarkParser";
 import { projectWhereForUser, teamToCountry } from "@/lib/propertyScope";
@@ -164,8 +164,14 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
   if (!lead) notFound();
 
   // §14 Module context rule: cold-call records must stay inside Revival Engine.
-  // If someone navigates to /leads/:id for a cold-call lead, redirect them.
-  if (lead.isColdCall) redirect(`/revival-engine/cold-data/${id}`);
+  // If someone navigates to /leads/:id for a cold/revival record, redirect them.
+  // Key on the SAME predicate the Revival list/detail use (isColdCall OR
+  // leadOrigin ∈ COLD_ORIGINS) — keying on isColdCall alone would leave a
+  // leadOrigin=COLD/REVIVAL, isColdCall=false lead reachable here without
+  // redirecting, diverging from where the rest of the CRM places it.
+  if (lead.isColdCall || COLD_ORIGINS.includes(lead.leadOrigin)) {
+    redirect(`/revival-engine/cold-data/${id}`);
+  }
 
   // Resolve owner names for any ownerId-change rows in the Change-History card.
   const ownerIdVals = [...new Set(lead.fieldHistory.filter((h) => h.field === "ownerId").flatMap((h) => [h.oldValue, h.newValue]).filter((v): v is string => !!v))];
