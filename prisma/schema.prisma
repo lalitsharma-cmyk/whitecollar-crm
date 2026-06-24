@@ -2192,6 +2192,13 @@ model BuyerRecord {
   sourceFile        String?  // Original filename (if imported)
   // Flexibility — preserve unmapped columns from import sheets as JSON
   extraFields       Json?    // { "fieldName": "value", ... } for custom sheet columns
+  // IMMUTABLE audit of the ENTIRE original import row (every column, incl. mapped
+  // ones). Mirrors Lead.rawImport — guarantees every imported value is recoverable
+  // verbatim. Surfaced in the buyer detail Imported Fields ("Original Imported Row").
+  // NOTE: BuyerRecord.remarks (below, lifecycle section) doubles as the verbatim
+  // imported-remarks store (= Raw History source, like Lead.rawRemarks) AND the
+  // working notes — the buyer detail Raw History + Smart Timeline both read it.
+  rawImport         Json?    // verbatim full import row { "<header>": "<value>", ... }
   // Repeat-buyer detection
   buyerKey          String?  // Normalized (fname+lname+phone hash) for rollup. Index for dedup.
   // Metadata

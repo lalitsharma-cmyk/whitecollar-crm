@@ -283,8 +283,9 @@ export default async function BuyerDetail({ params }: { params: Promise<{ id: st
             </div>
           </div>
 
-          {/* Imported Fields — unmapped import columns, verbatim. */}
-          <ImportedFieldsCard customFields={rec.extraFields} />
+          {/* Imported Fields — unmapped import columns (extraFields) + the verbatim
+              full original row (rawImport, collapsible "Original Imported Row"). */}
+          <ImportedFieldsCard customFields={rec.extraFields} rawImport={rec.rawImport} />
 
           {/* Multiple Properties table — all records sharing this buyerKey. */}
           {others.length > 0 && (

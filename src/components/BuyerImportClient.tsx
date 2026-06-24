@@ -21,6 +21,9 @@ const BUYER_FIELDS: [string, string][] = [
   ["transactionValue", "Transaction Value"], ["pricePerSqFt", "Price / sq.ft"],
   ["transactionDate", "Transaction Date"], ["transactionId", "Transaction ID"],
   ["agentName", "Agent"],
+  // Remarks / notes / activity history → BuyerRecord.remarks (verbatim Raw History +
+  // a derived Smart Timeline). Parity with the Lead import's Remarks mapping.
+  ["remarks", "Remarks / Notes"],
 ];
 const FIELD_LABEL = Object.fromEntries(BUYER_FIELDS) as Record<string, string>;
 
@@ -41,6 +44,7 @@ const GUESS: Record<string, string[]> = {
   transactionDate: ["transaction date", "deal date", "booking date", "date of sale", "sale date", "agreement date", "date", "purchase date"],
   transactionId: ["transaction id", "deal id", "booking id", "reference", "ref no", "transaction ref", "deal reference"],
   agentName: ["agent", "agent name", "sales agent", "broker", "rm", "relationship manager", "sold by"],
+  remarks: ["remarks", "remark", "notes", "note", "comments", "comment", "follow-up notes", "followup notes", "activity history", "activity", "conversation", "history", "status", "follow-up", "followup", "follow up"],
 };
 
 const norm = (h: string) => h.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
@@ -96,8 +100,11 @@ export default function BuyerImportClient() {
   const [colMap, setColMap] = useState<Record<string, ColTarget>>({});
   const [err, setErr] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
-  const [progress, setProgress] = useState({ done: 0, total: 0, imported: 0, failed: 0 });
+  const [progress, setProgress] = useState({ done: 0, total: 0, imported: 0, updated: 0, skipped: 0, failed: 0 });
   const [batchId, setBatchId] = useState<string | null>(null);
+  // Duplicate handling — what to do with a row that matches an existing live buyer
+  // (by buyerKey / phone / email). Default "skip" never creates a duplicate.
+  const [dupMode, setDupMode] = useState<"skip" | "update" | "create" | "history">("skip");
 
   function applyHeaderRow(g: string[][], hr: number) {
     const raw = (g[hr] ?? []).map((c) => String(c ?? "").trim());
@@ -160,12 +167,17 @@ export default function BuyerImportClient() {
     setStep("run");
 
     // Build mapped rows + preserve every KEEP column into _extra. SKIP columns dropped.
-    type MappedRow = Record<string, string | Record<string, string>> & { _extra: Record<string, string>; clientName?: string };
+    // `_raw` keeps the COMPLETE original row (every column, verbatim) so the server can
+    // store it on BuyerRecord.rawImport — nothing is ever lost, even SKIP'd columns.
+    type MappedRow = Record<string, string | Record<string, string>> & { _extra: Record<string, string>; _raw: Record<string, string>; clientName?: string };
     const mapped: MappedRow[] = rows.map((r) => {
       const extra: Record<string, string> = {};
-      const o: MappedRow = { _extra: extra };
+      const raw: Record<string, string> = {};
+      const o: MappedRow = { _extra: extra, _raw: raw };
       for (const [field, col] of Object.entries(fieldToCol)) o[field] = r[col] ?? "";
       for (const h of keptCols) { const v = (r[h] ?? "").trim(); if (v) extra[h] = v; }
+      // rawImport = every column of the source row, verbatim (incl. mapped + skipped).
+      for (const h of headers) { const v = (r[h] ?? "").trim(); if (v) raw[h] = v; }
       return o;
     }).filter((o) => String(o.clientName ?? "").trim());
 
@@ -181,22 +193,26 @@ export default function BuyerImportClient() {
     } catch { setNote("❌ Could not start import (network)."); setStep("map"); return; }
 
     const BATCH = 200;
-    const acc = { imported: 0, failed: 0 };
+    const acc = { imported: 0, updated: 0, skipped: 0, failed: 0 };
     setProgress({ done: 0, total: mapped.length, ...acc });
     for (let i = 0; i < mapped.length; i += BATCH) {
       const chunk = mapped.slice(i, i + BATCH);
       try {
         const res = await fetch("/api/buyer-data/import", {
           method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ batchId: bid, rows: chunk, rowOffset: i, sourceFile: fileName }),
+          body: JSON.stringify({ batchId: bid, rows: chunk, rowOffset: i, sourceFile: fileName, dupMode }),
         });
         const j = await res.json();
         if (!res.ok) { setNote(`❌ Import failed: ${j.error ?? "server error"}`); setErr(j.error ?? "Import failed."); setStep("map"); return; }
-        acc.imported += j.imported || 0; acc.failed += j.failed || 0;
+        acc.imported += j.imported || 0; acc.updated += j.updated || 0; acc.skipped += j.skipped || 0; acc.failed += j.failed || 0;
       } catch { acc.failed += chunk.length; }
       setProgress({ done: Math.min(i + BATCH, mapped.length), total: mapped.length, ...acc });
     }
-    setNote(`✅ Imported ${acc.imported} record${acc.imported !== 1 ? "s" : ""}${acc.failed ? `, ${acc.failed} failed` : ""}.`);
+    const bits = [`✅ Imported ${acc.imported} record${acc.imported !== 1 ? "s" : ""}`];
+    if (acc.updated) bits.push(`${acc.updated} updated`);
+    if (acc.skipped) bits.push(`${acc.skipped} duplicate${acc.skipped !== 1 ? "s" : ""} skipped`);
+    if (acc.failed) bits.push(`${acc.failed} failed`);
+    setNote(`${bits.join(" · ")}.`);
     setStep("done");
     router.refresh();
   }
@@ -299,6 +315,30 @@ export default function BuyerImportClient() {
             </div>
           )}
 
+          {/* ── DUPLICATE HANDLING ──────────────────────────────────────────
+              What to do with a row that matches an EXISTING live buyer (matched
+              by name+phone / phone / email). Default "Skip" never creates a
+              duplicate on re-import. (Reference pattern: HR import's radio.) */}
+          <div className="rounded-lg border border-gray-200 dark:border-slate-700 p-3 space-y-1.5">
+            <div className="text-xs font-semibold text-gray-600 dark:text-slate-300">If a buyer already exists (matched by phone / email / name)</div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 text-sm">
+              {([
+                ["skip", "Skip duplicate", "Leave the existing buyer untouched (no duplicate row)."],
+                ["update", "Update existing", "Fill the existing buyer's blank fields + add the new remark to its history."],
+                ["history", "Add to conversation history", "Append only the imported remark/notes to the existing buyer's timeline."],
+                ["create", "Create new anyway", "Import as a brand-new buyer even though one matches."],
+              ] as const).map(([val, label, hint]) => (
+                <label key={val} className={`flex items-start gap-2 cursor-pointer rounded-lg px-2 py-1.5 border ${dupMode === val ? "border-[#1a2e4a] bg-[#1a2e4a]/5 dark:bg-blue-900/20" : "border-transparent hover:bg-gray-50 dark:hover:bg-slate-800"}`}>
+                  <input type="radio" name="dupMode" className="mt-0.5" checked={dupMode === val} onChange={() => setDupMode(val)} />
+                  <span className="min-w-0">
+                    <span className="font-medium text-gray-800 dark:text-slate-100">{label}</span>
+                    <span className="block text-[11px] text-gray-500 dark:text-slate-400">{hint}</span>
+                  </span>
+                </label>
+              ))}
+            </div>
+          </div>
+
           {!canImport ? (
             <div className="text-sm bg-red-50 border border-red-200 text-red-700 rounded-lg p-2.5"><b>Cannot import:</b> match a column to <b>Client Name</b> above.</div>
           ) : (
@@ -320,7 +360,7 @@ export default function BuyerImportClient() {
         <div className="space-y-3 py-4">
           <div className="text-sm font-semibold text-gray-700 dark:text-slate-200">Importing… {progress.done} / {progress.total}</div>
           <div className="w-full h-3 bg-gray-100 dark:bg-slate-800 rounded-full overflow-hidden"><div className="h-full bg-[#1a2e4a] transition-all" style={{ width: `${pct}%` }} /></div>
-          <div className="text-[11px] text-gray-500">✅ {progress.imported} imported · ⚠ {progress.failed} failed — keep this tab open.</div>
+          <div className="text-[11px] text-gray-500">✅ {progress.imported} imported{progress.updated ? ` · ✏ ${progress.updated} updated` : ""}{progress.skipped ? ` · ⏭ ${progress.skipped} skipped` : ""} · ⚠ {progress.failed} failed — keep this tab open.</div>
         </div>
       )}
 
@@ -328,13 +368,13 @@ export default function BuyerImportClient() {
         <div className="space-y-3 text-center py-4">
           <div className="text-4xl">🎉</div>
           <div className="text-sm font-semibold text-gray-800 dark:text-slate-100">Import complete</div>
-          <div className="text-sm text-gray-600 dark:text-slate-300">✅ {progress.imported} imported · ⚠ {progress.failed} failed</div>
+          <div className="text-sm text-gray-600 dark:text-slate-300">✅ {progress.imported} imported{progress.updated ? ` · ✏ ${progress.updated} updated` : ""}{progress.skipped ? ` · ⏭ ${progress.skipped} duplicate${progress.skipped !== 1 ? "s" : ""} skipped` : ""} · ⚠ {progress.failed} failed</div>
           {progress.failed > 0 && batchId && (
             <div className="text-[11px] text-gray-500">Failed rows are logged with the reason (batch {batchId.slice(0, 8)}…).</div>
           )}
           <div className="flex gap-2 justify-center">
             <Link href="/buyer-data" className="btn btn-primary justify-center">View buyer data</Link>
-            <button type="button" onClick={() => { setStep("upload"); setGrid([]); setHeaders([]); setRows([]); setColMap({}); setNote(null); setBatchId(null); }} className="btn justify-center px-4 border border-gray-300 text-gray-600 rounded-lg text-sm dark:text-slate-300 dark:border-slate-600">Import another</button>
+            <button type="button" onClick={() => { setStep("upload"); setGrid([]); setHeaders([]); setRows([]); setColMap({}); setNote(null); setBatchId(null); setDupMode("skip"); }} className="btn justify-center px-4 border border-gray-300 text-gray-600 rounded-lg text-sm dark:text-slate-300 dark:border-slate-600">Import another</button>
           </div>
         </div>
       )}

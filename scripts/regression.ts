@@ -1501,6 +1501,85 @@ const checks: Check[] = [
       }
     },
   },
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // 43. BUYER IMPORT → RAW HISTORY + SMART TIMELINE + DEDUP (parity with Lead imports).
+  //   A buyer import must now behave like a lead import:
+  //   (a) SCHEMA: BuyerRecord.rawImport column exists (migration applied to prod).
+  //   (b) PURE LIB: buildBuyerTimelinePlan honors a historical date in the remark
+  //       and falls back to the import date for an undated remark; the imported-tag
+  //       round-trips (isImportedActivityDescription); composeRemarkFromFields turns
+  //       status columns into one verbatim labeled line (Excel serial → readable).
+  //   (c) ROUTE WIRING (static): the import route maps a Remarks column → remarks,
+  //       stores rawImport, dedups against existing buyers, and generates BuyerActivity.
+  //   (d) DATA INVARIANT: every buyer that carries an imported-tagged BuyerActivity
+  //       also has a non-null remarks (Raw History) — the Smart Timeline is never
+  //       orphaned from the Raw History it was derived from.
+  // Read-only: column probe + pure-lib math + static source scans + a data count.
+  // ───────────────────────────────────────────────────────────────────────────
+  {
+    name: "buyer-import-history — rawImport column + remarks→timeline parity (historical date honored, import-date fallback) + dedup wired + no orphaned timeline",
+    run: async () => {
+      const fs = await import("node:fs");
+      const read = (f: string) => fs.readFileSync(f, "utf8");
+
+      // (a) rawImport column selectable (probe — proves the migration is applied).
+      await prisma.buyerRecord.findFirst({ select: { id: true, rawImport: true, remarks: true } });
+
+      // (b) PURE LIB — the shared remarks→timeline engine (tests REAL code).
+      const { buildBuyerTimelinePlan, composeRemarkFromFields, isImportedActivityDescription, IMPORTED_TAG } =
+        await import("../src/lib/buyerRemarkTimeline");
+      const fallback = new Date("2026-01-15T06:30:00Z");
+      // A remark WITH a historical date → the activity is dated to THAT date, not the fallback.
+      const dated = buildBuyerTimelinePlan("On 19 Jun 2026 (3:30 pm) client called, discussed 2BR", fallback);
+      assert(dated.length >= 1, "dated remark must produce ≥1 timeline row");
+      const istDay = (d: Date) => new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata", year: "numeric", month: "2-digit", day: "2-digit" }).format(d);
+      assert(istDay(dated[0].createdAt) === "2026-06-19", `historical date must be honored (got ${istDay(dated[0].createdAt)}, expected 2026-06-19)`);
+      assert(dated[0].description.includes(IMPORTED_TAG.trim()), "generated activity must carry the imported tag");
+      assert(isImportedActivityDescription(dated[0].description) === true, "imported-tag round-trip must hold");
+      // A remark with NO date → falls back to the import date.
+      const undated = buildBuyerTimelinePlan("Status: DNC Request", fallback);
+      assert(undated.length === 1 && undated[0].createdAt.getTime() === fallback.getTime(), "undated remark must fall back to the import date");
+      assert(undated[0].type === "NOTE", "a bare status line classifies as NOTE");
+      // A WhatsApp mention routes to the WHATSAPP lane.
+      const wa = buildBuyerTimelinePlan("Sent details on WhatsApp", fallback);
+      assert(wa[0]?.type === "WHATSAPP", "a WhatsApp mention must route to the WHATSAPP lane");
+      // Empty remark → no rows; a live agent-logged description is NOT imported.
+      assert(buildBuyerTimelinePlan("", fallback).length === 0 && buildBuyerTimelinePlan(null, fallback).length === 0, "empty remark → no timeline rows");
+      assert(isImportedActivityDescription("Called the client, will follow up") === false, "a live agent-logged row must NOT be flagged imported");
+      // composeRemarkFromFields: verbatim values, Excel serial follow-up → readable date.
+      const composed = composeRemarkFromFields({ Status: "Moved To MIS", "Follow-Up": "46152" });
+      assert(/Status: Moved To MIS/.test(composed) && /Follow-Up: 2026-05-10/.test(composed), `composeRemarkFromFields must preserve values + convert Excel serial (got ${JSON.stringify(composed)})`);
+      assert(composeRemarkFromFields({ Status: "" }) === "", "all-blank status fields → empty composed remark");
+
+      // (c) ROUTE WIRING (static) — the import route must do all four jobs.
+      const route = read("src/app/api/buyer-data/import/route.ts");
+      assert(/buildBuyerTimelinePlan/.test(route) && /buyerActivity\.createMany/.test(route), "import route MUST generate BuyerActivity Smart-Timeline rows");
+      assert(/remarks:\s*remark/.test(route), "import route MUST store the imported remark on BuyerRecord.remarks (Raw History)");
+      assert(/rawImport:/.test(route), "import route MUST store the verbatim rawImport audit");
+      assert(/findExistingBuyer/.test(route) && /dupMode/.test(route), "import route MUST dedup (match existing buyer + honor dupMode)");
+      // The wizard must offer the Remarks field + send the full raw row + a dup choice.
+      const wizard = read("src/components/BuyerImportClient.tsx");
+      assert(/\["remarks",/.test(wizard), "import wizard MUST offer a Remarks mapping field");
+      assert(/_raw:/.test(wizard) && /dupMode/.test(wizard), "import wizard MUST send the full raw row + a duplicate-handling choice");
+
+      // (d) DATA INVARIANT — no orphaned Smart Timeline: every buyer with an
+      // imported-tagged activity has a non-null remarks (the Raw History source).
+      const importedActs = await prisma.buyerActivity.findMany({
+        where: { description: { contains: IMPORTED_TAG.trim() }, buyer: { deletedAt: null } },
+        select: { buyerId: true },
+        distinct: ["buyerId"],
+        take: 5000,
+      });
+      if (importedActs.length > 0) {
+        const ids = importedActs.map((a) => a.buyerId);
+        const orphaned = await prisma.buyerRecord.count({ where: { id: { in: ids }, OR: [{ remarks: null }, { remarks: "" }] } });
+        assert(orphaned === 0, `${orphaned} buyer(s) have an imported Smart-Timeline row but NO remarks (Raw History) — timeline orphaned from its source`);
+      } else {
+        results.push({ name: "  ↳ note", ok: true, detail: "no imported-tagged BuyerActivity in prod yet — orphan check vacuously satisfied" });
+      }
+    },
+  },
 ];
 
 // ── runner ────────────────────────────────────────────────────────────────────

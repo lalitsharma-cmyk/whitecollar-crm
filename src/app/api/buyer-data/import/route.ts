@@ -2,19 +2,31 @@ import { NextResponse, type NextRequest } from "next/server";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { parseImportDate } from "@/lib/parseImportDate";
-import { normalizeBuyerKey, toJsonArray, primaryPhone } from "@/lib/buyerIntelligence";
+import { normalizeBuyerKey, toJsonArray, primaryPhone, parseJsonArray } from "@/lib/buyerIntelligence";
+import { buildBuyerTimelinePlan, composeRemarkFromFields } from "@/lib/buyerRemarkTimeline";
 import { audit, reqMeta } from "@/lib/audit";
 
 // ── Buyer import — ADMIN ONLY (passport + financial data) ────────────────────
 // Two actions on this one endpoint:
 //   POST {init:true, source, sourceRef, total}  → create a BuyerImportBatch, return its id.
-//   POST {batchId, rows:[...]}                   → create BuyerRecords for a chunk,
+//   POST {batchId, rows:[...], dupMode}          → create/update BuyerRecords for a chunk,
 //                                                  log failures to BuyerImportLog,
 //                                                  bump the batch counters.
-// The client sends rows in chunks (~200) so no single request risks the
-// serverless timeout. Each row carries the MAPPED buyer fields plus an `_extra`
-// object of every unmapped sheet column — preserved verbatim into extraFields so
-// NO imported data is ever dropped.
+//
+// PARITY WITH LEAD IMPORTS (src/app/api/intake/csv/route.ts):
+//   • Remarks: a mapped Remarks/Notes column — OR, when absent, short status-like
+//     columns (Status / Follow-Up / etc.) composed into one line — is stored
+//     VERBATIM on BuyerRecord.remarks (= the Raw History source). Never reformatted.
+//   • Smart Timeline: BuyerActivity rows are derived from that remark using the SAME
+//     parser the Lead view uses (historical dates honored; else the import date).
+//   • rawImport: the ENTIRE original row is stored verbatim (immutable audit), like
+//     Lead.rawImport — surfaced in the buyer detail "Imported Fields → Original Row".
+//   • Dedup: re-import no longer silently creates duplicate rows. We match an
+//     existing LIVE buyer by buyerKey / phone-tail / email and apply the admin's
+//     chosen dupMode (skip | update | create | history). Default = skip (safe).
+//
+// Each row carries the MAPPED buyer fields, an `_extra` object of every unmapped
+// column (→ extraFields verbatim), and `_raw` = the COMPLETE original row (→ rawImport).
 
 type ImportRow = {
   clientName?: string;
@@ -33,8 +45,19 @@ type ImportRow = {
   transactionDate?: string;
   transactionId?: string;
   agentName?: string;
-  _extra?: Record<string, string>;   // unmapped columns, verbatim
+  remarks?: string;          // mapped free-text remarks / notes / activity history
+  _extra?: Record<string, string>;   // unmapped columns, verbatim → extraFields
+  _raw?: Record<string, string>;     // the COMPLETE original row, verbatim → rawImport
 };
+
+// Dedup behaviour for a row that matches an existing LIVE buyer.
+//   skip    — do nothing (default; never creates a duplicate)
+//   update  — fill the existing buyer's blank fields + grow remarks/activity
+//   create  — import as a brand-new buyer anyway (explicit admin choice)
+//   history — append the imported remark as conversation history on the existing
+//             buyer (grow remarks + add BuyerActivity), without touching its fields
+type DupMode = "skip" | "update" | "create" | "history";
+const DUP_MODES = new Set<DupMode>(["skip", "update", "create", "history"]);
 
 function num(v?: string): number | null {
   if (v == null) return null;
@@ -45,6 +68,81 @@ const str = (v?: string): string | null => {
   const t = String(v ?? "").trim();
   return t || null;
 };
+
+// Last-8 digit phone tail (matches normalizeBuyerKey's tail) for dedup matching.
+const tail8 = (p?: string | null): string => String(p ?? "").replace(/\D/g, "").slice(-8);
+
+// Status-like extra columns that, when no free-text remarks column is mapped, are
+// composed into the remark (so this history-bearing data gets a Raw History +
+// Smart Timeline instead of sitting inert in extraFields). Order = display order.
+const STATUS_LIKE_KEYS = ["status", "status 2", "status2", "follow-up", "followup", "follow up", "remark", "remarks", "notes", "note", "comment", "comments", "activity", "activity history"];
+function composeFromExtra(extra: Record<string, string>): string {
+  const picked: Record<string, string> = {};
+  for (const [k, v] of Object.entries(extra)) {
+    if (STATUS_LIKE_KEYS.includes(k.trim().toLowerCase()) && String(v ?? "").trim()) picked[k] = v;
+  }
+  return composeRemarkFromFields(picked);
+}
+
+/** Find a LIVE (non-deleted) existing buyer matching this row by buyerKey first,
+ *  then by phone-tail, then by email. Returns the match or null. */
+async function findExistingBuyer(
+  buyerKey: string | null,
+  phonesJson: string | null,
+  emailsJson: string | null,
+): Promise<{ id: string; remarks: string | null; extraFields: unknown; rawImport: unknown } | null> {
+  const select = { id: true, remarks: true, extraFields: true, rawImport: true } as const;
+  // 1) buyerKey (name+phone-tail hash) — the strongest signal, already computed.
+  if (buyerKey) {
+    const byKey = await prisma.buyerRecord.findFirst({ where: { buyerKey, deletedAt: null }, select });
+    if (byKey) return byKey;
+  }
+  // 2) phone tail — any stored buyer whose primary phone shares the last-8 digits.
+  const phone = primaryPhone(phonesJson, null);
+  const t = tail8(phone);
+  if (t.length >= 7) {
+    // phones is a JSON string column; contains() on the tail is a safe pre-filter,
+    // then we confirm the tail in app code (avoids a false hit on a substring).
+    const candidates = await prisma.buyerRecord.findMany({
+      where: { deletedAt: null, phones: { contains: t } },
+      select: { ...select, phones: true },
+      take: 25,
+    });
+    for (const c of candidates) {
+      if (parseJsonArray(c.phones).some((p) => tail8(p) === t)) {
+        return { id: c.id, remarks: c.remarks, extraFields: c.extraFields, rawImport: c.rawImport };
+      }
+    }
+  }
+  // 3) email — exact (case-insensitive) match on any stored email.
+  const emails = parseJsonArray(emailsJson);
+  for (const e of emails) {
+    const lc = e.toLowerCase();
+    const candidates = await prisma.buyerRecord.findMany({
+      where: { deletedAt: null, emails: { contains: lc } },
+      select: { ...select, emails: true },
+      take: 25,
+    });
+    for (const c of candidates) {
+      if (parseJsonArray(c.emails).some((x) => x.toLowerCase() === lc)) {
+        return { id: c.id, remarks: c.remarks, extraFields: c.extraFields, rawImport: c.rawImport };
+      }
+    }
+  }
+  return null;
+}
+
+// Merge an imported remark into an existing buyer's remark blob WITHOUT losing
+// history (append on a new line, skip if the exact text is already present).
+// Mirrors the Lead importer's mergeRawRemark "grow, never overwrite" contract.
+function mergeRemark(prev: string | null | undefined, incoming: string): string {
+  const a = (prev ?? "").trim();
+  const b = incoming.trim();
+  if (!b) return a;
+  if (!a) return b;
+  if (a.includes(b)) return a; // already captured — no duplicate
+  return `${a}\n${b}`;
+}
 
 export async function POST(req: NextRequest) {
   const me = await requireUser();
@@ -69,15 +167,21 @@ export async function POST(req: NextRequest) {
   // ── Action 2: import a chunk of rows ──────────────────────────────────────
   const batchId: string | null = typeof body.batchId === "string" && body.batchId ? body.batchId : null;
   const rows: ImportRow[] = Array.isArray(body.rows) ? body.rows : [];
-  if (rows.length === 0) return NextResponse.json({ imported: 0, failed: 0 });
+  if (rows.length === 0) return NextResponse.json({ imported: 0, failed: 0, updated: 0, skipped: 0 });
+
+  // Dedup behaviour for rows that match an existing live buyer (admin's choice).
+  const dupMode: DupMode = DUP_MODES.has(body.dupMode) ? body.dupMode : "skip";
 
   // Resolve the batch's first-seen row offset so logged rowNum is global, not
   // per-chunk. The client passes rowOffset (rows already processed).
   const rowOffset: number = Number(body.rowOffset) || 0;
   const sourceFile: string | null = body.sourceFile ? String(body.sourceFile).slice(0, 200) : null;
 
-  let imported = 0;
+  let imported = 0;   // brand-new BuyerRecords created
+  let updated = 0;    // existing buyers updated (dupMode=update) or appended (history)
+  let skipped = 0;    // duplicates skipped (dupMode=skip)
   let failed = 0;
+  let activitiesCreated = 0;
   const errorLogs: { batchId: string; rowNum: number; error: string; rawRow: object }[] = [];
 
   for (let i = 0; i < rows.length; i++) {
@@ -97,8 +201,84 @@ export async function POST(req: NextRequest) {
       const extra = r._extra && typeof r._extra === "object"
         ? Object.fromEntries(Object.entries(r._extra).filter(([k, v]) => k.trim() && String(v ?? "").trim()))
         : {};
+      // rawImport = the COMPLETE original row, verbatim (immutable audit). Falls back
+      // to the mapped+extra view if the client didn't send _raw (older clients).
+      const rawRow: Record<string, string> = {};
+      const rawSource = r._raw && typeof r._raw === "object" ? r._raw : { ...extra };
+      for (const [k, v] of Object.entries(rawSource)) {
+        const s = String(v ?? "").trim();
+        if (k.trim() && s) rawRow[k] = s;
+      }
 
-      await prisma.buyerRecord.create({
+      // Remarks (verbatim) → Raw History. Prefer the mapped free-text Remarks column;
+      // else compose from short status-like extra columns so that history-bearing
+      // data still gets a Raw History + Smart Timeline (never lost in extraFields).
+      const mappedRemark = str(r.remarks);
+      const remark = mappedRemark ?? (composeFromExtra(extra) || null);
+
+      // Transaction date drives the timeline fallback (the day this record relates
+      // to). When absent, fall back to "now" (the import moment) — parity with how
+      // a lead's undated remark falls back to the lead's createdAt.
+      const txnDate = parseImportDate(r.transactionDate) ?? null;
+      const timelineFallback = txnDate ?? new Date();
+
+      // ── Dedup: does a LIVE buyer already match this row? ────────────────────
+      const existing = dupMode === "create" ? null : await findExistingBuyer(buyerKey, phonesJson, emailsJson);
+
+      if (existing && dupMode === "skip") {
+        skipped++;
+        continue;
+      }
+
+      if (existing && (dupMode === "update" || dupMode === "history")) {
+        // Append the imported remark (grow, never overwrite) + (re)derive the
+        // imported Smart-Timeline rows for the appended text. In UPDATE mode also
+        // fill blank structured fields. NEVER touch a live agent-logged activity.
+        const update: Record<string, unknown> = {};
+        if (remark) update.remarks = mergeRemark(existing.remarks, remark);
+        // Grow the rawImport audit (merge columns; blanks never overwrite).
+        if (Object.keys(rawRow).length) {
+          update.rawImport = { ...((existing.rawImport as Record<string, unknown>) ?? {}), ...rawRow };
+        }
+        if (Object.keys(extra).length) {
+          update.extraFields = { ...((existing.extraFields as Record<string, unknown>) ?? {}), ...extra };
+        }
+        if (dupMode === "update") {
+          // Fill blanks only — additive, never clobber an existing value.
+          const fill: Record<string, unknown> = {
+            coBuyerNames: coBuyersJson, phones: phonesJson, emails: emailsJson,
+            passport: str(r.passport), nationality: str(r.nationality),
+            projectName: str(r.projectName), tower: str(r.tower), unitNumber: str(r.unitNumber),
+            propertyType: str(r.propertyType), configuration: str(r.configuration),
+            transactionValue: num(r.transactionValue), pricePerSqFt: num(r.pricePerSqFt),
+            transactionDate: txnDate, transactionId: str(r.transactionId), agentName: str(r.agentName),
+          };
+          const current = await prisma.buyerRecord.findUnique({ where: { id: existing.id } });
+          for (const [k, v] of Object.entries(fill)) {
+            if (v == null) continue;
+            const cur = (current as Record<string, unknown> | null)?.[k];
+            if (cur == null || cur === "") update[k] = v;
+          }
+        }
+        if (Object.keys(update).length) {
+          await prisma.buyerRecord.update({ where: { id: existing.id }, data: update });
+        }
+        // Smart Timeline for the appended remark (idempotent — only the NEW text).
+        if (remark) {
+          const plan = buildBuyerTimelinePlan(remark, timelineFallback);
+          if (plan.length) {
+            await prisma.buyerActivity.createMany({
+              data: plan.map((p) => ({ buyerId: existing.id, userId: null, type: p.type, description: p.description, createdAt: p.createdAt })),
+            });
+            activitiesCreated += plan.length;
+          }
+        }
+        updated++;
+        continue;
+      }
+
+      // ── Create a brand-new BuyerRecord ──────────────────────────────────────
+      const created = await prisma.buyerRecord.create({
         data: {
           clientName,
           coBuyerNames: coBuyersJson,
@@ -114,17 +294,32 @@ export async function POST(req: NextRequest) {
           transactionValue: num(r.transactionValue),
           pricePerSqFt: num(r.pricePerSqFt),
           // transactionDate ALWAYS from the sheet — never the import timestamp.
-          transactionDate: parseImportDate(r.transactionDate) ?? null,
+          transactionDate: txnDate,
           transactionId: str(r.transactionId),
           agentName: str(r.agentName),
+          // Remarks verbatim → Raw History (never reformatted).
+          remarks: remark,
           source: "Excel import",
           sourceFile,
           extraFields: Object.keys(extra).length ? extra : undefined,
+          rawImport: Object.keys(rawRow).length ? rawRow : undefined,
           buyerKey,
           importBatchId: batchId,
         },
+        select: { id: true },
       });
       imported++;
+
+      // Smart Timeline — derive BuyerActivity rows from the imported remark.
+      if (remark) {
+        const plan = buildBuyerTimelinePlan(remark, timelineFallback);
+        if (plan.length) {
+          await prisma.buyerActivity.createMany({
+            data: plan.map((p) => ({ buyerId: created.id, userId: null, type: p.type, description: p.description, createdAt: p.createdAt })),
+          });
+          activitiesCreated += plan.length;
+        }
+      }
     } catch (e) {
       failed++;
       if (batchId) errorLogs.push({ batchId, rowNum, error: String(e).slice(0, 500), rawRow: { ...r } });
@@ -140,9 +335,13 @@ export async function POST(req: NextRequest) {
     }
     await prisma.buyerImportBatch.update({
       where: { id: batchId },
-      data: { successCount: { increment: imported }, errorCount: { increment: failed } },
+      data: { successCount: { increment: imported + updated }, errorCount: { increment: failed } },
     });
   }
 
-  return NextResponse.json({ imported, failed, errors: errorLogs.map((l) => ({ row: l.rowNum, error: l.error })) });
+  return NextResponse.json({
+    imported, updated, skipped, failed,
+    activitiesCreated,
+    errors: errorLogs.map((l) => ({ row: l.rowNum, error: l.error })),
+  });
 }
