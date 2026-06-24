@@ -213,7 +213,16 @@
 // on save it updates the Activity in place, mirrors a follow-up onto the lead, and
 // preserves the prior value per field in the ActivityEdit audit table (no data loss;
 // Raw History untouched). Force a refresh so the new timeline + per-card edit appear.
-const CACHE = "wcr-shell-v54";
+// v55 (2026-06-24): Log Conversation validation. Outcome no longer defaults to
+// "Connected" — it opens blank as "-- Select Outcome --". A logged conversation now
+// REQUIRES all three: Outcome + Next Follow-up Date + Remarks (enforced client-side
+// AND server-side — blank → 400, no junk row). The follow-up picker is always shown
+// and mandatory (sets Lead.followupDate so every client has a next action). The
+// outbound WhatsApp log (template/type/gallery send) now also requires a follow-up
+// date before it logs — the wa.me open + template logic is otherwise unchanged. Each
+// logged call/WA now stamps outcome + follow-up onto its Smart Timeline entry. Force a
+// refresh so the blank-outcome default + the new validation reach every PWA client.
+const CACHE = "wcr-shell-v55";
 const SHELL = ["/login", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", (event) => {

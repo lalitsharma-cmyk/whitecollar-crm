@@ -2622,6 +2622,71 @@ const checks: Check[] = [
       results.push({ name: "  ↳ note", ok: true, detail: `ActivityEdit rows in prod: ${editCount}` });
     },
   },
+
+  // ───────────────────────────────────────────────────────────────────────────
+  {
+    name: "log-conversation-validation — outcome/follow-up/remarks mandatory (server 400); Activity carries outcome+followup; no Connected default; WA send requires follow-up",
+    run: async () => {
+      const fs = await import("fs");
+      const path = await import("path");
+      const root = process.cwd();
+
+      // (a) LOG-CALL ENDPOINT — all three fields rejected when blank (server-side,
+      //     so a tampered request can't bypass the client guard).
+      const logCallPath = path.join(root, "src/app/api/leads/[id]/log-call/route.ts");
+      assert(fs.existsSync(logCallPath), "log-call route is missing");
+      const logCall = fs.readFileSync(logCallPath, "utf8");
+      assert(/Please select an outcome before saving\./.test(logCall) && /status:\s*400/.test(logCall),
+        "log-call does not 400 on blank outcome with the required message");
+      assert(/Please set the next follow-up date\./.test(logCall),
+        "log-call does not 400 on missing follow-up date");
+      assert(/Please add remarks before saving\./.test(logCall),
+        "log-call no longer requires remarks (must 400 on blank remarks)");
+      // The old 'remarks are optional' policy must be gone.
+      assert(!/Remarks are OPTIONAL/.test(logCall),
+        "log-call still declares remarks OPTIONAL — mandatory-remarks rule regressed");
+
+      // (b) LOG-CALL persists outcome + followupDate ONTO the Activity row (so the
+      //     Smart Timeline card carries them) and mirrors followupDate to the Lead.
+      //     Probe the Activity.create block (from its start to the next prisma call).
+      const actStart = logCall.indexOf("activity.create");
+      const actEnd = logCall.indexOf("lead.update", actStart);
+      assert(actStart >= 0 && actEnd > actStart, "log-call Activity.create block not found");
+      const actCreate = logCall.slice(actStart, actEnd);
+      assert(/outcome:/.test(actCreate) && /followupDate:/.test(actCreate),
+        "log-call Activity.create does not set outcome + followupDate (timeline would lose them)");
+      assert(/followupDate:\s*callbackAt/.test(logCall),
+        "log-call does not write Lead.followupDate from the callback time");
+
+      // (c) WHATSAPP LOG — kind='send' requires a follow-up date; click stays exempt.
+      const waPath = path.join(root, "src/app/api/whatsapp/log/route.ts");
+      const wa = fs.readFileSync(waPath, "utf8");
+      assert(/kind === "send"/.test(wa) && /Please set the next follow-up date\./.test(wa) && /status:\s*400/.test(wa),
+        "whatsapp/log does not require a follow-up date on kind='send'");
+      assert(/followupDate/.test(wa), "whatsapp/log does not handle followupDate at all");
+
+      // (d) CLIENT — Outcome no longer defaults to Connected; blank placeholder present.
+      const clientPath = path.join(root, "src/components/LeadActionsClient.tsx");
+      const client = fs.readFileSync(clientPath, "utf8");
+      assert(/\[outcomeKey, setOutcomeKey\]\s*=\s*useState\(""\)/.test(client),
+        "outcomeKey no longer defaults to blank — Connected default may have returned");
+      assert(!/setOutcomeKey\("PHONE_CONNECTED"\)/.test(client) && !/useState\("PHONE_CONNECTED"\)/.test(client),
+        "outcomeKey still defaults/resets to PHONE_CONNECTED (Connected default not fully removed)");
+      assert(/-- Select Outcome --/.test(client),
+        "the '-- Select Outcome --' blank placeholder option is missing");
+      // Client mandatory messages mirror the server.
+      assert(/Please select an outcome before saving\./.test(client)
+        && /Please set the next follow-up date\./.test(client)
+        && /Please add remarks before saving\./.test(client),
+        "client Log Conversation is missing one of the three mandatory validation messages");
+
+      // (e) WA picker (TemplatePickerButton) — mandatory follow-up wired into send.
+      const tplPath = path.join(root, "src/components/TemplatePickerButton.tsx");
+      const tpl = fs.readFileSync(tplPath, "utf8");
+      assert(/waFollowupAt/.test(tpl) && /followupDate/.test(tpl),
+        "TemplatePickerButton does not collect/pass a follow-up date for WhatsApp send");
+    },
+  },
 ];
 
 // ── runner ────────────────────────────────────────────────────────────────────

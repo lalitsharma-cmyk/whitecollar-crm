@@ -21,20 +21,28 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const durationRaw = Number(body.durationSec ?? 0);
   const durationSec = !isFinite(durationRaw) || durationRaw < 0 ? 0 : Math.floor(durationRaw);
   const direction = (body.direction as CallDirection) ?? CallDirection.OUTBOUND;
-  // Optional scheduled callback time (ISO string from the IST picker on the UI).
-  // When set, we update Lead.followupDate so the pre-meeting cron's
-  // 10-min-before push fires and it shows on the morning briefing card.
+  // Scheduled follow-up / callback time (ISO string from the IST picker on the UI).
+  // Now MANDATORY for every logged conversation — we always update Lead.followupDate
+  // so the pre-meeting cron's 10-min-before push fires and the lead surfaces on the
+  // morning briefing / Action List. Mirror of the client-side rule; enforced here
+  // too so a tampered request can't bypass it.
   const callbackAtRaw = body.callbackAt ? String(body.callbackAt) : "";
   const callbackAt = callbackAtRaw ? new Date(callbackAtRaw) : null;
-  if (callbackAtRaw && (!callbackAt || isNaN(callbackAt.getTime()) || callbackAt.getTime() <= Date.now())) {
-    return NextResponse.json({ error: "Callback time must be a valid future ISO datetime" }, { status: 400 });
-  }
 
+  // ── MANDATORY-FIELD VALIDATION (server-side mirror of the Log Conversation form).
+  //    Order matches the form: outcome → follow-up → remarks. Any miss → 400, no write.
   if (!outcome || !Object.values(CallOutcome).includes(outcome)) {
-    return NextResponse.json({ error: "Outcome is required" }, { status: 400 });
+    return NextResponse.json({ error: "Please select an outcome before saving." }, { status: 400 });
   }
-  // Remarks are OPTIONAL on every outcome (Lalit's policy). Agent can save a
-  // bare outcome like "not picked" without writing anything.
+  if (!callbackAtRaw) {
+    return NextResponse.json({ error: "Please set the next follow-up date." }, { status: 400 });
+  }
+  if (!callbackAt || isNaN(callbackAt.getTime()) || callbackAt.getTime() <= Date.now()) {
+    return NextResponse.json({ error: "Follow-up time must be a valid future ISO datetime." }, { status: 400 });
+  }
+  if (!remarks) {
+    return NextResponse.json({ error: "Please add remarks before saving." }, { status: 400 });
+  }
 
   const lead = await prisma.lead.findUnique({ where: { id } });
   if (!lead) return NextResponse.json({ error: "Lead not found" }, { status: 404 });
@@ -61,6 +69,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       status: ActivityStatus.DONE,
       title: `Call · ${outcome.replaceAll("_", " ")}`,
       description: remarks || undefined,
+      // Persist the structured outcome + follow-up ON the timeline entry itself so
+      // the Smart Timeline card renders the outcome chip + "📅 Follow-up:" line, and
+      // so the upcoming "activity-required-before-complete" workflow can key off a
+      // valid contact activity (outcome + followupDate present) logged today.
+      outcome: outcome.replaceAll("_", " "),
+      followupDate: callbackAt,
       completedAt: now,
     },
   });
@@ -70,14 +84,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       lastTouchedAt: now,
       // Clear the SLA flag — call has been made, so future breaches can re-notify
       slaEscalated: false,
-      // If the agent scheduled a specific callback time, write it to followupDate
-      // so the pre-meeting cron picks it up. Also reset the dedupe flag so the
-      // 10-min push fires for this new time even if the previous followupDate
-      // already had a reminder sent.
-      ...(callbackAt ? {
-        followupDate: callbackAt,
-        followupReminderSentAt: null,
-      } : {}),
+      // Follow-up date is mandatory now, so always write it to Lead.followupDate
+      // (the pre-meeting cron picks it up) and reset the dedupe flag so the 10-min
+      // push fires for this new time even if the previous followupDate already had
+      // a reminder sent.
+      followupDate: callbackAt,
+      followupReminderSentAt: null,
     },
   });
   // Auto-advance: if this lead is still NEW and a call was just logged, move it to CONTACTED

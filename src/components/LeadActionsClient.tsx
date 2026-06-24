@@ -109,7 +109,10 @@ export default function LeadActionsClient({ leadId, phone, altPhone, email, curr
   const [busy, setBusy] = useState(false);
   // outcomeKey tracks which specific option the agent selected (unique per option).
   // currentOutcomeV is the CallOutcome DB enum value derived from it.
-  const [outcomeKey, setOutcomeKey] = useState("PHONE_CONNECTED");
+  // Default is BLANK ("") — shown as "-- Select Outcome --". A not-yet-picked
+  // conversation must NOT silently save as "Connected" (Lalit's ask). The agent
+  // has to consciously choose the outcome; save is blocked until they do.
+  const [outcomeKey, setOutcomeKey] = useState("");
   // Channel + direction for Log Call modal. Lalit's ask: "From where should I
   // log a whatsapp message client sent me remarks to get it recorded in call?"
   // — answer: in the same Log Call modal, toggle channel = WhatsApp and
@@ -119,20 +122,26 @@ export default function LeadActionsClient({ leadId, phone, altPhone, email, curr
   const [remarks, setRemarks] = useState("");
   const [duration, setDuration] = useState("");
   const [callbackAt, setCallbackAt] = useState("");
+  // Refs so a failed validation can focus / scroll the first missing field.
+  const outcomeRef = useRef<HTMLSelectElement>(null);
+  const remarksRef = useRef<HTMLTextAreaElement>(null);
+  const callbackRef = useRef<HTMLDivElement>(null);
 
-  // Derive current outcome list and DB value from channel + selected key
+  // Derive current outcome list and DB value from channel + selected key.
+  // When no outcome is picked yet (outcomeKey === ""), currentOutcomeV is ""
+  // (NOT a defaulted "NOT_PICKED") so the save guard can block on a blank outcome.
   const currentOutcomeOptions = logChannel === "PHONE" ? PHONE_OUTCOMES
     : logDirection === "OUTBOUND" ? WA_OUTBOUND_OUTCOMES
     : WA_INBOUND_OUTCOMES;
-  const currentOutcomeV = currentOutcomeOptions.find((o) => o.key === outcomeKey)?.v ?? "NOT_PICKED";
+  const currentOutcomeV = currentOutcomeOptions.find((o) => o.key === outcomeKey)?.v ?? "";
 
-  // Three categories of outcome:
-  //   • "need callback"  → callback time REQUIRED (couldn't reach them; must reschedule)
-  //   • "show optional"  → callback time OPTIONAL (call connected; next followup is good practice)
-  //   • "hide"           → no callback field (wrong number / not interested — no point)
+  // Next Follow-up Date is now MANDATORY for EVERY logged conversation (Lalit's
+  // ask: "every client must have a next action"). The field is ALWAYS shown and
+  // ALWAYS required — there is no longer an outcome that hides it or makes it
+  // optional. The styling still adapts: amber "call back" framing for outcomes
+  // where we couldn't reach them, emerald "next touchpoint" for a connection.
   const needsCallback = currentOutcomeV === "CALLBACK" || currentOutcomeV === "BUSY" || currentOutcomeV === "SWITCHED_OFF" || currentOutcomeV === "NOT_PICKED";
-  const showOptionalCallback = currentOutcomeV === "CONNECTED";
-  const showCallbackField = needsCallback || showOptionalCallback;
+  const showCallbackField = true; // always — follow-up date is mandatory on every save
   // Duration only makes sense for phone calls that actually connected. Hidden
   // for WhatsApp (no measurable duration) and for not-picked / switched-off.
   const showDurationField = logChannel === "PHONE" && (currentOutcomeV === "CONNECTED" || currentOutcomeV === "CALLBACK");
@@ -234,19 +243,43 @@ export default function LeadActionsClient({ leadId, phone, altPhone, email, curr
 
   async function submitCall() {
     setErr(null);
-    // Remarks are OPTIONAL on every outcome — Lalit asked: "remarks on all outcome
-    // should not be mandatory". Just don't send the field if it's empty.
+    // ── MANDATORY FIELDS (Lalit's policy) ────────────────────────────────────
+    // Every logged conversation must carry: Outcome, Next Follow-up Date, Remarks.
+    // Validate in the order they appear in the form; on the FIRST miss, show the
+    // message, focus/scroll that field, and abort (no save). The server enforces
+    // the same three so a tampered request can't bypass these.
+    // 1) Outcome — must be a real picked value, never the blank placeholder.
+    if (!outcomeKey || !currentOutcomeV) {
+      setErr("Please select an outcome before saving.");
+      outcomeRef.current?.focus();
+      return;
+    }
+    // 2) Next Follow-up Date — mandatory on EVERY conversation.
+    if (!callbackAt) {
+      setErr("Please set the next follow-up date.");
+      callbackRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+      return;
+    }
     // Convert IST wall-clock callback time → ISO. Server picks it up and writes
     // Lead.followupDate so the pre-call reminder cron fires 10 min before.
-    let callbackAtISO: string | undefined;
-    if (showCallbackField && callbackAt) {
-      const d = fromISTLocalInput(callbackAt);
-      if (!d) { setErr("Invalid follow-up time."); return; }
-      if (d.getTime() <= Date.now()) {
-        setErr("Follow-up time must be in the future (IST).");
-        return;
-      }
-      callbackAtISO = d.toISOString();
+    const followupDate = fromISTLocalInput(callbackAt);
+    if (!followupDate) {
+      setErr("Please set the next follow-up date.");
+      callbackRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+      return;
+    }
+    if (followupDate.getTime() <= Date.now()) {
+      setErr("Follow-up time must be in the future (IST).");
+      callbackRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+      return;
+    }
+    const callbackAtISO = followupDate.toISOString();
+    // 3) Remarks — must be non-empty / non-whitespace. Validate the RAW text the
+    //    user typed (not the channel-prefixed finalRemarks, which is never blank).
+    if (!remarks.trim()) {
+      setErr("Please add remarks before saving.");
+      remarksRef.current?.focus();
+      return;
     }
     setBusy(true);
     try {
@@ -278,7 +311,7 @@ export default function LeadActionsClient({ leadId, phone, altPhone, email, curr
       const j = await r.json();
       if (!r.ok) { setErr(j.error ?? "Failed"); return; }
       setShowCall(false); setRemarks(""); setDuration(""); setCallbackAt("");
-      setLogChannel("PHONE"); setLogDirection("OUTBOUND"); setOutcomeKey("PHONE_CONNECTED");
+      setLogChannel("PHONE"); setLogDirection("OUTBOUND"); setOutcomeKey("");
       // Gamification — show toast if the server credited XP for this call.
       // Pattern: read `awardedXp` from the JSON response, fire the toast,
       // then refresh. Never blocks UI — toast is fire-and-forget.
@@ -438,11 +471,11 @@ export default function LeadActionsClient({ leadId, phone, altPhone, email, curr
             <div className="mb-3">
               <label className="text-[10px] font-semibold text-gray-600 uppercase tracking-widest">Channel</label>
               <div className="grid grid-cols-2 gap-1 mt-1 border border-[#e5e7eb] rounded-lg p-1">
-                <button type="button" onClick={() => { setLogChannel("PHONE"); setLogDirection("OUTBOUND"); setOutcomeKey("PHONE_CONNECTED"); }}
+                <button type="button" onClick={() => { setLogChannel("PHONE"); setLogDirection("OUTBOUND"); setOutcomeKey(""); }}
                   className={`py-1.5 rounded text-xs font-semibold transition ${logChannel === "PHONE" ? "bg-[#0b1a33] text-white" : "text-gray-600 hover:bg-gray-50"}`}>
                   📞 Phone
                 </button>
-                <button type="button" onClick={() => { setLogChannel("WHATSAPP"); setOutcomeKey("WA_SENT"); }}
+                <button type="button" onClick={() => { setLogChannel("WHATSAPP"); setOutcomeKey(""); }}
                   className={`py-1.5 rounded text-xs font-semibold transition ${logChannel === "WHATSAPP" ? "bg-emerald-600 text-white" : "text-gray-600 hover:bg-gray-50"}`}>
                   💬 WhatsApp
                 </button>
@@ -454,11 +487,11 @@ export default function LeadActionsClient({ leadId, phone, altPhone, email, curr
               <div className="mb-3">
                 <label className="text-[10px] font-semibold text-gray-600 uppercase tracking-widest">Direction</label>
                 <div className="grid grid-cols-2 gap-1 mt-1 border border-[#e5e7eb] rounded-lg p-1">
-                  <button type="button" onClick={() => { setLogDirection("OUTBOUND"); setOutcomeKey("WA_SENT"); }}
+                  <button type="button" onClick={() => { setLogDirection("OUTBOUND"); setOutcomeKey(""); }}
                     className={`py-1.5 rounded text-xs font-semibold transition ${logDirection === "OUTBOUND" ? "bg-[#0b1a33] text-white" : "text-gray-600 hover:bg-gray-50"}`}>
                     📤 Outbound (We Sent)
                   </button>
-                  <button type="button" onClick={() => { setLogDirection("INBOUND"); setOutcomeKey("WA_RECEIVED"); }}
+                  <button type="button" onClick={() => { setLogDirection("INBOUND"); setOutcomeKey(""); }}
                     className={`py-1.5 rounded text-xs font-semibold transition ${logDirection === "INBOUND" ? "bg-[#0b1a33] text-white" : "text-gray-600 hover:bg-gray-50"}`}>
                     📥 Inbound (Client Sent)
                   </button>
@@ -466,8 +499,14 @@ export default function LeadActionsClient({ leadId, phone, altPhone, email, curr
               </div>
             )}
 
-            <label className="text-xs font-semibold text-gray-600">Outcome *</label>
-            <select value={outcomeKey} onChange={(e) => setOutcomeKey(e.target.value)} className="w-full mt-1 mb-3 border border-[#e5e7eb] rounded-lg px-3 py-2 text-sm">
+            <label className="text-xs font-semibold text-gray-600">Outcome <span className="text-red-600">*</span></label>
+            <select
+              ref={outcomeRef}
+              value={outcomeKey}
+              onChange={(e) => { setOutcomeKey(e.target.value); if (err) setErr(null); }}
+              className={`w-full mt-1 mb-3 border rounded-lg px-3 py-2 text-sm ${outcomeKey ? "border-[#e5e7eb]" : "border-red-300 text-gray-500"}`}
+            >
+              <option value="" disabled>-- Select Outcome --</option>
               {currentOutcomeOptions.map(o => <option key={o.key} value={o.key}>{o.label}</option>)}
             </select>
             {/* Duration only shown when the call could have lasted measurable
@@ -507,16 +546,17 @@ export default function LeadActionsClient({ leadId, phone, altPhone, email, curr
                 Lead.followupDate so the pre-meeting cron sends a 10-min-before push
                 and it shows in the morning dashboard's callback count. */}
             {showCallbackField && (
-              <div className={`mb-3 p-3 rounded-lg border-2 ${needsCallback ? "border-amber-300 bg-amber-50" : "border-emerald-300 bg-emerald-50"}`}>
+              <div ref={callbackRef} className={`mb-3 p-3 rounded-lg border-2 ${needsCallback ? "border-amber-300 bg-amber-50" : "border-emerald-300 bg-emerald-50"}`}>
                 <label className={`text-xs font-semibold flex items-center gap-1 mb-2 ${needsCallback ? "text-amber-900" : "text-emerald-900"}`}>
                   ⏰ {needsCallback ? "When should you call back?" : "Next follow-up date"}
+                  <span className="text-red-600">*</span>
                   <span className={`text-[10px] font-normal ${needsCallback ? "text-amber-700" : "text-emerald-700"}`}>
-                    {needsCallback ? "(required for scheduled callback)" : "(optional — schedule the next touchpoint)"}
+                    (required — every conversation needs a next action)
                   </span>
                 </label>
                 <CRMDatePicker
                   value={callbackAt}
-                  onChange={setCallbackAt}
+                  onChange={(v) => { setCallbackAt(v); if (err) setErr(null); }}
                   withTime
                   futureOnly
                   triggerStyle="input"
@@ -530,7 +570,7 @@ export default function LeadActionsClient({ leadId, phone, altPhone, email, curr
             )}
 
             <div className="flex items-center justify-between">
-              <label className="text-xs font-semibold text-gray-600">Remarks * <span className="text-gray-400 font-normal">(what did the client say?)</span></label>
+              <label className="text-xs font-semibold text-gray-600">Remarks <span className="text-red-600">*</span> <span className="text-gray-400 font-normal">(what did the client say?)</span></label>
               {speechSupported && (
                 <button
                   type="button"
@@ -547,9 +587,9 @@ export default function LeadActionsClient({ leadId, phone, altPhone, email, curr
                 </button>
               )}
             </div>
-            <textarea value={remarks} onChange={(e) => setRemarks(e.target.value)} rows={4}
+            <textarea ref={remarksRef} value={remarks} onChange={(e) => { setRemarks(e.target.value); if (err) setErr(null); }} rows={4}
               placeholder="Be specific: client's exact concern, budget mentioned, next step agreed…"
-              className="w-full mt-1 border border-[#e5e7eb] rounded-lg px-3 py-2 text-sm font-mono text-[13px]" />
+              className={`w-full mt-1 border rounded-lg px-3 py-2 text-sm font-mono text-[13px] ${remarks.trim() ? "border-[#e5e7eb]" : "border-red-300"}`} />
             {err && <div className="text-xs text-red-600 mt-2 flex gap-1 items-center"><AlertCircle className="w-3 h-3" /> {err}</div>}
             <div className="flex justify-end gap-2 mt-4">
               <button onClick={() => setShowCall(false)} className="btn btn-ghost">Cancel</button>
