@@ -1217,6 +1217,26 @@ const checks: Check[] = [
       assert(/StickyNoteWidget/.test(page) && /apiBase="\/api\/buyer-data"/.test(page), "buyer detail MUST reuse StickyNoteWidget with apiBase=/api/buyer-data");
       assert(/lg:grid-cols-3/.test(page), "buyer detail MUST use the Lead 3-col grid shell (main + right rail)");
       assert(/BuyerAdminPanel/.test(page), "buyer detail MUST render the right-rail BuyerAdminPanel (convert/assign/reject/attempt/transfer)");
+      // Same main-column body as the Lead view: Conversation History (BuyerActivity)
+      // then Quick Note. Locks the visual layout order so it can't silently drift.
+      assert(/BuyerActivityTimeline/.test(page), "buyer detail MUST render the Conversation History (BuyerActivityTimeline) in the main column");
+      assert(/BuyerQuickNoteCard/.test(page), "buyer detail MUST render the Quick Note (BuyerQuickNoteCard) after Conversation History");
+      assert(page.indexOf("BuyerActivityTimeline") < page.indexOf("BuyerQuickNoteCard"), "Conversation History MUST come BEFORE Quick Note (Lead-view order)");
+      // The orphaned/superseded BuyerDetailActions component must be gone (replaced
+      // by BuyerAdminPanel + BuyerActionsClient) — no dead detail-action bar left.
+      assert(!fs.existsSync("src/components/BuyerDetailActions.tsx"), "superseded BuyerDetailActions.tsx MUST be removed (replaced by BuyerAdminPanel + BuyerActionsClient)");
+
+      // (c2) The buyer Conversation History card is VISUALLY UNIFIED with the Lead
+      //      view's ConversationStreamCard — same card shell (card p-5 · emerald
+      //      left rail · faint emerald tint) and the same Raw History / Smart
+      //      Timeline segmented toggle. Guards the "looks genuinely the same" ask.
+      const bat = read("src/components/BuyerActivityTimeline.tsx");
+      assert(/card p-5 border-l-4 border-emerald-500 bg-emerald-50\/20/.test(bat), "BuyerActivityTimeline MUST use the Lead Conversation-History card shell (card p-5 border-l-4 border-emerald-500 bg-emerald-50/20)");
+      assert(/Raw History/.test(bat) && /Smart Timeline/.test(bat) && /setViewMode/.test(bat), "BuyerActivityTimeline MUST have the Raw History / Smart Timeline toggle (parity with ConversationStreamCard)");
+      assert(/max-h-\[620px\] overflow-y-auto/.test(bat), "BuyerActivityTimeline stream MUST use the same scroll container (max-h-[620px] overflow-y-auto) as the Lead view");
+      // Quick Note parity — buyer reuses the exact Lead QuickNote card shell + navy Save button.
+      const bqn = read("src/components/BuyerQuickNoteCard.tsx");
+      assert(/className="card p-4"/.test(bqn) && /📝 Quick Note/.test(bqn) && /bg-\[#0b1a33\]/.test(bqn), "BuyerQuickNoteCard MUST match the Lead QuickNoteCard shell (card p-4 · 📝 Quick Note · navy Save button)");
 
       // (d) The shared StickyNoteWidget must NOT have hard-coded the lead API — it
       //     uses the apiBase prop so the buyer reuse actually hits the buyer route.

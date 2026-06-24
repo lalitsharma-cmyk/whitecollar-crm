@@ -260,7 +260,18 @@
 // longer repeats "I Am Here … I Am Here" — single current status; daily reset
 // (yesterday's check-in never shows as today's). Force a refresh so PWA clients get
 // the corrected dashboard numbers + links.
-const CACHE = "wcr-shell-v58";
+// v59 (2026-06-24): Dubai Buyer Data detail = genuinely the Lead detail layout.
+// The buyer Conversation History card was visually out of step with the Lead view
+// (different padding, no emerald tint, no Raw History / Smart Timeline toggle, no
+// scroll container). BuyerActivityTimeline now uses the EXACT ConversationStreamCard
+// shell — card p-5 · emerald left-rail · faint emerald tint · Raw/Smart segmented
+// toggle · max-h-[620px] scroll — so the most prominent card matches the Lead view.
+// Buyer header inner wrapper aligned to the Lead's. Removed the orphaned, superseded
+// BuyerDetailActions component. Buyer-specific extras (Property/Transaction/Buyer +
+// multi-property table) remain the ONLY addition, below Quick Note. Force a refresh
+// so PWA clients see the unified buyer detail (network-first serves fresh HTML; a
+// hard refresh is not required but clears any stale shell instantly).
+const CACHE = "wcr-shell-v59";
 const SHELL = ["/login", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", (event) => {

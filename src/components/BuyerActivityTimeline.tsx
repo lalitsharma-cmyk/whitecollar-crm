@@ -2,14 +2,22 @@
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 
-// ── Buyer activity timeline + log controls + agent-handling history ──────────
-// Renders the BuyerActivity stream (calls / notes / WA / voice / attempts +
-// lifecycle ASSIGNED/RETURNED/CONVERTED/REJECTED) chronologically in the
-// ConversationStreamCard look. Provides controls to log a CALL / NOTE / WHATSAPP /
-// VOICE_NOTE and an ATTEMPT (No Answer / Not Picked / WA No Response) → POST
-// /api/buyer-data/[id]/activity. Shows attemptCount + a warning as it approaches 5
-// (auto-return). For admins, also renders the agent-handling history (stints).
-// Read via GET /api/buyer-data/[id]/history. canLog = the assigned agent or admin.
+// ── Buyer Conversation History — VISUAL PARITY with the Lead view's
+// ConversationStreamCard (src/components/ConversationStreamCard.tsx). Same card
+// shell (`card p-5 border-l-4 border-emerald-500 bg-emerald-50/20`), same header
+// (💬 Conversation History + a Raw History / Smart Timeline segmented toggle pill),
+// same Raw-History block (verbatim mono on a slate rail) and the same scrollable
+// Smart-Timeline stream container (`max-h-[620px] overflow-y-auto`). The data is
+// buyer-specific (BuyerActivity, not CallLog/Note), so the per-row markup mirrors
+// the Lead timeline rows rather than re-using the lead-typed component verbatim.
+//
+// It renders the BuyerActivity stream (calls / notes / WA / voice / attempts +
+// lifecycle ASSIGNED/RETURNED/CONVERTED/REJECTED) chronologically. Provides
+// controls to log a CALL / NOTE / WHATSAPP / VOICE_NOTE and an ATTEMPT (No Answer /
+// Not Picked / WA No Response) → POST /api/buyer-data/[id]/activity. Shows
+// attemptCount + a warning as it approaches 5 (auto-return). For admins, also
+// renders the agent-handling history (stints). Read via GET
+// /api/buyer-data/[id]/history. canLog = the assigned agent or admin.
 
 type Activity = { id: string; type: string; description: string | null; by: string | null; createdAt: string };
 type Assignment = { id: string; agent: string | null; assignedAt: string; returnedAt: string | null; returnReason: string | null; attemptsInStint: number; open: boolean };
@@ -56,9 +64,12 @@ export default function BuyerActivityTimeline({ buyerId, canLog, isAdmin, rawRem
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
-  const [showRaw, setShowRaw] = useState(false);
+  // View toggle — Raw History (verbatim imported remarks, source of truth) vs
+  // Smart Timeline (processed CRM-activity stream). Mirrors ConversationStreamCard:
+  // Raw History is the DEFAULT when imported remarks exist, else Smart Timeline.
   const rawText = (rawRemarks ?? "").trim();
   const hasRaw = rawText.length > 0;
+  const [viewMode, setViewMode] = useState<"raw" | "smart">(hasRaw ? "raw" : "smart");
 
   const load = useCallback(async () => {
     try {
@@ -89,10 +100,36 @@ export default function BuyerActivityTimeline({ buyerId, canLog, isAdmin, rawRem
     finally { setBusy(false); }
   }
 
+  const activities = data?.activities ?? [];
+
   return (
-    <div className="card p-4 border-l-4 border-emerald-500" data-lead-section="timeline">
-      <div className="flex items-center justify-between gap-2 mb-3">
-        <div className="font-semibold dark:text-slate-100">💬 Conversation History</div>
+    // Card shell — byte-for-byte the same wrapper as the Lead ConversationStreamCard
+    // (card p-5 · emerald left rail · faint emerald tint). data-lead-section="timeline"
+    // keeps it on the same mobile tab as the Lead view's Conversation History.
+    <div className="card p-5 border-l-4 border-emerald-500 bg-emerald-50/20" data-lead-section="timeline">
+      {/* Header — same row layout + title size as the Lead view, with the Raw /
+          Smart segmented toggle pill (identical emerald-bordered styling). */}
+      <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+        <div className="font-semibold flex items-center gap-2 text-base flex-wrap">
+          💬 Conversation History
+          <span className="inline-flex rounded-md border border-emerald-300 overflow-hidden text-[10px] font-medium">
+            <button type="button" onClick={() => setViewMode("raw")}
+              title="Exact imported text — no grouping, no dedup, no rewriting. Source of truth."
+              className={viewMode === "raw" ? "px-2 py-0.5 bg-[#0b1a33] text-white" : "px-2 py-0.5 bg-white dark:bg-slate-800 text-gray-600 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-700"}>
+              📜 Raw History
+            </button>
+            <button type="button" onClick={() => setViewMode("smart")}
+              title="Processed convenience view — the buyer's CRM activity stream. Never modifies the raw audit trail."
+              className={viewMode === "smart" ? "px-2 py-0.5 bg-[#0b1a33] text-white" : "px-2 py-0.5 bg-white dark:bg-slate-800 text-gray-600 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-700"}>
+              ✨ Smart Timeline
+            </button>
+          </span>
+          <span className="text-[10px] text-gray-500 font-normal">
+            {viewMode === "raw" ? "— Raw History (Audit Log) · verbatim" : "— Smart Timeline (Processed View)"}
+          </span>
+        </div>
+        {/* Attempt counter — buyer-specific (auto-return at 5). Sits where the Lead
+            view's filter chips sit, so the header row reads identically. */}
         {isAssigned && (
           <span className={`text-xs font-medium ${attemptCount >= 4 ? "text-red-600" : attemptCount >= 3 ? "text-amber-600" : "text-gray-500 dark:text-slate-400"}`}>
             {attemptCount}/5 attempts{attemptCount >= 3 && attemptCount < 5 ? ` · ${5 - attemptCount} left before auto-return` : ""}
@@ -100,29 +137,11 @@ export default function BuyerActivityTimeline({ buyerId, canLog, isAdmin, rawRem
         )}
       </div>
 
-      {/* RAW HISTORY — imported remarks shown verbatim (parity with the Lead view's
-          Raw History). Collapsed by default; only rendered when the buyer carries
-          imported remark text. The Smart Timeline below is the CRM-activity stream. */}
-      {hasRaw && (
-        <div className="mb-3">
-          <button type="button" onClick={() => setShowRaw((s) => !s)}
-            className="flex items-center gap-1.5 text-xs font-semibold text-gray-600 dark:text-slate-300 hover:text-gray-800 dark:hover:text-slate-100">
-            <span>{showRaw ? "▾" : "▸"}</span> 📜 Raw History <span className="text-[10px] font-normal text-gray-400">— imported remarks, verbatim</span>
-          </button>
-          {showRaw && (
-            <div className="mt-2 rounded-lg border border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-800/40 p-3 text-sm text-gray-700 dark:text-slate-300 whitespace-pre-wrap break-words max-h-72 overflow-y-auto">
-              {rawText}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* SMART TIMELINE label — present so the two streams read distinctly, exactly
-          like the Lead Conversation History (Raw History + Smart Timeline). */}
-      <div className="text-[10px] uppercase tracking-widest text-gray-400 dark:text-slate-500 font-semibold mb-2">⚡ Smart Timeline</div>
-
-      {/* Log controls (assigned agent / admin only, on an ASSIGNED buyer) */}
-      {canLog && isAssigned && (
+      {/* Log controls (assigned agent / admin only, on an ASSIGNED buyer) —
+          shown above the stream, exactly where the Lead view surfaces its
+          inline log affordances. Hidden in Raw History mode so the verbatim
+          audit text reads cleanly (parity: Raw is read-only). */}
+      {canLog && isAssigned && viewMode === "smart" && (
         <div className="mb-3 space-y-2">
           <div className="flex flex-wrap gap-1.5">
             {LOG_BTNS.map((b) => (
@@ -159,29 +178,53 @@ export default function BuyerActivityTimeline({ buyerId, canLog, isAdmin, rawRem
 
       {msg && <div className="text-xs px-2.5 py-1.5 rounded bg-gray-100 dark:bg-slate-800 text-gray-700 dark:text-slate-200 mb-2">{msg}</div>}
 
-      {/* Timeline */}
-      {loading ? (
-        <div className="text-sm text-gray-400">Loading activity…</div>
-      ) : !data || data.activities.length === 0 ? (
-        <div className="text-sm text-gray-500 dark:text-slate-400">No activity logged yet.{canLog && isAssigned ? " Use the buttons above to log a call, note, or attempt." : ""}</div>
-      ) : (
-        <div className="space-y-1.5">
-          {data.activities.map((a) => {
-            const meta = TYPE_META[a.type] ?? { icon: "•", label: a.type, cls: "border-gray-300 bg-gray-50 dark:bg-slate-800/40" };
-            return (
-              <div key={a.id} className={`border-l-2 ${meta.cls} pl-3 pr-2 py-1.5 rounded-r`}>
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-xs font-semibold text-gray-700 dark:text-slate-200">{meta.icon} {meta.label}</span>
-                  <span className="text-[10px] text-gray-400 whitespace-nowrap">{fmt(a.createdAt)}{a.by ? ` · ${a.by}` : ""}</span>
-                </div>
-                {a.description && <div className="text-sm text-gray-700 dark:text-slate-300 mt-0.5 break-words">{a.description}</div>}
+      {/* ── Main stream — same scroll container as the Lead view (space-y-1.5,
+          text-sm, capped height with internal scroll). ── */}
+      <div className="space-y-1.5 text-sm max-h-[620px] overflow-y-auto pr-1">
+        {/* RAW HISTORY (Audit Log) — verbatim imported remark on a slate rail,
+            mono, whitespace-preserved. Identical block to the Lead view. */}
+        {viewMode === "raw" && (
+          hasRaw ? (
+            <div className="border-l-2 border-slate-400 bg-slate-50/70 dark:bg-slate-800/40 pl-3 pr-2 py-2 rounded-r">
+              <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-1.5 flex-wrap">
+                📜 Imported Remarks — verbatim audit log
               </div>
-            );
-          })}
-        </div>
-      )}
+              <div className="text-xs text-gray-800 dark:text-slate-200 whitespace-pre-wrap break-words leading-relaxed font-mono">{rawText}</div>
+            </div>
+          ) : (
+            <div className="text-gray-500 text-xs text-center py-4">No imported remarks on this buyer.</div>
+          )
+        )}
 
-      {/* Agent-handling history (admin) */}
+        {/* SMART TIMELINE — the buyer's processed CRM-activity stream (calls ·
+            notes · WhatsApp · voice · attempts · lifecycle), newest-first. */}
+        {viewMode === "smart" && (
+          loading ? (
+            <div className="text-gray-500 text-xs text-center py-4">Loading activity…</div>
+          ) : activities.length === 0 ? (
+            <div className="text-gray-500 text-xs text-center py-4">
+              No calls, WhatsApp messages, or notes logged yet.{canLog && isAssigned ? " Use the buttons above to log a call, note, or attempt." : ""}
+            </div>
+          ) : (
+            activities.map((a) => {
+              const meta = TYPE_META[a.type] ?? { icon: "•", label: a.type, cls: "border-gray-300 bg-gray-50 dark:bg-slate-800/40" };
+              return (
+                <div key={a.id} className={`border-l-2 ${meta.cls} pl-3 pr-2 py-1.5 rounded-r`}>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs font-semibold text-gray-700 dark:text-slate-200">{meta.icon} {meta.label}</span>
+                    <span className="text-[10px] text-gray-400 whitespace-nowrap">{fmt(a.createdAt)}{a.by ? ` · ${a.by}` : ""}</span>
+                  </div>
+                  {a.description && <div className="text-sm text-gray-700 dark:text-slate-300 mt-0.5 break-words">{a.description}</div>}
+                </div>
+              );
+            })
+          )
+        )}
+      </div>
+
+      {/* Agent-handling history (admin) — buyer-specific stint table, kept below
+          the stream (separated by a hairline rule, matching the Lead view's
+          below-stream secondary blocks). */}
       {isAdmin && data && data.assignments.length > 0 && (
         <div className="mt-4 pt-3 border-t border-gray-100 dark:border-slate-800">
           <div className="text-sm font-semibold text-gray-700 dark:text-slate-200 mb-2">🧑‍💼 Agent-handling history</div>

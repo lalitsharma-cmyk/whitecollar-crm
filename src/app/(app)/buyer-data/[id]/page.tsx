@@ -149,7 +149,7 @@ export default async function BuyerDetail({ params }: { params: Promise<{ id: st
               data-lead-section so the mobile tabs never hide it; matches Lead view). */}
           <div className="card p-4">
             <div className="flex items-start justify-between flex-wrap gap-3">
-              <div className="min-w-0">
+              <div>
                 <div className="flex flex-wrap items-center gap-2">
                   <h2 className="text-xl font-bold dark:text-slate-100">
                     {canEditFields
