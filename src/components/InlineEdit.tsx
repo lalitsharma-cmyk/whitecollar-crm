@@ -95,12 +95,30 @@ export default function InlineEdit({ leadId, field, label, value, type = "text",
 
   function cancel() { setV(value == null ? "" : String(value)); setEditing(false); setErr(null); }
 
+  // ── Lock-after-selection fix ────────────────────────────────────────────────
+  // A select field appeared "locked" once a value was set: if the current stored
+  // value was NOT present in `options` (legacy/custom value, or a list that was
+  // derived from the DB and didn't include this row's value), the <select> fell
+  // back to rendering the FIRST option (the "—" placeholder). Re-opening then
+  // showed a mismatched/blank dropdown, so the field looked un-editable / stuck.
+  // FIX: ALWAYS guarantee the current value is a selectable option. We build
+  // `selectOptions` = the passed options, with the current value injected at the
+  // top when it's missing. The dropdown therefore always reflects the saved value
+  // AND always lets you pick a different one — reopenable any number of times.
+  const selectOptions = (() => {
+    if (type !== "select" || !options) return options;
+    const cur = value == null ? "" : String(value);
+    if (cur === "" || options.some(o => o.value === cur)) return options;
+    // Current value isn't in the list → prepend it so it's visible + selectable.
+    return [{ value: cur, label: cur }, ...options];
+  })();
+
   // For select fields: resolve the option label for the read-only view so the
   // agent sees "30 Days" not "THIRTY_DAYS". Strip leading emoji if present.
   const resolvedDisplay = (() => {
     if (display) return display;
-    if (type === "select" && options && value != null && value !== "") {
-      const found = options.find(o => o.value === String(value));
+    if (type === "select" && selectOptions && value != null && value !== "") {
+      const found = selectOptions.find(o => o.value === String(value));
       if (found) return found.label.replace(/^[\u{1F000}-\u{1FFFF}\u{2600}-\u{27FF}\s]+/u, "").trim();
     }
     return null;
@@ -156,13 +174,13 @@ export default function InlineEdit({ leadId, field, label, value, type = "text",
 
   const errLine = err ? <div className="text-[11px] text-red-600 mt-1">⚠ {err}</div> : null;
 
-  if (type === "select" && options) {
+  if (type === "select" && selectOptions) {
     return (
       <div className="inline-flex flex-col">
         <div className="flex items-center gap-1">
           <select value={v} onChange={(e) => setV(e.target.value)} className="min-w-[90px] border border-[#c9a24b] rounded px-2 py-1 text-sm" autoFocus>
             <option value="">—</option>
-            {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+            {selectOptions.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
           <button onClick={save} disabled={busy} aria-label="Save" className="text-emerald-600 hover:bg-emerald-50 rounded p-2 text-base min-w-11 min-h-11 flex items-center justify-center">✓</button>
           <button onClick={cancel} aria-label="Cancel" className="text-red-600 hover:bg-red-50 rounded p-2 text-base min-w-11 min-h-11 flex items-center justify-center">✕</button>

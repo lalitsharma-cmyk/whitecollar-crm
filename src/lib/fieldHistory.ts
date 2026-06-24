@@ -10,10 +10,35 @@ type HistoryDB = {
 };
 
 // The fields we track. Add here to capture more. Keys match Lead columns.
+// Admin Lead-View full-edit (2026-06-24): every inline-editable field on the
+// lead detail is tracked so the Change History card records old→new + who + when
+// for ALL of them — identity/contact (name/phone/altPhone/email/altEmail/
+// linkedInUrl/company/profession), provenance (source/sourceRaw/sourceDetail/
+// medium/mediumOther), requirement (configuration/propertyType + BANT depth),
+// scheduling (followup/meeting/siteVisit), location, team, budget, status.
+// `customFields.<key>` rows are written by the customFields-merge update path
+// (the dynamic key is matched by a prefix rule in recordFieldChanges below).
 export const TRACKED_FIELDS = [
-  "currentStatus", "status", "budgetMin", "budgetMax", "budgetCurrency",
-  "bantStatus", "ownerId", "followupDate", "source", "leadOrigin",
-  "remarks", "city", "country", "configuration", "needType", "potential",
+  // status / pipeline
+  "currentStatus", "status", "potential", "bantStatus", "forwardedTeam",
+  // budget
+  "budgetMin", "budgetMax", "budgetCurrency", "budgetRaw",
+  // BANT depth
+  "fundReadiness", "authorityLevel", "authorityPerson", "needSummary",
+  "whenCanInvest", "needType",
+  // assignment + scheduling
+  "ownerId", "followupDate", "meetingDate", "siteVisitDate",
+  // provenance / channel
+  "source", "sourceRaw", "sourceDetail", "medium", "mediumOther", "leadOrigin",
+  // identity / contact
+  "name", "altName", "phone", "altPhone", "email", "altEmail",
+  "company", "profession", "linkedInUrl",
+  // requirement
+  "configuration", "propertyType",
+  // location
+  "city", "state", "country", "address",
+  // free-text
+  "remarks",
 ] as const;
 
 function norm(v: unknown): string | null {
@@ -36,7 +61,13 @@ export async function recordFieldChanges(
   source: string,
 ): Promise<number> {
   const rows: Prisma.LeadFieldHistoryCreateManyInput[] = [];
-  for (const f of TRACKED_FIELDS) {
+  // The set of column names to record: the static tracked list PLUS any
+  // dynamic `customFields.<key>` pseudo-fields present in `after` (written by
+  // the imported-field merge edit path — see /api/leads/[id]/update). The
+  // dynamic keys carry their own old/new in `before`/`after` already.
+  const dynamicCustom = Object.keys(after).filter((k) => k.startsWith("customFields."));
+  const fields: string[] = [...TRACKED_FIELDS, ...dynamicCustom];
+  for (const f of fields) {
     if (!(f in after)) continue;          // field not part of this update
     const o = norm(before[f]);
     const n = norm(after[f]);

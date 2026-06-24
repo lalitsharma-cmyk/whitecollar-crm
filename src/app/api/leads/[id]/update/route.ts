@@ -20,7 +20,8 @@ import { NotifKind, type Prisma } from "@prisma/client";
 // for status/stage changes. Only allows whitelisted fields.
 
 const ALLOWED: Record<string, "string" | "date" | "number" | "enum" | "bool"> = {
-  name: "string", altName: "string", phone: "string", altPhone: "string", email: "string", company: "string",
+  name: "string", altName: "string", phone: "string", altPhone: "string",
+  email: "string", altEmail: "string", company: "string",
   city: "string", state: "string", country: "string", address: "string",
   configuration: "string", currentStatus: "string", categorization: "string",
   // propertyType: "Residential" | "Commercial" — agent/admin/super-admin editable (not PII-locked).
@@ -77,6 +78,52 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const { me } = scoped;
   const body = await req.json().catch(() => ({}));
   if (!body || typeof body !== "object") return NextResponse.json({ error: "Invalid body" }, { status: 400 });
+
+  // ── customFields (Imported Fields) MERGE edit — Admin / Super-Admin only ──────
+  // Imported sheet columns live in the Lead.customFields JSON blob. Editing one
+  // value must MERGE the single key back in WITHOUT dropping the other keys (a
+  // bare `update: { customFields: {k:v} }` would replace the whole object). We
+  // read the current blob, overlay the edited key(s), write it back, and record
+  // a Change-History row per key as "customFields.<key>" (old→new). Handled here,
+  // before the generic loop, and returns immediately. Body shape:
+  //   { customFields: { "<Original Header>": "<new value>" } }
+  // A null/"" value clears that one key (removes it from the blob).
+  if ("customFields" in body) {
+    if (me.role !== "ADMIN") {
+      return NextResponse.json(
+        { error: "Only an Admin or Super Admin can edit imported fields.", adminOnly: true },
+        { status: 403 },
+      );
+    }
+    const patch = body.customFields;
+    if (!patch || typeof patch !== "object" || Array.isArray(patch)) {
+      return NextResponse.json({ error: "customFields must be an object of key→value." }, { status: 400 });
+    }
+    const cur = await prisma.lead.findUnique({ where: { id }, select: { customFields: true } });
+    const base: Record<string, unknown> =
+      cur?.customFields && typeof cur.customFields === "object" && !Array.isArray(cur.customFields)
+        ? { ...(cur.customFields as Record<string, unknown>) }
+        : {};
+    // Build before/after maps keyed as customFields.<key> for the audit, and apply
+    // the merge to a copy of the blob. Clearing (null/"") deletes the key.
+    const beforeCF: Record<string, unknown> = {};
+    const afterCF: Record<string, unknown> = {};
+    const merged: Record<string, unknown> = { ...base };
+    for (const [k, raw] of Object.entries(patch as Record<string, unknown>)) {
+      const oldVal = base[k] ?? null;
+      const newVal = raw == null || raw === "" ? null : String(raw);
+      beforeCF[`customFields.${k}`] = oldVal;
+      afterCF[`customFields.${k}`] = newVal;
+      if (newVal == null) delete merged[k];
+      else merged[k] = newVal;
+    }
+    await prisma.lead.update({
+      where: { id },
+      data: { customFields: merged as Prisma.InputJsonValue, lastTouchedAt: new Date() },
+    });
+    recordFieldChanges(prisma, id, me.id, beforeCF, afterCF, "inline-edit").catch(() => {});
+    return NextResponse.json({ ok: true, customFields: true, updated: Object.keys(patch).length });
+  }
 
   // Name / phone / email are sensitive PII — only admin/manager may change them.
   // createdAt (enquiry date) is also admin-only — prevents agents from backdating.

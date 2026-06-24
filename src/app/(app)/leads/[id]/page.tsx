@@ -684,6 +684,12 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
           <div className="text-xs text-gray-500 dark:text-slate-400">✉️ Email</div>
           <ContactField leadId={lead.id} field="email" kind="email" value={lead.email} editable={isAdminOrManager} />
         </div>
+        {/* Alt email — second address. Not PII-locked (like alt phone): everyone
+            who can edit this lead may set it; mailto: link + copy + inline edit. */}
+        <div>
+          <div className="text-xs text-gray-500 dark:text-slate-400">✉️ Alt email</div>
+          <ContactField leadId={lead.id} field="altEmail" kind="email" value={(lead as { altEmail?: string | null }).altEmail ?? null} editable />
+        </div>
         <div>
           <div className="text-xs text-gray-500 dark:text-slate-400">🏢 Company</div>
           <InlineEdit leadId={lead.id} field="company" value={lead.company ?? ""} placeholder="Add value" />
@@ -1390,7 +1396,7 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
         {/* ── Technical / audit — Admin / Super-Admin only, below the main working
             area + hidden from Agents/Managers (Imported Fields + Routing audit). ── */}
         {me.role === "ADMIN" && (
-          <ImportedFieldsCard customFields={lead.customFields} rawImport={lead.rawImport} />
+          <ImportedFieldsCard customFields={lead.customFields} rawImport={lead.rawImport} leadId={lead.id} editable />
         )}
         {me.role === "ADMIN" && hasRouting && (
           <div data-lead-section="admin" className="card p-4">

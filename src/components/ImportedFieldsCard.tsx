@@ -3,11 +3,19 @@
 // lead / master-data / revival detail so no imported sheet data is ever hidden.
 // Visible to ALL roles (it's lead information, not a permissioned action).
 //
+// EDITABLE (2026-06-24): when `editable` (Admin / Super-Admin on the lead detail)
+// each Imported Field value becomes inline-editable via ImportedFieldEdit, which
+// PATCHes a MERGE update (one key at a time, other keys preserved) + writes a
+// Change-History row. Agents/managers keep the plain read-only view.
+//
 // rawImport (optional) is the IMMUTABLE full original row — EVERY column, incl.
 // the mapped ones (name/phone/email/source/dates/…) — shown verbatim in a
 // collapsible "Original Imported Row" so the exact imported value of every field
-// is always recoverable, not just the unmapped extras.
-export default function ImportedFieldsCard({ customFields, rawImport }: { customFields: unknown; rawImport?: unknown }) {
+// is always recoverable, not just the unmapped extras. This block is NEVER
+// editable — it is the verbatim import audit.
+import ImportedFieldEdit from "./ImportedFieldEdit";
+
+export default function ImportedFieldsCard({ customFields, rawImport, leadId, editable }: { customFields: unknown; rawImport?: unknown; leadId?: string; editable?: boolean }) {
   const entries =
     customFields && typeof customFields === "object" && !Array.isArray(customFields)
       ? Object.entries(customFields as Record<string, unknown>).filter(([, v]) => v != null && String(v).trim() !== "")
@@ -21,12 +29,16 @@ export default function ImportedFieldsCard({ customFields, rawImport }: { custom
     <div data-lead-section="overview" className="card p-4">
       {entries.length > 0 && (
         <>
-          <div className="font-semibold mb-2 dark:text-slate-100">📋 Imported Fields <span className="text-[10px] text-gray-400 font-normal">— extra columns from the import sheet</span></div>
+          <div className="font-semibold mb-2 dark:text-slate-100">📋 Imported Fields <span className="text-[10px] text-gray-400 font-normal">— extra columns from the import sheet{editable && leadId ? " · click any value to edit" : ""}</span></div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1.5 text-sm">
             {entries.map(([k, v]) => (
               <div key={k} className="flex flex-col min-w-0">
                 <span className="text-[10px] uppercase tracking-wide text-gray-400 truncate" title={k}>{k}</span>
-                <span className="text-gray-800 dark:text-slate-200 break-words">{String(v)}</span>
+                {editable && leadId ? (
+                  <ImportedFieldEdit leadId={leadId} fieldKey={k} value={String(v)} />
+                ) : (
+                  <span className="text-gray-800 dark:text-slate-200 break-words">{String(v)}</span>
+                )}
               </div>
             ))}
           </div>

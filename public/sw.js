@@ -232,7 +232,20 @@
 // blocked unless the agent gives a reschedule reason. New Daily-Report "Follow-up
 // Workflow" section (due/completed/after-call/after-WA/snoozed/snoozed-without-contact/
 // escalated/pending-at-EOD). Force a refresh so every PWA client gets the gated buttons.
-const CACHE = "wcr-shell-v56";
+// v57 (2026-06-24): Admin Lead-View full edit + dropdown-lock fix. (1) Fixed the
+// "Medium locks after first selection" bug — InlineEdit selects now ALWAYS inject the
+// current value as an option, so every dropdown (Medium, Source, Configuration, Property
+// Type, Team, Status, BANT) reopens and is changeable any number of times (root cause:
+// a stored value absent from the options list made the <select> fall back to the blank
+// placeholder, looking locked). (2) Every Lead-View field is now inline-editable for
+// Admin/Super-Admin (added Alt email; all listed fields wired) with check/cross save +
+// immediate refresh. (3) Imported Fields (customFields) are admin-editable via a
+// MERGE-safe PATCH (one key at a time, other keys never dropped); agents stay read-only.
+// (4) Change History (LeadFieldHistory) now records ALL of them — medium/mediumOther/
+// altPhone/altEmail/linkedInUrl/sourceDetail/propertyType/configuration/BANT/meeting/
+// site-visit + customFields.<key> — field/old/new/by/when. Force a refresh so PWA
+// clients pick up the reopenable dropdowns + new editors.
+const CACHE = "wcr-shell-v57";
 const SHELL = ["/login", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", (event) => {

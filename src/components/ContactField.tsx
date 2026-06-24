@@ -23,7 +23,7 @@ type Kind = "email" | "phone";
 
 interface Props {
   leadId: string;
-  field: "email" | "phone" | "altPhone";
+  field: "email" | "phone" | "altPhone" | "altEmail";
   value: string | null;
   kind: Kind;
   /** Show the pencil + allow inline editing. */

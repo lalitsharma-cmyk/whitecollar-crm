@@ -533,6 +533,81 @@ const checks: Check[] = [
   },
 
   // ───────────────────────────────────────────────────────────────────────────
+  // 3e-quater-ii. ADMIN LEAD-VIEW FULL EDIT (2026-06-24) — every listed Lead-View
+  //     field is editable (ALLOWED) AND audited (TRACKED_FIELDS); the customFields
+  //     merge edit preserves OTHER keys + is admin-gated; admins/super-admins are
+  //     ALLOWED to edit the admin-only fields (name/phone/email/source/budgetRaw).
+  // ───────────────────────────────────────────────────────────────────────────
+  {
+    name: "lead-view-edit — fields in ALLOWED+TRACKED_FIELDS; customFields merge keeps other keys; admin-only edit allowed",
+    run: async () => {
+      const fs = await import("node:fs");
+      const routeSrc = fs.readFileSync("src/app/api/leads/[id]/update/route.ts", "utf8");
+
+      // (a) ALLOWED whitelist must contain every inline-editable Lead-View field.
+      const allowedBlock = routeSrc.slice(routeSrc.indexOf("const ALLOWED"), routeSrc.indexOf("export async function PATCH"));
+      const mustAllow = [
+        "name", "altName", "phone", "altPhone", "email", "altEmail", "company",
+        "city", "state", "country", "address", "configuration", "currentStatus",
+        "propertyType", "sourceDetail", "remarks", "budgetMin", "budgetMax",
+        "budgetCurrency", "budgetRaw", "forwardedTeam", "followupDate", "meetingDate",
+        "siteVisitDate", "status", "fundReadiness", "source", "sourceRaw",
+        "bantStatus", "authorityLevel", "authorityPerson", "needSummary",
+        "profession", "linkedInUrl", "medium", "mediumOther", "whenCanInvest",
+      ];
+      for (const f of mustAllow) {
+        assert(new RegExp(`(^|[^A-Za-z])${f}:`).test(allowedBlock), `ALLOWED whitelist MUST include '${f}' (Lead-View inline edit)`);
+      }
+
+      // (b) TRACKED_FIELDS (Change History) must cover the same edit surface so
+      //     every admin edit is recorded old→new. Import the REAL array.
+      const { TRACKED_FIELDS } = await import("../src/lib/fieldHistory");
+      const tracked = new Set(TRACKED_FIELDS as readonly string[]);
+      for (const f of [
+        "medium", "mediumOther", "altPhone", "altEmail", "linkedInUrl", "sourceDetail",
+        "propertyType", "configuration", "authorityLevel", "authorityPerson", "needSummary",
+        "fundReadiness", "whenCanInvest", "meetingDate", "siteVisitDate", "forwardedTeam",
+        "source", "sourceRaw", "budgetRaw", "name", "phone", "email", "company",
+        "profession", "city", "state", "country", "address",
+      ]) {
+        assert(tracked.has(f), `TRACKED_FIELDS MUST include '${f}' so its edits show in Change History`);
+      }
+
+      // (c) recordFieldChanges must ALSO record dynamic customFields.<key> rows
+      //     (imported-field edits), not only the static tracked list.
+      const fhSrc = fs.readFileSync("src/lib/fieldHistory.ts", "utf8");
+      assert(/customFields\./.test(fhSrc), "recordFieldChanges MUST capture dynamic customFields.<key> edits");
+
+      // (d) The customFields merge path is Admin-gated and MERGE-safe: it reads the
+      //     current blob, spreads it, and never replaces the whole object.
+      assert(/"customFields" in body/.test(routeSrc), "update route MUST handle a customFields merge edit");
+      const cfBlock = routeSrc.slice(routeSrc.indexOf('"customFields" in body'), routeSrc.indexOf('"customFields" in body') + 1800);
+      assert(/me\.role !== "ADMIN"/.test(cfBlock), "customFields edit MUST be Admin / Super-Admin only");
+      assert(/\.\.\.\(cur\.customFields/.test(cfBlock) || /\.\.\.base/.test(cfBlock), "customFields edit MUST MERGE (spread existing keys), never replace the blob");
+
+      // (e) MERGE LOGIC SIMULATION — editing one key keeps the others. Pure, no DB.
+      const base = { "Passport No": "X123", "Visa Status": "Valid", "Agent Notes": "VIP" };
+      const patch = { "Visa Status": "Expired" };
+      const merged: Record<string, unknown> = { ...base };
+      for (const [k, v] of Object.entries(patch)) { if (v == null || v === "") delete merged[k]; else merged[k] = v; }
+      assert(merged["Passport No"] === "X123" && merged["Agent Notes"] === "VIP", "merge MUST preserve untouched imported keys");
+      assert(merged["Visa Status"] === "Expired", "merge MUST apply the edited key");
+      const cleared: Record<string, unknown> = { ...base };
+      for (const [k, v] of Object.entries({ "Visa Status": "" })) { if (v == null || v === "") delete cleared[k]; else cleared[k] = v; }
+      assert(!("Visa Status" in cleared) && cleared["Passport No"] === "X123", "clearing one key removes ONLY it, others intact");
+
+      // (f) Admin/super-admin are ALLOWED to edit admin-only fields — the route
+      //     restricts these to role !== "ADMIN" (so ADMIN passes), NOT a blanket block.
+      assert(/ADMIN_ONLY_FIELDS = new Set\(\["name", "phone", "email", "createdAt"\]\)/.test(routeSrc), "admin-only PII set must be name/phone/email/createdAt");
+      assert(/if \(me\.role === "AGENT"\)/.test(routeSrc), "PII lock must gate only AGENT (admin/manager allowed)");
+
+      // (g) The Change-History UI labels the dynamic imported edits.
+      const chSrc = fs.readFileSync("src/components/ChangeHistoryCard.tsx", "utf8");
+      assert(/customFields\./.test(chSrc), "Change History card MUST render customFields.<key> edit rows");
+    },
+  },
+
+  // ───────────────────────────────────────────────────────────────────────────
   // 3e-quinque. REMARK INLINE-TIME IST (2026-06-21) — a written clock time in the
   //     comma/space form promotes to the IST event time, no shift; numbers that
   //     aren't times stay date-only.

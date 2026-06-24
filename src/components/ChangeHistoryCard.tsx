@@ -5,11 +5,28 @@ import { fmtIST12 } from "@/lib/datetime";
 
 const FIELD_LABEL: Record<string, string> = {
   currentStatus: "Status", status: "Status", budgetMin: "Budget", budgetMax: "Budget (max)",
-  budgetCurrency: "Currency", bantStatus: "BANT", ownerId: "Owner (assignment)",
-  followupDate: "Follow-up date", source: "Source", leadOrigin: "Section",
-  remarks: "Remarks", city: "City", country: "Country", configuration: "Configuration",
-  needType: "Need", potential: "Potential",
+  budgetCurrency: "Currency", budgetRaw: "Budget (raw)", bantStatus: "BANT",
+  ownerId: "Owner (assignment)", forwardedTeam: "Team",
+  followupDate: "Follow-up date", meetingDate: "Meeting date", siteVisitDate: "Site-visit date",
+  source: "Source", sourceRaw: "Source (raw)", sourceDetail: "Property Enquired",
+  medium: "Medium", mediumOther: "Custom medium", leadOrigin: "Section",
+  remarks: "Remarks", city: "City", state: "State / Province", country: "Country",
+  address: "Address", configuration: "Configuration", propertyType: "Property Type",
+  needType: "Need", needSummary: "Need", potential: "Potential",
+  fundReadiness: "Fund readiness", authorityLevel: "Authority", authorityPerson: "Authority (who)",
+  whenCanInvest: "Timeline",
+  name: "Name", altName: "Alt name", phone: "Phone", altPhone: "Alt phone",
+  email: "Email", altEmail: "Alt email", company: "Company", profession: "Profession",
+  linkedInUrl: "LinkedIn",
 };
+
+// Imported/custom-field changes are recorded as "customFields.<Original Header>".
+// Show the original header (after the dot) prefixed with a 📋 so it reads as an
+// imported value edit, not a core CRM field.
+function fieldLabel(field: string): string {
+  if (field.startsWith("customFields.")) return `📋 ${field.slice("customFields.".length)}`;
+  return FIELD_LABEL[field] ?? field;
+}
 const SRC_LABEL: Record<string, string> = {
   "inline-edit": "edit", bulk: "bulk", import: "import", eoi: "EOI", reject: "reject", move: "move", system: "system",
 };
@@ -55,7 +72,7 @@ export default function ChangeHistoryCard({
           {rows.map((r) => (
             <div key={r.id} className="text-xs border-b border-gray-100 dark:border-slate-800 pb-1.5">
               <div className="dark:text-slate-200">
-                <b>{FIELD_LABEL[r.field] ?? r.field}</b>{" "}
+                <b>{fieldLabel(r.field)}</b>{" "}
                 <span className="text-gray-400">{showVal(r.field, r.oldValue)}</span>
                 <span className="mx-1 text-gray-400">→</span>
                 <span className="font-medium text-[#0b1a33] dark:text-blue-300">{showVal(r.field, r.newValue)}</span>
