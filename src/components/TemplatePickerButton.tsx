@@ -1,7 +1,9 @@
 "use client";
 import { useEffect, useState } from "react";
-import { MessageCircle, Mail, X, Sparkles, PenLine, FolderOpen } from "lucide-react";
+import { Mail, X, Sparkles, PenLine, FolderOpen } from "lucide-react";
 import { whatsappLink } from "@/lib/phone";
+import { ACTION_TOKENS } from "@/lib/actionDesign";
+import WhatsAppGlyph from "@/components/actions/WhatsAppGlyph";
 import { buildShareMessage, type ResourceTypeStr } from "@/lib/resources";
 import { useBodyScrollLock } from "@/hooks/useBodyScrollLock";
 
@@ -114,12 +116,14 @@ export default function TemplatePickerButton({ lead, kind, suggestedTrigger, com
     return a.name.localeCompare(b.name);
   });
 
-  const Icon = kind === "WHATSAPP" ? MessageCircle : Mail;
-  // Email switched from sky-blue → indigo-600 per Lalit's "Change colour of
-  // email" ask. Distinct from the WhatsApp green AND from any blue used
-  // elsewhere in the action grid.
-  const labelColor = kind === "WHATSAPP" ? "bg-[#25D366]" : "bg-indigo-600";
+  // Colours now come from the central Action Design System (src/lib/actionDesign.ts):
+  // WhatsApp = the whatsapp token (brand green + glyph), Email = the email token
+  // (blue). Keeps this template-picker entry point visually identical to the
+  // plain WhatsApp/Email actions elsewhere. (Supersedes the earlier ad-hoc
+  // indigo email colour — email is unified to the system blue.)
+  const labelColor = kind === "WHATSAPP" ? ACTION_TOKENS.whatsapp.solid : ACTION_TOKENS.email.solid;
   const isDisabled = kind === "WHATSAPP" ? !lead.phone : !lead.email;
+  const iconClass = compact ? "w-3.5 h-3.5" : "w-5 h-5 mb-1";
 
   return (
     <>
@@ -131,12 +135,12 @@ export default function TemplatePickerButton({ lead, kind, suggestedTrigger, com
           compact
             // Compact variant: horizontal icon+label, smaller padding, fits the
             // mobile-first action bar on /leads/[id].
-            ? `flex items-center justify-center gap-1 py-2 rounded-lg ${labelColor} text-white text-xs font-semibold hover:opacity-90 disabled:opacity-30 transition shadow-sm min-h-10`
+            ? `flex items-center justify-center gap-1 py-2 rounded-lg ${labelColor} text-xs font-semibold hover:opacity-90 disabled:opacity-30 transition shadow-sm min-h-10`
             // Default: full-size vertical card (used elsewhere in the app).
-            : `flex flex-col items-center justify-center py-3 rounded-xl ${labelColor} text-white font-semibold hover:opacity-90 disabled:opacity-30 transition shadow-sm`
+            : `flex flex-col items-center justify-center py-3 rounded-xl ${labelColor} font-semibold hover:opacity-90 disabled:opacity-30 transition shadow-sm`
         }
       >
-        <Icon className={compact ? "w-3.5 h-3.5" : "w-5 h-5 mb-1"} />
+        {kind === "WHATSAPP" ? <WhatsAppGlyph className={iconClass} /> : <Mail className={iconClass} />}
         {compact ? (kind === "WHATSAPP" ? "WA" : "Email") : (kind === "WHATSAPP" ? "WhatsApp" : "Email")}
       </button>
 

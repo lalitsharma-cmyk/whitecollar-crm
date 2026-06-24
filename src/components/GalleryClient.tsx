@@ -2,9 +2,11 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import {
   Search, Upload, Link as LinkIcon, FileText, Image as ImageIcon, File as FileIcon,
-  MessageCircle, Mail, Copy, Trash2, Pencil, X, Check, Plus, Filter, CheckCircle2,
+  Copy, Trash2, Pencil, X, Check, Plus, Filter, CheckCircle2,
 } from "lucide-react";
 import { whatsappLink } from "@/lib/phone";
+import { ActionButton } from "@/components/actions/ActionButton";
+import WhatsAppGlyph from "@/components/actions/WhatsAppGlyph";
 import {
   RESOURCE_CATEGORIES, formatFileSize, buildShareMessage, shareableLink, publicFileUrl,
   type ResourceTypeStr,
@@ -233,7 +235,7 @@ export default function GalleryClient({ canManageAll, myUserId, initialItems }: 
                   {/* Actions */}
                   <div className="mt-auto pt-1.5 flex items-center gap-1">
                     <button onClick={() => setShareTarget([r])} title="Share via WhatsApp" className="flex-1 flex items-center justify-center gap-1 py-1 rounded bg-[#25D366] text-white text-[10px] font-semibold hover:opacity-90">
-                      <MessageCircle className="w-3 h-3" /> Share
+                      <WhatsAppGlyph className="w-3 h-3" /> Share
                     </button>
                     <button onClick={() => copyLink(r)} title="Copy link / text" className="p-1.5 rounded bg-gray-100 dark:bg-slate-700 text-gray-600 dark:text-slate-300 hover:bg-gray-200">
                       <Copy className="w-3 h-3" />
@@ -317,7 +319,8 @@ function ShareModal({
           <label className="text-xs font-semibold text-gray-600 dark:text-slate-300">WhatsApp number (optional)</label>
           <div className="flex gap-2 mt-1">
             <input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+9715… or +9198…" className="flex-1 px-3 py-2 rounded-lg border border-[#e5e7eb] dark:border-slate-600 dark:bg-slate-700 text-sm" />
-            <button onClick={shareWhatsApp} className="btn text-sm bg-[#25D366] text-white whitespace-nowrap"><MessageCircle className="w-4 h-4" /> WhatsApp</button>
+            {/* Central Action Design System — WhatsApp/Email send (was ad-hoc #25D366 + indigo). */}
+            <ActionButton action="whatsapp" size="sm" onClick={shareWhatsApp} className="whitespace-nowrap" />
           </div>
         </div>
 
@@ -325,7 +328,7 @@ function ShareModal({
           <label className="text-xs font-semibold text-gray-600 dark:text-slate-300">Email (optional)</label>
           <div className="flex gap-2 mt-1">
             <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="client@email.com" className="flex-1 px-3 py-2 rounded-lg border border-[#e5e7eb] dark:border-slate-600 dark:bg-slate-700 text-sm" />
-            <button onClick={shareEmail} className="btn text-sm bg-indigo-600 text-white whitespace-nowrap"><Mail className="w-4 h-4" /> Email</button>
+            <ActionButton action="email" size="sm" onClick={shareEmail} className="whitespace-nowrap" />
           </div>
         </div>
         <p className="text-[11px] text-gray-400">A link is sent (WhatsApp can’t attach files). Every share is tracked.</p>

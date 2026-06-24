@@ -2,20 +2,17 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Phone, MessageCircle, Tag, RefreshCw, XCircle, X, ExternalLink, Pencil, Calendar, Mail, Trash2 } from "lucide-react";
+import { Phone, MessageCircle, Tag, RefreshCw, XCircle, X, ExternalLink, Pencil, Calendar, Trash2 } from "lucide-react";
 import { REJECT_REASONS as REJECT_REASON_LIST } from "@/lib/reject-reasons";
 import LeadHeaderFilter from "@/components/LeadHeaderFilter";
-
-/** Official WhatsApp logo mark (brand colour applied via parent bg) */
-function WaIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="currentColor" className="w-3.5 h-3.5" aria-hidden>
-      <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
-    </svg>
-  );
-}
+// Per-row Call / WhatsApp / Follow-up / Email / Reject actions now render from
+// the central Action Design System (ActionButton / ActionIconButton + tokens).
+// The old inline WhatsApp <WaIcon> SVG + ad-hoc per-action colours were removed;
+// the brand WhatsApp glyph now lives in components/actions/WhatsAppGlyph.tsx.
 import { telLink, whatsappLink } from "@/lib/phone";
 import CopyPhoneButton from "./CopyPhoneButton";
+import { ActionButton } from "@/components/actions/ActionButton";
+import { ActionIconButton } from "@/components/actions/ActionIconButton";
 import { statusColor, selectableStatuses } from "@/lib/lead-statuses";
 import { resolveProjectDisplay, prettyProjectName } from "@/lib/projectName";
 
@@ -716,34 +713,29 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
 
                         {/* 9. Actions — ALWAYS VISIBLE (§5: no invisible hover area) */}
                         <td className="px-2 py-1.5 whitespace-nowrap" onClick={e => e.stopPropagation()}>
+                          {/* Actions column — ghost icons from the central Action
+                              Design System (src/lib/actionDesign.ts). Same icon +
+                              colour as these actions everywhere. Open Lead (not a
+                              catalogued action) stays an ExternalLink. Handlers/
+                              hrefs/permissions are unchanged. */}
                           <div className="flex items-center gap-0.5">
                             {l.phone && (
-                              <a href={`tel:${l.phone}`} title="Call"
-                                className="p-1.5 rounded-md text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-900/30 transition-colors">
-                                <Phone className="w-3.5 h-3.5" />
-                              </a>
+                              <ActionIconButton action="call" href={`tel:${l.phone}`} />
                             )}
                             {l.phone && (
-                              <a href={whatsappLink(l.phone, "")} target="_blank" rel="noreferrer" title="WhatsApp"
-                                className="p-1.5 rounded-md text-green-600 hover:bg-green-50 dark:hover:bg-green-900/30 transition-colors">
-                                <WaIcon />
-                              </a>
+                              <ActionIconButton action="whatsapp" href={whatsappLink(l.phone, "")} external />
                             )}
-                            <button type="button" title="Set follow-up"
-                              onClick={e => openPicker(l.id, e)}
-                              className="p-1.5 rounded-md text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors">
-                              <Calendar className="w-3.5 h-3.5" />
-                            </button>
+                            <ActionIconButton action="followUp" title="Set follow-up" onClick={e => openPicker(l.id, e)} />
                             <Link href={`/leads/${l.id}`} title="Open lead" onClick={e => e.stopPropagation()}
                               className="p-1.5 rounded-md text-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 transition-colors">
                               <ExternalLink className="w-3.5 h-3.5" />
                             </Link>
                             {/* Reject lead — business outcome (kept in CRM, marked Lost). Visible to all. */}
-                            <button type="button" title="Reject lead"
+                            <ActionIconButton
+                              action="reject"
+                              title="Reject lead"
                               onClick={() => { setDeleteTarget({ id: l.id, name: l.name }); setDeleteReason("NOT_INTERESTED"); setDeleteNote(""); }}
-                              className="p-1.5 rounded-md text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors">
-                              <XCircle className="w-3.5 h-3.5" />
-                            </button>
+                            />
                             {/* Delete lead — Super-Admin (Lalit) only · removes from active CRM */}
                             {canDelete && (
                               <button type="button" title="Delete lead (Super Admin only)"
@@ -799,28 +791,19 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
                   )}
                 </div>
                 {/* Row 4: Action icons — ALWAYS VISIBLE on mobile (§8, no hover on touch) */}
-                <div className="flex items-center gap-1 pt-2 border-t border-gray-50 dark:border-slate-700">
+                {/* Mobile quick actions — solid buttons from the central Action
+                    Design System (compact size). Open Lead stays a Link. Handlers/
+                    hrefs unchanged. */}
+                <div className="flex items-center gap-1 pt-2 border-t border-gray-50 dark:border-slate-700 [&>*]:flex-1">
                   {l.phone && (
-                    <a href={`tel:${l.phone}`}
-                      className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg text-emerald-600 bg-emerald-50 dark:bg-emerald-900/20 text-xs font-medium"
-                      onClick={e => e.stopPropagation()}>
-                      <Phone className="w-3.5 h-3.5" /> Call
-                    </a>
+                    <ActionButton action="call" size="sm" href={`tel:${l.phone}`} label="Call" onClick={(e: React.MouseEvent) => e.stopPropagation()} />
                   )}
                   {l.phone && (
-                    <a href={whatsappLink(l.phone, "")} target="_blank" rel="noreferrer"
-                      className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg text-green-600 bg-green-50 dark:bg-green-900/20 text-xs font-medium"
-                      onClick={e => e.stopPropagation()}>
-                      <WaIcon /> WA
-                    </a>
+                    <ActionButton action="whatsapp" size="sm" href={whatsappLink(l.phone, "")} label="WA" external onClick={(e: React.MouseEvent) => e.stopPropagation()} />
                   )}
-                  <button type="button"
-                    onClick={e => openPicker(l.id, e)}
-                    className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg text-blue-600 bg-blue-50 dark:bg-blue-900/20 text-xs font-medium">
-                    <Calendar className="w-3.5 h-3.5" /> Date
-                  </button>
+                  <ActionButton action="followUp" size="sm" label="Date" onClick={e => openPicker(l.id, e)} />
                   <Link href={`/leads/${l.id}`}
-                    className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg text-indigo-600 bg-indigo-50 dark:bg-indigo-900/20 text-xs font-medium"
+                    className="flex items-center justify-center gap-1 py-1.5 rounded-lg text-indigo-600 bg-indigo-50 dark:bg-indigo-900/20 text-xs font-medium min-h-9"
                     onClick={e => e.stopPropagation()}>
                     <ExternalLink className="w-3.5 h-3.5" /> Open
                   </Link>
@@ -1123,32 +1106,28 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
 
                   {/* ── Actions ── */}
                   <td className="px-3 py-3 align-top" onClick={(e) => e.stopPropagation()}>
-                    <div className="flex items-center gap-1 flex-nowrap">
+                    {/* Actions — solid icon chips from the central Action Design
+                        System (src/lib/actionDesign.ts), so Call / WhatsApp /
+                        Follow-up / Email / Reject match the same actions everywhere
+                        (this view previously diverged: blue Call, amber follow-up,
+                        sky Email, red-500 Reject). Open Lead (Pencil) stays bespoke.
+                        Handlers/hrefs/permissions unchanged. */}
+                    <div className="flex items-center gap-1 flex-nowrap [&>*]:flex-none">
 
                       {/* 1. Call */}
                       {l.phone && (
-                        <a href={telLink(l.phone) || "#"} title={`Call ${l.name}`}
-                          className="w-8 h-8 rounded-lg bg-blue-600 hover:bg-blue-700 text-white flex items-center justify-center transition-colors flex-none">
-                          <Phone className="w-3.5 h-3.5" />
-                        </a>
+                        <ActionIconButton action="call" variant="solid" href={telLink(l.phone) || "#"} title={`Call ${l.name}`} />
                       )}
 
-                      {/* 2. WhatsApp — real brand icon */}
+                      {/* 2. WhatsApp — brand glyph */}
                       {l.phone && (
-                        <a href={whatsappLink(l.phone) || "#"} target="_blank" rel="noopener noreferrer"
-                          title={`WhatsApp ${l.name}`}
-                          className="w-8 h-8 rounded-lg bg-[#25D366] hover:bg-[#1ea953] text-white flex items-center justify-center transition-colors flex-none">
-                          <WaIcon />
-                        </a>
+                        <ActionIconButton action="whatsapp" variant="solid" href={whatsappLink(l.phone) || "#"} title={`WhatsApp ${l.name}`} external />
                       )}
 
                       {/* 3. Follow-up */}
                       <div className="relative flex-none">
-                        <button type="button" title="Set follow-up date"
-                          onClick={() => setPickerOpenFor(pickerOpenFor === l.id ? null : l.id)}
-                          className="w-8 h-8 rounded-lg bg-amber-500 hover:bg-amber-600 text-white flex items-center justify-center transition-colors">
-                          <Calendar className="w-3.5 h-3.5" />
-                        </button>
+                        <ActionIconButton action="followUp" variant="solid" title="Set follow-up date"
+                          onClick={() => setPickerOpenFor(pickerOpenFor === l.id ? null : l.id)} />
                         {pickerOpenFor === l.id && (
                           <input type="date" autoFocus
                             className="absolute top-9 left-0 z-20 text-xs border rounded px-2 py-1 shadow-lg bg-white dark:bg-slate-800 dark:border-slate-600 dark:text-slate-100"
@@ -1160,13 +1139,10 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
 
                       {/* 4. Email */}
                       {l.email && (
-                        <a href={`mailto:${l.email}`} title={`Email ${l.name}`}
-                          className="w-8 h-8 rounded-lg bg-sky-500 hover:bg-sky-600 text-white flex items-center justify-center transition-colors flex-none">
-                          <Mail className="w-3.5 h-3.5" />
-                        </a>
+                        <ActionIconButton action="email" variant="solid" href={`mailto:${l.email}`} title={`Email ${l.name}`} />
                       )}
 
-                      {/* 5. Edit */}
+                      {/* 5. Edit / Open lead (not a catalogued action) */}
                       <button type="button" title="Open lead"
                         onClick={() => router.push(`/leads/${l.id}`)}
                         className="w-8 h-8 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-white flex items-center justify-center transition-colors flex-none">
@@ -1174,11 +1150,8 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
                       </button>
 
                       {/* 6. Reject lead — business outcome (kept in CRM, marked Lost). Visible to all. */}
-                      <button type="button" title="Reject lead"
-                        onClick={() => { setDeleteTarget({ id: l.id, name: l.name }); setDeleteReason("NOT_INTERESTED"); setDeleteNote(""); }}
-                        className="w-8 h-8 rounded-lg bg-red-500 hover:bg-red-600 text-white flex items-center justify-center transition-colors flex-none">
-                        <XCircle className="w-3.5 h-3.5" />
-                      </button>
+                      <ActionIconButton action="reject" variant="solid" title="Reject lead"
+                        onClick={() => { setDeleteTarget({ id: l.id, name: l.name }); setDeleteReason("NOT_INTERESTED"); setDeleteNote(""); }} />
 
                       {/* 7. Delete lead — Super-Admin (Lalit) only · removes from active CRM */}
                       {canDelete && (

@@ -113,7 +113,19 @@
 // Call / WhatsApp / Email / Log Call / Note (one flex-wrap row) instead of a
 // separate stacked row below, reclaiming vertical space and keeping the actions
 // above the fold. No business logic / endpoint / permission change.
-const CACHE = "wcr-shell-v45";
+// v46 (2026-06-24): CRM-wide Action Design System (visual standardization only) —
+// new single source of truth src/lib/actionDesign.ts (13-action token map: icon +
+// colour + tooltip + hover/disabled/loading + sm/md sizes + dark mode) consumed
+// by two reusable components (ActionButton solid/labeled, ActionIconButton ghost/
+// solid icon-only) + a shared brand WhatsAppGlyph. Replaced every scattered/
+// divergent action button & icon across Lead view, Buyer Data, Action List,
+// Revival/Cold-Calls, Leads table (both desktop variants + mobile), Inbox,
+// Calls, Hidden Gems, Gallery share, Reject modal, Template picker, and the
+// Smart-Timeline dot colours + AgentStatusBar tones — so the same action looks
+// identical everywhere (killed: blue-vs-emerald Call, 3 inline WhatsApp/phone
+// SVGs, sky/indigo Email, amber-vs-token follow-up). Note button keeps its
+// dark-navy-on-amber contrast. NO business logic / endpoint / permission change.
+const CACHE = "wcr-shell-v46";
 const SHELL = ["/login", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", (event) => {

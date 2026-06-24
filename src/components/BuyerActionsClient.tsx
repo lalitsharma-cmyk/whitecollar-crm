@@ -1,8 +1,9 @@
 "use client";
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { Phone, MessageCircle, Mail, AlertCircle, Mic } from "lucide-react";
+import { Phone, AlertCircle, Mic } from "lucide-react";
 import { whatsappLink, telLink } from "@/lib/phone";
+import { ActionButton } from "@/components/actions/ActionButton";
 
 // ── Buyer action button row — EXACT visual parity with LeadActionsClient ──────
 // Same grid (grid-cols-3 sm:grid-cols-5), same button colours/sizes:
@@ -132,37 +133,28 @@ export default function BuyerActionsClient({ buyerId, phone, altPhone, email, cl
           No phone number on this buyer — Call &amp; WhatsApp are unavailable.
         </div>
       )}
-      {/* Primary action bar — identical grid + button styling to the Lead view. */}
-      <div className="grid grid-cols-3 sm:grid-cols-5 gap-2 mt-3">
+      {/* Primary action bar — identical grid + button styling to the Lead view,
+          now sourced from the central Action Design System (src/lib/actionDesign.ts)
+          so Call / WhatsApp / Email / Log Call / Note match the Lead view exactly.
+          Voice is a buyer-specific dictation action (kept bespoke). All hrefs/
+          handlers/permissions (canLog) are unchanged. */}
+      <div className="grid grid-cols-3 sm:grid-cols-5 gap-2 mt-3 [&>*]:w-full">
         {phone && (
-          <a href={telLink(phone)} className="flex items-center justify-center gap-1.5 py-2.5 rounded-lg bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700 transition shadow-sm min-h-11">
-            <Phone className="w-4 h-4" /> Call
-          </a>
+          <ActionButton action="call" href={telLink(phone)} />
         )}
         {phone && (
-          <a href={whatsappLink(phone, waGreeting)} target="_blank" rel="noopener noreferrer" className="flex items-center justify-center gap-1.5 py-2.5 rounded-lg bg-[#25D366] text-white text-sm font-semibold hover:bg-[#1eb858] transition shadow-sm min-h-11">
-            <MessageCircle className="w-4 h-4" /> WhatsApp
-          </a>
+          <ActionButton action="whatsapp" href={whatsappLink(phone, waGreeting)} external />
         )}
         {email && (
-          <a href={`mailto:${email}`} className="flex items-center justify-center gap-1.5 py-2.5 rounded-lg bg-slate-600 text-white text-sm font-semibold hover:bg-slate-700 transition shadow-sm min-h-11">
-            <Mail className="w-4 h-4" /> Email
-          </a>
+          <ActionButton action="email" href={`mailto:${email}`} />
         )}
         {canLog && (
-          <button onClick={() => setShowLog(true)} className="flex items-center justify-center gap-1.5 py-2.5 rounded-lg bg-[#c9a24b] text-[#0b1a33] text-sm font-semibold hover:bg-[#e7c97a] transition shadow-sm min-h-11">
-            📝 Log Call
-          </button>
+          <ActionButton action="logCall" onClick={() => setShowLog(true)} />
         )}
-        <button
+        <ActionButton
+          action="note"
           onClick={() => window.dispatchEvent(new CustomEvent(`open-sticky-${buyerId}`))}
-          // Same pinned-contrast colours as the Lead view's Note button so a global
-          // dark-mode rule can't hijack it (dark-navy ink on amber).
-          className="flex items-center justify-center gap-1.5 py-2.5 rounded-lg bg-[#fcd34d] text-[#3a2c00] text-sm font-semibold hover:bg-[#fbbf24] transition shadow-sm min-h-11"
-          title="Open private sticky note"
-        >
-          🗒 Note
-        </button>
+        />
         {canLog && (
           <button onClick={quickVoiceNote} className="flex items-center justify-center gap-1.5 py-2.5 rounded-lg bg-purple-600 text-white text-sm font-semibold hover:bg-purple-700 transition shadow-sm min-h-11">
             <Mic className="w-4 h-4" /> Voice
@@ -174,13 +166,9 @@ export default function BuyerActionsClient({ buyerId, phone, altPhone, email, cl
       {phone && altPhone && (
         <div className="mt-2">
           <div className="text-[10px] uppercase tracking-widest text-gray-500 font-semibold mb-1.5">📱 Alternate number</div>
-          <div className="grid grid-cols-2 gap-1.5">
-            <a href={telLink(altPhone)} className="flex items-center justify-center gap-1 py-2 rounded-lg bg-emerald-50 border border-emerald-300 text-emerald-800 text-xs font-semibold hover:bg-emerald-100 min-h-10">
-              <Phone className="w-3.5 h-3.5" /> Call alt
-            </a>
-            <a href={whatsappLink(altPhone, waGreeting)} target="_blank" rel="noopener noreferrer" className="flex items-center justify-center gap-1 py-2 rounded-lg bg-[#25D366]/15 border border-[#25D366] text-[#0b6a35] text-xs font-semibold hover:bg-[#25D366]/25 min-h-10">
-              <MessageCircle className="w-3.5 h-3.5" /> WA alt
-            </a>
+          <div className="grid grid-cols-2 gap-1.5 [&>*]:w-full">
+            <ActionButton action="call" size="sm" href={telLink(altPhone)} label="Call alt" />
+            <ActionButton action="whatsapp" size="sm" href={whatsappLink(altPhone, waGreeting)} label="WA alt" external />
           </div>
         </div>
       )}

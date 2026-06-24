@@ -4,8 +4,9 @@ import Link from "next/link";
 import { fmtIST12, fmtISTDate } from "@/lib/datetime";
 import { formatLeadName } from "@/lib/leadName";
 import { formatBudgetAmount } from "@/lib/budgetParse";
-import { Phone, MessageCircle, X, ChevronRight } from "lucide-react";
+import { X, ChevronRight } from "lucide-react";
 import { telLink, whatsappLink } from "@/lib/phone";
+import { ActionButton } from "@/components/actions/ActionButton";
 import { useBodyScrollLock } from "@/hooks/useBodyScrollLock";
 
 const oc: Record<string, string> = {
@@ -186,15 +187,11 @@ function SummaryPanel({ lead, call }: { lead: LeadSummary; call: CallRowData }) 
         </div>
       </div>
 
-      {/* Tap-to-call / WA shortcuts */}
+      {/* Tap-to-call / WA shortcuts — central Action Design System (compact). */}
       {lead.phone && (
-        <div className="grid grid-cols-2 gap-1.5">
-          <a href={telLink(lead.phone) ?? "#"} className="flex items-center justify-center gap-1 py-2 rounded-lg bg-emerald-600 text-white text-xs font-semibold">
-            <Phone className="w-3.5 h-3.5" /> Call
-          </a>
-          <a href={whatsappLink(lead.phone) ?? "#"} target="_blank" rel="noopener noreferrer" className="flex items-center justify-center gap-1 py-2 rounded-lg bg-[#25D366] text-white text-xs font-semibold">
-            <MessageCircle className="w-3.5 h-3.5" /> WA
-          </a>
+        <div className="grid grid-cols-2 gap-1.5 [&>*]:w-full">
+          <ActionButton action="call" size="sm" href={telLink(lead.phone) ?? "#"} label="Call" />
+          <ActionButton action="whatsapp" size="sm" href={whatsappLink(lead.phone) ?? "#"} label="WA" external />
         </div>
       )}
 

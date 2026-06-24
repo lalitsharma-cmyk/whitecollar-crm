@@ -140,21 +140,28 @@ export default function AgentStatusBar({ initialEvents, initialOpenGoing }: Prop
   const siteOpen = openGoing?.status === "GOING_SITE_VISIT";
   const outMin = openGoing ? elapsedMin(openGoing.startedAt, nowMs) : 0;
 
-  // Per-button enable/label tweaks.
+  // Per-button enable/label tweaks. Tones for the meeting / site-visit actions
+  // are aligned with the central Action Design System (src/lib/actionDesign.ts):
+  // meeting = purple, siteVisit = indigo — so these status buttons share the same
+  // colour language as the meeting / site-visit actions elsewhere. (Was blue /
+  // violet.) HERE keeps emerald (the "call/positive" green), LEAVING keeps slate
+  // (the neutral/snooze grey). Behaviour/endpoints unchanged.
   const buttons: { kind: Kind; tone: string; disabled: boolean }[] = [
     { kind: "HERE", tone: "emerald", disabled: false },
     { kind: "LEAVING_OFFICE", tone: "slate", disabled: false },
-    { kind: "GOING_MEETING", tone: "blue", disabled: meetingOpen },
-    { kind: "RETURNED_MEETING", tone: "blue", disabled: !meetingOpen },
-    { kind: "GOING_SITE_VISIT", tone: "violet", disabled: siteOpen },
-    { kind: "RETURNED_SITE_VISIT", tone: "violet", disabled: !siteOpen },
+    { kind: "GOING_MEETING", tone: "meeting", disabled: meetingOpen },
+    { kind: "RETURNED_MEETING", tone: "meeting", disabled: !meetingOpen },
+    { kind: "GOING_SITE_VISIT", tone: "siteVisit", disabled: siteOpen },
+    { kind: "RETURNED_SITE_VISIT", tone: "siteVisit", disabled: !siteOpen },
   ];
 
+  // Mirrors the meeting / siteVisit / call (emerald) / snooze (slate) token
+  // colours so the field-status bar matches the rest of the CRM in both themes.
   const toneClass: Record<string, string> = {
-    emerald: "border-emerald-600 bg-emerald-600 hover:bg-emerald-700 text-white",
-    slate: "border-slate-500 bg-slate-600 hover:bg-slate-700 text-white",
-    blue: "border-blue-600 bg-blue-600 hover:bg-blue-700 text-white",
-    violet: "border-violet-600 bg-violet-600 hover:bg-violet-700 text-white",
+    emerald: "border-emerald-600 bg-emerald-600 hover:bg-emerald-700 dark:hover:bg-emerald-500 text-white",
+    slate: "border-slate-500 bg-slate-600 hover:bg-slate-700 dark:hover:bg-slate-500 text-white",
+    meeting: "border-purple-600 bg-purple-600 hover:bg-purple-700 dark:hover:bg-purple-500 text-white",
+    siteVisit: "border-indigo-600 bg-indigo-600 hover:bg-indigo-700 dark:hover:bg-indigo-500 text-white",
   };
 
   return (

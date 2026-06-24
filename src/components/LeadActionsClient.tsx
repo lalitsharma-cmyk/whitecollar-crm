@@ -2,9 +2,10 @@
 import type { ReactNode } from "react";
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { Phone, MessageCircle, AlertCircle, Mic } from "lucide-react";
+import { Phone, AlertCircle, Mic } from "lucide-react";
 import { whatsappLink, telLink } from "@/lib/phone";
 import TemplatePickerButton from "./TemplatePickerButton";
+import { ActionButton } from "@/components/actions/ActionButton";
 import { fromISTLocalInput } from "@/lib/datetime";
 import CRMDatePicker from "./CRMDatePicker";
 import { useBodyScrollLock } from "@/hooks/useBodyScrollLock";
@@ -335,10 +336,14 @@ export default function LeadActionsClient({ leadId, phone, altPhone, email, curr
           `flex-1 basis-28` so they size uniformly and wrap gracefully on narrow
           widths — compact, above-the-fold, no overlap. */}
       <div className="flex flex-wrap gap-2 mt-3 [&>*]:grow [&>*]:basis-28">
+        {/* Call / Log Call / Note now render from the central Action Design System
+            (src/lib/actionDesign.ts) — same icon+colour everywhere. WhatsApp &
+            Email stay as TemplatePickerButton (they open the template/gallery
+            picker, not a plain link) but use the same WA/Email token colours.
+            Handlers/hrefs are unchanged. The Note token bakes in the dark-navy-
+            on-amber contrast fix (no global rule can hijack `bg-[#fcd34d]`). */}
         {phone && (
-          <a href={telUrl(phone)} onClick={logCallClick} className="flex items-center justify-center gap-1.5 py-2.5 rounded-lg bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700 transition shadow-sm min-h-11">
-            <Phone className="w-4 h-4" /> Call
-          </a>
+          <ActionButton action="call" href={telUrl(phone)} onClick={logCallClick} />
         )}
         {phone && (
           <TemplatePickerButton lead={{ id: leadId, name: leadName, phone, email }} kind="WHATSAPP" compact />
@@ -346,24 +351,11 @@ export default function LeadActionsClient({ leadId, phone, altPhone, email, curr
         {email && (
           <TemplatePickerButton lead={{ id: leadId, name: leadName, phone, email }} kind="EMAIL" compact />
         )}
-        <button onClick={() => setShowCall(true)} className="flex items-center justify-center gap-1.5 py-2.5 rounded-lg bg-[#c9a24b] text-[#0b1a33] text-sm font-semibold hover:bg-[#e7c97a] transition shadow-sm min-h-11">
-          📝 Log Call
-        </button>
-        <button
+        <ActionButton action="logCall" onClick={() => setShowCall(true)} />
+        <ActionButton
+          action="note"
           onClick={() => window.dispatchEvent(new CustomEvent(`open-sticky-${leadId}`))}
-          // Contrast fix (iPad/Apple): the old `bg-yellow-300 text-yellow-900`
-          // turned INVISIBLE in dark mode — globals.css force-overrides
-          // .text-yellow-900 → bright #fde047 while bg-yellow-300 is NOT
-          // overridden, so it was yellow-on-yellow. Pin both colours with
-          // explicit hex (dark-navy ink on amber, matching the sticky-note
-          // widget + Log Call button) so no global rule can hijack it. The
-          // arbitrary `text-[#…]` / `bg-[#…]` classes aren't touched by the
-          // dark colour-family overrides, keeping AA contrast in BOTH themes.
-          className="flex items-center justify-center gap-1.5 py-2.5 rounded-lg bg-[#fcd34d] text-[#3a2c00] text-sm font-semibold hover:bg-[#fbbf24] transition shadow-sm min-h-11"
-          title="Open private sticky note"
-        >
-          🗒 Note
-        </button>
+        />
         {/* Follow-up actions (Complete / Snooze / Escalate) — injected by the
             lead-detail page. Rendered here so they share this same flex row.
             The component's root is `display:contents`, so its three buttons
@@ -381,21 +373,18 @@ export default function LeadActionsClient({ leadId, phone, altPhone, email, curr
           <div className="text-[10px] uppercase tracking-widest text-gray-500 font-semibold mb-1.5">
             📱 Alternate number
           </div>
-          <div className="grid grid-cols-2 gap-1.5">
-            <a
-              href={telUrl(altPhone)}
-              className="flex items-center justify-center gap-1 py-2 rounded-lg bg-emerald-50 border border-emerald-300 text-emerald-800 text-xs font-semibold hover:bg-emerald-100 min-h-10"
-            >
-              <Phone className="w-3.5 h-3.5" /> Call alt
-            </a>
-            <a
+          <div className="grid grid-cols-2 gap-1.5 [&>*]:w-full">
+            {/* Same Call / WhatsApp actions, on the 2nd number — rendered from the
+                shared tokens (compact size) so they match the primary ones. */}
+            <ActionButton action="call" size="sm" href={telUrl(altPhone)} label="Call alt" />
+            <ActionButton
+              action="whatsapp"
+              size="sm"
               href={waUrl(altPhone)}
+              label="WA alt"
+              external
               onClick={() => logWaClick("click")}
-              target="_blank" rel="noopener noreferrer"
-              className="flex items-center justify-center gap-1 py-2 rounded-lg bg-[#25D366]/15 border border-[#25D366] text-[#0b6a35] text-xs font-semibold hover:bg-[#25D366]/25 min-h-10"
-            >
-              <MessageCircle className="w-3.5 h-3.5" /> WA alt
-            </a>
+            />
           </div>
         </div>
       )}

@@ -18,7 +18,7 @@
  *
  * All timezone logic targets IST (UTC+05:30).
  */
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, type ReactNode } from "react";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Pure utilities
@@ -333,7 +333,10 @@ export interface CRMDatePickerProps {
   // ── Display ────────────────────────────────────────────────────────────────
   label?:       string;  // tile label / modal title prefix
   title?:       string;  // explicit modal header (overrides derived title)
-  placeholder?: string;
+  // Usually a plain string, but the chip trigger (triggerStyle="chip") may pass a
+  // ReactNode so callers can inject an icon + label (e.g. the Snooze chip uses the
+  // Action Design System's Clock icon). Rendered as-is inside the trigger.
+  placeholder?: ReactNode;
 
   // ── Trigger style ──────────────────────────────────────────────────────────
   /** "tile" = colored block (scheduling card tiles) */

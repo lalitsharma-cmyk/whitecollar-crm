@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { XCircle } from "lucide-react";
 import { useBodyScrollLock } from "@/hooks/useBodyScrollLock";
 import { rejectReasonsForTeam } from "@/lib/reject-reasons";
+import { ActionButton } from "@/components/actions/ActionButton";
 
 /**
  * Reject Lead — Agent J's clean-room implementation per the spec.
@@ -93,15 +94,14 @@ export default function RejectLeadModal({ leadId, forwardedTeam }: Props) {
 
   return (
     <>
-      <button
-        type="button"
+      {/* Reject trigger — central Action Design System `reject` token (dark red,
+          XCircle). Opens the structured-reason modal below; behaviour unchanged. */}
+      <ActionButton
+        action="reject"
+        size="md"
+        label="Reject lead"
         onClick={() => setOpen(true)}
-        className="btn bg-red-600 hover:bg-red-700 text-white inline-flex items-center gap-2"
-        title="Reject this lead — marks it LOST with a structured reason"
-      >
-        <XCircle className="w-4 h-4" />
-        Reject lead
-      </button>
+      />
 
       {open && (
         <div

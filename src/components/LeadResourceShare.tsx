@@ -1,10 +1,11 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import {
-  FolderOpen, Search, MessageCircle, Mail, X, FileText, Link as LinkIcon,
+  FolderOpen, Search, X, FileText, Link as LinkIcon,
   Image as ImageIcon, File as FileIcon, CheckCircle2, Send,
 } from "lucide-react";
 import { whatsappLink } from "@/lib/phone";
+import { ActionButton } from "@/components/actions/ActionButton";
 import { buildShareMessage, type ResourceTypeStr } from "@/lib/resources";
 
 interface ResItem {
@@ -179,13 +180,11 @@ export default function LeadResourceShare({ leadId, leadName, phone, email }: Pr
 
             <div className="p-3 border-t border-[#e5e7eb] dark:border-slate-700 space-y-2">
               {chosen.length > 0 && <div className="text-[11px] text-gray-500">{chosen.length} selected</div>}
-              <div className="grid grid-cols-2 gap-2">
-                <button onClick={shareWA} disabled={chosen.length === 0 || !phone} title={!phone ? "No phone on this lead" : undefined} className="btn text-sm bg-[#25D366] text-white justify-center disabled:opacity-40">
-                  <MessageCircle className="w-4 h-4" /> WhatsApp
-                </button>
-                <button onClick={shareEmail} disabled={chosen.length === 0 || !email} title={!email ? "No email on this lead" : undefined} className="btn text-sm bg-indigo-600 text-white justify-center disabled:opacity-40">
-                  <Mail className="w-4 h-4" /> Email
-                </button>
+              {/* Central Action Design System — WhatsApp/Email resource share
+                  (was ad-hoc #25D366 + indigo). Disabled states + titles kept. */}
+              <div className="grid grid-cols-2 gap-2 [&>*]:w-full">
+                <ActionButton action="whatsapp" size="sm" onClick={shareWA} disabled={chosen.length === 0 || !phone} title={!phone ? "No phone on this lead" : undefined} />
+                <ActionButton action="email" size="sm" onClick={shareEmail} disabled={chosen.length === 0 || !email} title={!email ? "No email on this lead" : undefined} />
               </div>
               <p className="text-[10px] text-gray-400 text-center">A link is sent (WhatsApp can’t attach files). Each share is tracked on this lead.</p>
             </div>

@@ -20,6 +20,8 @@ import { useState, useRef, useEffect } from "react";
 import { showXpToast } from "@/components/XPToast";
 import CRMDatePicker from "@/components/CRMDatePicker";
 import { toISTLocalInput, isPastISTLocalInput } from "@/lib/datetime";
+import { ActionButton } from "@/components/actions/ActionButton";
+import { ACTION_TOKENS } from "@/lib/actionDesign";
 
 interface Props {
   leadId: string;
@@ -113,55 +115,67 @@ export default function LeadFollowupActions({ leadId, leadName, followupDate }: 
     }
   }
 
-  // Shared compact action-button styling so Complete / Snooze / Escalate match
-  // the primary Call / WhatsApp / Email / Log Call / Note buttons in the SAME row
-  // (icon+label, rounded-lg, text-sm, min-h-10). `inline` so the wrapper below can
-  // be `display:contents` and let these three sit as direct flex siblings of the
-  // primary buttons — giving one row: Call · WhatsApp · Email · Log Call · Note ·
-  // Complete · Snooze · Escalate. Layout-only; handlers/endpoints are unchanged.
-  const actionBtn = "grow basis-28 inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-sm font-semibold transition shadow-sm min-h-10 disabled:opacity-60";
+  // Complete / Snooze / Escalate visuals all come from the central Action Design
+  // System (src/lib/actionDesign.ts) so they match the same actions elsewhere.
+  // The follow-up row is a flex row whose direct children get `grow basis-28`
+  // (see parent + the `contents` wrapper below), so each control adds that sizing.
+  // Snooze + Escalate keep their bespoke shells (CRMDatePicker chip / popover
+  // toggle) but borrow the token colours/icon. Layout-only; handlers unchanged.
+  const sizing = "grow basis-28";
+  const SnoozeIcon = ACTION_TOKENS.snooze.icon;
+  const snoozeChip = `${sizing} inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-sm font-semibold transition shadow-sm min-h-10 disabled:opacity-60 ${ACTION_TOKENS.snooze.solid}`;
 
   return (
     // `contents` makes this wrapper layout-transparent: its children become direct
     // flex items of the parent action row, so the 3 follow-up buttons render inline
     // with the primary action buttons instead of on a separate stacked line.
     <div className="contents">
-      <button
-        type="button"
+      <ActionButton
+        action="complete"
+        size="md"
         onClick={doComplete}
         disabled={!!busy}
-        className={`${actionBtn} bg-emerald-600 text-white hover:bg-emerald-700`}
+        loading={busy === "complete"}
+        className={sizing}
         title={`Mark the current follow-up for ${leadName} as done`}
-      >
-        {busy === "complete" ? "Saving…" : "✅ Complete"}
-      </button>
+      />
 
       {/* Snooze — opens the shared IST date/time picker (CRMDatePicker handles
           the modal/bottom-sheet itself; this trigger button is its child). Uses the
-          compact "chip" trigger so it sits inline with the other action buttons. */}
+          compact "chip" trigger so it sits inline with the other action buttons.
+          The Clock icon is injected via the placeholder to match the snooze token. */}
       <CRMDatePicker
         value={snoozeSeed}
         onConfirm={doSnooze}
         withTime
         futureOnly
         title="Snooze follow-up"
-        placeholder={busy === "snooze" ? "Saving…" : "⏸ Snooze"}
+        placeholder={
+          busy === "snooze" ? (
+            "Saving…"
+          ) : (
+            <span className="inline-flex items-center gap-1.5">
+              <SnoozeIcon className="w-4 h-4" /> Snooze
+            </span>
+          )
+        }
         triggerStyle="chip"
-        chipClassName={`${actionBtn} bg-amber-400 text-[#3a2c00] hover:bg-amber-500`}
+        chipClassName={snoozeChip}
       />
 
       {/* Escalate — popover with optional reason (notifies manager + admins).
           This wrapper is the flex item (so the popover anchors to it); it carries
           the `grow basis-28` sizing while the inner button fills it (w-full). */}
-      <div ref={escalateRef} className="relative grow basis-28">
-        <button
-          type="button"
+      <div ref={escalateRef} className={`relative ${sizing}`}>
+        <ActionButton
+          action="escalate"
+          size="md"
           onClick={() => setShowEscalate((s) => !s)}
           disabled={!!busy}
-          className={`w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-sm font-semibold transition shadow-sm min-h-10 disabled:opacity-60 bg-rose-600 text-white hover:bg-rose-700`}
-        >
-          {busy === "escalate" ? "Sending…" : "🆘 Escalate"}
-        </button>
+          loading={busy === "escalate"}
+          loadingLabel="Sending…"
+          className="w-full"
+        />
         {showEscalate && (
           <div className="absolute z-30 top-full mt-1 left-0 w-[280px] rounded-lg border bg-white dark:bg-slate-800 dark:border-slate-600 shadow-xl p-3 text-xs">
             <div className="font-bold mb-2 text-[#0b1a33] dark:text-slate-100">Tell manager why</div>
