@@ -113,37 +113,52 @@ export default function LeadFollowupActions({ leadId, leadName, followupDate }: 
     }
   }
 
+  // Shared compact action-button styling so Complete / Snooze / Escalate match
+  // the primary Call / WhatsApp / Email / Log Call / Note buttons in the SAME row
+  // (icon+label, rounded-lg, text-sm, min-h-10). `inline` so the wrapper below can
+  // be `display:contents` and let these three sit as direct flex siblings of the
+  // primary buttons — giving one row: Call · WhatsApp · Email · Log Call · Note ·
+  // Complete · Snooze · Escalate. Layout-only; handlers/endpoints are unchanged.
+  const actionBtn = "grow basis-28 inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-sm font-semibold transition shadow-sm min-h-10 disabled:opacity-60";
+
   return (
-    <div className="mt-3 w-full flex flex-wrap gap-2 relative">
+    // `contents` makes this wrapper layout-transparent: its children become direct
+    // flex items of the parent action row, so the 3 follow-up buttons render inline
+    // with the primary action buttons instead of on a separate stacked line.
+    <div className="contents">
       <button
         type="button"
         onClick={doComplete}
         disabled={!!busy}
-        className="btn text-xs bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-60"
+        className={`${actionBtn} bg-emerald-600 text-white hover:bg-emerald-700`}
         title={`Mark the current follow-up for ${leadName} as done`}
       >
         {busy === "complete" ? "Saving…" : "✅ Complete"}
       </button>
 
       {/* Snooze — opens the shared IST date/time picker (CRMDatePicker handles
-          the modal/bottom-sheet itself; this trigger button is its child). */}
+          the modal/bottom-sheet itself; this trigger button is its child). Uses the
+          compact "chip" trigger so it sits inline with the other action buttons. */}
       <CRMDatePicker
         value={snoozeSeed}
         onConfirm={doSnooze}
         withTime
         futureOnly
         title="Snooze follow-up"
-        placeholder="⏸ Snooze"
-        triggerStyle="input"
+        placeholder={busy === "snooze" ? "Saving…" : "⏸ Snooze"}
+        triggerStyle="chip"
+        chipClassName={`${actionBtn} bg-amber-400 text-[#3a2c00] hover:bg-amber-500`}
       />
 
-      {/* Escalate — popover with optional reason (notifies manager + admins). */}
-      <div ref={escalateRef} className="relative">
+      {/* Escalate — popover with optional reason (notifies manager + admins).
+          This wrapper is the flex item (so the popover anchors to it); it carries
+          the `grow basis-28` sizing while the inner button fills it (w-full). */}
+      <div ref={escalateRef} className="relative grow basis-28">
         <button
           type="button"
           onClick={() => setShowEscalate((s) => !s)}
           disabled={!!busy}
-          className="btn text-xs bg-rose-600 text-white hover:bg-rose-700 disabled:opacity-60"
+          className={`w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-sm font-semibold transition shadow-sm min-h-10 disabled:opacity-60 bg-rose-600 text-white hover:bg-rose-700`}
         >
           {busy === "escalate" ? "Sending…" : "🆘 Escalate"}
         </button>

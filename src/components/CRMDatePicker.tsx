@@ -338,9 +338,13 @@ export interface CRMDatePickerProps {
   // ── Trigger style ──────────────────────────────────────────────────────────
   /** "tile" = colored block (scheduling card tiles) */
   /** "input" = full-width input box (report filters, forms) */
-  triggerStyle?: "tile" | "input";
+  /** "chip" = compact inline action button (sits in an action row, e.g. Snooze) */
+  triggerStyle?: "tile" | "input" | "chip";
   /** "primary" = emerald (Follow-up), "default" = neutral */
   tileVariant?: "primary" | "default";
+  /** For triggerStyle="chip": full className for the compact trigger button so the
+   *  caller can match a surrounding action row exactly. Label = `placeholder`. */
+  chipClassName?: string;
 }
 
 export default function CRMDatePicker({
@@ -354,6 +358,7 @@ export default function CRMDatePicker({
   label, title, placeholder = "Not set",
   triggerStyle = "input",
   tileVariant  = "default",
+  chipClassName,
 }: CRMDatePickerProps) {
 
   // ── Sheet state ────────────────────────────────────────────────────────────
@@ -520,7 +525,22 @@ export default function CRMDatePicker({
     </span>
   );
 
-  const trigger = triggerStyle === "tile" ? (
+  // Compact inline chip — a single small button (label = placeholder) that opens
+  // the picker. Used inside an action row (e.g. the lead-header Snooze button) so
+  // it sits flush with the other action buttons. Behaviour is identical to the
+  // other triggers — it only changes how the trigger looks.
+  const chipTrigger = (
+    <button
+      type="button"
+      onClick={openPicker}
+      title={modalTitle}
+      className={chipClassName ?? "inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg border border-amber-300 bg-amber-50 text-amber-800 text-sm font-semibold hover:bg-amber-100 transition dark:border-amber-700 dark:bg-amber-900/20 dark:text-amber-300"}
+    >
+      {placeholder}
+    </button>
+  );
+
+  const trigger = triggerStyle === "chip" ? chipTrigger : triggerStyle === "tile" ? (
     <div
       role="button" tabIndex={0}
       onClick={openPicker}

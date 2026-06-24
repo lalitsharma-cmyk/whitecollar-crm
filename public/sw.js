@@ -108,7 +108,12 @@
 // under two labels (removed the duplicate "Property / Unit"); (3) the Google-Sheet
 // importer now honours an admin-confirmed Date-column mapping (parity with the CSV
 // route) instead of always auto-detecting the date column.
-const CACHE = "wcr-shell-v44";
+// v45 (2026-06-24): Lead-detail UI compaction (layout only) — the Complete /
+// Snooze / Escalate follow-up buttons now sit INLINE on the same action row as
+// Call / WhatsApp / Email / Log Call / Note (one flex-wrap row) instead of a
+// separate stacked row below, reclaiming vertical space and keeping the actions
+// above the fold. No business logic / endpoint / permission change.
+const CACHE = "wcr-shell-v45";
 const SHELL = ["/login", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", (event) => {

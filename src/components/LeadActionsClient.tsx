@@ -1,4 +1,5 @@
 "use client";
+import type { ReactNode } from "react";
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { Phone, MessageCircle, AlertCircle, Mic } from "lucide-react";
@@ -68,13 +69,18 @@ interface Props {
   // standalone <LeadReassignClient> on the right column instead (Lalit's ask:
   // "Reassignment move to Right side").
   hideReassign?: boolean;
+  // Extra action buttons rendered INSIDE the primary action row, after Note.
+  // The page passes <LeadFollowupActions> here so Complete / Snooze / Escalate
+  // sit on the same line as Call / WhatsApp / Email / Log Call / Note instead of
+  // on a separate stacked row below (UI compaction — saves vertical space).
+  extraActions?: React.ReactNode;
 }
 
 // Phone helpers — now in src/lib/phone.ts. Kept as thin wrappers for compatibility.
 const telUrl = (p: string | null) => telLink(p);
 const waUrl = (p: string | null) => whatsappLink(p);
 
-export default function LeadActionsClient({ leadId, phone, altPhone, email, currentOwnerId, canReassign, agents, phoneMasked, altPhoneMasked, leadName, agentName, acefoneEnabled, acefoneMappedForUser, hideReassign }: Props) {
+export default function LeadActionsClient({ leadId, phone, altPhone, email, currentOwnerId, canReassign, agents, phoneMasked, altPhoneMasked, leadName, agentName, acefoneEnabled, acefoneMappedForUser, hideReassign, extraActions }: Props) {
   const waGreeting = `Hi ${leadName}, this is ${agentName} from White Collar Realty. I'll be your dedicated property advisor. May I know a convenient time to call you today?`;
   const waUrlWithDraft = (p: string | null) => whatsappLink(p, waGreeting);
 
@@ -321,7 +327,14 @@ export default function LeadActionsClient({ leadId, phone, altPhone, email, curr
           No phone number saved — add one in the Qualification panel to enable Call &amp; WhatsApp.
         </div>
       )}
-      <div className="grid grid-cols-3 sm:grid-cols-5 gap-2 mt-3">
+      {/* Primary action row — flex-wrap (was a fixed 3/5-col grid) so the
+          follow-up actions (Complete / Snooze / Escalate, injected via
+          `extraActions`) sit on the SAME line as Call / WhatsApp / Email /
+          Log Call / Note instead of a separate stacked row below it. Every
+          direct child (primary buttons + the injected follow-up buttons) gets
+          `flex-1 basis-28` so they size uniformly and wrap gracefully on narrow
+          widths — compact, above-the-fold, no overlap. */}
+      <div className="flex flex-wrap gap-2 mt-3 [&>*]:grow [&>*]:basis-28">
         {phone && (
           <a href={telUrl(phone)} onClick={logCallClick} className="flex items-center justify-center gap-1.5 py-2.5 rounded-lg bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700 transition shadow-sm min-h-11">
             <Phone className="w-4 h-4" /> Call
@@ -351,6 +364,11 @@ export default function LeadActionsClient({ leadId, phone, altPhone, email, curr
         >
           🗒 Note
         </button>
+        {/* Follow-up actions (Complete / Snooze / Escalate) — injected by the
+            lead-detail page. Rendered here so they share this same flex row.
+            The component's root is `display:contents`, so its three buttons
+            become direct children of this row and inherit the sizing above. */}
+        {extraActions}
       </div>
 
       {/* Alt-phone (2nd number from MIS). Lalit's ask: "WA alt, call alt
