@@ -1882,6 +1882,12 @@ const checks: Check[] = [
       assert(/deletedAt: new Date\(\)/.test(idRoute), "delete must be a SOFT delete (reversible)");
       const shareRoute = fs.readFileSync("src/app/api/resources/share/route.ts", "utf8");
       assert(/resourceShare\.create\(/.test(shareRoute), "share route must record a ResourceShare row (tracking)");
+
+      // (f) The public file route must be exempt from the auth proxy (so share
+      //     recipients can open it without a login) — but ONLY that exact path.
+      const proxy = fs.readFileSync("src/proxy.ts", "utf8");
+      assert(proxy.includes("PUBLIC_RESOURCE_FILE") && proxy.includes("/api/resources/") && proxy.includes("/file"),
+        "proxy must publicly allow /api/resources/<id>/file (capability download) via PUBLIC_RESOURCE_FILE");
     },
   },
 ];

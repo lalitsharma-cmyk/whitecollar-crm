@@ -20,7 +20,17 @@ const NO_STORE = "no-store, max-age=0, must-revalidate";
 // that merely begins with a public prefix bypass auth (e.g. /login-as-admin,
 // /api/intake-secret). Match the exact path, a path segment under it (p + "/"),
 // or a query on it — and treat entries ending in "/" as explicit prefix dirs.
+//
+// Public capability download for a shared gallery resource. ONLY the exact
+// `/api/resources/<id>/file` path is public (the cuid is the unguessable
+// capability) so a client who receives a WhatsApp/Email share link can open the
+// file without a CRM login. Nothing else under /api/resources is exposed — the
+// list/create/edit/delete/share routes still require a session. Anchored regex
+// so a stray trailing segment does NOT match.
+const PUBLIC_RESOURCE_FILE = /^\/api\/resources\/[^/]+\/file(?:[/?]|$)/;
+
 function isPublicPath(pathname: string): boolean {
+  if (PUBLIC_RESOURCE_FILE.test(pathname)) return true;
   return PUBLIC_PATHS.some((p) =>
     p.endsWith("/")
       ? pathname.startsWith(p)
