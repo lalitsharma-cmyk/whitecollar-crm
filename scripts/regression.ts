@@ -54,6 +54,9 @@ import {
 // IST day-boundary helpers (pure, no "server-only") — the REAL window math the
 // Action List follow-up board uses, so the invariant tests production code.
 import { istDayRange, istDateKey, isValidDateKey } from "../src/lib/datetime";
+// Name normalisation (pure, no "server-only") — the REAL write-time transform, so
+// the backfill-integrity invariant tests production code (0 un-cased names remain).
+import { normalizeNameList } from "../src/lib/nameFormat";
 
 // ── tiny assertion harness ──────────────────────────────────────────────────
 type Check = { name: string; run: () => Promise<void> };
@@ -3056,6 +3059,71 @@ const checks: Check[] = [
       const adminFs = fs.readFileSync("src/app/(app)/admin/field-status/page.tsx", "utf8");
       assert(/istDayBoundsUTC/.test(adminFs) && /startedAt:\s*\{\s*gte:\s*start,\s*lt:\s*end\s*\}/.test(adminFs),
         "admin field-status must scope today's movements to the IST day (daily reset)");
+    },
+  },
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // 47. BACKFILL INTEGRITY (2026-06-24). Existing data complies with the recent
+  //     write-time normalisations — proves the one-off migrations held and new
+  //     gaps haven't crept in. ALL read-only counts.
+  //   (a) NAMES — 0 live Lead.name/altName + Buyer name fields are un-cased
+  //       (normalizeNameList(x) === x for every stored name).
+  //   (b) SOURCE — 0 live leads still carry the deprecated WHATSAPP / INBOUND_CALL
+  //       source enum (migrated to WEBSITE + medium).
+  //   (c) BUYER PROPERTY MAP — 0 live Dubai buyers have a CLEAR property value
+  //       sitting only in extraFields (Flat Typology / Saleable Area / Size(MM))
+  //       while the real column (configuration / size / actualSize) is null.
+  //       (idempotency guarantee of scripts/backfill-buyer-property-map.ts.)
+  // ───────────────────────────────────────────────────────────────────────────
+  {
+    name: "backfill-integrity — 0 un-cased names + 0 legacy source enum + buyer property columns mapped (not stranded in extraFields)",
+    run: async () => {
+      // (a) NAMES — leads.
+      const leads = await prisma.lead.findMany({ where: { deletedAt: null }, select: { name: true, altName: true } });
+      let leadUncased = 0;
+      for (const l of leads) {
+        if (l.name && normalizeNameList(l.name) !== l.name) leadUncased++;
+        if (l.altName && normalizeNameList(l.altName) !== l.altName) leadUncased++;
+      }
+      assert(leadUncased === 0, `${leadUncased} live lead name/altName still un-cased — run scripts/normalize-names.ts --apply`);
+
+      // (a) NAMES — buyers (clientName/ownerName/agentName + coBuyerNames JSON).
+      const buyers = await prisma.buyerRecord.findMany({
+        where: { deletedAt: null },
+        select: { clientName: true, ownerName: true, agentName: true, coBuyerNames: true, configuration: true, size: true, actualSize: true, extraFields: true, rawImport: true },
+      });
+      let buyerUncased = 0;
+      for (const b of buyers) {
+        for (const v of [b.clientName, b.ownerName, b.agentName]) if (v && normalizeNameList(v) !== v) buyerUncased++;
+        try { const arr = JSON.parse(b.coBuyerNames ?? "[]"); if (Array.isArray(arr)) for (const c of arr) if (typeof c === "string" && normalizeNameList(c) !== c) buyerUncased++; } catch { /* not JSON → ignore */ }
+      }
+      assert(buyerUncased === 0, `${buyerUncased} live buyer name field(s) still un-cased — run scripts/normalize-names.ts --apply`);
+
+      // (b) SOURCE — deprecated enum tokens fully migrated.
+      const legacySource = await prisma.lead.count({ where: { deletedAt: null, source: { in: ["WHATSAPP", "INBOUND_CALL"] } } });
+      assert(legacySource === 0, `${legacySource} live lead(s) still carry deprecated WHATSAPP/INBOUND_CALL source — run scripts/migrate-source-to-medium.ts`);
+
+      // (c) BUYER PROPERTY MAP — clear values mapped into real columns, not stranded.
+      const JUNK = new Set(["", "na", "n/a", "none", "null", "-", "nil", "tbd"]);
+      const real = (v: unknown): string | null => { const s = String(v ?? "").trim(); return s && !JUNK.has(s.toLowerCase()) ? s : null; };
+      const asObj = (v: unknown): Record<string, unknown> => (v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {});
+      const PMAP: Array<{ key: string; col: "configuration" | "size" | "actualSize" }> = [
+        { key: "Flat Typology", col: "configuration" },
+        { key: "Saleable Area", col: "size" },
+        { key: "Size(MM)", col: "actualSize" },
+      ];
+      let stranded = 0;
+      for (const b of buyers) {
+        const blob = { ...asObj(b.rawImport), ...asObj(b.extraFields) };
+        for (const { key, col } of PMAP) {
+          const cur = (b as Record<string, unknown>)[col];
+          const isNull = cur == null || (typeof cur === "string" && cur.trim() === "");
+          if (isNull && real(blob[key])) stranded++;
+        }
+      }
+      assert(stranded === 0, `${stranded} buyer property value(s) stranded in extraFields with a null column — run scripts/backfill-buyer-property-map.ts --apply`);
+
+      results.push({ name: "  ↳ note", ok: true, detail: `names cased (${leads.length} leads, ${buyers.length} buyers) · 0 legacy source · buyer property columns mapped` });
     },
   },
 ];
