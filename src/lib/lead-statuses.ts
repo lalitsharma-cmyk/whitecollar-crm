@@ -293,6 +293,15 @@ export const TERMINAL_STATUSES: string[] = [
   ...LOST_STATUSES,
 ];
 
+// True when a status is TERMINAL (booked/sold/leased OR lost/rejected). A lead in
+// a terminal status is done — it must NOT keep an active followupDate (that would
+// surface it on the Action-List follow-up board, which applies no status filter).
+// Every status-change path that can set a terminal value (reject flow, inline
+// /update) clears followupDate + followupReminderSentAt when this is true.
+export function isTerminalStatus(status: string | null | undefined): boolean {
+  return status != null && TERMINAL_STATUSES.includes(status);
+}
+
 // ─── Dashboard live-status COLUMN buckets (admin assignment widget) ───────
 // SINGLE SOURCE OF TRUTH for the admin-dashboard "Live Lead Assignment" grid,
 // which breaks a population of leads down by CURRENT status into one column
@@ -429,12 +438,35 @@ const CANONICAL_STATUS_BY_KEY: Map<string, string> = (() => {
   }
   return m;
 })();
+
+// Explicit ALIASES — sheet/import variants that the master-derived map can't fold
+// because they differ by more than casing (a missing/extra word, "Fund" vs
+// "Funds", a hyphen). Each LHS (normalized: lowercased, single-spaced, trimmed)
+// maps to a value that EXISTS in a team master, so the folded lead lands under one
+// canonical chip + inside the team status dropdown. Keys are pre-normalized.
+//   "Long Term Followup" / "Long-term Followup" / "Long Follow Up" → "Long Term Follow Up"
+//   "Fund Issue" → "Funds Issue"  (+ "Funds Issues" plural slip)
+// (Bare "Other" is deliberately NOT aliased — it has no unambiguous canonical
+//  target; forcing "Other Location"/"Other Requirement" would fabricate intent.)
+const CANONICAL_STATUS_ALIASES: Record<string, string> = {
+  "long term followup": "Long Term Follow Up",
+  "long-term followup": "Long Term Follow Up",
+  "long term follow up": "Long Term Follow Up",
+  "long follow up": "Long Term Follow Up",
+  "longterm followup": "Long Term Follow Up",
+  "fund issue": "Funds Issue",
+  "funds issues": "Funds Issue",
+  "fund issues": "Funds Issue",
+};
+
 export function canonicalStatus(raw: string | null | undefined): string | null {
   if (raw == null) return null;
   const trimmed = raw.trim();
   if (!trimmed) return trimmed;
   const key = trimmed.toLowerCase().replace(/\s+/g, " ").trim();
-  return CANONICAL_STATUS_BY_KEY.get(key) ?? trimmed;
+  // Explicit aliases first (handles word/spelling variants), then the
+  // master-derived casing map, else preserve the trimmed original.
+  return CANONICAL_STATUS_ALIASES[key] ?? CANONICAL_STATUS_BY_KEY.get(key) ?? trimmed;
 }
 
 // A lead is "fresh" when it has not yet been worked: no real status yet, or an

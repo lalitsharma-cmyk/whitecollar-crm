@@ -3244,6 +3244,89 @@ const checks: Check[] = [
       });
     },
   },
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // 4. DATA-INTEGRITY BATCH (2026-06-25) — four backfills + the terminal-status
+  //    source fix. Each invariant locks in the post-backfill DATA state AND the
+  //    forward code path so a future deploy can't silently reintroduce the rot.
+  //      (a) Terminal leads carry NO followupDate → Action-List Overdue (no status
+  //          filter) reconciles 1:1 with the Leads Overdue chip (workableWhere).
+  //      (b) Reject flow + /update status-change path both CLEAR followupDate on a
+  //          terminal status (source-scan — the going-forward guarantee).
+  //      (c) 0 live leads have sourceRaw NULL (Source filter omits none).
+  //      (d) Every live currentStatus is already canonical (no mis-cased chip
+  //          fragments) + the canonicalStatus aliases fold the known variants.
+  //      (e) Historical CALL activities carry an outcome (chip not blank).
+  // ───────────────────────────────────────────────────────────────────────────
+  {
+    name: "data-integrity-jun25 — terminal leads have no followup (AL Overdue==Leads chip), 0 null sourceRaw, canonical statuses, CALL outcomes backfilled",
+    run: async () => {
+      const fs = await import("node:fs");
+      const { TERMINAL_STATUSES, canonicalStatus, isTerminalStatus } = await import("../src/lib/lead-statuses");
+      const { istDayRange } = await import("../src/lib/datetime");
+
+      // ── (a) DATA: no live terminal lead carries a followupDate ────────────────
+      const termWithFollowup = await prisma.lead.count({
+        where: { deletedAt: null, currentStatus: { in: TERMINAL_STATUSES }, followupDate: { not: null } },
+      });
+      assert(termWithFollowup === 0, `${termWithFollowup} terminal lead(s) still carry a followupDate — they pollute the Action-List follow-up board`);
+
+      // ── (a') RECONCILE: Action-List Overdue == Leads Overdue chip (admin scope) ─
+      // AL Overdue = scope(deletedAt:null) + followupDate < startOfTodayIST, NO status filter.
+      // Leads chip = workableWhere(scope) + followupDate < now (not null).
+      // Mirror workableWhere inline (leadScope.ts imports "server-only").
+      const COLD_ORIGINS = ["COLD", "REVIVAL"];
+      const WORKABLE_STATUS_OR = [
+        { currentStatus: null }, { currentStatus: "" }, { currentStatus: { notIn: TERMINAL_STATUSES } },
+      ];
+      const startToday = istDayRange().start;
+      const alOverdue = await prisma.lead.count({ where: { deletedAt: null, followupDate: { lt: startToday } } });
+      const leadsOverdue = await prisma.lead.count({
+        where: { deletedAt: null, leadOrigin: { notIn: COLD_ORIGINS }, OR: WORKABLE_STATUS_OR, followupDate: { lt: new Date(), not: null } },
+      });
+      assert(alOverdue === leadsOverdue, `Action-List Overdue (${alOverdue}) must equal Leads Overdue chip (${leadsOverdue}) now that terminal leads have no followup`);
+
+      // ── (b) FORWARD CODE: reject + /update both clear followup on terminal ─────
+      const rejectRoute = fs.readFileSync("src/app/api/leads/[id]/reject/route.ts", "utf8");
+      assert(/followupDate:\s*null/.test(rejectRoute), "reject route MUST clear followupDate on a terminal status");
+      const updateRoute = fs.readFileSync("src/app/api/leads/[id]/update/route.ts", "utf8");
+      assert(/isTerminalStatus\(/.test(updateRoute) && /updates\.followupDate\s*=\s*null/.test(updateRoute),
+        "/update route MUST clear followupDate when the new currentStatus isTerminalStatus()");
+      assert(typeof isTerminalStatus === "function" && isTerminalStatus("Booked With Us") && !isTerminalStatus("Follow Up"),
+        "isTerminalStatus() must classify booked/lost as terminal, workable as not");
+
+      // ── (c) DATA: 0 live leads with sourceRaw NULL (source enum non-nullable) ──
+      const nullSourceRaw = await prisma.lead.count({ where: { deletedAt: null, sourceRaw: null } });
+      assert(nullSourceRaw === 0, `${nullSourceRaw} live lead(s) have sourceRaw NULL — the Source filter silently omits them`);
+
+      // ── (d) DATA: every live currentStatus is already canonical (no fragments) ─
+      const statusRows = await prisma.lead.groupBy({
+        by: ["currentStatus"], where: { deletedAt: null, currentStatus: { not: null } }, _count: true,
+      });
+      const fragmented = statusRows
+        .map((r) => r.currentStatus!)
+        .filter((s) => { const c = canonicalStatus(s); return c && c !== s; });
+      assert(fragmented.length === 0, `mis-cased status(es) still in data (should be canonicalized): ${fragmented.join(", ")}`);
+      // ── (d') CODE: the alias table folds the known variants ───────────────────
+      assert(canonicalStatus("Long Term Followup") === "Long Term Follow Up", "alias: 'Long Term Followup' → 'Long Term Follow Up'");
+      assert(canonicalStatus("Long-term Followup") === "Long Term Follow Up", "alias: 'Long-term Followup' → 'Long Term Follow Up'");
+      assert(canonicalStatus("Long Follow Up") === "Long Term Follow Up", "alias: 'Long Follow Up' → 'Long Term Follow Up'");
+      assert(canonicalStatus("Fund Issue") === "Funds Issue", "alias: 'Fund Issue' → 'Funds Issue'");
+      assert(canonicalStatus("Other") === "Other", "bare 'Other' is deliberately NOT folded (ambiguous)");
+
+      // ── (e) DATA: historical CALL activities carry an outcome ──────────────────
+      // The vast majority of CALL activities that have a matching CallLog now show
+      // an outcome. We assert a sturdy lower bound (>= 90% of CALL acts with a user
+      // are populated) rather than an exact 0-null (a dozen have no CallLog at all).
+      const callTotal = await prisma.activity.count({ where: { type: "CALL", userId: { not: null } } });
+      if (callTotal > 0) {
+        const callWithOutcome = await prisma.activity.count({ where: { type: "CALL", userId: { not: null }, outcome: { not: null } } });
+        const pct = callWithOutcome / callTotal;
+        assert(pct >= 0.9, `only ${callWithOutcome}/${callTotal} (${(pct * 100).toFixed(1)}%) CALL activities have an outcome — backfill regressed?`);
+        results.push({ name: "  ↳ note", ok: true, detail: `${callWithOutcome}/${callTotal} CALL activities carry an outcome; AL Overdue==Leads chip==${alOverdue}; 0 null sourceRaw; 0 mis-cased statuses` });
+      }
+    },
+  },
 ];
 
 // ── runner ────────────────────────────────────────────────────────────────────

@@ -7,7 +7,7 @@ import { fireWorkflowTrigger } from "@/lib/workflowEngine";
 import { getScheduledActionsEnabled, getBantGateMode } from "@/lib/settings";
 import { evaluateBantGate, type BantFields } from "@/lib/bantGate";
 import { awardXp, type AwardResult, type XpReason } from "@/lib/gamification.server";
-import { canSetStatus, isStatusValidForTeam, NEEDS_REVIEW } from "@/lib/lead-statuses";
+import { canSetStatus, isStatusValidForTeam, isTerminalStatus, NEEDS_REVIEW } from "@/lib/lead-statuses";
 import { isPropertyType } from "@/lib/propertyType";
 import { recordFieldChanges, TRACKED_FIELDS } from "@/lib/fieldHistory";
 import { normalizeNameList } from "@/lib/nameFormat";
@@ -295,6 +295,20 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   }
 
   if (Object.keys(updates).length === 0) return NextResponse.json({ error: "Nothing to update" }, { status: 400 });
+
+  // ── Terminal-status → clear follow-up (Action-List reconciliation) ────────────
+  // When this edit moves the lead INTO a terminal status (booked/sold/leased OR
+  // lost/rejected), the lead is done and must leave the follow-up board. The
+  // Action List intentionally applies NO status filter, so the only correct place
+  // to drop a terminal lead off it is at the SOURCE: clear followupDate (+ the
+  // 10-min reminder dedupe). Mirrors the reject flow, which already does this.
+  // Skipped if the caller is explicitly SETTING a followupDate in the same PATCH
+  // (an admin deliberately scheduling one wins — we don't fight an explicit value).
+  if (typeof updates.currentStatus === "string" && isTerminalStatus(updates.currentStatus) &&
+      !(("followupDate" in updates) && updates.followupDate != null)) {
+    updates.followupDate = null;
+    updates.followupReminderSentAt = null;
+  }
 
   // §17 — Location enrichment on City edit + manual-lock + impossible-combo guard.
   const editingCity = "city" in updates && !!updates.city;

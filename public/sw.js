@@ -297,7 +297,19 @@
 // server guards also reject an hrOnly target (defense-in-depth; the pickers already hid
 // them). Driven off the canonical hrOnly flag, not a name. Data/roster-only; force a
 // fresh shell so cached client bundles pick up the corrected rosters.
-const CACHE = "wcr-shell-v62";
+// v63 (2026-06-25): Data-integrity batch. (1) Historical CALL activities now show
+// their real outcome chip in the Smart Timeline — Activity.outcome backfilled from
+// each call's CallLog (1084 rows; forward-only on per-activity followupDate/
+// actionContext, which can't be accurately reconstructed). (2) Terminal leads
+// (booked/sold/lost/rejected) no longer pollute the Action-List "Overdue" board:
+// the reject flow + the /update status-change path now CLEAR followupDate on a
+// terminal status, and 105 existing terminal leads were cleared — so Action-List
+// Overdue (90) reconciles 1:1 with the Leads Overdue chip (90). (3) 54 leads with
+// a null sourceRaw backfilled from the source enum so the Source filter includes
+// them. (4) 22 mis-cased statuses folded to canonical ("Long Term Followup" etc →
+// "Long Term Follow Up"; "Fund Issue" → "Funds Issue") so each shows under one
+// chip. Data + filter changes — force a fresh shell so chips/counts refresh.
+const CACHE = "wcr-shell-v63";
 const SHELL = ["/login", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", (event) => {
