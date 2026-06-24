@@ -271,7 +271,15 @@
 // multi-property table) remain the ONLY addition, below Quick Note. Force a refresh
 // so PWA clients see the unified buyer detail (network-first serves fresh HTML; a
 // hard refresh is not required but clears any stale shell instantly).
-const CACHE = "wcr-shell-v59";
+// v60 (2026-06-24): Master Data inline-edit dropdowns no longer clip/hide behind the
+// table. EVERY editable cell (Agent/Team/Status/Property Type/Source/Medium/Bucket)
+// now opens its dropdown through a PORTAL (document.body, position:fixed off the
+// trigger's rect, z-9999, re-measured on scroll/resize, flips up near the viewport
+// bottom, click-outside/Esc to close) instead of an absolute menu trapped inside the
+// grid's overflow-x-auto scroll container. Fixes hidden/buried dropdowns, z-index
+// burial behind frozen columns, and row-height jump — the read cell stays put while
+// only the floating editor overlays. CSS/render-only; save logic + endpoints unchanged.
+const CACHE = "wcr-shell-v60";
 const SHELL = ["/login", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", (event) => {

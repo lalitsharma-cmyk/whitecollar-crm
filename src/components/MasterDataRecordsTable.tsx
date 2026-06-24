@@ -491,9 +491,18 @@ export default function MasterDataRecordsTable({ rows, agents, projects, isSuper
                       ];
                       return (
                         <td key={c.key} className={`${cellCls} whitespace-nowrap`} style={fStyle(c.key)} onClick={stop}>
-                          <button onClick={() => openMenu(l.id, "agent")} className="text-gray-700 dark:text-slate-300 hover:underline" title="Click to assign">{l.owner}</button>
-                          {ageBadge && <span className={`ml-1.5 align-middle text-[9px] px-1.5 py-0.5 rounded-full border ${ageBadge.cls}`} title="Unassigned for this long — please assign">{ageBadge.label}</span>}
-                          {editing(l.id, "agent") && <Menu busy={busy} options={agentOpts} onPick={(v) => saveText(l.id, "ownerId", v)} />}
+                          <MenuCell
+                            open={editing(l.id, "agent")}
+                            onToggle={() => openMenu(l.id, "agent")}
+                            onClose={() => setEdit(null)}
+                            label={l.owner}
+                            title="Click to assign"
+                            triggerClass="text-gray-700 dark:text-slate-300 hover:underline"
+                            options={agentOpts}
+                            onPick={(v) => saveText(l.id, "ownerId", v)}
+                            busy={busy}
+                            after={ageBadge ? <span className={`ml-1.5 align-middle text-[9px] px-1.5 py-0.5 rounded-full border ${ageBadge.cls}`} title="Unassigned for this long — please assign">{ageBadge.label}</span> : null}
+                          />
                         </td>
                       );
                     }
@@ -504,8 +513,17 @@ export default function MasterDataRecordsTable({ rows, agents, projects, isSuper
                       // after so counts/filters update.
                       return (
                         <td key={c.key} className={cellCls} style={fStyle(c.key)} onClick={stop}>
-                          <button onClick={() => openMenu(l.id, "team")} className="text-gray-700 dark:text-slate-300 hover:underline" title="Click to set team">{l.team}</button>
-                          {editing(l.id, "team") && <Menu busy={busy} options={TEAMS.map((t) => ({ value: t, label: t }))} onPick={(v) => saveText(l.id, "forwardedTeam", v)} />}
+                          <MenuCell
+                            open={editing(l.id, "team")}
+                            onToggle={() => openMenu(l.id, "team")}
+                            onClose={() => setEdit(null)}
+                            label={l.team}
+                            title="Click to set team"
+                            triggerClass="text-gray-700 dark:text-slate-300 hover:underline"
+                            options={TEAMS.map((t) => ({ value: t, label: t }))}
+                            onPick={(v) => saveText(l.id, "forwardedTeam", v)}
+                            busy={busy}
+                          />
                         </td>
                       );
                     case "createdDate":
@@ -553,12 +571,17 @@ export default function MasterDataRecordsTable({ rows, agents, projects, isSuper
                       // so Source values appeared under the Property Type header.)
                       return (
                         <td key={c.key} className="px-3 py-2 relative whitespace-nowrap" onClick={stop}>
-                          <button onClick={() => openMenu(l.id, "propertyType")} className="text-gray-700 dark:text-slate-300 hover:underline" title="Click to set property type">
-                            {l.propertyType || <span className="text-gray-300 dark:text-slate-600">—</span>}
-                          </button>
-                          {editing(l.id, "propertyType") && (
-                            <Menu busy={busy} options={[{ value: "", label: "— clear —" }, ...PROPERTY_TYPES.map((p) => ({ value: p, label: p }))]} onPick={(v) => saveText(l.id, "propertyType", v)} />
-                          )}
+                          <MenuCell
+                            open={editing(l.id, "propertyType")}
+                            onToggle={() => openMenu(l.id, "propertyType")}
+                            onClose={() => setEdit(null)}
+                            label={l.propertyType || <span className="text-gray-300 dark:text-slate-600">—</span>}
+                            title="Click to set property type"
+                            triggerClass="text-gray-700 dark:text-slate-300 hover:underline"
+                            options={[{ value: "", label: "— clear —" }, ...PROPERTY_TYPES.map((p) => ({ value: p, label: p }))]}
+                            onPick={(v) => saveText(l.id, "propertyType", v)}
+                            busy={busy}
+                          />
                         </td>
                       );
                     case "source":
@@ -569,29 +592,40 @@ export default function MasterDataRecordsTable({ rows, agents, projects, isSuper
                       // Master Data is admin-only.
                       return (
                         <td key={c.key} className="px-3 py-2 relative whitespace-nowrap" onClick={stop}>
-                          <button onClick={() => openMenu(l.id, "source")} className="text-gray-600 dark:text-slate-400 hover:underline" title="Click to set source">{l.sourceLabel}</button>
-                          {editing(l.id, "source") && (
-                            <Menu busy={busy} options={SOURCE_OPTIONS} onPick={(v) => {
+                          <MenuCell
+                            open={editing(l.id, "source")}
+                            onToggle={() => openMenu(l.id, "source")}
+                            onClose={() => setEdit(null)}
+                            label={l.sourceLabel}
+                            title="Click to set source"
+                            triggerClass="text-gray-600 dark:text-slate-400 hover:underline"
+                            options={SOURCE_OPTIONS}
+                            onPick={(v) => {
                               const opt = SOURCE_OPTIONS.find((s) => s.value === v);
                               saveFields(l.id, { source: v, sourceRaw: opt?.label ?? v });
-                            }} />
-                          )}
+                            }}
+                            busy={busy}
+                          />
                         </td>
                       );
                     case "medium":
                       // Contact medium (Call / WhatsApp / Email / Other + custom). "Other"
                       // opens a free-text input for a custom medium (stored in mediumOther).
+                      // The editor is portal-floated (CellEditPopover inside MediumPickerCell)
+                      // so the grid's overflow-x never clips it; the read trigger stays in
+                      // place so the row height doesn't jump.
                       return (
                         <td key={c.key} className="px-3 py-2 relative whitespace-nowrap" onClick={stop}>
-                          {editing(l.id, "medium")
-                            ? <MediumPickerCell
-                                initialMedium={l.medium}
-                                initialOther={l.mediumOther ?? ""}
-                                busy={busy}
-                                onSave={(medium, mediumOther) => saveFields(l.id, { medium: medium || null, mediumOther: medium === "Other" ? mediumOther : null })}
-                                onCancel={() => setEdit(null)}
-                              />
-                            : <button onClick={() => openMenu(l.id, "medium")} className="text-gray-600 dark:text-slate-400 hover:underline" title="Click to set medium">{valueOf(l, "medium")}</button>}
+                          <MediumPickerCell
+                            open={editing(l.id, "medium")}
+                            onToggle={() => openMenu(l.id, "medium")}
+                            display={valueOf(l, "medium")}
+                            initialMedium={l.medium}
+                            initialOther={l.mediumOther ?? ""}
+                            busy={busy}
+                            onSave={(medium, mediumOther) => saveFields(l.id, { medium: medium || null, mediumOther: medium === "Other" ? mediumOther : null })}
+                            onCancel={() => setEdit(null)}
+                          />
                         </td>
                       );
                     case "message":
@@ -605,17 +639,30 @@ export default function MasterDataRecordsTable({ rows, agents, projects, isSuper
                     case "status":
                       return (
                         <td key={c.key} className="px-3 py-2 relative whitespace-nowrap min-w-[150px]" onClick={stop}>
-                          <button onClick={() => openMenu(l.id, "status")} title="Click to change status">
-                            {l.statusLabel ? <span className={`text-xs px-2 py-0.5 rounded-full ${l.statusClass}`}>{l.statusLabel}</span> : <span className="text-xs text-gray-400 italic">— set —</span>}
-                          </button>
-                          {editing(l.id, "status") && <Menu busy={busy} options={statusMenuOptions(l.team, l.statusLabel)} onPick={(v) => v && bulk([l.id], "set_status", { status: v })} />}
+                          <MenuCell
+                            open={editing(l.id, "status")}
+                            onToggle={() => openMenu(l.id, "status")}
+                            onClose={() => setEdit(null)}
+                            label={l.statusLabel ? <span className={`text-xs px-2 py-0.5 rounded-full ${l.statusClass}`}>{l.statusLabel}</span> : <span className="text-xs text-gray-400 italic">— set —</span>}
+                            title="Click to change status"
+                            options={statusMenuOptions(l.team, l.statusLabel)}
+                            onPick={(v) => v && bulk([l.id], "set_status", { status: v })}
+                            busy={busy}
+                          />
                         </td>
                       );
                     case "bucket":
                       return (
                         <td key={c.key} className="px-3 py-2 relative" onClick={stop}>
-                          <button onClick={() => openMenu(l.id, "bucket")}><span className={`text-xs px-2 py-0.5 rounded-full border ${l.bucketClass}`}>{l.bucket}</span></button>
-                          {editing(l.id, "bucket") && <Menu busy={busy} options={[{ value: "move_to_revival", label: "→ Revival (cold)" }, { value: "move_to_leads", label: "→ Active (leads)" }]} onPick={(v) => bulk([l.id], v)} />}
+                          <MenuCell
+                            open={editing(l.id, "bucket")}
+                            onToggle={() => openMenu(l.id, "bucket")}
+                            onClose={() => setEdit(null)}
+                            label={<span className={`text-xs px-2 py-0.5 rounded-full border ${l.bucketClass}`}>{l.bucket}</span>}
+                            options={[{ value: "move_to_revival", label: "→ Revival (cold)" }, { value: "move_to_leads", label: "→ Active (leads)" }]}
+                            onPick={(v) => bulk([l.id], v)}
+                            busy={busy}
+                          />
                         </td>
                       );
                     case "email":
@@ -698,13 +745,130 @@ function PreviewDrawer({ l, onClose }: { l: MDRow; onClose: () => void }) {
   );
 }
 
-function Menu({ options, onPick, busy }: { options: { value: string; label: string }[]; onPick: (v: string) => void; busy: boolean }) {
+// ── Shared floating cell-edit popover ─────────────────────────────────────────
+// EVERY editable-cell dropdown renders THROUGH this wrapper. It portals to
+// document.body and fixes itself to the trigger element's bounding rect (re-
+// measured on open + on scroll/resize), exactly like ColumnHeaderFilter. This
+// is THE fix for the reported bug: the old <Menu> used `absolute` inside the
+// <td>, so the grid's `overflow-x-auto` clipped it and the frozen columns'
+// stacking contexts (z-10/20) buried it. A portal escapes both — the panel now
+// floats above ALL table layers, never clipped, never behind, correct width.
+//
+//   • position: fixed at the trigger's bottom-left, width ≥ trigger width
+//     (clamped to a sensible min/max and kept inside the viewport).
+//   • flips ABOVE the trigger when it would overflow the bottom of the screen.
+//   • click-outside (transparent backdrop) + Esc close it.
+//   • the cell's read view never moves — only this overlay paints — so the row
+//     height never jumps and the table layout never shifts.
+function CellEditPopover({
+  anchorRef, onClose, minWidth = 176, maxWidth = 280, children,
+}: {
+  anchorRef: React.RefObject<HTMLElement | null>;
+  onClose: () => void;
+  minWidth?: number;
+  maxWidth?: number;
+  children: React.ReactNode;
+}) {
+  const [box, setBox] = useState<{ left: number; top: number; width: number; maxH: number; flip: boolean } | null>(null);
+
+  useEffect(() => {
+    const measure = () => {
+      const el = anchorRef.current;
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      const width = Math.min(maxWidth, Math.max(minWidth, r.width));
+      const left = Math.max(8, Math.min(r.left, window.innerWidth - width - 8));
+      const below = window.innerHeight - r.bottom - 8;
+      const above = r.top - 8;
+      // Flip above only when there's clearly more room up top and not enough below.
+      const flip = below < 180 && above > below;
+      const maxH = Math.max(140, Math.min(320, flip ? above : below));
+      const top = flip ? r.top : r.bottom;
+      setBox({ left, top, width, maxH, flip });
+    };
+    measure();
+    window.addEventListener("scroll", measure, true);
+    window.addEventListener("resize", measure);
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") { e.preventDefault(); onClose(); } };
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("scroll", measure, true);
+      window.removeEventListener("resize", measure);
+      window.removeEventListener("keydown", onKey);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  if (!box || typeof document === "undefined") return null;
+  return createPortal(
+    <>
+      {/* transparent click-outside catcher */}
+      <div className="fixed inset-0 z-[9998]" onMouseDown={onClose} />
+      <div
+        style={{
+          position: "fixed",
+          left: box.left,
+          top: box.top,
+          width: box.width,
+          maxHeight: box.maxH,
+          zIndex: 9999,
+          ...(box.flip ? { transform: "translateY(-100%)" } : {}),
+        }}
+        className="overflow-auto rounded-lg border border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-800 shadow-2xl text-xs"
+        onClick={(e) => e.stopPropagation()}
+        onMouseDown={(e) => e.stopPropagation()}
+      >
+        {children}
+      </div>
+    </>,
+    document.body,
+  );
+}
+
+// Simple option list rendered inside the floating popover. Anchored to the
+// cell's trigger button (passed as anchorRef) so it floats above the grid.
+function Menu({ options, onPick, busy, anchorRef, onClose }: {
+  options: { value: string; label: string }[];
+  onPick: (v: string) => void;
+  busy: boolean;
+  anchorRef: React.RefObject<HTMLElement | null>;
+  onClose: () => void;
+}) {
   return (
-    <div className="absolute z-30 mt-1 left-0 w-44 max-h-60 overflow-auto rounded-lg border border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-800 shadow-xl text-xs">
+    <CellEditPopover anchorRef={anchorRef} onClose={onClose}>
       {options.map((o) => (
         <button key={o.value} disabled={busy} onClick={() => onPick(o.value)} className="block w-full text-left px-3 py-1.5 hover:bg-gray-50 dark:hover:bg-slate-700 disabled:opacity-50">{o.label}</button>
       ))}
-    </div>
+    </CellEditPopover>
+  );
+}
+
+// ── Self-contained editable dropdown cell ─────────────────────────────────────
+// The trigger button + its floating Menu, sharing one ref. Used by Agent / Team /
+// Property Type / Source / Status / Bucket. The trigger stays in normal table
+// flow (read view never moves); the Menu portals out via CellEditPopover so it
+// floats above every table layer — the fix for the clipped/buried dropdown.
+function MenuCell({
+  open, onToggle, onClose, label, title, triggerClass, options, onPick, busy, after,
+}: {
+  open: boolean;
+  onToggle: () => void;
+  onClose: () => void;
+  label: React.ReactNode;
+  title?: string;
+  triggerClass?: string;
+  options: { value: string; label: string }[];
+  onPick: (v: string) => void;
+  busy: boolean;
+  after?: React.ReactNode;
+}) {
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  return (
+    <>
+      <button ref={triggerRef} onClick={onToggle} className={triggerClass} title={title}>{label}</button>
+      {after}
+      {open && <Menu busy={busy} options={options} onPick={onPick} anchorRef={triggerRef} onClose={onClose} />}
+    </>
   );
 }
 
@@ -843,10 +1007,15 @@ function ProjectPickerCell({
 
 // ── Medium picker ─────────────────────────────────────────────────────────────
 // Call / WhatsApp / Email / Other(+custom). "Other" reveals a free-text input
-// for a custom medium (stored in mediumOther). Saves on ✓ / Enter.
+// for a custom medium (stored in mediumOther). Saves on ✓ / Enter. The trigger
+// stays in the cell (read view); the select + custom input float in a portal
+// popover (CellEditPopover) so the grid's overflow-x-auto can't clip them.
 function MediumPickerCell({
-  initialMedium, initialOther, busy, onSave, onCancel,
+  open, onToggle, display, initialMedium, initialOther, busy, onSave, onCancel,
 }: {
+  open: boolean;
+  onToggle: () => void;
+  display: string;
   initialMedium: string;
   initialOther: string;
   busy: boolean;
@@ -858,6 +1027,16 @@ function MediumPickerCell({
   const isStd = MEDIUM_OPTIONS.includes(initialMedium);
   const [medium, setMedium] = useState(isStd ? initialMedium : (initialMedium ? "Other" : ""));
   const [other, setOther] = useState(!isStd && initialMedium ? initialMedium : initialOther);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+
+  // Reset the local editor state each time the popover (re)opens so it reflects
+  // the current row value — the trigger now persists across open/close.
+  useEffect(() => {
+    if (!open) return;
+    const std = MEDIUM_OPTIONS.includes(initialMedium);
+    setMedium(std ? initialMedium : (initialMedium ? "Other" : ""));
+    setOther(!std && initialMedium ? initialMedium : initialOther);
+  }, [open, initialMedium, initialOther]);
 
   const commit = () => {
     if (medium === "Other") {
@@ -870,28 +1049,35 @@ function MediumPickerCell({
   };
 
   return (
-    <span className="inline-flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
-      <select
-        autoFocus
-        value={medium}
-        disabled={busy}
-        onChange={(e) => setMedium(e.target.value)}
-        className="min-w-[90px] px-2 py-1 text-sm border border-blue-400 rounded dark:bg-slate-700"
-      >
-        <option value="">— clear —</option>
-        {MEDIUM_OPTIONS.map((m) => <option key={m} value={m}>{m}</option>)}
-      </select>
-      {medium === "Other" && (
-        <input
-          value={other}
-          onChange={(e) => setOther(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter") commit(); if (e.key === "Escape") onCancel(); }}
-          placeholder="custom…"
-          className="w-24 px-2 py-1 text-sm border border-blue-400 rounded dark:bg-slate-700"
-        />
+    <>
+      <button ref={triggerRef} onClick={onToggle} className="text-gray-600 dark:text-slate-400 hover:underline" title="Click to set medium">{display}</button>
+      {open && (
+        <CellEditPopover anchorRef={triggerRef} onClose={onCancel} minWidth={200}>
+          <div className="flex items-center gap-1 p-2" onClick={(e) => e.stopPropagation()}>
+            <select
+              autoFocus
+              value={medium}
+              disabled={busy}
+              onChange={(e) => setMedium(e.target.value)}
+              className="min-w-[90px] px-2 py-1 text-sm border border-blue-400 rounded dark:bg-slate-700 dark:text-slate-100"
+            >
+              <option value="">— clear —</option>
+              {MEDIUM_OPTIONS.map((m) => <option key={m} value={m}>{m}</option>)}
+            </select>
+            {medium === "Other" && (
+              <input
+                value={other}
+                onChange={(e) => setOther(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") commit(); if (e.key === "Escape") onCancel(); }}
+                placeholder="custom…"
+                className="w-24 px-2 py-1 text-sm border border-blue-400 rounded dark:bg-slate-700 dark:text-slate-100"
+              />
+            )}
+            <button onClick={commit} disabled={busy} aria-label="Save" className="text-emerald-600 hover:bg-emerald-50 dark:hover:bg-slate-700 rounded px-1.5 py-1 text-sm">✓</button>
+            <button onClick={onCancel} aria-label="Cancel" className="text-red-600 hover:bg-red-50 dark:hover:bg-slate-700 rounded px-1.5 py-1 text-sm">✕</button>
+          </div>
+        </CellEditPopover>
       )}
-      <button onClick={commit} disabled={busy} aria-label="Save" className="text-emerald-600 hover:bg-emerald-50 rounded px-1.5 py-1 text-sm">✓</button>
-      <button onClick={onCancel} aria-label="Cancel" className="text-red-600 hover:bg-red-50 rounded px-1.5 py-1 text-sm">✕</button>
-    </span>
+    </>
   );
 }
