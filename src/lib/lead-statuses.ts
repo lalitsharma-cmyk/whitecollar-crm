@@ -293,6 +293,89 @@ export const TERMINAL_STATUSES: string[] = [
   ...LOST_STATUSES,
 ];
 
+// ─── Dashboard live-status COLUMN buckets (admin assignment widget) ───────
+// SINGLE SOURCE OF TRUTH for the admin-dashboard "Live Lead Assignment" grid,
+// which breaks a population of leads down by CURRENT status into one column
+// each. Buckets are DISJOINT — every lead lands in exactly one — so the column
+// counts always sum to the population (no double-count, perfect reconciliation).
+//
+// The CRM has NO explicit "Contacted/Qualified/Negotiation" status; those
+// columns map from the real MIS vocabulary below (NOT hardcoded at the call
+// site). Precedence top→bottom; first match wins:
+//   BOOKED  → a win (isBookedStatus)                  — terminal
+//   LOST    → any LOST_STATUS                          — terminal
+//   MEETING → reached a meeting/office/zoom stage
+//   SITE_VISIT → a physical-visit stage
+//   NEGOTIATION → "in discussion" (details/mail shared)
+//   QUALIFIED → engaged & advanced past first contact, pre-meeting
+//   CONTACTED → worked / in active follow-up conversation
+//   FRESH   → isFreshStatus (untouched / new / not-contacted / null)
+//   OTHER   → closed-but-not-a-win (sell/lease/bought-elsewhere) + anything else
+// FRESH..NEGOTIATION + OTHER are all WORKABLE/"active"; BOOKED+LOST are terminal.
+export type LeadStatusColumn =
+  | "FRESH" | "CONTACTED" | "QUALIFIED" | "MEETING" | "SITE_VISIT"
+  | "NEGOTIATION" | "BOOKED" | "LOST" | "OTHER";
+
+// Meeting-stage statuses (office / zoom / expo / generic meeting).
+const COL_MEETING_STATUSES = [
+  "Meeting", "Wants Office Visit", "Want Office Visit", "Zoom Meeting", "Expo Only",
+];
+// Physical site-visit stage.
+const COL_SITE_VISIT_STATUSES = ["Site Visit Schedule", "Visit Dubai"];
+// "In discussion / negotiation" proxy — collateral shared, evaluating a deal.
+const COL_NEGOTIATION_STATUSES = ["Details Shared", "Mail Sent"];
+// Advanced-but-pre-meeting engaged statuses → "Qualified".
+const COL_QUALIFIED_STATUSES = ["Long Term Follow Up"];
+// Worked / actively-followed-up conversation → "Contacted". (NOT "Never
+// Responding" — that's a LOST dead-end, classified as LOST by precedence; kept
+// out of this finite set so the buckets stay strictly disjoint.)
+const COL_CONTACTED_STATUSES = ["Follow Up", "Postponed"];
+
+const COL_MEETING_SET = new Set(COL_MEETING_STATUSES);
+const COL_SITE_VISIT_SET = new Set(COL_SITE_VISIT_STATUSES);
+const COL_NEGOTIATION_SET = new Set(COL_NEGOTIATION_STATUSES);
+const COL_QUALIFIED_SET = new Set(COL_QUALIFIED_STATUSES);
+const COL_CONTACTED_SET = new Set(COL_CONTACTED_STATUSES);
+
+/** Classify a CURRENT status into exactly one dashboard column bucket. */
+export function leadStatusColumn(status: string | null | undefined): LeadStatusColumn {
+  if (isBookedStatus(status)) return "BOOKED";
+  if (status && LOST_STATUSES.includes(status)) return "LOST";
+  if (status && COL_MEETING_SET.has(status)) return "MEETING";
+  if (status && COL_SITE_VISIT_SET.has(status)) return "SITE_VISIT";
+  if (status && COL_NEGOTIATION_SET.has(status)) return "NEGOTIATION";
+  if (status && COL_QUALIFIED_SET.has(status)) return "QUALIFIED";
+  if (status && COL_CONTACTED_SET.has(status)) return "CONTACTED";
+  if (isFreshStatus(status)) return "FRESH";
+  return "OTHER"; // closed-non-win (sell/lease/bought-elsewhere) or unmapped
+}
+
+/** Exact status string set behind each column (for Prisma `in` drill-down).
+ *  FRESH / OTHER are open-ended (null / negation) so they have no finite list
+ *  and get their own where-fragments at the call site. */
+export const COLUMN_STATUS_VALUES: Partial<Record<LeadStatusColumn, string[]>> = {
+  MEETING: COL_MEETING_STATUSES,
+  SITE_VISIT: COL_SITE_VISIT_STATUSES,
+  NEGOTIATION: COL_NEGOTIATION_STATUSES,
+  QUALIFIED: COL_QUALIFIED_STATUSES,
+  CONTACTED: COL_CONTACTED_STATUSES,
+  BOOKED: BOOKED_STATUSES,
+  LOST: LOST_STATUSES,
+};
+// Statuses that ARE finitely-listed in a column (everything except FRESH/OTHER).
+// FRESH = isFreshStatus; OTHER = "assigned, not in any of the above" — used to
+// build the negation where-fragment so FRESH+OTHER+listed == population.
+export const COLUMN_NON_OPEN_STATUSES: string[] = [
+  ...COL_MEETING_STATUSES, ...COL_SITE_VISIT_STATUSES, ...COL_NEGOTIATION_STATUSES,
+  ...COL_QUALIFIED_STATUSES, ...COL_CONTACTED_STATUSES, ...BOOKED_STATUSES, ...LOST_STATUSES,
+];
+// Explicit fresh-status casings (mirrors isFreshStatus) for a Prisma `in`
+// drill-down clause — Prisma can't call isFreshStatus inside a where.
+export const FRESH_STATUS_IN_VALUES: string[] = [
+  "Fresh Lead", "Fresh", "New", "New Lead", "Not Contacted", "Never Contacted",
+  "Uncontacted", "Not Connected Yet",
+];
+
 // ─── "Needs Review" sentinel (team-status revalidation) ───────────────────
 // When a lead's team changes — or an import brings a status that doesn't exist
 // in the lead's team master — we MUST NOT force a wrong-team status. We set this

@@ -31,6 +31,11 @@ import {
   LOST_STATUSES,
   TERMINAL_STATUSES,
   isFreshStatus,
+  isWorkableStatus,
+  leadStatusColumn,
+  COLUMN_STATUS_VALUES,
+  COLUMN_NON_OPEN_STATUSES,
+  FRESH_STATUS_IN_VALUES,
 } from "@/lib/lead-statuses";
 
 // Typed enum arrays for Prisma `in` filters (string-backed enums; we keep them
@@ -253,6 +258,24 @@ export interface AgentMetrics {
   revivalAssigned: number;
   buyerAssigned: number; // BuyerRecord uses free-text agentName (no User FK) → always 0 (see note)
 
+  // ── CURRENT-STATUS breakdown of the leads ASSIGNED-IN-WINDOW (admin
+  // dashboard "Live Lead Assignment" grid). Buckets are DISJOINT
+  // (leadStatusColumn) so cur* sum to totalAssigned. "Where are the leads
+  // this agent received in the window RIGHT NOW?" — distinct from the
+  // owner-book Outcomes group below. rejected (rejectedAt-in-window) is the
+  // existing owner-scoped column and is reported alongside.
+  curFresh: number;
+  curContacted: number;
+  curQualified: number;
+  curMeeting: number;
+  curSiteVisit: number;
+  curNegotiation: number;
+  curBooked: number;
+  curLost: number;
+  curOther: number;
+  /** Assigned-in-window AND currently still workable (not terminal). */
+  assignedActive: number;
+
   // ── Lead Outcomes (current owner, status-bucketed; rejected by rejectedAt in window) ──
   rejected: number;
   closedWon: number;
@@ -296,6 +319,7 @@ function zeroMetrics(a: AgentLite): AgentMetrics {
     agentName: a.name,
     team: a.team,
     totalAssigned: 0, freshAssigned: 0, websiteAssigned: 0, eventAssigned: 0, revivalAssigned: 0, buyerAssigned: 0,
+    curFresh: 0, curContacted: 0, curQualified: 0, curMeeting: 0, curSiteVisit: 0, curNegotiation: 0, curBooked: 0, curLost: 0, curOther: 0, assignedActive: 0,
     rejected: 0, closedWon: 0, lost: 0, stillActive: 0, awaitingFollowup: 0, noFollowup: 0,
     callsLogged: 0, connectedCalls: 0, notPickedCalls: 0, whatsappConversations: 0, notesAdded: 0, voiceNotesAdded: 0,
     meetingsScheduled: 0, meetingsCompleted: 0, officeMeetings: 0, virtualMeetings: 0,
@@ -375,6 +399,23 @@ export async function buildAgentReport(range: DateRange, scope: ReportScope): Pr
     if (REVIVAL_ORIGINS.includes(l.leadOrigin) || l.isColdCall) m.revivalAssigned += 1;
     // buyerAssigned stays 0 — BuyerRecord exists but records carry a free-text
     // agentName (no User FK), so per-agent attribution would be fuzzy. Left 0 by design.
+
+    // CURRENT-status breakdown of this assigned-in-window lead — DISJOINT
+    // buckets (sum to totalAssigned). Drives the dashboard live grid; uses the
+    // single-source leadStatusColumn() so the columns never drift from the
+    // status vocabulary.
+    switch (leadStatusColumn(l.currentStatus)) {
+      case "FRESH": m.curFresh += 1; break;
+      case "CONTACTED": m.curContacted += 1; break;
+      case "QUALIFIED": m.curQualified += 1; break;
+      case "MEETING": m.curMeeting += 1; break;
+      case "SITE_VISIT": m.curSiteVisit += 1; break;
+      case "NEGOTIATION": m.curNegotiation += 1; break;
+      case "BOOKED": m.curBooked += 1; break;
+      case "LOST": m.curLost += 1; break;
+      default: m.curOther += 1; break;
+    }
+    if (isWorkableStatus(l.currentStatus)) m.assignedActive += 1;
   }
 
   // ── 2. OUTCOMES (by CURRENT owner — "what is the state of this agent's book") ──
@@ -576,6 +617,52 @@ function applyGroupU(
   }
 }
 
+// ── Summary roll-up (dashboard widget cards) ─────────────────────────────────
+// Aggregate the per-agent rows into the headline numbers + rates for the
+// selected window/team. Booked/Active/Lost use the assigned-in-window
+// CURRENT-status breakdown (curBooked/assignedActive/curLost) so every card
+// reconciles with the grid's column totals; rejected uses the rejectedAt-in-
+// window column. Rates are over total assigned-in-window (the widget's
+// population), 0 when there are no assigned leads.
+
+export interface ReportSummary {
+  totalAssigned: number;
+  totalActive: number;
+  totalRejected: number;
+  totalBooked: number;
+  totalLost: number;
+  totalMeetings: number;   // assigned-in-window currently at meeting stage
+  totalSiteVisits: number; // assigned-in-window currently at site-visit stage
+  conversionRatePct: number; // booked ÷ assigned
+  rejectionRatePct: number;  // rejected ÷ assigned
+  meetingRatePct: number;    // at-meeting ÷ assigned
+  siteVisitRatePct: number;  // at-site-visit ÷ assigned
+}
+
+export function summarizeReport(rows: AgentMetrics[]): ReportSummary {
+  const s = rows.reduce(
+    (acc, m) => {
+      acc.totalAssigned += m.totalAssigned;
+      acc.totalActive += m.assignedActive;
+      acc.totalRejected += m.rejected;
+      acc.totalBooked += m.curBooked;
+      acc.totalLost += m.curLost;
+      acc.totalMeetings += m.curMeeting;
+      acc.totalSiteVisits += m.curSiteVisit;
+      return acc;
+    },
+    { totalAssigned: 0, totalActive: 0, totalRejected: 0, totalBooked: 0, totalLost: 0, totalMeetings: 0, totalSiteVisits: 0 },
+  );
+  const pct = (n: number) => (s.totalAssigned > 0 ? (n / s.totalAssigned) * 100 : 0);
+  return {
+    ...s,
+    conversionRatePct: pct(s.totalBooked),
+    rejectionRatePct: pct(s.totalRejected),
+    meetingRatePct: pct(s.totalMeetings),
+    siteVisitRatePct: pct(s.totalSiteVisits),
+  };
+}
+
 // ── Derived ratios (for detail view / rankings) ──────────────────────────────
 
 /** Connect rate = connected ÷ total calls (0 when no calls). */
@@ -608,7 +695,10 @@ export function followupCompliance(m: AgentMetrics): number {
 export type DrillKey =
   | "totalAssigned" | "freshAssigned" | "websiteAssigned" | "eventAssigned" | "revivalAssigned"
   | "rejected" | "closedWon" | "lost" | "stillActive" | "awaitingFollowup" | "noFollowup"
-  | "funnelQualified" | "funnelMeetings" | "funnelSiteVisits" | "funnelNegotiations" | "funnelBookings";
+  | "funnelQualified" | "funnelMeetings" | "funnelSiteVisits" | "funnelNegotiations" | "funnelBookings"
+  // CURRENT-status breakdown of the assigned-in-window population (dashboard grid).
+  | "curFresh" | "curContacted" | "curQualified" | "curMeeting" | "curSiteVisit"
+  | "curNegotiation" | "curBooked" | "curLost" | "curOther" | "assignedActive";
 
 const ACTIVE_OR: Prisma.LeadWhereInput["OR"] = [
   { currentStatus: null }, { currentStatus: "" }, { currentStatus: { notIn: TERMINAL_STATUSES } },
@@ -661,6 +751,37 @@ export function drilldownWhere(key: DrillKey, agentId: string, range: DateRange)
       return { ownerId: agentId, deletedAt: null, currentStatus: { in: NEGOTIATION_STATUSES } };
     case "funnelBookings":
       return { ownerId: agentId, deletedAt: null, currentStatus: { in: BOOKING_STATUSES } };
+
+    // ── CURRENT-status columns: the assigned-in-window population, bucketed by
+    // current status. AND assignedInWindow with the same status predicate
+    // leadStatusColumn() uses, so count == drill records exactly. ──
+    case "curFresh":
+      return { ...assignedInWindow, OR: [{ currentStatus: null }, { currentStatus: "" }, { currentStatus: { in: FRESH_STATUS_IN_VALUES } }] };
+    case "curContacted":
+      return { ...assignedInWindow, currentStatus: { in: COLUMN_STATUS_VALUES.CONTACTED ?? [] } };
+    case "curQualified":
+      return { ...assignedInWindow, currentStatus: { in: COLUMN_STATUS_VALUES.QUALIFIED ?? [] } };
+    case "curMeeting":
+      return { ...assignedInWindow, currentStatus: { in: COLUMN_STATUS_VALUES.MEETING ?? [] } };
+    case "curSiteVisit":
+      return { ...assignedInWindow, currentStatus: { in: COLUMN_STATUS_VALUES.SITE_VISIT ?? [] } };
+    case "curNegotiation":
+      return { ...assignedInWindow, currentStatus: { in: COLUMN_STATUS_VALUES.NEGOTIATION ?? [] } };
+    case "curBooked":
+      return { ...assignedInWindow, currentStatus: { in: COLUMN_STATUS_VALUES.BOOKED ?? [] } };
+    case "curLost":
+      return { ...assignedInWindow, currentStatus: { in: COLUMN_STATUS_VALUES.LOST ?? [] } };
+    case "curOther":
+      // Closed-non-win + any unmapped status: NOT fresh, NOT listed in any column.
+      return {
+        ...assignedInWindow,
+        currentStatus: { notIn: [...COLUMN_NON_OPEN_STATUSES, ...FRESH_STATUS_IN_VALUES], not: null },
+        NOT: { currentStatus: "" },
+      };
+    case "assignedActive":
+      // Assigned-in-window AND currently workable (not terminal).
+      return { ...assignedInWindow, OR: [{ currentStatus: null }, { currentStatus: "" }, { currentStatus: { notIn: TERMINAL_STATUSES } }] };
+
     default:
       return { deletedAt: null, id: "__none__" }; // never matches
   }
@@ -691,6 +812,17 @@ export const DRILL_LABELS: Record<DrillKey, string> = {
   funnelSiteVisits: "Leads at Site-Visit Stage",
   funnelNegotiations: "Leads in Negotiation",
   funnelBookings: "Bookings / Closures",
+  // Current-status breakdown of the assigned-in-window population.
+  curFresh: "Assigned · Currently Fresh",
+  curContacted: "Assigned · Currently Contacted",
+  curQualified: "Assigned · Currently Qualified",
+  curMeeting: "Assigned · Currently at Meeting",
+  curSiteVisit: "Assigned · Currently at Site Visit",
+  curNegotiation: "Assigned · Currently in Negotiation",
+  curBooked: "Assigned · Booked / Won",
+  curLost: "Assigned · Lost",
+  curOther: "Assigned · Other Outcome",
+  assignedActive: "Assigned · Currently Active",
 };
 
 /** Source-of-truth for the metric used by the CSV export (label + accessor). */
@@ -711,6 +843,17 @@ export const METRIC_COLUMNS: MetricColumn[] = [
   { key: "eventAssigned", label: "Event Assigned", group: "Assignment", get: (m) => m.eventAssigned },
   { key: "revivalAssigned", label: "Revival Assigned", group: "Assignment", get: (m) => m.revivalAssigned },
   { key: "buyerAssigned", label: "Buyer Assigned", group: "Assignment", get: (m) => m.buyerAssigned },
+  // Live status breakdown of the assigned-in-window population (dashboard grid)
+  { key: "curFresh", label: "Current Fresh", group: "Live Status", get: (m) => m.curFresh },
+  { key: "curContacted", label: "Contacted", group: "Live Status", get: (m) => m.curContacted },
+  { key: "curQualified", label: "Qualified", group: "Live Status", get: (m) => m.curQualified },
+  { key: "curMeeting", label: "Meeting", group: "Live Status", get: (m) => m.curMeeting },
+  { key: "curSiteVisit", label: "Site Visit", group: "Live Status", get: (m) => m.curSiteVisit },
+  { key: "curNegotiation", label: "Negotiation", group: "Live Status", get: (m) => m.curNegotiation },
+  { key: "curBooked", label: "Booked/Won", group: "Live Status", get: (m) => m.curBooked },
+  { key: "curLost", label: "Lost (assigned)", group: "Live Status", get: (m) => m.curLost },
+  { key: "curOther", label: "Other (assigned)", group: "Live Status", get: (m) => m.curOther },
+  { key: "assignedActive", label: "Active (assigned)", group: "Live Status", get: (m) => m.assignedActive },
   // Outcomes
   { key: "rejected", label: "Rejected", group: "Outcomes", get: (m) => m.rejected },
   { key: "closedWon", label: "Closed/Won", group: "Outcomes", get: (m) => m.closedWon },

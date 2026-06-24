@@ -1580,6 +1580,113 @@ const checks: Check[] = [
       }
     },
   },
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // 12. DASHBOARD LIVE-ASSIGNMENT WIDGET (2026-06-24)
+  //   The admin-dashboard "Live Lead Assignment & Status" grid breaks the
+  //   assigned-in-window population down by CURRENT status into DISJOINT column
+  //   buckets (leadStatusColumn). Two guards:
+  //   (a) CLASSIFICATION — leadStatusColumn() is total + disjoint: every status
+  //       in the union of every team master maps to exactly one column, and the
+  //       finite COLUMN_STATUS_VALUES sets don't overlap. lead-statuses.ts has
+  //       NO "server-only", so this tests the REAL classifier the widget uses.
+  //   (b) RECONCILIATION (data) — for a real agent with assignment history, the
+  //       per-column drill where-clause counts SUM to the assigned-in-window
+  //       total (no lead lost, none double-counted) — proving the grid numbers
+  //       reconcile 1:1 with their drill lists, the same as agent-performance.
+  // ───────────────────────────────────────────────────────────────────────────
+  {
+    name: "dashboard-assignment — status→column is total+disjoint; per-agent column drills reconcile to the assigned total",
+    run: async () => {
+      const {
+        leadStatusColumn, COLUMN_STATUS_VALUES, COLUMN_NON_OPEN_STATUSES,
+        FRESH_STATUS_IN_VALUES, INDIA_STATUSES, DUBAI_STATUSES, TERMINAL_STATUSES,
+        isWorkableStatus,
+      } = await import("../src/lib/lead-statuses");
+
+      // (a) Every status in either team master classifies into exactly one column.
+      const allStatuses = [...new Set([...INDIA_STATUSES, ...DUBAI_STATUSES])];
+      for (const s of allStatuses) {
+        const col = leadStatusColumn(s);
+        assert(typeof col === "string" && col.length > 0, `leadStatusColumn("${s}") produced no bucket`);
+      }
+      // null / empty → FRESH (fail-safe).
+      assert(leadStatusColumn(null) === "FRESH" && leadStatusColumn("") === "FRESH", "null/empty status must bucket as FRESH");
+      // The finite column sets must be mutually exclusive (no status in two columns).
+      const finiteSets = Object.values(COLUMN_STATUS_VALUES) as string[][];
+      const seen = new Map<string, number>();
+      for (const set of finiteSets) for (const s of set) seen.set(s, (seen.get(s) ?? 0) + 1);
+      const overlaps = [...seen.entries()].filter(([, n]) => n > 1).map(([s]) => s);
+      assert(overlaps.length === 0, `COLUMN_STATUS_VALUES sets overlap on: ${overlaps.join(", ")} — buckets must be disjoint`);
+      // Each finite-set status actually classifies to a finite column (not FRESH/OTHER).
+      for (const s of COLUMN_NON_OPEN_STATUSES) {
+        const col = leadStatusColumn(s);
+        assert(col !== "FRESH" && col !== "OTHER", `"${s}" is a finite-column status but classified as ${col}`);
+      }
+
+      // (b) Pick a real agent who HELD a lead via an assignment in a wide window.
+      const recentAssignment = await prisma.assignment.findFirst({
+        where: { lead: { deletedAt: null } },
+        orderBy: { assignedAt: "desc" },
+        select: { userId: true, assignedAt: true },
+      });
+      if (!recentAssignment) {
+        results.push({ name: "  ↳ note", ok: true, detail: "no Assignment rows in prod — reconciliation check vacuously satisfied" });
+        return;
+      }
+      const agentId = recentAssignment.userId;
+      // Window: a generous span around the assignment so we capture a population.
+      const gte = new Date("2000-01-01T00:00:00Z");
+      const lt = new Date(Date.now() + 86400000);
+      const win = { gte, lt };
+      // assigned-in-window population (mirrors agentPerformance.drilldownWhere base).
+      const assignedInWindow = { deletedAt: null, assignments: { some: { userId: agentId, assignedAt: win } } } as const;
+
+      const totalAssigned = await prisma.lead.count({ where: assignedInWindow });
+      assert(totalAssigned > 0, "selected agent has no assigned-in-window leads — fixture mismatch");
+
+      // Count each column with the SAME where-clause shape drilldownWhere builds.
+      const fresh = await prisma.lead.count({
+        where: { ...assignedInWindow, OR: [{ currentStatus: null }, { currentStatus: "" }, { currentStatus: { in: FRESH_STATUS_IN_VALUES } }] },
+      });
+      const finiteCounts: Record<string, number> = {};
+      for (const [col, set] of Object.entries(COLUMN_STATUS_VALUES) as [string, string[]][]) {
+        finiteCounts[col] = await prisma.lead.count({ where: { ...assignedInWindow, currentStatus: { in: set } } });
+      }
+      const other = await prisma.lead.count({
+        where: { ...assignedInWindow, currentStatus: { notIn: [...COLUMN_NON_OPEN_STATUSES, ...FRESH_STATUS_IN_VALUES], not: null }, NOT: { currentStatus: "" } },
+      });
+      const sumOfColumns = fresh + other + Object.values(finiteCounts).reduce((a, b) => a + b, 0);
+      assert(
+        sumOfColumns === totalAssigned,
+        `column counts (${sumOfColumns}) do not reconcile with assigned-in-window total (${totalAssigned}) for agent ${agentId} — buckets not exhaustive/disjoint`,
+      );
+
+      // The "Active" drill (workable subset) must be ≤ total and consistent with terminal exclusion.
+      const active = await prisma.lead.count({
+        where: { ...assignedInWindow, OR: [{ currentStatus: null }, { currentStatus: "" }, { currentStatus: { notIn: TERMINAL_STATUSES } }] },
+      });
+      assert(active <= totalAssigned, `active (${active}) cannot exceed assigned (${totalAssigned})`);
+      // Active must equal total minus the terminal columns (BOOKED + LOST) — within the disjoint model.
+      const terminalInWindow = (finiteCounts.BOOKED ?? 0) + (finiteCounts.LOST ?? 0);
+      // OTHER holds closed-non-win outcomes (also terminal per isWorkableStatus). Verify the
+      // workable identity: active == assigned - (terminal columns + terminal "OTHER" rows).
+      // Recompute OTHER's terminal share precisely via isWorkableStatus on a sample-free count:
+      const otherTerminal = await prisma.lead.count({
+        where: {
+          ...assignedInWindow,
+          currentStatus: { notIn: [...COLUMN_NON_OPEN_STATUSES, ...FRESH_STATUS_IN_VALUES], not: null },
+          NOT: { currentStatus: "" },
+          AND: [{ currentStatus: { in: TERMINAL_STATUSES } }],
+        },
+      });
+      void isWorkableStatus; // (documents intent; the identity below encodes it)
+      assert(
+        active === totalAssigned - terminalInWindow - otherTerminal,
+        `active identity broken: active(${active}) != assigned(${totalAssigned}) - terminalCols(${terminalInWindow}) - otherTerminal(${otherTerminal})`,
+      );
+    },
+  },
 ];
 
 // ── runner ────────────────────────────────────────────────────────────────────

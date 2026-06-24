@@ -19,6 +19,7 @@ import { formatLeadName } from "@/lib/leadName";
 import TargetCelebration from "@/components/TargetCelebration";
 import RemindersCard, { type ReminderEvent } from "@/components/RemindersCard";
 import { countUnassignedLeads, countAwaitingTeamLeads } from "@/lib/leadCounts";
+import DashboardAssignmentWidget from "@/components/DashboardAssignmentWidget";
 
 export const dynamic = "force-dynamic";
 
@@ -500,6 +501,19 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
                 <div className="text-[11px] font-semibold text-purple-900 mt-0.5">🧭 Awaiting Team</div>
               </Link>
             </div>
+          )}
+
+          {/* ── Live Lead Assignment & Status widget — ADMIN/MANAGER only.
+              Per-agent assignment-by-date grid + summary cards + time/team
+              filters + drill-down + auto-refresh. Reuses the agent-performance
+              engine (buildAgentReport). AGENTS never see this. */}
+          {isAdminOrMgr && (
+            <DashboardAssignmentWidget
+              role={me.role === "ADMIN" ? "ADMIN" : "MANAGER"}
+              meId={me.id}
+              lockedTeam={me.role === "MANAGER" ? ((normalizeTeam(me.team) as "India" | "Dubai" | null) ?? null) : null}
+              sp={sp}
+            />
           )}
 
           {/* Personal-performance section — hidden for lead-ops/support admins (Sameer). */}
