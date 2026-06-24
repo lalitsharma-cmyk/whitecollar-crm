@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import Papa from "papaparse";
 import * as XLSX from "xlsx";
 import { ingestLead } from "@/lib/leadIngest";
-import { LeadSource, Potential, FundReadiness, MoodStatus, InvestTimeline, LeadStatus, AIScore } from "@prisma/client";
+import { LeadSource, Potential, FundReadiness, MoodStatus, InvestTimeline, LeadStatus, AIScore, Prisma } from "@prisma/client";
 import { requireRole } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { extractFromRemarks, mergeSuggestions } from "@/lib/remarkAutofill";
@@ -67,6 +67,7 @@ import {
   parseClientMapping,
   parseDupMode,
   type DupMode,
+  dupKeysForRow,
   pick as pickShared,
   makeMappedPick as makeMappedPickShared,
 } from "@/lib/importMapping";
@@ -350,9 +351,11 @@ export async function POST(req: NextRequest) {
     const unknownStatuses = new Set<string>();
 
     for (const row of rows) {
-      const nameRaw = pick(row, "customer", "name", "fullname", "leadname", "customername");
+      const nameRaw = pick(row, "customer", "name", "fullname", "leadname", "customername", "clientname");
       const phoneRaw = pick(row, "mobile", "phone", "contact", "phonenumber", "whatsapp");
+      const altPhoneRaw = pick(row, "altnumber", "altphone", "alternatephone", "alternatenumber", "alternatemobile", "altmobile", "phone2", "secondarynumber", "secondaryphone");
       const email = pick(row, "email", "emailid", "mail");
+      const altEmail = pick(row, "altemail", "alternateemail", "alternativeemail", "email2", "secondaryemail");
       if (!nameRaw && !phoneRaw && !email) continue;
       if (!nameRaw) missingName++;
       if (!phoneRaw) missingPhone++;
@@ -361,33 +364,39 @@ export async function POST(req: NextRequest) {
       const callStatus = pick(row, "status", "callstatus");
       if (callStatus) unknownStatuses.add(callStatus);
 
-      if (phoneRaw) {
-        const phones = splitPhones(phoneRaw, "+91");
-        const phone = phones[0];
-        if (phone) {
-          const fp = normalizePhone(phone);
-          if (fp) {
-            // Preview dedupe count must match the real import: only ACTIVE leads
-            // count as duplicates. Soft-deleted leads are re-created on re-import.
-            const existing = await prisma.lead.findFirst({
-              where: { fingerprint: { startsWith: fp }, deletedAt: null },
-              select: { name: true, phone: true, currentStatus: true },
-            });
-            if (existing) {
-              dupRows++;
-              if (dupSamples.length < 8) {
-                dupSamples.push({
-                  name: nameRaw ?? "—",
-                  phone: phoneRaw,
-                  existingStatus: existing.currentStatus ?? existing.name,
-                });
-              }
-            } else {
-              newRows++;
-            }
-          } else { newRows++; }
-        } else { newRows++; }
-      } else { newRows++; }
+      // Duplicate detection by ANY contact point (Mobile / Alternate Mobile /
+      // Email / Alternate Email) — not phone alone. We split the phone cells the
+      // same way the real import does, then match active leads on a phone TAIL
+      // (last-10, covers phone+altPhone) OR an email (covers email+altEmail). Only
+      // ACTIVE leads count (soft-deleted are re-created on re-import), matching the
+      // real ingest dedupe scope.
+      const dk = dupKeysForRow({
+        phone: splitPhones(phoneRaw, "+91")[0] ?? phoneRaw,
+        altPhone: splitPhones(altPhoneRaw, "+91")[0] ?? altPhoneRaw,
+        email, altEmail,
+      });
+      let existing: { name: string; phone: string | null; currentStatus: string | null } | null = null;
+      if (dk.phoneTails.length > 0 || dk.emails.length > 0) {
+        const dupOR: Prisma.LeadWhereInput[] = [];
+        for (const t of dk.phoneTails) dupOR.push({ phone: { endsWith: t } }, { altPhone: { endsWith: t } });
+        for (const e of dk.emails) dupOR.push({ email: { equals: e, mode: "insensitive" } }, { altEmail: { equals: e, mode: "insensitive" } });
+        existing = await prisma.lead.findFirst({
+          where: { deletedAt: null, OR: dupOR },
+          select: { name: true, phone: true, currentStatus: true },
+        });
+      }
+      if (existing) {
+        dupRows++;
+        if (dupSamples.length < 8) {
+          dupSamples.push({
+            name: nameRaw ?? "—",
+            phone: phoneRaw ?? email ?? "—",
+            existingStatus: existing.currentStatus ?? existing.name,
+          });
+        }
+      } else {
+        newRows++;
+      }
     }
 
     // ── Import Mapping Approval gate data ────────────────────────────────────
@@ -467,6 +476,42 @@ export async function POST(req: NextRequest) {
   // project mentions in free-text ("interested in Azizi Venice" → sourceDetail).
   const knownProjects = (await prisma.project.findMany({ select: { name: true } })).map((p) => p.name);
 
+  // ── Assigned-User (owner) resolution map ─────────────────────────────────────
+  // When the sheet has an "Assigned User"/"Agent" column, match each cell to a
+  // real CRM user by EMAIL (exact) or NAME (exact, case-insensitive) and assign
+  // the NEW lead to them. Best-effort: an unmatched value never fails the row —
+  // the lead is left unassigned and the unmatched value is reported back so the
+  // admin can fix/assign afterwards. Active, non-HR users only. Built once.
+  const ownerLookup = new Map<string, string>(); // normalized name|email → userId
+  {
+    const users = await prisma.user.findMany({
+      where: { active: true, hrOnly: false },
+      select: { id: true, name: true, email: true },
+    });
+    for (const u of users) {
+      if (u.email) ownerLookup.set(u.email.trim().toLowerCase(), u.id);
+      if (u.name) {
+        const nk = u.name.trim().toLowerCase();
+        // First writer wins on a name collision (rare); email keys never collide.
+        if (!ownerLookup.has(nk)) ownerLookup.set(nk, u.id);
+        // Also index the first-name token so "Mehak" matches "Mehak Sharma".
+        const first = nk.split(/\s+/)[0];
+        if (first && first !== nk && !ownerLookup.has(first)) ownerLookup.set(first, u.id);
+      }
+    }
+  }
+  // Resolve one Assigned-User cell → userId (or null). Trims a trailing "(Dubai)"
+  // / "(India)" team annotation that the Master-Data agent dropdown appends.
+  const resolveOwner = (raw?: string): string | null => {
+    const v = (raw ?? "").replace(/\s*\([^)]*\)\s*$/, "").trim().toLowerCase();
+    if (!v) return null;
+    return ownerLookup.get(v) ?? null;
+  };
+  // Assigned-User values present in the sheet but matching no CRM user — surfaced
+  // in the import report so the admin can correct them (the lead is still created,
+  // just left unassigned). De-duped, capped in the response.
+  const unmatchedOwners = new Set<string>();
+
   // NOTE: imported remark cells are no longer parsed into per-entry CallLog
   // rows, so there's no "sheet owner" fallback to attribute unnamed entries to.
   // The raw remark text is kept on Lead.remarks and surfaced as read-only
@@ -484,11 +529,12 @@ export async function POST(req: NextRequest) {
     const field = (crmField: string, ...fallback: string[]): string | undefined =>
       mappedPick ? mappedPick(crmField) : pick(row, ...fallback);
 
-    const nameRaw = notDate(field("name", "customer", "name", "fullname", "leadname", "customername"));
+    const nameRaw = notDate(field("name", "customer", "name", "fullname", "leadname", "customername", "clientname"));
     const phoneRaw = field("phone", "mobile", "phone", "contact", "phonenumber", "whatsapp");
-    const altPhoneRaw = field("altPhone", "altnumber", "altphone", "alternatephone", "alternatenumber", "phone2", "secondarynumber", "secondaryphone");
+    const altPhoneRaw = field("altPhone", "altnumber", "altphone", "alternatephone", "alternatenumber", "alternatemobile", "altmobile", "phone2", "secondarynumber", "secondaryphone");
     // VALIDATE: only an actual email — never a name/boolean from another column.
     const email = validEmail(field("email", "email", "emailid", "mail"));
+    const altEmail = validEmail(field("altEmail", "altemail", "alternateemail", "alternativeemail", "email2", "secondaryemail"));
     if (!nameRaw && !phoneRaw && !email) continue;
 
     // Split the customer cell — MIS rows like "Soumya, Ayush Gupta" with two phone
@@ -591,6 +637,7 @@ export async function POST(req: NextRequest) {
       // Add medium from parsed source
       if (sourceAndMedium.medium) update.medium = sourceAndMedium.medium;
       if (altPhone) update.altPhone = altPhone;
+      if (altEmail && altEmail !== email) update.altEmail = altEmail;
       // Proper-Case the alternative name(s) too (the primary name is normalized
       // inside ingestLead). Multi-name cell → normalize each part.
       if (altName) update.altName = normalizeNameList(altName);
@@ -758,6 +805,24 @@ export async function POST(req: NextRequest) {
         update.leadOrigin = "MASTER_DATA";
         // Bump status from NEW to CONTACTED — they're existing relationships
         update.status = "CONTACTED";
+      } else if (!r.deduped && !importAsColdData) {
+        // ── Per-row Assigned-User column (Master Data import) ──────────────────
+        // When the sheet carries an "Assigned User"/"Agent" column and no
+        // assign-all-to-one override is set, match each row to a CRM user by
+        // name/email and assign the NEW lead to them. Best-effort: an unmatched
+        // value leaves the lead UNASSIGNED (never fails the row) and is collected
+        // for the import report. Cold-data imports skip this (they stay unassigned
+        // for bulk assignment afterwards), matching the block above.
+        const ownerRaw = field("owner", "assigneduser", "assignedto", "assigned", "owner", "agent", "agentname", "salesperson", "assignedagent", "leadowner", "rm");
+        if (ownerRaw) {
+          const matchedOwnerId = resolveOwner(ownerRaw);
+          if (matchedOwnerId) {
+            update.ownerId = matchedOwnerId;
+            update.assignedAt = new Date();
+          } else if (unmatchedOwners.size < 50) {
+            unmatchedOwners.add(ownerRaw.trim());
+          }
+        }
       }
       // ── Budget: verbatim raw + market-resolved currency (strict priority) ──
       // budgetRaw preserves EXACTLY what the sheet had ("10 Cr", "4 Cr - 5 Cr").
@@ -924,6 +989,10 @@ export async function POST(req: NextRequest) {
     detectedColumns,
     futureDateRows: futureDateRows.slice(0, 50),
     futureDateCount: futureDateRows.length,
+    // Assigned-User values from the sheet that matched no CRM user — those leads
+    // were created UNASSIGNED so the admin can fix the name / assign them.
+    unmatchedOwners: [...unmatchedOwners].slice(0, 50),
+    unmatchedOwnerCount: unmatchedOwners.size,
     errors: errors.slice(0, 10),
   });
 }

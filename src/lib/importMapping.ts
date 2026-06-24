@@ -57,10 +57,12 @@ export const PROJECT_PICK = [
 // sync with every pick(row, …) call in the import routes — the importer reads
 // from here.
 export const FIELD_CANDIDATES: Record<string, string[]> = {
-  name:            ["customer", "name", "fullname", "leadname", "customername"],
+  name:            ["customer", "name", "fullname", "leadname", "customername", "clientname"],
   phone:           ["mobile", "phone", "contact", "phonenumber", "whatsapp"],
-  altPhone:        ["altnumber", "altphone", "alternatephone", "alternatenumber", "phone2", "secondarynumber", "secondaryphone"],
+  altPhone:        ["altnumber", "altphone", "alternatephone", "alternatenumber", "alternatemobile", "altmobile", "phone2", "secondarynumber", "secondaryphone"],
   email:           ["email", "emailid", "mail"],
+  altEmail:        ["altemail", "alternateemail", "alternativeemail", "email2", "secondaryemail"],
+  owner:           ["assigneduser", "assignedto", "assigned", "owner", "agent", "agentname", "salesperson", "assignedagent", "leadowner", "rm"],
   city:            ["city", "location"],
   configuration:   ["configuration", "config", "bhk", "type"],
   budget:          ["budgetaed", "budget", "budgetmin", "minbudget"],
@@ -97,7 +99,8 @@ export const FIELD_CANDIDATES: Record<string, string[]> = {
 // Human-readable labels surfaced in the per-column dropdown.
 export const FIELD_LABELS: Record<string, string> = {
   name: "Name / Customer", phone: "Phone (mobile)", altPhone: "Alt phone",
-  email: "Email", city: "City / Location", configuration: "Configuration / BHK",
+  email: "Email", altEmail: "Alt email", owner: "Assigned User / Agent",
+  city: "City / Location", configuration: "Configuration / BHK",
   budget: "Budget", budgetMax: "Budget (max)", currency: "Currency", country: "Country",
   source: "Source", project: "Property Enquired / Project", company: "Company", address: "Address",
   whoIsClient: "Who is client", categorization: "Categorization", tags: "Tags",
@@ -264,4 +267,32 @@ export function parseDupMode(raw: unknown): DupMode {
   return v === "skip" || v === "update" || v === "create" || v === "conversation"
     ? (v as DupMode)
     : "merge";
+}
+
+// ── Preview duplicate-detection keys ─────────────────────────────────────────
+// The import PREVIEW counts a row as a duplicate if ANY of its contact points
+// already exists as an active lead. Historically the preview only matched the
+// primary phone (the fingerprint startsWith check). This widens the preview to
+// the SAME contact points the user maps: primary phone, alternate phone, primary
+// email, alternate email. Returns the normalized keys for one row:
+//   • phones → last-10 digits (matches Lead.phone / Lead.altPhone endsWith key)
+//   • emails → trimmed lowercase (matches Lead.email / Lead.altEmail equals key)
+// Pure + dependency-free so the CSV/Sheet routes and the regression suite share it.
+export interface DupKeyInput {
+  phone?: string;
+  altPhone?: string;
+  email?: string;
+  altEmail?: string;
+}
+export interface DupKeys {
+  phoneTails: string[];   // last-10-digit phone keys (primary + alt)
+  emails: string[];       // lowercased email keys (primary + alt)
+}
+export function dupKeysForRow(input: DupKeyInput): DupKeys {
+  const tail = (s?: string): string => (s ?? "").replace(/\D/g, "").slice(-10);
+  const lc = (s?: string): string => (s ?? "").trim().toLowerCase();
+  const phoneTails = [tail(input.phone), tail(input.altPhone)].filter((d) => d.length >= 7);
+  const emails = [lc(input.email), lc(input.altEmail)].filter((e) => e.includes("@") && e.length >= 5);
+  // De-dup so a row that repeats the same contact in two columns isn't double-counted.
+  return { phoneTails: [...new Set(phoneTails)], emails: [...new Set(emails)] };
 }

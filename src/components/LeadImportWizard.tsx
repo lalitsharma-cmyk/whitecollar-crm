@@ -63,6 +63,8 @@ interface ImportResult {
   customFieldsCreated?: number;
   detectedColumns?: string[];
   futureDateCount?: number;
+  unmatchedOwners?: string[];
+  unmatchedOwnerCount?: number;
   errors?: string[];
 }
 
@@ -437,6 +439,17 @@ export default function LeadImportWizard({
             <details>
               <summary className="text-[11px] cursor-pointer">Columns mapped ↓</summary>
               <div className="text-[11px] mt-1 font-mono">{result.detectedColumns.join(" · ")}</div>
+            </details>
+          )}
+          {result.unmatchedOwners && result.unmatchedOwners.length > 0 && (
+            <details>
+              <summary className="text-[11px] text-amber-700 cursor-pointer">
+                {result.unmatchedOwnerCount ?? result.unmatchedOwners.length} Assigned-User value{(result.unmatchedOwnerCount ?? result.unmatchedOwners.length) === 1 ? "" : "s"} didn&apos;t match a CRM user — left unassigned ↓
+              </summary>
+              <div className="text-[11px] mt-1 text-gray-600">
+                These leads were imported <b>unassigned</b>. Fix the name/email or assign them from Master Data:
+                <div className="mt-1 font-mono">{result.unmatchedOwners.join(" · ")}</div>
+              </div>
             </details>
           )}
           {result.errors && result.errors.length > 0 && (

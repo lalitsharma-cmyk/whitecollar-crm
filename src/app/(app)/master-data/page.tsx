@@ -13,6 +13,7 @@ import {
   DUBAI_STATUSES,
 } from "@/lib/lead-statuses";
 import MasterDataRecordsTable, { type MDRow } from "@/components/MasterDataRecordsTable";
+import MasterDataImportControls from "@/components/MasterDataImportControls";
 import LeadFilters from "@/components/LeadFilters";
 import { leadFilterWhere } from "@/lib/leadFilterWhere";
 import { PROPERTY_TYPES } from "@/lib/propertyType";
@@ -220,7 +221,13 @@ export default async function MasterDataPage({ searchParams }: { searchParams: P
             {" "}<span className={awaitingTeam ? "text-amber-600 font-semibold" : ""}>{awaitingTeam} awaiting team</span>
           </p>
         </div>
-        <a href={exportHref} className="btn btn-ghost self-start sm:self-auto" title="Export this exact view to CSV">⬇ Export CSV</a>
+        <div className="flex items-center gap-2 self-start sm:self-auto">
+          {/* Admin-only Import (the page already redirects non-admins; the
+              /api/intake/csv endpoint is role-gated to ADMIN). Mounts the shared
+              Import-Mapping-Approval wizard configured for Master Data. */}
+          <MasterDataImportControls />
+          <a href={exportHref} className="btn btn-ghost" title="Export this exact view to CSV">⬇ Export CSV</a>
+        </div>
       </div>
 
       {/* ── Category tabs (operational buckets) ─────────────────────────────── */}

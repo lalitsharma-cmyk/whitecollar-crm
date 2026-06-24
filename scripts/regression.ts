@@ -49,6 +49,7 @@ import {
   parseDupMode,
   parseClientMapping,
   crmFieldOptions,
+  dupKeysForRow,
 } from "../src/lib/importMapping";
 // IST day-boundary helpers (pure, no "server-only") — the REAL window math the
 // Action List follow-up board uses, so the invariant tests production code.
@@ -2057,6 +2058,72 @@ const checks: Check[] = [
       const gs = fs.readFileSync("src/app/api/intake/google-sheet/route.ts", "utf8");
       assert(/dateMappingConfirmed/.test(gs), "google-sheet route must compute dateMappingConfirmed from the confirmed mapping");
       assert(/field\("date"/.test(gs), 'google-sheet route must read the lead date via field("date", …) when a date mapping is confirmed');
+    },
+  },
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // 27b. MASTER DATA IMPORT (2026-06-24) — the admin-only Import on /master-data
+  //    mounts the SAME shared wizard, so the mapping catalog must expose every
+  //    Master-Data field the spec lists, the Assigned-User column must map to
+  //    `owner`, the dup-preview key helper must match by email/altPhone/altEmail
+  //    (not phone alone), and the import endpoint + page must stay admin-gated.
+  // ───────────────────────────────────────────────────────────────────────────
+  {
+    name: "master-data-import — wizard mapping covers MD fields (incl. owner/altEmail); dup keys cover email/alt*; admin-gated",
+    run: async () => {
+      const fs = await import("fs");
+      // (a) The mapping dropdown catalog must expose every requested Master-Data
+      // field so an admin can map them: Client Name→name, Mobile→phone, Alternate
+      // Mobile→altPhone, Email→email, Alternate Email→altEmail, Source, Medium(via
+      // source parse), Property Enquired→project, Budget, Status, Team, Assigned
+      // User→owner, Follow-up Date→followupDate, Remarks.
+      const fields = new Set(crmFieldOptions().map((c) => c.field));
+      for (const f of ["name", "phone", "altPhone", "email", "altEmail", "owner", "source", "project", "budget", "status", "followupDate", "team", "remarks"]) {
+        assert(fields.has(f), `mapping catalog must expose '${f}' for Master Data import`);
+      }
+
+      // (b) Header auto-detection routes the requested columns to the right field.
+      const m = buildMapping(["Client Name", "Mobile", "Alternate Mobile", "Email", "Alternate Email", "Assigned User", "Follow-up Date", "Property Enquired"]);
+      const by = new Map(m.map((r) => [r.column, r.crmField]));
+      assert(by.get("Client Name") === "name", "‘Client Name’ → name");
+      assert(by.get("Alternate Mobile") === "altPhone", "‘Alternate Mobile’ → altPhone");
+      assert(by.get("Alternate Email") === "altEmail", "‘Alternate Email’ → altEmail");
+      assert(by.get("Assigned User") === "owner", "‘Assigned User’ → owner");
+      assert(by.get("Property Enquired") === "project", "‘Property Enquired’ → project");
+
+      // (c) Duplicate-preview keys: a row is matchable by EITHER phone tail (primary
+      // or alternate) OR email (primary or alternate) — never phone alone.
+      const dk = dupKeysForRow({ phone: "+91 98765 43210", altPhone: "022-1234-5678", email: "A@B.com", altEmail: "c@d.com" });
+      assert(dk.phoneTails.includes("9876543210"), "primary phone tail captured");
+      assert(dk.phoneTails.includes("2212345678"), "alternate phone tail captured");
+      assert(dk.emails.includes("a@b.com") && dk.emails.includes("c@d.com"), "primary + alternate emails captured (lowercased)");
+      // Email-only row still produces a usable dup key (so email duplicates are caught
+      // with no phone present).
+      const dkEmail = dupKeysForRow({ email: "Solo@X.com" });
+      assert(dkEmail.phoneTails.length === 0 && dkEmail.emails[0] === "solo@x.com", "email-only row → email dup key");
+      // Junk contact points produce no keys (no false dup matches).
+      const dkJunk = dupKeysForRow({ phone: "12", email: "notanemail" });
+      assert(dkJunk.phoneTails.length === 0 && dkJunk.emails.length === 0, "too-short phone / non-email produce no dup keys");
+
+      // (d) The import route reads the Assigned-User column AND resolves it to a
+      // CRM user id, writes altEmail, and uses the widened dup-preview helper.
+      const csv = fs.readFileSync("src/app/api/intake/csv/route.ts", "utf8");
+      assert(/resolveOwner\(/.test(csv) && /ownerLookup/.test(csv), "csv route must resolve an Assigned-User column → userId");
+      assert(/unmatchedOwners/.test(csv), "csv route must report Assigned-User values that matched no CRM user");
+      assert(/update\.altEmail/.test(csv), "csv route must write altEmail");
+      assert(/dupKeysForRow\(/.test(csv), "csv route preview must use the widened dup-key helper (email/altPhone/altEmail)");
+      assert(/requireRole\("ADMIN"\)/.test(csv), "csv import endpoint must be ADMIN-gated");
+
+      // (e) The Master Data page mounts the Import control and is admin-gated.
+      const page = fs.readFileSync("src/app/(app)/master-data/page.tsx", "utf8");
+      assert(/MasterDataImportControls/.test(page), "Master Data page must mount the Import control");
+      assert(/me\.role !== "ADMIN"/.test(page) && /redirect\("\/dashboard"\)/.test(page), "Master Data page must redirect non-admins (Import is admin-only)");
+      const ctrl = fs.readFileSync("src/components/MasterDataImportControls.tsx", "utf8");
+      assert(/LeadImportWizard/.test(ctrl) && /mode="csv"/.test(ctrl), "Import control must mount the shared LeadImportWizard (Excel+CSV)");
+      // It must NOT PASS isColdCall:"true" to the wizard — Master Data imports are
+      // sales leads (isColdCall:false) so they appear in the grid. (Mentioning the
+      // flag in a comment is fine; actually sending it as an extraField is not.)
+      assert(!/isColdCall["']?\s*:/.test(ctrl), "Master Data import must NOT flag rows as cold (they must show in the isColdCall:false grid)");
     },
   },
 

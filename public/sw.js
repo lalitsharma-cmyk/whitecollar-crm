@@ -176,7 +176,20 @@
 // timezone-aware + live — a client island computes Morning/Afternoon/Evening/
 // Night from the user's tz (India→IST, Dubai→GST) and auto-updates across
 // boundaries (no more "Good morning" at 4 PM IST; no stale cached greeting).
-const CACHE = "wcr-shell-v51";
+// v52 (2026-06-24): Master Data Import — admin-only "Import" button on /master-data
+// mounts the SAME shared Import-Mapping-Approval wizard (Excel + CSV): upload →
+// preview detected columns → confirm/re-map/ignore each column → 10-row data
+// preview with duplicate flags → duplicate-handling choice (Merge/Skip/Update/
+// Create new/Add as conversation) → import + report. Imported rows land as sales
+// leads (non-cold) so they show in the Master Data grid. Mapping catalog extended:
+// Assigned User → owner (matched to a CRM user by name/email; unmatched → left
+// unassigned + listed in the report) and Alternate Email → altEmail; Client Name /
+// Alternate Mobile aliases added. Duplicate PREVIEW now matches by Mobile OR
+// Alternate Mobile OR Email OR Alternate Email (not phone alone). Sheet Date still
+// drives the lead date (never the import timestamp); Remarks → Raw History + Smart
+// Timeline; unknown columns → Imported Fields. Endpoint stays ADMIN-gated. Force a
+// client refresh so the new Import control appears.
+const CACHE = "wcr-shell-v52";
 const SHELL = ["/login", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", (event) => {
