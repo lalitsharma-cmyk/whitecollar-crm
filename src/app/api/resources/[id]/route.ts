@@ -1,4 +1,6 @@
-// Update / soft-delete a single resource (ADMIN/MANAGER only).
+// Update / soft-delete a single resource.
+//   Permission: ADMIN/MANAGER may edit/delete ANY resource; an AGENT may
+//   edit/delete only their OWN uploads (uploadedById === me.id).
 //   PATCH  /api/resources/[id]  → edit metadata (title, category, project, tags,
 //                                  fileUrl for URL, textContent for TEXT).
 //   DELETE /api/resources/[id]  → soft-delete (sets deletedAt; reversible).
@@ -6,18 +8,19 @@ import { NextResponse, type NextRequest } from "next/server";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
-import { canManageResources } from "@/lib/resources";
+import { canManageResource } from "@/lib/resources";
 
 export const dynamic = "force-dynamic";
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const me = await requireUser();
-  if (!canManageResources(me.role)) {
-    return NextResponse.json({ error: "Not allowed" }, { status: 403 });
-  }
   const { id } = await params;
-  const existing = await prisma.resource.findUnique({ where: { id }, select: { id: true, type: true } });
+  // Fetch uploadedById so we can authorize owner-or-admin BEFORE any write.
+  const existing = await prisma.resource.findUnique({ where: { id }, select: { id: true, type: true, uploadedById: true } });
   if (!existing) return NextResponse.json({ error: "Resource not found" }, { status: 404 });
+  if (!canManageResource(me.role, existing.uploadedById, me.id)) {
+    return NextResponse.json({ error: "You can only edit your own uploads" }, { status: 403 });
+  }
 
   const body = await req.json().catch(() => ({} as Record<string, unknown>));
   const data: Prisma.ResourceUpdateInput = {};
@@ -49,12 +52,12 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
 export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const me = await requireUser();
-  if (!canManageResources(me.role)) {
-    return NextResponse.json({ error: "Not allowed" }, { status: 403 });
-  }
   const { id } = await params;
-  const existing = await prisma.resource.findUnique({ where: { id }, select: { id: true } });
+  const existing = await prisma.resource.findUnique({ where: { id }, select: { id: true, uploadedById: true } });
   if (!existing) return NextResponse.json({ error: "Resource not found" }, { status: 404 });
+  if (!canManageResource(me.role, existing.uploadedById, me.id)) {
+    return NextResponse.json({ error: "You can only delete your own uploads" }, { status: 403 });
+  }
 
   // Soft-delete — reversible (PATCH { restore: true } brings it back).
   await prisma.resource.update({ where: { id }, data: { deletedAt: new Date() } });

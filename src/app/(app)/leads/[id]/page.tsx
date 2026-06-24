@@ -1238,7 +1238,7 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
                 Already rejected{lead.rejectionReason ? ` — ${lead.rejectionReason.replace(/_/g, " ").toLowerCase()}` : ""}.
               </div>
             ) : (
-              <RejectLeadModal leadId={lead.id} />
+              <RejectLeadModal leadId={lead.id} forwardedTeam={lead.forwardedTeam} />
             )}
             {canReassign && (
               <LeadReassignClient

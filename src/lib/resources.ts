@@ -42,9 +42,33 @@ export const RESOURCE_CATEGORIES = [
 export type ResourceTypeStr = "FILE" | "URL" | "TEXT";
 export type ResourceChannelStr = "WHATSAPP" | "EMAIL" | "ATTACH";
 
-/** Only ADMIN + MANAGER may upload / edit / delete library resources. */
+/** ADMIN + MANAGER can manage ANY resource (view all, edit/delete/categorize
+ *  any row). This is the "manage everything" capability — distinct from the
+ *  per-resource owner check below. */
 export function canManageResources(role: string | null | undefined): boolean {
   return role === "ADMIN" || role === "MANAGER";
+}
+
+/** Any active, authenticated user (incl. AGENT) may CREATE/upload a resource —
+ *  direct upload, no approval flow. requireUser() already rejects inactive /
+ *  unauthenticated callers, so the mere presence of a role means "may create".
+ *  Kept as an explicit helper so the gate reads intentionally at every call
+ *  site (and so a future restriction has ONE place to change). */
+export function canCreateResources(role: string | null | undefined): boolean {
+  return !!role;
+}
+
+/** May this user EDIT/DELETE this specific resource?
+ *  - ADMIN / MANAGER → yes, on ANY resource (manage all).
+ *  - AGENT (or anyone else) → only their OWN uploads (uploadedById === userId).
+ *  An unowned legacy resource (uploadedById === null) is admin/manager-only. */
+export function canManageResource(
+  role: string | null | undefined,
+  uploadedById: string | null | undefined,
+  userId: string | null | undefined,
+): boolean {
+  if (canManageResources(role)) return true;
+  return !!userId && !!uploadedById && uploadedById === userId;
 }
 
 /** Human-readable size, e.g. "1.4 MB", "812 KB". */

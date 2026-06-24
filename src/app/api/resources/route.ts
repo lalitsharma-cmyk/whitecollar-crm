@@ -1,4 +1,4 @@
-// Gallery / Resource Library — list/search (all active users) + create (ADMIN/MANAGER).
+// Gallery / Resource Library — list/search + create (any active user, incl. AGENT).
 //
 //   GET  /api/resources?category=&type=&project=&q=&includeDeleted=
 //        → list active resources. NEVER selects fileData (kept out of list
@@ -13,7 +13,7 @@ import { Prisma } from "@prisma/client";
 import {
   MAX_FILE_BYTES,
   isAllowedMime,
-  canManageResources,
+  canCreateResources,
 } from "@/lib/resources";
 
 export const dynamic = "force-dynamic";
@@ -70,9 +70,11 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  // Any active, authenticated user (incl. AGENT) may upload — direct upload,
+  // no approval flow. requireUser() already enforces active + authenticated.
   const me = await requireUser();
-  if (!canManageResources(me.role)) {
-    return NextResponse.json({ error: "Only admins and managers can upload resources" }, { status: 403 });
+  if (!canCreateResources(me.role)) {
+    return NextResponse.json({ error: "You must be signed in to upload resources" }, { status: 403 });
   }
 
   const ct = req.headers.get("content-type") ?? "";

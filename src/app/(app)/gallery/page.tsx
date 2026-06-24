@@ -8,7 +8,9 @@ export const dynamic = "force-dynamic";
 
 export default async function GalleryPage() {
   const me = await requireUser();
-  const canManage = canManageResources(me.role);
+  // ADMIN/MANAGER manage ANY resource; everyone (incl. AGENT) can upload + manage
+  // their OWN uploads. The client decides per-card Edit/Delete from myUserId.
+  const canManageAll = canManageResources(me.role);
 
   // NEVER select fileData here — list payloads stay small (bytes only stream
   // from the public download route).
@@ -27,6 +29,7 @@ export default async function GalleryPage() {
 
   const initialItems: ResourceItem[] = rows.map((r) => ({
     ...r,
+    uploadedById: r.uploadedBy?.id ?? null,
     createdAt: r.createdAt.toISOString(),
   }));
 
@@ -44,7 +47,7 @@ export default async function GalleryPage() {
         </div>
       </div>
 
-      <GalleryClient canManage={canManage} initialItems={initialItems} />
+      <GalleryClient canManageAll={canManageAll} myUserId={me.id} initialItems={initialItems} />
     </div>
   );
 }

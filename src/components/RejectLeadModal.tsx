@@ -3,7 +3,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { XCircle } from "lucide-react";
 import { useBodyScrollLock } from "@/hooks/useBodyScrollLock";
-import { REJECT_REASONS } from "@/lib/reject-reasons";
+import { rejectReasonsForTeam } from "@/lib/reject-reasons";
 
 /**
  * Reject Lead — Agent J's clean-room implementation per the spec.
@@ -20,14 +20,19 @@ import { REJECT_REASONS } from "@/lib/reject-reasons";
  */
 interface Props {
   leadId: string;
+  /** The lead's forwarded team ("Dubai" | "India" | null). Drives team-conditional
+   *  reject reasons — e.g. "Expo Only" is offered ONLY for Dubai-team leads. */
+  forwardedTeam?: string | null;
 }
 
 const NOTE_MAX = 500;
 
-export default function RejectLeadModal({ leadId }: Props) {
+export default function RejectLeadModal({ leadId, forwardedTeam }: Props) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [reason, setReason] = useState<string>("NOT_INTERESTED");
+  // Reasons offered for THIS lead's team — Dubai leads additionally get "Expo Only".
+  const reasons = rejectReasonsForTeam(forwardedTeam);
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -129,7 +134,7 @@ export default function RejectLeadModal({ leadId }: Props) {
               disabled={busy}
               className="w-full mt-1 mb-3 border border-[#e5e7eb] rounded-lg px-3 py-2 text-sm bg-white"
             >
-              {REJECT_REASONS.map((r) => (
+              {reasons.map((r) => (
                 <option key={r.value} value={r.value}>{r.label}</option>
               ))}
             </select>

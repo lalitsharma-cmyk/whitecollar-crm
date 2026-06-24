@@ -35,9 +35,43 @@ export const REJECT_REASONS: Array<{ value: string; label: string }> = [
   { value: "OTHER",                     label: "Other" },
 ];
 
-// Reason value → human label.
+// Team-conditional reasons — offered ONLY for leads on the named team. "Expo Only"
+// is a Dubai-team outcome (the client engaged purely at an expo/exhibition and has
+// no real ongoing intent), so it is NOT shown in the global list above; the reject
+// modal merges it in only when the lead's forwardedTeam === "Dubai". It is still a
+// fully valid API reason (added to REJECT_REASON_VALUES below) and resolves a label
+// + status like any other reason.
+export const DUBAI_ONLY_REJECT_REASONS: Array<{ value: string; label: string }> = [
+  { value: "EXPO_ONLY", label: "Expo Only" },
+];
+
+/** Reasons offered in the reject dropdown for a given lead team. The base list
+ *  always applies; Dubai-team leads additionally get the Dubai-only reasons.
+ *  (Append so the team-specific reasons sit at the end, before nothing reorders.) */
+export function rejectReasonsForTeam(
+  forwardedTeam: string | null | undefined,
+): Array<{ value: string; label: string }> {
+  if (forwardedTeam === "Dubai") {
+    // Insert the Dubai-only reasons just before the trailing "Other" so "Expo Only"
+    // groups with the real outcomes rather than after the catch-all.
+    const otherIdx = REJECT_REASONS.findIndex((r) => r.value === "OTHER");
+    if (otherIdx === -1) return [...REJECT_REASONS, ...DUBAI_ONLY_REJECT_REASONS];
+    return [
+      ...REJECT_REASONS.slice(0, otherIdx),
+      ...DUBAI_ONLY_REJECT_REASONS,
+      ...REJECT_REASONS.slice(otherIdx),
+    ];
+  }
+  return REJECT_REASONS;
+}
+
+// Reason value → human label. Includes the team-conditional reasons so their
+// label resolves everywhere (timeline, admin Rejected-Leads view) regardless of
+// which team's dropdown they were chosen from.
 export const REJECT_REASON_LABEL: Record<string, string> =
-  Object.fromEntries(REJECT_REASONS.map(r => [r.value, r.label]));
+  Object.fromEntries(
+    [...REJECT_REASONS, ...DUBAI_ONLY_REJECT_REASONS].map(r => [r.value, r.label]),
+  );
 
 // Legacy reason values kept valid so old rejected records still resolve their
 // human label (e.g. the Rejected-Leads admin view). BOOKED_WITH_US is here — it
@@ -56,9 +90,10 @@ const LEGACY_REASONS: Record<string, string> = {
   TRANSFER_TO_DUBAI_TEAM: "Transfer to Dubai Team",
 };
 
-// Accepted on the API (current canonical + legacy).
+// Accepted on the API (current canonical + team-conditional + legacy).
 export const REJECT_REASON_VALUES = new Set<string>([
   ...REJECT_REASONS.map(r => r.value),
+  ...DUBAI_ONLY_REJECT_REASONS.map(r => r.value),
   ...Object.keys(LEGACY_REASONS),
 ]);
 
@@ -78,6 +113,8 @@ const REASON_STATUS: Record<string, string> = {
   FAKE_INQUIRY:         "Junk",
   PURCHASED_ELSEWHERE:  "Purchased Elsewhere",
   BOOKED_OTHER_CHANNEL: "Booked Through Another Channel",
+  // Dubai-only outcome: client engaged only at an expo, no ongoing intent.
+  EXPO_ONLY:            "Expo Only",
   // Legacy reject → closed-elsewhere outcome (NEVER the winning "Booked With Us").
   BOOKED_WITH_US:       "Purchased Elsewhere",
 };

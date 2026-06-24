@@ -326,7 +326,7 @@ const checks: Check[] = [
     name: "team-status isolation + reject-reasons + property-type",
     run: async () => {
       const { isStatusValidForTeam, NEEDS_REVIEW, statusesForTeam } = await import("../src/lib/lead-statuses");
-      const { REJECT_REASONS, rejectionStatusFor, rejectReasonLabel } = await import("../src/lib/reject-reasons");
+      const { REJECT_REASONS, rejectionStatusFor, rejectReasonLabel, rejectReasonsForTeam, REJECT_REASON_VALUES } = await import("../src/lib/reject-reasons");
       const { inferPropertyType, isPropertyType, PROPERTY_TYPES } = await import("../src/lib/propertyType");
 
       // Team isolation — a Dubai status is invalid for India and vice-versa.
@@ -352,6 +352,24 @@ const checks: Check[] = [
       assert(rejectionStatusFor("BOOKED_WITH_US") !== "Booked With Us", "legacy reject must NOT resolve to the winning status (it inflated commission)");
       assert(rejectReasonLabel("BOOKED_WITH_US") === "Booked With Us", "legacy value still resolves a human label for historical records");
       assert(rejectionStatusFor("JUNK") === "Junk", "Junk Lead → canonical 'Junk' status");
+
+      // "Expo Only" — Dubai-team-conditional reject reason (2026-06-24).
+      // (a) It is a VALID API reason and resolves a label + its own outcome status.
+      assert(REJECT_REASON_VALUES.has("EXPO_ONLY"), "EXPO_ONLY must be an accepted API reject reason");
+      assert(rejectReasonLabel("EXPO_ONLY") === "Expo Only", "EXPO_ONLY → label 'Expo Only'");
+      assert(rejectionStatusFor("EXPO_ONLY") === "Expo Only", "EXPO_ONLY → its own 'Expo Only' outcome status");
+      assert(rejectionStatusFor("EXPO_ONLY") !== "Booked With Us", "Expo Only must never resolve to a winning status");
+      // (b) It is NOT in the GLOBAL base list (never shown to non-Dubai teams)…
+      assert(!REJECT_REASONS.some((r) => r.value === "EXPO_ONLY"), "EXPO_ONLY must NOT be in the global base reason list");
+      // …and the team helper offers it ONLY for Dubai.
+      const dubaiReasons = rejectReasonsForTeam("Dubai").map((r) => r.value);
+      const indiaReasons = rejectReasonsForTeam("India").map((r) => r.value);
+      const noTeamReasons = rejectReasonsForTeam(null).map((r) => r.value);
+      assert(dubaiReasons.includes("EXPO_ONLY"), "Dubai-team reject dropdown MUST offer 'Expo Only'");
+      assert(!indiaReasons.includes("EXPO_ONLY"), "India-team reject dropdown must NOT offer 'Expo Only'");
+      assert(!noTeamReasons.includes("EXPO_ONLY"), "no-team reject dropdown must NOT offer 'Expo Only'");
+      // The Dubai list is the base list + exactly the one extra reason.
+      assert(dubaiReasons.length === REJECT_REASONS.length + 1, "Dubai list = base reasons + Expo Only (no drops/dupes)");
 
       // Property Type — Mixed Use is allowed; Source values are not.
       assert(PROPERTY_TYPES.length === 3 && isPropertyType("Mixed Use"), "Mixed Use is an allowed property type");
@@ -1860,25 +1878,36 @@ const checks: Check[] = [
       assert(typeof rc === "number" && typeof sc === "number", "resource/share counts must work via Prisma client");
 
       // (c) Size + MIME cap helpers (test the REAL pure code).
-      const { MAX_FILE_BYTES, isAllowedMime, canManageResources } = await import("../src/lib/resources");
+      const { MAX_FILE_BYTES, isAllowedMime, canManageResources, canCreateResources, canManageResource } = await import("../src/lib/resources");
       assert(MAX_FILE_BYTES === 5 * 1024 * 1024, `upload cap must be 5 MB (got ${MAX_FILE_BYTES})`);
       assert(isAllowedMime("image/png") && isAllowedMime("image/jpeg") && isAllowedMime("application/pdf"), "image/* + application/pdf must be allowed");
       assert(!isAllowedMime("application/zip") && !isAllowedMime("text/html") && !isAllowedMime("application/x-msdownload") && !isAllowedMime(null), "non-image/pdf MIME must be rejected");
-      assert(canManageResources("ADMIN") && canManageResources("MANAGER") && !canManageResources("AGENT"), "manage = ADMIN/MANAGER only");
+      // "manage ALL" stays ADMIN/MANAGER-only…
+      assert(canManageResources("ADMIN") && canManageResources("MANAGER") && !canManageResources("AGENT"), "manage-all = ADMIN/MANAGER only");
+      // …CREATE/upload is open to ANY active role (incl. AGENT), closed to anonymous.
+      assert(canCreateResources("AGENT") && canCreateResources("ADMIN") && canCreateResources("MANAGER"), "any active role (incl. AGENT) may upload");
+      assert(!canCreateResources(null) && !canCreateResources(undefined) && !canCreateResources(""), "anonymous/roleless may NOT upload");
+      // …per-resource edit/delete: admin/manager → ANY; agent → only OWN upload.
+      assert(canManageResource("ADMIN", "u_other", "u_me") && canManageResource("MANAGER", "u_other", "u_me"), "admin/manager manage ANY resource");
+      assert(canManageResource("AGENT", "u_me", "u_me"), "agent manages their OWN upload");
+      assert(!canManageResource("AGENT", "u_other", "u_me"), "agent must NOT manage another agent's upload");
+      assert(!canManageResource("AGENT", null, "u_me"), "agent must NOT manage an unowned (legacy) resource");
 
       // (d) List route + gallery page must NOT select fileData (only the download route may).
       const listRoute = fs.readFileSync("src/app/api/resources/route.ts", "utf8");
       assert(!/fileData:\s*true/.test(listRoute), "list/search route must NEVER select fileData (bytes stay out of list payloads)");
-      assert(/canManageResources\(/.test(listRoute) && /multipart\/form-data/.test(listRoute) && /MAX_FILE_BYTES/.test(listRoute) && /isAllowedMime\(/.test(listRoute), "upload route must role-gate + enforce size + MIME cap");
+      assert(/canCreateResources\(/.test(listRoute) && /multipart\/form-data/.test(listRoute) && /MAX_FILE_BYTES/.test(listRoute) && /isAllowedMime\(/.test(listRoute), "upload route must gate on canCreateResources (any active user) + enforce size + MIME cap");
       const page = fs.readFileSync("src/app/(app)/gallery/page.tsx", "utf8");
       assert(!/fileData:\s*true/.test(page), "/gallery page must NEVER select fileData");
       const fileRoute = fs.readFileSync("src/app/api/resources/[id]/file/route.ts", "utf8");
       assert(/fileData:\s*true/.test(fileRoute), "the download route IS the only place fileData is selected");
       assert(/deletedAt/.test(fileRoute), "download route must refuse soft-deleted resources");
 
-      // (e) Mutating routes role-gated; share route writes a ResourceShare.
+      // (e) Mutating routes owner-or-admin gated; share route writes a ResourceShare.
       const idRoute = fs.readFileSync("src/app/api/resources/[id]/route.ts", "utf8");
-      assert(/canManageResources\(/.test(idRoute), "edit/delete route must role-gate (ADMIN/MANAGER)");
+      assert(/canManageResource\(me\.role, existing\.uploadedById, me\.id\)/.test(idRoute), "edit/delete route must gate owner-or-admin (canManageResource with uploadedById)");
+      // Owner check is load-bearing only if the route actually reads uploadedById.
+      assert(/uploadedById:\s*true/.test(idRoute), "edit/delete route must SELECT uploadedById to authorize the owner");
       assert(/deletedAt: new Date\(\)/.test(idRoute), "delete must be a SOFT delete (reversible)");
       const shareRoute = fs.readFileSync("src/app/api/resources/share/route.ts", "utf8");
       assert(/resourceShare\.create\(/.test(shareRoute), "share route must record a ResourceShare row (tracking)");

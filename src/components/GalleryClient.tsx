@@ -22,13 +22,17 @@ export interface ResourceItem {
   textContent: string | null;
   projectName: string | null;
   tags: string | null;
+  uploadedById?: string | null;
   uploadedBy: { id: string; name: string } | null;
   createdAt: string;
   _count?: { shares: number };
 }
 
 interface Props {
-  canManage: boolean;
+  /** ADMIN/MANAGER → may edit/delete ANY resource. */
+  canManageAll: boolean;
+  /** The signed-in user's id — used to allow editing/deleting OWN uploads. */
+  myUserId: string;
   initialItems: ResourceItem[];
 }
 
@@ -47,8 +51,16 @@ function TypeIcon({ r, className }: { r: ResourceItem; className?: string }) {
   return <FileIcon className={className} />;
 }
 
-export default function GalleryClient({ canManage, initialItems }: Props) {
+export default function GalleryClient({ canManageAll, myUserId, initialItems }: Props) {
   const [items, setItems] = useState<ResourceItem[]>(initialItems);
+
+  // Per-resource manage right: admins/managers manage everything; everyone else
+  // manages only their OWN uploads. (uploadedById may arrive directly or via the
+  // uploadedBy relation, depending on the payload source.)
+  const canManageItem = useCallback(
+    (r: ResourceItem) => canManageAll || (r.uploadedById ?? r.uploadedBy?.id ?? null) === myUserId,
+    [canManageAll, myUserId],
+  );
   const [q, setQ] = useState("");
   const [category, setCategory] = useState("");
   const [typeFilter, setTypeFilter] = useState("");
@@ -133,11 +145,10 @@ export default function GalleryClient({ canManage, initialItems }: Props) {
             className="w-full pl-9 pr-3 py-2 rounded-lg border border-[#e5e7eb] dark:border-slate-600 dark:bg-slate-700 text-sm outline-none focus:border-[#c9a24b]"
           />
         </div>
-        {canManage && (
-          <button onClick={() => setShowUpload(true)} className="btn btn-gold justify-center whitespace-nowrap">
-            <Plus className="w-4 h-4" /> Add Resource
-          </button>
-        )}
+        {/* Upload is open to every active user (incl. agents) — direct upload. */}
+        <button onClick={() => setShowUpload(true)} className="btn btn-gold justify-center whitespace-nowrap">
+          <Plus className="w-4 h-4" /> Add Resource
+        </button>
       </div>
 
       {/* Filters */}
@@ -174,7 +185,7 @@ export default function GalleryClient({ canManage, initialItems }: Props) {
       {items.length === 0 ? (
         <div className="text-center py-16 text-gray-500">
           <FileIcon className="w-10 h-10 mx-auto mb-2 opacity-40" />
-          <p className="text-sm">No resources yet.{canManage && " Click “Add Resource” to upload."}</p>
+          <p className="text-sm">No resources yet. Click “Add Resource” to upload.</p>
         </div>
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
@@ -227,7 +238,7 @@ export default function GalleryClient({ canManage, initialItems }: Props) {
                     <button onClick={() => copyLink(r)} title="Copy link / text" className="p-1.5 rounded bg-gray-100 dark:bg-slate-700 text-gray-600 dark:text-slate-300 hover:bg-gray-200">
                       <Copy className="w-3 h-3" />
                     </button>
-                    {canManage && (
+                    {canManageItem(r) && (
                       <>
                         <button onClick={() => setEditing(r)} title="Edit" className="p-1.5 rounded bg-gray-100 dark:bg-slate-700 text-gray-600 dark:text-slate-300 hover:bg-gray-200">
                           <Pencil className="w-3 h-3" />

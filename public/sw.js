@@ -88,7 +88,12 @@
 // Lead-detail "Share Resource" affordance + per-lead share history; gallery
 // resources surfaced in the WhatsApp/Email template picker. Public token-gated
 // download endpoint streams file bytes to clients without login.
-const CACHE = "wcr-shell-v41";
+// v42 (2026-06-24): Gallery — agents can now upload/create resources (direct, no
+// approval) + edit/delete their OWN uploads; ADMIN/MANAGER still manage ANY. Upload
+// UI (button + Upload/Link/Template modals) now shows for agents. Reject Lead — new
+// "Expo Only" reason offered ONLY on Dubai-team leads; rejecting logs Rejected + reason
+// + user + IST time to the Smart Timeline.
+const CACHE = "wcr-shell-v42";
 const SHELL = ["/login", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", (event) => {
