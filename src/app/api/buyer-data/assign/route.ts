@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { notify } from "@/lib/notify";
 import { audit, reqMeta } from "@/lib/audit";
 import { assignBuyerInTx, BUYER_POOL_STATUS } from "@/lib/buyerLifecycle";
-import { visibleBuyerOwnerIds } from "@/lib/buyerScope";
+import { visibleBuyerOwnerIds, isDubaiAssignable, DUBAI_MARKET } from "@/lib/buyerScope";
 
 // ── Assign buyers from the Admin Pool to an agent ────────────────────────────
 // ADMIN / MANAGER only. Supports bulk (array of buyerIds → one agent). For each
@@ -33,8 +33,14 @@ export async function POST(req: NextRequest) {
   if (buyerIds.length === 0) return NextResponse.json({ error: "buyerIds required" }, { status: 400 });
 
   // Validate the target agent exists + is active.
-  const agent = await prisma.user.findUnique({ where: { id: agentId }, select: { id: true, name: true, active: true } });
+  const agent = await prisma.user.findUnique({ where: { id: agentId }, select: { id: true, name: true, active: true, role: true, team: true } });
   if (!agent || !agent.active) return NextResponse.json({ error: "Target agent not found or inactive" }, { status: 400 });
+
+  // DUBAI ONLY: the target must be a Dubai-team user or an admin. A tampered
+  // request that names an India/Gurgaon/HR user is rejected here, server-side.
+  if (!isDubaiAssignable(agent)) {
+    return NextResponse.json({ error: "Dubai Buyer Data can only be assigned to Dubai-team users or admins." }, { status: 403 });
+  }
 
   // MANAGER may only assign to an agent within their org subtree.
   if (me.role === "MANAGER") {
@@ -48,7 +54,9 @@ export async function POST(req: NextRequest) {
   // terminal; an ASSIGNED buyer would be a reassign, which assignBuyerInTx handles
   // but we surface as a separate count).
   const buyers = await prisma.buyerRecord.findMany({
-    where: { id: { in: buyerIds }, deletedAt: null }, // never assign a recycle-bin buyer
+    // never assign a recycle-bin buyer, and ONLY Dubai-market buyers (this is the
+    // Dubai module — a non-Dubai buyer is silently skipped as "not found").
+    where: { id: { in: buyerIds }, deletedAt: null, market: DUBAI_MARKET },
     select: { id: true, clientName: true, poolStatus: true, ownerId: true },
   });
   const byId = new Map(buyers.map((b) => [b.id, b]));
@@ -74,8 +82,8 @@ export async function POST(req: NextRequest) {
       ? `🏷️ Buyer assigned: ${first?.clientName ?? "buyer"}`
       : `🏷️ ${assigned.length} buyers assigned to you`;
     const body2 = assigned.length === 1
-      ? `You have a new buyer to work in Buyer Data.`
-      : `${assigned.length} buyers from the Admin Pool are now yours in Buyer Data.`;
+      ? `You have a new buyer to work in Dubai Buyer Data.`
+      : `${assigned.length} buyers from the Admin Pool are now yours in Dubai Buyer Data.`;
     await notify({
       userId: agentId,
       kind: "BUYER_ASSIGNED",

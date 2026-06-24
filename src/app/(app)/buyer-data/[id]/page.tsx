@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
 import ImportedFieldsCard from "@/components/ImportedFieldsCard";
 import BuyerInlineEdit from "@/components/BuyerInlineEdit";
@@ -11,7 +11,7 @@ import BuyerQuickNoteCard from "@/components/BuyerQuickNoteCard";
 import BuyerNotesCard from "@/components/BuyerNotesCard";
 import StickyNoteWidget from "@/components/StickyNoteWidget";
 import LeadMobileTabs from "@/components/LeadMobileTabs";
-import { canTouchBuyer } from "@/lib/buyerScope";
+import { canTouchBuyer, canAccessDubaiBuyers, isDubaiAssignable } from "@/lib/buyerScope";
 import {
   parseJsonArray,
   rollupForRecords,
@@ -42,11 +42,15 @@ const toDateInput = (d: Date | null) =>
 export default async function BuyerDetail({ params }: { params: Promise<{ id: string }> }) {
   const me = await requireUser();
   const { id } = await params;
+  // Dubai Buyer Data — visible only to Admin + Dubai-team users. Non-Dubai
+  // (India/Gurgaon) agents/managers are redirected away (parity with the list).
+  if (!canAccessDubaiBuyers(me)) redirect("/dashboard");
 
   const rec = await prisma.buyerRecord.findUnique({ where: { id }, include: { owner: { select: { id: true, name: true } } } });
   if (!rec) notFound();
-  // 404 (not 403) if this user can't see this buyer — also blocks a soft-deleted one.
-  if (!(await canTouchBuyer(me, { ownerId: rec.ownerId, poolStatus: rec.poolStatus, deletedAt: rec.deletedAt }))) notFound();
+  // 404 (not 403) if this user can't see this buyer — also blocks a soft-deleted
+  // one AND a non-Dubai-market buyer (canTouchBuyer enforces market="Dubai").
+  if (!(await canTouchBuyer(me, { ownerId: rec.ownerId, poolStatus: rec.poolStatus, deletedAt: rec.deletedAt, market: rec.market }))) notFound();
 
   const isAdmin = me.role === "ADMIN";
   const isAdminOrMgr = me.role === "ADMIN" || me.role === "MANAGER";
@@ -69,12 +73,21 @@ export default async function BuyerDetail({ params }: { params: Promise<{ id: st
   const rollup = rollupForRecords(siblings);
   const others = siblings.filter((s) => s.id !== rec.id);
 
-  // Agent roster for the admin panel (admin/mgr only).
+  // Agent roster for the admin panel (admin/mgr only). DUBAI ONLY — Dubai-team
+  // AGENT/MANAGER + admins; India/Gurgaon + HR excluded (the assign endpoint
+  // re-enforces this server-side via isDubaiAssignable).
   const agents = canAssign
-    ? await prisma.user.findMany({
-        where: { active: true, hrOnly: false, role: { in: ["AGENT", "MANAGER"] } },
-        select: { id: true, name: true, team: true }, orderBy: { name: "asc" },
-      })
+    ? (await prisma.user.findMany({
+        where: {
+          active: true,
+          hrOnly: false,
+          OR: [
+            { team: "Dubai", role: { in: ["AGENT", "MANAGER"] } },
+            { role: "ADMIN" },
+          ],
+        },
+        select: { id: true, name: true, team: true, role: true }, orderBy: { name: "asc" },
+      })).filter((a) => isDubaiAssignable(a)).map(({ id, name, team }) => ({ id, name, team }))
     : [];
 
   // Sticky note — private to the calling user, upserted so the widget renders
@@ -365,7 +378,7 @@ export default async function BuyerDetail({ params }: { params: Promise<{ id: st
             </div>
           )}
 
-          <Link href="/buyer-data" className="text-xs text-[#0b1a33] dark:text-blue-300 font-semibold inline-block">← Back to Buyer Data</Link>
+          <Link href="/buyer-data" className="text-xs text-[#0b1a33] dark:text-blue-300 font-semibold inline-block">← Back to Dubai Buyer Data</Link>
         </div>
       </div>
     </>

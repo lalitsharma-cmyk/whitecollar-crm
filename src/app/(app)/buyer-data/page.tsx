@@ -1,8 +1,9 @@
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
+import { redirect } from "next/navigation";
 import Link from "next/link";
 import BuyerListClient, { type BuyerRow, type BuyerAgent } from "@/components/BuyerListClient";
-import { buyerScopeWhere } from "@/lib/buyerScope";
+import { buyerScopeWhere, canAccessDubaiBuyers, isDubaiAssignable } from "@/lib/buyerScope";
 import {
   groupByBuyerKey,
   rollupForRecords,
@@ -36,9 +37,14 @@ const POOL_LABEL: Record<string, string> = {
 
 export default async function BuyerDataPage() {
   const me = await requireUser();
+  // Dubai Buyer Data is visible only to Admin/super-admin + Dubai-team users.
+  // A non-Dubai (India/Gurgaon) agent/manager is redirected away (the nav item is
+  // also hidden for them in MobileShell).
+  if (!canAccessDubaiBuyers(me)) redirect("/dashboard");
   const isAdmin = me.role === "ADMIN";
   const isAdminOrMgr = me.role === "ADMIN" || me.role === "MANAGER";
-  // Scope to what this user may see (admin = all + pool; agent = own ASSIGNED).
+  // Scope to what this user may see — buyerScopeWhere pins market="Dubai"
+  // (admin = all Dubai + pool; Dubai agent = own ASSIGNED Dubai buyers).
   const scope = await buyerScopeWhere(me);
 
   // Load the scoped set (server-capped) — the client filters / sorts / paginates.
@@ -90,15 +96,28 @@ export default async function BuyerDataPage() {
     new Map(records.filter((r) => r.owner).map((r) => [r.owner!.id, r.owner!.name])).entries(),
   ).map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name));
 
-  // The active agent roster (admin/mgr only — powers Assign/Transfer + AI distribution).
+  // The active agent roster (admin/mgr only — powers Assign/Transfer + AI
+  // distribution). DUBAI ONLY: assignment is limited to Dubai-team users + admins,
+  // so the roster offered to the UI excludes India/Gurgaon + HR/non-sales users.
+  // (The server endpoints re-enforce this via isDubaiAssignable.)
   let agents: BuyerAgent[] = [];
   if (isAdminOrMgr) {
+    // Allowed targets = Dubai-team AGENT/MANAGER, PLUS admins (any team — admins
+    // can hold/convert any market's buyers). India/Gurgaon + HR/non-sales excluded.
     const ag = await prisma.user.findMany({
-      where: { active: true, hrOnly: false, role: { in: ["AGENT", "MANAGER"] } },
-      select: { id: true, name: true, team: true },
+      where: {
+        active: true,
+        hrOnly: false,
+        OR: [
+          { team: "Dubai", role: { in: ["AGENT", "MANAGER"] } },
+          { role: "ADMIN" },
+        ],
+      },
+      select: { id: true, name: true, team: true, role: true },
       orderBy: { name: "asc" },
     });
-    agents = ag;
+    // Defensive: keep only genuinely Dubai-assignable users (team=Dubai or admin).
+    agents = ag.filter((a) => isDubaiAssignable(a)).map(({ id, name, team }) => ({ id, name, team }));
   }
 
   // Map to table rows.
@@ -149,9 +168,9 @@ export default async function BuyerDataPage() {
       {/* ── Header + actions ──────────────────────────────────────────────── */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
-          <h1 className="text-xl sm:text-2xl font-bold">Buyer Data</h1>
+          <h1 className="text-xl sm:text-2xl font-bold">Dubai Buyer Data</h1>
           <p className="text-xs sm:text-sm text-gray-500 dark:text-slate-400">
-            {isAdmin ? "Worked pipeline — Admin Pool → agent → convert / reject" : "Buyers assigned to you"} · <span className="font-semibold">{totalRecords}</span> in view ·
+            {isAdmin ? "Dubai worked pipeline — Admin Pool → agent → convert / reject" : "Dubai buyers assigned to you"} · <span className="font-semibold">{totalRecords}</span> in view ·
             {" "}<span className="text-amber-600 dark:text-amber-400">passport &amp; financial data</span>
           </p>
         </div>

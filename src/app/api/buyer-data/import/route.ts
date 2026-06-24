@@ -304,6 +304,9 @@ export async function POST(req: NextRequest) {
           agentName: normalizeName(str(r.agentName)),
           // Remarks verbatim → Raw History (never reformatted).
           remarks: remark,
+          // Dubai Buyer Data — every import into THIS module is a Dubai-market
+          // buyer. A future Gurgaon module would stamp its own market value.
+          market: "Dubai",
           source: "Excel import",
           sourceFile,
           extraFields: Object.keys(extra).length ? extra : undefined,

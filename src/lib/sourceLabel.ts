@@ -12,6 +12,9 @@ export const SOURCE_ENUM_LABELS: Record<string, string> = {
   FACEBOOK_ADS: "Facebook Ads", GOOGLE_ADS: "Google Ads",
   PORTAL_99ACRES: "99Acres", PORTAL_MAGICBRICKS: "MagicBricks",
   PORTAL_HOUSING: "Housing.com", OTHER: "Other",
+  // WCR-specific enum values (migration 20260623150000) — map to human labels so
+  // sourceBreakdown never leaks a raw token in reports/filters.
+  WCR_WEBSITE: "WCR Website", WCR_EVENT: "WCR Event", LANDING_PAGE: "Landing Page",
 };
 
 /** Friendly label for a legacy LeadSource enum token. */

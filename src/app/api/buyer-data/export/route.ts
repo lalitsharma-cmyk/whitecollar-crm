@@ -39,7 +39,9 @@ async function buildExport(
   note: string | null,
 ) {
   const records = await prisma.buyerRecord.findMany({
-    where: { deletedAt: null, ...where }, // recycle-bin records never exported
+    // Dubai Buyer Data export — recycle-bin records never exported, and ONLY
+    // Dubai-market buyers (this module never exports another market's data).
+    where: { deletedAt: null, market: "Dubai", ...where },
     orderBy: { transactionDate: "desc" },
   });
 
@@ -72,7 +74,7 @@ async function buildExport(
 
   const stamp = new Date().toISOString();
   const watermark = [
-    `# Confidential buyer-data export from White Collar Realty CRM`,
+    `# Confidential Dubai Buyer Data export from White Collar Realty CRM`,
     `# Downloaded by: ${me.email} (${me.name}) at ${stamp}`,
     `# Rows: ${records.length}${note ? `  ·  ${note}` : ""}  ·  Contains passport & financial data — do NOT share outside the company.`,
     "",

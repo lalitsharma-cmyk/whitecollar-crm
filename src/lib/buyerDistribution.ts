@@ -26,14 +26,18 @@ import { prisma } from "@/lib/prisma";
 import { notify } from "@/lib/notify";
 import { assignBuyerInTx, BUYER_POOL_STATUS } from "@/lib/buyerLifecycle";
 import { inferBuyerCurrency } from "@/lib/buyerIntelligence";
+import { DUBAI_MARKET } from "@/lib/buyerScope";
 
 // ── eligible-pool helpers ────────────────────────────────────────────────────
 
-/** The where-fragment for "an assignable Admin-Pool buyer": in the pool, with no
- *  owner, not converted/rejected, not soft-deleted. The single source of truth so
- *  the preview, the apply, and the cron can never diverge on what's eligible. */
+/** The where-fragment for "an assignable Admin-Pool buyer": in the DUBAI market,
+ *  in the pool, with no owner, not converted/rejected, not soft-deleted. The
+ *  single source of truth so the preview, the apply, and the cron can never
+ *  diverge on what's eligible — and this Dubai module only ever distributes
+ *  Dubai-market buyers (a future Gurgaon module distributes its own market). */
 export function poolableWhere(extra?: Record<string, unknown>) {
   return {
+    market: DUBAI_MARKET,
     poolStatus: BUYER_POOL_STATUS.ADMIN_POOL,
     ownerId: null,
     deletedAt: null,
@@ -103,21 +107,27 @@ export function regionWhere(region?: string | null): Record<string, unknown> {
 
 export type DistAgent = { id: string; name: string; team: string | null };
 
-/** Active, non-HR agents (+ managers) eligible to receive buyers. Mirrors the
- *  assignment-window roster: active, not HR-only, role AGENT or MANAGER. Optionally
- *  filtered to a team (so "Dubai buyers → Dubai team" can target only that team). */
+/** Active users eligible to receive DUBAI buyers: Dubai-team AGENT/MANAGER PLUS
+ *  admins (any team — admins can hold any market's buyers). India/Gurgaon-team +
+ *  HR/non-sales users are EXCLUDED (this is the Dubai module). `team` may further
+ *  narrow within the allowed set (the daily cron's optional team scope) but can
+ *  never widen it beyond Dubai-assignable. */
 export async function activeAgents(team?: string | null): Promise<DistAgent[]> {
   const rows = await prisma.user.findMany({
     where: {
       active: true,
       hrOnly: false,
-      role: { in: ["AGENT", "MANAGER"] },
-      ...(team ? { team } : {}),
+      OR: [
+        { team: "Dubai", role: { in: ["AGENT", "MANAGER"] } },
+        { role: "ADMIN" },
+      ],
     },
     select: { id: true, name: true, team: true },
     orderBy: { name: "asc" },
   });
-  return rows;
+  // Optional extra team narrowing (cron scope). Only ever narrows within the
+  // Dubai-assignable set already selected above.
+  return team ? rows.filter((r) => r.team === team) : rows;
 }
 
 // ── plan types ───────────────────────────────────────────────────────────────
@@ -249,7 +259,7 @@ export async function applyPlan(
           kind: "LEAD_ASSIGNED",
           severity: "INFO",
           title: applied === 1 ? `🏷️ A buyer was assigned to you` : `🏷️ ${applied} buyers assigned to you`,
-          body: `${applied} buyer${applied === 1 ? "" : "s"} from the Admin Pool ${applied === 1 ? "is" : "are"} now yours in Buyer Data${opts?.reason ? ` — ${opts.reason}` : ""}.`,
+          body: `${applied} buyer${applied === 1 ? "" : "s"} from the Admin Pool ${applied === 1 ? "is" : "are"} now yours in Dubai Buyer Data${opts?.reason ? ` — ${opts.reason}` : ""}.`,
           linkUrl: "/buyer-data",
         }).catch(() => null);
       }

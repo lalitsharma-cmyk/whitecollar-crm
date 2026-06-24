@@ -1,6 +1,7 @@
 import { requireUser } from "@/lib/auth";
-import { normalizeTeam } from "@/lib/teamRouting";
 import { prisma } from "@/lib/prisma";
+import { redirect } from "next/navigation";
+import { canAccessDubaiBuyers } from "@/lib/buyerScope";
 import Link from "next/link";
 import {
   buildBuyerReport,
@@ -31,24 +32,20 @@ export default async function BuyerPerformancePage({
   searchParams: Promise<Record<string, string | undefined>>;
 }) {
   const me = await requireUser();
+  // Dubai Buyer Data Performance — visible to Admin + Dubai-team users only.
+  // A non-Dubai (India/Gurgaon) agent/manager is redirected away.
+  if (!canAccessDubaiBuyers(me)) redirect("/reports");
   const sp = await searchParams;
 
   const range = resolveDateRange(sp.range, sp.from, sp.to);
 
-  // Team scope: ADMIN free choice; MANAGER locked to own team; AGENT n/a.
-  const resolvedTeam: "India" | "Dubai" | null = (() => {
-    if (me.role === "MANAGER") return (normalizeTeam(me.team) as "India" | "Dubai" | null) ?? null;
-    if (me.role === "ADMIN") {
-      if (sp.team === "India" || sp.team === "Dubai") return sp.team;
-      return null;
-    }
-    return null;
-  })();
-
+  // This is the DUBAI module — there is no team toggle (a future Gurgaon module is
+  // separate). The agent universe is already Dubai-team + admins (scopedBuyerAgents),
+  // and every metric is market="Dubai"-scoped.
   const scope: BuyerReportScope = {
     role: me.role as BuyerReportScope["role"],
     meId: me.id,
-    team: resolvedTeam,
+    team: null, // agents are Dubai-scoped in scopedBuyerAgents; no extra team narrowing
   };
 
   const rows = await buildBuyerReport(range, scope);
@@ -62,8 +59,10 @@ export default async function BuyerPerformancePage({
   // agent), so the summary slice matches the rows shown. The unassigned Admin
   // Pool is owner-less so it only appears in the unscoped (whole-pool) view —
   // that is correct: the pool is no single team's.
+  // ADMIN → whole Dubai pool (null = market-scoped whole pool, incl. the
+  // unassigned Admin Pool). Non-admin Dubai users → only their in-scope agents.
   const teamOwnerIds: string[] | null =
-    isAdmin && !resolvedTeam ? null : rows.map((r) => r.agentId);
+    isAdmin ? null : rows.map((r) => r.agentId);
   const summary = await buildBuyerSummary(teamOwnerIds);
 
   // Thread the active filters onto links (detail view + export) so they open in
@@ -74,7 +73,6 @@ export default async function BuyerPerformancePage({
     if (sp.from) qs.set("from", sp.from);
     if (sp.to) qs.set("to", sp.to);
   }
-  if (resolvedTeam) qs.set("team", resolvedTeam);
   const query = `?${qs.toString()}`;
 
   return (
@@ -84,30 +82,15 @@ export default async function BuyerPerformancePage({
           <Link href="/reports" className="text-xs text-gray-500 hover:underline">
             ← Back to reports
           </Link>
-          <h1 className="text-xl sm:text-2xl font-bold">🤝 Buyer Data Performance</h1>
+          <h1 className="text-xl sm:text-2xl font-bold">🇦🇪 Dubai Buyer Data Performance</h1>
           <p className="text-xs sm:text-sm text-gray-500">
             {range.label}
-            {resolvedTeam ? ` · ${resolvedTeam} team` : me.role === "ADMIN" ? " · all teams" : ""}
+            {" · Dubai market"}
             {isAgent ? " · your performance" : ""}
           </p>
         </div>
-
-        {/* Team filter — ADMIN interactive, MANAGER locked, AGENT hidden */}
-        {!isAgent && (
-          <div className="flex items-center gap-2 self-start sm:self-auto">
-            {me.role === "MANAGER" ? (
-              <div className="seg opacity-60 cursor-not-allowed" title="Locked to your team">
-                <span className="pointer-events-none on">{resolvedTeam ?? "Your team"}</span>
-              </div>
-            ) : (
-              <div className="seg">
-                <Link href={`/reports/buyer-performance?range=${range.preset}&team=Dubai`} className={resolvedTeam === "Dubai" ? "on" : ""}>🇦🇪 Dubai</Link>
-                <Link href={`/reports/buyer-performance?range=${range.preset}&team=India`} className={resolvedTeam === "India" ? "on" : ""}>🇮🇳 India</Link>
-                <Link href={`/reports/buyer-performance?range=${range.preset}`} className={!resolvedTeam ? "on" : ""}>All</Link>
-              </div>
-            )}
-          </div>
-        )}
+        {/* No team toggle — this is the Dubai module (a future Gurgaon module is
+            separate). The agent universe + every metric is Dubai-scoped. */}
       </div>
 
       {/* Time window selector (shared component — keys off the current path) */}
@@ -133,7 +116,7 @@ export default async function BuyerPerformancePage({
       {/* Conversion funnel (overall / scope) */}
       <BuyerConversionFunnel
         stages={overallFunnel}
-        title={isAgent ? "Your buyer conversion funnel" : `Buyer conversion funnel — ${resolvedTeam ?? "all agents"}`}
+        title={isAgent ? "Your Dubai buyer conversion funnel" : "Dubai buyer conversion funnel"}
       />
 
       {/* Agent rankings — hidden for AGENT (single-row scope) */}

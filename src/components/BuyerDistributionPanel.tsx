@@ -2,24 +2,26 @@
 import { useState, useEffect } from "react";
 import type { BuyerAgent } from "@/components/BuyerListClient";
 
-// ── AI Buyer Distribution console (admin) ────────────────────────────────────
+// ── AI Dubai Buyer Distribution console (admin) ──────────────────────────────
 // Rule-based, preview → confirm (mirrors the safe /admin/assistant pattern — NO
-// LLM). Three actions over the Admin Pool, plus a daily auto-distribute toggle:
+// LLM). Two actions over the Dubai Admin Pool, plus a daily auto-distribute toggle:
 //   • Assign N pool buyers to <agent>     (oldest-first)
 //   • Split the pool equally across agents (round-robin)
-//   • Send <region> buyers to <agent>      (region-filtered pool → agent)
+// There is NO region filter — this is the Dubai module, so the whole pool is
+// Dubai-market (a future Gurgaon module has its own separate console). Only
+// Dubai-team agents + admins appear in the picker (server re-enforces this).
 // Every action shows a counts-per-agent PREVIEW before applying. Applying writes
 // BuyerAssignment + BuyerActivity + notifies agents (the engine does this).
 
 type PlanRow = { agentId: string; agentName: string; count: number; buyerIds: string[] };
 type Plan = { rows: PlanRow[]; totalAssigned: number; poolAvailable: number; shortfall: number; note?: string };
+// "byRegion" is retained in the server contract but unused by this Dubai console.
 type Mode = "assignN" | "splitEqually" | "byRegion";
 
 export default function BuyerDistributionPanel({ agents, poolAvailable, onApplied }: { agents: BuyerAgent[]; poolAvailable: number; onApplied?: () => void }) {
   const [mode, setMode] = useState<Mode>("assignN");
   const [agentId, setAgentId] = useState("");
   const [n, setN] = useState("100");
-  const [region, setRegion] = useState("");
   const [splitIds, setSplitIds] = useState<Set<string>>(new Set());
   const [plan, setPlan] = useState<Plan | null>(null);
   const [phase, setPhase] = useState<"idle" | "previewing" | "applying">("idle");
@@ -39,9 +41,9 @@ export default function BuyerDistributionPanel({ agents, poolAvailable, onApplie
   const sel = "border border-gray-200 dark:border-slate-600 rounded-lg px-2.5 py-2 text-base sm:text-sm dark:bg-slate-800 dark:text-slate-100";
 
   function body(): Record<string, unknown> {
-    if (mode === "assignN") return { mode, agentId, n: Number(n) || 0, region: region || null };
-    if (mode === "byRegion") return { mode, agentId, region: region || null };
-    return { mode: "splitEqually", agentIds: Array.from(splitIds), region: region || null };
+    // Dubai module — no region narrowing (the whole pool is Dubai-market).
+    if (mode === "assignN") return { mode, agentId, n: Number(n) || 0, region: null };
+    return { mode: "splitEqually", agentIds: Array.from(splitIds), region: null };
   }
 
   async function doPreview() {
@@ -86,32 +88,26 @@ export default function BuyerDistributionPanel({ agents, poolAvailable, onApplie
         <div><b>Safe by design.</b> Every distribution is previewed (counts per agent) before anything moves. Only buyers in the <b>Admin Pool</b> are ever assigned — converted, assigned, and deleted buyers are never touched. Each assignment notifies the agent and is logged.</div>
       </div>
 
-      <div className="font-semibold dark:text-slate-100">✨ Distribute Pool Buyers <span className="text-xs text-gray-400 font-normal">— {poolAvailable} in the Admin Pool</span></div>
+      <div className="font-semibold dark:text-slate-100">✨ Distribute Dubai Pool Buyers <span className="text-xs text-gray-400 font-normal">— {poolAvailable} in the Admin Pool</span></div>
 
-      {/* Mode picker */}
+      {/* Mode picker — Dubai module: the pool is all-Dubai, so there is no region
+          filter (a future Gurgaon module has its own separate console). */}
       <div className="flex flex-wrap gap-1.5">
-        {([["assignN", "Assign N to one agent"], ["splitEqually", "Split equally"], ["byRegion", "By region → agent"]] as [Mode, string][]).map(([m, label]) => (
+        {([["assignN", "Assign N to one agent"], ["splitEqually", "Split equally"]] as [Mode, string][]).map(([m, label]) => (
           <button key={m} type="button" onClick={() => { setMode(m); setPlan(null); }} className={`px-3 py-1.5 rounded-lg text-sm ${mode === m ? "bg-[#0b1a33] text-white dark:bg-[#c9a24b] dark:text-[#0b1a33]" : "bg-gray-100 text-gray-700 dark:bg-slate-800 dark:text-slate-300"}`}>{label}</button>
         ))}
       </div>
 
       {/* Mode forms */}
       <div className="flex flex-wrap items-center gap-2">
-        {(mode === "assignN" || mode === "byRegion") && (
+        {mode === "assignN" && (
           <select value={agentId} onChange={(e) => { setAgentId(e.target.value); setPlan(null); }} className={sel}>
-            <option value="">Choose agent…</option>
+            <option value="">Choose Dubai agent…</option>
             {agents.map((a) => <option key={a.id} value={a.id}>{a.name}{a.team ? ` · ${a.team}` : ""}</option>)}
           </select>
         )}
         {mode === "assignN" && (
           <input type="text" inputMode="numeric" value={n} onChange={(e) => { setN(e.target.value.replace(/[^\d]/g, "")); setPlan(null); }} placeholder="How many" className={`${sel} w-28`} />
-        )}
-        {(mode === "byRegion" || mode === "assignN" || mode === "splitEqually") && (
-          <select value={region} onChange={(e) => { setRegion(e.target.value); setPlan(null); }} className={sel} title="Region filter">
-            <option value="">{mode === "byRegion" ? "Region (required)" : "Any region"}</option>
-            <option value="Dubai">Dubai / UAE</option>
-            <option value="India">India</option>
-          </select>
         )}
         {mode === "splitEqually" && (
           <div className="flex flex-wrap gap-1.5 items-center">

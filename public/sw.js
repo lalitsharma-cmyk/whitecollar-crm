@@ -189,7 +189,20 @@
 // drives the lead date (never the import timestamp); Remarks → Raw History + Smart
 // Timeline; unknown columns → Imported Fields. Endpoint stays ADMIN-gated. Force a
 // client refresh so the new Import control appears.
-const CACHE = "wcr-shell-v52";
+// v53 (2026-06-24): Dubai Buyer Data — the Buyer Data module is now market-scoped
+// to Dubai. (1) RENAME: every visible "Buyer Data" label → "Dubai Buyer Data" (nav,
+// page titles, import/export, reports + reports nav card, assign dialogs, notifs).
+// Route paths (/buyer-data, /api/buyer-data/*) UNCHANGED — display-only. (2) MARKET
+// FIELD: BuyerRecord.market (default "Dubai", indexed, backfilled); every buyer read
+// (list/detail/reports/distribution/export/assign) pins market="Dubai"; imports stamp
+// it. (3) ASSIGNMENT: only Dubai-team users + admins are offered/accepted (UI roster +
+// server-enforced in assign/transfer/distribute/convert — India/Gurgaon + HR rejected).
+// (4) VISIBILITY: Admin + Dubai-team only; non-Dubai agents redirected from every
+// /buyer-data + /reports/buyer-performance page; the nav item is hidden for them. The
+// distribution console drops the (now-meaningless) region filter. A FUTURE Gurgaon
+// module is separate (own market value + rules). Force a refresh so the rename + the
+// hidden-for-non-Dubai nav take effect.
+const CACHE = "wcr-shell-v53";
 const SHELL = ["/login", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", (event) => {

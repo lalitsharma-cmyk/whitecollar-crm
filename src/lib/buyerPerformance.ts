@@ -84,13 +84,17 @@ export async function scopedBuyerAgents(scope: BuyerReportScope): Promise<BuyerA
     });
     return u ? [u] : [];
   }
+  // Dubai Buyer Data Performance — the agent universe is Dubai-team AGENT/MANAGER
+  // PLUS admins (admins can hold any market's buyers). India/Gurgaon-team + HR are
+  // excluded, since this report only describes the Dubai pipeline.
   const where: Prisma.UserWhereInput = {
-    role: { in: ["AGENT", "MANAGER"] },
     active: true,
     hrOnly: false,
+    OR: [
+      { team: "Dubai", role: { in: ["AGENT", "MANAGER"] } },
+      { role: "ADMIN" },
+    ],
   };
-  const teamFilter = scope.role === "MANAGER" ? scope.team : scope.team ?? undefined;
-  if (teamFilter === "India" || teamFilter === "Dubai") where.team = teamFilter;
   return prisma.user.findMany({
     where,
     select: { id: true, name: true, team: true, role: true },
@@ -201,7 +205,7 @@ export async function buildBuyerReport(
     where: {
       userId: { in: agentIds },
       assignedAt: win,
-      buyer: { deletedAt: null },
+      buyer: { deletedAt: null, market: "Dubai" },
     },
     select: { userId: true, buyerId: true },
   });
@@ -230,7 +234,7 @@ export async function buildBuyerReport(
         userId: { in: agentIds },
         returnedAt: win,
         returnReason: BUYER_RETURN_REASON.AUTO_5_ATTEMPTS,
-        buyer: { deletedAt: null },
+        buyer: { deletedAt: null, market: "Dubai" },
       },
       _count: { _all: true },
     }),
@@ -240,7 +244,7 @@ export async function buildBuyerReport(
         userId: { in: agentIds },
         returnedAt: win,
         returnReason: BUYER_RETURN_REASON.MANUAL_REJECT,
-        buyer: { deletedAt: null },
+        buyer: { deletedAt: null, market: "Dubai" },
       },
       _count: { _all: true },
     }),
@@ -257,37 +261,37 @@ export async function buildBuyerReport(
   ] = await Promise.all([
     prisma.buyerActivity.groupBy({
       by: ["userId"],
-      where: { userId: { in: agentIds }, type: BUYER_ACTIVITY_TYPE.CONVERTED, createdAt: win, buyer: { deletedAt: null } },
+      where: { userId: { in: agentIds }, type: BUYER_ACTIVITY_TYPE.CONVERTED, createdAt: win, buyer: { deletedAt: null, market: "Dubai" } },
       _count: { _all: true },
     }),
     prisma.buyerActivity.groupBy({
       by: ["userId"],
-      where: { userId: { in: agentIds }, type: BUYER_ACTIVITY_TYPE.REJECTED, createdAt: win, buyer: { deletedAt: null } },
+      where: { userId: { in: agentIds }, type: BUYER_ACTIVITY_TYPE.REJECTED, createdAt: win, buyer: { deletedAt: null, market: "Dubai" } },
       _count: { _all: true },
     }),
     prisma.buyerActivity.groupBy({
       by: ["userId"],
-      where: { userId: { in: agentIds }, type: BUYER_ACTIVITY_TYPE.CALL, createdAt: win, buyer: { deletedAt: null } },
+      where: { userId: { in: agentIds }, type: BUYER_ACTIVITY_TYPE.CALL, createdAt: win, buyer: { deletedAt: null, market: "Dubai" } },
       _count: { _all: true },
     }),
     prisma.buyerActivity.groupBy({
       by: ["userId"],
-      where: { userId: { in: agentIds }, type: BUYER_ACTIVITY_TYPE.WHATSAPP, createdAt: win, buyer: { deletedAt: null } },
+      where: { userId: { in: agentIds }, type: BUYER_ACTIVITY_TYPE.WHATSAPP, createdAt: win, buyer: { deletedAt: null, market: "Dubai" } },
       _count: { _all: true },
     }),
     prisma.buyerActivity.groupBy({
       by: ["userId"],
-      where: { userId: { in: agentIds }, type: BUYER_ACTIVITY_TYPE.NOTE, createdAt: win, buyer: { deletedAt: null } },
+      where: { userId: { in: agentIds }, type: BUYER_ACTIVITY_TYPE.NOTE, createdAt: win, buyer: { deletedAt: null, market: "Dubai" } },
       _count: { _all: true },
     }),
     prisma.buyerActivity.groupBy({
       by: ["userId"],
-      where: { userId: { in: agentIds }, type: BUYER_ACTIVITY_TYPE.VOICE_NOTE, createdAt: win, buyer: { deletedAt: null } },
+      where: { userId: { in: agentIds }, type: BUYER_ACTIVITY_TYPE.VOICE_NOTE, createdAt: win, buyer: { deletedAt: null, market: "Dubai" } },
       _count: { _all: true },
     }),
     prisma.buyerActivity.groupBy({
       by: ["userId"],
-      where: { userId: { in: agentIds }, type: { in: ATTEMPT_TYPE_LIST }, createdAt: win, buyer: { deletedAt: null } },
+      where: { userId: { in: agentIds }, type: { in: ATTEMPT_TYPE_LIST }, createdAt: win, buyer: { deletedAt: null, market: "Dubai" } },
       _count: { _all: true },
     }),
   ]);
@@ -309,17 +313,17 @@ export async function buildBuyerReport(
   // the agent's worked set so a stage can never exceed Assigned.
   const [contactedPairs, engagedPairs, convertedPairs] = await Promise.all([
     prisma.buyerActivity.findMany({
-      where: { userId: { in: agentIds }, type: { in: CONTACT_TYPE_LIST }, createdAt: win, buyer: { deletedAt: null } },
+      where: { userId: { in: agentIds }, type: { in: CONTACT_TYPE_LIST }, createdAt: win, buyer: { deletedAt: null, market: "Dubai" } },
       select: { userId: true, buyerId: true },
       distinct: ["userId", "buyerId"],
     }),
     prisma.buyerActivity.findMany({
-      where: { userId: { in: agentIds }, type: { in: ENGAGED_TYPE_LIST }, createdAt: win, buyer: { deletedAt: null } },
+      where: { userId: { in: agentIds }, type: { in: ENGAGED_TYPE_LIST }, createdAt: win, buyer: { deletedAt: null, market: "Dubai" } },
       select: { userId: true, buyerId: true },
       distinct: ["userId", "buyerId"],
     }),
     prisma.buyerActivity.findMany({
-      where: { userId: { in: agentIds }, type: BUYER_ACTIVITY_TYPE.CONVERTED, createdAt: win, buyer: { deletedAt: null } },
+      where: { userId: { in: agentIds }, type: BUYER_ACTIVITY_TYPE.CONVERTED, createdAt: win, buyer: { deletedAt: null, market: "Dubai" } },
       select: { userId: true, buyerId: true },
       distinct: ["userId", "buyerId"],
     }),
@@ -409,7 +413,8 @@ export interface BuyerSummary {
 export async function buildBuyerSummary(teamOwnerIds: string[] | null): Promise<BuyerSummary> {
   const ownerScope: Prisma.BuyerRecordWhereInput =
     teamOwnerIds === null ? {} : { ownerId: { in: teamOwnerIds } };
-  const base: Prisma.BuyerRecordWhereInput = { deletedAt: null, ...ownerScope };
+  // Dubai Buyer Data — the summary counts ONLY Dubai-market buyers.
+  const base: Prisma.BuyerRecordWhereInput = { deletedAt: null, market: "Dubai", ...ownerScope };
 
   const [total, assigned, unassigned, converted, rejected, returnedToPool] = await Promise.all([
     prisma.buyerRecord.count({ where: base }),
@@ -473,9 +478,13 @@ export function buyerDrilldownWhere(
   range: DateRange,
 ): Prisma.BuyerRecordWhereInput {
   const win = { gte: range.gte, lt: range.lt };
+  // Dubai Buyer Data — every drill-down lists ONLY Dubai-market buyers (so the
+  // count on the report reconciles 1:1 with the Dubai-scoped figure).
+  const MARKET = "Dubai";
   // Helper: buyer has >=1 BuyerActivity of these type(s), by this agent, in window.
   const hasActivity = (types: string | string[]): Prisma.BuyerRecordWhereInput => ({
     deletedAt: null,
+    market: MARKET,
     activities: {
       some: {
         userId: agentId,
@@ -489,6 +498,7 @@ export function buyerDrilldownWhere(
       // Stint opened in window, by this agent.
       return {
         deletedAt: null,
+        market: MARKET,
         assignments: { some: { userId: agentId, assignedAt: win } },
       };
     case "converted":
@@ -498,11 +508,13 @@ export function buyerDrilldownWhere(
     case "autoReturned":
       return {
         deletedAt: null,
+        market: MARKET,
         assignments: { some: { userId: agentId, returnedAt: win, returnReason: BUYER_RETURN_REASON.AUTO_5_ATTEMPTS } },
       };
     case "manualReturned":
       return {
         deletedAt: null,
+        market: MARKET,
         assignments: { some: { userId: agentId, returnedAt: win, returnReason: BUYER_RETURN_REASON.MANUAL_REJECT } },
       };
     case "callsLogged":
@@ -520,6 +532,7 @@ export function buyerDrilldownWhere(
       // on, in the window (matches the funnel intersection).
       return {
         deletedAt: null,
+        market: MARKET,
         AND: [
           { assignments: { some: { userId: agentId, assignedAt: win } } },
           { activities: { some: { userId: agentId, createdAt: win, type: { in: CONTACT_TYPE_LIST } } } },
@@ -528,6 +541,7 @@ export function buyerDrilldownWhere(
     case "funnelEngaged":
       return {
         deletedAt: null,
+        market: MARKET,
         AND: [
           { assignments: { some: { userId: agentId, assignedAt: win } } },
           { activities: { some: { userId: agentId, createdAt: win, type: { in: ENGAGED_TYPE_LIST } } } },
@@ -536,13 +550,14 @@ export function buyerDrilldownWhere(
     case "funnelConverted":
       return {
         deletedAt: null,
+        market: MARKET,
         AND: [
           { assignments: { some: { userId: agentId, assignedAt: win } } },
           { activities: { some: { userId: agentId, createdAt: win, type: BUYER_ACTIVITY_TYPE.CONVERTED } } },
         ],
       };
     default:
-      return { deletedAt: null, id: "__none__" }; // never matches
+      return { deletedAt: null, market: MARKET, id: "__none__" }; // never matches
   }
 }
 
@@ -560,23 +575,23 @@ export async function buyerEventCount(
   const win = { gte: range.gte, lt: range.lt };
   switch (key) {
     case "converted":
-      return prisma.buyerActivity.count({ where: { userId: agentId, type: BUYER_ACTIVITY_TYPE.CONVERTED, createdAt: win, buyer: { deletedAt: null } } });
+      return prisma.buyerActivity.count({ where: { userId: agentId, type: BUYER_ACTIVITY_TYPE.CONVERTED, createdAt: win, buyer: { deletedAt: null, market: "Dubai" } } });
     case "rejected":
-      return prisma.buyerActivity.count({ where: { userId: agentId, type: BUYER_ACTIVITY_TYPE.REJECTED, createdAt: win, buyer: { deletedAt: null } } });
+      return prisma.buyerActivity.count({ where: { userId: agentId, type: BUYER_ACTIVITY_TYPE.REJECTED, createdAt: win, buyer: { deletedAt: null, market: "Dubai" } } });
     case "callsLogged":
-      return prisma.buyerActivity.count({ where: { userId: agentId, type: BUYER_ACTIVITY_TYPE.CALL, createdAt: win, buyer: { deletedAt: null } } });
+      return prisma.buyerActivity.count({ where: { userId: agentId, type: BUYER_ACTIVITY_TYPE.CALL, createdAt: win, buyer: { deletedAt: null, market: "Dubai" } } });
     case "whatsappInteractions":
-      return prisma.buyerActivity.count({ where: { userId: agentId, type: BUYER_ACTIVITY_TYPE.WHATSAPP, createdAt: win, buyer: { deletedAt: null } } });
+      return prisma.buyerActivity.count({ where: { userId: agentId, type: BUYER_ACTIVITY_TYPE.WHATSAPP, createdAt: win, buyer: { deletedAt: null, market: "Dubai" } } });
     case "notesAdded":
-      return prisma.buyerActivity.count({ where: { userId: agentId, type: BUYER_ACTIVITY_TYPE.NOTE, createdAt: win, buyer: { deletedAt: null } } });
+      return prisma.buyerActivity.count({ where: { userId: agentId, type: BUYER_ACTIVITY_TYPE.NOTE, createdAt: win, buyer: { deletedAt: null, market: "Dubai" } } });
     case "voiceNotesAdded":
-      return prisma.buyerActivity.count({ where: { userId: agentId, type: BUYER_ACTIVITY_TYPE.VOICE_NOTE, createdAt: win, buyer: { deletedAt: null } } });
+      return prisma.buyerActivity.count({ where: { userId: agentId, type: BUYER_ACTIVITY_TYPE.VOICE_NOTE, createdAt: win, buyer: { deletedAt: null, market: "Dubai" } } });
     case "totalAttempts":
-      return prisma.buyerActivity.count({ where: { userId: agentId, type: { in: ATTEMPT_TYPE_LIST }, createdAt: win, buyer: { deletedAt: null } } });
+      return prisma.buyerActivity.count({ where: { userId: agentId, type: { in: ATTEMPT_TYPE_LIST }, createdAt: win, buyer: { deletedAt: null, market: "Dubai" } } });
     case "autoReturned":
-      return prisma.buyerAssignment.count({ where: { userId: agentId, returnedAt: win, returnReason: BUYER_RETURN_REASON.AUTO_5_ATTEMPTS, buyer: { deletedAt: null } } });
+      return prisma.buyerAssignment.count({ where: { userId: agentId, returnedAt: win, returnReason: BUYER_RETURN_REASON.AUTO_5_ATTEMPTS, buyer: { deletedAt: null, market: "Dubai" } } });
     case "manualReturned":
-      return prisma.buyerAssignment.count({ where: { userId: agentId, returnedAt: win, returnReason: BUYER_RETURN_REASON.MANUAL_REJECT, buyer: { deletedAt: null } } });
+      return prisma.buyerAssignment.count({ where: { userId: agentId, returnedAt: win, returnReason: BUYER_RETURN_REASON.MANUAL_REJECT, buyer: { deletedAt: null, market: "Dubai" } } });
     default:
       // Distinct-buyer metrics: the event count == the drill record count.
       return prisma.buyerRecord.count({ where: buyerDrilldownWhere(key, agentId, range) });

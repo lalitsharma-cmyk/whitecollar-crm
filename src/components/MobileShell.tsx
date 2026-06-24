@@ -19,7 +19,7 @@ import KeyboardShortcutsHelp from "./KeyboardShortcutsHelp";
 import PWAInstallNudge from "./PWAInstallNudge";
 import { useBodyScrollLock } from "@/hooks/useBodyScrollLock";
 
-type NavItem = { href: string; label: string; Icon: React.ElementType; tag?: string; agentHidden?: boolean; adminOnly?: boolean; leadOpsHidden?: boolean };
+type NavItem = { href: string; label: string; Icon: React.ElementType; tag?: string; agentHidden?: boolean; adminOnly?: boolean; leadOpsHidden?: boolean; dubaiBuyerOnly?: boolean };
 type NavSection = { section: string; adminOnly?: boolean; managerOrAdmin?: boolean; items: NavItem[] };
 
 // §6 — Global Back button + breadcrumb. Every page has a back button that
@@ -83,12 +83,13 @@ const fullNav: NavSection[] = [
     { href: "/dashboard",   label: "Dashboard",      Icon: LayoutDashboard },
     { href: "/master-data", label: "Master Data",    Icon: Database, adminOnly: true },
     { href: "/leads",       label: "Leads",          Icon: Users },
-    // Buyer Data is a PRIMARY module — sits immediately after Leads so it ranks
-    // high in the nav (Dashboard → [Master Data] → Leads → Buyer Data → rest).
-    // Still admin-gated today (passport/financial data); when agent buyer-access
-    // lands (Buyer lifecycle expansion), relax `adminOnly` here and agents see
-    // Dashboard → Leads → Buyer Data → rest with no further reordering.
-    { href: "/buyer-data",  label: "Buyer Data",     Icon: BadgeDollarSign, adminOnly: true },
+    // Dubai Buyer Data is a PRIMARY module — sits immediately after Leads so it
+    // ranks high in the nav (Dashboard → [Master Data] → Leads → Dubai Buyer Data
+    // → rest). MARKET-SCOPED: visible to Admin/super-admin + Dubai-team users only
+    // (passport/financial data + Dubai-only). India/Gurgaon-team users don't see
+    // it — the page guards also redirect them. A future Gurgaon Buyer Data module
+    // would be a SEPARATE nav item with its own market gate.
+    { href: "/buyer-data",  label: "Dubai Buyer Data", Icon: BadgeDollarSign, dubaiBuyerOnly: true },
     { href: "/cold-calls",  label: "Revival Engine", Icon: Gem },
     { href: "/action-list", label: "Action List",    Icon: Sparkles, leadOpsHidden: true },
     { href: "/properties",  label: "Properties",     Icon: Building2 },
@@ -231,7 +232,7 @@ export default function MobileShell({ children, user, awaitingTeamCount = 0 }: P
               )}
               {sidebarCollapsed && <div className="mb-1 mt-3 first:mt-0 border-t border-white/10 mx-1" />}
 
-              {group.items.filter((item) => !(item.agentHidden && user.role === "AGENT") && !(item.adminOnly && user.role !== "ADMIN") && !(item.leadOpsHidden && user.leadOpsOnly)).map(({ href, label, Icon, tag }) => {
+              {group.items.filter((item) => !(item.agentHidden && user.role === "AGENT") && !(item.adminOnly && user.role !== "ADMIN") && !(item.leadOpsHidden && user.leadOpsOnly) && !(item.dubaiBuyerOnly && !(user.role === "ADMIN" || user.team === "Dubai"))).map(({ href, label, Icon, tag }) => {
                 const active = pathname === href || (href !== "/dashboard" && pathname?.startsWith(href));
                 const showAwaitingBadge = href === "/admin/awaiting-team" && awaitingTeamCount > 0;
                 return (
@@ -371,7 +372,7 @@ export default function MobileShell({ children, user, awaitingTeamCount = 0 }: P
               }).map((group) => (
                 <div key={group.section}>
                   <div className="text-[10px] uppercase tracking-widest text-white/40 px-3 mb-1 mt-3 first:mt-0">{group.section}</div>
-                  {group.items.filter((item) => !(item.agentHidden && user.role === "AGENT") && !(item.adminOnly && user.role !== "ADMIN") && !(item.leadOpsHidden && user.leadOpsOnly)).map(({ href, label, Icon, tag }) => {
+                  {group.items.filter((item) => !(item.agentHidden && user.role === "AGENT") && !(item.adminOnly && user.role !== "ADMIN") && !(item.leadOpsHidden && user.leadOpsOnly) && !(item.dubaiBuyerOnly && !(user.role === "ADMIN" || user.team === "Dubai"))).map(({ href, label, Icon, tag }) => {
                     const active = pathname === href || (href !== "/dashboard" && pathname?.startsWith(href));
                     const showAwaitingBadge = href === "/admin/awaiting-team" && awaitingTeamCount > 0;
                     return (

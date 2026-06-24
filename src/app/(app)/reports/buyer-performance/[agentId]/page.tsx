@@ -1,5 +1,6 @@
 import { requireUser } from "@/lib/auth";
 import { normalizeTeam } from "@/lib/teamRouting";
+import { canAccessDubaiBuyers } from "@/lib/buyerScope";
 import { prisma } from "@/lib/prisma";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
@@ -102,6 +103,8 @@ export default async function BuyerAgentDetailPage({
   searchParams: Promise<Record<string, string | undefined>>;
 }) {
   const me = await requireUser();
+  // Dubai Buyer Data — admin + Dubai-team users only.
+  if (!canAccessDubaiBuyers(me)) redirect("/reports");
   const { agentId } = await params;
   const sp = await searchParams;
   const range = resolveDateRange(sp.range, sp.from, sp.to);

@@ -24,10 +24,10 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 
   const buyer = await prisma.buyerRecord.findUnique({
     where: { id },
-    select: { id: true, ownerId: true, poolStatus: true, deletedAt: true },
+    select: { id: true, ownerId: true, poolStatus: true, deletedAt: true, market: true },
   });
   if (!buyer) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  if (!(await canTouchBuyer(me, { ownerId: buyer.ownerId, poolStatus: buyer.poolStatus, deletedAt: buyer.deletedAt }))) {
+  if (!(await canTouchBuyer(me, { ownerId: buyer.ownerId, poolStatus: buyer.poolStatus, deletedAt: buyer.deletedAt, market: buyer.market }))) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 

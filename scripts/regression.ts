@@ -1503,6 +1503,97 @@ const checks: Check[] = [
   },
 
   // ───────────────────────────────────────────────────────────────────────────
+  // 41c. DUBAI BUYER DATA — market segregation (2026-06-24). The Buyer Data module
+  //   is now "Dubai Buyer Data": ONLY Dubai-market buyers, visible to Admin +
+  //   Dubai-team users, assignable ONLY to Dubai-team users + admins. Proves:
+  //   (a) the `market` column exists in prod (migration applied) + DEFAULTS Dubai
+  //       and every existing live buyer is market="Dubai" (backfill ran).
+  //   (b) buyerScopeWhere/canTouchBuyer pin market="Dubai" in EVERY branch + the
+  //       non-Dubai user gets the impossible "__no_access__" filter (no leak), and
+  //       the canAccessDubaiBuyers / isDubaiAssignable gates exist.
+  //   (c) the assign + transfer + convert endpoints REJECT a non-Dubai, non-admin
+  //       target server-side (isDubaiAssignable guard present in source).
+  //   (d) the pages + reports REDIRECT non-Dubai users (canAccessDubaiBuyers guard)
+  //       and the nav item is dubaiBuyerOnly (hidden from non-Dubai non-admins).
+  //   (e) the distribution pool + import + export are market="Dubai"-scoped.
+  //   (f) the label renamed to "Dubai Buyer Data" on the key surfaces (nav + titles).
+  //   (g) DATA: the real roster confirms the gate is right — Dubai-team users
+  //       (Mehak/Dinesh) ARE Dubai-assignable; India-team users (Tanuj/Yasir) and
+  //       HR users are NOT (read back their team to prove it's filtered, not hardcoded).
+  //   Read-only: column probe + source scans + roster read. ZERO writes.
+  // ───────────────────────────────────────────────────────────────────────────
+  {
+    name: "dubai-buyer-scope — market=Dubai default+backfill + scope/assign Dubai-only + non-Dubai excluded/redirected + nav hidden + label renamed",
+    run: async () => {
+      const fs = await import("node:fs");
+      const read = (f: string) => fs.readFileSync(f, "utf8");
+
+      // (a) market column exists + every live buyer is Dubai (default + backfill).
+      await prisma.buyerRecord.findFirst({ select: { id: true, market: true } });
+      const liveTotal = await prisma.buyerRecord.count({ where: { deletedAt: null } });
+      const liveDubai = await prisma.buyerRecord.count({ where: { deletedAt: null, market: "Dubai" } });
+      assert(liveTotal === liveDubai, `every live buyer must be market="Dubai" (live ${liveTotal}, Dubai ${liveDubai}) — backfill missing`);
+      const nonDubai = await prisma.buyerRecord.count({ where: { market: { not: "Dubai" } } });
+      assert(nonDubai === 0, `${nonDubai} buyer(s) have a non-Dubai market — this module is Dubai-only today`);
+
+      // (b) buyerScope pins market + has the Dubai gates + the impossible no-access filter.
+      const scopeSrc = read("src/lib/buyerScope.ts");
+      assert(/DUBAI_MARKET\s*=\s*"Dubai"/.test(scopeSrc), "buyerScope MUST define DUBAI_MARKET = 'Dubai'");
+      assert(/export function canAccessDubaiBuyers/.test(scopeSrc), "buyerScope MUST export canAccessDubaiBuyers");
+      assert(/export function isDubaiAssignable/.test(scopeSrc), "buyerScope MUST export isDubaiAssignable");
+      // Every where branch pins market (>=4: no-access, ADMIN, AGENT, MANAGER variants).
+      const marketBranches = (scopeSrc.match(/market:\s*DUBAI_MARKET/g) ?? []).length;
+      assert(marketBranches >= 4, `buyerScopeWhere must pin market:DUBAI_MARKET in every branch (found ${marketBranches}, expected >=4)`);
+      assert(/__no_access__/.test(scopeSrc), "a non-Dubai non-admin user MUST get an impossible filter (no buyer leak)");
+      assert(/buyer\.market\s*!==\s*DUBAI_MARKET/.test(scopeSrc), "canTouchBuyer MUST reject a non-Dubai-market buyer");
+
+      // (c) assign + transfer + convert REJECT a non-Dubai/non-admin target (server-side).
+      assert(/isDubaiAssignable/.test(read("src/app/api/buyer-data/assign/route.ts")), "assign route MUST gate the target via isDubaiAssignable");
+      assert(/isDubaiAssignable/.test(read("src/app/api/buyer-data/bulk/route.ts")), "bulk transfer MUST gate the target via isDubaiAssignable");
+      assert(/isDubaiAssignable/.test(read("src/app/api/buyer-data/[id]/convert/route.ts")), "convert route MUST gate an on-behalf owner via isDubaiAssignable");
+
+      // (d) pages + reports redirect non-Dubai users; nav item is dubaiBuyerOnly.
+      assert(/canAccessDubaiBuyers/.test(read("src/app/(app)/buyer-data/page.tsx")), "buyer list page MUST guard via canAccessDubaiBuyers (redirect non-Dubai)");
+      assert(/canAccessDubaiBuyers/.test(read("src/app/(app)/buyer-data/[id]/page.tsx")), "buyer detail page MUST guard via canAccessDubaiBuyers");
+      assert(/canAccessDubaiBuyers/.test(read("src/app/(app)/reports/buyer-performance/page.tsx")), "buyer report MUST guard via canAccessDubaiBuyers");
+      const shell = read("src/components/MobileShell.tsx");
+      assert(/dubaiBuyerOnly/.test(shell), "the nav MUST gate the Dubai Buyer Data item via dubaiBuyerOnly");
+      assert(/dubaiBuyerOnly && !\(user\.role === "ADMIN" \|\| user\.team === "Dubai"\)/.test(shell), "dubaiBuyerOnly MUST hide the item from non-Dubai non-admin users");
+
+      // (e) distribution pool + import + export are market-scoped.
+      assert(/market:\s*DUBAI_MARKET/.test(read("src/lib/buyerDistribution.ts")), "poolableWhere MUST pin market:DUBAI_MARKET (distribution is Dubai-only)");
+      assert(/market:\s*"Dubai"/.test(read("src/app/api/buyer-data/import/route.ts")), "import MUST stamp market='Dubai'");
+      assert(/market:\s*"Dubai"/.test(read("src/app/api/buyer-data/export/route.ts")), "export MUST pin market='Dubai'");
+
+      // (f) label renamed on the key visible surfaces (route paths unchanged).
+      assert(/Dubai Buyer Data/.test(read("src/app/(app)/buyer-data/page.tsx")), "list page header MUST read 'Dubai Buyer Data'");
+      assert(/label: "Dubai Buyer Data"/.test(shell), "nav label MUST be 'Dubai Buyer Data'");
+      assert(/Dubai Buyer Data Performance/.test(read("src/app/(app)/reports/buyer-performance/page.tsx")), "report title MUST read 'Dubai Buyer Data Performance'");
+      // Route paths unchanged (links + API still /buyer-data) — the rename is display-only.
+      assert(/href:\s*"\/buyer-data"/.test(shell), "the nav ROUTE must stay /buyer-data (rename is display-only)");
+
+      // (g) DATA: roster proves the gate is right (filtered by team, NOT hardcoded names).
+      const { normalizeTeam } = await import("../src/lib/teamRouting");
+      const dubaiAssignable = (u: { role: string | null; team: string | null }) =>
+        u.role === "ADMIN" || normalizeTeam(u.team) === "Dubai";
+      const roster = await prisma.user.findMany({
+        where: { active: true },
+        select: { name: true, role: true, team: true, hrOnly: true },
+      });
+      // At least one genuine Dubai-team AGENT/MANAGER must be assignable (else the
+      // pool can never be worked) — proven from team data, not a name list.
+      const dubaiTeamSales = roster.filter((u) => normalizeTeam(u.team) === "Dubai" && (u.role === "AGENT" || u.role === "MANAGER") && !u.hrOnly);
+      assert(dubaiTeamSales.length >= 1, "expected >=1 active Dubai-team sales user (the buyer-assignment pool)");
+      for (const u of dubaiTeamSales) assert(dubaiAssignable(u), `${u.name} is a Dubai-team sales user and MUST be Dubai-assignable`);
+      // India-team users + HR users must NOT be assignable (read their team to confirm).
+      const indiaTeamSales = roster.filter((u) => normalizeTeam(u.team) === "India" && (u.role === "AGENT" || u.role === "MANAGER"));
+      for (const u of indiaTeamSales) assert(!dubaiAssignable(u), `${u.name} is an India-team user and MUST NOT be Dubai-assignable`);
+      const hrUsers = roster.filter((u) => u.hrOnly);
+      for (const u of hrUsers) assert(!dubaiAssignable(u) || u.role === "ADMIN", `HR user ${u.name} must not be Dubai-assignable unless an admin`);
+    },
+  },
+
+  // ───────────────────────────────────────────────────────────────────────────
   // 42. BUYER PERFORMANCE REPORTING — Part 6 invariants (/reports/buyer-performance).
   //   The report MUST be reconcilable: every per-agent metric count traces back to
   //   the exact BuyerRecords behind it (the drill-down), and the admin summary
@@ -1544,8 +1635,11 @@ const checks: Check[] = [
       await prisma.buyerAssignment.findFirst({ select: { id: true, userId: true, assignedAt: true, returnedAt: true, returnReason: true, attemptsInStint: true } });
       await prisma.buyerActivity.findFirst({ select: { id: true, userId: true, type: true, createdAt: true, buyerId: true } });
 
-      // (b) ADMIN SUMMARY == direct counts (whole pool; teamOwnerIds = null path).
-      const base = { deletedAt: null } as const;
+      // (b) ADMIN SUMMARY == direct counts (whole Dubai pool; teamOwnerIds = null path).
+      //     Dubai Buyer Data: buildBuyerSummary pins market="Dubai", so the inline
+      //     replica does too (today every live buyer is Dubai, so the bucket math is
+      //     unchanged — this keeps the invariant byte-equivalent to the scoped code).
+      const base = { deletedAt: null, market: "Dubai" } as const;
       const [total, assigned, pool, converted, rejected, returnedToPool, grand, deleted] = await Promise.all([
         prisma.buyerRecord.count({ where: base }),
         prisma.buyerRecord.count({ where: { ...base, poolStatus: "ASSIGNED" } }),
@@ -1553,8 +1647,8 @@ const checks: Check[] = [
         prisma.buyerRecord.count({ where: { ...base, poolStatus: "CONVERTED" } }),
         prisma.buyerRecord.count({ where: { ...base, poolStatus: "REJECTED" } }),
         prisma.buyerRecord.count({ where: { ...base, returnedToPoolAt: { not: null }, poolStatus: "ADMIN_POOL" } }),
-        prisma.buyerRecord.count(),
-        prisma.buyerRecord.count({ where: { deletedAt: { not: null } } }),
+        prisma.buyerRecord.count({ where: { market: "Dubai" } }),
+        prisma.buyerRecord.count({ where: { deletedAt: { not: null }, market: "Dubai" } }),
       ]);
       // Every live buyer sits in exactly one of the 4 known poolStatus buckets (or an
       // unknown one). assigned+pool+converted+rejected must not exceed total, and on

@@ -369,7 +369,7 @@ export default function BuyerListClient(props: Props) {
       const blob = await r.blob();
       const a = document.createElement("a");
       a.href = URL.createObjectURL(blob);
-      a.download = `wcr-buyer-data-${new Date().toISOString().slice(0, 10).replace(/-/g, "")}.csv`;
+      a.download = `wcr-dubai-buyer-data-${new Date().toISOString().slice(0, 10).replace(/-/g, "")}.csv`;
       document.body.appendChild(a); a.click(); a.remove();
       URL.revokeObjectURL(a.href);
     } catch { setBulkMsg("⚠ Export network error."); }

@@ -46,7 +46,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
   // Scoped: admin any; assigned agent only their own ASSIGNED buyer. 404 (not
   // 403) for outsiders so existence isn't confirmed.
-  if (!(await canTouchBuyer(me, { ownerId: existing.ownerId, poolStatus: existing.poolStatus, deletedAt: existing.deletedAt }))) {
+  if (!(await canTouchBuyer(me, { ownerId: existing.ownerId, poolStatus: existing.poolStatus, deletedAt: existing.deletedAt, market: existing.market }))) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 

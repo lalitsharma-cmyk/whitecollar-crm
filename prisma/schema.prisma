@@ -2210,6 +2210,16 @@ model BuyerRecord {
   rawImport         Json?    // verbatim full import row { "<header>": "<value>", ... }
   // Repeat-buyer detection
   buyerKey          String?  // Normalized (fname+lname+phone hash) for rollup. Index for dedup.
+  // ── Market segregation (Dubai Buyer Data) ───────────────────────────────────
+  // THIS module is "Dubai Buyer Data" — only Dubai/UAE buyers live here. The
+  // `market` field is the seam that keeps it market-scoped: every read in this
+  // module pins market:"Dubai" (see DUBAI_MARKET / dubaiBuyerWhere in
+  // src/lib/buyerScope.ts), assignment is limited to Dubai-team users + admins,
+  // and visibility is Dubai-team + admin only. A FUTURE Gurgaon/India Buyer Data
+  // module will be a SEPARATE module with its own market value (e.g. "Gurgaon"),
+  // its own pages, and its own assignment rules — do NOT turn this into a shared
+  // all-markets system by widening these queries.
+  market            String   @default("Dubai") // "Dubai" today; future modules use their own value.
   // Metadata
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
@@ -2255,6 +2265,7 @@ model BuyerRecord {
   @@index([poolStatus])
   @@index([ownerId, poolStatus])
   @@index([deletedAt])
+  @@index([market])
 }
 
 // ── BuyerAssignment — agent-handling history ─────────────────────────────────
