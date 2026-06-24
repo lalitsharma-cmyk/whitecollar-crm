@@ -38,18 +38,27 @@ function pct(n: number): string {
 // Order matches the spec: Fresh Received | Current Fresh | Contacted |
 // Qualified | Meeting | Site Visit | Negotiation | Booked/Won | Lost |
 // Rejected | Active.
+//
+// COHORT RULE: every column here is a count OF THE ASSIGNED-IN-WINDOW COHORT
+// (each lead held by this agent via an assignment dated in the window), bucketed
+// by its CURRENT state. So all the cur* columns + Rejected sum cleanly against
+// "Assigned" and every rate built from them is ≤100%. The "Rejected" column is
+// the SAME-COHORT `curRejected` (assigned-in-window AND currently rejected) — NOT
+// the owner-scoped "all rejections dated in the window" count, which is a
+// different population and could exceed the cohort. Each `title` is the exact
+// calculation, surfaced as a hover tooltip on the header.
 const COLS: Array<{ label: string; field: keyof AgentMetrics; drill: DrillKey; tone?: string; title?: string }> = [
-  { label: "Fresh Recv.", field: "freshAssigned", drill: "freshAssigned", title: "Assigned in this window while still Fresh (fresh-at-assignment)" },
-  { label: "Cur. Fresh", field: "curFresh", drill: "curFresh", title: "Assigned-in-window leads whose status is currently Fresh" },
-  { label: "Contacted", field: "curContacted", drill: "curContacted", title: "Currently in active follow-up (Follow Up / Postponed)" },
-  { label: "Qualified", field: "curQualified", drill: "curQualified", title: "Engaged & advanced (Long Term Follow Up)" },
-  { label: "Meeting", field: "curMeeting", drill: "curMeeting", tone: "text-teal-700", title: "Currently at a meeting stage (Meeting / Office / Zoom / Expo)" },
-  { label: "Site Visit", field: "curSiteVisit", drill: "curSiteVisit", tone: "text-cyan-700", title: "Currently at a site-visit stage (Site Visit Schedule / Visit Dubai)" },
-  { label: "Negotiation", field: "curNegotiation", drill: "curNegotiation", title: "In discussion (Details / Mail Sent)" },
-  { label: "Booked/Won", field: "curBooked", drill: "curBooked", tone: "text-emerald-700 font-semibold", title: "Booked With Us" },
-  { label: "Lost", field: "curLost", drill: "curLost", tone: "text-rose-600", title: "Currently a Lost status" },
-  { label: "Rejected", field: "rejected", drill: "rejected", tone: "text-rose-700", title: "Rejected in this window (by rejection date)" },
-  { label: "Active", field: "assignedActive", drill: "assignedActive", tone: "font-semibold", title: "Assigned-in-window and currently still workable" },
+  { label: "Fresh Recv.", field: "freshAssigned", drill: "freshAssigned", title: "Fresh Received = leads assigned to this agent in this period that were still Fresh at the moment of assignment (fresh-at-assignment). Subset of Assigned." },
+  { label: "Cur. Fresh", field: "curFresh", drill: "curFresh", title: "Current Fresh = leads assigned in this period whose status is CURRENTLY Fresh / not-yet-contacted. Subset of Assigned." },
+  { label: "Contacted", field: "curContacted", drill: "curContacted", title: "Contacted = assigned-in-period leads CURRENTLY in active follow-up (Follow Up / Postponed). Subset of Assigned." },
+  { label: "Qualified", field: "curQualified", drill: "curQualified", title: "Qualified = assigned-in-period leads CURRENTLY engaged & advanced (Long Term Follow Up). Subset of Assigned." },
+  { label: "Meeting", field: "curMeeting", drill: "curMeeting", tone: "text-teal-700", title: "Meeting = assigned-in-period leads CURRENTLY at a meeting stage (Meeting / Office Visit / Zoom / Expo). Subset of Assigned." },
+  { label: "Site Visit", field: "curSiteVisit", drill: "curSiteVisit", tone: "text-cyan-700", title: "Site Visit = assigned-in-period leads CURRENTLY at a site-visit stage (Site Visit Schedule / Visit Dubai). Subset of Assigned." },
+  { label: "Negotiation", field: "curNegotiation", drill: "curNegotiation", title: "Negotiation = assigned-in-period leads CURRENTLY in discussion (Details Shared / Mail Sent). Subset of Assigned." },
+  { label: "Booked/Won", field: "curBooked", drill: "curBooked", tone: "text-emerald-700 font-semibold", title: "Booked/Won = assigned-in-period leads CURRENTLY Booked With Us. Numerator of Conversion Rate. Subset of Assigned." },
+  { label: "Lost", field: "curLost", drill: "curLost", tone: "text-rose-600", title: "Lost = assigned-in-period leads CURRENTLY in a Lost status. Subset of Assigned." },
+  { label: "Rejected", field: "curRejected", drill: "curRejected", tone: "text-rose-700", title: "Rejected = leads assigned in this period that are NOW rejected (same cohort). Numerator of Rejection Rate. Always ≤ Assigned (a lead is counted once)." },
+  { label: "Active", field: "assignedActive", drill: "assignedActive", tone: "font-semibold", title: "Active = assigned-in-period leads that are CURRENTLY still workable (not won / lost / rejected). Subset of Assigned." },
 ];
 
 function Cell({
@@ -81,10 +90,23 @@ function Cell({
   );
 }
 
-function SummaryCard({ label, value, accent, sub }: { label: string; value: string; accent: string; sub?: string }) {
+function SummaryCard({ label, value, accent, sub, title }: { label: string; value: string; accent: string; sub?: string; title?: string }) {
   return (
-    <div className={`card p-3 border-l-4 ${accent}`}>
-      <div className="text-[10px] uppercase tracking-widest text-gray-500 font-bold leading-tight">{label}</div>
+    // `title` puts the exact calculation on hover over the WHOLE card; the little
+    // ⓘ glyph signals "hover me for the formula" so the help is discoverable.
+    <div className={`card p-3 border-l-4 ${accent} relative group`} title={title}>
+      <div className="flex items-center gap-1">
+        <div className="text-[10px] uppercase tracking-widest text-gray-500 font-bold leading-tight">{label}</div>
+        {title && (
+          <span
+            className="text-[9px] text-gray-300 group-hover:text-gray-500 cursor-help select-none"
+            aria-label={title}
+            title={title}
+          >
+            ⓘ
+          </span>
+        )}
+      </div>
       <div className="text-xl font-extrabold mt-1 dark:text-white">{value}</div>
       {sub && <div className="text-[10px] text-gray-400 mt-0.5">{sub}</div>}
     </div>
@@ -178,16 +200,26 @@ export default async function DashboardAssignmentWidget({
         />
       </div>
 
-      {/* Summary cards */}
+      {/* Summary cards — every rate is COHORT-based (numerator ⊆ the assigned-in-
+          window cohort, denominator = that cohort) so each is mathematically
+          0–100%. Hover any card (or its ⓘ) for the exact formula. */}
       <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2 mb-4">
-        <SummaryCard label="Assigned" value={num(summary.totalAssigned)} accent="border-blue-500" sub="in window" />
-        <SummaryCard label="Active" value={num(summary.totalActive)} accent="border-amber-500" sub="still workable" />
-        <SummaryCard label="Rejected" value={num(summary.totalRejected)} accent="border-rose-500" sub="in window" />
-        <SummaryCard label="Booked/Won" value={num(summary.totalBooked)} accent="border-emerald-500" sub="converted" />
-        <SummaryCard label="Conversion" value={pct(summary.conversionRatePct)} accent="border-emerald-500" sub="booked ÷ assigned" />
-        <SummaryCard label="Rejection" value={pct(summary.rejectionRatePct)} accent="border-rose-500" sub="rejected ÷ assigned" />
-        <SummaryCard label="Meeting Rate" value={pct(summary.meetingRatePct)} accent="border-teal-500" sub="at meeting ÷ assigned" />
-        <SummaryCard label="Site Visit Rate" value={pct(summary.siteVisitRatePct)} accent="border-cyan-500" sub="at SV ÷ assigned" />
+        <SummaryCard label="Assigned" value={num(summary.totalAssigned)} accent="border-blue-500" sub="in this period"
+          title="Assigned = number of leads assigned to these agents during the selected period (by assignment history; de-duped per lead/agent). This is the cohort — the denominator of every rate below." />
+        <SummaryCard label="Active" value={num(summary.totalActive)} accent="border-amber-500" sub="still workable"
+          title="Active = of the leads assigned in this period, how many are CURRENTLY still workable (not won / lost / rejected). Count of the cohort." />
+        <SummaryCard label="Rejected" value={num(summary.totalRejectedCohort)} accent="border-rose-500" sub="of assigned cohort"
+          title="Rejected = of the leads assigned in this period, how many are NOW rejected. Same-cohort count — the Rejection-Rate numerator (always ≤ Assigned)." />
+        <SummaryCard label="Booked/Won" value={num(summary.totalBooked)} accent="border-emerald-500" sub="of assigned cohort"
+          title="Booked/Won = of the leads assigned in this period, how many are CURRENTLY Booked With Us. Same-cohort count — the Conversion-Rate numerator." />
+        <SummaryCard label="Conversion" value={pct(summary.conversionRatePct)} accent="border-emerald-500" sub="booked ÷ assigned"
+          title="Conversion Rate = leads assigned in this period that are now Booked/Won ÷ leads assigned in this period. Same cohort → 0–100%." />
+        <SummaryCard label="Rejection" value={pct(summary.rejectionRatePct)} accent="border-rose-500" sub="rejected ÷ assigned"
+          title="Rejection Rate = leads assigned in this period that are now Rejected ÷ leads assigned in this period. Same cohort → 0–100% (fixes the old cross-population >100% bug)." />
+        <SummaryCard label="Meeting Rate" value={pct(summary.meetingRatePct)} accent="border-teal-500" sub="at meeting ÷ assigned"
+          title="Meeting Rate = leads assigned in this period now at a meeting stage ÷ leads assigned in this period. Same cohort → 0–100%." />
+        <SummaryCard label="Site Visit Rate" value={pct(summary.siteVisitRatePct)} accent="border-cyan-500" sub="at SV ÷ assigned"
+          title="Site Visit Rate = leads assigned in this period now at a site-visit stage ÷ leads assigned in this period. Same cohort → 0–100%." />
       </div>
 
       {/* Per-agent grid (horizontal scroll on small screens) */}
@@ -235,10 +267,12 @@ export default async function DashboardAssignmentWidget({
       )}
 
       <div className="text-[10px] text-gray-500 mt-3 leading-relaxed">
-        <strong>Attribution:</strong> a lead counts for the agent who <strong>held it when it was assigned in the window</strong> (assignment history) — a lead created
-        earlier but assigned in-window still counts here. <strong>Fresh Recv.</strong> = fresh-at-assignment; the rest are the <strong>current</strong> status of those
-        assigned leads (each lead in exactly one column → columns sum to Assigned, minus terminal). <strong>Rejected</strong> is by rejection date in the window. Every
-        number is clickable and reconciles 1:1 with its lead list. Deleted / recycle-bin leads are excluded. Auto-refreshes while this tab is open.
+        <strong>Cohort:</strong> every column &amp; rate is built from the SAME population — the leads <strong>assigned to the agent in this period</strong> (assignment
+        history; a lead created earlier but assigned in-period still counts; de-duped per lead/agent). <strong>Fresh Recv.</strong> = fresh-at-assignment; the status
+        columns are the <strong>current</strong> state of those assigned leads (each lead in exactly one column → they sum to Assigned). <strong>Rejected</strong> here =
+        assigned-in-period leads that are <em>now</em> rejected (same cohort), so every rate (Conversion / Rejection / Meeting / Site-Visit = that column ÷ Assigned) is
+        always <strong>0–100%</strong>. Hover any header or summary card for its exact formula. Every number is clickable and reconciles 1:1 with its lead list. Deleted /
+        recycle-bin leads are excluded. Auto-refreshes while this tab is open.
       </div>
     </div>
   );

@@ -189,6 +189,63 @@ export function isValidDateKey(s: string | null | undefined): s is string {
   return !isNaN(t);
 }
 
+// ── Time-of-day greeting (timezone-aware) ──────────────────────────────────
+// The dashboard greeting must reflect the USER'S local time, not the server's.
+// Vercel runs in UTC, so a server-computed "morning" is wrong for an IST/GST
+// user (4:11 PM IST = 10:41 UTC = "morning" — the reported bug). These helpers
+// derive the hour in an explicit IANA timezone, so the band is always correct
+// regardless of where the code runs.
+//
+// Bands (in the target timezone), per spec:
+//   05:00–11:59 → Morning   12:00–16:59 → Afternoon
+//   17:00–20:59 → Evening   21:00–04:59 → Night
+
+export type GreetingBand = "Morning" | "Afternoon" | "Evening" | "Night";
+
+/** Map a user's team to their wall-clock timezone. India → IST, Dubai → GST. */
+export function tzForTeam(team: string | null | undefined): string {
+  const t = (team ?? "").trim().toLowerCase();
+  if (t === "dubai" || t === "uae" || t === "dxb" || t === "ae") return "Asia/Dubai";
+  if (t === "india" || t === "in" || t === "ind" || t === "bharat") return "Asia/Kolkata";
+  return "Asia/Kolkata"; // sensible default for this India-HQ'd team
+}
+
+/** The hour-of-day (0–23) of an instant, read in a specific IANA timezone. */
+export function hourInTZ(d: Date, tz: string): number {
+  // en-GB + hourCycle h23 → "00".."23"; parse to a number. Robust across zones.
+  const hh = new Intl.DateTimeFormat("en-GB", {
+    hour: "2-digit",
+    hourCycle: "h23",
+    timeZone: tz,
+  }).format(d);
+  const n = parseInt(hh, 10);
+  return Number.isFinite(n) ? n % 24 : 0;
+}
+
+/** Time-of-day band for an instant, evaluated in the given timezone. */
+export function greetingBandFor(d: Date, tz: string): GreetingBand {
+  const h = hourInTZ(d, tz);
+  if (h >= 5 && h < 12) return "Morning";   // 05:00–11:59
+  if (h >= 12 && h < 17) return "Afternoon"; // 12:00–16:59
+  if (h >= 17 && h < 21) return "Evening";   // 17:00–20:59
+  return "Night";                            // 21:00–04:59
+}
+
+/** Full greeting phrase, e.g. "Good Afternoon", for an instant in a timezone. */
+export function greetingFor(d: Date, tz: string): string {
+  return `Good ${greetingBandFor(d, tz)}`;
+}
+
+/** A representative emoji for a greeting band (for the dashboard header flourish). */
+export function greetingEmojiFor(band: GreetingBand): string {
+  switch (band) {
+    case "Morning": return "☀️";
+    case "Afternoon": return "🌤️";
+    case "Evening": return "🌆";
+    case "Night": return "🌙";
+  }
+}
+
 /**
  * Short, honest range label for KPI sub-text.
  *

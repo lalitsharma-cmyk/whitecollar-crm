@@ -275,6 +275,15 @@ export interface AgentMetrics {
   curOther: number;
   /** Assigned-in-window AND currently still workable (not terminal). */
   assignedActive: number;
+  /**
+   * Of the assigned-in-window cohort, how many are CURRENTLY rejected
+   * (rejectedAt != null). This is the SAME-COHORT rejected number — distinct
+   * from `rejected` below, which is the owner-scoped count of ALL rejections
+   * dated in the window (a different, non-comparable population). Every
+   * rejection RATE must use this cohort number as its numerator so the rate is
+   * always 0–100% (a lead can't be rejected-from-cohort more than once).
+   */
+  curRejected: number;
 
   // ── Lead Outcomes (current owner, status-bucketed; rejected by rejectedAt in window) ──
   rejected: number;
@@ -319,7 +328,7 @@ function zeroMetrics(a: AgentLite): AgentMetrics {
     agentName: a.name,
     team: a.team,
     totalAssigned: 0, freshAssigned: 0, websiteAssigned: 0, eventAssigned: 0, revivalAssigned: 0, buyerAssigned: 0,
-    curFresh: 0, curContacted: 0, curQualified: 0, curMeeting: 0, curSiteVisit: 0, curNegotiation: 0, curBooked: 0, curLost: 0, curOther: 0, assignedActive: 0,
+    curFresh: 0, curContacted: 0, curQualified: 0, curMeeting: 0, curSiteVisit: 0, curNegotiation: 0, curBooked: 0, curLost: 0, curOther: 0, assignedActive: 0, curRejected: 0,
     rejected: 0, closedWon: 0, lost: 0, stillActive: 0, awaitingFollowup: 0, noFollowup: 0,
     callsLogged: 0, connectedCalls: 0, notPickedCalls: 0, whatsappConversations: 0, notesAdded: 0, voiceNotesAdded: 0,
     meetingsScheduled: 0, meetingsCompleted: 0, officeMeetings: 0, virtualMeetings: 0,
@@ -377,6 +386,7 @@ export async function buildAgentReport(range: DateRange, scope: ReportScope): Pr
           sourceRaw: true,
           leadOrigin: true,
           isColdCall: true,
+          rejectedAt: true,
         },
       },
     },
@@ -416,6 +426,12 @@ export async function buildAgentReport(range: DateRange, scope: ReportScope): Pr
       default: m.curOther += 1; break;
     }
     if (isWorkableStatus(l.currentStatus)) m.assignedActive += 1;
+    // SAME-COHORT rejected: this assigned-in-window lead is CURRENTLY rejected
+    // (rejectedAt stamped). Numerator for the cohort rejection rate — guaranteed
+    // ⊆ totalAssigned, so the rate can never exceed 100% (the 233% bug). NOTE
+    // this is intentionally NOT "rejected in the window" (m.rejected, owner-
+    // scoped) — that population is unrelated to the assigned cohort.
+    if (l.rejectedAt != null) m.curRejected += 1;
   }
 
   // ── 2. OUTCOMES (by CURRENT owner — "what is the state of this agent's book") ──
@@ -619,24 +635,38 @@ function applyGroupU(
 
 // ── Summary roll-up (dashboard widget cards) ─────────────────────────────────
 // Aggregate the per-agent rows into the headline numbers + rates for the
-// selected window/team. Booked/Active/Lost use the assigned-in-window
-// CURRENT-status breakdown (curBooked/assignedActive/curLost) so every card
-// reconciles with the grid's column totals; rejected uses the rejectedAt-in-
-// window column. Rates are over total assigned-in-window (the widget's
-// population), 0 when there are no assigned leads.
-
+// selected window/team.
+//
+// COHORT RULE (the single invariant this widget guarantees): EVERY percentage's
+// numerator AND denominator come from the SAME assigned-in-window cohort. The
+// denominator is always totalAssigned (the cohort); each numerator is the count
+// of cohort members CURRENTLY in that state (curBooked / curRejected / curMeeting
+// / curSiteVisit / assignedActive). Because each numerator is a subset of the
+// cohort, every rate is mathematically in [0,100]% and means exactly what it says.
+//
+// This is why `totalRejectedCohort` uses `curRejected` (cohort members currently
+// rejected) and NOT `m.rejected` (the owner-scoped count of ALL rejections dated
+// in the window). The old code divided owner-scoped rejections by the cohort and
+// could exceed 100% (the reported "233.3%": 7 rejected-in-window ÷ 3 assigned).
+//   • totalRejectedCohort  — cohort number, drives Rejection Rate (≤100%).
+//   • totalRejectedInWindow — the standalone owner-scoped COUNT, shown as a count
+//     only (no % over the cohort), preserved for the per-agent grid's "Rejected"
+//     column which is explicitly labelled "rejected in this window".
 export interface ReportSummary {
   totalAssigned: number;
   totalActive: number;
-  totalRejected: number;
+  /** Cohort members CURRENTLY rejected — the Rejection-Rate numerator. */
+  totalRejectedCohort: number;
+  /** Owner-scoped rejections dated in the window — a COUNT only (not a cohort %). */
+  totalRejectedInWindow: number;
   totalBooked: number;
   totalLost: number;
-  totalMeetings: number;   // assigned-in-window currently at meeting stage
-  totalSiteVisits: number; // assigned-in-window currently at site-visit stage
-  conversionRatePct: number; // booked ÷ assigned
-  rejectionRatePct: number;  // rejected ÷ assigned
-  meetingRatePct: number;    // at-meeting ÷ assigned
-  siteVisitRatePct: number;  // at-site-visit ÷ assigned
+  totalMeetings: number;   // assigned-in-window cohort currently at meeting stage
+  totalSiteVisits: number; // assigned-in-window cohort currently at site-visit stage
+  conversionRatePct: number; // curBooked ÷ assigned cohort
+  rejectionRatePct: number;  // curRejected ÷ assigned cohort  (same cohort → ≤100%)
+  meetingRatePct: number;    // curMeeting ÷ assigned cohort
+  siteVisitRatePct: number;  // curSiteVisit ÷ assigned cohort
 }
 
 export function summarizeReport(rows: AgentMetrics[]): ReportSummary {
@@ -644,20 +674,27 @@ export function summarizeReport(rows: AgentMetrics[]): ReportSummary {
     (acc, m) => {
       acc.totalAssigned += m.totalAssigned;
       acc.totalActive += m.assignedActive;
-      acc.totalRejected += m.rejected;
+      acc.totalRejectedCohort += m.curRejected;
+      acc.totalRejectedInWindow += m.rejected;
       acc.totalBooked += m.curBooked;
       acc.totalLost += m.curLost;
       acc.totalMeetings += m.curMeeting;
       acc.totalSiteVisits += m.curSiteVisit;
       return acc;
     },
-    { totalAssigned: 0, totalActive: 0, totalRejected: 0, totalBooked: 0, totalLost: 0, totalMeetings: 0, totalSiteVisits: 0 },
+    { totalAssigned: 0, totalActive: 0, totalRejectedCohort: 0, totalRejectedInWindow: 0, totalBooked: 0, totalLost: 0, totalMeetings: 0, totalSiteVisits: 0 },
   );
-  const pct = (n: number) => (s.totalAssigned > 0 ? (n / s.totalAssigned) * 100 : 0);
+  // Same-cohort ratio, clamped to [0,100] as a belt-and-braces guard. With a
+  // subset numerator the clamp is a no-op, but it makes the invariant explicit
+  // and unbreakable even if a future numerator is mis-wired.
+  const pct = (n: number) => {
+    if (s.totalAssigned <= 0) return 0;
+    return Math.min(100, Math.max(0, (n / s.totalAssigned) * 100));
+  };
   return {
     ...s,
     conversionRatePct: pct(s.totalBooked),
-    rejectionRatePct: pct(s.totalRejected),
+    rejectionRatePct: pct(s.totalRejectedCohort),
     meetingRatePct: pct(s.totalMeetings),
     siteVisitRatePct: pct(s.totalSiteVisits),
   };
@@ -698,7 +735,8 @@ export type DrillKey =
   | "funnelQualified" | "funnelMeetings" | "funnelSiteVisits" | "funnelNegotiations" | "funnelBookings"
   // CURRENT-status breakdown of the assigned-in-window population (dashboard grid).
   | "curFresh" | "curContacted" | "curQualified" | "curMeeting" | "curSiteVisit"
-  | "curNegotiation" | "curBooked" | "curLost" | "curOther" | "assignedActive";
+  | "curNegotiation" | "curBooked" | "curLost" | "curOther" | "assignedActive"
+  | "curRejected";
 
 const ACTIVE_OR: Prisma.LeadWhereInput["OR"] = [
   { currentStatus: null }, { currentStatus: "" }, { currentStatus: { notIn: TERMINAL_STATUSES } },
@@ -781,6 +819,12 @@ export function drilldownWhere(key: DrillKey, agentId: string, range: DateRange)
     case "assignedActive":
       // Assigned-in-window AND currently workable (not terminal).
       return { ...assignedInWindow, OR: [{ currentStatus: null }, { currentStatus: "" }, { currentStatus: { notIn: TERMINAL_STATUSES } }] };
+    case "curRejected":
+      // SAME-COHORT rejected: assigned-in-window AND currently rejected
+      // (rejectedAt stamped). This is the drill behind the Rejection-Rate
+      // numerator — its record count == curRejected exactly. (Distinct from the
+      // `rejected` drill, which is owner-scoped rejectedAt-in-window.)
+      return { ...assignedInWindow, rejectedAt: { not: null } };
 
     default:
       return { deletedAt: null, id: "__none__" }; // never matches
@@ -823,6 +867,7 @@ export const DRILL_LABELS: Record<DrillKey, string> = {
   curLost: "Assigned · Lost",
   curOther: "Assigned · Other Outcome",
   assignedActive: "Assigned · Currently Active",
+  curRejected: "Assigned · Currently Rejected",
 };
 
 /** Source-of-truth for the metric used by the CSV export (label + accessor). */
@@ -852,6 +897,7 @@ export const METRIC_COLUMNS: MetricColumn[] = [
   { key: "curNegotiation", label: "Negotiation", group: "Live Status", get: (m) => m.curNegotiation },
   { key: "curBooked", label: "Booked/Won", group: "Live Status", get: (m) => m.curBooked },
   { key: "curLost", label: "Lost (assigned)", group: "Live Status", get: (m) => m.curLost },
+  { key: "curRejected", label: "Rejected (assigned cohort)", group: "Live Status", get: (m) => m.curRejected },
   { key: "curOther", label: "Other (assigned)", group: "Live Status", get: (m) => m.curOther },
   { key: "assignedActive", label: "Active (assigned)", group: "Live Status", get: (m) => m.assignedActive },
   // Outcomes

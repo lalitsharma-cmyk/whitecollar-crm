@@ -165,7 +165,18 @@
 // and non-name values (email/code) are preserved. A one-off migration backfilled
 // existing rows (31 Lead + 3 Buyer fields). Refresh so name fields render the
 // cleaned values. Display-only formatLeadName unchanged; no schema change.
-const CACHE = "wcr-shell-v50";
+// v51 (2026-06-24): Dashboard fixes. (A) "Live Lead Assignment & Status" widget
+// percentages now all COHORT-based — Rejection/Conversion/Meeting/Site-Visit
+// rates = (cohort members now in that state) ÷ (leads assigned in the period),
+// so every rate is 0–100% (kills the 233.3% Rejection Rate from comparing
+// owner-scoped rejections against the assigned cohort). New same-cohort
+// curRejected metric + drill (assigned-in-window AND now rejected); the grid's
+// Rejected column + Rejected summary card switched to it; tooltip/help text with
+// the exact formula on EVERY KPI header + summary card. (B) Greeting is now
+// timezone-aware + live — a client island computes Morning/Afternoon/Evening/
+// Night from the user's tz (India→IST, Dubai→GST) and auto-updates across
+// boundaries (no more "Good morning" at 4 PM IST; no stale cached greeting).
+const CACHE = "wcr-shell-v51";
 const SHELL = ["/login", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", (event) => {

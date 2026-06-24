@@ -20,6 +20,8 @@ import TargetCelebration from "@/components/TargetCelebration";
 import RemindersCard, { type ReminderEvent } from "@/components/RemindersCard";
 import { countUnassignedLeads, countAwaitingTeamLeads } from "@/lib/leadCounts";
 import DashboardAssignmentWidget from "@/components/DashboardAssignmentWidget";
+import DashboardGreeting from "@/components/DashboardGreeting";
+import { tzForTeam, greetingFor } from "@/lib/datetime";
 
 export const dynamic = "force-dynamic";
 
@@ -284,7 +286,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   // §12.4 Daily Opening Experience adds:
   //   • Today's mission — the SINGLE most-impactful lead for the agent right
   //     now (priority: hottest untouched > biggest closeable > oldest overdue).
-  //   • Time-aware greeting (good morning / afternoon / evening in IST).
+  //   • Time-aware greeting (Morning/Afternoon/Evening/Night in the user's tz).
   //   • Streak nudge so the daily login + follow-up streak feel rewarded.
   const since24h = new Date(Date.now() - 24 * 3600_000);
   const [myNewOvernight, myFollowupsToday, myCallbacksToday] = await Promise.all([
@@ -309,9 +311,15 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   ]);
   const hasMorningWork = myNewOvernight > 0 || myFollowupsToday > 0 || myCallbacksToday > 0;
 
-  // Greeting — always "Good morning" regardless of time of day.
-  const greeting = "Good morning";
-  const energyEmoji = "☀️";
+  // ── Time-of-day greeting (timezone-aware) ──────────────────────────────
+  // The user's wall-clock timezone (India→IST, Dubai→GST) drives the band.
+  // The PERSONAL greeting card uses a live CLIENT island (DashboardGreeting)
+  // that recomputes from the browser clock and auto-updates across boundaries.
+  // The lead-ops card (Sameer) is a simpler one-line header — render a correct
+  // server-side band for it here (still tz-aware, never a hardcoded "morning").
+  const greetingTz = tzForTeam(me.team);
+  const firstName = me.name.split(" ")[0];
+  const greeting = greetingFor(new Date(), greetingTz);
 
   // Daily real-estate sales-motivation quote (one per IST day, same all day).
   const dailyQuote = dashboardQuoteOfTheDay(istDayNumber(Date.now()));
@@ -472,7 +480,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
           {isLeadOps && mgmt && (
             <>
               <div className="card p-4 border-l-4 border-[#0b1a33] bg-gradient-to-br from-slate-50 to-white">
-                <div className="font-display text-lg font-bold text-[#0b1a33]">🗂️ {greeting}, {me.name.split(" ")[0]} — Lead Management</div>
+                <div className="font-display text-lg font-bold text-[#0b1a33]">🗂️ {greeting}, {firstName} — Lead Management</div>
                 <div className="text-xs text-gray-500 mt-0.5">Assignment queue &amp; team workload</div>
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
@@ -537,9 +545,9 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
             <div className="flex items-start justify-between gap-3 flex-wrap">
               <div className="flex-1 min-w-0">
                 <div className="flex items-baseline gap-2 flex-wrap">
-                  <h2 className="font-display text-lg sm:text-xl font-bold text-[#0b1a33]">
-                    {energyEmoji} {greeting}, {me.name.split(" ")[0]}
-                  </h2>
+                  {/* Live, timezone-aware greeting (client island) — auto-updates
+                      across Morning/Afternoon/Evening/Night boundaries. */}
+                  <DashboardGreeting firstName={firstName} tz={greetingTz} />
                 </div>
                 <p className="mt-1.5 text-sm italic text-[#6b5a2e] dark:text-amber-200/80">&ldquo;{dailyQuote}&rdquo;</p>
                 {hasMorningWork && (

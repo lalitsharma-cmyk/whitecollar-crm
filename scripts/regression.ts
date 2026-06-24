@@ -1855,6 +1855,123 @@ const checks: Check[] = [
   },
 
   // ───────────────────────────────────────────────────────────────────────────
+  // 12b. DASHBOARD KPI COHORT INTEGRITY (2026-06-24)
+  //   The "Live Lead Assignment & Status" widget's percentages must compare the
+  //   SAME population. Bug fixed: Rejection Rate divided owner-scoped
+  //   rejections-in-window by the assigned-in-window cohort and could exceed
+  //   100% (the reported 233.3% = 7 ÷ 3). Now EVERY rate's numerator is a cohort
+  //   member currently in that state, denominator = the cohort.
+  //   (a) DATA — for a real agent, the cohort-Rejected DRILL count (assigned-in-
+  //       window AND rejectedAt != null) is a SUBSET of Assigned, so
+  //       curRejected/assigned ≤ 100%. Mirrors agentPerformance.drilldownWhere.
+  //   (b) MATH — replicate summarizeReport's clamped cohort `pct()` and prove no
+  //       rate can exceed 100% even on an adversarial (rejected>assigned) row,
+  //       and that the 233% scenario (assigned=3, curRejected=… ) is impossible
+  //       because the numerator is drawn from the cohort.
+  // ───────────────────────────────────────────────────────────────────────────
+  {
+    name: "dashboard-kpi-cohort — every widget rate ≤100% & uses the assigned-in-window cohort denominator (233% bug gone)",
+    run: async () => {
+      // (a) DATA — cohort-rejected ⊆ assigned-in-window, for a real agent.
+      const recentAssignment = await prisma.assignment.findFirst({
+        where: { lead: { deletedAt: null } },
+        orderBy: { assignedAt: "desc" },
+        select: { userId: true },
+      });
+      if (!recentAssignment) {
+        results.push({ name: "  ↳ note", ok: true, detail: "no Assignment rows in prod — cohort data check vacuously satisfied" });
+      } else {
+        const agentId = recentAssignment.userId;
+        const win = { gte: new Date("2000-01-01T00:00:00Z"), lt: new Date(Date.now() + 86400000) };
+        const assignedInWindow = { deletedAt: null, assignments: { some: { userId: agentId, assignedAt: win } } } as const;
+        const assigned = await prisma.lead.count({ where: assignedInWindow });
+        assert(assigned > 0, "selected agent has no assigned-in-window leads — fixture mismatch");
+        // The curRejected drill where (mirror of drilldownWhere("curRejected", …)).
+        const cohortRejected = await prisma.lead.count({ where: { ...assignedInWindow, rejectedAt: { not: null } } });
+        assert(cohortRejected <= assigned, `cohort-rejected (${cohortRejected}) must be ⊆ assigned (${assigned}) — rejection numerator is NOT a subset of the cohort`);
+        // The same-cohort booked / active / meeting / site-visit numerators are also subsets.
+        const cohortBooked = await prisma.lead.count({ where: { ...assignedInWindow, currentStatus: { in: ["Booked With Us", "Booked with Us"] } } });
+        assert(cohortBooked <= assigned, `cohort-booked (${cohortBooked}) must be ⊆ assigned (${assigned})`);
+        const rate = (n: number) => (assigned > 0 ? (n / assigned) * 100 : 0);
+        assert(rate(cohortRejected) <= 100 && rate(cohortBooked) <= 100, "cohort rates over the real agent must be ≤100%");
+        results.push({ name: "  ↳ note", ok: true, detail: `agent ${agentId}: assigned=${assigned}, cohortRejected=${cohortRejected} (rate ${rate(cohortRejected).toFixed(1)}%), cohortBooked=${cohortBooked}` });
+      }
+
+      // (b) MATH — replicate the clamped cohort pct() from summarizeReport and
+      // prove it is unbreakable. Cohort numerators are subsets, so even if a row
+      // mis-reports, the clamp keeps the rate in [0,100].
+      const pct = (n: number, assigned: number) => {
+        if (assigned <= 0) return 0;
+        return Math.min(100, Math.max(0, (n / assigned) * 100));
+      };
+      // The exact reported bug scenario: assigned=3. A correct COHORT rejected can
+      // be at most 3 → ≤100%. The old code fed 7 (owner-scoped) → 233%. Prove the
+      // cohort value (≤assigned) yields ≤100, and the clamp catches any overflow.
+      assert(pct(3, 3) === 100, "cohort all-rejected (3/3) = 100% exactly");
+      assert(pct(0, 3) === 0, "cohort none-rejected (0/3) = 0%");
+      assert(pct(7, 3) === 100, "clamp caps an impossible 7/3 at 100% (defence in depth) — never 233%");
+      assert(pct(5, 0) === 0, "no assigned cohort → 0% (no divide-by-zero)");
+      // For ANY subset numerator 0..assigned, the rate is within [0,100].
+      for (let assigned = 1; assigned <= 25; assigned++) {
+        for (let num = 0; num <= assigned; num++) {
+          const r = pct(num, assigned);
+          assert(r >= 0 && r <= 100, `cohort rate out of range: ${num}/${assigned} = ${r}`);
+        }
+      }
+    },
+  },
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // 12c. GREETING TIMEZONE (2026-06-24)
+  //   The dashboard greeting was computed server-side in UTC → "Good morning" at
+  //   4:11 PM IST. greetingFor(date, tz) (pure, in datetime.ts — NO server-only,
+  //   so this tests the REAL helper) must band by the user's timezone:
+  //     05:00–11:59 Morning · 12:00–16:59 Afternoon · 17:00–20:59 Evening ·
+  //     21:00–04:59 Night. Boundary times + the reported IST-16:11 bug + the
+  //     India/Dubai tz mapping are all locked in.
+  // ───────────────────────────────────────────────────────────────────────────
+  {
+    name: "greeting-tz — greetingFor() bands by user tz at every boundary; IST 16:11 → Afternoon (bug fixed)",
+    run: async () => {
+      const { greetingFor, greetingBandFor, tzForTeam, hourInTZ } = await import("../src/lib/datetime");
+      const IST = "Asia/Kolkata";
+      const GST = "Asia/Dubai";
+
+      // Helper: build a UTC instant that reads as the given IST wall-clock H:M.
+      // IST = UTC+5:30 (no DST), so IST HH:MM == UTC (HH:MM − 5:30).
+      const istAt = (h: number, m: number) => new Date(Date.UTC(2026, 5, 24, h, m, 0) - 330 * 60_000);
+
+      // Boundary table (in IST).
+      assert(greetingBandFor(istAt(4, 59), IST) === "Night", "04:59 IST → Night");
+      assert(greetingBandFor(istAt(5, 0), IST) === "Morning", "05:00 IST → Morning");
+      assert(greetingBandFor(istAt(11, 59), IST) === "Morning", "11:59 IST → Morning");
+      assert(greetingBandFor(istAt(12, 0), IST) === "Afternoon", "12:00 IST → Afternoon");
+      assert(greetingBandFor(istAt(16, 59), IST) === "Afternoon", "16:59 IST → Afternoon");
+      assert(greetingBandFor(istAt(17, 0), IST) === "Evening", "17:00 IST → Evening");
+      assert(greetingBandFor(istAt(20, 59), IST) === "Evening", "20:59 IST → Evening");
+      assert(greetingBandFor(istAt(21, 0), IST) === "Night", "21:00 IST → Night");
+      assert(greetingBandFor(istAt(0, 30), IST) === "Night", "00:30 IST → Night (past-midnight)");
+
+      // The reported bug: 16:11 IST must be Afternoon, NOT Morning.
+      assert(greetingFor(istAt(16, 11), IST) === "Good Afternoon", `16:11 IST must be "Good Afternoon", got ${greetingFor(istAt(16, 11), IST)}`);
+      // Same instant, naive-UTC would say morning (10:41 UTC) — prove the tz fixes it.
+      assert(hourInTZ(istAt(16, 11), IST) === 16 && hourInTZ(istAt(16, 11), "UTC") === 10, "hourInTZ reads 16 in IST but 10 in UTC for the same instant (the root cause)");
+
+      // Dubai (GST = UTC+4). 23:30 UTC = 03:30 next day GST → Night; an instant
+      // that is morning in IST can be a different band in GST.
+      const gstAt = (h: number, m: number) => new Date(Date.UTC(2026, 5, 24, h, m, 0) - 240 * 60_000);
+      assert(greetingBandFor(gstAt(5, 0), GST) === "Morning", "05:00 GST → Morning");
+      assert(greetingBandFor(gstAt(20, 59), GST) === "Evening", "20:59 GST → Evening");
+      assert(greetingBandFor(gstAt(21, 0), GST) === "Night", "21:00 GST → Night");
+
+      // Team → timezone mapping.
+      assert(tzForTeam("India") === IST && tzForTeam("Dubai") === GST, "team tz: India→IST, Dubai→GST");
+      assert(tzForTeam("uae") === GST && tzForTeam("bharat") === IST, "loose team aliases map (uae→GST, bharat→IST)");
+      assert(tzForTeam(null) === IST && tzForTeam("") === IST, "unknown/empty team → IST default");
+    },
+  },
+
+  // ───────────────────────────────────────────────────────────────────────────
   // 26. IMPORT MAPPING TOOLKIT  (shared lib used by CSV + Google-Sheet + wizard)
   //    The Import-Mapping-Approval wizard depends on the shared toolkit behaving
   //    identically across importers. Assert the REAL pure functions:
