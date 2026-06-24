@@ -1292,17 +1292,19 @@ const checks: Check[] = [
       });
       assert(convertedNoLead === 0, `${convertedNoLead} CONVERTED buyer(s) missing convertedLeadId`);
 
-      // (c) assignment-history captured: any buyer that has been worked (has a
-      // BuyerActivity of a lifecycle/contact kind) and is not still in the pool
-      // must have >= 1 BuyerAssignment stint. We check the converted set (a buyer
-      // can only be CONVERTED after being assigned), which must always have a stint.
-      const convertedBuyers = await prisma.buyerRecord.findMany({
-        where: { poolStatus: "CONVERTED" },
+      // (c) assignment-history is never LOST: any buyer that was EVER assigned to
+      // an agent (has a BuyerActivity of type "ASSIGNED") must carry >= 1
+      // BuyerAssignment stint. We key off "was ever assigned", NOT poolStatus —
+      // an admin may convert (or reject) a buyer DIRECTLY from the Admin Pool
+      // without first assigning it to an agent (owner stays null), which
+      // legitimately has 0 stints and is not lost history.
+      const everAssignedBuyers = await prisma.buyerRecord.findMany({
+        where: { activities: { some: { type: "ASSIGNED" } } },
         select: { id: true, _count: { select: { assignments: true } } },
         take: 2000,
       });
-      for (const b of convertedBuyers) {
-        assert(b._count.assignments >= 1, `CONVERTED buyer ${b.id} has no BuyerAssignment stint (history lost)`);
+      for (const b of everAssignedBuyers) {
+        assert(b._count.assignments >= 1, `Buyer ${b.id} was ASSIGNED but has no BuyerAssignment stint (history lost)`);
       }
 
       // (d) buyerScopeWhere(AGENT) excludes others + the pool. Replicated inline:
