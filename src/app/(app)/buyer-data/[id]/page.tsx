@@ -18,19 +18,30 @@ import {
   formatTxnValue,
   inferBuyerCurrency,
 } from "@/lib/buyerIntelligence";
+import {
+  CARD, VERDICT_CARD, VERDICT_EYEBROW, CARD_TITLE, CARD_TITLE_HINT,
+  ADMIN_EYEBROW, FIELD_GRID_2, FIELD_LABEL, PAGE_GRID, MAIN_COL, RIGHT_RAIL,
+} from "@/lib/detailLayout";
 
 // ── Buyer Data detail — UNIFIED with the Lead detail view (Lead = master template).
-// Same layout shell as src/app/(app)/leads/[id]/page.tsx:
-//   • LeadMobileTabs + grid lg:grid-cols-3 (main col-span-2 + right rail)
-//   • Header card: name (inline-edit) + status chip + action button row
-//     (Call/WhatsApp/Email/Log Call/Note/Voice — BuyerActionsClient)
-//   • Buyer Intelligence (mirrors BANT verdict slot at the top of the left column)
-//   • Conversation History (Raw History + Smart Timeline — BuyerActivityTimeline)
-//   • Quick Note (BuyerQuickNoteCard) — secondary, after Conversation History
-//   • BELOW QUICK NOTE → Buyer Data Extra Section: Property / Transaction / Buyer
-//     details (inline-edit) + Imported Fields + multi-property table.
-//   • Right rail: floating Sticky-Note widget (StickyNoteWidget, apiBase=/api/buyer-data)
-//     + Buyer admin panel (convert/assign/reject + attempt + transfer history).
+// Both pages now share the class tokens in src/lib/detailLayout.ts (3rd alignment
+// pass) so the two views CANNOT drift apart again. The visual shell matches the
+// Lead detail section-for-section:
+//   MAIN COLUMN (col-span-2, space-y-4):
+//     • Header card (card p-4): name (inline-edit) + status chip + snapshot chips
+//       + the fluid action button row (BuyerActionsClient → ACTION_ROW token).
+//     • Buyer Intelligence (VERDICT_CARD — same shell/tint as the Lead BANT card).
+//     • Conversation History (CONVO_CARD — BuyerActivityTimeline, Raw + Smart).
+//     • Quick Note (BuyerQuickNoteCard) — secondary, after Conversation History.
+//     • BELOW QUICK NOTE → buyer extras (additions only, SAME CARD token):
+//       Property / Transaction details + Imported Fields + multi-property table.
+//   RIGHT RAIL (space-y-3) — SAME density + card styles as the Lead right rail:
+//     • Sticky-Note widget (StickyNoteWidget, apiBase=/api/buyer-data).
+//     • Client information card (CARD + FIELD_GRID_2 — the Lead's exact 2-col style).
+//     • 📍 Location card (CARD + FIELD_GRID_2 — mirrors the Lead Location card).
+//     • 💳 Transaction & next action card (occupies the Lead "Scheduling" slot).
+//     • Buyer admin panel (BuyerAdminPanel — mirrors the Lead "🛠 Lead admin" card).
+//     • Working notes (BuyerNotesCard) + Source provenance card (admin/manager).
 // Buyer-specific data only; the Lead view is untouched. Scoped via canTouchBuyer.
 export const dynamic = "force-dynamic";
 
@@ -115,9 +126,10 @@ export default async function BuyerDetail({ params }: { params: Promise<{ id: st
     : "bg-blue-100 text-blue-800 border-blue-200 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-700";
 
   // Small inline field renderer for the buyer extra section (label + value/editor).
+  // Uses the SAME label token as the Lead view's Client-Info / Location rows.
   const Field = ({ label, children }: { label: string; children: React.ReactNode }) => (
     <div className="flex flex-col min-w-0">
-      <span className="text-xs text-gray-500 dark:text-slate-400">{label}</span>
+      <span className={FIELD_LABEL}>{label}</span>
       <span className="text-gray-800 dark:text-slate-200 break-words text-sm">{children}</span>
     </div>
   );
@@ -142,12 +154,12 @@ export default async function BuyerDetail({ params }: { params: Promise<{ id: st
         apiBase="/api/buyer-data"
       />
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 pb-24 lg:pb-0">
+      <div className={PAGE_GRID}>
         {/* ── MAIN COLUMN (col-span-2) ──────────────────────────────────────── */}
-        <div className="lg:col-span-2 space-y-4">
+        <div className={MAIN_COL}>
           {/* Header — name + status chip + action button row (always visible, no
               data-lead-section so the mobile tabs never hide it; matches Lead view). */}
-          <div className="card p-4">
+          <div className={CARD}>
             <div className="flex items-start justify-between flex-wrap gap-3">
               <div>
                 <div className="flex flex-wrap items-center gap-2">
@@ -186,7 +198,8 @@ export default async function BuyerDetail({ params }: { params: Promise<{ id: st
                     )}
                   </div>
                 )}
-                {/* Action button row — same visual style as the Lead view. */}
+                {/* Action button row — same fluid flex primitive + button styling as
+                    the Lead view (BuyerActionsClient → ACTION_ROW token). */}
                 <BuyerActionsClient
                   buyerId={rec.id}
                   phone={primaryPhone}
@@ -201,10 +214,11 @@ export default async function BuyerDetail({ params }: { params: Promise<{ id: st
           </div>
 
           {/* Buyer Intelligence — occupies the BANT-verdict slot at the top of the
-              left column (rollup metrics). data-lead-section="overview". */}
-          <div data-lead-section="overview" className="card p-4 border-l-4 border-amber-400 bg-amber-50/40 dark:bg-amber-900/10">
+              left column (rollup metrics). SAME shell + tint as the Lead BANT card
+              (VERDICT_CARD token). data-lead-section="overview". */}
+          <div data-lead-section="overview" className={VERDICT_CARD}>
             <div className="flex items-center gap-2 mb-3 flex-wrap">
-              <span className="text-xs font-bold tracking-widest text-gray-600 dark:text-slate-300">📊 BUYER INTELLIGENCE</span>
+              <span className={VERDICT_EYEBROW}>📊 BUYER INTELLIGENCE</span>
               <span className="text-[10px] text-gray-500 dark:text-slate-400">Properties · Investment · Purchase history</span>
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 text-sm">
@@ -234,7 +248,7 @@ export default async function BuyerDetail({ params }: { params: Promise<{ id: st
           </div>
 
           {/* Conversation History — Raw History + Smart Timeline (BuyerActivity),
-              same card look as the Lead Conversation History. */}
+              same card look as the Lead Conversation History (CONVO_CARD). */}
           <div data-lead-section="timeline">
             <BuyerActivityTimeline buyerId={rec.id} canLog={canLog} isAdmin={isAdmin} rawRemarks={rec.remarks} />
           </div>
@@ -246,13 +260,15 @@ export default async function BuyerDetail({ params }: { params: Promise<{ id: st
 
           {/* ════════════════════════════════════════════════════════════════════
               BUYER DATA EXTRA SECTION — below Quick Note, in the available space.
-              Property / Transaction / Buyer / Imported fields + multi-property table.
-              This is the ONLY visible difference from the Lead view.
+              Property / Transaction details + Imported fields + multi-property table.
+              These are the intended ADDITIONS (the buyer-only data); every card uses
+              the SAME CARD token + CARD_TITLE heading style as the Lead view's cards,
+              so they read as part of the same layout, never a bespoke style.
               ════════════════════════════════════════════════════════════════════ */}
 
           {/* Buyer Property Details */}
-          <div data-lead-section="overview" className="card p-4">
-            <div className="font-semibold mb-3 dark:text-slate-100">🏠 Buyer Property Details {canEditFields && <span className="text-[10px] text-gray-400 font-normal">(click any value to edit)</span>}</div>
+          <div data-lead-section="overview" className={CARD}>
+            <div className={CARD_TITLE}>🏠 Buyer Property Details {canEditFields && <span className={CARD_TITLE_HINT}>(click any value to edit)</span>}</div>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-4 gap-y-3">
               <Field label="Project">{editable("projectName", rec.projectName)}</Field>
               <Field label="Tower / Building">{editable("tower", rec.tower)}</Field>
@@ -267,8 +283,8 @@ export default async function BuyerDetail({ params }: { params: Promise<{ id: st
           </div>
 
           {/* Transaction Details */}
-          <div data-lead-section="overview" className="card p-4">
-            <div className="font-semibold mb-3 dark:text-slate-100">💳 Transaction Details {canEditFields && <span className="text-[10px] text-gray-400 font-normal">(click any value to edit)</span>}</div>
+          <div data-lead-section="overview" className={CARD}>
+            <div className={CARD_TITLE}>💳 Transaction Details {canEditFields && <span className={CARD_TITLE_HINT}>(click any value to edit)</span>}</div>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-4 gap-y-3">
               <Field label="Transaction Value">{editable("transactionValue", rec.transactionValue, { type: "number", display: formatTxnValue(rec.transactionValue, ccy) })}</Field>
               <Field label="Transaction Date">{editable("transactionDate", toDateInput(rec.transactionDate), { type: "date", display: fmtDate(rec.transactionDate) })}</Field>
@@ -279,30 +295,14 @@ export default async function BuyerDetail({ params }: { params: Promise<{ id: st
             </div>
           </div>
 
-          {/* Buyer Details */}
-          <div data-lead-section="overview" className="card p-4">
-            <div className="font-semibold mb-3 dark:text-slate-100">👤 Buyer Details {canEditFields && <span className="text-[10px] text-gray-400 font-normal">(click any value to edit)</span>}</div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-4 gap-y-3">
-              <Field label="Buyer Name">{editable("clientName", rec.clientName)}</Field>
-              <Field label="Co-Buyers">{coBuyers.length ? coBuyers.join(", ") : "—"}</Field>
-              <Field label="Phones">{phones.length ? phones.join(", ") : "—"}</Field>
-              <Field label="Emails">{emails.length ? emails.join(", ") : "—"}</Field>
-              <Field label="Nationality">{editable("nationality", rec.nationality)}</Field>
-              <Field label="Passport Number">{editable("passport", rec.passport)}</Field>
-              <Field label="Passport Expiry">{editable("passportExpiry", rec.passportExpiry)}</Field>
-              <Field label="Owner Name">{editable("ownerName", rec.ownerName)}</Field>
-              <Field label="Sales Agent">{editable("agentName", rec.agentName)}</Field>
-            </div>
-          </div>
-
           {/* Imported Fields — unmapped import columns (extraFields) + the verbatim
               full original row (rawImport, collapsible "Original Imported Row"). */}
           <ImportedFieldsCard customFields={rec.extraFields} rawImport={rec.rawImport} />
 
           {/* Multiple Properties table — all records sharing this buyerKey. */}
           {others.length > 0 && (
-            <div data-lead-section="overview" className="card p-4">
-              <div className="font-semibold mb-3 dark:text-slate-100">🏘️ Properties owned by this buyer <span className="text-[11px] text-gray-400 font-normal">— {rollup.totalPropertiesOwned} total (this + {others.length} other{others.length === 1 ? "" : "s"})</span></div>
+            <div data-lead-section="overview" className={CARD}>
+              <div className={CARD_TITLE}>🏘️ Properties owned by this buyer <span className="text-[11px] text-gray-400 font-normal">— {rollup.totalPropertiesOwned} total (this + {others.length} other{others.length === 1 ? "" : "s"})</span></div>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
@@ -344,10 +344,114 @@ export default async function BuyerDetail({ params }: { params: Promise<{ id: st
           )}
         </div>
 
-        {/* ── RIGHT RAIL ────────────────────────────────────────────────────── */}
-        <div className="space-y-3">
+        {/* ── RIGHT RAIL ────────────────────────────────────────────────────────
+            SAME density + card styles as the Lead right rail. Lead order is:
+            Sticky → Client information → Location → Scheduling → … → admin.
+            Buyer mirrors: Client information → Location → Transaction & next action
+            → Buyer admin → Working notes → Source. ──────────────────────────── */}
+        <div className={RIGHT_RAIL}>
+          {/* Client information — RIGHT-RAIL 2-col card, byte-identical shell + grid
+              + label style to the Lead view's `qualificationCard` (the Client
+              Information card). Buyer-specific fields (nationality/passport/co-buyers)
+              slot into the SAME rows. */}
+          <div data-lead-section="overview" className={CARD}>
+            <div className={CARD_TITLE}>Client information {canEditFields && <span className={CARD_TITLE_HINT}>(click any value to edit)</span>}</div>
+            <div className={`${FIELD_GRID_2} [&>div]:min-w-0 [&>div]:overflow-hidden`}>
+              <div>
+                <div className={FIELD_LABEL}>👤 Buyer Name</div>
+                {/* Read-only here — the header h2 is the single editable source for
+                    the name (parity with the Lead view, which edits name only in
+                    the header). Avoids two live editors on one field. */}
+                <span className="text-gray-800 dark:text-slate-200 break-words">{rec.clientName || "—"}</span>
+              </div>
+              <div>
+                <div className={FIELD_LABEL}>📞 Phone</div>
+                <span className="text-gray-800 dark:text-slate-200 break-words">{phones.length ? phones.join(", ") : "—"}</span>
+              </div>
+              <div>
+                <div className={FIELD_LABEL}>✉️ Email</div>
+                <span className="text-gray-800 dark:text-slate-200 break-words">{emails.length ? emails.join(", ") : "—"}</span>
+              </div>
+              <div>
+                <div className={FIELD_LABEL}>👥 Co-Buyers</div>
+                <span className="text-gray-800 dark:text-slate-200 break-words">{coBuyers.length ? coBuyers.join(", ") : "—"}</span>
+              </div>
+              <div>
+                <div className={FIELD_LABEL}>🌍 Nationality</div>
+                {editable("nationality", rec.nationality)}
+              </div>
+              <div>
+                <div className={FIELD_LABEL}>🛂 Passport Number</div>
+                {editable("passport", rec.passport)}
+              </div>
+              <div>
+                <div className={FIELD_LABEL}>📅 Passport Expiry</div>
+                {editable("passportExpiry", rec.passportExpiry)}
+              </div>
+              <div>
+                <div className={FIELD_LABEL}>🧾 Owner Name</div>
+                {editable("ownerName", rec.ownerName)}
+              </div>
+              <div>
+                <div className={FIELD_LABEL}>🧑‍💼 Sales Agent</div>
+                {editable("agentName", rec.agentName)}
+              </div>
+              <div>
+                <div className={FIELD_LABEL}>📥 Source</div>
+                <span className="text-gray-800 dark:text-slate-200 break-words">{rec.source || "—"}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* 📍 Location — mirrors the Lead view's right-rail Location card shell
+              exactly (same CARD + FIELD_GRID_2 + label style). Country + Area are
+              shown READ-ONLY here (their single editable source is the main-column
+              Property Details card) so no field is bound to two editors — a buyer
+              field with two inline editors could desync (guarded by buyer-5b). */}
+          <div data-lead-section="overview" className={CARD}>
+            <div className={CARD_TITLE}>📍 Location</div>
+            <div className={FIELD_GRID_2}>
+              <div>
+                <div className={`${FIELD_LABEL} mb-0.5`}>Country</div>
+                <span className="text-gray-800 dark:text-slate-200 break-words">{rec.country || "—"}</span>
+              </div>
+              <div>
+                <div className={`${FIELD_LABEL} mb-0.5`}>Area</div>
+                <span className="text-gray-800 dark:text-slate-200 break-words">{rec.area || "—"}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* 💳 Purchase summary — occupies the Lead "📅 Scheduling & next action"
+              slot in the right rail, SAME CARD + FIELD_GRID_2 style, so the right
+              rail keeps the same rhythm (no hole). A buyer is a post-purchase record
+              with no follow-up scheduler, so this surfaces the headline purchase
+              facts (value + date) here; the full editable Transaction Details card
+              lives in the main column (no field duplication of type/role/id). */}
+          <div data-lead-section="actions" className={CARD}>
+            <div className={CARD_TITLE}>💳 Purchase summary</div>
+            <div className={FIELD_GRID_2}>
+              <div>
+                <div className={`${FIELD_LABEL} mb-0.5`}>Transaction Value</div>
+                <span className="text-gray-800 dark:text-slate-200 break-words font-semibold">{formatTxnValue(rec.transactionValue, ccy)}</span>
+              </div>
+              <div>
+                <div className={`${FIELD_LABEL} mb-0.5`}>Transaction Date</div>
+                <span className="text-gray-800 dark:text-slate-200 break-words">{fmtDate(rec.transactionDate)}</span>
+              </div>
+              <div>
+                <div className={`${FIELD_LABEL} mb-0.5`}>Latest Purchase</div>
+                <span className="text-gray-800 dark:text-slate-200 break-words">{fmtDate(rollup.latestPurchaseDate)}</span>
+              </div>
+              <div>
+                <div className={`${FIELD_LABEL} mb-0.5`}>Repeat Buyer</div>
+                <span className={`break-words font-medium ${rollup.repeatBuyerStatus ? "text-amber-600 dark:text-amber-400" : "text-gray-500 dark:text-slate-400"}`}>{rollup.repeatBuyerStatus ? "Yes 🔁" : "First-time"}</span>
+              </div>
+            </div>
+          </div>
+
           {/* Buyer admin panel — convert / assign / reject + attempt + transfer history
-              (mirrors the Lead "Lead admin" right-rail card). */}
+              (mirrors the Lead "🛠 Lead admin" right-rail card, SAME card shell). */}
           <BuyerAdminPanel
             buyerId={rec.id}
             poolStatus={rec.poolStatus}
@@ -366,8 +470,8 @@ export default async function BuyerDetail({ params }: { params: Promise<{ id: st
           {/* Source / import provenance — small read-only card (admin/manager),
               like the Lead view's reference cards on the right rail. */}
           {isAdminOrMgr && (
-            <div data-lead-section="admin" className="card p-4">
-              <div className="text-[10px] uppercase tracking-widest text-gray-500 dark:text-slate-400 font-semibold mb-2">📥 Source</div>
+            <div data-lead-section="admin" className={CARD}>
+              <div className={`${ADMIN_EYEBROW} mb-2`}>📥 Source</div>
               <dl className="grid grid-cols-[110px_1fr] gap-x-3 gap-y-1.5 text-xs">
                 <dt className="text-gray-400 dark:text-slate-500">Source</dt>
                 <dd className="text-gray-700 dark:text-slate-200 break-words">{rec.source || "—"}</dd>

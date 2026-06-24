@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { Phone, AlertCircle, Mic } from "lucide-react";
 import { whatsappLink, telLink } from "@/lib/phone";
 import { ActionButton } from "@/components/actions/ActionButton";
+import { ACTION_ROW } from "@/lib/detailLayout";
 
 // ── Buyer action button row — EXACT visual parity with LeadActionsClient ──────
 // Same grid (grid-cols-3 sm:grid-cols-5), same button colours/sizes:
@@ -133,12 +134,14 @@ export default function BuyerActionsClient({ buyerId, phone, altPhone, email, cl
           No phone number on this buyer — Call &amp; WhatsApp are unavailable.
         </div>
       )}
-      {/* Primary action bar — identical grid + button styling to the Lead view,
-          now sourced from the central Action Design System (src/lib/actionDesign.ts)
-          so Call / WhatsApp / Email / Log Call / Note match the Lead view exactly.
-          Voice is a buyer-specific dictation action (kept bespoke). All hrefs/
-          handlers/permissions (canLog) are unchanged. */}
-      <div className="grid grid-cols-3 sm:grid-cols-5 gap-2 mt-3 [&>*]:w-full">
+      {/* Primary action bar — EXACT same fluid flex-wrap primitive as the Lead
+          view's LeadActionsClient (ACTION_ROW token: flex-wrap · [&>*]:grow
+          [&>*]:basis-28) so the buttons size uniformly and wrap gracefully
+          instead of locking into a rigid grid. Buttons themselves come from the
+          central Action Design System (Call/WhatsApp/Email/Log Call/Note) so
+          colour+icon match the Lead view exactly; Voice is a buyer-specific
+          dictation action. All hrefs/handlers/permissions (canLog) unchanged. */}
+      <div className={ACTION_ROW}>
         {phone && (
           <ActionButton action="call" href={telLink(phone)} />
         )}

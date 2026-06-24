@@ -1255,6 +1255,40 @@ const checks: Check[] = [
       for (const f of ["passportExpiry", "ownerName", "country", "size", "actualSize", "area", "transactionType", "role"]) {
         assert(new RegExp(`${f}:\\s*"(string|number|date)"`).test(upd), `buyer update whitelist MUST allow editing "${f}"`);
       }
+
+      // (g) SHARED LAYOUT TOKENS (3rd alignment pass, 2026-06-25) — both the Lead
+      //     detail and the Buyer detail MUST source their card/grid/action-row
+      //     shells from src/lib/detailLayout.ts so the two views CANNOT drift apart
+      //     again. This is the structural guard the user's "still looks different"
+      //     feedback demanded.
+      assert(fs.existsSync("src/lib/detailLayout.ts"), "shared detailLayout.ts token module MUST exist (single source of truth for Lead+Buyer shells)");
+      const layout = read("src/lib/detailLayout.ts");
+      // The fluid action-row primitive (flex-wrap · grow · basis-28) is the EXACT
+      // string LeadActionsClient uses — assert the token carries it verbatim.
+      assert(/flex flex-wrap gap-2 mt-3 \[&>\*\]:grow \[&>\*\]:basis-28/.test(layout), "ACTION_ROW token MUST be the Lead's fluid flex-wrap action row (flex-wrap · grow · basis-28)");
+      assert(/card p-5 border-l-4 border-emerald-500 bg-emerald-50\/20/.test(layout), "CONVO_CARD token MUST be the Lead Conversation-History shell");
+      // The buyer page imports + uses the shared tokens (header card, verdict card,
+      // field grid, right-rail wrappers).
+      assert(/from "@\/lib\/detailLayout"/.test(page), "buyer detail page MUST import shared tokens from @/lib/detailLayout");
+      assert(/className=\{PAGE_GRID\}/.test(page) && /className=\{MAIN_COL\}/.test(page) && /className=\{RIGHT_RAIL\}/.test(page), "buyer detail page MUST use the shared PAGE_GRID/MAIN_COL/RIGHT_RAIL wrappers");
+      assert(/className=\{VERDICT_CARD\}/.test(page), "buyer Intelligence card MUST use the shared VERDICT_CARD shell (same as the Lead BANT card)");
+
+      // (h) The buyer action row component uses the shared ACTION_ROW token (fluid
+      //     flex) — NOT a rigid grid (the divergence the prior 2 passes missed).
+      const bac = read("src/components/BuyerActionsClient.tsx");
+      assert(/from "@\/lib\/detailLayout"/.test(bac) && /className=\{ACTION_ROW\}/.test(bac), "BuyerActionsClient MUST use the shared ACTION_ROW token (fluid flex, parity with LeadActionsClient)");
+      assert(!/grid grid-cols-3 sm:grid-cols-5/.test(bac), "BuyerActionsClient action bar MUST NOT use a rigid grid (must match the Lead's fluid flex-wrap row)");
+      // BuyerActivityTimeline references the shared CONVO_CARD token too.
+      assert(/CONVO_CARD/.test(bat), "BuyerActivityTimeline MUST use the shared CONVO_CARD token");
+
+      // (i) RIGHT-RAIL DENSITY PARITY — the buyer right rail must carry the same
+      //     core cards as the Lead right rail (Client information + Location + a
+      //     Scheduling-slot card), so the left/right balance reads identically.
+      //     Previously the buyer right rail was thin (admin + notes only) → the
+      //     whole page looked different even though shared cards matched.
+      assert(/Client information/.test(page), "buyer right rail MUST carry a 'Client information' card (parity with the Lead right rail)");
+      assert(/📍 Location/.test(page), "buyer right rail MUST carry a '📍 Location' card (parity with the Lead Location card)");
+      assert(/data-lead-section="actions"[\s\S]{0,200}Purchase summary/.test(page), "buyer right rail MUST fill the Lead 'Scheduling & next action' slot (Purchase summary card)");
     },
   },
 

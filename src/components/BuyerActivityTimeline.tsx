@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import { CONVO_CARD } from "@/lib/detailLayout";
 
 // ── Buyer Conversation History — VISUAL PARITY with the Lead view's
 // ConversationStreamCard (src/components/ConversationStreamCard.tsx). Same card
@@ -106,7 +107,7 @@ export default function BuyerActivityTimeline({ buyerId, canLog, isAdmin, rawRem
     // Card shell — byte-for-byte the same wrapper as the Lead ConversationStreamCard
     // (card p-5 · emerald left rail · faint emerald tint). data-lead-section="timeline"
     // keeps it on the same mobile tab as the Lead view's Conversation History.
-    <div className="card p-5 border-l-4 border-emerald-500 bg-emerald-50/20" data-lead-section="timeline">
+    <div className={`${CONVO_CARD}`} data-lead-section="timeline">
       {/* Header — same row layout + title size as the Lead view, with the Raw /
           Smart segmented toggle pill (identical emerald-bordered styling). */}
       <div className="flex items-center justify-between mb-3 flex-wrap gap-2">

@@ -279,7 +279,18 @@
 // grid's overflow-x-auto scroll container. Fixes hidden/buried dropdowns, z-index
 // burial behind frozen columns, and row-height jump — the read cell stays put while
 // only the floating editor overlays. CSS/render-only; save logic + endpoints unchanged.
-const CACHE = "wcr-shell-v60";
+// v61 (2026-06-25): Dubai Buyer Data detail = Lead detail, 3rd alignment pass. Both
+// pages now source their card/grid/action-row shells from a SHARED token module
+// (src/lib/detailLayout.ts) so they can't drift again. Fixes the divergences the
+// prior 2 passes missed: (1) the buyer ACTION ROW was a rigid grid → now the Lead's
+// fluid flex-wrap row (ACTION_ROW); (2) the buyer RIGHT RAIL was thin → now carries
+// the same core cards as the Lead rail (Client information + 📍 Location + a
+// Scheduling-slot "Purchase summary" card), so the left/right balance reads
+// identically; (3) Buyer-Intelligence card uses the shared VERDICT_CARD shell/tint.
+// Buyer-only extras (Property/Transaction details + multi-property table) remain the
+// ONLY addition, below Quick Note, in the SAME card style. Render-only; the Lead view
+// is untouched. Force a fresh shell so PWA clients see the unified buyer detail.
+const CACHE = "wcr-shell-v61";
 const SHELL = ["/login", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", (event) => {
