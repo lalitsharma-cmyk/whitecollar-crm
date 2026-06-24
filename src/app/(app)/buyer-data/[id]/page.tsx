@@ -242,7 +242,6 @@ export default async function BuyerDetail({ params }: { params: Promise<{ id: st
             <div className="font-semibold mb-3 dark:text-slate-100">🏠 Buyer Property Details {canEditFields && <span className="text-[10px] text-gray-400 font-normal">(click any value to edit)</span>}</div>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-4 gap-y-3">
               <Field label="Project">{editable("projectName", rec.projectName)}</Field>
-              <Field label="Property / Unit">{editable("unitNumber", rec.unitNumber)}</Field>
               <Field label="Tower / Building">{editable("tower", rec.tower)}</Field>
               <Field label="Unit Number">{editable("unitNumber", rec.unitNumber)}</Field>
               <Field label="Property Type">{editable("propertyType", rec.propertyType)}</Field>

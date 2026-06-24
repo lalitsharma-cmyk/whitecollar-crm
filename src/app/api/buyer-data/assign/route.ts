@@ -78,7 +78,7 @@ export async function POST(req: NextRequest) {
       : `${assigned.length} buyers from the Admin Pool are now yours in Buyer Data.`;
     await notify({
       userId: agentId,
-      kind: "LEAD_ASSIGNED",
+      kind: "BUYER_ASSIGNED",
       severity: "INFO",
       title,
       body: body2,

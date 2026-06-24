@@ -1392,6 +1392,9 @@ enum NotifKind {
   SYSTEM              // info / settings change
   LUNCH_REMINDER      // soft lunch-break reminder (2:00 / 2:25 PM IST)
   AGENT_STATUS        // field-movement check-in (I'm here / meeting / site visit) → manager
+  BUYER_ASSIGNED      // a Buyer-Data record was assigned/transferred to you (≠ a lead)
+  BUYER_CONVERTED     // a buyer was converted into a real Lead
+  BUYER_RETURNED      // a buyer was returned to the Admin Buyer Pool (manual reject OR auto-5-attempts)
 }
 
 enum NotifSeverity {

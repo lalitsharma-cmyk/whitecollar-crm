@@ -73,7 +73,7 @@ export async function POST(req: NextRequest) {
     }
     if (transferred > 0) {
       await notify({
-        userId: agentId, kind: "LEAD_ASSIGNED", severity: "INFO",
+        userId: agentId, kind: "BUYER_ASSIGNED", severity: "INFO",
         title: transferred === 1 ? `🔁 A buyer was transferred to you` : `🔁 ${transferred} buyers transferred to you`,
         body: `${transferred} buyer${transferred === 1 ? "" : "s"} ${transferred === 1 ? "is" : "are"} now yours in Buyer Data.`,
         linkUrl: "/buyer-data",

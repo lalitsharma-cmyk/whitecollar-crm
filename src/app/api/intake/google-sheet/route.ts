@@ -204,9 +204,16 @@ export async function POST(req: NextRequest) {
   const detectedColumns = Object.keys(parsed.data[0] ?? {});
   const futureDateRows: { name: string; rawDate: string }[] = [];
 
-  // Detect date and time columns for this sheet (fixed once, used for every row)
+  // Detect date and time columns for this sheet (fixed once, used for every row).
+  // These are the AUTO-DETECT fallback — used only when the admin did NOT confirm
+  // an explicit Date mapping in the wizard.
   const dateColumn = detectDateColumn(detectedColumns);
   const timeColumn = detectTimeColumn(detectedColumns);
+  // Did the admin confirm a column → "date" mapping in the approval gate? When so,
+  // the importer reads the lead date from THAT exact column (via the field()
+  // accessor below) instead of guessing — parity with the CSV route, which always
+  // honours field("date", …). Auto-detect remains the fallback.
+  const dateMappingConfirmed = !!explicitMapping && Object.values(explicitMapping).includes("date");
 
   // ── PREVIEW / DRY-RUN ───────────────────────────────────────────────────
   // preview=true: scan rows for dup/missing counts + propose a column mapping,
@@ -321,22 +328,32 @@ export async function POST(req: NextRequest) {
           // dupMode === "create" → fall through with skipDedup below.
         }
       }
-      // Parse date from detected date column, apply time if available
+      // Parse the lead (historic) date. When the admin CONFIRMED a Date mapping in
+      // the wizard, read the date from that exact column via field("date", …) —
+      // honouring the chosen mapping exactly like the CSV route, never re-guessing.
+      // Otherwise fall back to the auto-detected date column. Either way apply the
+      // (auto-detected) time column if one exists.
       let leadDate: Date | undefined;
-      if (dateColumn) {
-        const dateRaw = row[dateColumn];
+      let rawDateForReport = "";
+      if (dateMappingConfirmed) {
+        const dateRaw = field("date", "date", "leaddate", "createdon", "createddate", "entrydate");
+        rawDateForReport = dateRaw ?? "";
         leadDate = parseImportDate(dateRaw);
-        if (leadDate && timeColumn) {
-          const timeRaw = row[timeColumn];
-          leadDate = applyTimeToDate(leadDate, timeRaw);
-        }
+      } else if (dateColumn) {
+        const dateRaw = row[dateColumn];
+        rawDateForReport = dateRaw ?? "";
+        leadDate = parseImportDate(dateRaw);
+      }
+      if (leadDate && timeColumn) {
+        const timeRaw = row[timeColumn];
+        leadDate = applyTimeToDate(leadDate, timeRaw);
       }
 
       // Guard: reject future-dated leads (data-entry typos, follow-up dates misplaced)
       // 24h tolerance for timezone differences
       const dateIsFuture = !!leadDate && leadDate.getTime() > Date.now() + 24 * 3600 * 1000;
       if (dateIsFuture) {
-        futureDateRows.push({ name: name ?? phone ?? email ?? "—", rawDate: dateColumn ? row[dateColumn] ?? "" : "" });
+        futureDateRows.push({ name: name ?? phone ?? email ?? "—", rawDate: rawDateForReport });
         leadDate = undefined; // fallback to import time
       }
 
@@ -521,7 +538,10 @@ export async function POST(req: NextRequest) {
       : 0,
     importBatchId: importBatch.id,
     detectedColumns,
-    dateColumnDetected: !!dateColumn,
+    // A lead date was sourced either from the admin-confirmed Date mapping OR from
+    // the auto-detected Date column. dateMappingConfirmed says which one was used.
+    dateColumnDetected: dateMappingConfirmed || !!dateColumn,
+    dateMappingConfirmed,
     timeColumnDetected: !!timeColumn,
     futureDateRows: futureDateRows.slice(0, 20),
     futureDateCount: futureDateRows.length,

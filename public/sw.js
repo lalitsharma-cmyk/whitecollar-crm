@@ -101,7 +101,14 @@
 // header gains Complete / Snooze (IST date-time picker) / Escalate buttons reusing
 // the same action-complete/-snooze/-escalate endpoints; each logs a Smart-Timeline
 // Activity. Escalate now also notifies the owner's manager + admins.
-const CACHE = "wcr-shell-v43";
+// v44 (2026-06-24): Three polish fixes — (1) buyer lifecycle events now use
+// dedicated NotifKinds (BUYER_ASSIGNED / BUYER_CONVERTED / BUYER_RETURNED) so a
+// manager can tell a buyer event from a lead event in the bell (INFO severity, not
+// a hot-lead alert); (2) Buyer detail Property card no longer shows the unit number
+// under two labels (removed the duplicate "Property / Unit"); (3) the Google-Sheet
+// importer now honours an admin-confirmed Date-column mapping (parity with the CSV
+// route) instead of always auto-detecting the date column.
+const CACHE = "wcr-shell-v44";
 const SHELL = ["/login", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", (event) => {

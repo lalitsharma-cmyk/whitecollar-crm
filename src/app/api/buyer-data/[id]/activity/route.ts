@@ -56,7 +56,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       admins.map((a) =>
         notify({
           userId: a.id,
-          kind: "SYSTEM",
+          kind: "BUYER_RETURNED",
           severity: "INFO",
           title: `🔁 Buyer auto-returned to pool: ${buyer.clientName}`,
           body: `${AUTO_RETURN_ATTEMPTS} contact attempts logged by ${me.name} with no success — returned to the Admin Buyer Pool for reassignment.`,

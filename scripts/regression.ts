@@ -1364,6 +1364,24 @@ const checks: Check[] = [
       assert(/requireRole\("ADMIN", "MANAGER"\)/.test(distSrc), "distribute route MUST be ADMIN/MANAGER");
       assert(/requireRole\("ADMIN"\)/.test(read("src/app/api/settings/buyer-distribute/route.ts")), "buyer-distribute settings toggle MUST be ADMIN-only");
 
+      // (b2) Fix 1 (2026-06-24): buyer lifecycle events use DEDICATED NotifKinds
+      //      (BUYER_ASSIGNED / BUYER_CONVERTED / BUYER_RETURNED), not the generic
+      //      LEAD_ASSIGNED / SYSTEM — so a manager can tell a buyer event from a
+      //      lead event. The three enum values must be live in prod, AND the buyer
+      //      routes must emit them.
+      const buyerNotifKinds = await prisma.$queryRawUnsafe<{ label: string }[]>(
+        "SELECT e.enumlabel AS label FROM pg_enum e JOIN pg_type t ON t.oid = e.enumtypid WHERE t.typname = 'NotifKind' AND e.enumlabel LIKE 'BUYER_%'",
+      );
+      const labels = new Set(buyerNotifKinds.map((r) => r.label));
+      for (const k of ["BUYER_ASSIGNED", "BUYER_CONVERTED", "BUYER_RETURNED"]) {
+        assert(labels.has(k), `NotifKind enum must include ${k} in prod (found: ${[...labels].join(", ") || "none"})`);
+      }
+      assert(/kind:\s*"BUYER_ASSIGNED"/.test(read("src/app/api/buyer-data/assign/route.ts")), "assign route MUST notify with BUYER_ASSIGNED (not LEAD_ASSIGNED)");
+      assert(/kind:\s*"BUYER_ASSIGNED"/.test(bulkSrc), "bulk transfer MUST notify with BUYER_ASSIGNED (not LEAD_ASSIGNED)");
+      assert(/kind:\s*"BUYER_CONVERTED"/.test(read("src/app/api/buyer-data/[id]/convert/route.ts")), "convert route MUST notify with BUYER_CONVERTED");
+      assert(/kind:\s*"BUYER_RETURNED"/.test(read("src/app/api/buyer-data/[id]/reject/route.ts")), "reject route MUST notify with BUYER_RETURNED (not SYSTEM)");
+      assert(/kind:\s*"BUYER_RETURNED"/.test(read("src/app/api/buyer-data/[id]/activity/route.ts")), "auto-return MUST notify with BUYER_RETURNED (not SYSTEM)");
+
       // (c) planner math (pure, in memory — no DB writes). Build agents + a fake pool.
       const dist = await import("../src/lib/buyerDistribution");
       // regionWhere returns {} for blank, and an OR for a region.
@@ -1406,6 +1424,13 @@ const checks: Check[] = [
       const iConvo = detail.indexOf("<BuyerActivityTimeline");
       assert(iNotes > 0 && iImported > 0 && iConvo > 0, "detail page must render Notes + ImportedFields + Conversation");
       assert(iConvo < iImported, "Conversation History MUST come before Imported Fields (Lead-view parity: timeline high in the main column, extra section below Quick Note)");
+      // (e2) Fix 2 (2026-06-24): no buyer field may be bound to two labels. The
+      //      Property Details card previously showed unitNumber under BOTH
+      //      "Property / Unit" and "Unit Number". Assert each editable() field key
+      //      appears at most once (the unit number is the field that regressed).
+      const editKeys = [...detail.matchAll(/editable\("(\w+)"/g)].map((m) => m[1]);
+      const dupKeys = editKeys.filter((k, i) => editKeys.indexOf(k) !== i);
+      assert(dupKeys.length === 0, `buyer detail binds a field to >1 label (duplicate): ${[...new Set(dupKeys)].join(", ")}`);
     },
   },
 
@@ -1841,6 +1866,13 @@ const checks: Check[] = [
         assert(/parseDupMode\(/.test(src), `${f} must accept a duplicate mode (parseDupMode)`);
         assert(/preview/.test(src) && /buildMapping\(/.test(src), `${f} must offer a preview that proposes a mapping (buildMapping)`);
       }
+      // Fix 3 (2026-06-24): the Google-Sheet route must HONOUR an admin-confirmed
+      // Date mapping (read the date from the chosen column via the mapping-aware
+      // field("date", …) accessor), not blindly auto-detect — parity with the CSV
+      // route, which always reads the date through field("date", …).
+      const gs = fs.readFileSync("src/app/api/intake/google-sheet/route.ts", "utf8");
+      assert(/dateMappingConfirmed/.test(gs), "google-sheet route must compute dateMappingConfirmed from the confirmed mapping");
+      assert(/field\("date"/.test(gs), 'google-sheet route must read the lead date via field("date", …) when a date mapping is confirmed');
     },
   },
 

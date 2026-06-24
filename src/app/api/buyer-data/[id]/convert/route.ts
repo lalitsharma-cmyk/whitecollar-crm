@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { LeadSource, ActivityType } from "@prisma/client";
+import { notify } from "@/lib/notify";
 import { assignLeadTo } from "@/lib/leadIngest";
 import { canTouchBuyer } from "@/lib/buyerScope";
 import { audit, reqMeta } from "@/lib/audit";
@@ -150,6 +151,18 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   // proper Assignment-history row, SLA clock, and owner notification. (Runs
   // outside the tx because it sends a notification side-effect.)
   await assignLeadTo(result.leadId, ownerId, `Converted from Buyer Data by ${me.name}`);
+
+  // Buyer-lifecycle notification (its OWN kind, distinct from the LEAD_ASSIGNED
+  // that assignLeadTo just fired for the new lead). Tells the owner a buyer they
+  // were working became a real Lead. INFO severity — not a hot-lead alert.
+  await notify({
+    userId: ownerId,
+    kind: "BUYER_CONVERTED",
+    severity: "INFO",
+    title: `✅ Buyer converted to lead: ${buyer.clientName}`,
+    body: `${me.name} converted this buyer into a Lead. It's now in Leads / Master Data.`,
+    linkUrl: `/leads/${result.leadId}`,
+  }).catch(() => null);
 
   await audit({
     userId: me.id,
