@@ -3,6 +3,12 @@ import Link from "next/link";
 import { useState, useMemo, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import BuyerDistributionPanel from "@/components/BuyerDistributionPanel";
+import ColumnHeaderFilter, {
+  type ColKind,
+  type ColFilterState,
+  type ColSortDir,
+  isColFilterActive,
+} from "@/components/ColumnHeaderFilter";
 
 // ── Buyer list = the Leads list experience (Part 5b) ─────────────────────────
 // Filters (poolStatus / owner / project / type / nationality / region / repeat /
@@ -56,9 +62,56 @@ interface Props {
   convertedCount: number;
 }
 
-type SortKey = "clientName" | "project" | "txnValue" | "txnDate" | "propertiesOwned" | "poolStatus" | "agent" | "attempts";
+// ── Column model (drives the Excel header filters + sort, DRY) ───────────────
+// Every business column declares: a sortKey, a field kind, how to read its
+// display string (for the multi-select picker + text match) and — for numeric /
+// date columns — a numeric accessor (transaction date is sorted/ranged on its ms
+// value, not the formatted string). The Actions column is NOT in this list, so
+// it gets no header filter (per spec).
+type ColKey = "clientName" | "poolStatus" | "project" | "towerUnit" | "propertyType" | "txnValue" | "txnDate" | "nationality" | "agent" | "attempts" | "buyer";
+type SortKey = ColKey;
 type Tab = "all" | "pool" | "assigned" | "converted";
-type SavedView = { name: string; tab: Tab; q: string; project: string; ptype: string; nat: string; region: string; ownerId: string; repeatOnly: "" | "yes" | "no"; sortKey: SortKey; sortDir: "asc" | "desc" };
+
+type ColDef = {
+  key: ColKey;
+  label: string;
+  kind: ColKind;
+  /** Display string used for multi-select options + text filtering. */
+  str: (r: BuyerRow) => string;
+  /** Numeric value for number/date sort + range. */
+  num?: (r: BuyerRow) => number;
+  /** Keep caller option order (no forced A→Z) — used for the canonical status order. */
+  ordered?: boolean;
+  /** Caller-controlled option list (else distinct of str()). */
+  options?: (rows: BuyerRow[]) => string[];
+};
+
+// Canonical status order for the Status multi-select (matches the tab order).
+const STATUS_ORDER: { value: string; label: string }[] = [
+  { value: "ADMIN_POOL", label: "Admin Pool" },
+  { value: "ASSIGNED", label: "Assigned" },
+  { value: "CONVERTED", label: "Converted" },
+  { value: "REJECTED", label: "Rejected" },
+];
+
+const COLS: ColDef[] = [
+  { key: "clientName", label: "Client Name", kind: "text", str: (r) => r.clientName },
+  // Status filters on the LABEL (what the user sees); options are the canonical order.
+  { key: "poolStatus", label: "Status", kind: "select", ordered: true, str: (r) => r.poolStatusLabel,
+    options: () => STATUS_ORDER.map((s) => s.label) },
+  { key: "project", label: "Project", kind: "text", str: (r) => r.project },
+  { key: "towerUnit", label: "Tower / Unit", kind: "text", str: (r) => r.towerUnit },
+  { key: "propertyType", label: "Type", kind: "text", str: (r) => r.propertyType },
+  { key: "txnValue", label: "Transaction Value", kind: "number", str: (r) => r.txnValueDisplay, num: (r) => r.txnValueNum },
+  { key: "txnDate", label: "Transaction Date", kind: "date", str: (r) => r.txnDate, num: (r) => r.txnDateMs },
+  { key: "nationality", label: "Nationality", kind: "text", str: (r) => r.nationality },
+  { key: "agent", label: "Agent", kind: "text", str: (r) => r.agent },
+  { key: "attempts", label: "Attempts", kind: "number", str: (r) => String(r.attemptCount), num: (r) => r.attemptCount },
+  { key: "buyer", label: "Buyer Count", kind: "number", str: (r) => String(r.propertiesOwned), num: (r) => r.propertiesOwned },
+];
+const COL_BY_KEY = new Map(COLS.map((c) => [c.key, c]));
+
+type SavedView = { name: string; tab: Tab; q: string; project: string; ptype: string; nat: string; region: string; ownerId: string; repeatOnly: "" | "yes" | "no"; sortKey: SortKey; sortDir: "asc" | "desc"; colFilters?: Record<string, { values: string[]; min: string; max: string }> };
 
 const PAGE = 50;
 const EDITABLE_FIELDS: [string, string][] = [
@@ -91,6 +144,8 @@ export default function BuyerListClient(props: Props) {
   const [repeatOnly, setRepeatOnly] = useState<"" | "yes" | "no">("");
   const [sortKey, setSortKey] = useState<SortKey>("txnDate");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+  // Per-column Excel header filters (client-state — composes with the top filters).
+  const [colFilters, setColFilters] = useState<Record<string, ColFilterState>>({});
   const [page, setPage] = useState(0);
   const [showFilters, setShowFilters] = useState(false);
 
@@ -113,23 +168,50 @@ export default function BuyerListClient(props: Props) {
   }, [VKEY]);
   const persistViews = (v: SavedView[]) => { setViews(v); try { localStorage.setItem(VKEY, JSON.stringify(v)); } catch { /* ignore */ } };
 
-  const resetAll = () => { setTab("all"); setQ(""); setProject(""); setPtype(""); setNat(""); setRegion(""); setOwnerId(""); setRepeatOnly(""); setSortKey("txnDate"); setSortDir("desc"); setPage(0); };
+  const resetAll = () => { setTab("all"); setQ(""); setProject(""); setPtype(""); setNat(""); setRegion(""); setOwnerId(""); setRepeatOnly(""); setSortKey("txnDate"); setSortDir("desc"); setColFilters({}); setPage(0); };
+
+  // Serialize / deserialize the per-column filters (Set → array) for saved views.
+  const serCol = (cf: Record<string, ColFilterState>) =>
+    Object.fromEntries(Object.entries(cf).filter(([, f]) => isColFilterActive(f)).map(([k, f]) => [k, { values: [...f.values], min: f.min, max: f.max }]));
+  const deserCol = (o: Record<string, { values: string[]; min: string; max: string }> | undefined): Record<string, ColFilterState> =>
+    Object.fromEntries(Object.entries(o || {}).map(([k, f]) => [k, { values: new Set(f.values), min: f.min, max: f.max }]));
 
   function applyView(v: SavedView) {
     setTab(v.tab); setQ(v.q); setProject(v.project); setPtype(v.ptype); setNat(v.nat); setRegion(v.region);
-    setOwnerId(v.ownerId); setRepeatOnly(v.repeatOnly); setSortKey(v.sortKey); setSortDir(v.sortDir); setPage(0);
+    setOwnerId(v.ownerId); setRepeatOnly(v.repeatOnly); setSortKey(v.sortKey); setSortDir(v.sortDir);
+    setColFilters(deserCol(v.colFilters)); setPage(0);
   }
   function saveCurrentView() {
     const name = window.prompt("Name this view:");
     if (!name || !name.trim()) return;
-    const v: SavedView = { name: name.trim(), tab, q, project, ptype, nat, region, ownerId, repeatOnly, sortKey, sortDir };
+    const v: SavedView = { name: name.trim(), tab, q, project, ptype, nat, region, ownerId, repeatOnly, sortKey, sortDir, colFilters: serCol(colFilters) };
     persistViews([...views.filter((x) => x.name !== v.name), v]);
   }
   function deleteView(name: string) { persistViews(views.filter((v) => v.name !== name)); }
 
+  const setColFilter = (key: ColKey, next: ColFilterState) => {
+    setColFilters((prev) => {
+      const n = { ...prev };
+      if (isColFilterActive(next)) n[key] = next; else delete n[key];
+      return n;
+    });
+    setPage(0);
+  };
+  const activeColCount = Object.values(colFilters).filter(isColFilterActive).length;
+
   // ── filter + sort ──────────────────────────────────────────────────────────
+  // Layered AND: tab → top filters → search → per-column Excel header filters.
+  // Everything runs over the loaded (scoped) rows, so `filtered.length` is the
+  // EXACT visible count and the bulk/export/saved-view paths all see the same set.
   const filtered = useMemo(() => {
     const needle = q.trim().toLowerCase();
+    // Date range comparisons operate on the row's txn ms vs the picker's
+    // yyyy-mm-dd bounds (inclusive; "to" extends to end-of-day).
+    const dayStart = (s: string) => { const t = new Date(s + "T00:00:00").getTime(); return isNaN(t) ? null : t; };
+    const dayEnd = (s: string) => { const t = new Date(s + "T23:59:59.999").getTime(); return isNaN(t) ? null : t; };
+
+    const colEntries = Object.entries(colFilters).filter(([, f]) => isColFilterActive(f));
+
     let out = rows.filter((r) => {
       if (tab === "pool" && r.poolStatus !== "ADMIN_POOL") return false;
       if (tab === "assigned" && r.poolStatus !== "ASSIGNED") return false;
@@ -145,24 +227,48 @@ export default function BuyerListClient(props: Props) {
         const hay = `${r.clientName} ${r.phone} ${r.passport} ${r.project} ${r.towerUnit} ${r.agent}`.toLowerCase();
         if (!hay.includes(needle)) return false;
       }
+      // Per-column header filters.
+      for (const [key, f] of colEntries) {
+        const col = COL_BY_KEY.get(key as ColKey);
+        if (!col) continue;
+        if (col.kind === "text" || col.kind === "select") {
+          // Multi-select on the display string. Blank cells show as "—".
+          if (f.values.size > 0 && !f.values.has(col.str(r) || "—")) return false;
+        } else if (col.kind === "number") {
+          const v = col.num ? col.num(r) : 0;
+          if (f.min !== "" && v < Number(f.min)) return false;
+          if (f.max !== "" && v > Number(f.max)) return false;
+        } else if (col.kind === "date") {
+          const v = col.num ? col.num(r) : 0;
+          if (f.min !== "") { const lo = dayStart(f.min); if (lo != null && (v === 0 || v < lo)) return false; }
+          if (f.max !== "") { const hi = dayEnd(f.max); if (hi != null && (v === 0 || v > hi)) return false; }
+        }
+      }
       return true;
     });
+
     const dir = sortDir === "asc" ? 1 : -1;
+    const col = COL_BY_KEY.get(sortKey);
     out = out.slice().sort((a, b) => {
-      switch (sortKey) {
-        case "clientName": return a.clientName.localeCompare(b.clientName) * dir;
-        case "project": return a.project.localeCompare(b.project) * dir;
-        case "txnValue": return (a.txnValueNum - b.txnValueNum) * dir;
-        case "propertiesOwned": return (a.propertiesOwned - b.propertiesOwned) * dir;
-        case "poolStatus": return a.poolStatus.localeCompare(b.poolStatus) * dir;
-        case "agent": return a.agent.localeCompare(b.agent) * dir;
-        case "attempts": return (a.attemptCount - b.attemptCount) * dir;
-        case "txnDate":
-        default: return (a.txnDateMs - b.txnDateMs) * dir;
-      }
+      if (col?.num) return (col.num(a) - col.num(b)) * dir;
+      const sa = col ? col.str(a) : "";
+      const sb = col ? col.str(b) : "";
+      return sa.localeCompare(sb, undefined, { numeric: true }) * dir;
     });
     return out;
-  }, [rows, tab, q, project, ptype, nat, region, ownerId, repeatOnly, sortKey, sortDir]);
+  }, [rows, tab, q, project, ptype, nat, region, ownerId, repeatOnly, sortKey, sortDir, colFilters]);
+
+  // Distinct option lists for the text/select header filters (over loaded rows).
+  const colOptions = useMemo(() => {
+    const m = new Map<ColKey, string[]>();
+    for (const c of COLS) {
+      if (c.kind !== "text" && c.kind !== "select") continue;
+      if (c.options) { m.set(c.key, c.options(rows)); continue; }
+      const vals = Array.from(new Set(rows.map((r) => c.str(r) || "—"))).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+      m.set(c.key, vals);
+    }
+    return m;
+  }, [rows]);
 
   const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE));
   const safePage = Math.min(page, pageCount - 1);
@@ -182,15 +288,45 @@ export default function BuyerListClient(props: Props) {
   const toggleOne = (id: string) => setSelected((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
   const clearSel = () => setSelected(new Set());
 
+  // Toggle direction on repeat header-text click; default direction per field type
+  // (text → A→Z, number/date → high/newest first).
   const toggleSort = (k: SortKey) => {
     if (sortKey === k) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
-    else { setSortKey(k); setSortDir(k === "clientName" || k === "project" || k === "agent" ? "asc" : "desc"); }
+    else { const c = COL_BY_KEY.get(k); setSortKey(k); setSortDir(c?.num ? "desc" : "asc"); }
     setPage(0);
   };
+  // Direct set (the header-filter dropdown's Asc/Desc buttons).
+  const setSort = (k: SortKey, dir: ColSortDir) => { setSortKey(k); setSortDir(dir); setPage(0); };
   const arrow = (k: SortKey) => (sortKey === k ? (sortDir === "asc" ? " ▲" : " ▼") : "");
 
+  // Render a column's Excel header filter (sort + filter dropdown). Shared with
+  // Master Data via the same ColumnHeaderFilter component. `chip` renders a
+  // labeled pill for the mobile/tablet card view (where the table is hidden).
+  const renderHF = (key: ColKey, chip = false) => {
+    const c = COL_BY_KEY.get(key)!;
+    const hf = (
+      <ColumnHeaderFilter
+        label={c.label}
+        kind={c.kind}
+        sortActive={sortKey === key}
+        sortDir={sortDir}
+        onSort={(dir) => setSort(key, dir)}
+        filter={colFilters[key]}
+        onApply={(next) => setColFilter(key, next)}
+        options={colOptions.get(key) ?? []}
+      />
+    );
+    if (!chip) return hf;
+    const on = isColFilterActive(colFilters[key]) || sortKey === key;
+    return (
+      <span className={`inline-flex items-center gap-0.5 text-[11px] font-medium px-2 py-1 rounded-full border whitespace-nowrap ${on ? "border-[#c9a24b] text-[#9a7b2e] bg-[#c9a24b]/10 dark:bg-[#c9a24b]/15 dark:border-[#c9a24b] dark:text-[#d9b765]" : "border-gray-200 dark:border-slate-600 text-gray-600 dark:text-slate-300"}`}>
+        {c.label}{hf}
+      </span>
+    );
+  };
+
   const sel = "border border-gray-200 dark:border-slate-600 rounded-lg px-2.5 py-2 text-base sm:text-sm dark:bg-slate-800 dark:text-slate-100";
-  const anyFilter = q || project || ptype || nat || region || ownerId || repeatOnly || tab !== "all";
+  const anyFilter = q || project || ptype || nat || region || ownerId || repeatOnly || tab !== "all" || activeColCount > 0;
 
   // ── bulk runner ──────────────────────────────────────────────────────────
   async function runBulk(action: string, extra?: Record<string, unknown>, confirmMsg?: string) {
@@ -213,12 +349,30 @@ export default function BuyerListClient(props: Props) {
     finally { setBulkBusy(false); }
   }
 
-  // Export the current filtered selection (or all) via the CSV route. For a
-  // project filter we can hand it to the existing ?project= path; otherwise we
-  // export everything (admin) — the route is admin-only + watermarked.
-  function exportCsv() {
-    const url = project ? `/api/buyer-data/export?project=${encodeURIComponent(project)}` : `/api/buyer-data/export`;
-    window.location.href = url;
+  // Export reflects the ACTIVE FILTERS. The table is client-side, so we POST the
+  // exact filtered id set to the audited + watermarked server export (it re-fetches
+  // those rows, still ADMIN-only + deletedAt-excluded). Falls back to a plain GET
+  // (all / ?project=) if no narrowing is active. Bulk selection, when present,
+  // exports the selected rows instead.
+  async function exportCsv() {
+    const ids = selected.size > 0 ? Array.from(selected) : (anyFilter ? filteredIds : []);
+    if (ids.length === 0) { // unfiltered → simplest audited GET path
+      window.location.href = project ? `/api/buyer-data/export?project=${encodeURIComponent(project)}` : `/api/buyer-data/export`;
+      return;
+    }
+    try {
+      const r = await fetch("/api/buyer-data/export", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ buyerIds: ids }),
+      });
+      if (!r.ok) { setBulkMsg(`⚠ Export failed (${r.status}).`); return; }
+      const blob = await r.blob();
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = `wcr-buyer-data-${new Date().toISOString().slice(0, 10).replace(/-/g, "")}.csv`;
+      document.body.appendChild(a); a.click(); a.remove();
+      URL.revokeObjectURL(a.href);
+    } catch { setBulkMsg("⚠ Export network error."); }
   }
 
   const tabBtn = (t: Tab, label: string, count?: number) => (
@@ -261,6 +415,13 @@ export default function BuyerListClient(props: Props) {
           {anyFilter && <button type="button" onClick={saveCurrentView} className="text-xs text-[#0b1a33] dark:text-blue-300 underline">+ Save view</button>}
         </div>
       )}
+
+      {/* Mobile / tablet column-filter chips — same Excel filters as the desktop
+          table headers, surfaced here because the table is hidden below lg. */}
+      <div className="lg:hidden flex items-center gap-1.5 overflow-x-auto pb-1 -mx-1 px-1" style={{ scrollbarWidth: "thin" }}>
+        <span className="text-[11px] font-semibold text-gray-400 dark:text-slate-500 shrink-0">Columns:</span>
+        {COLS.map((c) => <span key={c.key} className="shrink-0">{renderHF(c.key, true)}</span>)}
+      </div>
 
       {/* AI distribution console (admin) */}
       {isAdmin && showDistribute && (
@@ -338,9 +499,13 @@ export default function BuyerListClient(props: Props) {
       )}
       {bulkMsg && <div className="text-xs px-3 py-1.5 rounded bg-gray-100 dark:bg-slate-800 text-gray-700 dark:text-slate-200">{bulkMsg}</div>}
 
-      {/* ── Count ──────────────────────────────────────────────────────────── */}
+      {/* ── Count (== visible rows, always) ───────────────────────────────── */}
       <div className="flex items-center justify-between text-xs text-gray-500 dark:text-slate-400">
-        <span>{filtered.length} record{filtered.length === 1 ? "" : "s"}{anyFilter ? " (filtered)" : ""}</span>
+        <span>
+          {filtered.length} record{filtered.length === 1 ? "" : "s"}
+          {anyFilter ? <span className="text-[#9a7b2e] dark:text-[#d9b765]"> (filtered{activeColCount > 0 ? ` · ${activeColCount} column${activeColCount === 1 ? "" : "s"}` : ""})</span> : ""}
+        </span>
+        {anyFilter && <button type="button" onClick={resetAll} className="text-gray-500 hover:text-gray-800 dark:hover:text-slate-200 underline">Clear all filters</button>}
       </div>
 
       {filtered.length === 0 ? (
@@ -357,17 +522,17 @@ export default function BuyerListClient(props: Props) {
                   {isAdminOrMgr && (
                     <th className="px-3 py-2 w-8"><input type="checkbox" checked={allFilteredSelected} onChange={toggleAll} aria-label="Select all" /></th>
                   )}
-                  <th className="px-3 py-2 cursor-pointer whitespace-nowrap" onClick={() => toggleSort("clientName")}>Client Name{arrow("clientName")}</th>
-                  <th className="px-3 py-2 cursor-pointer whitespace-nowrap" onClick={() => toggleSort("poolStatus")}>Status{arrow("poolStatus")}</th>
-                  <th className="px-3 py-2 cursor-pointer whitespace-nowrap" onClick={() => toggleSort("project")}>Project{arrow("project")}</th>
-                  <th className="px-3 py-2 whitespace-nowrap">Tower / Unit</th>
-                  <th className="px-3 py-2 whitespace-nowrap">Type</th>
-                  <th className="px-3 py-2 cursor-pointer whitespace-nowrap text-right" onClick={() => toggleSort("txnValue")}>Txn Value{arrow("txnValue")}</th>
-                  <th className="px-3 py-2 cursor-pointer whitespace-nowrap" onClick={() => toggleSort("txnDate")}>Txn Date{arrow("txnDate")}</th>
-                  <th className="px-3 py-2 whitespace-nowrap">Nationality</th>
-                  <th className="px-3 py-2 cursor-pointer whitespace-nowrap" onClick={() => toggleSort("agent")}>Agent{arrow("agent")}</th>
-                  <th className="px-3 py-2 cursor-pointer whitespace-nowrap text-center" onClick={() => toggleSort("attempts")} title="Contact attempts (auto-return at 5)">Att{arrow("attempts")}</th>
-                  <th className="px-3 py-2 cursor-pointer whitespace-nowrap text-center" onClick={() => toggleSort("propertiesOwned")} title="Properties owned by this buyer">Buyer{arrow("propertiesOwned")}</th>
+                  <th className="px-3 py-2 whitespace-nowrap"><span className="cursor-pointer" onClick={() => toggleSort("clientName")}>Client Name{arrow("clientName")}</span>{renderHF("clientName")}</th>
+                  <th className="px-3 py-2 whitespace-nowrap"><span className="cursor-pointer" onClick={() => toggleSort("poolStatus")}>Status{arrow("poolStatus")}</span>{renderHF("poolStatus")}</th>
+                  <th className="px-3 py-2 whitespace-nowrap"><span className="cursor-pointer" onClick={() => toggleSort("project")}>Project{arrow("project")}</span>{renderHF("project")}</th>
+                  <th className="px-3 py-2 whitespace-nowrap"><span className="cursor-pointer" onClick={() => toggleSort("towerUnit")}>Tower / Unit{arrow("towerUnit")}</span>{renderHF("towerUnit")}</th>
+                  <th className="px-3 py-2 whitespace-nowrap"><span className="cursor-pointer" onClick={() => toggleSort("propertyType")}>Type{arrow("propertyType")}</span>{renderHF("propertyType")}</th>
+                  <th className="px-3 py-2 whitespace-nowrap text-right"><span className="cursor-pointer" onClick={() => toggleSort("txnValue")}>Txn Value{arrow("txnValue")}</span>{renderHF("txnValue")}</th>
+                  <th className="px-3 py-2 whitespace-nowrap"><span className="cursor-pointer" onClick={() => toggleSort("txnDate")}>Txn Date{arrow("txnDate")}</span>{renderHF("txnDate")}</th>
+                  <th className="px-3 py-2 whitespace-nowrap"><span className="cursor-pointer" onClick={() => toggleSort("nationality")}>Nationality{arrow("nationality")}</span>{renderHF("nationality")}</th>
+                  <th className="px-3 py-2 whitespace-nowrap"><span className="cursor-pointer" onClick={() => toggleSort("agent")}>Agent{arrow("agent")}</span>{renderHF("agent")}</th>
+                  <th className="px-3 py-2 whitespace-nowrap text-center" title="Contact attempts (auto-return at 5)"><span className="cursor-pointer" onClick={() => toggleSort("attempts")}>Att{arrow("attempts")}</span>{renderHF("attempts")}</th>
+                  <th className="px-3 py-2 whitespace-nowrap text-center" title="Properties owned by this buyer"><span className="cursor-pointer" onClick={() => toggleSort("buyer")}>Buyer{arrow("buyer")}</span>{renderHF("buyer")}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100 dark:divide-slate-800">

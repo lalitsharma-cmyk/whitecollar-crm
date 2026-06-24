@@ -146,7 +146,18 @@
 // instant update). Snooze reschedules followupDate via the shared CRMDatePicker (IST)
 // so the lead leaves Today/Overdue; its Smart-Timeline entry now names the user
 // ("snoozed to … by <user>"). UI-only; no schema change.
-const CACHE = "wcr-shell-v48";
+// v49 (2026-06-24): Buyer Data table — Excel-style per-column header filters + sort
+// on every business column (Client Name, Status, Project, Tower/Unit, Type, Txn
+// Value, Txn Date, Nationality, Agent, Attempts, Buyer Count). Each header offers
+// asc/desc sort (text A→Z, numeric low→high, date oldest→newest), a filter dropdown
+// with search, multi-select values, and clear (per-column + clear-all). All combine
+// via AND with the existing top filters / saved views / search / bulk-select (which
+// targets the FILTERED set) and export (POST of the filtered ids — audited, still
+// ADMIN-only); count stays == visible rows. Actions column has NO filter. The new
+// client-state ColumnHeaderFilter component is shared with Master Data (DRY across
+// both client-side tables); the mobile card view exposes the same filters as chips.
+// UI-only; buyer scope / permissions / schema untouched.
+const CACHE = "wcr-shell-v49";
 const SHELL = ["/login", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", (event) => {

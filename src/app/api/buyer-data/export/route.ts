@@ -7,7 +7,12 @@ import { NextResponse } from "next/server";
 
 // Buyer Data CSV export — ADMIN ONLY (passport + financial data). Watermarked +
 // audited like the lead export so a leaked file traces back to the downloader.
-// Optional ?project= filters to one project (used by the project-buyers section).
+// Filtering options (both still ADMIN-only + still deletedAt-excluded + audited):
+//   • GET  ?project=          → one project (used by the project-buyers section).
+//   • POST { buyerIds:[…] }   → the exact rows the table currently shows, so the
+//                               CSV reflects ALL active header/top/search filters
+//                               (the table is client-side; this hands the visible
+//                               id set to the audited server export). Capped 20k.
 
 function csvEscape(v: unknown): string {
   if (v == null) return "";
@@ -27,18 +32,14 @@ function istDate(d: Date | null): string {
   return new Date(d.getTime() + IST_OFFSET_MS).toISOString().slice(0, 10);
 }
 
-export async function GET(req: NextRequest) {
-  const me = await requireUser();
-  if (me.role !== "ADMIN") return NextResponse.json({ error: "Admin only" }, { status: 403 });
-
-  const url = new URL(req.url);
-  const project = url.searchParams.get("project")?.trim() || null;
-
+async function buildExport(
+  req: NextRequest,
+  me: { id: string; email: string; name: string },
+  where: Record<string, unknown>,
+  note: string | null,
+) {
   const records = await prisma.buyerRecord.findMany({
-    where: {
-      deletedAt: null, // recycle-bin records never exported
-      ...(project ? { projectName: { equals: project, mode: "insensitive" } } : {}),
-    },
+    where: { deletedAt: null, ...where }, // recycle-bin records never exported
     orderBy: { transactionDate: "desc" },
   });
 
@@ -73,7 +74,7 @@ export async function GET(req: NextRequest) {
   const watermark = [
     `# Confidential buyer-data export from White Collar Realty CRM`,
     `# Downloaded by: ${me.email} (${me.name}) at ${stamp}`,
-    `# Rows: ${records.length}${project ? `  ·  Project: ${project}` : ""}  ·  Contains passport & financial data — do NOT share outside the company.`,
+    `# Rows: ${records.length}${note ? `  ·  ${note}` : ""}  ·  Contains passport & financial data — do NOT share outside the company.`,
     "",
   ].join("\r\n");
   const footer = `\r\n# Exported by ${me.name} at ${stamp} — confidential\r\n`;
@@ -82,7 +83,7 @@ export async function GET(req: NextRequest) {
     userId: me.id,
     action: "export.buyer-data",
     entity: "BuyerRecord",
-    meta: { rowCount: records.length, project: project ?? undefined },
+    meta: { rowCount: records.length, note: note ?? undefined },
     request: reqMeta(req),
   });
 
@@ -94,4 +95,21 @@ export async function GET(req: NextRequest) {
       "Content-Disposition": `attachment; filename="${filename}"`,
     },
   });
+}
+
+export async function GET(req: NextRequest) {
+  const me = await requireUser();
+  if (me.role !== "ADMIN") return NextResponse.json({ error: "Admin only" }, { status: 403 });
+  const project = new URL(req.url).searchParams.get("project")?.trim() || null;
+  return buildExport(req, me, project ? { projectName: { equals: project, mode: "insensitive" } } : {}, project ? `Project: ${project}` : null);
+}
+
+// POST { buyerIds } → export exactly the filtered set the table currently shows.
+export async function POST(req: NextRequest) {
+  const me = await requireUser();
+  if (me.role !== "ADMIN") return NextResponse.json({ error: "Admin only" }, { status: 403 });
+  const body = await req.json().catch(() => ({}));
+  const ids = Array.isArray(body?.buyerIds) ? body.buyerIds.filter((x: unknown): x is string => typeof x === "string").slice(0, 20000) : [];
+  if (ids.length === 0) return NextResponse.json({ error: "No rows to export" }, { status: 400 });
+  return buildExport(req, me, { id: { in: ids } }, `Filtered selection (${ids.length} rows)`);
 }

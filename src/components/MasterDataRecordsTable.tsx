@@ -7,6 +7,7 @@ import { PROPERTY_TYPES } from "@/lib/propertyType";
 import { statusesForTeam, compareStatusDisplay } from "@/lib/lead-statuses";
 import { formatLeadName } from "@/lib/leadName";
 import { parseBudget } from "@/lib/budgetParse";
+import ColumnHeaderFilter, { type ColFilterState } from "@/components/ColumnHeaderFilter";
 
 // Cleaned-up Source list — mirrors ALLOWED_SOURCES in LeadSourceMediumFields.tsx
 // (single "Website"; no Call/WhatsApp/Email/Event; WCR Event kept). The label
@@ -192,8 +193,6 @@ export default function MasterDataRecordsTable({ rows, agents, projects, isSuper
   const [editVal, setEditVal] = useState("");
   const [sort, setSort] = useState<{ col: ColKey; dir: "asc" | "desc" } | null>(null);
   const [filters, setFilters] = useState<Record<string, Set<string>>>({});
-  const [openFilter, setOpenFilter] = useState<ColKey | null>(null);
-  const [fq, setFq] = useState("");
   const [pageNo, setPageNo] = useState(0);
   // new V3.1 state
   const [hidden, setHidden] = useState<Set<ColKey>>(new Set(DEFAULT_HIDDEN));
@@ -317,8 +316,10 @@ export default function MasterDataRecordsTable({ rows, agents, projects, isSuper
   const openTextEdit = (id: string, field: ColKey, cur: string) => { setEdit({ id, field }); setEditVal(cur === "—" ? "" : cur); };
   const editing = (id: string, f: ColKey) => edit?.id === id && edit?.field === f;
   const openMenu = (id: string, f: ColKey) => setEdit((e) => (e?.id === id && e?.field === f ? null : { id, field: f }));
-  const openFilterFor = (c: ColKey) => { setOpenFilter((o) => (o === c ? null : c)); setFq(""); };
   const setColFilter = (c: ColKey, next: Set<string>) => { setFilters((f) => ({ ...f, [c]: next })); setPageNo(0); };
+  // Adapt MasterData's values-only filter map to the shared component's shape.
+  const mdColFilter = (set: Set<string> | undefined): ColFilterState | undefined =>
+    set && set.size ? { values: set, min: "", max: "" } : undefined;
 
   // ── Views ──
   const applyBuiltin = (name: string) => { setActiveView((a) => (a === name ? null : name)); setPageNo(0); };
@@ -430,42 +431,27 @@ export default function MasterDataRecordsTable({ rows, agents, projects, isSuper
                 <input type="checkbox" checked={allOnPage} onChange={toggleAll} aria-label="Select all" />
               </th>
               {visibleCols.map((c) => {
-                const active = (filters[c.key]?.size ?? 0) > 0;
-                const opts = openFilter === c.key ? distinctVals(c.key) : [];
-                const shown = fq ? opts.filter((o) => o.toLowerCase().includes(fq.toLowerCase())) : opts;
-                const sel = filters[c.key] ?? new Set<string>();
                 const fz = frozen && FROZEN_LEFT[c.key] != null;
+                // Date columns sort on the underlying ms (handled in `filtered`);
+                // everything filters as multi-select text — so the shared
+                // ColumnHeaderFilter runs in "text"/"select" mode here. The Status
+                // column keeps the canonical order (no forced A→Z).
+                const kind = c.key === "status" ? "select" : "text";
                 return (
                   <th key={c.key} className={`px-3 py-2 font-semibold relative ${fz ? "bg-white dark:bg-slate-800" : ""}`} style={fz ? { ...fStyle(c.key), zIndex: 20 } : (c.minW ? { minWidth: c.minW } : undefined)}>
-                    <button onClick={() => openFilterFor(c.key)} className="inline-flex items-center gap-1 hover:text-[#0b1a33] dark:hover:text-blue-300">
-                      {c.label}
-                      <span className={`text-[9px] ${active || sort?.col === c.key ? "text-blue-600" : "text-gray-400"}`}>{sort?.col === c.key ? (sort.dir === "asc" ? "▲" : "▼") : "▾"}</span>
-                    </button>
-                    {openFilter === c.key && (
-                      <div className="absolute z-40 mt-1 left-0 w-56 rounded-lg border border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-800 shadow-xl font-normal normal-case">
-                        <div className="flex border-b border-gray-100 dark:border-slate-700">
-                          <button onClick={() => { setSort({ col: c.key, dir: "asc" }); setOpenFilter(null); }} className="flex-1 px-2 py-1.5 hover:bg-gray-50 dark:hover:bg-slate-700">↑ Sort A–Z</button>
-                          <button onClick={() => { setSort({ col: c.key, dir: "desc" }); setOpenFilter(null); }} className="flex-1 px-2 py-1.5 hover:bg-gray-50 dark:hover:bg-slate-700 border-l border-gray-100 dark:border-slate-700">↓ Sort Z–A</button>
-                        </div>
-                        <div className="p-2">
-                          <input value={fq} onChange={(e) => setFq(e.target.value)} placeholder="Search…" className="w-full mb-1.5 px-2 py-1 border border-gray-200 dark:border-slate-600 rounded dark:bg-slate-700" />
-                          <div className="flex justify-between mb-1 text-[10px] text-blue-600">
-                            <button onClick={() => setColFilter(c.key, new Set(opts))}>Select all</button>
-                            <button onClick={() => setColFilter(c.key, new Set())}>Clear</button>
-                          </div>
-                          <div className="max-h-44 overflow-auto space-y-0.5">
-                            {shown.map((o) => (
-                              <label key={o} className="flex items-center gap-1.5 cursor-pointer py-0.5">
-                                <input type="checkbox" checked={sel.has(o)} onChange={() => { const n = new Set(sel); n.has(o) ? n.delete(o) : n.add(o); setColFilter(c.key, n); }} className="h-3.5 w-3.5" />
-                                <span className="truncate">{o}</span>
-                              </label>
-                            ))}
-                            {shown.length === 0 && <span className="text-gray-400 italic">No values</span>}
-                          </div>
-                          <button onClick={() => { setOpenFilter(null); setPageNo(0); }} className="mt-2 w-full bg-[#0b1a33] text-white rounded py-1">Apply</button>
-                        </div>
-                      </div>
-                    )}
+                    <span className="inline-flex items-center gap-1">
+                      <span onClick={() => setSort((s) => s?.col === c.key ? { col: c.key, dir: s.dir === "asc" ? "desc" : "asc" } : { col: c.key, dir: "asc" })} className="cursor-pointer hover:text-[#0b1a33] dark:hover:text-blue-300">{c.label}</span>
+                      <ColumnHeaderFilter
+                        label={c.label}
+                        kind={kind}
+                        sortActive={sort?.col === c.key}
+                        sortDir={sort?.dir ?? "asc"}
+                        onSort={(dir) => setSort({ col: c.key, dir })}
+                        filter={mdColFilter(filters[c.key])}
+                        onApply={(next: ColFilterState) => setColFilter(c.key, next.values)}
+                        options={distinctVals(c.key)}
+                      />
+                    </span>
                   </th>
                 );
               })}

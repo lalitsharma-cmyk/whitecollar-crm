@@ -1437,6 +1437,71 @@ const checks: Check[] = [
   },
 
   // ───────────────────────────────────────────────────────────────────────────
+  // 41b. BUYER TABLE — Excel-style per-column header filters + sort (UX, static).
+  //   The Buyer Data table is CLIENT-SIDE (loads the scoped set, filters/sorts in
+  //   a useMemo) so `count === visible rows` is exact. This asserts the shared
+  //   ColumnHeaderFilter is wired onto every business column, that per-column
+  //   filters fold into the filtered set (so bulk/export/count all see the same
+  //   rows), the Actions column has NO filter, and the shared component is reused
+  //   by BOTH client-side tables (Buyer + Master Data) — the DRY guarantee. Also
+  //   re-asserts buyer scope is untouched (no permission/schema drift).
+  {
+    name: "buyer-table-filter — shared Excel header filter on every buyer business column + client filter/sort (count==rows) + DRY w/ Master Data + scope intact",
+    run: async () => {
+      const fs = await import("node:fs");
+      const read = (f: string) => fs.readFileSync(f, "utf8");
+
+      // (a) The shared component exists and exposes the client-state contract.
+      const hf = read("src/components/ColumnHeaderFilter.tsx");
+      for (const sym of ["export type ColKind", "export type ColFilterState", "export const isColFilterActive", "export default function ColumnHeaderFilter"]) {
+        assert(hf.includes(sym), `ColumnHeaderFilter must export ${sym}`);
+      }
+      // It supports the three field types + ordered (canonical) lists.
+      for (const k of ['"text"', '"number"', '"date"', '"select"']) {
+        assert(hf.includes(k), `ColumnHeaderFilter must handle kind ${k}`);
+      }
+      // Rendered through a PORTAL so a table's overflow can't clip the popover.
+      assert(/createPortal\(/.test(hf), "ColumnHeaderFilter popover MUST render via a portal (table overflow must not clip it)");
+
+      // (b) The Buyer table uses it on every business column, and Actions is absent.
+      const buyer = read("src/components/BuyerListClient.tsx");
+      assert(/from "@\/components\/ColumnHeaderFilter"/.test(buyer), "BuyerListClient must import the shared ColumnHeaderFilter");
+      const buyerCols = ["clientName", "poolStatus", "project", "towerUnit", "propertyType", "txnValue", "txnDate", "nationality", "agent", "attempts", "buyer"];
+      for (const c of buyerCols) {
+        assert(new RegExp(`renderHF\\("${c}"`).test(buyer), `Buyer table must render a header filter on the ${c} column`);
+      }
+      // The column model is the single source for filter + sort (DRY within file).
+      assert(/const COLS:\s*ColDef\[\]/.test(buyer), "Buyer table must declare a COLS model driving filters+sort");
+      assert(!/renderHF\("actions"/.test(buyer), "the Actions column MUST NOT have a header filter");
+
+      // (c) Per-column filters fold into the SAME filtered set used everywhere.
+      assert(/colFilters/.test(buyer) && /Object\.entries\(colFilters\)/.test(buyer), "colFilters must be applied inside the filtered useMemo");
+      // Bulk selection + export must operate on the FILTERED set (filteredIds), not raw rows.
+      assert(/filteredIds\.forEach\(\(id\) => next\.add\(id\)\)/.test(buyer), "select-all MUST add the FILTERED ids (filtered set, not whole table)");
+      assert(/anyFilter \? filteredIds/.test(buyer), "export MUST reflect the active filters (the filtered id set)");
+      // The visible count is literally filtered.length (count == rows).
+      assert(/\{filtered\.length\} record/.test(buyer), "the summary count MUST be filtered.length (count == visible rows)");
+      // Clear/reset returns to the full set (clears column filters too).
+      assert(/setColFilters\(\{\}\)/.test(buyer), "Clear-all MUST reset the per-column filters");
+
+      // (d) DRY: Master Data reuses the very same component (both client-side tables).
+      const md = read("src/components/MasterDataRecordsTable.tsx");
+      assert(/from "@\/components\/ColumnHeaderFilter"/.test(md) && /<ColumnHeaderFilter/.test(md), "Master Data MUST reuse the shared ColumnHeaderFilter (DRY across client-side tables)");
+
+      // (e) Export route still ADMIN-only + deletedAt-excluded on BOTH paths; the
+      //     new POST(buyerIds) path is the filtered-export channel (capped, audited).
+      const exp = read("src/app/api/buyer-data/export/route.ts");
+      assert(/export async function POST/.test(exp) && /buyerIds/.test(exp), "export route must accept POST { buyerIds } for filtered export");
+      assert((exp.match(/me\.role !== "ADMIN"/g) ?? []).length >= 2, "BOTH export paths (GET+POST) MUST stay ADMIN-only");
+      assert(/deletedAt: null/.test(exp), "export MUST keep recycle-bin (deletedAt) rows excluded");
+
+      // (f) Scope guard untouched — no permission/schema drift (UX-only change).
+      const scopeSrc = read("src/lib/buyerScope.ts");
+      assert((scopeSrc.match(/deletedAt:\s*null/g) ?? []).length >= 4, "buyerScopeWhere deletedAt:null branches must remain intact");
+    },
+  },
+
+  // ───────────────────────────────────────────────────────────────────────────
   // 42. BUYER PERFORMANCE REPORTING — Part 6 invariants (/reports/buyer-performance).
   //   The report MUST be reconcilable: every per-agent metric count traces back to
   //   the exact BuyerRecords behind it (the drill-down), and the admin summary
