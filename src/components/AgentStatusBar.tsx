@@ -9,6 +9,11 @@
 // • Mobile-first: 2-col grid on phones → 3-col ≥sm, min 56px tall targets.
 // • State-aware: "Returned From X" is disabled until the matching "Going X" is
 //   open; while out, a live elapsed timer shows under the bar.
+// • "I Am Here" is a ONCE-PER-DAY check-in: once marked for the IST day it locks
+//   into a non-clickable "Checked in ✓" state (server also no-ops a 2nd HERE,
+//   keeping the first timestamp). Driven by the `alreadyCheckedIn` prop.
+// • Site-visit buttons are HIDDEN for the Dubai team (no local site visits) — the
+//   `team` prop gates them; meeting buttons stay for every team.
 // • Today's events + durations listed below, newest first.
 // • Posts to /api/agent-status; "I Am Here" also marks daily attendance.
 // ────────────────────────────────────────────────────────────────────────────
@@ -36,6 +41,11 @@ interface StatusEvent {
 interface Props {
   initialEvents: StatusEvent[];
   initialOpenGoing: StatusEvent | null;
+  /** True if the user has ALREADY checked in (HERE / attendance) for today (IST).
+   *  When true the "I Am Here" button renders locked ("Checked in ✓"). */
+  alreadyCheckedIn?: boolean;
+  /** The user's team ("Dubai" / "India" / …). Dubai hides the site-visit buttons. */
+  team?: string | null;
 }
 
 const LABEL: Record<Kind, string> = {
@@ -82,13 +92,22 @@ function elapsedMin(iso: string, nowMs: number): number {
   return Math.max(0, Math.floor((nowMs - new Date(iso).getTime()) / 60_000));
 }
 
-export default function AgentStatusBar({ initialEvents, initialOpenGoing }: Props) {
+export default function AgentStatusBar({ initialEvents, initialOpenGoing, alreadyCheckedIn = false, team = null }: Props) {
   const router = useRouter();
   const [events, setEvents] = useState<StatusEvent[]>(initialEvents);
   const [openGoing, setOpenGoing] = useState<StatusEvent | null>(initialOpenGoing);
   const [busy, setBusy] = useState<Kind | null>(null);
   const [nowMs, setNowMs] = useState<number>(() => Date.now());
   const [toast, setToast] = useState<string | null>(null);
+  // Locked once HERE is marked for the day — seeded from the server flag OR any
+  // HERE event already present in today's list, then latched after a HERE tap so
+  // the button locks instantly (before the router.refresh round-trip lands).
+  const [checkedIn, setCheckedIn] = useState<boolean>(
+    () => alreadyCheckedIn || initialEvents.some((e) => e.status === "HERE"),
+  );
+  // Dubai does no local site visits → drop those two buttons. Case-insensitive,
+  // trimmed; any non-Dubai team (India / HQ / null) keeps them.
+  const isDubaiTeam = (team ?? "").trim().toLowerCase() === "dubai";
 
   // Tick every 30s so the "out for Xm" timer stays live.
   useEffect(() => {
@@ -97,9 +116,19 @@ export default function AgentStatusBar({ initialEvents, initialOpenGoing }: Prop
     return () => clearInterval(t);
   }, [openGoing]);
 
+  // Re-latch the lock if the server flag flips true after a router.refresh()
+  // (e.g. the HERE tap marked attendance and the page re-rendered). Never
+  // un-latches — once checked in for the day it stays locked.
+  useEffect(() => {
+    if (alreadyCheckedIn) setCheckedIn(true);
+  }, [alreadyCheckedIn]);
+
   const post = useCallback(
     async (status: Kind) => {
       if (busy) return;
+      // Guard: never fire a 2nd HERE for the day (button is also hidden/locked,
+      // and the server no-ops it — this is the belt-and-braces client guard).
+      if (status === "HERE" && checkedIn) return;
       setBusy(status);
       try {
         const r = await fetch("/api/agent-status", {
@@ -113,14 +142,20 @@ export default function AgentStatusBar({ initialEvents, initialOpenGoing }: Prop
           setOpenGoing(data.openGoing ?? null);
           setNowMs(Date.now());
           // Confirmation toast (with duration on a Returned tap).
-          if (data.pairedClosed && data.durationMin != null) {
+          if (data.duplicate && status === "HERE") {
+            setToast("Already checked in today ✓");
+          } else if (data.pairedClosed && data.durationMin != null) {
             setToast(`${LABEL[status]} — ${fmtDuration(data.durationMin)}`);
           } else {
             setToast(`✓ ${LABEL[status]} logged`);
           }
-          // I Am Here also marks attendance → refresh the dashboard so the
-          // attendance card / greeting update without a manual reload.
-          if (status === "HERE") router.refresh();
+          // I Am Here also marks attendance → lock the button for the day and
+          // refresh the dashboard so the attendance card / greeting update
+          // without a manual reload.
+          if (status === "HERE") {
+            setCheckedIn(true);
+            router.refresh();
+          }
           window.setTimeout(() => setToast(null), 3500);
         } else {
           setToast("Could not log — try again");
@@ -147,12 +182,19 @@ export default function AgentStatusBar({ initialEvents, initialOpenGoing }: Prop
   // violet.) HERE keeps emerald (the "call/positive" green), LEAVING keeps slate
   // (the neutral/snooze grey). Behaviour/endpoints unchanged.
   const buttons: { kind: Kind; tone: string; disabled: boolean }[] = [
-    { kind: "HERE", tone: "emerald", disabled: false },
+    // HERE is locked once checked-in for the day (rendered as "Checked in ✓").
+    { kind: "HERE", tone: "emerald", disabled: checkedIn },
     { kind: "LEAVING_OFFICE", tone: "slate", disabled: false },
+    // Meeting buttons stay for EVERY team (India + Dubai).
     { kind: "GOING_MEETING", tone: "meeting", disabled: meetingOpen },
     { kind: "RETURNED_MEETING", tone: "meeting", disabled: !meetingOpen },
-    { kind: "GOING_SITE_VISIT", tone: "siteVisit", disabled: siteOpen },
-    { kind: "RETURNED_SITE_VISIT", tone: "siteVisit", disabled: !siteOpen },
+    // Site-visit buttons are India-only — Dubai does no local site visits.
+    ...(isDubaiTeam
+      ? []
+      : ([
+          { kind: "GOING_SITE_VISIT", tone: "siteVisit", disabled: siteOpen },
+          { kind: "RETURNED_SITE_VISIT", tone: "siteVisit", disabled: !siteOpen },
+        ] as { kind: Kind; tone: string; disabled: boolean }[])),
   ];
 
   // Mirrors the meeting / siteVisit / call (emerald) / snooze (slate) token
@@ -179,18 +221,25 @@ export default function AgentStatusBar({ initialEvents, initialOpenGoing }: Prop
 
       {/* 6 buttons — 2-col on phones, 3-col ≥sm. Large tap targets. */}
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-        {buttons.map(({ kind, tone, disabled }) => (
-          <button
-            key={kind}
-            onClick={() => post(kind)}
-            disabled={disabled || busy !== null}
-            className={`flex flex-col items-center justify-center gap-1 rounded-xl border min-h-[56px] px-2 py-2.5 text-xs sm:text-sm font-bold leading-tight text-center shadow-sm transition active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed disabled:active:scale-100 ${toneClass[tone]}`}
-            aria-label={LABEL[kind]}
-          >
-            <span className="text-lg leading-none">{ICON[kind]}</span>
-            <span>{busy === kind ? "…" : LABEL[kind]}</span>
-          </button>
-        ))}
+        {buttons.map(({ kind, tone, disabled }) => {
+          // The HERE button, once locked, shows a clear "Checked in ✓" state
+          // (kept visible but non-clickable) so the agent sees they're marked.
+          const isLockedHere = kind === "HERE" && checkedIn;
+          const icon = isLockedHere ? "✅" : ICON[kind];
+          const label = isLockedHere ? "Checked in ✓" : LABEL[kind];
+          return (
+            <button
+              key={kind}
+              onClick={() => post(kind)}
+              disabled={disabled || busy !== null}
+              className={`flex flex-col items-center justify-center gap-1 rounded-xl border min-h-[56px] px-2 py-2.5 text-xs sm:text-sm font-bold leading-tight text-center shadow-sm transition active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed disabled:active:scale-100 ${toneClass[tone]} ${isLockedHere ? "disabled:opacity-100" : ""}`}
+              aria-label={isLockedHere ? "Checked in for today" : LABEL[kind]}
+            >
+              <span className="text-lg leading-none">{icon}</span>
+              <span>{busy === kind ? "…" : label}</span>
+            </button>
+          );
+        })}
       </div>
 
       {/* Confirmation toast */}

@@ -125,7 +125,17 @@
 // identical everywhere (killed: blue-vs-emerald Call, 3 inline WhatsApp/phone
 // SVGs, sky/indigo Email, amber-vs-token follow-up). Note button keeps its
 // dark-navy-on-amber contrast. NO business logic / endpoint / permission change.
-const CACHE = "wcr-shell-v46";
+// v47 (2026-06-24): Dashboard field-status + sales-report fixes. (1) "I Am Here"
+// is now once-per-IST-day — the button locks to a non-clickable "Checked in ✓"
+// state after the first daily check-in (driven by attendance OR a HERE event),
+// and the /api/agent-status engine no-ops a 2nd HERE (keeps the first timestamp,
+// doesn't re-notify). (2) Site-visit buttons (Going/Returned For Site Visit) are
+// HIDDEN for the Dubai team (no local site visits); meeting buttons stay for both
+// teams; India keeps all six. (3) Dashboard "By Salesperson" sales board now
+// filters u."hrOnly" = false so HR/non-sales users (e.g. Nisha) never appear on
+// the sales performance report (the Live-Assignment widget already excluded them).
+// Additive/reversible; legacy duplicate HERE rows preserved as-is.
+const CACHE = "wcr-shell-v47";
 const SHELL = ["/login", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", (event) => {

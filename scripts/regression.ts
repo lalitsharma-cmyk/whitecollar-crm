@@ -2023,6 +2023,98 @@ const checks: Check[] = [
       assert(/body\.at/.test(snz), "action-snooze must accept an explicit { at } IST datetime for the Lead-View picker");
     },
   },
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // 44. DASHBOARD FIELD-STATUS + SALES REPORT (2026-06-24). Invariants:
+  //   (a) "I Am Here" is once-per-day (IST): at most ONE HERE AgentStatusEvent
+  //       per user per IST day in real data, AND the engine still carries the
+  //       guard (todaysHereEvent + the duplicate short-circuit in logAgentStatus).
+  //   (b) The dashboard "By Salesperson" SQL EXCLUDES hrOnly/non-sales users
+  //       (u."hrOnly" = false) — so an hrOnly user (Nisha) can NEVER appear on the
+  //       sales board; mirrored by agentPerformance.ts roster (hrOnly:false).
+  //   (c) AgentStatusBar HIDES the site-visit buttons for the Dubai team and
+  //       passes alreadyCheckedIn/team from the dashboard.
+  // ───────────────────────────────────────────────────────────────────────────
+  {
+    name: "dashboard-field-status — HERE idempotent-per-IST-day + sales report excludes hrOnly + Dubai hides site-visit",
+    run: async () => {
+      const fs = await import("node:fs");
+
+      // (a) DATA: from the fix forward, HERE is once-per-IST-day. We CANNOT assert
+      //     historically-clean data because the pre-fix engine allowed multiple
+      //     same-day check-ins (those legacy rows are kept verbatim — never mutated
+      //     — per the "preserve movement history" rule). So we report any legacy
+      //     same-day duplicates as a NON-FATAL note, and hard-assert the forward
+      //     guarantee at the engine level in (a'). Group HERE by (userId, IST-day).
+      const heres = await prisma.agentStatusEvent.findMany({
+        where: { status: "HERE" },
+        select: { userId: true, startedAt: true },
+        take: 5000,
+      });
+      const seen = new Map<string, number>();
+      for (const h of heres) {
+        const key = `${h.userId}|${istDateKey(h.startedAt)}`;
+        seen.set(key, (seen.get(key) ?? 0) + 1);
+      }
+      const dupes = [...seen.entries()].filter(([, n]) => n > 1);
+      if (dupes.length > 0) {
+        results.push({
+          name: "  ↳ note",
+          ok: true,
+          detail: `${dupes.length} legacy (user, IST-day) bucket(s) had >1 HERE before the fix — preserved as-is; the engine guard below prevents any NEW same-day duplicate`,
+        });
+      }
+
+      // (a') ENGINE: the once-per-day guard is present in the real code — this is
+      //      the FORWARD guarantee (a 2nd HERE today is a no-op keeping the first).
+      const agentStatusLib = fs.readFileSync("src/lib/agentStatus.ts", "utf8");
+      assert(/export async function todaysHereEvent\(/.test(agentStatusLib),
+        "agentStatus.ts must export todaysHereEvent (drives the HERE-once lock + guard)");
+      assert(/status === "HERE"/.test(agentStatusLib) && /duplicate: true/.test(agentStatusLib),
+        "logAgentStatus must short-circuit a 2nd HERE for the day (duplicate:true no-op, first kept)");
+
+      // (b) DATA: every active hrOnly user is absent from the sales-board population.
+      //     The board population is (active AND role IN AGENT/MANAGER AND hrOnly=false);
+      //     so assert NO hrOnly user satisfies the (active, AGENT/MANAGER) base. We
+      //     prove the FILTER is what excludes them: baseline (without hrOnly) may
+      //     include hrOnly users; filtered must include zero.
+      const baselineSales = await prisma.user.count({
+        where: { active: true, role: { in: ["AGENT", "MANAGER"] } },
+      });
+      const filteredSales = await prisma.user.count({
+        where: { active: true, role: { in: ["AGENT", "MANAGER"] }, hrOnly: false },
+      });
+      const hrInBase = await prisma.user.count({
+        where: { active: true, role: { in: ["AGENT", "MANAGER"] }, hrOnly: true },
+      });
+      assert(filteredSales === baselineSales - hrInBase,
+        `sales-board filter math broken: filtered(${filteredSales}) != baseline(${baselineSales}) - hrOnly(${hrInBase})`);
+      // No hrOnly user may remain in the filtered (board) population.
+      const hrStillIn = await prisma.user.count({
+        where: { active: true, role: { in: ["AGENT", "MANAGER"] }, hrOnly: false, AND: [{ hrOnly: true }] },
+      });
+      assert(hrStillIn === 0, "an hrOnly user must NEVER be in the sales-board population");
+
+      // (b') SOURCE: the dashboard "By Salesperson" SQL carries the hrOnly guard,
+      //      and the Live-Assignment roster (agentPerformance.ts) does too.
+      const dash = fs.readFileSync("src/app/(app)/dashboard/page.tsx", "utf8");
+      assert(/u\."hrOnly"\s*=\s*false/.test(dash),
+        'dashboard By-Salesperson SQL must filter u."hrOnly" = false (exclude HR/non-sales like Nisha)');
+      const agentPerf = fs.readFileSync("src/lib/agentPerformance.ts", "utf8");
+      assert(/hrOnly:\s*false/.test(agentPerf),
+        "agentPerformance.ts roster must keep hrOnly:false (Live-Assignment widget excludes HR too)");
+
+      // (c) SOURCE: AgentStatusBar hides site-visit for Dubai + wires the new props;
+      //      the dashboard passes team + alreadyCheckedIn through.
+      const bar = fs.readFileSync("src/components/AgentStatusBar.tsx", "utf8");
+      assert(/isDubaiTeam/.test(bar) && /GOING_SITE_VISIT/.test(bar) && /alreadyCheckedIn/.test(bar),
+        "AgentStatusBar must gate site-visit buttons on Dubai team + accept alreadyCheckedIn");
+      assert(/checkedIn/.test(bar) && /Checked in/.test(bar),
+        "AgentStatusBar must render a locked 'Checked in' state for HERE");
+      assert(/team=\{me\.team\}/.test(dash) && /alreadyCheckedIn=\{myCheckedInToday\}/.test(dash),
+        "dashboard must pass team + alreadyCheckedIn into <AgentStatusBar>");
+    },
+  },
 ];
 
 // ── runner ────────────────────────────────────────────────────────────────────

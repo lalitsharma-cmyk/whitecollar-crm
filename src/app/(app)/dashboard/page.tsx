@@ -12,7 +12,7 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import IamHereCard from "@/components/IamHereCard";
 import AgentStatusBar from "@/components/AgentStatusBar";
-import { todaysEvents, openGoingEvent } from "@/lib/agentStatus";
+import { todaysEvents, openGoingEvent, todaysHereEvent } from "@/lib/agentStatus";
 import { todayIST } from "@/lib/attendance";
 import { normalizeTeam } from "@/lib/teamRouting";
 import { formatLeadName } from "@/lib/leadName";
@@ -184,9 +184,10 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   });
 
   // ── Field-movement status widget data (this user's own events) ──
-  const [myStatusEventsRaw, myOpenGoingRaw] = await Promise.all([
+  const [myStatusEventsRaw, myOpenGoingRaw, myHereTodayRaw] = await Promise.all([
     todaysEvents(me.id),
     openGoingEvent(me.id),
+    todaysHereEvent(me.id),
   ]);
   const myStatusEvents = myStatusEventsRaw.map((e) => ({
     id: e.id,
@@ -206,6 +207,9 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         pairedEventId: myOpenGoingRaw.pairedEventId,
       }
     : null;
+  // "I Am Here" locks once marked for the IST day — true if the attendance
+  // self-check-in OR a HERE field-status event already exists today.
+  const myCheckedInToday = !!myAttendanceToday?.selfCheckedInAt || myHereTodayRaw != null;
 
   // ADMIN-only morning-window widget: overnight leads waiting for assign
   let morningQueueCount = 0;
@@ -233,6 +237,9 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   // in the KPI tiles + briefing above; the cross-team breakdown is management-
   // only. Skipping the query for agents also avoids 9 sub-selects × N users.
   // Calls / due_today use the selected period; overdue/closeable/needs are state-based.
+  // hrOnly = false EXCLUDES HR/non-sales users (e.g. Nisha, an hrOnly MANAGER) so
+  // the SALES performance board only ever shows actual sales agents — mirrors the
+  // agentPerformance.ts roster (hrOnly:false) used by the Live-Assignment widget.
   const spStatsRaw: SpRow[] = isAdminOrMgr ? await prisma.$queryRaw<SpRow[]>`
     SELECT u.id, u.name, u.team,
       COALESCE((SELECT COUNT(*) FROM "CallLog" c WHERE c."userId" = u.id AND c."startedAt" >= ${sqlFrom} AND c."startedAt" < ${sqlTo}), 0) as calls,
@@ -243,7 +250,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
       COALESCE((SELECT COUNT(*) FROM "Lead" l WHERE l."ownerId" = u.id AND l."deletedAt" IS NULL AND l."leadOrigin" NOT IN ('COLD','REVIVAL') AND l."needsManagerReview" = true), 0) as needs,
       COALESCE((SELECT COUNT(*) FROM "Lead" l WHERE l."ownerId" = u.id AND l."deletedAt" IS NULL AND l."leadOrigin" NOT IN ('COLD','REVIVAL')), 0) as clients
     FROM "User" u
-    WHERE u.active = true AND u.role::text IN ('AGENT','MANAGER')
+    WHERE u.active = true AND u.role::text IN ('AGENT','MANAGER') AND u."hrOnly" = false
     ORDER BY calls DESC
   ` : [];
   const spStats = spStatsRaw.map(r => ({
@@ -452,7 +459,12 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
               the field (arrival / leaving / meeting / site visit). Manager gets
               notified with the duration. Shown to AGENT/MANAGER/ADMIN. */}
           {(me.role === "AGENT" || me.role === "MANAGER" || me.role === "ADMIN") && (
-            <AgentStatusBar initialEvents={myStatusEvents} initialOpenGoing={myOpenGoing} />
+            <AgentStatusBar
+              initialEvents={myStatusEvents}
+              initialOpenGoing={myOpenGoing}
+              alreadyCheckedIn={myCheckedInToday}
+              team={me.team}
+            />
           )}
 
           {/* Lead-Ops / Support-Admin management view (Sameer): assignment queue

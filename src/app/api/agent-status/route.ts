@@ -3,7 +3,9 @@
 //           active user (agent/manager/admin log their OWN movements). For
 //           "Returned" taps the matching open "Going" is closed + duration
 //           computed. Manager (Lalit) is notified. HERE also marks the existing
-//           Attendance self-check-in (no duplicate "I'm here" path).
+//           Attendance self-check-in (no duplicate "I'm here" path) and is
+//           IDEMPOTENT PER IST DAY — a 2nd HERE is a no-op (first event echoed
+//           back, nothing written, manager not re-notified; `duplicate:true`).
 //   GET   → the caller's today's events + current open-going state (widget refresh).
 import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth";
@@ -91,6 +93,8 @@ export async function POST(req: NextRequest) {
     event: serialize(result.event),
     durationMin: result.durationMin,
     pairedClosed: result.pairedClosed,
+    // True when this was a 2nd HERE for the day — no row written, first kept.
+    duplicate: result.duplicate ?? false,
     openGoing: result.openGoing ? serialize(result.openGoing) : null,
     events: events.map(serialize),
   });

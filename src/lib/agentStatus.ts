@@ -135,6 +135,37 @@ export async function openGoingEvent(userId: string) {
   });
 }
 
+/** [start, end) UTC bounds of "today" in IST. Shared by the HERE-once guard. */
+function istDayWindowUtc(): { start: Date; end: Date } {
+  const istOffsetMs = 5.5 * 60 * 60 * 1000;
+  const istMidnight = new Date(Date.now() + istOffsetMs);
+  istMidnight.setUTCHours(0, 0, 0, 0);
+  const start = new Date(istMidnight.getTime() - istOffsetMs);
+  return { start, end: new Date(start.getTime() + 24 * 60 * 60 * 1000) };
+}
+
+/**
+ * The user's HERE (check-in) event for today (IST), if any. Used to enforce the
+ * once-per-day "I Am Here" rule (the button locks + a 2nd POST is a no-op).
+ */
+export async function todaysHereEvent(userId: string): Promise<RecordedStatus | null> {
+  const { start, end } = istDayWindowUtc();
+  const row = await prisma.agentStatusEvent.findFirst({
+    where: { userId, status: "HERE", startedAt: { gte: start, lt: end } },
+    orderBy: { startedAt: "asc" }, // FIRST check-in of the day wins
+  });
+  return row
+    ? {
+        id: row.id,
+        status: row.status,
+        startedAt: row.startedAt,
+        endedAt: row.endedAt,
+        durationMin: row.durationMin,
+        pairedEventId: row.pairedEventId,
+      }
+    : null;
+}
+
 /** Today's (IST) status events for a user, newest first — for the history list. */
 export async function todaysEvents(userId: string): Promise<RecordedStatus[]> {
   // IST day window expressed in UTC.
@@ -167,6 +198,8 @@ export interface LogResult {
   pairedClosed: boolean;
   /** The user's open Going event AFTER this log (null = not currently out). */
   openGoing: RecordedStatus | null;
+  /** True when the call was a no-op (a 2nd HERE for the day) — first event echoed back, nothing written. */
+  duplicate?: boolean;
 }
 
 /**
@@ -188,6 +221,29 @@ export async function logAgentStatus(
   let durationMin: number | null = null;
   let pairedClosed = false;
   let pairedEventId: string | null = null;
+
+  // ── HERE is once-per-day (IST) ──
+  // If this user already checked in today, DON'T create a 2nd HERE row, don't
+  // re-mark attendance, don't re-notify — echo back the FIRST event so its
+  // timestamp is preserved. Makes the endpoint idempotent (button is also locked
+  // client-side, but a stale tab / direct POST must not duplicate the check-in).
+  if (status === "HERE") {
+    const existing = await todaysHereEvent(user.id);
+    if (existing) {
+      return {
+        event: existing,
+        durationMin: null,
+        pairedClosed: false,
+        openGoing: await (async () => {
+          const o = await openGoingEvent(user.id);
+          return o
+            ? { id: o.id, status: o.status, startedAt: o.startedAt, endedAt: o.endedAt, durationMin: o.durationMin, pairedEventId: o.pairedEventId }
+            : null;
+        })(),
+        duplicate: true,
+      };
+    }
+  }
 
   // ── "Returned" → close the matching open "Going" ──
   const opensKind = RETURN_OPENS[status];
