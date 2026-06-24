@@ -10,6 +10,7 @@ import { awardXp, type AwardResult, type XpReason } from "@/lib/gamification.ser
 import { canSetStatus, isStatusValidForTeam, NEEDS_REVIEW } from "@/lib/lead-statuses";
 import { isPropertyType } from "@/lib/propertyType";
 import { recordFieldChanges, TRACKED_FIELDS } from "@/lib/fieldHistory";
+import { normalizeNameList } from "@/lib/nameFormat";
 import { notify } from "@/lib/notify";
 import { assignLeadTo } from "@/lib/leadIngest";
 import { NotifKind, type Prisma } from "@prisma/client";
@@ -202,6 +203,16 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     if (cur && cur.forwardedTeam !== newTeam && !isStatusValidForTeam(cur.currentStatus, newTeam)) {
       updates.currentStatus = NEEDS_REVIEW;
       activityNotes.push(`status → ${NEEDS_REVIEW} (team changed)`);
+    }
+  }
+
+  // Proper-Case name fields on inline edit (name/altName only — never phone/
+  // email/company/etc.). normalizeNameList preserves intentional mixed-case and
+  // skips non-name values; multi-name cells normalize each part. Applied to the
+  // string values just parsed above, before the DB write + history capture.
+  for (const nf of ["name", "altName"] as const) {
+    if (typeof updates[nf] === "string" && updates[nf]) {
+      updates[nf] = normalizeNameList(updates[nf] as string);
     }
   }
 

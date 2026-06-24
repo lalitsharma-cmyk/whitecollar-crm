@@ -21,6 +21,7 @@ import { interpretBudget, resolveBudgetCurrency } from "@/lib/budgetCurrency";
 import { inferCountryFromCity } from "@/lib/cityCountry";
 import { detectConversationColumn } from "@/lib/conversationColumn";
 import { canonicalStatus, isStatusValidForTeam, NEEDS_REVIEW } from "@/lib/lead-statuses";
+import { normalizeNameList } from "@/lib/nameFormat";
 import { audit, reqMeta } from "@/lib/audit";
 // runIntelligenceCheck is called inside ingestLead() for every new (non-deduped)
 // lead. No explicit call needed here — the check fires sequentially, one per row,
@@ -590,7 +591,9 @@ export async function POST(req: NextRequest) {
       // Add medium from parsed source
       if (sourceAndMedium.medium) update.medium = sourceAndMedium.medium;
       if (altPhone) update.altPhone = altPhone;
-      if (altName) update.altName = altName;
+      // Proper-Case the alternative name(s) too (the primary name is normalized
+      // inside ingestLead). Multi-name cell → normalize each part.
+      if (altName) update.altName = normalizeNameList(altName);
       const company = notDate(field("company", "company")); if (company) update.company = company;
       const address = notDate(field("address", "address")); if (address) update.address = address;
       const whoIsClient = field("whoIsClient", "whoisclient", "client", "clientinfo", "about");

@@ -20,6 +20,7 @@ import { cleanNeedSnapshot } from "@/lib/needSnapshot";
 import { runIntelligenceCheck } from "@/lib/intelligenceCheck";
 import { inferPropertyType } from "@/lib/propertyType";
 import { inferCountryFromCity, inferStateFromCity } from "@/lib/cityCountry";
+import { normalizeNameList } from "@/lib/nameFormat";
 
 export interface RawLeadInput {
   name: string;
@@ -95,6 +96,12 @@ export async function ingestLead(input: RawLeadInput) {
     const normalized = toE164(input.phone, fallbackDial);
     if (normalized) input.phone = normalized;
   }
+  // Proper-Case the client name(s) at the source so every downstream write
+  // (lead.create, notification bodies, investor-match) stores/show a clean name.
+  // normalizeName only touches all-upper / all-lower values — intentional
+  // mixed-case ("McDonald") is preserved, and non-name values are passed through.
+  // Lead.name can hold multiple comma/slash/&-joined names → normalize each part.
+  if (input.name) input.name = normalizeNameList(input.name);
   const fp = fingerprintFor(input.phone, input.email);
 
   // §17 — Auto-fill country from city (curated map, sync) when the intake didn't

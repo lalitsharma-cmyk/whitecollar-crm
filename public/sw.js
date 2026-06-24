@@ -157,7 +157,15 @@
 // client-state ColumnHeaderFilter component is shared with Master Data (DRY across
 // both client-side tables); the mobile card view exposes the same filters as chips.
 // UI-only; buyer scope / permissions / schema untouched.
-const CACHE = "wcr-shell-v49";
+// v50 (2026-06-24): Proper-Case (Title-Case) name normalization. Names now store
+// clean at the source — "ABHISHEK ARORA" → "Abhishek Arora", "MR. RISHI RAI" →
+// "Mr. Rishi Rai" — via src/lib/nameFormat.ts applied on EVERY write path (lead
+// ingest/import/manual/inline-edit, buyer import/create/update/convert). Only
+// all-UPPER / all-lower values are touched; intentional mixed-case ("McDonald")
+// and non-name values (email/code) are preserved. A one-off migration backfilled
+// existing rows (31 Lead + 3 Buyer fields). Refresh so name fields render the
+// cleaned values. Display-only formatLeadName unchanged; no schema change.
+const CACHE = "wcr-shell-v50";
 const SHELL = ["/login", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", (event) => {

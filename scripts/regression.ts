@@ -2217,6 +2217,66 @@ const checks: Check[] = [
       assert(/ownerId\s*=\s*\{\s*in:\s*ownerIds\s*\}/.test(page), "Leads page must accept multi-select ?owner= (ownerId in […])");
     },
   },
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // 6. PROPER-CASE NAME FORMAT (2026-06-24) — names are stored Proper-Case at the
+  //    source (nameFormat.ts, applied on every write path) and the migration
+  //    backfilled existing rows. Two parts:
+  //      (a) UTIL correctness — the spec examples + the safety guard (mixed-case
+  //          preserved, email/code passthrough). Tests the REAL pure lib.
+  //      (b) DATA — no LIVE Lead.name/altName or BuyerRecord name field remains
+  //          un-cased (all-UPPER / all-lower). A re-normalise must change 0. The
+  //          remaining-uncased COUNT is logged (note) for visibility.
+  // ───────────────────────────────────────────────────────────────────────────
+  {
+    name: "name-format — util cases pass; no all-caps/all-lower names remain on live leads/buyers",
+    run: async () => {
+      const { toProperCase, shouldNormalizeName, normalizeName, normalizeNameList } = await import("../src/lib/nameFormat");
+
+      // (a) Spec examples — Proper-Case, honorific, hyphen, apostrophe.
+      assert(toProperCase("ABHISHEK ARORA") === "Abhishek Arora", "toProperCase('ABHISHEK ARORA') → 'Abhishek Arora'");
+      assert(toProperCase("RAFIQ ALY HARRY MAHMOOD") === "Rafiq Aly Harry Mahmood", "multi-word upper → title case");
+      assert(toProperCase("MR. RISHI RAI CHANDHARY") === "Mr. Rishi Rai Chandhary", "honorific 'MR.' → 'Mr.'");
+      assert(toProperCase("AL-RASHID") === "Al-Rashid", "hyphen segments each cased");
+      assert(toProperCase("O'BRIEN") === "O'Brien", "apostrophe segments each cased");
+      // Passthrough — never reformat an email / URL / numeric code.
+      assert(toProperCase("john@x.com") === "john@x.com", "email passes through unchanged");
+      assert(toProperCase("https://x.com/p") === "https://x.com/p", "URL passes through unchanged");
+      assert(toProperCase("30100") === "30100" && toProperCase("A-1203") === "A-1203", "numeric/unit code passes through");
+      // Idempotent.
+      assert(toProperCase(toProperCase("ABHISHEK ARORA")) === toProperCase("ABHISHEK ARORA"), "toProperCase is idempotent");
+
+      // The SAFETY GUARD — only all-upper / all-lower are targets; mixed-case kept.
+      assert(shouldNormalizeName("ABHISHEK ARORA") === true && shouldNormalizeName("abhishek arora") === true, "all-upper/all-lower → normalise");
+      assert(shouldNormalizeName("Abhishek Arora") === false, "already-proper → leave");
+      assert(shouldNormalizeName("McDonald") === false && shouldNormalizeName("DeSouza") === false && shouldNormalizeName("JPMorgan") === false, "intentional mixed-case → PRESERVED");
+      assert(shouldNormalizeName("a@b.com") === false && shouldNormalizeName("30100") === false, "non-name values → never normalised");
+      assert(shouldNormalizeName("") === false && shouldNormalizeName(null) === false, "empty/null → false");
+      // Guarded entry point. (Cast args to string so the generic return type
+      // isn't narrowed to the input literal — which would make === a type error.)
+      assert(normalizeName("ABHISHEK ARORA" as string) === "Abhishek Arora" && normalizeName("McDonald" as string) === "McDonald", "normalizeName guards mixed-case");
+      assert(normalizeName(null) === null, "normalizeName(null) → null");
+      assert(normalizeNameList("ANIL RAJ, AVANTIKA NAIR" as string) === "Anil Raj, Avantika Nair", "multi-name list normalised per part");
+
+      // (b) DATA — no LIVE name remains un-cased (a re-normalise would change it).
+      const leads = await prisma.lead.findMany({ where: { deletedAt: null }, select: { name: true, altName: true } });
+      let leadUncased = 0;
+      for (const l of leads) {
+        if (l.name && normalizeNameList(l.name) !== l.name) leadUncased++;
+        if (l.altName && normalizeNameList(l.altName) !== l.altName) leadUncased++;
+      }
+      const buyers = await prisma.buyerRecord.findMany({ where: { deletedAt: null }, select: { clientName: true, ownerName: true, agentName: true } });
+      let buyerUncased = 0;
+      for (const b of buyers) {
+        if (b.clientName && normalizeNameList(b.clientName) !== b.clientName) buyerUncased++;
+        if (b.ownerName && normalizeNameList(b.ownerName) !== b.ownerName) buyerUncased++;
+        if (b.agentName && normalizeNameList(b.agentName) !== b.agentName) buyerUncased++;
+      }
+      results.push({ name: "  ↳ note", ok: true, detail: `live names still un-cased → Lead: ${leadUncased}, Buyer: ${buyerUncased} (expect 0 post-migration)` });
+      assert(leadUncased === 0, `${leadUncased} live Lead name/altName value(s) are still all-caps/all-lower — run scripts/normalize-names.ts --apply`);
+      assert(buyerUncased === 0, `${buyerUncased} live BuyerRecord name value(s) are still all-caps/all-lower — run scripts/normalize-names.ts --apply`);
+    },
+  },
 ];
 
 // ── runner ────────────────────────────────────────────────────────────────────

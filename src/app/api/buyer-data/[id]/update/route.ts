@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
 import { normalizeBuyerKey, primaryPhone } from "@/lib/buyerIntelligence";
+import { normalizeNameList } from "@/lib/nameFormat";
 import { canTouchBuyer } from "@/lib/buyerScope";
 import { audit, reqMeta } from "@/lib/audit";
 
@@ -77,6 +78,15 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     }
     data[key] = value;
     changed[key] = { from: (existing as Record<string, unknown>)[key], to: value };
+  }
+
+  // Proper-Case the NAME fields only (clientName/ownerName/agentName). Never
+  // touch passport/nationality/country/project/unit/txn — those aren't names.
+  // normalizeNameList preserves intentional mixed-case + skips non-name values.
+  for (const nf of ["clientName", "ownerName", "agentName"] as const) {
+    if (typeof data[nf] === "string" && data[nf]) {
+      data[nf] = normalizeNameList(data[nf] as string);
+    }
   }
 
   if (Object.keys(data).length === 0) {

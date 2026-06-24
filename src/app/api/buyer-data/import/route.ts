@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { parseImportDate } from "@/lib/parseImportDate";
 import { normalizeBuyerKey, toJsonArray, primaryPhone, parseJsonArray } from "@/lib/buyerIntelligence";
 import { buildBuyerTimelinePlan, composeRemarkFromFields } from "@/lib/buyerRemarkTimeline";
+import { normalizeName, normalizeNameList } from "@/lib/nameFormat";
 import { audit, reqMeta } from "@/lib/audit";
 
 // ── Buyer import — ADMIN ONLY (passport + financial data) ────────────────────
@@ -187,7 +188,10 @@ export async function POST(req: NextRequest) {
   for (let i = 0; i < rows.length; i++) {
     const r = rows[i];
     const rowNum = rowOffset + i + 1;
-    const clientName = str(r.clientName);
+    // Proper-Case the client name at the source (name field only). normalizeName
+    // preserves intentional mixed-case + skips non-name values; multi-name cells
+    // normalize each part. buyerKey/dedup/create below all see the clean name.
+    const clientName = normalizeNameList(str(r.clientName));
     if (!clientName) {
       failed++;
       if (batchId) errorLogs.push({ batchId, rowNum, error: "Missing required field: Client Name", rawRow: { ...r } });
@@ -196,7 +200,8 @@ export async function POST(req: NextRequest) {
     try {
       const phonesJson = toJsonArray((r.phones ?? "").split(/[,;|]/));
       const emailsJson = toJsonArray((r.emails ?? "").split(/[,;|]/).map((e) => e.toLowerCase()));
-      const coBuyersJson = toJsonArray((r.coBuyerNames ?? "").split(/[,;|]/));
+      // Co-buyer names are also names — Proper-Case each element of the array.
+      const coBuyersJson = toJsonArray((r.coBuyerNames ?? "").split(/[,;|]/).map((n) => normalizeName(n)));
       const buyerKey = normalizeBuyerKey(clientName, primaryPhone(phonesJson, null));
       const extra = r._extra && typeof r._extra === "object"
         ? Object.fromEntries(Object.entries(r._extra).filter(([k, v]) => k.trim() && String(v ?? "").trim()))
@@ -251,7 +256,7 @@ export async function POST(req: NextRequest) {
             projectName: str(r.projectName), tower: str(r.tower), unitNumber: str(r.unitNumber),
             propertyType: str(r.propertyType), configuration: str(r.configuration),
             transactionValue: num(r.transactionValue), pricePerSqFt: num(r.pricePerSqFt),
-            transactionDate: txnDate, transactionId: str(r.transactionId), agentName: str(r.agentName),
+            transactionDate: txnDate, transactionId: str(r.transactionId), agentName: normalizeName(str(r.agentName)),
           };
           const current = await prisma.buyerRecord.findUnique({ where: { id: existing.id } });
           for (const [k, v] of Object.entries(fill)) {
@@ -296,7 +301,7 @@ export async function POST(req: NextRequest) {
           // transactionDate ALWAYS from the sheet — never the import timestamp.
           transactionDate: txnDate,
           transactionId: str(r.transactionId),
-          agentName: str(r.agentName),
+          agentName: normalizeName(str(r.agentName)),
           // Remarks verbatim → Raw History (never reformatted).
           remarks: remark,
           source: "Excel import",

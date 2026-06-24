@@ -7,6 +7,7 @@ import { assignLeadTo } from "@/lib/leadIngest";
 import { canTouchBuyer } from "@/lib/buyerScope";
 import { audit, reqMeta } from "@/lib/audit";
 import { toE164 } from "@/lib/phone";
+import { normalizeNameList } from "@/lib/nameFormat";
 import { normalizeTeam } from "@/lib/teamRouting";
 import {
   parseJsonArray,
@@ -81,8 +82,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const result = await prisma.$transaction(async (tx) => {
     const lead = await tx.lead.create({
       data: {
-        name: buyer.clientName,
-        altName: coBuyers[0] ?? null,
+        // Proper-Case the names as they flow buyer → lead (covers buyers imported
+        // before name normalisation shipped; this create bypasses ingestLead).
+        name: normalizeNameList(buyer.clientName),
+        altName: normalizeNameList(coBuyers[0] ?? null),
         phone,
         altPhone,
         email,

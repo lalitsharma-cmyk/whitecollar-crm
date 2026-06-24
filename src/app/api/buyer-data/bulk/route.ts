@@ -5,6 +5,7 @@ import { notify } from "@/lib/notify";
 import { audit, reqMeta } from "@/lib/audit";
 import { canTouchBuyer, visibleBuyerOwnerIds, isBuyerAdmin } from "@/lib/buyerScope";
 import { assignBuyerInTx, BUYER_POOL_STATUS } from "@/lib/buyerLifecycle";
+import { normalizeNameList } from "@/lib/nameFormat";
 
 // ── Buyer bulk actions ───────────────────────────────────────────────────────
 // One endpoint for the list-page bulk toolbar. Actions:
@@ -120,6 +121,10 @@ export async function POST(req: NextRequest) {
       value = n;
     } else {
       value = String(raw).trim();
+      // Proper-Case the name field (agentName). normalizeNameList only touches
+      // all-upper/all-lower names + preserves intentional mixed-case; other
+      // string fields (projectName/tower/configuration/etc.) are left as typed.
+      if (field === "agentName" && value) value = normalizeNameList(value as string);
     }
     // Apply only to records the caller may touch (admin = any live; agent = own ASSIGNED).
     const buyers = await prisma.buyerRecord.findMany({

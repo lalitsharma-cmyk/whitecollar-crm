@@ -7,6 +7,7 @@ import { defaultCurrencyForTeam } from "@/lib/money";
 import { defaultDialForTeam, toE164 } from "@/lib/phone";
 import { validateMedium, getAvailableMediums } from "@/lib/mediumManager";
 import { getAvailableEventNames } from "@/lib/eventNameManager";
+import { normalizeNameList } from "@/lib/nameFormat";
 import PhoneInput from "@/components/PhoneInput";
 import DedupWarning from "@/components/DedupWarning";
 import LeadSourceMediumFields from "@/components/LeadSourceMediumFields";
@@ -49,8 +50,9 @@ async function createLeadAction(formData: FormData) {
     createdByUserId: me.id,
   });
 
-  // Add alternative contact info after lead creation
-  const altName = String(formData.get("altName") ?? "").trim() || undefined;
+  // Add alternative contact info after lead creation. Proper-Case the alt name(s)
+  // at the source (the primary name is normalized inside ingestLead).
+  const altName = normalizeNameList(String(formData.get("altName") ?? "").trim()) || undefined;
   const altEmail = String(formData.get("altEmail") ?? "").trim() || undefined;
   if (altName || altPhone || altEmail) {
     await prisma.lead.update({ where: { id: lead.id }, data: { altName, altPhone, altEmail } });
