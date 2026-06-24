@@ -13,8 +13,53 @@ import { telLink, whatsappLink } from "@/lib/phone";
 import CopyPhoneButton from "./CopyPhoneButton";
 import { ActionButton } from "@/components/actions/ActionButton";
 import { ActionIconButton } from "@/components/actions/ActionIconButton";
+import CRMDatePicker from "@/components/CRMDatePicker";
+import { toISTLocalInput, isPastISTLocalInput } from "@/lib/datetime";
+import { ACTION_TOKENS } from "@/lib/actionDesign";
+import { showXpToast } from "@/components/XPToast";
 import { statusColor, selectableStatuses } from "@/lib/lead-statuses";
 import { resolveProjectDisplay, prettyProjectName } from "@/lib/projectName";
+
+// ── Row Snooze button ────────────────────────────────────────────────────────
+// Wraps the shared CRMDatePicker (IST, future-only, with time) so a single
+// click in a Leads row/card opens the date/time sheet and reschedules the
+// follow-up via the SAME /action-snooze endpoint the Action List + Lead View
+// use. `variant` matches the surrounding action set: "ghost" for the dense
+// Excel table, "solid" for the card-view icon chips, "labeled" for mobile.
+const SnoozeClock = ACTION_TOKENS.snooze.icon;
+function RowSnoozeButton({
+  leadId, leadName, followupRaw, variant, onConfirm,
+}: {
+  leadId: string;
+  leadName: string;
+  followupRaw: string | null;
+  variant: "ghost" | "solid" | "labeled";
+  onConfirm: (leadId: string, v: string) => Promise<void> | void;
+}) {
+  const iconBox = "inline-flex items-center justify-center transition-colors w-8 h-8 rounded-md disabled:opacity-50";
+  const chipClassName =
+    variant === "labeled"
+      ? `inline-flex items-center justify-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold min-h-9 shadow-sm ${ACTION_TOKENS.snooze.solid} disabled:opacity-60`
+      : variant === "solid"
+        ? `${iconBox} shadow-sm ${ACTION_TOKENS.snooze.solid}`
+        : `${iconBox} ${ACTION_TOKENS.snooze.ghost}`;
+  return (
+    <CRMDatePicker
+      value={followupRaw ? toISTLocalInput(`${followupRaw}T10:00`) : ""}
+      onConfirm={(v) => onConfirm(leadId, v)}
+      withTime
+      futureOnly
+      title={`Snooze ${leadName}`}
+      triggerStyle="chip"
+      chipClassName={chipClassName}
+      placeholder={
+        variant === "labeled"
+          ? <span className="inline-flex items-center gap-1"><SnoozeClock className="w-3.5 h-3.5" /> Snooze</span>
+          : <SnoozeClock className="w-3.5 h-3.5" />
+      }
+    />
+  );
+}
 
 // Preset tag vocab — mirrors what Lalit asked the team to standardise on
 // across the pipeline. Kept here (not server-fetched) so the popover renders
@@ -121,7 +166,7 @@ interface Row {
   notPickedCount: number;
 }
 
-export default function LeadsListClient({ leads, canBulk, canReassign = false, canSetStatus = false, canDelete = false, agents, projectOptions = [], statusOptions = [], meRole = "AGENT", showSource = true, view = "cards", searchParamsStr = "" }: { leads: Row[]; canBulk: boolean; canReassign?: boolean; canSetStatus?: boolean; canDelete?: boolean; agents: { id: string; name: string; team: string | null }[]; projectOptions?: string[]; statusOptions?: string[]; meRole?: string; showSource?: boolean; view?: "cards" | "table"; searchParamsStr?: string; }) {
+export default function LeadsListClient({ leads, canBulk, canReassign = false, canSetStatus = false, canDelete = false, agents, projectOptions = [], statusOptions = [], sourceOptions = [], meRole = "AGENT", showSource = true, view = "cards", searchParamsStr = "" }: { leads: Row[]; canBulk: boolean; canReassign?: boolean; canSetStatus?: boolean; canDelete?: boolean; agents: { id: string; name: string; team: string | null }[]; projectOptions?: string[]; statusOptions?: string[]; sourceOptions?: string[]; meRole?: string; showSource?: boolean; view?: "cards" | "table"; searchParamsStr?: string; }) {
   // showSource = false → hide the source column + chip from agents.
   // Lalit's policy: agents shouldn't see where each lead came from (avoids them
   // cherry-picking high-converting sources or gaming the round-robin pool).
@@ -170,12 +215,72 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
   // Delete Lead (Super-Admin / Lalit only) — a separate action from Reject.
   const [delLeadTarget, setDelLeadTarget] = useState<{ id: string; name: string } | null>(null);
   const [delLeadBusy, setDelLeadBusy] = useState(false);
+  // ── Row follow-up actions (Complete / Snooze / Escalate) ─────────────────
+  // These reuse the EXACT same endpoints the Action List + Lead-View use, so
+  // there's no duplicated follow-up logic. `actionBusy` tracks which lead+action
+  // is mid-flight so we can disable + show a spinner per row. The Escalate popover
+  // (escalateTarget) collects an optional reason; Snooze opens the shared
+  // CRMDatePicker inline via <RowSnoozeButton> (one picker per row trigger).
+  const [actionBusy, setActionBusy] = useState<{ id: string; kind: "complete" | "snooze" | "escalate" } | null>(null);
+  const [escalateTarget, setEscalateTarget] = useState<{ id: string; name: string } | null>(null);
+  const [escalateReason, setEscalateReason] = useState("");
+
+  async function doActionComplete(leadId: string) {
+    if (actionBusy) return;
+    setActionBusy({ id: leadId, kind: "complete" });
+    try {
+      const r = await fetch(`/api/leads/${leadId}/action-complete`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) { alert(j.error ?? "Could not complete follow-up"); return; }
+      if (j.awardedXp) {
+        showXpToast({ amount: j.awardedXp.amount, label: j.awardedXp.label, leveledUp: j.awardedXp.leveledUp, newLevel: j.awardedXp.newLevel });
+      }
+      router.refresh();
+    } finally { setActionBusy(null); }
+  }
+
+  // Snooze via the shared CRMDatePicker — sends an explicit IST instant so the
+  // follow-up lands exactly when picked (same contract as LeadFollowupActions).
+  async function doActionSnooze(leadId: string, v: string) {
+    if (!v) return;
+    if (isPastISTLocalInput(v)) throw new Error("Pick a future date/time (IST).");
+    setActionBusy({ id: leadId, kind: "snooze" });
+    try {
+      const r = await fetch(`/api/leads/${leadId}/action-snooze`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ at: `${v}:00+05:30` }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.error ?? "Could not snooze");
+      router.refresh();
+    } finally { setActionBusy(null); }
+  }
+
+  async function doActionEscalate(leadId: string) {
+    if (actionBusy) return;
+    setActionBusy({ id: leadId, kind: "escalate" });
+    try {
+      const r = await fetch(`/api/leads/${leadId}/action-escalate`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason: escalateReason.trim() || undefined }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) { alert(j.error ?? "Could not escalate"); return; }
+      setEscalateTarget(null); setEscalateReason("");
+      router.refresh();
+    } finally { setActionBusy(null); }
+  }
 
   // Excel-style header-filter option lists (shared by the table headers + the
   // card-view filter toolbar).
   const agentFilterOpts = [{ value: "unassigned", label: "⚠ Unassigned" }, ...agents.map(a => ({ value: a.id, label: a.name }))];
   const projFilterOpts = projectOptions.map(p => ({ value: p, label: p }));
   const statusFilterOpts = statusOptions.map(s => ({ value: s, label: s }));
+  const sourceFilterOpts = sourceOptions.map(s => ({ value: s, label: s }));
+  // Team column filter — multi-select Gurgaon (India) / Dubai. Server reads ?team=
+  // as comma-separated now, so this combines with every other filter via AND.
+  const teamFilterOpts = [{ value: "India", label: "🇮🇳 India" }, { value: "Dubai", label: "🇦🇪 Dubai" }];
 
   async function quickSetStatus(leadId: string, currentStatus: string) {
     await fetch(`/api/leads/${leadId}/update`, {
@@ -531,7 +636,7 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
                     {!isAgent && <col style={{ width: 100 }} />}{/* assigned */}
                     {showSource && <col style={{ width: 75 }} />}
                     {!isAgent && <col style={{ width: 110 }} />}{/* activity */}
-                    {/* actions  */}<col style={{ width: 150 }} />
+                    {/* actions  */}<col style={{ width: 230 }} />
                   </colgroup>
                   <thead>
                     <tr className="border-b border-gray-200 dark:border-slate-700">
@@ -563,11 +668,21 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
                         <LeadHeaderFilter kind="followup" label="Follow-up" searchParamsStr={searchParamsStr} />
                       </th>
                       {!isAgent && (
-                        <th className={thCls}>
-                          Assigned {showSource && <LeadHeaderFilter kind="multi" paramKey="owner" label="Assigned to" options={agentFilterOpts} searchParamsStr={searchParamsStr} />}
+                        <th className={sortThCls}>
+                          <span onClick={() => router.push(sortHref("owner"))}>Assigned <SortIcon k="owner" /></span>
+                          {showSource && <LeadHeaderFilter kind="multi" paramKey="owner" label="Assigned to" options={agentFilterOpts} searchParamsStr={searchParamsStr} />}
                         </th>
                       )}
-                      {showSource && <th className={thCls}>Source</th>}
+                      {showSource && (
+                        <th className={thCls}>
+                          Source
+                          <LeadHeaderFilter kind="multi" paramKey="source" label="Source" options={sourceFilterOpts} searchParamsStr={searchParamsStr} />
+                          {/* Team has no dedicated column in this dense table, so its
+                              Excel filter rides along on the Source header (both are
+                              admin-only metadata). Multi-select India/Dubai → ?team=. */}
+                          <LeadHeaderFilter kind="multi" paramKey="team" label="Team" options={teamFilterOpts} searchParamsStr={searchParamsStr} />
+                        </th>
+                      )}
                       {!isAgent && (
                         <th className={thCls}>
                           Last Activity <LeadHeaderFilter kind="activity" label="Last Activity" searchParamsStr={searchParamsStr} />
@@ -725,7 +840,20 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
                             {l.phone && (
                               <ActionIconButton action="whatsapp" href={whatsappLink(l.phone, "")} external />
                             )}
-                            <ActionIconButton action="followUp" title="Set follow-up" onClick={e => openPicker(l.id, e)} />
+                            {/* Follow-up actions — Complete / Snooze / Escalate. Reuse the
+                                SAME endpoints as the Action List + Lead View (DRY). The old
+                                duplicate "Set follow-up" calendar button was removed — Snooze
+                                covers rescheduling, and the lead detail still has the picker. */}
+                            <ActionIconButton action="complete" title={`Complete follow-up for ${l.name}`}
+                              disabled={actionBusy?.id === l.id}
+                              onClick={() => doActionComplete(l.id)} />
+                            {/* Snooze — opens the shared IST date/time picker (CRMDatePicker),
+                                rendered as a compact ghost-icon chip. On confirm it reschedules
+                                followupDate via the shared /action-snooze endpoint. */}
+                            <RowSnoozeButton leadId={l.id} leadName={l.name} followupRaw={l.followupRaw} variant="ghost" onConfirm={doActionSnooze} />
+                            <ActionIconButton action="escalate" title="Escalate to manager"
+                              disabled={actionBusy?.id === l.id}
+                              onClick={() => { setEscalateTarget({ id: l.id, name: l.name }); setEscalateReason(""); }} />
                             <Link href={`/leads/${l.id}`} title="Open lead" onClick={e => e.stopPropagation()}
                               className="p-1.5 rounded-md text-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 transition-colors">
                               <ExternalLink className="w-3.5 h-3.5" />
@@ -801,12 +929,22 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
                   {l.phone && (
                     <ActionButton action="whatsapp" size="sm" href={whatsappLink(l.phone, "")} label="WA" external onClick={(e: React.MouseEvent) => e.stopPropagation()} />
                   )}
-                  <ActionButton action="followUp" size="sm" label="Date" onClick={e => openPicker(l.id, e)} />
                   <Link href={`/leads/${l.id}`}
                     className="flex items-center justify-center gap-1 py-1.5 rounded-lg text-indigo-600 bg-indigo-50 dark:bg-indigo-900/20 text-xs font-medium min-h-9"
                     onClick={e => e.stopPropagation()}>
                     <ExternalLink className="w-3.5 h-3.5" /> Open
                   </Link>
+                </div>
+                {/* Follow-up actions row (mobile) — Complete / Snooze / Escalate via the
+                    shared endpoints. Separate row so the primary Call/WA/Open stay prominent. */}
+                <div className="flex items-center gap-1 pt-1.5 [&>*]:flex-1">
+                  <ActionButton action="complete" size="sm" label="Done"
+                    disabled={actionBusy?.id === l.id} loading={actionBusy?.id === l.id && actionBusy.kind === "complete"}
+                    onClick={() => doActionComplete(l.id)} />
+                  <RowSnoozeButton leadId={l.id} leadName={l.name} followupRaw={l.followupRaw} variant="labeled" onConfirm={doActionSnooze} />
+                  <ActionButton action="escalate" size="sm" label="Escalate"
+                    disabled={actionBusy?.id === l.id} loading={actionBusy?.id === l.id && actionBusy.kind === "escalate"}
+                    onClick={() => { setEscalateTarget({ id: l.id, name: l.name }); setEscalateReason(""); }} />
                 </div>
                 {/* Picker now rendered as fixed-position portal below */}
               </div>
@@ -822,11 +960,14 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
         <div className="flex items-center gap-1.5 overflow-x-auto pb-1 -mx-3 px-3 sm:mx-0 sm:px-0" style={{ scrollbarWidth: "thin" }}>
           <span className="text-[11px] font-semibold text-gray-400 dark:text-slate-500 shrink-0">Filter:</span>
           <LeadHeaderFilter showLabel kind="search" paramKey="q" label="Name" searchParamsStr={searchParamsStr} />
+          <LeadHeaderFilter showLabel kind="enquiry" label="Enquiry Date" searchParamsStr={searchParamsStr} />
           <LeadHeaderFilter showLabel kind="multi" paramKey="project" label="Property Enquired" options={projFilterOpts} searchParamsStr={searchParamsStr} />
           <LeadHeaderFilter showLabel kind="multi" paramKey="cstatus" label="Status" options={statusFilterOpts} orderedValues searchParamsStr={searchParamsStr} />
           <LeadHeaderFilter showLabel kind="budget" label="Budget" searchParamsStr={searchParamsStr} />
           <LeadHeaderFilter showLabel kind="followup" label="Follow-up" searchParamsStr={searchParamsStr} />
           {showSource && <LeadHeaderFilter showLabel kind="multi" paramKey="owner" label="Assigned" options={agentFilterOpts} searchParamsStr={searchParamsStr} />}
+          {showSource && <LeadHeaderFilter showLabel kind="multi" paramKey="source" label="Source" options={sourceFilterOpts} searchParamsStr={searchParamsStr} />}
+          {showSource && <LeadHeaderFilter showLabel kind="multi" paramKey="team" label="Team" options={teamFilterOpts} searchParamsStr={searchParamsStr} />}
           <LeadHeaderFilter showLabel kind="activity" label="Last Activity" searchParamsStr={searchParamsStr} />
         </div>
       )}
@@ -960,6 +1101,17 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
                     {l.phone && <CopyPhoneButton phone={l.phone} />}
                   </div>
                 )}
+              </div>
+              {/* Follow-up actions (cards view) — Complete / Snooze / Escalate via the
+                  shared endpoints. Full-width row so they're tappable on touch. */}
+              <div className="flex items-center gap-1 mt-2 pt-2 border-t border-gray-50 dark:border-slate-700 [&>*]:flex-1">
+                <ActionButton action="complete" size="sm" label="Done"
+                  disabled={actionBusy?.id === l.id} loading={actionBusy?.id === l.id && actionBusy.kind === "complete"}
+                  onClick={() => doActionComplete(l.id)} />
+                <RowSnoozeButton leadId={l.id} leadName={l.name} followupRaw={l.followupRaw} variant="labeled" onConfirm={doActionSnooze} />
+                <ActionButton action="escalate" size="sm" label="Escalate"
+                  disabled={actionBusy?.id === l.id} loading={actionBusy?.id === l.id && actionBusy.kind === "escalate"}
+                  onClick={() => { setEscalateTarget({ id: l.id, name: l.name }); setEscalateReason(""); }} />
               </div>
             </div>
           );
@@ -1124,18 +1276,14 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
                         <ActionIconButton action="whatsapp" variant="solid" href={whatsappLink(l.phone) || "#"} title={`WhatsApp ${l.name}`} external />
                       )}
 
-                      {/* 3. Follow-up */}
-                      <div className="relative flex-none">
-                        <ActionIconButton action="followUp" variant="solid" title="Set follow-up date"
-                          onClick={() => setPickerOpenFor(pickerOpenFor === l.id ? null : l.id)} />
-                        {pickerOpenFor === l.id && (
-                          <input type="date" autoFocus
-                            className="absolute top-9 left-0 z-20 text-xs border rounded px-2 py-1 shadow-lg bg-white dark:bg-slate-800 dark:border-slate-600 dark:text-slate-100"
-                            defaultValue={l.followupDate ?? ""}
-                            onChange={(e) => quickSetFollowup(l.id, e.target.value)}
-                          />
-                        )}
-                      </div>
+                      {/* 3. Follow-up actions — Complete / Snooze / Escalate via the shared
+                          endpoints (same as the table + Lead View). The old duplicate
+                          "Set follow-up date" calendar button was removed. */}
+                      <ActionIconButton action="complete" variant="solid" title={`Complete follow-up for ${l.name}`}
+                        disabled={actionBusy?.id === l.id} onClick={() => doActionComplete(l.id)} />
+                      <RowSnoozeButton leadId={l.id} leadName={l.name} followupRaw={l.followupRaw} variant="solid" onConfirm={doActionSnooze} />
+                      <ActionIconButton action="escalate" variant="solid" title="Escalate to manager"
+                        disabled={actionBusy?.id === l.id} onClick={() => { setEscalateTarget({ id: l.id, name: l.name }); setEscalateReason(""); }} />
 
                       {/* 4. Email */}
                       {l.email && (
@@ -1571,6 +1719,42 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
                 className="btn bg-red-600 hover:bg-red-700 text-white text-sm"
               >
                 {deleteBusy ? "Rejecting…" : "Reject Lead"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Escalate modal — optional reason, then POST /api/leads/[id]/action-escalate
+          (the SAME endpoint the Action List + Lead View use). Sets needsManagerReview
+          + notifies the owner's manager + admins + logs a Smart-Timeline entry. */}
+      {escalateTarget && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={() => !actionBusy && setEscalateTarget(null)}>
+          <div className="bg-white dark:bg-slate-900 rounded-xl max-w-sm w-full p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center gap-2 mb-1">
+              {(() => { const Up = ACTION_TOKENS.escalate.icon; return <Up className={`w-4 h-4 flex-none ${ACTION_TOKENS.escalate.iconColor}`} />; })()}
+              <span className="font-semibold text-base">Escalate &quot;{escalateTarget.name}&quot; to manager?</span>
+            </div>
+            <p className="text-xs text-gray-500 dark:text-slate-400 mb-3">
+              Flags the lead for your manager &amp; admins (in-app + push) and records it on the timeline. Add a short reason so they know why.
+            </p>
+            <label className="text-xs font-semibold text-gray-600 dark:text-slate-300">Reason (optional)</label>
+            <textarea
+              value={escalateReason}
+              onChange={(e) => setEscalateReason(e.target.value.slice(0, 500))}
+              rows={3}
+              autoFocus
+              placeholder="e.g. Client wants a 30% discount, need approval"
+              className="w-full mt-1 mb-4 border border-[#e5e7eb] dark:border-slate-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-slate-800 dark:text-slate-100"
+            />
+            <div className="flex justify-end gap-2">
+              <button onClick={() => { setEscalateTarget(null); setEscalateReason(""); }} className="btn btn-ghost text-sm">Cancel</button>
+              <button
+                onClick={() => doActionEscalate(escalateTarget.id)}
+                disabled={!!actionBusy}
+                className="btn bg-red-600 hover:bg-red-700 text-white text-sm"
+              >
+                {actionBusy?.kind === "escalate" ? "Sending…" : "Escalate"}
               </button>
             </div>
           </div>

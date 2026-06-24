@@ -113,6 +113,9 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
   // source filter is now multi-select — handled below after Excel-field filters
   // Legacy ?status= URL param — redirect to currentStatus filter for backwards compat
   if (sp.status) where.currentStatus = sp.status;
+  // Helper: split a comma-separated multi-select param ("a,b,c") into trimmed values.
+  const splitMulti = (raw: string | undefined) =>
+    (raw ?? "").split(",").map(s => s.trim()).filter(Boolean);
   // ── Excel/MIS status filter (multi-select, comma-separated) ─────────────────
   if (sp.cstatus) {
     const vals = sp.cstatus.split(",").map(s => s.trim()).filter(Boolean);
@@ -120,7 +123,14 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
     else if (vals.length > 1) where.currentStatus = { in: vals };
   }
   if (sp.ai) where.aiScore = sp.ai as AIScore;
-  if (sp.team) where.forwardedTeam = sp.team;
+  // Team filter — now multi-select (comma-separated) so the Excel "Team" column
+  // header filter can tick India + Dubai together. Single value stays a plain
+  // equals (keeps the legacy Dubai/India quick-chips + filter-panel working).
+  if (sp.team) {
+    const teams = splitMulti(sp.team);
+    if (teams.length === 1) where.forwardedTeam = teams[0];
+    else if (teams.length > 1) where.forwardedTeam = { in: teams };
+  }
   // Single-value Excel-field filters
   if (sp.potential) where.potential = sp.potential as "HIGH" | "MEDIUM" | "LOW" | "UNKNOWN";
   if (sp.fundReady) where.fundReadiness = sp.fundReady as FundReadiness;
@@ -190,8 +200,27 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
   // may filter by owner — without this guard an agent could read a peer's leads by
   // hand-crafting ?owner=<id>, overriding their ownership scope.
   if (me.role !== "AGENT") {
-    if (sp.owner === "unassigned") where.ownerId = null;
-    else if (sp.owner) where.ownerId = sp.owner;
+    // Owner filter — multi-select (comma-separated) so the Excel "Assigned"
+    // column header can tick several agents at once. "unassigned" stays a
+    // special sentinel (ownerId = null); it may also be mixed with real owner
+    // ids (e.g. "unassigned,<id>") → match those owners OR no-owner.
+    const owners = splitMulti(sp.owner);
+    const wantsUnassigned = owners.includes("unassigned");
+    const ownerIds = owners.filter(o => o !== "unassigned");
+    if (wantsUnassigned && ownerIds.length > 0) {
+      // Mix of "unassigned" + specific owners → AND-in an OR clause so it never
+      // clobbers the search OR (sp.q also writes where.OR).
+      where.AND = [
+        ...(Array.isArray(where.AND) ? where.AND : where.AND ? [where.AND] : []),
+        { OR: [{ ownerId: null }, { ownerId: { in: ownerIds } }] },
+      ];
+    } else if (wantsUnassigned) {
+      where.ownerId = null;
+    } else if (ownerIds.length === 1) {
+      where.ownerId = ownerIds[0];
+    } else if (ownerIds.length > 1) {
+      where.ownerId = { in: ownerIds };
+    }
   }
   if (sp.when === "24h") where.createdAt = { gte: new Date(Date.now() - 24 * 3600 * 1000) };
   else if (sp.when === "7d") where.createdAt = { gte: new Date(Date.now() - 7 * 24 * 3600 * 1000) };
@@ -790,6 +819,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
         canDelete={me.isSuperAdmin === true}
         projectOptions={allProjects.map((p) => p.name)}
         statusOptions={cstatusCounts.map((c) => c.label)}
+        sourceOptions={sourceOptions}
         meRole={me.role}
         showSource={me.role !== "AGENT"}
         view={viewMode}

@@ -135,7 +135,18 @@
 // filters u."hrOnly" = false so HR/non-sales users (e.g. Nisha) never appear on
 // the sales performance report (the Live-Assignment widget already excluded them).
 // Additive/reversible; legacy duplicate HERE rows preserved as-is.
-const CACHE = "wcr-shell-v47";
+// v48 (2026-06-24): Leads table — Excel-style per-column header filters on every
+// relevant column (Name, Enquiry Date, Property Enquired, Status, Budget, Follow-up,
+// Assigned, Source, Team) + asc/desc sort incl. new Assigned sort; all combine with
+// the top filter panel + quick chips via AND and stay count==rows (owner/team ?param=
+// now multi-select on the server). Actions column has NO filter. Row actions in the
+// Actions column + cards rebuilt: removed the duplicate "Set follow-up" calendar
+// button, added Complete / Snooze / Escalate (ActionIconButton, shared
+// /action-complete|-snooze|-escalate endpoints — no dup logic, router.refresh for
+// instant update). Snooze reschedules followupDate via the shared CRMDatePicker (IST)
+// so the lead leaves Today/Overdue; its Smart-Timeline entry now names the user
+// ("snoozed to … by <user>"). UI-only; no schema change.
+const CACHE = "wcr-shell-v48";
 const SHELL = ["/login", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", (event) => {

@@ -2115,6 +2115,41 @@ const checks: Check[] = [
         "dashboard must pass team + alreadyCheckedIn into <AgentStatusBar>");
     },
   },
+  {
+    // The Leads table Actions column exposes Complete / Snooze / Escalate row
+    // actions that REUSE the shared follow-up endpoints (no duplicated logic),
+    // and the old duplicate "Set follow-up" calendar button is gone from Actions.
+    // Snooze logs a Smart-Timeline entry that names WHO snoozed it. The Leads
+    // page owner/team multi-select filters wire through to the server `where`.
+    name: "leads-table-actions — row Complete/Snooze/Escalate reuse shared endpoints; no dup follow-up button; snooze names user; owner/team multi-filter",
+    run: async () => {
+      const fs = await import("node:fs");
+      const list = fs.readFileSync("src/components/LeadsListClient.tsx", "utf8");
+      // (a) Row actions present + reuse the shared endpoints (DRY).
+      assert(/action-complete/.test(list), "LeadsListClient must call the shared /action-complete endpoint");
+      assert(/action-snooze/.test(list), "LeadsListClient must call the shared /action-snooze endpoint");
+      assert(/action-escalate/.test(list), "LeadsListClient must call the shared /action-escalate endpoint");
+      assert(/RowSnoozeButton/.test(list), "LeadsListClient must render the shared RowSnoozeButton (CRMDatePicker reschedule)");
+      // (b) The duplicate follow-up calendar action is removed from the Actions set.
+      //     `action="followUp"` must no longer appear (the Follow-Up DATA column
+      //     keeps its own picker via openPicker, which is a different affordance).
+      assert(!/action="followUp"/.test(list), "duplicate follow-up button must be removed from the Leads Actions column");
+      // (c) Snooze endpoint stamps the user into the Smart-Timeline title.
+      const snooze = fs.readFileSync("src/app/api/leads/[id]/action-snooze/route.ts", "utf8");
+      assert(/snoozed to \$\{label\} by \$\{me\.name\}/.test(snooze) || /by \$\{me\.name\}/.test(snooze),
+        "action-snooze timeline title must name the user (… by <user>)");
+      assert(/followupDate:\s*newFollowup/.test(snooze), "action-snooze must set followupDate to the picked instant (real reschedule)");
+      // (d) Escalate endpoint flags needsManagerReview + notifies (manager review reflected in reports).
+      const esc = fs.readFileSync("src/app/api/leads/[id]/action-escalate/route.ts", "utf8");
+      assert(/needsManagerReview:\s*true/.test(esc), "action-escalate must set needsManagerReview=true");
+      assert(/notify\(/.test(esc), "action-escalate must notify the manager/admins");
+      // (e) Server owner + team filters accept multi-select (comma-separated) so the
+      //     Excel column header filters narrow correctly (count==rows).
+      const page = fs.readFileSync("src/app/(app)/leads/page.tsx", "utf8");
+      assert(/forwardedTeam\s*=\s*\{\s*in:\s*teams\s*\}/.test(page), "Leads page must accept multi-select ?team= (forwardedTeam in […])");
+      assert(/ownerId\s*=\s*\{\s*in:\s*ownerIds\s*\}/.test(page), "Leads page must accept multi-select ?owner= (ownerId in […])");
+    },
+  },
 ];
 
 // ── runner ────────────────────────────────────────────────────────────────────

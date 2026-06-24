@@ -78,8 +78,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       userId: me.id,
       type: ActivityType.NOTE,
       status: ActivityStatus.DONE,
-      // Explicit-datetime path: label IS the target time, so don't repeat it.
-      title: atRaw && !isNaN(atMs) ? `⏸ Follow-up snoozed to ${label}` : `⏸ Snoozed ${label}`,
+      // Smart-Timeline entry. Include WHO snoozed it (Lalit's ask: "Lead snoozed
+      // to [date/time] by [user]"). Explicit-datetime path: the label already IS
+      // the target time, so we don't repeat it after "to".
+      title: atRaw && !isNaN(atMs)
+        ? `⏸ Follow-up snoozed to ${label} by ${me.name}`
+        : `⏸ Snoozed ${label} by ${me.name}`,
       description: `Next follow-up at ${whenIST} IST`,
       completedAt: new Date(),
     },
