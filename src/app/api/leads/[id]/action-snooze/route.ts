@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { ActivityType, ActivityStatus } from "@prisma/client";
 import { loadOwnedLead } from "@/lib/leadScope";
+import { contactActivityTodayInfo } from "@/lib/followupGate";
 
 /**
  * POST /api/leads/[id]/action-snooze
@@ -33,6 +34,21 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const { me, lead } = scoped;
 
   const body = await req.json().catch(() => ({}));
+  const reason = String(body.reason ?? "").trim();
+
+  // ── Snooze reason rule (Lalit's policy) ───────────────────────────────────
+  // If there is NO client response (no connected contact today), the agent must
+  // give a reason for pushing the follow-up out — so a snooze isn't a silent
+  // "kick the can". A connected contact today makes the reason optional. Admins/
+  // managers bypass (corrections). The reason is stored in the timeline entry.
+  const contact = await contactActivityTodayInfo(id);
+  const hasResponse = contact.has && contact.connected;
+  if (me.role === "AGENT" && !hasResponse && !reason) {
+    return NextResponse.json(
+      { error: "No client response yet — add a short reason for snoozing this follow-up.", reasonRequired: true },
+      { status: 400 },
+    );
+  }
 
   // ── Explicit datetime path (Lead-View picker) ──────────────────────────
   // Takes precedence over hours/days. Must be a valid, FUTURE instant.
@@ -72,19 +88,21 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   });
 
   const whenIST = newFollowup.toLocaleString("en-IN", { timeZone: "Asia/Kolkata", dateStyle: "medium", timeStyle: "short" });
+  // Smart-Timeline title. Include WHO snoozed it (Lalit's ask: "Lead snoozed to
+  // [date/time] by [user]") and, when given, the reason ("— reason: <reason>").
+  const titleBase = atRaw && !isNaN(atMs)
+    ? `⏸ Follow-up snoozed to ${label} by ${me.name}`
+    : `⏸ Snoozed ${label} by ${me.name}`;
   await prisma.activity.create({
     data: {
       leadId: id,
       userId: me.id,
       type: ActivityType.NOTE,
       status: ActivityStatus.DONE,
-      // Smart-Timeline entry. Include WHO snoozed it (Lalit's ask: "Lead snoozed
-      // to [date/time] by [user]"). Explicit-datetime path: the label already IS
-      // the target time, so we don't repeat it after "to".
-      title: atRaw && !isNaN(atMs)
-        ? `⏸ Follow-up snoozed to ${label} by ${me.name}`
-        : `⏸ Snoozed ${label} by ${me.name}`,
+      title: reason ? `${titleBase} — reason: ${reason}` : titleBase,
       description: `Next follow-up at ${whenIST} IST`,
+      // Report bucket: snoozed with vs without a client response today.
+      actionContext: hasResponse ? "snooze:contacted" : "snooze:no-contact",
       completedAt: new Date(),
     },
   });
@@ -94,5 +112,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     leadName: lead.name,
     followupDate: newFollowup.toISOString(),
     snoozedFor: label,
+    reasonRecorded: !!reason,
   });
 }

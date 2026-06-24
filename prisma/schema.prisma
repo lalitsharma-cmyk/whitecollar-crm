@@ -976,6 +976,14 @@ model Activity {
   /// Per-entry follow-up date. When an admin edits a timeline entry and it maps to
   /// a follow-up, this is updated AND mirrored onto Lead.followupDate.
   followupDate DateTime?
+  /// Follow-up-workflow context token, set on COMPLETE / SNOOZE / ESCALATE /
+  /// FOLLOWUP_DATE_CHANGE action rows so the EOD report can bucket them without
+  /// re-deriving. Format "<action>:<detail>", e.g.
+  ///   "complete:call" | "complete:whatsapp" | "complete:email" | "complete:none"
+  ///   "snooze:contacted" | "snooze:no-contact"
+  ///   "escalate" | "followup-change:contacted" | "followup-change:reason"
+  /// Null on every other (non-workflow) activity. Additive; report-only.
+  actionContext String?
   // ── Visit/meeting attendance + live-tracking (SITE_VISIT, OFFICE_MEETING, VIRTUAL_MEETING) ──
   /// Who actually attended (may differ from `userId`/owner — e.g. agent sent a colleague)
   attendedByUserId   String?

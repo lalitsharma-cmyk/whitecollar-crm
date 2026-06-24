@@ -23,6 +23,7 @@ import { runReconciler } from "@/lib/reconciler";
 import InlineEdit from "@/components/InlineEdit";
 import { acefoneEnabled } from "@/lib/acefone";
 import { canTouchLead, leadScopeWhere } from "@/lib/leadScope";
+import { hasContactActivityToday } from "@/lib/followupGate";
 import { parseRemarksTimeline, mergeSameMoment } from "@/lib/remarkParser";
 import { projectWhereForUser, teamToCountry } from "@/lib/propertyScope";
 import { inferCountryFromCityFuzzy, inferStateFromCity } from "@/lib/cityCountry";
@@ -217,6 +218,11 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
   // back to the active list (it's already hidden from their lists/search). The
   // Super Admin still opens it, but with a clear "deleted" banner + Restore (below).
   if (lead.deletedAt && !me.isSuperAdmin) redirect("/leads");
+
+  // Completion gate flag — does this lead have a valid contact attempt (call /
+  // WhatsApp / email) logged today (IST)? Drives the Complete button's enabled
+  // state in LeadFollowupActions (an agent must log a touch before completing).
+  const leadHasContactToday = await hasContactActivityToday(lead.id);
 
   // Investor-history quick counts for the banner (Agent V, Round 6).
   // Match the new lead against the existing pipeline on phone / email /
@@ -1036,6 +1042,7 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
                     leadId={lead.id}
                     leadName={lead.name}
                     followupDate={lead.followupDate ? lead.followupDate.toISOString() : null}
+                    hasContactToday={leadHasContactToday}
                   />
                 }
               />

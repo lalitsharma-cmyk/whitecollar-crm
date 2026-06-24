@@ -164,6 +164,9 @@ interface Row {
   // Connected History column — e.g. 5C / 2NC
   connectedCount: number;
   notPickedCount: number;
+  /** True when a contact attempt (call/WA/email) was logged today (IST). Gates the
+   *  Complete button — disabled + tooltip until a touch is logged (Lalit's policy). */
+  hasContactToday: boolean;
 }
 
 export default function LeadsListClient({ leads, canBulk, canReassign = false, canSetStatus = false, canDelete = false, agents, projectOptions = [], statusOptions = [], sourceOptions = [], meRole = "AGENT", showSource = true, view = "cards", searchParamsStr = "" }: { leads: Row[]; canBulk: boolean; canReassign?: boolean; canSetStatus?: boolean; canDelete?: boolean; agents: { id: string; name: string; team: string | null }[]; projectOptions?: string[]; statusOptions?: string[]; sourceOptions?: string[]; meRole?: string; showSource?: boolean; view?: "cards" | "table"; searchParamsStr?: string; }) {
@@ -248,10 +251,21 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
     if (isPastISTLocalInput(v)) throw new Error("Pick a future date/time (IST).");
     setActionBusy({ id: leadId, kind: "snooze" });
     try {
-      const r = await fetch(`/api/leads/${leadId}/action-snooze`, {
-        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ at: `${v}:00+05:30` }),
+      const post = (reason?: string) => fetch(`/api/leads/${leadId}/action-snooze`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ at: `${v}:00+05:30`, ...(reason ? { reason } : {}) }),
       });
-      const j = await r.json().catch(() => ({}));
+      let r = await post();
+      let j = await r.json().catch(() => ({}));
+      // No client response today → server asks for a reason. Prompt + retry.
+      if (!r.ok && j.reasonRequired) {
+        const reason = (typeof window !== "undefined"
+          ? window.prompt("No client response yet — add a short reason for snoozing this follow-up:")
+          : "")?.trim();
+        if (!reason) throw new Error("A reason is required to snooze without a client response.");
+        r = await post(reason);
+        j = await r.json().catch(() => ({}));
+      }
       if (!r.ok) throw new Error(j.error ?? "Could not snooze");
       router.refresh();
     } finally { setActionBusy(null); }
@@ -303,11 +317,25 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
   }
 
   async function quickSetFollowup(leadId: string, date: string) {
-    await fetch(`/api/leads/${leadId}/update`, {
+    const post = (rescheduleReason?: string) => fetch(`/api/leads/${leadId}/update`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ followupDate: date || null }),
+      body: JSON.stringify({ followupDate: date || null, ...(rescheduleReason ? { rescheduleReason } : {}) }),
     });
+    let r = await post();
+    let j = await r.json().catch(() => ({})) as { error?: string; rescheduleReasonRequired?: boolean };
+    // Follow-up-date-change protection (agents): server asks for a reason when no
+    // contact activity today. Prompt + retry so the inline picker still works.
+    if (!r.ok && j.rescheduleReasonRequired) {
+      const reason = (typeof window !== "undefined"
+        ? window.prompt("Please log an activity, or give a reason for changing the follow-up date:")
+        : "")?.trim();
+      if (reason) {
+        r = await post(reason);
+        j = await r.json().catch(() => ({})) as { error?: string };
+      }
+    }
+    if (!r.ok && j.error) alert(j.error);
     setPickerOpenFor(null);
     router.refresh();
   }
@@ -844,8 +872,9 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
                                 SAME endpoints as the Action List + Lead View (DRY). The old
                                 duplicate "Set follow-up" calendar button was removed — Snooze
                                 covers rescheduling, and the lead detail still has the picker. */}
-                            <ActionIconButton action="complete" title={`Complete follow-up for ${l.name}`}
-                              disabled={actionBusy?.id === l.id}
+                            <ActionIconButton action="complete"
+                              title={l.hasContactToday ? `Complete follow-up for ${l.name}` : "Contact attempt required before completing."}
+                              disabled={actionBusy?.id === l.id || !l.hasContactToday}
                               onClick={() => doActionComplete(l.id)} />
                             {/* Snooze — opens the shared IST date/time picker (CRMDatePicker),
                                 rendered as a compact ghost-icon chip. On confirm it reschedules
@@ -939,7 +968,8 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
                     shared endpoints. Separate row so the primary Call/WA/Open stay prominent. */}
                 <div className="flex items-center gap-1 pt-1.5 [&>*]:flex-1">
                   <ActionButton action="complete" size="sm" label="Done"
-                    disabled={actionBusy?.id === l.id} loading={actionBusy?.id === l.id && actionBusy.kind === "complete"}
+                    title={l.hasContactToday ? undefined : "Contact attempt required before completing."}
+                    disabled={actionBusy?.id === l.id || !l.hasContactToday} loading={actionBusy?.id === l.id && actionBusy.kind === "complete"}
                     onClick={() => doActionComplete(l.id)} />
                   <RowSnoozeButton leadId={l.id} leadName={l.name} followupRaw={l.followupRaw} variant="labeled" onConfirm={doActionSnooze} />
                   <ActionButton action="escalate" size="sm" label="Escalate"
@@ -1106,7 +1136,8 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
                   shared endpoints. Full-width row so they're tappable on touch. */}
               <div className="flex items-center gap-1 mt-2 pt-2 border-t border-gray-50 dark:border-slate-700 [&>*]:flex-1">
                 <ActionButton action="complete" size="sm" label="Done"
-                  disabled={actionBusy?.id === l.id} loading={actionBusy?.id === l.id && actionBusy.kind === "complete"}
+                  title={l.hasContactToday ? undefined : "Contact attempt required before completing."}
+                  disabled={actionBusy?.id === l.id || !l.hasContactToday} loading={actionBusy?.id === l.id && actionBusy.kind === "complete"}
                   onClick={() => doActionComplete(l.id)} />
                 <RowSnoozeButton leadId={l.id} leadName={l.name} followupRaw={l.followupRaw} variant="labeled" onConfirm={doActionSnooze} />
                 <ActionButton action="escalate" size="sm" label="Escalate"
@@ -1279,8 +1310,9 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
                       {/* 3. Follow-up actions — Complete / Snooze / Escalate via the shared
                           endpoints (same as the table + Lead View). The old duplicate
                           "Set follow-up date" calendar button was removed. */}
-                      <ActionIconButton action="complete" variant="solid" title={`Complete follow-up for ${l.name}`}
-                        disabled={actionBusy?.id === l.id} onClick={() => doActionComplete(l.id)} />
+                      <ActionIconButton action="complete" variant="solid"
+                        title={l.hasContactToday ? `Complete follow-up for ${l.name}` : "Contact attempt required before completing."}
+                        disabled={actionBusy?.id === l.id || !l.hasContactToday} onClick={() => doActionComplete(l.id)} />
                       <RowSnoozeButton leadId={l.id} leadName={l.name} followupRaw={l.followupRaw} variant="solid" onConfirm={doActionSnooze} />
                       <ActionIconButton action="escalate" variant="solid" title="Escalate to manager"
                         disabled={actionBusy?.id === l.id} onClick={() => { setEscalateTarget({ id: l.id, name: l.name }); setEscalateReason(""); }} />

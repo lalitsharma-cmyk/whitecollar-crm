@@ -7,6 +7,7 @@ import LeadFilters from "@/components/LeadFilters";
 import LeadsListClient from "@/components/LeadsListClient";
 import { runReconciler } from "@/lib/reconciler";
 import { leadScopeWhere, COLD_ORIGINS, workableWhere } from "@/lib/leadScope";
+import { contactActivityByLeadToday } from "@/lib/followupGate";
 import { projectWhereForUser } from "@/lib/propertyScope";
 import { PROPERTY_TYPES } from "@/lib/propertyType";
 import { displayBudget } from "@/lib/budgetParse";
@@ -577,6 +578,13 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
     : [];
   const intelByLeadId = new Map(intelMatches.map((m) => [m.leadId, m]));
 
+  // Contact-today flags for the Complete-button gate (one batch query over the
+  // current page). hasContactToday(leadId) → Complete enabled; else disabled +
+  // "Contact attempt required" tooltip. Agent must log a touch before completing.
+  const contactTodaySet = leadIds.length > 0
+    ? await contactActivityByLeadToday(leadIds)
+    : new Set<string>();
+
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const canBulk = me.role === "ADMIN" || me.role === "MANAGER";
 
@@ -880,6 +888,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
             // Connected history for "5C / 2NC" column
             connectedCount: l.callLogs.filter(c => ["CONNECTED","INTERESTED"].includes(c.outcome)).length,
             notPickedCount: l.callLogs.filter(c => ["NOT_PICKED","BUSY","SWITCHED_OFF"].includes(c.outcome)).length,
+            hasContactToday: contactTodaySet.has(l.id),
             intelligenceMatch: intel ? {
               matchType: intel.matchType,
               confidence: intel.confidence,

@@ -6,6 +6,7 @@ import { formatDistanceToNow } from "date-fns";
 import { runReconciler } from "@/lib/reconciler";
 import { leadScopeWhere, ACTIVE_ORIGIN_WHERE } from "@/lib/leadScope";
 import { istDayRange, istDateKey, isValidDateKey } from "@/lib/datetime";
+import { contactActivityByLeadToday } from "@/lib/followupGate";
 import { waDraftLink } from "@/lib/wa";
 import type { Prisma } from "@prisma/client";
 import Link from "next/link";
@@ -245,6 +246,16 @@ export default async function ActionListPage({
         }),
   ]);
 
+  // Contact-today flags for the Complete-button gate. One batch query over every
+  // lead that will render on this page (follow-ups + the two context sections).
+  // hasContactToday(leadId) → enables Complete; otherwise it's disabled w/ tooltip.
+  const allCardLeadIds = Array.from(new Set([
+    ...followups.map((l) => l.id),
+    ...readyToClose.map((l) => l.id),
+    ...needsYou.map((l) => l.id),
+  ]));
+  const contactByLead = await contactActivityByLeadToday(allCardLeadIds);
+
   // Status options for the dropdown — union of both teams (or the manager's
   // team only). Keeps the picker honest to what a lead can actually be.
   const statusOptions = me.role === "MANAGER" && normalizeTeam(me.team ?? undefined)
@@ -393,6 +404,7 @@ export default async function ActionListPage({
           phone={card.phone}
           waLink={waLink}
           flagKind={card.flagKind === "followup" ? "overdue" : card.flagKind}
+          hasContactToday={contactByLead.has(card.id)}
         />
 
         <div className="mt-2 text-right">

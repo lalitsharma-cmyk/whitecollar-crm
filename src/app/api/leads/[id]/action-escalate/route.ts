@@ -48,8 +48,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       userId: me.id,
       type: ActivityType.NOTE,
       status: ActivityStatus.DONE,
-      title: "🆘 Escalated to manager",
+      title: "🆘 Follow-up escalated to manager",
       description: reason,
+      actionContext: "escalate",
       completedAt: now,
     },
   });

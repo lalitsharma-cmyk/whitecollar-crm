@@ -13,6 +13,7 @@ import { recordFieldChanges, TRACKED_FIELDS } from "@/lib/fieldHistory";
 import { normalizeNameList } from "@/lib/nameFormat";
 import { notify } from "@/lib/notify";
 import { assignLeadTo } from "@/lib/leadIngest";
+import { hasContactActivityToday } from "@/lib/followupGate";
 import { NotifKind, type Prisma } from "@prisma/client";
 
 // Inline-edit endpoint — accepts one or more field updates and logs an Activity
@@ -166,6 +167,36 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   // here. The dropdowns only offer valid values; this guards direct API calls.
   if (typeof body.propertyType === "string" && body.propertyType && !isPropertyType(body.propertyType)) {
     return NextResponse.json({ error: "Property Type must be Residential, Commercial, or Mixed Use." }, { status: 400 });
+  }
+
+  // ── Follow-up-date-change protection (Lalit's policy) ─────────────────────────
+  // An AGENT must not silently change the Follow-up Date (Scheduling & Next Action
+  // inline edit) without a real contact attempt today. If they try to MOVE
+  // followupDate and there's no valid contact activity today, require a reschedule
+  // reason. A reason satisfies it (logged to the timeline). Admins/managers bypass.
+  // Only fires on an actual CHANGE — re-saving the same date, or clearing it on a
+  // complete path, is unaffected. Other field edits in the same PATCH are allowed.
+  let rescheduleReasonForTimeline: string | null = null;
+  if (me.role === "AGENT" && "followupDate" in body) {
+    const newRaw = body.followupDate;
+    const newDate = newRaw == null || newRaw === "" ? null : new Date(String(newRaw));
+    const cur = await prisma.lead.findUnique({ where: { id }, select: { followupDate: true } });
+    const curMs = cur?.followupDate ? cur.followupDate.getTime() : null;
+    const newMs = newDate && !isNaN(newDate.getTime()) ? newDate.getTime() : null;
+    const isChange = curMs !== newMs;
+    // Setting a date (not clearing) is the protected action. Clearing a follow-up
+    // is what Complete does and is never blocked here.
+    if (isChange && newMs != null) {
+      const reason = String(body.rescheduleReason ?? "").trim();
+      const hasContact = await hasContactActivityToday(id);
+      if (!hasContact && !reason) {
+        return NextResponse.json(
+          { error: "Please log an activity or provide a valid reschedule reason before changing the follow-up date.", rescheduleReasonRequired: true },
+          { status: 400 },
+        );
+      }
+      if (reason) rescheduleReasonForTimeline = reason;
+    }
   }
 
   const updates: Record<string, unknown> = {};
@@ -337,6 +368,27 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         leadId: id,
       }).catch(() => {});
     }
+  }
+
+  // Dedicated Smart-Timeline entry for a follow-up-date CHANGE so it reads clearly
+  // ("Follow-up date changed — reason: …") instead of being buried in a generic
+  // "Inline edit" row. Records the reason (when given) + a report bucket.
+  if ("followupDate" in updates) {
+    const newWhen = updates.followupDate instanceof Date
+      ? (updates.followupDate as Date).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", dateStyle: "medium", timeStyle: "short" }) + " IST"
+      : "cleared";
+    await prisma.activity.create({
+      data: {
+        leadId: id, userId: me.id,
+        type: ActivityType.NOTE,
+        status: ActivityStatus.DONE,
+        title: rescheduleReasonForTimeline
+          ? `📅 Follow-up date changed to ${newWhen} by ${me.name} — reason: ${rescheduleReasonForTimeline}`
+          : `📅 Follow-up date changed to ${newWhen} by ${me.name}`,
+        actionContext: rescheduleReasonForTimeline ? "followup-change:reason" : "followup-change:contacted",
+        completedAt: new Date(),
+      },
+    });
   }
 
   if (activityNotes.length) {

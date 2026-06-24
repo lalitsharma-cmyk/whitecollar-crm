@@ -10,6 +10,7 @@ import { fromISTLocalInput } from "@/lib/datetime";
 import CRMDatePicker from "./CRMDatePicker";
 import { useBodyScrollLock } from "@/hooks/useBodyScrollLock";
 import { showXpToast } from "./XPToast";
+import FollowupNextPopup from "./FollowupNextPopup";
 
 interface OutcomeOption { key: string; v: string; label: string; }
 
@@ -103,6 +104,9 @@ export default function LeadActionsClient({ leadId, phone, altPhone, email, curr
   }
   const router = useRouter();
   const [showCall, setShowCall] = useState(false);
+  // Post-log "What next?" prompt — opens after a successful Log Call so the agent
+  // closes the follow-up (Complete / Snooze / Escalate) instead of leaving it open.
+  const [showNextPrompt, setShowNextPrompt] = useState(false);
   // Lock background scroll while the Log Call modal is open — prevents the
   // underlying lead-detail form from jumping/shifting when the modal mounts.
   useBodyScrollLock(showCall);
@@ -324,6 +328,9 @@ export default function LeadActionsClient({ leadId, phone, altPhone, email, curr
         });
       }
       router.refresh();
+      // Force the agent to close the follow-up now that a contact attempt is
+      // logged: open the "What next?" prompt (Complete / Snooze / Escalate).
+      setShowNextPrompt(true);
     } finally { setBusy(false); }
   }
 
@@ -598,6 +605,15 @@ export default function LeadActionsClient({ leadId, phone, altPhone, email, curr
           </div>
         </div>
       )}
+
+      {/* Post-log "What next?" prompt — opens after a successful Log Call so the
+          agent closes the follow-up. Reuses the shared action endpoints. */}
+      <FollowupNextPopup
+        open={showNextPrompt}
+        leadId={leadId}
+        leadName={leadName}
+        onClose={() => setShowNextPrompt(false)}
+      />
     </div>
   );
 }

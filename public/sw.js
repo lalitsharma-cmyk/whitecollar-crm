@@ -222,7 +222,17 @@
 // date before it logs — the wa.me open + template logic is otherwise unchanged. Each
 // logged call/WA now stamps outcome + follow-up onto its Smart Timeline entry. Force a
 // refresh so the blank-outcome default + the new validation reach every PWA client.
-const CACHE = "wcr-shell-v55";
+// v56 (2026-06-24): Follow-up completion workflow. ✅ Complete is now GATED — an agent
+// can't complete a follow-up without first logging a call/WhatsApp/email TODAY (server
+// 400 + the Complete button is disabled with a "Contact attempt required" tooltip in all
+// four surfaces: Action List, Leads table, Lead card, Lead detail). After a Log Call or
+// WhatsApp send a "What next?" popup (Complete · Snooze · Escalate) forces the agent to
+// close the action. Snooze now requires a short reason when there's no client response
+// (logged to the timeline); changing the Follow-up Date without a logged activity is
+// blocked unless the agent gives a reschedule reason. New Daily-Report "Follow-up
+// Workflow" section (due/completed/after-call/after-WA/snoozed/snoozed-without-contact/
+// escalated/pending-at-EOD). Force a refresh so every PWA client gets the gated buttons.
+const CACHE = "wcr-shell-v56";
 const SHELL = ["/login", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", (event) => {

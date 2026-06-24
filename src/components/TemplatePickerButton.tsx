@@ -8,6 +8,7 @@ import { buildShareMessage, type ResourceTypeStr } from "@/lib/resources";
 import { useBodyScrollLock } from "@/hooks/useBodyScrollLock";
 import { fromISTLocalInput } from "@/lib/datetime";
 import CRMDatePicker from "./CRMDatePicker";
+import FollowupNextPopup from "./FollowupNextPopup";
 
 interface Lead { id: string; name: string; phone: string | null; email: string | null; }
 interface Tpl {
@@ -59,6 +60,9 @@ export default function TemplatePickerButton({ lead, kind, suggestedTrigger, com
   // we only block the send until a follow-up date is set, then pass it to the log.
   const [waFollowupAt, setWaFollowupAt] = useState("");
   const [waErr, setWaErr] = useState<string | null>(null);
+  // Post-log "What next?" prompt — opens after a WhatsApp send so the agent closes
+  // the follow-up (Complete / Snooze / Escalate). WhatsApp only (email isn't logged).
+  const [showNextPrompt, setShowNextPrompt] = useState(false);
 
   useEffect(() => {
     if (!open || loaded) return;
@@ -133,6 +137,9 @@ export default function TemplatePickerButton({ lead, kind, suggestedTrigger, com
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ leadId: lead.id, kind: "send", message: body, templateId, followupDate: followup || undefined }),
       }).catch(() => {});
+      // A WhatsApp send is a logged contact attempt — open the "What next?" prompt
+      // so the agent closes the follow-up (Complete / Snooze / Escalate).
+      setShowNextPrompt(true);
     } else if (kind === "EMAIL" && lead.email) {
       const s = encodeURIComponent(subject);
       const b = encodeURIComponent(body);
@@ -322,6 +329,15 @@ export default function TemplatePickerButton({ lead, kind, suggestedTrigger, com
           </div>
         </div>
       )}
+
+      {/* Post-send "What next?" prompt (WhatsApp only). Reuses the shared action
+          endpoints; the just-logged WA send means Complete passes the gate. */}
+      <FollowupNextPopup
+        open={showNextPrompt}
+        leadId={lead.id}
+        leadName={lead.name}
+        onClose={() => setShowNextPrompt(false)}
+      />
     </>
   );
 }

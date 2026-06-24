@@ -2687,6 +2687,123 @@ const checks: Check[] = [
         "TemplatePickerButton does not collect/pass a follow-up date for WhatsApp send");
     },
   },
+
+  // ───────────────────────────────────────────────────────────────────────────
+  {
+    name: "completion-gate — Complete requires a logged contact today (server 400 for agents) + helper + actionContext migration + disabled in 4 surfaces + post-log popup + date-change protection + report",
+    run: async () => {
+      // (a) DATA/SCHEMA — Activity.actionContext column present (probe select).
+      const probe = await prisma.activity.findFirst({ select: { id: true, actionContext: true } });
+      void probe; // null on empty DB is fine — the SELECT not throwing proves the column exists.
+
+      // (b) HELPER LOGIC — exercise the REAL followupGate helpers (read-only).
+      //     Pick a lead and assert the boolean + batch agree, and that the batch
+      //     never returns an id that wasn't asked for. Also assert the contact
+      //     types are exactly CALL/WHATSAPP/EMAIL.
+      const { hasContactActivityToday, contactActivityByLeadToday, CONTACT_ACTIVITY_TYPES, isConnectedOutcome } =
+        await import("../src/lib/followupGate");
+      const types = [...CONTACT_ACTIVITY_TYPES].sort().join(",");
+      assert(types === "CALL,EMAIL,WHATSAPP", `contact activity types drifted: ${types}`);
+      assert(isConnectedOutcome("CONNECTED") && isConnectedOutcome("interested") && !isConnectedOutcome("NOT PICKED"),
+        "isConnectedOutcome misclassifies connected/non-connected outcomes");
+      const sample = await prisma.lead.findFirst({ where: { deletedAt: null }, select: { id: true } });
+      if (sample) {
+        const set = await contactActivityByLeadToday([sample.id]);
+        const bool = await hasContactActivityToday(sample.id);
+        assert(set.has(sample.id) === bool, "batch contactActivityByLeadToday disagrees with hasContactActivityToday");
+        // Batch must only ever contain ids it was asked about.
+        for (const id of set) assert(id === sample.id, "batch returned an id outside the requested set");
+      }
+      // Empty input → empty set (no all-leads scan).
+      const empty = await contactActivityByLeadToday([]);
+      assert(empty.size === 0, "contactActivityByLeadToday([]) is not empty");
+
+      const fs = await import("fs");
+      const path = await import("path");
+      const root = process.cwd();
+
+      // (c) SERVER GATE — action-complete rejects agents with no contact today.
+      const acPath = path.join(root, "src/app/api/leads/[id]/action-complete/route.ts");
+      const ac = fs.readFileSync(acPath, "utf8");
+      assert(/hasContactActivityToday|contactActivityTodayInfo/.test(ac),
+        "action-complete does not consult the followupGate helper");
+      assert(/me\.role\s*===\s*"AGENT"/.test(ac) && /status:\s*400/.test(ac),
+        "action-complete does not 400 for an AGENT without contact today");
+      assert(/without logging a call, WhatsApp, or email/.test(ac),
+        "action-complete is missing the required contact-required message");
+      assert(/actionContext:/.test(ac), "action-complete does not record the contact channel (actionContext)");
+
+      // (d) SNOOZE REASON — reason required when no client response (agent).
+      const asPath = path.join(root, "src/app/api/leads/[id]/action-snooze/route.ts");
+      const as = fs.readFileSync(asPath, "utf8");
+      assert(/reasonRequired/.test(as) && /me\.role\s*===\s*"AGENT"/.test(as),
+        "action-snooze does not require a reason for agents without a client response");
+      assert(/actionContext:\s*hasResponse\s*\?\s*"snooze:contacted"\s*:\s*"snooze:no-contact"/.test(as),
+        "action-snooze does not stamp the snooze:contacted / snooze:no-contact report token");
+
+      // (e) DATE-CHANGE PROTECTION — update route blocks agent followupDate change
+      //     without contact unless a reschedule reason is given.
+      const upPath = path.join(root, "src/app/api/leads/[id]/update/route.ts");
+      const up = fs.readFileSync(upPath, "utf8");
+      assert(/rescheduleReasonRequired/.test(up) && /hasContactActivityToday/.test(up),
+        "update route does not gate followupDate changes on contact/reason for agents");
+      assert(/Follow-up date changed/.test(up),
+        "update route does not write a dedicated follow-up-date-change timeline entry");
+
+      // (f) UI — Complete disabled w/ tooltip in ALL FOUR surfaces.
+      //   ActionCardClient (Action List) + LeadFollowupActions (Lead Detail) take
+      //   the hasContactToday prop; LeadsListClient (table + cards) gates on the
+      //   per-row l.hasContactToday flag.
+      const accSrc = fs.readFileSync(path.join(root, "src/components/ActionCardClient.tsx"), "utf8");
+      assert(/hasContactToday/.test(accSrc) && /Contact attempt required before completing/.test(accSrc),
+        "ActionCardClient Complete is not gated/tooltipped on hasContactToday");
+      const lfaSrc = fs.readFileSync(path.join(root, "src/components/LeadFollowupActions.tsx"), "utf8");
+      assert(/hasContactToday/.test(lfaSrc) && /Contact attempt required before completing/.test(lfaSrc),
+        "LeadFollowupActions Complete is not gated/tooltipped on hasContactToday");
+      const llcSrc = fs.readFileSync(path.join(root, "src/components/LeadsListClient.tsx"), "utf8");
+      // Four Complete render sites, each must reference the per-row flag.
+      const completeGated = (llcSrc.match(/!l\.hasContactToday/g) ?? []).length;
+      assert(completeGated >= 4, `LeadsListClient gates only ${completeGated}/4 Complete surfaces on l.hasContactToday`);
+      assert(/hasContactToday:\s*boolean/.test(llcSrc), "Row type missing hasContactToday flag");
+
+      // The list/detail/action-list PAGES must compute + pass the flag.
+      const leadsPage = fs.readFileSync(path.join(root, "src/app/(app)/leads/page.tsx"), "utf8");
+      assert(/contactActivityByLeadToday/.test(leadsPage) && /hasContactToday:\s*contactTodaySet\.has/.test(leadsPage),
+        "leads page does not batch-compute + pass hasContactToday per row");
+      const actionListPage = fs.readFileSync(path.join(root, "src/app/(app)/action-list/page.tsx"), "utf8");
+      assert(/contactActivityByLeadToday/.test(actionListPage) && /hasContactToday=\{contactByLead\.has/.test(actionListPage),
+        "action-list page does not compute + pass hasContactToday to cards");
+      const detailPage = fs.readFileSync(path.join(root, "src/app/(app)/leads/[id]/page.tsx"), "utf8");
+      assert(/hasContactActivityToday/.test(detailPage) && /hasContactToday=\{leadHasContactToday\}/.test(detailPage),
+        "lead detail page does not compute + pass hasContactToday to LeadFollowupActions");
+
+      // (g) POST-LOG POPUP — the What-next prompt exists and is wired into both the
+      //     Log Call success (LeadActionsClient) and WhatsApp send (TemplatePickerButton).
+      const popupPath = path.join(root, "src/components/FollowupNextPopup.tsx");
+      assert(fs.existsSync(popupPath), "FollowupNextPopup component is missing");
+      const popup = fs.readFileSync(popupPath, "utf8");
+      assert(/action-complete/.test(popup) && /action-snooze/.test(popup) && /action-escalate/.test(popup),
+        "FollowupNextPopup does not call all three shared action endpoints");
+      const lac = fs.readFileSync(path.join(root, "src/components/LeadActionsClient.tsx"), "utf8");
+      assert(/FollowupNextPopup/.test(lac) && /setShowNextPrompt\(true\)/.test(lac),
+        "LeadActionsClient does not open the post-log popup after a Log Call");
+      const tplSrc = fs.readFileSync(path.join(root, "src/components/TemplatePickerButton.tsx"), "utf8");
+      assert(/FollowupNextPopup/.test(tplSrc) && /setShowNextPrompt\(true\)/.test(tplSrc),
+        "TemplatePickerButton does not open the post-log popup after a WhatsApp send");
+
+      // (h) REPORT — Daily Report renders the follow-up workflow metrics and the
+      //     helper exposes the core buckets (reconcilable).
+      const daily = fs.readFileSync(path.join(root, "src/app/(app)/reports/daily/page.tsx"), "utf8");
+      assert(/followupWorkflowStats/.test(daily) && /Follow-up Workflow/.test(daily),
+        "Daily Report does not render the Follow-up Workflow metrics section");
+      const fgSrc = fs.readFileSync(path.join(root, "src/lib/followupGate.ts"), "utf8");
+      for (const bucket of ["dueToday", "completed", "completedAfterCall", "completedAfterWhatsapp", "snoozed", "snoozedWithoutContact", "escalated", "pendingAtEod"]) {
+        assert(new RegExp(`${bucket}`).test(fgSrc), `followupWorkflowStats missing the '${bucket}' bucket`);
+      }
+
+      results.push({ name: "  ↳ note", ok: true, detail: "completion gate + helper + popup + report wired" });
+    },
+  },
 ];
 
 // ── runner ────────────────────────────────────────────────────────────────────

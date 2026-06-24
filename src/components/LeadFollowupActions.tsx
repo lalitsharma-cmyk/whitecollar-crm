@@ -28,9 +28,16 @@ interface Props {
   leadName: string;
   /** Current follow-up (ISO) — seeds the Snooze picker so it opens on the existing date. */
   followupDate: string | null;
+  /**
+   * True when the lead has a valid contact attempt (call / WhatsApp / email)
+   * logged TODAY (IST). Complete is disabled until this is true (Lalit's policy:
+   * an agent must log a touch before closing the follow-up). Snooze + Escalate
+   * stay available. Computed server-side on the lead-detail page.
+   */
+  hasContactToday?: boolean;
 }
 
-export default function LeadFollowupActions({ leadId, leadName, followupDate }: Props) {
+export default function LeadFollowupActions({ leadId, leadName, followupDate, hasContactToday = false }: Props) {
   const router = useRouter();
   const [busy, setBusy] = useState<null | "complete" | "snooze" | "escalate">(null);
   const [showEscalate, setShowEscalate] = useState(false);
@@ -79,17 +86,28 @@ export default function LeadFollowupActions({ leadId, leadName, followupDate }: 
   // Snooze via the shared CRMDatePicker (withTime, futureOnly). The picker
   // returns "YYYY-MM-DDTHH:mm" in IST wall-clock; we send it as an explicit
   // IST instant so the follow-up lands exactly when the agent picked.
+  // If the server requires a reason (no client response today), we prompt for one
+  // and retry — so the picker UX stays simple but the policy is enforced.
   async function doSnooze(v: string) {
     if (!v) return;
     if (isPastISTLocalInput(v)) throw new Error("Pick a future date/time (IST).");
     setBusy("snooze");
     try {
-      const r = await fetch(`/api/leads/${leadId}/action-snooze`, {
+      const post = (reason?: string) => fetch(`/api/leads/${leadId}/action-snooze`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ at: `${v}:00+05:30` }),
+        body: JSON.stringify({ at: `${v}:00+05:30`, ...(reason ? { reason } : {}) }),
       });
-      const j = await r.json().catch(() => ({}));
+      let r = await post();
+      let j = await r.json().catch(() => ({}));
+      if (!r.ok && j.reasonRequired) {
+        const reason = (typeof window !== "undefined"
+          ? window.prompt("No client response yet — add a short reason for snoozing this follow-up:")
+          : "")?.trim();
+        if (!reason) throw new Error("A reason is required to snooze without a client response.");
+        r = await post(reason);
+        j = await r.json().catch(() => ({}));
+      }
       if (!r.ok) throw new Error(j.error ?? "Could not snooze");
       router.refresh();
     } finally {
@@ -134,10 +152,12 @@ export default function LeadFollowupActions({ leadId, leadName, followupDate }: 
         action="complete"
         size="md"
         onClick={doComplete}
-        disabled={!!busy}
+        disabled={!!busy || !hasContactToday}
         loading={busy === "complete"}
         className={sizing}
-        title={`Mark the current follow-up for ${leadName} as done`}
+        title={hasContactToday
+          ? `Mark the current follow-up for ${leadName} as done`
+          : "Contact attempt required before completing."}
       />
 
       {/* Snooze — opens the shared IST date/time picker (CRMDatePicker handles

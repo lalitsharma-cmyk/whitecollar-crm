@@ -33,6 +33,14 @@ interface Props {
    *   • pre-fill the escalate reason on Overdue cards ("3+ days overdue, can't reach")
    */
   flagKind: "ready_close" | "overdue" | "needs_you";
+  /**
+   * True when the lead has a valid contact attempt (call / WhatsApp / email)
+   * logged TODAY (IST). The Complete button is disabled until this is true —
+   * an agent must log a touch before closing the follow-up (Lalit's policy).
+   * Computed once per card by the server page (batch query). Snooze + Escalate
+   * stay available regardless.
+   */
+  hasContactToday?: boolean;
 }
 
 const SNOOZE_OPTIONS: Array<{ label: string; hours: number }> = [
@@ -42,7 +50,7 @@ const SNOOZE_OPTIONS: Array<{ label: string; hours: number }> = [
   { label: "3 days",  hours: 72 },
 ];
 
-export default function ActionCardClient({ leadId, leadName, phone, waLink, flagKind }: Props) {
+export default function ActionCardClient({ leadId, leadName, phone, waLink, flagKind, hasContactToday = false }: Props) {
   const router = useRouter();
   const [busy, setBusy] = useState<null | "complete" | "snooze" | "escalate">(null);
   const [showSnooze, setShowSnooze] = useState(false);
@@ -156,9 +164,11 @@ export default function ActionCardClient({ leadId, leadName, phone, waLink, flag
         action="complete"
         size="sm"
         onClick={doComplete}
-        disabled={!!busy}
+        disabled={!!busy || !hasContactToday}
         loading={busy === "complete"}
-        title={`Mark today's follow-up for ${leadName} as done`}
+        title={hasContactToday
+          ? `Mark today's follow-up for ${leadName} as done`
+          : "Contact attempt required before completing."}
       />
 
       {/* Snooze — popover with preset windows */}
