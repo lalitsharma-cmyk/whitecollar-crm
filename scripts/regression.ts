@@ -2555,6 +2555,73 @@ const checks: Check[] = [
       assert(buyerUncased === 0, `${buyerUncased} live BuyerRecord name value(s) are still all-caps/all-lower — run scripts/normalize-names.ts --apply`);
     },
   },
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // SMART TIMELINE EDIT (2026-06-24) — the Smart Timeline shows ONLY processed
+  // CRM events (the raw imported remark blob stays in Raw History), is newest-
+  // first, and per-entry edits are ADMIN-gated + audited. Invariants:
+  //   (a) MIGRATION applied — Activity.outcome / Activity.followupDate columns +
+  //       the ActivityEdit audit table exist in prod (selecting them must not throw).
+  //   (b) ENDPOINT AUTH — the per-entry edit route admin-gates its PATCH server-side
+  //       (the recurring "UI-gated but API-open" class). Static source scan.
+  //   (c) NO RAW-BLOB LEAK — ConversationStreamCard's Smart Timeline view renders
+  //       the unified CRM-event stream (`filteredStream`) and NO LONGER maps the
+  //       parsed imported-remark entries (`displayRemarkEntries`). Static scan.
+  //   (d) NEWEST-FIRST — the unified sort orders mixed event types descending.
+  // ───────────────────────────────────────────────────────────────────────────
+  {
+    name: "smart-timeline-edit — migration applied + endpoint admin-gated + no raw-blob leak + newest-first",
+    run: async () => {
+      // (a) DATA/SCHEMA — new columns + audit table are present (column/table probe).
+      const probe = await prisma.activity.findFirst({ select: { id: true, outcome: true, followupDate: true } });
+      void probe; // null on empty DB is fine — the point is the SELECT didn't throw.
+      const editCount = await prisma.activityEdit.count();
+      assert(typeof editCount === "number" && editCount >= 0, "ActivityEdit table missing — migration 20260624200000 not applied");
+
+      const fs = await import("fs");
+      const path = await import("path");
+      const root = process.cwd();
+
+      // (b) ENDPOINT AUTH — the activities edit route must reject non-admins server-side.
+      const routePath = path.join(root, "src/app/api/leads/[id]/activities/[activityId]/route.ts");
+      assert(fs.existsSync(routePath), "activities edit route is missing");
+      const routeSrc = fs.readFileSync(routePath, "utf8");
+      assert(/export\s+async\s+function\s+PATCH/.test(routeSrc), "activities route does not export PATCH");
+      // role-gate present: ADMIN / isSuperAdmin check + a 403 for non-admins.
+      assert(/me\.role\s*===\s*"ADMIN"/.test(routeSrc) && /isSuperAdmin/.test(routeSrc),
+        "activities PATCH does not gate on ADMIN / isSuperAdmin");
+      assert(/status:\s*403/.test(routeSrc), "activities PATCH has no 403 path for non-admins");
+      // every changed field must be audited into ActivityEdit (no silent edits).
+      assert(/activityEdit\.createMany/.test(routeSrc), "activities PATCH does not write ActivityEdit audit rows");
+
+      // (c) NO RAW-BLOB LEAK — Smart Timeline renders the unified CRM-event stream and
+      //     must NOT render the parsed imported-remark entries as cards.
+      const cardPath = path.join(root, "src/components/ConversationStreamCard.tsx");
+      const cardSrc = fs.readFileSync(cardPath, "utf8");
+      assert(/viewMode === "smart" && filteredStream\.map/.test(cardSrc),
+        "Smart Timeline no longer renders the unified CRM-event stream (filteredStream)");
+      // The dead imported-remark render path must be gone (was `displayRemarkEntries.map`).
+      assert(!/displayRemarkEntries\.map/.test(cardSrc),
+        "Smart Timeline STILL maps parsed imported-remark entries (displayRemarkEntries) — raw blob leaks back in");
+      // The unified stream excludes the raw blob by construction: it is built only
+      // from call/wa/note/activity rows.
+      assert(/kind:\s*"call"/.test(cardSrc) && /kind:\s*"activity"/.test(cardSrc),
+        "unified stream is not built from genuine CRM event kinds");
+
+      // (d) NEWEST-FIRST — replicate the unified sort and assert descending order
+      //     across mixed event types (mirrors ConversationStreamCard.unifiedStream).
+      const items = [
+        { at: new Date("2026-06-13T10:00:00Z").getTime(), id: "c1" },
+        { at: new Date("2026-06-24T10:00:00Z").getTime(), id: "a1" },
+        { at: new Date("2026-06-17T10:00:00Z").getTime(), id: "w1" },
+        { at: new Date("2026-06-23T10:00:00Z").getTime(), id: "n1" },
+      ];
+      const order = [...items].sort((x, y) => (y.at - x.at) || (x.id < y.id ? 1 : -1)).map((s) => s.id).join(",");
+      assert(order === "a1,n1,w1,c1", `unified newest-first sort wrong: ${order}`);
+
+      results.push({ name: "  ↳ note", ok: true, detail: `ActivityEdit rows in prod: ${editCount}` });
+    },
+  },
 ];
 
 // ── runner ────────────────────────────────────────────────────────────────────

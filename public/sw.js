@@ -202,7 +202,18 @@
 // distribution console drops the (now-meaningless) region filter. A FUTURE Gurgaon
 // module is separate (own market value + rules). Force a refresh so the rename + the
 // hidden-for-non-Dubai nav take effect.
-const CACHE = "wcr-shell-v53";
+// v54 (2026-06-24): Smart Timeline (Lead View) = PROCESSED CRM EVENTS ONLY. The Smart
+// Timeline tab no longer renders the raw imported remark blob (e.g. "DAMAC Property Expo
+// in London") — that stays verbatim in the Raw History tab. It now shows ONE unified,
+// newest-first stream of genuine CRM events (calls · WhatsApp · notes · CRM activities),
+// sorted by effective IST timestamp descending across all types. Each Activity card gets
+// a per-entry ✏️ Edit on the right — ADMIN / Super-Admin ONLY (agents never see it; the
+// PATCH /api/leads/[id]/activities/[activityId] endpoint 403s a tampered non-admin
+// request). The edit modal edits Date/Time (IST) · Type · Outcome · Remark · Follow-up;
+// on save it updates the Activity in place, mirrors a follow-up onto the lead, and
+// preserves the prior value per field in the ActivityEdit audit table (no data loss;
+// Raw History untouched). Force a refresh so the new timeline + per-card edit appear.
+const CACHE = "wcr-shell-v54";
 const SHELL = ["/login", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", (event) => {

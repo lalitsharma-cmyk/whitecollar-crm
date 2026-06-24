@@ -8,24 +8,21 @@
 //   • Site Visit / Meeting / Virtual Meeting summaries surfaced separately
 //   • All entries visible; nothing discarded
 
-import { useState, useMemo, Fragment } from "react";
+import { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { fmtIST12Paren } from "@/lib/datetime";
+import { fmtIST12Paren, toISTLocalInput } from "@/lib/datetime";
 import { canonicalAgentName } from "@/lib/agentName";
 import { canEditRemark } from "@/lib/remarkPerms";
 import type { CallLog, WhatsAppMessage } from "@prisma/client";
 import {
   parseRemarksTimeline,
-  groupEntries,
   mergeSameMoment,
-  toReadableParagraph,
-  isMissedCall,
   remarkKeyFor,
-  type DisplayEntry,
   type RemarkEntry,
   type RemarkEventType,
 } from "@/lib/remarkParser";
-import RemarkControlMenu, { type RemarkControlState } from "@/components/RemarkControlMenu";
+import { type RemarkControlState } from "@/components/RemarkControlMenu";
+import TimelineEntryEditModal from "@/components/TimelineEntryEditModal";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -44,6 +41,7 @@ type CallLogWithUser = CallLog & { user: { name: string } };
 type ActivityStreamRow = {
   id: string; type: string; title?: string | null; description?: string | null;
   scheduledAt?: Date | null; completedAt?: Date | null; createdAt: Date;
+  status?: string | null; outcome?: string | null; followupDate?: Date | null;
   user?: { name: string } | null;
 };
 // Activity types rendered in the stream. CALL / WHATSAPP / NOTE are EXCLUDED — they
@@ -137,77 +135,11 @@ function waColour(direction: WhatsAppMessage["direction"]) {
     : { border: "border-purple-300", bg: "bg-purple-50/40", pill: "src-wa" };
 }
 
-// ─── Remark event type → display ─────────────────────────────────────────────
-
-const REMARK_BORDER: Record<RemarkEventType, string> = {
-  CALL_CONNECTED:     "border-emerald-300",
-  CALL_NOT_PICKED:    "border-red-200",
-  CALL_BUSY:          "border-red-200",
-  CALL_SWITCHED_OFF:  "border-red-200",
-  CALL_CALLBACK:      "border-amber-300",
-  CALL_NOT_INTERESTED:"border-gray-300",
-  SITE_VISIT:         "border-green-400",
-  MEETING:            "border-blue-400",
-  VIRTUAL_MEETING:    "border-purple-400",
-  NOTE:               "border-gray-200",
-};
-
-const REMARK_BG: Record<RemarkEventType, string> = {
-  CALL_CONNECTED:     "bg-emerald-50/30",
-  CALL_NOT_PICKED:    "bg-red-50/20",
-  CALL_BUSY:          "bg-red-50/20",
-  CALL_SWITCHED_OFF:  "bg-red-50/20",
-  CALL_CALLBACK:      "bg-amber-50/30",
-  CALL_NOT_INTERESTED:"bg-gray-50/20",
-  SITE_VISIT:         "bg-green-50/40",
-  MEETING:            "bg-blue-50/30",
-  VIRTUAL_MEETING:    "bg-purple-50/30",
-  NOTE:               "bg-gray-50/20",
-};
-
-function remarkIcon(t: RemarkEventType): string {
-  if (t === "SITE_VISIT") return "🏢";
-  if (t === "MEETING") return "🤝";
-  if (t === "VIRTUAL_MEETING") return "💻";
-  if (t === "CALL_CONNECTED") return "📞";
-  if (isMissedCall(t)) return "📵";
-  if (t === "CALL_CALLBACK") return "🔁";
-  if (t === "CALL_NOT_INTERESTED") return "🛑";
-  return "💬";
-}
-
-// ─── Date formatting ──────────────────────────────────────────────────────────
-
-function fmtDate(d: Date | null): string {
-  if (!d) return "";
-  return d.toLocaleDateString("en-GB", {
-    day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata",
-  });
-}
-
-function fmtDateShort(d: Date): string {
-  return d.toLocaleDateString("en-GB", {
-    day: "2-digit", month: "short", timeZone: "Asia/Kolkata",
-  });
-}
-
-function hasTime(d: Date): boolean {
-  // Dates created at noon IST (06:30 UTC) have no real time — they were date-only
-  const utcH = d.getUTCHours(), utcM = d.getUTCMinutes();
-  return !(utcH === 6 && utcM === 30) && !(utcH === 0 && utcM === 0);
-}
-
-function fmtDateTime(d: Date): string {
-  if (!hasTime(d)) return fmtDate(d);
-  return d.toLocaleString("en-GB", {
-    day: "2-digit", month: "short", year: "numeric",
-    hour: "2-digit", minute: "2-digit", hour12: true, timeZone: "Asia/Kolkata",
-  });
-}
-
-// Remark event types that represent a REAL two-way conversation vs a failed
-// call — drives the Connected / No-answer counters + filters so imported
-// conversations (not just CRM call logs) are counted.
+// ─── Remark event-type count sets ────────────────────────────────────────────
+// Imported remark entries are no longer rendered as Smart Timeline cards (they
+// live verbatim in Raw History). These two sets are kept ONLY to classify those
+// parsed entries for the cross-source connected / no-answer COUNT chips in the
+// header — so an imported-only lead still shows accurate conversation counters.
 const CONNECTED_REMARK_TYPES = new Set<RemarkEventType>([
   "CALL_CONNECTED", "MEETING", "VIRTUAL_MEETING", "SITE_VISIT", "CALL_NOT_INTERESTED", "NOTE",
 ]);
@@ -215,21 +147,13 @@ const NOANSWER_REMARK_TYPES = new Set<RemarkEventType>([
   "CALL_NOT_PICKED", "CALL_BUSY", "CALL_SWITCHED_OFF", "CALL_CALLBACK",
 ]);
 
-// Sort key for a display item (single entry or a missed-call group). A group is
-// positioned by its most-recent attempt (`to`). Returns null only when the item
-// has no date at all → it sinks below all dated conversations.
-function displayKey(d: DisplayEntry): number | null {
-  if (d.kind === "missed_group") return d.to ? d.to.getTime() : null;
-  return d.entry.date ? d.entry.date.getTime() : null;
-}
-
 // ─── Main component ───────────────────────────────────────────────────────────
 
 type FilterType = "ALL" | "CONNECTED" | "NO_ANSWER" | "WA";
 
 export default function ConversationStreamCard({
   callLogs, waMessages, notes = [], activities = [], forwardedTeam, rawRemarks, leadCreatedAt, agentNames = [],
-  leadId = "", canControl = false, viewerId, viewerTeam, controls = [], agents = [],
+  leadId = "", canControl = false, viewerId, viewerTeam, controls = [],
   isAdmin = false, meId, viewerRole, rawEdit = null, editedNotes = {},
 }: Props) {
   const [filter, setFilter] = useState<FilterType>("ALL");
@@ -238,26 +162,17 @@ export default function ConversationStreamCard({
   // History (Audit Log), the verbatim stored text. Smart NEVER mutates raw; if
   // they disagree, Raw wins (it is the stored audit trail), still one tap away.
   const [viewMode, setViewMode] = useState<"raw" | "smart">("smart");
-  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
+  // ── Per-entry Smart Timeline edit (admin/super-admin only) ──
+  // Holds the Activity row currently open in the edit modal, or null. Gated by
+  // `isAdmin` at the call site; the PATCH endpoint re-checks server-side (403).
+  const [editActivity, setEditActivity] = useState<ActivityStreamRow | null>(null);
 
-  // ── Bulk moderation (controllers / Lalit only) ──
   const router = useRouter();
-  const [manageMode, setManageMode] = useState(false);
-  const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
-  const [bulkBusy, setBulkBusy] = useState(false);
-  const toggleSelect = (k: string) => setSelectedKeys(s => { const n = new Set(s); n.has(k) ? n.delete(k) : n.add(k); return n; });
-  async function bulkAction(action: string) {
-    if (selectedKeys.size === 0 || bulkBusy) return;
-    setBulkBusy(true);
-    try {
-      const r = await fetch(`/api/leads/${leadId}/remark-control`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ remarkKeys: [...selectedKeys], action }),
-      });
-      if (r.ok) { setSelectedKeys(new Set()); setManageMode(false); router.refresh(); }
-    } finally { setBulkBusy(false); }
-  }
+  // NOTE: the old per-remark bulk-moderation UI (Manage / hide / remove) acted on
+  // imported-remark CARDS that no longer render in Smart Timeline. The visibility
+  // OVERLAY is still applied to the count chips (controlByKey / hiddenForViewer
+  // below), so a hidden remark still drops out of the connected/no-answer totals —
+  // but there is no longer a per-card selection UI to drive bulk actions here.
 
   // ── Inline note editing (✏️) ──
   // Notes are the only editable stream item (calls / WhatsApp / imported remarks
@@ -360,38 +275,11 @@ export default function ConversationStreamCard({
 
   // Merge entries that share the same agent + exact timestamp — one MIS remark
   // block the parser split across several lines — into a single conversation block.
+  // NOTE: imported remark entries are NO LONGER rendered as Smart Timeline cards
+  // (they live verbatim in the Raw History tab). `mergedEntries` is kept ONLY to
+  // power the cross-source connected / no-answer COUNT chips in the header, so an
+  // imported-only lead still shows accurate conversation counters.
   const mergedEntries = useMemo(() => mergeSameMoment(remarkEntries), [remarkEntries]);
-
-  // Imported remarks filtered to the active chip, then grouped (consecutive missed
-  // calls collapsed). Connected / No-answer narrow by event type so the rows shown
-  // always match the counter that was clicked.
-  const filteredRemarkEntries = useMemo(() => {
-    if (filter === "CONNECTED") return mergedEntries.filter(e => CONNECTED_REMARK_TYPES.has(e.eventType));
-    if (filter === "NO_ANSWER") return mergedEntries.filter(e => NOANSWER_REMARK_TYPES.has(e.eventType));
-    if (filter === "WA")        return [];
-    return mergedEntries;
-  }, [mergedEntries, filter]);
-
-  // Newest conversation first (like an email inbox / WhatsApp "latest update on
-  // top"). Sort by exact datetime descending. Same datetime — and same-date
-  // remarks with no real time (they all carry noon IST) — tie, and the stable
-  // sort keeps their original imported order. Truly date-less entries sink to the
-  // bottom, rendered under an "Undated Imported Remarks" header.
-  const displayRemarkEntries = useMemo(() => {
-    const grouped = groupEntries(filteredRemarkEntries);
-    return [...grouped].sort((a, b) => {
-      const ka = displayKey(a), kb = displayKey(b);
-      if (ka == null && kb == null) return 0;   // both undated → keep import order
-      if (ka == null) return 1;                 // a undated → bottom
-      if (kb == null) return -1;                // b undated → bottom
-      return kb - ka;                           // newest first
-    });
-  }, [filteredRemarkEntries]);
-  // Index where the trailing undated entries begin (for the section header).
-  const datedRemarkCount = useMemo(
-    () => displayRemarkEntries.filter(d => displayKey(d) != null).length,
-    [displayRemarkEntries],
-  );
 
   // ── Counts ────────────────────────────────────────────────────────────────
   // Connected = real two-way conversation across ALL sources (CRM calls + imported
@@ -409,7 +297,11 @@ export default function ConversationStreamCard({
   const unsuccessfulCount = callUnsuccessfulCount + remarkNoAnswerCount;
 
   const streamActs = activities.filter((a) => ACTIVITY_STREAM_TYPES.has(a.type));
-  const totalEntries = callLogs.length + waMessages.length + notes.length + mergedEntries.length + streamActs.length;
+  // Total rows shown in Smart Timeline = genuine CRM events ONLY (calls + WhatsApp
+  // + notes + CRM activities). Imported remark blobs (mergedEntries) are NO LONGER
+  // rendered in Smart Timeline — they live verbatim in the Raw History tab. They
+  // still feed the connected/no-answer counters above (cross-source totals).
+  const totalEntries = callLogs.length + waMessages.length + notes.length + streamActs.length;
 
   // ─── Filter helpers ────────────────────────────────────────────────────────
 
@@ -420,6 +312,52 @@ export default function ConversationStreamCard({
     if (filter === "NO_ANSWER") return UNSUCCESSFUL_OUTCOMES.has(eff);
     return false;
   }
+
+  // ── Unified Smart Timeline stream (newest-first across ALL event types) ──────
+  // Smart Timeline shows ONLY processed CRM events — call logs, WhatsApp, notes,
+  // and CRM-logged activities (meetings / visits / status changes / reject /
+  // convert / brochure / email / AI + manual timeline entries). It NEVER shows the
+  // raw imported remark blob (e.g. "DAMAC Property Expo in London") — that stays
+  // verbatim in the Raw History tab only.
+  //
+  // Every event is normalised to a single shape with an effective IST timestamp
+  // (completedAt ?? scheduledAt ?? createdAt for activities; the source timestamp
+  // otherwise) and the whole list is sorted DESCENDING — latest at the top, oldest
+  // at the bottom — across every type. A plain numeric sort (not a stable merge of
+  // pre-sorted buckets) guarantees the order is correct regardless of source.
+  type StreamKind = "call" | "wa" | "note" | "activity";
+  type StreamItem = { kind: StreamKind; at: number; id: string;
+    call?: CallLogWithUser; wa?: WhatsAppMessage; note?: NoteWithUser; act?: ActivityStreamRow };
+
+  const unifiedStream = useMemo<StreamItem[]>(() => {
+    const items: StreamItem[] = [];
+    for (const c of callLogs) items.push({ kind: "call", at: c.startedAt.getTime(), id: `c-${c.id}`, call: c });
+    for (const m of waMessages) items.push({ kind: "wa", at: m.receivedAt.getTime(), id: `w-${m.id}`, wa: m });
+    for (const n of notes) items.push({ kind: "note", at: n.createdAt.getTime(), id: `n-${n.id}`, note: n });
+    for (const a of streamActs) {
+      const eff = a.completedAt ?? a.scheduledAt ?? a.createdAt;
+      items.push({ kind: "activity", at: eff.getTime(), id: `a-${a.id}`, act: a });
+    }
+    // Newest first. Equal timestamps keep a deterministic id tiebreak.
+    return items.sort((x, y) => (y.at - x.at) || (x.id < y.id ? 1 : -1));
+  }, [callLogs, waMessages, notes, streamActs]);
+
+  // Apply the active filter chip to the unified stream.
+  function showStreamItem(it: StreamItem): boolean {
+    if (it.kind === "call") {
+      if (filter === "WA") return false;
+      return showCallLog(it.call!);
+    }
+    if (it.kind === "wa") {
+      if (filter === "NO_ANSWER") return false;
+      if (filter === "CONNECTED") return it.wa!.direction === "INBOUND";
+      return true; // ALL or WA
+    }
+    if (it.kind === "note") return filter === "ALL" || filter === "CONNECTED";
+    // activity
+    return filter === "ALL" || filter === "CONNECTED";
+  }
+  const filteredStream = unifiedStream.filter(showStreamItem);
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
@@ -471,28 +409,9 @@ export default function ConversationStreamCard({
           {filter !== "ALL" && (
             <button type="button" onClick={() => setFilter("ALL")} className="text-[10px] text-gray-400 hover:text-gray-600 px-1">✕ clear</button>
           )}
-          {canControl && (
-            <button type="button" onClick={() => { setManageMode(v => !v); setSelectedKeys(new Set()); }}
-              title="Select multiple remarks to hide / remove / restore at once"
-              className={`chip text-[10px] cursor-pointer ${manageMode ? "bg-[#0b1a33] text-white border border-[#0b1a33]" : "border border-gray-300 text-gray-600 hover:border-gray-400"}`}>
-              {manageMode ? "✓ Managing" : "🛡 Manage"}
-            </button>
-          )}
         </div>
         )}
       </div>
-
-      {/* ── Bulk moderation bar (controllers only, in Manage mode) ── */}
-      {canControl && manageMode && (
-        <div className="flex items-center gap-2 flex-wrap mb-3 px-3 py-2 rounded-lg bg-[#0b1a33] text-white text-xs">
-          <span className="font-semibold">{selectedKeys.size} selected</span>
-          <span className="text-white/40">·</span>
-          <button type="button" disabled={bulkBusy || selectedKeys.size === 0} onClick={() => bulkAction("DELETE")} className="px-2 py-1 rounded bg-white/15 hover:bg-white/25 disabled:opacity-40">🙈 Remove from view</button>
-          <button type="button" disabled={bulkBusy || selectedKeys.size === 0} onClick={() => bulkAction("HIDE_ALL")} className="px-2 py-1 rounded bg-white/15 hover:bg-white/25 disabled:opacity-40">🔒 Hide from everyone</button>
-          <button type="button" disabled={bulkBusy || selectedKeys.size === 0} onClick={() => bulkAction("RESTORE")} className="px-2 py-1 rounded bg-white/15 hover:bg-white/25 disabled:opacity-40">↩ Restore</button>
-          <button type="button" onClick={() => { setManageMode(false); setSelectedKeys(new Set()); }} className="ml-auto text-white/70 hover:text-white">Done</button>
-        </div>
-      )}
 
       {/* Site Visits & Meetings are intentionally NOT summarised here — they live in
           their own right-side "Meetings & Site Visits" card. Conversation History is
@@ -547,240 +466,162 @@ export default function ConversationStreamCard({
           </div>
         )}
 
-        {/* ─ Imported remarks — SMART TIMELINE (parsed, grouped, filtered) ─
-            These are the imported remarks from rawRemarks, shown in the Smart
-            Timeline ONLY when in Smart view. Raw History tab shows rawRemarks
-            verbatim (unprocessed). No duplication: each appears once. */}
-        {viewMode === "smart" && filter !== "WA" && displayRemarkEntries.map((item, idx) => {
-          // Stable, CONTENT-based key so expansion state + React reconciliation track
-          // the real entry across filter changes (an array index would attach state
-          // to a position and expand the wrong row after filtering).
-          const key = item.kind === "missed_group"
-            ? `missed-${item.label}-${item.from?.getTime() ?? "x"}-${item.to?.getTime() ?? "x"}-${item.agentName ?? ""}`
-            : `entry-${remarkKeyFor(item.entry)}`;
-          // "Undated Imported Remarks" divider — rendered before the FIRST undated
-          // item regardless of its kind (single entry OR missed-call group).
-          const undatedHeader = (idx === datedRemarkCount && datedRemarkCount < displayRemarkEntries.length) ? (
-            <div className="mt-2 mb-1 pt-2 border-t border-dashed border-gray-300 dark:border-slate-600 text-[10px] font-semibold uppercase tracking-wide text-gray-400 dark:text-slate-500">
-              Undated Imported Remarks
-            </div>
-          ) : null;
-
-          if (item.kind === "missed_group") {
-            const expanded = expandedGroups.has(key);
+        {/* ═══ SMART TIMELINE — unified, newest-first stream of PROCESSED CRM EVENTS
+              ONLY (calls · WhatsApp · notes · CRM activities). The raw imported
+              remark blob is NOT rendered here — it lives verbatim in the Raw
+              History tab. Every item is sorted by its effective IST timestamp,
+              latest at the TOP. ═══ */}
+        {viewMode === "smart" && filteredStream.map((it) => {
+          // ── CALL LOG ──
+          if (it.kind === "call") {
+            const c = it.call!;
+            const col = callColour(c.outcome, c.notes);
+            const displayName = canonicalAgentName(c.attributedAgentName ?? c.user.name, agentNames);
+            const notesClean = c.notes
+              ? c.notes.replace(/^[A-Z][A-Za-z]{1,15}(?:\s+[A-Z][A-Za-z]{1,15}){0,2}\s*:\s*/, "")
+              : null;
             return (
-              <Fragment key={key}>
-                {undatedHeader}
-              <div className="border-l-2 border-red-200 bg-red-50/20 pl-3 pr-2 py-1.5 rounded-r">
-                <div className="flex items-center justify-between text-[11px] text-gray-500">
+              <div key={it.id} className={`border-l-2 ${col.border} ${col.bg} pl-3 pr-2 py-1.5 rounded-r`}>
+                <div className="flex items-center justify-between flex-wrap gap-1 text-[11px] text-gray-500">
                   <span>
-                    📵 <span className="font-medium">{item.label}</span>
-                    {" · "}
-                    <span className="font-semibold text-red-600">{item.count} times</span>
-                    {" · "}
-                    {fmtDateShort(item.from)} – {fmtDateShort(item.to)}
-                    {item.agentName && <span className="ml-1 text-gray-400">· {item.agentName}</span>}
+                    📞 <b>{displayName}</b> · {fmtIST12Paren(c.startedAt)} IST
+                    {c.durationSec ? ` · ${Math.floor(c.durationSec / 60)}m ${c.durationSec % 60}s` : ""}
                   </span>
-                  <button type="button" onClick={() => setExpandedGroups(s => {
-                    const n = new Set(s); n.has(key) ? n.delete(key) : n.add(key); return n;
-                  })} className="text-[10px] text-gray-400 hover:text-gray-600 ml-2">
-                    {expanded ? "▲" : "▼"}
-                  </button>
+                  <span className={`chip ${col.pill} text-[9px]`}>{callOutcomeLabel(c.outcome, c.notes)}</span>
                 </div>
-                {/* Last attempt */}
-                <div className="text-[10px] text-gray-400 mt-0.5">Last attempt: {fmtDate(item.to)}</div>
+                {notesClean && <div className="text-xs mt-1 text-gray-700 whitespace-pre-wrap">{notesClean}</div>}
+                {c.recordingUrl && (
+                  <audio controls preload="none" src={c.recordingUrl} title={audioTitle} className="mt-1 h-7 max-w-full" />
+                )}
               </div>
-              </Fragment>
             );
           }
 
-          // Single remark entry
-          const e: RemarkEntry = item.entry;
-          const border = REMARK_BORDER[e.eventType];
-          const bg     = REMARK_BG[e.eventType];
-          const icon   = remarkIcon(e.eventType);
-          // Header date — "12 Apr 2025 | 11:23 AM IST" when there's a real clock
-          // time; date-only entries stay bare ("17 Jun 2026", no "… IST").
-          const dateStr = e.date
-            ? (hasTime(e.date)
-                ? `${fmtDateTime(e.date).replace(/,\s*/, " | ").replace(/\b([ap]m)\b/i, (s) => s.toUpperCase())} IST`
-                : fmtDateTime(e.date))
-            : null;
-          // Moderation state — only controllers ever reach here with a hidden entry.
-          const rKey = remarkKeyFor(e);
-          const ctrl = controlByKey.get(rKey) ?? null;
-          const hiddenCount = (ctrl?.hiddenFromUserIds ?? "").split(",").map(s => s.trim()).filter(Boolean).length;
-          const teamCount = (ctrl?.hiddenFromTeams ?? "").split(",").map(s => s.trim()).filter(Boolean).length;
-          const moderated = !!ctrl && (ctrl.deletedFromView || ctrl.hiddenFromAll || hiddenCount > 0 || teamCount > 0);
-          const modBadge = ctrl?.deletedFromView ? "removed" : ctrl?.hiddenFromAll ? "hidden · all" : teamCount > 0 ? `hidden · ${teamCount} team${teamCount > 1 ? "s" : ""}` : hiddenCount > 0 ? `hidden · ${hiddenCount} agent${hiddenCount > 1 ? "s" : ""}` : null;
+          // ── WHATSAPP ──
+          if (it.kind === "wa") {
+            const m = it.wa!;
+            const col = waColour(m.direction);
+            return (
+              <div key={it.id} className={`border-l-2 ${col.border} ${col.bg} pl-3 pr-2 py-1.5 rounded-r`}>
+                <div className="flex items-center justify-between flex-wrap gap-1 text-[11px] text-gray-500">
+                  <span>💬 <b>{m.direction === "INBOUND" ? "📥 Client" : "📤 Agent"}</b> · {fmtIST12Paren(m.receivedAt)} IST</span>
+                  <span className={`chip ${col.pill} text-[9px]`}>{m.direction === "INBOUND" ? "📥 Inbound" : "📤 Outbound"}</span>
+                </div>
+                <div className="text-xs mt-1 text-gray-800 whitespace-pre-wrap">{m.body}</div>
+              </div>
+            );
+          }
 
-          return (
-            <Fragment key={key}>
-              {undatedHeader}
-            <div className={`border-l-2 ${border} ${bg} pl-3 pr-2 py-1.5 rounded-r ${moderated ? "opacity-60" : ""} ${canControl && manageMode && selectedKeys.has(rKey) ? "ring-2 ring-[#0b1a33]/40" : ""}`}>
-              {/* Header — DATE/TIME on top, AGENT NAME on the second line, body
-                  below (Lalit's Smart-Timeline spec). Controls float on the right. */}
-              <div className="flex items-start justify-between gap-2 mb-1">
-                <div className="min-w-0 flex items-start gap-1.5">
-                  {canControl && manageMode && (
-                    <input type="checkbox" className="h-3.5 w-3.5 mt-0.5 flex-none accent-[#0b1a33]" checked={selectedKeys.has(rKey)} onChange={() => toggleSelect(rKey)} />
-                  )}
-                  <div className="min-w-0">
-                    {dateStr
-                      ? <div className={`text-[11px] font-semibold tracking-wide text-gray-500 dark:text-slate-400 ${e.dateInferred ? "italic opacity-70" : ""}`}>{dateStr}</div>
-                      : <div className="text-[11px] italic text-gray-400 opacity-60">Undated</div>}
-                    {e.agentName && (
-                      <div className="text-xs font-semibold text-gray-700 dark:text-slate-200">{e.agentName}</div>
+          // ── NOTE (voice + typed) — editable inline (admin, or author same IST day) ──
+          if (it.kind === "note") {
+            const n = it.note!;
+            const editing = editNoteId === n.id;
+            const noteEdit = editedNotes[n.id];
+            return (
+              <div key={it.id} className="border-l-2 border-amber-300 bg-amber-50/40 pl-3 pr-2 py-1.5 rounded-r">
+                <div className="flex items-center justify-between flex-wrap gap-1 text-[11px] text-gray-500">
+                  <span>📝 <b>{n.user?.name ?? "Agent"}</b> · {fmtIST12Paren(n.createdAt)} IST</span>
+                  <span className="inline-flex items-center gap-1.5">
+                    {noteEdit && isAdmin && (
+                      <span className="text-[9px] font-bold px-1 py-0.5 rounded bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300"
+                        title={`Edited ${new Date(noteEdit.at).toLocaleString("en-GB", { timeZone: "Asia/Kolkata" })} IST`}>✏️ Edited by {noteEdit.by}</span>
                     )}
+                    {canEditRemark({ id: meId ?? "", role: viewerRole ?? (isAdmin ? "ADMIN" : "AGENT") }, { createdById: n.userId ?? null, createdAt: n.createdAt }) && !editing && (
+                      <button type="button" onClick={() => startEditNote(n.id, n.body)}
+                        title="Edit this remark"
+                        className="text-[10px] text-gray-400 hover:text-gray-600">✏️ Edit</button>
+                    )}
+                    <span className="chip text-[9px] border border-amber-300 bg-amber-100 text-amber-700">Note</span>
+                  </span>
+                </div>
+                {editing ? (
+                  <div className="mt-1">
+                    <textarea
+                      value={editDraft}
+                      onChange={(e) => setEditDraft(e.target.value)}
+                      rows={3}
+                      disabled={editBusy}
+                      autoFocus
+                      className="w-full text-xs text-gray-800 dark:text-slate-100 border border-amber-300 dark:border-amber-700 rounded p-2 bg-white dark:bg-slate-800 focus:outline-none focus:ring-1 focus:ring-amber-400 disabled:opacity-60"
+                    />
+                    {editError && (
+                      <div className="text-[10px] text-red-600 dark:text-red-400 mt-1">{editError}</div>
+                    )}
+                    <div className="flex items-center gap-2 mt-1.5">
+                      <button type="button" onClick={() => saveEditNote(n.id)} disabled={editBusy || !editDraft.trim()}
+                        className="text-[10px] px-2 py-1 rounded bg-[#0b1a33] text-white hover:bg-[#0b1a33]/90 disabled:opacity-40">
+                        {editBusy ? "Saving…" : "Save"}
+                      </button>
+                      <button type="button" onClick={cancelEditNote} disabled={editBusy}
+                        className="text-[10px] px-2 py-1 rounded border border-gray-300 text-gray-600 hover:border-gray-400 disabled:opacity-40">
+                        Cancel
+                      </button>
+                    </div>
                   </div>
-                </div>
-                <span className="flex-none inline-flex items-center gap-1 pt-0.5">
-                  {canControl && modBadge && (
-                    <span className="text-[9px] font-bold px-1 py-0.5 rounded bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">{modBadge}</span>
-                  )}
-                  <span className="text-[10px]">{icon}</span>
-                  {/* Per-entry edit (Lalit only) — routes to the Raw History editor so
-                      the correction lands on the single source; Raw History + Smart
-                      Timeline stay consistent and the entry's original date is kept. */}
-                  {canControl && !manageMode && (
-                    <button type="button"
-                      onClick={() => { setViewMode("raw"); setRawEditing(true); setRawDraft(rawRemarks ?? ""); setRawErr(null); }}
-                      title="Edit this entry in Raw History — keeps Raw History + Smart Timeline in sync; the original date/time is preserved"
-                      className="text-[10px] text-gray-400 hover:text-gray-700 dark:hover:text-slate-200">✏️ Edit</button>
-                  )}
-                  {canControl && !manageMode && (
-                    <RemarkControlMenu leadId={leadId} remarkKey={rKey} control={ctrl} agents={agents} />
-                  )}
-                </span>
-              </div>
-              {/* Body — the remark text, preserved verbatim; only bracket/artifact
-                  noise was stripped by the parser. One remark = one card. */}
-              <div className="text-xs text-gray-700 dark:text-slate-200 break-words leading-relaxed whitespace-pre-line">
-                {toReadableParagraph(e.text)}
-              </div>
-            </div>
-            </Fragment>
-          );
-        })}
-
-        {/* ─ Real CRM call logs ─ */}
-        {callLogs.filter(showCallLog).map((c, idx) => {
-          const col = callColour(c.outcome, c.notes);
-          const displayName = canonicalAgentName(c.attributedAgentName ?? c.user.name, agentNames);
-          const notesClean = c.notes
-            ? c.notes.replace(/^[A-Z][A-Za-z]{1,15}(?:\s+[A-Z][A-Za-z]{1,15}){0,2}\s*:\s*/, "")
-            : null;
-          return (
-            <div key={`c-${c.id}`} className={`border-l-2 ${col.border} ${col.bg} pl-3 pr-2 py-1.5 rounded-r`}>
-              <div className="flex items-center justify-between flex-wrap gap-1 text-[11px] text-gray-500">
-                <span>
-                  📞 <b>{displayName}</b> · {fmtIST12Paren(c.startedAt)} IST
-                  {c.durationSec ? ` · ${Math.floor(c.durationSec / 60)}m ${c.durationSec % 60}s` : ""}
-                </span>
-                <span className={`chip ${col.pill} text-[9px]`}>{callOutcomeLabel(c.outcome, c.notes)}</span>
-              </div>
-              {notesClean && <div className="text-xs mt-1 text-gray-700 whitespace-pre-wrap">{notesClean}</div>}
-              {c.recordingUrl && (
-                <audio controls preload="none" src={c.recordingUrl} title={audioTitle} className="mt-1 h-7 max-w-full" />
-              )}
-            </div>
-          );
-        })}
-
-        {/* ─ WhatsApp messages (inbound replies are a real two-way conversation, so
-              they also appear under the Connected filter) ─ */}
-        {filter !== "NO_ANSWER" && waMessages
-          .filter(m => filter === "CONNECTED" ? m.direction === "INBOUND" : true)
-          .map((m, idx) => {
-          const col = waColour(m.direction);
-          return (
-            <div key={`w-${m.id}`} className={`border-l-2 ${col.border} ${col.bg} pl-3 pr-2 py-1.5 rounded-r`}>
-              <div className="flex items-center justify-between flex-wrap gap-1 text-[11px] text-gray-500">
-                <span>💬 <b>{m.direction === "INBOUND" ? "📥 Client" : "📤 Agent"}</b> · {fmtIST12Paren(m.receivedAt)} IST</span>
-                <span className={`chip ${col.pill} text-[9px]`}>{m.direction === "INBOUND" ? "📥 Inbound" : "📤 Outbound"}</span>
-              </div>
-              <div className="text-xs mt-1 text-gray-800 whitespace-pre-wrap">{m.body}</div>
-            </div>
-          );
-        })}
-
-        {/* ─ Notes (voice + typed) — real conversation records, shown under Connected too.
-              Notes are the only editable stream item: an admin (and, via the API, the
-              author on the same IST day) can ✏️ edit the remark text inline. ─ */}
-        {(filter === "ALL" || filter === "CONNECTED") && notes.map((n, idx) => {
-          const editing = editNoteId === n.id;
-          const noteEdit = editedNotes[n.id];
-          return (
-          <div key={`n-${n.id}`} className="border-l-2 border-amber-300 bg-amber-50/40 pl-3 pr-2 py-1.5 rounded-r">
-            <div className="flex items-center justify-between flex-wrap gap-1 text-[11px] text-gray-500">
-              <span>📝 <b>{n.user?.name ?? "Agent"}</b> · {fmtIST12Paren(n.createdAt)} IST</span>
-              <span className="inline-flex items-center gap-1.5">
-                {noteEdit && isAdmin && (
-                  <span className="text-[9px] font-bold px-1 py-0.5 rounded bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300"
-                    title={`Edited ${new Date(noteEdit.at).toLocaleString("en-GB", { timeZone: "Asia/Kolkata" })} IST`}>✏️ Edited by {noteEdit.by}</span>
+                ) : (
+                  <div className="text-xs mt-1 text-gray-800 whitespace-pre-wrap">{n.body}</div>
                 )}
-                {/* Edit: admins/managers any time; an AGENT only their OWN note on
-                    the same IST day they wrote it. Backend re-checks the same rule. */}
-                {canEditRemark({ id: meId ?? "", role: viewerRole ?? (isAdmin ? "ADMIN" : "AGENT") }, { createdById: n.userId ?? null, createdAt: n.createdAt }) && !editing && (
-                  <button type="button" onClick={() => startEditNote(n.id, n.body)}
-                    title="Edit this remark"
-                    className="text-[10px] text-gray-400 hover:text-gray-600">✏️ Edit</button>
-                )}
-                <span className="chip text-[9px] border border-amber-300 bg-amber-100 text-amber-700">Note</span>
-              </span>
-            </div>
-            {editing ? (
-              <div className="mt-1">
-                <textarea
-                  value={editDraft}
-                  onChange={(e) => setEditDraft(e.target.value)}
-                  rows={3}
-                  disabled={editBusy}
-                  autoFocus
-                  className="w-full text-xs text-gray-800 dark:text-slate-100 border border-amber-300 dark:border-amber-700 rounded p-2 bg-white dark:bg-slate-800 focus:outline-none focus:ring-1 focus:ring-amber-400 disabled:opacity-60"
-                />
-                {editError && (
-                  <div className="text-[10px] text-red-600 dark:text-red-400 mt-1">{editError}</div>
-                )}
-                <div className="flex items-center gap-2 mt-1.5">
-                  <button type="button" onClick={() => saveEditNote(n.id)} disabled={editBusy || !editDraft.trim()}
-                    className="text-[10px] px-2 py-1 rounded bg-[#0b1a33] text-white hover:bg-[#0b1a33]/90 disabled:opacity-40">
-                    {editBusy ? "Saving…" : "Save"}
-                  </button>
-                  <button type="button" onClick={cancelEditNote} disabled={editBusy}
-                    className="text-[10px] px-2 py-1 rounded border border-gray-300 text-gray-600 hover:border-gray-400 disabled:opacity-40">
-                    Cancel
-                  </button>
-                </div>
               </div>
-            ) : (
-              <div className="text-xs mt-1 text-gray-800 whitespace-pre-wrap">{n.body}</div>
-            )}
-          </div>
-          );
-        })}
+            );
+          }
 
-        {/* ─ Activity events (meetings / visits / status changes / reopen / brochure /
-              email) — logged by CRM actions; shown in BOTH views so every action lands
-              in Conversation History. CALL / WHATSAPP / NOTE excluded (own rows above). ─ */}
-        {(filter === "ALL" || filter === "CONNECTED") && streamActs.map((a) => {
+          // ── CRM ACTIVITY (meeting / visit / status change / reject / convert /
+          //    brochure / email / reminder …). Admin/super-admin gets a per-card
+          //    ✏️ Edit on the RIGHT that opens the edit modal for THIS entry only. ──
+          const a = it.act!;
           const when = a.completedAt ?? a.scheduledAt ?? a.createdAt;
           const who = canonicalAgentName(a.user?.name ?? "Agent", agentNames);
           return (
-            <div key={`a-${a.id}`} className="border-l-2 border-slate-300 bg-slate-50/70 pl-3 pr-2 py-1.5 rounded-r">
+            <div key={it.id} className="border-l-2 border-slate-300 bg-slate-50/70 pl-3 pr-2 py-1.5 rounded-r">
               <div className="flex items-center justify-between flex-wrap gap-1 text-[11px] text-gray-500">
                 <span>{ACTIVITY_ICON[a.type] ?? "•"} <b>{who}</b> · {fmtIST12Paren(when)} IST</span>
-                <span className="chip text-[9px] border border-slate-300 bg-slate-100 text-slate-600">{ACTIVITY_LABEL[a.type] ?? "Activity"}</span>
+                <span className="inline-flex items-center gap-1.5">
+                  {a.outcome && (
+                    <span className="chip text-[9px] border border-emerald-300 bg-emerald-50 text-emerald-700">{a.outcome}</span>
+                  )}
+                  <span className="chip text-[9px] border border-slate-300 bg-slate-100 text-slate-600">{ACTIVITY_LABEL[a.type] ?? "Activity"}</span>
+                  {/* Per-entry edit — ADMIN / Super-Admin ONLY. Agents never see this
+                      (and the PATCH endpoint 403s a tampered request). Edits THIS
+                      entry in place + writes the prior value to the audit trail. */}
+                  {isAdmin && (
+                    <button type="button" onClick={() => setEditActivity(a)}
+                      title="Edit this timeline entry (admin only — original kept in audit log)"
+                      className="text-[10px] text-gray-400 hover:text-gray-700 dark:hover:text-slate-200">✏️ Edit</button>
+                  )}
+                </span>
               </div>
               {(a.title || a.description) && (
                 <div className="text-xs mt-1 text-gray-800 whitespace-pre-wrap">
                   {a.title}{a.title && a.description ? " — " : ""}{a.description}
                 </div>
               )}
+              {a.followupDate && (
+                <div className="text-[10px] text-emerald-700 mt-0.5">📅 Follow-up: {fmtIST12Paren(a.followupDate)} IST</div>
+              )}
             </div>
           );
         })}
       </div>
+
+      {/* ── Per-entry edit modal (admin/super-admin) — opens for one Activity. ── */}
+      {editActivity && (
+        <TimelineEntryEditModal
+          leadId={leadId}
+          activityId={editActivity.id}
+          initial={{
+            type: editActivity.type,
+            outcome: editActivity.outcome ?? "",
+            description: editActivity.description ?? "",
+            // Effective date the card shows: completedAt ?? scheduledAt. Tell the
+            // modal which field that maps to so a completed event isn't moved onto
+            // scheduledAt (or vice-versa) on save.
+            when: toISTLocalInput(editActivity.completedAt ?? editActivity.scheduledAt ?? editActivity.createdAt),
+            whenIsScheduled: !editActivity.completedAt && !!editActivity.scheduledAt,
+            followup: toISTLocalInput(editActivity.followupDate),
+          }}
+          onClose={() => setEditActivity(null)}
+        />
+      )}
 
       {/* Legend */}
       <div className="mt-3 pt-2 border-t border-emerald-200 flex items-center gap-3 flex-wrap text-[10px] text-gray-600">

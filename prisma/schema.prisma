@@ -134,6 +134,7 @@ model User {
   notes         Note[]
   auditLogs     AuditLog[]
   fieldChanges  LeadFieldHistory[] @relation("FieldChangedBy")
+  activityEdits ActivityEdit[]     @relation("ActivityEditedBy")
   notifications Notification[]
   vaultEntries  VaultEntry[]
   stickyNotes   StickyNote[]
@@ -968,6 +969,13 @@ model Activity {
   description String?
   scheduledAt DateTime?
   completedAt DateTime?
+  // ── Smart Timeline edit fields (admin-editable per-entry) ──
+  /// Free-text outcome label for this event (e.g. "Connected", "Site visit done").
+  /// Optional — set when an admin edits the entry or a logger captures an outcome.
+  outcome     String?
+  /// Per-entry follow-up date. When an admin edits a timeline entry and it maps to
+  /// a follow-up, this is updated AND mirrored onto Lead.followupDate.
+  followupDate DateTime?
   // ── Visit/meeting attendance + live-tracking (SITE_VISIT, OFFICE_MEETING, VIRTUAL_MEETING) ──
   /// Who actually attended (may differ from `userId`/owner — e.g. agent sent a colleague)
   attendedByUserId   String?
@@ -1006,10 +1014,38 @@ model Activity {
   createdAt   DateTime       @default(now())
   updatedAt   DateTime       @updatedAt
 
+  edits       ActivityEdit[]
+
   @@index([leadId])
   @@index([scheduledAt])
   @@index([status])
   @@index([type, completedAt])
+}
+
+// =====================================================
+// ACTIVITY EDIT — append-only audit trail for Smart Timeline edits.
+// When an ADMIN / Super-Admin edits a timeline Activity (date/time/type/outcome/
+// remark text/follow-up), the prior value is preserved here per changed field
+// (old → new + who + when). The Smart Timeline shows the LATEST Activity value;
+// this table retains the full edit history. NO timeline data is ever lost — the
+// entry is updated in place and the prior value is captured here.
+// =====================================================
+model ActivityEdit {
+  id          String   @id @default(cuid())
+  activityId  String
+  activity    Activity @relation(fields: [activityId], references: [id], onDelete: Cascade)
+  leadId      String   // denormalized for fast per-lead audit queries
+  field       String   // "type" | "outcome" | "description" | "scheduledAt" | "completedAt" | "followupDate"
+  oldValue    String?
+  newValue    String?
+  editedById  String?
+  editedBy    User?    @relation("ActivityEditedBy", fields: [editedById], references: [id], onDelete: SetNull)
+  editedByName String? // denormalized so the log stays readable if the user is renamed
+  createdAt   DateTime @default(now())
+
+  @@index([activityId])
+  @@index([leadId, createdAt])
+  @@index([editedById, createdAt])
 }
 
 enum CallDirection {
