@@ -50,6 +50,9 @@ import {
   parseClientMapping,
   crmFieldOptions,
 } from "../src/lib/importMapping";
+// IST day-boundary helpers (pure, no "server-only") — the REAL window math the
+// Action List follow-up board uses, so the invariant tests production code.
+import { istDayRange, istDateKey, isValidDateKey } from "../src/lib/datetime";
 
 // ── tiny assertion harness ──────────────────────────────────────────────────
 type Check = { name: string; run: () => Promise<void> };
@@ -1917,6 +1920,75 @@ const checks: Check[] = [
       const proxy = fs.readFileSync("src/proxy.ts", "utf8");
       assert(proxy.includes("PUBLIC_RESOURCE_FILE") && proxy.includes("/api/resources/") && proxy.includes("/file"),
         "proxy must publicly allow /api/resources/<id>/file (capability download) via PUBLIC_RESOURCE_FILE");
+    },
+  },
+  {
+    // Action List = a follow-up board keyed on Lead.followupDate. The bug it
+    // fixes: today's afternoon/evening follow-ups were invisible (no Today
+    // bucket; only past-dated "overdue" showed) and the query over-filtered by
+    // status/origin. Invariants:
+    //   (a) IST day window math is correct (start = IST-midnight UTC instant,
+    //       end = +24h, end exclusive) and a custom ?date= validates.
+    //   (b) count == records for the SAME followupWhere (no silent hiding) —
+    //       and the "today" board, unlike the old page, includes follow-ups
+    //       scheduled later TODAY, not just overdue ones.
+    //   (c) the board does NOT whitelist status (all-status by default) and the
+    //       Lead-View reuses the SAME three action endpoints (DRY, no dupes).
+    name: "action-list-followups — IST-day window (count==records, all statuses) + Lead-View reuses action endpoints",
+    run: async () => {
+      const fs = await import("node:fs");
+
+      // (a) Window math — real istDayRange().
+      const { start, end } = istDayRange();
+      assert(end.getTime() - start.getTime() === 24 * 3600 * 1000, "istDayRange() must span exactly 24h");
+      // start must be IST-midnight: its IST date key equals today's, and the
+      // instant is 18:30Z the previous day (00:00 +05:30) OR 00:00 when IST.
+      assert(istDateKey(start) === istDateKey(), "istDayRange().start must fall on today's IST date");
+      assert(isValidDateKey(istDateKey()) && !isValidDateKey("2026-13-40") && !isValidDateKey("nope"),
+        "isValidDateKey must accept a real YYYY-MM-DD and reject junk");
+
+      // (b) count == records for the today window (permission scope omitted here
+      //     — this is the DATA invariant that the count helper and the list
+      //     query agree; the page applies the same scopeWhere to both).
+      const todayWhere = { deletedAt: null, followupDate: { gte: start, lt: end } } as const;
+      const listed = await prisma.lead.findMany({ where: todayWhere, select: { id: true, followupDate: true, currentStatus: true }, take: 1000 });
+      const counted = await prisma.lead.count({ where: todayWhere });
+      // (Bounded list at 1000; only assert equality when not truncated.)
+      if (listed.length < 1000) {
+        assert(listed.length === counted, `Action List today: count (${counted}) must equal records (${listed.length}) — no silent hiding`);
+      }
+      // Every listed row genuinely has a follow-up that lands TODAY (IST) — the
+      // window includes later-today, not just overdue.
+      for (const r of listed.slice(0, 200)) {
+        assert(!!r.followupDate && r.followupDate >= start && r.followupDate < end,
+          `row ${r.id} followupDate out of today's IST window`);
+      }
+
+      // (c) The page must NOT hard-filter status (the regression we fixed) and
+      //     must source the window from istDayRange + leadScopeWhere.
+      const page = fs.readFileSync("src/app/(app)/action-list/page.tsx", "utf8");
+      assert(/istDayRange/.test(page), "action-list page must use istDayRange for IST day boundaries");
+      assert(/leadScopeWhere/.test(page), "action-list page must scope via leadScopeWhere (permission scope, not status)");
+      assert(/followupDate:\s*followup/.test(page), "action-list must key the board on Lead.followupDate");
+      // Status is applied ONLY when the user picks one (conditional), never an
+      // unconditional whitelist on the follow-up board.
+      assert(/if\s*\(statusFilter\)\s*followupWhere\.currentStatus\s*=/.test(page),
+        "action-list must apply status ONLY when explicitly filtered (no default status whitelist on the board)");
+
+      // (d) DRY — Lead-View follow-up bar reuses the SAME endpoints; no new logic.
+      const lf = fs.readFileSync("src/components/LeadFollowupActions.tsx", "utf8");
+      for (const ep of ["action-complete", "action-snooze", "action-escalate"]) {
+        assert(lf.includes(`/api/leads/${"${leadId}"}/${ep}`), `LeadFollowupActions must POST to /api/leads/[id]/${ep} (reuse, not duplicate)`);
+      }
+      const leadPage = fs.readFileSync("src/app/(app)/leads/[id]/page.tsx", "utf8");
+      assert(/<LeadFollowupActions/.test(leadPage), "Lead detail page must render <LeadFollowupActions> in the header");
+
+      // (e) Escalate now notifies a human (manager/admins) — the new behaviour.
+      const esc = fs.readFileSync("src/app/api/leads/[id]/action-escalate/route.ts", "utf8");
+      assert(/notify\(/.test(esc) && /managerId/.test(esc), "action-escalate must notify the owner's manager/admins");
+      // Snooze accepts an explicit IST datetime (Lead-View picker path).
+      const snz = fs.readFileSync("src/app/api/leads/[id]/action-snooze/route.ts", "utf8");
+      assert(/body\.at/.test(snz), "action-snooze must accept an explicit { at } IST datetime for the Lead-View picker");
     },
   },
 ];

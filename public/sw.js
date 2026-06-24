@@ -93,7 +93,15 @@
 // UI (button + Upload/Link/Template modals) now shows for agents. Reject Lead — new
 // "Expo Only" reason offered ONLY on Dubai-team leads; rejecting logs Rejected + reason
 // + user + IST time to the Smart Timeline.
-const CACHE = "wcr-shell-v42";
+// v43 (2026-06-24): Action List rebuilt as a follow-up board keyed on
+// Lead.followupDate — Today (now incl. later-today, not just overdue) / Tomorrow /
+// Overdue / Custom-date tabs + Agent/Team/Status filters; shows EVERY follow-up for
+// the chosen date regardless of status (status narrows only when picked), count ==
+// records, permission-scoped (agent own / manager team / admin all). Lead Detail
+// header gains Complete / Snooze (IST date-time picker) / Escalate buttons reusing
+// the same action-complete/-snooze/-escalate endpoints; each logs a Smart-Timeline
+// Activity. Escalate now also notifies the owner's manager + admins.
+const CACHE = "wcr-shell-v43";
 const SHELL = ["/login", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", (event) => {

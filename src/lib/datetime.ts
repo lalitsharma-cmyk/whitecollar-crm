@@ -148,6 +148,47 @@ export function isPastISTLocalInput(s: string | null | undefined): boolean {
   return d.getTime() < Date.now();
 }
 
+// ── IST day boundaries ─────────────────────────────────────────────────
+// Vercel serverless runs in UTC, so a naive `new Date().setHours(0,0,0,0)`
+// lands on UTC-midnight — 5h30m off from the day the team reads on their
+// phones. These return the correct UTC *instants* for the start/end of an
+// IST calendar day, so a "followupDate falls on this IST day" query is exact.
+// Used by /action-list (Today / Tomorrow / Overdue / Custom date) and any
+// other "everything scheduled for date X (IST)" query — keep it DRY here.
+
+/** "YYYY-MM-DD" — the IST calendar date for a given instant (default: now). */
+export function istDateKey(d: Date = new Date()): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    year: "numeric", month: "2-digit", day: "2-digit", timeZone: IST,
+  }).format(d); // en-CA → ISO-ish "2026-06-24"
+}
+
+/**
+ * UTC instants bounding a single IST calendar day [start, end).
+ *   • No arg            → today (IST)
+ *   • "YYYY-MM-DD"      → that IST day
+ *   • Date              → the IST day that instant falls on
+ * `end` is exclusive (start of the next IST day), so use `lt: end`.
+ */
+export function istDayRange(day?: string | Date): { start: Date; end: Date } {
+  const key = day == null
+    ? istDateKey()
+    : day instanceof Date
+      ? istDateKey(day)
+      : day; // already a "YYYY-MM-DD" string
+  const start = new Date(`${key}T00:00:00+05:30`);
+  const end = new Date(start.getTime() + 24 * 60 * 60 * 1000);
+  return { start, end };
+}
+
+/** Validates a "YYYY-MM-DD" string (used to sanitise a ?date= query param). */
+export function isValidDateKey(s: string | null | undefined): s is string {
+  if (!s) return false;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
+  const t = Date.parse(`${s}T00:00:00+05:30`);
+  return !isNaN(t);
+}
+
 /**
  * Short, honest range label for KPI sub-text.
  *

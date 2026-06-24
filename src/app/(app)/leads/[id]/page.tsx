@@ -6,6 +6,7 @@ import Link from "next/link";
 import { fmtMoney } from "@/lib/money";
 import { requireUser } from "@/lib/auth";
 import LeadActionsClient from "@/components/LeadActionsClient";
+import LeadFollowupActions from "@/components/LeadFollowupActions";
 import LeadProjectsClient from "@/components/LeadProjectsClient";
 import LeadInterestedClient from "@/components/LeadInterestedClient";
 import LeadMeetingClient from "@/components/LeadMeetingClient";
@@ -1021,6 +1022,17 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
                 acefoneEnabled={acefoneEnabled()}
                 acefoneMappedForUser={!!me.acefoneAgentId}
                 hideReassign={true}
+              />
+              {/* Follow-up actions — Complete / Snooze / Escalate, right here in
+                  the header so the agent never has to open /action-list. Reuses
+                  the exact same action-complete / -snooze / -escalate endpoints
+                  the Action List card uses; each logs a Smart-Timeline Activity.
+                  The page already redirects anyone who fails canTouchLead, so
+                  whoever can see this can legitimately act on the lead. */}
+              <LeadFollowupActions
+                leadId={lead.id}
+                leadName={lead.name}
+                followupDate={lead.followupDate ? lead.followupDate.toISOString() : null}
               />
               <BestCallTimeChip leadId={lead.id} />
               {/* Voice note recorder — moved to header so agents see all 4
