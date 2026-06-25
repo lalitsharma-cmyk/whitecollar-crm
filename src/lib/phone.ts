@@ -141,6 +141,43 @@ export function splitPhones(raw: string | null | undefined, fallbackDial?: strin
   return out;
 }
 
+/**
+ * True when a phone string holds a genuinely DIALABLE number — not blank, not
+ * whitespace, and not a bare country-code/dial-prefix with no subscriber digits.
+ *
+ * Why this exists: the alt-phone field sometimes captured just a leftover dial
+ * prefix (e.g. "+91" from a normalization fallback) or whitespace. Those are
+ * truthy strings, so a naive `phone && altPhone` check still rendered the
+ * Call-alt / WhatsApp-alt action buttons even though there was no real number to
+ * call. A real number has subscriber digits beyond the country code.
+ *
+ *   hasDialableNumber("+919928418296") → true
+ *   hasDialableNumber("9928418296")    → true   (10-digit India mobile)
+ *   hasDialableNumber("+91")           → false  (dial prefix only)
+ *   hasDialableNumber("   ")           → false
+ *   hasDialableNumber("")              → false
+ *   hasDialableNumber(null)            → false
+ *
+ * Implementation note: we compare the total digit count to the matched country
+ * dial-code length. If the digits are nothing more than a known dial code (91,
+ * 971, 1, 44 …) — i.e. zero subscriber digits — it's not dialable. As a floor we
+ * also require ≥7 digits (the ITU-T E.164 minimum) so a stray "+1"/"+44" prefix
+ * can never slip through.
+ */
+export function hasDialableNumber(raw: string | null | undefined): boolean {
+  if (!raw) return false;
+  const s = String(raw).trim();
+  if (!s) return false;
+  const digits = s.replace(/\D/g, "");
+  if (digits.length < 7) return false;            // below E.164 minimum → not a real number
+  // If the whole thing is just a dial code with no subscriber digits, reject it.
+  for (const c of COUNTRIES) {
+    const code = c.dial.replace(/\D/g, "");
+    if (digits === code) return false;             // exactly a country code, nothing after it
+  }
+  return true;
+}
+
 /** Extracts just the WhatsApp-ready digits (no leading +, no spaces). */
 export function whatsappDigits(e164OrAny: string | null | undefined, fallbackDial?: string): string | null {
   const e = toE164(e164OrAny, fallbackDial);

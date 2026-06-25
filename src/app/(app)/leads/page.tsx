@@ -906,13 +906,16 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
             // Legacy fields kept for bulk actions and mobile card — team-aware too.
             budget: (() => { const d = displayBudget(l); return d === "—" ? null : d; })(),
             interest: l.interestedUnits[0] ? `${l.interestedUnits[0].unit.project.name} ${l.interestedUnits[0].unit.configuration}` : null,
-            // Project column = the actual property/project name (Excel "Project"
-            // column). Imports store that value in sourceDetail. Chain:
-            // 1. Formal project link (discussed / interestedUnits)
-            // 2. sourceDetail (imported "Project" value, e.g. "Central Park Resorts")
-            // 3. notesShort (one-liner requirement sometimes names the project)
+            // Property Enquired column = the CANONICAL `sourceDetail` field, the
+            // SAME value the lead-detail view and Master Data grid show. We pass
+            // sourceDetail and notesShort SEPARATELY (not pre-merged) so the
+            // table's resolver can always honor sourceDetail verbatim — even a
+            // free-text property not in the Project Master ("Central Park Valley")
+            // — while still gating the weak notesShort remark behind a known-
+            // project match. This keeps detail / table / Master Data in agreement.
             // NEVER fall back to configuration ("2 BHK") — that is its own column.
-            projectHint: l.sourceDetail ?? l.notesShort ?? null,
+            sourceDetail: l.sourceDetail ?? null,
+            projectHint: l.notesShort ?? null,
           };
         })}
       />

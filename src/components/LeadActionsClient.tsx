@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { Phone, AlertCircle, Mic } from "lucide-react";
-import { whatsappLink, telLink } from "@/lib/phone";
+import { whatsappLink, telLink, hasDialableNumber } from "@/lib/phone";
 import TemplatePickerButton from "./TemplatePickerButton";
 import { ActionButton } from "@/components/actions/ActionButton";
 import { fromISTLocalInput } from "@/lib/datetime";
@@ -407,8 +407,11 @@ export default function LeadActionsClient({ leadId, phone, altPhone, email, curr
           should only display after primary ones, and only when there are 2
           entries". So: render AFTER the primary bar, and only when BOTH
           primary + alt phones exist (a lone alt with no primary makes no
-          sense — it'd just BE the primary). */}
-      {phone && altPhone && (
+          sense — it'd just BE the primary). hasDialableNumber() additionally
+          rejects a blank / whitespace / bare-dial-prefix alt (e.g. "+91" left
+          over from normalization) so the Call-alt / WhatsApp-alt buttons only
+          show when there is a genuinely dialable second number. */}
+      {hasDialableNumber(phone) && hasDialableNumber(altPhone) && (
         <div className="mt-2">
           <div className="text-[10px] uppercase tracking-widest text-gray-500 font-semibold mb-1.5">
             📱 Alternate number

@@ -57,6 +57,11 @@ import { istDayRange, istDateKey, isValidDateKey } from "../src/lib/datetime";
 // Name normalisation (pure, no "server-only") — the REAL write-time transform, so
 // the backfill-integrity invariant tests production code (0 un-cased names remain).
 import { normalizeNameList } from "../src/lib/nameFormat";
+// Phone dialability + Property-Enquired resolution (pure, no "server-only") — the
+// REAL helpers behind Bug 1 (alt-action gating) and Bug 2 (canonical sourceDetail
+// shown identically on detail/table/Master-Data), so these invariants test prod code.
+import { hasDialableNumber } from "../src/lib/phone";
+import { resolveEnquiredProperty } from "../src/lib/projectName";
 
 // ── tiny assertion harness ──────────────────────────────────────────────────
 type Check = { name: string; run: () => Promise<void> };
@@ -3673,6 +3678,106 @@ const checks: Check[] = [
         ok: true,
         detail: `meetings tile==drill ✓ (3 buckets); Revival All=${allColdCount} (cold total=${coldAll}, deleted=${coldDeleted}) == Σ chips; cold redirect covers leadOrigin∈{COLD,REVIVAL}`,
       });
+    },
+  },
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // BUG 3 (2026-06-25). Fresh-lead follow-up default = createdAt + 10 minutes,
+  // NOT the old "today 7:00pm IST". Two parts:
+  //   (a) SOURCE — ingestLead must compute createdAt+10min, with the old 7pm
+  //       todayEodIST() removed (static source-scan so a refactor can't revert).
+  //   (b) DATA — no ACTIVE lead may still carry the auto-7PM signature with NO
+  //       followupDate history (i.e. an untouched auto-default). Agent-set 7pm
+  //       follow-ups (history exists) are legitimate and intentionally allowed.
+  //       Also: a 19:00-IST follow-up whose IST day ≠ createdAt IST day is an
+  //       agent-chosen slot on a later day, not the creation default — allowed.
+  // Plus BUG 1 helper proof: hasDialableNumber() rejects blank / whitespace /
+  // bare-dial-prefix ("+91") and accepts a real number — the exact gate the alt
+  // Call/WhatsApp buttons now use.
+  // ───────────────────────────────────────────────────────────────────────────
+  {
+    name: "followup-default-10min — ingestLead uses createdAt+10min (no 7pm default); no untouched auto-7PM lead remains; alt-dialable gate correct",
+    run: async () => {
+      const fs = await import("fs");
+      const ingest = fs.readFileSync("src/lib/leadIngest.ts", "utf8");
+      // (a) SOURCE — the +10-min default is present and the old 7pm stamp is gone.
+      assert(/followupDate:\s*followupDefault/.test(ingest), "ingestLead must set followupDate: followupDefault (createdAt+10min)");
+      assert(/getTime\(\)\s*\+\s*10\s*\*\s*60\s*\*\s*1000/.test(ingest), "ingestLead must compute createdAt+10min for the follow-up default");
+      assert(!/todayEodIST/.test(ingest), "the old todayEodIST() 7pm default must be removed from ingestLead");
+      assert(!/setUTCHours\(19/.test(ingest), "ingestLead must not stamp 19:00 (7pm) as the follow-up default");
+
+      // BUG 1 helper proof — hasDialableNumber must gate alt action buttons.
+      assert(hasDialableNumber("+919928418296") === true, "hasDialableNumber: real +91 number must be dialable");
+      assert(hasDialableNumber("9928418296") === true, "hasDialableNumber: 10-digit number must be dialable");
+      assert(hasDialableNumber("+91") === false, "hasDialableNumber: bare +91 dial-prefix must NOT be dialable");
+      assert(hasDialableNumber("+971") === false, "hasDialableNumber: bare +971 dial-prefix must NOT be dialable");
+      assert(hasDialableNumber("   ") === false, "hasDialableNumber: whitespace must NOT be dialable");
+      assert(hasDialableNumber("") === false, "hasDialableNumber: empty must NOT be dialable");
+      assert(hasDialableNumber(null) === false, "hasDialableNumber: null must NOT be dialable");
+      // The two alt-action surfaces must use the dialable gate, not a bare truthy check.
+      for (const f of ["src/components/LeadActionsClient.tsx", "src/components/BuyerActionsClient.tsx"]) {
+        const src = fs.readFileSync(f, "utf8");
+        assert(/hasDialableNumber\(phone\)\s*&&\s*hasDialableNumber\(altPhone\)/.test(src), `${f} must gate alt Call/WhatsApp on hasDialableNumber(phone)&&hasDialableNumber(altPhone)`);
+      }
+
+      // (b) DATA — no untouched auto-7PM default left on an ACTIVE lead.
+      const IST_MS = 5.5 * 3600 * 1000;
+      const dayKey = (d: Date) => new Date(d.getTime() + IST_MS).toISOString().slice(0, 10);
+      const isSeven = (d: Date) => { const x = new Date(d.getTime() + IST_MS); return x.getUTCHours() === 19 && x.getUTCMinutes() === 0; };
+      const live = await prisma.lead.findMany({
+        where: { deletedAt: null, followupDate: { not: null } },
+        select: { id: true, createdAt: true, followupDate: true },
+      });
+      const sig = live.filter((l) => l.followupDate && isSeven(l.followupDate) && dayKey(l.followupDate) === dayKey(l.createdAt));
+      const ids = sig.map((l) => l.id);
+      const touched = new Set(
+        ids.length
+          ? (await prisma.leadFieldHistory.findMany({ where: { leadId: { in: ids }, field: "followupDate" }, select: { leadId: true } })).map((h) => h.leadId)
+          : [],
+      );
+      const untouchedAuto7pm = sig.filter((l) => !touched.has(l.id));
+      assert(untouchedAuto7pm.length === 0, `${untouchedAuto7pm.length} active lead(s) still carry the untouched auto-7PM follow-up signature (run scripts/backfill-followup-10min.ts). e.g. ${untouchedAuto7pm.slice(0,3).map(l=>l.id).join(", ")}`);
+
+      results.push({ name: "  ↳ note", ok: true, detail: `ingestLead=createdAt+10min ✓; alt-dialable gate ✓; auto-7PM same-day followups=${sig.length} (all ${touched.size} agent-touched, 0 untouched)` });
+    },
+  },
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // BUG 2 (2026-06-25). "Property Enquired" reads ONE canonical field —
+  // `sourceDetail` — on the lead detail, the Leads table, and the Master Data
+  // grid, so all three AGREE for every lead. The Leads table previously routed
+  // sourceDetail through a strict "registered-project-only" gate that hid genuine
+  // free-text property enquiries while detail + Master Data showed them.
+  //   • SOURCE — detail (page.tsx field="sourceDetail"), Master Data
+  //     (project: l.sourceDetail), and the Leads table (resolveEnquiredProperty +
+  //     sourceDetail row field) all reference the canonical sourceDetail.
+  //   • LOGIC — resolveEnquiredProperty honors a free-text sourceDetail verbatim
+  //     (the bug was discarding it) but still rejects a stray notesShort remark
+  //     that isn't a known project.
+  // ───────────────────────────────────────────────────────────────────────────
+  {
+    name: "property-enquired-sync — detail/table/Master-Data all read canonical sourceDetail; free-text honored, remark rejected",
+    run: async () => {
+      const fs = await import("fs");
+      const detail = fs.readFileSync("src/app/(app)/leads/[id]/page.tsx", "utf8");
+      assert(/field="sourceDetail"/.test(detail), "lead detail Property Enquired must bind to field=\"sourceDetail\"");
+      const md = fs.readFileSync("src/app/(app)/master-data/page.tsx", "utf8");
+      assert(/project:\s*l\.sourceDetail/.test(md), "Master Data Property Enquired must read l.sourceDetail");
+      const listSrv = fs.readFileSync("src/app/(app)/leads/page.tsx", "utf8");
+      assert(/sourceDetail:\s*l\.sourceDetail/.test(listSrv), "Leads list server must pass the canonical sourceDetail to the table row");
+      const listCli = fs.readFileSync("src/components/LeadsListClient.tsx", "utf8");
+      assert(/resolveEnquiredProperty\(/.test(listCli), "Leads table must render Property Enquired via resolveEnquiredProperty (canonical sourceDetail)");
+
+      // LOGIC — a free-text property in sourceDetail is shown (NOT discarded); a
+      // remark in notesShort that isn't a known project is rejected. (Mirrors the
+      // surfaces: detail/Master-Data show raw sourceDetail; the table now agrees.)
+      const known = ["Sobha Central", "Central Park Resorts"];
+      assert(resolveEnquiredProperty(null, null, "Central Park Valley", null, known) === "Central Park Valley", "free-text sourceDetail must be shown (title-cased), not discarded");
+      assert(resolveEnquiredProperty(null, null, "Dubai Property Expo", null, known) === "Dubai Property Expo", "campaign/blog sourceDetail must show consistently (matches detail + Master Data)");
+      assert(resolveEnquiredProperty(null, null, null, "Lalit Sir", known) === null, "a notesShort remark that isn't a known project must NOT leak into Property Enquired");
+      assert(resolveEnquiredProperty("Sobha Central", null, "ignored", null, known) === "Sobha Central", "a formal project link wins over sourceDetail");
+
+      results.push({ name: "  ↳ note", ok: true, detail: "detail/table/Master-Data all key on canonical sourceDetail; free-text honored, remark gated" });
     },
   },
 ];

@@ -212,22 +212,20 @@ export async function ingestLead(input: RawLeadInput) {
     ? { routingMethod: "rule", routingSource: cls!.auditSource, routingReason: cls!.reason }
     : routingFieldsFor(routingResult);
 
-  // Default follow-up = TODAY at 7:00pm IST (close of business). Lalit's ask:
-  // "Any new lead received today should automatically have today's followup
-  // date and should be shown in it." So /leads default "Today" view captures
-  // every fresh lead the moment it arrives. The agent can later edit this
-  // datetime on the lead-detail page if they need a different time.
-  // CSV import path passes its own followupDate later (parsed from sheet) →
-  // that overwrites this default in the post-create update.
-  function todayEodIST(): Date {
-    const istOffsetMs = 330 * 60 * 1000;
-    const nowIST = new Date(Date.now() + istOffsetMs);
-    const eodIST = new Date(nowIST);
-    eodIST.setUTCHours(19, 0, 0, 0);    // 7:00pm IST
-    // If we're already past 7pm IST, schedule for end of day still — agent
-    // will see it in "Today" + "Overdue" both (overdue takes priority in UI).
-    return new Date(eodIST.getTime() - istOffsetMs);
-  }
+  // Default follow-up = lead's createdAt + 10 minutes (Lalit, 2026-06-25).
+  // A fresh lead should be contacted almost immediately, so the default next
+  // action is "in 10 minutes" rather than the old "today 7:00pm" close-of-
+  // business stamp (which let same-day leads sit untouched for hours and made
+  // every fresh lead share one identical 7pm slot). We key off the lead's ACTUAL
+  // createdAt — which is `input.createdAt` for imports (the sheet's generation
+  // date) or "now" for website/manual intake — so the +10-min offset is always
+  // IST-consistent (createdAt is an absolute instant; +10 min is timezone-free).
+  // The agent can edit this datetime later on the lead-detail page.
+  // IMPORTANT: importers PRESERVE an explicit sheet follow-up — they overwrite
+  // this default in their post-create update ONLY when the row carried a real
+  // follow-up date; an empty follow-up column keeps this createdAt+10min value.
+  const effectiveCreatedAt = input.createdAt ?? new Date();
+  const followupDefault = new Date(effectiveCreatedAt.getTime() + 10 * 60 * 1000);
 
   // ── Property Type (Residential/Commercial) ──
   // Explicit value (website property page) wins; else derive from the matched
@@ -296,7 +294,7 @@ export async function ingestLead(input: RawLeadInput) {
       // future imports of the same contact. phone/email are still stored.
       fingerprint: input.skipDedup ? null : fp,
       lastTouchedAt: new Date(),
-      followupDate: todayEodIST(),
+      followupDate: followupDefault,
       ...(input.createdAt ? { createdAt: input.createdAt } : {}),
     },
   });

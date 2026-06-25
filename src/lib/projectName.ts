@@ -57,3 +57,49 @@ export function resolveProjectDisplay(
   }
   return null;
 }
+
+/**
+ * Resolve the "Property Enquired" cell for the Leads table so it AGREES with the
+ * lead-detail view and the Master Data grid — all three read the ONE canonical
+ * field, `sourceDetail`.
+ *
+ * The old `resolveProjectDisplay` discarded any `sourceDetail` that wasn't a
+ * REGISTERED Project Master name, which wrongly blanked genuine free-text
+ * property enquiries ("Central Park Valley", "Silverglades Hightown Square", …)
+ * on the Leads table while detail + Master Data showed them. That mismatch was
+ * the reported bug.
+ *
+ * Resolution order:
+ *   1. formal Project link (discussed / interestedUnits) → canonical name
+ *   2. interested-unit project                            → canonical name
+ *   3. sourceDetail (the canonical "Property Enquired" field) → shown verbatim,
+ *      title-cased, EVEN when it isn't in the Project Master (it's the dedicated
+ *      property field an importer/agent set — not a stray remark)
+ *   4. notesShort (a free remark) → counts ONLY if it actually names a known
+ *      project, so a one-liner like "Lalit Sir"/"asked to call back" never leaks
+ *      into the column.
+ * Returns null → em-dash placeholder.
+ */
+export function resolveEnquiredProperty(
+  formal: string | null | undefined,
+  interest: string | null | undefined,
+  sourceDetail: string | null | undefined,
+  notesHint: string | null | undefined,
+  known: string[] = [],
+): string | null {
+  const f = prettyProjectName(formal, known);
+  if (f) return f;
+  const i = prettyProjectName(interest, known);
+  if (i) return i;
+  // sourceDetail IS the canonical Property Enquired field — always honor it
+  // (title-cased / canonicalized), matching detail + Master Data exactly.
+  const sd = prettyProjectName(sourceDetail, known);
+  if (sd) return sd;
+  // notesShort is a free remark — only a real known-project name counts.
+  if (notesHint) {
+    const key = despace(notesHint);
+    const match = known.find((k) => despace(k) === key);
+    if (match) return match;
+  }
+  return null;
+}

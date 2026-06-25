@@ -346,7 +346,16 @@
 // revival-source stamp, tag UNION, + a per-field LeadFieldHistory audit. The wizard
 // gains a "Revive existing" radio + a "Revived (re-engaged)" stat so an all-duplicates
 // upload reports the revived count, not "0 new leads". Bump shell to ship the new UI.
-const CACHE = "wcr-shell-v68";
+// v69 (2026-06-25): Three lead-detail fixes. (1) Alt-number Call/WhatsApp buttons now
+// render only when a genuinely DIALABLE alt number exists — a blank / whitespace /
+// bare-dial-prefix ("+91") alt no longer shows them (hasDialableNumber gate, lead +
+// buyer detail). (2) "Property Enquired" now reads the ONE canonical field
+// (sourceDetail) on lead detail, the Leads table, AND Master Data so all three agree
+// — the Leads table previously hid genuine free-text property enquiries behind a
+// registered-project-only filter. (3) A fresh lead's auto follow-up now defaults to
+// createdAt + 10 min (was today 7:00pm IST) on every creation path; imported rows that
+// already carry a follow-up are preserved; 48 untouched auto-7PM leads were backfilled.
+const CACHE = "wcr-shell-v69";
 const SHELL = ["/login", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", (event) => {

@@ -2,7 +2,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { Phone, AlertCircle, Mic } from "lucide-react";
-import { whatsappLink, telLink } from "@/lib/phone";
+import { whatsappLink, telLink, hasDialableNumber } from "@/lib/phone";
 import { ActionButton } from "@/components/actions/ActionButton";
 import { ACTION_ROW } from "@/lib/detailLayout";
 
@@ -165,8 +165,11 @@ export default function BuyerActionsClient({ buyerId, phone, altPhone, email, cl
         )}
       </div>
 
-      {/* Alternate number — render after the primary bar, only when both exist (parity). */}
-      {phone && altPhone && (
+      {/* Alternate number — render after the primary bar, only when both are
+          genuinely dialable (parity with LeadActionsClient). hasDialableNumber()
+          rejects a blank / whitespace / bare-dial-prefix alt so the Call-alt /
+          WhatsApp-alt buttons never show without a real second number. */}
+      {hasDialableNumber(phone) && hasDialableNumber(altPhone) && (
         <div className="mt-2">
           <div className="text-[10px] uppercase tracking-widest text-gray-500 font-semibold mb-1.5">📱 Alternate number</div>
           <div className="grid grid-cols-2 gap-1.5 [&>*]:w-full">

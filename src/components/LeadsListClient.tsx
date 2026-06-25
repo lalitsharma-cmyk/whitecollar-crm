@@ -18,7 +18,7 @@ import { toISTLocalInput, isPastISTLocalInput } from "@/lib/datetime";
 import { ACTION_TOKENS } from "@/lib/actionDesign";
 import { showXpToast } from "@/components/XPToast";
 import { statusColor, selectableStatuses } from "@/lib/lead-statuses";
-import { resolveProjectDisplay, prettyProjectName } from "@/lib/projectName";
+import { resolveEnquiredProperty, prettyProjectName } from "@/lib/projectName";
 
 // ── Row Snooze button ────────────────────────────────────────────────────────
 // Wraps the shared CRMDatePicker (IST, future-only, with time) so a single
@@ -157,7 +157,8 @@ interface Row {
   city: string | null;
   whenCanInvest: string | null;
   remarks: string | null;
-  projectHint: string | null;  // notesShort ?? configuration — fallback when no formal project linked
+  sourceDetail: string | null; // canonical "Property Enquired" — same field detail + Master Data show
+  projectHint: string | null;  // notesShort only — weak remark, gated behind a known-project match
   // Last Activity column — what happened last + when
   lastActivityType: string | null;
   lastActivityAt: string | null;
@@ -775,11 +776,13 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
                             className="hover:text-[#0b1a33] dark:hover:text-blue-300 hover:underline">{l.name}</Link>
                         </td>
 
-                        {/* 4. Project — real linked project only, normalized to the
-                            canonical name. A weak hint (notesShort/config like a
-                            remark or "2BHK") is NOT a project → em-dash, never italic. */}
+                        {/* 4. Property Enquired — the CANONICAL `sourceDetail`
+                            field, shown the same as lead-detail + Master Data.
+                            Formal project link wins; else sourceDetail verbatim
+                            (even free-text not in the master); a weak notesShort
+                            remark only counts if it names a known project. */}
                         {(() => {
-                          const proj = resolveProjectDisplay(l.discussedProjects[0], l.interest, l.projectHint, projectOptions);
+                          const proj = resolveEnquiredProperty(l.discussedProjects[0], l.interest, l.sourceDetail, l.projectHint, projectOptions);
                           return (
                             <td className="px-3 py-1.5 text-xs truncate" title={proj ?? ""}>
                               {proj
