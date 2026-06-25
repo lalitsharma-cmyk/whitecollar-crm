@@ -355,7 +355,18 @@
 // registered-project-only filter. (3) A fresh lead's auto follow-up now defaults to
 // createdAt + 10 min (was today 7:00pm IST) on every creation path; imported rows that
 // already carry a follow-up are preserved; 48 untouched auto-7PM leads were backfilled.
-const CACHE = "wcr-shell-v69";
+// v70 (2026-06-26): Active Follow-up Board + Revisit Queue. (1) The Action List board,
+// the Leads follow-up chips, and the Dashboard follow-up widgets now share ONE
+// definition (activeBoardWhere): terminal/rejected leads NEVER appear on the board, and
+// MASTER_DATA-origin leads appear only when BOTH assigned and scheduled — so the
+// Action-List ⇄ Leads-chip reconciliation is exact. (2) NEW Revisit Queue page
+// (/revisit-queue, nav item): a read-only, permission-scoped triage list of
+// rejected/closed leads that still carry a follow-up (a "Revisit"). To return one to
+// active, an admin changes its status off the terminal value via the existing inline
+// editor. Also bundles the parked Complete/logging change (Complete rolls follow-up
+// +1 day; Log Call/WhatsApp no longer set a follow-up). Bump shell to ship the new
+// board behaviour + Revisit Queue nav.
+const CACHE = "wcr-shell-v70";
 const SHELL = ["/login", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", (event) => {

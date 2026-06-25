@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { AIScore, CallOutcome, ActivityStatus, ActivityType, Prisma } from "@prisma/client";
 import { SUPPRESSED_STATUSES, CLOSING_STATUSES, BOOKED_STATUSES } from "@/lib/lead-statuses";
-import { COLD_ORIGINS, workableWhere } from "@/lib/leadScope";
+import { COLD_ORIGINS, workableWhere, activeBoardWhere } from "@/lib/leadScope";
 import { formatDistanceToNow, startOfDay } from "date-fns";
 import { fmtIST12 } from "@/lib/datetime";
 import { dashboardQuoteOfTheDay, istDayNumber } from "@/lib/salesQuotes";
@@ -153,9 +153,11 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     prisma.activity.count({ where: { ...meActWhere, status: ActivityStatus.PLANNED, type: ActivityType.VIRTUAL_MEETING, scheduledAt: { gte: sqlFrom, lt: sqlTo } } }),
   ]);
 
-  // UPCOMING counts — activities/follow-ups scheduled after the selected period ends
+  // UPCOMING counts — activities/follow-ups scheduled after the selected period ends.
+  // Follow-ups count through activeBoardWhere (the SAME Active-Board envelope the
+  // Action List + Leads "Future" chip use) so the three surfaces reconcile.
   const [upcomingFollowupsCount, upcomingActivitiesCount] = await Promise.all([
-    prisma.lead.count({ where: { ...workableWhere(meScope), followupDate: { gte: sqlTo } } }),
+    prisma.lead.count({ where: { ...activeBoardWhere(meScope), followupDate: { gte: sqlTo } } }),
     prisma.activity.count({ where: { ...meActWhere, status: ActivityStatus.PLANNED, scheduledAt: { gte: sqlTo } } }),
   ]);
 
@@ -169,14 +171,18 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   //   • Hot Untouched   → hotUntouchedWhere(): HOT + workable + UNTOUCHED (no
   //                       contact/meeting/site-visit logged). Drill: /leads?ai=HOT
   //                       &untouched=1&followup=all (+ seg=mine for admin).
-  //   • Overdue         → workable + followupDate in the past. Drill: ?followup=overdue.
+  //   • Overdue         → Active Board + followupDate in the past. Drill: ?followup=overdue.
+  //                       Counts through activeBoardWhere — the SAME envelope the
+  //                       Action List + Leads "Overdue" chip use (terminal excluded;
+  //                       Master-Data only when assigned+scheduled) — so the
+  //                       Action-List ⇄ Leads-chip ⇄ Dashboard reconciliation holds.
   //   • Closable deals  → workable + status in CLOSING_STATUSES. Drill: ?smart=visit_potential.
   //   • Cold revival    → cold pool (isColdCall), high-value dormant — drills to
   //                       /cold-calls (its OWN scope), so its count mirrors that page.
   const [hotUntouched, overdueFollowups, closableDeals, coldRevivalOps] = await Promise.all([
     prisma.lead.count({ where: hotUntouchedWhere(meScope) }),
     prisma.lead.count({
-      where: { ...workableWhere(meScope), followupDate: { lt: new Date(), not: null } },
+      where: { ...activeBoardWhere(meScope), followupDate: { lt: new Date(), not: null } },
     }),
     // Closable = workable leads at a closing stage (meeting / visit / dubai / EOI
     // stages). Reconciles with /leads?smart=visit_potential (currentStatus IN

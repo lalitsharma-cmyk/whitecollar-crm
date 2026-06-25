@@ -4,7 +4,7 @@ import { SUPPRESSED_STATUSES, CLOSING_STATUSES, statusesForTeam } from "@/lib/le
 import { formatBudget } from "@/lib/budgetParse";
 import { formatDistanceToNow } from "date-fns";
 import { runReconciler } from "@/lib/reconciler";
-import { leadScopeWhere, ACTIVE_ORIGIN_WHERE } from "@/lib/leadScope";
+import { leadScopeWhere, ACTIVE_ORIGIN_WHERE, activeBoardWhere } from "@/lib/leadScope";
 import { istDayRange, istDateKey, isValidDateKey } from "@/lib/datetime";
 import { contactActivityByLeadToday } from "@/lib/followupGate";
 import { waDraftLink } from "@/lib/wa";
@@ -181,12 +181,18 @@ export default async function ActionListPage({
 
   const { followup, label: windowLabel } = resolveWindow(effectiveWhen, dateKey);
 
-  // Compose the follow-up WHERE. We DO NOT filter by status here — the whole
-  // point of the fix is that EVERY follow-up for the date shows up. Status is
-  // only narrowed when the user explicitly picks one in the Status filter.
-  // (Permission scope is preserved; that is legitimate scoping, not hiding.)
+  // Compose the follow-up WHERE through the canonical Active-Board envelope
+  // (activeBoardWhere): permission scope + the Jun26 board exclusions —
+  //   • terminal/rejected leads NEVER appear (a rejected lead that still carries a
+  //     follow-up is a Revisit, surfaced on /revisit-queue, not here),
+  //   • MASTER_DATA-origin leads appear ONLY when assigned (ownerId) AND scheduled
+  //     (followupDate) — untriaged Master-Data imports stay off the board.
+  // We still DO NOT narrow by status here (the whole follow-up board shows for the
+  // date); the explicit Status filter below is the only status narrowing. The
+  // SAME activeBoardWhere drives the Leads follow-up chips + Dashboard follow-up
+  // widgets, so the Action-List ⇄ Leads reconciliation holds.
   const followupWhere: Prisma.LeadWhereInput = {
-    ...scopeWhere,
+    ...activeBoardWhere(scopeWhere),
     followupDate: followup,
   };
   if (agentFilter) followupWhere.ownerId = agentFilter;

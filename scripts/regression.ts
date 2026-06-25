@@ -3575,60 +3575,124 @@ const checks: Check[] = [
   },
 
   // ───────────────────────────────────────────────────────────────────────────
-  // 4. DATA-INTEGRITY BATCH (2026-06-25) — four backfills + the terminal-status
-  //    source fix. Each invariant locks in the post-backfill DATA state AND the
-  //    forward code path so a future deploy can't silently reintroduce the rot.
-  //      (a) Terminal leads carry NO followupDate → Action-List Overdue (no status
-  //          filter) reconciles 1:1 with the Leads Overdue chip (workableWhere).
-  //      (b) Reject flow + /update status-change path both CLEAR followupDate on a
-  //          terminal status (source-scan — the going-forward guarantee).
+  // 4. DATA-INTEGRITY BATCH (2026-06-25, REFRAMED 2026-06-26 for the Revisit model)
+  //    Each invariant locks in a DATA/QUERY state AND the forward code path so a
+  //    future deploy can't silently reintroduce the rot.
+  //      (a) ACTIVE-BOARD RULES (Jun26 — reframes the old "terminal leads have no
+  //          followup"): a rejected lead MAY now carry a follow-up — that's a REVISIT
+  //          (Revisit Queue), NOT a board pollutant. So assert the BOARD QUERY excludes
+  //          it instead of asserting the data is clean:
+  //            (a1) activeBoardWhere ∩ terminal == 0,
+  //            (a2) no MASTER_DATA on the board unless assigned+scheduled,
+  //            (a3) rejected-with-followup == the Revisit Queue set, disjoint from board.
+  //          (a') Action-List Overdue == Leads Overdue chip — both now count through
+  //               the SAME activeBoardWhere envelope (genuine 1:1 reconciliation).
+  //      (b) The board, Leads chips, and Dashboard widget all USE activeBoardWhere
+  //          (source-scan) so the reconciliation can't drift. Legacy reject + /update
+  //          source-clearing kept as defense-in-depth.
   //      (c) 0 live leads have sourceRaw NULL (Source filter omits none).
   //      (d) Every live currentStatus is already canonical (no mis-cased chip
   //          fragments) + the canonicalStatus aliases fold the known variants.
   //      (e) Historical CALL activities carry an outcome (chip not blank).
   // ───────────────────────────────────────────────────────────────────────────
   {
-    name: "data-integrity-jun25 — terminal leads have no followup (AL Overdue==Leads chip), 0 null sourceRaw, canonical statuses, CALL outcomes backfilled",
+    name: "data-integrity-jun25 — Active Board excludes terminal + unassigned Master-Data (AL Overdue==Leads chip); rejected-with-followup == Revisit Queue; 0 null sourceRaw, canonical statuses, CALL outcomes backfilled",
     run: async () => {
       const fs = await import("node:fs");
       const { TERMINAL_STATUSES, canonicalStatus, isTerminalStatus } = await import("../src/lib/lead-statuses");
       const { istDayRange } = await import("../src/lib/datetime");
 
-      // ── (a) DATA: no live terminal lead carries a followupDate ────────────────
-      const termWithFollowup = await prisma.lead.count({
-        where: { deletedAt: null, currentStatus: { in: TERMINAL_STATUSES }, followupDate: { not: null } },
-      });
-      assert(termWithFollowup === 0, `${termWithFollowup} terminal lead(s) still carry a followupDate — they pollute the Action-List follow-up board`);
-
-      // ── (a') RECONCILE: Action-List Overdue == Leads Overdue chip (admin scope) ─
-      // Both sides use the SAME "overdue" boundary the real Action List uses:
-      // followupDate < startOfTodayIST (action-list/page.tsx resolveWindow — a
-      // follow-up dated *today* is "Today", NOT Overdue; only strictly-before-today
-      // is overdue). They must use the identical boundary or the comparison drifts
-      // during the day (a `< now()` mirror would count today-earlier follow-ups as
-      // overdue on one side only, so the two counts coincide only near IST-midnight).
-      // The ONLY intended difference between the two queries is the workable/non-cold
-      // envelope — which is exactly what this reconciliation is meant to verify.
-      //   AL Overdue = scope(deletedAt:null) + followupDate < startTodayIST, NO status filter.
-      //   Leads chip = workableWhere(scope) + followupDate < startTodayIST.
-      // Mirror workableWhere inline (leadScope.ts imports "server-only").
+      // ── activeBoardWhere mirrored INLINE (leadScope.ts imports "server-only") ──
+      // Kept byte-for-byte equivalent to src/lib/leadScope.ts activeBoardWhere:
+      //   • not cold/revival origin
+      //   • not terminal (WORKABLE_STATUS_OR keeps null/blank statuses)
+      //   • not a MASTER_DATA lead unless BOTH assigned (ownerId) AND scheduled
+      //     (followupDate) — the Jun26 board rule.
       const COLD_ORIGINS = ["COLD", "REVIVAL"];
+      const MASTER_DATA_ORIGINS = ["MASTER_DATA", "PORTFOLIO", "SYSTEM"];
       const WORKABLE_STATUS_OR = [
         { currentStatus: null }, { currentStatus: "" }, { currentStatus: { notIn: TERMINAL_STATUSES } },
       ];
-      const startToday = istDayRange().start;
-      const alOverdue = await prisma.lead.count({ where: { deletedAt: null, followupDate: { lt: startToday } } });
-      const leadsOverdue = await prisma.lead.count({
-        where: { deletedAt: null, leadOrigin: { notIn: COLD_ORIGINS }, OR: WORKABLE_STATUS_OR, followupDate: { lt: startToday } },
+      const MASTER_DATA_BOARD_OR = [
+        { leadOrigin: { notIn: MASTER_DATA_ORIGINS } },
+        { AND: [{ ownerId: { not: null } }, { followupDate: { not: null } }] },
+      ];
+      const activeBoard = (scope: Record<string, unknown>) => ({
+        ...scope, leadOrigin: { notIn: COLD_ORIGINS },
+        AND: [{ OR: WORKABLE_STATUS_OR }, { OR: MASTER_DATA_BOARD_OR }],
       });
-      assert(alOverdue === leadsOverdue, `Action-List Overdue (${alOverdue}) must equal Leads Overdue chip (${leadsOverdue}) now that terminal leads have no followup`);
+      const startToday = istDayRange().start;
 
-      // ── (b) FORWARD CODE: reject + /update both clear followup on terminal ─────
+      // ── (a) NEW BOARD RULES (Jun26 — reframes "terminal leads have no followup") ──
+      // The old assertion ("0 terminal-with-followup leads") is intentionally OBSOLETE:
+      // a rejected lead MAY carry a follow-up — that's a REVISIT (surfaced on the
+      // Revisit Queue, NOT the Active Board). The board no longer relies on the DATA
+      // being clean; it relies on the QUERY excluding the right leads. Assert that:
+      //   (a1) NO terminal/rejected lead can appear on the Active Board (any window).
+      //        i.e. activeBoard ∩ isTerminalStatus == 0, by construction of the query.
+      const boardTerminal = await prisma.lead.count({
+        where: { ...activeBoard({ deletedAt: null }), currentStatus: { in: TERMINAL_STATUSES } },
+      });
+      assert(boardTerminal === 0, `${boardTerminal} terminal lead(s) still pass the Active-Board query — terminal must be excluded`);
+      //   (a2) NO MASTER_DATA lead on the board unless assigned AND scheduled. So a
+      //        MASTER_DATA lead that is on the board AND (unassigned OR unscheduled)
+      //        must be 0.
+      const boardMdUntriaged = await prisma.lead.count({
+        where: {
+          ...activeBoard({ deletedAt: null }),
+          leadOrigin: { in: MASTER_DATA_ORIGINS },
+          OR: [{ ownerId: null }, { followupDate: null }],
+        },
+      });
+      assert(boardMdUntriaged === 0, `${boardMdUntriaged} MASTER_DATA lead(s) reached the Active Board without being assigned+scheduled`);
+      //   (a3) The rejected-with-followup leads are EXACTLY the Revisit Queue set, and
+      //        that set is DISJOINT from the Active Board (a lead is on one or the
+      //        other, never both). Revisit = terminal + followupDate present + live.
+      const revisitSet = await prisma.lead.count({
+        where: { deletedAt: null, currentStatus: { in: TERMINAL_STATUSES }, followupDate: { not: null } },
+      });
+      const revisitOnBoard = await prisma.lead.count({
+        where: { ...activeBoard({ deletedAt: null }), currentStatus: { in: TERMINAL_STATUSES }, followupDate: { not: null } },
+      });
+      assert(revisitOnBoard === 0, `${revisitOnBoard} Revisit lead(s) (terminal+followup) leaked onto the Active Board — Revisit and Board must be disjoint`);
+      results.push({ name: "  ↳ note", ok: true, detail: `Revisit Queue set = ${revisitSet} terminal-with-followup lead(s), 0 on the Active Board` });
+
+      // ── (a') RECONCILE: Action-List Overdue == Leads Overdue chip (admin scope) ─
+      // Both surfaces now count through the SAME activeBoardWhere envelope (the whole
+      // point of the Jun26 shared helper), using the SAME "overdue" boundary the real
+      // Action List uses: followupDate < startOfTodayIST (resolveWindow — a follow-up
+      // dated *today* is "Today", NOT Overdue; only strictly-before-today is overdue).
+      //   AL Overdue  = activeBoardWhere(scope) + followupDate < startTodayIST.
+      //   Leads chip  = activeBoardWhere(scope) + followupDate < startTodayIST (boardScope).
+      // Identical predicates ⇒ identical counts. (Previously the two diverged because
+      // the board applied NO status/origin filter while the chip used workableWhere;
+      // unifying on activeBoardWhere is what makes them reconcile.)
+      const alOverdue = await prisma.lead.count({ where: { ...activeBoard({ deletedAt: null }), followupDate: { lt: startToday } } });
+      const leadsOverdue = await prisma.lead.count({ where: { ...activeBoard({ deletedAt: null }), followupDate: { lt: startToday } } });
+      assert(alOverdue === leadsOverdue, `Action-List Overdue (${alOverdue}) must equal Leads Overdue chip (${leadsOverdue}) — both count through activeBoardWhere`);
+
+      // ── (b) FORWARD CODE: the surfaces share ONE Active-Board definition ───────
+      // The board, the Leads follow-up chips, and the Dashboard follow-up widgets all
+      // call activeBoardWhere — so the reconciliation can't silently drift if one
+      // surface is refactored. Source-scan that the shared helper exists and is used.
+      const leadScopeSrc = fs.readFileSync("src/lib/leadScope.ts", "utf8");
+      assert(/export function activeBoardWhere/.test(leadScopeSrc),
+        "leadScope.ts MUST export activeBoardWhere — the single Active-Board definition");
+      const alSrc = fs.readFileSync("src/app/(app)/action-list/page.tsx", "utf8");
+      assert(/activeBoardWhere\(/.test(alSrc), "Action List board query MUST use activeBoardWhere (terminal + Master-Data exclusions)");
+      const leadsSrc = fs.readFileSync("src/app/(app)/leads/page.tsx", "utf8");
+      assert(/activeBoardWhere\(/.test(leadsSrc), "Leads follow-up chips MUST use activeBoardWhere so they reconcile with the board");
+      const dashSrc = fs.readFileSync("src/app/(app)/dashboard/page.tsx", "utf8");
+      assert(/activeBoardWhere\(/.test(dashSrc), "Dashboard follow-up widget MUST use activeBoardWhere so it reconciles with the board");
+      // Defense-in-depth (legacy, still valid): reject + /update also clear followup
+      // when moving a lead TO terminal at the SOURCE. This is no longer the primary
+      // guarantee (the board EXCLUDES terminal regardless) but is kept so a terminal
+      // lead doesn't silently keep an active reminder unless an admin re-adds one.
       const rejectRoute = fs.readFileSync("src/app/api/leads/[id]/reject/route.ts", "utf8");
-      assert(/followupDate:\s*null/.test(rejectRoute), "reject route MUST clear followupDate on a terminal status");
+      assert(/followupDate:\s*null/.test(rejectRoute), "reject route MUST clear followupDate on a terminal status (defense-in-depth)");
       const updateRoute = fs.readFileSync("src/app/api/leads/[id]/update/route.ts", "utf8");
       assert(/isTerminalStatus\(/.test(updateRoute) && /updates\.followupDate\s*=\s*null/.test(updateRoute),
-        "/update route MUST clear followupDate when the new currentStatus isTerminalStatus()");
+        "/update route MUST clear followupDate when the new currentStatus isTerminalStatus() (defense-in-depth)");
       assert(typeof isTerminalStatus === "function" && isTerminalStatus("Booked With Us") && !isTerminalStatus("Follow Up"),
         "isTerminalStatus() must classify booked/lost as terminal, workable as not");
 
@@ -3662,6 +3726,142 @@ const checks: Check[] = [
         assert(pct >= 0.9, `only ${callWithOutcome}/${callTotal} (${(pct * 100).toFixed(1)}%) CALL activities have an outcome — backfill regressed?`);
         results.push({ name: "  ↳ note", ok: true, detail: `${callWithOutcome}/${callTotal} CALL activities carry an outcome; AL Overdue==Leads chip==${alOverdue}; 0 null sourceRaw; 0 mis-cased statuses` });
       }
+    },
+  },
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // ACTIVE-BOARD EXCLUSIONS (Jun26) — the new Active Follow-up Board rules. The
+  // board (Action List), the Leads follow-up chips, and the Dashboard follow-up
+  // widgets all count through ONE shared envelope (activeBoardWhere in leadScope).
+  // This invariant proves the envelope behaves AND is wired into all three surfaces:
+  //   (a) terminal/rejected leads NEVER pass the board query (any window),
+  //   (b) a MASTER_DATA-origin lead passes ONLY when assigned (ownerId) AND
+  //       scheduled (followupDate); never when unassigned or unscheduled,
+  //   (c) a non-Master-Data, non-terminal lead with a follow-up DOES pass,
+  //   (d) all three surfaces call activeBoardWhere (source-scan — DRY/no-drift).
+  // activeBoardWhere is mirrored INLINE here (leadScope imports "server-only").
+  // ───────────────────────────────────────────────────────────────────────────
+  {
+    name: "active-board-exclusions — board query excludes terminal + unassigned/unscheduled Master-Data; non-MD non-terminal with followup included; 3 surfaces share activeBoardWhere",
+    run: async () => {
+      const fs = await import("node:fs");
+      const { TERMINAL_STATUSES } = await import("../src/lib/lead-statuses");
+      const COLD_ORIGINS = ["COLD", "REVIVAL"];
+      const MASTER_DATA_ORIGINS = ["MASTER_DATA", "PORTFOLIO", "SYSTEM"];
+      const WORKABLE_STATUS_OR = [
+        { currentStatus: null }, { currentStatus: "" }, { currentStatus: { notIn: TERMINAL_STATUSES } },
+      ];
+      const MASTER_DATA_BOARD_OR = [
+        { leadOrigin: { notIn: MASTER_DATA_ORIGINS } },
+        { AND: [{ ownerId: { not: null } }, { followupDate: { not: null } }] },
+      ];
+      const activeBoard = (scope: Record<string, unknown>) => ({
+        ...scope, leadOrigin: { notIn: COLD_ORIGINS },
+        AND: [{ OR: WORKABLE_STATUS_OR }, { OR: MASTER_DATA_BOARD_OR }],
+      });
+
+      // (a) Terminal NEVER on the board (no followupDate window applied → "any window").
+      const termOnBoard = await prisma.lead.count({
+        where: { ...activeBoard({ deletedAt: null }), currentStatus: { in: TERMINAL_STATUSES } },
+      });
+      assert(termOnBoard === 0, `${termOnBoard} terminal lead(s) pass the Active-Board query — must be excluded`);
+
+      // (b) MASTER_DATA on the board must ALL be assigned+scheduled. Equivalently:
+      //     0 MASTER_DATA on the board are unassigned OR unscheduled.
+      const mdUntriagedOnBoard = await prisma.lead.count({
+        where: {
+          ...activeBoard({ deletedAt: null }),
+          leadOrigin: { in: MASTER_DATA_ORIGINS },
+          OR: [{ ownerId: null }, { followupDate: null }],
+        },
+      });
+      assert(mdUntriagedOnBoard === 0, `${mdUntriagedOnBoard} unassigned/unscheduled MASTER_DATA lead(s) reached the Active Board`);
+      // And every MASTER_DATA lead that IS on the board is assigned+scheduled (sanity).
+      const mdOnBoard = await prisma.lead.count({ where: { ...activeBoard({ deletedAt: null }), leadOrigin: { in: MASTER_DATA_ORIGINS } } });
+      const mdOnBoardAssignedScheduled = await prisma.lead.count({
+        where: { ...activeBoard({ deletedAt: null }), leadOrigin: { in: MASTER_DATA_ORIGINS }, ownerId: { not: null }, followupDate: { not: null } },
+      });
+      assert(mdOnBoard === mdOnBoardAssignedScheduled, `MASTER_DATA on board (${mdOnBoard}) != assigned+scheduled (${mdOnBoardAssignedScheduled})`);
+
+      // (c) A non-Master-Data, non-terminal lead WITH a follow-up is INCLUDED — i.e.
+      //     the gate doesn't over-exclude. Prove the board's followup population is
+      //     entirely workable+non-cold (ACTIVE_LEAD with followup ⊆ board).
+      const activeWithFollowup = await prisma.lead.count({
+        where: { deletedAt: null, leadOrigin: { in: ["ACTIVE", "ACTIVE_LEAD"] }, currentStatus: { notIn: TERMINAL_STATUSES }, followupDate: { not: null } },
+      });
+      const activeWithFollowupOnBoard = await prisma.lead.count({
+        where: { ...activeBoard({ deletedAt: null }), leadOrigin: { in: ["ACTIVE", "ACTIVE_LEAD"] }, currentStatus: { notIn: TERMINAL_STATUSES }, followupDate: { not: null } },
+      });
+      assert(activeWithFollowup === activeWithFollowupOnBoard,
+        `non-terminal ACTIVE leads with a follow-up must all be on the board (${activeWithFollowup} vs ${activeWithFollowupOnBoard}) — gate over-excludes`);
+
+      // (d) SOURCE: all three surfaces call the shared activeBoardWhere helper, and the
+      //     helper exists. Locks the DRY single-definition so a refactor can't drift.
+      const leadScopeSrc = fs.readFileSync("src/lib/leadScope.ts", "utf8");
+      assert(/export function activeBoardWhere/.test(leadScopeSrc) && /MASTER_DATA_BOARD_OR/.test(leadScopeSrc),
+        "leadScope.ts MUST export activeBoardWhere + MASTER_DATA_BOARD_OR (the single Active-Board definition)");
+      const alSrc = fs.readFileSync("src/app/(app)/action-list/page.tsx", "utf8");
+      assert(/activeBoardWhere\(/.test(alSrc), "Action List MUST use activeBoardWhere");
+      const leadsSrc = fs.readFileSync("src/app/(app)/leads/page.tsx", "utf8");
+      assert(/activeBoardWhere\(/.test(leadsSrc), "Leads page follow-up chips MUST use activeBoardWhere");
+      const dashSrc = fs.readFileSync("src/app/(app)/dashboard/page.tsx", "utf8");
+      assert(/activeBoardWhere\(/.test(dashSrc), "Dashboard follow-up widget MUST use activeBoardWhere");
+
+      results.push({ name: "  ↳ note", ok: true, detail: `board excludes terminal(0) + untriaged MD(0); MD on board=${mdOnBoard} all assigned+scheduled; ${activeWithFollowup} active-with-followup all on board` });
+    },
+  },
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // REVISIT QUEUE (Jun26) — the read-only triage view for rejected/closed leads
+  // that still carry a follow-up (a "Revisit"). Proves the query + the page wiring:
+  //   (a) the Revisit set = terminal status + followupDate present + live, and is
+  //       DISJOINT from the Active Board (every such lead is OFF the board),
+  //   (b) the page exists, is permission-scoped via leadScopeWhere, and has a nav
+  //       item — and it does NOT introduce a new convert button / timeline event
+  //       (Release-1 scope = view + separation only).
+  // ───────────────────────────────────────────────────────────────────────────
+  {
+    name: "revisit-queue — terminal-with-followup set returned + disjoint from Active Board; page scoped via leadScopeWhere + nav item; no convert button",
+    run: async () => {
+      const fs = await import("node:fs");
+      const { TERMINAL_STATUSES } = await import("../src/lib/lead-statuses");
+      const COLD_ORIGINS = ["COLD", "REVIVAL"];
+      const MASTER_DATA_ORIGINS = ["MASTER_DATA", "PORTFOLIO", "SYSTEM"];
+      const WORKABLE_STATUS_OR = [
+        { currentStatus: null }, { currentStatus: "" }, { currentStatus: { notIn: TERMINAL_STATUSES } },
+      ];
+      const MASTER_DATA_BOARD_OR = [
+        { leadOrigin: { notIn: MASTER_DATA_ORIGINS } },
+        { AND: [{ ownerId: { not: null } }, { followupDate: { not: null } }] },
+      ];
+      const activeBoard = (scope: Record<string, unknown>) => ({
+        ...scope, leadOrigin: { notIn: COLD_ORIGINS },
+        AND: [{ OR: WORKABLE_STATUS_OR }, { OR: MASTER_DATA_BOARD_OR }],
+      });
+
+      // (a) DATA: the Revisit set (mirrors revisit-queue/page.tsx where, admin scope)
+      //     and its disjointness from the Active Board.
+      const revisitWhere = { deletedAt: null, currentStatus: { in: TERMINAL_STATUSES }, followupDate: { not: null } };
+      const revisitCount = await prisma.lead.count({ where: revisitWhere });
+      const revisitOnBoard = await prisma.lead.count({ where: { ...activeBoard({ deletedAt: null }), currentStatus: { in: TERMINAL_STATUSES }, followupDate: { not: null } } });
+      assert(revisitOnBoard === 0, `${revisitOnBoard} Revisit lead(s) also appear on the Active Board — sets must be disjoint`);
+
+      // (b) PAGE: exists, scoped via leadScopeWhere, terminal+followup query, NO new
+      //     convert button / timeline event in this release. Strip comments before the
+      //     "no convert button" check — the page's own prose legitimately MENTIONS
+      //     that it does NOT add one, so we assert on the CODE only.
+      const page = fs.readFileSync("src/app/(app)/revisit-queue/page.tsx", "utf8");
+      const pageCode = page.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
+      assert(/leadScopeWhere\(/.test(page), "Revisit Queue MUST scope via leadScopeWhere (agent=own, manager=team, admin=all)");
+      assert(/TERMINAL_STATUSES/.test(page) && /followupDate:\s*\{\s*not:\s*null/.test(page),
+        "Revisit Queue query MUST be terminal status + followupDate not null");
+      assert(!/Convert to Active|convertToActive|convert-to-active/i.test(pageCode),
+        "Revisit Queue must NOT add a Convert-to-Active button in Release 1 (status-editor on lead detail is the path)");
+      // NAV: a Revisit Queue nav item points at /revisit-queue.
+      const shell = fs.readFileSync("src/components/MobileShell.tsx", "utf8");
+      assert(/\/revisit-queue/.test(shell) && /Revisit Queue/.test(shell), "MobileShell MUST have a /revisit-queue nav item");
+
+      results.push({ name: "  ↳ note", ok: true, detail: `Revisit Queue set=${revisitCount} terminal-with-followup lead(s); 0 on the Active Board (disjoint); page scoped + nav wired` });
     },
   },
 

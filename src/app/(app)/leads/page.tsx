@@ -6,7 +6,7 @@ import { requireUser } from "@/lib/auth";
 import LeadFilters from "@/components/LeadFilters";
 import LeadsListClient from "@/components/LeadsListClient";
 import { runReconciler } from "@/lib/reconciler";
-import { leadScopeWhere, COLD_ORIGINS, workableWhere } from "@/lib/leadScope";
+import { leadScopeWhere, COLD_ORIGINS, workableWhere, activeBoardWhere, MASTER_DATA_BOARD_OR } from "@/lib/leadScope";
 import { contactActivityByLeadToday } from "@/lib/followupGate";
 import { CONTACT_ACTIVITY_TYPES } from "@/lib/dashboardWidgets";
 import { projectWhereForUser } from "@/lib/propertyScope";
@@ -342,6 +342,24 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
   }
   // effectiveFollowup === "all" → no follow-up filter (every workable lead).
 
+  // ── Active-Board MASTER_DATA gate on the follow-up LIST (chip == list rows) ──
+  // When a board-style follow-up window is active (Today / Overdue / Today+Overdue
+  // / Future / Tomorrow / week / month — all imply a non-null followupDate), the
+  // LIST rows must obey the SAME Active-Board envelope the chip COUNTS use, so a
+  // MASTER_DATA lead surfaces only when assigned (the chip already excludes the
+  // unassigned ones via boardScope). Without this, an unassigned Master-Data lead
+  // with a follow-up would show in the list but not be counted in the chip. The
+  // "none" / "all" / "range" views are intentionally the broad workable pipeline,
+  // so we skip the gate there. (Today: 0 such leads exist, so this is a durable
+  // no-op guard against future imports rather than a behaviour change.)
+  const BOARD_FOLLOWUP_WINDOWS = ["today", "tomorrow", "overdue", "todue", "future", "week", "month"];
+  if (BOARD_FOLLOWUP_WINDOWS.includes(effectiveFollowup)) {
+    where.AND = [
+      ...(Array.isArray(where.AND) ? where.AND : where.AND ? [where.AND] : []),
+      { OR: MASTER_DATA_BOARD_OR },   // shared with activeBoardWhere (single source)
+    ];
+  }
+
   // Smart-filter preset chips — spec §9.3. Composes via AND so it does not
   // replace existing followup / status / source filters. Each preset is a
   // named, opinionated combination of conditions surfaced as a top-row chip.
@@ -420,8 +438,17 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
   const todayWindow = istWindow(0);
   // Single source of truth for "active workable" — same envelope the Dashboard
   // follow-up tiles use, so the chip counts reconcile 1:1 (incl. cold/revival
-  // exclusion that was previously missing here).
+  // exclusion that was previously missing here). Used for the NON-board chips
+  // (No Follow-up, All Active) which describe the broad workable pipeline.
   const activeScope = workableWhere({ ...scope, ...segWhere });
+  // ACTIVE FOLLOW-UP BOARD envelope — the chips that mirror the Action List
+  // (Today+Overdue / Today / Overdue / Future) MUST count through the SAME
+  // activeBoardWhere the board uses, so the Action-List ⇄ Leads-chip
+  // reconciliation holds. vs activeScope it ADDS the Jun26 Master-Data gate
+  // (a MASTER_DATA lead counts only when assigned AND scheduled). For these
+  // follow-up-date chips followupDate is always non-null, so the gate reduces
+  // to "exclude unassigned Master-Data" — exactly the board's new behaviour.
+  const boardScope = activeBoardWhere({ ...scope, ...segWhere });
 
   // ── Smart priority sort pre-query ─────────────────────────────────────────
   // When no explicit ?sort= is provided we sort by urgency rather than created-
@@ -480,8 +507,8 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
     prisma.lead.count({ where: { ...scope, createdAt: { gte: new Date(Date.now() - 24 * 3600 * 1000) } } }),
     prisma.lead.count({ where: scope }),
     prisma.user.findMany({ where: { active: true, hrOnly: false, role: { in: ["AGENT", "MANAGER", "ADMIN"] } }, orderBy: { name: "asc" } }),
-    prisma.lead.count({ where: { ...activeScope, followupDate: todayWindow } }),
-    prisma.lead.count({ where: { ...activeScope, followupDate: { lt: new Date(), not: null } } }),
+    prisma.lead.count({ where: { ...boardScope, followupDate: todayWindow } }),
+    prisma.lead.count({ where: { ...boardScope, followupDate: { lt: new Date(), not: null } } }),
     // Per-currentStatus lead counts for the Excel-status chip bar.
     // Groups by the user-facing currentStatus field so chips reflect real
     // MIS status distribution. Excludes cold-call leads by default.
@@ -508,8 +535,10 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
   // the true UNION (not today+overdue summed — they overlap on earlier-today);
   // allWorkable backs the "All Active" chip so it matches the segment, not 160.
   const [followupTodue, followupFuture, followupNone, allWorkable] = await Promise.all([
-    prisma.lead.count({ where: { ...activeScope, followupDate: { lt: endOfTodayUTC, not: null } } }),
-    prisma.lead.count({ where: { ...activeScope, followupDate: { gte: endOfTodayUTC } } }),
+    // Board chips (Today+Overdue, Future) — boardScope so they match the Action List.
+    prisma.lead.count({ where: { ...boardScope, followupDate: { lt: endOfTodayUTC, not: null } } }),
+    prisma.lead.count({ where: { ...boardScope, followupDate: { gte: endOfTodayUTC } } }),
+    // Non-board chips (No Follow-up, All Active) describe the broad workable pipeline.
     prisma.lead.count({ where: { ...activeScope, followupDate: null } }),
     prisma.lead.count({ where: activeScope }),
   ]);

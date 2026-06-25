@@ -180,3 +180,50 @@ export const WORKABLE_STATUS_OR = [
 export function workableWhere<T extends Prisma.LeadWhereInput>(scope: T): Prisma.LeadWhereInput {
   return { ...scope, leadOrigin: { notIn: COLD_ORIGINS }, OR: WORKABLE_STATUS_OR };
 }
+
+// ── ACTIVE FOLLOW-UP BOARD definition (Jun26 — the SINGLE source of truth) ──────
+// "What appears on the Active Follow-up Board?" The board (Action List), the Leads
+// follow-up chips, and the Dashboard follow-up widgets MUST all agree on this one
+// definition so the Action-List ⇄ Leads-chip reconciliation holds. A lead is on the
+// Active Board iff ALL of:
+//   1. NOT cold/revival origin           (those live in the Revival Engine)
+//   2. NOT terminal/rejected             (isTerminalStatus → off the board; a
+//      rejected lead that still carries a follow-up is a REVISIT, surfaced on the
+//      separate Revisit Queue, never here). Expressed via WORKABLE_STATUS_OR, which
+//      keeps null/blank statuses (FRESH) eligible.
+//   3. NOT a MASTER_DATA-origin lead UNLESS it is BOTH assigned (ownerId != null)
+//      AND scheduled (followupDate != null). Untriaged Master-Data imports must not
+//      flood the board; only a Master-Data lead that has been given an owner and a
+//      follow-up date earns a place.
+//
+// Note: rules 2 & 3 layer ON TOP of workableWhere's envelope (rules 1 + 2). The new
+// piece is rule 3 (the Master-Data gate). We combine the two status/origin ORs under
+// AND so they never collide with a caller's own top-level OR (e.g. the Leads search
+// OR), and we preserve any AND already present on the incoming scope.
+export const MASTER_DATA_BOARD_OR: Prisma.LeadWhereInput[] = [
+  // Not a Master-Data lead → eligible on its own (subject to the other rules).
+  { leadOrigin: { notIn: MASTER_DATA_ORIGINS } },
+  // Master-Data lead → only when BOTH assigned AND scheduled.
+  { AND: [{ ownerId: { not: null } }, { followupDate: { not: null } }] },
+];
+
+/**
+ * The canonical "Active Follow-up Board" envelope. Spread a scope (e.g.
+ * leadScopeWhere(me), or { deletedAt:null, ... }) and this returns the where that
+ * every board-equivalent surface (Action List, Leads follow-up chips, Dashboard
+ * follow-up widgets) must use. Callers still add their own followupDate window on
+ * top. Collision-safe: status + master-data gates live under AND, so a caller may
+ * keep its own top-level OR.
+ */
+export function activeBoardWhere<T extends Prisma.LeadWhereInput>(scope: T): Prisma.LeadWhereInput {
+  const existingAnd = Array.isArray(scope.AND) ? scope.AND : scope.AND ? [scope.AND] : [];
+  return {
+    ...scope,
+    leadOrigin: { notIn: COLD_ORIGINS },
+    AND: [
+      ...existingAnd,
+      { OR: WORKABLE_STATUS_OR },     // rule 2: not terminal (null/blank kept)
+      { OR: MASTER_DATA_BOARD_OR },   // rule 3: master-data only if assigned+scheduled
+    ],
+  };
+}

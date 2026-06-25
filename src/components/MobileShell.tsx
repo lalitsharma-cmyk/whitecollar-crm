@@ -5,7 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import {
   LayoutDashboard, Users, Sparkles, Menu, X,
   Building2, BarChart3, Upload, UserCog, Settings as SettingsIcon, LogOut, Landmark,
-  ChevronLeft, ChevronRight, Gem, HelpCircle, AlertTriangle, Lock, PhoneCall, Briefcase, Database, ShieldCheck, Bot, Inbox, BadgeDollarSign, MapPin, Images,
+  ChevronLeft, ChevronRight, Gem, HelpCircle, AlertTriangle, Lock, PhoneCall, Briefcase, Database, ShieldCheck, Bot, Inbox, BadgeDollarSign, MapPin, Images, History,
 } from "lucide-react";
 import GlobalDateFilter from "./GlobalDateFilter";
 import NotifBell from "./NotifBell";
@@ -31,6 +31,7 @@ const BACK_LABELS: Record<string, string> = {
   "/cold-calls":      "Revival Engine",
   "/properties":      "Properties",
   "/action-list":     "Action List",
+  "/revisit-queue":   "Revisit Queue",
   "/activities":      "Activities",
   "/calls":           "Call Logs",
   "/team":            "Team",
@@ -45,7 +46,7 @@ function GlobalBackButton() {
   const router = useRouter();
   // Don't show on root pages (they have nothing to go back to)
   const rootPages = ["/dashboard", "/leads", "/cold-calls", "/properties",
-    "/reports", "/action-list", "/activities", "/calls", "/settings",
+    "/reports", "/action-list", "/revisit-queue", "/activities", "/calls", "/settings",
     "/notifications", "/team", "/vault", "/ai", "/help", "/leaderboards",
     "/profile", "/admin", "/intake", "/hr"];
   const isRoot = rootPages.some(r => pathname === r);
@@ -92,6 +93,11 @@ const fullNav: NavSection[] = [
     { href: "/buyer-data",  label: "Dubai Buyer Data", Icon: BadgeDollarSign, dubaiBuyerOnly: true },
     { href: "/cold-calls",  label: "Revival Engine", Icon: Gem },
     { href: "/action-list", label: "Action List",    Icon: Sparkles, leadOpsHidden: true },
+    // Revisit Queue — terminal/rejected leads that still carry a follow-up date
+    // (a "Revisit"). They are OFF the Active Board (Action List); this read-only
+    // triage view is where an admin can re-open one by changing its status off the
+    // terminal value via the existing inline status editor. Permission-scoped.
+    { href: "/revisit-queue", label: "Revisit Queue", Icon: History, leadOpsHidden: true },
     { href: "/properties",  label: "Properties",     Icon: Building2 },
     // Gallery / Resource Library — shareable collateral. Visible to everyone;
     // upload/manage is gated inside the page (ADMIN/MANAGER only).
