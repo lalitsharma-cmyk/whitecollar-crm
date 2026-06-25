@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
 import { audit, reqMeta } from "@/lib/audit";
-import { isStatusValidForTeam, NEEDS_REVIEW, statusesForTeam } from "@/lib/lead-statuses";
+import { isStatusValidForTeam, NEEDS_REVIEW, statusesForTeam, clearFollowupIfTerminal } from "@/lib/lead-statuses";
 import { validateMedium } from "@/lib/mediumManager";
 
 // =====================================================================
@@ -81,7 +81,12 @@ export async function POST(req: NextRequest) {
     const skipped = before.length - eligible.length;
     const changed = eligible.filter((b) => b.currentStatus !== status);
     if (changed.length) {
-      await prisma.lead.updateMany({ where: { id: { in: changed.map((c) => c.id) } }, data: { currentStatus: status, lastTouchedAt: new Date() } });
+      // Terminal status ⇒ drop followupDate + reminder in the same write so the lead
+      // leaves the Action-List board (which has no status filter). Mirrors reject.
+      await prisma.lead.updateMany({
+        where: { id: { in: changed.map((c) => c.id) } },
+        data: clearFollowupIfTerminal(status, { currentStatus: status, lastTouchedAt: new Date() }),
+      });
       writeHistory(changed.map((c) => ({ leadId: c.id, field: "currentStatus", oldValue: c.currentStatus, newValue: status, changedById: me.id, source: "master-data-bulk" })));
     }
     await audit({ userId: me.id, action: "masterdata.bulk.status", entity: "Lead", meta: { status, updated: changed.length, skipped, leadIds: ids.slice(0, 50) }, request: reqMeta(req) });

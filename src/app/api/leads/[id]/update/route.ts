@@ -297,15 +297,22 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if (Object.keys(updates).length === 0) return NextResponse.json({ error: "Nothing to update" }, { status: 400 });
 
   // ── Terminal-status → clear follow-up (Action-List reconciliation) ────────────
-  // When this edit moves the lead INTO a terminal status (booked/sold/leased OR
-  // lost/rejected), the lead is done and must leave the follow-up board. The
-  // Action List intentionally applies NO status filter, so the only correct place
-  // to drop a terminal lead off it is at the SOURCE: clear followupDate (+ the
-  // 10-min reminder dedupe). Mirrors the reject flow, which already does this.
-  // Skipped if the caller is explicitly SETTING a followupDate in the same PATCH
-  // (an admin deliberately scheduling one wins — we don't fight an explicit value).
-  if (typeof updates.currentStatus === "string" && isTerminalStatus(updates.currentStatus) &&
-      !(("followupDate" in updates) && updates.followupDate != null)) {
+  // A lead that IS terminal (booked/sold/leased OR lost/rejected), or is BECOMING
+  // terminal in this edit, must leave the follow-up board: the Action List applies
+  // NO status filter, so a terminal lead with a followupDate pollutes it. We key off
+  // the EFFECTIVE status — the incoming value when present, else the lead's current
+  // one — because the inline date-picker edits followupDate ALONE (currentStatus is
+  // absent from the PATCH). The previous guard only covered the status *transition*
+  // and so let a follow-up be set on an ALREADY-terminal lead, which left 9 rejected
+  // "War Fear" / "Never Respond Phone Calls" leads on the board (data-integrity-jun25).
+  // Fires only when relevant (becoming terminal, or setting a non-null follow-up on a
+  // terminal lead) so unrelated edits to a clean terminal lead add no churn.
+  const effectiveStatus = typeof updates.currentStatus === "string"
+    ? updates.currentStatus
+    : scoped.lead.currentStatus;
+  const becomingTerminal = typeof updates.currentStatus === "string" && isTerminalStatus(updates.currentStatus);
+  const settingFollowup = "followupDate" in updates && updates.followupDate != null;
+  if (isTerminalStatus(effectiveStatus) && (becomingTerminal || settingFollowup)) {
     updates.followupDate = null;
     updates.followupReminderSentAt = null;
   }

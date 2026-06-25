@@ -3523,7 +3523,7 @@ const checks: Check[] = [
     name: "data-integrity-jun25 — terminal leads have no followup (AL Overdue==Leads chip), 0 null sourceRaw, canonical statuses, CALL outcomes backfilled",
     run: async () => {
       const fs = await import("node:fs");
-      const { TERMINAL_STATUSES, canonicalStatus, isTerminalStatus } = await import("../src/lib/lead-statuses");
+      const { TERMINAL_STATUSES, canonicalStatus, isTerminalStatus, clearFollowupIfTerminal } = await import("../src/lib/lead-statuses");
       const { istDayRange } = await import("../src/lib/datetime");
 
       // ── (a) DATA: no live terminal lead carries a followupDate ────────────────
@@ -3555,14 +3555,44 @@ const checks: Check[] = [
       });
       assert(alOverdue === leadsOverdue, `Action-List Overdue (${alOverdue}) must equal Leads Overdue chip (${leadsOverdue}) now that terminal leads have no followup`);
 
-      // ── (b) FORWARD CODE: reject + /update both clear followup on terminal ─────
+      // ── (b) FORWARD CODE: EVERY status/follow-up write path enforces the invariant ─
+      // The invariant ("a terminal lead carries no active followupDate") must hold at
+      // the SOURCE on every write path, not just the reject + inline-update routes —
+      // a follow-up set on an ALREADY-terminal lead via inline-edit is exactly what
+      // regressed 9 leads after the task-#165 backfill. Lock all of them by source
+      // scan so a refactor can't silently drop a guard and re-pollute the Action List.
       const rejectRoute = fs.readFileSync("src/app/api/leads/[id]/reject/route.ts", "utf8");
       assert(/followupDate:\s*null/.test(rejectRoute), "reject route MUST clear followupDate on a terminal status");
       const updateRoute = fs.readFileSync("src/app/api/leads/[id]/update/route.ts", "utf8");
-      assert(/isTerminalStatus\(/.test(updateRoute) && /updates\.followupDate\s*=\s*null/.test(updateRoute),
-        "/update route MUST clear followupDate when the new currentStatus isTerminalStatus()");
+      // The inline-update guard must key off the EFFECTIVE status (incoming OR the
+      // lead's current one) so it fires when followupDate is edited ALONE on an
+      // already-terminal lead — not only on the status transition.
+      assert(/isTerminalStatus\(effectiveStatus\)/.test(updateRoute) && /updates\.followupDate\s*=\s*null/.test(updateRoute),
+        "/update route MUST clear followupDate whenever the EFFECTIVE status isTerminalStatus() (incl. editing follow-up on an already-terminal lead)");
+      // Bulk status setters (leads/bulk set_current_status + master-data/bulk
+      // set_status) must clear follow-up when the new status is terminal.
+      const leadsBulk = fs.readFileSync("src/app/api/leads/bulk/route.ts", "utf8");
+      assert(/clearFollowupIfTerminal\(/.test(leadsBulk), "leads/bulk set_current_status MUST run its update through clearFollowupIfTerminal()");
+      assert(/currentStatus:\s*\{\s*notIn:\s*TERMINAL_STATUSES\s*\}/.test(leadsBulk), "leads/bulk set_followup MUST exclude TERMINAL_STATUSES when setting a follow-up");
+      const mdBulk = fs.readFileSync("src/app/api/master-data/bulk/route.ts", "utf8");
+      assert(/clearFollowupIfTerminal\(/.test(mdBulk), "master-data/bulk set_status MUST run its update through clearFollowupIfTerminal()");
+      // Importers (CSV + Google Sheet) must clear a sheet follow-up on a terminal row.
+      const csvRoute = fs.readFileSync("src/app/api/intake/csv/route.ts", "utf8");
+      const gsRoute = fs.readFileSync("src/app/api/intake/google-sheet/route.ts", "utf8");
+      assert(/clearFollowupIfTerminal\(/.test(csvRoute), "CSV importer MUST clear followupDate when the imported status is terminal");
+      assert(/clearFollowupIfTerminal\(/.test(gsRoute), "Google-Sheet importer MUST clear followupDate when the imported status is terminal");
+      // Admin Assistant SET_FOLLOWUP must skip terminal leads.
+      const assistantEngine = fs.readFileSync("src/lib/adminAssistant/engine.ts", "utf8");
+      assert(/isTerminalStatus\(/.test(assistantEngine), "Admin-Assistant SET_FOLLOWUP MUST skip terminal leads (isTerminalStatus filter)");
+      // Helper behaviour: terminal ⇒ nulls follow-up + reminder; workable ⇒ untouched.
       assert(typeof isTerminalStatus === "function" && isTerminalStatus("Booked With Us") && !isTerminalStatus("Follow Up"),
         "isTerminalStatus() must classify booked/lost as terminal, workable as not");
+      const termData = clearFollowupIfTerminal("War Fear", { followupDate: new Date(), followupReminderSentAt: new Date(), lastTouchedAt: new Date() } as Record<string, unknown>);
+      assert(termData.followupDate === null && termData.followupReminderSentAt === null,
+        "clearFollowupIfTerminal() must null followupDate + reminder for a terminal status");
+      const liveData = clearFollowupIfTerminal("Follow Up", { followupDate: new Date(0), lastTouchedAt: new Date() } as Record<string, unknown>);
+      assert(liveData.followupDate instanceof Date,
+        "clearFollowupIfTerminal() must leave followupDate untouched for a workable status");
 
       // ── (c) DATA: 0 live leads with sourceRaw NULL (source enum non-nullable) ──
       const nullSourceRaw = await prisma.lead.count({ where: { deletedAt: null, sourceRaw: null } });

@@ -7,7 +7,7 @@ import { prisma } from "@/lib/prisma";
 import { resolveTeam, routingFieldsFor } from "@/lib/teamRouting";
 import { interpretBudget, resolveBudgetCurrency } from "@/lib/budgetCurrency";
 import { inferCountryFromCity } from "@/lib/cityCountry";
-import { canonicalStatus, isStatusValidForTeam, NEEDS_REVIEW } from "@/lib/lead-statuses";
+import { canonicalStatus, isStatusValidForTeam, NEEDS_REVIEW, clearFollowupIfTerminal } from "@/lib/lead-statuses";
 import { mergeRawRemark } from "@/lib/rawRemarks";
 import { applyRevivalMerge } from "@/lib/revivalImport";
 import { detectConversationKeyFromRows } from "@/lib/conversationColumn";
@@ -562,6 +562,10 @@ export async function POST(req: NextRequest) {
           update.rawImport = rawRow;
         }
       }
+      // Invariant: a terminal imported status carries no follow-up. Clear any sheet
+      // followupDate (+ reminder dedupe) when the imported status is terminal, so the
+      // row never lands on the Action-List board (no status filter). No-op otherwise.
+      clearFollowupIfTerminal(update.currentStatus as string | null | undefined, update);
       if (Object.keys(update).length) {
         await prisma.lead.update({ where: { id: r.lead.id }, data: update });
         enriched++;

@@ -5,7 +5,7 @@ import { assignLeadTo } from "@/lib/leadIngest";
 import { audit, reqMeta } from "@/lib/audit";
 import { leadScopeWhere } from "@/lib/leadScope";
 import { LeadStatus, LeadSource, ActivityType, ActivityStatus } from "@prisma/client";
-import { isStatusValidForTeam, NEEDS_REVIEW, statusesForTeam } from "@/lib/lead-statuses";
+import { isStatusValidForTeam, NEEDS_REVIEW, statusesForTeam, TERMINAL_STATUSES, clearFollowupIfTerminal } from "@/lib/lead-statuses";
 import { crossTeamWarning, normalizeTeam } from "@/lib/teamRouting";
 import { parseBudget } from "@/lib/budgetParse";
 import { resolveBudgetCurrency } from "@/lib/budgetCurrency";
@@ -224,9 +224,16 @@ export async function POST(req: NextRequest) {
     if (dateStr && isNaN(followupDate!.getTime())) {
       return NextResponse.json({ error: "Invalid followupDate" }, { status: 400 });
     }
-    const beforeFu = await prisma.lead.findMany({ where: { id: { in: ids }, ...scope }, select: { id: true, followupDate: true } });
+    // A terminal lead (booked/sold/lost) must never carry a follow-up — it would
+    // pollute the Action-List board, which applies NO status filter. So when SETTING
+    // a date, exclude terminal leads; when CLEARING (null) allow everyone (clearing a
+    // stray follow-up off a terminal lead is exactly what we want).
+    const fuWhere = followupDate != null
+      ? { id: { in: ids }, ...scope, currentStatus: { notIn: TERMINAL_STATUSES } }
+      : { id: { in: ids }, ...scope };
+    const beforeFu = await prisma.lead.findMany({ where: fuWhere, select: { id: true, followupDate: true } });
     const r = await prisma.lead.updateMany({
-      where: { id: { in: ids }, ...scope },
+      where: fuWhere,
       data: {
         followupDate: followupDate,
         lastTouchedAt: new Date(),
@@ -356,7 +363,12 @@ export async function POST(req: NextRequest) {
     const skipped = before.length - eligible.length;
     const changed = eligible.filter((b) => b.currentStatus !== status);
     if (changed.length) {
-      await prisma.lead.updateMany({ where: { id: { in: changed.map((c) => c.id) } }, data: { currentStatus: status, lastTouchedAt: new Date() } });
+      // If the new status is terminal, drop followupDate + reminder in the SAME
+      // write so the lead leaves the Action-List board (mirrors the reject flow).
+      await prisma.lead.updateMany({
+        where: { id: { in: changed.map((c) => c.id) } },
+        data: clearFollowupIfTerminal(status, { currentStatus: status, lastTouchedAt: new Date() }),
+      });
       prisma.leadFieldHistory.createMany({
         data: changed.map((c) => ({ leadId: c.id, field: "currentStatus", oldValue: c.currentStatus, newValue: status, changedById: me.id, source: "bulk" })),
       }).catch(() => {});

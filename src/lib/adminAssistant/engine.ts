@@ -14,6 +14,7 @@
 import { prisma } from "@/lib/prisma";
 import type { Prisma } from "@prisma/client";
 import type { ParsedCommand, LeadFilter } from "./parse";
+import { isTerminalStatus } from "@/lib/lead-statuses";
 
 export type AgentLite = { id: string; name: string; role: string; team: string | null };
 
@@ -147,7 +148,7 @@ export async function executeRun(runId: string, meId: string): Promise<{ ok: boo
   // Re-fetch in scope (deletedAt:null re-enforced) + current value for undo.
   const leads = await prisma.lead.findMany({
     where: { id: { in: ids }, deletedAt: null },
-    select: { id: true, ownerId: true, tags: true, forwardedTeam: true, followupDate: true },
+    select: { id: true, ownerId: true, tags: true, forwardedTeam: true, followupDate: true, currentStatus: true },
   });
   if (leads.length === 0) return { ok: false, affected: 0, error: "No leads still in scope (they may have changed since preview)." };
 
@@ -167,8 +168,12 @@ export async function executeRun(runId: string, meId: string): Promise<{ ok: boo
         for (const l of leads) before.push({ id: l.id, old: l.forwardedTeam ?? null });
         await tx.lead.updateMany({ where: { id: { in: leads.map((l) => l.id) } }, data: { forwardedTeam: value } });
       } else if (field === "followupDate") {
-        for (const l of leads) before.push({ id: l.id, old: l.followupDate ? l.followupDate.toISOString() : null });
-        await tx.lead.updateMany({ where: { id: { in: leads.map((l) => l.id) } }, data: { followupDate: new Date(value) } });
+        // A terminal (booked/sold/lost) lead must never get a follow-up — it would
+        // pollute the Action-List board, which applies no status filter. Skip them;
+        // `before` (and thus the audit + affected count) reflects only real changes.
+        const targets = leads.filter((l) => !isTerminalStatus(l.currentStatus));
+        for (const l of targets) before.push({ id: l.id, old: l.followupDate ? l.followupDate.toISOString() : null });
+        if (targets.length) await tx.lead.updateMany({ where: { id: { in: targets.map((l) => l.id) } }, data: { followupDate: new Date(value) } });
       }
       // Per-lead audit trail (source = "assistant").
       await tx.leadFieldHistory.createMany({
@@ -176,10 +181,12 @@ export async function executeRun(runId: string, meId: string): Promise<{ ok: boo
       });
       await tx.assistantRun.update({
         where: { id: runId },
-        data: { status: "EXECUTED", executedAt: now, affectedCount: leads.length, beforeValues: before },
+        // `before` holds one row per lead actually changed (for followupDate, terminal
+        // leads are skipped), so it is the accurate affected count for every field.
+        data: { status: "EXECUTED", executedAt: now, affectedCount: before.length, beforeValues: before },
       });
     });
-    return { ok: true, affected: leads.length };
+    return { ok: true, affected: before.length };
   } catch (e) {
     await prisma.assistantRun.update({ where: { id: runId }, data: { status: "FAILED", error: String((e as Error).message).slice(0, 500) } }).catch(() => {});
     return { ok: false, affected: 0, error: "Execution failed — no changes were committed (transaction rolled back)." };

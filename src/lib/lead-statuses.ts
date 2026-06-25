@@ -302,6 +302,26 @@ export function isTerminalStatus(status: string | null | undefined): boolean {
   return status != null && TERMINAL_STATUSES.includes(status);
 }
 
+// Enforce the invariant above on a Prisma lead update-data object: when `status`
+// (the EFFECTIVE resulting currentStatus) is terminal, null out followupDate AND
+// its 10-min reminder dedupe in the SAME write — so a done lead never lands on the
+// Action-List follow-up board (which applies NO status filter). EVERY write path
+// that can set a terminal currentStatus must run its update data through this (the
+// reject flow does the equivalent inline). Mutates and returns `data`. A no-op for
+// any non-terminal / null status, so it is safe to call unconditionally.
+export function clearFollowupIfTerminal<T extends Record<string, unknown>>(
+  status: string | null | undefined,
+  data: T,
+): T {
+  if (isTerminalStatus(status)) {
+    // Cast to a plain mutable record — writing arbitrary keys on a generic T is
+    // rejected by TS, but T is constrained to Record<string, unknown> so this is safe.
+    (data as Record<string, unknown>).followupDate = null;
+    (data as Record<string, unknown>).followupReminderSentAt = null;
+  }
+  return data;
+}
+
 // ─── Dashboard live-status COLUMN buckets (admin assignment widget) ───────
 // SINGLE SOURCE OF TRUTH for the admin-dashboard "Live Lead Assignment" grid,
 // which breaks a population of leads down by CURRENT status into one column
