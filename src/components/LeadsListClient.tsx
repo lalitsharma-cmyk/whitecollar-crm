@@ -117,7 +117,7 @@ function fmtLastActivity(type: string | null, at: string | null): string | null 
   return `${icon} ${label} · ${ago}`;
 }
 
-interface Row {
+export interface Row {
   id: string;
   name: string;
   phone: string | null;
@@ -170,7 +170,20 @@ interface Row {
   hasContactToday: boolean;
 }
 
-export default function LeadsListClient({ leads, canBulk, canReassign = false, canSetStatus = false, canDelete = false, agents, projectOptions = [], statusOptions = [], sourceOptions = [], meRole = "AGENT", showSource = true, view = "cards", searchParamsStr = "" }: { leads: Row[]; canBulk: boolean; canReassign?: boolean; canSetStatus?: boolean; canDelete?: boolean; agents: { id: string; name: string; team: string | null }[]; projectOptions?: string[]; statusOptions?: string[]; sourceOptions?: string[]; meRole?: string; showSource?: boolean; view?: "cards" | "table"; searchParamsStr?: string; }) {
+export default function LeadsListClient({ leads, canBulk, canReassign = false, canSetStatus = false, canDelete = false, agents, projectOptions = [], statusOptions = [], sourceOptions = [], meRole = "AGENT", showSource = true, view = "cards", searchParamsStr = "", detailBasePath = "/leads", listBasePath = "/leads", extraRowAction }: { leads: Row[]; canBulk: boolean; canReassign?: boolean; canSetStatus?: boolean; canDelete?: boolean; agents: { id: string; name: string; team: string | null }[]; projectOptions?: string[]; statusOptions?: string[]; sourceOptions?: string[]; meRole?: string; showSource?: boolean; view?: "cards" | "table"; searchParamsStr?: string;
+  /** Base path for a row's detail link. "/leads" (default) → /leads/:id. The
+   *  Revival list passes "/revival-engine/cold-data" so cold rows open the cold
+   *  detail page. Additive — /leads behaviour is unchanged. */
+  detailBasePath?: string;
+  /** Base path the table's sortable column headers link back to (the LIST page
+   *  itself). Default "/leads"; the Revival list passes "/cold-calls" so sorting
+   *  stays on that page. Additive. */
+  listBasePath?: string;
+  /** Optional extra per-row action (e.g. Revival "Promote to Lead"). Rendered
+   *  alongside the standard row actions in every surface (table + cards) when
+   *  provided. Default undefined → /leads renders nothing extra. */
+  extraRowAction?: (row: Row) => React.ReactNode;
+}) {
   // showSource = false → hide the source column + chip from agents.
   // Lalit's policy: agents shouldn't see where each lead came from (avoids them
   // cherry-picking high-converting sources or gaming the round-robin pool).
@@ -632,7 +645,7 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
                 const next = cur === `${key}_asc` ? `${key}_desc` : `${key}_asc`;
                 params.set("sort", next);
                 params.delete("page");
-                return `/leads?${params.toString()}`;
+                return `${listBasePath}?${params.toString()}`;
               }
               function SortIcon({ k }: { k: string }) {
                 const cur = new URLSearchParams(searchParamsStr).get("sort");
@@ -728,7 +741,7 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
                       const lastAct = fmtLastActivity(l.lastActivityType, l.lastActivityAt);
                       return (
                       <tr key={l.id}
-                        onClick={() => router.push(`/leads/${l.id}`)}
+                        onClick={() => router.push(`${detailBasePath}/${l.id}`)}
                         className={`border-b border-gray-100 dark:border-slate-700/60 cursor-pointer hover:bg-blue-50/60 dark:hover:bg-blue-900/20 transition-colors ${i % 2 === 1 ? "bg-gray-50/30 dark:bg-slate-800/30" : "bg-white dark:bg-slate-800"}`}>
 
                         {/* 1. Checkbox */}
@@ -772,7 +785,7 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
 
                         {/* 3. Name */}
                         <td className="px-3 py-1.5 font-medium text-gray-900 dark:text-slate-100 truncate">
-                          <Link href={`/leads/${l.id}`} onClick={e => e.stopPropagation()}
+                          <Link href={`${detailBasePath}/${l.id}`} onClick={e => e.stopPropagation()}
                             className="hover:text-[#0b1a33] dark:hover:text-blue-300 hover:underline">{l.name}</Link>
                         </td>
 
@@ -886,7 +899,7 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
                             <ActionIconButton action="escalate" title="Escalate to manager"
                               disabled={actionBusy?.id === l.id}
                               onClick={() => { setEscalateTarget({ id: l.id, name: l.name }); setEscalateReason(""); }} />
-                            <Link href={`/leads/${l.id}`} title="Open lead" onClick={e => e.stopPropagation()}
+                            <Link href={`${detailBasePath}/${l.id}`} title="Open lead" onClick={e => e.stopPropagation()}
                               className="p-1.5 rounded-md text-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 transition-colors">
                               <ExternalLink className="w-3.5 h-3.5" />
                             </Link>
@@ -904,6 +917,9 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
                                 <Trash2 className="w-3.5 h-3.5" />
                               </button>
                             )}
+                            {/* Extra per-row action — e.g. Revival "Promote to Lead".
+                                Default undefined on /leads (renders nothing). */}
+                            {extraRowAction?.(l)}
                           </div>
                         </td>
                       </tr>
@@ -921,7 +937,7 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
               <div key={l.id} className="bg-white dark:bg-slate-800 rounded-xl border border-gray-100 dark:border-slate-700 p-3 shadow-sm">
                 {/* Row 1: Name + Status badge */}
                 <div className="flex items-center justify-between gap-2 mb-1.5">
-                  <Link href={`/leads/${l.id}`} className="font-bold text-sm text-[#0b1a33] dark:text-white truncate">
+                  <Link href={`${detailBasePath}/${l.id}`} className="font-bold text-sm text-[#0b1a33] dark:text-white truncate">
                     {l.name}
                   </Link>
                   <span className={`${statusColor(l.currentStatus)} text-[10px] px-2 py-0.5 rounded-full border font-medium shrink-0`}>
@@ -961,12 +977,18 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
                   {l.phone && (
                     <ActionButton action="whatsapp" size="sm" href={whatsappLink(l.phone, "")} label="WA" external onClick={(e: React.MouseEvent) => e.stopPropagation()} />
                   )}
-                  <Link href={`/leads/${l.id}`}
+                  <Link href={`${detailBasePath}/${l.id}`}
                     className="flex items-center justify-center gap-1 py-1.5 rounded-lg text-indigo-600 bg-indigo-50 dark:bg-indigo-900/20 text-xs font-medium min-h-9"
                     onClick={e => e.stopPropagation()}>
                     <ExternalLink className="w-3.5 h-3.5" /> Open
                   </Link>
                 </div>
+                {/* Extra per-row action (mobile) — e.g. Revival "Promote to Lead". */}
+                {extraRowAction && (
+                  <div className="flex items-center gap-1 pt-1.5" onClick={e => e.stopPropagation()}>
+                    {extraRowAction(l)}
+                  </div>
+                )}
                 {/* Follow-up actions row (mobile) — Complete / Snooze / Escalate via the
                     shared endpoints. Separate row so the primary Call/WA/Open stay prominent. */}
                 <div className="flex items-center gap-1 pt-1.5 [&>*]:flex-1">
@@ -1018,7 +1040,7 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
                 {canSel && (
                   <input type="checkbox" checked={selected.has(l.id)} onChange={() => toggle(l.id)} className="mt-1" />
                 )}
-                <Link href={`/leads/${l.id}`} className="flex-1 min-w-0 block">
+                <Link href={`${detailBasePath}/${l.id}`} className="flex-1 min-w-0 block">
                   {/* Row 1: Name · Phone masked · Status */}
                   <div className="flex items-center justify-between gap-1">
                     <div className="flex items-center gap-1.5 flex-wrap min-w-0">
@@ -1146,6 +1168,7 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
                 <ActionButton action="escalate" size="sm" label="Escalate"
                   disabled={actionBusy?.id === l.id} loading={actionBusy?.id === l.id && actionBusy.kind === "escalate"}
                   onClick={() => { setEscalateTarget({ id: l.id, name: l.name }); setEscalateReason(""); }} />
+                {extraRowAction?.(l)}
               </div>
             </div>
           );
@@ -1190,7 +1213,7 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
                   </td>
 
                   {/* ── Lead Name + intel ── */}
-                  <td className="px-3 py-3 align-top cursor-pointer" onClick={() => router.push(`/leads/${l.id}`)}>
+                  <td className="px-3 py-3 align-top cursor-pointer" onClick={() => router.push(`${detailBasePath}/${l.id}`)}>
                     {/* Row 1: Name · Phone */}
                     <div className="flex items-center gap-1.5 flex-wrap mb-0.5">
                       <span className="font-bold text-[#0b1a33] dark:text-white text-sm leading-tight">{l.name}</span>
@@ -1327,7 +1350,7 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
 
                       {/* 5. Edit / Open lead (not a catalogued action) */}
                       <button type="button" title="Open lead"
-                        onClick={() => router.push(`/leads/${l.id}`)}
+                        onClick={() => router.push(`${detailBasePath}/${l.id}`)}
                         className="w-8 h-8 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-white flex items-center justify-center transition-colors flex-none">
                         <Pencil className="w-3.5 h-3.5" />
                       </button>
@@ -1344,6 +1367,9 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
                       )}
+
+                      {/* 8. Extra per-row action — e.g. Revival "Promote to Lead". */}
+                      {extraRowAction?.(l)}
 
                     </div>
                   </td>

@@ -17,6 +17,7 @@ import LeadActionsClient from "@/components/LeadActionsClient";
 import { acefoneEnabled } from "@/lib/acefone";
 import { statusColor } from "@/lib/lead-statuses";
 import ColdDataPromoteButton from "@/components/ColdDataPromoteButton";
+import RejectLeadModal from "@/components/RejectLeadModal";
 import ImportedFieldsCard from "@/components/ImportedFieldsCard";
 function maskPhone(p?: string | null): string | null {
   if (!p) return null;
@@ -159,6 +160,30 @@ export default async function ColdDataDetailPage({ params, searchParams }: { par
         <ColdDataPromoteButton leadId={lead.id} leadName={lead.name} />
       </div>
 
+      {/* ── Reject — keeps the lead in Revival as Rejected (NOT promoted) ──
+          Wires the SAME RejectLeadModal + origin-safe /api/leads/[id]/reject the
+          Leads detail uses. Reject sets currentStatus = rejectionStatusFor(reason),
+          records rejectionReason/Note/At/By, clears the follow-up, and logs a
+          STATUS_CHANGE Activity + Note + AuditLog + notify — and NEVER touches
+          leadOrigin/isColdCall. So the lead remains a cold/revival record (now
+          Rejected); it is not moved to Leads or Master Data. redirectTo=/cold-calls
+          returns the user to the Revival list. */}
+      <div className="card p-5">
+        <div className="text-[10px] uppercase tracking-widest text-gray-500 dark:text-slate-400 font-semibold mb-2">🛠 Cold-data actions</div>
+        {lead.rejectedAt != null ? (
+          <div className="text-xs text-gray-600 dark:text-slate-300">
+            Already rejected{lead.rejectionReason ? ` — ${lead.rejectionReason.replace(/_/g, " ").toLowerCase()}` : ""}. The record stays in Revival, marked Rejected.
+          </div>
+        ) : (
+          <>
+            <p className="text-xs text-gray-500 dark:text-slate-400 mb-3">
+              Not a real prospect? Reject it — the record stays here in Revival (marked Rejected), out of the working queue. It is <strong>not</strong> promoted or moved to Leads.
+            </p>
+            <RejectLeadModal leadId={lead.id} forwardedTeam={lead.forwardedTeam} redirectTo="/cold-calls" />
+          </>
+        )}
+      </div>
+
       {/* ── Imported sheet columns (verbatim) — Admin/Super-Admin/Lalit only ── */}
       {me.role === "ADMIN" && (
         <ImportedFieldsCard customFields={lead.customFields} rawImport={lead.rawImport} />
@@ -169,10 +194,12 @@ export default async function ColdDataDetailPage({ params, searchParams }: { par
         callLogs={lead.callLogs}
         waMessages={lead.waMessages}
         notes={lead.notes}
+        activities={lead.activities}
         forwardedTeam={lead.forwardedTeam}
         rawRemarks={lead.rawRemarks ?? lead.remarks}
         isAdmin={me.role === "ADMIN"}
         meId={me.id}
+        leadOwnerName={lead.owner?.name ?? null}
       />
 
       {/* ── Quick note ── */}

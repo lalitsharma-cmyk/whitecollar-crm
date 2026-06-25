@@ -24,11 +24,17 @@ interface Props {
   /** The lead's forwarded team ("Dubai" | "India" | null). Drives team-conditional
    *  reject reasons — e.g. "Expo Only" is offered ONLY for Dubai-team leads. */
   forwardedTeam?: string | null;
+  /** Where to navigate after a successful reject. Defaults to /leads (the agent's
+   *  working board, where the now-LOST lead correctly drops out). The Revival
+   *  detail page passes "/cold-calls" so the user returns to the Revival list —
+   *  the lead stays in Revival as Rejected (reject is origin-safe; it NEVER flips
+   *  leadOrigin/isColdCall, so it is not promoted or moved to Leads/Master Data). */
+  redirectTo?: string;
 }
 
 const NOTE_MAX = 500;
 
-export default function RejectLeadModal({ leadId, forwardedTeam }: Props) {
+export default function RejectLeadModal({ leadId, forwardedTeam, redirectTo = "/leads" }: Props) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [reason, setReason] = useState<string>("NOT_INTERESTED");
@@ -84,7 +90,7 @@ export default function RejectLeadModal({ leadId, forwardedTeam }: Props) {
         window.alert("Lead rejected");
       }
       router.refresh();
-      router.push("/leads");
+      router.push(redirectTo);
     } catch (e) {
       setErr(`Network error: ${String(e).slice(0, 120)}`);
     } finally {

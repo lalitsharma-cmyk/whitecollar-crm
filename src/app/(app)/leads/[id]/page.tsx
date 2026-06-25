@@ -1116,6 +1116,7 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
             viewerRole={me.role}
             rawEdit={rawEdit}
             editedNotes={editedNotes}
+            leadOwnerName={lead.owner?.name ?? null}
           />
         </div>
 

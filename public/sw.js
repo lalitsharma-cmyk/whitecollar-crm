@@ -366,7 +366,22 @@
 // editor. Also bundles the parked Complete/logging change (Complete rolls follow-up
 // +1 day; Log Call/WhatsApp no longer set a follow-up). Bump shell to ship the new
 // board behaviour + Revisit Queue nav.
-const CACHE = "wcr-shell-v70";
+// v71 (2026-06-26): Revival Engine list = Leads list. /cold-calls now mounts the SAME
+// <LeadsListClient> grid /leads uses (via a thin RevivalLeadsListClient wrapper),
+// cold/revival-scoped — identical columns (Property Enquired/Status/Budget/Follow-Up/
+// Assigned/Source/Last Activity/Actions), per-column header filters, sorting,
+// pagination, status badges, bulk toolbar and row actions (Call/WA/Complete/Snooze/
+// Escalate/Reject); rows link to the cold-data detail; the Revival-only "Promote to
+// Lead" rides along via an additive extraRowAction prop (default off for /leads). The
+// old slim RevivalEngineListClient is retired (kept in repo, unmounted). (2) The
+// Revival cold-data DETAIL page gains a Reject button (the same origin-safe
+// RejectLeadModal + /api/leads/[id]/reject) — a rejected cold lead STAYS in Revival as
+// Rejected (never promoted / moved to Leads). (3) Conversation timeline never shows the
+// literal "Agent": actor resolves to the real user → "System" (system STATUS_CHANGE
+// rows) → the lead owner's name → "Unknown User"; outbound WhatsApp shows the owner or
+// "Outbound". Pure render fix — fixes all historical + future rows, no data migration.
+// Bump shell so every client loads the new Revival grid + timeline labels.
+const CACHE = "wcr-shell-v71";
 const SHELL = ["/login", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", (event) => {

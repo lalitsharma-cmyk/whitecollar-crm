@@ -115,6 +115,11 @@ interface Props {
   rawEdit?: { by: string; at: string } | null;
   /** noteId → edit marker, for the per-note "Edited by Lalit" badge (admins only). */
   editedNotes?: Record<string, { by: string; at: string }>;
+  /** The lead OWNER's display name — the truthful fallback actor for stream rows
+   *  whose own author is unknown (a Note/Activity with no recorded user, or an
+   *  outbound WhatsApp which has no actor column). NEVER show the literal "Agent":
+   *  resolve user → System (system-cron rows) → this owner → "Unknown User". */
+  leadOwnerName?: string | null;
 }
 
 // ─── Outcome helpers ─────────────────────────────────────────────────────────
@@ -189,8 +194,11 @@ type FilterType = "ALL" | "CONNECTED" | "NO_ANSWER" | "WA";
 export default function ConversationStreamCard({
   callLogs, waMessages, notes = [], activities = [], forwardedTeam, rawRemarks, leadCreatedAt, agentNames = [],
   leadId = "", canControl = false, viewerId, viewerTeam, controls = [],
-  isAdmin = false, meId, viewerRole, rawEdit = null, editedNotes = {},
+  isAdmin = false, meId, viewerRole, rawEdit = null, editedNotes = {}, leadOwnerName = null,
 }: Props) {
+  // Truthful fallback actor when a row's own author is unknown. NEVER "Agent":
+  // prefer the lead owner's real name; if even that is missing, "Unknown User".
+  const fallbackActor = (leadOwnerName && leadOwnerName.trim()) || "Unknown User";
   const [filter, setFilter] = useState<FilterType>("ALL");
   // View mode — "smart" = Smart Timeline (Processed View) is the DEFAULT (Lalit,
   // 2026-06-20) so agents see the tidy parsed conversation first. "raw" = Raw
@@ -590,7 +598,11 @@ export default function ConversationStreamCard({
             return (
               <div key={it.id} className={`border-l-2 ${col.border} ${col.bg} pl-3 pr-2 py-1.5 rounded-r`}>
                 <div className="flex items-center justify-between flex-wrap gap-1 text-[11px] text-gray-500">
-                  <span>💬 <b>{m.direction === "INBOUND" ? "📥 Client" : "📤 Agent"}</b> · {fmtIST12Paren(m.receivedAt)} IST</span>
+                  {/* WhatsAppMessage has no actor column, so an OUTBOUND message can't
+                      be attributed to a specific person. Show a truthful label — the
+                      lead owner's name when known, else the neutral "Outbound" — NEVER
+                      a fabricated "Agent". Inbound stays "Client". */}
+                  <span>💬 <b>{m.direction === "INBOUND" ? "📥 Client" : `📤 ${(leadOwnerName && leadOwnerName.trim()) || "Outbound"}`}</b> · {fmtIST12Paren(m.receivedAt)} IST</span>
                   <span className={`chip ${col.pill} text-[9px]`}>{m.direction === "INBOUND" ? "📥 Inbound" : "📤 Outbound"}</span>
                 </div>
                 <div className="text-xs mt-1 text-gray-800 whitespace-pre-wrap">{m.body}</div>
@@ -606,7 +618,7 @@ export default function ConversationStreamCard({
             return (
               <div key={it.id} className="border-l-2 border-amber-300 bg-amber-50/40 pl-3 pr-2 py-1.5 rounded-r">
                 <div className="flex items-center justify-between flex-wrap gap-1 text-[11px] text-gray-500">
-                  <span>📝 <b>{n.user?.name ?? "Agent"}</b> · {fmtIST12Paren(n.createdAt)} IST</span>
+                  <span>📝 <b>{n.user?.name ?? fallbackActor}</b> · {fmtIST12Paren(n.createdAt)} IST</span>
                   <span className="inline-flex items-center gap-1.5">
                     {noteEdit && isAdmin && (
                       <span className="text-[9px] font-bold px-1 py-0.5 rounded bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300"
@@ -687,7 +699,20 @@ export default function ConversationStreamCard({
           //    ✏️ Edit on the RIGHT that opens the edit modal for THIS entry only. ──
           const a = it.act!;
           const when = a.completedAt ?? a.scheduledAt ?? a.createdAt;
-          const who = canonicalAgentName(a.user?.name ?? "Agent", agentNames);
+          // Actor resolution — NEVER the literal "Agent". Priority:
+          //   1. the recorded author (a.user.name), canonicalised; else
+          //   2. "System" for system-cron rows — STATUS_CHANGE activities written
+          //      with NO user by the AI rescorer / revival engine / reconciler /
+          //      follow-up rollover (so automation isn't mis-attributed to a person);
+          //      else
+          //   3. the lead owner's real name; else "Unknown User".
+          // A user-driven reject also writes STATUS_CHANGE but WITH a userId, so it
+          // resolves via (1) to the real rejecting user — not "System".
+          const who = a.user?.name
+            ? canonicalAgentName(a.user.name, agentNames)
+            : a.type === "STATUS_CHANGE"
+              ? "System"
+              : fallbackActor;
           // Surfaced system NOTE activities (follow-up change / admin inline edit)
           // have no entry in the meeting/status icon+label maps — give them a
           // sensible icon + chip so they read as what they are.
@@ -760,7 +785,7 @@ export default function ConversationStreamCard({
         <span><span className="inline-block w-2 h-2 bg-emerald-400 rounded-full mr-1 align-middle" />Connected</span>
         <span><span className="inline-block w-2 h-2 bg-red-400 rounded-full mr-1 align-middle" />Missed</span>
         <span><span className="inline-block w-2 h-2 bg-blue-400 rounded-full mr-1 align-middle" />📥 Client WA</span>
-        <span><span className="inline-block w-2 h-2 bg-purple-400 rounded-full mr-1 align-middle" />📤 Agent WA</span>
+        <span><span className="inline-block w-2 h-2 bg-purple-400 rounded-full mr-1 align-middle" />📤 Outbound WA</span>
         <span><span className="inline-block w-2 h-2 bg-amber-400 rounded-full mr-1 align-middle" />📝 Note</span>
         <span><span className="inline-block w-2 h-2 bg-green-400 rounded-full mr-1 align-middle" />🏢 Site Visit</span>
         <span><span className="inline-block w-2 h-2 bg-blue-500 rounded-full mr-1 align-middle" />🤝 Meeting</span>

@@ -3967,6 +3967,89 @@ const checks: Check[] = [
   },
 
   // ───────────────────────────────────────────────────────────────────────────
+  // REVIVAL PARITY + REJECT + TIMELINE ACTOR (2026-06-26). Three shipped invariants,
+  // all static source-scans (no writes), so a future refactor can't silently revert:
+  //   (1) /cold-calls renders the SAME list component as /leads (LeadsListClient,
+  //       via the thin RevivalLeadsListClient wrapper) pointed at the cold detail
+  //       route — NOT the old slim RevivalEngineListClient — and LeadsListClient
+  //       still exposes the additive detailBasePath/extraRowAction props (default
+  //       /leads behaviour). The originCold deletedAt:null decl is asserted above.
+  //   (2) The Revival cold-data DETAIL page wires the origin-safe RejectLeadModal,
+  //       and the reject endpoint NEVER mutates leadOrigin/isColdCall (so a rejected
+  //       cold lead stays in Revival, not promoted / moved to Leads).
+  //   (3) ConversationStreamCard never renders the literal "Agent" as an actor —
+  //       it resolves user → "System" (system STATUS_CHANGE) → owner → "Unknown
+  //       User", takes a leadOwnerName prop, and BOTH detail pages pass it.
+  // ───────────────────────────────────────────────────────────────────────────
+  {
+    name: "revival-parity+reject+actor — /cold-calls uses LeadsListClient; cold detail has origin-safe Reject; timeline never says \"Agent\"",
+    run: async () => {
+      const fs = await import("node:fs");
+
+      // ── (1) Revival list == Leads list component ──────────────────────────────
+      const coldPage = fs.readFileSync("src/app/(app)/cold-calls/page.tsx", "utf8");
+      assert(/RevivalLeadsListClient/.test(coldPage),
+        "/cold-calls must mount RevivalLeadsListClient (the shared LeadsListClient wrapper)");
+      assert(!/^\s*import\s+RevivalEngineListClient/m.test(coldPage) && !/<RevivalEngineListClient/.test(coldPage),
+        "/cold-calls must NOT mount the old slim RevivalEngineListClient (parity = same grid as /leads)");
+      const wrapper = fs.readFileSync("src/components/RevivalLeadsListClient.tsx", "utf8");
+      // The wrapper points the shared list's rows at the cold-data detail route.
+      assert(/detailBasePath="\/revival-engine\/cold-data"/.test(wrapper) || /detailBasePath:\s*"\/revival-engine\/cold-data"/.test(wrapper),
+        "Revival list rows must link to the cold-data detail route (detailBasePath in the wrapper)");
+      assert(/LeadsListClient/.test(wrapper) && /extraRowAction/.test(wrapper),
+        "RevivalLeadsListClient must render LeadsListClient and pass the Promote extraRowAction");
+      assert(/RevivalRowPromote/.test(wrapper),
+        "RevivalLeadsListClient must preserve the Revival Promote action (RevivalRowPromote)");
+      // LeadsListClient keeps the additive props (default /leads behaviour intact).
+      const list = fs.readFileSync("src/components/LeadsListClient.tsx", "utf8");
+      assert(/detailBasePath\s*=\s*"\/leads"/.test(list),
+        "LeadsListClient must default detailBasePath to /leads (additive — /leads unchanged)");
+      assert(/extraRowAction\?\.\(/.test(list) || /extraRowAction\(/.test(list),
+        "LeadsListClient must render the optional extraRowAction in its action surfaces");
+      // Promote endpoints unchanged (the two existing promote routes still exist).
+      assert(fs.existsSync("src/app/api/leads/[id]/promote/route.ts"), "promote endpoint (origin cold) must still exist");
+      assert(fs.existsSync("src/app/api/leads/[id]/promote-cold/route.ts"), "promote-cold endpoint must still exist");
+
+      // ── (2) Reject on the cold DETAIL page + origin-safety of the endpoint ─────
+      const coldDetail = fs.readFileSync("src/app/(app)/revival-engine/cold-data/[id]/page.tsx", "utf8");
+      assert(/RejectLeadModal/.test(coldDetail),
+        "cold-data detail page must wire the RejectLeadModal");
+      const rejectRoute = fs.readFileSync("src/app/api/leads/[id]/reject/route.ts", "utf8");
+      // The reject UPDATE must NOT set leadOrigin or isColdCall — keeps the lead cold.
+      assert(!/leadOrigin\s*:/.test(rejectRoute) && !/isColdCall\s*:/.test(rejectRoute),
+        "reject endpoint must NEVER write leadOrigin/isColdCall (rejected cold lead stays in Revival)");
+      assert(/rejectionStatusFor\(/.test(rejectRoute) && /rejectedById:\s*me\.id/.test(rejectRoute),
+        "reject endpoint must set the rejection status + rejectedById (origin-safe reject)");
+
+      // ── (3) Timeline actor never "Agent" ─────────────────────────────────────
+      const stream = fs.readFileSync("src/components/ConversationStreamCard.tsx", "utf8");
+      // No JSX/string literal renders the bare word Agent as an actor. We allow it
+      // only inside comments + the "hide from agent" picker label, so scan for the
+      // specific fabricated-actor patterns that USED to exist.
+      assert(!/\?\?\s*"Agent"/.test(stream),
+        "ConversationStreamCard must not fall back to the literal \"Agent\" (use System/owner/Unknown User)");
+      assert(!/\?\s*"📤 Agent"\s*:/.test(stream) && !/"📤 Agent"/.test(stream),
+        "outbound WhatsApp must not be labelled \"Agent\" (use the owner name or \"Outbound\")");
+      assert(/leadOwnerName/.test(stream),
+        "ConversationStreamCard must accept a leadOwnerName prop (truthful actor fallback)");
+      assert(/"System"/.test(stream) && /"Unknown User"/.test(stream),
+        "ConversationStreamCard must resolve system rows to \"System\" and the final fallback to \"Unknown User\"");
+      // Both detail pages must pass the owner name in.
+      const leadDetail2 = fs.readFileSync("src/app/(app)/leads/[id]/page.tsx", "utf8");
+      assert(/leadOwnerName=\{lead\.owner\?\.name/.test(leadDetail2),
+        "leads detail page must pass leadOwnerName to ConversationStreamCard");
+      assert(/leadOwnerName=\{lead\.owner\?\.name/.test(coldDetail),
+        "cold-data detail page must pass leadOwnerName to ConversationStreamCard");
+
+      results.push({
+        name: "  ↳ note",
+        ok: true,
+        detail: "Revival list == LeadsListClient (Promote preserved) · cold-detail Reject is origin-safe · timeline actor never \"Agent\" (System/owner/Unknown User)",
+      });
+    },
+  },
+
+  // ───────────────────────────────────────────────────────────────────────────
   // BUG 3 (2026-06-25). Fresh-lead follow-up default = createdAt + 10 minutes,
   // NOT the old "today 7:00pm IST". Two parts:
   //   (a) SOURCE — ingestLead must compute createdAt+10min, with the old 7pm

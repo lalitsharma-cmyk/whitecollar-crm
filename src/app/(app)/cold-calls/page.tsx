@@ -1,19 +1,23 @@
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
-import { Prisma } from "@prisma/client";
+import { LeadSource, Prisma } from "@prisma/client";
 import { SUPPRESSED_STATUSES, statusColor, INDIA_STATUSES, DUBAI_STATUSES, compareStatusDisplay } from "@/lib/lead-statuses";
 import { COLD_ORIGINS } from "@/lib/leadScope";
-import { leadFilterWhere, leadFilterOrderBy } from "@/lib/leadFilterWhere";
+import { leadFilterWhere } from "@/lib/leadFilterWhere";
 import { getAvailableMediums } from "@/lib/mediumManager";
 import { projectWhereForUser } from "@/lib/propertyScope";
 import { PROPERTY_TYPES } from "@/lib/propertyType";
-import { startOfDay, startOfWeek } from "date-fns";
+import { displayBudget } from "@/lib/budgetParse";
+import { formatLeadName } from "@/lib/leadName";
+import { contactActivityByLeadToday } from "@/lib/followupGate";
+import { CONTACT_ACTIVITY_TYPES } from "@/lib/dashboardWidgets";
+import { startOfDay, startOfWeek, formatDistanceToNow, format as fnsFormat } from "date-fns";
 import Link from "next/link";
 import ColdDataAdminControls from "@/components/ColdDataAdminControls";
 import HiddenGemsBanner, { type HiddenGem } from "@/components/HiddenGemsBanner";
 import DailyRevivalMission from "@/components/DailyRevivalMission";
 import RevivalLeaderboard, { type LeaderboardRow } from "@/components/RevivalLeaderboard";
-import RevivalEngineListClient from "@/components/RevivalEngineListClient";
+import RevivalLeadsListClient, { type RevivalPromoteMeta } from "@/components/RevivalLeadsListClient";
 import LeadFilters from "@/components/LeadFilters";
 import SavedFiltersBar from "@/components/SavedFiltersBar";
 import { REVIVAL_MISSION } from "@/lib/missions";
@@ -26,15 +30,19 @@ export const dynamic = "force-dynamic";
 // Agents see only their assigned rows. "Promote to Lead" flips leadOrigin → ACTIVE
 // and the row moves into /leads.
 //
-// PARITY (DRY — reuses the Leads building blocks):
+// PARITY (DRY — literally reuses the Leads list component):
+//   • The grid/table is the SAME <LeadsListClient> the /leads page mounts — same
+//     columns (Property Enquired / Status / Budget / Follow-Up / Assigned / Source /
+//     Last Activity / Actions), same per-column header filters + sorting + pagination,
+//     same status badges, same row actions (Call/WA/Complete/Snooze/Escalate/Reject/
+//     Open). Only the DATA SOURCE differs (cold/revival-scoped) + the detail link
+//     points at the cold-data detail page + a Revival-only "Promote to Lead" action
+//     rides along via the additive extraRowAction prop. Nothing is forked.
 //   • Filters  → shared <LeadFilters> panel + leadFilterWhere() (team/owner/status/
 //                source/medium/tags/date/follow-up/search), scoped to cold/revival data.
 //   • Saved Views → shared <SavedFiltersBar> (URL-query Smart Lists, /api/saved-filters).
-//   • Bulk actions → assign / team / status / reject / export via /api/leads/bulk
-//                    (reassign routes through assignLeadTo → Assignment row + notify).
-//   • Search → the LeadFilters search box (?q=) translated by leadFilterWhere.
-//   • Columns → same column set as Leads (Lead/Status/Owner/Last touch/Source/Medium),
-//               sortable, plus Revival-only bits (stale badge, cold reason, promote).
+//   • Bulk actions → the LeadsListClient bulk toolbar (Tag / Reassign / Reject /
+//                    WhatsApp / Follow-up / Edit-fields) via /api/leads/bulk.
 //
 // Status filter tabs use the SAME statuses as /leads (INDIA_STATUSES + DUBAI_STATUSES).
 // "Stages" concept removed — Revival Engine is status-aligned with Leads.
@@ -45,6 +53,22 @@ const COLD_DAYS = REVIVAL_MISSION.dormantDays;
 const ALL_POSSIBLE_STATUSES = new Set([...INDIA_STATUSES, ...DUBAI_STATUSES]);
 
 const PAGE_SIZE = 200;
+
+// Source enum → chip class + human label (same maps the /leads page uses, so the
+// LeadsListClient Source column reads identically here). Kept local (small, static).
+const srcChip: Record<LeadSource, string> = {
+  WEBSITE: "src-web", WCR_WEBSITE: "src-web", WCR_EVENT: "src-event", LANDING_PAGE: "src-web",
+  WHATSAPP: "src-wa", CSV_IMPORT: "src-csv", EVENT: "src-event",
+  REFERRAL: "src", INBOUND_CALL: "src-call", FACEBOOK_ADS: "src-web", GOOGLE_ADS: "src-csv",
+  PORTAL_99ACRES: "src", PORTAL_MAGICBRICKS: "src", PORTAL_HOUSING: "src", OTHER: "src",
+};
+const srcLabel: Record<LeadSource, string> = {
+  WEBSITE: "Website", WCR_WEBSITE: "Website", WCR_EVENT: "WCR Event", LANDING_PAGE: "Landing Page",
+  WHATSAPP: "WhatsApp", CSV_IMPORT: "CSV Import", EVENT: "Event",
+  REFERRAL: "Referral", INBOUND_CALL: "Call", FACEBOOK_ADS: "Facebook Ads",
+  GOOGLE_ADS: "Google Ads", PORTAL_99ACRES: "Portal 99acres", PORTAL_MAGICBRICKS: "Portal MagicBricks",
+  PORTAL_HOUSING: "Portal Housing", OTHER: "Other",
+};
 
 export default async function ColdDataPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const me = await requireUser();
@@ -65,9 +89,10 @@ export default async function ColdDataPage({ searchParams }: { searchParams: Pro
   // CRITICAL: deletedAt:null lives on originCold so EVERY count built on it (All
   // tab via allCold, filteredCount via where, the per-status chips) excludes
   // soft-deleted cold leads consistently. Without it, the "All" count would
-  // exceed Σ(status chips) — which DO filter deletedAt:null (line ~166) — the
-  // moment any cold lead is soft-deleted. Matches the rest of the CRM (recycle
-  // bin is never counted).
+  // exceed Σ(status chips) — which DO filter deletedAt:null (below) — the moment
+  // any cold lead is soft-deleted. Matches the rest of the CRM (recycle bin is
+  // never counted). The regression suite asserts this declaration carries both
+  // leadOrigin AND deletedAt:null.
   const originCold: Prisma.LeadWhereInput = { leadOrigin: { in: COLD_ORIGINS }, deletedAt: null };
   const unassigned: Prisma.LeadWhereInput = { ownerId: null };
 
@@ -112,11 +137,29 @@ export default async function ColdDataPage({ searchParams }: { searchParams: Pro
     ],
   };
 
-  // Sort — honour the shared ?sort= (LeadFilters "Sort By"); default = stalest-first
-  // (oldest lastTouchedAt), which is the Revival working order (chase dormant first).
-  const orderBy: Prisma.LeadOrderByWithRelationInput[] = sp.sort
-    ? leadFilterOrderBy(sp)
-    : [{ lastTouchedAt: "asc" }];
+  // Sort — honour the SAME ?sort= keys the LeadsListClient sortable column headers
+  // emit (name/status/budget/followup/owner/created/touched, asc+desc), so clicking
+  // a header on /cold-calls sorts exactly like /leads. Default (no ?sort=) =
+  // stalest-first (oldest lastTouchedAt), the Revival working order (chase dormant
+  // first). Mirrors the /leads orderBy switch.
+  let orderBy: Prisma.LeadOrderByWithRelationInput[];
+  switch (sp.sort) {
+    case "created_asc":  orderBy = [{ createdAt: "asc" }]; break;
+    case "created_desc": orderBy = [{ createdAt: "desc" }]; break;
+    case "touched_asc":  orderBy = [{ lastTouchedAt: "asc" }]; break;
+    case "touched_desc": orderBy = [{ lastTouchedAt: "desc" }]; break;
+    case "name_asc":     orderBy = [{ name: "asc" }]; break;
+    case "name_desc":    orderBy = [{ name: "desc" }]; break;
+    case "budget_asc":   orderBy = [{ budgetMin: "asc" }]; break;
+    case "budget_desc":  orderBy = [{ budgetMin: "desc" }]; break;
+    case "status_asc":   orderBy = [{ currentStatus: "asc" }]; break;
+    case "status_desc":  orderBy = [{ currentStatus: "desc" }]; break;
+    case "followup_asc": orderBy = [{ followupDate: "asc" }]; break;
+    case "followup_desc":orderBy = [{ followupDate: "desc" }]; break;
+    case "owner_asc":    orderBy = [{ owner: { name: "asc" } }]; break;
+    case "owner_desc":   orderBy = [{ owner: { name: "desc" } }]; break;
+    default:             orderBy = [{ lastTouchedAt: "asc" }];
+  }
 
   const [
     leads,
@@ -131,7 +174,13 @@ export default async function ColdDataPage({ searchParams }: { searchParams: Pro
   ] = await Promise.all([
     prisma.lead.findMany({
       where,
-      include: { owner: true },
+      include: {
+        owner: { select: { name: true, avatarColor: true } },
+        interestedUnits: { take: 1, select: { unit: { select: { configuration: true, project: { select: { name: true } } } } } },
+        discussed: { take: 3, select: { project: { select: { name: true } } } },
+        callLogs: { orderBy: { startedAt: "desc" }, take: 20, select: { outcome: true, startedAt: true } },
+        activities: { orderBy: { createdAt: "desc" }, take: 1, select: { type: true, createdAt: true } },
+      },
       orderBy,
       take: PAGE_SIZE,
     }),
@@ -208,6 +257,13 @@ export default async function ColdDataPage({ searchParams }: { searchParams: Pro
 
   const streak = me.coldCallStreak ?? 0;
 
+  // Contact-today flags (gates the Complete row button) — one batch query over the
+  // visible page, same helper + meaning as /leads.
+  const leadIds = leads.map(l => l.id);
+  const contactTodaySet = leadIds.length > 0
+    ? await contactActivityByLeadToday(leadIds)
+    : new Set<string>();
+
   // ── Filter-panel option lists (cold/revival-scoped) ─────────────────────────
   // Source + Medium dropdowns + projects, same shape the Leads/Master-Data panels
   // use. Sources are DISTINCT verbatim sourceRaw values seen on cold/revival leads.
@@ -244,14 +300,88 @@ export default async function ColdDataPage({ searchParams }: { searchParams: Pro
   `;
   const distinctTags = tagRows.map(r => r.tag).filter((t): t is string => typeof t === "string" && t.length > 0);
 
-  // Build a query-string of the CURRENT params for the export / bulk-export link.
-  const currentParams = (() => {
-    const p = new URLSearchParams();
-    for (const [k, v] of Object.entries(sp)) if (v != null && v !== "" && k !== "page") p.set(k, String(v));
-    return p.toString();
-  })();
+  // Build a query-string of the CURRENT params, used by the LeadsListClient
+  // header-filter + sort links so they round-trip on /cold-calls.
+  const searchParamsStr = new URLSearchParams(
+    Object.entries(sp).filter(([, v]) => v != null && v !== "").map(([k, v]) => [k, String(v!)])
+  ).toString();
 
   const isFiltered = filteredCount !== totalCount;
+
+  // ── Map the cold/revival rows into the EXACT LeadsListClient Row shape ───────
+  // Identical mapping to /leads (formatLeadName, BANT count, displayBudget,
+  // last-activity, connected/no-answer history, sourceDetail/projectHint, …) so
+  // the grid renders the SAME for cold/revival leads — only the data source and
+  // the detail link differ. intelligenceMatch is null (cold data isn't intel-matched).
+  const listRows = leads.map((l) => {
+    const bantCount = [
+      l.budgetMin != null && l.budgetMin > 0,
+      l.authorityLevel != null && l.authorityLevel !== "UNKNOWN",
+      l.needSummary != null && l.needSummary.trim().length > 0,
+      l.whenCanInvest != null && l.whenCanInvest !== "UNKNOWN",
+    ].filter(Boolean).length;
+
+    return {
+      id: l.id,
+      name: formatLeadName(l.name),
+      phone: l.phone,
+      email: l.email,
+      source: l.source,
+      statusName: l.currentStatus ?? "",
+      currentStatus: l.currentStatus ?? null,
+      srcChip: srcChip[l.source],
+      srcLabel: srcLabel[l.source],
+      statusChip: statusColor(l.currentStatus),
+      aiScore: l.aiScore,
+      aiScoreValue: l.aiScoreValue,
+      team: l.forwardedTeam,
+      owner: l.owner ? { name: l.owner.name, avatarColor: l.owner.avatarColor ?? "bg-slate-500" } : null,
+      budgetFormatted: (() => { const d = displayBudget(l); return d === "—" ? null : d; })(),
+      bantCount,
+      needSummary: l.needSummary ?? null,
+      discussedProjects: l.discussed.map((d) => d.project.name),
+      lastTouched: l.lastTouchedAt ? formatDistanceToNow(l.lastTouchedAt, { addSuffix: false }) : null,
+      lastTouchedAt: l.lastTouchedAt ? l.lastTouchedAt.toISOString() : null,
+      todoNext: l.todoNext ?? null,
+      followupDate: l.followupDate ? fnsFormat(l.followupDate, "dd MMM") : null,
+      followupRaw: l.followupDate ? fnsFormat(l.followupDate, "yyyy-MM-dd") : null,
+      enquiryDate: l.createdAt ? new Date(l.createdAt).toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short", year: "2-digit" }) : null,
+      enquiryTime: l.createdAt ? new Date(l.createdAt).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hour12: true }) : null,
+      enquiryRaw: l.createdAt ? fnsFormat(l.createdAt, "yyyy-MM-dd") : null,
+      city: l.city ?? null,
+      whenCanInvest: l.whenCanInvest ?? null,
+      remarks: l.remarks ? l.remarks.slice(0, 120) : null,
+      lastActivityType: l.callLogs.length > 0 ? "CALL"
+        : l.activities.length > 0 ? l.activities[0].type
+        : null,
+      lastActivityAt: l.callLogs[0]?.startedAt?.toISOString()
+        ?? l.activities[0]?.createdAt?.toISOString()
+        ?? null,
+      connectedCount: l.callLogs.filter(c => ["CONNECTED", "INTERESTED"].includes(c.outcome)).length,
+      notPickedCount: l.callLogs.filter(c => ["NOT_PICKED", "BUSY", "SWITCHED_OFF"].includes(c.outcome)).length,
+      hasContactToday: contactTodaySet.has(l.id),
+      intelligenceMatch: null,
+      budget: (() => { const d = displayBudget(l); return d === "—" ? null : d; })(),
+      interest: l.interestedUnits[0] ? `${l.interestedUnits[0].unit.project.name} ${l.interestedUnits[0].unit.configuration}` : null,
+      sourceDetail: l.sourceDetail ?? null,
+      projectHint: l.notesShort ?? null,
+    };
+  });
+
+  // Promote-to-Lead per-row action (Revival-only) — preserved alongside the
+  // standard Leads row actions. Built as a SERIALIZABLE map (id → {canPromote,
+  // isOriginCold}) so the server page can hand it to the client list wrapper,
+  // which renders the actual Promote button. canPromote = admin/manager OR the
+  // owner. isOriginCold picks the endpoint (leadOrigin COLD/REVIVAL → /promote;
+  // legacy isColdCall-only → /promote-cold) — the SAME split the old
+  // RevivalEngineListClient used, so Revival keeps its promote capability 1:1.
+  const promoteMeta: Record<string, RevivalPromoteMeta> = {};
+  for (const l of leads) {
+    promoteMeta[l.id] = {
+      canPromote: isAdminOrMgr || l.ownerId === me.id,
+      isOriginCold: l.leadOrigin === "COLD" || l.leadOrigin === "REVIVAL",
+    };
+  }
 
   return (
     <>
@@ -365,37 +495,24 @@ export default async function ColdDataPage({ searchParams }: { searchParams: Pro
             </div>
           )}
 
-          <RevivalEngineListClient
-            leads={leads.map(l => ({
-              id:             l.id,
-              name:           l.name,
-              phone:          l.phone,
-              company:        l.company ?? null,
-              city:           l.city ?? null,
-              isColdCall:     l.isColdCall,
-              leadOrigin:     l.leadOrigin,
-              status:         l.status,
-              currentStatus:  l.currentStatus ?? null,
-              statusChip:     statusColor(l.currentStatus),
-              sourceRaw:      l.sourceRaw ?? null,
-              medium:         l.medium ?? null,
-              mediumOther:    l.mediumOther ?? null,
-              team:           l.forwardedTeam ?? null,
-              lastTouchedAt:  l.lastTouchedAt,
-              ownerId:        l.ownerId,
-              owner:          l.owner ? { name: l.owner.name } : null,
-              coldCallReason: l.coldCallReason ?? null,
-              alreadyBought:  l.alreadyBought ?? null,
-              alreadyBoughtBy: l.alreadyBoughtBy ?? null,
-            }))}
-            myId={me.id}
-            isAdminOrMgr={isAdminOrMgr}
-            canExport={!isAgent}
-            agents={agents.map(a => ({ id: a.id, name: a.name, team: a.team }))}
-            cutoffMs={cutoff.getTime()}
-            coldDays={COLD_DAYS}
-            exportParams={currentParams}
+          {/* THE SAME table component as /leads — RevivalLeadsListClient is a thin
+              client wrapper around <LeadsListClient> (so the Promote render-fn can
+              live client-side). Only the data source + detail link differ, plus the
+              Revival-only Promote action rides along via the serializable promoteMeta. */}
+          <RevivalLeadsListClient
+            canBulk={isAdminOrMgr}
+            canReassign={isAdminOrMgr}
+            canSetStatus={isAdminOrMgr}
+            canDelete={me.isSuperAdmin === true}
+            projectOptions={allProjects.map((p) => p.name)}
+            statusOptions={statusChips}
+            sourceOptions={sourceOptions}
+            meRole={me.role}
             showSource={!isAgent}
+            searchParamsStr={searchParamsStr}
+            agents={agents.map((a) => ({ id: a.id, name: a.name, team: a.team }))}
+            leads={listRows}
+            promoteMeta={promoteMeta}
           />
         </div>
 
