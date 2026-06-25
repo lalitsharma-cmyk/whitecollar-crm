@@ -62,6 +62,21 @@ import { normalizeNameList } from "../src/lib/nameFormat";
 // shown identically on detail/table/Master-Data), so these invariants test prod code.
 import { hasDialableNumber } from "../src/lib/phone";
 import { resolveEnquiredProperty } from "../src/lib/projectName";
+// Customer-layer computed helpers (pure, NO "server-only") — import the REAL
+// implementations + their pure unit-test suites so the invariant tests the
+// production logic. The Customer/CustomerLinkAudit tables + Lead.customerId are
+// NOT yet in prod (Step-1 migration is gated/unapplied), so this invariant is
+// strictly PURE — it never selects the new tables from the live DB.
+import {
+  computeCustomerStatus,
+  computeCustomerOwner,
+  computeCustomerConfidence,
+} from "../src/lib/customer/compute";
+import { runComputeTests } from "../src/lib/customer/compute.test";
+import { runDetectTests } from "../src/lib/customer/detect.test";
+import { runSearchTests } from "../src/lib/customer/search.test";
+import { detectCandidates } from "../src/lib/customer/detect";
+import { MULTIPLE_OWNERS } from "../src/lib/customer/types";
 
 // ── tiny assertion harness ──────────────────────────────────────────────────
 type Check = { name: string; run: () => Promise<void> };
@@ -3778,6 +3793,98 @@ const checks: Check[] = [
       assert(resolveEnquiredProperty("Sobha Central", null, "ignored", null, known) === "Sobha Central", "a formal project link wins over sourceDetail");
 
       results.push({ name: "  ↳ note", ok: true, detail: "detail/table/Master-Data all key on canonical sourceDetail; free-text honored, remark gated" });
+    },
+  },
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // CUSTOMER COMPUTED LAYER (Step 1 foundation, 2026-06-26). The Customer layer's
+  // status/owner/confidence are PURE computed functions (never stored). This
+  // invariant proves they hold:
+  //   • status precedence: any WORKABLE→Active; converted+rejected(no active)→
+  //     Converted; all rejected→Closed.
+  //   • owner: single shared owner resolves; multiple owners (no canonical)→
+  //     "MULTIPLE"; an admin canonical owner always wins.
+  //   • confidence: factors produce the expected reasons ("Same mobile" etc.).
+  //   • the detection engine flags the REAL Ravi shape (same email, diff phone)
+  //     as a Very-High match with the right reasons.
+  //   • the full pure unit suites (compute/detect/search) all pass.
+  // STRICTLY PURE — it never selects the Customer/CustomerLinkAudit tables or
+  // Lead.customerId from the live DB (the Step-1 migration is gated/unapplied),
+  // so it is safe to run against prod before the schema deploys.
+  // ───────────────────────────────────────────────────────────────────────────
+  {
+    name: "customer-computed-layer — status precedence + owner MULTIPLE + confidence reasons + Ravi detection (pure)",
+    run: async () => {
+      // ── status precedence (owner-confirmed examples) ──
+      assert(
+        computeCustomerStatus([{ id: "a", currentStatus: "Follow Up", ownerId: null }]) === "Active",
+        "status: a workable enquiry must be Active",
+      );
+      assert(
+        computeCustomerStatus([
+          { id: "a", currentStatus: "Booked With Us", ownerId: null },
+          { id: "b", currentStatus: "Not Interested", ownerId: null },
+        ]) === "Converted",
+        "status: converted + rejected (no active) must be Converted",
+      );
+      assert(
+        computeCustomerStatus([
+          { id: "a", currentStatus: "Not Interested", ownerId: null },
+          { id: "b", currentStatus: "Junk", ownerId: null },
+        ]) === "Closed",
+        "status: all rejected must be Closed",
+      );
+      assert(
+        computeCustomerStatus([
+          { id: "a", currentStatus: "Meeting", ownerId: null },
+          { id: "b", currentStatus: "Junk", ownerId: null },
+        ]) === "Active",
+        "status: qualified + rejected must be Active",
+      );
+
+      // ── owner-of-record ──
+      assert(
+        computeCustomerOwner([{ id: "a", currentStatus: null, ownerId: "u1" }, { id: "b", currentStatus: null, ownerId: "u1" }], null) === "u1",
+        "owner: a single shared owner must resolve to that owner",
+      );
+      assert(
+        computeCustomerOwner([{ id: "a", currentStatus: null, ownerId: "u1" }, { id: "b", currentStatus: null, ownerId: "u2" }], null) === MULTIPLE_OWNERS,
+        "owner: multiple owners with no canonical must be MULTIPLE",
+      );
+      assert(
+        computeCustomerOwner([{ id: "a", currentStatus: null, ownerId: "u1" }, { id: "b", currentStatus: null, ownerId: "u2" }], "uX") === "uX",
+        "owner: an admin canonical owner must always win",
+      );
+
+      // ── confidence reasons ──
+      const conf = computeCustomerConfidence({ sameMobile: true, sameEmail: true });
+      assert(conf.reasons.includes("Same mobile") && conf.reasons.includes("Same email"), "confidence: reasons must name the matched factors");
+      assert(computeCustomerConfidence({}).score === 0, "confidence: no factors → score 0");
+      assert(computeCustomerConfidence({ sameMobile: true, sameEmail: true, sameAlternateNumber: true, sameCompany: true, similarName: true }).score === 100, "confidence: score must clamp at 100");
+
+      // ── detection engine: the REAL Ravi shape (same email, different phone) ──
+      const ravi = detectCandidates(
+        { id: "A", name: "Ravi", phone: "+917018120792", email: "upadhyay84ravi@gmail.com", currentStatus: "Fresh Lead", ownerId: "o1" },
+        [{ id: "B", name: "Ravi", phone: "+919999999999", email: "upadhyay84ravi@gmail.com", currentStatus: "Invalid Number", ownerId: "o1" }],
+      );
+      assert(ravi.length === 1, "detect: Ravi pair must produce exactly one match");
+      assert(ravi[0].tier === "Very High", `detect: Ravi pair must be Very High (got ${ravi[0]?.tier})`);
+      assert(ravi[0].reasons.includes("Same email"), "detect: Ravi match reasons must include 'Same email'");
+      assert(ravi[0].factors.sameEmail === true && ravi[0].factors.sameMobile === false, "detect: Ravi match must be email-driven, not phone");
+
+      // ── full pure unit suites must all pass ──
+      const c = runComputeTests();
+      const d = runDetectTests();
+      const s = runSearchTests();
+      assert(c.failed === 0, `compute unit tests failed: ${c.failures.join("; ")}`);
+      assert(d.failed === 0, `detect unit tests failed: ${d.failures.join("; ")}`);
+      assert(s.failed === 0, `search-rank unit tests failed: ${s.failures.join("; ")}`);
+
+      results.push({
+        name: "  ↳ note",
+        ok: true,
+        detail: `pure customer-layer suites green: compute ${c.passed}, detect ${d.passed}, search ${s.passed}; Ravi=Very High (Same email); status/owner/confidence invariants hold`,
+      });
     },
   },
 ];

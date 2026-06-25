@@ -169,6 +169,10 @@ model User {
   // ── Gallery / Resource Library relations ──
   uploadedResources     Resource[]      @relation("ResourceUploader")
   resourceShares        ResourceShare[] @relation("ResourceSharedBy")
+
+  // ── Customer layer (Step 1 foundation) relations ──
+  canonicalCustomers    Customer[]          @relation("CustomerCanonicalOwner")
+  customerLinkActions   CustomerLinkAudit[] @relation("CustomerLinkAuditActor")
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -426,6 +430,17 @@ model Lead {
   // ownership
   ownerId         String?
   owner           User?       @relation("LeadOwner", fields: [ownerId], references: [id])
+  // ── Customer layer (Step 1 foundation) ──
+  // Optional link to the canonical Customer this enquiry belongs to. NULL =
+  // standalone enquiry (the default for EVERY existing lead — so adding this
+  // column changes ZERO existing rows' meaning). A lead is "owned" by a person
+  // (ownerId) but may be grouped under one Customer (the human who made several
+  // enquiries). Set/cleared ONLY through the audited link/unlink service
+  // (src/lib/customer/link.ts) which writes an immutable CustomerLinkAudit row.
+  // The Customer never stores status/owner/phone — those are computed live from
+  // the set of linked enquiries.
+  customerId      String?
+  customer        Customer?   @relation("CustomerEnquiries", fields: [customerId], references: [id], onDelete: SetNull)
   forwardedTeam   String?     // "Dubai" / "India" — canonical team marker. NULL = not yet
                               // classified → ALL automation is suppressed until a team is set
                               // (the mandatory pre-assignment routing gate; see src/lib/teamRouting.ts).
@@ -570,6 +585,8 @@ model Lead {
   @@index([leadOrigin])
   @@index([ownerId, deletedAt])
   @@index([forwardedTeam, deletedAt])
+  // Customer layer — group an enquiry's siblings by the canonical Customer.
+  @@index([customerId])
 }
 
 // =====================================================
@@ -2486,4 +2503,94 @@ model ResourceShare {
   @@index([leadId])
   @@index([sharedById])
   @@index([sharedAt])
+}
+
+// =====================================================
+// CUSTOMER LAYER (Step 1 foundation — additive only)
+// =====================================================
+// Guiding principle (owner): "Everything that can be computed should be
+// computed; everything that must be stored should be immutable."
+//
+// A Customer is the canonical HUMAN behind one-or-more enquiries (Leads). The
+// link between a Lead and its Customer is the only thing we store about the
+// relationship; EVERYTHING describing the customer's CURRENT state — status,
+// owner-of-record, confidence, contact rollup, future health — is COMPUTED LIVE
+// from the set of linked enquiries (see src/lib/customer/compute.ts). Nothing
+// derivable is persisted here, so a new enquiry can never make a stored value go
+// stale.
+model Customer {
+  // IMMUTABLE identity. A surrogate UUID — NEVER a mobile, email, or name (all of
+  // those change; the customer's identity must not). Generated once, never reused.
+  id               String   @id @default(uuid())
+  // Human-friendly label for lists/headers (e.g. "Ravi Upadhyay"). A convenience
+  // display value only — it is NOT identity and carries no business logic. Owner,
+  // status, phones, emails, projects are all computed from the linked enquiries.
+  displayName      String
+  // Admin-selected canonical owner-of-record. NULL = "Multiple Owners" (the
+  // computed owner falls back to the single shared owner, or "MULTIPLE"). This is
+  // the ONE human override the model accepts; it is never auto-derived from a new
+  // enquiry (see computeCustomerOwner — a new enquiry never silently changes it).
+  canonicalOwnerId String?
+  canonicalOwner   User?    @relation("CustomerCanonicalOwner", fields: [canonicalOwnerId], references: [id], onDelete: SetNull)
+  // Reserved for the FUTURE health score (Step N). Nullable JSON, intentionally
+  // NOT computed or written yet — reserved so adding health later needs no
+  // migration. Leave NULL.
+  healthMeta       Json?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  // All enquiries currently linked to this customer. Unlinking a lead clears its
+  // customerId (SetNull) and the enquiry returns to its exact standalone state.
+  enquiries        Lead[]               @relation("CustomerEnquiries")
+  // Immutable, append-only audit of every link/unlink decision (never updated).
+  linkAudits       CustomerLinkAudit[]
+
+  @@index([canonicalOwnerId])
+}
+
+// IMMUTABLE, APPEND-ONLY audit of every merge/link/unlink decision (Rule 2 —
+// the auditable, reversible record behind the Customer layer). A row is WRITTEN
+// ONCE when an admin links or unlinks an enquiry and is NEVER updated or deleted.
+// Together these rows are a complete, replayable history of how every customer
+// grouping came to be — and the basis for one-click reversibility (Rule 7).
+model CustomerLinkAudit {
+  id                 String   @id @default(cuid())
+  // The customer this decision concerns. Kept even if the customer is later
+  // deleted (SetNull) so the audit trail survives — the row is the source of
+  // truth for what happened, independent of current state.
+  customerId         String?
+  customer           Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  // The enquiry that was linked or unlinked.
+  leadId             String
+  // "LINK" | "UNLINK". (Stored as text — no enum — so the immutable log can never
+  // be invalidated by a future enum edit; the service constrains the values.)
+  action             String
+  // WHO performed it (admin user id) and WHEN. performedAt is the immutable
+  // timestamp of the decision.
+  performedById      String?
+  performedBy        User?    @relation("CustomerLinkAuditActor", fields: [performedById], references: [id], onDelete: SetNull)
+  performedAt        DateTime @default(now())
+  // WHY — optional free-text reason the admin gave for the merge/unlink.
+  reason             String?
+  // The live confidence score AT THE MOMENT of the decision (snapshot — confidence
+  // is otherwise never stored), plus the match factors that produced it. Captured
+  // so the audit explains the basis for the decision even as data later changes.
+  confidenceSnapshot Int?
+  matchFactors       Json?
+  // Owner-of-record transition captured at decision time (for the audit narrative).
+  previousOwnerId    String?
+  currentOwnerId     String?
+  // Customer-membership transition: where the enquiry sat before vs after. On a
+  // LINK from standalone, prevCustomerId is null; on UNLINK, newCustomerId is null.
+  // This pair is what makes a link/unlink exactly reversible.
+  prevCustomerId     String?
+  newCustomerId      String?
+  // Whether this specific decision can still be rolled back (an admin can mark a
+  // historical decision as locked). Default true.
+  rollbackAvailable  Boolean  @default(true)
+
+  @@index([customerId])
+  @@index([leadId])
+  @@index([performedById])
+  @@index([performedAt])
 }
