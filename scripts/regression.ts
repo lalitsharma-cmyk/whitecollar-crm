@@ -3001,66 +3001,151 @@ const checks: Check[] = [
 
   // ───────────────────────────────────────────────────────────────────────────
   {
-    name: "log-conversation-validation — outcome/follow-up/remarks mandatory (server 400); Activity carries outcome+followup; no Connected default; WA send requires follow-up",
+    name: "log-conversation-validation — outcome+remarks mandatory (server 400); NO follow-up field on call/WA logging (Jun25 reversal); Activity carries outcome; no Connected default",
     run: async () => {
       const fs = await import("fs");
       const path = await import("path");
       const root = process.cwd();
 
-      // (a) LOG-CALL ENDPOINT — all three fields rejected when blank (server-side,
-      //     so a tampered request can't bypass the client guard).
+      // POLICY (Jun25, reverses #122–#124): an agent must NEVER set/edit the
+      // follow-up date while logging a call or WhatsApp — the follow-up changes
+      // ONLY via Complete / Snooze / Escalate / Reschedule / Admin. Outcome +
+      // remarks STAY mandatory on the Log Conversation form; only the follow-up is
+      // removed. So: log-call + whatsapp/log must NOT read/require/write followupDate.
+
+      // Strip comments before asserting "field is gone" — explanatory prose in the
+      // route/component legitimately MENTIONS followupDate/callbackAt when it says it
+      // no longer uses them. We assert on the CODE only, so a comment can't trip it.
+      const stripComments = (s: string) =>
+        s.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
+
+      // (a) LOG-CALL ENDPOINT — outcome + remarks still rejected when blank
+      //     (server-side, so a tampered request can't bypass the client guard).
       const logCallPath = path.join(root, "src/app/api/leads/[id]/log-call/route.ts");
       assert(fs.existsSync(logCallPath), "log-call route is missing");
       const logCall = fs.readFileSync(logCallPath, "utf8");
+      const logCallCode = stripComments(logCall);
       assert(/Please select an outcome before saving\./.test(logCall) && /status:\s*400/.test(logCall),
         "log-call does not 400 on blank outcome with the required message");
-      assert(/Please set the next follow-up date\./.test(logCall),
-        "log-call does not 400 on missing follow-up date");
       assert(/Please add remarks before saving\./.test(logCall),
         "log-call no longer requires remarks (must 400 on blank remarks)");
       // The old 'remarks are optional' policy must be gone.
       assert(!/Remarks are OPTIONAL/.test(logCall),
         "log-call still declares remarks OPTIONAL — mandatory-remarks rule regressed");
+      // FOLLOW-UP MUST BE GONE — no read, no require, no write of followupDate/callbackAt (code only).
+      assert(!/Please set the next follow-up date\./.test(logCall),
+        "log-call still 400s on a missing follow-up date — the follow-up field must be removed from logging");
+      assert(!/followupDate/.test(logCallCode) && !/callbackAt/.test(logCallCode),
+        "log-call code still references followupDate/callbackAt — logging must not set the follow-up");
 
-      // (b) LOG-CALL persists outcome + followupDate ONTO the Activity row (so the
-      //     Smart Timeline card carries them) and mirrors followupDate to the Lead.
-      //     Probe the Activity.create block (from its start to the next prisma call).
-      const actStart = logCall.indexOf("activity.create");
-      const actEnd = logCall.indexOf("lead.update", actStart);
+      // (b) LOG-CALL still persists the OUTCOME onto the Activity row (Smart Timeline
+      //     keeps the outcome chip), but must NOT set followupDate on it.
+      const actStart = logCallCode.indexOf("activity.create");
+      const actEnd = logCallCode.indexOf("lead.update", actStart);
       assert(actStart >= 0 && actEnd > actStart, "log-call Activity.create block not found");
-      const actCreate = logCall.slice(actStart, actEnd);
-      assert(/outcome:/.test(actCreate) && /followupDate:/.test(actCreate),
-        "log-call Activity.create does not set outcome + followupDate (timeline would lose them)");
-      assert(/followupDate:\s*callbackAt/.test(logCall),
-        "log-call does not write Lead.followupDate from the callback time");
+      const actCreate = logCallCode.slice(actStart, actEnd);
+      assert(/outcome:/.test(actCreate),
+        "log-call Activity.create no longer sets outcome (timeline would lose the outcome chip)");
 
-      // (c) WHATSAPP LOG — kind='send' requires a follow-up date; click stays exempt.
+      // (c) WHATSAPP LOG — must no longer require or persist a follow-up date.
       const waPath = path.join(root, "src/app/api/whatsapp/log/route.ts");
       const wa = fs.readFileSync(waPath, "utf8");
-      assert(/kind === "send"/.test(wa) && /Please set the next follow-up date\./.test(wa) && /status:\s*400/.test(wa),
-        "whatsapp/log does not require a follow-up date on kind='send'");
-      assert(/followupDate/.test(wa), "whatsapp/log does not handle followupDate at all");
+      const waCode = stripComments(wa);
+      assert(!/Please set the next follow-up date\./.test(wa),
+        "whatsapp/log still requires a follow-up date — must be removed");
+      assert(!/followupDate/.test(waCode),
+        "whatsapp/log code still references followupDate — a WhatsApp send must not set the follow-up");
+      // The send-vs-click distinction + activity write still exist.
+      assert(/kind === "send"/.test(wa) && /WHATSAPP/.test(wa),
+        "whatsapp/log lost its send-logging behaviour");
 
-      // (d) CLIENT — Outcome no longer defaults to Connected; blank placeholder present.
+      // (d) CLIENT (Log Conversation form) — Outcome has no Connected default,
+      //     blank placeholder present, and the follow-up field is REMOVED.
       const clientPath = path.join(root, "src/components/LeadActionsClient.tsx");
       const client = fs.readFileSync(clientPath, "utf8");
+      const clientCode = stripComments(client);
       assert(/\[outcomeKey, setOutcomeKey\]\s*=\s*useState\(""\)/.test(client),
         "outcomeKey no longer defaults to blank — Connected default may have returned");
       assert(!/setOutcomeKey\("PHONE_CONNECTED"\)/.test(client) && !/useState\("PHONE_CONNECTED"\)/.test(client),
         "outcomeKey still defaults/resets to PHONE_CONNECTED (Connected default not fully removed)");
       assert(/-- Select Outcome --/.test(client),
         "the '-- Select Outcome --' blank placeholder option is missing");
-      // Client mandatory messages mirror the server.
+      // Outcome + remarks messages remain; the follow-up message + field are gone.
       assert(/Please select an outcome before saving\./.test(client)
-        && /Please set the next follow-up date\./.test(client)
         && /Please add remarks before saving\./.test(client),
-        "client Log Conversation is missing one of the three mandatory validation messages");
+        "client Log Conversation is missing the outcome/remarks mandatory validation messages");
+      assert(!/Please set the next follow-up date\./.test(client) && !/callbackAt/.test(clientCode),
+        "client Log Conversation still has a follow-up field/validation — it must be removed from logging");
 
-      // (e) WA picker (TemplatePickerButton) — mandatory follow-up wired into send.
+      // (e) WA picker (TemplatePickerButton) — the mandatory follow-up date field is
+      //     REMOVED; the WhatsApp send no longer collects/passes a follow-up.
       const tplPath = path.join(root, "src/components/TemplatePickerButton.tsx");
       const tpl = fs.readFileSync(tplPath, "utf8");
-      assert(/waFollowupAt/.test(tpl) && /followupDate/.test(tpl),
-        "TemplatePickerButton does not collect/pass a follow-up date for WhatsApp send");
+      const tplCode = stripComments(tpl);
+      assert(!/waFollowupAt/.test(tplCode) && !/followupDate/.test(tplCode),
+        "TemplatePickerButton code still collects/passes a follow-up date for WhatsApp send — must be removed");
+      // It still opens the post-send "What next?" popup so the follow-up is closed there.
+      assert(/FollowupNextPopup/.test(tpl),
+        "TemplatePickerButton no longer opens the post-send What-next popup");
+    },
+  },
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // COMPLETE ROLLS THE FOLLOW-UP FORWARD (Jun25). Completing a follow-up must NOT
+  // blank it — it rolls to (completion-moment + 1 day) so the lead keeps a next
+  // touchpoint. The shared nextFollowupAfterCompletion helper is the single source
+  // of truth (the future repair script reuses it). SAFETY: a terminal lead keeps
+  // followupDate null (data-integrity invariant). Invariants:
+  //   (a) PURE FN — nextFollowupAfterCompletion(d) === d + 1 day, deterministic
+  //       (fixed dates, no Date.now()): future relative to input; exactly +24h.
+  //   (b) ROUTE — action-complete sets followupDate = nextFollowupAfterCompletion(now)
+  //       (NEVER null) and resets followupReminderSentAt, GUARDED by isTerminalStatus.
+  //   (c) DATA — no live NON-terminal lead can be left without a follow-up by a
+  //       completion (proven structurally via the route; the terminal-no-followup
+  //       data invariant is asserted by data-integrity-jun25).
+  // ───────────────────────────────────────────────────────────────────────────
+  {
+    name: "complete-rolls-followup — Complete sets followupDate=completion+1day (never null) via shared helper, terminal-guarded; helper is a pure +1day fn",
+    run: async () => {
+      const fs = await import("fs");
+      const path = await import("path");
+      const root = process.cwd();
+
+      // (a) PURE FUNCTION — exercise the REAL helper with FIXED dates (no Date.now()).
+      const { nextFollowupAfterCompletion, ONE_DAY_MS } = await import("../src/lib/followup");
+      assert(ONE_DAY_MS === 24 * 60 * 60 * 1000, "ONE_DAY_MS must be exactly 24h in ms");
+      // Mid-afternoon completion → same wall-clock time, next calendar day.
+      const completedAt = new Date("2026-06-25T15:30:00.000Z");
+      const next = nextFollowupAfterCompletion(completedAt);
+      assert(next.getTime() - completedAt.getTime() === ONE_DAY_MS,
+        "nextFollowupAfterCompletion must return exactly completedAt + 1 day");
+      assert(next.getTime() > completedAt.getTime(),
+        "rolled follow-up must be strictly after the completion moment (always future)");
+      assert(next.toISOString() === "2026-06-26T15:30:00.000Z",
+        `expected 2026-06-26T15:30:00.000Z, got ${next.toISOString()}`);
+      // An already-OVERDUE completion still rolls to +1 day from the COMPLETION
+      // moment (NOT from the old past followupDate) — so it can never be in the past.
+      const overdueCompletion = new Date("2026-01-01T09:00:00.000Z");
+      assert(nextFollowupAfterCompletion(overdueCompletion).toISOString() === "2026-01-02T09:00:00.000Z",
+        "overdue completion must roll to completion+1day, never a past date");
+
+      // (b) ROUTE — action-complete uses the helper, never blanks the follow-up for a
+      //     workable lead, resets the reminder flag, and guards terminal with null.
+      const acPath = path.join(root, "src/app/api/leads/[id]/action-complete/route.ts");
+      const ac = fs.readFileSync(acPath, "utf8");
+      assert(/nextFollowupAfterCompletion\(/.test(ac),
+        "action-complete does not roll the follow-up via nextFollowupAfterCompletion");
+      assert(/isTerminalStatus\(/.test(ac),
+        "action-complete does not guard the roll with isTerminalStatus (terminal must stay null)");
+      // The follow-up assignment must NOT be a bare `followupDate: null` anymore —
+      // it must reference the rolled value variable.
+      assert(/followupDate:\s*rolledFollowup/.test(ac),
+        "action-complete must set followupDate to the rolled value (not a bare null)");
+      assert(/followupReminderSentAt:\s*null/.test(ac),
+        "action-complete must reset followupReminderSentAt so the reminder re-fires at the new date");
+      // Terminal guard yields null (so the data-integrity invariant stays green).
+      assert(/isTerminalStatus\([^)]*\)\s*\?\s*null/.test(ac),
+        "action-complete terminal branch must yield null followup");
     },
   },
 

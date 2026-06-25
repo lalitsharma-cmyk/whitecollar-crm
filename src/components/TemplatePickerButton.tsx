@@ -1,13 +1,11 @@
 "use client";
 import { useEffect, useState } from "react";
-import { Mail, X, Sparkles, PenLine, FolderOpen, AlertCircle } from "lucide-react";
+import { Mail, X, Sparkles, PenLine, FolderOpen } from "lucide-react";
 import { whatsappLink } from "@/lib/phone";
 import { ACTION_TOKENS } from "@/lib/actionDesign";
 import WhatsAppGlyph from "@/components/actions/WhatsAppGlyph";
 import { buildShareMessage, type ResourceTypeStr } from "@/lib/resources";
 import { useBodyScrollLock } from "@/hooks/useBodyScrollLock";
-import { fromISTLocalInput } from "@/lib/datetime";
-import CRMDatePicker from "./CRMDatePicker";
 import FollowupNextPopup from "./FollowupNextPopup";
 
 interface Lead { id: string; name: string; phone: string | null; email: string | null; }
@@ -53,14 +51,12 @@ export default function TemplatePickerButton({ lead, kind, suggestedTrigger, com
   // Gallery / Resource Library — shareable files + URL links + text templates,
   // surfaced so the agent can insert a resource into the message they compose.
   const [resources, setResources] = useState<GalleryRes[]>([]);
-  // WhatsApp follow-up date — MANDATORY when logging an outbound WhatsApp
-  // interaction (Lalit's ask: every client must have a next action). Required
-  // only for WHATSAPP; EMAIL (mailto, not logged via /whatsapp/log) is unaffected.
-  // The wa.me open + template/free-text/resource logic is otherwise unchanged —
-  // we only block the send until a follow-up date is set, then pass it to the log.
-  const [waFollowupAt, setWaFollowupAt] = useState("");
-  const [waErr, setWaErr] = useState<string | null>(null);
-  // Post-log "What next?" prompt — opens after a WhatsApp send so the agent closes
+  // Follow-up date is intentionally NOT collected when sending a WhatsApp message
+  // (Lalit's rule: an agent must NEVER set/edit the follow-up while logging a
+  // call or WhatsApp — the follow-up changes ONLY via Complete / Snooze /
+  // Escalate / Reschedule / Admin). After a send, the "What next?" popup opens so
+  // the agent closes the follow-up through those shared actions.
+  // Post-send "What next?" prompt — opens after a WhatsApp send so the agent closes
   // the follow-up (Complete / Snooze / Escalate). WhatsApp only (email isn't logged).
   const [showNextPrompt, setShowNextPrompt] = useState(false);
 
@@ -77,30 +73,9 @@ export default function TemplatePickerButton({ lead, kind, suggestedTrigger, com
     })();
   }, [open, loaded, lead.id, kind]);
 
-  // Validate the mandatory WhatsApp follow-up date. Returns the ISO string when
-  // valid, or null (after setting the inline error) when missing/invalid. Called
-  // synchronously inside the click handler so window.open still counts as a user
-  // gesture when it passes. EMAIL skips this entirely.
-  function waFollowupISOorBlock(): string | null {
-    if (kind !== "WHATSAPP") return ""; // not applicable to email
-    if (!waFollowupAt) {
-      setWaErr("Please set the next follow-up date.");
-      return null;
-    }
-    const d = fromISTLocalInput(waFollowupAt);
-    if (!d || d.getTime() <= Date.now()) {
-      setWaErr("Follow-up time must be in the future (IST).");
-      return null;
-    }
-    return d.toISOString();
-  }
-
   // Insert a gallery resource: its share message becomes the body, and we record
   // a ResourceShare(leadId) so admin tracks which file went to which client.
   function pickResource(r: GalleryRes) {
-    // Block before any side-effect (share log / wa.me) if WA follow-up is missing.
-    const followupISO = waFollowupISOorBlock();
-    if (followupISO === null) return;
     const origin = typeof window !== "undefined" ? window.location.origin : "";
     const body = buildShareMessage(origin, r);
     fetch("/api/resources/share", {
@@ -108,34 +83,29 @@ export default function TemplatePickerButton({ lead, kind, suggestedTrigger, com
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ resourceId: r.id, leadId: lead.id, channel: kind === "WHATSAPP" ? "WHATSAPP" : "EMAIL" }),
     }).catch(() => {});
-    sendMessage(body, r.title, undefined, followupISO);
+    sendMessage(body, r.title, undefined);
   }
 
   function pick(t: Tpl) {
-    const followupISO = waFollowupISOorBlock();
-    if (followupISO === null) return;
-    sendMessage(t.rendered.body, t.rendered.subject ?? "", t.id, followupISO);
+    sendMessage(t.rendered.body, t.rendered.subject ?? "", t.id);
   }
 
   function sendFreeText() {
     const body = freeText.trim();
     if (!body) return;
-    const followupISO = waFollowupISOorBlock();
-    if (followupISO === null) return;
-    sendMessage(body, freeSubject.trim(), undefined, followupISO);
+    sendMessage(body, freeSubject.trim(), undefined);
   }
 
-  function sendMessage(body: string, subject: string, templateId: string | undefined, followupISO?: string) {
+  function sendMessage(body: string, subject: string, templateId: string | undefined) {
     if (kind === "WHATSAPP" && lead.phone) {
-      // Belt-and-braces: if a caller reached here without the guard, re-check.
-      const followup = followupISO ?? waFollowupISOorBlock();
-      if (followup === null) return;
       const url = whatsappLink(lead.phone, body);
       window.open(url, "_blank", "noopener,noreferrer");
+      // Log the send as a touch — but NOT a follow-up (the follow-up is set only
+      // via Complete / Snooze / Escalate, surfaced by the popup below).
       fetch("/api/whatsapp/log", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ leadId: lead.id, kind: "send", message: body, templateId, followupDate: followup || undefined }),
+        body: JSON.stringify({ leadId: lead.id, kind: "send", message: body, templateId }),
       }).catch(() => {});
       // A WhatsApp send is a logged contact attempt — open the "What next?" prompt
       // so the agent closes the follow-up (Complete / Snooze / Escalate).
@@ -149,8 +119,6 @@ export default function TemplatePickerButton({ lead, kind, suggestedTrigger, com
     setTyping(false);
     setFreeText("");
     setFreeSubject("");
-    setWaFollowupAt("");
-    setWaErr(null);
   }
 
   // Sort: suggested trigger first, then by trigger name
@@ -202,31 +170,10 @@ export default function TemplatePickerButton({ lead, kind, suggestedTrigger, com
               <button onClick={() => setOpen(false)} className="text-gray-400 hover:text-gray-700"><X className="w-5 h-5" /></button>
             </div>
 
-            {/* WhatsApp follow-up date — MANDATORY. Pinned under the header (outside
-                the scroll area) so it's always set before the agent sends, whichever
-                send path they take (template / type your own / gallery resource). */}
-            {kind === "WHATSAPP" && (
-              <div className="px-4 pt-3 pb-2 border-b border-[#e5e7eb] bg-emerald-50/60">
-                <label className="text-[11px] font-semibold text-emerald-900 flex items-center gap-1 mb-1.5">
-                  ⏰ Next follow-up date <span className="text-red-600">*</span>
-                  <span className="text-[10px] font-normal text-emerald-700">(required — set the next touchpoint before sending)</span>
-                </label>
-                <CRMDatePicker
-                  value={waFollowupAt}
-                  onChange={(v) => { setWaFollowupAt(v); if (waErr) setWaErr(null); }}
-                  withTime
-                  futureOnly
-                  triggerStyle="input"
-                  placeholder="Pick date &amp; time"
-                  title="Next follow-up"
-                />
-                {waErr && (
-                  <div className="text-[11px] text-red-700 mt-1.5 flex gap-1 items-center">
-                    <AlertCircle className="w-3 h-3 flex-none" /> {waErr}
-                  </div>
-                )}
-              </div>
-            )}
+            {/* Follow-up date intentionally REMOVED from the WhatsApp send flow
+                (Lalit's rule: the follow-up is set only via Complete / Snooze /
+                Escalate / Reschedule / Admin). After a send, the "What next?"
+                popup opens so the agent closes the follow-up there. */}
 
             <div className="overflow-y-auto p-3 space-y-2">
               {/* Free-type mode — typed message goes through the same logging

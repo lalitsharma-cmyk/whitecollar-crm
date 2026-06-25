@@ -6,8 +6,6 @@ import { Phone, AlertCircle, Mic } from "lucide-react";
 import { whatsappLink, telLink, hasDialableNumber } from "@/lib/phone";
 import TemplatePickerButton from "./TemplatePickerButton";
 import { ActionButton } from "@/components/actions/ActionButton";
-import { fromISTLocalInput } from "@/lib/datetime";
-import CRMDatePicker from "./CRMDatePicker";
 import { useBodyScrollLock } from "@/hooks/useBodyScrollLock";
 import { showXpToast } from "./XPToast";
 import FollowupNextPopup from "./FollowupNextPopup";
@@ -125,11 +123,9 @@ export default function LeadActionsClient({ leadId, phone, altPhone, email, curr
   const [logDirection, setLogDirection] = useState<"OUTBOUND" | "INBOUND">("OUTBOUND");
   const [remarks, setRemarks] = useState("");
   const [duration, setDuration] = useState("");
-  const [callbackAt, setCallbackAt] = useState("");
   // Refs so a failed validation can focus / scroll the first missing field.
   const outcomeRef = useRef<HTMLSelectElement>(null);
   const remarksRef = useRef<HTMLTextAreaElement>(null);
-  const callbackRef = useRef<HTMLDivElement>(null);
 
   // Derive current outcome list and DB value from channel + selected key.
   // When no outcome is picked yet (outcomeKey === ""), currentOutcomeV is ""
@@ -139,13 +135,11 @@ export default function LeadActionsClient({ leadId, phone, altPhone, email, curr
     : WA_INBOUND_OUTCOMES;
   const currentOutcomeV = currentOutcomeOptions.find((o) => o.key === outcomeKey)?.v ?? "";
 
-  // Next Follow-up Date is now MANDATORY for EVERY logged conversation (Lalit's
-  // ask: "every client must have a next action"). The field is ALWAYS shown and
-  // ALWAYS required — there is no longer an outcome that hides it or makes it
-  // optional. The styling still adapts: amber "call back" framing for outcomes
-  // where we couldn't reach them, emerald "next touchpoint" for a connection.
-  const needsCallback = currentOutcomeV === "CALLBACK" || currentOutcomeV === "BUSY" || currentOutcomeV === "SWITCHED_OFF" || currentOutcomeV === "NOT_PICKED";
-  const showCallbackField = true; // always — follow-up date is mandatory on every save
+  // Follow-up date is intentionally NOT part of logging a conversation anymore
+  // (Lalit's rule: an agent must NEVER set/edit the follow-up while logging a
+  // call or WhatsApp — the follow-up changes ONLY via Complete / Snooze /
+  // Escalate / Reschedule / Admin). After a successful save we open the "What
+  // next?" popup so the agent closes the follow-up through those shared actions.
   // Duration only makes sense for phone calls that actually connected. Hidden
   // for WhatsApp (no measurable duration) and for not-picked / switched-off.
   const showDurationField = logChannel === "PHONE" && (currentOutcomeV === "CONNECTED" || currentOutcomeV === "CALLBACK");
@@ -248,37 +242,19 @@ export default function LeadActionsClient({ leadId, phone, altPhone, email, curr
   async function submitCall() {
     setErr(null);
     // ── MANDATORY FIELDS (Lalit's policy) ────────────────────────────────────
-    // Every logged conversation must carry: Outcome, Next Follow-up Date, Remarks.
-    // Validate in the order they appear in the form; on the FIRST miss, show the
-    // message, focus/scroll that field, and abort (no save). The server enforces
-    // the same three so a tampered request can't bypass these.
+    // Every logged conversation must carry: Outcome + Remarks. The follow-up date
+    // is intentionally NOT collected here — it is set only via Complete / Snooze /
+    // Escalate / Reschedule / Admin (the "What next?" popup opens after save).
+    // Validate in the order they appear; on the FIRST miss, show the message,
+    // focus that field, and abort (no save). The server enforces the same two so
+    // a tampered request can't bypass them.
     // 1) Outcome — must be a real picked value, never the blank placeholder.
     if (!outcomeKey || !currentOutcomeV) {
       setErr("Please select an outcome before saving.");
       outcomeRef.current?.focus();
       return;
     }
-    // 2) Next Follow-up Date — mandatory on EVERY conversation.
-    if (!callbackAt) {
-      setErr("Please set the next follow-up date.");
-      callbackRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
-      return;
-    }
-    // Convert IST wall-clock callback time → ISO. Server picks it up and writes
-    // Lead.followupDate so the pre-call reminder cron fires 10 min before.
-    const followupDate = fromISTLocalInput(callbackAt);
-    if (!followupDate) {
-      setErr("Please set the next follow-up date.");
-      callbackRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
-      return;
-    }
-    if (followupDate.getTime() <= Date.now()) {
-      setErr("Follow-up time must be in the future (IST).");
-      callbackRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
-      return;
-    }
-    const callbackAtISO = followupDate.toISOString();
-    // 3) Remarks — must be non-empty / non-whitespace. Validate the RAW text the
+    // 2) Remarks — must be non-empty / non-whitespace. Validate the RAW text the
     //    user typed (not the channel-prefixed finalRemarks, which is never blank).
     if (!remarks.trim()) {
       setErr("Please add remarks before saving.");
@@ -308,13 +284,12 @@ export default function LeadActionsClient({ leadId, phone, altPhone, email, curr
           outcome: currentOutcomeV,
           remarks: finalRemarks,
           durationSec: durationToSend,
-          callbackAt: callbackAtISO,
           direction: logDirection,
         }),
       });
       const j = await r.json();
       if (!r.ok) { setErr(j.error ?? "Failed"); return; }
-      setShowCall(false); setRemarks(""); setDuration(""); setCallbackAt("");
+      setShowCall(false); setRemarks(""); setDuration("");
       setLogChannel("PHONE"); setLogDirection("OUTBOUND"); setOutcomeKey("");
       // Gamification — show toast if the server credited XP for this call.
       // Pattern: read `awardedXp` from the JSON response, fire the toast,
@@ -551,33 +526,10 @@ export default function LeadActionsClient({ leadId, phone, altPhone, email, curr
               </>
             )}
 
-            {/* Callback scheduler — shows only when the outcome implies "ring back later".
-                Required when the client asked for a specific time. Saved as
-                Lead.followupDate so the pre-meeting cron sends a 10-min-before push
-                and it shows in the morning dashboard's callback count. */}
-            {showCallbackField && (
-              <div ref={callbackRef} className={`mb-3 p-3 rounded-lg border-2 ${needsCallback ? "border-amber-300 bg-amber-50" : "border-emerald-300 bg-emerald-50"}`}>
-                <label className={`text-xs font-semibold flex items-center gap-1 mb-2 ${needsCallback ? "text-amber-900" : "text-emerald-900"}`}>
-                  ⏰ {needsCallback ? "When should you call back?" : "Next follow-up date"}
-                  <span className="text-red-600">*</span>
-                  <span className={`text-[10px] font-normal ${needsCallback ? "text-amber-700" : "text-emerald-700"}`}>
-                    (required — every conversation needs a next action)
-                  </span>
-                </label>
-                <CRMDatePicker
-                  value={callbackAt}
-                  onChange={(v) => { setCallbackAt(v); if (err) setErr(null); }}
-                  withTime
-                  futureOnly
-                  triggerStyle="input"
-                  placeholder="Pick date &amp; time"
-                  title="Schedule callback"
-                />
-                <p className={`text-[10px] mt-2 ${needsCallback ? "text-amber-800" : "text-emerald-800"}`}>
-                  You&apos;ll get a push notification 10 min before this time, and it will appear in your morning briefing.
-                </p>
-              </div>
-            )}
+            {/* Follow-up scheduler intentionally REMOVED from logging (Lalit's rule:
+                the follow-up is set only via Complete / Snooze / Escalate /
+                Reschedule / Admin). After Save, the "What next?" popup opens so the
+                agent closes the follow-up there. */}
 
             <div className="flex items-center justify-between">
               <label className="text-xs font-semibold text-gray-600">Remarks <span className="text-red-600">*</span> <span className="text-gray-400 font-normal">(what did the client say?)</span></label>

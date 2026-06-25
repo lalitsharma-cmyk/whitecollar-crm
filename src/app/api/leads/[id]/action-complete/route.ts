@@ -4,13 +4,22 @@ import { ActivityType, ActivityStatus } from "@prisma/client";
 import { loadOwnedLead } from "@/lib/leadScope";
 import { awardXp, bumpStreak, type AwardResult } from "@/lib/gamification.server";
 import { contactActivityTodayInfo } from "@/lib/followupGate";
+import { nextFollowupAfterCompletion } from "@/lib/followup";
+import { isTerminalStatus } from "@/lib/lead-statuses";
 
 /**
  * POST /api/leads/[id]/action-complete
  *
  * "Complete" button on the Action List card. Marks the current follow-up done:
  *   • lastTouchedAt → now (so the SLA clock + "untouched" feed reset)
- *   • followupDate / followupReminderSentAt cleared (item drops off Overdue / Today)
+ *   • followupDate → ROLLED FORWARD to completion-moment + 1 day (NEVER blanked —
+ *     completing a follow-up must leave a next touchpoint, never drop the lead off
+ *     the board). followupReminderSentAt reset to null so the reminder fires again
+ *     at the new date. The roll uses the shared nextFollowupAfterCompletion helper
+ *     so the future repair script computes the same date. SAFETY: if the lead is
+ *     somehow in a TERMINAL status, we keep followupDate null instead (terminal
+ *     leads must carry no follow-up — data-integrity invariant); Complete is a
+ *     workable-lead action so this is only a guard.
  *   • needsManagerReview cleared if the agent themselves handled it
  *   • Activity row added so the timeline shows the manual complete
  *   • XP + follow-up streak awarded
@@ -51,11 +60,25 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   const now = new Date();
 
+  // Roll the follow-up forward to (now + 1 day) so completing leaves the lead with
+  // a next touchpoint instead of dropping it off the board. SAFETY GUARD: a
+  // terminal lead must carry NO followupDate (data-integrity-jun25 invariant), so
+  // if Complete is somehow invoked on one we keep it null. Complete is a workable-
+  // lead action, so the terminal branch is only a defensive guard — we still load
+  // the current status (loadOwnedLead doesn't select it) to make the decision.
+  const statusRow = await prisma.lead.findUnique({
+    where: { id },
+    select: { currentStatus: true },
+  });
+  const rolledFollowup = isTerminalStatus(statusRow?.currentStatus)
+    ? null
+    : nextFollowupAfterCompletion(now);
+
   await prisma.lead.update({
     where: { id },
     data: {
       lastTouchedAt: now,
-      followupDate: null,
+      followupDate: rolledFollowup,
       followupReminderSentAt: null,
       needsManagerReview: false,
       managerReviewReason: null,

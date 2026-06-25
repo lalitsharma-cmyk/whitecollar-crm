@@ -92,14 +92,15 @@ export default function ColdCallSession({ leads }: { leads: SessionLead[] }) {
     setErr(null);
     try {
       // 1) Always log the call via the standard endpoint so call history,
-      //    rescoring, gamification, and SLA all stay consistent.
+      //    rescoring, gamification, and SLA all stay consistent. Logging a call no
+      //    longer carries a follow-up date (Lalit's rule) — the "Call back later"
+      //    schedule is applied separately via the shared Snooze endpoint in step 2.
       const r = await fetch(`/api/leads/${current.id}/log-call`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           outcome: toEnumOutcome(outcome.key),
           remarks: outcome.notesOverride ?? "",
-          callbackAt: opts?.callbackISO ?? "",
           direction: "OUTBOUND",
         }),
       });
@@ -117,6 +118,18 @@ export default function ColdCallSession({ leads }: { leads: SessionLead[] }) {
           leveledUp: !!j.awardedXp.leveledUp,
           newLevel: j.awardedXp.newLevel,
         });
+      }
+
+      // 1b) "Call back later" → schedule the next follow-up through the SHARED
+      //     snooze endpoint (the canonical "set a future follow-up" path). This is
+      //     the only follow-up write in the cold-call flow, kept off the log-call
+      //     route so logging itself never sets a follow-up.
+      if (opts?.callbackISO) {
+        await fetch(`/api/leads/${current.id}/action-snooze`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ at: opts.callbackISO, reason: "Cold-call callback scheduled" }),
+        }).catch(() => {});
       }
 
       // 2) Outcome-specific side-effects fire AFTER the log succeeded.
