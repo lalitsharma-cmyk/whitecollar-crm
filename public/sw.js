@@ -332,7 +332,13 @@
 // imported-only hint now only shows when ZERO entries parse. Follow-up-date changes
 // + admin inline-field edits (system NOTE activities) are surfaced too. Parse-on-
 // render only — no data mutation; verbatim blob unchanged in Raw History. Bump shell.
-const CACHE = "wcr-shell-v66";
+// v67: Smart Timeline per-entry Edit now works for AGENTS on their OWN free-text
+// activity (meeting/visit/discussion/email/brochure) on the SAME IST day they logged
+// it — including EXISTING same-day rows already in the DB (gate keys on the entry's
+// stored createdAt + author + role via shared canEditActivity, not an admin-only flag).
+// Previous-day, another agent's entry, or system-generated kinds stay locked (server
+// re-enforces, 403). Admin/Manager/Super unchanged. Bump shell to ship the new gate.
+const CACHE = "wcr-shell-v67";
 const SHELL = ["/login", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", (event) => {

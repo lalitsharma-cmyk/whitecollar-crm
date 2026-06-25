@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { loadOwnedLead } from "@/lib/leadScope";
 import { audit, reqMeta } from "@/lib/audit";
+import { canEditActivity, AGENT_EDITABLE_ACTIVITY_TYPES } from "@/lib/remarkPerms";
 import { ActivityType } from "@prisma/client";
 
 /**
@@ -10,9 +11,16 @@ import { ActivityType } from "@prisma/client";
  *
  * Edit a Smart Timeline entry (a CRM Activity row) IN PLACE.
  *
- * PERMISSION — ADMIN / Super-Admin ONLY. Agents CANNOT edit historical timeline
- * records; this returns 403 for any non-admin even if the UI button is hidden
- * (defence in depth — a tampered request from an agent must 403).
+ * PERMISSION (shared rule — canEditActivity, mirrored in the UI button gate):
+ *   • ADMIN / Super-Admin / MANAGER → edit ANY entry, ANY date.
+ *   • AGENT → edit ONLY their OWN free-text entry (meeting / visit / discussion /
+ *     email / brochure — an AGENT_EDITABLE_ACTIVITY_TYPES kind) and ONLY on the IST
+ *     calendar day they logged it (the entry's stored createdAt). From the next IST
+ *     day on, edit is rejected (403). Computed from createdAt + author + role — NOT
+ *     a UI flag — so an EXISTING same-day row is editable without being recreated.
+ * The rule is re-enforced here independently of the client (a tampered request
+ * still 403s), and agents additionally cannot re-type an entry into a non-agent
+ * kind (e.g. STATUS_CHANGE) — the type change is admin/manager-only.
  *
  * AUDIT — the prior value of every changed field is preserved in ActivityEdit
  * (old → new + who + when) AND LeadFieldHistory. The timeline shows the LATEST
@@ -70,30 +78,35 @@ export async function PATCH(
   if (scoped.error) return scoped.error;
   const { me } = scoped;
 
-  // ── PERMISSION: ADMIN / Super-Admin only (server-enforced) ──
-  // Agents (and managers) may ADD activities elsewhere, but editing a historical
-  // timeline entry is admin-only. isSuperAdmin is a flag layered on the ADMIN
-  // role, so `role === "ADMIN"` already covers Lalit; we also accept the flag
-  // explicitly for robustness.
-  const isAdmin = me.role === "ADMIN" || me.isSuperAdmin === true;
-  if (!isAdmin) {
-    return NextResponse.json(
-      { error: "Only an admin can edit timeline entries." },
-      { status: 403 },
-    );
-  }
-
   const activity = await prisma.activity.findUnique({
     where: { id: activityId },
     select: {
       id: true, leadId: true, type: true, status: true, title: true,
       description: true, scheduledAt: true, completedAt: true,
       outcome: true, followupDate: true,
+      // author + creation instant — needed by the shared own/same-IST-day gate.
+      userId: true, createdAt: true,
     },
   });
   // Defence in depth — the activity must belong to the lead in the URL.
   if (!activity || activity.leadId !== id) {
     return NextResponse.json({ error: "Activity not found" }, { status: 404 });
+  }
+
+  // ── PERMISSION (shared rule, re-enforced server-side) ──
+  // ADMIN / Super-Admin / MANAGER → any entry, any date. AGENT → own + same-IST-day
+  // + an agent-editable (own free-text) kind. Computed from the entry's stored
+  // createdAt + author + role, so an EXISTING same-day row is editable; a previous-
+  // day row, another agent's row, or a system-generated kind is 403 — even if the
+  // UI button were tampered back on. (Super-admins are role ADMIN; the helper
+  // covers them. isSuperAdmin kept as a belt-and-braces ADMIN signal.)
+  const role = me.isSuperAdmin === true ? "ADMIN" : me.role;
+  const isPrivileged = me.role === "ADMIN" || me.role === "MANAGER" || me.isSuperAdmin === true;
+  if (!canEditActivity({ id: me.id, role }, { type: activity.type, createdById: activity.userId, createdAt: activity.createdAt })) {
+    return NextResponse.json(
+      { error: "You can only edit your own timeline entry, and only on the day you logged it." },
+      { status: 403 },
+    );
   }
 
   const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
@@ -102,11 +115,16 @@ export async function PATCH(
   const data: Record<string, unknown> = {};
   const edits: { field: string; oldValue: string | null; newValue: string | null }[] = [];
 
-  // type
+  // type — an admin/manager may re-type to any EDITABLE_TYPES kind; an AGENT may
+  // only ever set an agent-editable (own free-text) kind, never a system kind like
+  // STATUS_CHANGE / LEAD_CREATED (defence in depth on top of the per-row gate).
   if (typeof body.type === "string" && body.type.trim()) {
     const t = body.type.trim() as ActivityType;
     if (!EDITABLE_TYPES.has(t)) {
       return NextResponse.json({ error: "Invalid activity type." }, { status: 400 });
+    }
+    if (!isPrivileged && !AGENT_EDITABLE_ACTIVITY_TYPES.has(t)) {
+      return NextResponse.json({ error: "You can't change this entry to that type." }, { status: 403 });
     }
     if (t !== activity.type) {
       data.type = t;

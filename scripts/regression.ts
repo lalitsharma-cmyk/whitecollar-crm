@@ -1033,6 +1033,81 @@ const checks: Check[] = [
     },
   },
   {
+    // AGENT-SAMEDAY-EDIT (2026-06-25) — per-entry Smart Timeline ACTIVITY edit gate.
+    // An AGENT may edit their OWN free-text Activity (meeting/visit/discussion/email/
+    // brochure) ONLY on the IST day they logged it — computed from the entry's stored
+    // createdAt + author + role (NOT a UI mount flag / admin-only). EXISTING same-day
+    // rows must be editable WITHOUT recreating them; previous-day, another agent's, or
+    // a system-generated kind → false. Admin/Manager/super → any entry, any date
+    // (unchanged). Pure-function test on fixed timestamps (no Date.now). Plus a static
+    // guard that the SAME helper gates BOTH the UI button and the server PATCH.
+    name: "agent-sameday-edit — agent edits own same-IST-day free-text activity; previous-day/other-agent/system-kind blocked; admin/manager/super unchanged; gate shared UI+server",
+    run: async () => {
+      const { canEditActivity } = await import("../src/lib/remarkPerms");
+      // Fixed "now" = 2026-06-21 08:00 UTC = 13:30 IST (same IST day as a 05:00Z entry).
+      const now = new Date("2026-06-21T08:00:00Z");
+      const agent = { id: "a1", role: "AGENT" };
+      const todayIST = new Date("2026-06-21T05:00:00Z");      // 10:30 IST, 21 Jun
+      const yesterdayIST = new Date("2026-06-20T05:00:00Z");  // 20 Jun
+      // Edge: 2026-06-20T19:00Z = 2026-06-21T00:30 IST → still "today" IST.
+      const lateNightPrevUtcButTodayIST = new Date("2026-06-20T19:00:00Z");
+
+      // (1) EXISTING same-day own free-text entry → editable (the core fix).
+      assert(canEditActivity(agent, { type: "MEETING", createdById: "a1", createdAt: todayIST }, now) === true,
+        "agent own + same IST day + MEETING → editable (existing same-day row)");
+      assert(canEditActivity(agent, { type: "SITE_VISIT", createdById: "a1", createdAt: lateNightPrevUtcButTodayIST }, now) === true,
+        "agent own + UTC-prev-but-IST-today + SITE_VISIT → editable (IST boundary)");
+      assert(canEditActivity(agent, { type: "PROJECT_DISCUSSED", createdById: "a1", createdAt: todayIST }, now) === true,
+        "agent own + same IST day + PROJECT_DISCUSSED → editable");
+
+      // (3) Previous-day own entry → locked (no edit / server 403).
+      assert(canEditActivity(agent, { type: "MEETING", createdById: "a1", createdAt: yesterdayIST }, now) === false,
+        "agent own + previous IST day → locked");
+
+      // (4) Another agent's same-day entry → locked.
+      assert(canEditActivity(agent, { type: "MEETING", createdById: "a2", createdAt: todayIST }, now) === false,
+        "agent + another agent's entry (same day) → locked");
+
+      // System-generated kinds → never agent-editable, even own + same day.
+      for (const sysType of ["STATUS_CHANGE", "LEAD_CREATED", "COLD_TO_LEAD", "REMINDER_FIRED", "ASSIGNMENT", "CALL", "WHATSAPP"]) {
+        assert(canEditActivity(agent, { type: sysType, createdById: "a1", createdAt: todayIST }, now) === false,
+          `agent + own same-day ${sysType} (system/non-free-text kind) → locked`);
+      }
+      // Missing author / missing type → locked for agents.
+      assert(canEditActivity(agent, { type: "MEETING", createdById: null, createdAt: todayIST }, now) === false,
+        "agent + no author → locked");
+      assert(canEditActivity(agent, { type: null, createdById: "a1", createdAt: todayIST }, now) === false,
+        "agent + no type → locked");
+
+      // ADMIN / MANAGER / super (role ADMIN) — UNCHANGED: any entry, any date, any kind.
+      const admin = { id: "x", role: "ADMIN" };
+      const manager = { id: "m", role: "MANAGER" };
+      assert(canEditActivity(admin, { type: "STATUS_CHANGE", createdById: "someoneElse", createdAt: yesterdayIST }, now) === true,
+        "admin → any entry/date/kind (incl. STATUS_CHANGE, prev day, not author)");
+      assert(canEditActivity(manager, { type: "MEETING", createdById: "someoneElse", createdAt: yesterdayIST }, now) === true,
+        "manager → any entry/date (not author, prev day)");
+      assert(canEditActivity(admin, { type: "MEETING", createdById: null, createdAt: null }, now) === true,
+        "admin → editable even with no author/date");
+
+      // STATIC GUARD — the SAME helper must gate BOTH surfaces (UI button + server
+      // PATCH), so an agent can't be granted edit on one side but denied on the other.
+      const fs = await import("fs");
+      const path = await import("path");
+      const root = process.cwd();
+      const cardSrc = fs.readFileSync(path.join(root, "src/components/ConversationStreamCard.tsx"), "utf8");
+      assert(/canEditActivity\(/.test(cardSrc), "ConversationStreamCard must gate the Edit button via canEditActivity");
+      // The old admin-only flag must NOT gate the activity Edit button any longer.
+      assert(!/\{isAdmin && !surfacedNote &&/.test(cardSrc),
+        "activity Edit button still uses the old admin-only `isAdmin && !surfacedNote` gate");
+      const routeSrc = fs.readFileSync(path.join(root, "src/app/api/leads/[id]/activities/[activityId]/route.ts"), "utf8");
+      assert(/canEditActivity\(/.test(routeSrc), "activities PATCH must re-enforce via canEditActivity");
+      assert(/status:\s*403/.test(routeSrc), "activities PATCH must keep a 403 path for a forbidden edit");
+      // The old blanket admin-only short-circuit (reject ALL non-admins) must be gone.
+      assert(!/Only an admin can edit timeline entries/.test(routeSrc),
+        "activities PATCH still hard-blocks every non-admin (old admin-only gate not replaced)");
+    },
+  },
+  {
     name: "status-order — canonical priority (Fresh Lead → Office Visit → Follow Up → Visit Dubai → Details Shared → rest A→Z)",
     run: async () => {
       const { compareStatusDisplay } = await import("../src/lib/lead-statuses");
@@ -2711,7 +2786,7 @@ const checks: Check[] = [
   //   (d) NEWEST-FIRST — the unified sort orders mixed event types descending.
   // ───────────────────────────────────────────────────────────────────────────
   {
-    name: "smart-timeline-edit — migration applied + endpoint admin-gated + no raw-blob leak + newest-first",
+    name: "smart-timeline-edit — migration applied + endpoint permission-gated (shared rule) + no raw-blob leak + newest-first",
     run: async () => {
       // (a) DATA/SCHEMA — new columns + audit table are present (column/table probe).
       const probe = await prisma.activity.findFirst({ select: { id: true, outcome: true, followupDate: true } });
@@ -2723,15 +2798,19 @@ const checks: Check[] = [
       const path = await import("path");
       const root = process.cwd();
 
-      // (b) ENDPOINT AUTH — the activities edit route must reject non-admins server-side.
+      // (b) ENDPOINT AUTH — the activities edit route must enforce the shared
+      //     permission rule server-side (admin/manager any · agent own same-IST-day
+      //     free-text kind) and keep a 403 path for a forbidden edit. The deeper
+      //     own/same-day/kind matrix is proven on the pure helper in
+      //     `agent-sameday-edit`; here we lock the wiring + super-admin handling.
       const routePath = path.join(root, "src/app/api/leads/[id]/activities/[activityId]/route.ts");
       assert(fs.existsSync(routePath), "activities edit route is missing");
       const routeSrc = fs.readFileSync(routePath, "utf8");
       assert(/export\s+async\s+function\s+PATCH/.test(routeSrc), "activities route does not export PATCH");
-      // role-gate present: ADMIN / isSuperAdmin check + a 403 for non-admins.
-      assert(/me\.role\s*===\s*"ADMIN"/.test(routeSrc) && /isSuperAdmin/.test(routeSrc),
-        "activities PATCH does not gate on ADMIN / isSuperAdmin");
-      assert(/status:\s*403/.test(routeSrc), "activities PATCH has no 403 path for non-admins");
+      // Shared gate present, super-admin honoured, and a 403 path for forbidden edits.
+      assert(/canEditActivity\(/.test(routeSrc), "activities PATCH does not enforce the shared canEditActivity rule");
+      assert(/isSuperAdmin/.test(routeSrc), "activities PATCH no longer honours the super-admin flag");
+      assert(/status:\s*403/.test(routeSrc), "activities PATCH has no 403 path for a forbidden edit");
       // every changed field must be audited into ActivityEdit (no silent edits).
       assert(/activityEdit\.createMany/.test(routeSrc), "activities PATCH does not write ActivityEdit audit rows");
 

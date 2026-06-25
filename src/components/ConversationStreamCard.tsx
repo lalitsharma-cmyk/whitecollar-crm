@@ -12,7 +12,7 @@ import { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { fmtIST12Paren, fmtISTDate, toISTLocalInput } from "@/lib/datetime";
 import { canonicalAgentName } from "@/lib/agentName";
-import { canEditRemark } from "@/lib/remarkPerms";
+import { canEditRemark, canEditActivity } from "@/lib/remarkPerms";
 import type { CallLog, WhatsAppMessage } from "@prisma/client";
 import {
   parseRemarksTimeline,
@@ -44,6 +44,8 @@ type ActivityStreamRow = {
   scheduledAt?: Date | null; completedAt?: Date | null; createdAt: Date;
   status?: string | null; outcome?: string | null; followupDate?: Date | null;
   actionContext?: string | null;
+  /** Author of the activity — drives the agent own-entry edit gate. */
+  userId?: string | null;
   user?: { name: string } | null;
 };
 // Activity types rendered in the stream. CALL / WHATSAPP / NOTE are EXCLUDED — they
@@ -702,14 +704,20 @@ export default function ConversationStreamCard({
                     <span className="chip text-[9px] border border-emerald-300 bg-emerald-50 text-emerald-700">{a.outcome}</span>
                   )}
                   <span className="chip text-[9px] border border-slate-300 bg-slate-100 text-slate-600">{actLabel}</span>
-                  {/* Per-entry edit — ADMIN / Super-Admin ONLY. Agents never see this
-                      (and the PATCH endpoint 403s a tampered request). Edits THIS
-                      entry in place + writes the prior value to the audit trail.
-                      NOT offered on surfaced system NOTE rows — those aren't an
-                      editable activity type (the PATCH endpoint rejects NOTE). */}
-                  {isAdmin && !surfacedNote && (
+                  {/* Per-entry edit. ADMIN / MANAGER → any entry, any date. AGENT →
+                      ONLY their OWN free-text entry (meeting/visit/discussion/email/
+                      brochure) and ONLY on the IST day they logged it — computed from
+                      the entry's stored createdAt + author + role via canEditActivity
+                      (NOT a mount-time or admin-only flag), so an EXISTING same-day
+                      entry is editable without recreating it. The PATCH endpoint
+                      re-enforces the identical rule (403 otherwise). NOT offered on
+                      surfaced system NOTE rows (follow-up/inline-edit audit lines). */}
+                  {!surfacedNote && canEditActivity(
+                    { id: meId ?? "", role: viewerRole ?? (isAdmin ? "ADMIN" : "AGENT") },
+                    { type: a.type, createdById: a.userId ?? null, createdAt: a.createdAt },
+                  ) && (
                     <button type="button" onClick={() => setEditActivity(a)}
-                      title="Edit this timeline entry (admin only — original kept in audit log)"
+                      title="Edit this timeline entry (original kept in the audit log)"
                       className="text-[10px] text-gray-400 hover:text-gray-700 dark:hover:text-slate-200">✏️ Edit</button>
                   )}
                 </span>

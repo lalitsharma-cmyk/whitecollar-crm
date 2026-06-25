@@ -30,3 +30,35 @@ export function canEditRemark(
   if (isNaN(d.getTime())) return false;
   return item.createdById === me.id && istDayKey(d) === istDayKey(now);
 }
+
+// ─── Smart-Timeline ACTIVITY edit gate ────────────────────────────────────────
+// Per-entry Edit on a CRM Activity row in the Smart Timeline. Same OWN + same-IST-
+// day rule as a free-text note (canEditRemark), but additionally restricted — for
+// AGENTS — to the activity KINDS that carry the agent's OWN free-text remark
+// (a meeting/visit/discussion/email they logged). System-generated rows
+// (STATUS_CHANGE, LEAD_CREATED, COLD_TO_LEAD, REMINDER_FIRED, ASSIGNMENT, …) and
+// the call/WhatsApp rows (which edit via their own note path) are NEVER agent-
+// editable, even on the same day. ADMIN / MANAGER keep their existing rights
+// (edit ANY activity, ANY date) — this never narrows or widens them.
+//
+// Used by BOTH the Edit-button visibility (ConversationStreamCard) and the server
+// PATCH authorization (api/leads/[id]/activities/[activityId]) so the rule is a
+// single source of truth and cannot be bypassed by un-hiding the button.
+
+/** Activity `type` values an AGENT may edit (their own free-text conversational content). */
+export const AGENT_EDITABLE_ACTIVITY_TYPES: ReadonlySet<string> = new Set<string>([
+  "SITE_VISIT", "OFFICE_MEETING", "VIRTUAL_MEETING", "HOME_VISIT", "EXPO_MEETING",
+  "MEETING", "PROJECT_DISCUSSED", "BROCHURE_SENT", "EMAIL", "NOTE",
+]);
+
+export function canEditActivity(
+  me: EditableActor,
+  activity: { type?: string | null; createdById?: string | null; createdAt?: Date | string | null },
+  now: Date = new Date(),
+): boolean {
+  // Admin / Manager (super-admins are role ADMIN) — unchanged: any activity, any date.
+  if (me.role === "ADMIN" || me.role === "MANAGER") return true;
+  // Agent — kind must be an own-authored free-text type, AND own + same IST day.
+  if (!activity.type || !AGENT_EDITABLE_ACTIVITY_TYPES.has(activity.type)) return false;
+  return canEditRemark(me, { createdById: activity.createdById, createdAt: activity.createdAt }, now);
+}
