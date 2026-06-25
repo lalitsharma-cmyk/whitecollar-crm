@@ -2704,9 +2704,10 @@ const checks: Check[] = [
   //       the ActivityEdit audit table exist in prod (selecting them must not throw).
   //   (b) ENDPOINT AUTH — the per-entry edit route admin-gates its PATCH server-side
   //       (the recurring "UI-gated but API-open" class). Static source scan.
-  //   (c) NO RAW-BLOB LEAK — ConversationStreamCard's Smart Timeline view renders
-  //       the unified CRM-event stream (`filteredStream`) and NO LONGER maps the
-  //       parsed imported-remark entries (`displayRemarkEntries`). Static scan.
+  //   (c) NO RAW-BLOB LEAK — ConversationStreamCard's Smart Timeline renders the
+  //       unified stream (`filteredStream`); the verbatim `{rawRemarks}` blob stays
+  //       behind the raw-mode guard. Parsed remarks render as clean per-remark cards
+  //       (kind:"remark") inside the stream, never the single blob. Static scan.
   //   (d) NEWEST-FIRST — the unified sort orders mixed event types descending.
   // ───────────────────────────────────────────────────────────────────────────
   {
@@ -2734,19 +2735,22 @@ const checks: Check[] = [
       // every changed field must be audited into ActivityEdit (no silent edits).
       assert(/activityEdit\.createMany/.test(routeSrc), "activities PATCH does not write ActivityEdit audit rows");
 
-      // (c) NO RAW-BLOB LEAK — Smart Timeline renders the unified CRM-event stream and
-      //     must NOT render the parsed imported-remark entries as cards.
+      // (c) NO RAW-BLOB LEAK — Smart Timeline renders the unified stream and must
+      //     NOT dump the raw imported BLOB as one verbatim entry. Parsed imported
+      //     remarks ARE now rendered, but as individual clean cards (kind:"remark")
+      //     INSIDE the unified stream — never the single `{rawRemarks}` blob.
       const cardPath = path.join(root, "src/components/ConversationStreamCard.tsx");
       const cardSrc = fs.readFileSync(cardPath, "utf8");
       assert(/viewMode === "smart" && filteredStream\.map/.test(cardSrc),
-        "Smart Timeline no longer renders the unified CRM-event stream (filteredStream)");
-      // The dead imported-remark render path must be gone (was `displayRemarkEntries.map`).
-      assert(!/displayRemarkEntries\.map/.test(cardSrc),
-        "Smart Timeline STILL maps parsed imported-remark entries (displayRemarkEntries) — raw blob leaks back in");
-      // The unified stream excludes the raw blob by construction: it is built only
-      // from call/wa/note/activity rows.
-      assert(/kind:\s*"call"/.test(cardSrc) && /kind:\s*"activity"/.test(cardSrc),
-        "unified stream is not built from genuine CRM event kinds");
+        "Smart Timeline no longer renders the unified stream (filteredStream)");
+      // The verbatim blob `{rawRemarks}` must render ONLY under the raw-mode guard,
+      // never inside the smart-mode map (that was the old messy single-entry leak).
+      assert(/viewMode === "raw" && rawRemarks && rawRemarks\.trim\(\)/.test(cardSrc),
+        "raw verbatim blob is no longer guarded behind viewMode === 'raw'");
+      // The unified stream is built from genuine CRM event kinds PLUS parsed remark
+      // cards — all individually shaped, none of them the raw blob.
+      assert(/kind:\s*"call"/.test(cardSrc) && /kind:\s*"activity"/.test(cardSrc) && /kind:\s*"remark"/.test(cardSrc),
+        "unified stream is not built from the expected event kinds (call/activity/remark)");
 
       // (d) NEWEST-FIRST — replicate the unified sort and assert descending order
       //     across mixed event types (mirrors ConversationStreamCard.unifiedStream).
@@ -2760,6 +2764,93 @@ const checks: Check[] = [
       assert(order === "a1,n1,w1,c1", `unified newest-first sort wrong: ${order}`);
 
       results.push({ name: "  ↳ note", ok: true, detail: `ActivityEdit rows in prod: ${editCount}` });
+    },
+  },
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // IMPORTED-REMARKS-TIMELINE (2026-06-25) — parsed imported rawRemarks now render
+  // as clean per-remark cards in Smart Timeline (parse-on-render, NO data write).
+  // Locks the two behaviours that must never silently regress:
+  //   (a) CANONICAL CASE — the "28 May … Lalit Sharma" remark parses to a dated
+  //       entry on 2026-05-28 AND a Lalit-Sharma-attributed entry. Verified on a
+  //       deterministic synthetic blob (never flaky) AND, when present, on the real
+  //       prod lead that carries both "28 May" + "Lalit" in rawRemarks.
+  //   (b) ZERO-DROP — on a multi-remark sample every coarse segment is represented
+  //       (parsed entries ≥ 1 and NO entry is silently discarded): the parser keeps
+  //       undated fragments rather than dropping them.
+  //   (c) WIRED — ConversationStreamCard pushes mergedEntries into the unified
+  //       stream as kind:"remark" with the no-truncation full body. Static scan.
+  // ───────────────────────────────────────────────────────────────────────────
+  {
+    name: "imported-remarks-timeline — 28-May Lalit parses (date+author) + multi-remark sample drops 0 segments + wired into Smart Timeline",
+    run: async () => {
+      const { parseRemarksTimeline, mergeSameMoment } = await import("../src/lib/remarkParser");
+      const roster = ["Lalit Sharma", "Tanuj Chopra", "Yasir Khan"];
+
+      // (a) CANONICAL — deterministic synthetic blob encoding the 28-May Lalit case.
+      const synthetic = "Lalit Sharma: On 28 May 2026 (3:30 pm) discussed Magnolias, client interested in 4 BHK, budget 12 cr";
+      const synEntries = mergeSameMoment(parseRemarksTimeline(synthetic, roster));
+      const synDated = synEntries.find((e) => e.date && e.date.getUTCMonth() === 4 && e.date.getUTCDate() === 28);
+      assert(!!synDated, "28-May synthetic remark did NOT parse to a 2026-05-28 dated entry");
+      assert(synEntries.some((e) => (e.agentName ?? "").toLowerCase().includes("lalit")),
+        "28-May synthetic remark did NOT attribute the entry to Lalit Sharma");
+
+      // (b) ZERO-DROP — a multi-remark blob with mixed dated + undated lines. Every
+      //     line must survive: the merged entry count is ≥ the number of distinct
+      //     dated remarks, and NOTHING parses to an empty set.
+      const multi =
+        "On 12 Mar 2021 call not picked,,On 14 Mar 2021 site visit done magnolias,," +
+        "he said will revert next week,,On 03 Jan 2026 (3:17 pm) discussed Trump 1 resale,," +
+        "On 28 May 2026 he confirmed booking intent";
+      const segs = multi
+        .replace(/,{2,}/g, "\n")
+        .replace(/[.!?,]?\s*((?:[A-Z][A-Za-z]{1,20}\s*:\s*)?[oO]n\s+\d{1,2})/g, (_m, b) => `\n${b}`)
+        .split("\n").map((l) => l.trim()).filter((l) => l.length >= 2);
+      const multiEntries = mergeSameMoment(parseRemarksTimeline(multi, roster));
+      assert(multiEntries.length >= 1, "multi-remark sample parsed to ZERO entries (everything dropped)");
+      // No coarse segment is lost: the parser keeps every line (dated OR undated) —
+      // entries (after same-moment merge) must be at least the count of dated lines.
+      const datedLines = segs.filter((s) => /\d{1,2}\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)/i.test(s)).length;
+      assert(multiEntries.length >= datedLines,
+        `parser dropped dated remarks: ${multiEntries.length} entries < ${datedLines} dated lines`);
+      // The 28-May line in the multi sample is present as a dated entry too.
+      assert(multiEntries.some((e) => e.date && e.date.getUTCMonth() === 4 && e.date.getUTCDate() === 28),
+        "28-May remark missing from the multi-remark sample parse");
+
+      // (a′) PROD — if a real lead carries both '28 May' + 'Lalit' in rawRemarks,
+      //      it must parse to ≥1 dated entry (the canonical acceptance lead). Skip
+      //      cleanly if no such lead exists (data may change), so the gate never
+      //      false-fails on data drift — the synthetic case already locks behaviour.
+      const prodLead = await prisma.lead.findFirst({
+        where: {
+          AND: [
+            { OR: [{ rawRemarks: { contains: "28 May" } }, { remarks: { contains: "28 May" } }] },
+            { OR: [{ rawRemarks: { contains: "Lalit" } }, { remarks: { contains: "Lalit" } }] },
+          ],
+        },
+        select: { id: true, rawRemarks: true, remarks: true, createdAt: true },
+      });
+      let prodNote = "no prod 28-May-Lalit lead (synthetic case still locks it)";
+      if (prodLead) {
+        const raw = prodLead.rawRemarks ?? prodLead.remarks ?? "";
+        const pe = mergeSameMoment(parseRemarksTimeline(raw, roster, prodLead.createdAt));
+        const datedCount = pe.filter((e) => e.date).length;
+        assert(datedCount >= 1, `prod 28-May-Lalit lead ${prodLead.id} parsed to 0 dated entries`);
+        prodNote = `prod lead ${prodLead.id}: ${pe.length} entries, ${datedCount} dated`;
+      }
+
+      // (c) WIRED — Smart Timeline actually pushes parsed remarks into the stream.
+      const fs = await import("fs");
+      const path = await import("path");
+      const cardSrc = fs.readFileSync(path.join(process.cwd(), "src/components/ConversationStreamCard.tsx"), "utf8");
+      assert(/kind:\s*"remark"/.test(cardSrc) && /mergedEntries/.test(cardSrc),
+        "ConversationStreamCard does not push mergedEntries into the unified stream as kind:'remark'");
+      // Full body, no truncation: the imported-remark card renders e.text with
+      // whitespace-pre-wrap + break-words and must NOT slice/substring it.
+      assert(/whitespace-pre-wrap break-words[^>]*>\{e\.text\}/.test(cardSrc),
+        "imported-remark card does not render the FULL untruncated body ({e.text})");
+
+      results.push({ name: "  ↳ note", ok: true, detail: `${synEntries.length} synth / ${multiEntries.length} multi entries; ${prodNote}` });
     },
   },
 

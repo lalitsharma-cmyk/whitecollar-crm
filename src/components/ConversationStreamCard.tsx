@@ -10,7 +10,7 @@
 
 import { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { fmtIST12Paren, toISTLocalInput } from "@/lib/datetime";
+import { fmtIST12Paren, fmtISTDate, toISTLocalInput } from "@/lib/datetime";
 import { canonicalAgentName } from "@/lib/agentName";
 import { canEditRemark } from "@/lib/remarkPerms";
 import type { CallLog, WhatsAppMessage } from "@prisma/client";
@@ -18,6 +18,7 @@ import {
   parseRemarksTimeline,
   mergeSameMoment,
   remarkKeyFor,
+  isNoonSentinel,
   type RemarkEntry,
   type RemarkEventType,
 } from "@/lib/remarkParser";
@@ -42,6 +43,7 @@ type ActivityStreamRow = {
   id: string; type: string; title?: string | null; description?: string | null;
   scheduledAt?: Date | null; completedAt?: Date | null; createdAt: Date;
   status?: string | null; outcome?: string | null; followupDate?: Date | null;
+  actionContext?: string | null;
   user?: { name: string } | null;
 };
 // Activity types rendered in the stream. CALL / WHATSAPP / NOTE are EXCLUDED — they
@@ -51,6 +53,19 @@ const ACTIVITY_STREAM_TYPES = new Set([
   "MEETING", "STATUS_CHANGE", "LEAD_CREATED", "COLD_TO_LEAD", "BROCHURE_SENT",
   "PROJECT_DISCUSSED", "REMINDER_FIRED", "EMAIL",
 ]);
+// Narrow carve-out: a FEW Activity rows are typed NOTE but are NOT free-text notes
+// (those mirror a Note-model row and would double-up). These are system audit
+// events the server logs as NOTE — a FOLLOW-UP-DATE change ("followup-change:*")
+// or an admin INLINE FIELD EDIT ("Inline edit: N field(s)"). Surfacing exactly
+// these — and nothing else NOTE-typed — adds "follow-up changes" + "admin edits"
+// to Smart Timeline without re-introducing the note double-count.
+function isSurfacedNoteActivity(a: ActivityStreamRow): boolean {
+  if (a.type !== "NOTE") return false;
+  const ctx = a.actionContext ?? "";
+  if (ctx.startsWith("followup-change")) return true;
+  if ((a.title ?? "").startsWith("Inline edit:")) return true;
+  return false;
+}
 const ACTIVITY_ICON: Record<string, string> = {
   SITE_VISIT: "🚗", OFFICE_MEETING: "🏢", VIRTUAL_MEETING: "💻", HOME_VISIT: "🏠",
   EXPO_MEETING: "🎪", MEETING: "📅", STATUS_CHANGE: "🔄", LEAD_CREATED: "✨",
@@ -136,16 +151,34 @@ function waColour(direction: WhatsAppMessage["direction"]) {
 }
 
 // ─── Remark event-type count sets ────────────────────────────────────────────
-// Imported remark entries are no longer rendered as Smart Timeline cards (they
-// live verbatim in Raw History). These two sets are kept ONLY to classify those
-// parsed entries for the cross-source connected / no-answer COUNT chips in the
-// header — so an imported-only lead still shows accurate conversation counters.
+// Parsed imported-remark entries are BOTH rendered as Smart Timeline cards (one
+// clean dated card per remark) AND classified here for the cross-source
+// connected / no-answer COUNT chips in the header — so an imported-only lead
+// shows accurate conversation counters AND its historical comments inline.
 const CONNECTED_REMARK_TYPES = new Set<RemarkEventType>([
   "CALL_CONNECTED", "MEETING", "VIRTUAL_MEETING", "SITE_VISIT", "CALL_NOT_INTERESTED", "NOTE",
 ]);
 const NOANSWER_REMARK_TYPES = new Set<RemarkEventType>([
   "CALL_NOT_PICKED", "CALL_BUSY", "CALL_SWITCHED_OFF", "CALL_CALLBACK",
 ]);
+
+// Per-imported-remark icon by classified event type — small visual cue mirroring
+// the call/activity rows. Falls back to the imported-note glyph.
+const REMARK_ICON: Record<RemarkEventType, string> = {
+  CALL_CONNECTED: "📞", CALL_NOT_PICKED: "📵", CALL_BUSY: "⏳", CALL_SWITCHED_OFF: "📴",
+  CALL_CALLBACK: "🔁", CALL_NOT_INTERESTED: "🛑", SITE_VISIT: "🚗", MEETING: "🏢",
+  VIRTUAL_MEETING: "💻", NOTE: "🗒",
+};
+// Imported-remark left-border + background tint by event class. Connected /
+// meeting tones lean emerald; no-answer tones lean red; plain notes stay slate —
+// consistent with the call/WhatsApp colour language, just muted for "imported".
+function remarkColour(t: RemarkEventType): { border: string; bg: string } {
+  if (CONNECTED_REMARK_TYPES.has(t) && t !== "NOTE")
+    return { border: "border-emerald-300", bg: "bg-emerald-50/30" };
+  if (NOANSWER_REMARK_TYPES.has(t))
+    return { border: "border-red-200", bg: "bg-red-50/20" };
+  return { border: "border-slate-300", bg: "bg-slate-50/60" };
+}
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
@@ -239,9 +272,10 @@ export default function ConversationStreamCard({
   const audioTitle = forwardedTeam === "Dubai"
     ? "Recordings may exist only for India team (UAE consent rules)" : undefined;
 
-  // ── Parse the raw remarks into structured entries (Raw History ONLY) ───────
-  // These entries are ONLY for the Raw History tab (immutable imported text).
-  // Smart Timeline does NOT use these — it reads from Activity records instead.
+  // ── Parse the raw remarks into structured entries ──────────────────────────
+  // Derived from the IMMUTABLE imported text (rawRemarks). Used for BOTH the
+  // header count chips AND — now — the Smart Timeline cards (one clean dated card
+  // per remark). The Raw History tab still shows the untouched verbatim blob.
   const allRemarkEntries = useMemo(() =>
     rawRemarks
       ? parseRemarksTimeline(rawRemarks, agentNames, leadCreatedAt ?? undefined)
@@ -275,10 +309,11 @@ export default function ConversationStreamCard({
 
   // Merge entries that share the same agent + exact timestamp — one MIS remark
   // block the parser split across several lines — into a single conversation block.
-  // NOTE: imported remark entries are NO LONGER rendered as Smart Timeline cards
-  // (they live verbatim in the Raw History tab). `mergedEntries` is kept ONLY to
-  // power the cross-source connected / no-answer COUNT chips in the header, so an
-  // imported-only lead still shows accurate conversation counters.
+  // `mergedEntries` powers BOTH the cross-source connected / no-answer COUNT chips
+  // in the header AND the Smart Timeline imported-remark cards (one clean dated
+  // card per remark), so an imported-only lead shows accurate counters AND its
+  // historical comments inline. It already respects the moderation overlay (it
+  // derives from `remarkEntries`, which drops viewer-hidden entries).
   const mergedEntries = useMemo(() => mergeSameMoment(remarkEntries), [remarkEntries]);
 
   // ── Counts ────────────────────────────────────────────────────────────────
@@ -296,12 +331,15 @@ export default function ConversationStreamCard({
   const connectedCount    = callConnectedCount + remarkConnectedCount + waInboundCount + noteCount;
   const unsuccessfulCount = callUnsuccessfulCount + remarkNoAnswerCount;
 
-  const streamActs = activities.filter((a) => ACTIVITY_STREAM_TYPES.has(a.type));
-  // Total rows shown in Smart Timeline = genuine CRM events ONLY (calls + WhatsApp
-  // + notes + CRM activities). Imported remark blobs (mergedEntries) are NO LONGER
-  // rendered in Smart Timeline — they live verbatim in the Raw History tab. They
-  // still feed the connected/no-answer counters above (cross-source totals).
-  const totalEntries = callLogs.length + waMessages.length + notes.length + streamActs.length;
+  const streamActs = activities.filter((a) => ACTIVITY_STREAM_TYPES.has(a.type) || isSurfacedNoteActivity(a));
+  // Total rows shown in Smart Timeline = genuine CRM events (calls + WhatsApp +
+  // notes + CRM activities) PLUS every parsed imported remark (mergedEntries).
+  // Imported remarks now render as their own clean dated cards in the stream
+  // (date → author → full body), so an imported-only lead shows its historical
+  // comments inline instead of a bare "view Raw History" hint. The verbatim blob
+  // is still available, unchanged, in the Raw History tab.
+  const totalEntries =
+    callLogs.length + waMessages.length + notes.length + streamActs.length + mergedEntries.length;
 
   // ─── Filter helpers ────────────────────────────────────────────────────────
 
@@ -314,20 +352,22 @@ export default function ConversationStreamCard({
   }
 
   // ── Unified Smart Timeline stream (newest-first across ALL event types) ──────
-  // Smart Timeline shows ONLY processed CRM events — call logs, WhatsApp, notes,
-  // and CRM-logged activities (meetings / visits / status changes / reject /
-  // convert / brochure / email / AI + manual timeline entries). It NEVER shows the
-  // raw imported remark blob (e.g. "DAMAC Property Expo in London") — that stays
-  // verbatim in the Raw History tab only.
+  // Smart Timeline interleaves every event type into one newest-first stream:
+  // call logs, WhatsApp, notes, CRM-logged activities (meetings / visits / status
+  // changes / reject / convert / brochure / email / AI + manual entries) AND every
+  // parsed imported remark (one clean dated card per remark). It still never dumps
+  // the raw imported BLOB as one messy entry — each remark is a parsed clean card;
+  // the verbatim blob remains in the Raw History tab only.
   //
   // Every event is normalised to a single shape with an effective IST timestamp
   // (completedAt ?? scheduledAt ?? createdAt for activities; the source timestamp
   // otherwise) and the whole list is sorted DESCENDING — latest at the top, oldest
   // at the bottom — across every type. A plain numeric sort (not a stable merge of
   // pre-sorted buckets) guarantees the order is correct regardless of source.
-  type StreamKind = "call" | "wa" | "note" | "activity";
+  type StreamKind = "call" | "wa" | "note" | "activity" | "remark";
   type StreamItem = { kind: StreamKind; at: number; id: string;
-    call?: CallLogWithUser; wa?: WhatsAppMessage; note?: NoteWithUser; act?: ActivityStreamRow };
+    call?: CallLogWithUser; wa?: WhatsAppMessage; note?: NoteWithUser; act?: ActivityStreamRow;
+    remark?: RemarkEntry; remarkUndated?: boolean };
 
   const unifiedStream = useMemo<StreamItem[]>(() => {
     const items: StreamItem[] = [];
@@ -338,9 +378,24 @@ export default function ConversationStreamCard({
       const eff = a.completedAt ?? a.scheduledAt ?? a.createdAt;
       items.push({ kind: "activity", at: eff.getTime(), id: `a-${a.id}`, act: a });
     }
+    // ── PARSED IMPORTED REMARKS — one clean card per remark ──
+    // Every parsed entry from the imported rawRemarks blob is merged into the SAME
+    // newest-first stream as a clean dated card (date → author → FULL body, no
+    // length cap). An entry with no parseable date is NOT dropped — it sinks to a
+    // stable epoch-0 position so it always renders (as an undated "Imported note").
+    // The remarkKey (date+text hash) gives a stable React key across renders.
+    for (const e of mergedEntries) {
+      items.push({
+        kind: "remark",
+        at: e.date ? e.date.getTime() : 0,
+        id: `r-${remarkKeyFor(e)}`,
+        remark: e,
+        remarkUndated: !e.date,
+      });
+    }
     // Newest first. Equal timestamps keep a deterministic id tiebreak.
     return items.sort((x, y) => (y.at - x.at) || (x.id < y.id ? 1 : -1));
-  }, [callLogs, waMessages, notes, streamActs]);
+  }, [callLogs, waMessages, notes, streamActs, mergedEntries]);
 
   // Apply the active filter chip to the unified stream.
   function showStreamItem(it: StreamItem): boolean {
@@ -354,6 +409,15 @@ export default function ConversationStreamCard({
       return true; // ALL or WA
     }
     if (it.kind === "note") return filter === "ALL" || filter === "CONNECTED";
+    if (it.kind === "remark") {
+      // Classify an imported remark by its parsed event type so the connected /
+      // no-answer chips filter it the same way they filter a real call.
+      const t = it.remark!.eventType;
+      if (filter === "ALL") return true;
+      if (filter === "CONNECTED") return CONNECTED_REMARK_TYPES.has(t);
+      if (filter === "NO_ANSWER") return NOANSWER_REMARK_TYPES.has(t);
+      return false; // WA filter → imported remarks excluded
+    }
     // activity
     return filter === "ALL" || filter === "CONNECTED";
   }
@@ -419,19 +483,19 @@ export default function ConversationStreamCard({
 
       {/* ── Main stream ── */}
       <div className="space-y-1.5 text-sm max-h-[620px] overflow-y-auto pr-1">
-        {/* Empty-state. For an IMPORTED-ONLY lead (rawRemarks present but no CRM
-            Activity logged yet) the Smart Timeline would otherwise look blank even
-            though the Raw History tab has content — so point the user there with a
-            one-tap switch instead of the bare "nothing logged" message. Raw blobs
-            are deliberately NOT rendered in Smart Timeline; this is just a signpost.
-            With genuinely no history at all (and in Raw mode, where the blob itself
-            renders below) → the plain empty state. */}
+        {/* Empty-state. Parsed imported remarks now render as their own cards in
+            Smart Timeline, so totalEntries already includes them — this hint can
+            ONLY fire when rawRemarks exists but parsed to ZERO entries (a genuinely
+            unparseable blob, very rare). In that one edge case we still point the
+            user to the verbatim Raw History so nothing is hidden. Otherwise → the
+            plain "nothing logged" empty state (or, in Raw mode, the blob renders
+            below). */}
         {totalEntries === 0 && (
           viewMode === "smart" && rawRemarks && rawRemarks.trim() ? (
             <div className="text-center py-5 px-3">
-              <div className="text-gray-500 dark:text-slate-400 text-xs">No CRM activity logged yet.</div>
+              <div className="text-gray-500 dark:text-slate-400 text-xs">No timeline entries could be parsed.</div>
               <div className="text-gray-600 dark:text-slate-300 text-xs mt-1">
-                📋 Imported history is available in the Raw History tab.
+                📋 The full imported history is available, verbatim, in the Raw History tab.
               </div>
               <button type="button" onClick={() => setViewMode("raw")}
                 className="mt-2 text-[11px] px-2.5 py-1 rounded-md bg-[#0b1a33] text-white hover:bg-[#0b1a33]/90">
@@ -585,25 +649,65 @@ export default function ConversationStreamCard({
             );
           }
 
+          // ── IMPORTED REMARK (parsed from the rawRemarks audit blob) ──
+          // One clean card per remark: date → author → FULL body (never truncated).
+          // A subtle "Imported" chip marks the provenance; the verbatim blob still
+          // lives unchanged in the Raw History tab. Date-only remarks (noon
+          // sentinel) show the DATE ALONE — no invented clock time. Undated
+          // fragments render as "Imported note" so nothing is ever dropped.
+          if (it.kind === "remark") {
+            const e = it.remark!;
+            const col = remarkColour(e.eventType);
+            const who = e.agentName ? canonicalAgentName(e.agentName, agentNames) : null;
+            const dateLabel = !e.date
+              ? null
+              : isNoonSentinel(e.date)
+                ? `${fmtISTDate(e.date)}`             // date-only remark — no clock time
+                : `${fmtIST12Paren(e.date)} IST`;     // real timestamp
+            return (
+              <div key={it.id} className={`border-l-2 ${col.border} ${col.bg} pl-3 pr-2 py-1.5 rounded-r`}>
+                <div className="flex items-center justify-between flex-wrap gap-1 text-[11px] text-gray-500">
+                  <span>
+                    {REMARK_ICON[e.eventType] ?? "🗒"} {who ? <><b>{who}</b> · </> : null}
+                    {dateLabel ?? "Imported note"}
+                  </span>
+                  <span className="chip text-[9px] border border-slate-300 bg-slate-100 text-slate-500" title="Parsed from the imported Raw History (verbatim original preserved in the Raw History tab)">📋 Imported</span>
+                </div>
+                {/* FULL body — whitespace-pre-wrap + break-words, NO max-height / NO
+                    truncation, so even a very long imported remark renders complete. */}
+                <div className="text-xs mt-1 text-gray-800 dark:text-slate-200 whitespace-pre-wrap break-words">{e.text}</div>
+              </div>
+            );
+          }
+
           // ── CRM ACTIVITY (meeting / visit / status change / reject / convert /
           //    brochure / email / reminder …). Admin/super-admin gets a per-card
           //    ✏️ Edit on the RIGHT that opens the edit modal for THIS entry only. ──
           const a = it.act!;
           const when = a.completedAt ?? a.scheduledAt ?? a.createdAt;
           const who = canonicalAgentName(a.user?.name ?? "Agent", agentNames);
+          // Surfaced system NOTE activities (follow-up change / admin inline edit)
+          // have no entry in the meeting/status icon+label maps — give them a
+          // sensible icon + chip so they read as what they are.
+          const surfacedNote = isSurfacedNoteActivity(a);
+          const isFollowupChange = surfacedNote && (a.actionContext ?? "").startsWith("followup-change");
+          const actIcon = ACTIVITY_ICON[a.type] ?? (isFollowupChange ? "📅" : surfacedNote ? "✏️" : "•");
+          const actLabel = ACTIVITY_LABEL[a.type] ?? (isFollowupChange ? "Follow-up" : surfacedNote ? "Edit" : "Activity");
           return (
             <div key={it.id} className="border-l-2 border-slate-300 bg-slate-50/70 pl-3 pr-2 py-1.5 rounded-r">
               <div className="flex items-center justify-between flex-wrap gap-1 text-[11px] text-gray-500">
-                <span>{ACTIVITY_ICON[a.type] ?? "•"} <b>{who}</b> · {fmtIST12Paren(when)} IST</span>
+                <span>{actIcon} <b>{who}</b> · {fmtIST12Paren(when)} IST</span>
                 <span className="inline-flex items-center gap-1.5">
                   {a.outcome && (
                     <span className="chip text-[9px] border border-emerald-300 bg-emerald-50 text-emerald-700">{a.outcome}</span>
                   )}
-                  <span className="chip text-[9px] border border-slate-300 bg-slate-100 text-slate-600">{ACTIVITY_LABEL[a.type] ?? "Activity"}</span>
+                  <span className="chip text-[9px] border border-slate-300 bg-slate-100 text-slate-600">{actLabel}</span>
                   {/* Per-entry edit — ADMIN / Super-Admin ONLY. Agents never see this
                       (and the PATCH endpoint 403s a tampered request). Edits THIS
-                      entry in place + writes the prior value to the audit trail. */}
-                  {isAdmin && (
+                      entry in place + writes the prior value to the audit trail.
+                      NOT offered on surfaced system NOTE rows — those aren't an
+                      editable activity type (the PATCH endpoint rejects NOTE). */}
+                  {isAdmin && !surfacedNote && (
                     <button type="button" onClick={() => setEditActivity(a)}
                       title="Edit this timeline entry (admin only — original kept in audit log)"
                       className="text-[10px] text-gray-400 hover:text-gray-700 dark:hover:text-slate-200">✏️ Edit</button>

@@ -109,7 +109,9 @@ function withISTTime(baseDate: Date, timeStr: string): Date | null {
 
 // Date-only noon sentinel (06:30 UTC = 12:00 IST): the entry has NO real clock
 // time, so two such entries on the same day are DISTINCT remarks — never merged.
-function isNoonSentinel(d: Date): boolean {
+// EXPORTED so the Smart Timeline render can show the DATE ALONE for these entries
+// (no invented clock time) exactly the way the parser intends them.
+export function isNoonSentinel(d: Date): boolean {
   return d.getUTCHours() === 6 && d.getUTCMinutes() === 30;
 }
 

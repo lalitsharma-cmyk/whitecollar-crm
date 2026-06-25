@@ -326,7 +326,13 @@
 // wide horizontal-scroll Excel grid + full-width preview drawer on phones; Smart
 // Timeline shows an imported-history hint (→ Raw History tab) for imported-only
 // leads instead of a bare empty state. UI-only; bump to ship the new shell.
-const CACHE = "wcr-shell-v65";
+// v66: Smart Timeline now PARSES the imported rawRemarks blob into one clean dated
+// card per remark (date → author → FULL body, no truncation), interleaved newest-
+// first with calls/WhatsApp/notes/activities; each carries an "Imported" chip. The
+// imported-only hint now only shows when ZERO entries parse. Follow-up-date changes
+// + admin inline-field edits (system NOTE activities) are surfaced too. Parse-on-
+// render only — no data mutation; verbatim blob unchanged in Raw History. Bump shell.
+const CACHE = "wcr-shell-v66";
 const SHELL = ["/login", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", (event) => {
