@@ -322,7 +322,11 @@
 // and the /leads/:id cold redirect keys on isColdCall OR leadOrigin∈{COLD,REVIVAL}
 // so cold/revival records always land in Revival Engine. Bump to refresh the shell
 // so the corrected tile drill-hrefs are served.
-const CACHE = "wcr-shell-v64";
+// v65: Master Data gets a real mobile card layout (< sm) replacing the unusable
+// wide horizontal-scroll Excel grid + full-width preview drawer on phones; Smart
+// Timeline shows an imported-history hint (→ Raw History tab) for imported-only
+// leads instead of a bare empty state. UI-only; bump to ship the new shell.
+const CACHE = "wcr-shell-v65";
 const SHELL = ["/login", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", (event) => {

@@ -419,10 +419,30 @@ export default function ConversationStreamCard({
 
       {/* ── Main stream ── */}
       <div className="space-y-1.5 text-sm max-h-[620px] overflow-y-auto pr-1">
+        {/* Empty-state. For an IMPORTED-ONLY lead (rawRemarks present but no CRM
+            Activity logged yet) the Smart Timeline would otherwise look blank even
+            though the Raw History tab has content — so point the user there with a
+            one-tap switch instead of the bare "nothing logged" message. Raw blobs
+            are deliberately NOT rendered in Smart Timeline; this is just a signpost.
+            With genuinely no history at all (and in Raw mode, where the blob itself
+            renders below) → the plain empty state. */}
         {totalEntries === 0 && (
-          <div className="text-gray-500 text-xs text-center py-4">
-            No calls, WhatsApp messages, or notes logged yet.
-          </div>
+          viewMode === "smart" && rawRemarks && rawRemarks.trim() ? (
+            <div className="text-center py-5 px-3">
+              <div className="text-gray-500 dark:text-slate-400 text-xs">No CRM activity logged yet.</div>
+              <div className="text-gray-600 dark:text-slate-300 text-xs mt-1">
+                📋 Imported history is available in the Raw History tab.
+              </div>
+              <button type="button" onClick={() => setViewMode("raw")}
+                className="mt-2 text-[11px] px-2.5 py-1 rounded-md bg-[#0b1a33] text-white hover:bg-[#0b1a33]/90">
+                📜 View Raw History
+              </button>
+            </div>
+          ) : !(viewMode === "raw" && rawRemarks && rawRemarks.trim()) && (
+            <div className="text-gray-500 text-xs text-center py-4">
+              No calls, WhatsApp messages, or notes logged yet.
+            </div>
+          )
         )}
 
         {/* ─ RAW HISTORY (Audit Log) — the exact imported remark, verbatim. No

@@ -423,7 +423,10 @@ export default function MasterDataRecordsTable({ rows, agents, projects, isSuper
       )}
       {!selected.size && msg && <div className="text-xs text-gray-600 dark:text-slate-300">{msg}</div>}
 
-      <div className="card overflow-x-auto p-0">
+      {/* ─── DESKTOP EXCEL GRID (sm:+) — frozen columns, CellEditPopover inline edit,
+            ColumnHeaderFilter, bulk-select. Hidden on phones, where the card block
+            below takes over (the wide horizontal-scroll grid is unusable < 640px). ─── */}
+      <div className="hidden sm:block card overflow-x-auto p-0">
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-xs text-gray-500 dark:text-slate-400 border-b border-[#e5e7eb] dark:border-slate-600">
@@ -677,6 +680,60 @@ export default function MasterDataRecordsTable({ rows, agents, projects, isSuper
         </table>
       </div>
 
+      {/* ─── MOBILE CARDS (< sm) — dedicated layout, not a shrunken Excel grid. Mirrors
+            the Leads mobile cards for visual consistency. Tap the card → existing
+            Preview drawer; the ✏️ chip opens the same per-cell editors as desktop. ─── */}
+      <div className="sm:hidden space-y-2">
+        {pageRows.length === 0 && <div className="card p-5 text-center text-gray-400 text-sm">No matching records.</div>}
+        {pageRows.map((l) => {
+          const sel = selected.has(l.id);
+          const ageBadge = hydrated && !l.ownerId ? unassignedAgeBadge(l.createdAtMs) : null;
+          return (
+            <div key={l.id} onClick={() => setPreview(l)}
+              className={`bg-white dark:bg-slate-800 rounded-xl border p-3 shadow-sm ${sel ? "border-[#c9a24b]/60 bg-amber-50/40 dark:bg-slate-700/40" : "border-gray-100 dark:border-slate-700"}`}>
+              {/* Row 1: checkbox + Name + Status chip */}
+              <div className="flex items-center justify-between gap-2 mb-1.5">
+                <span className="flex items-center gap-2 min-w-0">
+                  <input type="checkbox" checked={sel} onClick={(e) => e.stopPropagation()} onChange={() => toggle(l.id)} aria-label={`Select ${l.name}`} className="shrink-0" />
+                  <span className="font-bold text-sm text-[#0b1a33] dark:text-white truncate">{formatLeadName(l.name)}</span>
+                </span>
+                {l.statusLabel
+                  ? <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium shrink-0 ${l.statusClass}`}>{l.statusLabel}</span>
+                  : <span className="text-[10px] text-gray-400 italic shrink-0">— no status —</span>}
+              </div>
+              {/* Row 2: Owner/Agent · Team · Phone */}
+              <div className="flex items-center gap-3 text-xs text-gray-500 dark:text-slate-400 mb-1 flex-wrap">
+                <span className="flex items-center gap-1">👤 <span className="text-gray-700 dark:text-slate-300 font-medium">{l.owner}</span></span>
+                {l.team && l.team !== "—" && <span className="flex items-center gap-1">🏷 {l.team}</span>}
+                {l.phone && <span className="flex items-center gap-1 font-mono tabular-nums">📞 {l.phone}</span>}
+                {ageBadge && <span className={`text-[9px] px-1.5 py-0.5 rounded-full border ${ageBadge.cls}`} title="Unassigned for this long — please assign">{ageBadge.label}</span>}
+              </div>
+              {/* Row 3: Property Enquired · Budget · Source */}
+              <div className="flex items-center gap-3 text-[11px] text-gray-500 dark:text-slate-400 mb-1 flex-wrap">
+                {l.project && l.project !== "—" && <span className="truncate max-w-[60%]">🏗 <span className="font-medium">{l.project}</span></span>}
+                {l.budget && <span className="text-gray-700 dark:text-slate-300 font-medium">💰 {l.budget}</span>}
+                {l.sourceLabel && <span>🔗 {l.sourceLabel}</span>}
+              </div>
+              {/* Row 4: Follow-up date */}
+              {l.followupDate && (
+                <div className="text-[11px] text-emerald-700 dark:text-emerald-400 mb-2">📅 Follow-up: <span className="font-medium">{l.followupDate}</span></div>
+              )}
+              {/* Row 5: tap targets — Preview drawer + Open full lead */}
+              <div className="flex items-center gap-1 pt-2 border-t border-gray-50 dark:border-slate-700 [&>*]:flex-1">
+                <button onClick={(e) => { e.stopPropagation(); setPreview(l); }}
+                  className="flex items-center justify-center gap-1 py-1.5 rounded-lg text-amber-700 bg-amber-50 dark:bg-amber-900/20 text-xs font-medium min-h-9">
+                  ✏️ Preview / Edit
+                </button>
+                <Link href={l.href} onClick={(e) => e.stopPropagation()}
+                  className="flex items-center justify-center gap-1 py-1.5 rounded-lg text-indigo-600 bg-indigo-50 dark:bg-indigo-900/20 text-xs font-medium min-h-9">
+                  Open →
+                </Link>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
       <div className="flex items-center justify-between text-xs text-gray-500 dark:text-slate-400">
         <span>{filtered.length} of {rows.length} · single-click = preview · double-click Name / click a cell to edit (admin)</span>
         {totalPages > 1 && (
@@ -708,7 +765,7 @@ function PreviewDrawer({ l, onClose }: { l: MDRow; onClose: () => void }) {
   return (
     <div className="fixed inset-0 z-50 flex justify-end" onClick={onClose}>
       <div className="absolute inset-0 bg-black/30" />
-      <div className="relative w-full max-w-md h-full bg-white dark:bg-slate-900 shadow-2xl overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+      <div className="relative w-full max-w-none sm:max-w-md h-full bg-white dark:bg-slate-900 shadow-2xl overflow-y-auto" onClick={(e) => e.stopPropagation()}>
         <div className="sticky top-0 bg-white dark:bg-slate-900 border-b border-gray-100 dark:border-slate-700 px-4 py-3 flex items-center justify-between">
           <div>
             <div className="text-lg font-bold text-[#0b1a33] dark:text-blue-200">{formatLeadName(l.name)}</div>
