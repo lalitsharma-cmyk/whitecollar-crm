@@ -1,6 +1,6 @@
 # Release 2 — Customer Layer · Implementation Design
 
-**Status:** Design / review-ready · **NOT** built beyond the Step-1 foundation · NOT deployed
+**Status:** Design / review-ready · product decisions **LOCKED** (owner-approved 2026-06-26) · **NOT** built beyond the Step-1 foundation · NOT deployed
 **Foundation branch (read-only reference):** `feat/customer-layer-foundation` (HEAD `9ad1f9e`)
 **Production baseline:** `main` @ `9406e23` (Release 1, frozen — see `RELEASES.md`)
 **Audit referenced:** `customer-duplicate-audit-2026-06-26.md` (read-only prod analysis, Step 2)
@@ -22,23 +22,46 @@ be *linked* under, giving a single read-only **360 view** (one timeline, one
 contact rollup, one computed status/owner) without ever merging, collapsing, or
 deleting the underlying enquiries.
 
+There is exactly **one canonical `Customer` per real person** — the layer never
+creates a duplicate customer record for the same human. **Ownership stays at the
+Enquiry level** (`Lead.ownerId`): linking enquiries under a customer never moves
+ownership onto the customer (the customer's owner-of-record is *computed*, with an
+optional admin pin — §1, §3, §4). With the Customer as the master entity, the CRM
+adopts the **master-entity pattern** of Salesforce / HubSpot / Zoho / Dynamics:
+the `Customer` is the master record and Leads/Enquiries are its child records,
+surfaced through a dedicated **Customer Index** master module (§1, §9).
+
 The architecture obeys one owner rule above all: **"everything that can be computed
 should be computed; everything that must be stored should be immutable."** A
 `Customer` stores almost nothing — only its UUID, an optional admin display-name
 override, and an optional admin canonical-owner override. Its **status, owner,
 confidence, contact rollup, health, last-activity and summary are all computed live
 from the linked enquiries on every read**, so a new enquiry can never make a stored
-value go stale. The relationship itself is recorded in an **immutable, append-only
-`CustomerLinkAudit`** that makes every grouping decision explainable and exactly
-reversible.
+value go stale. `displayName` is **computed by default and never stored** — the
+nullable column exists *only* as an optional explicit admin override (a future
+affordance), never auto-populated (decision 6, §1/§2). **Health Score is reserve
+architecture only** — its inputs are catalogued for the future but **no scoring is
+implemented in Release 2** (decision 7, §1). The relationship itself is recorded in
+an **immutable, append-only `CustomerLinkAudit`** that makes every grouping decision
+explainable and exactly reversible.
 
 Detection is advisory only: an engine **detects, scores, and recommends** duplicate
-candidates, but **never auto-merges, auto-links, or deletes** — an admin always
-makes the call through the audited link service. Linking and unlinking are always
-reversible (unlink restores the enquiry to its exact standalone state). Nothing on
-the timeline is ever deleted; the UI **filters** events, never removes them. The
-360 view is permission-scoped: a viewer sees only the enquiries under a customer
-that they are allowed to see.
+candidates, but **never auto-merges, auto-links, or deletes** — and **manual admin
+review is mandatory: ALL detection results require admin approval before any
+link/merge, with NO automatic merge, ever** (§3, §4, §10, §12). Linking, merging,
+and unlinking are **ADMIN ONLY** (owner-locked 2026-06-26): managers and agents may
+**not** mutate customers — their access is view-scoped only (§7). Detection drives
+the admin flow by tier: **Very-High and High** candidates surface automatically in
+the admin flow; **Medium** appears only inside a non-interrupting "Possible
+Duplicates" review panel; **Low** is ignored (§3, §4, §9). Agents get a
+**privacy-safe** generic hint only ("⚠ Possible duplicate exists — contact Admin if
+required") — never the other customer's name, owner, phone, email, or any detail
+(§7, §9, §12).
+
+Linking and unlinking are always reversible (unlink restores the enquiry to its
+exact standalone state). Nothing on the timeline is ever deleted; the UI
+**filters** events, never removes them. The 360 view is permission-scoped: a viewer
+sees only the enquiries under a customer that they are allowed to see.
 
 ### What's already built (Step 1) vs what Release 2 adds
 
@@ -64,16 +87,18 @@ that they are allowed to see.
 | **Admin link/merge review screen** | **`[TO BUILD]`** | — |
 | **Migration-audit review screen** | **`[TO BUILD]`** | — |
 | **Customer-first wiring into the live global search bar** | **`[TO BUILD]`** | — |
-| **Customer index / list page** | **`[TO BUILD]`** | — |
-| **Computed customer health** (`computeCustomerHealth`) | **`[TO BUILD]`** (taxonomy reserved; deliberately NO schema field) | — |
+| **Customer Index — dedicated master module** (`/customers` list: Search · Filters · Health · Total enquiries · Last activity · Owner · Projects · Status) | **`[TO BUILD]`** (decision 5 — replaces the legacy redirect) | — |
+| **Customer Health Score** (`computeCustomerHealth`) | **RESERVE ONLY** — decision 7: inputs catalogued (§1), NOT implemented in Release 2; deliberately NO schema field | — |
+| **Admin-assigned customer flags** (Investor / VIP / Blacklisted — small additive stored field) | **`[TO BUILD]`** (Customer States, §"Customer States"; OPEN sub-question) | — |
 | **Regression invariants for the customer layer** | **`[TO BUILD]`** | `scripts/regression.ts` |
 | **Junk/placeholder-phone guard in the production dedup path** | **`[TO BUILD]`** (audit applied it locally; prod path still raw) | `lib/dedup`, `intelligenceCheck`, importer dedup |
 
 > Note: a pre-existing `src/app/(app)/customers/page.tsx` (a redirect to
 > `/leads?filter=won`) and the older `CustomerIntelligenceCard` / `customerHistory.ts`
 > are the **legacy** "customers removed" stub and the per-lead duplicate-history
-> feature — **not** the Customer Layer. Release 2 replaces the redirect stub with a
-> real customer index `[TO BUILD]`.
+> feature — **not** the Customer Layer. The current `/customers` redirect is marked
+> **to replace with the Customer Index** (decision 5): Release 2 swaps the redirect
+> stub for a real, permission-scoped customer master list `[TO BUILD]`.
 
 ---
 
@@ -87,6 +112,14 @@ groups enquiries. The relationship is strictly **1 Customer → many enquiries**
 (one enquiry belongs to at most one customer). Every existing lead defaults
 `customerId = NULL` = *standalone enquiry*, so introducing the layer changes the
 meaning of zero existing rows.
+
+**One canonical Customer per person (decision 4, LOCKED).** The layer never creates
+a second `Customer` record for the same human, and it **never moves ownership onto
+the customer**. Ownership lives — and stays — at the Enquiry level (`Lead.ownerId`):
+each enquiry keeps its own owner, and the customer's "owner of record" is a
+*computed* rollup (single shared owner, else `MULTIPLE`) with one optional admin
+override (`canonicalOwnerId`). Grouping three enquiries under one customer therefore
+re-parents nothing but a pointer and reassigns no agent.
 
 ```
             ┌──────────────────────────────┐
@@ -116,6 +149,35 @@ meaning of zero existing rows.
             │  prevCustomerId/newCustomerId │   • owner + customer transition
             └──────────────────────────────┘   (basis for reversibility)
 ```
+
+### Customer Index — the master module (decision 5, LOCKED)
+
+The Customer is the **master entity**; Leads/Enquiries are its **child records**.
+This is the standard CRM master-entity pattern (Salesforce *Account/Contact* →
+*Opportunity*; HubSpot *Contact* → *Deal*; Zoho *Contact* → *Deal*; Dynamics
+*Contact* → *Opportunity*). Release 2 therefore ships a dedicated **`/customers`
+master module** — a real customer list, **replacing the legacy `/customers`
+redirect** (which currently sends to `/leads?filter=won`).
+
+The Customer Index is a first-class list page (`[TO BUILD]`, §9.7) with:
+
+| Column / control | Source |
+|---|---|
+| **Search** (name / phone / email) | `resolveCustomers` → `rankCustomerSearchRows` (customer-first) |
+| **Filters** (owner / status / team / project / health) | computed rollups over the customer's enquiries |
+| **Health** | computed-when-built (decision 7 — reserve only; column present, value pending) |
+| **Total enquiries** | `count(enquiries)` |
+| **Last activity** | `max(Activity.createdAt)` across linked enquiries |
+| **Owner** | computed owner-of-record (single shared, else "Multiple"), or pinned `canonicalOwnerId` |
+| **Projects** | union of `LeadInterestedProject` / discussed projects across enquiries |
+| **Status** | computed customer lifecycle state (§"Customer States") |
+
+Each row opens the read-only Customer 360 (§9.1). The index is **permission-scoped**
+exactly like the 360 loader: a viewer sees only customers that have ≥1 enquiry
+visible to them (`leadScopeWhere`), and a customer with no visible enquiry never
+appears (no existence disclosure). It is a **read/navigation surface** — no
+link/merge controls live here (those are admin-only and live in the review screens,
+§9.5).
 
 ### The 3-tier Single Source of Truth
 
@@ -208,6 +270,24 @@ model Customer {
 }
 ```
 
+> **`displayName` policy (decision 6, LOCKED):** the display name is **computed by
+> default and never stored**. The nullable `displayName` column is kept *only* as an
+> optional explicit **admin override** (a future affordance); it is never
+> auto-populated from an enquiry. Until an admin overrides it, the field stays NULL
+> and the name is derived live by `computeDisplayName` (most-recent / most-complete
+> enquiry name).
+>
+> **Health Score (decision 7, LOCKED):** there is **no health column and no health
+> computation in Release 2** — Health is *reserve architecture only*. The future
+> inputs are catalogued in §1 / §"Customer States"; when built it is added as a pure
+> compute helper (no schema field, no redesign).
+>
+> **Admin-assigned flags `[TO BUILD]`:** the only *new stored* customer field
+> contemplated beyond identity + the two overrides is a small additive
+> **`flags`** field for admin-set labels (`Investor` / `VIP` / `Blacklisted`) — see
+> §"Customer States". It is an OPEN sub-question (not yet added to the schema); it
+> would be set only by admins and fully audited.
+
 ### `Lead` addition (only the new lines)
 
 ```prisma
@@ -278,10 +358,185 @@ migration deploys (P2a).
 
 ---
 
+## Customer States
+
+A customer's "state" answers two different questions that the
+single-source-of-truth rule (§1) forces us to keep **separate**:
+
+1. *Where is this person in the funnel right now?* — this is **derived from their
+   enquiries** and therefore **must be computed, never stored** (a new enquiry would
+   instantly make a stored value stale).
+2. *What standing label has an admin deliberately put on this person?* — this is a
+   **human decision** that **cannot be computed** from enquiries (like
+   `canonicalOwnerId`), so it **must be stored** and audited.
+
+We therefore split the owner's proposed states into a **computed lifecycle** and a
+small set of **admin-assigned flags**.
+
+### A. Computed lifecycle (derived live, NEVER stored)
+
+Computed from the customer's linked enquiries on every read (alongside status / owner
+/ confidence in `compute.ts`). It is a single **precedence-ordered** state — the
+highest-precedence condition that holds wins:
+
+| Precedence | State | Holds when (over the linked enquiries) |
+|:--:|---|---|
+| 1 (highest) | **Merged** | the customer was merged into another (this customer now has zero enquiries because they were re-parented to a survivor — §4 action 2). Terminal display state. |
+| 2 | **Customer** | ≥1 enquiry is **converted / booked** (a won/booking lead status). |
+| 3 | **Qualified** | ≥1 enquiry is **qualified** (BANT-qualified) and none is converted. |
+| 4 | **Active** | ≥1 enquiry is **workable** (in active follow-up) and none is qualified/converted. |
+| 5 | **Dormant** | there has been **no activity in `N` days** across all enquiries (last `Activity` / contact older than the threshold), and the customer is not already Customer/Qualified. *(`Dormant` is evaluated against recency; it can co-exist conceptually with lower funnel states but is surfaced when the inactivity threshold trips.)* |
+| 6 (lowest) | **Lead** | **only new / uncontacted** enquiries (no workable/qualified/converted enquiry and no recorded activity yet). |
+
+**Parameters (proposed defaults, owner to confirm):**
+- **Precedence** = the order above (Merged → Customer → Qualified → Active → Dormant →
+  Lead). This is the tie-breaker when more than one could apply.
+- **Dormant threshold `N`** = a single configurable number of days of no activity
+  (proposed default **N = 90** days). Stored as a setting/parameter, not per-customer.
+
+Because this is computed, it stays correct automatically as enquiries are added,
+worked, converted, or go quiet — exactly like the computed owner/status.
+
+### B. Admin-assigned flags (STORED admin decisions, CANNOT be computed)
+
+These are deliberate standing labels an admin places on a person; nothing in the
+enquiry data can derive them, so they are **stored** (like `canonicalOwnerId`):
+
+| Flag | Meaning |
+|---|---|
+| **Investor** | admin marks this person as an investor profile. |
+| **VIP** | admin marks this person as high-priority / VIP. |
+| **Blacklisted** | admin marks this person as blacklisted / do-not-engage. |
+
+Implementation note `[TO BUILD]`: a **small additive stored field** on `Customer`
+(e.g. a `flags` column — a string/array of the above tokens), **set only by admins**
+and **fully audited** (same spirit as the link audit). This is the *only* new stored
+customer attribute beyond identity + the two existing overrides, and it is **not yet
+in the schema** — it is gated on the owner confirming the split below.
+
+> **OPEN SUB-QUESTION (owner):** confirm **exactly which** states are
+> *computed-lifecycle* (A) vs *admin-assigned-flags* (B) — in particular whether
+> `Investor` / `VIP` / `Blacklisted` are the complete flag set — and confirm the
+> **Dormant day-threshold `N`** (proposed 90). Listed again in "Remaining open items".
+
+---
+
+## Entity Relationship Diagram
+
+Textual ERD for the whole CRM as it stands **with the Customer Layer added**. Field
+names are grounded in the real schema: existing entities from `prisma/schema.prisma`
+on `main`; the three Customer-Layer entities (`Customer`, `Lead.customerId`,
+`CustomerLinkAudit`) from the foundation branch `feat/customer-layer-foundation`.
+
+**The ONLY schema change to an existing table is the additive nullable
+`Lead.customerId`.** Every other entity below is **unchanged** by Release 2; the two
+genuinely new tables are `Customer` and `CustomerLinkAudit`.
+
+### Entities & key fields
+
+- **Customer** *(NEW — master entity)*
+  - `id` (UUID, immutable PK) · `canonicalOwnerId?` → User (admin owner override) ·
+    `displayName?` (admin override; else computed) · `createdAt` · `updatedAt`
+  - Computed-on-read (NOT columns): status (lifecycle), owner-of-record, confidence,
+    displayName, summary/contact-rollup, health *(reserve only)*.
+  - **1 → N** `Lead` (its enquiries) · **1 → N** `CustomerLinkAudit`.
+
+- **Lead / Enquiry** *(existing + NEW `customerId?`)*
+  - `id` (cuid PK) · `customerId?` → Customer *(**the only new existing-table
+    column** — nullable, `onDelete: SetNull`)* · `ownerId?` → User (relation
+    "LeadOwner") · `name` · `altName?` · `phone?` · `altPhone?` · `email?` ·
+    `altEmail?` · `currentStatus?` · `source` (LeadSource) · `sourceDetail?` ·
+    `followupDate?` · `leadOrigin` (default `ACTIVE_LEAD`) · `deletedAt?` (soft delete).
+  - **Child of** Customer (`N → 1`, optional). Source of truth for all contact /
+    activity / ownership data (never duplicated onto Customer).
+
+- **CustomerLinkAudit** *(NEW — immutable, append-only)*
+  - `id` (cuid PK) · `customerId?` → Customer · `leadId` → Lead ·
+    `action` (text: `LINK` / `UNLINK` / `MERGE` / `ROLLBACK`) · `performedById?` →
+    User · `performedAt` · `reason?` · `confidenceSnapshot?` · `matchFactors?` (Json) ·
+    `previousOwnerId?` / `currentOwnerId?` (owner transition) · `prevCustomerId?` /
+    `newCustomerId?` (membership transition — the reversibility key) ·
+    `rollbackAvailable` (default true).
+  - **N → 1** Customer · **N → 1** Lead · **N → 1** User (actor).
+
+- **User** *(Owner / actor — existing)*
+  - `id` (cuid PK) · `email` · `name` · `role` (Role) · `team?` · `managerId?` (self-ref).
+  - **1 → N** `Lead` (owns, via `ownerId`) · **0..1 → N** `Customer` (canonical owner,
+    via `canonicalOwnerId`) · **1 → N** `Activity` (actor) · **1 → N**
+    `CustomerLinkAudit` (actor) · self-ref **1 → N** `User` (manager → reports).
+
+- **Activity** *(Timeline — existing)*
+  - `id` (cuid PK) · `leadId` → Lead · `userId?` → User · `type` (ActivityType — the
+    22-event taxonomy: CALL / WHATSAPP / EMAIL / SITE_VISIT / OFFICE_MEETING /
+    VIRTUAL_MEETING / … / LEAD_CREATED / STATUS_CHANGE / ASSIGNMENT / …) · `status` ·
+    `outcome?` · `followupDate?` · `scheduledAt?` / `completedAt?` · `createdAt`.
+  - **Append-only** per enquiry. **N → 1** Lead, **N → 1** User. The customer master
+    timeline is the union of Activity across the customer's linked enquiries.
+
+- **Project** *(Property — existing)* ↔ **LeadInterestedProject** ↔ **Lead**
+  - `Project`: `id` · `name` · `developer?` · `city` · `country` (default "UAE") ·
+    `active` · `status` (ProjectStatus).
+  - `LeadInterestedProject` (join): `id` · `leadId` → Lead · `projectId` → Project ·
+    `@@unique([leadId, projectId])`.
+  - **N – N** between Lead and Project ("enquired / interested"), modelled through the
+    `LeadInterestedProject` join row.
+
+- **Per-enquiry detail (existing, unchanged) — each `1 → N` from Lead:**
+  - **CallLog** (`leadId?` → Lead, `userId` → User, `direction`, `outcome`,
+    `startedAt`).
+  - **Note** (`leadId` → Lead, `userId?` → User, `body`, `createdAt`).
+  - **LeadFieldHistory** (`leadId` → Lead, `field`, `oldValue?`/`newValue?`,
+    `changedById?` → User, `changedAt`).
+  - **Assignment** (`leadId` → Lead, `userId` → User, `reason?`, `assignedAt`).
+
+### Relationships & cardinality (summary)
+
+```
+User ──1:N──< Lead            (Lead.ownerId → User ; "LeadOwner")
+User ──0..1:N──< Customer      (Customer.canonicalOwnerId → User ; admin override)
+User ──1:N──< Activity         (Activity.userId → User)
+User ──1:N──< CustomerLinkAudit(CustomerLinkAudit.performedById → User ; actor)
+User ──1:N──< User             (self-ref: manager → reports)
+
+Customer ──1:N──< Lead         (Lead.customerId → Customer ; NULLABLE, SetNull)  ◄── the ONLY new existing-table column
+Customer ──1:N──< CustomerLinkAudit
+
+Lead ──1:N──< Activity         (Activity.leadId → Lead)
+Lead ──1:N──< CallLog          (CallLog.leadId → Lead)
+Lead ──1:N──< Note             (Note.leadId → Lead)
+Lead ──1:N──< LeadFieldHistory (LeadFieldHistory.leadId → Lead)
+Lead ──1:N──< Assignment       (Assignment.leadId → Lead)
+Lead ──1:N──< CustomerLinkAudit(CustomerLinkAudit.leadId → Lead)
+
+Lead >──N:N──< Project         via LeadInterestedProject (interested / enquired)
+```
+
+**Explicit statement:** the introduction of the Customer Layer changes **exactly one
+existing table** — it adds the nullable `Lead.customerId` foreign key. `Customer` and
+`CustomerLinkAudit` are new tables; **all other entities (User, Activity, Project,
+LeadInterestedProject, CallLog, Note, LeadFieldHistory, Assignment) are unchanged.**
+
+---
+
 ## 3. Customer Linking workflow
 
-Linking groups one or more enquiries under a single canonical customer. **Admin-only.**
-The full path is *detect → recommend → admin reviews → admin links*.
+Linking groups one or more enquiries under a single canonical customer. **ADMIN ONLY**
+(decision 1, LOCKED — managers and agents may not link/merge/unlink). It produces
+**one canonical customer per person** and **never moves ownership** off the enquiry
+(decision 4). **Manual admin review is mandatory** (decision 8): every detection
+result requires explicit admin approval before any link/merge — there is **no
+automatic link or merge, ever**. The full path is
+*detect → recommend → admin reviews → admin approves → admin links*.
+
+**Tier → where it surfaces (decision 2, LOCKED).** Detection tiers candidates
+**Very-High / High / Medium / Low**:
+
+| Tier | Trigger (factors) | Surfaced where |
+|---|---|---|
+| **Very-High** | verified `sameMobile` or `sameEmail` | **automatically in the admin flow** (offered as *Safe Merge*) |
+| **High** | `sameAlternateNumber` | **automatically in the admin flow** (Manual Review) |
+| **Medium** | `similarName` only | **only** inside the non-interrupting **"Possible Duplicates" review panel** — never interrupts workflow |
+| **Low** | weaker / below threshold | **ignored** (not surfaced) |
 
 **Step-by-step**
 
@@ -289,11 +544,14 @@ The full path is *detect → recommend → admin reviews → admin links*.
    detection review screen `[TO BUILD]`), the server fetches a role-scoped,
    `deletedAt:null` candidate pool and calls `detectCandidates(lead, pool)`
    (`detect.ts`). This returns scored `DetectMatch[]` (strongest first) with tier
-   (`Very High` / `High` / `Medium`), score (0–100), reasons, and the raw factors.
-   **It writes nothing.**
-2. **Recommend.** The UI presents the candidates with their confidence + reasons.
-   `Very High` (verified mobile/email) → labelled **Safe Merge**; everything else →
-   **Manual Review**. No action is pre-selected and nothing auto-links.
+   (`Very High` / `High` / `Medium` / `Low`), score (0–100), reasons, and the raw
+   factors. **It writes nothing.**
+2. **Recommend (by tier — decision 2).** The UI surfaces candidates according to
+   their tier: **Very-High** and **High** appear **automatically in the admin flow**
+   (Very-High labelled **Safe Merge**, High as **Manual Review**); **Medium** appears
+   **only** in the non-interrupting **"Possible Duplicates" review panel** and never
+   interrupts the workflow; **Low is ignored**. No action is ever pre-selected and
+   **nothing auto-links or auto-merges** — admin approval is mandatory (decision 8).
 3. **Admin reviews.** The admin inspects the consolidated evidence (the popup in
    §4 / §9) and chooses one of the four actions. Only the admin can trigger a write.
 4. **Link.** On "Add enquiry under existing" (or creating a new customer and linking
@@ -325,10 +583,19 @@ The full path is *detect → recommend → admin reviews → admin links*.
 
 ## 4. Duplicate Merge workflow
 
-When detection surfaces a likely-duplicate, the admin sees a **duplicate-detection
-popup** with a consolidated summary and **four actions**. Every action is
+When detection surfaces a likely-duplicate, the **admin** (ADMIN ONLY — decision 1)
+sees a **duplicate-detection popup** with a consolidated summary and **four
+actions**. Every action requires the admin's explicit decision — **manual review is
+mandatory and nothing is ever auto-merged** (decision 8). Every action is
 **link-not-collapse**: no enquiry row is ever merged into another, overwritten, or
-deleted. "Merge" means *re-parent enquiries under one Customer*, never destroy one.
+deleted. "Merge" means *re-parent enquiries under one Customer*, never destroy one,
+and **never reassigns ownership** (owner stays at the enquiry — decision 4).
+
+**Where each tier shows up (decision 2):** **Very-High** and **High** drive this
+popup automatically in the admin flow (Very-High → *Safe Merge*; High → *Manual
+Review*). **Medium** does **not** raise this popup — it is confined to the
+non-interrupting **"Possible Duplicates" review panel** (§9.2 variant). **Low** is
+ignored.
 
 **The 4 admin actions**
 
@@ -347,14 +614,19 @@ deleted. "Merge" means *re-parent enquiries under one Customer*, never destroy o
 - A **side-by-side contact diff** (phones, emails, projects, status, owner) so the
   admin sees exactly what overlaps and what conflicts.
 - The four action buttons; **Safe Merge** is offered only for `Very High`
-  (verified mobile/email); `Medium` shows **Manual Review** with merge de-emphasised.
+  (verified mobile/email); `High` shows **Manual Review**; `Medium` is not shown here
+  at all — it lives only in the "Possible Duplicates" review panel (decision 2), and
+  `Low` is never surfaced. Whichever action the admin picks, it only takes effect on
+  their explicit confirmation (no auto-apply — decision 8).
 
 **Confidence + reasons** are computed by `computeCustomerConfidence`
 (`sameMobile`+60, `sameEmail`+55, `sameAlternateNumber`+35, `similarName`+25,
 `sameCompany`+20; clamped 0–100) and tiered by `tierForFactors`
-(`sameMobile || sameEmail` → Very High; `sameAlternateNumber` → High; `similarName`
-→ Medium). The score shown in the popup is snapshotted into `confidenceSnapshot` if
-the admin proceeds, so the decision stays explainable even as the data later changes.
+(`sameMobile || sameEmail` → **Very High** → auto-surface; `sameAlternateNumber` →
+**High** → auto-surface; `similarName` → **Medium** → review-panel-only; anything
+weaker → **Low** → ignored). The score shown in the popup is snapshotted into
+`confidenceSnapshot` if the admin proceeds, so the decision stays explainable even as
+the data later changes.
 
 ---
 
@@ -423,31 +695,42 @@ intact). This is exactly the data-level escape hatch invoked during a phase roll
 
 ## 7. Permission matrix
 
-Grounded in `leadScopeWhere(me)` (`src/lib/leadScope.ts`): **ADMIN** → all leads
-(no filter, `deletedAt:null`); **MANAGER** → team-scoped (`forwardedTeam` matches
-`normalizeTeam(me.team)` — strict, a Dubai manager never sees India leads); **AGENT**
-→ own leads only (`ownerId === me.id`). The Customer-360 loader already enforces this:
-a customer with **no enquiry visible to the caller** returns `null` (treated as
-not-found, never disclosing existence).
+**LOCKED (decision 1):** **Customer link / merge / unlink — and every customer
+mutation — is ADMIN ONLY.** Managers and agents may **not** link, merge, unlink, edit
+overrides, or run detection. Their access to the Customer Layer is **view-scoped
+only**. This supersedes the prior "manager team-scoped linking?" open question — the
+answer is **no**.
+
+Read access is grounded in `leadScopeWhere(me)` (`src/lib/leadScope.ts`): **ADMIN** →
+all leads (no filter, `deletedAt:null`); **MANAGER** → team-scoped (`forwardedTeam`
+matches `normalizeTeam(me.team)` — strict, a Dubai manager never sees India leads);
+**AGENT** → own leads only (`ownerId === me.id`). The Customer-360 loader already
+enforces this: a customer with **no enquiry visible to the caller** returns `null`
+(treated as not-found, never disclosing existence).
 
 `SUPER-ADMIN(admin)` below = the `ADMIN` role (the highest role in this CRM).
 
 | Capability | AGENT | MANAGER | SUPER-ADMIN (admin) |
 |---|:--:|:--:|:--:|
 | **View 360 page** | ✅ scoped — only customers with ≥1 of *their own* enquiries; sees only their own enquiries/events under it | ✅ scoped — customers with ≥1 *team* enquiry; sees only team enquiries/events | ✅ full — every customer, every enquiry/event |
+| **View Customer Index (`/customers`)** | ✅ scoped (own-enquiry customers only) | ✅ scoped (team customers only) | ✅ full |
 | **See which enquiries belong to a customer** | own only (others hidden) | team only | all |
-| **Link an enquiry under a customer** | ❌ | ❌ (default) — *OPEN QUESTION: allow team-scoped linking?* | ✅ |
-| **Unlink an enquiry** | ❌ | ❌ (default) | ✅ |
-| **Merge customer records** | ❌ | ❌ | ✅ |
-| **Edit canonical owner / displayName** | ❌ | ❌ | ✅ |
-| **Run detection (advisory candidates)** | 👁️ *OPEN QUESTION: read-only near-dup hint?* (default ❌) | 👁️ default ❌ | ✅ |
-| **Run the migration audit / bulk detection report** | ❌ | ❌ | ✅ |
+| **Link an enquiry under a customer** | ❌ | ❌ | ✅ **only** |
+| **Unlink an enquiry** | ❌ | ❌ | ✅ **only** |
+| **Merge customer records** | ❌ | ❌ | ✅ **only** |
+| **Roll back / bulk-unlink** | ❌ | ❌ | ✅ **only** |
+| **Edit canonical owner / displayName override / admin flags** | ❌ | ❌ | ✅ **only** |
+| **Run detection (advisory candidates)** | ❌ | ❌ | ✅ **only** |
+| **See a duplicate *hint*** | 👁️ **privacy-safe generic only** — "⚠ Possible duplicate exists — contact Admin if required"; **never** the other customer's name/owner/phone/email/any detail (decision 3) | ❌ (no hint by default) | ✅ full evidence + actions |
+| **Run the migration audit / bulk detection report** | ❌ | ❌ | ✅ **only** |
 
-Defaults are **admin-only for every mutating action and for running detection**,
-matching the foundation's stated AUTH (`link.ts`: "ADMIN-only"). Whether managers may
-link within their team, and whether agents see read-only near-duplicate hints, are
-listed as open questions for the owner (§ Open questions). The **360 view itself is
-always permission-scoped per viewer** regardless of who may link.
+Every mutating action **and** running detection are **admin-only**, matching the
+foundation's stated AUTH (`link.ts`: "ADMIN-only"). The **only** non-admin duplicate
+surfacing permitted is the agent's **privacy-safe generic hint** (decision 3): it may
+say a possible duplicate exists and to contact Admin, but must **never** expose the
+other customer's name, owner, phone, email, or any other detail — see §9 and §12. The
+**360 view and Customer Index are always permission-scoped per viewer**, independent
+of who may mutate.
 
 ---
 
@@ -468,7 +751,7 @@ and re-reads current membership before acting.
 | `POST /api/customers/unlink` | Unlink an enquiry → standalone | `{ leadId, reason? }` | ADMIN | safe — `UNLINK` audit, no-op if already null | `unlinkEnquiry` |
 | `POST /api/customers/merge` | Merge two customers (re-parent enquiries) | `{ sourceCustomerId, survivorCustomerId, reason? }` | ADMIN | safe — per-enquiry `LINK` + one `MERGE` audit, all-in-tx | `linkEnquiry` ×N + merge writer `[TO BUILD]` |
 | `POST /api/customers/rollback` | Roll back a link/merge / bulk-unlink | `{ auditId }` **or** `{ customerId, bulkUnlink:true }` | ADMIN | safe — inverse transitions + `ROLLBACK` audit | rollback writer `[TO BUILD]` |
-| `PATCH /api/customers/:id` | Set canonical owner / displayName override | `{ canonicalOwnerId?, displayName? }` | ADMIN | idempotent update | `prisma.customer.update` |
+| `PATCH /api/customers/:id` | Set canonical owner / displayName override (and, when built, admin flags) | `{ canonicalOwnerId?, displayName?, flags? `[TO BUILD]` }` | ADMIN | idempotent update | `prisma.customer.update` |
 
 **Wiring `[TO BUILD]`:** add a *customer-first* branch to the live global search bar
 so a person-search resolves to customers (via `resolveCustomers`) before falling
@@ -535,10 +818,33 @@ renders responsively).
 │  Reason (optional): […………………………]                            │
 └──────────────────────────────────────────────────────────────┘
 ```
-Medium-tier variant: header reads **MANUAL REVIEW**, the merge buttons are
-de-emphasised, and a caption warns "similar name only — likely different people".
-**Mobile:** the two-column diff stacks (this-then-candidate per field); actions become
-a vertical button stack.
+**High-tier variant:** header reads **MANUAL REVIEW** (auto-surfaced in the admin
+flow alongside Very-High — decision 2); Safe-Merge is not offered, the merge buttons
+stay available but un-highlighted. **Mobile:** the two-column diff stacks
+(this-then-candidate per field); actions become a vertical button stack.
+
+**Medium tier does NOT raise this popup.** Per decision 2, `Medium`
+(similar-name-only) is shown **only** inside the non-interrupting **"Possible
+Duplicates" review panel** (an admin-only, collapsible side panel / tab that lists
+medium-confidence groups for optional review — it never interrupts the workflow and
+never auto-selects an action). The caption there warns "similar name only — likely
+different people". `Low` is never surfaced.
+
+### 9.2a Agent privacy-safe duplicate hint `[TO BUILD]` (decision 3)
+
+The **only** duplicate surfacing an AGENT ever sees on a lead they own. It is a
+generic, non-actionable banner — **no other-customer detail, no link button**:
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│ ⚠ Possible duplicate exists — contact Admin if required.     │
+└──────────────────────────────────────────────────────────────┘
+```
+
+It MUST NOT reveal the other customer's name, owner, phone, email, project, status,
+or even how many duplicates exist — only that one *may* exist. (Managers see no hint
+by default.) The full evidence diff + the four actions are admin-only (§9.2). This is
+both a UX and a **security control** (§12).
 
 ### 9.3 Inquiry-history table `[TO BUILD]` (within 360 / customer view)
 
@@ -577,6 +883,30 @@ the 2 Safe-Merge groups, the 11 Manual-Review groups, the junk-number key findin
 and a **per-group "approve link"** affordance (admin-only) used during P2d. Shows the
 batch/throttle status during linking. Mobile → metric cards then grouped lists.
 
+### 9.7 Customer Index — master module `[TO BUILD]` (decision 5)
+
+Replaces the legacy `/customers` redirect with the customer **master list** (§1).
+Customer is the master entity; Leads/Enquiries are its child records (Salesforce /
+HubSpot / Zoho / Dynamics pattern). Permission-scoped per viewer (own / team / all).
+
+```
+┌──────────────────── Customers (master) ─────────────────────────────────┐
+│ [ Search name / phone / email …… ]   Owner:[All▾] Status:[All▾] Proj:[▾] │
+│ ─────────────────────────────────────────────────────────────────────── │
+│  Name            Status    Enq  Last activity  Owner    Projects   Health │
+│  Ravi Upadhyay   Active     2   24 Jun 2026    Mehak    Binghatti… [ — ]  │
+│  Aksa behlim     Qualified  2   22 Jun 2026    Multiple  Sobha…    [ — ]  │
+│  Saurabh         Lead       1   18 Jun 2026    Tanuj     Central…  [ — ]  │
+│  …                                                                        │
+└──────────────────────────────────────────────────────────────────────────┘
+```
+
+Columns: **Search · Filters · Status · Total enquiries · Last activity · Owner ·
+Projects · Health**. Each row → the read-only Customer 360 (§9.1). **Health** column
+is present but **value-pending** (decision 7 — reserve only; renders "—" until built).
+**No link/merge controls** here — those are admin-only review screens (§9.5). Mobile →
+one card per customer (name + status header; enquiries/owner/last-activity stacked).
+
 ---
 
 ## 10. Migration strategy
@@ -600,8 +930,11 @@ non-destructive and independently reversible.
 3. **Present.** Surface the audit in the migration-audit review screen (§9.6) for the
    owner: 2 one-click Safe-Merge suggestions; 11 Manual-Review groups; the junk-number
    finding; the cross-owner caveat on Aksa behlim.
-4. **Approve.** Owner explicitly approves which groups to link (default: only the 2
-   Very-High, and only after the cross-owner owner-of-record decision for Aksa behlim).
+4. **Approve (manual review mandatory — decision 8).** An **admin** must explicitly
+   approve which groups to link (default: only the 2 Very-High, and only after the
+   cross-owner owner-of-record decision for Aksa behlim). **No group is ever
+   auto-linked or auto-merged** — every historical link, like every live link, passes
+   through explicit admin approval. (Approval is admin-only — decision 1.)
 5. **Link historical (reversibly).** For each approved group, create a `Customer` and
    `linkEnquiry` each member — writing the immutable audit per enquiry. **Reversible**
    at all times (bulk-unlink, §6).
@@ -687,9 +1020,21 @@ Launch-tier upgrade lands first, this is a non-issue.)
 - **Immutable audit.** `CustomerLinkAudit` is append-only — written once by the
   service, never updated or deleted; there is no update/delete path on it. This is the
   tamper-evident record behind every grouping.
-- **No auto-merge.** Detection (`detect.ts`) is pure detect/score/recommend and writes
-  nothing; only an admin decision through the audited service ever links. There is no
-  code path that links/merges without a `performedById`.
+- **No auto-merge — manual admin review mandatory (decision 8).** Detection
+  (`detect.ts`) is pure detect/score/recommend and writes nothing; **every** link and
+  merge requires explicit admin approval through the audited service. There is **no
+  automatic merge, ever**, and **no** code path that links/merges without a
+  `performedById`. All four popup actions (and all historical links, §10) take effect
+  only on the admin's confirmation.
+- **Admin-only mutations (decision 1).** Link / unlink / merge / rollback / override
+  edits and running detection are **ADMIN ONLY**; managers and agents are view-scoped.
+  The mutating routes (§8) all enforce a role check before calling the service.
+- **Agent duplicate hint is privacy-safe (decision 3).** The only duplicate surfacing
+  a non-admin ever receives is the agent's **generic** hint ("⚠ Possible duplicate
+  exists — contact Admin if required"). It MUST NOT leak the other customer's name,
+  owner, phone, email, project, status, or even the duplicate count — preventing
+  cross-scope PII disclosure via the dedup surface. Full evidence + actions stay
+  admin-only.
 - **Junk-number guard.** Placeholder/ramp numbers are excluded before bucketing so a
   dummy number can never drive a false link (§10) — both a data-integrity and a
   security control (prevents cross-person data exposure via a shared dummy number).
@@ -793,32 +1138,59 @@ again, exactly as before Release 2," with the immutable audit available for fore
 
 ---
 
-## OPEN QUESTIONS (need the owner's decision)
+## LOCKED DECISIONS (owner-approved 2026-06-26)
 
-1. **Who may link / merge?** Default in this design is **admin-only** for all mutating
-   actions (matches the foundation's `link.ts` AUTH). Should **managers** be allowed to
-   link/merge **within their own team's scope** (team-strict, like buyer-assign), or
-   stay strictly admin-only?
-2. **Auto-suggest threshold.** Detection already tiers Very-High / High / Medium.
-   Should the live popup **only** surface **Very-High** (verified mobile/email) as a
-   suggestion, or also surface **High**? And should **Medium** (similar-name-only) be
-   shown at all in the live flow, or confined to the admin review screen?
-3. **Read-only near-duplicate hint for agents?** Should an agent see a *non-actionable*
-   "this person may already exist" hint on a lead they own (read-only, no link button),
-   or is any duplicate surfacing strictly admin-only?
-4. **Aksa behlim owner-of-record.** This Very-High safe-merge spans **two different
-   owners**. Which owner should be pinned as `canonicalOwnerId` on merge — or should it
-   intentionally compute to "Multiple Owners" until decided?
-5. **Customer index page.** The legacy `/customers` route is a redirect to
-   `/leads?filter=won`. For Release 2, should `/customers` become a real
-   **customer-list/index** (search-first), and if so who can see it (admin-only, or
-   scoped for all roles)?
-6. **displayName policy.** Keep `displayName` **computed-by-default** (current design —
-   most-recent/most-complete enquiry name) and let admins override only when needed, or
-   require an explicit display name at customer-creation time?
-7. **Health definition (when built).** Computed health is reserved in the taxonomy but
-   not yet built. What inputs define it (recency of last activity, engagement count,
-   status mix), and what are the band thresholds (e.g. Hot / Warm / Cold)?
-8. **Manual-Review backlog.** Beyond the 2 Safe-Merge groups, do you want the 11
-   Manual-Review groups worked during P2d (admin confirms each), or deferred to
+The eight prior open questions are now **owner-approved decisions** and are folded
+throughout this document. Summary:
+
+1. **Customer Link & Merge = ADMIN ONLY.** Managers and agents may **not**
+   link/merge/unlink or run any customer mutation — they are **view-scoped only**.
+   (§7 Permission Matrix; §8 routes; §12.)
+2. **Auto-suggest thresholds.** **Very-High AND High** → surface **automatically** in
+   the admin flow. **Medium** → only inside a non-interrupting **"Possible
+   Duplicates" review panel** (never interrupts workflow). **Low** → **ignored**.
+   (§3, §4, §9.)
+3. **Agent duplicate hint = privacy-safe.** Agents see **only** a generic "⚠ Possible
+   duplicate exists — contact Admin if required" — **never** the other customer's
+   name, owner, phone, email, or any detail. (§7, §9.2a, §12.)
+4. **One canonical Customer; ownership at the Enquiry level.** Never create duplicate
+   customer records for the same person; never move ownership onto the customer.
+   (§1, §3, §4.)
+5. **Customer Index = dedicated master module.** A real `/customers` list (Search ·
+   Filters · Health · Total enquiries · Last activity · Owner · Projects · Status)
+   where Customer is the master entity and Leads/Enquiries are child records
+   (Salesforce / HubSpot / Zoho / Dynamics pattern); the legacy redirect is **to
+   replace**. Permission-scoped. (§1, §9.7.)
+6. **displayName = computed by default**, never stored unless an admin explicitly
+   overrides (future); the nullable column remains only as that optional override.
+   (§1, §2.)
+7. **Health Score = reserve architecture only** — **not** implemented in Release 2
+   (computed-when-built; future inputs: last activity, days inactive, total
+   enquiries, confidence, duplicate status, budget filled, documents, AI score).
+   (§1; built-vs-to-build table.)
+8. **Manual review mandatory.** **ALL** detection results require admin approval
+   before any link/merge; **NO automatic merge, ever**. (§3, §4, §10, §12.)
+
+---
+
+## Remaining open items
+
+The product decisions above are locked. The following genuinely still need owner
+input (or are deferred), and are *not* blockers for the design being review-ready:
+
+1. **Customer-States sub-question (new — §"Customer States").** Confirm **exactly
+   which** states are *computed-lifecycle* (`Lead` → `Active` → `Qualified` →
+   `Customer` → `Dormant` → `Merged`) vs *admin-assigned flags* (`Investor` / `VIP` /
+   `Blacklisted`), whether those three are the complete flag set, and the **Dormant
+   day-threshold `N`** (proposed default **90**). The admin-flags `flags` column is
+   `[TO BUILD]` and gated on this confirmation.
+2. **Aksa behlim owner-of-record (operational, P2d).** This Very-High safe-merge spans
+   **two different owners**. Which owner is pinned as `canonicalOwnerId` on merge, or
+   does it intentionally compute to "Multiple Owners" until decided? (Resolve before
+   linking this specific group — §10 step 4.)
+3. **Manual-Review backlog (operational, P2d).** Beyond the 2 Safe-Merge groups, work
+   the **11 Manual-Review** groups during P2d (admin confirms each), or defer to
    business-as-usual after the layer is live?
+4. **Health Score inputs/bands (future — decision 7).** When Health is eventually
+   built, confirm the exact input weighting and band thresholds. Out of scope for
+   Release 2 (reserve only).
