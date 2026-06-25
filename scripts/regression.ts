@@ -3280,8 +3280,16 @@ const checks: Check[] = [
       assert(termWithFollowup === 0, `${termWithFollowup} terminal lead(s) still carry a followupDate — they pollute the Action-List follow-up board`);
 
       // ── (a') RECONCILE: Action-List Overdue == Leads Overdue chip (admin scope) ─
-      // AL Overdue = scope(deletedAt:null) + followupDate < startOfTodayIST, NO status filter.
-      // Leads chip = workableWhere(scope) + followupDate < now (not null).
+      // Both sides use the SAME "overdue" boundary the real Action List uses:
+      // followupDate < startOfTodayIST (action-list/page.tsx resolveWindow — a
+      // follow-up dated *today* is "Today", NOT Overdue; only strictly-before-today
+      // is overdue). They must use the identical boundary or the comparison drifts
+      // during the day (a `< now()` mirror would count today-earlier follow-ups as
+      // overdue on one side only, so the two counts coincide only near IST-midnight).
+      // The ONLY intended difference between the two queries is the workable/non-cold
+      // envelope — which is exactly what this reconciliation is meant to verify.
+      //   AL Overdue = scope(deletedAt:null) + followupDate < startTodayIST, NO status filter.
+      //   Leads chip = workableWhere(scope) + followupDate < startTodayIST.
       // Mirror workableWhere inline (leadScope.ts imports "server-only").
       const COLD_ORIGINS = ["COLD", "REVIVAL"];
       const WORKABLE_STATUS_OR = [
@@ -3290,7 +3298,7 @@ const checks: Check[] = [
       const startToday = istDayRange().start;
       const alOverdue = await prisma.lead.count({ where: { deletedAt: null, followupDate: { lt: startToday } } });
       const leadsOverdue = await prisma.lead.count({
-        where: { deletedAt: null, leadOrigin: { notIn: COLD_ORIGINS }, OR: WORKABLE_STATUS_OR, followupDate: { lt: new Date(), not: null } },
+        where: { deletedAt: null, leadOrigin: { notIn: COLD_ORIGINS }, OR: WORKABLE_STATUS_OR, followupDate: { lt: startToday } },
       });
       assert(alOverdue === leadsOverdue, `Action-List Overdue (${alOverdue}) must equal Leads Overdue chip (${leadsOverdue}) now that terminal leads have no followup`);
 
