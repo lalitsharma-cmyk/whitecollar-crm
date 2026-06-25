@@ -79,7 +79,7 @@ const PRESET_TAGS = [
 // Same allow-list as RejectLeadClient / the single-lead reject endpoint.
 const REJECT_REASONS: Array<{ v: string; label: string }> = [
   { v: "FUND_ISSUE",                  label: "💰 Fund issue" },
-  { v: "WAR_FEAR",                    label: "⚔ War fear" },
+  // "War Fear" retired as a reject reason (2026-06-26) — it's now a workable status.
   { v: "LOW_BUDGET",                  label: "📉 Low budget" },
   { v: "LOOK_AFTER_2_YEARS",          label: "📅 Look after 2 years" },
   { v: "WAITING_FOR_PROPERTY_SALE",   label: "🏠 Waiting to sell own property" },

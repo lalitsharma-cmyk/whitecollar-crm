@@ -6,7 +6,9 @@
 
 export const REJECT_REASONS: Array<{ value: string; label: string }> = [
   { value: "NOT_INTERESTED",            label: "Not Interested" },
-  { value: "WAR_FEAR",                  label: "War Fear" },
+  // "War Fear" is NO LONGER a rejection (Lalit, 2026-06-26) — it is a WORKABLE
+  // obstacle status set from the normal status dropdown (keeps its follow-up), not a
+  // lost outcome. Kept in LEGACY_REASONS below so old records still resolve a label.
   { value: "FUND_ISSUE",                label: "Funds Issue" },
   { value: "NOT_ABLE_TO_BUY",           label: "Not Able To Buy" },
   { value: "BROKER",                    label: "Broker / Channel Partner" },
@@ -78,6 +80,9 @@ export const REJECT_REASON_LABEL: Record<string, string> =
 // is no longer offered in any dropdown, but historical records keep resolving
 // until the one-time backfill remaps them to the two new reasons.
 const LEGACY_REASONS: Record<string, string> = {
+  // War Fear was retired as a reject reason on 2026-06-26 (now a workable status).
+  // Kept here so any historical rejected-as-War-Fear record still resolves its label.
+  WAR_FEAR: "War Fear",
   BOOKED_WITH_US: "Booked With Us",
   BY_MISTAKE_INQUIRY: "By Mistake Inquiry",
   LEASING_REQUIREMENT: "Leasing",

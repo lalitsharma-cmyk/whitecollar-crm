@@ -40,7 +40,6 @@ const REJECT_REASONS = [
   { value: "NEVER_RESPONDED",          label: "Never Responded" },
   { value: "JUST_SEARCHING",           label: "Just Searching" },
   { value: "DROP_THE_PLAN",            label: "Drop The Plan" },
-  { value: "WAR_FEAR",                 label: "War / Market Fear" },
   { value: "WAITING_FOR_PROPERTY_SALE",label: "Waiting to Sell Own Property" },
   { value: "INVALID_NUMBER",           label: "Invalid Number" },
   { value: "OTHER",                    label: "Other" },

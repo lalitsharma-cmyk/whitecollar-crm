@@ -278,7 +278,11 @@ export const CLOSED_OUTCOME_STATUSES: string[] = [
 // Lost / rejected — non-actionable. Sourced from the Reject modal (minus the
 // closed outcomes) plus the dead-end suppressed statuses + India equivalents.
 export const LOST_STATUSES: string[] = [
-  "Not Interested", "War Fear", "Funds Issue", "Not Able To Buy",
+  // NOTE: "War Fear" is deliberately NOT a lost status (Lalit, 2026-06-26). It is a
+  // TEMPORARY geopolitical obstacle, not a dead outcome — it lives in the Dubai
+  // status master + active-pursuit + agent dropdown as a WORKABLE status that KEEPS
+  // its follow-up, so War-Fear leads stay on the board to be revisited (not rejected).
+  "Not Interested", "Funds Issue", "Not Able To Buy",
   "Broker", "Visited With Other Broker", "In Touch With Another Broker",
   "Other Location", "Other Requirement", "Low Budget", "Just Searching",
   "Drop The Plan", "Number Changed", "Invalid Number",
@@ -537,7 +541,10 @@ export function statusesLookSame(a?: string | null, b?: string | null): boolean 
 // dropdown so casual selection can't corrupt reporting.
 export const DUBAI_AGENT_STATUSES: string[] = [
   "Not Contacted", "Follow Up", "Long Term Follow Up", "Mail Sent",
-  "Wants Office Visit", "Zoom Meeting", "Meeting", "Visit Dubai", "Expo Only", "Not Interested",
+  "Wants Office Visit", "Zoom Meeting", "Meeting", "Visit Dubai", "Expo Only",
+  // "War Fear" is a WORKABLE obstacle status (not a rejection) — agents set it from
+  // the normal dropdown so the lead keeps its revisit follow-up. See LOST_STATUSES note.
+  "War Fear", "Not Interested",
 ];
 export const INDIA_AGENT_STATUSES: string[] = [
   "Not Contacted", "Follow Up", "Details Shared", "Site Visit Schedule", "Meeting", "Postponed", "Not Interested",
