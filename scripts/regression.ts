@@ -2315,10 +2315,10 @@ const checks: Check[] = [
       assert(consumed.has("Col A") && consumed.has("Col B") && !consumed.has("Junk"),
         "mapped columns are consumed; IGNORE/unmapped columns stay for customFields");
 
-      // parseDupMode: legacy default + the four explicit choices.
+      // parseDupMode: legacy default + the five explicit choices (incl. revival).
       assert(parseDupMode(undefined) === "merge", "absent dupMode must default to merge (legacy)");
       assert(parseDupMode("") === "merge", "blank dupMode must default to merge");
-      for (const v of ["skip", "update", "create", "conversation"] as const) {
+      for (const v of ["skip", "update", "create", "conversation", "revival"] as const) {
         assert(parseDupMode(v) === v, `dupMode “${v}” must round-trip`);
       }
 
@@ -2367,6 +2367,67 @@ const checks: Check[] = [
       const gs = fs.readFileSync("src/app/api/intake/google-sheet/route.ts", "utf8");
       assert(/dateMappingConfirmed/.test(gs), "google-sheet route must compute dateMappingConfirmed from the confirmed mapping");
       assert(/field\("date"/.test(gs), 'google-sheet route must read the lead date via field("date", …) when a date mapping is confirmed');
+    },
+  },
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // 27a. REVIVAL IMPORT PROCESSES DUPLICATES  (2026-06-25)
+  //    The Revival Engine import re-engages leads that ALREADY exist. Before this
+  //    fix the Revival preset hard-defaulted dupMode="skip", whose branch did
+  //    `skippedDup++; deduped++; continue;` — discarding every existing match
+  //    ("Import 0 new leads"). The fix adds dupMode="revival": an existing match is
+  //    PROCESSED (applyRevivalMerge → fill-if-empty + append history + NOTE +
+  //    move to Revival + per-field audit, `revived++`), never the bare skip.
+  //    A static scan so a future refactor can't silently revert the Revival default
+  //    to skip, or let the revival branch fall through to a discard `continue`.
+  // ───────────────────────────────────────────────────────────────────────────
+  {
+    name: "revival-import-processes-duplicates — revival dupMode PROCESSES existing leads (never the bare skip continue); Revival preset defaults to revival",
+    run: async () => {
+      const fs = await import("fs");
+      // (1) parseDupMode accepts the new mode (tests the REAL shared toolkit).
+      assert(parseDupMode("revival") === "revival", 'parseDupMode("revival") must round-trip to "revival"');
+
+      // (2) BOTH intake routes: the revival branch must reach the shared merge +
+      //     `revived++`, and must NOT degrade to the bare skip `continue` (the bug).
+      for (const f of [
+        "src/app/api/intake/csv/route.ts",
+        "src/app/api/intake/google-sheet/route.ts",
+      ]) {
+        const src = fs.readFileSync(f, "utf8");
+        assert(/dupMode === "revival"/.test(src), `${f} must branch on dupMode === "revival"`);
+        assert(/applyRevivalMerge\(/.test(src), `${f} must call the shared applyRevivalMerge() helper (DRY — no per-route merge logic)`);
+        assert(/revived\+\+/.test(src), `${f} revival branch must count the lead as revived (revived++), not skip it`);
+        assert(/\brevived\b/.test(src) && /skippedDup/.test(src), `${f} must surface a distinct revived counter (not folded into skippedDup)`);
+        // The revival branch must end in the SAME dedup accounting as the other
+        // dup arms (deduped++) so skippedCount math stays correct (revived rows are
+        // duplicates, not "skipped").
+        assert(/revived\+\+; deduped\+\+;/.test(src), `${f} revival branch must do revived++; deduped++ (counts as a duplicate, not a skip)`);
+      }
+
+      // (3) The shared helper itself must be strictly non-destructive + move the
+      //     matched lead into the Revival bucket via existing columns (no migration).
+      const helper = fs.readFileSync("src/lib/revivalImport.ts", "utf8");
+      assert(/mergeRawRemark\(/.test(helper), "applyRevivalMerge must APPEND remarks via mergeRawRemark (append-only, never truncates)");
+      assert(/recordFieldChanges\(/.test(helper), "applyRevivalMerge must write a per-field LeadFieldHistory audit (recordFieldChanges)");
+      assert(/leadOrigin = "REVIVAL"|leadOrigin: "REVIVAL"|"REVIVAL"/.test(helper), "applyRevivalMerge must set leadOrigin=REVIVAL (move into the Revival Engine)");
+      assert(/isColdCall/.test(helper), "applyRevivalMerge must set isColdCall=true (Revival bucket)");
+      assert(/ActivityType\.NOTE/.test(helper), "applyRevivalMerge must write a NOTE Activity (existing enum — no migration)");
+      assert(/FILL_IF_EMPTY/.test(helper) && /isBlank\(/.test(helper), "applyRevivalMerge must use fill-if-empty semantics (never overwrite a non-blank field)");
+
+      // (4) The Revival preset (cold-data Import control) must DEFAULT to revival,
+      //     while the other importers keep their existing defaults (no collateral).
+      const cold = fs.readFileSync("src/components/ColdDataAdminControls.tsx", "utf8");
+      assert(/defaultDupMode="revival"/.test(cold), 'ColdDataAdminControls (Revival import) must default to dupMode="revival"');
+      const preassigned = fs.readFileSync("src/components/PreAssignedImporter.tsx", "utf8");
+      assert(/defaultDupMode="skip"/.test(preassigned), "PreAssignedImporter must keep its skip default (not flipped to revival)");
+      const masterData = fs.readFileSync("src/components/MasterDataImportControls.tsx", "utf8");
+      assert(/defaultDupMode="skip"/.test(masterData), "MasterDataImportControls must keep its skip default (not flipped to revival)");
+
+      // (5) The wizard must expose the revival radio + surface the revived count.
+      const wiz = fs.readFileSync("src/components/LeadImportWizard.tsx", "utf8");
+      assert(/val: "revival"/.test(wiz), "LeadImportWizard DUP_OPTIONS must include the revival choice");
+      assert(/revived\?: number/.test(wiz), "LeadImportWizard ImportResult must carry the revived count");
     },
   },
 

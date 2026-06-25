@@ -260,11 +260,21 @@ export function parseClientMapping(raw: unknown): Record<string, string> | null 
 //   create       → import as a brand-new lead anyway (do NOT dedupe).
 //   conversation → append the row's remark to the existing lead's history only;
 //                  touch no structured field.
-export type DupMode = "merge" | "skip" | "update" | "create" | "conversation";
+//   revival      → RE-ENGAGE an existing lead (the Revival Engine's import mode).
+//                  Strictly NON-DESTRUCTIVE: fill-if-empty merge (never overwrites
+//                  a non-blank field), APPEND imported remarks (mergeRawRemark),
+//                  write a NOTE Smart-Timeline entry, move the lead into the
+//                  Revival bucket (leadOrigin=REVIVAL + isColdCall=true), stamp a
+//                  revival source, union tags, and write a per-field
+//                  LeadFieldHistory audit. A brand-new row still CREATES the lead.
+//                  Unlike "skip", an existing match is PROCESSED, never discarded —
+//                  Revival exists to re-engage leads that already exist. See
+//                  applyRevivalMerge() in src/lib/revivalImport.ts.
+export type DupMode = "merge" | "skip" | "update" | "create" | "conversation" | "revival";
 
 export function parseDupMode(raw: unknown): DupMode {
   const v = String(raw ?? "").trim().toLowerCase();
-  return v === "skip" || v === "update" || v === "create" || v === "conversation"
+  return v === "skip" || v === "update" || v === "create" || v === "conversation" || v === "revival"
     ? (v as DupMode)
     : "merge";
 }

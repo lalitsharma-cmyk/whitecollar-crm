@@ -338,7 +338,15 @@
 // stored createdAt + author + role via shared canEditActivity, not an admin-only flag).
 // Previous-day, another agent's entry, or system-generated kinds stay locked (server
 // re-enforces, 403). Admin/Manager/Super unchanged. Bump shell to ship the new gate.
-const CACHE = "wcr-shell-v67";
+// v68: Revival Engine import now RE-ENGAGES existing leads instead of skipping them.
+// New dupMode="revival" (the Revival/cold preset default): an existing-lead match is
+// PROCESSED non-destructively — fill-if-empty merge (never overwrites a set field),
+// appended remark history (mergeRawRemark → parsed into a dated Smart-Timeline card),
+// a NOTE timeline entry, moved into the Revival bucket (leadOrigin=REVIVAL+isColdCall),
+// revival-source stamp, tag UNION, + a per-field LeadFieldHistory audit. The wizard
+// gains a "Revive existing" radio + a "Revived (re-engaged)" stat so an all-duplicates
+// upload reports the revived count, not "0 new leads". Bump shell to ship the new UI.
+const CACHE = "wcr-shell-v68";
 const SHELL = ["/login", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", (event) => {

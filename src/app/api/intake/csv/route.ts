@@ -7,6 +7,7 @@ import { requireRole } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { extractFromRemarks, mergeSuggestions } from "@/lib/remarkAutofill";
 import { mergeRawRemark } from "@/lib/rawRemarks";
+import { applyRevivalMerge } from "@/lib/revivalImport";
 import { validEmail, validPhone, validBudgetRaw, looksLikeStatus, looksLikeDate } from "@/lib/importValidate";
 import { parseImportDate, applyTimeToDate } from "@/lib/parseImportDate";
 
@@ -447,6 +448,7 @@ export async function POST(req: NextRequest) {
   // Duplicate-mode counters (only move off 0 under skip / conversation modes).
   let skippedDup = 0;            // dupMode="skip": existing lead left untouched
   let conversationAppended = 0;  // dupMode="conversation": remark appended only
+  let revived = 0;               // dupMode="revival": existing lead re-engaged (non-destructive)
   // Rows whose "Date" column was in the future — createdAt was NOT backdated;
   // surfaced in the import summary so the importer can review/correct them.
   const futureDateRows: { name: string; rawDate: string }[] = [];
@@ -600,6 +602,74 @@ export async function POST(req: NextRequest) {
               conversationAppended++;
             }
             deduped++;
+            continue;
+          }
+          if (dupMode === "revival") {
+            // ── REVIVAL: re-engage the existing lead, strictly NON-DESTRUCTIVELY.
+            // Unlike "skip" we PROCESS the match — fill-if-empty merge + append
+            // remarks + NOTE timeline entry + move into the Revival Engine +
+            // per-field LeadFieldHistory audit. The shared helper does all of it
+            // (identical in the Google-Sheet route — lib-query parity). Build the
+            // candidate field set with the SAME parsing the main create path uses.
+            const teamRaw = forceTeam ?? field("team", "forwardedteam", "team") ?? null;
+            const teamRes = resolveTeam({
+              forceTeam: teamRaw,
+              forceMethod: "import",
+              sourceDetail: campaign ?? field("project", ...PROJECT_PICK) ?? undefined,
+              projectSlug: field("project", ...PROJECT_PICK),
+              text: field("remarks", "remarks", "remark"),
+            });
+            const callStatusRev = field("status", "status", "callstatus");
+            const incoming: Record<string, unknown> = {
+              altName: altName ? normalizeNameList(altName) : undefined,
+              altPhone: altPhone ?? undefined,
+              altEmail: altEmail && altEmail !== email ? altEmail : undefined,
+              company: notDate(field("company", "company")),
+              address: notDate(field("address", "address")),
+              profession: field("profession", "profession", "occupation", "job"),
+              linkedInUrl: field("linkedInUrl", "linkedin", "linkedinurl"),
+              configuration: notDate(field("configuration", "configuration", "config", "bhk", "type")),
+              propertyType: field("propertyType", "propertytype"),
+              city: notDate(field("city", "city", "location", "address")),
+              state: field("state", "state", "province"),
+              country: field("country", "country"),
+              budgetMin: budgetInfo.min ?? undefined,
+              budgetMax: budgetInfo.max ?? undefined,
+              budgetRaw: budgetInfo.raw ?? undefined,
+              potential: parsePotential(field("potential", "potential")),
+              fundReadiness: parseFund(field("fundReadiness", "fundreadiness", "fund", "funds")),
+              moodStatus: parseMood(field("moodStatus", "moodstatus", "mood")),
+              whenCanInvest: parseInvestTimeline(field("whenCanInvest", "whencaninvest", "timeline", "invest", "whencaninvest")),
+              authorityPerson: field("authorityPerson", "authorityperson", "decisionmaker"),
+              needSummary: field("needSummary", "needsummary", "need", "purpose"),
+              currentStatus: callStatusRev && looksLikeStatus(callStatusRev) ? canonicalStatus(callStatusRev) : undefined,
+              categorization: field("categorization", "categorization", "category"),
+              sourceRaw: field("source", "source"),
+              whoIsClient: field("whoIsClient", "whoisclient", "client", "clientinfo", "about"),
+              alreadyBought: field("alreadyBought", "alreadybought", "alreadyowns", "owns", "purchased"),
+              alreadyBoughtBy: field("alreadyBoughtBy", "alreadyboughtby", "boughtvia", "via", "broker", "boughtfrom"),
+              detailShared: field("detailShared", "detailshared", "shared"),
+              todoNext: field("todoNext", "todo", "todonext", "nextaction"),
+              followupDate: parseImportDate(field("followupDate", "followupdate", "followup", "nextfollowup")) ?? undefined,
+              meetingDate: parseImportDate(field("meeting", "meeting", "meetingdate")) ?? undefined,
+              siteVisitDate: parseImportDate(field("siteVisit", "sitevisit", "sitevisitdate")) ?? undefined,
+              forwardedTeam: teamRes.team ?? undefined,
+              routingMethod: teamRes.team ? routingFieldsFor(teamRes).routingMethod : undefined,
+              routingSource: teamRes.team ? routingFieldsFor(teamRes).routingSource : undefined,
+              routingReason: teamRes.team ? routingFieldsFor(teamRes).routingReason : undefined,
+            };
+            await applyRevivalMerge({
+              db: prisma,
+              existingId: existingDup.id,
+              incoming,
+              remark: field("remarks", "remarks", "remark") ?? field("message", "message", "requirement"),
+              project: field("project", ...PROJECT_PICK),
+              tags: field("tags", "tags", "tag"),
+              revivalSource: field("source", "source") ?? campaign ?? importBatch.fileName,
+              fileName: importBatch.fileName,
+              changedById: me.id,
+            });
+            revived++; deduped++;
             continue;
           }
           // dupMode === "create" → fall through with skipDedup so ingestLead
@@ -962,6 +1032,7 @@ export async function POST(req: NextRequest) {
       assignToUserId: assignToUserId ?? null,
       forceTeam: forceTeam ?? null,
       dupMode,
+      revived,
       mappingConfirmed: !!explicitMapping,
     },
     request: reqMeta(req),
@@ -976,7 +1047,11 @@ export async function POST(req: NextRequest) {
     rowsProcessed: rows.length,
     created, deduped, enriched, callLogsCreated, autofilled,
     // Duplicate-mode outcome (drives the import report's "duplicates" line).
-    dupMode, skippedDup, conversationAppended,
+    // `revived` (dupMode="revival") = existing leads re-engaged non-destructively;
+    // surfaced in the API response + report ONLY (reuses ImportBatch.updatedCount —
+    // no schema column, so no migration). These leads are NOT batch-rollback-able
+    // (they pre-existed); their per-field LeadFieldHistory rows are the undo trail.
+    dupMode, skippedDup, conversationAppended, revived,
     // Whether the admin-confirmed mapping was applied (vs fuzzy auto-detect).
     mappingConfirmed: !!explicitMapping,
     customFieldsCreated: detectedColumns.filter((c) => {

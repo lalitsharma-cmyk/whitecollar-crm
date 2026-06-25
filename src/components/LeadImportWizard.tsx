@@ -25,7 +25,8 @@ import ImportMappingTable, { type MappingRow, type CrmFieldOption } from "./Impo
 
 type WizardMode = "csv" | "google-sheet";
 
-type DupMode = "merge" | "skip" | "update" | "create" | "conversation";
+// Kept in sync with the canonical DupMode union in src/lib/importMapping.ts.
+type DupMode = "merge" | "skip" | "update" | "create" | "conversation" | "revival";
 
 interface PreviewResult {
   preview: true;
@@ -59,6 +60,7 @@ interface ImportResult {
   dupMode?: DupMode;
   skippedDup?: number;
   conversationAppended?: number;
+  revived?: number;
   mappingConfirmed?: boolean;
   customFieldsCreated?: number;
   detectedColumns?: string[];
@@ -74,6 +76,7 @@ const DUP_OPTIONS: { val: DupMode; label: string; desc: string }[] = [
   { val: "update", label: "Update existing", desc: "Write the sheet's values onto the existing lead (sheet wins)." },
   { val: "create", label: "Create new anyway", desc: "Import as a brand-new lead even if a match exists." },
   { val: "conversation", label: "Add as conversation", desc: "Append only the remark to the existing lead's history." },
+  { val: "revival", label: "Revive existing (merge + append history)", desc: "Existing leads are updated & their history appended — nothing is skipped. Fills empty fields only, moves the lead into the Revival Engine." },
 ];
 
 export interface LeadImportWizardProps {
@@ -402,7 +405,12 @@ export default function LeadImportWizard({
             <button onClick={confirmImport} disabled={busy || !confirmed}
               title={confirmed ? "" : "Confirm the mapping above to enable import"}
               className="flex-1 btn btn-primary justify-center disabled:opacity-50 disabled:cursor-not-allowed">
-              {busy ? "Importing…" : `✅ Import ${preview.newRows} new lead${preview.newRows === 1 ? "" : "s"}`}
+              {busy ? "Importing…"
+                : dupMode === "revival"
+                  // Revival re-engages existing leads, so the meaningful count is
+                  // new + duplicates (both get processed), not "new leads" alone.
+                  ? `✅ Import — revive ${preview.dupRows} existing${preview.newRows > 0 ? ` + ${preview.newRows} new` : ""}`
+                  : `✅ Import ${preview.newRows} new lead${preview.newRows === 1 ? "" : "s"}`}
             </button>
             <button onClick={resetAll} disabled={busy}
               className="px-4 py-2 rounded-lg border border-gray-300 text-sm text-gray-600 hover:bg-gray-50">
@@ -415,7 +423,14 @@ export default function LeadImportWizard({
       {/* ── Import report ── */}
       {result && (
         <div className={`mt-1 text-sm bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-lg ${pad} space-y-1.5`}>
-          <div className="font-bold">✅ Import complete</div>
+          <div className="font-bold">
+            {/* Revival imports re-engage EXISTING leads, so "0 new leads" is
+                expected & correct — lead with the revived count, not the create
+                count, so the admin sees the import actually did something. */}
+            {result.dupMode === "revival" && (result.revived ?? 0) > 0
+              ? `✅ Import complete — ${result.revived} lead${result.revived === 1 ? "" : "s"} revived (re-engaged)`
+              : "✅ Import complete"}
+          </div>
           <div className="grid grid-cols-2 gap-1.5 text-[11px]">
             <Stat label="Rows processed" value={result.rowsProcessed} />
             <Stat label="New leads created" value={result.created} />
@@ -423,6 +438,7 @@ export default function LeadImportWizard({
             <Stat label="Enriched" value={result.enriched} />
             {result.dupMode === "skip" && <Stat label="Skipped (dup)" value={result.skippedDup} />}
             {result.dupMode === "conversation" && <Stat label="Conversation added" value={result.conversationAppended} />}
+            {result.dupMode === "revival" && <Stat label="Revived (re-engaged)" value={result.revived} />}
             {typeof result.customFieldsCreated === "number" && result.customFieldsCreated > 0 && (
               <Stat label="Custom-field columns" value={result.customFieldsCreated} />
             )}

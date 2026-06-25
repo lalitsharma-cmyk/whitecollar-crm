@@ -9,6 +9,7 @@ import { interpretBudget, resolveBudgetCurrency } from "@/lib/budgetCurrency";
 import { inferCountryFromCity } from "@/lib/cityCountry";
 import { canonicalStatus, isStatusValidForTeam, NEEDS_REVIEW } from "@/lib/lead-statuses";
 import { mergeRawRemark } from "@/lib/rawRemarks";
+import { applyRevivalMerge } from "@/lib/revivalImport";
 import { detectConversationKeyFromRows } from "@/lib/conversationColumn";
 import { validEmail, validBudgetRaw, looksLikeStatus, validPhone, looksLikeDate } from "@/lib/importValidate";
 import { parseImportDate, detectDateColumn, detectTimeColumn, applyTimeToDate } from "@/lib/parseImportDate";
@@ -200,6 +201,7 @@ export async function POST(req: NextRequest) {
 
   let created = 0, deduped = 0, enriched = 0;
   let skippedDup = 0, conversationAppended = 0;
+  let revived = 0;               // dupMode="revival": existing lead re-engaged (non-destructive)
   const errors: string[] = [];
   const detectedColumns = Object.keys(parsed.data[0] ?? {});
   const futureDateRows: { name: string; rawDate: string }[] = [];
@@ -323,6 +325,61 @@ export async function POST(req: NextRequest) {
               conversationAppended++;
             }
             deduped++;
+            continue;
+          }
+          if (dupMode === "revival") {
+            // ── REVIVAL: re-engage the existing lead, strictly NON-DESTRUCTIVELY.
+            // IDENTICAL behaviour to the CSV route via the shared applyRevivalMerge
+            // helper (lib-query parity): fill-if-empty merge + append remarks + NOTE
+            // timeline entry + move into the Revival Engine + per-field audit.
+            const teamRaw = field("team", "forwardedteam", "team") ?? null;
+            const teamRes = resolveTeam({
+              forceTeam: teamRaw,
+              forceMethod: "import",
+              sourceDetail: campaign ?? field("project", ...PROJECT_PICK) ?? undefined,
+              projectSlug: field("project", ...PROJECT_PICK),
+              text: field("message", "remarks", "message", "requirement"),
+            });
+            const csRev = field("status", "status");
+            const incoming: Record<string, unknown> = {
+              company: notDate(field("company", "company")),
+              address: notDate(field("address", "address")),
+              configuration: notDate(field("configuration", "configuration", "config", "bhk", "type")),
+              city: notDate(field("city", "city", "location")),
+              country: field("country", "country"),
+              budgetMin: budgetInfo.min ?? undefined,
+              budgetMax: budgetInfo.max ?? undefined,
+              budgetRaw: budgetInfo.raw ?? undefined,
+              potential: parsePotential(field("potential", "potential")),
+              fundReadiness: parseFund(field("fundReadiness", "fundreadiness", "fund")),
+              moodStatus: parseMood(field("moodStatus", "moodstatus", "mood")),
+              whenCanInvest: parseTimeline(field("whenCanInvest", "whencaninvest", "timeline")),
+              currentStatus: csRev && looksLikeStatus(csRev) ? canonicalStatus(csRev) : undefined,
+              categorization: field("categorization", "categorization", "category"),
+              sourceRaw: field("source", "source"),
+              whoIsClient: field("whoIsClient", "whoisclient", "client", "clientinfo"),
+              detailShared: field("detailShared", "detailshared"),
+              todoNext: field("todoNext", "todo", "todonext", "nextaction"),
+              followupDate: parseImportDate(field("followupDate", "followupdate", "followup")) ?? undefined,
+              meetingDate: parseImportDate(field("meeting", "meeting", "meetingdate")) ?? undefined,
+              siteVisitDate: parseImportDate(field("siteVisit", "sitevisit")) ?? undefined,
+              forwardedTeam: teamRes.team ?? undefined,
+              routingMethod: teamRes.team ? routingFieldsFor(teamRes).routingMethod : undefined,
+              routingSource: teamRes.team ? routingFieldsFor(teamRes).routingSource : undefined,
+              routingReason: teamRes.team ? routingFieldsFor(teamRes).routingReason : undefined,
+            };
+            await applyRevivalMerge({
+              db: prisma,
+              existingId: existingDup.id,
+              incoming,
+              remark: field("remarks", "remarks", "remark") ?? field("message", "message", "requirement"),
+              project: field("project", ...PROJECT_PICK),
+              tags: field("tags", "tags"),
+              revivalSource: field("source", "source") ?? campaign ?? importBatch.fileName,
+              fileName: importBatch.fileName,
+              changedById: meUser.id,
+            });
+            revived++; deduped++;
             continue;
           }
           // dupMode === "create" → fall through with skipDedup below.
@@ -531,7 +588,9 @@ export async function POST(req: NextRequest) {
     fileType: "Google Sheet",
     rowsProcessed: parsed.data.length,
     created, deduped, enriched,
-    dupMode, skippedDup, conversationAppended,
+    // `revived` (dupMode="revival") = existing leads re-engaged non-destructively;
+    // surfaced in the response + report only (reuses updatedCount — no migration).
+    dupMode, skippedDup, conversationAppended, revived,
     mappingConfirmed: !!explicitMapping,
     customFieldsCreated: explicitMapping
       ? detectedColumns.filter((c) => { const v = explicitMapping[c]; return !v || v === IGNORE; }).length

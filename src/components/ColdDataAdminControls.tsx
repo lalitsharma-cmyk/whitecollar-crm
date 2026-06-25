@@ -64,11 +64,15 @@ export default function ColdDataAdminControls({ agents }: { agents: Agent[] }) {
               Every imported row is marked as cold data and left unassigned (assign them below afterwards).
             </p>
             {/* isColdCall=true rides along on preview + import. defaultDupMode
-                "skip" — cold lists are often re-uploaded; don't disturb existing. */}
+                "revival" — the Revival Engine exists to RE-ENGAGE leads that
+                already exist, so an existing-lead match is PROCESSED (fill-if-empty
+                merge + appended history + moved into Revival), never skipped. The
+                admin can still pick Skip per-import. (Was "skip", which discarded
+                every match → "Import 0 new leads".) */}
             <LeadImportWizard
               mode="csv"
               extraFields={{ isColdCall: "true" }}
-              defaultDupMode="skip"
+              defaultDupMode="revival"
               compact
               onDone={() => router.refresh()}
             />
