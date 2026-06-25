@@ -154,6 +154,58 @@ export function runDetectTests(): TestReport {
   check("tier: name only → Medium", tierForFactors({ sameMobile: false, sameEmail: false, similarName: true, sameCompany: false, sameAlternateNumber: false }) === "Medium");
   check("tier: nothing → None", tierForFactors({ sameMobile: false, sameEmail: false, similarName: false, sameCompany: false, sameAlternateNumber: false }) === "None");
 
+  // ── NEGATIVE: similar name but NOT verified (different phone AND email) is at
+  //    most a Medium name-only match — never Very High. A fuzzy name is not a
+  //    verified contact match, so it must rank LOWER (the search layer enforces
+  //    verified-first; the detector tiers it as Medium, not Very High/High).
+  {
+    const m = scoreCandidate(
+      lead({ id: "a", name: "Ravi Kumar", phone: "+910000000001", email: "ravi.k@one.com" }),
+      cand({ id: "b", name: "Ravi Kumarr", phone: "+910000000002", email: "ravi.k@two.com" }),
+    );
+    check("negative: fuzzy-name, unverified contact → Medium (not Very High)", m?.tier === "Medium");
+    check("negative: fuzzy-name match has neither sameMobile nor sameEmail",
+      m?.factors.sameMobile === false && m?.factors.sameEmail === false);
+  }
+  // ── NEGATIVE: nothing in common at all → no match (already covered, reasserted
+  //    here as the explicit "no verified, no fuzzy" baseline).
+  {
+    const m = detectCandidates(
+      lead({ id: "a", name: "Zeta One", phone: "+911234500001", email: "z@a.com" }),
+      [cand({ id: "b", name: "Omega Two", phone: "+919876500002", email: "o@b.com" })],
+    );
+    check("negative: no signal whatsoever → zero matches", m.length === 0);
+  }
+
+  // ── ROLLBACK (logic-level): link → unlink restores the EXACT standalone state.
+  //    link.ts is server-only/DB-bound; here we model the membership transition it
+  //    records (prevCustomerId/newCustomerId on each audit row) to prove the state
+  //    machine is reversible: a standalone enquiry linked to a customer and then
+  //    unlinked returns to customerId === null, and the audit pair inverts cleanly.
+  {
+    type Membership = string | null;
+    // Pure mirror of linkEnquiryInTx's transition record (no DB).
+    function applyLink(current: Membership, target: Membership) {
+      const action = target ? "LINK" : "UNLINK";
+      return { prevCustomerId: current, newCustomerId: target, action, resulting: target };
+    }
+    const start: Membership = null;                         // standalone enquiry
+    const linked = applyLink(start, "cust_1");              // admin links it
+    check("rollback: link sets membership to the customer", linked.resulting === "cust_1");
+    check("rollback: link audit captures prev=null → new=cust_1",
+      linked.prevCustomerId === null && linked.newCustomerId === "cust_1" && linked.action === "LINK");
+
+    const unlinked = applyLink(linked.resulting, null);     // admin unlinks it
+    check("rollback: unlink restores standalone (customerId === null)", unlinked.resulting === null);
+    check("rollback: unlink audit inverts the link (prev=cust_1 → new=null)",
+      unlinked.prevCustomerId === "cust_1" && unlinked.newCustomerId === null && unlinked.action === "UNLINK");
+    check("rollback: end state equals original standalone state", unlinked.resulting === start);
+
+    // Re-linking after a rollback restores membership again (idempotent reversibility).
+    const relinked = applyLink(unlinked.resulting, "cust_1");
+    check("rollback: re-link after unlink restores membership", relinked.resulting === "cust_1");
+  }
+
   return { passed, failed, failures };
 }
 

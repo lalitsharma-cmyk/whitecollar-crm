@@ -159,3 +159,41 @@ export function computeCustomerSummary(enquiries: CustomerEnquiryInput[]): Custo
     lastEnquiryAt,
   };
 }
+
+/**
+ * Compute a customer's display name from its enquiries — used WHENEVER the stored
+ * Customer.displayName override is null (the default). Per the owner rule the
+ * display name is computed-by-default; an admin may pin a label by storing one.
+ *
+ * Selection (deterministic — no Date.now()): among enquiries that actually carry a
+ * non-blank name, prefer the MOST RECENT enquiry; break ties toward the MORE
+ * COMPLETE name (longer trimmed string — typically a full "First Last" over a bare
+ * first name). Enquiries with no createdAt sort oldest. Returns "" when no enquiry
+ * has a name (the caller falls back to a placeholder such as "Unnamed customer").
+ *
+ * `override` short-circuits: a non-blank stored displayName always wins (the one
+ * admin override the model accepts), exactly mirroring computeCustomerOwner.
+ */
+export function computeDisplayName(
+  enquiries: CustomerEnquiryInput[],
+  override?: string | null,
+): string {
+  const pinned = (override ?? "").trim();
+  if (pinned) return pinned;
+
+  let best: { name: string; at: number; len: number } | null = null;
+  for (const e of enquiries) {
+    const name = (e.name ?? "").trim();
+    if (!name) continue;
+    const at = e.createdAt ? e.createdAt.getTime() : -Infinity;
+    const len = name.length;
+    if (
+      best === null ||
+      at > best.at ||                         // more recent wins
+      (at === best.at && len > best.len)       // tie → more complete (longer) name
+    ) {
+      best = { name, at, len };
+    }
+  }
+  return best?.name ?? "";
+}

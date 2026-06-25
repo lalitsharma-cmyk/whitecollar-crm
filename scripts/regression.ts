@@ -71,11 +71,13 @@ import {
   computeCustomerStatus,
   computeCustomerOwner,
   computeCustomerConfidence,
+  computeDisplayName,
 } from "../src/lib/customer/compute";
 import { runComputeTests } from "../src/lib/customer/compute.test";
 import { runDetectTests } from "../src/lib/customer/detect.test";
 import { runSearchTests } from "../src/lib/customer/search.test";
 import { detectCandidates } from "../src/lib/customer/detect";
+import { rankCustomerSearchRows, type CustomerSearchRow } from "../src/lib/customer/searchRank";
 import { MULTIPLE_OWNERS } from "../src/lib/customer/types";
 
 // ── tiny assertion harness ──────────────────────────────────────────────────
@@ -3813,7 +3815,7 @@ const checks: Check[] = [
   // so it is safe to run against prod before the schema deploys.
   // ───────────────────────────────────────────────────────────────────────────
   {
-    name: "customer-computed-layer — status precedence + owner MULTIPLE + confidence reasons + Ravi detection (pure)",
+    name: "customer-computed-layer — status precedence + owner MULTIPLE + confidence reasons + computed displayName + verified-first 6-step ranking + Ravi detection (pure)",
     run: async () => {
       // ── status precedence (owner-confirmed examples) ──
       assert(
@@ -3872,6 +3874,42 @@ const checks: Check[] = [
       assert(ravi[0].reasons.includes("Same email"), "detect: Ravi match reasons must include 'Same email'");
       assert(ravi[0].factors.sameEmail === true && ravi[0].factors.sameMobile === false, "detect: Ravi match must be email-driven, not phone");
 
+      // ── displayName is COMPUTED-by-default with an admin override (refinement #2) ──
+      assert(
+        computeDisplayName(
+          [
+            { id: "a", currentStatus: null, ownerId: null, name: "Ravi", createdAt: new Date("2026-01-01") },
+            { id: "b", currentStatus: null, ownerId: null, name: "Ravi Upadhyay", createdAt: new Date("2026-03-01") },
+          ],
+          null,
+        ) === "Ravi Upadhyay",
+        "displayName: null override must compute the most-recent enquiry name",
+      );
+      assert(
+        computeDisplayName([{ id: "a", currentStatus: null, ownerId: null, name: "Ravi" }], "Pinned Label") === "Pinned Label",
+        "displayName: a non-blank admin override must always win",
+      );
+      assert(computeDisplayName([], null) === "", "displayName: empty enquiry set must compute to empty string");
+
+      // ── search RANKING: the LOCKED 6-step order — a VERIFIED MOBILE match must
+      //    OUTRANK a similar-name (unverified) hit at equal confidence, even when
+      //    the name hit has better recency + more enquiries (refinement #3). ──
+      {
+        const ranked = rankCustomerSearchRows([
+          {
+            customerId: "nameOnly", displayName: "x", status: "Active", ownerOfRecord: "u1",
+            enquiryCount: 99, lastActivityAt: new Date("2030-01-01"), confidence: 100,
+            verifiedMobile: false, verifiedEmail: false, phones: [], emails: [],
+          } as CustomerSearchRow,
+          {
+            customerId: "verifiedMobile", displayName: "y", status: "Active", ownerOfRecord: "u1",
+            enquiryCount: 1, lastActivityAt: new Date("2026-01-01"), confidence: 100,
+            verifiedMobile: true, verifiedEmail: false, phones: [], emails: [],
+          } as CustomerSearchRow,
+        ]);
+        assert(ranked[0].customerId === "verifiedMobile", "rank: a verified mobile match must outrank a similar-name hit");
+      }
+
       // ── full pure unit suites must all pass ──
       const c = runComputeTests();
       const d = runDetectTests();
@@ -3883,7 +3921,7 @@ const checks: Check[] = [
       results.push({
         name: "  ↳ note",
         ok: true,
-        detail: `pure customer-layer suites green: compute ${c.passed}, detect ${d.passed}, search ${s.passed}; Ravi=Very High (Same email); status/owner/confidence invariants hold`,
+        detail: `pure customer-layer suites green: compute ${c.passed}, detect ${d.passed}, search ${s.passed}; Ravi=Very High (Same email); computed displayName + verified-mobile-first 6-step ranking + status/owner/confidence invariants hold`,
       });
     },
   },

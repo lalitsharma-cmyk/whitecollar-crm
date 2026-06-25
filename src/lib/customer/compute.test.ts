@@ -19,6 +19,7 @@ import {
   computeCustomerOwner,
   computeCustomerConfidence,
   computeCustomerSummary,
+  computeDisplayName,
 } from "./compute";
 import { MULTIPLE_OWNERS, type CustomerEnquiryInput } from "./types";
 
@@ -198,6 +199,68 @@ export function runComputeTests(): TestReport {
     const s = computeCustomerSummary([]);
     check("summary: empty → 0 enquiries, null dates",
       s.enquiryCount === 0 && s.firstEnquiryAt === null && s.lastEnquiryAt === null && s.phones.length === 0);
+  }
+
+  // ── computeDisplayName (computed-by-default + admin override) ────────────────
+  {
+    const d1 = new Date("2026-01-10T00:00:00.000Z");
+    const d2 = new Date("2026-03-20T00:00:00.000Z");
+    const d3 = new Date("2026-02-15T00:00:00.000Z");
+
+    // NORMAL: picks the MOST RECENT enquiry's name (d2 = March).
+    eq("displayName: most-recent enquiry name wins",
+      computeDisplayName([
+        enq({ id: "a", name: "Ravi", createdAt: d1 }),
+        enq({ id: "b", name: "Ravi Upadhyay", createdAt: d2 }),
+        enq({ id: "c", name: "Ravi U", createdAt: d3 }),
+      ]), "Ravi Upadhyay");
+
+    // OVERRIDE always wins (the one admin override) — even over a more-recent enquiry.
+    eq("displayName: admin override wins over computed",
+      computeDisplayName([enq({ id: "a", name: "Ravi Upadhyay", createdAt: d2 })], "Mr. R. Upadhyay"),
+      "Mr. R. Upadhyay");
+    eq("displayName: blank override falls through to computed",
+      computeDisplayName([enq({ id: "a", name: "Ravi", createdAt: d1 })], "   "), "Ravi");
+
+    // TIE on date → MORE COMPLETE (longer) name wins.
+    eq("displayName: same-date tie → more complete name",
+      computeDisplayName([
+        enq({ id: "a", name: "Ravi", createdAt: d1 }),
+        enq({ id: "b", name: "Ravi Upadhyay", createdAt: d1 }),
+      ]), "Ravi Upadhyay");
+
+    // EDGE: single enquiry → that name.
+    eq("displayName: single enquiry", computeDisplayName([enq({ id: "a", name: "Solo Person", createdAt: d1 })]), "Solo Person");
+
+    // EDGE: empty enquiry set → "" (caller supplies a placeholder).
+    eq("displayName: empty set → empty string", computeDisplayName([]), "");
+
+    // EDGE: enquiries with blank / whitespace names are skipped; trimmed result.
+    eq("displayName: skips blank names, trims",
+      computeDisplayName([
+        enq({ id: "a", name: "  ", createdAt: d2 }),
+        enq({ id: "b", name: "  Real Name  ", createdAt: d1 }),
+      ]), "Real Name");
+
+    // EDGE: no enquiry carries a name → "".
+    eq("displayName: all names blank → empty string",
+      computeDisplayName([enq({ id: "a", name: null }), enq({ id: "b", name: "" })]), "");
+
+    // EDGE: enquiry with no createdAt sorts oldest (a dated name beats an undated one).
+    eq("displayName: dated name beats undated",
+      computeDisplayName([
+        enq({ id: "a", name: "Undated Name" }),
+        enq({ id: "b", name: "Dated Name", createdAt: d1 }),
+      ]), "Dated Name");
+
+    // EDGE: all undated, EQUAL-length names → first by stable order (the final
+    //   fallback once date and length both tie; "Anna" and "Bina" are both 4 chars).
+    eq("displayName: all undated + equal length → first by stable order",
+      computeDisplayName([enq({ id: "a", name: "Anna" }), enq({ id: "b", name: "Bina" })]), "Anna");
+    // EDGE: all undated, DIFFERENT length → the more-complete (longer) name wins
+    //   even with no dates (length is the documented tie-break before stable order).
+    eq("displayName: all undated + different length → longer name wins",
+      computeDisplayName([enq({ id: "a", name: "Jo" }), enq({ id: "b", name: "Jonathan" })]), "Jonathan");
   }
 
   return { passed, failed, failures };

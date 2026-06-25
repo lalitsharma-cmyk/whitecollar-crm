@@ -21,7 +21,7 @@ import "server-only";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { leadScopeWhere, type ScopedUser } from "@/lib/leadScope";
-import { computeCustomerStatus, computeCustomerOwner, computeCustomerSummary } from "./compute";
+import { computeCustomerStatus, computeCustomerOwner, computeCustomerSummary, computeDisplayName } from "./compute";
 import type { CustomerEnquiryInput } from "./types";
 // Pure ranking lives in searchRank.ts (no "server-only") so it is unit-testable
 // + importable into the regression harness. Re-export for existing callers.
@@ -95,6 +95,9 @@ export async function resolveCustomers(
     },
   });
 
+  const ql = q.toLowerCase();
+  const qPhone = last10(q);
+
   const rows: CustomerSearchRow[] = customers.map((c) => {
     const enquiries: CustomerEnquiryInput[] = c.enquiries.map((e) => ({
       id: e.id, currentStatus: e.currentStatus, ownerId: e.ownerId, name: e.name,
@@ -103,28 +106,36 @@ export async function resolveCustomers(
       createdAt: e.createdAt,
     }));
     const summary = computeCustomerSummary(enquiries);
+    // displayName is computed-by-default (stored value = admin override).
+    const displayName = computeDisplayName(enquiries, c.displayName) || "Unnamed customer";
     const lastActivityAt = c.enquiries.reduce<Date | null>((acc, e) => {
       const t = e.lastTouchedAt ?? e.createdAt ?? null;
       if (!t) return acc;
       return acc === null || t > acc ? t : acc;
     }, null);
 
+    // "Verified" match = EXACT normalized equality (not fuzzy). These two flags
+    // are the rank tie-breaks (Rule 5 steps 2–3): a verified mobile/email match
+    // must outrank a mere similar-name hit.
+    const verifiedMobile = !!qPhone && summary.phones.some((p) => last10(p) === qPhone);
+    const verifiedEmail = summary.emails.some((e) => e.toLowerCase() === ql);
+
     // Search confidence: exact phone/email match → 100; exact (whole) name → 90;
     // otherwise a partial/contains hit → 60.
     let confidence = 60;
-    const ql = q.toLowerCase();
-    if (isPhoneish && summary.phones.some((p) => last10(p) === last10(q))) confidence = 100;
-    else if (summary.emails.some((e) => e.toLowerCase() === ql)) confidence = 100;
-    else if (c.displayName.toLowerCase() === ql) confidence = 90;
+    if (verifiedMobile || verifiedEmail) confidence = 100;
+    else if (displayName.toLowerCase() === ql) confidence = 90;
 
     return {
       customerId: c.id,
-      displayName: c.displayName,
+      displayName,
       status: computeCustomerStatus(enquiries),
       ownerOfRecord: computeCustomerOwner(enquiries, c.canonicalOwnerId),
       enquiryCount: summary.enquiryCount,
       lastActivityAt,
       confidence,
+      verifiedMobile,
+      verifiedEmail,
       phones: summary.phones,
       emails: summary.emails,
     };

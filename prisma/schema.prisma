@@ -2522,20 +2522,25 @@ model Customer {
   // IMMUTABLE identity. A surrogate UUID — NEVER a mobile, email, or name (all of
   // those change; the customer's identity must not). Generated once, never reused.
   id               String   @id @default(uuid())
-  // Human-friendly label for lists/headers (e.g. "Ravi Upadhyay"). A convenience
-  // display value only — it is NOT identity and carries no business logic. Owner,
-  // status, phones, emails, projects are all computed from the linked enquiries.
-  displayName      String
+  // OPTIONAL admin display-name override (e.g. "Ravi Upadhyay"). NULL by default —
+  // when NULL the display name is COMPUTED from the linked enquiries (the most
+  // recent / most-complete enquiry name; see computeDisplayName). It is a
+  // convenience label only — NOT identity and no business logic. Owner, status,
+  // phones, emails, projects, health are all computed from the linked enquiries.
+  displayName      String?
   // Admin-selected canonical owner-of-record. NULL = "Multiple Owners" (the
   // computed owner falls back to the single shared owner, or "MULTIPLE"). This is
   // the ONE human override the model accepts; it is never auto-derived from a new
   // enquiry (see computeCustomerOwner — a new enquiry never silently changes it).
   canonicalOwnerId String?
   canonicalOwner   User?    @relation("CustomerCanonicalOwner", fields: [canonicalOwnerId], references: [id], onDelete: SetNull)
-  // Reserved for the FUTURE health score (Step N). Nullable JSON, intentionally
-  // NOT computed or written yet — reserved so adding health later needs no
-  // migration. Leave NULL.
-  healthMeta       Json?
+  // NOTE (owner rule): customer HEALTH is a COMPUTED value — it is derived live
+  // from the linked enquiries (recency / engagement / status mix) exactly like
+  // status / owner / confidence / contact rollup, and is NEVER stored. There is
+  // deliberately NO healthMeta column: storing it would let a new enquiry make a
+  // persisted health value go stale, which violates the single-source-of-truth
+  // rule. When health is built it is added as a pure compute helper alongside
+  // computeCustomerStatus — no schema field and no redesign are needed.
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 

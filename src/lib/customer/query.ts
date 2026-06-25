@@ -24,21 +24,18 @@ import {
   computeCustomerOwner,
   computeCustomerConfidence,
   computeCustomerSummary,
+  computeDisplayName,
 } from "./compute";
-import { isTerminalStatus, isBookedStatus } from "@/lib/lead-statuses";
 import type { CustomerStatus, CustomerEnquiryInput, ConfidenceResult, CustomerSummary } from "./types";
-
-/** Timeline event categories — drive the filter chips on the 360 view. */
-export type TimelineCategory =
-  | "call" | "whatsapp" | "note" | "assignment" | "ai" | "import"
-  | "followup" | "merge" | "unlink" | "converted" | "rejected" | "other";
+import { TIMELINE_EVENT, type TimelineEventType } from "./timelineEvents";
 
 export interface TimelineEvent {
   id: string;
   /** Which enquiry this event belongs to (null for customer-level audit events). */
   leadId: string | null;
   at: Date;
-  category: TimelineCategory;
+  /** Standardized taxonomy event type (timelineEvents.ts) — the UI filters by it. */
+  category: TimelineEventType;
   title: string;
   detail: string | null;
   /** Actor name when known. */
@@ -74,20 +71,22 @@ export interface Customer360 {
   createdAt: Date;
 }
 
-/** Map an Activity row to a timeline category + readable title. */
-function categorizeActivity(type: string, leadStatus: string | null): TimelineCategory {
+/**
+ * Map an Activity row's type onto the standardized taxonomy event type
+ * (timelineEvents.ts). leadStatus is retained for parity with the prior
+ * converted/rejected distinction but both now fold into STATUS_CHANGED (the chip
+ * layer groups them) — the taxonomy is locked, so we never invent ad-hoc values.
+ */
+function categorizeActivity(type: string, _leadStatus: string | null): TimelineEventType {
   switch (type) {
-    case "CALL": return "call";
-    case "WHATSAPP": return "whatsapp";
-    case "NOTE": return "note";
-    case "ASSIGNMENT": return "assignment";
-    case "LEAD_CREATED": return "import";
-    case "REMINDER_FIRED": return "followup";
-    case "STATUS_CHANGE":
-      if (isBookedStatus(leadStatus)) return "converted";
-      if (isTerminalStatus(leadStatus)) return "rejected";
-      return "other";
-    default: return "other";
+    case "CALL": return TIMELINE_EVENT.CALL_LOGGED;
+    case "WHATSAPP": return TIMELINE_EVENT.WHATSAPP_LOGGED;
+    case "NOTE": return TIMELINE_EVENT.NOTE_ADDED;
+    case "ASSIGNMENT": return TIMELINE_EVENT.LEAD_ASSIGNED;
+    case "LEAD_CREATED": return TIMELINE_EVENT.LEAD_CREATED;
+    case "REMINDER_FIRED": return TIMELINE_EVENT.FOLLOWUP_COMPLETED;
+    case "STATUS_CHANGE": return TIMELINE_EVENT.STATUS_CHANGED;
+    default: return TIMELINE_EVENT.NOTE_ADDED;
   }
 }
 
@@ -160,6 +159,9 @@ export async function getCustomer360(me: ScopedUser, customerId: string): Promis
   const ownerOfRecord = computeCustomerOwner(enquiryInputs, customer.canonicalOwnerId);
   const summary = computeCustomerSummary(enquiryInputs);
   const confidence = confidenceFromEnquiries(enquiryInputs);
+  // displayName is computed-by-default: a non-null stored value is an admin
+  // override; otherwise derive it from the linked enquiries.
+  const displayName = computeDisplayName(enquiryInputs, customer.displayName) || "Unnamed customer";
 
   // Resolve the owner-of-record display name (canonical owner, or the single
   // shared enquiry owner; "MULTIPLE" has no single name).
@@ -213,7 +215,7 @@ export async function getCustomer360(me: ScopedUser, customerId: string): Promis
       id: `lnk_${au.id}`,
       leadId: au.leadId,
       at: au.performedAt,
-      category: (au.action === "UNLINK" ? "unlink" : "merge") as TimelineCategory,
+      category: (au.action === "UNLINK" ? TIMELINE_EVENT.CUSTOMER_UNLINKED : TIMELINE_EVENT.CUSTOMER_LINKED) as TimelineEventType,
       title: au.action === "UNLINK" ? "Enquiry unlinked from customer" : "Enquiry linked to customer",
       detail: au.reason ?? null,
       by: au.performedBy?.name ?? null,
@@ -222,7 +224,7 @@ export async function getCustomer360(me: ScopedUser, customerId: string): Promis
 
   return {
     id: customer.id,
-    displayName: customer.displayName,
+    displayName,
     canonicalOwnerId: customer.canonicalOwnerId,
     status,
     ownerOfRecord,

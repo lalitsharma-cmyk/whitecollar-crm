@@ -15,14 +15,16 @@
 
 -- ── Customer ─────────────────────────────────────────────────────────────────
 -- IMMUTABLE identity = uuid id (never a phone/email/name). Everything about the
--- customer's CURRENT state (status / owner / confidence / contact rollup) is
--- COMPUTED LIVE from the linked enquiries — only canonicalOwnerId (an admin
--- override) and healthMeta (reserved, unused) are stored.
+-- customer's CURRENT state (status / owner / confidence / contact rollup / HEALTH)
+-- is COMPUTED LIVE from the linked enquiries — the ONLY stored columns are the
+-- surrogate id, an OPTIONAL admin display-name override (NULL = compute it from
+-- the enquiries) and canonicalOwnerId (an admin owner override). Nothing derivable
+-- is persisted, so a new enquiry can never make a stored value go stale. (There is
+-- deliberately NO healthMeta column — health is computed, never stored.)
 CREATE TABLE IF NOT EXISTS "Customer" (
   "id"               TEXT NOT NULL,
-  "displayName"      TEXT NOT NULL,
+  "displayName"      TEXT,
   "canonicalOwnerId" TEXT,
-  "healthMeta"       JSONB,
   "createdAt"        TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
   "updatedAt"        TIMESTAMP(3) NOT NULL,
   CONSTRAINT "Customer_pkey" PRIMARY KEY ("id")

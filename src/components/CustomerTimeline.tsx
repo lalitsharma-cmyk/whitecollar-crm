@@ -1,51 +1,62 @@
 "use client";
 
 import { useState } from "react";
+import {
+  TIMELINE_CHIPS,
+  TIMELINE_EVENT,
+  chipForEvent,
+  eventMatchesChip,
+  type TimelineChipKey,
+  type TimelineEventType,
+} from "@/lib/customer/timelineEvents";
 
 // Customer-layer master timeline (Step 1 foundation). READ-ONLY. The events are
 // passed in pre-aggregated from the server (every Activity across the customer's
-// enquiries + the link/unlink audit events). The chips FILTER what is shown —
-// events are never removed, only hidden (Rule 4). Default = All Events.
+// enquiries + the link/unlink audit events), each tagged with a STANDARDIZED
+// taxonomy event type (timelineEvents.ts). The chips FILTER what is shown — events
+// are never removed, only hidden (Rule 4). Default = All Events.
 
 export interface ClientTimelineEvent {
   id: string;
   leadId: string | null;
   at: string;            // ISO
+  /** A locked taxonomy event type (timelineEvents.ts TIMELINE_EVENT). */
   category: string;
   title: string;
   detail: string | null;
   by: string | null;
 }
 
-const CHIPS: { key: string; label: string }[] = [
-  { key: "all", label: "All Events" },
-  { key: "call", label: "Calls" },
-  { key: "whatsapp", label: "WhatsApp" },
-  { key: "note", label: "Notes" },
-  { key: "assignment", label: "Assignments" },
-  { key: "ai", label: "AI" },
-  { key: "import", label: "Imports" },
-  { key: "followup", label: "Follow-ups" },
-  { key: "merge", label: "Merges" },
-  { key: "unlink", label: "Unlinks" },
-  { key: "converted", label: "Converted" },
-  { key: "rejected", label: "Rejected" },
-];
-
-const CAT_DOT: Record<string, string> = {
-  call: "bg-blue-500",
-  whatsapp: "bg-green-500",
-  note: "bg-slate-400",
-  assignment: "bg-indigo-500",
-  ai: "bg-purple-500",
-  import: "bg-amber-500",
-  followup: "bg-orange-500",
-  merge: "bg-teal-500",
-  unlink: "bg-rose-500",
-  converted: "bg-emerald-600",
-  rejected: "bg-red-500",
-  other: "bg-slate-300",
+// Per-event dot colour, keyed by the LOCKED taxonomy event type. Anything not
+// explicitly listed falls back to a neutral dot.
+const EVENT_DOT: Partial<Record<TimelineEventType, string>> = {
+  [TIMELINE_EVENT.CALL_LOGGED]: "bg-blue-500",
+  [TIMELINE_EVENT.WHATSAPP_LOGGED]: "bg-green-500",
+  [TIMELINE_EVENT.NOTE_ADDED]: "bg-slate-400",
+  [TIMELINE_EVENT.LEAD_ASSIGNED]: "bg-indigo-500",
+  [TIMELINE_EVENT.LEAD_REASSIGNED]: "bg-indigo-500",
+  [TIMELINE_EVENT.FOLLOWUP_CREATED]: "bg-orange-500",
+  [TIMELINE_EVENT.FOLLOWUP_COMPLETED]: "bg-orange-500",
+  [TIMELINE_EVENT.FOLLOWUP_RESCHEDULED]: "bg-orange-500",
+  [TIMELINE_EVENT.STATUS_CHANGED]: "bg-emerald-600",
+  [TIMELINE_EVENT.STAGE_CHANGED]: "bg-emerald-600",
+  [TIMELINE_EVENT.AI_RECOMMENDATION]: "bg-purple-500",
+  [TIMELINE_EVENT.AI_SUMMARY]: "bg-purple-500",
+  [TIMELINE_EVENT.IMPORT]: "bg-amber-500",
+  [TIMELINE_EVENT.EXPORT]: "bg-amber-500",
+  [TIMELINE_EVENT.LEAD_CREATED]: "bg-amber-500",
+  [TIMELINE_EVENT.CUSTOMER_CREATED]: "bg-teal-500",
+  [TIMELINE_EVENT.CUSTOMER_LINKED]: "bg-teal-500",
+  [TIMELINE_EVENT.MERGE]: "bg-teal-500",
+  [TIMELINE_EVENT.ROLLBACK]: "bg-rose-500",
+  [TIMELINE_EVENT.CUSTOMER_UNLINKED]: "bg-rose-500",
+  [TIMELINE_EVENT.SOFT_DELETE]: "bg-red-500",
+  [TIMELINE_EVENT.RESTORE]: "bg-lime-600",
 };
+
+function dotFor(ev: string): string {
+  return EVENT_DOT[ev as TimelineEventType] ?? "bg-slate-300";
+}
 
 function fmt(iso: string): string {
   const d = new Date(iso);
@@ -57,19 +68,28 @@ function fmt(iso: string): string {
 }
 
 export default function CustomerTimeline({ events }: { events: ClientTimelineEvent[] }) {
-  const [active, setActive] = useState<string>("all");
+  const [active, setActive] = useState<TimelineChipKey>("all");
 
-  // Only show chips for categories that actually have events (plus "All").
-  const present = new Set(events.map((e) => e.category));
-  const visibleChips = CHIPS.filter((c) => c.key === "all" || present.has(c.key));
+  // Count events per chip GROUP (an event belongs to exactly one non-"all" chip).
+  const countForChip = (key: TimelineChipKey): number =>
+    key === "all"
+      ? events.length
+      : events.filter((e) => eventMatchesChip(e.category as TimelineEventType, key)).length;
 
-  const shown = active === "all" ? events : events.filter((e) => e.category === active);
+  // Only show chips for groups that actually have events (plus the "all" chip).
+  const visibleChips = TIMELINE_CHIPS.filter((c) => c.key === "all" || countForChip(c.key) > 0);
+
+  // Filter (never remove) — "all" passes everything.
+  const shown =
+    active === "all"
+      ? events
+      : events.filter((e) => eventMatchesChip(e.category as TimelineEventType, active));
 
   return (
     <div>
       <div className="flex flex-wrap gap-2 mb-4">
         {visibleChips.map((c) => {
-          const count = c.key === "all" ? events.length : events.filter((e) => e.category === c.key).length;
+          const count = countForChip(c.key);
           const on = active === c.key;
           return (
             <button
@@ -97,7 +117,7 @@ export default function CustomerTimeline({ events }: { events: ClientTimelineEve
               <span
                 className={
                   "absolute -left-[7px] mt-1.5 h-3 w-3 rounded-full border border-white dark:border-slate-900 " +
-                  (CAT_DOT[e.category] ?? CAT_DOT.other)
+                  dotFor(e.category)
                 }
               />
               <div className="flex items-baseline justify-between gap-3">
@@ -106,7 +126,7 @@ export default function CustomerTimeline({ events }: { events: ClientTimelineEve
               </div>
               {e.detail && <p className="text-sm text-slate-600 dark:text-slate-300 mt-0.5">{e.detail}</p>}
               <div className="flex items-center gap-2 mt-1 text-xs text-slate-400">
-                <span className="uppercase tracking-wide">{e.category}</span>
+                <span className="uppercase tracking-wide">{chipForEvent(e.category as TimelineEventType)}</span>
                 {e.by && <span>· {e.by}</span>}
               </div>
             </li>
