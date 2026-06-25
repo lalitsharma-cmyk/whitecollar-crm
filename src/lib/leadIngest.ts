@@ -13,6 +13,7 @@ import { notifyHotLead } from "@/lib/push";
 import { findMatchingLeads, summariseHistory, projectsFromInterestedUnits } from "@/lib/investorMatch";
 import { audit } from "@/lib/audit";
 import { websiteMessageRemark } from "@/lib/websiteRemark";
+import { sourceEnumLabel } from "@/lib/sourceLabel";
 import { BOOKED_STATUSES } from "@/lib/lead-statuses";
 import { resolveTeam, routingFieldsFor, automationGate } from "@/lib/teamRouting";
 import type { Classification } from "@/lib/leadClassifier";
@@ -254,7 +255,13 @@ export async function ingestLead(input: RawLeadInput) {
       country: input.country,
       source: input.source,
       // Classifier may relabel Source → "Blog" and fill Project (matched master).
-      sourceRaw: cls?.isBlog ? "Blog" : (input.sourceRaw?.trim() || null),
+      // sourceRaw is the canonical Source the CRM shows/filters/reports on — it must
+      // NEVER be null (a null silently drops the lead from the Source filter and
+      // re-trips the data-integrity-jun25 gate). Keep any explicitly-provided raw
+      // import/intake string; otherwise fall back to the human label of the source
+      // enum — the SAME mapping the #166 sourceRaw backfill used (sourceEnumLabel).
+      // This covers website-form / meta / manual / import-without-a-source-column.
+      sourceRaw: cls?.isBlog ? "Blog" : (input.sourceRaw?.trim() || sourceEnumLabel(input.source)),
       sourceDetail: (useCls && cls?.project) ? cls.project : input.sourceDetail,
       status: LeadStatus.NEW,
       // Excel/MIS status: real-time intake stamps "Fresh Lead"; importers leave it
