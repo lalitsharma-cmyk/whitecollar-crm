@@ -34,15 +34,28 @@ surfaced through a dedicated **Customer Index** master module (§1, §9).
 The architecture obeys one owner rule above all: **"everything that can be computed
 should be computed; everything that must be stored should be immutable."** A
 `Customer` stores almost nothing — only its UUID, an optional admin display-name
-override, and an optional admin canonical-owner override. Its **status, owner,
+override, and an optional admin canonical-owner override. Its **lifecycle, owner,
 confidence, contact rollup, health, last-activity and summary are all computed live
 from the linked enquiries on every read**, so a new enquiry can never make a stored
 value go stale. `displayName` is **computed by default and never stored** — the
 nullable column exists *only* as an optional explicit admin override (a future
-affordance), never auto-populated (decision 6, §1/§2). **Health Score is reserve
-architecture only** — its inputs are catalogued for the future but **no scoring is
-implemented in Release 2** (decision 7, §1). The relationship itself is recorded in
-an **immutable, append-only `CustomerLinkAudit`** that makes every grouping decision
+affordance), never auto-populated (decision 6, §1/§2).
+
+**Lifecycle and Classification are two independent axes (refinement, 2026-06-26).** A
+customer's **Lifecycle** (`Lead → Qualified → Customer → Inactive → Dormant → Merged`)
+is **computed, never stored, and mutually exclusive** — exactly one at a time
+(§"Customer States"). A customer's **Classification** (Investor / VIP / Blacklisted /
+HNI / NRI / …) is an **independent, many-to-many set of admin-assigned tags** — a
+customer may hold zero or many at once, alongside whatever the lifecycle is (so a person
+can be **Dormant *and* Investor *and* VIP** simultaneously). `Investor` is therefore a
+**tag, not a computed state**, and the vague `Active` state is dropped in favour of
+`Inactive` (short window) and `Dormant` (long window). Classification is modelled by the
+**reserved `Tag` + `CustomerTag` tables** — design-only, **NOT built in Release 2**,
+purely additive, addable later with zero structural change (§"Reserved Tag data model").
+**Health / AI / Relationship / Investment-Potential scores are reserve architecture
+only** — inputs catalogued for the future, **no scoring and no schema column in Release
+2** (decision 7; §"Reserved AI scoring"). The relationship itself is recorded in an
+**immutable, append-only `CustomerLinkAudit`** that makes every grouping decision
 explainable and exactly reversible.
 
 Detection is advisory only: an engine **detects, scores, and recommends** duplicate
@@ -63,6 +76,26 @@ exact standalone state). Nothing on the timeline is ever deleted; the UI
 **filters** events, never removes them. The 360 view is permission-scoped: a viewer
 sees only the enquiries under a customer that they are allowed to see.
 
+The **Customer 360** is the master screen (§"Customer 360") — Name · Phone(s) · Email(s)
+· **Lifecycle** · **Tags** *(reserved)* · **Health** *(reserved)* · Confidence ·
+Duplicate score · Owner(s) · Enquiries · Properties · Activities · **Customer Timeline**
+· Notes · Calls · WhatsApp · **AI Summary** *(reserved)* · **Investment History** *(computed
+from converted enquiries)* · **Merge History** — extending the already-built read-only
+360 page. It surfaces the **Customer timeline** (a **computed aggregate** of every
+linked enquiry's activities **+** the customer-level link/merge events from
+`CustomerLinkAudit`), distinct from the **Lead timeline** (the single-enquiry stream the
+Lead detail still shows) — §"Customer Timeline vs Lead Timeline".
+
+**Release 2 BUILD scope is unchanged and explicit (§"Release 2 build scope").** R2 ships
+**only**: `Customer` (UUID) + nullable `Lead.customerId` + `CustomerLinkAudit` +
+read-only detection + the Customer Index + the read-only Customer 360 + the admin
+link/merge/unlink workflow + the audit-first migration. **Everything else is RESERVED**
+(design-only, additive-later): the `Tag`/`CustomerTag` classification tables, the four
+AI scores, AI Summary, and any tag UI. **Scalability guarantee:** every reserved feature
+is a **new additive table/column or a pure compute helper**, addable in a later release
+with **zero restructuring** of existing data; the only existing-table change R2 makes is
+the additive nullable `Lead.customerId`.
+
 ### What's already built (Step 1) vs what Release 2 adds
 
 | Capability | State | Where |
@@ -77,8 +110,9 @@ sees only the enquiries under a customer that they are allowed to see.
 | Customer-360 read-only data loader (permission-scoped, computed-on-read) | **Built** | `src/lib/customer/query.ts` |
 | Customer-first search resolution + locked 6-step ranking | **Built** | `src/lib/customer/search.ts`, `searchRank.ts` |
 | Locked 22-event timeline taxonomy + chip groups | **Built** | `src/lib/customer/timelineEvents.ts` |
-| Read-only Customer 360 page | **Built** | `src/app/(app)/customers/[id]/page.tsx` |
+| Read-only Customer 360 page (master screen — base to extend) | **Built** | `src/app/(app)/customers/[id]/page.tsx` |
 | Master-timeline client (filter chips; never removes events) | **Built** | `src/components/CustomerTimeline.tsx` |
+| Customer timeline = computed aggregate (⋃ enquiry Activity + CustomerLinkAudit; computed-on-read, NO new table) | **Built** (loader) | `src/lib/customer/query.ts` |
 | Unit tests (compute / detect / search) | **Built** | `src/lib/customer/*.test.ts` |
 | **HTTP API routes** (link / unlink / merge / detection-candidates / 360 / search) | **`[TO BUILD]`** | — |
 | **Merge-two-customers** writer (link-not-collapse; re-parent enquiries) | **`[TO BUILD]`** | — |
@@ -87,9 +121,13 @@ sees only the enquiries under a customer that they are allowed to see.
 | **Admin link/merge review screen** | **`[TO BUILD]`** | — |
 | **Migration-audit review screen** | **`[TO BUILD]`** | — |
 | **Customer-first wiring into the live global search bar** | **`[TO BUILD]`** | — |
-| **Customer Index — dedicated master module** (`/customers` list: Search · Filters · Health · Total enquiries · Last activity · Owner · Projects · Status) | **`[TO BUILD]`** (decision 5 — replaces the legacy redirect) | — |
-| **Customer Health Score** (`computeCustomerHealth`) | **RESERVE ONLY** — decision 7: inputs catalogued (§1), NOT implemented in Release 2; deliberately NO schema field | — |
-| **Admin-assigned customer flags** (Investor / VIP / Blacklisted — small additive stored field) | **`[TO BUILD]`** (Customer States, §"Customer States"; OPEN sub-question) | — |
+| **Customer Index — dedicated master module** (`/customers` list: Search · Filters · Lifecycle · Total enquiries · Last activity · Owner · Projects · Health) | **`[TO BUILD]`** (decision 5 — replaces the legacy redirect) | — |
+| **Customer 360 `[TO BUILD]` blocks** (Duplicate score · Investment History [computed from converted enquiries] · fuller enquiry/notes/calls/WhatsApp surfacing) | **`[TO BUILD]`** (extends the built 360; no new stored field) | §"Customer 360" |
+| **Customer Lifecycle** (computed: `Lead`/`Qualified`/`Customer`/`Inactive`/`Dormant`/`Merged`, mutually exclusive; `M`/`N` thresholds) | **Built (compute)** — `Inactive` state + `M` threshold new; wiring `[TO BUILD]`; deliberately NO schema field | `src/lib/customer/compute.ts` |
+| **Customer Classification — `Tag` + `CustomerTag`** (M–N tags: Investor / VIP / Blacklisted / HNI / NRI / …) | **`[RESERVED / NOT BUILT IN R2]`** — 2 purely-additive new tables; design-only shape, addable later with ZERO existing-table change; NO `flags` column | §"Reserved Tag data model" |
+| **Health Score · AI Score · Relationship Score · Investment Potential** (4 AI scores) | **`[RESERVED / NOT BUILT IN R2]`** — decision 7: computed-when-built (or additive cache); inputs catalogued; deliberately NO schema field | §"Reserved AI scoring" |
+| **AI Summary** (relationship narrative on the 360) | **`[RESERVED / NOT BUILT IN R2]`** | §"Customer 360" / §"Reserved AI scoring" |
+| **Tag management UI** (admin set/clear classification) | **`[RESERVED / NOT BUILT IN R2]`** — depends on the reserved tag tables | — |
 | **Regression invariants for the customer layer** | **`[TO BUILD]`** | `scripts/regression.ts` |
 | **Junk/placeholder-phone guard in the production dedup path** | **`[TO BUILD]`** (audit applied it locally; prod path still raw) | `lib/dedup`, `intelligenceCheck`, importer dedup |
 
@@ -99,6 +137,12 @@ sees only the enquiries under a customer that they are allowed to see.
 > feature — **not** the Customer Layer. The current `/customers` redirect is marked
 > **to replace with the Customer Index** (decision 5): Release 2 swaps the redirect
 > stub for a real, permission-scoped customer master list `[TO BUILD]`.
+>
+> **Scalability guarantee.** Every **`[RESERVED]`** feature above (Tag/CustomerTag, the
+> 4 AI scores, AI Summary, tag UI) is realised as a **new additive table/column or a
+> pure compute helper** — each can be added in a **later release with zero restructuring
+> of existing data**. The only existing-table change Release 2 itself makes is the
+> additive nullable `Lead.customerId`.
 
 ---
 
@@ -165,12 +209,13 @@ The Customer Index is a first-class list page (`[TO BUILD]`, §9.7) with:
 |---|---|
 | **Search** (name / phone / email) | `resolveCustomers` → `rankCustomerSearchRows` (customer-first) |
 | **Filters** (owner / status / team / project / health) | computed rollups over the customer's enquiries |
+| **Lifecycle** | computed customer **lifecycle** state — `Lead`/`Qualified`/`Customer`/`Inactive`/`Dormant`/`Merged` (§"Customer States"); mutually exclusive |
+| **Tags** | classification tags (Investor / VIP / …) — **`[RESERVED / NOT BUILT IN R2]`**; column reserved, renders nothing until the tag tables ship |
 | **Health** | computed-when-built (decision 7 — reserve only; column present, value pending) |
 | **Total enquiries** | `count(enquiries)` |
 | **Last activity** | `max(Activity.createdAt)` across linked enquiries |
 | **Owner** | computed owner-of-record (single shared, else "Multiple"), or pinned `canonicalOwnerId` |
 | **Projects** | union of `LeadInterestedProject` / discussed projects across enquiries |
-| **Status** | computed customer lifecycle state (§"Customer States") |
 
 Each row opens the read-only Customer 360 (§9.1). The index is **permission-scoped**
 exactly like the 360 loader: a viewer sees only customers that have ≥1 enquiry
@@ -207,11 +252,11 @@ system never auto-derives from a new enquiry.
         ▼                                           (+ deletedAt:null)
   Customer + its VISIBLE enquiries  ── Prisma ──► DB
         │
-        ├─► computeCustomerStatus(enquiries)             ┐
-        ├─► computeCustomerOwner(enquiries, canonical)   │  PURE — no DB,
-        ├─► computeCustomerSummary(enquiries)            │  no Date.now(),
-        ├─► confidenceFromEnquiries(enquiries)           │  deterministic
-        ├─► computeDisplayName(enquiries, override)      ┘
+        ├─► computeCustomerStatus(enquiries)  ← lifecycle  ┐
+        ├─► computeCustomerOwner(enquiries, canonical)     │  PURE — no DB,
+        ├─► computeCustomerSummary(enquiries)              │  no Date.now(),
+        ├─► confidenceFromEnquiries(enquiries)             │  deterministic
+        ├─► computeDisplayName(enquiries, override)        ┘
         │
         ├─► Activity[] across linked enquiries  ─────► master timeline events
         └─► CustomerLinkAudit[] for this customer ───► LINK/UNLINK timeline events
@@ -265,8 +310,12 @@ model Customer {
   linkAudits       CustomerLinkAudit[]
 
   @@index([canonicalOwnerId])
-  // NOTE: there is deliberately NO `healthMeta` / status / owner column — those are
-  // all COMPUTED. Storing them would let a new enquiry make a persisted value stale.
+  // NOTE: there is deliberately NO lifecycle / status / owner / health / score column —
+  // those are all COMPUTED. Storing them would let a new enquiry make a persisted value
+  // stale. Classification tags are NOT a column either: they live in the RESERVED
+  // Tag/CustomerTag tables (§"Reserved Tag data model"), added in a LATER release with
+  // zero change to this model. When the tag tables ship, the only addition here is a
+  // back-relation:  // customerTags  CustomerTag[]   [RESERVED / NOT BUILT IN R2]
 }
 ```
 
@@ -277,16 +326,19 @@ model Customer {
 > and the name is derived live by `computeDisplayName` (most-recent / most-complete
 > enquiry name).
 >
-> **Health Score (decision 7, LOCKED):** there is **no health column and no health
-> computation in Release 2** — Health is *reserve architecture only*. The future
-> inputs are catalogued in §1 / §"Customer States"; when built it is added as a pure
-> compute helper (no schema field, no redesign).
+> **Health Score & AI scores (decision 7, LOCKED):** there is **no health column and no
+> score column** and **no scoring computation in Release 2** — Health / AI / Relationship
+> / Investment-Potential scores are *reserve architecture only* (§"Reserved AI scoring").
+> The future inputs are catalogued there; when built each is a pure compute helper (no
+> schema field, no redesign).
 >
-> **Admin-assigned flags `[TO BUILD]`:** the only *new stored* customer field
-> contemplated beyond identity + the two overrides is a small additive
-> **`flags`** field for admin-set labels (`Investor` / `VIP` / `Blacklisted`) — see
-> §"Customer States". It is an OPEN sub-question (not yet added to the schema); it
-> would be set only by admins and fully audited.
+> **Classification tags = reserved tables, NOT a column (refinement 2026-06-26):**
+> customer classification (`Investor` / `VIP` / `Blacklisted` / `HNI` / `NRI` / …) is
+> **no longer** modelled as a `flags` column on `Customer`. It is modelled as a proper
+> **many-to-many** via two **new reserved tables** `Tag` + `CustomerTag`
+> (§"Reserved Tag data model") — **`[RESERVED / NOT BUILT IN R2]`**. `Customer` therefore
+> gains **no** new column for classification; the tag tables are purely additive and
+> land in a later release with zero change to this `Customer` model.
 
 ### `Lead` addition (only the new lines)
 
@@ -358,88 +410,354 @@ migration deploys (P2a).
 
 ---
 
-## Customer States
+## Customer States — Lifecycle vs Classification (two independent axes)
 
-A customer's "state" answers two different questions that the
-single-source-of-truth rule (§1) forces us to keep **separate**:
+**Refinement (owner-approved 2026-06-26).** A customer's "state" is **two
+independent things**, not one. Conflating them is the mistake the
+single-source-of-truth rule (§1) forces us to avoid:
 
-1. *Where is this person in the funnel right now?* — this is **derived from their
-   enquiries** and therefore **must be computed, never stored** (a new enquiry would
-   instantly make a stored value stale).
-2. *What standing label has an admin deliberately put on this person?* — this is a
-   **human decision** that **cannot be computed** from enquiries (like
-   `canonicalOwnerId`), so it **must be stored** and audited.
+1. **Customer Lifecycle** — *Where is this person in the funnel right now?* This is
+   **derived from their enquiries**, so it **must be computed, never stored**, and it
+   is **mutually exclusive** — a customer is in **exactly one** lifecycle state at any
+   moment.
+2. **Customer Classification** — *What standing labels does this person carry?* These
+   are **human-assigned tags** that **cannot be computed** from enquiries, are
+   **many-to-many** (a customer may hold zero or many at once), and are **independent
+   of the lifecycle**.
 
-We therefore split the owner's proposed states into a **computed lifecycle** and a
-small set of **admin-assigned flags**.
+**These are orthogonal axes.** A single customer can be — simultaneously — **Dormant**
+(lifecycle) **and** an **Investor** **and** a **VIP** (classification). The lifecycle
+answers "funnel position"; the classification answers "what kind of relationship this
+is". One never constrains the other.
 
-### A. Computed lifecycle (derived live, NEVER stored)
+> **Key change vs the prior draft:** `Investor` is **no longer** a computed/lifecycle
+> state — it is now a **classification tag**. The vague **`Active`** lifecycle state is
+> **dropped**; a new **`Inactive`** state (short-window) is **added** between
+> `Customer` and `Dormant`.
 
-Computed from the customer's linked enquiries on every read (alongside status / owner
-/ confidence in `compute.ts`). It is a single **precedence-ordered** state — the
-highest-precedence condition that holds wins:
+### A. Customer Lifecycle (COMPUTED live, NEVER stored, mutually exclusive)
+
+Computed from the customer's linked enquiries on every read (alongside owner /
+confidence in `compute.ts`). It is a single **precedence-ordered** value — the
+highest-precedence condition that holds wins, so **exactly one** lifecycle state is
+ever in effect:
+
+```
+Lead → Qualified → Customer → Inactive → Dormant → Merged
+```
 
 | Precedence | State | Holds when (over the linked enquiries) |
 |:--:|---|---|
-| 1 (highest) | **Merged** | the customer was merged into another (this customer now has zero enquiries because they were re-parented to a survivor — §4 action 2). Terminal display state. |
-| 2 | **Customer** | ≥1 enquiry is **converted / booked** (a won/booking lead status). |
-| 3 | **Qualified** | ≥1 enquiry is **qualified** (BANT-qualified) and none is converted. |
-| 4 | **Active** | ≥1 enquiry is **workable** (in active follow-up) and none is qualified/converted. |
-| 5 | **Dormant** | there has been **no activity in `N` days** across all enquiries (last `Activity` / contact older than the threshold), and the customer is not already Customer/Qualified. *(`Dormant` is evaluated against recency; it can co-exist conceptually with lower funnel states but is surfaced when the inactivity threshold trips.)* |
-| 6 (lowest) | **Lead** | **only new / uncontacted** enquiries (no workable/qualified/converted enquiry and no recorded activity yet). |
+| 1 (highest) | **Merged** | the customer was merged into another (now has zero enquiries because they were re-parented to a survivor — §4 action 2). Terminal display state. |
+| 2 | **Customer** | ≥1 enquiry is **converted / booked** (a won / booking lead status). |
+| 3 | **Qualified** | ≥1 enquiry is **qualified** (≥1 qualified enquiry, BANT-qualified) and none is converted. |
+| 4 | **Inactive** | **no recent engagement** — last `Activity` / contact older than the **short** window `M` days (but newer than `N`), and not already Customer/Qualified. *Short-term quiet.* |
+| 5 | **Dormant** | **long-term inactivity** — last `Activity` / contact older than the **long** window `N` days, and not already Customer/Qualified. *Long-term quiet.* |
+| 6 (lowest) | **Lead** | **only new / uncontacted** enquiries (no qualified/converted enquiry and no recorded activity yet). |
 
-**Parameters (proposed defaults, owner to confirm):**
-- **Precedence** = the order above (Merged → Customer → Qualified → Active → Dormant →
+**Per-state definition (plain English):**
+- **Lead** — only *new / uncontacted* enquiries; nothing has been worked yet.
+- **Qualified** — at least **one qualified enquiry** exists (and none converted).
+- **Customer** — at least **one converted / booked** enquiry exists.
+- **Inactive** — **no recent engagement** within the *short* window (recency tripped at
+  `M` days). Recoverable; just gone quiet recently.
+- **Dormant** — **long-term inactivity** (recency tripped at the *long* window `N`
+  days). Effectively cold.
+- **Merged** — this customer was **merged into another** customer (its enquiries now
+  live under the survivor). Terminal.
+
+**Parameters (two thresholds — proposed defaults, owner to confirm):**
+- **Precedence** = the order above (Merged → Customer → Qualified → Inactive → Dormant →
   Lead). This is the tie-breaker when more than one could apply.
-- **Dormant threshold `N`** = a single configurable number of days of no activity
-  (proposed default **N = 90** days). Stored as a setting/parameter, not per-customer.
+- **`M` (Inactive threshold)** = days of no activity to become **Inactive** — **proposed
+  default `M = 30` days** (short window).
+- **`N` (Dormant threshold)** = days of no activity to become **Dormant** — **proposed
+  default `N = 90` days** (long window). `N > M`.
+- Both are **configurable settings/parameters**, not per-customer columns.
 
-Because this is computed, it stays correct automatically as enquiries are added,
-worked, converted, or go quiet — exactly like the computed owner/status.
+**Reconfirmed: computed live, never stored (Single Source of Truth).** The lifecycle is
+recomputed every read from the current enquiry set, so adding/working/converting an
+enquiry — or time simply passing — can never leave a *stored* value stale. There is
+**no lifecycle column** on `Customer`.
 
-### B. Admin-assigned flags (STORED admin decisions, CANNOT be computed)
+### B. Customer Classification (INDEPENDENT, many-to-many TAGS — NOT lifecycle)
 
-These are deliberate standing labels an admin places on a person; nothing in the
-enquiry data can derive them, so they are **stored** (like `canonicalOwnerId`):
+Classification is a set of **standing, human-assigned labels** that describe *what kind
+of relationship* this person is. They are **independent of the lifecycle**, **many-to-
+many** (a customer may carry **zero or many** at once), and **cannot be computed** from
+enquiry data — so they are **stored** and audited (like `canonicalOwnerId`).
 
-| Flag | Meaning |
+Candidate classification tags (seed set — extensible):
+
+| Tag | Meaning |
 |---|---|
-| **Investor** | admin marks this person as an investor profile. |
-| **VIP** | admin marks this person as high-priority / VIP. |
-| **Blacklisted** | admin marks this person as blacklisted / do-not-engage. |
+| **Investor** | investor profile (was previously mis-modelled as a lifecycle/computed state — now a tag). |
+| **VIP** | high-priority / VIP relationship. |
+| **Blacklisted** | do-not-engage. |
+| **HNI** | high-net-worth individual. |
+| **Broker** | broker / channel partner. |
+| **Developer** | developer-side contact. |
+| **Corporate** | corporate / company buyer. |
+| **NRI** | non-resident Indian. |
+| **Golden Visa** | Golden-Visa interest / holder. |
+| **Returning Customer** | repeat / returning customer. |
+| **Referral Partner** | referral source. |
+| *(…extensible)* | further admin-defined tags as needed. |
 
-Implementation note `[TO BUILD]`: a **small additive stored field** on `Customer`
-(e.g. a `flags` column — a string/array of the above tokens), **set only by admins**
-and **fully audited** (same spirit as the link audit). This is the *only* new stored
-customer attribute beyond identity + the two existing overrides, and it is **not yet
-in the schema** — it is gated on the owner confirming the split below.
+A customer holds **any subset** of these at once — e.g. `Investor + VIP + NRI`
+alongside whatever the computed lifecycle currently is. Classification is **admin-
+managed** (set/cleared by admins, fully audited).
 
-> **OPEN SUB-QUESTION (owner):** confirm **exactly which** states are
-> *computed-lifecycle* (A) vs *admin-assigned-flags* (B) — in particular whether
-> `Investor` / `VIP` / `Blacklisted` are the complete flag set — and confirm the
-> **Dormant day-threshold `N`** (proposed 90). Listed again in "Remaining open items".
+**Modeled via reserved tag tables (DESIGN ONLY — not built in Release 2).** Rather than
+a single `flags` string, classification is modelled as a proper **many-to-many** via two
+**new** tables — see the reserved data model in §"Reserved Tag data model" below. These
+are **purely additive** (new tables, no change to any existing table) and can be added
+in a **later release with zero structural changes**.
+
+---
+
+## Reserved Tag data model — `[RESERVED / NOT BUILT IN R2]`
+
+> **This entire section is DESIGN-ONLY.** The tables below are **reserved** — their
+> shape is fixed now so a later release can add them **without any structural change**.
+> They are **NOT created by the Release 2 migration** and **NOT in `schema.prisma`**.
+> Release 2 ships **no tag tables, no `flags` column, and no tag UI** (see §"Keep
+> Release 2 BUILD scope unchanged").
+
+Classification (§B above) is modelled as a clean **many-to-many**: a `Tag` dictionary
+plus a `CustomerTag` join. Both are **new tables** — **no existing table is altered**.
+
+### `Tag` `[RESERVED]`
+
+```prisma
+// [RESERVED / NOT BUILT IN R2] — design-only shape; not in schema.prisma yet.
+model Tag {
+  id        String   @id @default(cuid())
+  name      String   @unique            // "Investor", "VIP", "Blacklisted", "HNI", …
+  category  String?                      // optional grouping (e.g. "profile" | "risk" | "segment")
+  createdAt DateTime @default(now())
+
+  customerTags CustomerTag[]
+}
+```
+
+**Seed list** = the classification tags in §B (Investor, VIP, Blacklisted, HNI, Broker,
+Developer, Corporate, NRI, Golden Visa, Returning Customer, Referral Partner, …).
+
+### `CustomerTag` `[RESERVED]` (M–N join, audited / immutable-ish)
+
+```prisma
+// [RESERVED / NOT BUILT IN R2] — design-only shape; not in schema.prisma yet.
+model CustomerTag {
+  id         String   @id @default(cuid())
+  customerId String                      // → Customer
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  tagId      String                       // → Tag
+  tag        Tag      @relation(fields: [tagId], references: [id], onDelete: Cascade)
+  addedById  String?                      // → User (who applied it) — audited
+  addedBy    User?    @relation(fields: [addedById], references: [id], onDelete: SetNull)
+  addedAt    DateTime @default(now())
+
+  @@unique([customerId, tagId])           // a tag applies to a customer at most once
+  @@index([customerId])
+  @@index([tagId])
+}
+```
+
+A `CustomerTag` row is **append-style and audited** (who added which tag, when); it is
+**admin-managed**. Removing a classification is a deliberate admin action (and, when
+built, would itself be audited in the same spirit as `CustomerLinkAudit`).
+
+**Purely additive — addable later with NO structural change.** Both tables are **brand
+new**; introducing them adds **zero** columns to `Customer`, `Lead`, or any existing
+table. They can therefore land in a **future release** behind their own migration
+without touching, restructuring, or backfilling any existing data — the data model here
+simply **reserves the shape**.
+
+---
+
+## Customer Timeline vs Lead Timeline
+
+The CRM now has **two** timeline concepts. They are deliberately different scopes, and
+both obey the Single-Source-of-Truth rule (§1) — neither introduces a new stored table.
+
+### Lead timeline (existing — enquiry-specific)
+
+The **Lead timeline** is what the Lead detail page shows today: the `Activity` rows
+**for that one enquiry** (calls, WhatsApp, notes, status changes, follow-ups, … on that
+single `Lead`). It is scoped to **one enquiry** and is unchanged by Release 2. The Lead
+detail page **keeps the Lead timeline** exactly as-is.
+
+### Customer timeline (NEW — computed aggregate across all the customer's enquiries)
+
+The **Customer timeline** is a **computed-on-read aggregate** — it is **not** a new
+stored table. For a given customer it is the union of:
+
+1. **every linked enquiry's `Activity` rows** — i.e. ⋃(Activity) across **all** the
+   customer's enquiries (calls / WhatsApp / notes / status / follow-ups / imports / …),
+   **and**
+2. **customer-level events** — `link` / `unlink` / `merge` / `rollback` sourced from
+   this customer's **`CustomerLinkAudit`** rows.
+
+Properties:
+- **Newest-first**, merged into a single stream.
+- **Filterable by the locked 22-event taxonomy** (the same `TIMELINE_CHIPS` groups used
+  by `CustomerTimeline.tsx`, §9.4) — Calls · WhatsApp · Notes · Assignments · Follow-ups
+  · Status · AI · Imports/Exports · Created · **Merges** · Recycle.
+- **Append-only and nothing hidden** — the UI **filters** events (chips), it **never
+  deletes or suppresses** any event. Default view shows All.
+- **Permission-scoped** — assembled only from the enquiries the viewer may see
+  (`leadScopeWhere`), so an agent never sees a sibling enquiry's activity owned by
+  someone else (§7, §12).
+- **Computed-on-read (no new stored table)** — consistent with Single Source of Truth;
+  it is recomputed from the current enquiry set + audit rows on every load, so it can
+  never go stale (`getCustomer360` already gathers `Activity.findMany` across linked
+  enquiries + `CustomerLinkAudit.findMany`, §"Data-flow", §11).
+
+**Where each is shown.** The **Customer 360** (§"Customer 360", §9.1) shows the
+**Customer timeline** (the aggregate). The **Lead detail** keeps the **Lead timeline**
+(the single-enquiry stream). Same underlying `Activity` data, two different scopes.
+
+---
+
+## Customer 360 — the master screen
+
+The **Customer 360** is the **master screen** of the Customer Layer: a single
+read-only, permission-scoped view of one canonical person. A **read-only 360 page is
+already built** (`src/app/(app)/customers/[id]/page.tsx` + `CustomerTimeline.tsx`,
+§9.1) — this section specifies the **full** screen it grows into; Release 2 **extends
+that existing page** (it does not start a new one). Everything here is **read-only**
+and **scoped per viewer** (admin sees all; manager/agent see only their visible
+enquiries under the customer — §7); a customer with no visible enquiry is **not-found**
+(no existence disclosure).
+
+### Fields (each marked built-vs-reserved)
+
+| # | Field / block | What it shows | State |
+|---|---|---|---|
+| 1 | **Name** | computed `displayName` (admin override else most-recent/most-complete enquiry name) | **Built** (computed) |
+| 2 | **Phone(s)** | union of phones across linked enquiries (chips) | **Built** (computed rollup) |
+| 3 | **Email(s)** | union of emails across linked enquiries (chips) | **Built** (computed rollup) |
+| 4 | **Lifecycle** | computed lifecycle badge — `Lead`/`Qualified`/`Customer`/`Inactive`/`Dormant`/`Merged` (§"Customer States" A); mutually exclusive | **Built** (computed; `Inactive` state new — wiring `[TO BUILD]`) |
+| 5 | **Tags** | classification chips (Investor / VIP / Blacklisted / HNI / …) | **`[RESERVED / NOT BUILT IN R2]`** (tag tables) |
+| 6 | **Health** | health score badge | **`[RESERVED]`** (decision 7 — renders "—") |
+| 7 | **Confidence** | computed match-confidence % + reason chips ("why one customer") | **Built** (computed) |
+| 8 | **Duplicate score** | top detection candidate's score/tier for this customer (admin-only evidence) | **`[TO BUILD]`** (uses built `detect.ts`) |
+| 9 | **Owner(s)** | owner-of-record — single shared owner, else "Multiple"; per-enquiry owners listed | **Built** (computed; `canonicalOwnerId` pin override) |
+| 10 | **Enquiries** | list of all linked enquiries (date · name · project · source · owner · status), each → `/leads/:id` | **Built** |
+| 11 | **Properties** | union of `LeadInterestedProject` / discussed projects across enquiries | **Built** (computed union) |
+| 12 | **Activities** | per-enquiry activity items feeding the timeline | **Built** |
+| 13 | **Customer Timeline** | the computed aggregate stream (§"Customer Timeline vs Lead Timeline") — newest-first, 22-event chip filters, append-only | **Built** (computed-on-read) |
+| 14 | **Notes** | notes across the linked enquiries | **Built** (within timeline / enquiries) |
+| 15 | **Calls** | call logs across the linked enquiries | **Built** (within timeline / enquiries) |
+| 16 | **WhatsApp** | WhatsApp activity across the linked enquiries | **Built** (within timeline / enquiries) |
+| 17 | **AI Summary** | generated narrative summary of the relationship | **`[RESERVED]`** (§"Reserved AI scoring" — not built in R2) |
+| 18 | **Investment History** | computed from the customer's **converted** enquiries (booked units / values) | **`[TO BUILD]`** (computed from converted-enquiry data; no new stored field) |
+| 19 | **Merge History** | the customer's `CustomerLinkAudit` link/unlink/merge/rollback rows (who/when/why) | **Built** (from `CustomerLinkAudit`; merge/rollback writers `[TO BUILD]`) |
+
+### Properties
+
+- **Read-only.** No edit/link/merge controls live on the 360 — those are admin-only
+  review screens (§9.5). The 360 is a **navigation + read** surface.
+- **Permission-scoped per viewer** (§7) — every block is assembled from only the
+  enquiries the caller may see; reserved blocks render a neutral placeholder ("—").
+- **Computed-live** — lifecycle / owner / confidence / contact rollup / summary /
+  Investment History are recomputed on read (no stored value to go stale).
+- **Base to extend** — the already-built read-only 360 page (§9.1 wireframe) is the
+  starting point; Release 2 adds the `[TO BUILD]` blocks (Duplicate score, Investment
+  History, fuller enquiry/notes/calls/WhatsApp surfacing) and **reserves** the rest
+  (Tags, Health, AI Summary) as placeholders.
+
+---
+
+## Reserved AI scoring — `[RESERVED / DESIGN-ONLY — NOT BUILT IN R2]`
+
+> Four scores are **reserved architecture only**. Release 2 **does not build any of
+> them** and adds **no schema column** for them (decision 7). When built, each is
+> **COMPUTED** per the Single-Source-of-Truth rule (recomputed on read, never stored) —
+> or, only if profiling ever demands it, a **clearly-additive optional cache** that is
+> derived and invalidatable (never the authoritative value, never a stored status).
+
+| Score | What it would express | Candidate inputs (all derivable / already-present) |
+|---|---|---|
+| **Health Score** | overall account health / engagement strength | last activity recency, days inactive (vs `M`/`N`), total enquiries, computed confidence, duplicate status, budget-filled completeness, documents present, AI score |
+| **AI Score** | model-derived quality / intent signal | enquiry remarks/notes content, contact cadence, response signals, source quality, project fit, recency |
+| **Relationship Score** | depth/warmth of the relationship over time | meeting/site-visit count, two-way contact frequency, tenure (first→last enquiry span), returning-customer signal, owner continuity |
+| **Investment Potential** | likelihood/scale of (further) investment | converted-enquiry count & value (Investment History), budget band, HNI/Investor classification (reserved tag), number of projects engaged, Golden-Visa interest |
+
+**Modeling note.** Each score, when built, is a **pure compute helper** in
+`src/lib/customer/` (the same pattern as `computeCustomerStatus` / `confidenceFromEnquiries`)
+taking the customer's enquiries (+ activities) and returning a number/band — **no new
+`Customer` column**. An optional short-TTL derived cache (keyed by
+`max(enquiry.updatedAt, lastAudit.performedAt)`, §11) may be added **last** if profiling
+demands, but must remain invalidatable and derived — never authoritative.
+
+---
+
+## Release 2 build scope (unchanged + explicit)
+
+The refinement above adds **design reserves only**; it does **not** widen what Release 2
+builds. To be unambiguous:
+
+### Release 2 BUILDS (only these)
+
+- **`Customer`** model (immutable UUID + the two admin overrides).
+- **Nullable `Lead.customerId`** FK (the **only** existing-table change — additive,
+  defaults NULL).
+- **`CustomerLinkAudit`** (immutable, append-only decision log).
+- **Detection (read-only)** — `detect.ts` detect/score/recommend; **writes nothing**.
+- **Customer Index** — the `/customers` master list (replacing the legacy redirect).
+- **Read-only Customer 360** — the master screen (extending the built page).
+- **Admin link / merge / unlink workflow** — admin-only, audited, reversible.
+- **The audit-first migration** — build → read-only audit → present → approve → link
+  historical (reversibly) → validate → enable detection (§10).
+
+### RESERVED (design-only — additive-later, NO structural change, NOT built in R2)
+
+- **`Tag` + `CustomerTag`** classification tables (Investor / VIP / Blacklisted / HNI /
+  NRI / …) — purely additive new tables; **no `flags` column**.
+- **Health Score · AI Score · Relationship Score · Investment Potential** — four AI
+  scores; computed-when-built (or an additive optional cache); **no schema field in R2**.
+- **AI Summary** on the 360.
+- **Any tag-management UI.**
+
+### Scalability guarantee (one line)
+
+> **Every reserved feature is a NEW additive table/column (or a pure compute helper) —
+> addable in a later release with ZERO restructuring of any existing data.** The only
+> existing-table change Release 2 itself makes is the additive nullable `Lead.customerId`.
 
 ---
 
 ## Entity Relationship Diagram
 
-Textual ERD for the whole CRM as it stands **with the Customer Layer added**. Field
-names are grounded in the real schema: existing entities from `prisma/schema.prisma`
-on `main`; the three Customer-Layer entities (`Customer`, `Lead.customerId`,
-`CustomerLinkAudit`) from the foundation branch `feat/customer-layer-foundation`.
+Textual ERD for the whole CRM as it stands **with the Customer Layer added** (matching
+the rendered **ERD v2**). Field names are grounded in the real schema: existing entities
+from `prisma/schema.prisma` on `main`; the three Customer-Layer entities (`Customer`,
+`Lead.customerId`, `CustomerLinkAudit`) from the foundation branch
+`feat/customer-layer-foundation`; plus the **`[RESERVED]`** `Tag` / `CustomerTag` M–N
+(classification — design-only, not built in R2).
 
 **The ONLY schema change to an existing table is the additive nullable
-`Lead.customerId`.** Every other entity below is **unchanged** by Release 2; the two
-genuinely new tables are `Customer` and `CustomerLinkAudit`.
+`Lead.customerId`.** Every other entity below is **unchanged** by Release 2. The two
+genuinely new tables built in R2 are `Customer` and `CustomerLinkAudit`; `Tag` and
+`CustomerTag` are **reserved** (new additive tables, NOT built in R2) and the
+**Customer timeline is an aggregate** (no stored table) — see notes below.
 
 ### Entities & key fields
 
 - **Customer** *(NEW — master entity)*
   - `id` (UUID, immutable PK) · `canonicalOwnerId?` → User (admin owner override) ·
     `displayName?` (admin override; else computed) · `createdAt` · `updatedAt`
-  - Computed-on-read (NOT columns): status (lifecycle), owner-of-record, confidence,
-    displayName, summary/contact-rollup, health *(reserve only)*.
-  - **1 → N** `Lead` (its enquiries) · **1 → N** `CustomerLinkAudit`.
+  - Computed-on-read (NOT columns): **lifecycle** (`Lead`/`Qualified`/`Customer`/
+    `Inactive`/`Dormant`/`Merged` — mutually exclusive), owner-of-record, confidence,
+    displayName, summary/contact-rollup, **health / AI / relationship / investment-
+    potential scores** *(all RESERVED — §"Reserved AI scoring")*.
+  - **1 → N** `Lead` (its enquiries) · **1 → N** `CustomerLinkAudit` · **`[RESERVED]` 1 →
+    N** `CustomerTag` (classification — §"Reserved Tag data model").
+  - **Customer timeline** is **not a stored relation** — it is a **computed aggregate**
+    over the linked enquiries' `Activity` rows **+** this customer's `CustomerLinkAudit`
+    events (§"Customer Timeline vs Lead Timeline").
 
 - **Lead / Enquiry** *(existing + NEW `customerId?`)*
   - `id` (cuid PK) · `customerId?` → Customer *(**the only new existing-table
@@ -458,6 +776,19 @@ genuinely new tables are `Customer` and `CustomerLinkAudit`.
     `newCustomerId?` (membership transition — the reversibility key) ·
     `rollbackAvailable` (default true).
   - **N → 1** Customer · **N → 1** Lead · **N → 1** User (actor).
+
+- **Tag** *(`[RESERVED / NOT BUILT IN R2]` — new dictionary table)*
+  - `id` (cuid PK) · `name` (unique — `Investor` / `VIP` / `Blacklisted` / `HNI` /
+    `Broker` / `Developer` / `Corporate` / `NRI` / `Golden Visa` / `Returning Customer` /
+    `Referral Partner` / …) · `category?` · `createdAt`.
+  - **1 → N** `CustomerTag`. Seeded with the classification set (§"Customer States" B).
+
+- **CustomerTag** *(`[RESERVED / NOT BUILT IN R2]` — new M–N join, audited)*
+  - `id` (cuid PK) · `customerId` → Customer · `tagId` → Tag · `addedById?` → User
+    (who applied it) · `addedAt` · `@@unique([customerId, tagId])`.
+  - **N → 1** Customer · **N → 1** Tag · **N → 1** User (actor). Realises the
+    **many-to-many** customer ↔ classification relationship. **Purely additive** — adding
+    these two tables changes **no** existing table (not even `Customer`).
 
 - **User** *(Owner / actor — existing)*
   - `id` (cuid PK) · `email` · `name` · `role` (Role) · `team?` · `managerId?` (self-ref).
@@ -509,12 +840,26 @@ Lead ──1:N──< Assignment       (Assignment.leadId → Lead)
 Lead ──1:N──< CustomerLinkAudit(CustomerLinkAudit.leadId → Lead)
 
 Lead >──N:N──< Project         via LeadInterestedProject (interested / enquired)
+
+# ─── RESERVED (design-only; NOT built in R2 — additive-later, zero existing-table change) ───
+Customer >──N:N──< Tag         via CustomerTag (classification: Investor/VIP/…)   [RESERVED]
+Customer ──1:N──< CustomerTag  (CustomerTag.customerId → Customer)                [RESERVED]
+Tag      ──1:N──< CustomerTag  (CustomerTag.tagId → Tag)                          [RESERVED]
+User     ──0..1:N──< CustomerTag (CustomerTag.addedById → User ; who tagged)      [RESERVED]
+
+# ─── COMPUTED AGGREGATE (no stored table) ───
+Customer ⇐⇐ Customer Timeline  = ⋃(Activity over linked Leads) ∪ (this Customer's CustomerLinkAudit), computed-on-read
 ```
 
 **Explicit statement:** the introduction of the Customer Layer changes **exactly one
 existing table** — it adds the nullable `Lead.customerId` foreign key. `Customer` and
-`CustomerLinkAudit` are new tables; **all other entities (User, Activity, Project,
-LeadInterestedProject, CallLog, Note, LeadFieldHistory, Assignment) are unchanged.**
+`CustomerLinkAudit` are the new tables built in R2; **all other entities (User, Activity,
+Project, LeadInterestedProject, CallLog, Note, LeadFieldHistory, Assignment) are
+unchanged.** The **`[RESERVED]`** `Tag` / `CustomerTag` pair (classification M–N) is
+**not built in R2**; when it lands later it is **two purely additive new tables** that
+change **no** existing table (not even `Customer`). The **Customer timeline** is a
+**computed-on-read aggregate** (union of the linked enquiries' `Activity` plus this
+customer's `CustomerLinkAudit` events) — **not a new stored table.**
 
 ---
 
@@ -769,7 +1114,7 @@ References the already-built prototypes: the read-only **360 page**
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│ CUSTOMER                                              [ Active ]      │  status pill (computed)
+│ CUSTOMER                                  [ Lead ]  Tags:[ — ]       │  lifecycle pill (computed) · Tags reserved
 │ Ravi Upadhyay                                                        │  computed displayName
 │ 6f3a…-uuid (mono)                                                    │  immutable id
 ├─────────────────────────────────────────────────────────────────────┤
@@ -790,10 +1135,15 @@ References the already-built prototypes: the read-only **360 page**
 │  ● 24 Jun 10:12  Call logged — Connected — Mehak                    │  CALL_LOGGED
 │  ● 12 Jun 09:30  Lead created — website                            │  LEAD_CREATED
 ├─────────────────────────────────────────────────────────────────────┤
-│ Read-only · status/owner/confidence/summary computed live · not     │
-│ editable here.                                                      │
+│ Read-only · lifecycle/owner/confidence/summary computed live · not   │
+│ editable here. Tags/Health reserved (render "—" until built).        │
 └─────────────────────────────────────────────────────────────────────┘
 ```
+> The pill shows the **computed lifecycle** (here `Lead` — Ravi has recent activity but
+> no qualified/converted enquiry, so the precedence falls through to the lowest state).
+> **Tags** (classification) and **Health** render a neutral "—" — both are reserved (not
+> built in R2). The full Customer 360 field list is in §"Customer 360".
+
 **Desktop:** 4-up summary grid, full timeline rail. **Mobile:** summary collapses to
 2-up; chips horizontally scroll; timeline is single-column (`CustomerTimeline` already
 renders responsively).
@@ -890,22 +1240,25 @@ Customer is the master entity; Leads/Enquiries are its child records (Salesforce
 HubSpot / Zoho / Dynamics pattern). Permission-scoped per viewer (own / team / all).
 
 ```
-┌──────────────────── Customers (master) ─────────────────────────────────┐
-│ [ Search name / phone / email …… ]   Owner:[All▾] Status:[All▾] Proj:[▾] │
-│ ─────────────────────────────────────────────────────────────────────── │
-│  Name            Status    Enq  Last activity  Owner    Projects   Health │
-│  Ravi Upadhyay   Active     2   24 Jun 2026    Mehak    Binghatti… [ — ]  │
-│  Aksa behlim     Qualified  2   22 Jun 2026    Multiple  Sobha…    [ — ]  │
-│  Saurabh         Lead       1   18 Jun 2026    Tanuj     Central…  [ — ]  │
-│  …                                                                        │
-└──────────────────────────────────────────────────────────────────────────┘
+┌──────────────────── Customers (master) ────────────────────────────────────┐
+│ [ Search name / phone / email …… ]  Owner:[All▾] Lifecycle:[All▾] Proj:[▾]  │
+│ ─────────────────────────────────────────────────────────────────────────  │
+│  Name            Lifecycle  Enq  Last activity  Owner    Projects   Health  │
+│  Ravi Upadhyay   Lead        2   24 Jun 2026    Mehak    Binghatti… [ — ]   │
+│  Aksa behlim     Qualified   2   22 Jun 2026    Multiple  Sobha…    [ — ]   │
+│  Saurabh         Inactive    1   18 Jun 2026    Tanuj     Central…  [ — ]   │
+│  …                                                                          │
+└────────────────────────────────────────────────────────────────────────────┘
 ```
 
-Columns: **Search · Filters · Status · Total enquiries · Last activity · Owner ·
-Projects · Health**. Each row → the read-only Customer 360 (§9.1). **Health** column
-is present but **value-pending** (decision 7 — reserve only; renders "—" until built).
-**No link/merge controls** here — those are admin-only review screens (§9.5). Mobile →
-one card per customer (name + status header; enquiries/owner/last-activity stacked).
+Columns: **Search · Filters · Lifecycle · Total enquiries · Last activity · Owner ·
+Projects · Health**. The **Lifecycle** column is the computed, mutually-exclusive state
+(`Lead`/`Qualified`/`Customer`/`Inactive`/`Dormant`/`Merged`, §"Customer States" A).
+Each row → the read-only Customer 360 (§9.1). **Health** column is present but
+**value-pending** (decision 7 — reserve only; renders "—" until built); a **Tags**
+column (classification) is likewise **reserved** and omitted from R2. **No link/merge
+controls** here — those are admin-only review screens (§9.5). Mobile → one card per
+customer (name + lifecycle header; enquiries/owner/last-activity stacked).
 
 ---
 
@@ -1089,7 +1442,10 @@ keep all Release 1 invariants green.
 - **`customer-additive-schema`** — `Lead.customerId` is nullable and defaults NULL;
   the migration is `IF NOT EXISTS`/guarded (additive only).
 - **`customer-single-source-of-truth`** — the `Customer` model stores **no** computed
-  value (no status/owner/health/phone column); only id + the two overrides + timestamps.
+  value (no **lifecycle**/status/owner/**health**/**score**/phone column) and **no
+  classification `flags` column**; only id + the two overrides + timestamps. (The
+  classification `Tag`/`CustomerTag` tables and the AI scores are RESERVED, not in the
+  R2 schema — §"Reserved Tag data model", §"Reserved AI scoring".)
 - **`customer-junk-number-guard`** `[TO BUILD]` — placeholder numbers are excluded from
   detection bucketing.
 
@@ -1140,8 +1496,9 @@ again, exactly as before Release 2," with the immutable audit available for fore
 
 ## LOCKED DECISIONS (owner-approved 2026-06-26)
 
-The eight prior open questions are now **owner-approved decisions** and are folded
-throughout this document. Summary:
+The prior open questions are now **owner-approved decisions** and are folded throughout
+this document. Summary (decisions 1–8 locked 2026-06-26; decision 9 = the 2026-06-26
+refinement):
 
 1. **Customer Link & Merge = ADMIN ONLY.** Managers and agents may **not**
    link/merge/unlink or run any customer mutation — they are **view-scoped only**.
@@ -1157,19 +1514,35 @@ throughout this document. Summary:
    customer records for the same person; never move ownership onto the customer.
    (§1, §3, §4.)
 5. **Customer Index = dedicated master module.** A real `/customers` list (Search ·
-   Filters · Health · Total enquiries · Last activity · Owner · Projects · Status)
-   where Customer is the master entity and Leads/Enquiries are child records
+   Filters · **Lifecycle** · Total enquiries · Last activity · Owner · Projects ·
+   Health) where Customer is the master entity and Leads/Enquiries are child records
    (Salesforce / HubSpot / Zoho / Dynamics pattern); the legacy redirect is **to
    replace**. Permission-scoped. (§1, §9.7.)
 6. **displayName = computed by default**, never stored unless an admin explicitly
    overrides (future); the nullable column remains only as that optional override.
    (§1, §2.)
-7. **Health Score = reserve architecture only** — **not** implemented in Release 2
-   (computed-when-built; future inputs: last activity, days inactive, total
-   enquiries, confidence, duplicate status, budget filled, documents, AI score).
+7. **AI scores = reserve architecture only** — **Health Score · AI Score · Relationship
+   Score · Investment Potential** are **not** implemented in Release 2 (computed-when-
+   built; deliberately NO schema column; inputs catalogued in §"Reserved AI scoring").
    (§1; built-vs-to-build table.)
 8. **Manual review mandatory.** **ALL** detection results require admin approval
    before any link/merge; **NO automatic merge, ever**. (§3, §4, §10, §12.)
+9. **Lifecycle and Classification are TWO INDEPENDENT axes (refinement 2026-06-26).**
+   - **Customer Lifecycle = COMPUTED, never stored, mutually exclusive (exactly one):**
+     `Lead → Qualified → Customer → Inactive → Dormant → Merged`. (`Active` dropped;
+     `Inactive` added.) Two thresholds — **Inactive = `M` days (proposed 30)**,
+     **Dormant = `N` days (proposed 90)**. (§"Customer States" A.)
+   - **Customer Classification = INDEPENDENT, many-to-many admin TAGS:** Investor / VIP /
+     Blacklisted / HNI / Broker / Developer / Corporate / NRI / Golden Visa / Returning
+     Customer / Referral Partner / … — a customer may hold zero or many at once,
+     orthogonal to lifecycle. **`Investor` is a tag, not a computed state.** Modelled via
+     the **reserved `Tag` + `CustomerTag` tables** — purely additive, **NOT built in R2**,
+     addable later with zero structural change (**no `flags` column**). (§"Customer
+     States" B; §"Reserved Tag data model".)
+   - **Customer 360** is the master screen, surfacing the **computed Customer timeline**
+     (aggregate of all enquiries' activities + `CustomerLinkAudit`), distinct from the
+     enquiry-scoped **Lead timeline**. (§"Customer 360"; §"Customer Timeline vs Lead
+     Timeline".)
 
 ---
 
@@ -1178,12 +1551,12 @@ throughout this document. Summary:
 The product decisions above are locked. The following genuinely still need owner
 input (or are deferred), and are *not* blockers for the design being review-ready:
 
-1. **Customer-States sub-question (new — §"Customer States").** Confirm **exactly
-   which** states are *computed-lifecycle* (`Lead` → `Active` → `Qualified` →
-   `Customer` → `Dormant` → `Merged`) vs *admin-assigned flags* (`Investor` / `VIP` /
-   `Blacklisted`), whether those three are the complete flag set, and the **Dormant
-   day-threshold `N`** (proposed default **90**). The admin-flags `flags` column is
-   `[TO BUILD]` and gated on this confirmation.
+1. **Lifecycle thresholds `M` / `N` (§"Customer States").** The lifecycle axis is now
+   locked as **`Lead → Qualified → Customer → Inactive → Dormant → Merged`** (computed,
+   mutually exclusive). The only items left to **confirm** are the two day-thresholds:
+   **Inactive = `M` days (proposed `M = 30`)** and **Dormant = `N` days (proposed
+   `N = 90`)**, with `N > M`. The classification axis is settled as **reserved tags**
+   (`Tag` / `CustomerTag`, not built in R2) — no `flags` column is contemplated.
 2. **Aksa behlim owner-of-record (operational, P2d).** This Very-High safe-merge spans
    **two different owners**. Which owner is pinned as `canonicalOwnerId` on merge, or
    does it intentionally compute to "Multiple Owners" until decided? (Resolve before
@@ -1191,6 +1564,6 @@ input (or are deferred), and are *not* blockers for the design being review-read
 3. **Manual-Review backlog (operational, P2d).** Beyond the 2 Safe-Merge groups, work
    the **11 Manual-Review** groups during P2d (admin confirms each), or defer to
    business-as-usual after the layer is live?
-4. **Health Score inputs/bands (future — decision 7).** When Health is eventually
-   built, confirm the exact input weighting and band thresholds. Out of scope for
-   Release 2 (reserve only).
+4. **AI score inputs/bands (future — decision 7).** When the reserved scores (Health /
+   AI / Relationship / Investment Potential) are eventually built, confirm the exact
+   input weighting and band thresholds. Out of scope for Release 2 (reserve only).
