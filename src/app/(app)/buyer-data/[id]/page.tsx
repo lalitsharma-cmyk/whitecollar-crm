@@ -15,6 +15,9 @@ import { canTouchBuyer, canAccessDubaiBuyers, isDubaiAssignable } from "@/lib/bu
 import {
   parseJsonArray,
   rollupForRecords,
+  classifyBuyer,
+  CLASSIFICATION_CHIP,
+  classificationBadge,
   formatTxnValue,
   inferBuyerCurrency,
 } from "@/lib/buyerIntelligence";
@@ -82,6 +85,7 @@ export default async function BuyerDetail({ params }: { params: Promise<{ id: st
       })
     : [rec];
   const rollup = rollupForRecords(siblings);
+  const classification = classifyBuyer(rollup); // First-Time / Investor / Whale — computed, not stored
   const others = siblings.filter((s) => s.id !== rec.id);
 
   // Agent roster for the admin panel (admin/mgr only). DUBAI ONLY — Dubai-team
@@ -171,6 +175,10 @@ export default async function BuyerDetail({ params }: { params: Promise<{ id: st
                   {/* Status chip — styled like the Lead status chip. */}
                   <span className={`text-xs px-2.5 py-0.5 rounded-full border font-semibold inline-flex items-center ${statusChipCls}`}>
                     {poolLabel}
+                  </span>
+                  {/* Investor classification — computed from the buyerKey rollup. */}
+                  <span className={`text-[10px] px-2 py-0.5 rounded-full border inline-flex items-center ${CLASSIFICATION_CHIP[classification]}`}>
+                    {classificationBadge(classification)}
                   </span>
                   {rollup.repeatBuyerStatus && (
                     <span className="chip text-[10px] bg-amber-100 text-amber-800 border border-amber-200 dark:bg-amber-900/30 dark:text-amber-300 dark:border-amber-700">

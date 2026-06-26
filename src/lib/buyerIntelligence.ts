@@ -215,6 +215,47 @@ export function computeBuyerRollup<T extends BuyerRollupInput>(
   return rollupForRecords(slice);
 }
 
+// ── investor classification (derived from the rollup) ────────────────────────
+// Dubai Buyer Data is market-scoped to Dubai, so transaction values are AED and
+// these thresholds are AED. Pure/derived ("compute-don't-store") and layered on
+// the SAME buyerKey rollup — never a stored column, no migration. TUNABLE: change
+// only the four constants. Precedence: WHALE → INVESTOR → FIRST_TIME.
+export const INVESTOR_MIN_PROPERTIES = 2;
+export const WHALE_MIN_PROPERTIES = 4;
+export const INVESTOR_MIN_VALUE = 5_000_000;   // AED 5M total invested
+export const WHALE_MIN_VALUE = 15_000_000;     // AED 15M total invested
+
+export type BuyerClassification = "FIRST_TIME" | "INVESTOR" | "WHALE";
+
+/** Classify a buyer from their rollup (property count + total invested). */
+export function classifyBuyer(
+  rollup: Pick<BuyerRollup, "totalPropertiesOwned" | "totalInvestmentValue">,
+): BuyerClassification {
+  const n = rollup.totalPropertiesOwned;
+  const v = rollup.totalInvestmentValue;
+  if (n >= WHALE_MIN_PROPERTIES || v >= WHALE_MIN_VALUE) return "WHALE";
+  if (n >= INVESTOR_MIN_PROPERTIES || v >= INVESTOR_MIN_VALUE) return "INVESTOR";
+  return "FIRST_TIME";
+}
+
+export const ALL_CLASSIFICATIONS: BuyerClassification[] = ["FIRST_TIME", "INVESTOR", "WHALE"];
+export const CLASSIFICATION_LABEL: Record<BuyerClassification, string> = {
+  FIRST_TIME: "First-Time Buyer", INVESTOR: "Investor", WHALE: "Whale",
+};
+export const CLASSIFICATION_EMOJI: Record<BuyerClassification, string> = {
+  FIRST_TIME: "🌱", INVESTOR: "📈", WHALE: "🐋",
+};
+/** Tailwind chip classes (light + dark), matching the lead status-chip style. */
+export const CLASSIFICATION_CHIP: Record<BuyerClassification, string> = {
+  FIRST_TIME: "bg-slate-100 text-slate-700 border border-slate-200 dark:bg-slate-800 dark:text-slate-200 dark:border-slate-600",
+  INVESTOR: "bg-blue-100 text-blue-700 border border-blue-200 dark:bg-blue-950/40 dark:text-blue-200 dark:border-blue-800",
+  WHALE: "bg-amber-100 text-amber-800 border border-amber-300 font-semibold dark:bg-amber-950/40 dark:text-amber-200 dark:border-amber-700",
+};
+/** "🐋 Whale" style badge text for a classification. */
+export function classificationBadge(c: BuyerClassification): string {
+  return `${CLASSIFICATION_EMOJI[c]} ${CLASSIFICATION_LABEL[c]}`;
+}
+
 // ── value formatting (mixed-currency buyer transactions) ─────────────────────
 
 /** Compact money formatter for transaction values. Dubai projects price in AED,
