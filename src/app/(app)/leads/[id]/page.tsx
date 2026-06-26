@@ -32,6 +32,7 @@ import ConversationStreamCard from "@/components/ConversationStreamCard";
 import StickyNoteWidget from "@/components/StickyNoteWidget";
 import BuyingSignalsCard from "@/components/BuyingSignalsCard";
 import VoiceNoteRecorder from "@/components/VoiceNoteRecorder";
+import LeadVoiceGuidance from "@/components/LeadVoiceGuidance";
 import LeadResourceShare from "@/components/LeadResourceShare";
 import QuickNoteCard from "@/components/QuickNoteCard";
 import LeadReassignClient from "@/components/LeadReassignClient";
@@ -177,6 +178,28 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
   const ownerIdVals = [...new Set(lead.fieldHistory.filter((h) => h.field === "ownerId").flatMap((h) => [h.oldValue, h.newValue]).filter((v): v is string => !!v))];
   const ownerNameRows = ownerIdVals.length ? await prisma.user.findMany({ where: { id: { in: ownerIdVals } }, select: { id: true, name: true } }) : [];
   const ownerNames: Record<string, string> = Object.fromEntries(ownerNameRows.map((u) => [u.id, u.name]));
+
+  // Channel ① Manager Voice Guidance — this lead's guidance messages (audio bytes are
+  // NOT selected here; the play endpoint streams them). `understood` is per current viewer.
+  const voiceGuidanceRaw = await prisma.leadVoiceMessage.findMany({
+    where: { leadId: id, kind: "GUIDANCE" },
+    orderBy: { createdAt: "desc" },
+    select: {
+      id: true, createdAt: true, transcript: true, title: true, durationSec: true, createdById: true,
+      createdBy: { select: { name: true } },
+      reads: { where: { userId: me.id }, select: { id: true } },
+    },
+  });
+  const voiceGuidance = voiceGuidanceRaw.map((v) => ({
+    id: v.id,
+    by: v.createdBy?.name ?? "Admin",
+    at: v.createdAt.toISOString(),
+    transcript: v.transcript,
+    title: v.title,
+    durationSec: v.durationSec,
+    understood: v.reads.length > 0,
+    mine: v.createdById === me.id,
+  }));
 
   // Confidentiality scope (AGENT → own leads, MANAGER → own team, ADMIN → all).
   // Passed into the history/intent/investor surfaces so an Agent/Manager never
@@ -1118,6 +1141,12 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
             editedNotes={editedNotes}
             leadOwnerName={lead.owner?.name ?? null}
           />
+        </div>
+
+        {/* Channel ① Manager Voice Guidance — admin records voice notes; the assigned
+            agent plays them back + marks understood. Separate from the Escalation thread. */}
+        <div data-lead-section="timeline">
+          <LeadVoiceGuidance leadId={lead.id} isAdmin={me.role === "ADMIN"} messages={voiceGuidance} />
         </div>
 
         {/* QUICK NOTE — secondary (spec §9: Quick Note is secondary, must not dominate).
