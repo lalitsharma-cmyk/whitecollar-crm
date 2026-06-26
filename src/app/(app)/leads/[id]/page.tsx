@@ -1059,30 +1059,38 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
                   Activity + refreshes the follow-up banner. The page already
                   redirects anyone who fails canTouchLead, so whoever can see this
                   can legitimately act on the lead. */}
-              <LeadActionsClient
-                leadId={lead.id}
-                phone={lead.phone}
-                altPhone={lead.altPhone}
-                email={lead.email}
-                currentOwnerId={lead.ownerId}
-                canReassign={canReassign}
-                agents={agents.map(a => ({ id: a.id, name: a.name, role: a.role, team: a.team, avatarColor: a.avatarColor }))}
-                phoneMasked={maskPhone(lead.phone)}
-                altPhoneMasked={maskPhone(lead.altPhone)}
-                leadName={lead.name}
-                agentName={me.name}
-                acefoneEnabled={acefoneEnabled()}
-                acefoneMappedForUser={!!me.acefoneAgentId}
-                hideReassign={true}
-                extraActions={
-                  <LeadFollowupActions
-                    leadId={lead.id}
-                    leadName={lead.name}
-                    followupDate={lead.followupDate ? lead.followupDate.toISOString() : null}
-                    hasContactToday={leadHasContactToday}
-                  />
-                }
-              />
+              {/* Workflow actions are PAUSED while the lead is rejected — reactivate
+                  to re-enable call / WhatsApp / log / follow-up (Rejected-Lead workflow). */}
+              {lead.rejectedAt == null ? (
+                <LeadActionsClient
+                  leadId={lead.id}
+                  phone={lead.phone}
+                  altPhone={lead.altPhone}
+                  email={lead.email}
+                  currentOwnerId={lead.ownerId}
+                  canReassign={canReassign}
+                  agents={agents.map(a => ({ id: a.id, name: a.name, role: a.role, team: a.team, avatarColor: a.avatarColor }))}
+                  phoneMasked={maskPhone(lead.phone)}
+                  altPhoneMasked={maskPhone(lead.altPhone)}
+                  leadName={lead.name}
+                  agentName={me.name}
+                  acefoneEnabled={acefoneEnabled()}
+                  acefoneMappedForUser={!!me.acefoneAgentId}
+                  hideReassign={true}
+                  extraActions={
+                    <LeadFollowupActions
+                      leadId={lead.id}
+                      leadName={lead.name}
+                      followupDate={lead.followupDate ? lead.followupDate.toISOString() : null}
+                      hasContactToday={leadHasContactToday}
+                    />
+                  }
+                />
+              ) : (
+                <div className="rounded-lg border border-red-200 dark:border-red-800 bg-red-50/60 dark:bg-red-900/20 px-3 py-2.5 text-xs text-red-700 dark:text-red-300">
+                  🟥 This lead is <b>rejected</b> — call / WhatsApp / log / follow-up are paused. Reactivate it (in <b>Lead admin</b> below) to work it again.
+                </div>
+              )}
               <BestCallTimeChip leadId={lead.id} />
               {(me.role === "ADMIN" || voiceGuidance.length > 0) && (
                 <div className="mt-2"><VoiceGuidancePin count={voiceGuidance.length} /></div>
