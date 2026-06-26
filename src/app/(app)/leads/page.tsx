@@ -5,6 +5,7 @@ import Link from "next/link";
 import { requireUser } from "@/lib/auth";
 import LeadFilters from "@/components/LeadFilters";
 import LeadsListClient from "@/components/LeadsListClient";
+import MotivationBanner from "@/components/MotivationBanner";
 import { runReconciler } from "@/lib/reconciler";
 import { leadScopeWhere, COLD_ORIGINS, workableWhere, activeBoardWhere, MASTER_DATA_BOARD_OR } from "@/lib/leadScope";
 import { contactActivityByLeadToday } from "@/lib/followupGate";
@@ -666,6 +667,12 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
           )}
         </div>
       </div>
+
+      {/* ── Motivational banner (presentational, Leads-page only) ─────────────
+          Sits ABOVE the filters/table. Personalised with the logged-in user's
+          first name; rotates every 7s. Isolated client island — no impact on
+          the table/filters below. */}
+      <MotivationBanner firstName={(me.name ?? "").split(" ")[0]} />
 
       {/* ── Segment selector: My / India / Dubai / All (admin only) ───────── */}
       {isAdmin && (() => {

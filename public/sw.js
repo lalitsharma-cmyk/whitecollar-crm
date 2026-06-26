@@ -404,7 +404,14 @@
 // editable entry; agent → only their own same-IST-day free-text comment; never on
 // system rows. Pure render-gating fix (retroactive to all rows), no data/permission
 // change. Bump shell so every client loads the corrected timeline.
-const CACHE = "wcr-shell-v73";
+// v74 (2026-06-26): Leads page gets a compact, premium rotating motivational
+// banner above the filters/table — personalised with the user's first name,
+// rotates 5 messages every 7s (fade/slide, reduced-motion aware), soft
+// champagne→navy gradient that follows the theme tokens in Light/Dark/System.
+// Purely presentational (new isolated MotivationBanner client island); no data,
+// no business logic, no permission change — the leads table/filters are
+// untouched. Bump shell so every client loads the new banner.
+const CACHE = "wcr-shell-v74";
 const SHELL = ["/login", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", (event) => {
