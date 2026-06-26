@@ -90,6 +90,13 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   const meScope: Prisma.LeadWhereInput = isAdminOrMgr ? teamScope : { ownerId: me.id, deletedAt: null, leadOrigin: { notIn: COLD_ORIGINS } };
   const meActWhere: Prisma.ActivityWhereInput = isAdminOrMgr ? teamActWhere : { userId: me.id, lead: { deletedAt: null } };
   const meCallWhere: Prisma.CallLogWhereInput = isAdminOrMgr ? teamCallWhere : { userId: me.id, lead: { deletedAt: null } };
+  // Cold-revival scope — the SAME team/owner envelope as meScope but WITHOUT the
+  // `leadOrigin notIn COLD_ORIGINS` exclusion, so the "Cold revival" tile can
+  // actually count cold/revival leads (meScope + isColdCall was mutually exclusive
+  // → always ~0). Audit fix 2026-06-27.
+  const coldScope: Prisma.LeadWhereInput = isAdminOrMgr
+    ? (view === "all" ? { deletedAt: null } : { forwardedTeam: view, deletedAt: null })
+    : { ownerId: me.id, deletedAt: null };
 
   // IST offset (UTC+5:30) — used throughout this page
   const istOffset = 5.5 * 60 * 60 * 1000;
@@ -193,10 +200,15 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     }),
     prisma.lead.count({
       where: {
-        ...meScope, isColdCall: true,
+        ...coldScope,
         currentStatus: { notIn: SUPPRESSED_STATUSES },
         lastTouchedAt: { lt: thirtyDaysAgo },
-        OR: [{ budgetMin: { gt: 5_000_000 } }, { aiScore: AIScore.HOT }],
+        // cold/revival origin AND (hot budget OR HOT score) — two ORs combined via
+        // AND so neither key overwrites the other.
+        AND: [
+          { OR: [{ leadOrigin: { in: COLD_ORIGINS } }, { isColdCall: true }] },
+          { OR: [{ budgetMin: { gt: 5_000_000 } }, { aiScore: AIScore.HOT }] },
+        ],
       },
     }),
   ]);
