@@ -84,3 +84,61 @@ Release 2 will ship in phases (additive schema → read-only detection + 360 →
 present the audit → on owner approval, reversibly link historical enquiries →
 enable detection for new enquiries), each independently rollback-able. No enquiry
 data is ever lost at any phase.
+
+---
+
+## Phase 1 — CLOSED (2026-06-26)
+
+| Field | Value |
+|---|---|
+| **Status** | **CLOSED — closing audit passed on LIVE production data** |
+| **Prod commit** | `b9e0bce` |
+| **Service Worker** | **v74** |
+| **Regression** | **82/82 green** (`scripts/regression.ts`) |
+| **Audit date** | 2026-06-26 |
+| **Data writes** | **None** — audit was read-only / rolled-back-transaction only |
+
+Phase 1 is closed. The closing audit ran against the **live** production database and
+verified, end to end, that every reporting surface reconciles, that follow-up
+hygiene holds, that the Revival reject/promote lifecycle behaves, and that
+role-based permissions and the migration ledger are clean. Nothing below modified
+production data — counts are observed, and the one lifecycle proof (promote) was
+executed inside a rolled-back transaction.
+
+### Closing audit — proven on live data
+
+**1. Reporting reconciliation (517 live leads, every bucket adds up).**
+- By origin: `ACTIVE_LEAD` **211** + `REVIVAL` **46** + `MASTER_DATA` **260** = **517**.
+- Active-vs-terminal within ACTIVE_LEAD: active **144** + terminal **67** = **211**.
+- Terminal split: lost **65** + closed **2** = **67**.
+- Assignment: assigned **210** + unassigned **1** = **211**.
+- Buyer pool: pool **38** + converted **1** (= 39 buyer records in scope).
+
+**2. Follow-up hygiene (Active Follow-up Board = 144 active leads).**
+- **0** active leads carry a follow-up date older than 26-Jun.
+- Earliest follow-up date across active leads = **26-Jun** (today); **0** null follow-ups.
+- Distribution: **76** due today + **68** future = **144** — matches the active count exactly.
+
+**3. Revival reject + promote lifecycle.**
+- **Reject:** Mukul Dudeja stays `REVIVAL` / *Not Interested* and is **never** promoted to a Lead.
+- **Promote:** Prakhar Sharma promoted in a **rolled-back transaction** — `REVIVAL → ACTIVE_LEAD`
+  with owner, Smart-Timeline history, and status all preserved; **production left untouched**
+  (the transaction was rolled back after the assertion).
+
+**4. Permissions (role scoping verified).**
+- Agent **Tanuj** sees **181 / 517** leads — his own only, **0 leakage**, and **no buyer-data access**.
+- Buyer-data gate by market: **Dubai = true**, **India = false**.
+- **No MANAGER accounts exist** in production, so manager subtree scoping is **code-verified only**
+  (asserted in `scripts/regression.ts`, not exercised against a live manager login).
+
+**5. Migration ledger reconciled.**
+- `prisma migrate status` = **"Database schema is up to date!"** after the four hand-applied
+  migrations were marked `--applied` on 2026-06-26. See
+  [`MIGRATION-LEDGER.md`](./MIGRATION-LEDGER.md) for the full reconciliation and the
+  safe procedure for future migrations.
+
+### Verification at close
+- Full regression suite green (**82 checks**, `scripts/regression.ts`).
+- Audit was **read-only / rolled-back** — additive, reversible, **no production data modified**.
+
+> **Phase 1 is CLOSED.** Any change to the above behaviour is a new release/phase.
