@@ -65,12 +65,12 @@ export default function BuyerActivityTimeline({ buyerId, canLog, isAdmin, rawRem
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
-  // View toggle — Raw History (verbatim imported remarks, source of truth) vs
-  // Smart Timeline (processed CRM-activity stream). Mirrors ConversationStreamCard:
-  // Raw History is the DEFAULT when imported remarks exist, else Smart Timeline.
+  // View toggle — Smart Timeline (processed activity stream) is the DEFAULT,
+  // mirroring the Lead ConversationStreamCard (Lalit's "default Smart Timeline"
+  // consistency rule). Raw History (verbatim imported remarks) is one tap away.
   const rawText = (rawRemarks ?? "").trim();
   const hasRaw = rawText.length > 0;
-  const [viewMode, setViewMode] = useState<"raw" | "smart">(hasRaw ? "raw" : "smart");
+  const [viewMode, setViewMode] = useState<"raw" | "smart">("smart");
 
   const load = useCallback(async () => {
     try {
