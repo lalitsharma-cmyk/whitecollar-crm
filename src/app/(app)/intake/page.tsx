@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { redirect } from "next/navigation";
 import CsvUploader from "@/components/CsvUploader";
 import GoogleSheetImporter from "@/components/GoogleSheetImporter";
 import PreAssignedImporter from "@/components/PreAssignedImporter";
@@ -9,6 +10,8 @@ export const dynamic = "force-dynamic";
 
 export default async function IntakePage() {
   const me = await requireUser();
+  // ADMIN-ONLY — the page renders live IntakeKey.key secrets; non-admins must never see them.
+  if (me.role !== "ADMIN") redirect("/dashboard");
   const [keys, agents, testingModeOn] = await Promise.all([
     prisma.intakeKey.findMany({ orderBy: { createdAt: "asc" } }),
     me.role === "ADMIN" || me.role === "MANAGER"

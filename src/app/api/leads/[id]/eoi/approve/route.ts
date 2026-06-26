@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { ActivityType, ActivityStatus } from "@prisma/client";
 import { requireUser } from "@/lib/auth";
+import { canTouchLead } from "@/lib/leadScope";
 import { notify } from "@/lib/notify";
 
 // POST /api/leads/[id]/eoi/approve — admin/manager sign-off for a booking
@@ -17,9 +18,11 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
 
   const lead = await prisma.lead.findUnique({
     where: { id },
-    select: { id: true, name: true, ownerId: true, eoiApprovalRequired: true, eoiStage: true },
+    select: { id: true, name: true, ownerId: true, forwardedTeam: true, eoiApprovalRequired: true, eoiStage: true },
   });
   if (!lead) return NextResponse.json({ error: "Lead not found" }, { status: 404 });
+  // Team-scope guard — a MANAGER may only approve EOI for leads in their own team (ADMIN passes).
+  if (!(await canTouchLead(me, { ownerId: lead.ownerId, forwardedTeam: lead.forwardedTeam }))) return NextResponse.json({ error: "Lead not found" }, { status: 404 });
 
   const now = new Date();
   const updated = await prisma.lead.update({

@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { notFound, redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth";
+import { canTouchLead } from "@/lib/leadScope";
 import { fmtIST12, fmtISTDate } from "@/lib/datetime";
 import { displayBudget } from "@/lib/budgetParse";
 import PrintButton from "./PrintButton";
@@ -121,6 +122,10 @@ export default async function LeadPrintPage({
   });
 
   if (!lead) notFound();
+
+  // Scope guard — a MANAGER may only print leads in their own forwardedTeam,
+  // an AGENT only their own. Treat out-of-scope as not-found (no PII leak by URL).
+  if (!(await canTouchLead(me, { ownerId: lead.ownerId, forwardedTeam: lead.forwardedTeam }))) notFound();
 
   const printedAt = fmtIST12(new Date());
 

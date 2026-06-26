@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { requireRole } from "@/lib/auth";
 import { assignLeadTo } from "@/lib/leadIngest";
 import { prisma } from "@/lib/prisma";
+import { canTouchLead } from "@/lib/leadScope";
 import { crossTeamWarning, resolveTeam, routingFieldsFor, normalizeTeam } from "@/lib/teamRouting";
 
 // Manual reassign — Admin or Manager only.
@@ -13,8 +14,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   if (!userId) return NextResponse.json({ error: "userId required" }, { status: 400 });
 
   // Fetch current lead to get its team marker before assignment.
-  const lead = await prisma.lead.findUnique({ where: { id }, select: { forwardedTeam: true } });
+  const lead = await prisma.lead.findUnique({ where: { id }, select: { ownerId: true, forwardedTeam: true } });
   if (!lead) return NextResponse.json({ error: "Lead not found" }, { status: 404 });
+  // Team-scope guard — a MANAGER may only reassign leads in their own team (ADMIN passes).
+  if (!(await canTouchLead(me, { ownerId: lead.ownerId, forwardedTeam: lead.forwardedTeam }))) return NextResponse.json({ error: "Lead not found" }, { status: 404 });
 
   // If the caller is explicitly setting a team (admin pulling from awaiting-team queue),
   // resolve and write routing provenance alongside the assignment.

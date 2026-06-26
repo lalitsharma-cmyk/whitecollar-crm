@@ -1,14 +1,17 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
+import { canTouchLead } from "@/lib/leadScope";
 import { audit, reqMeta } from "@/lib/audit";
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const me = await requireUser();
-  const lead = await prisma.lead.findUnique({ where: { id }, select: { id: true, leadOrigin: true, status: true } });
+  const lead = await prisma.lead.findUnique({ where: { id }, select: { id: true, leadOrigin: true, status: true, ownerId: true, forwardedTeam: true } });
   if (!lead) return NextResponse.json({ error: "Not found" }, { status: 404 });
   if (lead.leadOrigin !== "COLD" && lead.leadOrigin !== "REVIVAL") return NextResponse.json({ error: "Already an active lead" }, { status: 400 });
+  // Scope guard — AGENT may only promote their own cold lead, MANAGER only within their team.
+  if (!(await canTouchLead(me, { ownerId: lead.ownerId, forwardedTeam: lead.forwardedTeam }))) return NextResponse.json({ error: "Not found" }, { status: 404 });
   await prisma.lead.update({
     where: { id },
     data: {

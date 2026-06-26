@@ -50,7 +50,8 @@ function buildIcsUrl(userId: string): string {
 
 export default async function SettingsPage() {
   const me = await requireUser();
-  if (me.role === "AGENT") redirect("/leads");
+  // ADMIN-ONLY — Settings exposes admin tools + system config; managers/agents must not see it.
+  if (me.role !== "ADMIN") redirect("/leads");
   const [travelRate, speedToLeadOn, roundRobinOn, testingModeOn, motivationPilotOn, motivationPilotTeam, bantGateMode, pushSubCount, aiEnabledOn, aiTrialModeOn, aiMonthlyCostCapUsd, automationFlags] = await Promise.all([
     getTravelRatePerKmInr(),
     getSpeedToLeadEnabled(),

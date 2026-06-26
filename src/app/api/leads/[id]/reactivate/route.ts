@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
+import { canTouchLead } from "@/lib/leadScope";
 import { audit, reqMeta } from "@/lib/audit";
 import { ActivityType, ActivityStatus } from "@prisma/client";
 
@@ -28,10 +29,15 @@ export async function POST(
 
   const lead = await prisma.lead.findUnique({
     where: { id },
-    select: { id: true, status: true },
+    select: { id: true, status: true, ownerId: true, forwardedTeam: true },
   });
 
   if (!lead) {
+    return NextResponse.json({ error: "Lead not found" }, { status: 404 });
+  }
+
+  // Team-scope guard — a MANAGER may only reactivate leads in their own team (ADMIN passes).
+  if (!(await canTouchLead(me, { ownerId: lead.ownerId, forwardedTeam: lead.forwardedTeam }))) {
     return NextResponse.json({ error: "Lead not found" }, { status: 404 });
   }
 

@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { ActivityType, ActivityStatus, NotifKind } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { getCurrentUser } from "@/lib/auth";
+import { loadOwnedLead } from "@/lib/leadScope";
 import { notify } from "@/lib/notify";
 
 /**
@@ -19,10 +19,12 @@ import { notify } from "@/lib/notify";
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
 
-  const me = await getCurrentUser();
-  if (!me) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  // Scoped guard — 401 if logged out, 404 if the caller can't see this lead
+  // (AGENT not owner / MANAGER outside team). Replaces the old unscoped
+  // getCurrentUser() + bare findUnique existence check.
+  const scoped = await loadOwnedLead(id);
+  if (scoped.error) return scoped.error;
+  const { me, lead } = scoped;
 
   const body = await req.json().catch(() => ({}));
   const text = String(body.text ?? "").trim();
@@ -32,12 +34,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   }
   if (text.length > 2000) {
     return NextResponse.json({ error: "Note is too long (max 2000 chars)" }, { status: 400 });
-  }
-
-  // Verify the lead exists
-  const lead = await prisma.lead.findUnique({ where: { id }, select: { id: true, ownerId: true, name: true } });
-  if (!lead) {
-    return NextResponse.json({ error: "Lead not found" }, { status: 404 });
   }
 
   const note = await prisma.note.create({
