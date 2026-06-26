@@ -1,7 +1,8 @@
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
 import { ActivityStatus, ActivityType, AIScore, Prisma } from "@prisma/client";
-import { SUPPRESSED_STATUSES, CLOSING_STATUSES, statusColor } from "@/lib/lead-statuses";
+import { TERMINAL_STATUSES, CLOSING_STATUSES, statusColor } from "@/lib/lead-statuses";
+import { COLD_ORIGINS } from "@/lib/leadScope";
 import Link from "next/link";
 import { fmtIST12, fmtISTTime12 } from "@/lib/datetime";
 import { waDraftLink, WA_TEMPLATES } from "@/lib/wa";
@@ -173,8 +174,9 @@ export default async function ActivitiesPage(
       where: {
         ...scope,
         deletedAt: null,
+        leadOrigin: { notIn: COLD_ORIGINS },
         followupDate: { lt: now },
-        currentStatus: { notIn: SUPPRESSED_STATUSES },
+        currentStatus: { notIn: TERMINAL_STATUSES },
       },
       orderBy: { followupDate: "asc" },
       take: 10,
@@ -185,8 +187,10 @@ export default async function ActivitiesPage(
       where: {
         ...scope,
         deletedAt: null,
+        leadOrigin: { notIn: COLD_ORIGINS },
         aiScore: AIScore.HOT,
         followupDate: { gte: now, lte: in24h },
+        currentStatus: { notIn: TERMINAL_STATUSES },
       },
       orderBy: { followupDate: "asc" },
       take: 10,
@@ -197,8 +201,9 @@ export default async function ActivitiesPage(
       where: {
         ...scope,
         deletedAt: null,
+        leadOrigin: { notIn: COLD_ORIGINS },
         lastTouchedAt: { lt: fiveDaysAgo },
-        currentStatus: { notIn: SUPPRESSED_STATUSES },
+        currentStatus: { notIn: TERMINAL_STATUSES },
       },
       orderBy: { lastTouchedAt: "asc" },
       take: 10,
@@ -236,6 +241,7 @@ export default async function ActivitiesPage(
       where: {
         ...scope,
         deletedAt: null,
+        leadOrigin: { notIn: COLD_ORIGINS },
         currentStatus: { in: CLOSING_STATUSES },
         eoiStage: { not: null },
       },
