@@ -34,6 +34,7 @@ import BuyingSignalsCard from "@/components/BuyingSignalsCard";
 import VoiceNoteRecorder from "@/components/VoiceNoteRecorder";
 import LeadVoiceGuidance from "@/components/LeadVoiceGuidance";
 import VoiceGuidancePin from "@/components/VoiceGuidancePin";
+import LeadReactivateButton from "@/components/LeadReactivateButton";
 import LeadResourceShare from "@/components/LeadResourceShare";
 import QuickNoteCard from "@/components/QuickNoteCard";
 import LeadReassignClient from "@/components/LeadReassignClient";
@@ -1304,19 +1305,28 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
           <div data-lead-section="admin" className="card p-4 space-y-3">
             <div className="text-[10px] uppercase tracking-widest text-gray-500 dark:text-slate-400 font-semibold">{canReassign ? "🛠 Lead admin" : "🛠 Lead actions"}</div>
             {lead.rejectedAt != null ? (
-              <div className="text-xs text-gray-600 dark:text-slate-300">
-                Already rejected{lead.rejectionReason ? ` — ${lead.rejectionReason.replace(/_/g, " ").toLowerCase()}` : ""}.
+              <div className="space-y-2">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="inline-flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded-full bg-red-100 text-red-700 border border-red-200 dark:bg-red-900/30 dark:text-red-300 dark:border-red-700">🟥 REJECTED</span>
+                  {lead.rejectionReason && <span className="text-xs text-gray-600 dark:text-slate-300">{lead.rejectionReason.replace(/_/g, " ").toLowerCase()}</span>}
+                </div>
+                <div className="text-[11px] text-gray-500 dark:text-slate-400">Reactivate to return this lead to the working board — only then can it be reassigned.</div>
+                {/* Reactivate-before-reassign: the reassign control is hidden while
+                    rejected; it reappears (below) once the lead is reactivated. */}
+                {canReassign && <LeadReactivateButton leadId={lead.id} />}
               </div>
             ) : (
-              <RejectLeadModal leadId={lead.id} forwardedTeam={lead.forwardedTeam} />
-            )}
-            {canReassign && (
-              <LeadReassignClient
-                leadId={lead.id}
-                currentOwnerId={lead.ownerId}
-                agents={agents.map(a => ({ id: a.id, name: a.name, role: a.role, team: a.team }))}
-                leadTeam={lead.forwardedTeam}
-              />
+              <>
+                <RejectLeadModal leadId={lead.id} forwardedTeam={lead.forwardedTeam} />
+                {canReassign && (
+                  <LeadReassignClient
+                    leadId={lead.id}
+                    currentOwnerId={lead.ownerId}
+                    agents={agents.map(a => ({ id: a.id, name: a.name, role: a.role, team: a.team }))}
+                    leadTeam={lead.forwardedTeam}
+                  />
+                )}
+              </>
             )}
           </div>
         )}

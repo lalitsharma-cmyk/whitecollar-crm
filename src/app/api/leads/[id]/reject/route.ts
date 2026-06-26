@@ -45,6 +45,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       name: true,
       ownerId: true,
       currentStatus: true,
+      rejectedAt: true,
       owner: { select: { id: true, name: true, managerId: true } },
     },
   });
@@ -52,6 +53,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   if (!lead) return NextResponse.json({ error: "Lead not found" }, { status: 404 });
   if (!(await canTouchLead(me, lead))) {
     return NextResponse.json({ error: "Lead not found" }, { status: 404 });
+  }
+  // Prevent DOUBLE rejection — an already-rejected lead (rejectedAt stamped) must be
+  // Reactivated before it can be rejected again (Rejected-Lead workflow 2026-06-27).
+  if (lead.rejectedAt) {
+    return NextResponse.json({ error: "This lead is already rejected — reactivate it first." }, { status: 400 });
   }
 
   // Parse + validate the body.
@@ -87,6 +93,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       rejectionNote: note,
       rejectedAt: now,
       rejectedById: me.id,
+      // Record the owner-at-rejection as the explicit "Previous Owner" for the
+      // Lead-view display + permanent audit. ownerId is INTENTIONALLY retained so
+      // per-agent Rejected/Lost reporting (groupBy ownerId) stays accurate; the lead
+      // is already out of active work via its terminal status. A hard-unassign would
+      // need every rejected/lost report groupBy re-pointed + a data migration —
+      // deferred (see DEV_TRACKER "Rejected-Lead").
+      previousOwnerId: lead.ownerId,
       followupDate: null,
       followupReminderSentAt: null,
       lastTouchedAt: now,

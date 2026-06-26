@@ -3173,6 +3173,30 @@ const checks: Check[] = [
   },
 
   // ───────────────────────────────────────────────────────────────────────────
+  // Rejected-Lead workflow (Lalit 2026-06-27): reject preserves the previous owner
+  // + blocks double-rejection; reactivate resets currentStatus + clears the
+  // rejection stamp; reassign is hidden until reactivated.
+  // ───────────────────────────────────────────────────────────────────────────
+  {
+    name: "rejected-lead-workflow — reject sets previousOwnerId + double-reject guard; reactivate clears rejection; reassign gated behind reactivate",
+    run: async () => {
+      const fs = await import("fs");
+      const path = await import("path");
+      const reject = fs.readFileSync(path.join(process.cwd(), "src/app/api/leads/[id]/reject/route.ts"), "utf8");
+      assert(/previousOwnerId:\s*lead\.ownerId/.test(reject), "reject must record previousOwnerId = lead.ownerId");
+      assert(/lead\.rejectedAt[\s\S]{0,140}already rejected/i.test(reject), "reject must block an already-rejected lead (double-reject guard)");
+      const react = fs.readFileSync(path.join(process.cwd(), "src/app/api/leads/[id]/reactivate/route.ts"), "utf8");
+      assert(/currentStatus:\s*"Fresh Lead"/.test(react) && /rejectedAt:\s*null/.test(react),
+        "reactivate must reset currentStatus to Fresh Lead + clear rejectedAt");
+      const page = fs.readFileSync(path.join(process.cwd(), "src/app/(app)/leads/[id]/page.tsx"), "utf8");
+      assert(/REJECTED/.test(page) && /LeadReactivateButton/.test(page),
+        "lead page must show the REJECTED badge + a Reactivate button for a rejected lead");
+      const probe = await prisma.lead.findFirst({ select: { id: true, previousOwnerId: true } });
+      assert(probe === null || "previousOwnerId" in probe, "Lead.previousOwnerId column must exist in prod");
+    },
+  },
+
+  // ───────────────────────────────────────────────────────────────────────────
   {
     name: "log-conversation-validation — outcome+remarks mandatory (server 400); NO follow-up field on call/WA logging (Jun25 reversal); Activity carries outcome; no Connected default",
     run: async () => {
