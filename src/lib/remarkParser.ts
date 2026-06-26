@@ -452,8 +452,14 @@ export function parseRemarksTimeline(
     // ("4th"/"1st" have no space before the suffix) and yearless casual dates
     // ("on 5 July"), so a client message is never split. Real MIS headers always
     // carry the full "On DD Month YYYY", so legitimate entries still separate.
+    // Day/month/year may be separated by space, hyphen, slash or dot — the same
+    // tolerance parseDateTime() uses — so hyphenated MIS dates ("On 17-May-26")
+    // still split. The day must be followed by a SEPARATOR then a month NAME then a
+    // year: an ordinal ("4th"/"1st" — letter, not a separator) or a yearless casual
+    // date ("on 5 July to visit") structurally cannot match, so a client message is
+    // never torn.
     .replace(
-      /[.!?,]?\s*((?:[A-Z][A-Za-z]{1,20}\s*:\s*)?[oO]n\s+\d{1,2}\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s+\d{2,4}\b)/gi,
+      /[.!?,]?\s*((?:[A-Z][A-Za-z]{1,20}\s*:\s*)?[oO]n\s+\d{1,2}[\s\-/.]+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*[\s\-/.]+\d{2,4}\b)/gi,
       (_m, block) => `\n${block}`,
     )
     .trim();
