@@ -209,6 +209,17 @@ html, body { background: var(--bg-app); color: var(--text-base); font-family: va
 [data-theme="dark"] .border-gray-300  { border-color: var(--border) !important; }
 [data-theme="dark"] .divide-gray-100 > * + *,
 [data-theme="dark"] .divide-gray-200 > * + * { border-color: var(--border) !important; }
+/* Slate neutrals + light placeholders/dividers the gray net above misses (UI
+   audit 2026-06-27): slate card/row surfaces (ConversationStreamCard, calendar,
+   AI workspace), the lightest gray text (em-dash placeholders / heatmap zeros),
+   and the hardcoded #e5e7eb hairline (Inbox/team/reports/archived/overdue). */
+[data-theme="dark"] .bg-slate-50,
+[data-theme="dark"] .bg-slate-100     { background-color: var(--bg-muted) !important; }
+[data-theme="dark"] .hover\:bg-slate-50:hover,
+[data-theme="dark"] .hover\:bg-slate-100:hover { background-color: var(--bg-muted) !important; }
+[data-theme="dark"] .text-gray-300    { color: var(--text-muted) !important; }
+[data-theme="dark"] .border-\[\#e5e7eb\]         { border-color: var(--border) !important; }
+[data-theme="dark"] .divide-\[\#e5e7eb\] > * + * { border-color: var(--border) !important; }
 
 /* Ghost/secondary button — white surface → card surface */
 [data-theme="dark"] .btn-ghost        { background: var(--bg-card); border-color: var(--border); color: var(--text-base); }
