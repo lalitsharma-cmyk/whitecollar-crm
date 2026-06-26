@@ -3117,6 +3117,40 @@ const checks: Check[] = [
   },
 
   // ───────────────────────────────────────────────────────────────────────────
+  // Buyer Conversation History (Lalit P0, 2026-06-27): the buyer sheets carry a
+  // "Conversation History" column = the real dated conversation. It must drive the
+  // buyer Conversation timeline (Raw + Smart) via the SAME Lead parser — NOT sit
+  // stranded in extraFields → the Imported Fields card.
+  // ───────────────────────────────────────────────────────────────────────────
+  {
+    name: "buyer-conversation-history — import maps a Conversation-History column to remarks (pulled out of extraFields); 0 buyers leak it; timeline reuses the Lead parser",
+    run: async () => {
+      const fs = await import("fs");
+      const path = await import("path");
+      // (a) STATIC — the buyer import recognizes a conversation column + removes it from extra.
+      const importSrc = fs.readFileSync(path.join(process.cwd(), "src/app/api/buyer-data/import/route.ts"), "utf8");
+      assert(/CONVERSATION_KEYS/.test(importSrc) && /conversation history/i.test(importSrc),
+        "buyer import must recognize a Conversation-History column");
+      assert(/pickConversation\(extra\)/.test(importSrc) && /delete extra\[/.test(importSrc),
+        "buyer import must pull the conversation column OUT of extraFields (else it duplicates into Imported Fields)");
+      // (b) PARITY — the buyer timeline reuses the Lead parser.
+      const btSrc = fs.readFileSync(path.join(process.cwd(), "src/lib/buyerRemarkTimeline.ts"), "utf8");
+      assert(/parseRemarksTimeline/.test(btSrc), "buyer timeline must reuse the Lead parser (parseRemarksTimeline)");
+      // (c) DATA — no live buyer leaks a non-empty conversation column in extraFields.
+      const CONVERSATION_KEYS = ["conversation history","conversation","call history","remark history","interaction history","communication history","discussion","chat history"];
+      const buyers = await prisma.buyerRecord.findMany({ where: { deletedAt: null }, select: { id: true, extraFields: true } });
+      let stranded = 0;
+      for (const b of buyers) {
+        const ef = b.extraFields as Record<string, unknown> | null;
+        if (ef && typeof ef === "object" && !Array.isArray(ef) &&
+            Object.keys(ef).some((k) => CONVERSATION_KEYS.includes(k.trim().toLowerCase()) && String(ef[k] ?? "").trim())) stranded++;
+      }
+      assert(stranded === 0, `${stranded} buyers still have a Conversation-History column stranded in extraFields (must be in remarks/timeline)`);
+      results.push({ name: "  ↳ note", ok: true, detail: `${buyers.length} buyers · 0 stranded conversation columns` });
+    },
+  },
+
+  // ───────────────────────────────────────────────────────────────────────────
   {
     name: "log-conversation-validation — outcome+remarks mandatory (server 400); NO follow-up field on call/WA logging (Jun25 reversal); Activity carries outcome; no Connected default",
     run: async () => {

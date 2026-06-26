@@ -85,6 +85,29 @@ function composeFromExtra(extra: Record<string, string>): string {
   return composeRemarkFromFields(picked);
 }
 
+// Free-text conversation / interaction-history columns. The Dubai buyer sheets
+// carry a "Conversation History" column = the REAL dated conversation ("On 5 June
+// 2026 (4:31PM) he called back…"). When the admin maps a short Status column to
+// Remarks and leaves this one unmapped, it lands in extraFields → the Imported
+// Fields card instead of the Conversation timeline (Lalit P0, 2026-06-27). It is
+// recognised here as the PRIMARY remarks / Smart-Timeline source. pickConversation
+// REMOVES the chosen key from `extra` so the conversation lives in the timeline,
+// never duplicated in Imported Fields (rawImport keeps the verbatim original row).
+const CONVERSATION_KEYS = [
+  "conversation history", "conversation", "call history", "remark history",
+  "interaction history", "communication history", "discussion", "chat history",
+];
+function pickConversation(extra: Record<string, string>): string | null {
+  for (const k of Object.keys(extra)) {
+    if (CONVERSATION_KEYS.includes(k.trim().toLowerCase()) && String(extra[k] ?? "").trim()) {
+      const v = String(extra[k]).trim();
+      delete extra[k]; // move into remarks; rawImport retains the verbatim audit
+      return v;
+    }
+  }
+  return null;
+}
+
 /** Find a LIVE (non-deleted) existing buyer matching this row by buyerKey first,
  *  then by phone-tail, then by email. Returns the match or null. */
 async function findExistingBuyer(
@@ -215,11 +238,16 @@ export async function POST(req: NextRequest) {
         if (k.trim() && s) rawRow[k] = s;
       }
 
-      // Remarks (verbatim) → Raw History. Prefer the mapped free-text Remarks column;
-      // else compose from short status-like extra columns so that history-bearing
-      // data still gets a Raw History + Smart Timeline (never lost in extraFields).
+      // Remarks (verbatim) → Raw History + Smart Timeline. Priority (Lalit P0,
+      // 2026-06-27): an explicit conversation-history column FIRST (the buyer
+      // sheets' real dated conversation — pulled OUT of extra so it isn't stranded
+      // in Imported Fields), THEN the mapped Remarks column + composed short
+      // status/follow-up tokens, appended as trailing context.
+      const conv = pickConversation(extra); // mutates extra (removes the conv key)
       const mappedRemark = str(r.remarks);
-      const remark = mappedRemark ?? (composeFromExtra(extra) || null);
+      const statusBits = composeFromExtra(extra) || null; // status tokens (post-removal)
+      const tail = [mappedRemark, statusBits].filter(Boolean).join("\n") || null;
+      const remark = conv ? (tail ? `${conv}\n${tail}` : conv) : tail;
 
       // Transaction date drives the timeline fallback (the day this record relates
       // to). When absent, fall back to "now" (the import moment) — parity with how
