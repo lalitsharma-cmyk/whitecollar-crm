@@ -3016,6 +3016,26 @@ const checks: Check[] = [
       assert(multiEntries.some((e) => e.date && e.date.getUTCMonth() === 4 && e.date.getUTCDate() === 28),
         "28-May remark missing from the multi-remark sample parse");
 
+      // (b′) P0 NO-TEAR (Lalit 2026-06, data integrity): a client's MID-SENTENCE
+      //      date must NEVER split one message into two fake dated entries. The
+      //      entry-header split fires ONLY on a real "On DD <Month> YYYY" — ordinals
+      //      ("4th"/"1st") and yearless casual dates ("on 5 July") cannot match it,
+      //      so the client sentence stays whole. Proven on the real Gaurav Saxena
+      //      blob ("passed away on 1st April", "Gurgaon on 5th evening").
+      const clientMsg =
+        "Lalit: On 8 Apr 2021 he text My mother passed away on 1st April,," +
+        "On 31 Mar 2024 I have plans to come to Gurgaon on 5th evening to visit the site";
+      const ce = mergeSameMoment(parseRemarksTimeline(clientMsg, roster));
+      assert(ce.some((e) => /passed away on 1st April/i.test(e.text)),
+        "P0 REGRESSION: client sentence 'passed away on 1st April' was TORN by a mid-sentence date split");
+      assert(ce.some((e) => /Gurgaon on 5th evening to visit the site/i.test(e.text)),
+        "P0 REGRESSION: client sentence '...Gurgaon on 5th evening to visit the site' was TORN");
+      assert(!ce.some((e) => /^(?:st April\b|th evening\b)/i.test(e.text.trim())),
+        "P0 REGRESSION: a torn date-fragment entry exists — the mid-sentence split bug returned");
+      // The two REAL headers still separate into their own dated entries.
+      assert(ce.filter((e) => e.date && (e.date.getUTCFullYear() === 2021 || e.date.getUTCFullYear() === 2024)).length >= 2,
+        "real 'On DD Month YYYY' headers must still split into separate dated entries");
+
       // (a′) PROD — if a real lead carries both '28 May' + 'Lalit' in rawRemarks,
       //      it must parse to ≥1 dated entry (the canonical acceptance lead). Skip
       //      cleanly if no such lead exists (data may change), so the gate never

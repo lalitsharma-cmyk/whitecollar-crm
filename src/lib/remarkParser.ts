@@ -439,11 +439,23 @@ export function parseRemarksTimeline(
   const normalized = cell
     .replace(/,{2,}/g, "\n")
     .replace(/\r\n/g, "\n")
-    // Split before "On <date>", PULLING an immediately-preceding "Name:" prefix
-    // onto the new line so the new dated entry keeps its OWN agent ("...him. Lalit:
-    // On 19 Jun..." → "Lalit: On 19 Jun...", attributed to Lalit, not the previous
-    // entry's agent).
-    .replace(/[.!?,]?\s*((?:[A-Z][A-Za-z]{1,20}\s*:\s*)?[oO]n\s+\d{1,2})/g, (_m, block) => `\n${block}`)
+    // Split before a REAL imported-entry header — "On DD <Month> YYYY" — only,
+    // pulling an immediately-preceding "Name:" prefix onto the new line so the new
+    // dated entry keeps its OWN agent ("...him. Lalit: On 19 Jun 2026..." → "Lalit:
+    // On 19 Jun 2026...", attributed to Lalit).
+    //
+    // P0 DATA-INTEGRITY (Lalit 2026-06): the old regex split before ANY "on <digit>",
+    // so a client's MID-SENTENCE date tore one message into two fake dated entries —
+    // "...visited the Expo on 4th & 5th July 2026" / "he text My mother passed away
+    // on 1st April" both split at "on 4"/"on 1". Requiring a FULL date — day, then a
+    // whitespace-separated month NAME, then a year — structurally excludes ordinals
+    // ("4th"/"1st" have no space before the suffix) and yearless casual dates
+    // ("on 5 July"), so a client message is never split. Real MIS headers always
+    // carry the full "On DD Month YYYY", so legitimate entries still separate.
+    .replace(
+      /[.!?,]?\s*((?:[A-Z][A-Za-z]{1,20}\s*:\s*)?[oO]n\s+\d{1,2}\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s+\d{2,4}\b)/gi,
+      (_m, block) => `\n${block}`,
+    )
     .trim();
 
   const lines = normalized.split("\n").map(l => l.trim()).filter(Boolean);
