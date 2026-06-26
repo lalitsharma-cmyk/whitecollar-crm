@@ -76,7 +76,7 @@ export default async function BuyerDataPage() {
     if (r.poolStatus === "ADMIN_POOL") poolCount++;
     else if (r.poolStatus === "ASSIGNED") assignedCount++;
     else if (r.poolStatus === "CONVERTED") convertedCount++;
-    const ccy = inferBuyerCurrency({ nationality: r.nationality, projectName: r.projectName, source: r.source });
+    const ccy = inferBuyerCurrency({ nationality: r.nationality, projectName: r.projectName, source: r.source, market: r.market });
     const v = typeof r.transactionValue === "number" && isFinite(r.transactionValue) ? r.transactionValue : 0;
     if (ccy === "INR") totalInvestmentInr += v;
     else if (ccy === "AED") totalInvestmentAed += v;
@@ -126,7 +126,7 @@ export default async function BuyerDataPage() {
     const rollup = key ? rollupByKey.get(key) : undefined;
     const owned = rollup?.totalPropertiesOwned ?? 1;
     const repeat = rollup?.repeatBuyerStatus ?? false;
-    const ccy = inferBuyerCurrency({ nationality: r.nationality, projectName: r.projectName, source: r.source });
+    const ccy = inferBuyerCurrency({ nationality: r.nationality, projectName: r.projectName, source: r.source, market: r.market });
     const towerUnit = [r.tower, r.unitNumber].map((x) => (x ?? "").trim()).filter(Boolean).join(" · ");
     const region = ccy === "INR" ? "India" : ccy === "AED" ? "Dubai/UAE" : "—";
     return {

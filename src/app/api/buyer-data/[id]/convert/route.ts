@@ -91,7 +91,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   // authoritative signal (this is the Dubai module — market is "Dubai"), NOT the
   // nationality heuristic (an Indian-national Dubai investor must stay Dubai/AED).
   const marketTeam = buyer.market === "Dubai" ? "Dubai" : buyer.market === "India" ? "India" : null;
-  const inferredCcy = inferBuyerCurrency({ nationality: buyer.nationality, projectName: buyer.projectName, source: buyer.source });
+  const inferredCcy = inferBuyerCurrency({ nationality: buyer.nationality, projectName: buyer.projectName, source: buyer.source, market: buyer.market });
   const team = normalizeTeam(owner.team) ?? marketTeam ?? (inferredCcy === "INR" ? "India" : inferredCcy === "AED" ? "Dubai" : null);
   const budgetCurrency = team === "India" ? "INR" : team === "Dubai" ? "AED" : (buyer.market === "Dubai" ? "AED" : inferredCcy ?? "AED");
 

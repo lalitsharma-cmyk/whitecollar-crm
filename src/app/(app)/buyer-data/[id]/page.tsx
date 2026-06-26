@@ -109,7 +109,7 @@ export default async function BuyerDetail({ params }: { params: Promise<{ id: st
     update: {},
   });
 
-  const ccy = inferBuyerCurrency({ nationality: rec.nationality, projectName: rec.projectName, source: rec.source });
+  const ccy = inferBuyerCurrency({ nationality: rec.nationality, projectName: rec.projectName, source: rec.source, market: rec.market });
   const coBuyers = parseJsonArray(rec.coBuyerNames);
   const phones = parseJsonArray(rec.phones);
   const emails = parseJsonArray(rec.emails);
@@ -319,7 +319,7 @@ export default async function BuyerDetail({ params }: { params: Promise<{ id: st
                   </thead>
                   <tbody className="divide-y divide-gray-100 dark:divide-slate-800">
                     {[rec, ...others].map((o) => {
-                      const occy = inferBuyerCurrency({ nationality: o.nationality, projectName: o.projectName, source: o.source });
+                      const occy = inferBuyerCurrency({ nationality: o.nationality, projectName: o.projectName, source: o.source, market: o.market });
                       const isThis = o.id === rec.id;
                       return (
                         <tr key={o.id} className={isThis ? "bg-amber-50/40 dark:bg-amber-900/10" : "hover:bg-gray-50 dark:hover:bg-slate-800/50"}>

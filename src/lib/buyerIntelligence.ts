@@ -244,7 +244,12 @@ export function formatTxnValue(value: number | null | undefined, currency?: stri
 /** Guess the market currency for a buyer record from its country/nationality/
  *  project hints. Conservative: only returns INR for clear India signals, AED
  *  for clear UAE signals, else null (→ neutral compact display). */
-export function inferBuyerCurrency(hint?: { nationality?: string | null; projectName?: string | null; source?: string | null }): string | null {
+export function inferBuyerCurrency(hint?: { nationality?: string | null; projectName?: string | null; source?: string | null; market?: string | null }): string | null {
+  // Market is authoritative when known — a Dubai-market buyer is AED even if the
+  // owner's nationality is Indian (audit fix 2026-06-27). Fall back to the text
+  // heuristic only when there is no market.
+  if (hint?.market === "Dubai") return "AED";
+  if (hint?.market === "India") return "INR";
   const blob = `${hint?.nationality ?? ""} ${hint?.projectName ?? ""} ${hint?.source ?? ""}`.toLowerCase();
   if (/\b(india|indian|inr|mumbai|gurgaon|gurugram|delhi|noida|bengaluru|bangalore|pune)\b/.test(blob)) return "INR";
   if (/\b(uae|dubai|emirat|aed|abu dhabi|sharjah)\b/.test(blob)) return "AED";
