@@ -491,6 +491,11 @@ model Lead {
   rejectionNote   String? // free-text — required when rejectionReason = OTHER
   rejectedAt      DateTime?
   rejectedById    String?
+  // Rejected-Lead workflow (Lalit 2026-06-27): on reject the lead is UNASSIGNED
+  // (ownerId → null, freeing the agent + keeping reports correct) and the prior
+  // owner is preserved here for the "Previous Owner" display + permanent audit.
+  // Kept as a reference after reactivate (reactivate → re-assign is the path).
+  previousOwnerId String?
 
   // ── EOI / Booking workflow (Phase 6 of CRM master spec §13) ──
   // Stage in the booking funnel — populated once a Lead enters NEGOTIATION

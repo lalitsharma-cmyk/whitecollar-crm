@@ -3,7 +3,7 @@ import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { parseImportDate } from "@/lib/parseImportDate";
 import { normalizeBuyerKey, toJsonArray, primaryPhone, parseJsonArray } from "@/lib/buyerIntelligence";
-import { buildBuyerTimelinePlan, composeRemarkFromFields } from "@/lib/buyerRemarkTimeline";
+import { buildBuyerTimelinePlan, composeRemarkFromFields, isImportedActivityDescription } from "@/lib/buyerRemarkTimeline";
 import { normalizeName, normalizeNameList } from "@/lib/nameFormat";
 import { audit, reqMeta } from "@/lib/audit";
 
@@ -79,8 +79,14 @@ const tail8 = (p?: string | null): string => String(p ?? "").replace(/\D/g, "").
 const STATUS_LIKE_KEYS = ["status", "status 2", "status2", "follow-up", "followup", "follow up", "remark", "remarks", "notes", "note", "comment", "comments", "activity", "activity history"];
 function composeFromExtra(extra: Record<string, string>): string {
   const picked: Record<string, string> = {};
-  for (const [k, v] of Object.entries(extra)) {
-    if (STATUS_LIKE_KEYS.includes(k.trim().toLowerCase()) && String(v ?? "").trim()) picked[k] = v;
+  for (const k of Object.keys(extra)) {
+    if (STATUS_LIKE_KEYS.includes(k.trim().toLowerCase()) && String(extra[k] ?? "").trim()) {
+      picked[k] = extra[k];
+      // Composed into the remark (→ Raw + Smart) — REMOVE from extra so the same
+      // status text isn't ALSO shown verbatim in the Imported Fields card (the
+      // duplication pickConversation already avoids). rawImport keeps the original.
+      delete extra[k];
+    }
   }
   return composeRemarkFromFields(picked);
 }
@@ -296,9 +302,19 @@ export async function POST(req: NextRequest) {
         if (Object.keys(update).length) {
           await prisma.buyerRecord.update({ where: { id: existing.id }, data: update });
         }
-        // Smart Timeline for the appended remark (idempotent — only the NEW text).
+        // Smart Timeline — regenerate the IMPORTED rows IDEMPOTENTLY: drop the prior
+        // imported-tagged rows for this buyer, then rebuild from the FULL MERGED
+        // remark (not just the incoming fragment). Without this, re-importing the
+        // same sheet (the normal "top up" flow) re-inserted every historical row
+        // again → the timeline showed each conversation 2×/3× (P0, audit 2026-06-27);
+        // and building from the fragment alone mis-dated undated lines. Live
+        // agent-logged rows (no IMPORTED_TAG) are never touched.
         if (remark) {
-          const plan = buildBuyerTimelinePlan(remark, timelineFallback);
+          const mergedRemark = (update.remarks as string | undefined) ?? existing.remarks ?? remark;
+          const existingActs = await prisma.buyerActivity.findMany({ where: { buyerId: existing.id }, select: { id: true, description: true } });
+          const importedIds = existingActs.filter((a) => isImportedActivityDescription(a.description)).map((a) => a.id);
+          if (importedIds.length) await prisma.buyerActivity.deleteMany({ where: { id: { in: importedIds } } });
+          const plan = buildBuyerTimelinePlan(mergedRemark, timelineFallback);
           if (plan.length) {
             await prisma.buyerActivity.createMany({
               data: plan.map((p) => ({ buyerId: existing.id, userId: null, type: p.type, description: p.description, createdAt: p.createdAt })),

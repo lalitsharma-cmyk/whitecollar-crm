@@ -3151,6 +3151,28 @@ const checks: Check[] = [
   },
 
   // ───────────────────────────────────────────────────────────────────────────
+  // Buyer re-import idempotency (audit P0, 2026-06-27): re-importing the same
+  // sheet must NOT double-create Smart-Timeline rows. The live import route must
+  // delete prior imported-tagged BuyerActivity rows + rebuild from the merged
+  // remark (mirroring the backfill), and composeFromExtra must remove the status
+  // keys it composes so they don't ALSO render verbatim in Imported Fields.
+  // ───────────────────────────────────────────────────────────────────────────
+  {
+    name: "buyer-import-idempotent — re-import deletes prior imported rows before regenerating + composeFromExtra de-dups status keys",
+    run: async () => {
+      const fs = await import("fs");
+      const path = await import("path");
+      const src = fs.readFileSync(path.join(process.cwd(), "src/app/api/buyer-data/import/route.ts"), "utf8");
+      assert(/isImportedActivityDescription/.test(src),
+        "import route must use isImportedActivityDescription to find prior imported timeline rows");
+      assert(/buyerActivity\.deleteMany/.test(src),
+        "import route must deleteMany prior imported-tagged rows before regenerating (idempotency — no double-count on re-import)");
+      assert(/delete extra\[k\]/.test(src),
+        "composeFromExtra must remove the status keys it composes from `extra` (no double-surface in Imported Fields)");
+    },
+  },
+
+  // ───────────────────────────────────────────────────────────────────────────
   {
     name: "log-conversation-validation — outcome+remarks mandatory (server 400); NO follow-up field on call/WA logging (Jun25 reversal); Activity carries outcome; no Connected default",
     run: async () => {
