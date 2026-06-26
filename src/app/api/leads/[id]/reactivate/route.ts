@@ -45,6 +45,16 @@ export async function POST(
     where: { id },
     data: {
       status: "NEW",
+      // Reset to a workable status + clear the rejection stamp so the lead actually
+      // LEAVES the terminal / Master-Data view and returns to the working Leads
+      // board. Previously only the vestigial `status` enum flipped while
+      // currentStatus stayed terminal + rejectedAt stayed set — so a "reactivated"
+      // lead silently remained rejected/hidden (Rejected-Lead workflow, 2026-06-27).
+      currentStatus: "Fresh Lead",
+      rejectedAt: null,
+      rejectionReason: null,
+      rejectionNote: null,
+      rejectedById: null,
       lastTouchedAt: new Date(),
     },
   });
