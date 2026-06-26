@@ -33,6 +33,7 @@ import StickyNoteWidget from "@/components/StickyNoteWidget";
 import BuyingSignalsCard from "@/components/BuyingSignalsCard";
 import VoiceNoteRecorder from "@/components/VoiceNoteRecorder";
 import LeadVoiceGuidance from "@/components/LeadVoiceGuidance";
+import VoiceGuidancePin from "@/components/VoiceGuidancePin";
 import LeadResourceShare from "@/components/LeadResourceShare";
 import QuickNoteCard from "@/components/QuickNoteCard";
 import LeadReassignClient from "@/components/LeadReassignClient";
@@ -1082,6 +1083,9 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
                 }
               />
               <BestCallTimeChip leadId={lead.id} />
+              {(me.role === "ADMIN" || voiceGuidance.length > 0) && (
+                <div className="mt-2"><VoiceGuidancePin count={voiceGuidance.length} /></div>
+              )}
               {/* Voice note recorder — moved to header so agents see all 4
                   actions (Call / WhatsApp / Log Call / Voice Note) together
                   without scrolling. */}
@@ -1145,7 +1149,7 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
 
         {/* Channel ① Manager Voice Guidance — admin records voice notes; the assigned
             agent plays them back + marks understood. Separate from the Escalation thread. */}
-        <div data-lead-section="timeline">
+        <div id="lead-voice-guidance" data-lead-section="timeline" className="scroll-mt-24 rounded-xl">
           <LeadVoiceGuidance leadId={lead.id} isAdmin={me.role === "ADMIN"} messages={voiceGuidance} />
         </div>
 
