@@ -396,7 +396,15 @@
 // render in IST (Asia/Kolkata) on Leads/Revival/Revisit-Queue/Inbox — an IST-midnight
 // follow-up no longer shows as the prior day. All additive/display + count-only; no
 // data writes, dashboard count==drill preserved. Bump shell so clients load the fixes.
-const CACHE = "wcr-shell-v72";
+// v73 (2026-06-26): Smart Timeline Edit-affordance UI-correctness fix. A surfaced
+// SYSTEM audit row ("Inline edit: N field(s)") no longer renders a "Edit"-labelled
+// chip (or a ✏️ pencil) that read as a broken, unclickable Edit button — it now shows
+// a neutral "🛈 System" chip. Real per-entry Edit buttons are unchanged and stay
+// gated by canEditRemark (notes) / canEditActivity (activities): admin/manager → any
+// editable entry; agent → only their own same-IST-day free-text comment; never on
+// system rows. Pure render-gating fix (retroactive to all rows), no data/permission
+// change. Bump shell so every client loads the corrected timeline.
+const CACHE = "wcr-shell-v73";
 const SHELL = ["/login", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", (event) => {

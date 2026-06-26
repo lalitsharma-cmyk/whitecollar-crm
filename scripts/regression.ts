@@ -1113,6 +1113,60 @@ const checks: Check[] = [
     },
   },
   {
+    // SMART-TIMELINE-EDIT-VISIBILITY (2026-06-26) — the *rendered* Edit affordance
+    // in Conversation History → Smart Timeline must match the edit rules exactly:
+    //   • EVERY clickable Edit on a stream entry is gated by canEditRemark (notes)
+    //     or canEditActivity (activities) — never an ungated / mount-only flag.
+    //   • A SYSTEM audit row ("Inline edit: N field(s)", followup-change) is NOT
+    //     freely editable → it must render NO real Edit button AND no "Edit"-looking
+    //     text. The bug fixed here: the surfaced-system-NOTE chip used the literal
+    //     label "Edit" (+ a ✏️ pencil), which read as a broken, unclickable Edit
+    //     control sitting next to the real per-entry Edit button. It now reads
+    //     "System" (🛈). This is a pure render-gating guard (static source scan) —
+    //     the own/same-IST-day/kind matrix itself is proven in `agent-sameday-edit`.
+    name: "smart-timeline-edit-visibility — Edit affordance gated by canEditRemark/canEditActivity; surfaced system NOTE rows show NO clickable Edit + no \"Edit\" text",
+    run: async () => {
+      const fs = await import("fs");
+      const path = await import("path");
+      const cardPath = path.join(process.cwd(), "src/components/ConversationStreamCard.tsx");
+      const src = fs.readFileSync(cardPath, "utf8");
+
+      // (1) GATED — the two real Edit buttons are gated by the shared perm helpers.
+      //     Note row → canEditRemark; CRM activity row → canEditActivity. Both must
+      //     wrap a real <button>, and the activity one must additionally exclude
+      //     surfaced system NOTE rows (!surfacedNote).
+      assert(/canEditRemark\([^)]*\)[\s\S]{0,80}&&\s*!editing\s*&&[\s\S]{0,160}<button/.test(src),
+        "note Edit button is not gated by canEditRemark (+ !editing)");
+      assert(/!surfacedNote\s*&&\s*canEditActivity\(/.test(src),
+        "activity Edit button must be gated by `!surfacedNote && canEditActivity(`");
+      // The real per-entry edit button opens the modal — proves it's a working control.
+      assert(/onClick=\{\(\)\s*=>\s*setEditActivity\(a\)\}/.test(src),
+        "activity Edit button no longer opens the TimelineEntryEditModal (setEditActivity)");
+
+      // (2) NO FAKE "Edit" TEXT — a surfaced system NOTE row (isSurfacedNoteActivity:
+      //     "Inline edit:" / followup-change) must NOT label its chip "Edit" and must
+      //     NOT show a ✏️ pencil. The non-followup surfaced-note branch is "System"/🛈.
+      //     Guard against the exact regression: `surfacedNote ? "Edit"` and
+      //     `surfacedNote ? "✏️"` in the actLabel/actIcon fallbacks.
+      assert(!/surfacedNote\s*\?\s*"Edit"/.test(src),
+        "surfaced system NOTE row still uses the literal \"Edit\" chip label (fake/unclickable Edit affordance)");
+      assert(!/surfacedNote\s*\?\s*"✏️"/.test(src),
+        "surfaced system NOTE row still uses a ✏️ pencil icon (reads like an Edit control)");
+      assert(/surfacedNote\s*\?\s*"System"/.test(src),
+        "surfaced system NOTE row must label its chip \"System\" (neutral, non-Edit)");
+
+      // (3) SYSTEM ROWS GET NO EDIT BUTTON — defence in depth: the activity Edit
+      //     button is suppressed for surfacedNote, and isSurfacedNoteActivity only
+      //     matches the system audit kinds (NOTE-typed "Inline edit:" / followup-change),
+      //     never a free-text meeting/visit/discussion. Confirm the classifier shape.
+      assert(/function isSurfacedNoteActivity/.test(src) &&
+             /a\.type !== "NOTE"\)\s*return false/.test(src) &&
+             /startsWith\("Inline edit:"\)/.test(src) &&
+             /startsWith\("followup-change"\)/.test(src),
+        "isSurfacedNoteActivity no longer narrowly classifies only system NOTE audit rows");
+    },
+  },
+  {
     name: "status-order — canonical priority (Fresh Lead → Office Visit → Follow Up → Visit Dubai → Details Shared → rest A→Z)",
     run: async () => {
       const { compareStatusDisplay } = await import("../src/lib/lead-statuses");

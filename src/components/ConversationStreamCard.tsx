@@ -716,10 +716,17 @@ export default function ConversationStreamCard({
           // Surfaced system NOTE activities (follow-up change / admin inline edit)
           // have no entry in the meeting/status icon+label maps — give them a
           // sensible icon + chip so they read as what they are.
+          // IMPORTANT (UI clarity): an inline-field-edit row ("Inline edit: N
+          // field(s)") is a SYSTEM audit line, not a freely-editable entry. It must
+          // NEVER show the word "Edit" (or a ✏️ pencil) — that read as a broken,
+          // unclickable Edit button next to the real per-entry Edit affordance. It
+          // gets a neutral "🛈 System" chip instead; the real Edit button below is
+          // suppressed for surfacedNote rows. (followup-change keeps its own
+          // "📅 Follow-up" label — also non-Edit, so unambiguous.)
           const surfacedNote = isSurfacedNoteActivity(a);
           const isFollowupChange = surfacedNote && (a.actionContext ?? "").startsWith("followup-change");
-          const actIcon = ACTIVITY_ICON[a.type] ?? (isFollowupChange ? "📅" : surfacedNote ? "✏️" : "•");
-          const actLabel = ACTIVITY_LABEL[a.type] ?? (isFollowupChange ? "Follow-up" : surfacedNote ? "Edit" : "Activity");
+          const actIcon = ACTIVITY_ICON[a.type] ?? (isFollowupChange ? "📅" : surfacedNote ? "🛈" : "•");
+          const actLabel = ACTIVITY_LABEL[a.type] ?? (isFollowupChange ? "Follow-up" : surfacedNote ? "System" : "Activity");
           return (
             <div key={it.id} className="border-l-2 border-slate-300 bg-slate-50/70 pl-3 pr-2 py-1.5 rounded-r">
               <div className="flex items-center justify-between flex-wrap gap-1 text-[11px] text-gray-500">
