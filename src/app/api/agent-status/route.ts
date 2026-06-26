@@ -16,6 +16,7 @@ import {
   isAgentStatusKind,
   todaysEvents,
   openGoingEvent,
+  todaysHereEvent,
 } from "@/lib/agentStatus";
 import { autoMarkAttendanceOnLogin, todayIST, hourIST, minIST } from "@/lib/attendance";
 
@@ -74,6 +75,12 @@ export async function POST(req: NextRequest) {
 
   if (!isAgentStatusKind(statusRaw)) {
     return NextResponse.json({ error: "Invalid status" }, { status: 400 });
+  }
+
+  // Check-in-before-check-out (Lalit 2026-06-27): a user cannot mark "Leaving for
+  // the Day" (LEAVING_OFFICE) unless they have already checked in (HERE) today.
+  if (statusRaw === "LEAVING_OFFICE" && !(await todaysHereEvent(me.id))) {
+    return NextResponse.json({ error: "You haven't checked in today." }, { status: 400 });
   }
 
   const ip = (req.headers.get("x-forwarded-for")?.split(",")[0] ?? "").trim() || null;

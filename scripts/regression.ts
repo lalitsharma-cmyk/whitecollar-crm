@@ -3197,6 +3197,23 @@ const checks: Check[] = [
   },
 
   // ───────────────────────────────────────────────────────────────────────────
+  // Attendance check-in-before-check-out (Lalit 2026-06-27): a user cannot mark
+  // "Leaving for the Day" (LEAVING_OFFICE) unless they already checked in (HERE).
+  // ───────────────────────────────────────────────────────────────────────────
+  {
+    name: "attendance-checkout-after-checkin — LEAVING_OFFICE server-gated on a HERE event today",
+    run: async () => {
+      const fs = await import("fs");
+      const path = await import("path");
+      const src = fs.readFileSync(path.join(process.cwd(), "src/app/api/agent-status/route.ts"), "utf8");
+      assert(/LEAVING_OFFICE/.test(src) && /todaysHereEvent/.test(src),
+        "agent-status route must gate LEAVING_OFFICE on todaysHereEvent (check-in-before-check-out)");
+      assert(/checked in today/.test(src),
+        "must return the 'You haven't checked in today.' message when no check-in exists");
+    },
+  },
+
+  // ───────────────────────────────────────────────────────────────────────────
   {
     name: "log-conversation-validation — outcome+remarks mandatory (server 400); NO follow-up field on call/WA logging (Jun25 reversal); Activity carries outcome; no Connected default",
     run: async () => {
