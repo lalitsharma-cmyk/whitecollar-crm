@@ -283,7 +283,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
     .sort((a, b) => b.n - a.n);
   const byPropertyTypeTotal = byPropertyType.reduce((s, p) => s + p.n, 0);
 
-  const [tot, contacted, qualified, , ] = funnel; // status-based: total, active, closing, booked(×2)
+  const [tot, contacted, qualified, booked] = funnel; // status-based: total, active, closing, booked
 
   // ── Build status funnel stages for StatusFunnelChart ─────────────────
   // Status-only — no stage system. Show all Excel statuses by count.
@@ -331,7 +331,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
   const labels = [
     { from: "All Leads",     to: "Active Pursuit", count: tot,       next: contacted },
     { from: "Active Pursuit",to: "Closing Stage",  count: contacted, next: qualified },
-    { from: "Closing Stage", to: "Booked with Us", count: qualified, next: qualified },
+    { from: "Closing Stage", to: "Booked with Us", count: qualified, next: booked },
   ];
   for (const p of labels) {
     if (p.count === 0) continue;

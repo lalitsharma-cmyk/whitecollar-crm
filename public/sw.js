@@ -411,7 +411,7 @@
 // Purely presentational (new isolated MotivationBanner client island); no data,
 // no business logic, no permission change — the leads table/filters are
 // untouched. Bump shell so every client loads the new banner.
-const CACHE = "wcr-shell-v80";
+const CACHE = "wcr-shell-v81";
 const SHELL = ["/login", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", (event) => {

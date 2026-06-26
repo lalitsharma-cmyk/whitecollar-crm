@@ -692,7 +692,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
               <div className="font-semibold">📆 Future Activities</div>
               <div className="flex gap-2 text-xs flex-wrap">
                 {upcomingFollowupsCount > 0 && (
-                  <Link href="/leads?followup=upcoming" className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-300 font-semibold hover:bg-amber-200">
+                  <Link href="/leads?followup=future" className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-300 font-semibold hover:bg-amber-200">
                     {upcomingFollowupsCount} follow-up{upcomingFollowupsCount === 1 ? "" : "s"}
                   </Link>
                 )}

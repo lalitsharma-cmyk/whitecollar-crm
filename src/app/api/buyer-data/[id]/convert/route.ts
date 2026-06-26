@@ -46,13 +46,28 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   if (!(await canTouchBuyer(me, { ownerId: buyer.ownerId, poolStatus: buyer.poolStatus, deletedAt: buyer.deletedAt, market: buyer.market }))) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
-  if (buyer.poolStatus === BUYER_POOL_STATUS.CONVERTED && buyer.convertedLeadId) {
-    return NextResponse.json({ error: "This buyer has already been converted.", leadId: buyer.convertedLeadId }, { status: 409 });
+  // Already converted → 409. Guard on status ALONE: a CONVERTED buyer must never be
+  // re-converted even if its lead link is somehow null (which would mint a duplicate).
+  if (buyer.poolStatus === BUYER_POOL_STATUS.CONVERTED) {
+    return NextResponse.json({ error: "This buyer has already been converted.", leadId: buyer.convertedLeadId ?? undefined }, { status: 409 });
   }
 
-  // Who owns the resulting lead. Admin may pass ownerId to convert on behalf of an
-  // agent; otherwise the buyer's current owner, falling back to the actor.
+  // Convert authority: ADMIN any; else ONLY the owning agent of an ASSIGNED buyer
+  // (mirrors the detail page's canConvertReject — bare canTouchBuyer would also let
+  // a MANAGER convert a subordinate's buyer, wider than the UI ever offers).
+  const isAdmin = me.role === "ADMIN";
+  if (!isAdmin && !(buyer.ownerId === me.id && buyer.poolStatus === BUYER_POOL_STATUS.ASSIGNED)) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
+  // Who owns the resulting lead. For an ASSIGNED buyer it's the owning agent (admin
+  // may override with body.ownerId). A buyer NOT currently assigned (admin pool /
+  // returned) has no owner to convert under → the admin must name the agent, else
+  // the lead would silently land on the admin with no team.
   const requestedOwner = String(body.ownerId ?? "").trim();
+  if (buyer.poolStatus !== BUYER_POOL_STATUS.ASSIGNED && !requestedOwner) {
+    return NextResponse.json({ error: "Assign this buyer to an agent before converting, or pass an ownerId." }, { status: 400 });
+  }
   const ownerId = requestedOwner || buyer.ownerId || me.id;
   const owner = await prisma.user.findUnique({ where: { id: ownerId }, select: { id: true, name: true, team: true, active: true, role: true } });
   if (!owner || !owner.active) return NextResponse.json({ error: "Resolved lead owner not found or inactive" }, { status: 400 });
@@ -72,11 +87,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const email = emails[0] ?? null;
   const altEmail = emails[1] ?? null;
 
-  // Team: prefer the owning agent's team, else infer from the buyer's market.
+  // Team / currency: the owning agent's team wins; else the buyer's MARKET is the
+  // authoritative signal (this is the Dubai module — market is "Dubai"), NOT the
+  // nationality heuristic (an Indian-national Dubai investor must stay Dubai/AED).
+  const marketTeam = buyer.market === "Dubai" ? "Dubai" : buyer.market === "India" ? "India" : null;
   const inferredCcy = inferBuyerCurrency({ nationality: buyer.nationality, projectName: buyer.projectName, source: buyer.source });
-  const teamFromCcy = inferredCcy === "INR" ? "India" : inferredCcy === "AED" ? "Dubai" : null;
-  const team = normalizeTeam(owner.team) ?? teamFromCcy ?? null;
-  const budgetCurrency = team === "India" ? "INR" : team === "Dubai" ? "AED" : (inferredCcy ?? "AED");
+  const team = normalizeTeam(owner.team) ?? marketTeam ?? (inferredCcy === "INR" ? "India" : inferredCcy === "AED" ? "Dubai" : null);
+  const budgetCurrency = team === "India" ? "INR" : team === "Dubai" ? "AED" : (buyer.market === "Dubai" ? "AED" : inferredCcy ?? "AED");
 
   // transactionValue → budgetMax (a sensible single figure). budgetRaw keeps the
   // human display. Only when it's a positive finite number.

@@ -49,6 +49,9 @@ export default function BuyerActionsClient({ buyerId, phone, altPhone, email, cl
   const [remarks, setRemarks] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  // When the log modal was opened via the Voice button, the saved activity is a
+  // VOICE_NOTE (🎤), not a plain NOTE — audit fix 2026-06-27.
+  const [voiceMode, setVoiceMode] = useState(false);
 
   // Voice dictation (Web Speech API) — same approach as LeadActionsClient.
   const [speechSupported, setSpeechSupported] = useState(false);
@@ -110,9 +113,10 @@ export default function BuyerActionsClient({ buyerId, phone, altPhone, email, cl
   async function submitLog() {
     const opt = LOG_OUTCOMES.find((o) => o.key === outcomeKey);
     if (!opt) return;
-    const ok = await logActivity(opt.type, remarks.trim() || null);
+    // A note dictated via the Voice button is logged as VOICE_NOTE (🎤), not NOTE.
+    const ok = await logActivity(voiceMode ? "VOICE_NOTE" : opt.type, remarks.trim() || null);
     if (ok) {
-      setShowLog(false); setRemarks(""); setOutcomeKey("CALL_CONNECTED");
+      setShowLog(false); setRemarks(""); setOutcomeKey("CALL_CONNECTED"); setVoiceMode(false);
       router.refresh();
     }
   }
@@ -120,6 +124,7 @@ export default function BuyerActionsClient({ buyerId, phone, altPhone, email, cl
   async function quickVoiceNote() {
     // Tapping Voice opens the Log modal pre-set to a VOICE note with dictation —
     // mirrors the Lead voice-note flow (record → save). We reuse the same modal.
+    setVoiceMode(true);
     setOutcomeKey("NOTE");
     setShowLog(true);
     // Auto-start dictation for a true voice-first feel.
@@ -152,7 +157,7 @@ export default function BuyerActionsClient({ buyerId, phone, altPhone, email, cl
           <ActionButton action="email" href={`mailto:${email}`} />
         )}
         {canLog && (
-          <ActionButton action="logCall" onClick={() => setShowLog(true)} />
+          <ActionButton action="logCall" onClick={() => { setVoiceMode(false); setShowLog(true); }} />
         )}
         <ActionButton
           action="note"

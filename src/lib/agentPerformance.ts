@@ -763,7 +763,9 @@ export function drilldownWhere(key: DrillKey, agentId: string, range: DateRange)
     case "totalAssigned":
       return assignedInWindow;
     case "freshAssigned":
-      return { ...assignedInWindow, OR: [{ currentStatus: null }, { currentStatus: "" }, { currentStatus: { in: FRESH_STATUS_VALUES } }] };
+      // Use the CANONICAL fresh set (8 casings) so the drill matches the card's
+      // isFreshStatus()-based count (the local 6-value list under-counted by 2).
+      return { ...assignedInWindow, OR: [{ currentStatus: null }, { currentStatus: "" }, { currentStatus: { in: FRESH_STATUS_IN_VALUES } }] };
     case "websiteAssigned":
       return { ...assignedInWindow, source: { in: WEBSITE_SOURCE_ENUMS } };
     case "eventAssigned":
@@ -837,12 +839,8 @@ export function drilldownWhere(key: DrillKey, agentId: string, range: DateRange)
   }
 }
 
-// The explicit fresh-status string set (mirrors isFreshStatus for the
-// drill-down where-clause, which can't call a function inside Prisma). Lower-
-// case comparison isn't available in `in`, so we list the canonical casings.
-const FRESH_STATUS_VALUES = [
-  "Fresh Lead", "Fresh", "New", "New Lead", "Not Contacted", "Never Contacted",
-];
+// (FRESH_STATUS_VALUES removed 2026-06-27 — freshAssigned now uses the canonical
+//  FRESH_STATUS_IN_VALUES from lead-statuses, matching isFreshStatus + curFresh.)
 
 /** Human label for a drill-down key — used on the filtered-list page header. */
 export const DRILL_LABELS: Record<DrillKey, string> = {
