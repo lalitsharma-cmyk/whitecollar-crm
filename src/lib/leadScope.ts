@@ -152,9 +152,13 @@ export const ACTIVE_STATUS_WHERE = { currentStatus: { notIn: SUPPRESSED_STATUSES
  *  resale / lease / bought-elsewhere outcome can never inflate a "deals closed" KPI. */
 export const WON_STATUS_WHERE = { currentStatus: { in: BOOKED_STATUSES } };
 
-/** A specific owner's ACTIVE, non-deleted, non-cold leads (Profile / Team / Team-detail / Scoreboards). */
+/** A specific owner's ACTIVE, non-deleted, non-cold leads (Profile / Team / Team-detail / Scoreboards).
+ *  Delegates to the canonical activeLeadWhere so an agent's "active leads" number is
+ *  IDENTICAL here and on every reporting surface (leaderboard / reports / team /
+ *  agent-performance). The status envelope is the broad non-terminal one (not just
+ *  SUPPRESSED), so a Lost/Booked lead is excluded from "active" consistently. */
 export function ownerActiveWhere(ownerId: string) {
-  return { ownerId, deletedAt: null, leadOrigin: { in: ACTIVE_ORIGINS }, currentStatus: { notIn: SUPPRESSED_STATUSES } };
+  return activeLeadWhere({ ownerId });
 }
 /** A specific owner's total non-deleted, non-cold leads, any status (cold lives in Revival, not the agent's book). */
 export function ownerTotalWhere(ownerId: string) {
@@ -179,6 +183,36 @@ export const WORKABLE_STATUS_OR = [
 ];
 export function workableWhere<T extends Prisma.LeadWhereInput>(scope: T): Prisma.LeadWhereInput {
   return { ...scope, leadOrigin: { notIn: COLD_ORIGINS }, OR: WORKABLE_STATUS_OR };
+}
+
+// ── CANONICAL "operational ACTIVE lead" definition (Jun26 — owner-approved) ─────
+// The SINGLE source of truth for "active operational lead", used by EVERY
+// per-agent / team "active leads" metric on the reporting surfaces
+// (/reports/leaderboard, /reports, /team, /reports/agent-performance, /profile,
+// /team/[id]). An active operational lead is ALL of:
+//   1. leadOrigin in ACTIVE_ORIGINS  — NOT cold/revival, NOT master-data. Master
+//      Data is a repository, not active until promoted (this is the ALLOW-LIST,
+//      which is why it differs from the old `leadOrigin notIn COLD` that WRONGLY
+//      counted untriaged MASTER_DATA imports as active — the 245-lead gap).
+//   2. deletedAt: null               — recycle-bin / rolled-back imports never count.
+//   3. currentStatus is WORKABLE     — NOT terminal (Rejected/Lost/Not-Interested/
+//      Duplicate/Invalid/Dead/Blacklisted/Junk + booked/sold/leased). Expressed via
+//      WORKABLE_STATUS_OR so null/blank (FRESH) leads stay eligible. Mirrors
+//      ownerActiveWhere's status semantics but the canonical helper uses the broad
+//      non-terminal envelope (not just SUPPRESSED) so a Lost/Booked lead is excluded
+//      from "active" consistently across all surfaces.
+//
+// Spread a scope (e.g. { ownerId } for one agent, or leadScopeWhere(me) for a
+// role-scoped count, or {} for a global total) and combine. Because deletedAt and
+// leadOrigin are top-level keys and the status predicate is an OR, callers that
+// need their OWN top-level OR must nest it under AND (none currently do).
+export function activeLeadWhere<T extends Prisma.LeadWhereInput>(scope?: T): Prisma.LeadWhereInput {
+  return {
+    ...(scope ?? ({} as T)),
+    deletedAt: null,
+    leadOrigin: { in: ACTIVE_ORIGINS },
+    OR: WORKABLE_STATUS_OR,
+  };
 }
 
 // ── ACTIVE FOLLOW-UP BOARD definition (Jun26 — the SINGLE source of truth) ──────

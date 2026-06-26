@@ -37,6 +37,7 @@ import {
   COLUMN_NON_OPEN_STATUSES,
   FRESH_STATUS_IN_VALUES,
 } from "@/lib/lead-statuses";
+import { ACTIVE_ORIGIN_WHERE } from "@/lib/leadScope";
 
 // Typed enum arrays for Prisma `in` filters (string-backed enums; we keep them
 // as proper enum arrays so the queries are type-checked). Connected = picked up;
@@ -459,8 +460,12 @@ export async function buildAgentReport(range: DateRange, scope: ReportScope): Pr
     }),
     prisma.lead.groupBy({
       by: ["ownerId"],
+      // stillActive — the agent's CANONICAL active book: ACTIVE_LEAD origin (no
+      // cold/revival/master-data), non-deleted, non-terminal status. This equals
+      // activeLeadWhere({ ownerId }) so the same agent's "active leads" is identical
+      // here and on /reports/leaderboard, /reports, /team, /profile, /team/[id].
       where: {
-        ownerId: { in: agentIds }, deletedAt: null,
+        ownerId: { in: agentIds }, deletedAt: null, ...ACTIVE_ORIGIN_WHERE,
         OR: [{ currentStatus: null }, { currentStatus: "" }, { currentStatus: { notIn: TERMINAL_STATUSES } }],
       },
       _count: { _all: true },
@@ -468,7 +473,7 @@ export async function buildAgentReport(range: DateRange, scope: ReportScope): Pr
     prisma.lead.groupBy({
       by: ["ownerId"],
       where: {
-        ownerId: { in: agentIds }, deletedAt: null,
+        ownerId: { in: agentIds }, deletedAt: null, ...ACTIVE_ORIGIN_WHERE,
         followupDate: { lt: range.lt, not: null }, // due today or overdue (≤ end of window)
         OR: [{ currentStatus: null }, { currentStatus: "" }, { currentStatus: { notIn: TERMINAL_STATUSES } }],
       },
@@ -477,7 +482,7 @@ export async function buildAgentReport(range: DateRange, scope: ReportScope): Pr
     prisma.lead.groupBy({
       by: ["ownerId"],
       where: {
-        ownerId: { in: agentIds }, deletedAt: null,
+        ownerId: { in: agentIds }, deletedAt: null, ...ACTIVE_ORIGIN_WHERE,
         followupDate: null,
         OR: [{ currentStatus: null }, { currentStatus: "" }, { currentStatus: { notIn: TERMINAL_STATUSES } }],
       },
@@ -772,11 +777,12 @@ export function drilldownWhere(key: DrillKey, agentId: string, range: DateRange)
     case "lost":
       return { ownerId: agentId, deletedAt: null, currentStatus: { in: LOST_STATUSES } };
     case "stillActive":
-      return { ownerId: agentId, deletedAt: null, OR: ACTIVE_OR };
+      // Canonical active book (ACTIVE_LEAD origin) — count==drill with stillActive.
+      return { ownerId: agentId, deletedAt: null, ...ACTIVE_ORIGIN_WHERE, OR: ACTIVE_OR };
     case "awaitingFollowup":
-      return { ownerId: agentId, deletedAt: null, followupDate: { lt: range.lt, not: null }, OR: ACTIVE_OR };
+      return { ownerId: agentId, deletedAt: null, ...ACTIVE_ORIGIN_WHERE, followupDate: { lt: range.lt, not: null }, OR: ACTIVE_OR };
     case "noFollowup":
-      return { ownerId: agentId, deletedAt: null, followupDate: null, OR: ACTIVE_OR };
+      return { ownerId: agentId, deletedAt: null, ...ACTIVE_ORIGIN_WHERE, followupDate: null, OR: ACTIVE_OR };
     case "funnelQualified": {
       const FUNNEL_QUALIFIED = [...new Set([...MEETING_STATUSES, ...SITE_VISIT_STATUSES, ...NEGOTIATION_STATUSES, ...BOOKING_STATUSES])];
       return { ownerId: agentId, deletedAt: null, currentStatus: { in: FUNNEL_QUALIFIED } };

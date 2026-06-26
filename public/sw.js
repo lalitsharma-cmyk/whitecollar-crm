@@ -381,7 +381,22 @@
 // rows) → the lead owner's name → "Unknown User"; outbound WhatsApp shows the owner or
 // "Outbound". Pure render fix — fixes all historical + future rows, no data migration.
 // Bump shell so every client loads the new Revival grid + timeline labels.
-const CACHE = "wcr-shell-v71";
+// v72 (2026-06-26): Reporting-count unification + 4 confirmed reporting-bug fixes.
+// (1) ONE canonical "active operational lead" definition — activeLeadWhere() in
+// leadScope.ts (leadOrigin ∈ ACTIVE_LEAD, non-deleted, non-terminal status). Every
+// "active leads" surface (/reports/leaderboard, /reports, /team, /reports/
+// agent-performance, /profile, /team/[id]) now routes through it, so the SAME agent's
+// active count is identical everywhere. Closes the ~245-lead gap where untriaged
+// Master-Data imports were wrongly counted as active (the old `leadOrigin notIn COLD`).
+// (2) M1: manager-emailed Lost report switched from the DEAD `status=LOST` enum to
+// currentStatus ∈ LOST_STATUSES (3 → 175); Won/quality funnel likewise off the dead
+// status enum. (3) M3: Master-Data category/queue counts now apply the active table
+// filter → header badge == table rows under any filter. (4) M5: Revival adds a Fresh
+// chip for status-less cold leads → 'All' == Σ status chips. (5) Follow-up dates now
+// render in IST (Asia/Kolkata) on Leads/Revival/Revisit-Queue/Inbox — an IST-midnight
+// follow-up no longer shows as the prior day. All additive/display + count-only; no
+// data writes, dashboard count==drill preserved. Bump shell so clients load the fixes.
+const CACHE = "wcr-shell-v72";
 const SHELL = ["/login", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", (event) => {

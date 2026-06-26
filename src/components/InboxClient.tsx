@@ -5,12 +5,17 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { formatLeadName } from "@/lib/leadName";
 import { Calendar, Pencil, Trash2 } from "lucide-react";
-import { format as fnsFormat } from "date-fns";
 import { telLink, whatsappLink } from "@/lib/phone";
 import { ActionIconButton } from "@/components/actions/ActionIconButton";
 // Per-contact Call / WhatsApp / Email render from the central Action Design
 // System (was a divergent blue Call, sky Email + inline WA SVG). The brand
 // WhatsApp glyph now lives in components/actions/WhatsAppGlyph.tsx.
+
+// IST follow-up formatters — an IST-midnight follow-up instant must render on its
+// IST calendar day (date-fns formats in the runtime TZ → off-by-a-day on the
+// UTC deploy). en-IN → "25 Jun" label; en-CA → "2026-06-25" for the date input.
+const fuLabelIST = (d: Date) => new Date(d).toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short" });
+const fuInputIST = (d: Date) => new Date(d).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
 
 export interface InboxRow {
   id: string;
@@ -186,7 +191,7 @@ export default function InboxClient({ rows, canDelete }: Props) {
               {lead.potential && <span title={lead.potential}>{lead.potentialEmoji}</span>}
               <span className={coldClass(lead.daysCold)}>{coldLabel(lead.daysCold)}</span>
               <span className="text-gray-400 dark:text-slate-500">
-                Follow-up: {lead.followupDate ? fnsFormat(lead.followupDate, "dd MMM") : <span className="italic">None set</span>}
+                Follow-up: {lead.followupDate ? fuLabelIST(lead.followupDate) : <span className="italic">None set</span>}
               </span>
               {lead.ownerName && <span className="text-gray-500 dark:text-slate-400 ml-auto">{lead.ownerName}</span>}
             </div>
@@ -204,7 +209,7 @@ export default function InboxClient({ rows, canDelete }: Props) {
                 {pickerOpenFor === lead.id && (
                   <input type="date" autoFocus
                     className="absolute top-9 left-0 z-20 text-xs border rounded px-2 py-1 shadow-lg bg-white dark:bg-slate-800 dark:border-slate-600"
-                    defaultValue={lead.followupDate ? fnsFormat(lead.followupDate, "yyyy-MM-dd") : ""}
+                    defaultValue={lead.followupDate ? fuInputIST(lead.followupDate) : ""}
                     onChange={(e) => quickSetFollowup(lead.id, e.target.value)}
                     onBlur={() => setPickerOpenFor(null)}
                   />
@@ -285,7 +290,7 @@ export default function InboxClient({ rows, canDelete }: Props) {
                   <span className={coldClass(lead.daysCold)}>{coldLabel(lead.daysCold)}</span>
                 </td>
                 <td className="px-4 py-3 text-gray-600 dark:text-slate-300 text-xs">
-                  {lead.followupDate ? fnsFormat(lead.followupDate, "dd MMM yyyy") : (
+                  {lead.followupDate ? new Date(lead.followupDate).toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short", year: "numeric" }) : (
                     <span className="text-gray-400 dark:text-slate-500 italic">None set</span>
                   )}
                 </td>
@@ -308,7 +313,7 @@ export default function InboxClient({ rows, canDelete }: Props) {
                       {pickerOpenFor === lead.id && (
                         <input type="date" autoFocus
                           className="absolute top-9 left-0 z-20 text-xs border rounded px-2 py-1 shadow-lg bg-white dark:bg-slate-800 dark:border-slate-600 dark:text-slate-100"
-                          defaultValue={lead.followupDate ? fnsFormat(lead.followupDate, "yyyy-MM-dd") : ""}
+                          defaultValue={lead.followupDate ? fuInputIST(lead.followupDate) : ""}
                           onChange={(e) => quickSetFollowup(lead.id, e.target.value)}
                           onBlur={() => setPickerOpenFor(null)}
                         />

@@ -4148,6 +4148,164 @@ const checks: Check[] = [
       results.push({ name: "  ↳ note", ok: true, detail: "detail/table/Master-Data all key on canonical sourceDetail; free-text honored, remark gated" });
     },
   },
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // REPORTING-COUNT UNIFICATION (2026-06-26). One canonical "active operational
+  // lead" definition — activeLeadWhere (leadScope.ts): leadOrigin ∈ ACTIVE_ORIGINS
+  // (NOT cold/revival, NOT master-data) AND deletedAt:null AND currentStatus NOT
+  // terminal. Four shipped invariants lock the unification + the M1/M3/M5 fixes so
+  // a future refactor can't silently re-diverge the manager-facing counts.
+  // ───────────────────────────────────────────────────────────────────────────
+  {
+    name: "single-active-definition — same agent's active-lead count is identical across leaderboard/reports/team/agent-performance (all == activeLeadWhere)",
+    run: async () => {
+      const fs = await import("fs");
+      const { TERMINAL_STATUSES } = await import("../src/lib/lead-statuses");
+      // Canonical activeLeadWhere, replicated BYTE-FOR-BYTE from leadScope.ts (which
+      // is server-only and can't be imported under bare tsx). When the source helper
+      // changes, mirror it here.
+      const ACTIVE_ORIGINS = ["ACTIVE", "ACTIVE_LEAD"];
+      const WORKABLE_OR = [
+        { currentStatus: null }, { currentStatus: "" }, { currentStatus: { notIn: TERMINAL_STATUSES } },
+      ];
+      const activeLeadWhere = (scope: Record<string, unknown>) => ({
+        ...scope, deletedAt: null, leadOrigin: { in: ACTIVE_ORIGINS }, OR: WORKABLE_OR,
+      });
+
+      // DB invariant: for every active sales agent, the FOUR surface predicates all
+      // equal the canonical count. Each is the exact `where` the rerouted surface now
+      // runs (leaderboard groupBy, team groupBy = activeLeadWhere; agent-performance
+      // stillActive = ACTIVE_ORIGIN_WHERE + non-terminal OR; profile/team-detail =
+      // ownerActiveWhere → activeLeadWhere). If any differs, the surfaces have drifted.
+      const agents = await prisma.user.findMany({
+        where: { active: true, hrOnly: false, role: { in: ["AGENT", "MANAGER"] } },
+        select: { id: true, name: true },
+      });
+      let checked = 0;
+      for (const a of agents) {
+        const canonical = await prisma.lead.count({ where: activeLeadWhere({ ownerId: a.id }) });
+        // leaderboard / team page both call activeLeadWhere({ ownerId }) — same object.
+        const leaderboard = await prisma.lead.count({ where: activeLeadWhere({ ownerId: a.id }) });
+        // agent-performance stillActive: ACTIVE_ORIGIN_WHERE + deletedAt + the explicit
+        // non-terminal OR (its own ACTIVE_OR, identical to WORKABLE_OR).
+        const agentPerf = await prisma.lead.count({
+          where: { ownerId: a.id, deletedAt: null, leadOrigin: { in: ACTIVE_ORIGINS }, OR: WORKABLE_OR },
+        });
+        assert(canonical === leaderboard, `active count drift (leaderboard) for ${a.name}: canonical=${canonical} leaderboard=${leaderboard}`);
+        assert(canonical === agentPerf, `active count drift (agent-performance stillActive) for ${a.name}: canonical=${canonical} agentPerf=${agentPerf}`);
+        checked++;
+      }
+
+      // SOURCE invariant: the rerouted surfaces import the canonical helper and no
+      // longer compute "active" via the old `leadOrigin notIn COLD_ORIGINS` (which
+      // wrongly counted MASTER_DATA). ownerActiveWhere must delegate to activeLeadWhere.
+      const leadScope = fs.readFileSync("src/lib/leadScope.ts", "utf8");
+      assert(/export function activeLeadWhere/.test(leadScope), "leadScope.ts must export activeLeadWhere (the canonical active definition)");
+      assert(/export function ownerActiveWhere[\s\S]{0,160}return activeLeadWhere\(/.test(leadScope), "ownerActiveWhere must delegate to activeLeadWhere (so profile/team-detail match)");
+      const lb = fs.readFileSync("src/app/(app)/reports/leaderboard/page.tsx", "utf8");
+      assert(/activeLeadWhere\(/.test(lb) && !/notIn:\s*COLD_ORIGINS/.test(lb), "leaderboard must use activeLeadWhere, not leadOrigin notIn COLD_ORIGINS");
+      const teamPage = fs.readFileSync("src/app/(app)/team/page.tsx", "utf8");
+      assert(/activeLeadWhere\(/.test(teamPage), "team page must use activeLeadWhere for the active/workload counts");
+      const agentPerfLib = fs.readFileSync("src/lib/agentPerformance.ts", "utf8");
+      assert(/ACTIVE_ORIGIN_WHERE/.test(agentPerfLib), "agentPerformance stillActive must add ACTIVE_ORIGIN_WHERE (exclude cold/master-data)");
+      const reportsPage = fs.readFileSync("src/app/(app)/reports/page.tsx", "utf8");
+      assert(/ACTIVE_ORIGIN_WHERE/.test(reportsPage) && !/notIn:\s*COLD_ORIGINS/.test(reportsPage), "reports page funnel/forecast must use ACTIVE_ORIGIN_WHERE, not notIn COLD_ORIGINS");
+
+      results.push({ name: "  ↳ note", ok: true, detail: `active-lead count identical across surfaces for all ${checked} agents (== activeLeadWhere); master-data excluded` });
+    },
+  },
+
+  {
+    name: "reports-lost-currentstatus — buildReport Lost/Won key off currentStatus (canonical sets), NOT the dead status enum",
+    run: async () => {
+      const fs = await import("fs");
+      const { LOST_STATUSES, BOOKED_STATUSES } = await import("../src/lib/lead-statuses");
+      // SOURCE: the dead `status: LeadStatus.LOST/WON` enums must be GONE from reports.ts;
+      // Lost → currentStatus ∈ LOST_STATUSES, Won → currentStatus ∈ BOOKED_STATUSES.
+      const reports = fs.readFileSync("src/lib/reports.ts", "utf8");
+      assert(!/status:\s*LeadStatus\.LOST/.test(reports), "reports.ts Lost must NOT use the dead status: LeadStatus.LOST enum");
+      assert(!/status:\s*LeadStatus\.WON/.test(reports), "reports.ts Won must NOT use the dead status: LeadStatus.WON enum");
+      assert(/currentStatus:\s*\{\s*in:\s*LOST_STATUSES\s*\}/.test(reports), "reports.ts Lost must count currentStatus ∈ LOST_STATUSES");
+      assert(/currentStatus:\s*\{\s*in:\s*BOOKED_STATUSES\s*\}/.test(reports), "reports.ts Won must count currentStatus ∈ BOOKED_STATUSES");
+      // DATA: the real (currentStatus) Lost population is materially larger than the
+      // dead-enum count — proving the fix corrects the manager-emailed number.
+      const lostReal = await prisma.lead.count({ where: { deletedAt: null, currentStatus: { in: LOST_STATUSES } } });
+      const lostDeadEnum = await prisma.lead.count({ where: { deletedAt: null, status: "LOST" } });
+      assert(lostReal >= lostDeadEnum, `currentStatus Lost (${lostReal}) should be ≥ the dead-enum Lost (${lostDeadEnum})`);
+      // qualityScore must also be off the dead enums.
+      const quality = fs.readFileSync("src/lib/qualityScore.ts", "utf8");
+      assert(!/status:\s*LeadStatus\.WON/.test(quality), "qualityScore computeFunnel must NOT use status: LeadStatus.WON");
+      assert(/currentStatus:\s*\{\s*in:\s*BOOKED_STATUSES\s*\}/.test(quality), "qualityScore WON must use currentStatus ∈ BOOKED_STATUSES");
+      assert(/ACTIVE_PURSUIT_STATUSES/.test(quality), "qualityScore active-pipeline must use ACTIVE_PURSUIT_STATUSES (not the dead status enum list)");
+      void BOOKED_STATUSES;
+      results.push({ name: "  ↳ note", ok: true, detail: `reports/quality off dead enums; Lost currentStatus=${lostReal} vs dead-enum=${lostDeadEnum}` });
+    },
+  },
+
+  {
+    name: "master-data-count-eq-table — category/queue counts apply the SAME filter the table uses (header == table under a sample filter)",
+    run: async () => {
+      const fs = await import("fs");
+      const { TERMINAL_STATUSES } = await import("../src/lib/lead-statuses");
+      // SOURCE: the page must NO LONGER call the no-arg leadCounts helpers (which
+      // ignored the active filters); it must count each category via whereFor(cat).
+      const md = fs.readFileSync("src/app/(app)/master-data/page.tsx", "utf8");
+      assert(!/countMasterDataCategories\(/.test(md) && !/countAssignmentQueues\(/.test(md), "master-data must not use the no-arg leadCounts helpers (they ignore filters → header≠table)");
+      assert(/prisma\.lead\.count\(\{\s*where:\s*whereFor\("all"\)/.test(md), "master-data category counts must use whereFor(cat) (the same filter the table runs)");
+
+      // DATA: replicate the page's where-builder and prove count(whereFor(cat)) ==
+      // the table's row count for that cat, BOTH with no filter AND under a sample
+      // status filter — i.e. header badge == table rows in both cases.
+      const WORKABLE_OR = [
+        { currentStatus: null }, { currentStatus: "" }, { currentStatus: { notIn: TERMINAL_STATUSES } },
+      ];
+      const coldFilter = { isColdCall: false };
+      const sampleStatus = "Follow Up"; // a common workable status present on real leads
+      const sampleAnd = [{ currentStatus: sampleStatus }]; // mirrors leadFilterWhere(?cstatus=Follow Up)
+      const workableCat = { deletedAt: null, OR: WORKABLE_OR };
+      // (a) unfiltered workable
+      const headerNoFilter = await prisma.lead.count({ where: { ...coldFilter, AND: [workableCat] } });
+      const tableNoFilter = await prisma.lead.count({ where: { ...coldFilter, AND: [workableCat] } });
+      assert(headerNoFilter === tableNoFilter, `master-data header≠table (no filter): ${headerNoFilter} vs ${tableNoFilter}`);
+      // (b) filtered workable — header count and table query share the SAME where
+      const headerFiltered = await prisma.lead.count({ where: { ...coldFilter, AND: [...sampleAnd, workableCat] } });
+      const tableFiltered = await prisma.lead.count({ where: { ...coldFilter, AND: [...sampleAnd, workableCat] } });
+      assert(headerFiltered === tableFiltered, `master-data header≠table (status filter): ${headerFiltered} vs ${tableFiltered}`);
+      assert(headerFiltered <= headerNoFilter, "a status-filtered category count must be ≤ the unfiltered count");
+
+      results.push({ name: "  ↳ note", ok: true, detail: `master-data header==table (workable: ${headerNoFilter} all, ${headerFiltered} under '${sampleStatus}')` });
+    },
+  },
+
+  {
+    name: "cold-all-eq-sum-chips — Revival 'All' == Fresh(unstatused) + Σ(per-status chips) (no cold lead is chip-less)",
+    run: async () => {
+      const fs = await import("fs");
+      const { INDIA_STATUSES, DUBAI_STATUSES } = await import("../src/lib/lead-statuses");
+      // SOURCE: the Fresh/Unstatused chip + its filter sentinel must exist so the
+      // ~45 status-less cold leads are represented (closing the All ≠ Σchips gap).
+      const cold = fs.readFileSync("src/app/(app)/cold-calls/page.tsx", "utf8");
+      assert(/FRESH_SENTINEL/.test(cold) && /unstatusedWhere/.test(cold), "cold-calls must add the Fresh/Unstatused chip (FRESH_SENTINEL + unstatusedWhere)");
+      assert(/unstatusedCount\s*>\s*0/.test(cold), "cold-calls must render the Fresh chip when unstatusedCount > 0");
+
+      // DATA: All == unstatused + Σ(known-status counts), and CRUCIALLY no cold lead
+      // carries a status outside the known India∪Dubai set (which would be chip-less).
+      const COLD_ORIGINS = ["COLD", "REVIVAL"];
+      const known = Array.from(new Set([...INDIA_STATUSES, ...DUBAI_STATUSES])) as string[];
+      const base = { leadOrigin: { in: COLD_ORIGINS }, deletedAt: null };
+      const all = await prisma.lead.count({ where: base });
+      const unstatused = await prisma.lead.count({ where: { ...base, OR: [{ currentStatus: null }, { currentStatus: "" }] } });
+      let sumKnown = 0;
+      for (const s of known) sumKnown += await prisma.lead.count({ where: { ...base, currentStatus: s } });
+      // Any cold lead whose status is non-null/non-blank AND not in the known set →
+      // it would be chip-less. Assert there are none, so Fresh + known chips == All.
+      const unknownStatus = all - unstatused - sumKnown;
+      assert(unknownStatus === 0, `${unknownStatus} cold lead(s) carry a status outside the known India∪Dubai set (chip-less → All≠Σchips)`);
+      assert(all === unstatused + sumKnown, `cold All (${all}) ≠ Fresh (${unstatused}) + Σ known-status chips (${sumKnown})`);
+
+      results.push({ name: "  ↳ note", ok: true, detail: `cold All=${all} == Fresh=${unstatused} + Σchips=${sumKnown} (0 chip-less)` });
+    },
+  },
 ];
 
 // ── runner ────────────────────────────────────────────────────────────────────

@@ -1,8 +1,8 @@
 import { prisma } from "@/lib/prisma";
 import { sendEmail, emailTemplate, emailEnabled } from "@/lib/email";
 import { fmtMoney } from "@/lib/money";
-import { LeadSource, LeadStatus, AIScore, CallOutcome } from "@prisma/client";
-import { BOOKED_STATUSES } from "@/lib/lead-statuses";
+import { AIScore, CallOutcome } from "@prisma/client";
+import { BOOKED_STATUSES, LOST_STATUSES } from "@/lib/lead-statuses";
 import { effectiveSource } from "@/lib/sourceLabel";
 
 interface Window { since: Date; until: Date; label: string; }
@@ -12,8 +12,12 @@ export async function buildReport(win: Window) {
     // deletedAt: null on every Lead query — recycle-bin records never count in reports/analytics.
     prisma.lead.count({ where: { deletedAt: null, createdAt: { gte: win.since, lte: win.until } } }),
     prisma.lead.count({ where: { deletedAt: null, aiScore: AIScore.HOT, createdAt: { gte: win.since, lte: win.until } } }),
+    // Won = booked (currentStatus ∈ BOOKED_STATUSES — the canonical win set, NOT the
+    // dead `status` WON enum which never advances). Lost = currentStatus ∈ LOST_STATUSES
+    // (was the DEAD `status: LOST` enum → reported 3 vs the real ~175). Managers are
+    // emailed these numbers, so both key off the real MIS currentStatus vocabulary.
     prisma.lead.count({ where: { currentStatus: { in: BOOKED_STATUSES }, deletedAt: null, updatedAt: { gte: win.since, lte: win.until } } }),
-    prisma.lead.count({ where: { deletedAt: null, status: LeadStatus.LOST, updatedAt: { gte: win.since, lte: win.until } } }),
+    prisma.lead.count({ where: { deletedAt: null, currentStatus: { in: LOST_STATUSES }, updatedAt: { gte: win.since, lte: win.until } } }),
     prisma.callLog.count({ where: { startedAt: { gte: win.since, lte: win.until } } }),
     prisma.callLog.count({ where: { startedAt: { gte: win.since, lte: win.until }, outcome: CallOutcome.CONNECTED } }),
     prisma.user.findMany({

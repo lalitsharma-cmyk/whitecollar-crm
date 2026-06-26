@@ -3,7 +3,7 @@ import { requireUser } from "@/lib/auth";
 import { normalizeTeam } from "@/lib/teamRouting";
 import { Role } from "@prisma/client";
 import { CLOSING_STATUSES, BOOKED_STATUSES } from "@/lib/lead-statuses";
-import { COLD_ORIGINS } from "@/lib/leadScope";
+import { activeLeadWhere, ACTIVE_ORIGIN_WHERE } from "@/lib/leadScope";
 import { subDays, startOfDay, format } from "date-fns";
 import Link from "next/link";
 import { redirect } from "next/navigation";
@@ -72,32 +72,34 @@ export default async function LeaderboardPage() {
       _count: { _all: true },
     }),
 
-    // Leads assigned per agent (all time — scoped to visible team)
+    // Active leads per agent (CANONICAL activeLeadWhere — ACTIVE_LEAD origin,
+    // non-deleted, non-terminal status). Identical to /reports, /team,
+    // /reports/agent-performance, /profile, /team/[id] for the same agent.
     prisma.lead.groupBy({
       by: ["ownerId"],
-      where: { ownerId: { in: agentIds }, deletedAt: null, leadOrigin: { notIn: COLD_ORIGINS } },
+      where: activeLeadWhere({ ownerId: { in: agentIds } }),
       _count: { _all: true },
     }),
 
-    // Leads qualified+ per agent
+    // Leads qualified+ per agent (ACTIVE-origin book; own status filter)
     prisma.lead.groupBy({
       by: ["ownerId"],
       where: {
         ownerId: { in: agentIds },
         deletedAt: null,
-        leadOrigin: { notIn: COLD_ORIGINS },
+        ...ACTIVE_ORIGIN_WHERE,
         currentStatus: { in: QUALIFIED_STATUSES },
       },
       _count: { _all: true },
     }),
 
-    // Leads won per agent
+    // Leads won per agent (ACTIVE-origin book; booked status)
     prisma.lead.groupBy({
       by: ["ownerId"],
       where: {
         ownerId: { in: agentIds },
         deletedAt: null,
-        leadOrigin: { notIn: COLD_ORIGINS },
+        ...ACTIVE_ORIGIN_WHERE,
         currentStatus: { in: BOOKED_STATUSES },
       },
       _count: { _all: true },
@@ -173,7 +175,7 @@ export default async function LeaderboardPage() {
               <th>Agent Name</th>
               <th>Team</th>
               <th className="text-center">Calls Made</th>
-              <th className="text-center">Leads Assigned</th>
+              <th className="text-center">Active Leads</th>
               <th className="text-center">Qualified</th>
               <th className="text-center">Won</th>
               <th className="text-center">Conversion %</th>
@@ -207,8 +209,8 @@ export default async function LeaderboardPage() {
           </tbody>
         </table>
         <div className="text-[10px] text-gray-500 p-3">
-          Calls Made = last 90 days. Leads Assigned, Qualified, Won = all time for this scope.
-          Conversion % = Won ÷ Leads Assigned × 100.
+          Calls Made = last 90 days. Active Leads (canonical: live, non-cold, non-terminal),
+          Qualified, Won = all time for this scope. Conversion % = Won ÷ Active Leads × 100.
         </div>
       </div>
     </>

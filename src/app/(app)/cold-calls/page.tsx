@@ -11,7 +11,7 @@ import { displayBudget } from "@/lib/budgetParse";
 import { formatLeadName } from "@/lib/leadName";
 import { contactActivityByLeadToday } from "@/lib/followupGate";
 import { CONTACT_ACTIVITY_TYPES } from "@/lib/dashboardWidgets";
-import { startOfDay, startOfWeek, formatDistanceToNow, format as fnsFormat } from "date-fns";
+import { startOfDay, startOfWeek, formatDistanceToNow } from "date-fns";
 import Link from "next/link";
 import ColdDataAdminControls from "@/components/ColdDataAdminControls";
 import HiddenGemsBanner, { type HiddenGem } from "@/components/HiddenGemsBanner";
@@ -108,14 +108,20 @@ export default async function ColdDataPage({ searchParams }: { searchParams: Pro
   }
   const sharedAnd = leadFilterWhere(filterSp);
 
-  // Status-tab filter — "all" shows everything, "unassigned" is an admin shortcut.
-  // Uses actual status text (e.g., "Fresh Lead", "Follow Up").
+  // Status-tab filter — "all" shows everything, "unassigned" is an admin shortcut,
+  // "__fresh__" = leads with NO status yet (null/blank) so Σ(status chips) == All
+  // even though ~45 cold leads carry no MIS status (they'd otherwise get no chip).
+  // Uses actual status text (e.g., "Fresh Lead", "Follow Up") for the rest.
+  const FRESH_SENTINEL = "__fresh__";
+  const unstatusedWhere: Prisma.LeadWhereInput = { OR: [{ currentStatus: null }, { currentStatus: "" }] };
   const statusWhere: Prisma.LeadWhereInput =
     statusFilter === "unassigned"
       ? unassigned
-      : statusFilter !== "all" && (ALL_POSSIBLE_STATUSES as Set<string>).has(statusFilter)
-        ? { currentStatus: statusFilter }
-        : {};
+      : statusFilter === FRESH_SENTINEL
+        ? unstatusedWhere
+        : statusFilter !== "all" && (ALL_POSSIBLE_STATUSES as Set<string>).has(statusFilter)
+          ? { currentStatus: statusFilter }
+          : {};
 
   // allCold = everything in scope (for the "All" tab + total). where = the active view.
   const allCold: Prisma.LeadWhereInput = { AND: [baseScope, originCold] };
@@ -166,6 +172,7 @@ export default async function ColdDataPage({ searchParams }: { searchParams: Pro
     totalCount,
     filteredCount,
     unassignedCount,
+    unstatusedCount,
     agents,
     convertedTodayCount,
     hiddenGemsRaw,
@@ -187,6 +194,9 @@ export default async function ColdDataPage({ searchParams }: { searchParams: Pro
     prisma.lead.count({ where: allCold }),
     prisma.lead.count({ where }),
     isAdminOrMgr ? prisma.lead.count({ where: { AND: [originCold, unassigned, { deletedAt: null }] } }) : Promise.resolve(0),
+    // Fresh/Unstatused chip count — cold leads with NO MIS status (null/blank) in
+    // the current filter set. Mirrors the per-status chip recipe so All == Σ chips.
+    prisma.lead.count({ where: { AND: [baseScope, originCold, { deletedAt: null }, ...sharedAnd, unstatusedWhere] } }),
     isAdminOrMgr
       ? prisma.user.findMany({ where: { active: true, hrOnly: false, role: { in: ["AGENT", "MANAGER", "ADMIN"] } }, orderBy: { name: "asc" } })
       : Promise.resolve([]),
@@ -343,11 +353,13 @@ export default async function ColdDataPage({ searchParams }: { searchParams: Pro
       lastTouched: l.lastTouchedAt ? formatDistanceToNow(l.lastTouchedAt, { addSuffix: false }) : null,
       lastTouchedAt: l.lastTouchedAt ? l.lastTouchedAt.toISOString() : null,
       todoNext: l.todoNext ?? null,
-      followupDate: l.followupDate ? fnsFormat(l.followupDate, "dd MMM") : null,
-      followupRaw: l.followupDate ? fnsFormat(l.followupDate, "yyyy-MM-dd") : null,
+      // IST-rendered (matches /leads + the adjacent enquiryDate) — an IST-midnight
+      // follow-up was showing as the prior day under date-fns' server-UTC format.
+      followupDate: l.followupDate ? new Date(l.followupDate).toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short" }) : null,
+      followupRaw: l.followupDate ? new Date(l.followupDate).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" }) : null,
       enquiryDate: l.createdAt ? new Date(l.createdAt).toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short", year: "2-digit" }) : null,
       enquiryTime: l.createdAt ? new Date(l.createdAt).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hour12: true }) : null,
-      enquiryRaw: l.createdAt ? fnsFormat(l.createdAt, "yyyy-MM-dd") : null,
+      enquiryRaw: l.createdAt ? new Date(l.createdAt).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" }) : null,
       city: l.city ?? null,
       whenCanInvest: l.whenCanInvest ?? null,
       remarks: l.remarks ? l.remarks.slice(0, 120) : null,
@@ -474,6 +486,14 @@ export default async function ColdDataPage({ searchParams }: { searchParams: Pro
                   {isAdminOrMgr && (
                     <Link href={chipHref({ status: statusFilter === "unassigned" ? null : "unassigned" })} className={`${base} ${statusFilter === "unassigned" ? "bg-amber-600 text-white border-amber-600" : "bg-amber-50 border-amber-300 text-amber-800 dark:bg-amber-950/30 dark:border-amber-700 dark:text-amber-200"}`}>
                       ⚠ Unassigned <span className={`px-1 rounded text-[10px] ${statusFilter === "unassigned" ? "bg-white/25" : "bg-black/10 dark:bg-white/10"}`}>{unassignedCount}</span>
+                    </Link>
+                  )}
+                  {/* Fresh / Unstatused chip — the ~45 cold leads with no MIS status yet.
+                      Closes the "All ≠ Σ status chips" gap (those leads get no per-status
+                      chip). Only shown when there are any in the current filter set. */}
+                  {unstatusedCount > 0 && (
+                    <Link href={chipHref({ status: statusFilter === FRESH_SENTINEL ? null : FRESH_SENTINEL })} className={`${base} ${statusFilter === FRESH_SENTINEL ? on : off}`}>
+                      Fresh <span className={`px-1 rounded text-[10px] ${statusFilter === FRESH_SENTINEL ? "bg-white/25" : "bg-black/10 dark:bg-white/10"}`}>{unstatusedCount}</span>
                     </Link>
                   )}
                   {statusChips.map(s => {

@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { LeadSource, AIScore, FundReadiness, InvestTimeline, Prisma } from "@prisma/client";
-import { formatDistanceToNow, format as fnsFormat } from "date-fns";
+import { formatDistanceToNow } from "date-fns";
 import Link from "next/link";
 import { requireUser } from "@/lib/auth";
 import LeadFilters from "@/components/LeadFilters";
@@ -906,13 +906,17 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
             lastTouched: l.lastTouchedAt ? formatDistanceToNow(l.lastTouchedAt, { addSuffix: false }) : null,
             lastTouchedAt: l.lastTouchedAt ? l.lastTouchedAt.toISOString() : null,
             todoNext:      l.todoNext ?? null,
-            followupDate:  l.followupDate ? fnsFormat(l.followupDate, "dd MMM") : null,
-            followupRaw:   l.followupDate ? fnsFormat(l.followupDate, "yyyy-MM-dd") : null,
+            // IST-rendered (not server-UTC). An IST-midnight follow-up instant
+            // (e.g. 25 Jun 00:00 IST = 24 Jun 18:30Z) was rendering as the PRIOR
+            // day under date-fns' UTC format ("24 Jun"). en-IN → display label,
+            // en-CA → the canonical YYYY-MM-DD the date-input + snooze prefill use.
+            followupDate:  l.followupDate ? new Date(l.followupDate).toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short" }) : null,
+            followupRaw:   l.followupDate ? new Date(l.followupDate).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" }) : null,
             // Enquiry date — when the client came in. Imports set createdAt from the
             // sheet's Date column; manually-created leads get the creation date.
             enquiryDate:   l.createdAt ? new Date(l.createdAt).toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short", year: "2-digit" }) : null,
             enquiryTime:   l.createdAt ? new Date(l.createdAt).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hour12: true }) : null,
-            enquiryRaw:    l.createdAt ? fnsFormat(l.createdAt, "yyyy-MM-dd") : null,
+            enquiryRaw:    l.createdAt ? new Date(l.createdAt).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" }) : null,
             city:          l.city ?? null,
             whenCanInvest: l.whenCanInvest ?? null,
             remarks:       l.remarks ? l.remarks.slice(0, 120) : null,

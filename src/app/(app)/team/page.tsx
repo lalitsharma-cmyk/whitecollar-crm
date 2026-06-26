@@ -2,8 +2,8 @@ import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/auth";
 import { acefoneEnabled } from "@/lib/acefone";
 import { fmtMoneyDual } from "@/lib/money";
-import { SUPPRESSED_STATUSES } from "@/lib/lead-statuses";
-import { COLD_ORIGINS } from "@/lib/leadScope";
+import { TERMINAL_STATUSES } from "@/lib/lead-statuses";
+import { activeLeadWhere, ACTIVE_ORIGINS } from "@/lib/leadScope";
 import AcefoneAgentIdEdit from "@/components/AcefoneAgentIdEdit";
 import WhatsAppNumberEdit from "@/components/WhatsAppNumberEdit";
 import ManagerPicker from "@/components/ManagerPicker";
@@ -36,17 +36,16 @@ export default async function TeamPage() {
     // Driven off the canonical hrOnly flag, not a name. Admins stay (cross-team owners).
     prisma.user.findMany({
       where: { active: true, hrOnly: false },
-      include: { _count: { select: { ownedLeads: { where: { deletedAt: null, leadOrigin: { notIn: COLD_ORIGINS } } }, callLogs: true } } },
+      // "Active leads" column — CANONICAL active envelope (ACTIVE_LEAD origin,
+      // non-deleted, non-terminal status). Identical to the Workload column and
+      // every reporting surface for the same agent.
+      include: { _count: { select: { ownedLeads: { where: { deletedAt: null, leadOrigin: { in: ACTIVE_ORIGINS }, OR: [{ currentStatus: null }, { currentStatus: "" }, { currentStatus: { notIn: TERMINAL_STATUSES } }] } }, callLogs: true } } },
       orderBy: [{ team: "asc" }, { name: "asc" }],
     }),
     prisma.lead.groupBy({
       by: ["ownerId"],
-      where: {
-        ownerId: { not: null },
-        deletedAt: null,
-        leadOrigin: { notIn: COLD_ORIGINS },
-        currentStatus: { notIn: SUPPRESSED_STATUSES },
-      },
+      // Workload — same canonical active envelope, scoped to owned leads.
+      where: activeLeadWhere({ ownerId: { not: null } }),
       _count: { _all: true },
     }),
     prisma.$queryRaw<PipelineRow[]>`

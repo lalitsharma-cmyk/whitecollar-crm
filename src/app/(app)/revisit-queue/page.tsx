@@ -4,7 +4,7 @@ import { leadScopeWhere } from "@/lib/leadScope";
 import { TERMINAL_STATUSES, statusColor, leadCategory } from "@/lib/lead-statuses";
 import { formatLeadName } from "@/lib/leadName";
 import { lastMeaningfulRemark } from "@/lib/needSnapshot";
-import { formatDistanceToNow, format as fnsFormat } from "date-fns";
+import { formatDistanceToNow } from "date-fns";
 import Link from "next/link";
 
 export const dynamic = "force-dynamic";
@@ -146,7 +146,7 @@ export default async function RevisitQueuePage({
                     </td>
                     <td className="px-3 py-2 whitespace-nowrap">
                       {l.followupDate
-                        ? fnsFormat(l.followupDate, "dd MMM yyyy")
+                        ? new Date(l.followupDate).toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short", year: "numeric" })
                         : "—"}
                     </td>
                     <td className="px-3 py-2 whitespace-nowrap">{l.owner?.name ?? <span className="text-gray-400">Unassigned</span>}</td>

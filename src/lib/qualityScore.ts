@@ -30,9 +30,9 @@ import {
   AIScore,
   BantStatus,
   CallOutcome,
-  LeadStatus,
   Mood,
 } from "@prisma/client";
+import { BOOKED_STATUSES, ACTIVE_PURSUIT_STATUSES } from "@/lib/lead-statuses";
 
 // ────────────────────────────────────────────────────────────────────
 // PUBLIC TYPES
@@ -219,25 +219,19 @@ async function computeFunnel(userId: string, start: Date): Promise<number> {
         updatedAt: { gte: start },
       },
     }),
+    // WON in window — currentStatus ∈ BOOKED_STATUSES (the canonical win set; the
+    // dead `status` WON enum never advances, so this previously counted 0 for
+    // everyone and pinned won_vs_pipeline to 0).
     prisma.lead.count({
-      where: { ownerId: userId, status: LeadStatus.WON, updatedAt: { gte: start } },
+      where: { ownerId: userId, currentStatus: { in: BOOKED_STATUSES }, updatedAt: { gte: start } },
     }),
+    // Active pipeline (snapshot, pre-booking) — currentStatus ∈ ACTIVE_PURSUIT_STATUSES,
+    // the canonical "still being worked" set (replaces the dead status enum list).
     prisma.lead.count({
-      where: {
-        ownerId: userId,
-        status: {
-          in: [
-            LeadStatus.CONTACTED,
-            LeadStatus.QUALIFIED,
-            LeadStatus.SITE_VISIT,
-            LeadStatus.NEGOTIATION,
-            LeadStatus.BOOKING_DONE,
-          ],
-        },
-      },
+      where: { ownerId: userId, currentStatus: { in: ACTIVE_PURSUIT_STATUSES } },
     }),
     prisma.lead.findMany({
-      where: { ownerId: userId, status: LeadStatus.WON, updatedAt: { gte: start } },
+      where: { ownerId: userId, currentStatus: { in: BOOKED_STATUSES }, updatedAt: { gte: start } },
       select: { budgetMin: true, budgetCurrency: true },
     }),
   ]);

@@ -20,7 +20,6 @@ import { PROPERTY_TYPES } from "@/lib/propertyType";
 import { getAvailableMediums } from "@/lib/mediumManager";
 import { displayBudget } from "@/lib/budgetParse";
 import { cleanNeedSnapshot, lastMeaningfulRemark } from "@/lib/needSnapshot";
-import { countMasterDataCategories, countAssignmentQueues } from "@/lib/leadCounts";
 
 // ── Master Data V3 — Admin/Super-Admin OPERATIONS CONSOLE (not a dashboard) ──
 // Excel-style ops sheet for assignment + routing. Reporting (By Team/Agent/Status/
@@ -92,11 +91,25 @@ export default async function MasterDataPage({ searchParams }: { searchParams: P
   const whereFor = (c: Cat): Prisma.LeadWhereInput => ({ ...coldFilter, AND: [...baseAnd, catWhere(c)] });
   const where = whereFor(cat);
 
-  // Category-tab counts + operations counters (unassigned agent / awaiting team).
-  // Using unified leadCounts module for consistency across the CRM.
-  const categories = await countMasterDataCategories();
-  const { unassigned: unassignedAgent, awaitingTeam } = await countAssignmentQueues();
-  const catCount: Record<Cat, number> = { all: categories.all, workable: categories.workable, closed: categories.closed, lost: categories.lost, deleted: categories.deleted, archived: categories.archived };
+  // ── Category-tab counts + operations counters — FILTER-AWARE (M3 fix) ────────
+  // Each category count applies the SAME baseAnd (leadFilterWhere(sp) + ?batch) the
+  // table query uses, so the tab badge == the rows the table shows under any filter.
+  // Previously these called the no-arg leadCounts helpers, which ignored the active
+  // filters → header (217) ≠ table. The queue counters (unassigned agent / awaiting
+  // team) likewise honor the current filter set.
+  const queueUnassignedWhere: Prisma.LeadWhereInput = { ...coldFilter, AND: [...baseAnd, { deletedAt: null, ownerId: null, OR: WORKABLE_OR }] };
+  const queueAwaitingWhere: Prisma.LeadWhereInput = { ...coldFilter, AND: [...baseAnd, { deletedAt: null, forwardedTeam: null, OR: WORKABLE_OR }] };
+  const [cAll, cWorkable, cClosed, cLost, cDeleted, cArchived, unassignedAgent, awaitingTeam] = await Promise.all([
+    prisma.lead.count({ where: whereFor("all") }),
+    prisma.lead.count({ where: whereFor("workable") }),
+    prisma.lead.count({ where: whereFor("closed") }),
+    prisma.lead.count({ where: whereFor("lost") }),
+    prisma.lead.count({ where: whereFor("deleted") }),
+    prisma.lead.count({ where: whereFor("archived") }),
+    prisma.lead.count({ where: queueUnassignedWhere }),
+    prisma.lead.count({ where: queueAwaitingWhere }),
+  ]);
+  const catCount: Record<Cat, number> = { all: cAll, workable: cWorkable, closed: cClosed, lost: cLost, deleted: cDeleted, archived: cArchived };
 
   // Load the FULL category set (no server pagination) — the table sorts /
   // filters / paginates client-side, Excel-style. Capped for safety.
