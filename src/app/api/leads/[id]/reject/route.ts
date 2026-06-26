@@ -93,13 +93,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       rejectionNote: note,
       rejectedAt: now,
       rejectedById: me.id,
-      // Record the owner-at-rejection as the explicit "Previous Owner" for the
-      // Lead-view display + permanent audit. ownerId is INTENTIONALLY retained so
-      // per-agent Rejected/Lost reporting (groupBy ownerId) stays accurate; the lead
-      // is already out of active work via its terminal status. A hard-unassign would
-      // need every rejected/lost report groupBy re-pointed + a data migration —
-      // deferred (see DEV_TRACKER "Rejected-Lead").
+      // UNASSIGN on reject (Lalit's final rule 2026-06-27): the lead becomes
+      // Unassigned and the owner-at-rejection is preserved as previousOwnerId for the
+      // "Previous Owner" display + permanent audit. Per-agent Rejected/Lost reporting
+      // attributes via previousOwnerId (agentPerformance), so attribution is kept; the
+      // Assignment-history rows already hold the full ownership timeline.
       previousOwnerId: lead.ownerId,
+      ownerId: null,
+      assignedAt: null,
       followupDate: null,
       followupReminderSentAt: null,
       lastTouchedAt: now,

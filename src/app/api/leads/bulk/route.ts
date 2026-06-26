@@ -156,7 +156,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Invalid reason" }, { status: 400 });
     }
     const rows = await prisma.lead.findMany({
-      where: { id: { in: ids }, ...scope },
+      // Skip already-rejected leads — re-stamping them would overwrite their
+      // preserved previousOwnerId with a now-null ownerId (Lalit 2026-06-27).
+      where: { id: { in: ids }, ...scope, rejectedAt: null },
       select: { id: true },
     });
     const visibleIds = rows.map(r => r.id);
@@ -176,6 +178,16 @@ export async function POST(req: NextRequest) {
         lastTouchedAt: now,
       },
     });
+    // Hard-unassign each rejected lead, preserving its OWN owner-at-rejection as
+    // previousOwnerId (per-row column copy — updateMany can't reference a sibling
+    // column). Mirrors the single-lead reject (Lalit 2026-06-27).
+    if (visibleIds.length) {
+      await prisma.$executeRawUnsafe(
+        `UPDATE "Lead" SET "previousOwnerId" = "ownerId", "ownerId" = NULL, "assignedAt" = NULL
+         WHERE "id" = ANY($1::text[]) AND "ownerId" IS NOT NULL`,
+        visibleIds,
+      );
+    }
     // Best-effort timeline entries — failures don't block the bulk update.
     for (const id of visibleIds) {
       try {

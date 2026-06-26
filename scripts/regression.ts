@@ -3184,13 +3184,20 @@ const checks: Check[] = [
       const path = await import("path");
       const reject = fs.readFileSync(path.join(process.cwd(), "src/app/api/leads/[id]/reject/route.ts"), "utf8");
       assert(/previousOwnerId:\s*lead\.ownerId/.test(reject), "reject must record previousOwnerId = lead.ownerId");
+      assert(/ownerId:\s*null/.test(reject), "reject must HARD-UNASSIGN the lead (ownerId: null)");
       assert(/lead\.rejectedAt[\s\S]{0,140}already rejected/i.test(reject), "reject must block an already-rejected lead (double-reject guard)");
       const react = fs.readFileSync(path.join(process.cwd(), "src/app/api/leads/[id]/reactivate/route.ts"), "utf8");
       assert(/currentStatus:\s*"Fresh Lead"/.test(react) && /rejectedAt:\s*null/.test(react),
         "reactivate must reset currentStatus to Fresh Lead + clear rejectedAt");
+      // Per-agent Rejected/Lost reporting must attribute UNASSIGNED rejected leads via
+      // previousOwnerId — else nulling ownerId on reject would zero those agents' counts.
+      const perf = fs.readFileSync(path.join(process.cwd(), "src/lib/agentPerformance.ts"), "utf8");
+      assert(/applyGroupP/.test(perf) && /previousOwnerId/.test(perf),
+        "agentPerformance must attribute rejected/lost leads via previousOwnerId (applyGroupP)");
       const page = fs.readFileSync(path.join(process.cwd(), "src/app/(app)/leads/[id]/page.tsx"), "utf8");
       assert(/REJECTED/.test(page) && /LeadReactivateButton/.test(page),
         "lead page must show the REJECTED badge + a Reactivate button for a rejected lead");
+      assert(/Previous Owner/.test(page), "lead page must display the Previous Owner for a rejected (unassigned) lead");
       const probe = await prisma.lead.findFirst({ select: { id: true, previousOwnerId: true } });
       assert(probe === null || "previousOwnerId" in probe, "Lead.previousOwnerId column must exist in prod");
     },

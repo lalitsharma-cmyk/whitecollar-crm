@@ -177,7 +177,10 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
   }
 
   // Resolve owner names for any ownerId-change rows in the Change-History card.
-  const ownerIdVals = [...new Set(lead.fieldHistory.filter((h) => h.field === "ownerId").flatMap((h) => [h.oldValue, h.newValue]).filter((v): v is string => !!v))];
+  const ownerIdVals = [...new Set([
+    ...lead.fieldHistory.filter((h) => h.field === "ownerId").flatMap((h) => [h.oldValue, h.newValue]),
+    lead.previousOwnerId, // resolve the rejected-lead "Previous Owner" name too
+  ].filter((v): v is string => !!v))];
   const ownerNameRows = ownerIdVals.length ? await prisma.user.findMany({ where: { id: { in: ownerIdVals } }, select: { id: true, name: true } }) : [];
   const ownerNames: Record<string, string> = Object.fromEntries(ownerNameRows.map((u) => [u.id, u.name]));
 
@@ -1317,6 +1320,14 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="inline-flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded-full bg-red-100 text-red-700 border border-red-200 dark:bg-red-900/30 dark:text-red-300 dark:border-red-700">🟥 REJECTED</span>
                   {lead.rejectionReason && <span className="text-xs text-gray-600 dark:text-slate-300">{lead.rejectionReason.replace(/_/g, " ").toLowerCase()}</span>}
+                </div>
+                {/* Hard-unassigned on reject (Lalit 2026-06-27): the current assignee
+                    is cleared, the owner-at-rejection is preserved as Previous Owner. */}
+                <div className="text-[11px] text-gray-600 dark:text-slate-300">
+                  Current Assignee: <span className="font-semibold text-gray-800 dark:text-slate-100">Unassigned</span>
+                  {lead.previousOwnerId && (
+                    <> · Previous Owner: <span className="font-semibold text-gray-800 dark:text-slate-100">{ownerNames[lead.previousOwnerId] ?? "—"}</span></>
+                  )}
                 </div>
                 <div className="text-[11px] text-gray-500 dark:text-slate-400">Reactivate to return this lead to the working board — only then can it be reassigned.</div>
                 {/* Reactivate-before-reassign: the reassign control is hidden while

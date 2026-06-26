@@ -442,6 +442,7 @@ export async function buildAgentReport(range: DateRange, scope: ReportScope): Pr
   // Deleted excluded throughout.
   const [
     rejectedRows, closedRows, lostRows, activeRows, awaitingRows, noFuRows,
+    rejectedPrevRows, lostPrevRows,
   ] = await Promise.all([
     prisma.lead.groupBy({
       by: ["ownerId"],
@@ -488,10 +489,26 @@ export async function buildAgentReport(range: DateRange, scope: ReportScope): Pr
       },
       _count: { _all: true },
     }),
+    // Rejected/Lost leads are UNASSIGNED on reject (ownerId→null) yet keep the
+    // owner-at-rejection as previousOwnerId. Attribute those unassigned rows to the
+    // previous owner so per-agent Rejected/Lost stays accurate after the hard-unassign
+    // (Lalit 2026-06-27). The owner-scoped rows above still catch any not-yet-migrated.
+    prisma.lead.groupBy({
+      by: ["previousOwnerId"],
+      where: { ownerId: null, previousOwnerId: { in: agentIds }, deletedAt: null, rejectedAt: win },
+      _count: { _all: true },
+    }),
+    prisma.lead.groupBy({
+      by: ["previousOwnerId"],
+      where: { ownerId: null, previousOwnerId: { in: agentIds }, deletedAt: null, currentStatus: { in: LOST_STATUSES } },
+      _count: { _all: true },
+    }),
   ]);
   applyGroup(byId, rejectedRows, (m, n) => (m.rejected = n));
+  applyGroupP(byId, rejectedPrevRows, (m, n) => (m.rejected += n));
   applyGroup(byId, closedRows, (m, n) => (m.closedWon = n));
   applyGroup(byId, lostRows, (m, n) => (m.lost = n));
+  applyGroupP(byId, lostPrevRows, (m, n) => (m.lost += n));
   applyGroup(byId, activeRows, (m, n) => (m.stillActive = n));
   applyGroup(byId, awaitingRows, (m, n) => (m.awaitingFollowup = n));
   applyGroup(byId, noFuRows, (m, n) => (m.noFollowup = n));
@@ -623,6 +640,20 @@ function applyGroup(
   for (const r of rows) {
     if (!r.ownerId) continue;
     const m = byId.get(r.ownerId);
+    if (m) set(m, r._count._all);
+  }
+}
+// Same as applyGroup but keyed on previousOwnerId — used to attribute UNASSIGNED
+// rejected/lost leads (ownerId null) back to their owner-at-rejection so per-agent
+// Rejected/Lost reporting stays accurate after the reject hard-unassign.
+function applyGroupP(
+  byId: Map<string, AgentMetrics>,
+  rows: Array<{ previousOwnerId: string | null; _count: { _all: number } }>,
+  set: (m: AgentMetrics, n: number) => void,
+): void {
+  for (const r of rows) {
+    if (!r.previousOwnerId) continue;
+    const m = byId.get(r.previousOwnerId);
     if (m) set(m, r._count._all);
   }
 }
@@ -773,11 +804,13 @@ export function drilldownWhere(key: DrillKey, agentId: string, range: DateRange)
     case "revivalAssigned":
       return { ...assignedInWindow, OR: [{ leadOrigin: { in: REVIVAL_ORIGINS } }, { isColdCall: true }] };
     case "rejected":
-      return { ownerId: agentId, deletedAt: null, rejectedAt: win };
+      // Rejected leads are UNASSIGNED (ownerId→null) but keep previousOwnerId — match
+      // owned (legacy) OR unassigned-with-previousOwner so the drill == the summary.
+      return { deletedAt: null, rejectedAt: win, OR: [{ ownerId: agentId }, { ownerId: null, previousOwnerId: agentId }] };
     case "closedWon":
       return { ownerId: agentId, deletedAt: null, currentStatus: { in: CLOSED_OUTCOME_STATUSES } };
     case "lost":
-      return { ownerId: agentId, deletedAt: null, currentStatus: { in: LOST_STATUSES } };
+      return { deletedAt: null, currentStatus: { in: LOST_STATUSES }, OR: [{ ownerId: agentId }, { ownerId: null, previousOwnerId: agentId }] };
     case "stillActive":
       // Canonical active book (ACTIVE_LEAD origin) — count==drill with stillActive.
       return { ownerId: agentId, deletedAt: null, ...ACTIVE_ORIGIN_WHERE, OR: ACTIVE_OR };
