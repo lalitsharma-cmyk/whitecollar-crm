@@ -50,10 +50,17 @@ type ActivityStreamRow = {
 };
 // Activity types rendered in the stream. CALL / WHATSAPP / NOTE are EXCLUDED — they
 // already render via their own CallLog / WhatsAppMessage / Note rows (no double-up).
+//
+// Smart Timeline = CLIENT COMMUNICATION ONLY (Lalit 2026-06). System / audit events
+// are NOT conversation and are deliberately excluded here — STATUS_CHANGE,
+// LEAD_CREATED, COLD_TO_LEAD (revived) and REMINDER_FIRED all live in the admin
+// "Change History" card (field-level audit via LeadFieldHistory: status, owner /
+// assignment, follow-up, every inline edit, plus the import batch — nothing is
+// lost). Only genuine client touchpoints render in the conversation: meetings /
+// visits, project discussed, brochure sent, email.
 const ACTIVITY_STREAM_TYPES = new Set([
   "SITE_VISIT", "OFFICE_MEETING", "VIRTUAL_MEETING", "HOME_VISIT", "EXPO_MEETING",
-  "MEETING", "STATUS_CHANGE", "LEAD_CREATED", "COLD_TO_LEAD", "BROCHURE_SENT",
-  "PROJECT_DISCUSSED", "REMINDER_FIRED", "EMAIL",
+  "MEETING", "BROCHURE_SENT", "PROJECT_DISCUSSED", "EMAIL",
 ]);
 // Narrow carve-out: a FEW Activity rows are typed NOTE but are NOT free-text notes
 // (those mirror a Note-model row and would double-up). These are system audit
@@ -341,7 +348,10 @@ export default function ConversationStreamCard({
   const connectedCount    = callConnectedCount + remarkConnectedCount + waInboundCount + noteCount;
   const unsuccessfulCount = callUnsuccessfulCount + remarkNoAnswerCount;
 
-  const streamActs = activities.filter((a) => ACTIVITY_STREAM_TYPES.has(a.type) || isSurfacedNoteActivity(a));
+  // Client-communication activities only. Surfaced system NOTE rows (follow-up
+  // changes, admin inline edits) are audit events → they appear in the Change
+  // History card (field-level audit), NOT in the conversation stream.
+  const streamActs = activities.filter((a) => ACTIVITY_STREAM_TYPES.has(a.type));
   // Total rows shown in Smart Timeline = genuine CRM events (calls + WhatsApp +
   // notes + CRM activities) PLUS every parsed imported remark (mergedEntries).
   // Imported remarks now render as their own clean dated cards in the stream

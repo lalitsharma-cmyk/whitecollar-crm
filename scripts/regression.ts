@@ -3074,6 +3074,49 @@ const checks: Check[] = [
   },
 
   // ───────────────────────────────────────────────────────────────────────────
+  // Smart Timeline = CLIENT COMMUNICATION ONLY (Lalit 2026-06). System / audit
+  // events (status change · lead created · revived · reminder · follow-up change ·
+  // inline edit) are excluded from the conversation and surface in the Change
+  // History card (LeadFieldHistory). This invariant proves the exclusion AND that
+  // the destination audit actually tracks those fields — so nothing is lost.
+  // ───────────────────────────────────────────────────────────────────────────
+  {
+    name: "smart-timeline-client-comms-only — conversation excludes system/audit events; Change History tracks them (no data loss)",
+    run: async () => {
+      const fs = await import("fs");
+      const path = await import("path");
+      const cardSrc = fs.readFileSync(path.join(process.cwd(), "src/components/ConversationStreamCard.tsx"), "utf8");
+
+      // (a) ACTIVITY_STREAM_TYPES must EXCLUDE system / audit types.
+      const m = cardSrc.match(/ACTIVITY_STREAM_TYPES\s*=\s*new Set\(\[([\s\S]*?)\]\)/);
+      assert(!!m, "could not locate ACTIVITY_STREAM_TYPES in ConversationStreamCard");
+      const allow = m![1];
+      for (const sys of ["STATUS_CHANGE", "LEAD_CREATED", "COLD_TO_LEAD", "REMINDER_FIRED"]) {
+        assert(!new RegExp(`"${sys}"`).test(allow),
+          `Smart Timeline must NOT render system event ${sys} (belongs in Change History)`);
+      }
+      // Client-communication types are still present.
+      for (const ok of ["SITE_VISIT", "MEETING", "PROJECT_DISCUSSED", "BROCHURE_SENT", "EMAIL"]) {
+        assert(new RegExp(`"${ok}"`).test(allow), `Smart Timeline lost client-communication type ${ok}`);
+      }
+      // (b) Surfaced system NOTE rows (follow-up change / inline edit) are no longer
+      //     mixed into the stream filter.
+      assert(!/streamActs\s*=\s*activities\.filter\([^)]*isSurfacedNoteActivity/.test(cardSrc),
+        "streamActs must not include isSurfacedNoteActivity rows (follow-up/inline-edit are Change History audit)");
+
+      // (c) NO DATA LOSS — Change History (LeadFieldHistory) tracks exactly the
+      //     fields the removed system events represent.
+      const { TRACKED_FIELDS } = await import("../src/lib/fieldHistory");
+      for (const f of ["currentStatus", "ownerId", "followupDate"]) {
+        assert((TRACKED_FIELDS as readonly string[]).includes(f),
+          `Change History must track ${f} so the removed timeline event is not lost`);
+      }
+      const leadSrc = fs.readFileSync(path.join(process.cwd(), "src/app/(app)/leads/[id]/page.tsx"), "utf8");
+      assert(/<ChangeHistoryCard\b/.test(leadSrc), "lead page must render ChangeHistoryCard (the audit destination)");
+    },
+  },
+
+  // ───────────────────────────────────────────────────────────────────────────
   {
     name: "log-conversation-validation — outcome+remarks mandatory (server 400); NO follow-up field on call/WA logging (Jun25 reversal); Activity carries outcome; no Connected default",
     run: async () => {
