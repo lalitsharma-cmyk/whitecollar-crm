@@ -3221,6 +3221,25 @@ const checks: Check[] = [
   },
 
   // ───────────────────────────────────────────────────────────────────────────
+  // Smart Timeline CONNECTED chip must equal the rows it filters. The header count
+  // and the stream filter must share ONE activity set — else clicking CONNECTED
+  // shows more (or fewer) rows than the number on the chip.
+  // ───────────────────────────────────────────────────────────────────────────
+  {
+    name: "smart-timeline-connected-reconcile — CONNECTED count includes the same activity set the filter shows",
+    run: async () => {
+      const fs = await import("fs");
+      const path = await import("path");
+      const src = fs.readFileSync(path.join(process.cwd(), "src/components/ConversationStreamCard.tsx"), "utf8");
+      assert(/CONNECTED_ACTIVITY_TYPES/.test(src), "must define a shared CONNECTED_ACTIVITY_TYPES set");
+      assert(/connectedCount\s*=[^;]*activityConnectedCount/.test(src),
+        "CONNECTED count must include activityConnectedCount (else the chip number < rows shown)");
+      assert(/filter === "CONNECTED"\)\s*return CONNECTED_ACTIVITY_TYPES\.has\(it\.act/.test(src),
+        "CONNECTED filter for activities must use CONNECTED_ACTIVITY_TYPES (so count == rows)");
+    },
+  },
+
+  // ───────────────────────────────────────────────────────────────────────────
   {
     name: "log-conversation-validation — outcome+remarks mandatory (server 400); NO follow-up field on call/WA logging (Jun25 reversal); Activity carries outcome; no Connected default",
     run: async () => {

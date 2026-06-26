@@ -175,6 +175,13 @@ const CONNECTED_REMARK_TYPES = new Set<RemarkEventType>([
 const NOANSWER_REMARK_TYPES = new Set<RemarkEventType>([
   "CALL_NOT_PICKED", "CALL_BUSY", "CALL_SWITCHED_OFF", "CALL_CALLBACK",
 ]);
+// CRM-logged activities that are genuine two-way client contact ("connected").
+// One-way touches (brochure sent, email, project note) are not conversations, so
+// they show only under ALL — this keeps the CONNECTED chip count == the rows it
+// filters (the header count and the stream filter share this exact set).
+const CONNECTED_ACTIVITY_TYPES = new Set<string>([
+  "SITE_VISIT", "OFFICE_MEETING", "VIRTUAL_MEETING", "HOME_VISIT", "EXPO_MEETING", "MEETING",
+]);
 
 // Per-imported-remark icon by classified event type — small visual cue mirroring
 // the call/activity rows. Falls back to the imported-note glyph.
@@ -338,20 +345,24 @@ export default function ConversationStreamCard({
   // remarks + inbound WhatsApp + notes) — not just CRM call logs (the old bug that
   // showed 0/0 on imported leads). No-answer = failed call attempts only. Each count
   // uses the same predicate as its filter, so the counter equals the rows shown.
+  // Client-communication activities only. Surfaced system NOTE rows (follow-up
+  // changes, admin inline edits) are audit events → they appear in the Change
+  // History card (field-level audit), NOT in the conversation stream.
+  const streamActs = activities.filter((a) => ACTIVITY_STREAM_TYPES.has(a.type));
+
   const callConnectedCount    = callLogs.filter(c => CONNECTED_OUTCOMES.has(effectiveOutcome(c.outcome as string, c.notes))).length;
   const callUnsuccessfulCount = callLogs.filter(c => UNSUCCESSFUL_OUTCOMES.has(effectiveOutcome(c.outcome as string, c.notes))).length;
   const remarkConnectedCount  = mergedEntries.filter(e => CONNECTED_REMARK_TYPES.has(e.eventType)).length;
   const remarkNoAnswerCount   = mergedEntries.filter(e => NOANSWER_REMARK_TYPES.has(e.eventType)).length;
   const waInboundCount        = waMessages.filter(m => m.direction === "INBOUND").length;
   const noteCount             = notes.length;
+  // Meetings / site-visits logged as CRM activities are real two-way contact — count
+  // them as connected too, using the SAME set the CONNECTED filter uses (below) so
+  // the chip number always equals the rows it shows.
+  const activityConnectedCount = streamActs.filter(a => CONNECTED_ACTIVITY_TYPES.has(a.type)).length;
 
-  const connectedCount    = callConnectedCount + remarkConnectedCount + waInboundCount + noteCount;
+  const connectedCount    = callConnectedCount + remarkConnectedCount + waInboundCount + noteCount + activityConnectedCount;
   const unsuccessfulCount = callUnsuccessfulCount + remarkNoAnswerCount;
-
-  // Client-communication activities only. Surfaced system NOTE rows (follow-up
-  // changes, admin inline edits) are audit events → they appear in the Change
-  // History card (field-level audit), NOT in the conversation stream.
-  const streamActs = activities.filter((a) => ACTIVITY_STREAM_TYPES.has(a.type));
   // Total rows shown in Smart Timeline = genuine CRM events (calls + WhatsApp +
   // notes + CRM activities) PLUS every parsed imported remark (mergedEntries).
   // Imported remarks now render as their own clean dated cards in the stream
@@ -438,8 +449,10 @@ export default function ConversationStreamCard({
       if (filter === "NO_ANSWER") return NOANSWER_REMARK_TYPES.has(t);
       return false; // WA filter → imported remarks excluded
     }
-    // activity
-    return filter === "ALL" || filter === "CONNECTED";
+    // activity — meetings/visits are two-way contact → CONNECTED; every activity
+    // shows under ALL. Mirrors CONNECTED_ACTIVITY_TYPES so the count == the rows.
+    if (filter === "CONNECTED") return CONNECTED_ACTIVITY_TYPES.has(it.act!.type);
+    return filter === "ALL";
   }
   const filteredStream = unifiedStream.filter(showStreamItem);
 
