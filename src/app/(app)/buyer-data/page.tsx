@@ -9,6 +9,7 @@ import {
   rollupForRecords,
   formatTxnValue,
   inferBuyerCurrency,
+  classifyBuyer,
 } from "@/lib/buyerIntelligence";
 
 // ── Buyer Data — worked pipeline, now with the Leads LIST EXPERIENCE (Part 5b) ──
@@ -129,6 +130,10 @@ export default async function BuyerDataPage() {
     const ccy = inferBuyerCurrency({ nationality: r.nationality, projectName: r.projectName, source: r.source, market: r.market });
     const towerUnit = [r.tower, r.unitNumber].map((x) => (x ?? "").trim()).filter(Boolean).join(" · ");
     const region = ccy === "INR" ? "India" : ccy === "AED" ? "Dubai/UAE" : "—";
+    // Classification from the buyer's full rollup (total invested + properties owned),
+    // not this single row — so a repeat/whale buyer is tagged on every one of their rows.
+    const totalInvested = rollup?.totalInvestmentValue ?? (typeof r.transactionValue === "number" && isFinite(r.transactionValue) ? r.transactionValue : 0);
+    const buyerClass = classifyBuyer({ totalPropertiesOwned: owned, totalInvestmentValue: totalInvested }, ccy);
     return {
       id: r.id,
       href: `/buyer-data/${r.id}`,
@@ -150,6 +155,7 @@ export default async function BuyerDataPage() {
       attemptCount: r.attemptCount,
       repeat,
       propertiesOwned: owned,
+      buyerClass,
       createdAtMs: r.createdAt ? new Date(r.createdAt).getTime() : 0,
       phone: (r.phones ?? "") + " ",
       passport: r.passport ?? "",

@@ -215,6 +215,48 @@ export function computeBuyerRollup<T extends BuyerRollupInput>(
   return rollupForRecords(slice);
 }
 
+// ── buyer classification (First-Time / Investor / Whale) ─────────────────────
+// Computed from the same rollup, so it never goes stale. Value-tier wins over
+// count: a single AED-12M villa buyer is a Whale, not "First-Time".
+
+export type BuyerClass = "First-Time" | "Investor" | "Whale";
+
+/** Total-investment cut-off for the top-tier "Whale" class, BY MARKET CURRENCY.
+ *  Dubai luxury buyers price in AED, India in INR. These are sensible starting
+ *  lines — trivially tunable if Lalit wants a different bar. */
+export const WHALE_THRESHOLD: Record<string, number> = {
+  AED: 10_000_000,   // AED 10M+ total across all their properties
+  INR: 100_000_000,  // ₹10 Cr+
+};
+const DEFAULT_WHALE_THRESHOLD = 10_000_000;
+
+/** Minimum properties owned to be an "Investor" (a repeat buyer building a portfolio). */
+export const INVESTOR_MIN_PROPERTIES = 2;
+
+/**
+ * Classify a buyer from their rollup:
+ *   • Whale      — total invested ≥ the market's Whale threshold (value-tier first).
+ *   • Investor   — owns ≥ 2 properties (repeat buyer) but below the Whale line.
+ *   • First-Time — a single property below the Whale line.
+ */
+export function classifyBuyer(
+  rollup: Pick<BuyerRollup, "totalPropertiesOwned" | "totalInvestmentValue">,
+  currency?: string | null,
+): BuyerClass {
+  const ccy = (currency ?? "").toUpperCase();
+  const threshold = WHALE_THRESHOLD[ccy] ?? DEFAULT_WHALE_THRESHOLD;
+  if (rollup.totalInvestmentValue >= threshold) return "Whale";
+  if (rollup.totalPropertiesOwned >= INVESTOR_MIN_PROPERTIES) return "Investor";
+  return "First-Time";
+}
+
+/** UI metadata for a buyer class — emoji + Tailwind chip tone (light + dark). */
+export const BUYER_CLASS_META: Record<BuyerClass, { label: string; emoji: string; tone: string }> = {
+  "Whale":      { label: "Whale",      emoji: "🐋", tone: "bg-violet-100 text-violet-700 border-violet-200 dark:bg-violet-900/30 dark:text-violet-300 dark:border-violet-700" },
+  "Investor":   { label: "Investor",   emoji: "📈", tone: "bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-900/30 dark:text-amber-300 dark:border-amber-700" },
+  "First-Time": { label: "First-Time", emoji: "🌱", tone: "bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-300 dark:border-emerald-700" },
+};
+
 // ── value formatting (mixed-currency buyer transactions) ─────────────────────
 
 /** Compact money formatter for transaction values. Dubai projects price in AED,

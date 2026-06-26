@@ -9,6 +9,7 @@ import ColumnHeaderFilter, {
   type ColSortDir,
   isColFilterActive,
 } from "@/components/ColumnHeaderFilter";
+import { type BuyerClass, BUYER_CLASS_META } from "@/lib/buyerIntelligence";
 
 // ── Buyer list = the Leads list experience (Part 5b) ─────────────────────────
 // Filters (poolStatus / owner / project / type / nationality / region / repeat /
@@ -40,6 +41,7 @@ export type BuyerRow = {
   attemptCount: number;
   repeat: boolean;
   propertiesOwned: number;
+  buyerClass: BuyerClass; // First-Time | Investor | Whale (computed from rollup)
   createdAtMs: number;
   // hidden search fields
   phone: string;
@@ -541,7 +543,12 @@ export default function BuyerListClient(props: Props) {
                     {isAdminOrMgr && (
                       <td className="px-3 py-2"><input type="checkbox" checked={selected.has(r.id)} onChange={() => toggleOne(r.id)} aria-label={`Select ${r.clientName}`} /></td>
                     )}
-                    <td className="px-3 py-2"><Link href={r.href} className="font-medium text-[#0b1a33] dark:text-blue-300 hover:underline">{r.clientName}</Link></td>
+                    <td className="px-3 py-2">
+                      <Link href={r.href} className="font-medium text-[#0b1a33] dark:text-blue-300 hover:underline">{r.clientName}</Link>
+                      {r.buyerClass !== "First-Time" && (
+                        <span title={`${BUYER_CLASS_META[r.buyerClass].label} buyer`} className={`ml-1.5 inline-flex items-center gap-0.5 rounded-full border px-1.5 py-0.5 text-[10px] font-semibold align-middle ${BUYER_CLASS_META[r.buyerClass].tone}`}>{BUYER_CLASS_META[r.buyerClass].emoji} {BUYER_CLASS_META[r.buyerClass].label}</span>
+                      )}
+                    </td>
                     <td className="px-3 py-2"><span className={`inline-flex rounded-full border px-2 py-0.5 text-[10px] font-semibold ${statusChip(r.poolStatus)}`}>{r.poolStatusLabel}</span></td>
                     <td className="px-3 py-2 text-gray-700 dark:text-slate-300">{r.project || "—"}</td>
                     <td className="px-3 py-2 text-gray-600 dark:text-slate-400 whitespace-nowrap">{r.towerUnit || "—"}</td>
@@ -575,6 +582,9 @@ export default function BuyerListClient(props: Props) {
                     {isAdminOrMgr && <input type="checkbox" className="mt-1" checked={selected.has(r.id)} onChange={() => toggleOne(r.id)} aria-label={`Select ${r.clientName}`} />}
                     <Link href={r.href} className="min-w-0">
                       <div className="font-semibold text-[#0b1a33] dark:text-blue-300 truncate">{r.clientName}</div>
+                      {r.buyerClass !== "First-Time" && (
+                        <span className={`inline-flex items-center gap-0.5 rounded-full border px-1.5 py-0.5 text-[10px] font-semibold mt-0.5 ${BUYER_CLASS_META[r.buyerClass].tone}`}>{BUYER_CLASS_META[r.buyerClass].emoji} {BUYER_CLASS_META[r.buyerClass].label}</span>
+                      )}
                       <div className="text-xs text-gray-500 dark:text-slate-400 truncate">{r.project || "—"}{r.towerUnit ? ` · ${r.towerUnit}` : ""}</div>
                     </Link>
                   </div>

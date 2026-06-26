@@ -3240,6 +3240,25 @@ const checks: Check[] = [
   },
 
   // ───────────────────────────────────────────────────────────────────────────
+  // Buyer classification (First-Time / Investor / Whale) — value-tier beats count,
+  // per-currency Whale threshold. Pure function, so test it directly.
+  // ───────────────────────────────────────────────────────────────────────────
+  {
+    name: "buyer-classification — value-tier beats count; per-currency Whale threshold",
+    run: async () => {
+      const { classifyBuyer } = await import("../src/lib/buyerIntelligence");
+      assert(classifyBuyer({ totalPropertiesOwned: 1, totalInvestmentValue: 12_000_000 }, "AED") === "Whale",
+        "AED 12M single property → Whale (value beats count)");
+      assert(classifyBuyer({ totalPropertiesOwned: 3, totalInvestmentValue: 3_000_000 }, "AED") === "Investor",
+        "3 properties below the whale line → Investor");
+      assert(classifyBuyer({ totalPropertiesOwned: 1, totalInvestmentValue: 1_500_000 }, "AED") === "First-Time",
+        "1 modest property → First-Time");
+      assert(classifyBuyer({ totalPropertiesOwned: 2, totalInvestmentValue: 150_000_000 }, "INR") === "Whale",
+        "INR 15 Cr → Whale on the INR threshold");
+    },
+  },
+
+  // ───────────────────────────────────────────────────────────────────────────
   {
     name: "log-conversation-validation — outcome+remarks mandatory (server 400); NO follow-up field on call/WA logging (Jun25 reversal); Activity carries outcome; no Connected default",
     run: async () => {
