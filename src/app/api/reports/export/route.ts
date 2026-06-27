@@ -75,6 +75,92 @@ function masterDataWhere(sp: Record<string, string | undefined>): Prisma.LeadWhe
   return { ...cold, AND: and };
 }
 
+// The ONE lead → CSV row shape, shared by the GET (filter-param) path and the
+// POST (explicit id-set) path so both produce identical columns.
+const LEAD_EXPORT_INCLUDE = { owner: true } as const;
+type LeadExportRow = Prisma.LeadGetPayload<{ include: typeof LEAD_EXPORT_INCLUDE }>;
+function leadCsvRow(l: LeadExportRow): Record<string, unknown> {
+  return {
+    id: l.id,
+    name: l.name,
+    phone: l.phone,
+    altPhone: l.altPhone,
+    email: l.email,
+    company: l.company,
+    profession: l.profession,
+    city: l.city,
+    country: l.country,
+    team: l.forwardedTeam,
+    source: effectiveSource(l.sourceRaw, l.source),
+    currentStatus: l.currentStatus,
+    status: l.status,
+    aiScore: l.aiScore,
+    aiScoreValue: l.aiScoreValue,
+    bantStatus: l.bantStatus,
+    budgetMin: l.budgetMin,
+    budgetMax: l.budgetMax,
+    budgetCurrency: l.budgetCurrency,
+    configuration: l.configuration,
+    ownerName: l.owner?.name ?? "",
+    tags: l.tags,
+    followupDate: istIso(l.followupDate),
+    lastTouchedAt: istIso(l.lastTouchedAt),
+    createdAt: istIso(l.createdAt),
+    linkedInUrl: l.linkedInUrl,
+    rejectionReason: l.rejectionReason,
+    rejectedAt: istIso(l.rejectedAt),
+  };
+}
+
+// Shared watermark + audit + Response builder (identical trailer for GET & POST).
+async function buildCsvResponse(opts: {
+  csv: string; filename: string; rowCount: number; type: string;
+  appliedFilters: Record<string, string>; me: { id: string; email: string; name: string }; req: NextRequest;
+}): Promise<Response> {
+  const { csv, filename, rowCount, type, appliedFilters, me, req } = opts;
+  const stamp = new Date().toISOString();
+  const filterSummary = Object.keys(appliedFilters).length > 0
+    ? Object.entries(appliedFilters).map(([k, v]) => `${k}=${v}`).join(" · ")
+    : "(no filters)";
+  const watermark = [
+    `# Confidential export from White Collar Realty CRM`,
+    `# Downloaded by: ${me.email} (${me.name}) at ${stamp}`,
+    `# Type: ${type}  ·  Rows: ${rowCount}  ·  Sharing this file outside the company breaches the Data Handling policy.`,
+    `# Filters: ${filterSummary}`,
+    "",
+  ].join("\r\n");
+  const footer = `\r\n# Exported by ${me.name} at ${stamp} — confidential\r\n`;
+  await audit({
+    userId: me.id, action: `export.${type}`, entity: "Lead",
+    meta: { rowCount, filename, filters: appliedFilters }, request: reqMeta(req),
+  });
+  return new Response(watermark + csv + footer, {
+    status: 200,
+    headers: {
+      "Content-Type": "text/csv; charset=utf-8",
+      "Content-Disposition": `attachment; filename="${filename}"`,
+    },
+  });
+}
+
+// POST — export an EXACT, client-resolved id-set. Master Data / any Excel-style
+// table sends the ids of the rows currently visible AFTER all client filters
+// (column header filters + active Saved View / builtin preset), so the CSV equals
+// what's on screen — the filter-param GET below can't see those client filters.
+// ADMIN-only, audited + watermarked exactly like GET.
+export async function POST(req: NextRequest) {
+  const me = await requireRole("ADMIN");
+  const body = await req.json().catch(() => ({}));
+  const ids: string[] = Array.isArray(body?.leadIds) ? body.leadIds.filter((x: unknown) => typeof x === "string") : [];
+  if (ids.length === 0) return NextResponse.json({ error: "No rows to export." }, { status: 400 });
+  // Fetch exactly the requested rows (no deletedAt filter — Master Data exports
+  // include the deleted/archived categories; the id-set already scopes it).
+  const leads = await prisma.lead.findMany({ where: { id: { in: ids } }, include: LEAD_EXPORT_INCLUDE, orderBy: { createdAt: "desc" } });
+  const csv = toCsv(leads.map(leadCsvRow));
+  const filename = `wcr-master-data-${new Date().toISOString().slice(0, 10).replace(/-/g, "")}.csv`;
+  return buildCsvResponse({ csv, filename, rowCount: leads.length, type: "leads", appliedFilters: { selection: `${leads.length} filtered rows` }, me, req });
+}
+
 export async function GET(req: NextRequest) {
   const me = await requireRole("ADMIN");
   const url = new URL(req.url);
@@ -239,40 +325,11 @@ export async function GET(req: NextRequest) {
     const effectiveWhere = sp.master === "1" ? masterDataWhere(sp) : where;
     const leads = await prisma.lead.findMany({
       where: effectiveWhere,
-      include: { owner: true },
+      include: LEAD_EXPORT_INCLUDE,
       orderBy: { createdAt: "desc" },
     });
     rowCount = leads.length;
-    csv = toCsv(leads.map((l) => ({
-      id: l.id,
-      name: l.name,
-      phone: l.phone,
-      altPhone: l.altPhone,
-      email: l.email,
-      company: l.company,
-      profession: l.profession,
-      city: l.city,
-      country: l.country,
-      team: l.forwardedTeam,
-      source: effectiveSource(l.sourceRaw, l.source),
-      currentStatus: l.currentStatus,
-      status: l.status,
-      aiScore: l.aiScore,
-      aiScoreValue: l.aiScoreValue,
-      bantStatus: l.bantStatus,
-      budgetMin: l.budgetMin,
-      budgetMax: l.budgetMax,
-      budgetCurrency: l.budgetCurrency,
-      configuration: l.configuration,
-      ownerName: l.owner?.name ?? "",
-      tags: l.tags,
-      followupDate: istIso(l.followupDate),
-      lastTouchedAt: istIso(l.lastTouchedAt),
-      createdAt: istIso(l.createdAt),
-      linkedInUrl: l.linkedInUrl,
-      rejectionReason: l.rejectionReason,
-      rejectedAt: istIso(l.rejectedAt),
-    })));
+    csv = toCsv(leads.map(leadCsvRow));
     filename = `wcr-leads-filtered-${new Date().toISOString().slice(0, 10).replace(/-/g, "")}.csv`;
   } else if (type === "calls") {
     // Per Lalit's feedback (2026-06): the CSV export must NOT carry an

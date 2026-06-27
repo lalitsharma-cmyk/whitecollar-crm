@@ -183,12 +183,6 @@ export default async function MasterDataPage({ searchParams }: { searchParams: P
     : b === "Archived" ? "bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-900/30 dark:text-amber-300 dark:border-amber-700"
     : "bg-slate-200 text-slate-600 border-slate-300 dark:bg-slate-700 dark:text-slate-300 dark:border-slate-600";
 
-  const exportHref = (() => {
-    const p = new URLSearchParams({ type: "leads", master: "1", cat });
-    for (const k of ["team", "owner", "source", "q"]) if (sp[k]) p.set(k, String(sp[k]));
-    return `/api/reports/export?${p.toString()}`;
-  })();
-
   const rows: MDRow[] = leads.map((l) => {
     const bucket = bucketOf(l) ?? "—";
     return {
@@ -242,7 +236,8 @@ export default async function MasterDataPage({ searchParams }: { searchParams: P
               /api/intake/csv endpoint is role-gated to ADMIN). Mounts the shared
               Import-Mapping-Approval wizard configured for Master Data. */}
           <MasterDataImportControls />
-          <a href={exportHref} className="btn btn-ghost" title="Export this exact view to CSV">⬇ Export CSV</a>
+          {/* Export lives in the table toolbar ("⬇ Export view") so it can POST the
+              EXACT filtered id-set (builtin view + column filters), not just URL params. */}
         </div>
       </div>
 

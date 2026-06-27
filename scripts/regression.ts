@@ -4837,6 +4837,24 @@ const checks: Check[] = [
       results.push({ name: "  ↳ note", ok: true, detail: "buyer list: default Active (terminal excluded), Rejected+Converted tabs, clickable summary cards" });
     },
   },
+  {
+    name: "master-data-export-filtered — export POSTs the exact on-screen id-set (builtin view + column filters), not just URL params",
+    run: async () => {
+      const fs = await import("fs");
+      const route = fs.readFileSync("src/app/api/reports/export/route.ts", "utf8");
+      const tbl = fs.readFileSync("src/components/MasterDataRecordsTable.tsx", "utf8");
+      const pg = fs.readFileSync("src/app/(app)/master-data/page.tsx", "utf8");
+      // The route must expose a POST that takes an explicit leadIds set (ADMIN, audited).
+      assert(/export async function POST\(/.test(route), "export route must have a POST handler");
+      assert(/body\?\.leadIds/.test(route) && /requireRole\("ADMIN"\)/.test(route), "POST must read leadIds + be ADMIN-only");
+      // The table must POST its FILTERED id-set (so the CSV == the visible rows).
+      assert(/exportFiltered/.test(tbl) && /filtered\.map\(\(r\) => r\.id\)/.test(tbl), "table must export the filtered id-set");
+      assert(/\/api\/reports\/export/.test(tbl) && /leadIds: ids/.test(tbl), "table must POST leadIds to the export route");
+      // The old GET-only link (which ignored client filters) must be gone from the page.
+      assert(!/href=\{exportHref\}/.test(pg), "stale GET export link must be removed from the Master Data header");
+      results.push({ name: "  ↳ note", ok: true, detail: "Master Data export = POST(filtered id-set) → CSV equals the on-screen view incl. column filters + builtin" });
+    },
+  },
 ];
 
 // ── runner ────────────────────────────────────────────────────────────────────
