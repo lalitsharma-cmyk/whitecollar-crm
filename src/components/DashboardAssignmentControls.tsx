@@ -85,9 +85,14 @@ export default function DashboardAssignmentControls({
             </button>
           );
         })}
+      </div>
 
-        {/* Team filter */}
-        <span className="text-[10px] uppercase tracking-widest text-gray-500 font-semibold ml-2 mr-1">Team:</span>
+      {/* Team filter on its OWN aligned row — the label stays with its pills (it was
+          sharing the Period flex-wrap row, so on narrow widths "Team:" wrapped onto a
+          line by itself, away from the pills). Same gap + alignment as Period; the
+          fixed-width label lines the pills up under the Period pills. (Lalit 2026-06-28) */}
+      <div className="flex flex-wrap gap-1.5 items-center">
+        <span className="text-[10px] uppercase tracking-widest text-gray-500 font-semibold mr-1 inline-block w-12 shrink-0">Team:</span>
         {canChooseTeam ? (
           <div className="seg">
             <button type="button" className={team === "Dubai" ? "on" : ""} onClick={() => push({ dwTeam: "Dubai" })}>🇦🇪 Dubai</button>

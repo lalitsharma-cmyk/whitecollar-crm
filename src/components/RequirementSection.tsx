@@ -5,6 +5,7 @@ import AssignToSelect from "@/components/AssignToSelect";
 import ProjectSelect from "@/components/ProjectSelect";
 import BudgetInput from "@/components/BudgetInput";
 import { PROPERTY_TYPES } from "@/lib/propertyType";
+import { categoryOptionsForTeam } from "@/lib/leadCategory";
 
 // Team-reactive REQUIREMENT block for the New-Lead form. Team is the single
 // source of truth, held in React state here, and the dependent fields filter /
@@ -71,12 +72,20 @@ export default function RequirementSection({ users, dubaiProjects, indiaProjects
     return [] as ProjOption[];
   }, [team, dubaiProjects, indiaProjects]);
 
+  // Buyer-category options are MARKET-SPECIFIC (India must never show UAE-resident
+  // categories, and vice-versa). Reactive to team; a stale out-of-market pick is
+  // cleared when the market switches (in onTeamChange). (Lalit 2026-06-28)
+  const categoryOptions = useMemo(() => categoryOptionsForTeam(team), [team]);
+  const [category, setCategory] = useState("");
+
   function onTeamChange(v: string) {
     setTeam(v);
     // Reset the manual-currency flag so currency re-derives from the new team
     // (e.g. switching India→Dubai flips INR→AED unless they re-pick).
     setCurrencyTouched(false);
     setCurrency(currencyForTeam(v, defaultCurrency));
+    // Drop a category that isn't valid for the new market (India ↔ Dubai).
+    setCategory((c) => (categoryOptionsForTeam(v).includes(c) ? c : ""));
   }
 
   return (
@@ -165,11 +174,9 @@ export default function RequirementSection({ users, dubaiProjects, indiaProjects
       {/* Extra optional fields (retained — bind to real columns) */}
       <div>
         <label className={label}>Categorization</label>
-        <select name="categorization" className={input} defaultValue="">
+        <select name="categorization" className={input} value={category} onChange={(e) => setCategory(e.target.value)}>
           <option value="">—</option>
-          <option>NRI Investor</option><option>NRI End-user</option>
-          <option>UAE Resident Investor</option><option>UAE Resident End-user</option>
-          <option>International Investor</option><option>First-time buyer</option>
+          {categoryOptions.map((c) => <option key={c} value={c}>{c}</option>)}
         </select>
       </div>
       <div>

@@ -3377,6 +3377,27 @@ const checks: Check[] = [
   },
 
   // ───────────────────────────────────────────────────────────────────────────
+  // Buyer categorization is MARKET-SPECIFIC: an India lead must never be taggable
+  // with UAE-resident / International categories, and vice-versa (Lalit 2026-06-28).
+  // ───────────────────────────────────────────────────────────────────────────
+  {
+    name: "lead-category-by-market — India excludes UAE/International; Dubai includes them; New-Lead form is market-reactive",
+    run: async () => {
+      const { categoryOptionsForTeam } = await import("../src/lib/leadCategory");
+      const india = categoryOptionsForTeam("India");
+      const dubai = categoryOptionsForTeam("Dubai");
+      assert(india.includes("Indian Investor") && india.includes("NRI Investor"), "India must offer Indian + NRI categories");
+      assert(!india.includes("UAE Resident Investor") && !india.includes("International Investor"), "India must NOT offer UAE-resident / International categories");
+      assert(dubai.includes("UAE Resident Investor") && dubai.includes("International Investor"), "Dubai must offer UAE-resident + International categories");
+      assert(!dubai.includes("Indian Investor"), "Dubai must NOT offer the India-only 'Indian Investor' category");
+      const fs = await import("fs");
+      const path = await import("path");
+      const req = fs.readFileSync(path.join(process.cwd(), "src/components/RequirementSection.tsx"), "utf8");
+      assert(/categoryOptionsForTeam/.test(req), "New-Lead Requirement section must use categoryOptionsForTeam (market-reactive, not a static list)");
+    },
+  },
+
+  // ───────────────────────────────────────────────────────────────────────────
   {
     name: "log-conversation-validation — outcome+remarks mandatory (server 400); NO follow-up field on call/WA logging (Jun25 reversal); Activity carries outcome; no Connected default",
     run: async () => {
