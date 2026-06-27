@@ -3259,6 +3259,23 @@ const checks: Check[] = [
   },
 
   // ───────────────────────────────────────────────────────────────────────────
+  // Buyer detail — Source is admin-provenance only (#248); Country is a dropdown
+  // editable via BuyerInlineEdit's new <select> support (#247).
+  // ───────────────────────────────────────────────────────────────────────────
+  {
+    name: "buyer-detail-source-country — Source removed from client info; Country is a dropdown",
+    run: async () => {
+      const fs = await import("fs");
+      const path = await import("path");
+      const page = fs.readFileSync(path.join(process.cwd(), "src/app/(app)/buyer-data/[id]/page.tsx"), "utf8");
+      assert(!/imported via \$\{rec\.source\}/.test(page), "the 'imported via {source}' subtitle must be removed from the buyer header (#248)");
+      assert(/editable\("country", rec\.country, \{ options:/.test(page), "Country must be an editable dropdown (#247)");
+      const inl = fs.readFileSync(path.join(process.cwd(), "src/components/BuyerInlineEdit.tsx"), "utf8");
+      assert(/options\?: string\[\]/.test(inl) && /<select/.test(inl), "BuyerInlineEdit must support an options <select>");
+    },
+  },
+
+  // ───────────────────────────────────────────────────────────────────────────
   {
     name: "log-conversation-validation — outcome+remarks mandatory (server 400); NO follow-up field on call/WA logging (Jun25 reversal); Activity carries outcome; no Connected default",
     run: async () => {

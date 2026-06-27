@@ -16,10 +16,11 @@ interface Props {
   type?: FieldType;
   placeholder?: string;
   display?: string;       // formatted read-only override (e.g. compact money)
+  options?: string[];     // when set, edit via a <select> of these values (not a text input)
   className?: string;
 }
 
-export default function BuyerInlineEdit({ recordId, field, value, type = "text", placeholder, display, className }: Props) {
+export default function BuyerInlineEdit({ recordId, field, value, type = "text", placeholder, display, options, className }: Props) {
   const router = useRouter();
   const [editing, setEditing] = useState(false);
   const [v, setV] = useState<string>(value == null ? "" : String(value));
@@ -73,16 +74,27 @@ export default function BuyerInlineEdit({ recordId, field, value, type = "text",
   return (
     <span className="inline-flex flex-col">
       <span className="inline-flex items-center gap-1">
-        <input
-          type={type === "date" ? "date" : type === "number" ? "text" : "text"}
-          inputMode={type === "number" ? "decimal" : undefined}
-          value={v}
-          onChange={(e) => setV(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter") save(); if (e.key === "Escape") cancel(); }}
-          className={inputCls}
-          placeholder={placeholder}
-          autoFocus
-        />
+        {options
+          ? <select
+              value={v}
+              onChange={(e) => setV(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") save(); if (e.key === "Escape") cancel(); }}
+              className={inputCls}
+              autoFocus
+            >
+              <option value="">— Select —</option>
+              {options.map((o) => <option key={o} value={o}>{o}</option>)}
+            </select>
+          : <input
+              type={type === "date" ? "date" : type === "number" ? "text" : "text"}
+              inputMode={type === "number" ? "decimal" : undefined}
+              value={v}
+              onChange={(e) => setV(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") save(); if (e.key === "Escape") cancel(); }}
+              className={inputCls}
+              placeholder={placeholder}
+              autoFocus
+            />}
         <button onClick={save} disabled={busy} aria-label="Save" className="text-emerald-600 hover:bg-emerald-50 rounded p-2 text-base min-w-9 min-h-9 flex items-center justify-center">✓</button>
         <button onClick={cancel} aria-label="Cancel" className="text-red-600 hover:bg-red-50 rounded p-2 text-base min-w-9 min-h-9 flex items-center justify-center">✕</button>
       </span>

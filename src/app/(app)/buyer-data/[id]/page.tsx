@@ -138,10 +138,13 @@ export default async function BuyerDetail({ params }: { params: Promise<{ id: st
   );
   // Inline-or-readonly: edit when permitted, else show the value plainly (parity
   // with the Lead view, where agents on others' records see read-only values).
-  const editable = (field: string, value: string | number | null, opts?: { type?: "text" | "number" | "date"; display?: string }) =>
+  const editable = (field: string, value: string | number | null, opts?: { type?: "text" | "number" | "date"; display?: string; options?: string[] }) =>
     canEditFields
-      ? <BuyerInlineEdit recordId={rec.id} field={field} value={value} type={opts?.type} display={opts?.display} />
+      ? <BuyerInlineEdit recordId={rec.id} field={field} value={value} type={opts?.type} display={opts?.display} options={opts?.options} />
       : <>{opts?.display ?? (value == null || value === "" ? "—" : String(value))}</>;
+  // Property-country dropdown options — Dubai module → UAE primary, plus GCC + the
+  // common buyer-home countries for the occasional non-UAE record (#247).
+  const BUYER_COUNTRY_OPTIONS = ["United Arab Emirates", "Saudi Arabia", "Qatar", "Oman", "Bahrain", "Kuwait", "India", "United Kingdom", "Pakistan", "United States", "Canada", "Other"];
 
   return (
     <>
@@ -187,7 +190,6 @@ export default async function BuyerDetail({ params }: { params: Promise<{ id: st
                 </div>
                 <div className="mt-1 text-xs text-gray-500 dark:text-slate-400">
                   {rec.projectName || "—"}{rec.unitNumber ? ` · Unit ${rec.unitNumber}` : ""}
-                  {rec.source ? ` · imported via ${rec.source}` : ""}
                 </div>
                 {/* Requirement snapshot chips — Configuration + Transaction value (mirrors
                     the Lead header's config + budget chip row). */}
@@ -403,10 +405,8 @@ export default async function BuyerDetail({ params }: { params: Promise<{ id: st
                 <div className={FIELD_LABEL}>🧑‍💼 Sales Agent</div>
                 {editable("agentName", rec.agentName)}
               </div>
-              <div>
-                <div className={FIELD_LABEL}>📥 Source</div>
-                <span className="text-gray-800 dark:text-slate-200 break-words">{rec.source || "—"}</span>
-              </div>
+              {/* Source is import provenance, not client info — shown only in the
+                  admin/manager provenance card below (Lalit 2026-06-27, #248). */}
             </div>
           </div>
 
@@ -420,7 +420,7 @@ export default async function BuyerDetail({ params }: { params: Promise<{ id: st
             <div className={FIELD_GRID_2}>
               <div>
                 <div className={`${FIELD_LABEL} mb-0.5`}>Country</div>
-                <span className="text-gray-800 dark:text-slate-200 break-words">{rec.country || "—"}</span>
+                {editable("country", rec.country, { options: BUYER_COUNTRY_OPTIONS })}
               </div>
               <div>
                 <div className={`${FIELD_LABEL} mb-0.5`}>Area</div>
