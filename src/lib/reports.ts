@@ -3,6 +3,7 @@ import { sendEmail, emailTemplate, emailEnabled } from "@/lib/email";
 import { fmtMoney } from "@/lib/money";
 import { AIScore, CallOutcome } from "@prisma/client";
 import { BOOKED_STATUSES, LOST_STATUSES } from "@/lib/lead-statuses";
+import { activeLeadWhere } from "@/lib/leadScope";
 import { effectiveSource } from "@/lib/sourceLabel";
 
 interface Window { since: Date; until: Date; label: string; }
@@ -22,7 +23,11 @@ export async function buildReport(win: Window) {
     prisma.callLog.count({ where: { startedAt: { gte: win.since, lte: win.until }, outcome: CallOutcome.CONNECTED } }),
     prisma.user.findMany({
       where: { active: true, hrOnly: false, role: { in: ["AGENT", "MANAGER"] } },
-      include: { _count: { select: { callLogs: { where: { startedAt: { gte: win.since, lte: win.until } } }, ownedLeads: true } } },
+      // "active leads" in the manager digest must mean the SAME thing as everywhere
+      // else — the canonical active set (non-terminal, ACTIVE origin, not deleted).
+      // A raw ownedLeads count would over-count (booked/lost/cold) and mismatch the
+      // leaderboard/team/agent-performance numbers (audit 2026-06-27).
+      include: { _count: { select: { callLogs: { where: { startedAt: { gte: win.since, lte: win.until } } }, ownedLeads: { where: activeLeadWhere() } } } },
     }),
     // Source breakdown reads VERBATIM sourceRaw (enum label only as legacy fallback)
     // so analytics show the real channel ("Townscript"), never corrupted "CSV_IMPORT".

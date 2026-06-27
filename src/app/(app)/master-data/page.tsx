@@ -177,9 +177,9 @@ export default async function MasterDataPage({ searchParams }: { searchParams: P
   const bucketChip = (b: string) =>
     b === "Workable" ? "bg-emerald-100 text-emerald-700 border-emerald-200"
     : b === "Closed" ? "bg-green-100 text-green-800 border-green-200"
-    : b === "Lost" ? "bg-rose-100 text-rose-700 border-rose-200"
-    : b === "Archived" ? "bg-amber-100 text-amber-700 border-amber-200"
-    : "bg-slate-200 text-slate-600 border-slate-300";
+    : b === "Lost" ? "bg-rose-100 text-rose-700 border-rose-200 dark:bg-rose-900/30 dark:text-rose-300 dark:border-rose-800"
+    : b === "Archived" ? "bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-900/30 dark:text-amber-300 dark:border-amber-700"
+    : "bg-slate-200 text-slate-600 border-slate-300 dark:bg-slate-700 dark:text-slate-300 dark:border-slate-600";
 
   const exportHref = (() => {
     const p = new URLSearchParams({ type: "leads", master: "1", cat });

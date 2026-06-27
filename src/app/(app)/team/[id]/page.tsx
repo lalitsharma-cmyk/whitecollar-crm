@@ -172,23 +172,22 @@ export default async function AgentDeepDivePage({
         bookingDoneAt: { gte: monthStart },
       },
     }),
-    prisma.$queryRaw<
-      Array<{ currency: string; total: number }>
-    >`
-      SELECT COALESCE("budgetCurrency", 'AED') AS currency, SUM("budgetMin")::float AS total
-      FROM "Lead"
-      WHERE "ownerId" = ${id}
-        AND "status"::text IN ('NEW','CONTACTED','QUALIFIED','SITE_VISIT','NEGOTIATION')
-        AND "budgetMin" IS NOT NULL
-        AND "leadOrigin" NOT IN ('COLD','REVIVAL')
-      GROUP BY COALESCE("budgetCurrency", 'AED')
-    `,
+    // Pipeline value = Σ budgetMin of this agent's ACTIVE leads, grouped by currency.
+    // Uses the canonical active envelope (ownerActiveWhere — non-terminal, ACTIVE
+    // origin, not deleted). Previously keyed on the DEAD `status` enum, which is out
+    // of sync with currentStatus (counted booked/lost leads + diverged from the
+    // Active-leads tile right beside it). Audit 2026-06-27.
+    prisma.lead.groupBy({
+      by: ["budgetCurrency"],
+      where: { ...ownerActiveWhere(id), budgetMin: { not: null } },
+      _sum: { budgetMin: true },
+    }),
   ]);
 
   const pipeline = { aed: 0, inr: 0 };
   for (const row of pipelineRows) {
-    const total = Number(row.total) || 0;
-    if ((row.currency || "AED").toUpperCase() === "INR") pipeline.inr += total;
+    const total = Number(row._sum.budgetMin) || 0;
+    if ((row.budgetCurrency || "AED").toUpperCase() === "INR") pipeline.inr += total;
     else pipeline.aed += total;
   }
 

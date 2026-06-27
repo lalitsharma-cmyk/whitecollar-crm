@@ -3276,6 +3276,25 @@ const checks: Check[] = [
   },
 
   // ───────────────────────────────────────────────────────────────────────────
+  // Reporting reconciliation v2 (2026-06-27 audit): "active leads" everywhere must
+  // route through the canonical helpers, and reporting reads must NOT key off the
+  // dead `status` enum (out of sync with currentStatus).
+  // ───────────────────────────────────────────────────────────────────────────
+  {
+    name: "reporting-no-dead-status-enum — manager digest uses activeLeadWhere; team pipeline uses currentStatus not the dead enum",
+    run: async () => {
+      const fs = await import("fs");
+      const path = await import("path");
+      const team = fs.readFileSync(path.join(process.cwd(), "src/app/(app)/team/[id]/page.tsx"), "utf8");
+      assert(!/"status"::text\s+IN/.test(team),
+        "team/[id] pipeline must NOT filter on the dead `status` enum — use ownerActiveWhere/currentStatus");
+      const rep = fs.readFileSync(path.join(process.cwd(), "src/lib/reports.ts"), "utf8");
+      assert(/ownedLeads:\s*\{\s*where:\s*activeLeadWhere\(\)/.test(rep),
+        "manager digest 'active leads' must count via activeLeadWhere(), not a raw ownedLeads relation count");
+    },
+  },
+
+  // ───────────────────────────────────────────────────────────────────────────
   {
     name: "log-conversation-validation — outcome+remarks mandatory (server 400); NO follow-up field on call/WA logging (Jun25 reversal); Activity carries outcome; no Connected default",
     run: async () => {

@@ -708,7 +708,7 @@ export default function ConversationStreamCard({
                     {REMARK_ICON[e.eventType] ?? "🗒"} {who ? <><b>{who}</b> · </> : null}
                     {dateLabel ?? "Imported note"}
                   </span>
-                  <span className="chip text-[9px] border border-slate-300 bg-slate-100 text-slate-500" title="Parsed from the imported Raw History (verbatim original preserved in the Raw History tab)">📋 Imported</span>
+                  <span className="chip text-[9px] border border-slate-300 dark:border-slate-600 bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-300" title="Parsed from the imported Raw History (verbatim original preserved in the Raw History tab)">📋 Imported</span>
                 </div>
                 {/* FULL body — whitespace-pre-wrap + break-words, NO max-height / NO
                     truncation, so even a very long imported remark renders complete. */}
@@ -758,7 +758,7 @@ export default function ConversationStreamCard({
                   {a.outcome && (
                     <span className="chip text-[9px] border border-emerald-300 bg-emerald-50 text-emerald-700">{a.outcome}</span>
                   )}
-                  <span className="chip text-[9px] border border-slate-300 bg-slate-100 text-slate-600">{actLabel}</span>
+                  <span className="chip text-[9px] border border-slate-300 dark:border-slate-600 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300">{actLabel}</span>
                   {/* Per-entry edit. ADMIN / MANAGER → any entry, any date. AGENT →
                       ONLY their OWN free-text entry (meeting/visit/discussion/email/
                       brochure) and ONLY on the IST day they logged it — computed from

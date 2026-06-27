@@ -531,8 +531,8 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
               instead of personal sales KPIs. */}
           {isLeadOps && mgmt && (
             <>
-              <div className="card p-4 border-l-4 border-[#0b1a33] bg-gradient-to-br from-slate-50 to-white">
-                <div className="font-display text-lg font-bold text-[#0b1a33]">🗂️ {greeting}, {firstName} — Lead Management</div>
+              <div className="card p-4 border-l-4 border-[#0b1a33] bg-gradient-to-br from-slate-50 to-white dark:from-slate-800 dark:to-slate-900">
+                <div className="font-display text-lg font-bold text-[#0b1a33] dark:text-slate-100">🗂️ {greeting}, {firstName} — Lead Management</div>
                 <div className="text-xs text-gray-500 mt-0.5">Assignment queue &amp; team workload</div>
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
@@ -593,7 +593,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
           {/* §12.4 Morning briefing / greeting + daily sales quote — at the TOP.
               Hidden for sales users (agents/managers) once they mark "I Am Here". */}
           {!hideMorningGreeting && (
-          <div className="card p-4 border-l-4 border-[#c9a24b] bg-gradient-to-br from-amber-50/60 to-white">
+          <div className="card p-4 border-l-4 border-[#c9a24b] bg-gradient-to-br from-amber-50/60 to-white dark:from-amber-900/20 dark:to-transparent">
             <div className="flex items-start justify-between gap-3 flex-wrap">
               <div className="flex-1 min-w-0">
                 <div className="flex items-baseline gap-2 flex-wrap">

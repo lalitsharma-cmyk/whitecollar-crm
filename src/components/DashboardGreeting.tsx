@@ -47,7 +47,7 @@ export default function DashboardGreeting({
   }, [tz]);
 
   return (
-    <h2 className="font-display text-lg sm:text-xl font-bold text-[#0b1a33]">
+    <h2 className="font-display text-lg sm:text-xl font-bold text-[#0b1a33] dark:text-slate-100">
       <span aria-hidden="true">{greetingEmojiFor(band)}</span> Good {band}, {firstName}
     </h2>
   );

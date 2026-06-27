@@ -1029,7 +1029,7 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
                   const teamMarket = lead.forwardedTeam === "Dubai" ? "Dubai" : lead.forwardedTeam === "India" ? "India" : null;
                   const loc = proj?.city ?? proj?.area ?? teamMarket;
                   return loc ? (
-                    <span title="Buying market (project / team) — not the client's residence" className="chip bg-slate-100 text-slate-600 border border-slate-200 text-[10px]">📍 {loc}</span>
+                    <span title="Buying market (project / team) — not the client's residence" className="chip bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-600 text-[10px]">📍 {loc}</span>
                   ) : null;
                 })()}
               </div>

@@ -425,7 +425,7 @@ export default async function ColdDataPage({ searchParams }: { searchParams: Pro
               🎯 Start session ({totalCount} leads)
             </Link>
           ) : (
-            <span className="btn bg-gray-200 text-gray-400 text-sm font-bold cursor-not-allowed" aria-disabled="true">
+            <span className="btn bg-gray-200 dark:bg-slate-700 text-gray-400 dark:text-slate-500 text-sm font-bold cursor-not-allowed" aria-disabled="true">
               No cold leads available
             </span>
           )}
