@@ -3333,6 +3333,26 @@ const checks: Check[] = [
   },
 
   // ───────────────────────────────────────────────────────────────────────────
+  // Follow-up active-filter pill must show a FRIENDLY label for every quick-chip
+  // value — else it falls back to the raw URL value (the "todue" eyesore that read
+  // like a typo). Lalit 2026-06-28.
+  // ───────────────────────────────────────────────────────────────────────────
+  {
+    name: "followup-chip-labels — every quick follow-up value has a friendly label (no raw 'todue' pill)",
+    run: async () => {
+      const fs = await import("fs");
+      const path = await import("path");
+      const src = fs.readFileSync(path.join(process.cwd(), "src/components/LeadFilters.tsx"), "utf8");
+      const m = src.match(/const FOLLOWUP_LABELS[\s\S]*?};/);
+      assert(!!m, "FOLLOWUP_LABELS map must exist in LeadFilters");
+      const map = m![0];
+      for (const v of ["today", "overdue", "todue", "future", "none"]) {
+        assert(new RegExp(`\\b${v}:`).test(map), `FOLLOWUP_LABELS must label '${v}' (else the active-filter pill shows the raw value)`);
+      }
+    },
+  },
+
+  // ───────────────────────────────────────────────────────────────────────────
   {
     name: "log-conversation-validation — outcome+remarks mandatory (server 400); NO follow-up field on call/WA logging (Jun25 reversal); Activity carries outcome; no Connected default",
     run: async () => {

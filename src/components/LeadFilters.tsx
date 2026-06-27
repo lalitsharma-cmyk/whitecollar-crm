@@ -16,6 +16,11 @@ const FOLLOWUP_LABELS: Record<string, string> = {
   today: "Follow-up: Today", tomorrow: "Follow-up: Tomorrow",
   week: "Follow-up: This week", month: "Follow-up: This month",
   overdue: "Follow-up: Overdue",
+  // `todue` is the quick-chip value for "Today + Overdue" (short for TOday + overDUE,
+  // NOT a typo for "to-do"). Without these entries the active-filter pill fell back to
+  // the raw value and showed an ugly "todue". Labels mirror the big chip row so the
+  // pill and the chip read identically (Lalit 2026-06-28).
+  todue: "Follow-up: Today + Overdue", future: "Follow-up: Future", none: "No Follow-up",
 };
 const WHEN_LABELS: Record<string, string> = {
   IMMEDIATE: "⚡ Immediate", THIRTY_DAYS: "📅 1 Month",
