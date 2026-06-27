@@ -4818,6 +4818,25 @@ const checks: Check[] = [
       results.push({ name: "  ↳ note", ok: true, detail: `${live.length} distinct live sources, all labeled; Website/Event presets family-matched` });
     },
   },
+  {
+    name: "buyer-pipeline-tabs — Buyer list defaults to Active (pool+assigned, terminal excluded); Rejected + Converted have their own tabs; cards clickable",
+    run: async () => {
+      const fs = await import("fs");
+      const cl = fs.readFileSync("src/components/BuyerListClient.tsx", "utf8");
+      const pg = fs.readFileSync("src/app/(app)/buyer-data/page.tsx", "utf8");
+      // The default view is the working pipeline so terminal CONVERTED/REJECTED no
+      // longer inflate it (B2); All is still reachable explicitly.
+      assert(/useState<Tab>\("active"\)/.test(cl), "Buyer list must default to the Active tab");
+      assert(/tab === "active" && r\.poolStatus !== "ADMIN_POOL" && r\.poolStatus !== "ASSIGNED"/.test(cl), "Active tab must include only ADMIN_POOL + ASSIGNED");
+      // Rejected has a tab + filter (B1); Converted too. Both gated to admin.
+      assert(/tabBtn\("rejected"/.test(cl) && /tab === "rejected" && r\.poolStatus !== "REJECTED"/.test(cl), "Rejected must have a tab + filter");
+      assert(/tabBtn\("converted"/.test(cl), "Converted must have a tab");
+      // Summary cards are clickable status filters (B3) and the page feeds the counts.
+      assert(/aria-pressed=\{!!active\}/.test(cl) && /tabKey: "rejected"/.test(cl), "summary cards must be clickable + include Rejected");
+      assert(/rejected: rejectedCount/.test(pg) && /summary=\{\{/.test(pg), "page must pass a summary incl. rejectedCount to the buyer list");
+      results.push({ name: "  ↳ note", ok: true, detail: "buyer list: default Active (terminal excluded), Rejected+Converted tabs, clickable summary cards" });
+    },
+  },
 ];
 
 // ── runner ────────────────────────────────────────────────────────────────────

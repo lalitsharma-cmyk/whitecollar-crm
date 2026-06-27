@@ -69,6 +69,7 @@ export default async function BuyerDataPage() {
   let poolCount = 0;
   let assignedCount = 0;
   let convertedCount = 0;
+  let rejectedCount = 0;
   let totalInvestmentInr = 0;
   let totalInvestmentAed = 0;
   let totalInvestmentOther = 0;
@@ -77,6 +78,7 @@ export default async function BuyerDataPage() {
     if (r.poolStatus === "ADMIN_POOL") poolCount++;
     else if (r.poolStatus === "ASSIGNED") assignedCount++;
     else if (r.poolStatus === "CONVERTED") convertedCount++;
+    else if (r.poolStatus === "REJECTED") rejectedCount++;
     const ccy = inferBuyerCurrency({ nationality: r.nationality, projectName: r.projectName, source: r.source, market: r.market });
     const v = typeof r.transactionValue === "number" && isFinite(r.transactionValue) ? r.transactionValue : 0;
     if (ccy === "INR") totalInvestmentInr += v;
@@ -162,13 +164,6 @@ export default async function BuyerDataPage() {
     };
   });
 
-  const stat = (label: string, value: string | number, tone?: string) => (
-    <div className="rounded-lg border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-3">
-      <div className={`text-lg font-bold ${tone ?? "text-gray-800 dark:text-slate-100"}`}>{value}</div>
-      <div className="text-[10px] uppercase tracking-wide text-gray-500 dark:text-slate-400">{label}</div>
-    </div>
-  );
-
   return (
     <>
       {/* ── Header + actions ──────────────────────────────────────────────── */}
@@ -188,17 +183,8 @@ export default async function BuyerDataPage() {
         )}
       </div>
 
-      {/* ── Summary stats ─────────────────────────────────────────────────── */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 mt-3">
-        {stat("Total", totalRecords)}
-        {stat("Unique Buyers", uniqueBuyers)}
-        {stat("Admin Pool", poolCount, poolCount ? "text-blue-600 dark:text-blue-400" : undefined)}
-        {stat("Assigned", assignedCount, assignedCount ? "text-emerald-600 dark:text-emerald-400" : undefined)}
-        {stat("Repeat Buyers", repeatBuyers, repeatBuyers ? "text-amber-600 dark:text-amber-400" : undefined)}
-        {stat("Investment", investmentLabel)}
-      </div>
-
-      {/* ── List experience ───────────────────────────────────────────────── */}
+      {/* ── List experience (summary cards live INSIDE the client so they are
+            clickable status filters that reconcile with the visible rows) ──── */}
       <div className="mt-3">
         <BuyerListClient
           rows={rows}
@@ -212,6 +198,16 @@ export default async function BuyerDataPage() {
           viewerId={me.id}
           poolAvailable={poolCount}
           convertedCount={convertedCount}
+          summary={{
+            total: totalRecords,
+            uniqueBuyers,
+            repeatBuyers,
+            pool: poolCount,
+            assigned: assignedCount,
+            converted: convertedCount,
+            rejected: rejectedCount,
+            investmentLabel,
+          }}
         />
       </div>
     </>

@@ -62,6 +62,11 @@ interface Props {
   viewerId: string;
   poolAvailable: number;
   convertedCount: number;
+  summary: {
+    total: number; uniqueBuyers: number; repeatBuyers: number;
+    pool: number; assigned: number; converted: number; rejected: number;
+    investmentLabel: string;
+  };
 }
 
 // ── Column model (drives the Excel header filters + sort, DRY) ───────────────
@@ -72,7 +77,10 @@ interface Props {
 // it gets no header filter (per spec).
 type ColKey = "clientName" | "poolStatus" | "project" | "towerUnit" | "propertyType" | "txnValue" | "txnDate" | "nationality" | "agent" | "attempts" | "buyer";
 type SortKey = ColKey;
-type Tab = "all" | "pool" | "assigned" | "converted";
+// "active" = the working pipeline (Admin Pool + Assigned) and is the DEFAULT, so
+// terminal CONVERTED/REJECTED records no longer inflate the main view. Terminal
+// states have their own tabs; "all" still shows literally everything for the admin.
+type Tab = "active" | "all" | "pool" | "assigned" | "converted" | "rejected";
 
 type ColDef = {
   key: ColKey;
@@ -133,10 +141,10 @@ const statusChip = (s: string) => {
 };
 
 export default function BuyerListClient(props: Props) {
-  const { rows, projects, propertyTypes, nationalities, owners, agents, isAdmin, isAdminOrMgr, viewerId, poolAvailable, convertedCount } = props;
+  const { rows, projects, propertyTypes, nationalities, owners, agents, isAdmin, isAdminOrMgr, viewerId, poolAvailable, convertedCount, summary } = props;
   const router = useRouter();
 
-  const [tab, setTab] = useState<Tab>("all");
+  const [tab, setTab] = useState<Tab>("active");
   const [q, setQ] = useState("");
   const [project, setProject] = useState("");
   const [ptype, setPtype] = useState("");
@@ -171,7 +179,7 @@ export default function BuyerListClient(props: Props) {
   }, [VKEY]);
   const persistViews = (v: SavedView[]) => { setViews(v); try { localStorage.setItem(VKEY, JSON.stringify(v)); } catch { /* ignore */ } };
 
-  const resetAll = () => { setTab("all"); setQ(""); setProject(""); setPtype(""); setNat(""); setRegion(""); setOwnerId(""); setRepeatOnly(""); setClassFilter(""); setSortKey("txnDate"); setSortDir("desc"); setColFilters({}); setPage(0); };
+  const resetAll = () => { setTab("active"); setQ(""); setProject(""); setPtype(""); setNat(""); setRegion(""); setOwnerId(""); setRepeatOnly(""); setClassFilter(""); setSortKey("txnDate"); setSortDir("desc"); setColFilters({}); setPage(0); };
 
   // Serialize / deserialize the per-column filters (Set → array) for saved views.
   const serCol = (cf: Record<string, ColFilterState>) =>
@@ -216,9 +224,11 @@ export default function BuyerListClient(props: Props) {
     const colEntries = Object.entries(colFilters).filter(([, f]) => isColFilterActive(f));
 
     let out = rows.filter((r) => {
+      if (tab === "active" && r.poolStatus !== "ADMIN_POOL" && r.poolStatus !== "ASSIGNED") return false;
       if (tab === "pool" && r.poolStatus !== "ADMIN_POOL") return false;
       if (tab === "assigned" && r.poolStatus !== "ASSIGNED") return false;
       if (tab === "converted" && r.poolStatus !== "CONVERTED") return false;
+      if (tab === "rejected" && r.poolStatus !== "REJECTED") return false;
       if (project && r.project !== project) return false;
       if (ptype && r.propertyType !== ptype) return false;
       if (nat && r.nationality !== nat) return false;
@@ -330,7 +340,7 @@ export default function BuyerListClient(props: Props) {
   };
 
   const sel = "border border-gray-200 dark:border-slate-600 rounded-lg px-2.5 py-2 text-base sm:text-sm dark:bg-slate-800 dark:text-slate-100";
-  const anyFilter = q || project || ptype || nat || region || ownerId || repeatOnly || classFilter || tab !== "all" || activeColCount > 0;
+  const anyFilter = q || project || ptype || nat || region || ownerId || repeatOnly || classFilter || tab !== "active" || activeColCount > 0;
 
   // ── bulk runner ──────────────────────────────────────────────────────────
   async function runBulk(action: string, extra?: Record<string, unknown>, confirmMsg?: string) {
@@ -386,14 +396,48 @@ export default function BuyerListClient(props: Props) {
     </button>
   );
 
+  // Clickable summary card — status cards set the tab + reconcile with the rows
+  // below (clicking "Rejected" filters to rejected). Non-status cards (Investment /
+  // Unique / Repeat) are informational and not clickable.
+  const card = (label: string, value: string | number, opts?: { tabKey?: Tab; tone?: string }) => {
+    const active = opts?.tabKey && tab === opts.tabKey;
+    const base = `rounded-lg border p-3 text-left transition ${active ? "border-[#c9a24b] ring-1 ring-[#c9a24b] bg-[#c9a24b]/5" : "border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800"}`;
+    const inner = (
+      <>
+        <div className={`text-lg font-bold ${opts?.tone ?? "text-gray-800 dark:text-slate-100"}`}>{value}</div>
+        <div className="text-[10px] uppercase tracking-wide text-gray-500 dark:text-slate-400">{label}</div>
+      </>
+    );
+    if (!opts?.tabKey) return <div className={base}>{inner}</div>;
+    return (
+      <button type="button" onClick={() => { setTab(opts.tabKey!); setPage(0); clearSel(); }} className={`${base} hover:border-[#c9a24b] focus:outline-none focus:ring-1 focus:ring-[#c9a24b]`} aria-pressed={!!active} title={`Show ${label}`}>
+        {inner}
+      </button>
+    );
+  };
+
   return (
     <div className="space-y-3">
+      {/* ── Summary cards (clickable status filters) ────────────────────────── */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
+        {card("Active Pipeline", summary.pool + summary.assigned, { tabKey: "active", tone: "text-[#0b1a33] dark:text-[#d9b765]" })}
+        {isAdmin && card("Admin Pool", summary.pool, { tabKey: "pool", tone: summary.pool ? "text-blue-600 dark:text-blue-400" : undefined })}
+        {card("Assigned", summary.assigned, { tabKey: "assigned", tone: summary.assigned ? "text-emerald-600 dark:text-emerald-400" : undefined })}
+        {isAdmin && card("Converted", summary.converted, { tabKey: "converted", tone: summary.converted ? "text-purple-600 dark:text-purple-400" : undefined })}
+        {isAdmin && card("Rejected", summary.rejected, { tabKey: "rejected", tone: summary.rejected ? "text-gray-500 dark:text-slate-400" : undefined })}
+        {card("Unique Buyers", summary.uniqueBuyers)}
+        {card("Repeat Buyers", summary.repeatBuyers, { tone: summary.repeatBuyers ? "text-amber-600 dark:text-amber-400" : undefined })}
+        {card("Investment", summary.investmentLabel)}
+      </div>
+
       {/* ── Views (tabs) + Saved views + filters toggle ─────────────────────── */}
       <div className="flex flex-wrap items-center gap-2">
-        {tabBtn("all", "All")}
+        {tabBtn("active", "Active", summary.pool + summary.assigned)}
         {isAdmin && tabBtn("pool", "Admin Pool", poolAvailable)}
-        {tabBtn("assigned", "Assigned")}
+        {tabBtn("assigned", "Assigned", summary.assigned)}
         {isAdmin && tabBtn("converted", "Converted", convertedCount)}
+        {isAdmin && tabBtn("rejected", "Rejected", summary.rejected)}
+        {tabBtn("all", "All", summary.total)}
         <div className="ml-auto flex items-center gap-2">
           {isAdmin && (
             <button type="button" onClick={() => setShowDistribute((s) => !s)}
