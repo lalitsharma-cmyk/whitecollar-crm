@@ -113,7 +113,7 @@ const COLS: ColDef[] = [
 ];
 const COL_BY_KEY = new Map(COLS.map((c) => [c.key, c]));
 
-type SavedView = { name: string; tab: Tab; q: string; project: string; ptype: string; nat: string; region: string; ownerId: string; repeatOnly: "" | "yes" | "no"; sortKey: SortKey; sortDir: "asc" | "desc"; colFilters?: Record<string, { values: string[]; min: string; max: string }> };
+type SavedView = { name: string; tab: Tab; q: string; project: string; ptype: string; nat: string; region: string; ownerId: string; repeatOnly: "" | "yes" | "no"; classFilter?: "" | "First-Time" | "Investor" | "Whale"; sortKey: SortKey; sortDir: "asc" | "desc"; colFilters?: Record<string, { values: string[]; min: string; max: string }> };
 
 const PAGE = 50;
 const EDITABLE_FIELDS: [string, string][] = [
@@ -144,6 +144,7 @@ export default function BuyerListClient(props: Props) {
   const [region, setRegion] = useState("");
   const [ownerId, setOwnerId] = useState("");
   const [repeatOnly, setRepeatOnly] = useState<"" | "yes" | "no">("");
+  const [classFilter, setClassFilter] = useState<"" | "First-Time" | "Investor" | "Whale">("");
   const [sortKey, setSortKey] = useState<SortKey>("txnDate");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   // Per-column Excel header filters (client-state — composes with the top filters).
@@ -170,7 +171,7 @@ export default function BuyerListClient(props: Props) {
   }, [VKEY]);
   const persistViews = (v: SavedView[]) => { setViews(v); try { localStorage.setItem(VKEY, JSON.stringify(v)); } catch { /* ignore */ } };
 
-  const resetAll = () => { setTab("all"); setQ(""); setProject(""); setPtype(""); setNat(""); setRegion(""); setOwnerId(""); setRepeatOnly(""); setSortKey("txnDate"); setSortDir("desc"); setColFilters({}); setPage(0); };
+  const resetAll = () => { setTab("all"); setQ(""); setProject(""); setPtype(""); setNat(""); setRegion(""); setOwnerId(""); setRepeatOnly(""); setClassFilter(""); setSortKey("txnDate"); setSortDir("desc"); setColFilters({}); setPage(0); };
 
   // Serialize / deserialize the per-column filters (Set → array) for saved views.
   const serCol = (cf: Record<string, ColFilterState>) =>
@@ -180,13 +181,13 @@ export default function BuyerListClient(props: Props) {
 
   function applyView(v: SavedView) {
     setTab(v.tab); setQ(v.q); setProject(v.project); setPtype(v.ptype); setNat(v.nat); setRegion(v.region);
-    setOwnerId(v.ownerId); setRepeatOnly(v.repeatOnly); setSortKey(v.sortKey); setSortDir(v.sortDir);
+    setOwnerId(v.ownerId); setRepeatOnly(v.repeatOnly); setClassFilter(v.classFilter ?? ""); setSortKey(v.sortKey); setSortDir(v.sortDir);
     setColFilters(deserCol(v.colFilters)); setPage(0);
   }
   function saveCurrentView() {
     const name = window.prompt("Name this view:");
     if (!name || !name.trim()) return;
-    const v: SavedView = { name: name.trim(), tab, q, project, ptype, nat, region, ownerId, repeatOnly, sortKey, sortDir, colFilters: serCol(colFilters) };
+    const v: SavedView = { name: name.trim(), tab, q, project, ptype, nat, region, ownerId, repeatOnly, classFilter, sortKey, sortDir, colFilters: serCol(colFilters) };
     persistViews([...views.filter((x) => x.name !== v.name), v]);
   }
   function deleteView(name: string) { persistViews(views.filter((v) => v.name !== name)); }
@@ -225,6 +226,7 @@ export default function BuyerListClient(props: Props) {
       if (ownerId && r.ownerId !== ownerId) return false;
       if (repeatOnly === "yes" && !r.repeat) return false;
       if (repeatOnly === "no" && r.repeat) return false;
+      if (classFilter && r.buyerClass !== classFilter) return false;
       if (needle) {
         const hay = `${r.clientName} ${r.phone} ${r.passport} ${r.project} ${r.towerUnit} ${r.agent}`.toLowerCase();
         if (!hay.includes(needle)) return false;
@@ -258,7 +260,7 @@ export default function BuyerListClient(props: Props) {
       return sa.localeCompare(sb, undefined, { numeric: true }) * dir;
     });
     return out;
-  }, [rows, tab, q, project, ptype, nat, region, ownerId, repeatOnly, sortKey, sortDir, colFilters]);
+  }, [rows, tab, q, project, ptype, nat, region, ownerId, repeatOnly, classFilter, sortKey, sortDir, colFilters]);
 
   // Distinct option lists for the text/select header filters (over loaded rows).
   const colOptions = useMemo(() => {
@@ -328,7 +330,7 @@ export default function BuyerListClient(props: Props) {
   };
 
   const sel = "border border-gray-200 dark:border-slate-600 rounded-lg px-2.5 py-2 text-base sm:text-sm dark:bg-slate-800 dark:text-slate-100";
-  const anyFilter = q || project || ptype || nat || region || ownerId || repeatOnly || tab !== "all" || activeColCount > 0;
+  const anyFilter = q || project || ptype || nat || region || ownerId || repeatOnly || classFilter || tab !== "all" || activeColCount > 0;
 
   // ── bulk runner ──────────────────────────────────────────────────────────
   async function runBulk(action: string, extra?: Record<string, unknown>, confirmMsg?: string) {
@@ -461,6 +463,12 @@ export default function BuyerListClient(props: Props) {
             <option value="">All buyers</option>
             <option value="yes">🔁 Repeat buyers</option>
             <option value="no">First-time buyers</option>
+          </select>
+          <select value={classFilter} onChange={(e) => { setClassFilter(e.target.value as "" | "First-Time" | "Investor" | "Whale"); setPage(0); }} className={sel} title="Buyer classification">
+            <option value="">All classes</option>
+            <option value="Whale">🐋 Whale</option>
+            <option value="Investor">📈 Investor</option>
+            <option value="First-Time">🌱 First-Time</option>
           </select>
           {anyFilter && <button type="button" onClick={resetAll} className="text-xs text-gray-500 hover:text-gray-800 dark:hover:text-slate-200 underline">Clear all</button>}
         </div>

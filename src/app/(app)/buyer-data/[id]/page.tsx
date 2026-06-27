@@ -17,6 +17,8 @@ import {
   rollupForRecords,
   formatTxnValue,
   inferBuyerCurrency,
+  classifyBuyer,
+  BUYER_CLASS_META,
 } from "@/lib/buyerIntelligence";
 import {
   CARD, VERDICT_CARD, VERDICT_EYEBROW, CARD_TITLE, CARD_TITLE_HINT,
@@ -110,6 +112,7 @@ export default async function BuyerDetail({ params }: { params: Promise<{ id: st
   });
 
   const ccy = inferBuyerCurrency({ nationality: rec.nationality, projectName: rec.projectName, source: rec.source, market: rec.market });
+  const buyerClass = classifyBuyer({ totalPropertiesOwned: rollup.totalPropertiesOwned, totalInvestmentValue: rollup.totalInvestmentValue }, ccy);
   const coBuyers = parseJsonArray(rec.coBuyerNames);
   const phones = parseJsonArray(rec.phones);
   const emails = parseJsonArray(rec.emails);
@@ -171,6 +174,10 @@ export default async function BuyerDetail({ params }: { params: Promise<{ id: st
                   {/* Status chip — styled like the Lead status chip. */}
                   <span className={`text-xs px-2.5 py-0.5 rounded-full border font-semibold inline-flex items-center ${statusChipCls}`}>
                     {poolLabel}
+                  </span>
+                  {/* Classification tier — First-Time / Investor / Whale (matches the list badge). */}
+                  <span className={`text-[10px] px-2 py-0.5 rounded-full border font-semibold inline-flex items-center gap-0.5 ${BUYER_CLASS_META[buyerClass].tone}`}>
+                    {BUYER_CLASS_META[buyerClass].emoji} {BUYER_CLASS_META[buyerClass].label}
                   </span>
                   {rollup.repeatBuyerStatus && (
                     <span className="chip text-[10px] bg-amber-100 text-amber-800 border border-amber-200 dark:bg-amber-900/30 dark:text-amber-300 dark:border-amber-700">
