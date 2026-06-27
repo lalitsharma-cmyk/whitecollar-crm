@@ -8,6 +8,7 @@ import LeadsListClient from "@/components/LeadsListClient";
 import MotivationBanner from "@/components/MotivationBanner";
 import { runReconciler } from "@/lib/reconciler";
 import { leadScopeWhere, COLD_ORIGINS, workableWhere, activeBoardWhere, MASTER_DATA_BOARD_OR } from "@/lib/leadScope";
+import { overdueFollowupBoundary } from "@/lib/datetime";
 import { contactActivityByLeadToday } from "@/lib/followupGate";
 import { CONTACT_ACTIVITY_TYPES } from "@/lib/dashboardWidgets";
 import { projectWhereForUser } from "@/lib/propertyScope";
@@ -327,7 +328,10 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
   } else if (effectiveFollowup === "tomorrow") {
     where.followupDate = istWindow(1);
   } else if (effectiveFollowup === "overdue") {
-    where.followupDate = { lt: new Date(), not: null };
+    // Overdue = strictly before the start of today IST (a follow-up due LATER
+    // today is "Today", not overdue). Canonical boundary so Today/Overdue are
+    // disjoint and the count matches the Dashboard tile + Action List.
+    where.followupDate = { lt: overdueFollowupBoundary(), not: null };
   } else if (effectiveFollowup === "todue") {
     // Today + Overdue: every follow-up up to end of today IST (excludes future + null).
     where.followupDate = { lt: endOfTodayUTC, not: null };
@@ -509,7 +513,9 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
     prisma.lead.count({ where: scope }),
     prisma.user.findMany({ where: { active: true, hrOnly: false, role: { in: ["AGENT", "MANAGER", "ADMIN"] } }, orderBy: { name: "asc" } }),
     prisma.lead.count({ where: { ...boardScope, followupDate: todayWindow } }),
-    prisma.lead.count({ where: { ...boardScope, followupDate: { lt: new Date(), not: null } } }),
+    // Overdue chip BADGE — must use the same canonical boundary as the chip's
+    // filter (start of today IST) so badge count == rows shown when clicked.
+    prisma.lead.count({ where: { ...boardScope, followupDate: { lt: overdueFollowupBoundary(), not: null } } }),
     // Per-currentStatus lead counts for the Excel-status chip bar.
     // Groups by the user-facing currentStatus field so chips reflect real
     // MIS status distribution. Excludes cold-call leads by default.

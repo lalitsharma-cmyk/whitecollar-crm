@@ -22,7 +22,7 @@ import { countUnassignedLeads, countAwaitingTeamLeads } from "@/lib/leadCounts";
 import { hotUntouchedWhere } from "@/lib/dashboardWidgets";
 import DashboardAssignmentWidget from "@/components/DashboardAssignmentWidget";
 import DashboardGreeting from "@/components/DashboardGreeting";
-import { tzForTeam, greetingFor } from "@/lib/datetime";
+import { tzForTeam, greetingFor, overdueFollowupBoundary } from "@/lib/datetime";
 
 export const dynamic = "force-dynamic";
 
@@ -54,7 +54,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
       countAwaitingTeamLeads(),
     ]);
     const overdueUnassigned = await prisma.lead.count({
-      where: { ...w, ownerId: null, rejectedAt: null, followupDate: { lt: new Date(), not: null } }
+      where: { ...w, ownerId: null, rejectedAt: null, followupDate: { lt: overdueFollowupBoundary(), not: null } }
     });
     return { unassigned, overdueUnassigned, awaitingTeam };
   })() : null;
@@ -189,7 +189,9 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   const [hotUntouched, overdueFollowups, closableDeals, coldRevivalOps] = await Promise.all([
     prisma.lead.count({ where: hotUntouchedWhere(meScope) }),
     prisma.lead.count({
-      where: { ...activeBoardWhere(meScope), followupDate: { lt: new Date(), not: null } },
+      // Overdue = before start of today IST (canonical) so this tile's count
+      // matches its ?followup=overdue drill on Leads + the Action List.
+      where: { ...activeBoardWhere(meScope), followupDate: { lt: overdueFollowupBoundary(), not: null } },
     }),
     // Closable = workable leads at a closing stage (meeting / visit / dubai / EOI
     // stages). Reconciles with /leads?smart=visit_potential (currentStatus IN

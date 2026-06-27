@@ -4,6 +4,7 @@ import { SUPPRESSED_STATUSES, statusColor } from "@/lib/lead-statuses";
 import Link from "next/link";
 import { requireUser } from "@/lib/auth";
 import { leadScopeWhere } from "@/lib/leadScope";
+import { overdueFollowupBoundary } from "@/lib/datetime";
 
 export const dynamic = "force-dynamic";
 
@@ -24,7 +25,9 @@ export default async function OverduePage() {
   const leads = await prisma.lead.findMany({
     where: {
       ...scope,
-      followupDate: { lt: now },
+      // Overdue = before the start of today IST (today's follow-ups are "Today",
+      // not overdue) — canonical boundary shared with Leads/Dashboard/Action List.
+      followupDate: { lt: overdueFollowupBoundary() },
       currentStatus: { notIn: SUPPRESSED_STATUSES },
     },
     orderBy: { followupDate: "asc" },

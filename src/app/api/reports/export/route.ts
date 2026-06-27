@@ -5,6 +5,7 @@ import { audit, reqMeta } from "@/lib/audit";
 import { leadScopeWhere } from "@/lib/leadScope";
 import { TERMINAL_STATUSES, CLOSED_OUTCOME_STATUSES, LOST_STATUSES } from "@/lib/lead-statuses";
 import { effectiveSource } from "@/lib/sourceLabel";
+import { overdueFollowupBoundary } from "@/lib/datetime";
 import { LeadSource, LeadStatus, AIScore, Prisma } from "@prisma/client";
 
 // CSV export — ADMIN ONLY. Every export is audited and the CSV is watermarked
@@ -273,7 +274,9 @@ export async function GET(req: NextRequest) {
     } else if (effectiveFollowup === "tomorrow") {
       where.followupDate = istWindow(1);
     } else if (effectiveFollowup === "overdue") {
-      where.followupDate = { lt: new Date(), not: null };
+      // Canonical overdue boundary = start of today IST (matches Leads/Dashboard/
+      // Action List), so an "overdue" export == the on-screen overdue set.
+      where.followupDate = { lt: overdueFollowupBoundary(), not: null };
     } else if (effectiveFollowup === "week") {
       where.followupDate = { gte: new Date(), lte: new Date(Date.now() + 7 * 24 * 3600 * 1000) };
     } else if (effectiveFollowup === "month") {

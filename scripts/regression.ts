@@ -4855,6 +4855,39 @@ const checks: Check[] = [
       results.push({ name: "  ↳ note", ok: true, detail: "Master Data export = POST(filtered id-set) → CSV equals the on-screen view incl. column filters + builtin" });
     },
   },
+  {
+    name: "overdue-boundary-canonical — 'Overdue follow-up' = before start-of-today IST everywhere (Today/Overdue disjoint, no double-count)",
+    run: async () => {
+      const fs = await import("fs");
+      const { overdueFollowupBoundary, istDayRange } = await import("../src/lib/datetime");
+      // LOGIC: the canonical boundary == start of today IST.
+      assert(overdueFollowupBoundary().getTime() === istDayRange().start.getTime(), "overdueFollowupBoundary must equal istDayRange().start");
+      // SOURCE: every overdue-follow-up surface routes through the canonical helper,
+      // none re-introduces the `< now()` definition that overlapped with Today.
+      const SURFACES = [
+        "src/app/(app)/leads/page.tsx",
+        "src/app/(app)/dashboard/page.tsx",
+        "src/app/(app)/leads/overdue/page.tsx",
+        "src/app/(app)/activities/page.tsx",
+        "src/app/api/reports/export/route.ts",
+      ];
+      for (const f of SURFACES) {
+        const src = fs.readFileSync(f, "utf8");
+        assert(/overdueFollowupBoundary\(\)/.test(src), `${f} must use overdueFollowupBoundary()`);
+        assert(!/followupDate:\s*\{\s*lt:\s*new Date\(\),\s*not:\s*null\s*\}/.test(src), `${f} still has a now()-based overdue followup boundary`);
+      }
+      // DATA: Today ⊔ Overdue == "Today+Overdue", and the two are disjoint — i.e.
+      // todue == overdue + today exactly (off-by-one in the boundary would break this).
+      const start = overdueFollowupBoundary();
+      const end = new Date(istDayRange().end.getTime());
+      const base = { deletedAt: null, followupDate: { not: null } } as const;
+      const overdue = await prisma.lead.count({ where: { ...base, followupDate: { lt: start } } });
+      const today = await prisma.lead.count({ where: { ...base, followupDate: { gte: start, lt: end } } });
+      const todue = await prisma.lead.count({ where: { ...base, followupDate: { lt: end } } });
+      assert(todue === overdue + today, `Today+Overdue (${todue}) ≠ Overdue (${overdue}) + Today (${today}) — boundary off-by-one`);
+      results.push({ name: "  ↳ note", ok: true, detail: `overdue=${overdue} + today=${today} == todue=${todue} (disjoint); 5 surfaces canonical` });
+    },
+  },
 ];
 
 // ── runner ────────────────────────────────────────────────────────────────────

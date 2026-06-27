@@ -4,7 +4,7 @@ import { ActivityStatus, ActivityType, AIScore, Prisma } from "@prisma/client";
 import { TERMINAL_STATUSES, CLOSING_STATUSES, statusColor } from "@/lib/lead-statuses";
 import { COLD_ORIGINS } from "@/lib/leadScope";
 import Link from "next/link";
-import { fmtIST12, fmtISTTime12 } from "@/lib/datetime";
+import { fmtIST12, fmtISTTime12, overdueFollowupBoundary } from "@/lib/datetime";
 import { waDraftLink, WA_TEMPLATES } from "@/lib/wa";
 
 export const dynamic = "force-dynamic";
@@ -175,7 +175,9 @@ export default async function ActivitiesPage(
         ...scope,
         deletedAt: null,
         leadOrigin: { notIn: COLD_ORIGINS },
-        followupDate: { lt: now },
+        // Overdue = before start of today IST (canonical) — a follow-up due later
+        // today is "Today", not overdue.
+        followupDate: { lt: overdueFollowupBoundary() },
         currentStatus: { notIn: TERMINAL_STATUSES },
       },
       orderBy: { followupDate: "asc" },

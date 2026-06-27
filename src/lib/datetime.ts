@@ -181,6 +181,26 @@ export function istDayRange(day?: string | Date): { start: Date; end: Date } {
   return { start, end };
 }
 
+/**
+ * The ONE canonical "overdue" boundary for Lead.followupDate, as a UTC instant =
+ * the start of today (IST). A follow-up is OVERDUE iff `followupDate < this`.
+ *
+ * Why a day boundary, not `now()`: follow-up dates are day-granular ("call them
+ * on the 24th"), so a follow-up due LATER today is "Today", NOT overdue — a 6pm
+ * callback must not flip to "Overdue" at 11am. Keying off start-of-today-IST also
+ * makes the Today and Overdue buckets DISJOINT (Today = [start, end) today;
+ * Overdue = < start), so the same lead never double-counts across both chips and
+ * Today + Overdue == the "Today + Overdue" default exactly.
+ *
+ * Every surface that means "overdue follow-up" (Leads chip, Dashboard tile,
+ * /leads/overdue, Action List, the CSV export) MUST use this so the definition
+ * can't drift. (Action List + its SQL rollup already key off istDayRange().start,
+ * which equals this.)
+ */
+export function overdueFollowupBoundary(): Date {
+  return istDayRange().start;
+}
+
 /** Validates a "YYYY-MM-DD" string (used to sanitise a ?date= query param). */
 export function isValidDateKey(s: string | null | undefined): s is string {
   if (!s) return false;
