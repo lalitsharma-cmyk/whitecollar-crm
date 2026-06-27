@@ -2095,7 +2095,10 @@ const checks: Check[] = [
       assert(/findExistingBuyer/.test(route) && /dupMode/.test(route), "import route MUST dedup (match existing buyer + honor dupMode)");
       // The wizard must offer the Remarks field + send the full raw row + a dup choice.
       const wizard = read("src/components/BuyerImportClient.tsx");
-      assert(/\["remarks",/.test(wizard), "import wizard MUST offer a Remarks mapping field");
+      // The field catalog/aliases moved to the shared, regression-tested
+      // buyerImportMap.ts (the wizard imports BUYER_FIELDS from it) — assert it there.
+      const importMap = read("src/lib/buyerImportMap.ts");
+      assert(/remarks:\s*\[/.test(importMap), "buyerImportMap MUST offer a Remarks mapping field (with aliases)");
       assert(/_raw:/.test(wizard) && /dupMode/.test(wizard), "import wizard MUST send the full raw row + a duplicate-handling choice");
 
       // (d) DATA INVARIANT — no orphaned Smart Timeline: every buyer with an
@@ -3291,6 +3294,41 @@ const checks: Check[] = [
       const rep = fs.readFileSync(path.join(process.cwd(), "src/lib/reports.ts"), "utf8");
       assert(/ownedLeads:\s*\{\s*where:\s*activeLeadWhere\(\)/.test(rep),
         "manager digest 'active leads' must count via activeLeadWhere(), not a raw ownedLeads relation count");
+    },
+  },
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // Buyer import — unified template + smart column mapping (#249). The shared
+  // matcher maps every field, routes conversation/status to remarks (so the import
+  // route's rescue + Smart Timeline keep working), preserves unknowns, and the
+  // template round-trips at full confidence. The route persists all mapped fields.
+  // ───────────────────────────────────────────────────────────────────────────
+  {
+    name: "buyer-import-map — smart mapping (conversation→remarks, unknown→KEEP) + template round-trip + route persists all fields",
+    run: async () => {
+      const { buildBuyerColumnMap, buyerTemplateHeaders, BUYER_FIELDS, KEEP } = await import("../src/lib/buyerImportMap");
+      const map = buildBuyerColumnMap(["Client Name", "Transaction Value", "Passport No", "Country", "Size", "Conversation History", "Mystery Column"]);
+      assert(map["Client Name"].target === "clientName" && map["Client Name"].confidence === "high", "Client Name → clientName (high)");
+      assert(map["Transaction Value"].target === "transactionValue", "Transaction Value → transactionValue");
+      assert(map["Passport No"].target === "passport", "Passport No → passport");
+      assert(map["Country"].target === "country", "Country → country");
+      assert(map["Size"].target === "size", "Size → size");
+      // conversation/status aliases MUST route to remarks (never a typed column) so the
+      // route's pickConversation rescue + Smart Timeline are never bypassed.
+      assert(map["Conversation History"].target === "remarks", "Conversation History → remarks (NOT a typed field)");
+      assert(map["Mystery Column"].target === KEEP, "unknown column → KEEP (preserved verbatim, never lost)");
+      // A file built from the downloadable template auto-maps every column at high confidence.
+      const headers = buyerTemplateHeaders();
+      assert(headers.length === BUYER_FIELDS.length, "template has exactly one header per catalog field");
+      const round = buildBuyerColumnMap(headers);
+      assert(headers.every((h) => round[h].confidence === "high"), "every template header re-maps at high confidence");
+      // The import route must actually PERSIST the newly-mappable fields.
+      const fs = await import("fs");
+      const path = await import("path");
+      const route = fs.readFileSync(path.join(process.cwd(), "src/app/api/buyer-data/import/route.ts"), "utf8");
+      for (const f of ["passportExpiry", "ownerName", "country", "size", "actualSize", "area", "transactionType", "role"]) {
+        assert(new RegExp(`\\b${f}:`).test(route), `import route must persist ${f}`);
+      }
     },
   },
 

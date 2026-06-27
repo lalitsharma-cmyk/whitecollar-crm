@@ -35,16 +35,24 @@ type ImportRow = {
   phones?: string;
   emails?: string;
   passport?: string;
+  passportExpiry?: string;
   nationality?: string;
+  ownerName?: string;
+  country?: string;
   projectName?: string;
   tower?: string;
   unitNumber?: string;
   propertyType?: string;
   configuration?: string;
+  size?: string;
+  actualSize?: string;
+  area?: string;
   transactionValue?: string;
   pricePerSqFt?: string;
   transactionDate?: string;
   transactionId?: string;
+  transactionType?: string;
+  role?: string;
   agentName?: string;
   remarks?: string;          // mapped free-text remarks / notes / activity history
   _extra?: Record<string, string>;   // unmapped columns, verbatim → extraFields
@@ -286,11 +294,14 @@ export async function POST(req: NextRequest) {
           // Fill blanks only — additive, never clobber an existing value.
           const fill: Record<string, unknown> = {
             coBuyerNames: coBuyersJson, phones: phonesJson, emails: emailsJson,
-            passport: str(r.passport), nationality: str(r.nationality),
+            passport: str(r.passport), passportExpiry: str(r.passportExpiry), nationality: str(r.nationality),
+            ownerName: normalizeName(str(r.ownerName)), country: str(r.country),
             projectName: str(r.projectName), tower: str(r.tower), unitNumber: str(r.unitNumber),
             propertyType: str(r.propertyType), configuration: str(r.configuration),
+            size: str(r.size), actualSize: str(r.actualSize), area: str(r.area),
             transactionValue: num(r.transactionValue), pricePerSqFt: num(r.pricePerSqFt),
-            transactionDate: txnDate, transactionId: str(r.transactionId), agentName: normalizeName(str(r.agentName)),
+            transactionDate: txnDate, transactionId: str(r.transactionId),
+            transactionType: str(r.transactionType), role: str(r.role), agentName: normalizeName(str(r.agentName)),
           };
           const current = await prisma.buyerRecord.findUnique({ where: { id: existing.id } });
           for (const [k, v] of Object.entries(fill)) {
@@ -334,17 +345,25 @@ export async function POST(req: NextRequest) {
           phones: phonesJson,
           emails: emailsJson,
           passport: str(r.passport),
+          passportExpiry: str(r.passportExpiry),
           nationality: str(r.nationality),
+          ownerName: normalizeName(str(r.ownerName)),
+          country: str(r.country),
           projectName: str(r.projectName),
           tower: str(r.tower),
           unitNumber: str(r.unitNumber),
           propertyType: str(r.propertyType),
           configuration: str(r.configuration),
+          size: str(r.size),
+          actualSize: str(r.actualSize),
+          area: str(r.area),
           transactionValue: num(r.transactionValue),
           pricePerSqFt: num(r.pricePerSqFt),
           // transactionDate ALWAYS from the sheet — never the import timestamp.
           transactionDate: txnDate,
           transactionId: str(r.transactionId),
+          transactionType: str(r.transactionType),
+          role: str(r.role),
           agentName: normalizeName(str(r.agentName)),
           // Remarks verbatim → Raw History (never reformatted).
           remarks: remark,

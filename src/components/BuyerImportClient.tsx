@@ -3,6 +3,15 @@ import { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import * as XLSX from "xlsx";
+import {
+  BUYER_FIELDS,
+  BUYER_FIELD_LABELS,
+  buildBuyerColumnMap,
+  buyerHeaderScore,
+  buyerTemplateHeaders,
+  KEEP,
+  SKIP,
+} from "@/lib/buyerImportMap";
 
 // Buyer transaction import with a COLUMN-MAPPING WIZARD. Auto-detects the header
 // row, then shows EVERY sheet column with a per-column decision:
@@ -13,80 +22,43 @@ import * as XLSX from "xlsx";
 // Admin-only (page + API both gate it). Only clientName is required; transactionDate
 // comes from the sheet (Excel serials & dd/mm/yyyy supported).
 
-const BUYER_FIELDS: [string, string][] = [
-  ["clientName", "Client Name"], ["coBuyerNames", "Co-buyers"], ["phones", "Phone(s)"], ["emails", "Email(s)"],
-  ["passport", "Passport"], ["nationality", "Nationality"],
-  ["projectName", "Project"], ["tower", "Tower / Building"], ["unitNumber", "Unit Number"],
-  ["propertyType", "Property Type"], ["configuration", "Configuration"],
-  ["transactionValue", "Transaction Value"], ["pricePerSqFt", "Price / sq.ft"],
-  ["transactionDate", "Transaction Date"], ["transactionId", "Transaction ID"],
-  ["agentName", "Agent"],
-  // Remarks / notes / activity history → BuyerRecord.remarks (verbatim Raw History +
-  // a derived Smart Timeline). Parity with the Lead import's Remarks mapping.
-  ["remarks", "Remarks / Notes"],
-];
-const FIELD_LABEL = Object.fromEntries(BUYER_FIELDS) as Record<string, string>;
+// The field catalog, aliases, header matcher, and template headers all live in the
+// shared, regression-tested src/lib/buyerImportMap.ts (single source of truth — #249).
+const FIELD_LABEL = BUYER_FIELD_LABELS;
 
-const GUESS: Record<string, string[]> = {
-  clientName: ["client name", "buyer name", "customer name", "name of buyer", "purchaser", "owner name", "name"],
-  coBuyerNames: ["co buyer", "co-buyer", "joint buyer", "co applicant", "co-applicant", "second buyer", "family"],
-  phones: ["phone", "mobile", "contact", "contact number", "mobile number", "phone number", "cell"],
-  emails: ["email", "email id", "e-mail", "mail", "email address"],
-  passport: ["passport", "passport no", "passport number"],
-  nationality: ["nationality", "country", "citizenship"],
-  projectName: ["project", "project name", "development", "property name", "building project"],
-  tower: ["tower", "building", "block", "wing"],
-  unitNumber: ["unit", "unit no", "unit number", "apartment", "flat", "villa no", "apt"],
-  propertyType: ["property type", "type", "asset type", "category"],
-  configuration: ["configuration", "config", "bhk", "bedrooms", "layout", "unit type"],
-  transactionValue: ["transaction value", "deal value", "sale price", "price", "amount", "value", "consideration", "total value", "sale value"],
-  pricePerSqFt: ["price per sqft", "price per sq ft", "psf", "rate", "per sqft", "price/sqft", "rate per sqft"],
-  transactionDate: ["transaction date", "deal date", "booking date", "date of sale", "sale date", "agreement date", "date", "purchase date"],
-  transactionId: ["transaction id", "deal id", "booking id", "reference", "ref no", "transaction ref", "deal reference"],
-  agentName: ["agent", "agent name", "sales agent", "broker", "rm", "relationship manager", "sold by"],
-  remarks: ["remarks", "remark", "notes", "note", "comments", "comment", "follow-up notes", "followup notes", "activity history", "activity", "conversation", "history", "status", "follow-up", "followup", "follow up"],
-};
-
-const norm = (h: string) => h.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 const isJunkHeader = (h: string) => !h || !h.trim() || /^__empty/i.test(h.trim());
-const ALL_SYN = (() => { const s = new Set<string>(); for (const f in GUESS) GUESS[f].forEach((x) => s.add(x)); return [...s]; })();
-function fieldMatchCount(cells: string[]): number {
-  let score = 0;
-  for (const c of cells) { const n = norm(c); if (!n) continue; if (ALL_SYN.some((s) => n === s || n.includes(s) || s.includes(n))) score++; }
-  return score;
-}
+
 function detectHeaderRow(grid: string[][]): number {
   let best = 0, bestScore = -1;
   for (let i = 0; i < Math.min(20, grid.length); i++) {
-    const s = fieldMatchCount(grid[i] ?? []);
+    const s = buyerHeaderScore(grid[i] ?? []);
     if (s > bestScore) { bestScore = s; best = i; }
   }
   return best;
 }
 
-// A per-column decision. target = a BuyerRecord field name, or "__keep" (extraFields)
-// or "__skip" (drop). Auto-detection pre-fills known columns to their field; unknown
-// columns default to "__keep" so NO data is lost unless the admin chooses to skip.
-type ColTarget = string; // field name | "__keep" | "__skip"
-const KEEP = "__keep";
-const SKIP = "__skip";
+// A per-column decision. target = a BuyerRecord field name, or KEEP (extraFields) or
+// SKIP (drop). buildBuyerColumnMap (shared) pre-fills known columns; unknown columns
+// default to KEEP so NO data is lost unless the admin explicitly skips.
+type ColTarget = string; // field name | KEEP | SKIP
 
+// Adapter: the shared mapper returns { target, confidence } per column; the wizard
+// state only needs the target string.
 function guessColumnMap(headers: string[]): Record<string, ColTarget> {
   const out: Record<string, ColTarget> = {};
-  const takenFields = new Set<string>();
-  // First pass: assign each header to its best-matching field (one field per column).
-  for (const h of headers) {
-    const nh = norm(h);
-    let matched: string | null = null;
-    for (const [field] of BUYER_FIELDS) {
-      if (takenFields.has(field)) continue;
-      const cands = (GUESS[field] ?? [field]).map(norm);
-      if (cands.includes(nh) || cands.some((c) => nh.includes(c) || c.includes(nh))) { matched = field; break; }
-    }
-    if (matched) { out[h] = matched; takenFields.add(matched); }
-    else out[h] = KEEP; // unknown → preserved in extraFields by default
-  }
+  for (const [h, m] of Object.entries(buildBuyerColumnMap(headers))) out[h] = m.target;
   return out;
+}
+
+// Download a blank CSV of the canonical buyer-import headers. A file built from this
+// re-imports at full auto-map confidence (each template header IS the first alias of
+// its field). Pure client-side blob — no server route, no data, admin-gated page.
+function downloadTemplate() {
+  const csv = buyerTemplateHeaders().map((h) => (/[",\r\n]/.test(h) ? `"${h.replace(/"/g, '""')}"` : h)).join(",") + "\r\n";
+  const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8;" }));
+  const a = document.createElement("a");
+  a.href = url; a.download = "dubai-buyer-import-template.csv";
+  a.click(); URL.revokeObjectURL(url);
 }
 
 export default function BuyerImportClient() {
@@ -228,12 +200,18 @@ export default function BuyerImportClient() {
       {note && <div className="text-sm bg-blue-50 border border-blue-200 text-blue-800 rounded p-2 dark:bg-blue-900/20 dark:border-blue-700 dark:text-blue-200">{note}</div>}
 
       {step === "upload" && (
-        <label className="block border-2 border-dashed border-gray-200 dark:border-slate-600 rounded-xl p-8 text-center cursor-pointer hover:border-[#1a2e4a] transition">
-          <input type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={(e) => e.target.files?.[0] && onFile(e.target.files[0])} />
-          <div className="text-3xl mb-2">📥</div>
-          <div className="text-sm text-gray-600 dark:text-slate-300">Drop a <b>Excel (.xlsx)</b> or <b>CSV</b> file of buyer transactions, or <b className="text-[#1a2e4a] dark:text-blue-400">click to browse</b></div>
-          <div className="text-[11px] text-gray-400 mt-1">Header row auto-detected · map each column (or keep it as-is) · no data is dropped.</div>
-        </label>
+        <div className="space-y-3">
+          <label className="block border-2 border-dashed border-gray-200 dark:border-slate-600 rounded-xl p-8 text-center cursor-pointer hover:border-[#1a2e4a] transition">
+            <input type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={(e) => e.target.files?.[0] && onFile(e.target.files[0])} />
+            <div className="text-3xl mb-2">📥</div>
+            <div className="text-sm text-gray-600 dark:text-slate-300">Drop a <b>Excel (.xlsx)</b> or <b>CSV</b> file of buyer transactions, or <b className="text-[#1a2e4a] dark:text-blue-400">click to browse</b></div>
+            <div className="text-[11px] text-gray-400 mt-1">Header row auto-detected · columns smart-matched · map or keep each · no data is dropped.</div>
+          </label>
+          <div className="flex items-center justify-center gap-2 text-xs text-gray-500 dark:text-slate-400">
+            <span>Not sure of the column names?</span>
+            <button type="button" onClick={downloadTemplate} className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-slate-200 hover:bg-gray-50 dark:hover:bg-slate-800 font-medium">⬇ Download template</button>
+          </div>
+        </div>
       )}
 
       {step === "map" && (
