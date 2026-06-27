@@ -94,7 +94,9 @@ export default async function ColdDataPage({ searchParams }: { searchParams: Pro
   // never counted). The regression suite asserts this declaration carries both
   // leadOrigin AND deletedAt:null.
   const originCold: Prisma.LeadWhereInput = { leadOrigin: { in: COLD_ORIGINS }, deletedAt: null };
-  const unassigned: Prisma.LeadWhereInput = { ownerId: null };
+  // "Unassigned" = workable-unassigned only. A rejected cold lead is unassigned for
+  // history; it belongs under Lost/Rejected, never the assign queue (Lalit 2026-06-28).
+  const unassigned: Prisma.LeadWhereInput = { ownerId: null, rejectedAt: null };
 
   // ── Shared filter translation (same engine as /leads + /master-data) ────────
   // leadFilterWhere() turns the LeadFilters panel params (q, cstatus, source,

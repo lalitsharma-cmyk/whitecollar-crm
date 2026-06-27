@@ -54,7 +54,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
       countAwaitingTeamLeads(),
     ]);
     const overdueUnassigned = await prisma.lead.count({
-      where: { ...w, ownerId: null, followupDate: { lt: new Date(), not: null } }
+      where: { ...w, ownerId: null, rejectedAt: null, followupDate: { lt: new Date(), not: null } }
     });
     return { unassigned, overdueUnassigned, awaitingTeam };
   })() : null;
@@ -253,7 +253,9 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     // Created after 10pm yesterday IST AND still unassigned today
     const cutoff = new Date(Date.now() - 14 * 3600 * 1000); // last 14 hours
     morningQueueLeads = await prisma.lead.findMany({
-      where: { ownerId: null, isColdCall: false, deletedAt: null, createdAt: { gte: cutoff }, currentStatus: { notIn: SUPPRESSED_STATUSES } },
+      // rejectedAt: null — a rejected lead is unassigned for HISTORY only; it must
+      // never appear in the "waiting for your assign" queue (Lalit 2026-06-28).
+      where: { ownerId: null, isColdCall: false, deletedAt: null, rejectedAt: null, createdAt: { gte: cutoff }, currentStatus: { notIn: SUPPRESSED_STATUSES } },
       select: { id: true, name: true, phone: true, createdAt: true, forwardedTeam: true },
       orderBy: { createdAt: "desc" },
       take: 20,

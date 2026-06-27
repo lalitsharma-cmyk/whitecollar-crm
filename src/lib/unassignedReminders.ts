@@ -30,6 +30,7 @@ function unassignedBase(): Prisma.LeadWhereInput {
   return {
     ownerId: null,
     deletedAt: null,
+    rejectedAt: null,          // rejected leads are unassigned for history only — never re-alert to assign them
     isColdCall: false,
     importBatchId: null,
     OR: [{ currentStatus: null }, { currentStatus: "" }, { currentStatus: { notIn: TERMINAL_STATUSES } }],

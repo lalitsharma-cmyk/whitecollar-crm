@@ -3398,6 +3398,33 @@ const checks: Check[] = [
   },
 
   // ───────────────────────────────────────────────────────────────────────────
+  // Rejected-unassigned must NEVER enter the assignment workflow. A rejected lead is
+  // unassigned for history only — it must not appear in "waiting to assign" queues,
+  // unassigned counters, or assign reminders (Lalit 2026-06-28, critical).
+  // ───────────────────────────────────────────────────────────────────────────
+  {
+    name: "rejected-not-in-assign-queue — unassigned counters/alerts/dashboard exclude rejected leads",
+    run: async () => {
+      const fs = await import("fs");
+      const path = await import("path");
+      const read = (f: string) => fs.readFileSync(path.join(process.cwd(), f), "utf8");
+      assert(/rejectedAt:\s*null/.test(read("src/lib/leadCounts.ts")), "countUnassignedLeads must carry rejectedAt: null");
+      assert(/rejectedAt:\s*null/.test(read("src/lib/unassignedReminders.ts")), "unassigned reminder base must carry rejectedAt: null");
+      const dash = read("src/app/(app)/dashboard/page.tsx");
+      assert((dash.match(/rejectedAt:\s*null/g) ?? []).length >= 2, "dashboard waiting-to-assign + overdue-unassigned queues must carry rejectedAt: null");
+      assert(/rejectedAt:\s*null/.test(read("src/app/(app)/cold-calls/page.tsx")), "revival 'Unassigned' filter must carry rejectedAt: null");
+      // DATA: no rejected lead sits unassigned with a non-terminal status (which would
+      // let it leak into a weak-guard queue). Reject always stamps a terminal status.
+      const { TERMINAL_STATUSES: TERM } = await import("../src/lib/lead-statuses");
+      const leak = await prisma.lead.count({
+        where: { ownerId: null, deletedAt: null, rejectedAt: { not: null }, isColdCall: false,
+          OR: [{ currentStatus: null }, { currentStatus: "" }, { currentStatus: { notIn: TERM } }] },
+      });
+      assert(leak === 0, `${leak} rejected+unassigned lead(s) carry a non-terminal status — could leak into assign queues`);
+    },
+  },
+
+  // ───────────────────────────────────────────────────────────────────────────
   {
     name: "log-conversation-validation — outcome+remarks mandatory (server 400); NO follow-up field on call/WA logging (Jun25 reversal); Activity carries outcome; no Connected default",
     run: async () => {

@@ -108,6 +108,7 @@ export async function countUnassignedLeads(me?: ScopedUser): Promise<number> {
     isColdCall: false,
     deletedAt: null,
     ownerId: null,
+    rejectedAt: null,          // rejected = unassigned-for-history, NOT ready to assign
     OR: WORKABLE_STATUS_OR,
     ...(me ? await leadScopeWhere(me) : {}),
   };
