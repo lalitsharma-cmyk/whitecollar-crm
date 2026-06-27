@@ -285,6 +285,10 @@ export const LOST_STATUSES: string[] = [
   "Never Respond Phone Calls", "Never Respond Phone calls", // import casing variant
   "Never Responding", "Pass Away",
   "Junk", "Blocked Me", "By Mistake Inquiry",
+  // Bare "Other" = the OTHER reject-reason outcome (rejectionStatusFor("OTHER")).
+  // Only ever set on a rejected lead, so it's terminal — it must leave the working
+  // view. (Verified: 0 active/non-rejected leads carry it. Lalit 2026-06-28.)
+  "Other",
 ];
 
 // Every terminal status — both CLOSED and LOST leave the working Leads view.

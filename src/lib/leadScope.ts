@@ -254,6 +254,7 @@ export function activeBoardWhere<T extends Prisma.LeadWhereInput>(scope: T): Pri
   return {
     ...scope,
     leadOrigin: { notIn: COLD_ORIGINS },
+    rejectedAt: null,   // a rejected lead is off the board regardless of a stale workable status (Lalit 2026-06-28)
     AND: [
       ...existingAnd,
       { OR: WORKABLE_STATUS_OR },     // rule 2: not terminal (null/blank kept)
