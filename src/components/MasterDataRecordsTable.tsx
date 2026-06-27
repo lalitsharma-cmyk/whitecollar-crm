@@ -180,7 +180,7 @@ const BUILTINS: { name: string; test: (r: MDRow, today: string) => boolean }[] =
   { name: "Workable Leads", test: (r) => r.bucket === "Workable" },
 ];
 
-type SavedView = { name: string; filters: Record<string, string[]>; sort: { col: ColKey; dir: "asc" | "desc" } | null; hidden: ColKey[]; frozen: boolean };
+type SavedView = { name: string; filters: Record<string, string[]>; sort: { col: ColKey; dir: "asc" | "desc" } | null; hidden: ColKey[]; frozen: boolean; builtin?: string | null };
 const serFilters = (f: Record<string, Set<string>>) => Object.fromEntries(Object.entries(f).filter(([, s]) => s.size).map(([k, s]) => [k, [...s]]));
 const deserFilters = (o: Record<string, string[]>) => Object.fromEntries(Object.entries(o || {}).map(([k, a]) => [k, new Set(a)]));
 
@@ -245,7 +245,13 @@ export default function MasterDataRecordsTable({ rows, agents, projects, isSuper
 
   const filtered = useMemo(() => {
     let out = rows;
-    const bv = BUILTINS.find((b) => b.name === activeView);
+    // A built-in can be active directly (activeView is its name) OR captured inside an
+    // active SAVED view (v.builtin) — apply it either way so a saved "Today's Leads"
+    // view re-runs the test against TODAY (dynamic, not frozen to the save date).
+    const bvName = BUILTINS.find((b) => b.name === activeView)?.name
+      ?? views.find((v) => v.name === activeView)?.builtin
+      ?? null;
+    const bv = BUILTINS.find((b) => b.name === bvName);
     if (bv) { const t = todayIST(); out = out.filter((r) => bv.test(r, t)); }
     for (const [col, set] of Object.entries(filters)) {
       if (set.size === 0) continue;
@@ -264,7 +270,7 @@ export default function MasterDataRecordsTable({ rows, agents, projects, isSuper
       out = [...out].sort((a, b) => sectionRank(a) - sectionRank(b) || (b.createdAtMs - a.createdAtMs));
     }
     return out;
-  }, [rows, filters, sort, activeView]);
+  }, [rows, filters, sort, activeView, views]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE));
   const safePage = Math.min(pageNo, totalPages - 1);
@@ -336,7 +342,9 @@ export default function MasterDataRecordsTable({ rows, agents, projects, isSuper
   const saveCurrentView = () => {
     const name = (window.prompt("Save current filters + columns as a view named:") || "").trim();
     if (!name) return;
-    const v: SavedView = { name, filters: serFilters(filters), sort, hidden: [...hidden], frozen };
+    // Capture an active built-in (e.g. "Today's Leads") so the saved view re-runs it
+    // dynamically on reopen — Lalit wants "Today's Leads" to always mean the CURRENT day.
+    const v: SavedView = { name, filters: serFilters(filters), sort, hidden: [...hidden], frozen, builtin: BUILTINS.some((b) => b.name === activeView) ? activeView : null };
     persistViews([...views.filter((x) => x.name !== name), v]);
     setActiveView(name);
   };

@@ -213,9 +213,17 @@ export default function QuickSearch() {
             autoComplete="off"
             spellCheck={false}
           />
-          <span className="text-[10px] text-gray-400 border border-gray-300 rounded px-1.5 py-0.5">
-            Esc
-          </span>
+          {/* Proper ✕ close button (44×44 touch target). Esc + click-outside still
+              close the modal — Esc is now a keyboard shortcut only, not a visible chip. */}
+          <button
+            type="button"
+            onClick={close}
+            aria-label="Close search"
+            title="Close (Esc)"
+            className="-mr-1 inline-flex items-center justify-center min-w-[44px] min-h-[44px] rounded-lg text-gray-500 hover:text-gray-800 hover:bg-gray-100 dark:text-slate-400 dark:hover:text-slate-100 dark:hover:bg-slate-700 transition"
+          >
+            <span className="text-lg leading-none">✕</span>
+          </button>
         </div>
 
         <div className="max-h-[60vh] overflow-y-auto">
