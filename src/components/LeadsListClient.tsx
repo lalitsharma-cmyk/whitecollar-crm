@@ -19,6 +19,10 @@ import { ACTION_TOKENS } from "@/lib/actionDesign";
 import { showXpToast } from "@/components/XPToast";
 import { statusColor, selectableStatuses } from "@/lib/lead-statuses";
 import { resolveEnquiredProperty, prettyProjectName } from "@/lib/projectName";
+// Shared source allow-list — same one the New-Lead form uses, so the Master-Data
+// bulk Source edit can't re-offer the deprecated WhatsApp/Inbound-Call/Event/Email
+// values (channel → Medium). See src/lib/lead-sources.ts.
+import { allowedSourceOptions } from "@/lib/lead-sources";
 
 // ── Row Snooze button ────────────────────────────────────────────────────────
 // Wraps the shared CRMDatePicker (IST, future-only, with time) so a single
@@ -1513,7 +1517,7 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
                 <label className="text-[11px] font-semibold text-gray-500 dark:text-slate-400">Source</label>
                 <select value={editSource} onChange={(e) => setEditSource(e.target.value)} className="w-full border border-[#e5e7eb] dark:border-slate-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-slate-700 dark:text-slate-100 mb-2 mt-0.5">
                   <option value="">— leave unchanged —</option>
-                  {["WEBSITE","WHATSAPP","CSV_IMPORT","EVENT","REFERRAL","INBOUND_CALL","FACEBOOK_ADS","GOOGLE_ADS","PORTAL_99ACRES","PORTAL_MAGICBRICKS","PORTAL_HOUSING","OTHER"].map(s => <option key={s} value={s}>{s.replace(/_/g," ").replace("PORTAL ","")}</option>)}
+                  {allowedSourceOptions().map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                 </select>
                 <label className="text-[11px] font-semibold text-gray-500 dark:text-slate-400">Budget</label>
                 <input value={editBudget} onChange={(e) => setEditBudget(e.target.value)} placeholder="e.g. 2.5M · 30L · 3Cr · 2000000" className="w-full border border-[#e5e7eb] dark:border-slate-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-slate-700 dark:text-slate-100 mb-2 mt-0.5" />

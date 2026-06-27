@@ -3353,6 +3353,30 @@ const checks: Check[] = [
   },
 
   // ───────────────────────────────────────────────────────────────────────────
+  // Smart Timeline must NEVER turn a date MENTIONED inside a client message into a
+  // timeline event date (critical regression, Lalit 2026-06-28). "...Expo on 4-5
+  // July 2026" must stay ONE verbatim entry at the lead's real time — not a fake
+  // card dated 5 Jul. Future + mid-sentence dates are content, never events.
+  // ───────────────────────────────────────────────────────────────────────────
+  {
+    name: "smart-timeline-content-dates — client-message dates (future / mid-sentence) never become event dates; real leading dates still parse",
+    run: async () => {
+      const { parseRemarksTimeline } = await import("../src/lib/remarkParser");
+      const created = new Date("2026-06-26T10:17:00Z"); // lead created 26 Jun
+      const now = new Date("2026-06-28T00:00:00Z");
+      const istDay = (d: Date | null) => d ? new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata", year: "numeric", month: "2-digit", day: "2-digit" }).format(d) : "null";
+      const msg = "Hi, I saw your website. I am interested in attending the Dubai Property Expo on 4-5 July 2026. I am interested in buying a property in Dubai.";
+      const got = parseRemarksTimeline(msg, [], created, now);
+      assert(got.length === 1, `client message must stay ONE entry, never split on a content date (got ${got.length})`);
+      assert(istDay(got[0].date) !== "2026-07-05", `client message must NOT be dated to the content date 5 Jul (got ${istDay(got[0].date)})`);
+      assert(/4-5 July 2026/.test(got[0].text) && /buying a property/.test(got[0].text), "client message must be preserved verbatim (not split/truncated at the mentioned date)");
+      // A REAL leading 'On <past date>' agent remark must still parse to that date.
+      const agent = parseRemarksTimeline("On 20 Jun 2026 (3:30 pm) client called, discussed 2BR", [], created, now);
+      assert(istDay(agent[0].date) === "2026-06-20", `a genuine leading 'On <past date>' header must still parse (got ${istDay(agent[0].date)})`);
+    },
+  },
+
+  // ───────────────────────────────────────────────────────────────────────────
   {
     name: "log-conversation-validation — outcome+remarks mandatory (server 400); NO follow-up field on call/WA logging (Jun25 reversal); Activity carries outcome; no Connected default",
     run: async () => {

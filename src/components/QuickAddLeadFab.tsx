@@ -17,6 +17,9 @@ import { useRouter } from "next/navigation";
 import { Plus, X } from "lucide-react";
 import { quickCreateLeadAction } from "@/app/(app)/leads/new/actions";
 import { useBodyScrollLock } from "@/hooks/useBodyScrollLock";
+// Shared source list — same allow-list the New-Lead form uses, so quick-add can't
+// re-offer the deprecated WhatsApp/Inbound-Call/Event values (channel → Medium).
+import { allowedSourceOptions } from "@/lib/lead-sources";
 
 type Result = { ok: boolean; leadId?: string; error?: string };
 
@@ -191,11 +194,9 @@ export default function QuickAddLeadFab() {
                         defaultValue="OTHER"
                         className="w-full mt-1 border border-[#e5e7eb] rounded-lg px-3 py-2 text-sm"
                       >
-                        <option value="OTHER">Manual / Walk-in</option>
-                        <option value="REFERRAL">Referral</option>
-                        <option value="INBOUND_CALL">Inbound call</option>
-                        <option value="WHATSAPP">WhatsApp</option>
-                        <option value="EVENT">Event / Expo</option>
+                        {allowedSourceOptions().map((o) => (
+                          <option key={o.value} value={o.value}>{o.label}</option>
+                        ))}
                       </select>
                     </div>
                   </div>

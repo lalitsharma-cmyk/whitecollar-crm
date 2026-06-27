@@ -136,6 +136,29 @@ function tryExtractDate(line: string): Date | null {
   return null;
 }
 
+// Extract a date ONLY when the text STARTS with it ("5 Jul 2026 called", "17-May-26
+// not picked"). A date buried MID-SENTENCE ("…attending the Expo on 4-5 July 2026",
+// "his mother passed away on 1 April") is CLIENT-MESSAGE CONTENT and must NEVER
+// become a timeline event date. This is the anchored counterpart to tryExtractDate
+// (which scans the whole line) — used for non-"On…" content lines so a client's
+// message is never re-dated to a date it merely mentions. (Lalit 2026-06-28, critical.)
+function leadingDate(text: string): Date | null {
+  const t = (text ?? "").trimStart();
+  const mLong = t.match(/^(\d{1,2})[\s\-/.]+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*[\s\-/.,]+(\d{2,4})\b/i);
+  if (mLong) {
+    const mon = MONTHS[mLong[2].toLowerCase().slice(0, 4)] ?? MONTHS[mLong[2].toLowerCase()];
+    if (mon !== undefined) return dateOnlyNoonIST(expandYear(parseInt(mLong[3])), mon, parseInt(mLong[1]));
+  }
+  const mISO = t.match(/^(\d{4})-(\d{2})-(\d{2})\b/);
+  if (mISO) return dateOnlyNoonIST(parseInt(mISO[1]), parseInt(mISO[2]) - 1, parseInt(mISO[3]));
+  const mDMY = t.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})\b/);
+  if (mDMY) {
+    const day = parseInt(mDMY[1]), mon = parseInt(mDMY[2]) - 1, yr = expandYear(parseInt(mDMY[3]));
+    if (day >= 1 && day <= 31 && mon >= 0 && mon <= 11) return dateOnlyNoonIST(yr, mon, day);
+  }
+  return null;
+}
+
 // ─── Event-type classification ───────────────────────────────────────────────
 
 export type RemarkEventType =
@@ -430,10 +453,18 @@ export function parseRemarksTimeline(
   cell: string,
   agentNames: string[],
   leadCreatedAt?: Date,
+  now: Date = new Date(),
 ): RemarkEntry[] {
   if (!cell || typeof cell !== "string") return [];
 
   const matchAgent = buildAgentMatcher(agentNames);
+
+  // A remark documents something that ALREADY happened, so a parsed date in the
+  // FUTURE is never an event date — it is client-message CONTENT ("…attending the
+  // Expo on 4-5 July 2026"). Reject anything more than a day ahead of `now`.
+  // (Lalit 2026-06-28, critical Smart-Timeline regression.)
+  const futureCutoff = now.getTime() + 24 * 60 * 60 * 1000;
+  const notFuture = (d: Date | null): Date | null => (d && d.getTime() > futureCutoff ? null : d);
 
   // Normalize MIS separators and split inline "On DD Mon" occurrences
   const normalized = cell
@@ -459,8 +490,15 @@ export function parseRemarksTimeline(
     // date ("on 5 July to visit") structurally cannot match, so a client message is
     // never torn.
     .replace(
-      /[.!?,]?\s*((?:[A-Z][A-Za-z]{1,20}\s*:\s*)?[oO]n\s+\d{1,2}[\s\-/.]+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*[\s\-/.]+\d{2,4}\b)/gi,
-      (_m, block) => `\n${block}`,
+      /[.!?,]?\s*((?:[A-Z][A-Za-z]{1,20}\s*:\s*)?[oO]n\s+(\d{1,2})[\s\-/.]+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*[\s\-/.]+(\d{2,4})\b)/gi,
+      (m: string, block: string, dd: string, mon: string, yy: string) => {
+        // Only treat "On <date>" as a NEW dated entry when the date is NOT in the
+        // future — a future "on 4-5 July 2026" is client-message content, not an
+        // event header, so it must not split the message into a fake dated entry.
+        const mi = MONTHS[mon.toLowerCase().slice(0, 4)];
+        const dt = mi === undefined ? null : new Date(Date.UTC(expandYear(parseInt(yy)), mi, parseInt(dd), 6, 30));
+        return notFuture(dt) ? `\n${block}` : m;
+      },
     )
     .trim();
 
@@ -478,7 +516,7 @@ export function parseRemarksTimeline(
     const mFull = line.match(FULL_DATED_RE);
     if (mFull) {
       const candidate = mFull[1]?.trim() ?? null;
-      const date = parseDateTime(mFull[2].trim(), mFull[3].trim());
+      const date = notFuture(parseDateTime(mFull[2].trim(), mFull[3].trim()));
       const body = cleanRemarkBody((mFull[4] ?? "").replace(/^[,.\s]+/, "").trim());
       if (candidate) {
         const resolved = matchAgent(candidate);
@@ -494,7 +532,7 @@ export function parseRemarksTimeline(
     const mOn = line.match(ON_DATE_NO_TIME);
     if (mOn) {
       const candidate = mOn[1]?.trim() ?? null;
-      let date = tryExtractDate(mOn[2].trim()) ?? tryExtractDate(line);
+      let date = notFuture(tryExtractDate(mOn[2].trim()));
       let body = (mOn[3] ?? "").replace(/^[,.\s]+/, "").trim();
       // The body may START with a written clock time ("On 19 Jun 2026, 3:30 PM
       // call not picked"). The calling team writes these in IST, so PROMOTE the
@@ -524,7 +562,7 @@ export function parseRemarksTimeline(
       if (resolved) currentAgent = resolved;
       const body = line.slice(mName[0].length).trim();
       if (body.length < 2) continue; // name-only line — agent updated, nothing to push
-      const date = tryExtractDate(body) ?? tryExtractDate(line);
+      const date = notFuture(leadingDate(body));
       let displayText = body.replace(/^[,.\s]+/, "").trim();
       if (date) {
         displayText = displayText
@@ -539,8 +577,9 @@ export function parseRemarksTimeline(
       continue;
     }
 
-    // Case 4: plain line — may have a date embedded, otherwise truly undated
-    const date = tryExtractDate(line);
+    // Case 4: plain content line. Only a LEADING date counts (a real date prefix);
+    // a date mentioned mid-sentence is client-message content, never an event date.
+    const date = notFuture(leadingDate(line));
     let displayText = line;
     if (date) {
       displayText = line

@@ -21,6 +21,7 @@ import AdvancedActivityLogger from "@/components/AdvancedActivityLogger";
 import { getTravelRatePerKmInr } from "@/lib/settings";
 import { runReconciler } from "@/lib/reconciler";
 import InlineEdit from "@/components/InlineEdit";
+import { sourceLabel } from "@/lib/lead-sources";
 import { acefoneEnabled } from "@/lib/acefone";
 import { canTouchLead, leadScopeWhere, COLD_ORIGINS } from "@/lib/leadScope";
 import { hasContactActivityToday } from "@/lib/followupGate";
@@ -674,20 +675,6 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
   // "ADMIN" covers super-admins via isSuperAdmin). Managers + agents see it
   // read-only. The server enforces the same rule in /api/leads/[id]/update.
   const canEditSource = me.role === "ADMIN";
-  const sourceOptions = [
-    { value: "WEBSITE", label: "Website" },
-    { value: "WHATSAPP", label: "WhatsApp" },
-    { value: "CSV_IMPORT", label: "CSV Import" },
-    { value: "EVENT", label: "Event" },
-    { value: "REFERRAL", label: "Referral" },
-    { value: "INBOUND_CALL", label: "Inbound Call" },
-    { value: "FACEBOOK_ADS", label: "Facebook Ads" },
-    { value: "GOOGLE_ADS", label: "Google Ads" },
-    { value: "PORTAL_99ACRES", label: "99acres" },
-    { value: "PORTAL_MAGICBRICKS", label: "MagicBricks" },
-    { value: "PORTAL_HOUSING", label: "Housing.com" },
-    { value: "OTHER", label: "Other" },
-  ];
 
   const qualificationCard = (
     <div data-lead-section="overview" className="card p-4">
@@ -735,7 +722,7 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
         <div>
           <div className="text-xs text-gray-500 dark:text-slate-400">📥 Source</div>
           {(() => {
-            const shown = lead.sourceRaw ?? sourceOptions.find(o => o.value === lead.source)?.label ?? (lead.source ?? "");
+            const shown = lead.sourceRaw ?? sourceLabel(lead.source);
             return canEditSource ? (
               <InlineEdit leadId={lead.id} field="sourceRaw" value={shown} placeholder="Set source" />
             ) : (

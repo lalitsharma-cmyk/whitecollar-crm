@@ -2,6 +2,10 @@
 
 import { useEffect, useState } from "react";
 import LocationSelect from "@/components/LocationSelect";
+// Source vocabulary is centralised so the New-Lead form, Quick-Add FAB,
+// lead-detail inline edit, and Master-Data bulk edit can't drift apart and
+// re-introduce a deprecated source value. See src/lib/lead-sources.ts.
+import { ALLOWED_SOURCES, SOURCE_LABELS } from "@/lib/lead-sources";
 
 // Self-contained client block for the New-Lead form covering:
 //   • Source <select>  (drives conditional fields via React state)
@@ -23,40 +27,9 @@ import LocationSelect from "@/components/LocationSelect";
 const input = "w-full mt-1 border border-[#e5e7eb] rounded-lg px-3 py-2 text-sm";
 const label = "text-xs font-semibold text-gray-600";
 
-// Canonical Source labels. Only the values that should appear in the picker are
-// listed (see ALLOWED_SOURCES). Notably WCR_WEBSITE is dropped (dupe "Website"),
-// and WHATSAPP / INBOUND_CALL / EMAIL / EVENT are removed (task 11). WCR_EVENT
-// is kept as "WCR Event".
-const SOURCE_LABELS: Record<string, string> = {
-  WEBSITE: "Website",
-  WCR_EVENT: "WCR Event",
-  LANDING_PAGE: "Landing Page",
-  REFERRAL: "Referral",
-  FACEBOOK_ADS: "Facebook Ads",
-  GOOGLE_ADS: "Google Ads",
-  PORTAL_99ACRES: "Portal 99acres",
-  PORTAL_MAGICBRICKS: "Portal MagicBricks",
-  PORTAL_HOUSING: "Portal Housing",
-  CSV_IMPORT: "CSV Import",
-  OTHER: "Other",
-};
-
-// The ONLY source values shown in the New-Lead picker. Order = display order.
-// (CSV_IMPORT intentionally excluded — imports set it programmatically, it is
-// never a manual New-Lead choice.) Anything not here is filtered out even if
-// the server passes the full enum.
-const ALLOWED_SOURCES = [
-  "WEBSITE",
-  "WCR_EVENT",
-  "LANDING_PAGE",
-  "REFERRAL",
-  "FACEBOOK_ADS",
-  "GOOGLE_ADS",
-  "PORTAL_99ACRES",
-  "PORTAL_MAGICBRICKS",
-  "PORTAL_HOUSING",
-  "OTHER",
-];
+// SOURCE_LABELS + ALLOWED_SOURCES now live in @/lib/lead-sources (the single
+// source of truth) — imported above. WCR_WEBSITE is dropped (dupe "Website") and
+// WHATSAPP / INBOUND_CALL / EMAIL / EVENT are absent (task 11; channel → Medium).
 
 interface Props {
   sources: string[];
