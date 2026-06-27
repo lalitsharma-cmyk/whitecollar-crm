@@ -411,7 +411,13 @@
 // Purely presentational (new isolated MotivationBanner client island); no data,
 // no business logic, no permission change — the leads table/filters are
 // untouched. Bump shell so every client loads the new banner.
-const CACHE = "wcr-shell-v99";
+// v99 (2026-06-28): Source-picker drift fix — the Quick-Add FAB, lead-detail
+// inline edit, and Master-Data bulk edit now share ONE allow-list
+// (src/lib/lead-sources.ts) with the New-Lead form, so none can re-offer the
+// deprecated WhatsApp / Inbound Call / Email / Event source values (the channel
+// lives in the Medium field now). Display/picker-only — no schema or data change.
+// Bump shell so every client loads the corrected pickers.
+const CACHE = "wcr-shell-v100";
 const SHELL = ["/login", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", (event) => {

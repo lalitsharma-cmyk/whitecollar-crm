@@ -166,7 +166,10 @@ function unassignedAgeBadge(createdAtMs: number): { label: string; cls: string }
 // Default Saved Views — predicate presets over the loaded rows (owner-approved list).
 const BUILTINS: { name: string; test: (r: MDRow, today: string) => boolean }[] = [
   { name: "New Website Leads", test: (r) => r.sourceLabel === "Website" },
-  { name: "Unassigned Leads", test: (r) => !r.ownerId },
+  // "Unassigned" must mean READY TO ASSIGN — only workable leads. A rejected lead is
+  // unassigned too (hard-unassign on reject) but CANNOT be assigned until reactivated,
+  // so it stays under Lost/Rejected, never in this queue (Lalit 2026-06-28).
+  { name: "Unassigned Leads", test: (r) => !r.ownerId && r.bucket === "Workable" },
   { name: "Awaiting Classification", test: (r) => r.team === "—" },
   { name: "Dubai Leads", test: (r) => r.team === "Dubai" },
   { name: "India Leads", test: (r) => r.team === "India" },
@@ -221,6 +224,12 @@ export default function MasterDataRecordsTable({ rows, agents, projects, isSuper
       const v = JSON.parse(localStorage.getItem(VKEY) || "null");
       if (Array.isArray(v)) setViews(v);
     } catch { /* ignore corrupt storage */ }
+    // A summary-counter deep link can preselect a built-in view via ?view=… (e.g. the
+    // Master-Data header "N unassigned" link). URL takes precedence over sticky state.
+    try {
+      const urlView = new URLSearchParams(window.location.search).get("view");
+      if (urlView && BUILTINS.some((b) => b.name === urlView)) setActiveView(urlView);
+    } catch { /* no window / malformed URL — ignore */ }
     setHydrated(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [viewerId]);

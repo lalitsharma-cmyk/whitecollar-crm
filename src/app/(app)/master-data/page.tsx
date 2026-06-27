@@ -230,8 +230,8 @@ export default async function MasterDataPage({ searchParams }: { searchParams: P
           <h1 className="text-xl sm:text-2xl font-bold">Master Data</h1>
           <p className="text-xs sm:text-sm text-gray-500 dark:text-slate-400">
             Operations console · <span className="font-semibold">{catCount[cat]}</span> in view ·
-            {" "}<span className={unassignedAgent ? "text-amber-600 font-semibold" : ""}>{unassignedAgent} unassigned</span> ·
-            {" "}<span className={awaitingTeam ? "text-amber-600 font-semibold" : ""}>{awaitingTeam} awaiting team</span>
+            {" "}<Link href={keep({ view: "Unassigned Leads", cat: "" })} className={`hover:underline ${unassignedAgent ? "text-amber-600 font-semibold" : "text-gray-500 dark:text-slate-400"}`} title="Show ready-to-assign leads (excludes rejected)">{unassignedAgent} unassigned</Link> ·
+            {" "}<Link href={keep({ view: "Awaiting Classification", cat: "" })} className={`hover:underline ${awaitingTeam ? "text-amber-600 font-semibold" : "text-gray-500 dark:text-slate-400"}`} title="Show leads awaiting team classification">{awaitingTeam} awaiting team</Link>
           </p>
         </div>
         <div className="flex items-center gap-2 self-start sm:self-auto">

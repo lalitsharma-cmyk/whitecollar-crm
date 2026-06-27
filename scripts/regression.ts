@@ -3868,6 +3868,63 @@ const checks: Check[] = [
   },
 
   // ───────────────────────────────────────────────────────────────────────────
+  // 47b. LEAD-SOURCE PICKERS (2026-06-28). The CODE companion to backfill-integrity:
+  //      that invariant proves the DATA has 0 deprecated `source`; this proves no
+  //      MANUAL source PICKER can re-create it. WhatsApp / Inbound Call / Email /
+  //      Event are CHANNELS — they live in the Medium field, not Source. The
+  //      New-Lead form was cleaned up (task 11) but three other pickers still offered
+  //      them; a lead "Sameer" had to be hand-migrated off INBOUND_CALL on 2026-06-27.
+  //      Every manual picker now imports the shared ALLOWED_SOURCES
+  //      (src/lib/lead-sources.ts); this invariant locks that wiring + source-scans
+  //      the picker files so a future edit can't silently re-add a deprecated option.
+  //      NB: FILTER/label surfaces (LeadFilters, /leads, master-data, sourceLabel.ts,
+  //      charts) legitimately still list INBOUND_CALL to FILTER historical leads —
+  //      they are intentionally NOT scanned (they read, they don't write source).
+  // ───────────────────────────────────────────────────────────────────────────
+  {
+    name: "lead-source-pickers — every manual Source picker uses shared ALLOWED_SOURCES; none re-offers a deprecated WHATSAPP/INBOUND_CALL/EMAIL/EVENT option",
+    run: async () => {
+      const fs = await import("node:fs");
+      const { ALLOWED_SOURCES, DEPRECATED_SOURCES } = await import("../src/lib/lead-sources");
+      const allowed: readonly string[] = ALLOWED_SOURCES;
+
+      // (a) The canonical list itself is clean — no deprecated channel token leaked
+      //     into the picker vocabulary, and CSV_IMPORT stays import-only.
+      for (const dep of DEPRECATED_SOURCES) {
+        assert(!allowed.includes(dep), `ALLOWED_SOURCES must not contain deprecated source ${dep} — the channel lives in the Medium field`);
+      }
+      assert(!allowed.includes("CSV_IMPORT"), "ALLOWED_SOURCES must not contain CSV_IMPORT (imports set it programmatically; never a manual choice)");
+      assert(allowed.length >= 8, `ALLOWED_SOURCES unexpectedly short (${allowed.length}) — the picker vocabulary looks truncated`);
+
+      // (b) Each manual Source WRITE-picker imports the shared list AND hard-codes no
+      //     deprecated source <option>. A deprecated value used AS AN OPTION is
+      //     `value="WHATSAPP"` or `value: "WHATSAPP"` (matches the JSX-attr AND
+      //     object-literal forms); this deliberately does NOT match an activity lane
+      //     like `type === "WHATSAPP"`, a legitimate non-source use in LeadsListClient.
+      //     INBOUND_CALL is ONLY ever a source token, so its bare presence anywhere in
+      //     a picker file is itself a regression.
+      const PICKERS = [
+        "src/components/QuickAddLeadFab.tsx",
+        "src/app/(app)/leads/[id]/page.tsx",
+        "src/components/LeadsListClient.tsx",
+      ];
+      const optionRe = /value\s*[:=]\s*["'](WHATSAPP|INBOUND_CALL|EMAIL|EVENT)["']/;
+      for (const f of PICKERS) {
+        const src = fs.readFileSync(f, "utf8");
+        assert(
+          /from\s+["']@\/lib\/lead-sources["']/.test(src),
+          `${f} must import the shared source list from @/lib/lead-sources (no hand-rolled enum that can drift)`,
+        );
+        const m = src.match(optionRe);
+        assert(!m, `${f} re-offers a deprecated source option (${m?.[1]}) — pick the channel via the Medium field, not Source`);
+        assert(!/INBOUND_CALL/.test(src), `${f} still references INBOUND_CALL — remove it (deprecated source; channel → Medium)`);
+      }
+
+      results.push({ name: "  ↳ note", ok: true, detail: `${allowed.length} allowed sources; ${PICKERS.length} write-pickers wired to @/lib/lead-sources; 0 deprecated options` });
+    },
+  },
+
+  // ───────────────────────────────────────────────────────────────────────────
   // 3f. HR EXCLUDED FROM ALL SALES SURFACES (2026-06-25) — an hrOnly user (Nisha,
   //     an active MANAGER on the HR side) must NEVER appear in any sales roster,
   //     count, or assignment dropdown, and must NEVER be a valid assignment target
