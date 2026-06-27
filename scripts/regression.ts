@@ -4788,6 +4788,36 @@ const checks: Check[] = [
       results.push({ name: "  ↳ note", ok: true, detail: `cold All=${all} == Fresh=${unstatused} + Σchips=${sumKnown} (0 chip-less)` });
     },
   },
+  {
+    name: "master-data-source-families — canonical labels (incl. WCR_WEBSITE) + Website/Event presets match the source FAMILY (not one label string)",
+    run: async () => {
+      const fs = await import("fs");
+      const { SOURCE_LABELS, isWebsiteSource, isEventSource } = await import("../src/lib/lead-sources");
+      // LOGIC: every website/event enum variant resolves to a FRIENDLY label (not the
+      // ALL_CAPS_UNDERSCORE fallback) — the old page-local map dropped these three.
+      for (const s of ["WEBSITE", "WCR_WEBSITE", "WCR_EVENT", "LANDING_PAGE"]) {
+        assert(!!SOURCE_LABELS[s] && !/_/.test(SOURCE_LABELS[s] ?? ""), `SOURCE_LABELS missing friendly label for ${s}`);
+      }
+      // LOGIC: the family predicates cover ALL variants (so "New Website Leads" /
+      // "Event Leads" presets can't silently miss WCR_*/Landing-Page leads).
+      assert(["WEBSITE", "WCR_WEBSITE", "LANDING_PAGE"].every(isWebsiteSource), "isWebsiteSource must cover Website/WCR Website/Landing Page");
+      assert(["WCR_EVENT", "EVENT"].every(isEventSource), "isEventSource must cover Event/WCR Event");
+      assert(!isWebsiteSource("REFERRAL") && !isEventSource("WEBSITE"), "family predicates must not over-match");
+      // SOURCE: Master Data must carry the raw enum and test the family, NOT compare a
+      // display label by string (the regression this prevents).
+      const page = fs.readFileSync("src/app/(app)/master-data/page.tsx", "utf8");
+      const tbl = fs.readFileSync("src/components/MasterDataRecordsTable.tsx", "utf8");
+      assert(/sourceLabel:\s*sourceLabel\(/.test(page), "master-data page must use canonical sourceLabel()");
+      assert(/source:\s*l\.source/.test(page), "master-data page must carry the raw enum source on each row");
+      assert(/isWebsiteSource\(r\.source\)/.test(tbl) && /isEventSource\(r\.source\)/.test(tbl), "table presets/sectionRank must test the source family via r.source");
+      assert(!/sourceLabel === "Website"|sourceLabel === "Event"/.test(tbl), "table must not compare the display label by string anymore");
+      // DATA: no LIVE lead carries a source that renders as an unlabeled ALL_CAPS token.
+      const live = await prisma.lead.findMany({ where: { deletedAt: null }, select: { source: true }, distinct: ["source"] });
+      const unlabeled = live.map((l) => l.source).filter((s) => s && !SOURCE_LABELS[s as string]);
+      assert(unlabeled.length === 0, `live sources with no friendly label: ${unlabeled.join(", ")}`);
+      results.push({ name: "  ↳ note", ok: true, detail: `${live.length} distinct live sources, all labeled; Website/Event presets family-matched` });
+    },
+  },
 ];
 
 // ── runner ────────────────────────────────────────────────────────────────────

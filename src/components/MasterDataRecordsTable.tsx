@@ -7,6 +7,7 @@ import { PROPERTY_TYPES } from "@/lib/propertyType";
 import { statusesForTeam, compareStatusDisplay } from "@/lib/lead-statuses";
 import { formatLeadName } from "@/lib/leadName";
 import { parseBudget } from "@/lib/budgetParse";
+import { isWebsiteSource, isEventSource } from "@/lib/lead-sources";
 import ColumnHeaderFilter, { type ColFilterState } from "@/components/ColumnHeaderFilter";
 
 // Cleaned-up Source list — mirrors ALLOWED_SOURCES in LeadSourceMediumFields.tsx
@@ -48,6 +49,7 @@ export type MDRow = {
   team: string;            // "Dubai" | "India" | "—"
   project: string;
   propertyType: string;    // "Residential" | "Commercial" | ""
+  source: string;          // raw LeadSource enum — family tests use this, not the label
   sourceLabel: string;
   sourceRaw: string;
   medium: string;          // "Call", "WhatsApp", "Email", or custom
@@ -134,8 +136,8 @@ function sectionRank(r: MDRow): number {
   if (!r.ownerId) return 0;                  // 1. Unassigned Leads
   if (r.team === "India") return 1;          // 2. India Leads
   if (r.team === "Dubai") return 2;          // 3. Dubai Leads
-  if (r.sourceLabel === "Website") return 3; // 4. Website Leads
-  if (r.sourceLabel === "Event") return 4;   // 5. Event Leads
+  if (isWebsiteSource(r.source)) return 3;   // 4. Website Leads (Website/WCR Website/Landing Page)
+  if (isEventSource(r.source)) return 4;     // 5. Event Leads (Event/WCR Event)
   return 5;                                   // 6. Others
 }
 
@@ -165,15 +167,17 @@ function unassignedAgeBadge(createdAtMs: number): { label: string; cls: string }
 
 // Default Saved Views — predicate presets over the loaded rows (owner-approved list).
 const BUILTINS: { name: string; test: (r: MDRow, today: string) => boolean }[] = [
-  { name: "New Website Leads", test: (r) => r.sourceLabel === "Website" },
+  { name: "New Website Leads", test: (r) => isWebsiteSource(r.source) },
   // "Unassigned" must mean READY TO ASSIGN — only workable leads. A rejected lead is
   // unassigned too (hard-unassign on reject) but CANNOT be assigned until reactivated,
   // so it stays under Lost/Rejected, never in this queue (Lalit 2026-06-28).
   { name: "Unassigned Leads", test: (r) => !r.ownerId && r.bucket === "Workable" },
-  { name: "Awaiting Classification", test: (r) => r.team === "—" },
+  // Teamless AND still workable — a rejected/lost teamless lead is not "awaiting
+  // classification", it's done. Mirrors queueAwaitingWhere on the server.
+  { name: "Awaiting Classification", test: (r) => r.team === "—" && r.bucket === "Workable" },
   { name: "Dubai Leads", test: (r) => r.team === "Dubai" },
   { name: "India Leads", test: (r) => r.team === "India" },
-  { name: "Event Leads", test: (r) => r.sourceLabel === "Event" },
+  { name: "Event Leads", test: (r) => isEventSource(r.source) },
   { name: "Today's Leads", test: (r, t) => r.createdDate === t },
   { name: "Follow Up Today", test: (r, t) => r.followupDate === t },
   { name: "Fresh Leads", test: (r) => r.statusLabel === "Fresh Lead" },

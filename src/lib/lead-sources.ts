@@ -28,6 +28,7 @@
 // ever offer them.)
 export const SOURCE_LABELS: Record<string, string> = {
   WEBSITE: "Website",
+  WCR_WEBSITE: "WCR Website",
   WCR_EVENT: "WCR Event",
   LANDING_PAGE: "Landing Page",
   REFERRAL: "Referral",
@@ -69,6 +70,18 @@ export const ALLOWED_SOURCES = [
   "PORTAL_HOUSING",
   "OTHER",
 ] as const;
+
+// Source FAMILIES — group the website/event enum variants so "is this a website
+// lead?" / "is this an event lead?" is asked ONCE, canonically. Used by Master
+// Data's section ordering + the "New Website Leads" / "Event Leads" presets, which
+// previously string-matched a single display label ("Website" / "Event") and so
+// silently MISSED WCR_WEBSITE / LANDING_PAGE / WCR_EVENT leads.
+export const WEBSITE_SOURCES = ["WEBSITE", "WCR_WEBSITE", "LANDING_PAGE"] as const;
+export const EVENT_SOURCES = ["WCR_EVENT", "EVENT"] as const;
+export const isWebsiteSource = (s: string | null | undefined): boolean =>
+  !!s && (WEBSITE_SOURCES as readonly string[]).includes(s);
+export const isEventSource = (s: string | null | undefined): boolean =>
+  !!s && (EVENT_SOURCES as readonly string[]).includes(s);
 
 /**
  * Friendly label for any source token (deprecated tokens included so historical

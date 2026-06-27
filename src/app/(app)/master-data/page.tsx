@@ -17,6 +17,7 @@ import MasterDataImportControls from "@/components/MasterDataImportControls";
 import LeadFilters from "@/components/LeadFilters";
 import { leadFilterWhere } from "@/lib/leadFilterWhere";
 import { COLD_ORIGINS } from "@/lib/leadScope";
+import { sourceLabel } from "@/lib/lead-sources";
 import { PROPERTY_TYPES } from "@/lib/propertyType";
 import { getAvailableMediums } from "@/lib/mediumManager";
 import { displayBudget } from "@/lib/budgetParse";
@@ -61,12 +62,9 @@ function catWhere(cat: Cat): Prisma.LeadWhereInput {
   }
 }
 
-const SOURCE_LABEL: Record<string, string> = {
-  WEBSITE: "Website", WHATSAPP: "WhatsApp", CSV_IMPORT: "Import", EVENT: "Event",
-  REFERRAL: "Referral", INBOUND_CALL: "Inbound Call", FACEBOOK_ADS: "Facebook",
-  GOOGLE_ADS: "Google", PORTAL_99ACRES: "99acres", PORTAL_MAGICBRICKS: "MagicBricks",
-  PORTAL_HOUSING: "Housing", OTHER: "Other",
-};
+// Source labels come from the ONE canonical map (src/lib/lead-sources.ts) so
+// WCR_EVENT / WCR_WEBSITE / LANDING_PAGE render as friendly text here exactly as
+// everywhere else — the old page-local map silently dropped those three.
 const fmtDate = (d: Date | null) =>
   d ? new Date(d).toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short", year: "numeric" }) : "—";
 const fmtTime = (d: Date | null) =>
@@ -210,7 +208,8 @@ export default async function MasterDataPage({ searchParams }: { searchParams: P
       team: l.forwardedTeam ?? "—",
       project: l.sourceDetail ?? "—",
       propertyType: l.propertyType ?? "",
-      sourceLabel: SOURCE_LABEL[l.source] ?? l.source,
+      source: l.source,
+      sourceLabel: sourceLabel(l.source),
       sourceRaw: l.sourceRaw ?? "",
       medium: (l as any).medium ?? "",
       mediumOther: (l as any).mediumOther ?? null,
