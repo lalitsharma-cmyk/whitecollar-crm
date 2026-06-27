@@ -106,6 +106,19 @@ async function createLeadAction(formData: FormData) {
   const eventCity = opt<string>(formData.get("eventCity")); if (eventCity) update.eventCity = eventCity;
   // Referral field (shown only when source = REFERRAL)
   const referralName = opt<string>(formData.get("referralName")); if (referralName) update.referralName = referralName;
+  // Created Date — admin/manager may backfill an earlier date for offline / walk-in /
+  // delayed entries (this action is already admin/manager-only; agents were redirected
+  // above). The picked date becomes the lead's Created Date (createdAt) so reports /
+  // filters / dashboards reflect it; the TRUE insert time stays in the audit trail (the
+  // LEAD_CREATED activity carries real-now). A future date is rejected; the default
+  // (today) is effectively a no-op. Stored at noon IST. (Lalit 2026-06-28)
+  const createdDateStr = String(formData.get("leadCreatedDate") ?? "").trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(createdDateStr)) {
+    const picked = new Date(`${createdDateStr}T06:30:00.000Z`); // 06:30 UTC = 12:00 IST
+    if (!isNaN(picked.getTime()) && picked.getTime() <= Date.now() + 24 * 60 * 60 * 1000) {
+      update.createdAt = picked;
+    }
+  }
   if (Object.keys(update).length) await prisma.lead.update({ where: { id: lead.id }, data: update });
 
   // Link the lead to a discussed Project (matched by name) when one was picked.
@@ -225,6 +238,17 @@ export default async function NewLeadPage() {
             <div>
               <label className={label}>🔗 LinkedIn URL</label>
               <input name="linkedInUrl" type="url" className={input} />
+            </div>
+            <div>
+              <label className={label}>📅 Created Date</label>
+              <input
+                name="leadCreatedDate"
+                type="date"
+                defaultValue={new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata" }).format(new Date())}
+                max={new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata" }).format(new Date())}
+                className={input}
+              />
+              <p className="text-[10px] text-gray-500 mt-0.5">Defaults to today · backfill an earlier date for offline / walk-in / delayed entries</p>
             </div>
           </div>
           {/* Location — Country → State/Province → City → Address, cascading
