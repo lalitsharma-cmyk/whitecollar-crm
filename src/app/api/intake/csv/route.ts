@@ -858,9 +858,14 @@ export async function POST(req: NextRequest) {
       if (alreadyBought) update.alreadyBought = alreadyBought;
       const alreadyBoughtBy = field("alreadyBoughtBy", "alreadyboughtby", "boughtvia", "via", "broker", "boughtfrom");
       if (alreadyBoughtBy) update.alreadyBoughtBy = alreadyBoughtBy;
-      // When importing a cold-data batch: flag every new row + leave ownerId null
+      // When importing a cold-data batch: flag every new row + leave ownerId null.
+      // CRITICAL: a cold-data row must ALSO carry leadOrigin=REVIVAL, not the default
+      // MASTER_DATA stamped above. Otherwise isColdCall=true + leadOrigin=MASTER_DATA =
+      // limbo — invisible in the Revival Engine (which keys on cold origin) AND hidden
+      // from Master Data (which excludes isColdCall). That stranded a whole import once.
       if (importAsColdData && !r.deduped) {
         update.isColdCall = true;
+        update.leadOrigin = "REVIVAL";
         update.ownerId = null;
       }
       // Pre-assigned import (Mehak MIS, etc.) — every NEW row goes to picked agent
