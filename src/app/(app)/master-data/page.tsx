@@ -16,6 +16,7 @@ import MasterDataRecordsTable, { type MDRow } from "@/components/MasterDataRecor
 import MasterDataImportControls from "@/components/MasterDataImportControls";
 import LeadFilters from "@/components/LeadFilters";
 import { leadFilterWhere } from "@/lib/leadFilterWhere";
+import { COLD_ORIGINS } from "@/lib/leadScope";
 import { PROPERTY_TYPES } from "@/lib/propertyType";
 import { getAvailableMediums } from "@/lib/mediumManager";
 import { displayBudget } from "@/lib/budgetParse";
@@ -83,7 +84,10 @@ export default async function MasterDataPage({ searchParams }: { searchParams: P
 
   // Master Data = SALES leads only. Cold-call leads live in the Revival Engine
   // (the lead-type toggle was removed — Master Data is the sales ops console).
-  const coldFilter: Prisma.LeadWhereInput = { isColdCall: false };
+  // Cold/revival leads live in the Revival Engine, never Master Data. Guard on BOTH
+  // isColdCall AND leadOrigin (parity with /leads) so a REVIVAL-origin lead that isn't
+  // flagged isColdCall can't leak in — migration-proof origin segregation (audit 2026-06-28).
+  const coldFilter: Prisma.LeadWhereInput = { isColdCall: false, leadOrigin: { notIn: COLD_ORIGINS } };
 
   // Cross-cutting filters (same engine as /leads).
   const baseAnd: Prisma.LeadWhereInput[] = [...leadFilterWhere(sp)];
@@ -97,8 +101,8 @@ export default async function MasterDataPage({ searchParams }: { searchParams: P
   // Previously these called the no-arg leadCounts helpers, which ignored the active
   // filters → header (217) ≠ table. The queue counters (unassigned agent / awaiting
   // team) likewise honor the current filter set.
-  const queueUnassignedWhere: Prisma.LeadWhereInput = { ...coldFilter, AND: [...baseAnd, { deletedAt: null, ownerId: null, OR: WORKABLE_OR }] };
-  const queueAwaitingWhere: Prisma.LeadWhereInput = { ...coldFilter, AND: [...baseAnd, { deletedAt: null, forwardedTeam: null, OR: WORKABLE_OR }] };
+  const queueUnassignedWhere: Prisma.LeadWhereInput = { ...coldFilter, AND: [...baseAnd, { deletedAt: null, ownerId: null, rejectedAt: null, OR: WORKABLE_OR }] };
+  const queueAwaitingWhere: Prisma.LeadWhereInput = { ...coldFilter, AND: [...baseAnd, { deletedAt: null, forwardedTeam: null, rejectedAt: null, OR: WORKABLE_OR }] };
   const [cAll, cWorkable, cClosed, cLost, cDeleted, cArchived, unassignedAgent, awaitingTeam] = await Promise.all([
     prisma.lead.count({ where: whereFor("all") }),
     prisma.lead.count({ where: whereFor("workable") }),

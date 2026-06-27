@@ -93,7 +93,12 @@ export default async function ColdDataPage({ searchParams }: { searchParams: Pro
   // any cold lead is soft-deleted. Matches the rest of the CRM (recycle bin is
   // never counted). The regression suite asserts this declaration carries both
   // leadOrigin AND deletedAt:null.
-  const originCold: Prisma.LeadWhereInput = { leadOrigin: { in: COLD_ORIGINS }, deletedAt: null };
+  // Revival membership = leadOrigin ∈ COLD_ORIGINS OR isColdCall=true — the SAME
+  // definition the lead-detail redirect uses (leads/[id] + cold-data/[id]). Keying on
+  // leadOrigin ALONE stranded cold leads whose import set isColdCall but left a
+  // non-cold origin (e.g. MASTER_DATA) — invisible in BOTH Revival and Master Data.
+  // (Lalit 2026-06-28: today's revival import not showing.)
+  const originCold: Prisma.LeadWhereInput = { deletedAt: null, OR: [{ leadOrigin: { in: COLD_ORIGINS } }, { isColdCall: true }] };
   // "Unassigned" = workable-unassigned only. A rejected cold lead is unassigned for
   // history; it belongs under Lost/Rejected, never the assign queue (Lalit 2026-06-28).
   const unassigned: Prisma.LeadWhereInput = { ownerId: null, rejectedAt: null };
@@ -108,6 +113,11 @@ export default async function ColdDataPage({ searchParams }: { searchParams: Pro
     delete filterSp.owner;
     delete filterSp.source;
   }
+  // The status chip-tab is applied via statusWhere below; strip it here so
+  // leadFilterWhere doesn't ALSO inject {currentStatus: status}. For the sentinels
+  // ("unassigned"/"__fresh__") that injection matched no row → an EMPTY list while the
+  // chip count stayed non-zero (count≠rows). (Lalit 2026-06-28 reconciliation audit.)
+  delete filterSp.status;
   const sharedAnd = leadFilterWhere(filterSp);
 
   // Status-tab filter — "all" shows everything, "unassigned" is an admin shortcut,
@@ -195,7 +205,7 @@ export default async function ColdDataPage({ searchParams }: { searchParams: Pro
     }),
     prisma.lead.count({ where: allCold }),
     prisma.lead.count({ where }),
-    isAdminOrMgr ? prisma.lead.count({ where: { AND: [originCold, unassigned, { deletedAt: null }] } }) : Promise.resolve(0),
+    isAdminOrMgr ? prisma.lead.count({ where: { AND: [baseScope, originCold, { deletedAt: null }, ...sharedAnd, unassigned] } }) : Promise.resolve(0),
     // Fresh/Unstatused chip count — cold leads with NO MIS status (null/blank) in
     // the current filter set. Mirrors the per-status chip recipe so All == Σ chips.
     prisma.lead.count({ where: { AND: [baseScope, originCold, { deletedAt: null }, ...sharedAnd, unstatusedWhere] } }),
