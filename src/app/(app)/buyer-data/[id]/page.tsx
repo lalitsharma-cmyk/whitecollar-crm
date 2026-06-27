@@ -287,7 +287,7 @@ export default async function BuyerDetail({ params }: { params: Promise<{ id: st
               <Field label="Size">{editable("size", rec.size)}</Field>
               <Field label="Actual Size">{editable("actualSize", rec.actualSize)}</Field>
               <Field label="Area">{editable("area", rec.area)}</Field>
-              <Field label="Country">{editable("country", rec.country)}</Field>
+              <Field label="Country">{editable("country", rec.country, { options: BUYER_COUNTRY_OPTIONS })}</Field>
             </div>
           </div>
 
@@ -420,7 +420,7 @@ export default async function BuyerDetail({ params }: { params: Promise<{ id: st
             <div className={FIELD_GRID_2}>
               <div>
                 <div className={`${FIELD_LABEL} mb-0.5`}>Country</div>
-                {editable("country", rec.country, { options: BUYER_COUNTRY_OPTIONS })}
+                <span className="text-gray-800 dark:text-slate-200 break-words">{rec.country || "—"}</span>
               </div>
               <div>
                 <div className={`${FIELD_LABEL} mb-0.5`}>Area</div>
