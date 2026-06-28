@@ -99,7 +99,10 @@ export function leadFilterWhere(sp: SP): Prisma.LeadWhereInput[] {
     const or: Prisma.LeadWhereInput[] = [];
     if (real.length === 1) or.push({ ownerId: real[0] });
     else if (real.length > 1) or.push({ ownerId: { in: real } });
-    if (owners.includes("unassigned")) or.push({ ownerId: null });
+    // "Unassigned" means READY TO ASSIGN — a rejected lead is unassigned too
+    // (hard-unassign on reject) but is NOT a normal unassigned lead, so exclude it
+    // (rejectedAt is the source of truth). It surfaces only in Rejected/Lost views.
+    if (owners.includes("unassigned")) or.push({ ownerId: null, rejectedAt: null });
     if (or.length === 1) and.push(or[0]);
     else if (or.length > 1) and.push({ OR: or });
   }

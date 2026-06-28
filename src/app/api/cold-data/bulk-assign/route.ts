@@ -25,6 +25,7 @@ export async function POST(req: NextRequest) {
     where: {
       isColdCall: true,
       ownerId: null,
+      rejectedAt: null,        // never bulk-assign a rejected (hard-unassigned) cold lead
       ...(team ? { forwardedTeam: team } : {}),
     },
     orderBy: { createdAt: "asc" },

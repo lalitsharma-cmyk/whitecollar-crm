@@ -224,10 +224,13 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
       // clobbers the search OR (sp.q also writes where.OR).
       where.AND = [
         ...(Array.isArray(where.AND) ? where.AND : where.AND ? [where.AND] : []),
-        { OR: [{ ownerId: null }, { ownerId: { in: ownerIds } }] },
+        // "unassigned" = ready-to-assign → EXCLUDE rejected (hard-unassigned but not
+        // a normal unassigned lead; rejectedAt is the source of truth).
+        { OR: [{ ownerId: null, rejectedAt: null }, { ownerId: { in: ownerIds } }] },
       ];
     } else if (wantsUnassigned) {
       where.ownerId = null;
+      where.rejectedAt = null; // rejected leads are never "ready to assign"
     } else if (ownerIds.length === 1) {
       where.ownerId = ownerIds[0];
     } else if (ownerIds.length > 1) {

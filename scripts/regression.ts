@@ -4919,6 +4919,35 @@ const checks: Check[] = [
       results.push({ name: "  ↳ note", ok: true, detail: `Channel ② wired (3 routes + hook + thread UI); ${threads.length} thread(s), 0 orphan, 0 unlinked` });
     },
   },
+  {
+    name: "rejected-unassigned-full-coverage — EVERY 'unassigned' surface excludes rejected (filter/leads/reconciler/bulk-assign/export/master-data) + data integrity",
+    run: async () => {
+      const fs = await import("fs");
+      const { TERMINAL_STATUSES } = await import("../src/lib/lead-statuses");
+      // SOURCE: each surface that treats ownerId:null as "ready to assign" must AND rejectedAt:null.
+      const filt = fs.readFileSync("src/lib/leadFilterWhere.ts", "utf8");
+      assert(/owners\.includes\("unassigned"\)\)\s*or\.push\(\{ ownerId: null, rejectedAt: null \}/.test(filt), "leadFilterWhere owner=unassigned must exclude rejected");
+      const lpage = fs.readFileSync("src/app/(app)/leads/page.tsx", "utf8");
+      assert(/\{ ownerId: null, rejectedAt: null \}/.test(lpage) && /where\.rejectedAt = null/.test(lpage), "leads page owner=unassigned arms must exclude rejected");
+      const rec = fs.readFileSync("src/lib/reconciler.ts", "utf8");
+      assert(/ownerId: null,\s*\n\s*rejectedAt: null,/.test(rec), "reconciler auto-assign orphans must exclude rejected");
+      const bulk = fs.readFileSync("src/app/api/cold-data/bulk-assign/route.ts", "utf8");
+      assert(/rejectedAt: null/.test(bulk), "cold-data bulk-assign must exclude rejected");
+      const exp = fs.readFileSync("src/app/api/reports/export/route.ts", "utf8");
+      const expUnassignedLines = exp.split("\n").filter((l) => /owner === "unassigned"/.test(l));
+      assert(expUnassignedLines.length >= 2 && expUnassignedLines.every((l) => /rejectedAt/.test(l)), "both export owner=unassigned arms must exclude rejected");
+      const mdt = fs.readFileSync("src/components/MasterDataRecordsTable.tsx", "utf8");
+      assert(/!r\.ownerId && r\.bucket === "Workable"/.test(mdt), "Master Data section rank must not put rejected in the Unassigned section");
+      assert(/!l\.ownerId && l\.bucket === "Workable" \? unassignedAgeBadge/.test(mdt), "Master Data age badge must not flag rejected as 'please assign'");
+      // DATA: the hard-unassign held — no rejected lead is still owned, and none
+      // would slip into the canonical normal-unassigned set.
+      const stillOwned = await prisma.lead.count({ where: { rejectedAt: { not: null }, ownerId: { not: null }, deletedAt: null } });
+      assert(stillOwned === 0, `${stillOwned} rejected lead(s) still carry an owner (hard-unassign breach)`);
+      const leak = await prisma.lead.count({ where: { rejectedAt: { not: null }, ownerId: null, deletedAt: null, isColdCall: false, OR: [{ currentStatus: null }, { currentStatus: "" }, { currentStatus: { notIn: TERMINAL_STATUSES } }] } });
+      assert(leak === 0, `${leak} rejected lead(s) would appear in the normal workable-unassigned set`);
+      results.push({ name: "  ↳ note", ok: true, detail: "6 unassigned surfaces exclude rejected; 0 rejected still-owned; 0 leak into normal-unassigned" });
+    },
+  },
 ];
 
 // ── runner ────────────────────────────────────────────────────────────────────

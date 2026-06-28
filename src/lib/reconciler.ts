@@ -48,6 +48,7 @@ export async function runReconciler(): Promise<ReconcileResult> {
   const orphans = roundRobinOn ? await prisma.lead.findMany({
     where: {
       ownerId: null,
+      rejectedAt: null,        // never auto-assign a rejected (hard-unassigned) lead
       deletedAt: null,
       createdAt: { lte: cutoffAssign },
       currentStatus: { notIn: SUPPRESSED_STATUSES },

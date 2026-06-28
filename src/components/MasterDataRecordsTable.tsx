@@ -133,7 +133,7 @@ function valueOf(r: MDRow, c: ColKey): string {
 // Website → Event → Others. Applied only when no explicit column sort is active;
 // any column-sort the user clicks overrides it. Pure ordering — no data change.
 function sectionRank(r: MDRow): number {
-  if (!r.ownerId) return 0;                  // 1. Unassigned Leads
+  if (!r.ownerId && r.bucket === "Workable") return 0;  // 1. Unassigned Leads (rejected/terminal unassigned are NOT "ready to assign")
   if (r.team === "India") return 1;          // 2. India Leads
   if (r.team === "Dubai") return 2;          // 3. Dubai Leads
   if (isWebsiteSource(r.source)) return 3;   // 4. Website Leads (Website/WCR Website/Landing Page)
@@ -530,7 +530,10 @@ export default function MasterDataRecordsTable({ rows, agents, projects, isSuper
                         </td>
                       );
                     case "agent": {
-                      const ageBadge = hydrated && !l.ownerId ? unassignedAgeBadge(l.createdAtMs) : null;
+                      // "Unassigned for X — please assign" urgency only for WORKABLE
+                      // unassigned. A rejected/terminal lead is unassigned (hard-unassign)
+                      // but must NOT show the assign-me urgency badge.
+                      const ageBadge = hydrated && !l.ownerId && l.bucket === "Workable" ? unassignedAgeBadge(l.createdAtMs) : null;
                       // Inline-assign routes through ownerId on the update route →
                       // assignLeadTo() (Assignment history row + notify + SLA), so
                       // the Agent Performance report (assignment-history attribution)

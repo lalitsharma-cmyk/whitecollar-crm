@@ -417,7 +417,7 @@
 // deprecated WhatsApp / Inbound Call / Email / Event source values (the channel
 // lives in the Medium field now). Display/picker-only — no schema or data change.
 // Bump shell so every client loads the corrected pickers.
-const CACHE = "wcr-shell-v111";
+const CACHE = "wcr-shell-v112";
 const SHELL = ["/login", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", (event) => {

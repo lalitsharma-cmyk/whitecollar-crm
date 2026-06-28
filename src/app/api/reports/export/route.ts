@@ -64,7 +64,7 @@ function masterDataWhere(sp: Record<string, string | undefined>): Prisma.LeadWhe
   const cold: Prisma.LeadWhereInput = sp.cold === "only" ? { isColdCall: true } : sp.cold === "all" ? {} : { isColdCall: false };
   const and: Prisma.LeadWhereInput[] = [masterCatWhere(sp.cat ?? "all")];
   if (sp.team === "India" || sp.team === "Dubai") and.push({ forwardedTeam: sp.team });
-  if (sp.owner === "unassigned") and.push({ ownerId: null });
+  if (sp.owner === "unassigned") and.push({ ownerId: null, rejectedAt: null }); // ready-to-assign only; rejected excluded
   else if (sp.owner) and.push({ ownerId: sp.owner });
   if (sp.source) and.push({ source: sp.source as LeadSource });
   if (sp.q) and.push({ OR: [
@@ -220,7 +220,7 @@ export async function GET(req: NextRequest) {
     if (sp.status) where.status = sp.status as LeadStatus;
     if (sp.ai) where.aiScore = sp.ai as AIScore;
     if (sp.team) where.forwardedTeam = sp.team;
-    if (sp.owner === "unassigned") where.ownerId = null;
+    if (sp.owner === "unassigned") { where.ownerId = null; where.rejectedAt = null; } // ready-to-assign only; rejected excluded
     else if (sp.owner) where.ownerId = sp.owner;
     if (sp.when === "24h") where.createdAt = { gte: new Date(Date.now() - 24 * 3600 * 1000) };
     else if (sp.when === "7d") where.createdAt = { gte: new Date(Date.now() - 7 * 24 * 3600 * 1000) };
