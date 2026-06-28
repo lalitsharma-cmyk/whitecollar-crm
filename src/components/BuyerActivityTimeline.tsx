@@ -80,6 +80,16 @@ export default function BuyerActivityTimeline({ buyerId, canLog, isAdmin, rawRem
     finally { setLoading(false); }
   }, [buyerId]);
   useEffect(() => { load(); }, [load]);
+  // Auto-refresh the stream when the user returns to the tab — e.g. after editing a
+  // remark/field in a sibling island (those router.refresh the SERVER tree, but this
+  // client island keeps its own fetched copy). Re-fetching on focus/visibility keeps
+  // the timeline current without a manual reload. (no-store fetch; cheap payload.)
+  useEffect(() => {
+    const onFocus = () => { if (document.visibilityState === "visible") load(); };
+    document.addEventListener("visibilitychange", onFocus);
+    window.addEventListener("focus", onFocus);
+    return () => { document.removeEventListener("visibilitychange", onFocus); window.removeEventListener("focus", onFocus); };
+  }, [load]);
 
   const attemptCount = data?.record.attemptCount ?? 0;
   const poolStatus = data?.record.poolStatus ?? "";
