@@ -15,15 +15,25 @@ export default async function HRLayout({ children }: { children: React.ReactNode
   const hrRole = hrRoleOf(user);
   const perms = permissionsFor(hrRole);
 
-  // Badge count for Missed Follow-Ups (overdue + no next action). Scope by the HR
-  // permission model (not raw role) so the badge matches what the user can see.
-  const overdueCount = await prisma.hRFollowUp.count({
-    where: {
-      completedAt: null,
-      dueAt: { lt: new Date() },
-      candidate: { AND: [hrScopeWhere(user), { deletedAt: null }] },
-    },
-  });
+  // Scope fragment shared by the badge counts below — limit every count to the
+  // candidates this user may see, and never include recycle-bin candidates.
+  const inScope = { candidate: { AND: [hrScopeWhere(user), { deletedAt: null }] } };
+
+  const [overdueCount, unreadVoiceCount, openEscalationCount] = await Promise.all([
+    // Badge count for Missed Follow-Ups (overdue + no next action). Scope by the HR
+    // permission model (not raw role) so the badge matches what the user can see.
+    prisma.hRFollowUp.count({
+      where: { completedAt: null, dueAt: { lt: new Date() }, ...inScope },
+    }),
+    // Unread voice GUIDANCE for THIS viewer across all in-scope candidates.
+    prisma.hRVoiceMessage.count({
+      where: { kind: "GUIDANCE", reads: { none: { userId: user.id } }, ...inScope },
+    }),
+    // Open (non-RESOLVED) escalation threads across all in-scope candidates.
+    prisma.hREscalation.count({
+      where: { status: { not: "RESOLVED" }, ...inScope },
+    }),
+  ]);
 
   return (
     <HRShell
@@ -31,6 +41,8 @@ export default async function HRLayout({ children }: { children: React.ReactNode
       hrRole={hrRole}
       perms={{ reports: perms.reports, settings: perms.settings, importData: perms.importData }}
       overdueCount={overdueCount}
+      // Combined attention badge on the Candidates nav item (see HRShell).
+      voiceUnreadCount={unreadVoiceCount + openEscalationCount}
     >
       {children}
     </HRShell>

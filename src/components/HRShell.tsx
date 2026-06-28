@@ -45,9 +45,11 @@ interface Props {
   /** Which permission-gated nav items to show. Backend still enforces each. */
   perms?: { reports?: boolean; settings?: boolean; importData?: boolean };
   overdueCount?: number;
+  /** Combined unread voice guidance + open escalations for this viewer; badges /hr/candidates. */
+  voiceUnreadCount?: number;
 }
 
-export default function HRShell({ children, user, hrRole, perms, overdueCount = 0 }: Props) {
+export default function HRShell({ children, user, hrRole, perms, overdueCount = 0, voiceUnreadCount = 0 }: Props) {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
   // Collapsed (icons only) BY DEFAULT. Expands on hover (overlay, no reflow) or
@@ -73,9 +75,19 @@ export default function HRShell({ children, user, hrRole, perms, overdueCount = 
     return pathname.startsWith(href);
   }
 
+  // Per-item attention badge: red for overdue follow-ups on /hr/missed, blue for
+  // unread voice guidance + open escalations on /hr/candidates. null = no badge.
+  const badgeFor = (href: string): { count: number; color: string } | null => {
+    if (href === "/hr/missed" && overdueCount > 0)
+      return { count: overdueCount, color: "bg-red-500 dark:bg-red-600" };
+    if (href === "/hr/candidates" && voiceUnreadCount > 0)
+      return { count: voiceUnreadCount, color: "bg-blue-500 dark:bg-blue-600" };
+    return null;
+  };
+
   const navItem = (item: NavItem, compact: boolean) => {
     const active = isActive(item.href);
-    const badge = item.href === "/hr/missed" && overdueCount > 0 ? overdueCount : 0;
+    const badge = badgeFor(item.href);
     return (
       <Link
         key={item.href}
@@ -92,10 +104,10 @@ export default function HRShell({ children, user, hrRole, perms, overdueCount = 
       >
         <item.Icon className={`shrink-0 ${compact ? "w-5 h-5" : "w-4 h-4"}`} />
         {!compact && <span>{item.label}</span>}
-        {badge > 0 && (
-          <span className={`bg-red-500 text-white text-[10px] font-bold rounded-full min-w-[18px] h-[18px] flex items-center justify-center
+        {badge && (
+          <span className={`${badge.color} text-white text-[10px] font-bold rounded-full min-w-[18px] h-[18px] flex items-center justify-center
             ${compact ? "absolute -top-1 -right-1" : "ml-auto"}`}>
-            {badge > 99 ? "99+" : badge}
+            {badge.count > 99 ? "99+" : badge.count}
           </span>
         )}
       </Link>
@@ -219,16 +231,16 @@ export default function HRShell({ children, user, hrRole, perms, overdueCount = 
         <nav className="lg:hidden flex border-t border-gray-200 bg-white dark:bg-slate-900 dark:border-slate-700 shrink-0 safe-area-bottom">
           {BOTTOM_NAV.map(item => {
             const active = isActive(item.href);
-            const badge = item.href === "/hr/missed" && overdueCount > 0 ? overdueCount : 0;
+            const badge = badgeFor(item.href);
             return (
               <Link key={item.href} href={item.href}
                 className={`flex-1 flex flex-col items-center py-2 gap-0.5 text-[10px] font-medium transition relative
                   ${active ? "text-[#1a2e4a] dark:text-blue-400" : "text-gray-500 dark:text-slate-500"}`}>
                 <item.Icon className="w-5 h-5" />
                 <span className="truncate">{item.label}</span>
-                {badge > 0 && (
-                  <span className="absolute top-1 right-1/4 bg-red-500 text-white text-[9px] font-bold rounded-full min-w-[14px] h-[14px] flex items-center justify-center">
-                    {badge}
+                {badge && (
+                  <span className={`absolute top-1 right-1/4 ${badge.color} text-white text-[9px] font-bold rounded-full min-w-[14px] h-[14px] flex items-center justify-center`}>
+                    {badge.count > 99 ? "99+" : badge.count}
                   </span>
                 )}
               </Link>

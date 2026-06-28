@@ -1,9 +1,10 @@
 "use client";
-import { useState, useTransition, useEffect, useMemo } from "react";
+import { useState, useTransition, useEffect, useMemo, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import HRResumeUploadWidget from "@/components/HRResumeUploadWidget";
 import HRCandidateVoice from "@/components/HRCandidateVoice";
+import HRWhatsAppTemplatePicker, { type HRTemplateContext } from "@/components/HRWhatsAppTemplatePicker";
 import { ACTIVE_STATUS_DEFS, CLOSED_STATUS_DEFS, statusColor, statusLabel, displayStatus } from "@/lib/hrStatus";
 import type { HRCandidateStatus, HRActivityType, HRFollowUpType, HRInterviewType } from "@prisma/client";
 import {
@@ -12,6 +13,7 @@ import {
   PhoneForwarded, Voicemail, Ban, RotateCcw, Target, CheckCircle2, AlertTriangle, RefreshCw,
   FileSignature, XCircle, PartyPopper, CalendarCheck, StickyNote, History, User as UserIcon,
   Mic, Trash2, ClipboardCheck, Building2, Briefcase, Wallet, Award, Activity as ActivityIcon,
+  Keyboard, Send,
 } from "lucide-react";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -210,6 +212,17 @@ export default function HRCandidateDetail({ candidate: c, agents, me, voicePerms
   const [ivType, setIvType] = useState<HRInterviewType>("HR"); const [ivDate, setIvDate] = useState(""); const [ivInterviewer, setIvInterviewer] = useState(me.id); const [ivNotes, setIvNotes] = useState("");
   const [newStatus, setNewStatus] = useState<HRCandidateStatus>(c.status); const [statusNote, setStatusNote] = useState("");
   const [noteText, setNoteText] = useState("");
+  // WhatsApp quick-send template picker (overlay) + shortcuts help + non-blocking
+  // interview conflict warning (set when the interview API returns { conflict }).
+  const [waPickerOpen, setWaPickerOpen] = useState(false);
+  const [showShortcuts, setShowShortcuts] = useState(false);
+  const [ivConflict, setIvConflict] = useState<string|null>(null);
+  // Refs so keyboard shortcuts can focus the first field of a just-opened panel.
+  const callNotesRef = useRef<HTMLTextAreaElement>(null);
+  const noteTextRef = useRef<HTMLTextAreaElement>(null);
+  // WhatsApp target number (declared early so the keyboard-shortcut effect can
+  // depend on it without a temporal-dead-zone error).
+  const waPhone = c.whatsappPhone ?? c.phone ?? "";
 
   useEffect(() => {
     const doParam = new URLSearchParams(window.location.search).get("do");
@@ -218,6 +231,35 @@ export default function HRCandidateDetail({ candidate: c, agents, me, voicePerms
     else if (doParam === "note") setPanel("note");
     else if (doParam === "resume") setTab("resumes");
   }, []);
+
+  // ── Keyboard shortcuts (guarded against firing while typing) ──
+  // c = log call · w = WhatsApp quick-send · f = new follow-up · e = edit
+  // (status) · i = schedule interview · n = add note · ? = shortcuts help.
+  const focusSoon = useCallback((ref: React.RefObject<HTMLTextAreaElement | null>) => {
+    setTimeout(() => ref.current?.focus(), 40);
+  }, []);
+  useEffect(() => {
+    function onKey(ev: KeyboardEvent) {
+      // Don't hijack when the user is typing or using modifier combos.
+      if (ev.metaKey || ev.ctrlKey || ev.altKey) return;
+      const el = ev.target as HTMLElement | null;
+      const tag = el?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || el?.isContentEditable) return;
+      switch (ev.key) {
+        case "c": case "C": ev.preventDefault(); setPanel(p => p === "call" ? "none" : "call"); focusSoon(callNotesRef); break;
+        case "w": case "W": if (waPhone) { ev.preventDefault(); setWaPickerOpen(true); } break;
+        case "f": case "F": ev.preventDefault(); setPanel(p => p === "followup" ? "none" : "followup"); break;
+        case "i": case "I": ev.preventDefault(); setPanel(p => p === "interview" ? "none" : "interview"); break;
+        case "n": case "N": ev.preventDefault(); setPanel(p => p === "note" ? "none" : "note"); focusSoon(noteTextRef); break;
+        case "e": case "E": ev.preventDefault(); setPanel(p => p === "status" ? "none" : "status"); break;
+        case "?": ev.preventDefault(); setShowShortcuts(s => !s); break;
+        case "Escape": setShowShortcuts(false); setWaPickerOpen(false); break;
+        default: break;
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [waPhone, focusSoon]);
 
   const inp = "w-full border border-[#e5e7eb] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0b1a33]/20 dark:bg-slate-800 dark:border-slate-600 dark:text-slate-100";
 
@@ -243,7 +285,23 @@ export default function HRCandidateDetail({ candidate: c, agents, me, voicePerms
   }
   async function scheduleInterview() {
     if (!ivDate) return;
-    await post("/interview", { type: ivType, scheduledAt: ivDate, interviewerId: ivInterviewer, notes: ivNotes||null });
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/hr/candidates/${c.id}/interview`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type: ivType, scheduledAt: ivDate, interviewerId: ivInterviewer, notes: ivNotes||null }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error ?? "Failed");
+      // The interview still SAVED even when a conflict is reported — show a
+      // non-blocking amber warning rather than failing the action.
+      if (data?.conflict) {
+        const cf = data.conflict;
+        setIvConflict(typeof cf === "string" ? cf : (cf?.message ?? cf?.with ?? "Another interview overlaps this time slot."));
+      } else {
+        setIvConflict(null);
+      }
+    } finally { setBusy(false); }
     setPanel("none"); setIvDate(""); setIvNotes(""); startT(() => router.refresh());
   }
   async function updateStatus() {
@@ -289,12 +347,37 @@ export default function HRCandidateDetail({ candidate: c, agents, me, voicePerms
   const nextFU = pendingFollowUps[0];
   const nextIV = upcomingInterviews[0] ?? c.interviews[0];
   const activeResume = c.resumes.find(r => r.isActive) ?? c.resumes[0];
-  const waPhone = c.whatsappPhone ?? c.phone ?? "";
   const ownerOpts = agents.map(a => [a.id, a.name] as [string, string]);
   const ownerName = (id: string | number) => agents.find(a => a.id === String(id))?.name ?? "—";
   const userName = (id: string) => agents.find(a => a.id === id)?.name ?? "Someone";
   const fillTpl = (s: string) => s.replace(/\{name\}/g, c.name.split(" ")[0]).replace(/\{recruiter\}/g, me.name.split(" ")[0]);
   const lastAct = c.activities[0];
+
+  // Candidate context for the WhatsApp template picker's variable substitution.
+  const waCtx: HRTemplateContext = {
+    name: c.name,
+    firstName: c.name.split(" ")[0],
+    phone: c.phone,
+    whatsappPhone: c.whatsappPhone,
+    email: c.email,
+    position: c.positionApplied,
+    company: c.currentCompany,
+    city: c.city,
+    location: c.location,
+    recruiter: me.name,
+    recruiterFirst: me.name.split(" ")[0],
+  };
+
+  // Quick-send: open wa.me with the rendered text AND log the WhatsApp activity
+  // (keeps the existing manual "Log WA" flow working too). The picker hands us
+  // the final rendered string; we open WhatsApp then POST the same /log entry.
+  async function quickSendWA(renderedText: string) {
+    if (waPhone) {
+      window.open(`https://wa.me/${waPhone.replace(/\D/g,"")}?text=${encodeURIComponent(renderedText)}`, "_blank", "noopener,noreferrer");
+    }
+    await post("/log", { type: "WHATSAPP_SENT", notes: renderedText || null });
+    startT(() => router.refresh());
+  }
   const activeStatusDefs = me.role === "AGENT" ? ACTIVE_STATUS_DEFS.filter(s => s.key !== "OFFER_RELEASED") : ACTIVE_STATUS_DEFS;
 
   // ── Unified conversation timeline: activities + interviews + voice, newest first ──
@@ -375,6 +458,7 @@ export default function HRCandidateDetail({ candidate: c, agents, me, voicePerms
         <div className="flex gap-2 mt-4 flex-wrap">
           {c.phone && <a href={`tel:${c.phone}`} className={`${btn} border-gray-300 dark:border-slate-600 text-gray-700 dark:text-slate-200 hover:bg-gray-50 dark:hover:bg-slate-800`}><Phone size={14} />Call</a>}
           {waPhone && <a href={`https://wa.me/${waPhone.replace(/\D/g,"")}`} target="_blank" rel="noopener noreferrer" className={`${btn} border-green-300 text-green-700 hover:bg-green-50`}><MessageSquare size={14} />WhatsApp</a>}
+          {waPhone && <button type="button" onClick={() => setWaPickerOpen(true)} className={`${btn} border-green-300 text-green-700 hover:bg-green-50`}><Send size={14} />Quick WA</button>}
           {waPhone && <button type="button" onClick={() => setPanel(p => p==="wa"?"none":"wa")} className={`${btn} border-green-300 text-green-700 hover:bg-green-50`}><MessageSquare size={14} />Log WA</button>}
           {c.email && <a href={`mailto:${c.email}`} className={`${btn} border-blue-300 text-blue-700 hover:bg-blue-50`}><Mail size={14} />Email</a>}
           <button type="button" onClick={() => setPanel(p => p==="call"?"none":"call")} className={`${btn} border-blue-300 text-blue-700 hover:bg-blue-50`}><PhoneCall size={14} />Log Call</button>
@@ -382,6 +466,11 @@ export default function HRCandidateDetail({ candidate: c, agents, me, voicePerms
           <button type="button" onClick={() => setPanel(p => p==="interview"?"none":"interview")} className={`${btn} border-purple-300 text-purple-700 hover:bg-purple-50`}><Target size={14} />Schedule Interview</button>
           <button type="button" onClick={() => setPanel(p => p==="followup"?"none":"followup")} className={`${btn} border-amber-300 text-amber-700 hover:bg-amber-50`}><CalendarPlus size={14} />Add Follow-Up</button>
           <button type="button" onClick={() => setTab("resumes")} className={`${btn} border-gray-300 dark:border-slate-600 text-gray-700 dark:text-slate-200 hover:bg-gray-50 dark:hover:bg-slate-800`}><Paperclip size={14} />Upload Resume</button>
+          {/* Keyboard-shortcuts hint — opens the help overlay; also bound to "?". */}
+          <button type="button" onClick={() => setShowShortcuts(true)} title="Keyboard shortcuts (?)"
+            className="hidden sm:inline-flex items-center gap-1 text-[11px] px-2 py-1 rounded-lg border border-gray-200 dark:border-slate-700 text-gray-400 dark:text-slate-500 hover:bg-gray-50 dark:hover:bg-slate-800 ml-auto">
+            <Keyboard size={13} />Shortcuts (?)
+          </button>
         </div>
 
         {/* Action panels */}
@@ -391,7 +480,7 @@ export default function HRCandidateDetail({ candidate: c, agents, me, voicePerms
             <div className="flex flex-wrap gap-2">
               {CALL_OUTCOMES.map(o => { const Ic=o.icon; return <button key={o.type} type="button" disabled={busy} onClick={() => logCall(o.type)} className={`inline-flex items-center gap-1 text-xs px-3 py-1.5 rounded-full border font-medium ${o.color} hover:opacity-80`}><Ic size={13} />{o.label}</button>; })}
             </div>
-            <textarea value={callNotes} onChange={e=>setCallNotes(e.target.value)} placeholder="Notes…" rows={2} className={inp} />
+            <textarea ref={callNotesRef} value={callNotes} onChange={e=>setCallNotes(e.target.value)} placeholder="Notes…" rows={2} className={inp} />
             <div className="flex gap-2">
               <input className={`${inp} flex-1`} placeholder="Next action" value={callNext} onChange={e=>setCallNext(e.target.value)} />
               <input className={`${inp} flex-1`} type="datetime-local" value={callNextDate} onChange={e=>setCallNextDate(e.target.value)} />
@@ -458,8 +547,19 @@ export default function HRCandidateDetail({ candidate: c, agents, me, voicePerms
         )}
         {panel === "note" && (
           <div className="mt-3 p-3 bg-amber-50/60 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900 rounded-lg space-y-2">
-            <textarea value={noteText} onChange={e=>setNoteText(e.target.value)} placeholder="Add a remark — it becomes a timeline entry…" rows={3} className={inp} />
+            <textarea ref={noteTextRef} value={noteText} onChange={e=>setNoteText(e.target.value)} placeholder="Add a remark — it becomes a timeline entry…" rows={3} className={inp} />
             <button type="button" disabled={busy||!noteText.trim()} onClick={addNote} className="btn text-sm bg-amber-500 text-white hover:bg-amber-600">Save Note</button>
+          </div>
+        )}
+
+        {/* Non-blocking interview conflict warning — the interview still SAVED. */}
+        {ivConflict && (
+          <div className="mt-3 p-3 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-800 flex items-start gap-2">
+            <AlertTriangle size={16} className="text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+            <div className="flex-1 min-w-0 text-xs text-amber-800 dark:text-amber-200">
+              <span className="font-semibold">Scheduling conflict — </span>the interview was still saved, but the slot overlaps another booking: {ivConflict}
+            </div>
+            <button type="button" onClick={() => setIvConflict(null)} className="text-amber-500 hover:text-amber-700 shrink-0" aria-label="Dismiss"><X size={14} /></button>
           </div>
         )}
       </div>
@@ -720,6 +820,44 @@ export default function HRCandidateDetail({ candidate: c, agents, me, voicePerms
           )}
         </div>
       </div>
+
+      {/* ── WhatsApp quick-send template picker (overlay) ── */}
+      <HRWhatsAppTemplatePicker
+        open={waPickerOpen}
+        onClose={() => setWaPickerOpen(false)}
+        ctx={waCtx}
+        waPhone={waPhone}
+        onSend={(text) => quickSendWA(text)}
+      />
+
+      {/* ── Keyboard shortcuts help overlay ── */}
+      {showShortcuts && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={() => setShowShortcuts(false)}>
+          <div className="bg-white dark:bg-slate-900 rounded-xl max-w-xs w-full shadow-2xl" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between p-4 border-b border-gray-100 dark:border-slate-700">
+              <div className="font-semibold text-sm text-gray-900 dark:text-white inline-flex items-center gap-2"><Keyboard size={16} />Keyboard shortcuts</div>
+              <button type="button" onClick={() => setShowShortcuts(false)} className="text-gray-400 hover:text-gray-700 dark:hover:text-slate-200"><X size={18} /></button>
+            </div>
+            <div className="p-4 space-y-2 text-sm">
+              {([
+                ["c", "Log a call"],
+                ["w", "WhatsApp quick-send"],
+                ["f", "New follow-up"],
+                ["i", "Schedule interview"],
+                ["n", "Add note"],
+                ["e", "Edit status"],
+                ["?", "Show / hide this help"],
+              ] as [string, string][]).map(([k, label]) => (
+                <div key={k} className="flex items-center justify-between gap-3">
+                  <span className="text-gray-600 dark:text-slate-300">{label}</span>
+                  <kbd className="px-2 py-0.5 rounded border border-gray-300 dark:border-slate-600 bg-gray-50 dark:bg-slate-800 text-gray-700 dark:text-slate-200 text-xs font-mono font-semibold uppercase">{k}</kbd>
+                </div>
+              ))}
+              <div className="text-[11px] text-gray-400 dark:text-slate-500 pt-1">Shortcuts pause while typing in a field.</div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -1,5 +1,6 @@
 import { requireHrPagePermission } from "@/lib/hrAccess";
 import { prisma } from "@/lib/prisma";
+import { Prisma } from "@prisma/client";
 import Link from "next/link";
 import { statusColor, statusLabel } from "@/lib/hrStatus";
 import { getHrUsers } from "@/lib/hrUsers";
@@ -9,9 +10,6 @@ export const dynamic = "force-dynamic";
 
 const CALL_TYPES = ["CALL_CONNECTED", "CALL_NOT_ANSWERED", "CALL_BUSY", "CALL_SWITCHED_OFF", "CALL_WRONG_NUMBER", "CALL_LATER"];
 const FUNNEL = ["NEW", "NOT_CALLED", "INTERESTED", "PIPELINE", "VIRTUAL_INTERVIEW_SCHEDULED", "F2F_INTERVIEW_SCHEDULED", "INTERVIEW_HELD", "SHORTLISTED", "OFFER_RELEASED", "JOINED"];
-// Statuses that represent an interview reached (for conversion math).
-const INTERVIEW_STATUSES = ["VIRTUAL_INTERVIEW_SCHEDULED", "F2F_INTERVIEW_SCHEDULED", "INTERVIEW_HELD", "NO_SHOW", "SHORTLISTED", "OFFER_RELEASED", "EXPECTED_JOINING", "JOINED"];
-const OFFER_STATUSES = ["OFFER_RELEASED", "EXPECTED_JOINING", "JOINED", "OFFER_DECLINED"];
 
 function countBy<T extends string>(arr: { _count: number }[], key: T): Record<string, number> {
   const m: Record<string, number> = {};
@@ -29,13 +27,28 @@ export default async function HRReportsPage({ searchParams }: { searchParams: Pr
   else if (period === "7d") since = new Date(Date.now() - 7 * 864e5);
   else if (period === "30d") since = new Date(Date.now() - 30 * 864e5);
   else if (period === "month") { const d = new Date(); since = new Date(d.getFullYear(), d.getMonth(), 1); }
+  // Period end — funnel/time-to-hire count activity that happened up to "now" within the window.
+  const periodEnd = new Date();
   const actWhere = since ? { createdAt: { gte: since }, candidate: { deletedAt: null } } : { candidate: { deletedAt: null } };
   // Candidate counts in this report are "current snapshot" of candidates ADDED in the period.
   const candWhere = since ? { createdAt: { gte: since }, deletedAt: null } : { deletedAt: null };
+  // Activity-timestamp window for the PERIOD-SCOPED conversion funnel + time-to-hire.
+  // Counts the progression EVENTS that occurred inside the selected period.
+  const actWindow = since ? { gte: since, lte: periodEnd } : { lte: periodEnd };
+
+  // Period-scoped funnel: DISTINCT candidates with each progression activity inside the window.
+  // groupBy candidateId then count the groups → one candidate counted once per stage.
+  const distinctCandActivity = (types: string[]) =>
+    prisma.hRActivity.groupBy({
+      by: ["candidateId"],
+      where: { type: { in: types as never[] }, createdAt: actWindow, candidate: { deletedAt: null } },
+      _count: true,
+    });
 
   const [
     users, calls, added, ivSched, ivDone, shortlisted, offers, joined, funnel,
     sourceGroup, joinedThisPeriod, offersReleasedPeriod,
+    pvInterviewed, pvOffered, pvJoined, timeToHireRaw,
   ] = await Promise.all([
     getHrUsers(),
     prisma.hRActivity.groupBy({ by: ["userId"], where: { type: { in: CALL_TYPES as never[] }, ...actWhere }, _count: true }),
@@ -50,6 +63,33 @@ export default async function HRReportsPage({ searchParams }: { searchParams: Pr
     prisma.hRCandidate.groupBy({ by: ["source"], where: candWhere, _count: true }),
     prisma.hRActivity.count({ where: { type: "CANDIDATE_JOINED", ...actWhere } }),
     prisma.hRActivity.count({ where: { type: "OFFER_RELEASED", ...actWhere } }),
+    // ── Period-scoped conversion funnel (distinct candidates by activity type, in-window) ──
+    distinctCandActivity(["INTERVIEW_SCHEDULED", "INTERVIEW_ATTENDED"]),
+    distinctCandActivity(["OFFER_RELEASED"]),
+    distinctCandActivity(["CANDIDATE_JOINED"]),
+    // ── Time-to-hire: days from candidate.createdAt → earliest CANDIDATE_JOINED activity in-window ──
+    // DISTINCT-on candidateId (GROUP BY) to avoid double counting if multiple join activities exist.
+    prisma.$queryRaw<{ avg_days: number | null; min_days: number | null; max_days: number | null; n: bigint }[]>(
+      Prisma.sql`
+      SELECT
+        AVG(diff_days)::float AS avg_days,
+        MIN(diff_days)::float AS min_days,
+        MAX(diff_days)::float AS max_days,
+        COUNT(*)::bigint      AS n
+      FROM (
+        SELECT
+          a."candidateId",
+          EXTRACT(EPOCH FROM (MIN(a."createdAt") - c."createdAt")) / 86400.0 AS diff_days
+        FROM "HRActivity" a
+        JOIN "HRCandidate" c ON c.id = a."candidateId"
+        WHERE a."type" = 'CANDIDATE_JOINED'
+          AND c."deletedAt" IS NULL
+          AND a."createdAt" <= ${periodEnd}
+          ${since ? Prisma.sql`AND a."createdAt" >= ${since}` : Prisma.empty}
+        GROUP BY a."candidateId", c."createdAt"
+      ) sub
+      WHERE diff_days >= 0
+    `),
   ]);
 
   const cCalls = countBy(calls, "userId"), cAdded = countBy(added, "primaryOwnerId");
@@ -78,18 +118,30 @@ export default async function HRReportsPage({ searchParams }: { searchParams: Pr
   const sourceTotal = sourceRows.reduce((t, s) => t + s.n, 0);
   const maxSource = Math.max(1, ...sourceRows.map(s => s.n));
 
-  // ── Conversion funnel (current snapshot, global) ──
-  const interviewedN = INTERVIEW_STATUSES.reduce((a, s) => a + (fmap[s] ?? 0), 0);
-  const offeredN = OFFER_STATUSES.reduce((a, s) => a + (fmap[s] ?? 0), 0);
-  const joinedN = fmap["JOINED"] ?? 0;
-  const appliedAll = Object.values(fmap).reduce((a, b) => a + b, 0);
+  // ── Conversion funnel (PERIOD-SCOPED) ──
+  // Applied = candidates ADDED in the period (all owners, not just those with later activity).
+  // Each later stage = DISTINCT candidates with the matching progression activity IN-WINDOW.
+  // "all" period → these become lifetime totals (since/window unbounded below), accurately.
   const pct = (n: number, d: number) => d > 0 ? Math.round((n / d) * 1000) / 10 : 0;
+  const appliedAll = added.reduce((a, r) => a + r._count, 0);
+  const interviewedN = pvInterviewed.length;   // distinct candidates with interview activity in-window
+  const offeredN = pvOffered.length;           // distinct candidates with offer-released activity in-window
+  const joinedN = pvJoined.length;             // distinct candidates with join activity in-window
   const conv = [
-    { label: "Applied", n: appliedAll, of: "" },
-    { label: "Reached Interview", n: interviewedN, of: `${pct(interviewedN, appliedAll)}% of applied` },
-    { label: "Offered", n: offeredN, of: `${pct(offeredN, interviewedN)}% of interviewed` },
-    { label: "Joined", n: joinedN, of: `${pct(joinedN, offeredN)}% of offered` },
+    { label: "Applied", n: appliedAll, of: "added in period" },
+    { label: "Reached Interview", n: interviewedN, of: appliedAll > 0 ? `${pct(interviewedN, appliedAll)}% of applied` : "—" },
+    { label: "Offered", n: offeredN, of: interviewedN > 0 ? `${pct(offeredN, interviewedN)}% of interviewed` : "—" },
+    { label: "Joined", n: joinedN, of: offeredN > 0 ? `${pct(joinedN, offeredN)}% of offered` : "—" },
   ];
+
+  // ── Time-to-hire (PERIOD-SCOPED): avg days from candidate.createdAt → join activity, for in-window joins ──
+  const tth = timeToHireRaw?.[0];
+  const tthCount = tth?.n != null ? Number(tth.n) : 0;
+  const fmt1 = (v: number | null | undefined) => v == null ? null : Math.round(v * 10) / 10;
+  const tthAvg = tthCount > 0 ? fmt1(tth?.avg_days) : null;
+  const tthMin = tthCount > 0 ? fmt1(tth?.min_days) : null;
+  const tthMax = tthCount > 0 ? fmt1(tth?.max_days) : null;
+  const dayStr = (v: number | null) => v == null ? "—" : `${v} ${v === 1 ? "day" : "days"}`;
 
   // ── Offers / Joining summary (current snapshot) ──
   const offerSummary = [
@@ -120,15 +172,47 @@ export default async function HRReportsPage({ searchParams }: { searchParams: Pr
         </div>
       </div>
 
-      {/* Conversion funnel (period new joins/offers + current snapshot) */}
-      <div className="grid sm:grid-cols-4 gap-3">
-        {conv.map((c, i) => (
-          <div key={c.label} className="bg-white dark:bg-slate-900 rounded-2xl border border-gray-200 dark:border-slate-700 p-4">
-            <div className="text-[11px] uppercase tracking-wide text-gray-400 font-semibold">{c.label}</div>
-            <div className="text-2xl font-extrabold text-gray-800 dark:text-white mt-1">{c.n}</div>
-            <div className="text-[11px] text-gray-500 dark:text-slate-400 mt-0.5">{i === 0 ? "in pipeline" : c.of}</div>
+      {/* Conversion funnel — PERIOD-SCOPED (cohort added in period, tracked via activity timestamps) */}
+      <div>
+        <div className="flex items-baseline gap-2 mb-2">
+          <div className="text-sm font-semibold text-gray-700 dark:text-slate-200">Conversion Funnel</div>
+          <span className="text-[11px] font-normal text-gray-400">{periodLabel.toLowerCase()} · cohort added in period, progressed via activity</span>
+        </div>
+        <div className="grid sm:grid-cols-4 gap-3">
+          {conv.map((c) => (
+            <div key={c.label} className="bg-white dark:bg-slate-900 rounded-2xl border border-gray-200 dark:border-slate-700 p-4">
+              <div className="text-[11px] uppercase tracking-wide text-gray-400 font-semibold">{c.label}</div>
+              <div className="text-2xl font-extrabold text-gray-800 dark:text-white mt-1">{c.n}</div>
+              <div className="text-[11px] text-gray-500 dark:text-slate-400 mt-0.5">{c.of}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Time-to-hire — PERIOD-SCOPED (candidates joined in period; createdAt → join activity) */}
+      <div className="bg-white dark:bg-slate-900 rounded-2xl border border-gray-200 dark:border-slate-700 p-4">
+        <div className="flex items-baseline gap-2 mb-3">
+          <div className="text-sm font-semibold text-gray-700 dark:text-slate-200">Time to Hire</div>
+          <span className="text-[11px] font-normal text-gray-400">
+            {tthCount > 0
+              ? `avg from added → joined · ${tthCount} joined in ${periodLabel.toLowerCase()}`
+              : `no candidates joined in ${periodLabel.toLowerCase()}`}
+          </span>
+        </div>
+        <div className="grid grid-cols-3 gap-3">
+          <div className="rounded-xl bg-gray-50 dark:bg-slate-800 p-3">
+            <div className="text-2xl font-extrabold text-indigo-700 dark:text-indigo-400">{dayStr(tthAvg)}</div>
+            <div className="text-[11px] text-gray-500 dark:text-slate-400 mt-0.5">Average</div>
           </div>
-        ))}
+          <div className="rounded-xl bg-gray-50 dark:bg-slate-800 p-3">
+            <div className="text-2xl font-extrabold text-gray-700 dark:text-slate-200">{dayStr(tthMin)}</div>
+            <div className="text-[11px] text-gray-500 dark:text-slate-400 mt-0.5">Fastest</div>
+          </div>
+          <div className="rounded-xl bg-gray-50 dark:bg-slate-800 p-3">
+            <div className="text-2xl font-extrabold text-gray-700 dark:text-slate-200">{dayStr(tthMax)}</div>
+            <div className="text-[11px] text-gray-500 dark:text-slate-400 mt-0.5">Slowest</div>
+          </div>
+        </div>
       </div>
 
       {/* Offers / Joining summary + new this period */}

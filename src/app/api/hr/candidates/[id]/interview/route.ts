@@ -21,6 +21,54 @@ const RECOMMENDATION_STATUS: Record<string, HRCandidateStatus> = {
 const fmtDateTime = (d: Date) =>
   d.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
 
+// ── Interview CONFLICT detection (NON-blocking warning) ──────────────────────
+// Does `interviewerId` already have another interview within ±60 min of `at`?
+// Returns a small descriptor for the UI to warn on, or null. NEVER blocks
+// scheduling — purely advisory. `excludeInterviewId` skips the row being
+// rescheduled so an interview never conflicts with itself.
+const CONFLICT_WINDOW_MIN = 60;
+type InterviewConflict = { message: string; interviewerName: string; otherCandidateName: string; scheduledAt: Date };
+
+async function detectInterviewConflict(
+  interviewerId: string | null | undefined,
+  at: Date,
+  excludeInterviewId?: string,
+): Promise<InterviewConflict | null> {
+  if (!interviewerId) return null; // unassigned interviewer → nothing to clash with
+  const windowMs = CONFLICT_WINDOW_MIN * 60_000;
+  const from = new Date(at.getTime() - windowMs);
+  const to = new Date(at.getTime() + windowMs);
+
+  const clash = await prisma.hRInterview.findFirst({
+    where: {
+      interviewerId,
+      scheduledAt: { gte: from, lte: to },
+      ...(excludeInterviewId ? { id: { not: excludeInterviewId } } : {}),
+      // Ignore interviews already marked done/cancelled — only live slots clash.
+      attendanceStatus: { in: ["SCHEDULED", "RESCHEDULED"] },
+      candidate: { deletedAt: null },
+    },
+    orderBy: { scheduledAt: "asc" },
+    select: {
+      scheduledAt: true,
+      interviewer: { select: { name: true } },
+      candidate: { select: { name: true } },
+    },
+  });
+  if (!clash) return null;
+  const interviewerName = clash.interviewer?.name ?? "Interviewer";
+  const otherCandidateName = clash.candidate?.name ?? "another candidate";
+  const whenStr = clash.scheduledAt.toLocaleString("en-IN", {
+    day: "numeric", month: "short", hour: "numeric", minute: "2-digit", hour12: true, timeZone: "Asia/Kolkata",
+  });
+  return {
+    message: `${interviewerName} already has an interview with ${otherCandidateName} at ${whenStr} (within ${CONFLICT_WINDOW_MIN} min).`,
+    interviewerName,
+    otherCandidateName,
+    scheduledAt: clash.scheduledAt,
+  };
+}
+
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const access = await loadOwnedCandidate(id);
@@ -33,6 +81,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   const itype = body.type as HRInterviewType;
   const scheduledAt = new Date(body.scheduledAt);
+  const interviewerId = body.interviewerId || me.id;
+
+  // Advisory conflict check BEFORE creating (does not block).
+  const conflict = await detectInterviewConflict(interviewerId, scheduledAt);
 
   const [interview] = await prisma.$transaction(async (tx) => {
     const iv = await tx.hRInterview.create({
@@ -40,7 +92,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         candidateId: id,
         type: itype,
         scheduledAt,
-        interviewerId: body.interviewerId || me.id,
+        interviewerId,
         notes: body.notes || null,
       },
     });
@@ -93,7 +145,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     return [iv];
   });
 
-  return NextResponse.json({ interview }, { status: 201 });
+  return NextResponse.json({ interview, conflict: conflict ?? null }, { status: 201 });
 }
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -120,6 +172,10 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     const oldAt = existing.scheduledAt;
     const itype = existing.type;
     const newStatus = STATUS_MAP[itype];
+
+    // Advisory conflict check against the effective interviewer at the NEW time,
+    // excluding this interview row so it can't clash with itself. Non-blocking.
+    const conflict = await detectInterviewConflict(existing.interviewerId, newAt, existing.id);
 
     const iv = await prisma.$transaction(async (tx) => {
       const updated = await tx.hRInterview.update({
@@ -182,7 +238,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       return updated;
     });
 
-    return NextResponse.json({ interview: iv });
+    return NextResponse.json({ interview: iv, conflict: conflict ?? null });
   }
 
   // ── RESULT / FEEDBACK capture ───────────────────────────────────────────────

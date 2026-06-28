@@ -36,7 +36,16 @@ export default async function CandidatesPage({ searchParams }: { searchParams: P
         followUps: { where: { completedAt: null }, orderBy: { dueAt: "asc" }, take: 1, select: { dueAt: true } },
         interviews: { orderBy: { scheduledAt: "desc" }, take: 5, select: { scheduledAt: true, type: true, confirmationStatus: true, attendanceStatus: true } },
         activities: { orderBy: { createdAt: "desc" }, take: 1, select: { type: true, createdAt: true } },
-        _count: { select: { resumes: true } },
+        _count: {
+          select: {
+            resumes: true,
+            // UNREAD voice guidance for the current viewer — GUIDANCE messages this
+            // user has NOT yet marked understood (no HRVoiceMessageRead row).
+            voiceMessages: { where: { kind: "GUIDANCE", reads: { none: { userId: me.id } } } },
+            // Open escalation threads (anything not yet RESOLVED).
+            escalations: { where: { status: { not: "RESOLVED" } } },
+          },
+        },
       },
     }),
     getHrUsers(),
@@ -45,7 +54,17 @@ export default async function CandidatesPage({ searchParams }: { searchParams: P
 
   const countMap: Record<string, number> = {};
   counts.forEach(r => { countMap[r.status] = r._count.id; });
-  const rows = candidates.map(c => ({ ...c, hasResume: c._count.resumes > 0 }));
+  const rows = candidates.map(c => {
+    const unreadVoiceCount = c._count.voiceMessages;
+    const openEscalationCount = c._count.escalations;
+    return {
+      ...c,
+      hasResume: c._count.resumes > 0,
+      unreadVoiceCount,
+      openEscalationCount,
+      hasUnread: unreadVoiceCount > 0 || openEscalationCount > 0,
+    };
+  });
 
   return (
     <div className="p-4 sm:p-6 max-w-full space-y-4">

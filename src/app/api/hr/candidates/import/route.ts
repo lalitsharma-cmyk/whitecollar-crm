@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { requireHrPermission } from "@/lib/hrAccess";
+import { requireHrPermission, hrActiveScopeWhere } from "@/lib/hrAccess";
 import { prisma } from "@/lib/prisma";
 import { HRCandidateStatus, Prisma } from "@prisma/client";
 import { fingerprintFor } from "@/lib/assignment";
@@ -139,10 +139,24 @@ export async function POST(req: NextRequest) {
   if (access.error) return access.error;
   const { me } = access;
 
+  // Dry-run preview: parse + dedup + categorize WITHOUT writing anything to the
+  // DB. Triggered by ?dryRun=1. Returns a distinct response shape (see below) so
+  // existing direct-commit callers are completely unaffected.
+  const dryRun = req.nextUrl.searchParams.get("dryRun") === "1";
+
   const body = await req.json();
   const rows: Row[] = Array.isArray(body.rows) ? body.rows : [];
   const strategy: "skip" | "update" | "create" = ["skip", "update", "create"].includes(body.strategy) ? body.strategy : "skip";
-  const ownerId: string = body.primaryOwnerId || me.id;
+  // Owner must be an active HR user — never orphan imported candidates onto a
+  // Sales/inactive account. Invalid/blank → default to the importer.
+  let ownerId: string = me.id;
+  if (body.primaryOwnerId && typeof body.primaryOwnerId === "string") {
+    const validOwner = await prisma.user.findFirst({
+      where: { id: body.primaryOwnerId, active: true, OR: [{ hrOnly: true }, { hrTeam: true }, { role: "ADMIN" }] },
+      select: { id: true },
+    });
+    if (validOwner) ownerId = body.primaryOwnerId;
+  }
   const importBatchId: string | null = typeof body.importBatchId === "string" && body.importBatchId ? body.importBatchId : null;
 
   const summary = {
@@ -151,24 +165,65 @@ export async function POST(req: NextRequest) {
     missingStatus: 0, missingFollowUpDate: 0, missingInterviewDate: 0,
     errorRows: [] as { row: string; reason: string }[],
   };
-  if (rows.length === 0) return NextResponse.json(summary);
+
+  // Per-row classification accumulated during the loop. In dryRun this is the
+  // payload; in a real commit it is simply ignored (zero cost).
+  type PreviewRow = {
+    rowIndex: number;
+    action: "new" | "update" | "skip" | "error";
+    candidateName: string;
+    reason: string;
+    status: string;
+    workflowCount: { followUps: number; interviews: number; activities: number };
+  };
+  const previewRows: PreviewRow[] = [];
+  const preview = {
+    total: rows.length, new: 0, update: 0, skip: 0, error: 0,
+    totalFollowUps: 0, totalInterviews: 0,
+  };
+
+  if (rows.length === 0) {
+    return dryRun
+      ? NextResponse.json({ dryRun: true, summary: preview, rows: previewRows })
+      : NextResponse.json(summary);
+  }
 
   // One indexed lookup for the whole batch + existing-workflow counts so a
   // re-import (reprocessing) doesn't duplicate auto-created records.
   const fps = Array.from(new Set(rows.map(r => fingerprintFor(r.phone, r.email)).filter(Boolean) as string[]));
   const existing = fps.length
     ? await prisma.hRCandidate.findMany({
-        where: { fingerprint: { in: fps } },
+        // Exclude soft-deleted rows (and scope) so a re-import never matches a
+        // recycle-binned candidate. Importers are Admin/Senior (view-all), so
+        // scope is a no-op for them; deletedAt:null is the meaningful filter.
+        where: { AND: [hrActiveScopeWhere(me), { fingerprint: { in: fps } }] },
         select: { id: true, fingerprint: true, _count: { select: { followUps: true, interviews: true, activities: true } } },
       })
     : [];
   const existingByFp = new Map(existing.map(e => [e.fingerprint!, e]));
   const seenFp = new Set<string>();
 
-  for (const r of rows) {
+  // Record a classification for the preview payload (no-op cost in real commits).
+  const classify = (rowIndex: number, action: PreviewRow["action"], candidateName: string, reason: string, status: string, wf?: { followUps: { length: number }; interviews: { length: number }; activities: { length: number } }) => {
+    const workflowCount = { followUps: wf?.followUps.length ?? 0, interviews: wf?.interviews.length ?? 0, activities: wf?.activities.length ?? 0 };
+    previewRows.push({ rowIndex, action, candidateName, reason, status, workflowCount });
+    preview[action]++;
+    if (action !== "skip" && action !== "error") {
+      preview.totalFollowUps += workflowCount.followUps;
+      preview.totalInterviews += workflowCount.interviews;
+    }
+  };
+
+  for (let rowIndex = 0; rowIndex < rows.length; rowIndex++) {
+    const r = rows[rowIndex];
     const phoneVal = (r.phone ?? "").trim();
     const name = (r.name ?? "").trim() || (phoneVal ? `Candidate - ${phoneVal}` : "");
-    if (!name) { summary.failed++; summary.errorRows.push({ row: r.email?.trim() || "(blank row)", reason: "Missing both name and phone" }); continue; }
+    if (!name) {
+      summary.failed++;
+      summary.errorRows.push({ row: r.email?.trim() || "(blank row)", reason: "Missing both name and phone" });
+      classify(rowIndex, "error", r.email?.trim() || "(blank row)", "Missing both name and phone", "");
+      continue;
+    }
 
     const rawStatus = (r.status ?? "").trim();
     const status = categorizeStatus(rawStatus);
@@ -183,8 +238,17 @@ export async function POST(req: NextRequest) {
 
     try {
       if (existsRow) {
-        if (strategy === "skip") { summary.skipped++; continue; }
+        if (strategy === "skip") {
+          summary.skipped++;
+          classify(rowIndex, "skip", name, "Duplicate of an existing candidate — skipped", status, wf);
+          continue;
+        }
         if (strategy === "update") {
+          if (dryRun) {
+            summary.updated++;
+            classify(rowIndex, "update", name, "Matches an existing candidate — will update", status, wf);
+            continue;
+          }
           const d = toData(r);
           const upd: Record<string, unknown> = { status, nextActionDate: wf.nextActionDate, nextAction: wf.nextAction, joiningDate: wf.joiningDate };
           if (rawStatus) upd.originalStatus = rawStatus;
@@ -216,6 +280,19 @@ export async function POST(req: NextRequest) {
       const forcedDup = !!existsRow || (fp ? seenFp.has(fp) : false);
       if (fp && !forcedDup) seenFp.add(fp);
 
+      if (dryRun) {
+        // seenFp was already updated above, so duplicates WITHIN the same preview
+        // batch classify identically to a real commit.
+        summary.imported++;
+        const reason = existsRow
+          ? "Existing candidate — will be created as a duplicate (Create anyway)"
+          : forcedDup
+            ? "Duplicate within this file — will be created as a separate record"
+            : "New candidate — will be created";
+        classify(rowIndex, "new", name, reason, status, wf);
+        continue;
+      }
+
       const cand = await prisma.hRCandidate.create({
         data: {
           ...toData(r), name, status, originalStatus: rawStatus || null, primaryOwnerId: ownerId, fingerprint: forcedDup ? null : fp,
@@ -233,8 +310,13 @@ export async function POST(req: NextRequest) {
       summary.interviewsCreated += wf.interviews.length;
       summary.noShowRecoveriesCreated += wf.followUps.filter(f => f.type === "NO_SHOW_RECOVERY").length;
       summary.timelineEntriesCreated += wf.activities.length;
-    } catch (e) { summary.failed++; summary.errorRows.push({ row: name, reason: String(e).slice(0, 150) }); }
+    } catch (e) {
+      summary.failed++;
+      summary.errorRows.push({ row: name, reason: String(e).slice(0, 150) });
+      classify(rowIndex, "error", name, String(e).slice(0, 150), status);
+    }
   }
 
+  if (dryRun) return NextResponse.json({ dryRun: true, summary: preview, rows: previewRows });
   return NextResponse.json(summary);
 }

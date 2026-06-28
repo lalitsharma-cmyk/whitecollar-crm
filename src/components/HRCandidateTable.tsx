@@ -2,7 +2,7 @@
 import { useState, useMemo, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Phone, MessageCircle, Target, CalendarPlus, Bookmark, BookmarkPlus, Trash2, Columns3, X } from "lucide-react";
+import { Phone, MessageCircle, Target, CalendarPlus, Bookmark, BookmarkPlus, Trash2, Columns3, X, Mic, AlertTriangle } from "lucide-react";
 import { ACTIVE_STATUS_DEFS, CLOSED_STATUS_DEFS, CLOSED_STATUS_KEYS, statusColor, displayStatus } from "@/lib/hrStatus";
 import * as XLSX from "xlsx";
 
@@ -55,6 +55,10 @@ interface Candidate {
   interviews: Interview[];
   activities: { type: string; createdAt: string }[];
   hasResume: boolean;
+  // Unread voice/escalation signals (computed server-side, scoped to the viewer).
+  unreadVoiceCount?: number;
+  openEscalationCount?: number;
+  hasUnread?: boolean;
 }
 interface TablePerms {
   importData: boolean;
@@ -340,6 +344,31 @@ export default function HRCandidateTable({ candidates, agents, perms = NO_PERMS 
   const inp = "w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs dark:bg-slate-800 dark:border-slate-600";
   const lbl = "block text-[10px] font-semibold text-gray-500 mb-1 uppercase tracking-wide";
 
+  // Unread voice / open-escalation badges next to a candidate's name. Voice =
+  // blue Mic (unread GUIDANCE for the viewer), escalation = amber AlertTriangle
+  // (open thread). Nothing renders when there's nothing unread.
+  const UnreadBadges = ({ c }: { c: Candidate }) => {
+    const voice = c.unreadVoiceCount ?? 0;
+    const esc = c.openEscalationCount ?? 0;
+    if (voice <= 0 && esc <= 0) return null;
+    return (
+      <span className="inline-flex items-center gap-1 align-middle">
+        {voice > 0 && (
+          <span title={`${voice} unread voice guidance message${voice === 1 ? "" : "s"}`}
+            className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">
+            <Mic className="w-3 h-3" />{voice}
+          </span>
+        )}
+        {esc > 0 && (
+          <span title={`${esc} open escalation${esc === 1 ? "" : "s"}`}
+            className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
+            <AlertTriangle className="w-3 h-3" />{esc}
+          </span>
+        )}
+      </span>
+    );
+  };
+
   // Row action buttons (reuse the detail deep-links for schedule/follow-up).
   const RowActions = ({ c }: { c: Candidate }) => (
     <div className="flex items-center gap-1">
@@ -520,7 +549,10 @@ export default function HRCandidateTable({ candidates, agents, perms = NO_PERMS 
                   <tr key={c.id} className="hover:bg-gray-50/80 dark:hover:bg-slate-800/50 transition align-top">
                     <td className="px-2 py-2.5"><input type="checkbox" aria-label="Select" checked={selected.has(c.id)} onChange={() => toggleSel(c.id)} /></td>
                     <td className="px-3 py-2.5 min-w-[150px]">
-                      <Link href={`/hr/candidates/${c.id}`} className="font-semibold text-[#1a2e4a] dark:text-blue-400 hover:underline block">{c.name}</Link>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <Link href={`/hr/candidates/${c.id}`} className="font-semibold text-[#1a2e4a] dark:text-blue-400 hover:underline">{c.name}</Link>
+                        <UnreadBadges c={c} />
+                      </div>
                       {c.currentCompany && <div className="text-[11px] text-gray-400 truncate max-w-[160px]">{c.currentCompany}</div>}
                     </td>
                     {visible("phone") && <td className="px-3 py-2.5 text-xs text-gray-600 whitespace-nowrap">{c.phone ? <a href={`tel:${c.phone}`} className="hover:text-blue-600">{c.phone}</a> : "—"}</td>}
@@ -554,7 +586,10 @@ export default function HRCandidateTable({ candidates, agents, perms = NO_PERMS 
             return (
               <div key={c.id} className="bg-white dark:bg-slate-900 rounded-xl border border-gray-200 dark:border-slate-700 p-3">
                 <div className="flex items-start justify-between gap-2">
-                  <Link href={`/hr/candidates/${c.id}`} className="font-semibold text-sm text-[#1a2e4a] dark:text-blue-400 hover:underline">{c.name}</Link>
+                  <div className="flex items-center gap-1.5 flex-wrap min-w-0">
+                    <Link href={`/hr/candidates/${c.id}`} className="font-semibold text-sm text-[#1a2e4a] dark:text-blue-400 hover:underline">{c.name}</Link>
+                    <UnreadBadges c={c} />
+                  </div>
                   <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium shrink-0 ${statusColor(c.status)}`}>{displayStatus(c)}</span>
                 </div>
                 <div className="text-[11px] text-gray-500 mt-0.5">{[c.currentProfile, c.currentCompany].filter(Boolean).join(" · ") || "—"}</div>

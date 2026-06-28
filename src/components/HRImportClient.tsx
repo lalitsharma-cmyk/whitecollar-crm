@@ -3,8 +3,24 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import * as XLSX from "xlsx";
+import { Eye, Loader2, UserPlus, RefreshCw, SkipForward, AlertTriangle, CheckCircle2, ArrowLeft } from "lucide-react";
 
 interface Agent { id: string; name: string; }
+
+// Dry-run preview payload returned by POST /api/hr/candidates/import?dryRun=1.
+type PreviewAction = "new" | "update" | "skip" | "error";
+interface PreviewRow {
+  rowIndex: number;
+  action: PreviewAction;
+  candidateName: string;
+  reason: string;
+  status: string;
+  workflowCount: { followUps: number; interviews: number; activities: number };
+}
+interface PreviewData {
+  summary: { total: number; new: number; update: number; skip: number; error: number; totalFollowUps: number; totalInterviews: number };
+  rows: PreviewRow[];
+}
 const CRM_FIELDS: [string, string][] = [
   ["name", "Candidate Name"], ["phone", "Phone"], ["whatsappPhone", "WhatsApp"], ["email", "Email"],
   ["location", "Location"], ["city", "City"], ["currentCompany", "Current Company"], ["currentProfile", "Current Profile"],
@@ -87,6 +103,9 @@ export default function HRImportClient({ agents, defaultOwnerId }: { agents: Age
   const [note, setNote] = useState<string | null>(null);
   const [progress, setProgress] = useState({ done: 0, total: 0, imported: 0, updated: 0, skipped: 0, failed: 0 });
   const [details, setDetails] = useState<{ followUpsCreated: number; interviewsCreated: number; noShowRecoveriesCreated: number; timelineEntriesCreated: number; missingStatus: number; errorCount: number; batchId: string | null } | null>(null);
+  const [previewData, setPreviewData] = useState<PreviewData | null>(null);
+  const [showPreview, setShowPreview] = useState(false);
+  const [previewing, setPreviewing] = useState(false);
 
   // Re-derive headers, data rows and mapping for a chosen header row.
   function applyHeaderRow(g: string[][], hr: number) {
@@ -129,16 +148,61 @@ export default function HRImportClient({ agents, defaultOwnerId }: { agents: Age
   const validRows = rows.filter(r => valOf(r, mapping.name) || valOf(r, mapping.phone)).length;
   const previewFields = CRM_FIELDS.filter(([f]) => mapping[f]);
 
-  async function runImport() {
-    if (!canImport) { setErr("Cannot import — map a column to Candidate Name or Phone."); return; }
-    setErr(null); setNote("⏳ Import started…");
-    try { localStorage.setItem(sigOf(headers), JSON.stringify(mapping)); } catch { /* ignore */ }
-    setStep("run");
-    const mapped = rows.map(r => {
+  // Map the spreadsheet rows to CRM fields exactly as the import expects. Shared
+  // by both the dry-run preview and the real commit so they classify identically.
+  function buildMappedRows() {
+    return rows.map(r => {
       const o: Record<string, string> = {};
       for (const [field, col] of Object.entries(mapping)) if (col) o[field] = r[col] ?? "";
       return o;
     }).filter(o => (o.name ?? "").trim() || (o.phone ?? "").trim());
+  }
+
+  // Non-committing preview: sends the rows with ?dryRun=1 (no DB writes) and
+  // shows the classification (new / update / skip / error) before anything runs.
+  async function previewImport() {
+    if (!canImport) { setErr("Cannot preview — map a column to Candidate Name or Phone."); return; }
+    setErr(null); setNote(null);
+    const mapped = buildMappedRows();
+    if (mapped.length === 0) { setErr("No rows have a Name or Phone value — nothing to preview."); return; }
+
+    setPreviewing(true);
+    const BATCH = 100;
+    const acc: PreviewData = { summary: { total: 0, new: 0, update: 0, skip: 0, error: 0, totalFollowUps: 0, totalInterviews: 0 }, rows: [] };
+    try {
+      for (let i = 0; i < mapped.length; i += BATCH) {
+        const chunk = mapped.slice(i, i + BATCH);
+        const res = await fetch("/api/hr/candidates/import?dryRun=1", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ rows: chunk, strategy, primaryOwnerId: ownerId, importBatchId: null }),
+        });
+        const j = await res.json();
+        if (!res.ok) { setErr(j.error ?? "Preview failed."); setPreviewing(false); return; }
+        acc.summary.total += j.summary?.total || 0;
+        acc.summary.new += j.summary?.new || 0;
+        acc.summary.update += j.summary?.update || 0;
+        acc.summary.skip += j.summary?.skip || 0;
+        acc.summary.error += j.summary?.error || 0;
+        acc.summary.totalFollowUps += j.summary?.totalFollowUps || 0;
+        acc.summary.totalInterviews += j.summary?.totalInterviews || 0;
+        // rowIndex from the server is chunk-relative — offset it back to the full set.
+        if (Array.isArray(j.rows)) for (const pr of j.rows as PreviewRow[]) acc.rows.push({ ...pr, rowIndex: pr.rowIndex + i });
+      }
+      setPreviewData(acc); setShowPreview(true);
+    } catch {
+      setErr("Could not generate preview — check your connection and try again.");
+    } finally {
+      setPreviewing(false);
+    }
+  }
+
+  async function runImport() {
+    if (!canImport) { setErr("Cannot import — map a column to Candidate Name or Phone."); return; }
+    setErr(null); setNote("⏳ Import started…");
+    setShowPreview(false);
+    try { localStorage.setItem(sigOf(headers), JSON.stringify(mapping)); } catch { /* ignore */ }
+    setStep("run");
+    const mapped = buildMappedRows();
     if (mapped.length === 0) { setErr("No rows have a Name or Phone value — nothing to import."); setNote("❌ Import failed: every row is missing both Name and Phone."); setStep("map"); return; }
 
     const BATCH = 100;
@@ -291,15 +355,25 @@ export default function HRImportClient({ agents, defaultOwnerId }: { agents: Age
             <div className="text-[11px] text-gray-500">📅 Follow-up / interview dates will create dashboard tasks (Calls Due, Interviews Today, No-Show Recovery) and a timeline entry per candidate.</div>
           )}
 
-          <div className="flex gap-2">
-            <button type="button" onClick={runImport} disabled={!canImport}
-              className={`btn justify-center ${canImport ? "btn-primary" : "bg-gray-200 text-gray-400 cursor-not-allowed"}`}
-              title={canImport ? "" : "Map Candidate Name or Phone first"}>
-              Confirm &amp; Import {validRows || rows.length}
+          <div className="flex flex-wrap gap-2">
+            <button type="button" onClick={previewImport} disabled={!canImport || previewing}
+              className={`btn justify-center inline-flex items-center gap-1.5 ${canImport && !previewing ? "btn-primary" : "bg-gray-200 text-gray-400 cursor-not-allowed dark:bg-slate-700 dark:text-slate-500"}`}
+              title={canImport ? "See what will happen before anything is saved" : "Map Candidate Name or Phone first"}>
+              {previewing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Eye className="w-4 h-4" />}
+              {previewing ? "Building preview…" : `Preview Import (${validRows || rows.length})`}
             </button>
-            <button type="button" onClick={() => setStep("upload")} className="btn justify-center px-4 border border-gray-300 text-gray-600 rounded-lg text-sm">Back</button>
+            <button type="button" onClick={runImport} disabled={!canImport}
+              className={`btn justify-center px-4 border rounded-lg text-sm ${canImport ? "border-gray-300 text-gray-600 hover:bg-gray-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-800" : "border-gray-200 text-gray-300 cursor-not-allowed dark:border-slate-700 dark:text-slate-600"}`}
+              title={canImport ? "Skip the preview and import now" : "Map Candidate Name or Phone first"}>
+              Import now
+            </button>
+            <button type="button" onClick={() => setStep("upload")} className="btn justify-center px-4 border border-gray-300 text-gray-600 rounded-lg text-sm dark:border-slate-600 dark:text-slate-300">Back</button>
           </div>
         </div>
+      )}
+
+      {showPreview && previewData && (
+        <ImportPreview data={previewData} onConfirm={runImport} onBack={() => setShowPreview(false)} />
       )}
 
       {step === "run" && (
@@ -334,10 +408,117 @@ export default function HRImportClient({ agents, defaultOwnerId }: { agents: Age
           )}
           <div className="flex gap-2 justify-center">
             <Link href="/hr/candidates" className="btn btn-primary justify-center">View candidates</Link>
-            <button type="button" onClick={() => { setStep("upload"); setGrid([]); setHeaders([]); setRows([]); setMapping({}); setNote(null); }} className="btn justify-center px-4 border border-gray-300 text-gray-600 rounded-lg text-sm">Import another</button>
+            <button type="button" onClick={() => { setStep("upload"); setGrid([]); setHeaders([]); setRows([]); setMapping({}); setNote(null); setPreviewData(null); setShowPreview(false); }} className="btn justify-center px-4 border border-gray-300 text-gray-600 rounded-lg text-sm">Import another</button>
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// ── Dry-run preview modal ──────────────────────────────────────────────────
+// Shows the server's non-committing classification (new / update / skip / error)
+// before anything is written. Confirm runs the real import; Back returns to map.
+const ACTION_META: Record<PreviewAction, { label: string; cls: string; Icon: typeof UserPlus }> = {
+  new: { label: "New", cls: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300", Icon: UserPlus },
+  update: { label: "Update", cls: "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300", Icon: RefreshCw },
+  skip: { label: "Skip", cls: "bg-gray-100 text-gray-600 dark:bg-slate-700 dark:text-slate-300", Icon: SkipForward },
+  error: { label: "Error", cls: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300", Icon: AlertTriangle },
+};
+
+function ImportPreview({ data, onConfirm, onBack }: { data: PreviewData; onConfirm: () => void; onBack: () => void }) {
+  const { summary, rows } = data;
+  const willWrite = summary.new + summary.update;
+  const cards: { key: PreviewAction; n: number }[] = [
+    { key: "new", n: summary.new }, { key: "update", n: summary.update },
+    { key: "skip", n: summary.skip }, { key: "error", n: summary.error },
+  ];
+  const sample = rows.slice(0, 20);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/40 dark:bg-black/60" role="dialog" aria-modal="true">
+      <div className="w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col bg-white dark:bg-slate-900 rounded-2xl border border-gray-200 dark:border-slate-700 shadow-xl">
+        <div className="px-5 py-3 border-b border-gray-100 dark:border-slate-800 flex items-center gap-2">
+          <Eye className="w-5 h-5 text-blue-600 dark:text-blue-300" />
+          <div>
+            <h2 className="text-base font-bold text-gray-900 dark:text-white">Import Preview</h2>
+            <p className="text-xs text-gray-500 dark:text-slate-400">Nothing has been saved yet. Review the {summary.total} rows below, then confirm.</p>
+          </div>
+        </div>
+
+        <div className="px-5 py-3 space-y-3 overflow-y-auto">
+          {/* Summary grid */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center">
+            {cards.map(({ key, n }) => {
+              const m = ACTION_META[key];
+              return (
+                <div key={key} className="rounded-lg border border-gray-200 dark:border-slate-700 p-2">
+                  <div className="flex items-center justify-center gap-1.5">
+                    <m.Icon className="w-3.5 h-3.5 text-gray-400 dark:text-slate-500" />
+                    <span className="text-lg font-bold text-gray-800 dark:text-slate-100 tabular-nums">{n}</span>
+                  </div>
+                  <div className="text-[10px] text-gray-500 dark:text-slate-400">{m.label}</div>
+                </div>
+              );
+            })}
+          </div>
+          <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-gray-500 dark:text-slate-400">
+            <span>📞 {summary.totalFollowUps} follow-ups will be created</span>
+            <span>🗓 {summary.totalInterviews} interviews will be created</span>
+          </div>
+
+          {/* Per-row classification (first 20) */}
+          <div className="overflow-x-auto rounded-lg border border-gray-200 dark:border-slate-700">
+            <table className="text-[11px] w-full">
+              <thead>
+                <tr className="bg-gray-50 dark:bg-slate-800 text-left text-gray-500 dark:text-slate-400">
+                  <th className="px-2 py-1.5 whitespace-nowrap">#</th>
+                  <th className="px-2 py-1.5 whitespace-nowrap">Candidate</th>
+                  <th className="px-2 py-1.5 whitespace-nowrap">Action</th>
+                  <th className="px-2 py-1.5 whitespace-nowrap">Status</th>
+                  <th className="px-2 py-1.5 whitespace-nowrap text-right">F/U</th>
+                  <th className="px-2 py-1.5 whitespace-nowrap text-right">Intv</th>
+                  <th className="px-2 py-1.5 whitespace-nowrap">Reason</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100 dark:divide-slate-800">
+                {sample.map(r => {
+                  const m = ACTION_META[r.action];
+                  return (
+                    <tr key={r.rowIndex} className="text-gray-700 dark:text-slate-300">
+                      <td className="px-2 py-1 tabular-nums text-gray-400">{r.rowIndex + 1}</td>
+                      <td className="px-2 py-1 whitespace-nowrap max-w-[160px] truncate font-medium">{r.candidateName}</td>
+                      <td className="px-2 py-1">
+                        <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium ${m.cls}`}>
+                          <m.Icon className="w-3 h-3" />{m.label}
+                        </span>
+                      </td>
+                      <td className="px-2 py-1 whitespace-nowrap">{r.status || "—"}</td>
+                      <td className="px-2 py-1 text-right tabular-nums">{r.workflowCount.followUps || ""}</td>
+                      <td className="px-2 py-1 text-right tabular-nums">{r.workflowCount.interviews || ""}</td>
+                      <td className="px-2 py-1 max-w-[220px] truncate text-gray-500 dark:text-slate-400" title={r.reason}>{r.reason}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          {rows.length > sample.length && (
+            <div className="text-[11px] text-gray-400 dark:text-slate-500">Showing first {sample.length} of {rows.length} rows.</div>
+          )}
+        </div>
+
+        <div className="px-5 py-3 border-t border-gray-100 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2">
+          <button type="button" onClick={onBack} className="btn justify-center px-4 inline-flex items-center gap-1.5 border border-gray-300 text-gray-600 rounded-lg text-sm dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-800">
+            <ArrowLeft className="w-4 h-4" /> Back to Edit
+          </button>
+          <button type="button" onClick={onConfirm} disabled={willWrite === 0}
+            className={`btn justify-center inline-flex items-center gap-1.5 ${willWrite > 0 ? "btn-primary" : "bg-gray-200 text-gray-400 cursor-not-allowed dark:bg-slate-700 dark:text-slate-500"}`}
+            title={willWrite > 0 ? "Commit this import" : "No rows would be created or updated"}>
+            <CheckCircle2 className="w-4 h-4" /> Confirm Import ({willWrite})
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
