@@ -418,7 +418,10 @@
 // lives in the Medium field now). Display/picker-only — no schema or data change.
 // v118: relabel "Closable deals"/"Closing Stage" → "Meeting / Visit Stage" + de-"Won"
 // the Closed (final) outcome column (display-only; meetings/visits never mark Won/Closed).
-const CACHE = "wcr-shell-v118";
+// v119: P0 iPhone/PWA login fix — server cookie fallback for device id + mobile-safe
+// errors (no Ctrl+Shift+R) + Safari/PWA device labelling. Bump so every shell reloads
+// the hardened /login page.
+const CACHE = "wcr-shell-v119";
 const SHELL = ["/login", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", (event) => {

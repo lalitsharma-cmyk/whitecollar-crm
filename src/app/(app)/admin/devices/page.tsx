@@ -92,6 +92,7 @@ export default async function DevicesPage() {
                       <th className="px-4 py-2 font-semibold">Device</th>
                       <th className="px-3 py-2 font-semibold">Type</th>
                       <th className="px-3 py-2 font-semibold hidden md:table-cell">IP / Location</th>
+                      <th className="px-3 py-2 font-semibold hidden lg:table-cell">First seen</th>
                       <th className="px-3 py-2 font-semibold hidden sm:table-cell">Last seen</th>
                       <th className="px-3 py-2 font-semibold">Status</th>
                       <th className="px-3 py-2 font-semibold">Actions</th>
@@ -102,12 +103,17 @@ export default async function DevicesPage() {
                       <tr key={d.id} className="border-b border-[#f1f5f9] dark:border-slate-700">
                         <td className="px-4 py-2">
                           <div className="font-medium">{d.name}</div>
-                          <div className="text-xs text-gray-500">{d.os} · {d.browser}</div>
+                          <div className="text-xs text-gray-500">{d.os ?? "—"} · {d.browser ?? "—"}</div>
+                          {(() => {
+                            const ua = u.loginSessions.find((s) => s.deviceRef === d.id)?.userAgent;
+                            return ua ? <div className="text-[10px] text-gray-400 truncate max-w-[240px]" title={ua}>{ua}</div> : null;
+                          })()}
                         </td>
                         <td className="px-3 py-2 capitalize text-gray-600 dark:text-slate-300">{d.type}</td>
                         <td className="px-3 py-2 hidden md:table-cell text-xs text-gray-600 dark:text-slate-400 whitespace-nowrap">
                           {d.lastIp ?? "—"}<br />{locationLabel(d.lastCity, d.lastCountry)}
                         </td>
+                        <td className="px-3 py-2 hidden lg:table-cell text-xs text-gray-500 whitespace-nowrap tabular-nums">{fmt(d.createdAt)}</td>
                         <td className="px-3 py-2 hidden sm:table-cell text-xs text-gray-500 whitespace-nowrap tabular-nums">{fmt(d.lastSeenAt)}</td>
                         <td className="px-3 py-2"><span className={`text-xs px-2 py-0.5 rounded-full border ${STATUS_CHIP[d.status] ?? ""}`}>{d.status}</span></td>
                         <td className="px-3 py-2"><DeviceRowActions deviceId={d.id} status={d.status} /></td>

@@ -56,7 +56,7 @@ export async function requireRole(...roles: Role[]) {
 export async function loginWithCredentials(
   email: string,
   password: string,
-  deviceCtx?: { deviceId: string; meta: RequestMeta },
+  deviceCtx?: { deviceId: string; meta: RequestMeta; pwa?: boolean },
 ) {
   const user = await prisma.user.findUnique({ where: { email: email.toLowerCase().trim() } });
   if (!user || !user.active) return { ok: false as const, error: "Invalid credentials" };
@@ -70,20 +70,21 @@ export async function loginWithCredentials(
       user: { id: user.id, name: user.name, deviceLimitExtra: user.deviceLimitExtra, isSuperAdmin: user.isSuperAdmin },
       deviceId: deviceCtx.deviceId,
       meta: deviceCtx.meta,
+      pwa: deviceCtx.pwa,
     });
     if (!decision.ok) {
       if (decision.reason === "blocked") {
         return { ok: false as const, error: "This device is not approved for CRM access.", blocked: true as const };
       }
-      return { ok: false as const, error: "Device approval pending. Please contact Admin.", pending: true as const };
+      return { ok: false as const, error: "Device registration is pending administrator approval.", pending: true as const };
     }
     sid = await createSession(user.id, decision.deviceRowId, deviceCtx.meta);
   } else if (enforcementOn() && !user.isSuperAdmin) {
-    // No device id from the client → the device can't be identified/registered.
-    // Under enforcement this must NOT silently log in (that was the bypass that let
-    // agents in without an approval request). Tell them to reload so the fresh login
-    // page sends a device id. Super-admins are exempt (safety hatch).
-    return { ok: false as const, error: "Couldn't verify this device. Please fully reload the page (Ctrl+Shift+R / clear cache) and sign in again.", blocked: true as const };
+    // Defensive only: the /api/login route now ALWAYS resolves a device id
+    // (client localStorage → wcr_did cookie → server-generated UUID), so this
+    // branch is effectively unreachable. If it ever is hit, fail with a neutral,
+    // device-agnostic message — NEVER desktop-only instructions. Super-admins exempt.
+    return { ok: false as const, error: "Device verification failed. Please try again.", blocked: true as const };
   }
 
   const token = await signSession(

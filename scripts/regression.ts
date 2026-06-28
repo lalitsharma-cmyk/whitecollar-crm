@@ -4983,7 +4983,7 @@ const checks: Check[] = [
       assert(/action === "logout_everyone"/.test(api) && /revokedAt: null \}, data: \{ revokedAt: now/.test(api), "global logout_everyone must revoke ALL active sessions");
       assert(/action === "set_device_limit"/.test(api) && /deviceLimitExtra: extra/.test(api), "set_device_limit must write deviceLimitExtra");
       const auth = fs.readFileSync("src/lib/auth.ts", "utf8");
-      assert(/Device approval pending\. Please contact Admin\./.test(auth), "pending message must match the agreed wording");
+      assert(/Device registration is pending administrator approval\./.test(auth), "pending message must match the agreed (mobile-friendly) wording");
       assert(/This device is not approved for CRM access\./.test(auth), "blocked message must match the agreed wording");
       const page = fs.readFileSync("src/app/(app)/admin/devices/page.tsx", "utf8");
       assert(/ForceLogoutEveryone/.test(page) && /UserDeviceLimit/.test(page), "admin page must mount the global logout + per-user limit controls");
@@ -4994,8 +4994,13 @@ const checks: Check[] = [
       // EVERY new device needs admin approval under enforcement — auto-approve ONLY in
       // monitor mode or for a super-admin (NOT 'first N devices auto-pass').
       assert(/const autoApprove = !enforcementOn\(\) \|\| user\.isSuperAdmin;/.test(ds), "new devices must NOT auto-approve up to the limit — only monitor/super-admin auto-approve");
-      // The no-deviceId login bypass must be closed under enforcement (except super-admin).
-      assert(/enforcementOn\(\) && !user\.isSuperAdmin/.test(auth) && /Couldn't verify this device/.test(auth), "login must block a no-deviceId attempt under enforcement");
+      // The no-deviceId login bypass must stay closed under enforcement (super-admin
+      // exempt). NB: the /api/login route now ALWAYS resolves a device id (localStorage
+      // → wcr_did cookie → UUID), so this defensive branch is effectively unreachable —
+      // but it must remain so a future refactor can't silently re-open the bypass. The
+      // old desktop-only "Couldn't verify… Ctrl+Shift+R" message was REMOVED (P0 iPhone
+      // fix); see the device-login-resilient invariant for the mobile-safe wording.
+      assert(/enforcementOn\(\) && !user\.isSuperAdmin/.test(auth), "login must still close the no-deviceId bypass under enforcement (super-admin exempt)");
       // The cap is enforced at APPROVAL time.
       assert(/Device limit reached/.test(api) && /deviceLimit\(/.test(api), "approve must enforce the per-user device cap");
       results.push({ name: "  ↳ note", ok: true, detail: "every new device → admin approval (no auto-pass); no-deviceId bypass closed; cap enforced at approval; enforcement env-gated" });
@@ -5071,6 +5076,48 @@ const checks: Check[] = [
         ok: true,
         detail: `closed leads=${closedLeads.length}; without booking/reject signal=${unjustified} (meetings/visits never close — status model + write paths locked)`,
       });
+    },
+  },
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // 50. DEVICE LOGIN RESILIENCE + CONTEXT SEPARATION (2026-06-28, Lalit P0).
+  //   iPhone Safari / iOS PWA were hard-blocked ("Couldn't verify this device…
+  //   Ctrl+Shift+R") whenever localStorage was blocked/cleared and no deviceId
+  //   reached the server. Fix: the login route ALWAYS resolves a stable id
+  //   (localStorage → wcr_did httpOnly cookie → generated UUID), so a device is
+  //   always captured (pending/approved) — never a dead-end. Errors are mobile-safe
+  //   (no Ctrl+Shift+R). Safari vs installed-PWA are LABELLED distinctly; their
+  //   SEPARATION is already guaranteed by per-context cookie/localStorage jars on
+  //   iOS (Apple continuity/iCloud never syncs those across physical devices).
+  // ───────────────────────────────────────────────────────────────────────────
+  {
+    name: "device-login-resilient — login always resolves a device id (cookie fallback); no desktop-only error; PWA/Safari labelled",
+    run: async () => {
+      const fs = await import("fs");
+      const route = fs.readFileSync("src/app/api/login/route.ts", "utf8");
+      assert(/DID_COOKIE = "wcr_did"/.test(route), "login route must define the wcr_did device cookie");
+      assert(/deviceId\.trim\(\) \|\| cookieDid \|\| randomUUID\(\)/.test(route), "login route must resolve did = client || cookie || generated (never empty)");
+      assert(/jar\.set\(DID_COOKIE/.test(route), "login route must (re)set the wcr_did cookie on the response");
+      assert(/loginWithCredentials\(email, password, \{ deviceId: did, meta, pwa \}\)/.test(route), "login route must always pass a resolved deviceId + pwa");
+
+      const auth = fs.readFileSync("src/lib/auth.ts", "utf8");
+      assert(!/Ctrl\+Shift\+R/.test(auth), "auth must NOT show desktop-only Ctrl+Shift+R instructions (breaks iPhone)");
+      assert(/Device registration is pending administrator approval\./.test(auth), "pending message must be the mobile-friendly wording");
+      assert(/pwa: deviceCtx\.pwa/.test(auth), "auth must thread the pwa context into evaluateDevice");
+
+      const ds = fs.readFileSync("src/lib/deviceSecurity.ts", "utf8");
+      assert(/pwa\?: boolean/.test(ds) && /deviceName\(user\.name, p, \{ pwa \}\)/.test(ds), "evaluateDevice must accept + label the pwa context");
+      assert(/contextLabel\(p, pwa\)/.test(ds) && /osLabel\(p\)/.test(ds), "device row must store browser-context + OS-version labels");
+
+      const dev = fs.readFileSync("src/lib/device.ts", "utf8");
+      assert(/osVersion\?: string/.test(dev), "UaInfo must carry osVersion");
+      assert(/export function contextLabel/.test(dev) && /export function osLabel/.test(dev), "device.ts must export contextLabel + osLabel");
+
+      const page = fs.readFileSync("src/app/login/page.tsx", "utf8");
+      assert(/name="displayMode"/.test(page) && /display-mode: standalone/.test(page), "login page must capture PWA display-mode");
+      assert(!/Ctrl\+Shift\+R/.test(page), "login page must not show desktop-only refresh instructions");
+
+      results.push({ name: "  ↳ note", ok: true, detail: "login resolves did via localStorage→cookie→uuid; no desktop-only error; Safari vs PWA labelled; OS version shown" });
     },
   },
 ];

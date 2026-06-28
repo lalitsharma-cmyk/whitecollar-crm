@@ -1,9 +1,21 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { cookies } from "next/headers";
+import { randomUUID } from "crypto";
 import { loginWithCredentials } from "@/lib/auth";
 import { isRateLimited, clearRateLimit } from "@/lib/rateLimit";
 import { audit, reqMeta } from "@/lib/audit";
 import { autoMarkAttendanceOnLogin } from "@/lib/attendance";
 import { requestMetaFrom } from "@/lib/device";
+
+// Durable per-browser-context device id. Resolution order (login route):
+//   client localStorage value → this httpOnly cookie → freshly generated UUID.
+// The cookie is the RELIABLE anchor: iOS Safari/PWA can block or clear localStorage
+// (Private mode, ITP), which previously left the client sending NO deviceId and the
+// user hard-blocked. An httpOnly first-party cookie survives that, is scoped per
+// browser context (Safari and each installed PWA have SEPARATE cookie jars on iOS),
+// and is NOT synced across physical devices by Apple continuity/iCloud — so it both
+// fixes the login failure AND keeps every device/context a separate approval.
+const DID_COOKIE = "wcr_did";
 
 // Where a user lands right after a successful login. HR-only users (e.g. Nisha)
 // go straight to the HR workspace; everyone else to the main CRM dashboard, which
@@ -14,18 +26,20 @@ function landingPathFor(user: { hrOnly?: boolean | null }): string {
 }
 
 export async function POST(req: NextRequest) {
-  let email = "", password = "", deviceId = "";
+  let email = "", password = "", deviceId = "", displayMode = "";
   const ct = req.headers.get("content-type") ?? "";
   if (ct.includes("application/json")) {
     const body = await req.json().catch(() => ({} as Record<string, unknown>));
     email = String((body as { email?: string }).email ?? "");
     password = String((body as { password?: string }).password ?? "");
     deviceId = String((body as { deviceId?: string }).deviceId ?? "");
+    displayMode = String((body as { displayMode?: string }).displayMode ?? "");
   } else {
     const fd = await req.formData();
     email = String(fd.get("email") ?? "");
     password = String(fd.get("password") ?? "");
     deviceId = String(fd.get("deviceId") ?? "");
+    displayMode = String(fd.get("displayMode") ?? "");
   }
   if (!email || !password) return NextResponse.json({ error: "Email and password are required" }, { status: 400 });
 
@@ -40,8 +54,25 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  // Resolve a STABLE device id: prefer the client localStorage value (the original
+  // anchor the admin approved), else the durable cookie, else mint a new one. Then
+  // (re)write the cookie so it always mirrors the resolved id — if localStorage later
+  // breaks, the cookie carries the SAME id and the device stays recognised (no new
+  // pending device). Set on every response so even a failed attempt establishes it.
+  const jar = await cookies();
+  const cookieDid = (jar.get(DID_COOKIE)?.value ?? "").trim();
+  const did = deviceId.trim() || cookieDid || randomUUID();
+  jar.set(DID_COOKIE, did, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    path: "/",
+    maxAge: 60 * 60 * 24 * 365, // 1 year
+  });
+  const pwa = displayMode === "standalone";
+
   const meta = requestMetaFrom(req.headers);
-  const r = await loginWithCredentials(email, password, deviceId ? { deviceId, meta } : undefined);
+  const r = await loginWithCredentials(email, password, { deviceId: did, meta, pwa });
   if (!r.ok) {
     const pending = "pending" in r && r.pending;
     const blocked = "blocked" in r && r.blocked;

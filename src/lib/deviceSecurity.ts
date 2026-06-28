@@ -1,6 +1,6 @@
 import "server-only";
 import { prisma } from "@/lib/prisma";
-import { parseUserAgent, deviceName, locationLabel, type RequestMeta } from "@/lib/device";
+import { parseUserAgent, deviceName, contextLabel, osLabel, locationLabel, type RequestMeta } from "@/lib/device";
 import { notifyRoles } from "@/lib/notify";
 import { audit } from "@/lib/audit";
 import { NotifKind } from "@prisma/client";
@@ -37,10 +37,17 @@ export async function evaluateDevice(opts: {
   user: { id: string; name: string; deviceLimitExtra: number; isSuperAdmin: boolean };
   deviceId: string;
   meta: RequestMeta;
+  // Browser context discriminator — on iOS an installed PWA has its OWN cookie +
+  // localStorage jar (separate from Safari), so it already gets a separate deviceId
+  // and Device row; this flag just LABELS it ("Safari · App") so the admin can tell
+  // them apart. NOT a separate identity mechanism — storage isolation is.
+  pwa?: boolean;
 }): Promise<DeviceDecision> {
-  const { user, deviceId, meta } = opts;
+  const { user, deviceId, meta, pwa } = opts;
   const p = parseUserAgent(meta.ua);
-  const name = deviceName(user.name, p);
+  const name = deviceName(user.name, p, { pwa });
+  const browser = contextLabel(p, pwa);   // "Safari" | "Chrome" | "Safari · App"
+  const os = osLabel(p);                   // "iPhone 17.2" | "Windows 10/11" | "Mac 14.5"
   const now = new Date();
 
   let device = await prisma.device.findUnique({
@@ -53,9 +60,11 @@ export async function evaluateDevice(opts: {
     return { ok: false, reason: "blocked" };
   }
 
-  // Known + approved → touch last-seen and allow.
+  // Known + approved → touch last-seen and allow. Also refresh name/browser/os so
+  // existing rows self-heal to the enriched labels (OS version + Safari/App context)
+  // on next login — no migration needed.
   if (device?.status === "APPROVED") {
-    await prisma.device.update({ where: { id: device.id }, data: { lastSeenAt: now, lastIp: meta.ip, lastCity: meta.city ?? null, lastCountry: meta.country ?? null } });
+    await prisma.device.update({ where: { id: device.id }, data: { name, browser, os, type: p.type, lastSeenAt: now, lastIp: meta.ip, lastCity: meta.city ?? null, lastCountry: meta.country ?? null } });
     return { ok: true, deviceRowId: device.id };
   }
 
@@ -68,7 +77,7 @@ export async function evaluateDevice(opts: {
   if (!device) {
     device = await prisma.device.create({
       data: {
-        userId: user.id, deviceId, name, type: p.type, browser: p.browser, os: p.os,
+        userId: user.id, deviceId, name, type: p.type, browser, os,
         firstIp: meta.ip, lastIp: meta.ip, lastCity: meta.city ?? null, lastCountry: meta.country ?? null,
         status: autoApprove ? "APPROVED" : "PENDING",
         approvedAt: autoApprove ? now : null,
@@ -79,7 +88,7 @@ export async function evaluateDevice(opts: {
     device = await prisma.device.update({
       where: { id: device.id },
       data: {
-        name, type: p.type, browser: p.browser, os: p.os, lastSeenAt: now,
+        name, type: p.type, browser, os, lastSeenAt: now,
         lastIp: meta.ip, lastCity: meta.city ?? null, lastCountry: meta.country ?? null,
         ...(autoApprove ? { status: "APPROVED", approvedAt: now } : {}),
       },
