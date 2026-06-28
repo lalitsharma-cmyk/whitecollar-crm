@@ -38,13 +38,13 @@ export function DeviceRowActions({ deviceId, status }: { deviceId: string; statu
   );
 }
 
-// Per-user device limit setter. Default allowance is 2; admin can grant up to 5
-// total (extra 0–3). Shows + saves immediately. Monitor-safe — only matters once
-// enforcement is on.
+// Per-user device limit setter. Default allowance is 2; admin can set 1–5 total
+// (stored as deviceLimitExtra = total − 2, range −1…3). Shows + saves immediately.
+// Monitor-safe — only matters once enforcement is on.
 export function UserDeviceLimit({ userId, extra }: { userId: string; extra: number }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
-  const total = 2 + Math.max(0, extra || 0);
+  const total = Math.max(1, 2 + (extra || 0));
   async function set(newTotal: number) {
     setBusy(true);
     try { await call({ action: "set_device_limit", userId, extra: newTotal - 2 }); router.refresh(); }
@@ -58,9 +58,9 @@ export function UserDeviceLimit({ userId, extra }: { userId: string; extra: numb
         disabled={busy}
         onChange={(e) => set(Number(e.target.value))}
         className="text-xs border border-gray-300 dark:border-slate-600 rounded px-1.5 py-0.5 dark:bg-slate-800 disabled:opacity-50"
-        title="Approved devices allowed for this user (default 2)"
+        title="Approved devices allowed for this user (default 2). Set 1 to lock to a single device."
       >
-        {[2, 3, 4, 5].map((n) => <option key={n} value={n}>{n} device{n === 1 ? "" : "s"}</option>)}
+        {[1, 2, 3, 4, 5].map((n) => <option key={n} value={n}>{n} device{n === 1 ? "" : "s"}</option>)}
       </select>
     </label>
   );

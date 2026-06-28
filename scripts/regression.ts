@@ -4990,7 +4990,7 @@ const checks: Check[] = [
       // SAFETY: enforcement is still env-gated (this deploy must NOT silently enable lockdown).
       const ds = fs.readFileSync("src/lib/deviceSecurity.ts", "utf8");
       assert(/process\.env\.DEVICE_SECURITY_ENFORCE === "true"/.test(ds), "enforcement must remain env-gated (monitor by default)");
-      assert(/return 2 \+ Math\.max\(0, extra/.test(ds), "default device limit must be 2 + admin extra");
+      assert(/return Math\.max\(1, 2 \+ \(extra/.test(ds), "device limit must be 2 + admin extra, floored at 1 (allows locking to a single device)");
       // EVERY new device needs admin approval under enforcement — auto-approve ONLY in
       // monitor mode or for a super-admin (NOT 'first N devices auto-pass').
       assert(/const autoApprove = !enforcementOn\(\) \|\| user\.isSuperAdmin;/.test(ds), "new devices must NOT auto-approve up to the limit — only monitor/super-admin auto-approve");

@@ -14,11 +14,13 @@ export function enforcementOn(): boolean {
   return process.env.DEVICE_SECURITY_ENFORCE === "true";
 }
 
-// Default policy: 1 mobile + 1 desktop = 2, plus admin-granted extras (e.g. a tablet).
-// This is the CAP on APPROVED devices (enforced at approval time), NOT an
-// auto-approve threshold. Exported so the admin approve action shares the rule.
+// Default policy: 1 mobile + 1 desktop = 2, adjustable per user via deviceLimitExtra
+// (total = 2 + extra, floored at 1 so an admin can lock a user to a SINGLE device;
+// extra ranges −1…3 → total 1…5). This is the CAP on APPROVED devices (enforced at
+// approval time), NOT an auto-approve threshold. Exported so the admin approve
+// action shares the rule.
 export function deviceLimit(extra: number): number {
-  return 2 + Math.max(0, extra || 0);
+  return Math.max(1, 2 + (extra || 0));
 }
 
 export type DeviceDecision =

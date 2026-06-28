@@ -421,7 +421,8 @@
 // v119: P0 iPhone/PWA login fix — server cookie fallback for device id + mobile-safe
 // errors (no Ctrl+Shift+R) + Safari/PWA device labelling. Bump so every shell reloads
 // the hardened /login page.
-const CACHE = "wcr-shell-v119";
+// v120: admin device-limit dropdown now offers "1 device" (lock a user to a single device).
+const CACHE = "wcr-shell-v120";
 const SHELL = ["/login", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", (event) => {
