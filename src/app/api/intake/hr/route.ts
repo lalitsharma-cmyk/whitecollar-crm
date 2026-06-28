@@ -107,6 +107,10 @@ export async function POST(req: NextRequest) {
     return fail(422, "Validation failed: " + JSON.stringify(parsed.error.flatten().fieldErrors), raw);
   }
   const d = parsed.data;
+  // Normalize email exactly like the import path (lowercase + trim) so a
+  // differently-cased re-application dedups onto the same candidate and the
+  // fingerprint (phone||email) is stored canonically. Empty → undefined.
+  const normalizedEmail = d.email?.trim().toLowerCase() || undefined;
   const submittedAt = d.submittedAt && !isNaN(Date.parse(d.submittedAt)) ? new Date(d.submittedAt) : new Date();
 
   try {
@@ -119,7 +123,7 @@ export async function POST(req: NextRequest) {
     }
 
     // ── Dedup by mobile / whatsapp / email ────────────────────────────
-    const dupWhere = hrDuplicateWhere(d.phone, d.whatsappPhone, d.email);
+    const dupWhere = hrDuplicateWhere(d.phone, d.whatsappPhone, normalizedEmail);
     const existing = dupWhere
       ? await prisma.hRCandidate.findFirst({ where: dupWhere, select: { id: true, status: true, rawRemarks: true } })
       : null;
@@ -178,7 +182,7 @@ export async function POST(req: NextRequest) {
         phone: d.phone || null,
         whatsappPhone: d.whatsappPhone || null,
         altPhone: d.altPhone || null,
-        email: d.email || null,
+        email: normalizedEmail || null,
         location: d.locationPreference || null,
         city: d.city || null,
         currentCompany: d.currentCompany || null,
@@ -190,7 +194,7 @@ export async function POST(req: NextRequest) {
         remarks: d.remarks || null,
         rawRemarks: d.remarks || null,   // immutable Raw History (verbatim)
         primaryOwnerId: ownerId,
-        fingerprint: fingerprintFor(d.phone, d.email),
+        fingerprint: fingerprintFor(d.phone, normalizedEmail),
       },
       select: { id: true, status: true },
     });

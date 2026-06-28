@@ -49,7 +49,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     data: {
       candidateId: id,
       userId: me.id,
-      type: "NOTE_ADDED",
+      type: "RESUME_UPLOADED",
       notes: `Resume uploaded: ${file.name}`,
     },
   });

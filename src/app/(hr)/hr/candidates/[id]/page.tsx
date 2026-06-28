@@ -21,6 +21,17 @@ export default async function CandidatePage({ params }: { params: Promise<{ id: 
         followUps:      { orderBy: { dueAt: "asc" }, include: { user: { select: { name: true } } } },
         resumes:        { orderBy: { createdAt: "desc" }, take: 5 },
         applications:   { orderBy: { submittedAt: "desc" } },  // website/form application history
+        // Voice + escalations feed the unified conversation timeline. Audio bytes
+        // (audioData) are NEVER selected here — they stream from the play endpoint.
+        // The Voice & Escalations card self-fetches its own full state separately.
+        voiceMessages:  {
+          orderBy: { createdAt: "desc" },
+          select: { id: true, kind: true, createdById: true, title: true, textNote: true, transcript: true, durationSec: true, escalationId: true, createdAt: true },
+        },
+        escalations:    {
+          orderBy: { createdAt: "desc" },
+          select: { id: true, reason: true, status: true, raisedById: true, resolvedAt: true, createdAt: true },
+        },
       },
     }),
     getHrUsers(),
