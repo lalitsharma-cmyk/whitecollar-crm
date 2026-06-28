@@ -4975,6 +4975,25 @@ const checks: Check[] = [
       results.push({ name: "  ↳ note", ok: true, detail: `Feature 1: admin-only sender, transcript optional, ${c} broadcast(s); own table, separate from lead voice` });
     },
   },
+  {
+    name: "device-admin-tools — global force-logout + per-user limit setter wired; messages match; still MONITOR (no accidental enforce)",
+    run: async () => {
+      const fs = await import("fs");
+      const api = fs.readFileSync("src/app/api/admin/devices/route.ts", "utf8");
+      assert(/action === "logout_everyone"/.test(api) && /revokedAt: null \}, data: \{ revokedAt: now/.test(api), "global logout_everyone must revoke ALL active sessions");
+      assert(/action === "set_device_limit"/.test(api) && /deviceLimitExtra: extra/.test(api), "set_device_limit must write deviceLimitExtra");
+      const auth = fs.readFileSync("src/lib/auth.ts", "utf8");
+      assert(/Device approval pending\. Please contact Admin\./.test(auth), "pending message must match the agreed wording");
+      assert(/This device is not approved for CRM access\./.test(auth), "blocked message must match the agreed wording");
+      const page = fs.readFileSync("src/app/(app)/admin/devices/page.tsx", "utf8");
+      assert(/ForceLogoutEveryone/.test(page) && /UserDeviceLimit/.test(page), "admin page must mount the global logout + per-user limit controls");
+      // SAFETY: enforcement is still env-gated (this deploy must NOT silently enable lockdown).
+      const ds = fs.readFileSync("src/lib/deviceSecurity.ts", "utf8");
+      assert(/process\.env\.DEVICE_SECURITY_ENFORCE === "true"/.test(ds), "enforcement must remain env-gated (monitor by default)");
+      assert(/return 2 \+ Math\.max\(0, extra/.test(ds), "default device limit must be 2 + admin extra");
+      results.push({ name: "  ↳ note", ok: true, detail: "force-logout-all + per-user limit + exact messages; enforcement env-gated (monitor default, no lockout)" });
+    },
+  },
 ];
 
 // ── runner ────────────────────────────────────────────────────────────────────

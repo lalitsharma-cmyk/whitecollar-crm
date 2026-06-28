@@ -1,7 +1,7 @@
 import { requireRole } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { locationLabel } from "@/lib/device";
-import { DeviceRowActions, UserLogoutAll } from "@/components/DeviceActions";
+import { DeviceRowActions, UserLogoutAll, UserDeviceLimit, ForceLogoutEveryone } from "@/components/DeviceActions";
 
 // Admin / Super-Admin device & session control. requireRole("ADMIN") covers
 // super-admins. Shows every user's devices (approve/reject/block/remove) + live
@@ -24,7 +24,7 @@ export default async function DevicesPage() {
     where: { active: true },
     orderBy: [{ role: "asc" }, { name: "asc" }],
     select: {
-      id: true, name: true, email: true, role: true, isSuperAdmin: true,
+      id: true, name: true, email: true, role: true, isSuperAdmin: true, deviceLimitExtra: true,
       devices: { orderBy: [{ status: "asc" }, { lastSeenAt: "desc" }] },
       loginSessions: {
         where: { revokedAt: null, expiresAt: { gt: now } },
@@ -53,6 +53,9 @@ export default async function DevicesPage() {
             mode: <span className={`font-semibold ${enforce ? "text-rose-600" : "text-amber-600"}`}>{enforce ? "Enforcing" : "Monitoring"}</span>
           </p>
         </div>
+        {/* Rollout step 1 — sign everyone out so each real device is re-captured on
+            next login. Monitor-safe: re-login just works (no approval needed yet). */}
+        <ForceLogoutEveryone />
       </div>
 
       {!enforce && (
@@ -73,7 +76,10 @@ export default async function DevicesPage() {
                 </div>
                 <div className="text-xs text-gray-500 truncate">{u.email} · {u.loginSessions.length} active session(s)</div>
               </div>
-              <UserLogoutAll userId={u.id} name={u.name} />
+              <div className="flex items-center gap-2 shrink-0">
+                <UserDeviceLimit userId={u.id} extra={u.deviceLimitExtra} />
+                <UserLogoutAll userId={u.id} name={u.name} />
+              </div>
             </div>
 
             {u.devices.length === 0 ? (

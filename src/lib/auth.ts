@@ -73,9 +73,9 @@ export async function loginWithCredentials(
     });
     if (!decision.ok) {
       if (decision.reason === "blocked") {
-        return { ok: false as const, error: "This device is blocked. Contact your admin.", blocked: true as const };
+        return { ok: false as const, error: "This device is not approved for CRM access.", blocked: true as const };
       }
-      return { ok: false as const, error: "This device is not approved. Access request has been sent to Admin.", pending: true as const };
+      return { ok: false as const, error: "Device approval pending. Please contact Admin.", pending: true as const };
     }
     sid = await createSession(user.id, decision.deviceRowId, deviceCtx.meta);
   }

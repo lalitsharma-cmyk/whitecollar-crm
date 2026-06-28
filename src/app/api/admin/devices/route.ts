@@ -63,6 +63,25 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, count: r.count });
   }
 
+  if (action === "logout_everyone") {
+    // GLOBAL kill switch — revoke EVERY active session for EVERY user (rollout
+    // step 1: force a clean re-login so each real device is re-captured). The
+    // actor's own session is included; they simply log back in.
+    const r = await prisma.userSession.updateMany({ where: { revokedAt: null }, data: { revokedAt: now, revokedReason: "admin_logout_everyone" } });
+    await audit({ userId: me.id, action: "device.logout_everyone", entity: "User", meta: { count: r.count }, request: meta });
+    return NextResponse.json({ ok: true, count: r.count });
+  }
+
+  if (action === "set_device_limit") {
+    // Per-user EXTRA device allowance on top of the default 2 (so extra=1 → 3 max).
+    // Clamped 0–3 (total 2–5) to keep it sane.
+    const userId = String(body.userId ?? "");
+    const extra = Math.max(0, Math.min(3, Math.round(Number(body.extra) || 0)));
+    const u = await prisma.user.update({ where: { id: userId }, data: { deviceLimitExtra: extra }, select: { id: true, name: true } });
+    await audit({ userId: me.id, action: "device.set_limit", entity: "User", entityId: userId, meta: { extra, totalAllowed: 2 + extra, name: u.name }, request: meta });
+    return NextResponse.json({ ok: true, extra, totalAllowed: 2 + extra });
+  }
+
   if (action === "revoke_session") {
     const id = String(body.sessionId ?? "");
     await prisma.userSession.update({ where: { id }, data: { revokedAt: now, revokedReason: "admin_revoke" } }).catch(() => {});
