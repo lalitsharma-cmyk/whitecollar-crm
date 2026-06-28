@@ -34,6 +34,10 @@ Regression gate now **101 invariants** (+ rejected-not-in-assign-queue, smart-ti
 - Phase-A leftovers — buyer default Smart-Timeline tab ✅, check-in-before-logout ✅, call/WA actions disabled on rejected lead ✅.
 - "Overdue" boundary DECISION — resolved (start-of-today IST). Rejected hard-unassign DECISION — resolved (yes).
 
+## 🚀 SHIPPED 2026-06-28 (post-review fixes)
+- **Rejected→Unassigned FULL COVERAGE** `95ed21c` — closed the 6 surfaces still treating rejected as normal-unassigned (the "Unassigned Leads" nav filter was the active leak). All modules Completed+Verified; data clean (122 rejected, 0 still-owned/0 leak); regression `rejected-unassigned-full-coverage` locks it. See [[project-rejected-lead-workflow]].
+- **Master Data compact column layout** `4959cfc` — order Created Date·Time·Client Name (frozen) · Agent · Team · Property Enquired · Budget · Status · Source · Bucket · (optional); Message default-hidden; compact widths (fits one screen). Created Date admin-editable from lead detail.
+
 ## 🔴 BLOCKED — waiting on Lalit (no code possible until then)
 - **Device security enforce** — set `DEVICE_SECURITY_ENFORCE=true` in Vercel → redeploy. THEN orchestrator: confirm 4th user, clear the 4 agents' device rows so re-login → PENDING → Sameer approves. (All 4 already at 0 sessions; Sameer is active Admin + can approve.)
 - **#253 product calls** — (a) phone-number masking on/off for agents; (b) "Won" metric definition; (c) voice-notes: what's "incomplete" (require transcript before save? auto-retry failed transcription?).
