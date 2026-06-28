@@ -78,22 +78,26 @@ type ColKey =
 const TEAMS = ["Dubai", "India"];
 const PAGE = 50;
 
-// Order matters: frozen identity columns first (Name/Agent/Team stay pinned while
-// the rest scroll horizontally). Everything after is scrollable + hideable.
+// Column order (Lalit 2026-06-28): when + who first, then the deal fields, so the
+// important columns fit one screen with NO horizontal scroll. Frozen identity block
+// = Created Date / Created Time / Client Name (pinned while the rest scroll).
+// Compact widths throughout. "Message" is DEFAULT-HIDDEN (still available in the
+// Columns menu). Order: Created Date · Created Time · Client Name · Agent · Team ·
+// Property Enquired · Budget · Status · Source · Bucket · (remaining/optional).
 const COLS: { key: ColKey; label: string; frozen?: boolean; w?: number; minW?: number; defHidden?: boolean; wide?: boolean }[] = [
-  { key: "name", label: "Client Name", frozen: true, w: 180 },
-  { key: "agent", label: "Agent", frozen: true, w: 120 },
-  { key: "team", label: "Team", frozen: true, w: 72 },
-  { key: "createdDate", label: "Created Date", minW: 100 },
-  { key: "createdTime", label: "Created Time", minW: 80 },
-  { key: "budget", label: "Budget" },
-  { key: "project", label: "Property Enquired", minW: 180 },
-  { key: "propertyType", label: "Property Type", minW: 110 },
-  { key: "source", label: "Source" },
-  { key: "medium", label: "Medium", minW: 100 },
-  { key: "message", label: "Message", wide: true },
-  { key: "status", label: "Status", minW: 150 },
-  { key: "bucket", label: "Bucket" },
+  { key: "createdDate", label: "Created Date", frozen: true, w: 96 },
+  { key: "createdTime", label: "Created Time", frozen: true, w: 78 },
+  { key: "name", label: "Client Name", frozen: true, w: 150 },
+  { key: "agent", label: "Agent", minW: 104 },
+  { key: "team", label: "Team", minW: 60 },
+  { key: "project", label: "Property Enquired", minW: 150 },
+  { key: "budget", label: "Budget", minW: 96 },
+  { key: "status", label: "Status", minW: 130 },
+  { key: "source", label: "Source", minW: 92 },
+  { key: "bucket", label: "Bucket", minW: 84 },
+  { key: "propertyType", label: "Property Type", minW: 100 },
+  { key: "medium", label: "Medium", minW: 90 },
+  { key: "message", label: "Message", wide: true, defHidden: true },
   { key: "email", label: "Email", defHidden: true },
   { key: "phone", label: "Phone", defHidden: true },
 ];
@@ -424,7 +428,7 @@ export default function MasterDataRecordsTable({ rows, agents, projects, isSuper
 
         <span className="ml-auto inline-flex items-center gap-1.5">
           <button onClick={exportFiltered} disabled={busy} className={`${btn} bg-white dark:bg-slate-800 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800 disabled:opacity-50`} title="Export exactly the rows shown (after view + column filters)">⬇ Export view ({filtered.length})</button>
-          <button onClick={() => setFrozen((f) => !f)} className={`${btn} ${frozen ? "bg-sky-50 text-sky-700 border-sky-300" : "bg-white dark:bg-slate-800 text-gray-500 border-gray-200 dark:border-slate-600"}`} title="Freeze Name / Agent / Team while scrolling">❄ Freeze {frozen ? "On" : "Off"}</button>
+          <button onClick={() => setFrozen((f) => !f)} className={`${btn} ${frozen ? "bg-sky-50 text-sky-700 border-sky-300" : "bg-white dark:bg-slate-800 text-gray-500 border-gray-200 dark:border-slate-600"}`} title="Freeze Created Date / Time / Client Name while scrolling">❄ Freeze {frozen ? "On" : "Off"}</button>
           <span className="relative">
             <button onClick={() => setColsOpen((o) => !o)} className={`${btn} bg-white dark:bg-slate-800 border-gray-200 dark:border-slate-600 text-gray-600 dark:text-slate-300`}>⚙ Columns</button>
             {colsOpen && (
@@ -436,7 +440,7 @@ export default function MasterDataRecordsTable({ rows, agents, projects, isSuper
                     <span>{c.label}</span>
                   </label>
                 ))}
-                <div className="text-[10px] text-gray-400 mt-1 px-1 border-t pt-1 border-gray-100 dark:border-slate-700">Name · Agent · Team stay frozen</div>
+                <div className="text-[10px] text-gray-400 mt-1 px-1 border-t pt-1 border-gray-100 dark:border-slate-700">Created Date · Time · Client Name stay frozen</div>
               </div>
             )}
           </span>
