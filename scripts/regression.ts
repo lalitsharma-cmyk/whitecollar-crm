@@ -4948,6 +4948,33 @@ const checks: Check[] = [
       results.push({ name: "  ↳ note", ok: true, detail: "6 unassigned surfaces exclude rejected; 0 rejected still-owned; 0 leak into normal-unassigned" });
     },
   },
+  {
+    name: "voice-broadcast-feature1 — dashboard broadcast: admin-only sender, transcript optional, separate from lead voice",
+    run: async () => {
+      const fs = await import("fs");
+      const { canSendBroadcast } = await import("../src/lib/voiceBroadcast");
+      // LOGIC: sender permission — Lalit/admin yes; Sameer(leadOpsOnly)/agent/manager no.
+      assert(canSendBroadcast({ role: "ADMIN", leadOpsOnly: false }), "admin must be able to send");
+      assert(!canSendBroadcast({ role: "ADMIN", leadOpsOnly: true }), "Sameer (leadOpsOnly admin) must NOT send");
+      assert(!canSendBroadcast({ role: "AGENT" }), "agent must NOT send");
+      assert(!canSendBroadcast({ role: "MANAGER" }), "manager must NOT send");
+      // SOURCE: send route gated + transcript optional (never required); sub-routes exist.
+      const send = fs.readFileSync("src/app/api/voice-broadcast/route.ts", "utf8");
+      assert(/canSendBroadcast\(me\)/.test(send), "send route must gate on canSendBroadcast");
+      assert(!/require.{0,15}transcript|transcript.{0,15}required/i.test(send), "transcript must NOT be required in the send route");
+      assert(fs.existsSync("src/app/api/voice-broadcast/[id]/audio/route.ts"), "audio route must exist");
+      assert(fs.existsSync("src/app/api/voice-broadcast/[id]/heard/route.ts"), "heard route must exist");
+      // SOURCE: dashboard mounts the recipient inbox (everyone) + the gated sender.
+      const dash = fs.readFileSync("src/app/(app)/dashboard/page.tsx", "utf8");
+      assert(/DashboardBroadcastInbox/.test(dash) && /canSendBc && <DashboardVoiceBroadcast/.test(dash), "dashboard must mount inbox + gated sender");
+      // SOURCE: separate from lead-specific voice (distinct table + components).
+      assert(!/LeadVoiceMessage/.test(send), "broadcast must use its own table, not LeadVoiceMessage");
+      // DATA: tables exist + queryable.
+      const c = await prisma.voiceBroadcast.count();
+      assert(typeof c === "number", "VoiceBroadcast table must be queryable");
+      results.push({ name: "  ↳ note", ok: true, detail: `Feature 1: admin-only sender, transcript optional, ${c} broadcast(s); own table, separate from lead voice` });
+    },
+  },
 ];
 
 // ── runner ────────────────────────────────────────────────────────────────────

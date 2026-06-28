@@ -23,6 +23,9 @@ import { hotUntouchedWhere } from "@/lib/dashboardWidgets";
 import DashboardAssignmentWidget from "@/components/DashboardAssignmentWidget";
 import DashboardGreeting from "@/components/DashboardGreeting";
 import { tzForTeam, greetingFor, overdueFollowupBoundary } from "@/lib/datetime";
+import DashboardBroadcastInbox from "@/components/DashboardBroadcastInbox";
+import DashboardVoiceBroadcast from "@/components/DashboardVoiceBroadcast";
+import { canSendBroadcast, broadcastRecipientWhere, broadcastAudienceLabel } from "@/lib/voiceBroadcast";
 
 export const dynamic = "force-dynamic";
 
@@ -459,6 +462,35 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     return `/leads?${p.toString()}`;
   };
 
+  // ── Dashboard Voice Broadcast (Feature 1) — recipient inbox (everyone) +
+  //    sender roster (Lalit/Admin only). Separate from lead-specific voice.
+  const canSendBc = canSendBroadcast(me);
+  const myBroadcastsRaw = await prisma.voiceBroadcast.findMany({
+    where: broadcastRecipientWhere(me),
+    orderBy: { createdAt: "desc" },
+    take: 15,
+    select: {
+      id: true, createdAt: true, title: true, transcript: true, durationSec: true,
+      targetKind: true, targetTeam: true,
+      createdBy: { select: { name: true } },
+      targetUser: { select: { name: true } },
+      reads: { where: { userId: me.id }, select: { id: true } },
+    },
+  });
+  const myBroadcasts = myBroadcastsRaw.map((b) => ({
+    id: b.id,
+    by: b.createdBy?.name ?? "Admin",
+    at: b.createdAt.toISOString(),
+    audience: broadcastAudienceLabel({ targetKind: b.targetKind, targetTeam: b.targetTeam, targetUserName: b.targetUser?.name }),
+    title: b.title,
+    transcript: b.transcript,
+    durationSec: b.durationSec,
+    heard: b.reads.length > 0,
+  }));
+  const bcAgents = canSendBc
+    ? await prisma.user.findMany({ where: { active: true, hrOnly: false, role: { in: ["AGENT", "MANAGER"] } }, select: { id: true, name: true, team: true }, orderBy: { name: "asc" } })
+    : [];
+
   return (
     <>
       {/* ── Full-width: testing mode banner ── */}
@@ -518,6 +550,12 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
               userName={me.name}
             />
           )}
+
+          {/* Feature 1 — Dashboard Voice Broadcast. Recipient inbox shows messages
+              sent to me (Everyone / my Team / me); sender control is Lalit/Admin only
+              (canSendBroadcast). Separate from lead-specific voice guidance. */}
+          {canSendBc && <DashboardVoiceBroadcast agents={bcAgents} />}
+          <DashboardBroadcastInbox items={myBroadcasts} />
 
           {/* Field-movement status buttons — agents tap these on their phone in
               the field (arrival / leaving / meeting / site visit). Manager gets

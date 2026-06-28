@@ -173,6 +173,11 @@ model User {
   voiceMessages     LeadVoiceMessage[] @relation("VoiceMsgCreator")
   raisedEscalations LeadEscalation[]   @relation("EscalationRaiser")
   resourceShares    ResourceShare[]    @relation("ResourceSharedBy")
+
+  // ── Dashboard Voice Broadcast relations (admin → team/individual) ──
+  sentBroadcasts     VoiceBroadcast[]     @relation("BroadcastCreator")
+  targetedBroadcasts VoiceBroadcast[]     @relation("BroadcastTarget")
+  broadcastReads     VoiceBroadcastRead[]
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2587,4 +2592,50 @@ model VoiceMessageRead {
   understoodAt   DateTime         @default(now())
 
   @@unique([voiceMessageId, userId])
+}
+
+// ── Dashboard Voice Broadcast (admin → team / individual) ────────────────────
+// Lalit/Admin records a voice message and sends it to EVERYONE, a TEAM, or one
+// USER; recipients see + play it on their dashboard. Completely separate from the
+// lead-specific LeadVoiceMessage channels above. Original audio stored verbatim
+// (bytea, ≤5MB), streamed inline by the audio endpoint, NEVER selected in lists.
+// Transcript is OPTIONAL and NEVER required — the message always saves even if
+// transcription is absent/failed (Lalit rule).
+enum BroadcastTarget {
+  ALL  // every active sales user
+  TEAM // a single team (targetTeam)
+  USER // one user (targetUserId)
+}
+
+model VoiceBroadcast {
+  id           String          @id @default(cuid())
+  createdById  String
+  createdBy    User            @relation("BroadcastCreator", fields: [createdById], references: [id])
+  audioData    Bytes
+  mimeType     String          @default("audio/webm")
+  durationSec  Int?
+  transcript   String?         // OPTIONAL — never blocks save
+  title        String?
+  targetKind   BroadcastTarget
+  targetTeam   String? // "Dubai" | "India" when targetKind = TEAM
+  targetUserId String?
+  targetUser   User?           @relation("BroadcastTarget", fields: [targetUserId], references: [id])
+  createdAt    DateTime        @default(now())
+  reads        VoiceBroadcastRead[]
+
+  @@index([createdAt])
+  @@index([targetKind, targetTeam])
+  @@index([targetUserId])
+}
+
+// Per-recipient listened tracking → "new" badge until played.
+model VoiceBroadcastRead {
+  id          String         @id @default(cuid())
+  broadcastId String
+  broadcast   VoiceBroadcast @relation(fields: [broadcastId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User           @relation(fields: [userId], references: [id])
+  heardAt     DateTime       @default(now())
+
+  @@unique([broadcastId, userId])
 }
