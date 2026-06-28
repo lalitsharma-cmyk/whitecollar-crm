@@ -416,8 +416,9 @@
 // (src/lib/lead-sources.ts) with the New-Lead form, so none can re-offer the
 // deprecated WhatsApp / Inbound Call / Email / Event source values (the channel
 // lives in the Medium field now). Display/picker-only — no schema or data change.
-// Bump shell so every client loads the corrected pickers.
-const CACHE = "wcr-shell-v117";
+// v118: relabel "Closable deals"/"Closing Stage" → "Meeting / Visit Stage" + de-"Won"
+// the Closed (final) outcome column (display-only; meetings/visits never mark Won/Closed).
+const CACHE = "wcr-shell-v118";
 const SHELL = ["/login", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", (event) => {

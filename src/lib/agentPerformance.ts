@@ -883,7 +883,7 @@ export const DRILL_LABELS: Record<DrillKey, string> = {
   eventAssigned: "Event Leads Assigned",
   revivalAssigned: "Revival Leads Assigned",
   rejected: "Leads Rejected",
-  closedWon: "Leads Closed / Won",
+  closedWon: "Leads Closed (booked / sold / elsewhere)",
   lost: "Leads Lost",
   stillActive: "Leads Still Active",
   awaitingFollowup: "Leads Awaiting Follow-up",
@@ -939,7 +939,7 @@ export const METRIC_COLUMNS: MetricColumn[] = [
   { key: "assignedActive", label: "Active (assigned)", group: "Live Status", get: (m) => m.assignedActive },
   // Outcomes
   { key: "rejected", label: "Rejected", group: "Outcomes", get: (m) => m.rejected },
-  { key: "closedWon", label: "Closed/Won", group: "Outcomes", get: (m) => m.closedWon },
+  { key: "closedWon", label: "Closed (final)", group: "Outcomes", get: (m) => m.closedWon },
   { key: "lost", label: "Lost", group: "Outcomes", get: (m) => m.lost },
   { key: "stillActive", label: "Still Active", group: "Outcomes", get: (m) => m.stillActive },
   { key: "awaitingFollowup", label: "Awaiting Follow-up", group: "Outcomes", get: (m) => m.awaitingFollowup },

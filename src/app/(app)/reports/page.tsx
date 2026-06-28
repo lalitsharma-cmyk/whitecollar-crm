@@ -330,8 +330,8 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
   // Status-based funnel leakage: total → active → closing → booked
   const labels = [
     { from: "All Leads",     to: "Active Pursuit", count: tot,       next: contacted },
-    { from: "Active Pursuit",to: "Closing Stage",  count: contacted, next: qualified },
-    { from: "Closing Stage", to: "Booked with Us", count: qualified, next: booked },
+    { from: "Active Pursuit",to: "Meeting / Visit Stage",  count: contacted, next: qualified },
+    { from: "Meeting / Visit Stage", to: "Booked with Us", count: qualified, next: booked },
   ];
   for (const p of labels) {
     if (p.count === 0) continue;
@@ -765,7 +765,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
           <LegacyFunnelChart data={[
             { stage: "All Leads", n: tot },
             { stage: "Active Pursuit", n: contacted },
-            { stage: "Closing Stage", n: qualified },
+            { stage: "Meeting / Visit Stage", n: qualified },
           ]} />
           {/* Funnel-pair leakage table — exposes the same numbers powering
               the "biggest leak" card so Lalit can see all transitions, not

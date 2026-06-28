@@ -186,7 +186,9 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   //                       Action List + Leads "Overdue" chip use (terminal excluded;
   //                       Master-Data only when assigned+scheduled) — so the
   //                       Action-List ⇄ Leads-chip ⇄ Dashboard reconciliation holds.
-  //   • Closable deals  → workable + status in CLOSING_STATUSES. Drill: ?smart=visit_potential.
+  //   • Meeting / Visit Stage → workable + status in CLOSING_STATUSES (meeting/visit/
+  //     office/zoom/expo). These are ACTIVE leads near closing — NOT closed/won.
+  //     Drill: ?smart=visit_potential.
   //   • Cold revival    → cold pool (isColdCall), high-value dormant — drills to
   //                       /cold-calls (its OWN scope), so its count mirrors that page.
   const [hotUntouched, overdueFollowups, closableDeals, coldRevivalOps] = await Promise.all([
@@ -686,7 +688,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
               </Link>
               <Link href={leadsDrill({ smart: "visit_potential", followup: "all" })} className="card p-4 border-l-4 border-emerald-500 hover:shadow-lg transition active:bg-emerald-50">
                 <div className="text-3xl font-extrabold text-emerald-700">{closableDeals}</div>
-                <div className="text-xs font-semibold text-emerald-900 mt-1">💎 Closable deals</div>
+                <div className="text-xs font-semibold text-emerald-900 mt-1">💎 Meeting / Visit Stage</div>
                 <div className="text-[10px] text-emerald-700/70 mt-0.5">Meeting / visit stage</div>
               </Link>
               <Link href="/cold-calls" className="card p-4 border-l-4 border-blue-500 hover:shadow-lg transition active:bg-blue-50">

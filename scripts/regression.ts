@@ -5001,6 +5001,78 @@ const checks: Check[] = [
       results.push({ name: "  ↳ note", ok: true, detail: "every new device → admin approval (no auto-pass); no-deviceId bypass closed; cap enforced at approval; enforcement env-gated" });
     },
   },
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // 49. ACTIVITY → NEVER WON/CLOSED (2026-06-28, Lalit). Scheduling/completing a
+  //     meeting, site visit, office/virtual meeting, follow-up, call, WhatsApp,
+  //     note, escalation or voice note is an ACTIVITY, NOT a deal outcome — it must
+  //     NEVER move a lead to a Won/Closed (terminal) status. The ONLY path to a
+  //     "Booked with Us" win is the explicit EOI funnel reaching BOOKING_DONE
+  //     (api/leads/[id]/eoi). This invariant locks both halves so the bug can't
+  //     re-appear:
+  //       (a) STATUS MODEL — no meeting/visit status is classified terminal
+  //           (CLOSED_OUTCOME ∪ BOOKED ∪ LOST); each stays WORKABLE.
+  //       (b) WRITE PATHS — the activity routes never SET a terminal currentStatus.
+  //           Pure-activity routes don't touch currentStatus at all; action-complete
+  //           may READ it (terminal guard) but never assigns a literal status.
+  //       (c) DATA (note) — count of closed leads + how many lack a booking OR
+  //           rejection signal (the "wrongly closed?" set; was 0 on 2026-06-28).
+  // ───────────────────────────────────────────────────────────────────────────
+  {
+    name: "activity-never-won-closed — meetings/visits/follow-ups never mark a lead Won/Closed (status model + write paths locked)",
+    run: async () => {
+      const fs = await import("fs");
+      const { CLOSED_OUTCOME_STATUSES, BOOKED_STATUSES, LOST_STATUSES, leadCategory } =
+        await import("../src/lib/lead-statuses");
+
+      // (a) STATUS MODEL — meeting/visit statuses are WORKABLE, never terminal.
+      const MEETING_VISIT_STATUSES = [
+        "Meeting", "Site Visit Schedule", "Visit Dubai",
+        "Wants Office Visit", "Want Office Visit", "Zoom Meeting", "Expo Only",
+      ];
+      const terminal = new Set([...CLOSED_OUTCOME_STATUSES, ...BOOKED_STATUSES, ...LOST_STATUSES]);
+      for (const s of MEETING_VISIT_STATUSES) {
+        assert(!terminal.has(s), `meeting/visit status "${s}" must NOT be terminal (Won/Closed/Lost) — it is an active stage`);
+        assert(leadCategory(s) === "WORKABLE", `leadCategory("${s}") must be WORKABLE, got ${leadCategory(s)}`);
+      }
+
+      // (b) WRITE PATHS — pure-activity routes must not reference currentStatus at all.
+      const PURE_ACTIVITY_ROUTES = [
+        "src/app/api/leads/[id]/meeting/route.ts",
+        "src/app/api/leads/[id]/visit/route.ts",
+        "src/app/api/leads/[id]/log-call/route.ts",
+        "src/app/api/whatsapp/log/route.ts",
+        "src/app/api/leads/[id]/log-note/route.ts",
+        "src/app/api/leads/[id]/action-snooze/route.ts",
+        "src/app/api/leads/[id]/action-escalate/route.ts",
+      ];
+      for (const f of PURE_ACTIVITY_ROUTES) {
+        const src = fs.readFileSync(f, "utf8");
+        assert(!/currentStatus/.test(src), `${f} must NOT touch currentStatus — logging this activity cannot change the lead's status`);
+      }
+      // action-complete may READ currentStatus (terminal guard) but must never ASSIGN a literal status.
+      const ac = fs.readFileSync("src/app/api/leads/[id]/action-complete/route.ts", "utf8");
+      assert(!/currentStatus:\s*["'`]/.test(ac), "action-complete must never ASSIGN a currentStatus literal (Complete is not a deal outcome)");
+      // The ONLY win-write lives in the EOI funnel, gated on BOOKING_DONE.
+      const eoi = fs.readFileSync("src/app/api/leads/[id]/eoi/route.ts", "utf8");
+      assert(/BOOKING_DONE/.test(eoi) && /currentStatus = "Booked with Us"/.test(eoi),
+        "the only currentStatus→Booked write must be the EOI funnel reaching BOOKING_DONE");
+
+      // (c) DATA (note, non-fatal) — closed leads lacking a booking OR rejection signal.
+      const closedLeads = await prisma.lead.findMany({
+        where: { deletedAt: null, currentStatus: { in: CLOSED_OUTCOME_STATUSES } },
+        select: { bookingDoneAt: true, eoiStage: true, rejectedAt: true, status: true },
+      });
+      const unjustified = closedLeads.filter(
+        (l) => !l.bookingDoneAt && l.eoiStage !== "BOOKING_DONE" && !l.rejectedAt && l.status !== "WON",
+      ).length;
+      results.push({
+        name: "  ↳ note",
+        ok: true,
+        detail: `closed leads=${closedLeads.length}; without booking/reject signal=${unjustified} (meetings/visits never close — status model + write paths locked)`,
+      });
+    },
+  },
 ];
 
 // ── runner ────────────────────────────────────────────────────────────────────

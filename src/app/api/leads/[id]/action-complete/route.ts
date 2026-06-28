@@ -98,7 +98,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       status: ActivityStatus.DONE,
       title: "✅ Follow-up completed",
       description: note || (contact.has
-        ? `Closed after ${contact.channel?.toLowerCase() ?? "contact"}${contact.connected ? " (connected)" : ""}`
+        ? `Follow-up done after ${contact.channel?.toLowerCase() ?? "contact"}${contact.connected ? " (connected)" : ""}`
         : null),
       actionContext: `complete:${channelToken}`,
       completedAt: now,
