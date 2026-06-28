@@ -4,8 +4,27 @@ import Link from "next/link";
 import { statusColor, statusLabel, CLOSED_STATUS_KEYS } from "@/lib/hrStatus";
 import HRRemindersCard, { type HRReminderEvent, type HREventType } from "@/components/HRRemindersCard";
 import HRFollowUpTabs, { type FU } from "@/components/HRFollowUpTabs";
+import { getHrUsers } from "@/lib/hrUsers";
+import type { HRActivityType } from "@prisma/client";
+import { Phone, CalendarCheck, CheckCircle2, FileText, Handshake, Activity } from "lucide-react";
 
 export const dynamic = "force-dynamic";
+
+const CALL_TYPES: HRActivityType[] = ["CALL_CONNECTED", "CALL_NOT_ANSWERED", "CALL_BUSY", "CALL_SWITCHED_OFF", "CALL_WRONG_NUMBER", "CALL_LATER"];
+
+// Human-readable label for an activity type, used in the Recent Activities feed.
+const ACTIVITY_LABEL: Record<string, string> = {
+  CALL_CONNECTED: "Call connected", CALL_NOT_ANSWERED: "Call not answered", CALL_BUSY: "Call busy",
+  CALL_SWITCHED_OFF: "Phone switched off", CALL_WRONG_NUMBER: "Wrong number", CALL_LATER: "Call later",
+  WHATSAPP_SENT: "WhatsApp sent", WHATSAPP_RECEIVED: "WhatsApp received", EMAIL_LOGGED: "Email logged",
+  INTERVIEW_SCHEDULED: "Interview scheduled", INTERVIEW_ATTENDED: "Interview attended",
+  INTERVIEW_NO_SHOW: "Interview no-show", INTERVIEW_RESCHEDULED: "Interview rescheduled",
+  OFFER_RELEASED: "Offer released", OFFER_DECLINED: "Offer declined", CANDIDATE_JOINED: "Candidate joined",
+  FOLLOWUP_CREATED: "Follow-up set", FOLLOWUP_COMPLETED: "Follow-up done", STATUS_CHANGED: "Status changed",
+  NOTE_ADDED: "Note added", RESUME_UPLOADED: "Resume uploaded", VOICE_NOTE: "Voice note",
+  VOICE_GUIDANCE: "Voice guidance", ESCALATION_RAISED: "Escalation raised",
+  ESCALATION_REPLIED: "Escalation reply", ESCALATION_RESOLVED: "Escalation resolved",
+};
 
 function istRange() {
   const todayIso = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
@@ -32,18 +51,24 @@ const FU_EVENT: Record<string, { type: HREventType; label: string }> = {
 export default async function HRDashboard() {
   const { me, perms } = await requireHrPage();
   const { todayIso, start: todayStart, end: todayEnd } = istRange();
-  const scope = hrScopeWhere(me);
+  // All candidate-scoped queries must hide soft-deleted candidates.
+  const scope = { AND: [hrScopeWhere(me), { deletedAt: null }] };
+  const scopedCandidate = { AND: [hrScopeWhere(me), { deletedAt: null }] }; // for { candidate: ... } relation filters
   const now = new Date();
   const weekAgo = new Date(todayStart.getTime() - 7 * 24 * 3600_000);
+  const isLeader = perms.viewAllCandidates; // Admin / Senior HR see the team leaderboard
 
-  const [followUps, interviews, newCount, expectedList, noNextAction, noNextActionCount] = await Promise.all([
+  const [
+    followUps, interviews, newCount, expectedList, noNextAction, noNextActionCount,
+    todaysCalls, offersPending, recentActivities, leaderAdded, leaderJoined, hrUsers,
+  ] = await Promise.all([
     prisma.hRFollowUp.findMany({
-      where: { completedAt: null, candidate: scope },
+      where: { completedAt: null, candidate: scopedCandidate },
       orderBy: { dueAt: "asc" }, take: 200,
       include: { candidate: { select: { id: true, name: true, phone: true, whatsappPhone: true, status: true, nextAction: true, primaryOwner: { select: { name: true } } } } },
     }),
     prisma.hRInterview.findMany({
-      where: { candidate: scope, scheduledAt: { gte: weekAgo } },
+      where: { candidate: scopedCandidate, scheduledAt: { gte: weekAgo } },
       orderBy: { scheduledAt: "asc" }, take: 200,
       include: { candidate: { select: { id: true, name: true, phone: true, positionApplied: true, primaryOwner: { select: { name: true } } } }, interviewer: { select: { name: true } } },
     }),
@@ -59,7 +84,51 @@ export default async function HRDashboard() {
       select: { id: true, name: true, phone: true, whatsappPhone: true, status: true, positionApplied: true, primaryOwner: { select: { name: true } } },
     }),
     prisma.hRCandidate.count({ where: { AND: [scope, { nextActionDate: null, status: { notIn: CLOSED_STATUS_KEYS } }] } }),
+    // Today's Calls — call activities logged today (IST), scoped to my candidates.
+    prisma.hRActivity.count({
+      where: {
+        type: { in: CALL_TYPES },
+        createdAt: { gte: todayStart, lt: todayEnd },
+        candidate: scopedCandidate,
+      },
+    }),
+    // Offers Pending — released offers not yet joined/declined.
+    prisma.hRCandidate.count({ where: { status: "OFFER_RELEASED", ...scope } }),
+    // Recent Activities feed (scoped).
+    prisma.hRActivity.findMany({
+      where: { candidate: scopedCandidate },
+      orderBy: { createdAt: "desc" }, take: 12,
+      include: { candidate: { select: { id: true, name: true } }, user: { select: { name: true } } },
+    }),
+    // Recruiter leaderboard (Admin / Senior only) — candidates added per owner this week.
+    isLeader
+      ? prisma.hRCandidate.groupBy({
+          by: ["primaryOwnerId"],
+          where: { deletedAt: null, primaryOwnerId: { not: null }, createdAt: { gte: weekAgo } },
+          _count: true,
+        })
+      : Promise.resolve([] as { primaryOwnerId: string | null; _count: number }[]),
+    // Leaderboard — candidates joined per owner this week.
+    isLeader
+      ? prisma.hRActivity.groupBy({
+          by: ["userId"],
+          where: { type: "CANDIDATE_JOINED", userId: { not: null }, createdAt: { gte: weekAgo }, candidate: { deletedAt: null } },
+          _count: true,
+        })
+      : Promise.resolve([] as { userId: string | null; _count: number }[]),
+    isLeader ? getHrUsers() : Promise.resolve([] as { id: string; name: string }[]),
   ]);
+
+  // ── Build leaderboard rows (added + joined this week, per recruiter) ──
+  const addedByOwner: Record<string, number> = {};
+  for (const r of leaderAdded) if (r.primaryOwnerId) addedByOwner[r.primaryOwnerId] = r._count;
+  const joinedByOwner: Record<string, number> = {};
+  for (const r of leaderJoined) if (r.userId) joinedByOwner[r.userId] = r._count;
+  const leaderboard = hrUsers
+    .map(u => ({ name: u.name, added: addedByOwner[u.id] ?? 0, joined: joinedByOwner[u.id] ?? 0 }))
+    .filter(r => r.added || r.joined)
+    .sort((a, b) => (b.joined - a.joined) || (b.added - a.added))
+    .slice(0, 8);
 
   // ── Derive follow-up buckets ──
   const overdueFU = followUps.filter(f => new Date(f.dueAt) < todayStart);
@@ -101,6 +170,15 @@ export default async function HRDashboard() {
 
   const wa = (p: string | null, alt: string | null) => { const x = p ?? alt; return x ? `https://wa.me/${x.replace(/\D/g, "")}` : null; };
 
+  // Spec cards — "today at a glance" (Lucide icons for new UI).
+  const specCards = [
+    { label: "Today's Calls", n: todaysCalls, href: "#action", Icon: Phone, color: "text-blue-600" },
+    { label: "Interviews Today", n: ivToday.length, href: "#interviews", Icon: CalendarCheck, color: "text-indigo-600" },
+    { label: "Pending Confirmations", n: confirmPending.length, href: "#interviews", Icon: CheckCircle2, color: "text-orange-600" },
+    { label: "Offers Pending", n: offersPending, href: "/hr/candidates?status=OFFER_RELEASED", Icon: FileText, color: "text-amber-600" },
+    { label: "Expected Joinings", n: expectedList.length, href: "#joinings", Icon: Handshake, color: "text-green-600" },
+  ];
+
   return (
     <div className="p-4 sm:p-6 max-w-7xl mx-auto">
       <div className="flex items-center justify-between flex-wrap gap-2 mb-4">
@@ -108,6 +186,19 @@ export default async function HRDashboard() {
           {now.getHours() < 12 ? "Good morning" : now.getHours() < 17 ? "Good afternoon" : "Good evening"}, {me.name.split(" ")[0]} 👋
         </h1>
         <Link href="/hr/candidates/new" className="inline-flex items-center gap-2 bg-[#1a2e4a] text-white text-sm font-semibold px-4 py-2 rounded-xl hover:bg-[#243d60] transition">+ Add Candidate</Link>
+      </div>
+
+      {/* Today at a glance — spec cards */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mb-4">
+        {specCards.map(c => (
+          <a key={c.label} href={c.href} className="bg-white dark:bg-slate-900 rounded-2xl border border-gray-200 dark:border-slate-700 p-4 hover:shadow-md transition flex items-center gap-3">
+            <div className={`shrink-0 ${c.color}`}><c.Icon className="w-6 h-6" /></div>
+            <div className="min-w-0">
+              <div className="text-2xl font-extrabold text-gray-800 dark:text-white leading-none">{c.n}</div>
+              <div className="text-[11px] text-gray-500 mt-1 truncate">{c.label}</div>
+            </div>
+          </a>
+        ))}
       </div>
 
       <div className="grid lg:grid-cols-3 gap-4">
@@ -267,9 +358,58 @@ export default async function HRDashboard() {
           </section>
         </div>
 
-        {/* ── RIGHT: sticky reminders ── */}
-        <div className="lg:sticky lg:top-4 lg:self-start">
+        {/* ── RIGHT: sticky reminders + activity + leaderboard ── */}
+        <div className="lg:sticky lg:top-4 lg:self-start space-y-4">
           <HRRemindersCard events={reminderEvents} todayIso={todayIso} showOwner={perms.viewAllCandidates} />
+
+          {/* Recruiter leaderboard (Admin / Senior HR) */}
+          {isLeader && (
+            <section className="bg-white dark:bg-slate-900 rounded-2xl border border-gray-200 dark:border-slate-700 overflow-hidden">
+              <div className="px-4 py-2.5 border-b border-gray-100 dark:border-slate-800 text-sm font-bold text-gray-700 dark:text-slate-200">Leaderboard — this week</div>
+              {leaderboard.length === 0 ? (
+                <div className="px-4 py-5 text-center text-xs text-gray-400">No recruiter activity this week yet.</div>
+              ) : (
+                <div className="divide-y divide-gray-100 dark:divide-slate-800">
+                  {leaderboard.map((r, i) => (
+                    <div key={r.name} className="flex items-center gap-3 px-4 py-2">
+                      <div className={`w-5 text-center text-xs font-bold ${i === 0 ? "text-amber-500" : i === 1 ? "text-slate-400" : i === 2 ? "text-orange-400" : "text-gray-300"}`}>{i + 1}</div>
+                      <div className="flex-1 min-w-0 text-sm font-medium text-gray-800 dark:text-slate-200 truncate">{r.name}</div>
+                      <div className="text-[11px] text-gray-500 whitespace-nowrap">
+                        <span className="font-semibold text-teal-700">{r.added}</span> added
+                        <span className="mx-1 text-gray-300">·</span>
+                        <span className="font-semibold text-green-700">{r.joined}</span> joined
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+          )}
+
+          {/* Recent activities feed */}
+          <section className="bg-white dark:bg-slate-900 rounded-2xl border border-gray-200 dark:border-slate-700 overflow-hidden">
+            <div className="px-4 py-2.5 border-b border-gray-100 dark:border-slate-800 text-sm font-bold text-gray-700 dark:text-slate-200 flex items-center gap-2">
+              <Activity className="w-4 h-4 text-gray-400" /> Recent Activity
+            </div>
+            {recentActivities.length === 0 ? (
+              <div className="px-4 py-5 text-center text-xs text-gray-400">No recent activity.</div>
+            ) : (
+              <div className="divide-y divide-gray-100 dark:divide-slate-800">
+                {recentActivities.map(a => (
+                  <div key={a.id} className="px-4 py-2">
+                    <div className="text-xs text-gray-700 dark:text-slate-200">
+                      <span className="font-medium">{ACTIVITY_LABEL[a.type] ?? fmt(a.type)}</span>
+                      {" · "}
+                      <Link href={`/hr/candidates/${a.candidateId}`} className="text-[#1a2e4a] dark:text-blue-400 hover:underline">{a.candidate.name}</Link>
+                    </div>
+                    <div className="text-[10px] text-gray-400 mt-0.5">
+                      {a.user?.name?.split(" ")[0] ? `${a.user.name.split(" ")[0]} · ` : ""}{fmtDate(new Date(a.createdAt))} {fmtTime(new Date(a.createdAt))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
         </div>
       </div>
     </div>

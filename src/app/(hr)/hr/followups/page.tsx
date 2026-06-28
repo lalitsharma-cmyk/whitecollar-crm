@@ -18,12 +18,17 @@ export default async function FollowUpsPage({ searchParams }: { searchParams: Pr
   const { start, end } = todayRange();
 
   const filter = sp.filter ?? "today";
-  let where: NonNullable<Parameters<typeof prisma.hRFollowUp.findMany>[0]>["where"] = { completedAt: null, candidate: hrScopeWhere(me) };
+  // Scope to candidates the user may see AND that are not soft-deleted.
+  const candidateScope = { AND: [hrScopeWhere(me), { deletedAt: null }] };
+  let where: NonNullable<Parameters<typeof prisma.hRFollowUp.findMany>[0]>["where"] = { completedAt: null, candidate: candidateScope };
   if (filter === "today")    where = { ...where, dueAt: { gte: start, lt: end } };
   if (filter === "overdue")  where = { ...where, dueAt: { lt: start } };
   if (filter === "upcoming") where = { ...where, dueAt: { gte: end } };
   if (filter === "confirm")  where = { ...where, type: "INTERVIEW_CONFIRMATION" };
   if (filter === "no-show")  where = { ...where, type: "NO_SHOW_RECOVERY" };
+  // Offer / Joining tabs: pending follow-ups for candidates in those lifecycle stages.
+  if (filter === "offer")    where = { ...where, candidate: { AND: [hrScopeWhere(me), { deletedAt: null, status: "OFFER_RELEASED" }] } };
+  if (filter === "joining")  where = { ...where, candidate: { AND: [hrScopeWhere(me), { deletedAt: null, status: "EXPECTED_JOINING" }] } };
 
   const followUps = await prisma.hRFollowUp.findMany({
     where,
@@ -41,6 +46,8 @@ export default async function FollowUpsPage({ searchParams }: { searchParams: Pr
     { key: "upcoming", label: "Upcoming" },
     { key: "confirm",  label: "Interview Confirmation" },
     { key: "no-show",  label: "No Show Recovery" },
+    { key: "offer",    label: "Offer Follow-up" },
+    { key: "joining",  label: "Joining Follow-up" },
   ];
 
   const now = new Date();

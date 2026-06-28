@@ -14,27 +14,30 @@ export default async function MissedPage({ searchParams }: { searchParams: Promi
   const now = new Date();
   const filter = sp.filter ?? "all";
 
+  // Scope to candidates the user may see AND that are not soft-deleted.
+  const candidateScope = { AND: [hrScopeWhere(me), { deletedAt: null }] };
+
   const [overdueFollowUps, noNextAction, noShowsPending, pendingConfirm] = await Promise.all([
     prisma.hRFollowUp.findMany({
-      where: { completedAt: null, dueAt: { lt: now }, candidate: hrScopeWhere(me) },
+      where: { completedAt: null, dueAt: { lt: now }, candidate: candidateScope },
       orderBy: { dueAt: "asc" },
       take: 50,
       include: { candidate: { select: { id:true, name:true, phone:true, primaryOwner:{ select:{name:true} } } }, user: { select:{name:true} } },
     }),
     prisma.hRCandidate.findMany({
-      where: { AND: [ hrScopeWhere(me), { nextActionDate: null, status: { notIn: CLOSED_STATUS_KEYS as never[] } } ] },
+      where: { AND: [ hrScopeWhere(me), { deletedAt: null, nextActionDate: null, status: { notIn: CLOSED_STATUS_KEYS as never[] } } ] },
       orderBy: { createdAt: "asc" },
       take: 50,
       select: { id:true, name:true, phone:true, status:true, createdAt:true, primaryOwner:{ select:{name:true} } },
     }),
     prisma.hRInterview.findMany({
-      where: { attendanceStatus: "NO_SHOW", candidate: hrScopeWhere(me) },
+      where: { attendanceStatus: "NO_SHOW", candidate: candidateScope },
       orderBy: { scheduledAt: "desc" },
       take: 30,
       include: { candidate: { select: { id:true, name:true, phone:true, primaryOwner:{ select:{name:true} } } } },
     }),
     prisma.hRInterview.findMany({
-      where: { scheduledAt: { gte: now }, confirmationStatus: "PENDING", candidate: hrScopeWhere(me) },
+      where: { scheduledAt: { gte: now }, confirmationStatus: "PENDING", candidate: candidateScope },
       orderBy: { scheduledAt: "asc" },
       take: 30,
       include: { candidate: { select: { id:true, name:true, phone:true } } },

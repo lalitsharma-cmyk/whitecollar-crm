@@ -3,11 +3,15 @@ import { prisma } from "@/lib/prisma";
 import Link from "next/link";
 import { statusColor, statusLabel } from "@/lib/hrStatus";
 import { getHrUsers } from "@/lib/hrUsers";
+import HRRecruiterCsvButton, { type RecruiterRow } from "@/components/HRRecruiterCsvButton";
 
 export const dynamic = "force-dynamic";
 
 const CALL_TYPES = ["CALL_CONNECTED", "CALL_NOT_ANSWERED", "CALL_BUSY", "CALL_SWITCHED_OFF", "CALL_WRONG_NUMBER", "CALL_LATER"];
 const FUNNEL = ["NEW", "NOT_CALLED", "INTERESTED", "PIPELINE", "VIRTUAL_INTERVIEW_SCHEDULED", "F2F_INTERVIEW_SCHEDULED", "INTERVIEW_HELD", "SHORTLISTED", "OFFER_RELEASED", "JOINED"];
+// Statuses that represent an interview reached (for conversion math).
+const INTERVIEW_STATUSES = ["VIRTUAL_INTERVIEW_SCHEDULED", "F2F_INTERVIEW_SCHEDULED", "INTERVIEW_HELD", "NO_SHOW", "SHORTLISTED", "OFFER_RELEASED", "EXPECTED_JOINING", "JOINED"];
+const OFFER_STATUSES = ["OFFER_RELEASED", "EXPECTED_JOINING", "JOINED", "OFFER_DECLINED"];
 
 function countBy<T extends string>(arr: { _count: number }[], key: T): Record<string, number> {
   const m: Record<string, number> = {};
@@ -21,22 +25,31 @@ export default async function HRReportsPage({ searchParams }: { searchParams: Pr
   const period = sp.period ?? "30d";
 
   let since: Date | undefined;
-  if (period === "30d") since = new Date(Date.now() - 30 * 864e5);
+  if (period === "today") { const d = new Date(); since = new Date(d.getFullYear(), d.getMonth(), d.getDate()); }
   else if (period === "7d") since = new Date(Date.now() - 7 * 864e5);
+  else if (period === "30d") since = new Date(Date.now() - 30 * 864e5);
   else if (period === "month") { const d = new Date(); since = new Date(d.getFullYear(), d.getMonth(), 1); }
-  const actWhere = since ? { createdAt: { gte: since } } : {};
-  const candWhere = since ? { createdAt: { gte: since } } : {};
+  const actWhere = since ? { createdAt: { gte: since }, candidate: { deletedAt: null } } : { candidate: { deletedAt: null } };
+  // Candidate counts in this report are "current snapshot" of candidates ADDED in the period.
+  const candWhere = since ? { createdAt: { gte: since }, deletedAt: null } : { deletedAt: null };
 
-  const [users, calls, added, ivSched, ivDone, shortlisted, offers, joined, funnel] = await Promise.all([
+  const [
+    users, calls, added, ivSched, ivDone, shortlisted, offers, joined, funnel,
+    sourceGroup, joinedThisPeriod, offersReleasedPeriod,
+  ] = await Promise.all([
     getHrUsers(),
     prisma.hRActivity.groupBy({ by: ["userId"], where: { type: { in: CALL_TYPES as never[] }, ...actWhere }, _count: true }),
     prisma.hRCandidate.groupBy({ by: ["primaryOwnerId"], where: candWhere, _count: true }),
     prisma.hRActivity.groupBy({ by: ["userId"], where: { type: "INTERVIEW_SCHEDULED", ...actWhere }, _count: true }),
     prisma.hRActivity.groupBy({ by: ["userId"], where: { type: "INTERVIEW_ATTENDED", ...actWhere }, _count: true }),
-    prisma.hRCandidate.groupBy({ by: ["primaryOwnerId"], where: { status: "SHORTLISTED" }, _count: true }),
-    prisma.hRCandidate.groupBy({ by: ["primaryOwnerId"], where: { status: "OFFER_RELEASED" }, _count: true }),
-    prisma.hRCandidate.groupBy({ by: ["primaryOwnerId"], where: { status: "JOINED" }, _count: true }),
-    prisma.hRCandidate.groupBy({ by: ["status"], _count: true }),
+    prisma.hRCandidate.groupBy({ by: ["primaryOwnerId"], where: { status: "SHORTLISTED", deletedAt: null }, _count: true }),
+    prisma.hRCandidate.groupBy({ by: ["primaryOwnerId"], where: { status: "OFFER_RELEASED", deletedAt: null }, _count: true }),
+    prisma.hRCandidate.groupBy({ by: ["primaryOwnerId"], where: { status: "JOINED", deletedAt: null }, _count: true }),
+    prisma.hRCandidate.groupBy({ by: ["status"], where: { deletedAt: null }, _count: true }),
+    // Source performance — group candidates added in the period by source.
+    prisma.hRCandidate.groupBy({ by: ["source"], where: candWhere, _count: true }),
+    prisma.hRActivity.count({ where: { type: "CANDIDATE_JOINED", ...actWhere } }),
+    prisma.hRActivity.count({ where: { type: "OFFER_RELEASED", ...actWhere } }),
   ]);
 
   const cCalls = countBy(calls, "userId"), cAdded = countBy(added, "primaryOwnerId");
@@ -56,15 +69,46 @@ export default async function HRReportsPage({ searchParams }: { searchParams: Pr
     short: t.short + r.short, off: t.off + r.off, join: t.join + r.join,
   }), { calls: 0, added: 0, sched: 0, done: 0, short: 0, off: 0, join: 0 });
 
-  const periods = [["7d", "Last 7 days"], ["30d", "Last 30 days"], ["month", "This month"], ["all", "All time"]];
+  const csvRows: RecruiterRow[] = rows.map(r => ({ ...r }));
+
+  // ── Source performance ──
+  const sourceRows = sourceGroup
+    .map(s => ({ source: (s.source && s.source.trim()) || "Unknown", n: s._count }))
+    .sort((a, b) => b.n - a.n);
+  const sourceTotal = sourceRows.reduce((t, s) => t + s.n, 0);
+  const maxSource = Math.max(1, ...sourceRows.map(s => s.n));
+
+  // ── Conversion funnel (current snapshot, global) ──
+  const interviewedN = INTERVIEW_STATUSES.reduce((a, s) => a + (fmap[s] ?? 0), 0);
+  const offeredN = OFFER_STATUSES.reduce((a, s) => a + (fmap[s] ?? 0), 0);
+  const joinedN = fmap["JOINED"] ?? 0;
+  const appliedAll = Object.values(fmap).reduce((a, b) => a + b, 0);
+  const pct = (n: number, d: number) => d > 0 ? Math.round((n / d) * 1000) / 10 : 0;
+  const conv = [
+    { label: "Applied", n: appliedAll, of: "" },
+    { label: "Reached Interview", n: interviewedN, of: `${pct(interviewedN, appliedAll)}% of applied` },
+    { label: "Offered", n: offeredN, of: `${pct(offeredN, interviewedN)}% of interviewed` },
+    { label: "Joined", n: joinedN, of: `${pct(joinedN, offeredN)}% of offered` },
+  ];
+
+  // ── Offers / Joining summary (current snapshot) ──
+  const offerSummary = [
+    { label: "Offers Released", n: fmap["OFFER_RELEASED"] ?? 0, color: "text-amber-700" },
+    { label: "Expected Joinings", n: fmap["EXPECTED_JOINING"] ?? 0, color: "text-lime-700" },
+    { label: "Joined", n: fmap["JOINED"] ?? 0, color: "text-green-700" },
+    { label: "Offers Declined", n: fmap["OFFER_DECLINED"] ?? 0, color: "text-orange-700" },
+  ];
+
+  const periods = [["today", "Today"], ["7d", "Last 7 days"], ["30d", "Last 30 days"], ["month", "This month"], ["all", "All time"]];
   const maxFunnel = Math.max(1, ...FUNNEL.map(s => fmap[s] ?? 0));
+  const periodLabel = (periods.find(p => p[0] === period)?.[1]) ?? "Last 30 days";
 
   return (
     <div className="p-4 sm:p-6 max-w-5xl mx-auto space-y-5">
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div>
           <h1 className="text-xl font-bold text-gray-900 dark:text-white">Reports</h1>
-          <p className="text-sm text-gray-500">Recruiter performance &amp; pipeline</p>
+          <p className="text-sm text-gray-500">Recruiter performance, pipeline &amp; conversion</p>
         </div>
         <div className="flex gap-1 flex-wrap">
           {periods.map(([k, label]) => (
@@ -76,11 +120,61 @@ export default async function HRReportsPage({ searchParams }: { searchParams: Pr
         </div>
       </div>
 
+      {/* Conversion funnel (period new joins/offers + current snapshot) */}
+      <div className="grid sm:grid-cols-4 gap-3">
+        {conv.map((c, i) => (
+          <div key={c.label} className="bg-white dark:bg-slate-900 rounded-2xl border border-gray-200 dark:border-slate-700 p-4">
+            <div className="text-[11px] uppercase tracking-wide text-gray-400 font-semibold">{c.label}</div>
+            <div className="text-2xl font-extrabold text-gray-800 dark:text-white mt-1">{c.n}</div>
+            <div className="text-[11px] text-gray-500 mt-0.5">{i === 0 ? "in pipeline" : c.of}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Offers / Joining summary + new this period */}
+      <div className="grid sm:grid-cols-2 gap-4">
+        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-gray-200 dark:border-slate-700 p-4">
+          <div className="text-sm font-semibold text-gray-700 dark:text-slate-200 mb-3">Offers &amp; Joining (current)</div>
+          <div className="grid grid-cols-2 gap-3">
+            {offerSummary.map(o => (
+              <div key={o.label} className="rounded-xl bg-gray-50 dark:bg-slate-800 p-3">
+                <div className={`text-2xl font-extrabold ${o.color}`}>{o.n}</div>
+                <div className="text-[11px] text-gray-500 mt-0.5">{o.label}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-gray-200 dark:border-slate-700 p-4">
+          <div className="text-sm font-semibold text-gray-700 dark:text-slate-200 mb-3">Activity in {periodLabel}</div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="rounded-xl bg-gray-50 dark:bg-slate-800 p-3">
+              <div className="text-2xl font-extrabold text-teal-700">{totals.added}</div>
+              <div className="text-[11px] text-gray-500 mt-0.5">Candidates Added</div>
+            </div>
+            <div className="rounded-xl bg-gray-50 dark:bg-slate-800 p-3">
+              <div className="text-2xl font-extrabold text-blue-700">{totals.calls}</div>
+              <div className="text-[11px] text-gray-500 mt-0.5">Calls Logged</div>
+            </div>
+            <div className="rounded-xl bg-gray-50 dark:bg-slate-800 p-3">
+              <div className="text-2xl font-extrabold text-amber-700">{offersReleasedPeriod}</div>
+              <div className="text-[11px] text-gray-500 mt-0.5">Offers Released</div>
+            </div>
+            <div className="rounded-xl bg-gray-50 dark:bg-slate-800 p-3">
+              <div className="text-2xl font-extrabold text-green-700">{joinedThisPeriod}</div>
+              <div className="text-[11px] text-gray-500 mt-0.5">Joined</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       {/* Recruiter performance */}
       <div className="bg-white dark:bg-slate-900 rounded-2xl border border-gray-200 dark:border-slate-700 overflow-hidden">
-        <div className="px-4 py-2.5 border-b border-gray-100 dark:border-slate-800 text-sm font-semibold text-gray-700 dark:text-slate-200">
-          Recruiter Performance
-          <span className="text-[11px] font-normal text-gray-400 ml-2">calls, candidates &amp; interviews are for the selected period; status counts are current</span>
+        <div className="px-4 py-2.5 border-b border-gray-100 dark:border-slate-800 flex items-center justify-between gap-2">
+          <div className="text-sm font-semibold text-gray-700 dark:text-slate-200">
+            Recruiter Performance
+            <span className="text-[11px] font-normal text-gray-400 ml-2 hidden sm:inline">period activity; status counts are current</span>
+          </div>
+          <HRRecruiterCsvButton rows={csvRows} period={period} />
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -123,9 +217,34 @@ export default async function HRReportsPage({ searchParams }: { searchParams: Pr
         </div>
       </div>
 
+      {/* Source performance */}
+      <div className="bg-white dark:bg-slate-900 rounded-2xl border border-gray-200 dark:border-slate-700 p-4">
+        <div className="text-sm font-semibold text-gray-700 dark:text-slate-200 mb-3">
+          Source Performance
+          <span className="text-[11px] font-normal text-gray-400 ml-2">candidates added in {periodLabel.toLowerCase()}</span>
+        </div>
+        {sourceRows.length === 0 ? (
+          <div className="px-2 py-6 text-center text-gray-400 text-xs">No candidates added in this period.</div>
+        ) : (
+          <div className="space-y-1.5">
+            {sourceRows.map(s => (
+              <div key={s.source} className="flex items-center gap-2">
+                <div className="w-36 shrink-0 text-xs text-gray-700 dark:text-slate-300 truncate" title={s.source}>{s.source}</div>
+                <div className="flex-1 bg-gray-100 dark:bg-slate-800 rounded-full h-4 overflow-hidden">
+                  <div className="h-full bg-teal-500 rounded-full" style={{ width: `${(s.n / maxSource) * 100}%` }} />
+                </div>
+                <div className="w-20 text-right text-xs font-semibold text-gray-700 dark:text-slate-200 whitespace-nowrap">
+                  {s.n} <span className="text-gray-400 font-normal">({sourceTotal > 0 ? Math.round((s.n / sourceTotal) * 100) : 0}%)</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
       {/* Pipeline funnel (current snapshot) */}
       <div className="bg-white dark:bg-slate-900 rounded-2xl border border-gray-200 dark:border-slate-700 p-4">
-        <div className="text-sm font-semibold text-gray-700 dark:text-slate-200 mb-3">Pipeline (current)</div>
+        <div className="text-sm font-semibold text-gray-700 dark:text-slate-200 mb-3">Pipeline by Status (current)</div>
         <div className="space-y-1.5">
           {FUNNEL.map(s => {
             const n = fmap[s] ?? 0;

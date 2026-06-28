@@ -10,6 +10,17 @@ const STATUS_MAP: Record<HRInterviewType, HRCandidateStatus> = {
   FACE_TO_FACE: "F2F_INTERVIEW_SCHEDULED",
 };
 
+// recommendation → candidate status mapping (post-interview outcome).
+// SELECTED → SHORTLISTED (next step toward offer), REJECTED → REJECTED, HOLD → HOLD.
+const RECOMMENDATION_STATUS: Record<string, HRCandidateStatus> = {
+  SELECTED: "SHORTLISTED",
+  REJECTED: "REJECTED",
+  HOLD:     "HOLD",
+};
+
+const fmtDateTime = (d: Date) =>
+  d.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
+
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const access = await loadOwnedCandidate(id);
@@ -43,7 +54,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       data: {
         candidateId: id, userId: me.id,
         type: "INTERVIEW_SCHEDULED",
-        notes: `${itype.replace(/_/g, " ")} interview scheduled for ${scheduledAt.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}`,
+        notes: `${itype.replace(/_/g, " ")} interview scheduled for ${fmtDateTime(scheduledAt)}`,
         newStatus,
       },
     });
@@ -92,6 +103,134 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const { me } = access;
   const body = await req.json();
 
+  if (!body.interviewId) return NextResponse.json({ error: "interviewId required" }, { status: 400 });
+
+  // Ensure the interview belongs to this candidate (defence-in-depth: never let an
+  // owned-candidate request touch another candidate's interview row).
+  const existing = await prisma.hRInterview.findUnique({ where: { id: body.interviewId } });
+  if (!existing || existing.candidateId !== candidateId)
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+  // ── RESCHEDULE ──────────────────────────────────────────────────────────────
+  // Backward-compatible: a reschedule updates the EXISTING interview's scheduledAt
+  // (previously a "reschedule" wrongly POSTed a brand-new interview row).
+  if (body.action === "reschedule" || (body.scheduledAt && body.action !== "result")) {
+    if (!body.scheduledAt) return NextResponse.json({ error: "scheduledAt required" }, { status: 400 });
+    const newAt = new Date(body.scheduledAt);
+    const oldAt = existing.scheduledAt;
+    const itype = existing.type;
+    const newStatus = STATUS_MAP[itype];
+
+    const iv = await prisma.$transaction(async (tx) => {
+      const updated = await tx.hRInterview.update({
+        where: { id: body.interviewId },
+        data: {
+          scheduledAt: newAt,
+          confirmationStatus: "PENDING",
+          attendanceStatus: "SCHEDULED",
+          notes: body.notes ?? undefined,
+        },
+      });
+
+      // Reset candidate status back to "scheduled" for this interview type.
+      await tx.hRCandidate.update({ where: { id: candidateId }, data: { status: newStatus } });
+
+      await tx.hRActivity.create({
+        data: {
+          candidateId, userId: me.id,
+          type: "INTERVIEW_RESCHEDULED",
+          notes: `${itype.replace(/_/g, " ")} interview rescheduled from ${fmtDateTime(oldAt)} to ${fmtDateTime(newAt)}`,
+          newStatus,
+        },
+      });
+
+      // Clear the now-stale auto-created CONFIRMATION/REMINDER follow-ups, then
+      // recreate them aligned to the new date.
+      await tx.hRFollowUp.deleteMany({
+        where: {
+          candidateId,
+          autoCreated: true,
+          completedAt: null,
+          type: { in: ["INTERVIEW_CONFIRMATION", "REMINDER"] },
+        },
+      });
+
+      const dayBefore = new Date(newAt);
+      dayBefore.setDate(dayBefore.getDate() - 1);
+      dayBefore.setHours(10, 0, 0, 0);
+      if (dayBefore > new Date()) {
+        await tx.hRFollowUp.create({
+          data: {
+            candidateId, userId: me.id, type: "INTERVIEW_CONFIRMATION", dueAt: dayBefore,
+            notes: `Confirm ${itype.replace(/_/g, " ")} interview for ${newAt.toLocaleDateString("en-IN")}`,
+            autoCreated: true,
+          },
+        });
+      }
+      const morning = new Date(newAt);
+      morning.setHours(8, 0, 0, 0);
+      if (morning > new Date()) {
+        await tx.hRFollowUp.create({
+          data: {
+            candidateId, userId: me.id, type: "REMINDER", dueAt: morning,
+            notes: `Interview day reminder — ${itype.replace(/_/g, " ")} at ${newAt.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}`,
+            autoCreated: true,
+          },
+        });
+      }
+
+      return updated;
+    });
+
+    return NextResponse.json({ interview: iv });
+  }
+
+  // ── RESULT / FEEDBACK capture ───────────────────────────────────────────────
+  // recommendation ∈ SELECTED|REJECTED|HOLD → drives candidate status.
+  if (body.action === "result" || body.recommendation) {
+    const recommendation = body.recommendation ? String(body.recommendation).toUpperCase() : null;
+    if (recommendation && !RECOMMENDATION_STATUS[recommendation])
+      return NextResponse.json({ error: "recommendation must be SELECTED, REJECTED or HOLD" }, { status: 400 });
+
+    const iv = await prisma.$transaction(async (tx) => {
+      const updated = await tx.hRInterview.update({
+        where: { id: body.interviewId },
+        data: {
+          result:         body.result ?? undefined,
+          recommendation: recommendation ?? undefined,
+          notes:          body.notes ?? undefined,
+          // Recording a result means the interview was held.
+          attendanceStatus: existing.attendanceStatus === "SCHEDULED" || existing.attendanceStatus === "RESCHEDULED"
+            ? "ATTENDED" : undefined,
+        },
+      });
+
+      const newStatus = recommendation ? RECOMMENDATION_STATUS[recommendation] : "INTERVIEW_HELD";
+      await tx.hRCandidate.update({
+        where: { id: candidateId },
+        data: {
+          status: newStatus,
+          ...(body.result || body.notes ? { interviewFeedback: body.notes || body.result } : {}),
+        },
+      });
+
+      const recLabel = recommendation ? ` — ${recommendation}` : "";
+      await tx.hRActivity.create({
+        data: {
+          candidateId, userId: me.id,
+          type: "INTERVIEW_ATTENDED",
+          notes: `${existing.type.replace(/_/g, " ")} interview result recorded${recLabel}${body.result ? ` (${body.result})` : ""}${body.notes ? `: ${body.notes}` : ""}`,
+          newStatus,
+        },
+      });
+
+      return updated;
+    });
+
+    return NextResponse.json({ interview: iv });
+  }
+
+  // ── Legacy attendance / confirmation update (unchanged behaviour) ────────────
   const iv = await prisma.hRInterview.update({
     where: { id: body.interviewId },
     data: {
@@ -139,4 +278,46 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   }
 
   return NextResponse.json({ interview: iv });
+}
+
+// ── DELETE an interview ───────────────────────────────────────────────────────
+// Removing an interview also clears its auto-created (open) CONFIRMATION / REMINDER
+// follow-ups so the candidate's queue isn't left with orphaned reminders.
+export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id: candidateId } = await params;
+  const access = await loadOwnedCandidate(candidateId);
+  if (access.error) return access.error;
+  const { me } = access;
+
+  const { searchParams } = new URL(req.url);
+  let interviewId = searchParams.get("interviewId");
+  if (!interviewId) {
+    try { interviewId = (await req.json())?.interviewId ?? null; } catch { /* no body */ }
+  }
+  if (!interviewId) return NextResponse.json({ error: "interviewId required" }, { status: 400 });
+
+  const existing = await prisma.hRInterview.findUnique({ where: { id: interviewId } });
+  if (!existing || existing.candidateId !== candidateId)
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+  await prisma.$transaction([
+    // Clear the open auto-created confirmation/reminder follow-ups tied to interviews.
+    prisma.hRFollowUp.deleteMany({
+      where: {
+        candidateId,
+        autoCreated: true,
+        completedAt: null,
+        type: { in: ["INTERVIEW_CONFIRMATION", "REMINDER"] },
+      },
+    }),
+    prisma.hRInterview.delete({ where: { id: interviewId } }),
+    prisma.hRActivity.create({
+      data: {
+        candidateId, userId: me.id, type: "NOTE_ADDED",
+        notes: `${existing.type.replace(/_/g, " ")} interview (${fmtDateTime(existing.scheduledAt)}) deleted; auto-created confirmation/reminder follow-ups cleared`,
+      },
+    }),
+  ]);
+
+  return NextResponse.json({ ok: true });
 }

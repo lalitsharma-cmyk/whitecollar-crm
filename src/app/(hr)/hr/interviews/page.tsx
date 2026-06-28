@@ -20,6 +20,10 @@ const ATT_COLOR: Record<string,string> = {
   NO_SHOW:"bg-red-100 text-red-700",RESCHEDULED:"bg-blue-100 text-blue-700",
   CANCELLED:"bg-slate-100 text-slate-500",
 };
+const REC_COLOR: Record<string,string> = {
+  SELECTED:"bg-teal-100 text-teal-700",HOLD:"bg-orange-100 text-orange-700",
+  REJECTED:"bg-red-100 text-red-700",
+};
 function fmt(s:string){return s.replace(/_/g," ").replace(/\b\w/g,c=>c.toUpperCase());}
 
 export default async function InterviewsPage({ searchParams }: { searchParams: Promise<Record<string,string>> }) {
@@ -28,7 +32,10 @@ export default async function InterviewsPage({ searchParams }: { searchParams: P
   const { start, end, tomorrow } = todayRange();
 
   const filter = sp.filter ?? "upcoming";
-  let where: NonNullable<Parameters<typeof prisma.hRInterview.findMany>[0]>["where"] = { candidate: hrScopeWhere(me) };
+  // Scope to candidates the user may see AND exclude soft-deleted candidates.
+  let where: NonNullable<Parameters<typeof prisma.hRInterview.findMany>[0]>["where"] = {
+    candidate: { AND: [hrScopeWhere(me), { deletedAt: null }] },
+  };
   if (filter === "today")    where = { ...where, scheduledAt: { gte: start, lt: end }, attendanceStatus: "SCHEDULED" };
   if (filter === "tomorrow") where = { ...where, scheduledAt: { gte: end, lt: tomorrow }, attendanceStatus: "SCHEDULED" };
   if (filter === "pending-confirm") where = { ...where, scheduledAt: { gte: new Date() }, confirmationStatus: "PENDING" };
@@ -86,6 +93,7 @@ export default async function InterviewsPage({ searchParams }: { searchParams: P
                   <th className="px-4 py-3">Interviewer</th>
                   <th className="px-4 py-3">Confirmation</th>
                   <th className="px-4 py-3">Attendance</th>
+                  <th className="px-4 py-3">Result</th>
                   <th className="px-4 py-3">Owner</th>
                   <th className="px-4 py-3">Actions</th>
                 </tr>
@@ -115,9 +123,15 @@ export default async function InterviewsPage({ searchParams }: { searchParams: P
                         {fmt(iv.attendanceStatus)}
                       </span>
                     </td>
+                    <td className="px-4 py-3 text-xs">
+                      {iv.recommendation
+                        ? <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${REC_COLOR[iv.recommendation] ?? "bg-gray-100 text-gray-600"}`}>{fmt(iv.recommendation)}</span>
+                        : <span className="text-gray-300">—</span>}
+                      {iv.result && <div className="text-[11px] text-gray-500 mt-0.5 max-w-[160px] truncate" title={iv.result}>{iv.result}</div>}
+                    </td>
                     <td className="px-4 py-3 text-xs text-gray-500">{iv.candidate.primaryOwner?.name?.split(" ")[0]}</td>
                     <td className="px-4 py-3">
-                      <HRInterviewRowActions interviewId={iv.id} candidateId={iv.candidateId} phone={iv.candidate.phone} attendanceStatus={iv.attendanceStatus} />
+                      <HRInterviewRowActions interviewId={iv.id} candidateId={iv.candidateId} phone={iv.candidate.phone} attendanceStatus={iv.attendanceStatus} scheduledAt={iv.scheduledAt.toISOString()} result={iv.result} recommendation={iv.recommendation} />
                     </td>
                   </tr>
                 ))}
@@ -139,6 +153,7 @@ export default async function InterviewsPage({ searchParams }: { searchParams: P
                   <span>🎯 {fmt(iv.type)}</span>
                   <span>📅 {new Date(iv.scheduledAt).toLocaleDateString("en-IN",{day:"numeric",month:"short"})} {new Date(iv.scheduledAt).toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit"})}</span>
                   <span className={`px-1.5 py-0 rounded ${CONF_COLOR[iv.confirmationStatus] ?? ""}`}>{fmt(iv.confirmationStatus)}</span>
+                  {iv.recommendation && <span className={`px-1.5 py-0 rounded ${REC_COLOR[iv.recommendation] ?? ""}`}>{fmt(iv.recommendation)}</span>}
                 </div>
               </Link>
             ))}

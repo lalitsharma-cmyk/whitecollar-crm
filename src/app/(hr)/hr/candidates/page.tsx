@@ -15,7 +15,8 @@ export default async function CandidatesPage({ searchParams }: { searchParams: P
   const filterStatus = sp.status as HRCandidateStatus | undefined;
 
   const scope = hrScopeWhere(me);
-  const where: NonNullable<Parameters<typeof prisma.hRCandidate.findMany>[0]>["where"] = { ...scope };
+  // ALWAYS exclude soft-deleted (recycle-bin) candidates from the list + counts.
+  const where: NonNullable<Parameters<typeof prisma.hRCandidate.findMany>[0]>["where"] = { ...scope, deletedAt: null };
   if (sp.batch) {
     // Viewing the records created by a specific import batch — show all statuses.
     where.importBatchId = sp.batch;
@@ -39,7 +40,7 @@ export default async function CandidatesPage({ searchParams }: { searchParams: P
       },
     }),
     getHrUsers(),
-    prisma.hRCandidate.groupBy({ by: ["status"], where: scope, _count: { id: true } }),
+    prisma.hRCandidate.groupBy({ by: ["status"], where: { ...scope, deletedAt: null }, _count: { id: true } }),
   ]);
 
   const countMap: Record<string, number> = {};

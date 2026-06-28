@@ -3,6 +3,7 @@ import { useState, useTransition, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import HRResumeUploadWidget from "@/components/HRResumeUploadWidget";
+import HRCandidateVoice from "@/components/HRCandidateVoice";
 import { ACTIVE_STATUS_DEFS, CLOSED_STATUS_DEFS, statusColor, statusLabel, displayStatus } from "@/lib/hrStatus";
 import type { HRCandidateStatus, HRActivityType, HRFollowUpType, HRInterviewType } from "@prisma/client";
 
@@ -27,7 +28,8 @@ interface Candidate {
   secondaryOwner: {id:string;name:string;avatarColor:string}|null;
   activities: Activity[]; interviews: Interview[]; followUps: FollowUp[]; resumes: Resume[]; applications?: Application[];
 }
-interface Props { candidate: Candidate; agents: User[]; me: { id: string; name: string; role: string }; }
+interface VoicePerms { canGuide: boolean; canEscalate: boolean; canReview: boolean; }
+interface Props { candidate: Candidate; agents: User[]; me: { id: string; name: string; role: string }; voicePerms?: VoicePerms; }
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 const CALL_OUTCOMES: { type: HRActivityType; label: string; color: string }[] = [
@@ -144,7 +146,7 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
-export default function HRCandidateDetail({ candidate: c, agents, me }: Props) {
+export default function HRCandidateDetail({ candidate: c, agents, me, voicePerms }: Props) {
   const router = useRouter();
   const [, startT] = useTransition();
   const [busy, setBusy] = useState(false);
@@ -462,6 +464,12 @@ export default function HRCandidateDetail({ candidate: c, agents, me }: Props) {
 
         {/* Right panels */}
         <div className="space-y-4">
+          <HRCandidateVoice
+            candidateId={c.id}
+            canGuide={voicePerms?.canGuide ?? false}
+            canEscalate={voicePerms?.canEscalate ?? false}
+            canReview={voicePerms?.canReview ?? false}
+          />
           <Panel title="Candidate Information">
             <Row label="Phone"><InlineField candidateId={c.id} field="phone" value={c.phone} type="tel" /></Row>
             <Row label="WhatsApp"><InlineField candidateId={c.id} field="whatsappPhone" value={c.whatsappPhone} type="tel" /></Row>

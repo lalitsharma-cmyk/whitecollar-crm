@@ -70,6 +70,23 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   const resumeId = url.searchParams.get("resumeId");
   const download = url.searchParams.get("download") === "1";
 
+  // Additive, backward-compatible mode: `?list=1` returns the full version
+  // history (metadata only, never the file bytes) for THIS candidate, newest
+  // first. Used by the Resume Bank version-history view. Existing callers that
+  // omit `list` keep getting the streamed file as before.
+  if (url.searchParams.get("list") === "1") {
+    const versions = await prisma.hRResume.findMany({
+      where: { candidateId },
+      orderBy: [{ isActive: "desc" }, { createdAt: "desc" }],
+      select: {
+        id: true, filename: true, mimeType: true, sizeBytes: true,
+        isActive: true, createdAt: true,
+        uploadedBy: { select: { name: true } },
+      },
+    });
+    return NextResponse.json({ versions });
+  }
+
   const resume = resumeId
     ? await prisma.hRResume.findUnique({ where: { id: resumeId } })
     : await prisma.hRResume.findFirst({ where: { candidateId, isActive: true }, orderBy: { createdAt: "desc" } });

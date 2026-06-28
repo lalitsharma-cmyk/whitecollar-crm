@@ -1,7 +1,8 @@
 "use client";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { Phone, MessageCircle, Target, CalendarPlus, Bookmark, BookmarkPlus, Trash2, Columns3, X } from "lucide-react";
 import { ACTIVE_STATUS_DEFS, CLOSED_STATUS_DEFS, CLOSED_STATUS_KEYS, statusColor, displayStatus } from "@/lib/hrStatus";
 import * as XLSX from "xlsx";
 
@@ -17,6 +18,31 @@ const CHIPS: [string, string][] = [
   ["pending-confirm", "Pending Confirmation"], ["no-show", "No Show"], ["shortlisted", "Shortlisted"],
   ["offer", "Offer Released"], ["joined", "Joined"], ["closed", "Closed"],
 ];
+
+// Toggleable table columns. `key` doubles as the persisted hidden-set token and
+// the header label source. `always` columns can't be hidden (Candidate + Actions).
+const COLUMNS: { key: string; label: string; always?: boolean }[] = [
+  { key: "candidate", label: "Candidate", always: true },
+  { key: "phone", label: "Phone" },
+  { key: "profile", label: "Current Profile" },
+  { key: "exp", label: "Exp" },
+  { key: "currentSal", label: "Current ₹" },
+  { key: "expectedSal", label: "Expected ₹" },
+  { key: "notice", label: "Notice Period" },
+  { key: "source", label: "Source" },
+  { key: "status", label: "Status" },
+  { key: "nextAction", label: "Next Action" },
+  { key: "followUp", label: "Follow-Up" },
+  { key: "interview", label: "Interview" },
+  { key: "owner", label: "Owner" },
+  { key: "createdDate", label: "Created Date" },
+  { key: "createdTime", label: "Created Time" },
+  { key: "lastActivity", label: "Last Activity" },
+  { key: "actions", label: "Actions", always: true },
+];
+// Columns hidden by default to keep the table from being overwhelming on first load.
+const DEFAULT_HIDDEN = new Set<string>(["createdTime", "source", "notice"]);
+const HIDDEN_COLS_KEY = "hr-candidate-hidden-cols";
 
 interface Interview { scheduledAt: string; type: string; confirmationStatus: string; attendanceStatus: string; }
 interface Candidate {
@@ -37,12 +63,17 @@ interface Props {
   meId: string; meRole: string;
 }
 
+interface SavedView { id: string; name: string; query: string; isShared: boolean; isOwn: boolean; }
+
 function fmtDate(s: string) { return new Date(s).toLocaleDateString("en-IN", { day: "numeric", month: "short" }); }
+function fmtDateFull(s: string) { return new Date(s).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }); }
+function fmtTime(s: string) { return new Date(s).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: true }); }
 function fmtAct(s: string) { return s.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase()); }
 function fmtSal(n: number | null) { if (!n) return "—"; return n >= 100000 ? `₹${(n / 100000).toFixed(1)}L` : `₹${(n / 1000).toFixed(0)}K`; }
 function expYears(s: string | null): number | null { if (!s) return null; const m = s.match(/\d+(\.\d+)?/); return m ? parseFloat(m[0]) : null; }
 function startOfToday() { const d = new Date(); d.setHours(0, 0, 0, 0); return d; }
 function endOfToday() { const d = startOfToday(); return new Date(d.getTime() + 24 * 3600_000); }
+function waLink(p: string) { return `https://wa.me/${p.replace(/\D/g, "")}`; }
 
 // Derived per-candidate signals used by chips, columns and filters.
 function signals(c: Candidate, now: Date) {
@@ -74,6 +105,7 @@ export default function HRCandidateTable({ candidates, agents, meRole }: Props) 
   const [view, setView] = useState<"table" | "cards">("table");
   const [showAdv, setShowAdv] = useState(false);
   const [showExport, setShowExport] = useState(false);
+  const [showCols, setShowCols] = useState(false);
 
   // Advanced filters
   const [fStatus, setFStatus] = useState("");
@@ -91,6 +123,82 @@ export default function HRCandidateTable({ candidates, agents, meRole }: Props) 
   const [expSalMin, setExpSalMin] = useState(""); const [expSalMax, setExpSalMax] = useState("");
   const [fuFrom, setFuFrom] = useState(""); const [fuTo, setFuTo] = useState("");
   const [ivFrom, setIvFrom] = useState(""); const [ivTo, setIvTo] = useState("");
+
+  // ── Column show/hide (persisted client-side via localStorage) ──────────────
+  const [hidden, setHidden] = useState<Set<string>>(new Set(DEFAULT_HIDDEN));
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(HIDDEN_COLS_KEY);
+      if (raw) setHidden(new Set(JSON.parse(raw) as string[]));
+    } catch {}
+  }, []);
+  const persistHidden = useCallback((s: Set<string>) => {
+    try { localStorage.setItem(HIDDEN_COLS_KEY, JSON.stringify([...s])); } catch {}
+  }, []);
+  function toggleCol(key: string) {
+    setHidden(h => { const n = new Set(h); if (n.has(key)) n.delete(key); else n.add(key); persistHidden(n); return n; });
+  }
+  const visible = useCallback((key: string) => !hidden.has(key), [hidden]);
+
+  // ── Saved Views (filter + column snapshot via /api/hr/saved-filters) ───────
+  const [views, setViews] = useState<SavedView[]>([]);
+  const [viewsLoaded, setViewsLoaded] = useState(false);
+  const [showSaveDialog, setShowSaveDialog] = useState(false);
+  const [saveName, setSaveName] = useState("");
+  const [saveShared, setSaveShared] = useState(false);
+  const [savingView, setSavingView] = useState(false);
+
+  async function loadViews() {
+    try {
+      const r = await fetch("/api/hr/saved-filters", { cache: "no-store" });
+      if (!r.ok) { setViewsLoaded(true); return; }
+      const j = await r.json();
+      setViews(j.items ?? []);
+    } catch {} finally { setViewsLoaded(true); }
+  }
+  useEffect(() => { loadViews(); }, []);
+
+  // Snapshot every filter + column-visibility piece of state into one JSON blob.
+  function snapshotState() {
+    return {
+      search, chip, hidden: [...hidden],
+      fStatus, fSource, fPosition, fProfile, fLocation, fOwner, fNotice, fConfirm, fResume, fNoShow,
+      expMin, expMax, curMin, curMax, expSalMin, expSalMax, fuFrom, fuTo, ivFrom, ivTo,
+    };
+  }
+  function applySnapshot(raw: string) {
+    let v: Record<string, unknown>;
+    try { v = JSON.parse(raw); } catch { return; }
+    const str = (k: string) => (typeof v[k] === "string" ? (v[k] as string) : "");
+    setSearch(str("search")); setChip(str("chip") || "all");
+    setFStatus(str("fStatus")); setFSource(str("fSource")); setFPosition(str("fPosition"));
+    setFProfile(str("fProfile")); setFLocation(str("fLocation")); setFOwner(str("fOwner"));
+    setFNotice(str("fNotice")); setFConfirm(str("fConfirm")); setFResume(str("fResume"));
+    setFNoShow(v.fNoShow === true);
+    setExpMin(str("expMin")); setExpMax(str("expMax")); setCurMin(str("curMin")); setCurMax(str("curMax"));
+    setExpSalMin(str("expSalMin")); setExpSalMax(str("expSalMax"));
+    setFuFrom(str("fuFrom")); setFuTo(str("fuTo")); setIvFrom(str("ivFrom")); setIvTo(str("ivTo"));
+    if (Array.isArray(v.hidden)) {
+      const h = new Set((v.hidden as unknown[]).filter(x => typeof x === "string") as string[]);
+      setHidden(h); persistHidden(h);
+    }
+  }
+  async function saveView() {
+    if (savingView || !saveName.trim()) return;
+    setSavingView(true);
+    try {
+      const r = await fetch("/api/hr/saved-filters", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: saveName.trim(), query: JSON.stringify(snapshotState()), isShared: saveShared }),
+      });
+      if (r.ok) { setShowSaveDialog(false); setSaveName(""); setSaveShared(false); await loadViews(); }
+    } finally { setSavingView(false); }
+  }
+  async function deleteView(v: SavedView) {
+    if (!confirm(`Delete saved view "${v.name}"?`)) return;
+    const r = await fetch(`/api/hr/saved-filters?id=${encodeURIComponent(v.id)}`, { method: "DELETE" });
+    if (r.ok) await loadViews();
+  }
 
   function chipMatch(c: Candidate, s: ReturnType<typeof signals>): boolean {
     switch (chip) {
@@ -187,6 +295,7 @@ export default function HRCandidateTable({ candidates, agents, meRole }: Props) 
       "Total Experience": c.experience ?? "", "Current Salary": c.currentSalary ?? "", "Expected Salary": c.expectedSalary ?? "",
       "Notice Period": c.noticePeriod ?? "", Status: displayStatus(c), "Next Action": c.nextAction ?? "",
       Source: c.source ?? "", Owner: c.primaryOwner?.name ?? "",
+      "Created Date": fmtDateFull(c.createdAt), "Created Time": fmtTime(c.createdAt),
     }));
     const ws = XLSX.utils.json_to_sheet(data);
     const wb = XLSX.utils.book_new();
@@ -200,13 +309,16 @@ export default function HRCandidateTable({ candidates, agents, meRole }: Props) 
   // Row action buttons (reuse the detail deep-links for schedule/follow-up).
   const RowActions = ({ c }: { c: Candidate }) => (
     <div className="flex items-center gap-1">
-      {c.phone && <a href={`tel:${c.phone}`} title="Call" className="px-1.5 py-1 rounded hover:bg-blue-50 text-blue-600">📞</a>}
-      {(c.whatsappPhone ?? c.phone) && <a href={`https://wa.me/${(c.whatsappPhone ?? c.phone)!.replace(/\D/g, "")}`} target="_blank" rel="noopener noreferrer" title="WhatsApp" className="px-1.5 py-1 rounded hover:bg-green-50 text-green-600">💬</a>}
-      <Link href={`/hr/candidates/${c.id}?do=interview`} title="Schedule Interview" className="px-1.5 py-1 rounded hover:bg-purple-50 text-purple-600">🎯</Link>
-      <Link href={`/hr/candidates/${c.id}?do=followup`} title="Add Follow-Up" className="px-1.5 py-1 rounded hover:bg-amber-50 text-amber-600">📅</Link>
+      {c.phone && <a href={`tel:${c.phone}`} title="Call" className="p-1.5 rounded hover:bg-blue-50 text-blue-600"><Phone className="w-3.5 h-3.5" /></a>}
+      {(c.whatsappPhone ?? c.phone) && <a href={waLink((c.whatsappPhone ?? c.phone)!)} target="_blank" rel="noopener noreferrer" title="WhatsApp" className="p-1.5 rounded hover:bg-green-50 text-green-600"><MessageCircle className="w-3.5 h-3.5" /></a>}
+      <Link href={`/hr/candidates/${c.id}?do=interview`} title="Schedule Interview" className="p-1.5 rounded hover:bg-purple-50 text-purple-600"><Target className="w-3.5 h-3.5" /></Link>
+      <Link href={`/hr/candidates/${c.id}?do=followup`} title="Add Follow-Up" className="p-1.5 rounded hover:bg-amber-50 text-amber-600"><CalendarPlus className="w-3.5 h-3.5" /></Link>
       <Link href={`/hr/candidates/${c.id}`} title="Open" className="px-2 py-1 rounded-lg bg-[#1a2e4a] text-white text-[11px] hover:bg-[#243d60]">Open</Link>
     </div>
   );
+
+  // Header cells in column order, honoring visibility.
+  const headers = COLUMNS.filter(col => col.key !== "candidate" && col.key !== "actions" && visible(col.key));
 
   return (
     <div className="space-y-3">
@@ -219,6 +331,24 @@ export default function HRCandidateTable({ candidates, agents, meRole }: Props) 
           className={`px-3 py-2 rounded-xl text-sm border ${showAdv ? "bg-[#1a2e4a] text-white border-[#1a2e4a]" : "border-gray-300 text-gray-600 hover:bg-gray-50"}`}>
           ⚙ Filters
         </button>
+        {/* Column show/hide */}
+        <div className="relative">
+          <button type="button" onClick={() => setShowCols(s => !s)}
+            className="px-3 py-2 rounded-xl text-sm border border-gray-300 text-gray-600 hover:bg-gray-50 inline-flex items-center gap-1.5">
+            <Columns3 className="w-4 h-4" /> Columns
+          </button>
+          {showCols && (
+            <div className="absolute right-0 mt-1 z-30 bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-xl shadow-lg py-1.5 text-sm w-52 max-h-80 overflow-y-auto">
+              <div className="px-3 py-1 text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Show columns</div>
+              {COLUMNS.filter(col => !col.always).map(col => (
+                <label key={col.key} className="flex items-center gap-2 px-3 py-1.5 hover:bg-gray-50 dark:hover:bg-slate-800 cursor-pointer">
+                  <input type="checkbox" checked={visible(col.key)} onChange={() => toggleCol(col.key)} />
+                  <span className="text-gray-700 dark:text-slate-200">{col.label}</span>
+                </label>
+              ))}
+            </div>
+          )}
+        </div>
         <div className="flex rounded-xl border border-gray-300 overflow-hidden text-sm">
           <button type="button" onClick={() => setView("table")} className={`px-3 py-2 ${view === "table" ? "bg-[#1a2e4a] text-white" : "text-gray-600 hover:bg-gray-50"}`}>Table</button>
           <button type="button" onClick={() => setView("cards")} className={`px-3 py-2 ${view === "cards" ? "bg-[#1a2e4a] text-white" : "text-gray-600 hover:bg-gray-50"}`}>Cards</button>
@@ -236,6 +366,33 @@ export default function HRCandidateTable({ candidates, agents, meRole }: Props) 
             )}
           </div>
         )}
+      </div>
+
+      {/* Saved Views bar */}
+      <div className="flex flex-wrap items-center gap-1.5 bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-xl px-3 py-2">
+        <Bookmark className="w-3.5 h-3.5 text-gray-400" />
+        <span className="text-[10px] text-gray-500 font-bold tracking-widest uppercase mr-1">Saved views</span>
+        {!viewsLoaded && <span className="text-xs text-gray-400">Loading…</span>}
+        {viewsLoaded && views.length === 0 && <span className="text-xs text-gray-400">None yet — set filters, then save.</span>}
+        {views.map(v => (
+          <span key={v.id} className="inline-flex items-center group">
+            <button type="button" onClick={() => applySnapshot(v.query)}
+              className="text-xs px-2.5 py-1 rounded-full font-semibold whitespace-nowrap bg-gray-100 dark:bg-slate-800 text-gray-700 dark:text-slate-200 hover:bg-amber-50 hover:text-[#1a2e4a] transition"
+              title={v.isShared ? "Shared view" : "Private view"}>
+              {v.isShared ? "👥 " : "⭐ "}{v.name}
+            </button>
+            {v.isOwn && (
+              <button type="button" onClick={() => deleteView(v)}
+                className="opacity-0 group-hover:opacity-100 ml-0.5 text-gray-400 hover:text-red-600 p-0.5 transition" title={`Delete "${v.name}"`}>
+                <Trash2 className="w-3 h-3" />
+              </button>
+            )}
+          </span>
+        ))}
+        <button type="button" onClick={() => setShowSaveDialog(true)}
+          className="text-xs px-2.5 py-1 rounded-full font-semibold whitespace-nowrap bg-emerald-50 text-emerald-700 border border-emerald-300 hover:bg-emerald-100 inline-flex items-center gap-1">
+          <BookmarkPlus className="w-3 h-3" /> Save current
+        </button>
       </div>
 
       {/* Quick filter chips */}
@@ -302,20 +459,20 @@ export default function HRCandidateTable({ candidates, agents, meRole }: Props) 
       )}
       <div className="text-xs text-gray-500">{filtered.length} candidate{filtered.length !== 1 ? "s" : ""}</div>
 
-      {/* Table view — 13 columns */}
+      {/* Table view — columns honor show/hide */}
       {view === "table" && (
         <div className="hidden sm:block overflow-x-auto rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900">
-          <table className="min-w-[1200px] w-full text-sm">
+          <table className="min-w-[1000px] w-full text-sm">
             <thead>
               <tr className="bg-gray-50 dark:bg-slate-800 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wide">
                 <th className="px-2 py-2.5 w-8"><input type="checkbox" aria-label="Select all" checked={filtered.length > 0 && selected.size === filtered.length} onChange={toggleAll} /></th>
-                {["Candidate", "Phone", "Current Profile", "Exp", "Current ₹", "Expected ₹", "Status", "Next Action", "Follow-Up", "Interview", "Owner", "Last Activity", "Actions"].map(h => (
-                  <th key={h} className="px-3 py-2.5 whitespace-nowrap">{h}</th>
-                ))}
+                <th className="px-3 py-2.5 whitespace-nowrap">Candidate</th>
+                {headers.map(col => <th key={col.key} className="px-3 py-2.5 whitespace-nowrap">{col.label}</th>)}
+                <th className="px-3 py-2.5 whitespace-nowrap">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100 dark:divide-slate-800">
-              {filtered.length === 0 && <tr><td colSpan={14} className="px-4 py-10 text-center text-gray-400 text-xs">No candidates match these filters.</td></tr>}
+              {filtered.length === 0 && <tr><td colSpan={headers.length + 3} className="px-4 py-10 text-center text-gray-400 text-xs">No candidates match these filters.</td></tr>}
               {filtered.map(c => {
                 const s = signals(c, now);
                 const lastAct = c.activities[0];
@@ -326,17 +483,21 @@ export default function HRCandidateTable({ candidates, agents, meRole }: Props) 
                       <Link href={`/hr/candidates/${c.id}`} className="font-semibold text-[#1a2e4a] dark:text-blue-400 hover:underline block">{c.name}</Link>
                       {c.currentCompany && <div className="text-[11px] text-gray-400 truncate max-w-[160px]">{c.currentCompany}</div>}
                     </td>
-                    <td className="px-3 py-2.5 text-xs text-gray-600 whitespace-nowrap">{c.phone ? <a href={`tel:${c.phone}`} className="hover:text-blue-600">{c.phone}</a> : "—"}</td>
-                    <td className="px-3 py-2.5 text-xs text-gray-600 max-w-[130px] truncate">{c.currentProfile ?? "—"}</td>
-                    <td className="px-3 py-2.5 text-xs text-gray-600 whitespace-nowrap">{c.experience ?? "—"}</td>
-                    <td className="px-3 py-2.5 text-xs text-gray-600 whitespace-nowrap">{fmtSal(c.currentSalary)}</td>
-                    <td className="px-3 py-2.5 text-xs font-medium text-gray-800 dark:text-slate-200 whitespace-nowrap">{fmtSal(c.expectedSalary)}</td>
-                    <td className="px-3 py-2.5"><span className={`text-[10px] px-2 py-0.5 rounded-full font-medium whitespace-nowrap ${statusColor(c.status)}`}>{displayStatus(c)}</span></td>
-                    <td className="px-3 py-2.5 text-xs text-gray-600 max-w-[140px]"><div className="truncate">{c.nextAction ?? "—"}</div></td>
-                    <td className="px-3 py-2.5 text-xs whitespace-nowrap">{s.nextFU ? <span className={s.fuOverdue ? "text-red-600 font-semibold" : "text-amber-600"}>{s.fuOverdue ? "⚠ " : ""}{fmtDate(s.nextFU)}</span> : "—"}</td>
-                    <td className="px-3 py-2.5 text-xs whitespace-nowrap">{s.nextIV ? <span className="text-indigo-600">🎯 {fmtDate(s.nextIV.scheduledAt)}</span> : "—"}</td>
-                    <td className="px-3 py-2.5 text-xs text-gray-500 whitespace-nowrap">{c.primaryOwner?.name?.split(" ")[0] ?? "—"}</td>
-                    <td className="px-3 py-2.5 text-[11px] text-gray-500 whitespace-nowrap">{lastAct ? <><div className="text-gray-700 dark:text-slate-300">{fmtAct(lastAct.type).slice(0, 16)}</div><div>{fmtDate(lastAct.createdAt)}</div></> : "—"}</td>
+                    {visible("phone") && <td className="px-3 py-2.5 text-xs text-gray-600 whitespace-nowrap">{c.phone ? <a href={`tel:${c.phone}`} className="hover:text-blue-600">{c.phone}</a> : "—"}</td>}
+                    {visible("profile") && <td className="px-3 py-2.5 text-xs text-gray-600 max-w-[130px] truncate">{c.currentProfile ?? "—"}</td>}
+                    {visible("exp") && <td className="px-3 py-2.5 text-xs text-gray-600 whitespace-nowrap">{c.experience ?? "—"}</td>}
+                    {visible("currentSal") && <td className="px-3 py-2.5 text-xs text-gray-600 whitespace-nowrap">{fmtSal(c.currentSalary)}</td>}
+                    {visible("expectedSal") && <td className="px-3 py-2.5 text-xs font-medium text-gray-800 dark:text-slate-200 whitespace-nowrap">{fmtSal(c.expectedSalary)}</td>}
+                    {visible("notice") && <td className="px-3 py-2.5 text-xs text-gray-600 whitespace-nowrap">{c.noticePeriod ?? "—"}</td>}
+                    {visible("source") && <td className="px-3 py-2.5 text-xs text-gray-600 whitespace-nowrap">{c.source ?? "—"}</td>}
+                    {visible("status") && <td className="px-3 py-2.5"><span className={`text-[10px] px-2 py-0.5 rounded-full font-medium whitespace-nowrap ${statusColor(c.status)}`}>{displayStatus(c)}</span></td>}
+                    {visible("nextAction") && <td className="px-3 py-2.5 text-xs text-gray-600 max-w-[140px]"><div className="truncate">{c.nextAction ?? "—"}</div></td>}
+                    {visible("followUp") && <td className="px-3 py-2.5 text-xs whitespace-nowrap">{s.nextFU ? <span className={s.fuOverdue ? "text-red-600 font-semibold" : "text-amber-600"}>{s.fuOverdue ? "⚠ " : ""}{fmtDate(s.nextFU)}</span> : "—"}</td>}
+                    {visible("interview") && <td className="px-3 py-2.5 text-xs whitespace-nowrap">{s.nextIV ? <span className="text-indigo-600">🎯 {fmtDate(s.nextIV.scheduledAt)}</span> : "—"}</td>}
+                    {visible("owner") && <td className="px-3 py-2.5 text-xs text-gray-500 whitespace-nowrap">{c.primaryOwner?.name?.split(" ")[0] ?? "—"}</td>}
+                    {visible("createdDate") && <td className="px-3 py-2.5 text-xs text-gray-500 whitespace-nowrap">{fmtDateFull(c.createdAt)}</td>}
+                    {visible("createdTime") && <td className="px-3 py-2.5 text-xs text-gray-500 whitespace-nowrap">{fmtTime(c.createdAt)}</td>}
+                    {visible("lastActivity") && <td className="px-3 py-2.5 text-[11px] text-gray-500 whitespace-nowrap">{lastAct ? <><div className="text-gray-700 dark:text-slate-300">{fmtAct(lastAct.type).slice(0, 16)}</div><div>{fmtDate(lastAct.createdAt)}</div></> : "—"}</td>}
                     <td className="px-3 py-2.5"><RowActions c={c} /></td>
                   </tr>
                 );
@@ -359,10 +520,13 @@ export default function HRCandidateTable({ candidates, agents, meRole }: Props) 
                 <div className="text-[11px] text-gray-500 mt-0.5">{[c.currentProfile, c.currentCompany].filter(Boolean).join(" · ") || "—"}</div>
                 <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1.5 text-[11px] text-gray-500">
                   {c.phone && <span>📞 {c.phone}</span>}
+                  {c.source && <span>🏷 {c.source}</span>}
+                  {c.noticePeriod && <span>⏳ {c.noticePeriod}</span>}
                   {c.expectedSalary && <span>Exp ₹ {fmtSal(c.expectedSalary)}</span>}
                   {s.nextFU && <span className={s.fuOverdue ? "text-red-600 font-semibold" : "text-amber-600"}>{s.fuOverdue ? "⚠ Overdue" : `📅 ${fmtDate(s.nextFU)}`}</span>}
                   {s.nextIV && <span className="text-indigo-600">🎯 {fmtDate(s.nextIV.scheduledAt)}</span>}
                   {c.primaryOwner?.name && <span>👤 {c.primaryOwner.name.split(" ")[0]}</span>}
+                  <span>🕑 {fmtDateFull(c.createdAt)}</span>
                 </div>
                 {c.nextAction && <div className="text-[11px] text-gray-400 mt-1 truncate">⏭ {c.nextAction}</div>}
                 <div className="mt-2 pt-2 border-t border-gray-100 dark:border-slate-800"><RowActions c={c} /></div>
@@ -371,6 +535,29 @@ export default function HRCandidateTable({ candidates, agents, meRole }: Props) 
           })}
           {filtered.length === 0 && <div className="text-center text-gray-400 text-sm py-8 col-span-full">No candidates match these filters.</div>}
       </div>
+
+      {/* Save view dialog */}
+      {showSaveDialog && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={() => !savingView && setShowSaveDialog(false)}>
+          <div className="bg-white dark:bg-slate-900 rounded-xl max-w-sm w-full p-5 shadow-2xl" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-3">
+              <div className="font-semibold text-lg text-gray-900 dark:text-white">Save current view</div>
+              <button type="button" onClick={() => setShowSaveDialog(false)} className="text-gray-400 hover:text-gray-700"><X className="w-5 h-5" /></button>
+            </div>
+            <p className="text-xs text-gray-500 mb-3">Snapshots the active filters, search and visible columns.</p>
+            <label className="text-xs font-semibold text-gray-600 dark:text-slate-300">Name</label>
+            <input value={saveName} onChange={e => setSaveName(e.target.value)} placeholder="e.g. Sales — Immediate Joiners" className="w-full mt-1 mb-3 border border-gray-200 dark:border-slate-600 dark:bg-slate-800 rounded-lg px-3 py-2 text-sm" autoFocus />
+            <label className="flex items-center gap-2 text-xs text-gray-600 dark:text-slate-300 mb-4">
+              <input type="checkbox" checked={saveShared} onChange={e => setSaveShared(e.target.checked)} />
+              Share with the whole HR team
+            </label>
+            <div className="flex gap-2 justify-end">
+              <button type="button" onClick={() => setShowSaveDialog(false)} disabled={savingView} className="px-3 py-1.5 rounded-lg text-sm border border-gray-300 text-gray-600 hover:bg-gray-50">Cancel</button>
+              <button type="button" onClick={saveView} disabled={savingView || !saveName.trim()} className="px-4 py-1.5 rounded-lg bg-[#1a2e4a] text-white text-sm font-semibold disabled:opacity-50">{savingView ? "Saving…" : "Save"}</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
