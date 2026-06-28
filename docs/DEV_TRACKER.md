@@ -43,8 +43,10 @@ Regression gate now **101 invariants** (+ rejected-not-in-assign-queue, smart-ti
 - **Voice Channel ② Escalation Thread** — agent raises a voice escalation → manager replies by voice → either resolves; per-lead thread, status chips, notifications, shared useVoiceRecorder hook. Schema pre-existed; API+UI+wiring built. `a67b9f6` (regression invariant voice-channel-2-escalation).
 - **Buyer Conversation History auto-refresh** on tab focus (was stale after sibling-island edits). `4efc316`
 
-## ⏳ REMAINING — needs your steer
-- Lead-View **compact/density redesign** — no single sensible default; needs a direction on what "compact" means (collapse secondary cards? denser spacing? sections behind tabs?). Asked.
+## 🚀 PHASE C — Lead-View density v1 shipped 2026-06-28 (awaiting Lalit review)
+- Direction locked by Lalit: single page, NO collapse, NO tabs; denser spacing + compact action bar; reusable across Lead/Buyer/Revival (see [[feedback-detail-view-density]]).
+- v1 (Lead View) `49ebeeb`: action bar → shared compact density (size="sm" + LeadFollowupActions.compact; icons+labels kept), row tightened, main grid/column spacing 4→3. Built on the SHARED ActionButton + LeadFollowupActions so the SAME treatment rolls to Buyer + Revival next.
+- ⏭ NEXT (after Lalit's review/approval of v1): apply the same compact primitives to Buyer View + Revival Engine; then any further density passes he asks for.
 
 ## PENDING — Phase C (after prioritization)
 - Anything new from docs/CRM-GAP-ANALYSIS.md once you pick + supply creds/decisions.
