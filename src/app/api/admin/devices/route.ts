@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/auth";
 import { audit, reqMeta } from "@/lib/audit";
 import { notify } from "@/lib/notify";
+import { deviceLimit } from "@/lib/deviceSecurity";
 import { NotifKind } from "@prisma/client";
 
 // Admin (incl. Super-Admin — requireRole("ADMIN") covers them) device controls.
@@ -22,6 +23,16 @@ export async function POST(req: NextRequest) {
     const id = String(body.deviceId ?? "");
     const device = await prisma.device.findUnique({ where: { id } });
     if (!device) return NextResponse.json({ error: "Device not found" }, { status: 404 });
+    // Enforce the per-user device CAP at approval time: an admin can't approve more
+    // than (2 + deviceLimitExtra) devices — raise the user's limit or remove one first.
+    if (action === "approve") {
+      const owner = await prisma.user.findUnique({ where: { id: device.userId }, select: { deviceLimitExtra: true } });
+      const approvedOthers = await prisma.device.count({ where: { userId: device.userId, status: "APPROVED", id: { not: id } } });
+      const limit = deviceLimit(owner?.deviceLimitExtra ?? 0);
+      if (approvedOthers >= limit) {
+        return NextResponse.json({ error: `Device limit reached (${limit}). Raise this user's limit or remove an approved device first.` }, { status: 409 });
+      }
+    }
     const status = action === "approve" ? "APPROVED" : "BLOCKED";
     await prisma.device.update({
       where: { id },

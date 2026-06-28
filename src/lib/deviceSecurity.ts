@@ -15,7 +15,9 @@ export function enforcementOn(): boolean {
 }
 
 // Default policy: 1 mobile + 1 desktop = 2, plus admin-granted extras (e.g. a tablet).
-function deviceLimit(extra: number): number {
+// This is the CAP on APPROVED devices (enforced at approval time), NOT an
+// auto-approve threshold. Exported so the admin approve action shares the rule.
+export function deviceLimit(extra: number): number {
   return 2 + Math.max(0, extra || 0);
 }
 
@@ -57,10 +59,11 @@ export async function evaluateDevice(opts: {
     return { ok: true, deviceRowId: device.id };
   }
 
-  // New or still-pending device. Decide auto-approve.
-  const approvedCount = await prisma.device.count({ where: { userId: user.id, status: "APPROVED" } });
-  const limit = deviceLimit(user.deviceLimitExtra);
-  const autoApprove = !enforcementOn() || user.isSuperAdmin || approvedCount < limit;
+  // New or still-pending device. Under ENFORCEMENT every new device must be
+  // ADMIN-APPROVED — the 2/3 limit is a CAP enforced at approval time, NOT an
+  // auto-approve threshold. Auto-approve only in monitor mode or for a super-admin
+  // (safety hatch — Lalit/admins can never be locked out).
+  const autoApprove = !enforcementOn() || user.isSuperAdmin;
 
   if (!device) {
     device = await prisma.device.create({

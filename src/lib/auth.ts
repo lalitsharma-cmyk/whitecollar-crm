@@ -5,7 +5,7 @@ import { cache } from "react";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
 import { signSession, verifySession, SESSION_COOKIE, SESSION_TTL_SECS } from "@/lib/session";
-import { evaluateDevice, createSession } from "@/lib/deviceSecurity";
+import { evaluateDevice, createSession, enforcementOn } from "@/lib/deviceSecurity";
 import type { RequestMeta } from "@/lib/device";
 import type { Role } from "@prisma/client";
 
@@ -63,7 +63,7 @@ export async function loginWithCredentials(
   const ok = await bcrypt.compare(password, user.passwordHash);
   if (!ok) return { ok: false as const, error: "Invalid credentials" };
 
-  // ── Device-security gate (only when the client sent a device id) ──
+  // ── Device-security gate ──
   let sid: string | undefined;
   if (deviceCtx?.deviceId) {
     const decision = await evaluateDevice({
@@ -78,6 +78,12 @@ export async function loginWithCredentials(
       return { ok: false as const, error: "Device approval pending. Please contact Admin.", pending: true as const };
     }
     sid = await createSession(user.id, decision.deviceRowId, deviceCtx.meta);
+  } else if (enforcementOn() && !user.isSuperAdmin) {
+    // No device id from the client → the device can't be identified/registered.
+    // Under enforcement this must NOT silently log in (that was the bypass that let
+    // agents in without an approval request). Tell them to reload so the fresh login
+    // page sends a device id. Super-admins are exempt (safety hatch).
+    return { ok: false as const, error: "Couldn't verify this device. Please fully reload the page (Ctrl+Shift+R / clear cache) and sign in again.", blocked: true as const };
   }
 
   const token = await signSession(

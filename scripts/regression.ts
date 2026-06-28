@@ -4991,7 +4991,14 @@ const checks: Check[] = [
       const ds = fs.readFileSync("src/lib/deviceSecurity.ts", "utf8");
       assert(/process\.env\.DEVICE_SECURITY_ENFORCE === "true"/.test(ds), "enforcement must remain env-gated (monitor by default)");
       assert(/return 2 \+ Math\.max\(0, extra/.test(ds), "default device limit must be 2 + admin extra");
-      results.push({ name: "  ↳ note", ok: true, detail: "force-logout-all + per-user limit + exact messages; enforcement env-gated (monitor default, no lockout)" });
+      // EVERY new device needs admin approval under enforcement — auto-approve ONLY in
+      // monitor mode or for a super-admin (NOT 'first N devices auto-pass').
+      assert(/const autoApprove = !enforcementOn\(\) \|\| user\.isSuperAdmin;/.test(ds), "new devices must NOT auto-approve up to the limit — only monitor/super-admin auto-approve");
+      // The no-deviceId login bypass must be closed under enforcement (except super-admin).
+      assert(/enforcementOn\(\) && !user\.isSuperAdmin/.test(auth) && /Couldn't verify this device/.test(auth), "login must block a no-deviceId attempt under enforcement");
+      // The cap is enforced at APPROVAL time.
+      assert(/Device limit reached/.test(api) && /deviceLimit\(/.test(api), "approve must enforce the per-user device cap");
+      results.push({ name: "  ↳ note", ok: true, detail: "every new device → admin approval (no auto-pass); no-deviceId bypass closed; cap enforced at approval; enforcement env-gated" });
     },
   },
 ];
