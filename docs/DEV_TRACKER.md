@@ -39,12 +39,14 @@ Regression gate now **101 invariants** (+ rejected-not-in-assign-queue, smart-ti
 - **#253 product calls** — (a) phone-number masking on/off for agents; (b) "Won" metric definition; (c) voice-notes: what's "incomplete" (require transcript before save? auto-retry failed transcription?).
 - **Gap-analysis P0s** (see docs/CRM-GAP-ANALYSIS.md) — all need creds/decisions: Acefone keys (telephony), Meta WhatsApp tokens, OK to flip round-robin + 15-min SLA, OK to provision blob storage (per-lead documents).
 
-## ⏳ REMAINING — small, low-priority (can do anytime; need light direction)
-- Lead-View **compact/density redesign** (needs your steer on what "compact" should show/hide).
-- Buyer timeline **auto-refetch after a remark edit** (P2 nicety; needs server-side activity regen).
-- **Voice Channel ② escalation** (committed feature, Phase-C; Channel ① shipped).
+## 🚀 PHASE C — shipped 2026-06-28
+- **Voice Channel ② Escalation Thread** — agent raises a voice escalation → manager replies by voice → either resolves; per-lead thread, status chips, notifications, shared useVoiceRecorder hook. Schema pre-existed; API+UI+wiring built. `a67b9f6` (regression invariant voice-channel-2-escalation).
+- **Buyer Conversation History auto-refresh** on tab focus (was stale after sibling-island edits). `4efc316`
 
-## PENDING — committed features (Phase C, after Freeze)
-- Voice Channel ② · anything new from the gap-analysis once prioritized.
+## ⏳ REMAINING — needs your steer
+- Lead-View **compact/density redesign** — no single sensible default; needs a direction on what "compact" means (collapse secondary cards? denser spacing? sections behind tabs?). Asked.
 
-**State: Phase-A stabilization backlog is cleared. Everything remaining is a Lalit decision/credential or a Phase-C feature.**
+## PENDING — Phase C (after prioritization)
+- Anything new from docs/CRM-GAP-ANALYSIS.md once you pick + supply creds/decisions.
+
+**State: Phase-A cleared; Phase-C committed features shipped. Only open dev item = the Lead-View density redesign (awaiting your direction); everything else is a Lalit decision/credential.**
