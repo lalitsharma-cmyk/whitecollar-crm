@@ -2012,6 +2012,12 @@ enum HRActivityType {
   FOLLOWUP_COMPLETED
   STATUS_CHANGED
   NOTE_ADDED
+  RESUME_UPLOADED
+  VOICE_NOTE
+  VOICE_GUIDANCE
+  ESCALATION_RAISED
+  ESCALATION_REPLIED
+  ESCALATION_RESOLVED
 }
 
 enum HRInterviewType {
@@ -2106,12 +2112,20 @@ model HRCandidate {
   followUps      HRFollowUp[]
   resumes        HRResume[]
   applications   HRApplication[] // every website/form submission (re-applies append here)
+  voiceMessages  HRVoiceMessage[]
+  escalations    HREscalation[]
+
+  // Soft-delete (recycle bin / import rollback) — scoped queries hide deletedAt != null.
+  deletedAt      DateTime?
+  // Optional currency label for current/expected salary ("INR" | "AED" | …).
+  salaryCurrency String?
 
   @@index([status])
   @@index([primaryOwnerId])
   @@index([nextActionDate])
   @@index([createdAt])
   @@index([importBatchId])
+  @@index([deletedAt])
 }
 
 model HRActivity {
@@ -2140,6 +2154,7 @@ model HRInterview {
   confirmationStatus HRConfirmStatus @default(PENDING)
   attendanceStatus   HRAttendStatus  @default(SCHEDULED)
   result             String?
+  recommendation     String? // post-interview outcome: SELECTED | REJECTED | HOLD | null
   notes              String?         @db.Text
   noShowReason       String?
   createdAt          DateTime        @default(now())
@@ -2238,6 +2253,75 @@ model HRIntakeLog {
 
   @@index([receivedAt])
   @@index([outcome])
+}
+
+// ── HR VOICE ENGINE (shared shape with Sales LeadVoiceMessage/LeadEscalation) ──
+// Candidate-scoped voice with the SAME plumbing as the Sales side: original audio
+// bytes stored verbatim (bytea, ≤5MB enforced in the API), played back exactly as
+// recorded, streamed inline by the play endpoint, NEVER selected in list queries.
+// Reuses the VoiceMessageKind enum. GUIDANCE = Admin/Senior HR → candidate owner
+// (one-way coaching); ESCALATION / ESCALATION_REPLY = the Junior↔Senior thread.
+model HRVoiceMessage {
+  id             String              @id @default(cuid())
+  candidateId    String
+  candidate      HRCandidate         @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  kind           VoiceMessageKind
+  createdById    String // User id (resolved in API; no back-relation to keep User model untouched)
+  audioData      Bytes
+  mimeType       String              @default("audio/webm")
+  durationSec    Int?
+  transcript     String? // OPTIONAL — never blocks save (Lalit rule)
+  transcriptLang String?
+  textNote       String?
+  title          String?
+  escalationId   String?
+  escalation     HREscalation?       @relation(fields: [escalationId], references: [id], onDelete: Cascade)
+  createdAt      DateTime            @default(now())
+  reads          HRVoiceMessageRead[]
+
+  @@index([candidateId, kind])
+  @@index([escalationId])
+}
+
+model HREscalation {
+  id           String           @id @default(cuid())
+  candidateId  String
+  candidate    HRCandidate      @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  raisedById   String // Junior HR who raised it
+  reason       String
+  status       String           @default("PENDING") // PENDING | MANAGER_REPLIED | RESOLVED
+  resolvedById String?
+  resolvedAt   DateTime?
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+  messages     HRVoiceMessage[]
+
+  @@index([candidateId])
+  @@index([status])
+}
+
+model HRVoiceMessageRead {
+  id             String         @id @default(cuid())
+  voiceMessageId String
+  voiceMessage   HRVoiceMessage @relation(fields: [voiceMessageId], references: [id], onDelete: Cascade)
+  userId         String
+  understoodAt   DateTime       @default(now())
+
+  @@unique([voiceMessageId, userId])
+}
+
+// Saved candidate-list views (parity with Sales SavedFilter). `query` is the
+// serialized filter/column state; shared views are visible to all HR users.
+model HRSavedFilter {
+  id        String   @id @default(cuid())
+  userId    String
+  name      String
+  query     String   @db.Text
+  isShared  Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
 }
 
 // =====================================================
