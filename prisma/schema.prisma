@@ -2208,12 +2208,15 @@ model HRResume {
   filename     String
   mimeType     String      @default("application/pdf")
   sizeBytes    Int?
+  // SHA-256 of the file bytes — drives cross-candidate duplicate-resume detection.
+  contentHash  String?
   isActive     Boolean     @default(true)
   uploadedById String?
   uploadedBy   User?       @relation("HRResumeUploads", fields: [uploadedById], references: [id])
   createdAt    DateTime    @default(now())
 
   @@index([candidateId])
+  @@index([contentHash])
 }
 
 // One row per website/form submission. A re-applying candidate (matched by

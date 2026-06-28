@@ -1,11 +1,11 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   Search, FileText, Image as ImageIcon, Download, Eye, ExternalLink,
   ChevronDown, ChevronRight, History, ArrowUpDown, ArrowUp, ArrowDown,
-  ChevronLeft, ChevronsLeft, ChevronsRight, X, CheckCircle2,
+  ChevronLeft, ChevronsLeft, ChevronsRight, X, CheckCircle2, CopyCheck,
 } from "lucide-react";
 
 // ── Types (mirror the server-page projection) ────────────────────────────────
@@ -14,6 +14,7 @@ export interface ResumeVersion {
   filename: string;
   mimeType: string;
   sizeBytes: number | null;
+  contentHash: string | null;
   isActive: boolean;
   createdAt: string; // ISO
   uploadedByName: string | null;
@@ -27,6 +28,24 @@ export interface CandidateResumes {
 
 interface Props {
   groups: CandidateResumes[];
+  /** contentHash values that appear across 2+ distinct candidates. */
+  duplicateHashes?: string[];
+}
+
+/** Small amber badge flagging a resume whose identical file lives on another candidate. */
+function DuplicateBadge({ small = false }: { small?: boolean }) {
+  return (
+    <span
+      title="Identical file exists on another candidate"
+      className={
+        small
+          ? "inline-flex items-center gap-0.5 text-[9px] px-1 py-0.5 rounded bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300 font-semibold"
+          : "inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300 font-semibold"
+      }
+    >
+      <CopyCheck className={small ? "w-2.5 h-2.5" : "w-3 h-3"} /> Duplicate
+    </span>
+  );
 }
 
 type SortKey = "recent" | "name" | "position" | "filename";
@@ -52,7 +71,12 @@ function streamUrl(candidateId: string, resumeId: string, download = false) {
   return `/api/hr/candidates/${candidateId}/resume?resumeId=${resumeId}${download ? "&download=1" : ""}`;
 }
 
-export default function HRResumeBankClient({ groups }: Props) {
+export default function HRResumeBankClient({ groups, duplicateHashes = [] }: Props) {
+  const dupSet = useMemo(() => new Set(duplicateHashes), [duplicateHashes]);
+  const isDup = useCallback(
+    (v: ResumeVersion) => !!v.contentHash && dupSet.has(v.contentHash),
+    [dupSet],
+  );
   const [q, setQ] = useState("");
   const [sort, setSort] = useState<SortKey>("recent");
   const [page, setPage] = useState(0);
@@ -195,6 +219,7 @@ export default function HRResumeBankClient({ groups }: Props) {
                         <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full bg-green-100 text-green-700 font-semibold">
                           <CheckCircle2 className="w-3 h-3" /> Active
                         </span>
+                        {isDup(active) && <DuplicateBadge />}
                       </div>
                       <div className="text-[11px] text-gray-500 dark:text-slate-400 mt-0.5 flex flex-wrap gap-2 items-center">
                         <span className="truncate max-w-[260px]">{active.filename}</span>
@@ -257,6 +282,7 @@ export default function HRResumeBankClient({ groups }: Props) {
                                   {v.isActive && (
                                     <span className="text-[9px] px-1 py-0.5 rounded bg-green-100 text-green-700 font-semibold">current</span>
                                   )}
+                                  {isDup(v) && <DuplicateBadge small />}
                                 </div>
                                 <div className="text-[10px] text-gray-400 dark:text-slate-500 flex flex-wrap gap-1.5">
                                   {v.sizeBytes ? <span>{fmtSize(v.sizeBytes)}</span> : null}

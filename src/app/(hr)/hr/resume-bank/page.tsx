@@ -31,6 +31,7 @@ export default async function ResumeBankPage() {
         filename: true,
         mimeType: true,
         sizeBytes: true,
+        contentHash: true,
         isActive: true,
         createdAt: true,
         candidate: { select: { id: true, name: true, currentProfile: true } },
@@ -38,6 +39,19 @@ export default async function ResumeBankPage() {
       },
     }),
   ]);
+
+  // Cross-candidate duplicate detection: a contentHash that appears on 2+
+  // DISTINCT candidates means the identical file is sitting on another profile.
+  const candidatesByHash = new Map<string, Set<string>>();
+  for (const r of resumes) {
+    if (!r.contentHash) continue;
+    let s = candidatesByHash.get(r.contentHash);
+    if (!s) { s = new Set(); candidatesByHash.set(r.contentHash, s); }
+    s.add(r.candidateId);
+  }
+  const duplicateHashes = Array.from(candidatesByHash.entries())
+    .filter(([, ids]) => ids.size >= 2)
+    .map(([hash]) => hash);
 
   // Group resumes by candidate, preserving the active-first / newest-first order.
   const byCandidate = new Map<string, CandidateResumes>();
@@ -57,6 +71,7 @@ export default async function ResumeBankPage() {
       filename: r.filename,
       mimeType: r.mimeType,
       sizeBytes: r.sizeBytes,
+      contentHash: r.contentHash,
       isActive: r.isActive,
       createdAt: r.createdAt.toISOString(),
       uploadedByName: r.uploadedBy?.name ?? null,
@@ -87,7 +102,7 @@ export default async function ResumeBankPage() {
       </div>
 
       {/* Searchable / sortable / paginated resume list with version history */}
-      <HRResumeBankClient groups={groups} />
+      <HRResumeBankClient groups={groups} duplicateHashes={duplicateHashes} />
     </div>
   );
 }

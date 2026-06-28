@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { createHash } from "crypto";
 import { prisma } from "@/lib/prisma";
 import { loadOwnedCandidate } from "@/lib/hrAccess";
 
@@ -23,8 +24,18 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   }
 
   const bytes = await file.arrayBuffer();
-  const base64 = Buffer.from(bytes).toString("base64");
+  const buf = Buffer.from(bytes);
+  const base64 = buf.toString("base64");
   const dataUrl = `data:${file.type};base64,${base64}`;
+  // Content hash for cross-candidate duplicate-resume detection.
+  const contentHash = createHash("sha256").update(buf).digest("hex");
+
+  // Same file already on a DIFFERENT candidate? Surface it (don't block — a real
+  // duplicate applicant is useful to know about, not an error).
+  const dup = await prisma.hRResume.findFirst({
+    where: { contentHash, candidateId: { not: id }, candidate: { deletedAt: null } },
+    select: { candidate: { select: { id: true, name: true } } },
+  });
 
   // Deactivate previous active resume
   await prisma.hRResume.updateMany({
@@ -39,22 +50,28 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       filename: file.name,
       mimeType: file.type,
       sizeBytes: file.size,
+      contentHash,
       isActive: true,
       uploadedById: me.id,
     },
   });
 
-  // Log activity
+  // Log activity (flag a cross-candidate duplicate in the note for the timeline)
   await prisma.hRActivity.create({
     data: {
       candidateId: id,
       userId: me.id,
       type: "RESUME_UPLOADED",
-      notes: `Resume uploaded: ${file.name}`,
+      notes: dup
+        ? `Resume uploaded: ${file.name} — ⚠ identical file already on candidate "${dup.candidate.name}"`
+        : `Resume uploaded: ${file.name}`,
     },
   });
 
-  return NextResponse.json({ resume: { id: resume.id, filename: resume.filename, isActive: resume.isActive } }, { status: 201 });
+  return NextResponse.json({
+    resume: { id: resume.id, filename: resume.filename, isActive: resume.isActive },
+    duplicateOf: dup ? { candidateId: dup.candidate.id, candidateName: dup.candidate.name } : null,
+  }, { status: 201 });
 }
 
 // GET — stream a stored resume so the browser reliably opens/downloads it.

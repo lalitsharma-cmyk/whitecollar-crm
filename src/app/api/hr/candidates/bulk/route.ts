@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { requireHrPermission, hrActiveScopeWhere, hrCan } from "@/lib/hrAccess";
+import { requireHrPermission, hrActiveScopeWhere, hrCan, hrRoleOf } from "@/lib/hrAccess";
 import { prisma } from "@/lib/prisma";
 import { HRCandidateStatus } from "@prisma/client";
 
@@ -47,7 +47,7 @@ export async function POST(req: NextRequest) {
     if (!validOwner) return NextResponse.json({ error: "Invalid owner — must be an active HR team member." }, { status: 400 });
     data.primaryOwnerId = body.primaryOwnerId;
   }
-  if (data.status === "OFFER_RELEASED" && me.role === "AGENT") {
+  if (data.status === "OFFER_RELEASED" && hrRoleOf(me) === "JUNIOR_HR") {
     return NextResponse.json({ error: "Interns can't release offers — ask a manager." }, { status: 403 });
   }
 

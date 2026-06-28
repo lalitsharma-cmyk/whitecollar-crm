@@ -85,7 +85,7 @@ export async function POST(req: NextRequest) {
   // Duplicate check — mobile, WhatsApp, or email (last-10-digit aware).
   const dupWhere = hrDuplicateWhere(body.phone, body.whatsappPhone, body.email);
   if (dupWhere) {
-    const existing = await prisma.hRCandidate.findFirst({ where: dupWhere, select: { id: true, name: true } });
+    const existing = await prisma.hRCandidate.findFirst({ where: { AND: [dupWhere, { deletedAt: null }] }, select: { id: true, name: true } });
     if (existing) {
       return NextResponse.json({ duplicate: true, existingId: existing.id, existingName: existing.name }, { status: 409 });
     }

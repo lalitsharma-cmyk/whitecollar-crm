@@ -343,10 +343,10 @@ export default function HRCandidateTable({ candidates, agents, perms = NO_PERMS 
   // Row action buttons (reuse the detail deep-links for schedule/follow-up).
   const RowActions = ({ c }: { c: Candidate }) => (
     <div className="flex items-center gap-1">
-      {c.phone && <a href={`tel:${c.phone}`} title="Call" className="p-1.5 rounded hover:bg-blue-50 text-blue-600"><Phone className="w-3.5 h-3.5" /></a>}
-      {(c.whatsappPhone ?? c.phone) && <a href={waLink((c.whatsappPhone ?? c.phone)!)} target="_blank" rel="noopener noreferrer" title="WhatsApp" className="p-1.5 rounded hover:bg-green-50 text-green-600"><MessageCircle className="w-3.5 h-3.5" /></a>}
-      <Link href={`/hr/candidates/${c.id}?do=interview`} title="Schedule Interview" className="p-1.5 rounded hover:bg-purple-50 text-purple-600"><Target className="w-3.5 h-3.5" /></Link>
-      <Link href={`/hr/candidates/${c.id}?do=followup`} title="Add Follow-Up" className="p-1.5 rounded hover:bg-amber-50 text-amber-600"><CalendarPlus className="w-3.5 h-3.5" /></Link>
+      {c.phone && <a href={`tel:${c.phone}`} title="Call" className="p-1.5 rounded hover:bg-blue-50 dark:hover:bg-blue-900/30 text-blue-600 dark:text-blue-400"><Phone className="w-3.5 h-3.5" /></a>}
+      {(c.whatsappPhone ?? c.phone) && <a href={waLink((c.whatsappPhone ?? c.phone)!)} target="_blank" rel="noopener noreferrer" title="WhatsApp" className="p-1.5 rounded hover:bg-green-50 dark:hover:bg-green-900/30 text-green-600 dark:text-green-400"><MessageCircle className="w-3.5 h-3.5" /></a>}
+      <Link href={`/hr/candidates/${c.id}?do=interview`} title="Schedule Interview" className="p-1.5 rounded hover:bg-purple-50 dark:hover:bg-purple-900/30 text-purple-600 dark:text-purple-400"><Target className="w-3.5 h-3.5" /></Link>
+      <Link href={`/hr/candidates/${c.id}?do=followup`} title="Add Follow-Up" className="p-1.5 rounded hover:bg-amber-50 dark:hover:bg-amber-900/30 text-amber-600 dark:text-amber-400"><CalendarPlus className="w-3.5 h-3.5" /></Link>
       <Link href={`/hr/candidates/${c.id}`} title="Open" className="px-2 py-1 rounded-lg bg-[#1a2e4a] text-white text-[11px] hover:bg-[#243d60]">Open</Link>
     </div>
   );
@@ -362,13 +362,13 @@ export default function HRCandidateTable({ candidates, agents, perms = NO_PERMS 
           placeholder="🔍  Search name, phone, email, company, profile…"
           className="flex-1 min-w-[220px] border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1a2e4a]/20 dark:bg-slate-800 dark:border-slate-600" />
         <button type="button" onClick={() => setShowAdv(s => !s)}
-          className={`px-3 py-2 rounded-xl text-sm border ${showAdv ? "bg-[#1a2e4a] text-white border-[#1a2e4a]" : "border-gray-300 text-gray-600 hover:bg-gray-50"}`}>
+          className={`px-3 py-2 rounded-xl text-sm border ${showAdv ? "bg-[#1a2e4a] text-white border-[#1a2e4a]" : "border-gray-300 dark:border-slate-700 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-slate-800"}`}>
           ⚙ Filters
         </button>
         {/* Column show/hide */}
         <div className="relative">
           <button type="button" onClick={() => setShowCols(s => !s)}
-            className="px-3 py-2 rounded-xl text-sm border border-gray-300 text-gray-600 hover:bg-gray-50 inline-flex items-center gap-1.5">
+            className="px-3 py-2 rounded-xl text-sm border border-gray-300 dark:border-slate-700 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-slate-800 inline-flex items-center gap-1.5">
             <Columns3 className="w-4 h-4" /> Columns
           </button>
           {showCols && (
@@ -383,13 +383,13 @@ export default function HRCandidateTable({ candidates, agents, perms = NO_PERMS 
             </div>
           )}
         </div>
-        <div className="flex rounded-xl border border-gray-300 overflow-hidden text-sm">
-          <button type="button" onClick={() => setView("table")} className={`px-3 py-2 ${view === "table" ? "bg-[#1a2e4a] text-white" : "text-gray-600 hover:bg-gray-50"}`}>Table</button>
-          <button type="button" onClick={() => setView("cards")} className={`px-3 py-2 ${view === "cards" ? "bg-[#1a2e4a] text-white" : "text-gray-600 hover:bg-gray-50"}`}>Cards</button>
+        <div className="flex rounded-xl border border-gray-300 dark:border-slate-700 overflow-hidden text-sm">
+          <button type="button" onClick={() => setView("table")} className={`px-3 py-2 ${view === "table" ? "bg-[#1a2e4a] text-white" : "text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-slate-800"}`}>Table</button>
+          <button type="button" onClick={() => setView("cards")} className={`px-3 py-2 ${view === "cards" ? "bg-[#1a2e4a] text-white" : "text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-slate-800"}`}>Cards</button>
         </div>
         {canExport && (
           <div className="relative">
-            <button type="button" onClick={() => setShowExport(s => !s)} className="px-3 py-2 rounded-xl text-sm border border-gray-300 text-gray-600 hover:bg-gray-50">⬇ Export</button>
+            <button type="button" onClick={() => setShowExport(s => !s)} className="px-3 py-2 rounded-xl text-sm border border-gray-300 dark:border-slate-700 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-slate-800">⬇ Export</button>
             {showExport && (
               <div className="absolute right-0 mt-1 z-20 bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-xl shadow-lg py-1 text-sm w-56">
                 <button type="button" onClick={() => { exportRows("filtered", "xlsx"); setShowExport(false); }} className="block w-full text-left px-3 py-1.5 hover:bg-gray-50 dark:hover:bg-slate-800">Filtered → Excel ({filtered.length})</button>
