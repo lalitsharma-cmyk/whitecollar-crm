@@ -4,7 +4,7 @@ import { HRCandidateStatus, HRFollowUpType } from "@prisma/client";
 import { fingerprintFor } from "@/lib/assignment";
 import { hrDuplicateWhere } from "@/lib/hrDuplicates";
 import { CLOSED_STATUS_KEYS } from "@/lib/hrStatus";
-import { hrApiAuth, hrScopeWhere, hrRoleOf } from "@/lib/hrAccess";
+import { hrApiAuth, hrActiveScopeWhere, hrRoleOf } from "@/lib/hrAccess";
 
 export async function GET(req: NextRequest) {
   const auth = await hrApiAuth();
@@ -37,7 +37,8 @@ export async function GET(req: NextRequest) {
 
   // Scope by HR role: Junior HR only sees their own candidates; Admin/Senior HR see all.
   // Combined with the request filters via AND so the search OR isn't clobbered.
-  const where = { AND: [hrScopeWhere(me), filters] };
+  // hrActiveScopeWhere also excludes soft-deleted (recycle-bin) candidates.
+  const where = { AND: [hrActiveScopeWhere(me), filters] };
 
   const [candidates, total] = await Promise.all([
     prisma.hRCandidate.findMany({

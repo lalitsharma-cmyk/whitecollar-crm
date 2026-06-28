@@ -6,7 +6,12 @@ import HRRemindersCard, { type HRReminderEvent, type HREventType } from "@/compo
 import HRFollowUpTabs, { type FU } from "@/components/HRFollowUpTabs";
 import { getHrUsers } from "@/lib/hrUsers";
 import type { HRActivityType } from "@prisma/client";
-import { Phone, CalendarCheck, CheckCircle2, FileText, Handshake, Activity } from "lucide-react";
+import {
+  Phone, CalendarCheck, CheckCircle2, FileText, Handshake, Activity,
+  UserPlus, AlertTriangle, Ban, Inbox, Target, ClipboardList, RotateCcw,
+  MessageCircle,
+} from "lucide-react";
+import { ActionIconButton } from "@/components/actions/ActionIconButton";
 
 export const dynamic = "force-dynamic";
 
@@ -158,14 +163,14 @@ export default async function HRDashboard() {
   const toFU = (f: typeof followUps[number]): FU => ({ id: f.id, candidateId: f.candidateId, candidateName: f.candidate.name, phone: f.candidate.phone, type: f.type, dueAt: new Date(f.dueAt).toISOString(), notes: f.notes });
 
   const metrics = [
-    { label: "New Candidates", n: newCount, href: "/hr/candidates?status=NEW", emoji: "🆕", color: "border-blue-400 text-blue-700 bg-blue-50" },
-    { label: "Calls Due Today", n: todayFU.length, href: "#action", emoji: "📞", color: "border-amber-400 text-amber-700 bg-amber-50" },
-    { label: "Interviews Today", n: ivToday.length, href: "#interviews", emoji: "🎯", color: "border-indigo-400 text-indigo-700 bg-indigo-50" },
-    { label: "Confirmations Pending", n: confirmPending.length, href: "#interviews", emoji: "✅", color: "border-orange-400 text-orange-700 bg-orange-50" },
-    { label: "Overdue Follow-Ups", n: overdueFU.length, href: "#followups", emoji: "⚠️", color: "border-red-400 text-red-700 bg-red-50" },
-    { label: "No-Shows", n: noShowList.length, href: "#noshow", emoji: "🚫", color: "border-rose-400 text-rose-700 bg-rose-50" },
-    { label: "Expected Joinings", n: expectedList.length, href: "#joinings", emoji: "🤝", color: "border-green-400 text-green-700 bg-green-50" },
-    { label: "No Next Action", n: noNextActionCount, href: "#nonext", emoji: "📭", color: "border-slate-400 text-slate-700 bg-slate-50" },
+    { label: "New Candidates", n: newCount, href: "/hr/candidates?status=NEW", Icon: UserPlus, color: "border-blue-400 text-blue-700 bg-blue-50 dark:bg-blue-900/20 dark:text-blue-300 dark:border-blue-500/60" },
+    { label: "Calls Due Today", n: todayFU.length, href: "#action", Icon: Phone, color: "border-amber-400 text-amber-700 bg-amber-50 dark:bg-amber-900/20 dark:text-amber-300 dark:border-amber-500/60" },
+    { label: "Interviews Today", n: ivToday.length, href: "#interviews", Icon: Target, color: "border-indigo-400 text-indigo-700 bg-indigo-50 dark:bg-indigo-900/20 dark:text-indigo-300 dark:border-indigo-500/60" },
+    { label: "Confirmations Pending", n: confirmPending.length, href: "#interviews", Icon: CheckCircle2, color: "border-orange-400 text-orange-700 bg-orange-50 dark:bg-orange-900/20 dark:text-orange-300 dark:border-orange-500/60" },
+    { label: "Overdue Follow-Ups", n: overdueFU.length, href: "#followups", Icon: AlertTriangle, color: "border-red-400 text-red-700 bg-red-50 dark:bg-red-900/20 dark:text-red-300 dark:border-red-500/60" },
+    { label: "No-Shows", n: noShowList.length, href: "#noshow", Icon: Ban, color: "border-rose-400 text-rose-700 bg-rose-50 dark:bg-rose-900/20 dark:text-rose-300 dark:border-rose-500/60" },
+    { label: "Expected Joinings", n: expectedList.length, href: "#joinings", Icon: Handshake, color: "border-green-400 text-green-700 bg-green-50 dark:bg-green-900/20 dark:text-green-300 dark:border-green-500/60" },
+    { label: "No Next Action", n: noNextActionCount, href: "#nonext", Icon: Inbox, color: "border-slate-400 text-slate-700 bg-slate-50 dark:bg-slate-800/60 dark:text-slate-300 dark:border-slate-600" },
   ];
 
   const wa = (p: string | null, alt: string | null) => { const x = p ?? alt; return x ? `https://wa.me/${x.replace(/\D/g, "")}` : null; };
@@ -183,9 +188,11 @@ export default async function HRDashboard() {
     <div className="p-4 sm:p-6 max-w-7xl mx-auto">
       <div className="flex items-center justify-between flex-wrap gap-2 mb-4">
         <h1 className="text-xl font-bold text-gray-900 dark:text-white">
-          {now.getHours() < 12 ? "Good morning" : now.getHours() < 17 ? "Good afternoon" : "Good evening"}, {me.name.split(" ")[0]} 👋
+          {now.getHours() < 12 ? "Good morning" : now.getHours() < 17 ? "Good afternoon" : "Good evening"}, {me.name.split(" ")[0]}
         </h1>
-        <Link href="/hr/candidates/new" className="inline-flex items-center gap-2 bg-[#1a2e4a] text-white text-sm font-semibold px-4 py-2 rounded-xl hover:bg-[#243d60] transition">+ Add Candidate</Link>
+        <Link href="/hr/candidates/new" className="inline-flex items-center gap-2 bg-[#1a2e4a] text-white text-sm font-semibold px-4 py-2 rounded-xl hover:bg-[#243d60] transition">
+          <UserPlus className="w-4 h-4" /> Add Candidate
+        </Link>
       </div>
 
       {/* Today at a glance — spec cards */}
@@ -195,7 +202,7 @@ export default async function HRDashboard() {
             <div className={`shrink-0 ${c.color}`}><c.Icon className="w-6 h-6" /></div>
             <div className="min-w-0">
               <div className="text-2xl font-extrabold text-gray-800 dark:text-white leading-none">{c.n}</div>
-              <div className="text-[11px] text-gray-500 mt-1 truncate">{c.label}</div>
+              <div className="text-[11px] text-gray-500 dark:text-slate-400 mt-1 truncate">{c.label}</div>
             </div>
           </a>
         ))}
@@ -208,17 +215,24 @@ export default async function HRDashboard() {
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
             {metrics.map(m => (
               <a key={m.label} href={m.href} className={`rounded-xl border-l-4 ${m.color} p-3 hover:shadow-md transition`}>
-                <div className="text-2xl font-extrabold text-gray-800">{m.n}</div>
-                <div className="text-[10px] text-gray-600 mt-0.5">{m.emoji} {m.label}</div>
+                <div className="text-2xl font-extrabold text-gray-800 dark:text-white">{m.n}</div>
+                <div className="text-[10px] text-gray-600 dark:text-slate-300 mt-0.5 flex items-center gap-1">
+                  <m.Icon className="w-3 h-3 shrink-0" /> {m.label}
+                </div>
               </a>
             ))}
           </div>
 
           {/* Main action list */}
           <section id="action" className="bg-white dark:bg-slate-900 rounded-2xl border border-gray-200 dark:border-slate-700 overflow-hidden">
-            <div className="px-4 py-2.5 border-b border-gray-100 dark:border-slate-800 text-sm font-bold text-gray-700 dark:text-slate-200">📋 Who to call now ({actionItems.length})</div>
+            <div className="px-4 py-2.5 border-b border-gray-100 dark:border-slate-800 text-sm font-bold text-gray-700 dark:text-slate-200 flex items-center gap-2">
+              <ClipboardList className="w-4 h-4 text-gray-400" /> Who to call now ({actionItems.length})
+            </div>
             {actionItems.length === 0 ? (
-              <div className="px-4 py-6 text-center text-xs text-gray-400">Nothing due — you&apos;re all caught up 🎉</div>
+              <div className="px-4 py-8 text-center">
+                <CheckCircle2 className="w-7 h-7 mx-auto text-emerald-400 mb-2" />
+                <div className="text-xs text-gray-400 dark:text-slate-500">Nothing due — you&apos;re all caught up.</div>
+              </div>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
@@ -232,16 +246,16 @@ export default async function HRDashboard() {
                       return (
                         <tr key={f.id} className="hover:bg-gray-50/80 dark:hover:bg-slate-800/50">
                           <td className="px-3 py-2"><Link href={`/hr/candidates/${f.candidateId}`} className="font-semibold text-[#1a2e4a] dark:text-blue-400 hover:underline">{f.candidate.name}</Link></td>
-                          <td className="px-3 py-2 text-xs text-gray-600 whitespace-nowrap">{f.candidate.phone ?? "—"}</td>
+                          <td className="px-3 py-2 text-xs text-gray-600 dark:text-slate-300 whitespace-nowrap">{f.candidate.phone ?? "—"}</td>
                           <td className="px-3 py-2"><span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${statusColor(f.candidate.status)}`}>{statusLabel(f.candidate.status)}</span></td>
-                          <td className="px-3 py-2 text-xs text-gray-600 max-w-[140px] truncate">{f.candidate.nextAction ?? fmt(f.type)}</td>
-                          <td className="px-3 py-2 text-xs whitespace-nowrap"><span className={overdue ? "text-red-600 font-semibold" : "text-amber-600"}>{overdue ? "⚠ " : ""}{fmtTime(due)}</span></td>
-                          <td className="px-3 py-2 text-xs text-gray-500 whitespace-nowrap">{f.candidate.primaryOwner?.name?.split(" ")[0] ?? "—"}</td>
+                          <td className="px-3 py-2 text-xs text-gray-600 dark:text-slate-300 max-w-[140px] truncate">{f.candidate.nextAction ?? fmt(f.type)}</td>
+                          <td className="px-3 py-2 text-xs whitespace-nowrap"><span className={overdue ? "text-red-600 dark:text-red-400 font-semibold inline-flex items-center gap-1" : "text-amber-600 dark:text-amber-400"}>{overdue && <AlertTriangle className="w-3 h-3" />}{fmtTime(due)}</span></td>
+                          <td className="px-3 py-2 text-xs text-gray-500 dark:text-slate-400 whitespace-nowrap">{f.candidate.primaryOwner?.name?.split(" ")[0] ?? "—"}</td>
                           <td className="px-3 py-2"><div className="flex items-center gap-1">
-                            {f.candidate.phone && <a href={`tel:${f.candidate.phone}`} title="Call" className="px-1 py-0.5 rounded hover:bg-blue-50 text-blue-600">📞</a>}
-                            {waHref && <a href={waHref} target="_blank" rel="noopener noreferrer" title="WhatsApp" className="px-1 py-0.5 rounded hover:bg-green-50 text-green-600">💬</a>}
-                            <Link href={`/hr/candidates/${f.candidateId}?do=interview`} title="Schedule" className="px-1 py-0.5 rounded hover:bg-purple-50 text-purple-600">📅</Link>
-                            <Link href={`/hr/candidates/${f.candidateId}?do=note`} title="Note" className="px-1 py-0.5 rounded hover:bg-gray-100 text-gray-600">📝</Link>
+                            {f.candidate.phone && <ActionIconButton action="call" href={`tel:${f.candidate.phone}`} />}
+                            {waHref && <ActionIconButton action="whatsapp" href={waHref} external />}
+                            <Link href={`/hr/candidates/${f.candidateId}?do=interview`} title="Schedule" className="inline-flex items-center justify-center w-7 h-7 rounded-lg text-purple-600 hover:bg-purple-50 dark:text-purple-400 dark:hover:bg-purple-900/30"><CalendarCheck className="w-4 h-4" /></Link>
+                            <Link href={`/hr/candidates/${f.candidateId}?do=note`} title="Note" className="inline-flex items-center justify-center w-7 h-7 rounded-lg text-gray-600 hover:bg-gray-100 dark:text-slate-300 dark:hover:bg-slate-800"><FileText className="w-4 h-4" /></Link>
                           </div></td>
                         </tr>
                       );
@@ -254,8 +268,10 @@ export default async function HRDashboard() {
 
           {/* No Next Action — fresh candidates needing a first follow-up */}
           <section id="nonext" className="bg-white dark:bg-slate-900 rounded-2xl border border-gray-200 dark:border-slate-700 overflow-hidden">
-            <div className="px-4 py-2.5 border-b border-gray-100 dark:border-slate-800 text-sm font-bold text-gray-700 dark:text-slate-200">📭 No Next Action — needs a first follow-up ({noNextActionCount})</div>
-            {noNextAction.length === 0 ? <div className="px-4 py-5 text-center text-xs text-gray-400">Every active candidate has a next action 🎉</div> : (
+            <div className="px-4 py-2.5 border-b border-gray-100 dark:border-slate-800 text-sm font-bold text-gray-700 dark:text-slate-200 flex items-center gap-2">
+              <Inbox className="w-4 h-4 text-gray-400" /> No Next Action — needs a first follow-up ({noNextActionCount})
+            </div>
+            {noNextAction.length === 0 ? <div className="px-4 py-6 text-center text-xs text-gray-400 dark:text-slate-500">Every active candidate has a next action.</div> : (
               <div className="divide-y divide-gray-100 dark:divide-slate-800">
                 {noNextAction.map(c => {
                   const waHref = wa(c.whatsappPhone, c.phone);
@@ -263,12 +279,12 @@ export default async function HRDashboard() {
                     <div key={c.id} className="flex items-center gap-3 px-4 py-2.5">
                       <div className="flex-1 min-w-0">
                         <Link href={`/hr/candidates/${c.id}`} className="text-sm font-semibold text-gray-800 dark:text-slate-100 hover:underline">{c.name}</Link>
-                        <div className="text-[11px] text-gray-500">{[c.positionApplied, statusLabel(c.status)].filter(Boolean).join(" · ") || "—"}</div>
+                        <div className="text-[11px] text-gray-500 dark:text-slate-400">{[c.positionApplied, statusLabel(c.status)].filter(Boolean).join(" · ") || "—"}</div>
                       </div>
                       <div className="flex items-center gap-1 shrink-0">
-                        {c.phone && <a href={`tel:${c.phone}`} className="text-[11px] px-2 py-1 rounded-lg border border-blue-300 text-blue-700 hover:bg-blue-50">📞 Call</a>}
-                        {waHref && <a href={waHref} target="_blank" rel="noopener noreferrer" className="text-[11px] px-2 py-1 rounded-lg border border-green-300 text-green-700 hover:bg-green-50">💬 WA</a>}
-                        <Link href={`/hr/candidates/${c.id}?do=followup`} className="text-[11px] px-2 py-1 rounded-lg border border-amber-300 text-amber-700 hover:bg-amber-50">📅 Schedule</Link>
+                        {c.phone && <a href={`tel:${c.phone}`} className="inline-flex items-center gap-1 text-[11px] px-2 py-1 rounded-lg border border-blue-300 text-blue-700 hover:bg-blue-50 dark:border-blue-500/50 dark:text-blue-300 dark:hover:bg-blue-900/30"><Phone className="w-3 h-3" /> Call</a>}
+                        {waHref && <a href={waHref} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-[11px] px-2 py-1 rounded-lg border border-green-300 text-green-700 hover:bg-green-50 dark:border-green-500/50 dark:text-green-300 dark:hover:bg-green-900/30"><MessageCircle className="w-3 h-3" /> WA</a>}
+                        <Link href={`/hr/candidates/${c.id}?do=followup`} className="inline-flex items-center gap-1 text-[11px] px-2 py-1 rounded-lg border border-amber-300 text-amber-700 hover:bg-amber-50 dark:border-amber-500/50 dark:text-amber-300 dark:hover:bg-amber-900/30"><CalendarCheck className="w-3 h-3" /> Schedule</Link>
                       </div>
                     </div>
                   );
@@ -289,8 +305,10 @@ export default async function HRDashboard() {
 
           {/* Today's interviews */}
           <section id="interviews" className="bg-white dark:bg-slate-900 rounded-2xl border border-gray-200 dark:border-slate-700 overflow-hidden">
-            <div className="px-4 py-2.5 border-b border-gray-100 dark:border-slate-800 text-sm font-bold text-gray-700 dark:text-slate-200">🎯 Today&apos;s Interviews ({ivToday.length})</div>
-            {ivToday.length === 0 ? <div className="px-4 py-5 text-center text-xs text-gray-400">No interviews scheduled today.</div> : (
+            <div className="px-4 py-2.5 border-b border-gray-100 dark:border-slate-800 text-sm font-bold text-gray-700 dark:text-slate-200 flex items-center gap-2">
+              <Target className="w-4 h-4 text-gray-400" /> Today&apos;s Interviews ({ivToday.length})
+            </div>
+            {ivToday.length === 0 ? <div className="px-4 py-6 text-center text-xs text-gray-400 dark:text-slate-500">No interviews scheduled today.</div> : (
               <div className="overflow-x-auto"><table className="w-full text-sm">
                 <thead><tr className="bg-gray-50 dark:bg-slate-800 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide">
                   {["Candidate", "Position", "Time", "Interviewer", "Status"].map(h => <th key={h} className="px-3 py-2 whitespace-nowrap">{h}</th>)}
@@ -299,10 +317,10 @@ export default async function HRDashboard() {
                   {ivToday.map(iv => (
                     <tr key={iv.id} className="hover:bg-gray-50/80 dark:hover:bg-slate-800/50">
                       <td className="px-3 py-2"><Link href={`/hr/candidates/${iv.candidateId}`} className="font-medium text-[#1a2e4a] dark:text-blue-400 hover:underline">{iv.candidate.name}</Link></td>
-                      <td className="px-3 py-2 text-xs text-gray-600">{iv.candidate.positionApplied ?? "—"}</td>
-                      <td className="px-3 py-2 text-xs font-medium whitespace-nowrap">{fmtTime(new Date(iv.scheduledAt))}</td>
-                      <td className="px-3 py-2 text-xs text-gray-500">{iv.interviewer?.name?.split(" ")[0] ?? "—"}</td>
-                      <td className="px-3 py-2"><span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${iv.confirmationStatus === "CONFIRMED" ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"}`}>{fmt(iv.confirmationStatus)}</span></td>
+                      <td className="px-3 py-2 text-xs text-gray-600 dark:text-slate-300">{iv.candidate.positionApplied ?? "—"}</td>
+                      <td className="px-3 py-2 text-xs font-medium whitespace-nowrap text-gray-700 dark:text-slate-200">{fmtTime(new Date(iv.scheduledAt))}</td>
+                      <td className="px-3 py-2 text-xs text-gray-500 dark:text-slate-400">{iv.interviewer?.name?.split(" ")[0] ?? "—"}</td>
+                      <td className="px-3 py-2"><span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${iv.confirmationStatus === "CONFIRMED" ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300" : "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300"}`}>{fmt(iv.confirmationStatus)}</span></td>
                     </tr>
                   ))}
                 </tbody>
@@ -312,8 +330,10 @@ export default async function HRDashboard() {
 
           {/* No-show recovery */}
           <section id="noshow" className="bg-white dark:bg-slate-900 rounded-2xl border border-gray-200 dark:border-slate-700 overflow-hidden">
-            <div className="px-4 py-2.5 border-b border-gray-100 dark:border-slate-800 text-sm font-bold text-gray-700 dark:text-slate-200">🚫 No-Show Recovery ({noShowList.length})</div>
-            {noShowList.length === 0 ? <div className="px-4 py-5 text-center text-xs text-gray-400">No pending no-shows.</div> : (
+            <div className="px-4 py-2.5 border-b border-gray-100 dark:border-slate-800 text-sm font-bold text-gray-700 dark:text-slate-200 flex items-center gap-2">
+              <Ban className="w-4 h-4 text-gray-400" /> No-Show Recovery ({noShowList.length})
+            </div>
+            {noShowList.length === 0 ? <div className="px-4 py-6 text-center text-xs text-gray-400 dark:text-slate-500">No pending no-shows.</div> : (
               <div className="divide-y divide-gray-100 dark:divide-slate-800">
                 {noShowList.map(iv => {
                   const waHref = wa(iv.candidate.phone, null);
@@ -321,12 +341,12 @@ export default async function HRDashboard() {
                     <div key={iv.id} className="flex items-center gap-3 px-4 py-2.5">
                       <div className="flex-1 min-w-0">
                         <Link href={`/hr/candidates/${iv.candidateId}`} className="text-sm font-semibold text-gray-800 dark:text-slate-100 hover:underline">{iv.candidate.name}</Link>
-                        <div className="text-[11px] text-gray-500">Missed {fmt(iv.type)} on {fmtDate(new Date(iv.scheduledAt))}</div>
+                        <div className="text-[11px] text-gray-500 dark:text-slate-400">Missed {fmt(iv.type)} on {fmtDate(new Date(iv.scheduledAt))}</div>
                       </div>
                       <div className="flex items-center gap-1 shrink-0">
-                        {iv.candidate.phone && <a href={`tel:${iv.candidate.phone}`} className="text-[11px] px-2 py-1 rounded-lg border border-blue-300 text-blue-700 hover:bg-blue-50">📞 Call</a>}
-                        {waHref && <a href={waHref} target="_blank" rel="noopener noreferrer" className="text-[11px] px-2 py-1 rounded-lg border border-green-300 text-green-700 hover:bg-green-50">💬 WA</a>}
-                        <Link href={`/hr/candidates/${iv.candidateId}?do=interview`} className="text-[11px] px-2 py-1 rounded-lg border border-purple-300 text-purple-700 hover:bg-purple-50">↻ Reschedule</Link>
+                        {iv.candidate.phone && <a href={`tel:${iv.candidate.phone}`} className="inline-flex items-center gap-1 text-[11px] px-2 py-1 rounded-lg border border-blue-300 text-blue-700 hover:bg-blue-50 dark:border-blue-500/50 dark:text-blue-300 dark:hover:bg-blue-900/30"><Phone className="w-3 h-3" /> Call</a>}
+                        {waHref && <a href={waHref} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-[11px] px-2 py-1 rounded-lg border border-green-300 text-green-700 hover:bg-green-50 dark:border-green-500/50 dark:text-green-300 dark:hover:bg-green-900/30"><MessageCircle className="w-3 h-3" /> WA</a>}
+                        <Link href={`/hr/candidates/${iv.candidateId}?do=interview`} className="inline-flex items-center gap-1 text-[11px] px-2 py-1 rounded-lg border border-purple-300 text-purple-700 hover:bg-purple-50 dark:border-purple-500/50 dark:text-purple-300 dark:hover:bg-purple-900/30"><RotateCcw className="w-3 h-3" /> Reschedule</Link>
                       </div>
                     </div>
                   );
@@ -337,8 +357,10 @@ export default async function HRDashboard() {
 
           {/* Expected joinings */}
           <section id="joinings" className="bg-white dark:bg-slate-900 rounded-2xl border border-gray-200 dark:border-slate-700 overflow-hidden">
-            <div className="px-4 py-2.5 border-b border-gray-100 dark:border-slate-800 text-sm font-bold text-gray-700 dark:text-slate-200">🤝 Expected Joinings ({expectedList.length})</div>
-            {expectedList.length === 0 ? <div className="px-4 py-5 text-center text-xs text-gray-400">No expected joinings yet — set a joining date on offered candidates.</div> : (
+            <div className="px-4 py-2.5 border-b border-gray-100 dark:border-slate-800 text-sm font-bold text-gray-700 dark:text-slate-200 flex items-center gap-2">
+              <Handshake className="w-4 h-4 text-gray-400" /> Expected Joinings ({expectedList.length})
+            </div>
+            {expectedList.length === 0 ? <div className="px-4 py-6 text-center text-xs text-gray-400 dark:text-slate-500">No expected joinings yet — set a joining date on offered candidates.</div> : (
               <div className="overflow-x-auto"><table className="w-full text-sm">
                 <thead><tr className="bg-gray-50 dark:bg-slate-800 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide">
                   {["Candidate", "Joining Date", "Position", "Offer Status"].map(h => <th key={h} className="px-3 py-2 whitespace-nowrap">{h}</th>)}
@@ -347,8 +369,8 @@ export default async function HRDashboard() {
                   {expectedList.map(c => (
                     <tr key={c.id} className="hover:bg-gray-50/80 dark:hover:bg-slate-800/50">
                       <td className="px-3 py-2"><Link href={`/hr/candidates/${c.id}`} className="font-medium text-[#1a2e4a] dark:text-blue-400 hover:underline">{c.name}</Link></td>
-                      <td className="px-3 py-2 text-xs font-medium whitespace-nowrap">{c.joiningDate ? fmtDate(new Date(c.joiningDate)) : "—"}</td>
-                      <td className="px-3 py-2 text-xs text-gray-600">{c.positionApplied ?? "—"}</td>
+                      <td className="px-3 py-2 text-xs font-medium whitespace-nowrap text-gray-700 dark:text-slate-200">{c.joiningDate ? fmtDate(new Date(c.joiningDate)) : "—"}</td>
+                      <td className="px-3 py-2 text-xs text-gray-600 dark:text-slate-300">{c.positionApplied ?? "—"}</td>
                       <td className="px-3 py-2"><span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${statusColor(c.status)}`}>{statusLabel(c.status)}</span></td>
                     </tr>
                   ))}
@@ -367,17 +389,17 @@ export default async function HRDashboard() {
             <section className="bg-white dark:bg-slate-900 rounded-2xl border border-gray-200 dark:border-slate-700 overflow-hidden">
               <div className="px-4 py-2.5 border-b border-gray-100 dark:border-slate-800 text-sm font-bold text-gray-700 dark:text-slate-200">Leaderboard — this week</div>
               {leaderboard.length === 0 ? (
-                <div className="px-4 py-5 text-center text-xs text-gray-400">No recruiter activity this week yet.</div>
+                <div className="px-4 py-6 text-center text-xs text-gray-400 dark:text-slate-500">No recruiter activity this week yet.</div>
               ) : (
                 <div className="divide-y divide-gray-100 dark:divide-slate-800">
                   {leaderboard.map((r, i) => (
                     <div key={r.name} className="flex items-center gap-3 px-4 py-2">
                       <div className={`w-5 text-center text-xs font-bold ${i === 0 ? "text-amber-500" : i === 1 ? "text-slate-400" : i === 2 ? "text-orange-400" : "text-gray-300"}`}>{i + 1}</div>
                       <div className="flex-1 min-w-0 text-sm font-medium text-gray-800 dark:text-slate-200 truncate">{r.name}</div>
-                      <div className="text-[11px] text-gray-500 whitespace-nowrap">
-                        <span className="font-semibold text-teal-700">{r.added}</span> added
-                        <span className="mx-1 text-gray-300">·</span>
-                        <span className="font-semibold text-green-700">{r.joined}</span> joined
+                      <div className="text-[11px] text-gray-500 dark:text-slate-400 whitespace-nowrap">
+                        <span className="font-semibold text-teal-700 dark:text-teal-400">{r.added}</span> added
+                        <span className="mx-1 text-gray-300 dark:text-slate-600">·</span>
+                        <span className="font-semibold text-green-700 dark:text-green-400">{r.joined}</span> joined
                       </div>
                     </div>
                   ))}
@@ -392,7 +414,7 @@ export default async function HRDashboard() {
               <Activity className="w-4 h-4 text-gray-400" /> Recent Activity
             </div>
             {recentActivities.length === 0 ? (
-              <div className="px-4 py-5 text-center text-xs text-gray-400">No recent activity.</div>
+              <div className="px-4 py-6 text-center text-xs text-gray-400 dark:text-slate-500">No recent activity.</div>
             ) : (
               <div className="divide-y divide-gray-100 dark:divide-slate-800">
                 {recentActivities.map(a => (

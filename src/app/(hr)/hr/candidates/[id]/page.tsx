@@ -38,6 +38,7 @@ export default async function CandidatePage({ params }: { params: Promise<{ id: 
   ]);
 
   if (!candidate) notFound();
+  if (candidate.deletedAt) notFound(); // soft-deleted (recycle-bin) → 404
   if (!canTouchCandidate(me, candidate)) notFound();
 
   return (

@@ -56,11 +56,21 @@ interface Candidate {
   activities: { type: string; createdAt: string }[];
   hasResume: boolean;
 }
+interface TablePerms {
+  importData: boolean;
+  exportData: boolean;
+  bulkActions: boolean;
+  assign: boolean;
+  deleteCandidate: boolean;
+}
+const NO_PERMS: TablePerms = { importData: false, exportData: false, bulkActions: false, assign: false, deleteCandidate: false };
+
 interface Props {
   candidates: Candidate[];
   agents: { id: string; name: string }[];
   countMap: Record<string, number>;
   meId: string; meRole: string;
+  perms?: TablePerms;
 }
 
 interface SavedView { id: string; name: string; query: string; isShared: boolean; isOwn: boolean; }
@@ -91,10 +101,12 @@ function signals(c: Candidate, now: Date) {
   return { nextFU, nextIV, interviewToday, pendingConfirm, hasNoShow, fuOverdue, fuToday };
 }
 
-export default function HRCandidateTable({ candidates, agents, meRole }: Props) {
+export default function HRCandidateTable({ candidates, agents, perms = NO_PERMS }: Props) {
   const now = new Date();
-  const canExport = meRole === "ADMIN" || meRole === "MANAGER";
+  // UI gating is driven by the permission matrix (server re-enforces every action).
+  const canExport = perms.exportData;
   const router = useRouter();
+  const [bulkError, setBulkError] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkStatus, setBulkStatus] = useState("");
   const [bulkOwner, setBulkOwner] = useState("");
@@ -272,19 +284,41 @@ export default function HRCandidateTable({ candidates, agents, meRole }: Props) 
   function toggleAll() { setSelected(s => s.size === filtered.length ? new Set() : new Set(filtered.map(c => c.id))); }
   async function applyBulk() {
     if (selected.size === 0 || (!bulkStatus && !bulkOwner && !bulkFollowUp)) return;
-    setBulkBusy(true);
-    await fetch("/api/hr/candidates/bulk", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ids: [...selected], status: bulkStatus || undefined, primaryOwnerId: bulkOwner || undefined, followUpDate: bulkFollowUp || undefined }),
-    });
-    setBulkBusy(false); setSelected(new Set()); setBulkStatus(""); setBulkOwner(""); setBulkFollowUp(""); router.refresh();
+    setBulkBusy(true); setBulkError(null);
+    try {
+      const res = await fetch("/api/hr/candidates/bulk", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: [...selected], status: bulkStatus || undefined, primaryOwnerId: bulkOwner || undefined, followUpDate: bulkFollowUp || undefined }),
+      });
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        setBulkError(j?.error || "Bulk update failed. Please try again.");
+        return; // do NOT clear the selection or pretend success
+      }
+      setSelected(new Set()); setBulkStatus(""); setBulkOwner(""); setBulkFollowUp(""); router.refresh();
+    } catch {
+      setBulkError("Network error — bulk update did not complete.");
+    } finally {
+      setBulkBusy(false);
+    }
   }
   async function bulkDelete() {
     if (selected.size === 0) return;
     if (!window.confirm(`Delete ${selected.size} candidate${selected.size === 1 ? "" : "s"} and ALL of their follow-ups, interviews, timeline and resumes? This cannot be undone.`)) return;
-    setBulkBusy(true);
-    await fetch("/api/hr/candidates/bulk", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: [...selected], action: "delete" }) });
-    setBulkBusy(false); setSelected(new Set()); router.refresh();
+    setBulkBusy(true); setBulkError(null);
+    try {
+      const res = await fetch("/api/hr/candidates/bulk", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: [...selected], action: "delete" }) });
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        setBulkError(j?.error || "Delete failed. Please try again.");
+        return;
+      }
+      setSelected(new Set()); router.refresh();
+    } catch {
+      setBulkError("Network error — delete did not complete.");
+    } finally {
+      setBulkBusy(false);
+    }
   }
 
   function exportRows(which: "filtered" | "selected", fmt: "xlsx" | "csv") {
@@ -440,21 +474,27 @@ export default function HRCandidateTable({ candidates, agents, meRole }: Props) 
         </div>
       )}
 
-      {selected.size > 0 && (
-        <div className="flex items-center gap-2 flex-wrap bg-[#1a2e4a] text-white rounded-xl px-3 py-2 text-sm">
-          <span className="font-semibold">{selected.size} selected</span>
-          <select value={bulkStatus} onChange={e => setBulkStatus(e.target.value)} className="text-gray-800 rounded px-2 py-1 text-xs">
-            <option value="">Set status…</option>
-            {ACTIVE_STATUS_DEFS.concat(CLOSED_STATUS_DEFS).map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
-          </select>
-          <select value={bulkOwner} onChange={e => setBulkOwner(e.target.value)} className="text-gray-800 rounded px-2 py-1 text-xs">
-            <option value="">Assign owner…</option>
-            {agents.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
-          </select>
-          <label className="flex items-center gap-1 text-xs" title="Set a follow-up / call-back date for all selected">📅 <input type="date" value={bulkFollowUp} onChange={e => setBulkFollowUp(e.target.value)} className="text-gray-800 rounded px-2 py-1 text-xs" /></label>
-          <button type="button" disabled={bulkBusy || (!bulkStatus && !bulkOwner && !bulkFollowUp)} onClick={applyBulk} className="px-3 py-1 rounded bg-white text-[#1a2e4a] text-xs font-semibold disabled:opacity-50">{bulkBusy ? "Applying…" : "Apply"}</button>
-          {meRole === "ADMIN" && <button type="button" disabled={bulkBusy} onClick={bulkDelete} className="px-3 py-1 rounded bg-red-600 text-white text-xs font-semibold disabled:opacity-50">🗑 Delete</button>}
-          <button type="button" onClick={() => setSelected(new Set())} className="text-xs text-white/70 hover:text-white">Clear</button>
+      {/* Bulk toolbar — only for users who can perform bulk actions (hides dead controls from Junior HR). */}
+      {selected.size > 0 && perms.bulkActions && (
+        <div className="bg-[#1a2e4a] text-white rounded-xl px-3 py-2 text-sm space-y-1.5">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="font-semibold">{selected.size} selected</span>
+            <select value={bulkStatus} onChange={e => setBulkStatus(e.target.value)} className="text-gray-800 rounded px-2 py-1 text-xs">
+              <option value="">Set status…</option>
+              {ACTIVE_STATUS_DEFS.concat(CLOSED_STATUS_DEFS).map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
+            </select>
+            {perms.assign && (
+              <select value={bulkOwner} onChange={e => setBulkOwner(e.target.value)} className="text-gray-800 rounded px-2 py-1 text-xs">
+                <option value="">Assign owner…</option>
+                {agents.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+              </select>
+            )}
+            <label className="flex items-center gap-1 text-xs" title="Set a follow-up / call-back date for all selected">📅 <input type="date" value={bulkFollowUp} onChange={e => setBulkFollowUp(e.target.value)} className="text-gray-800 rounded px-2 py-1 text-xs" /></label>
+            <button type="button" disabled={bulkBusy || (!bulkStatus && !bulkOwner && !bulkFollowUp)} onClick={applyBulk} className="px-3 py-1 rounded bg-white text-[#1a2e4a] text-xs font-semibold disabled:opacity-50">{bulkBusy ? "Applying…" : "Apply"}</button>
+            {perms.deleteCandidate && <button type="button" disabled={bulkBusy} onClick={bulkDelete} className="px-3 py-1 rounded bg-red-600 text-white text-xs font-semibold disabled:opacity-50">🗑 Delete</button>}
+            <button type="button" onClick={() => setSelected(new Set())} className="text-xs text-white/70 hover:text-white">Clear</button>
+          </div>
+          {bulkError && <div className="text-xs font-medium text-red-200 bg-red-900/40 rounded px-2 py-1">{bulkError}</div>}
         </div>
       )}
       <div className="text-xs text-gray-500">{filtered.length} candidate{filtered.length !== 1 ? "s" : ""}</div>

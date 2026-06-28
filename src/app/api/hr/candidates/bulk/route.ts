@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { requireHrPermission, hrScopeWhere, hrCan } from "@/lib/hrAccess";
+import { requireHrPermission, hrActiveScopeWhere, hrCan } from "@/lib/hrAccess";
 import { prisma } from "@/lib/prisma";
 import { HRCandidateStatus } from "@prisma/client";
 
@@ -20,7 +20,7 @@ export async function POST(req: NextRequest) {
   // requested id list with ids matching hrScopeWhere(me) so a user can never act
   // on candidates outside their scope. (Admin/Senior HR scope is {} → all pass.)
   const inScope = await prisma.hRCandidate.findMany({
-    where: { AND: [hrScopeWhere(me), { id: { in: requestedIds } }] },
+    where: { AND: [hrActiveScopeWhere(me), { id: { in: requestedIds } }] },
     select: { id: true },
   });
   const ids = inScope.map(c => c.id);
@@ -39,6 +39,12 @@ export async function POST(req: NextRequest) {
   if (body.primaryOwnerId) {
     // Owner reassignment requires the assign permission.
     if (!hrCan(me, "assign")) return NextResponse.json({ error: "You don't have permission to reassign candidate ownership." }, { status: 403 });
+    // Target must be an ACTIVE HR user — never orphan a candidate onto a Sales/inactive user.
+    const validOwner = await prisma.user.findFirst({
+      where: { id: body.primaryOwnerId, active: true, OR: [{ hrOnly: true }, { hrTeam: true }, { role: "ADMIN" }] },
+      select: { id: true },
+    });
+    if (!validOwner) return NextResponse.json({ error: "Invalid owner — must be an active HR team member." }, { status: 400 });
     data.primaryOwnerId = body.primaryOwnerId;
   }
   if (data.status === "OFFER_RELEASED" && me.role === "AGENT") {

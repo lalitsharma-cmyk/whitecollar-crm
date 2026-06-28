@@ -133,6 +133,16 @@ export function hrScopeWhere(u: HrUserLite | null | undefined): Prisma.HRCandida
   return { id: "__no_access__" };
 }
 
+/**
+ * Like hrScopeWhere but ALSO excludes soft-deleted (recycle-bin) candidates.
+ * This is the canonical scope for candidate READS (lists, counts, exports,
+ * dedup, bulk intersection). Analogous to leadScope.activeLeadWhere.
+ * Spread/AND into any read: `where: hrActiveScopeWhere(me)` or combine via AND.
+ */
+export function hrActiveScopeWhere(u: HrUserLite | null | undefined): Prisma.HRCandidateWhereInput {
+  return { AND: [hrScopeWhere(u), { deletedAt: null }] };
+}
+
 /** True if `me` may read/act on this specific candidate. */
 export function canTouchCandidate(
   u: HrUserLite | null | undefined,

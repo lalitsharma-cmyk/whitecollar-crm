@@ -50,6 +50,7 @@ export default async function CandidateTimelinePage({ params }: { params: Promis
       where: { id },
       select: {
         id: true, name: true, status: true, originalStatus: true, phone: true,
+        deletedAt: true,
         primaryOwnerId: true, secondaryOwnerId: true,
         primaryOwner: { select: { name: true } },
         activities: { orderBy: { createdAt: "desc" }, include: { user: { select: { name: true } } } },
@@ -63,6 +64,7 @@ export default async function CandidateTimelinePage({ params }: { params: Promis
     getHrUsers(),
   ]);
   if (!candidate) notFound();
+  if (candidate.deletedAt) notFound(); // soft-deleted (recycle-bin) → 404
   if (!canTouchCandidate(me, candidate)) notFound();
 
   const userName = (uid: string) => agents.find(a => a.id === uid)?.name ?? "Someone";

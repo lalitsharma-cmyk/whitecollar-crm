@@ -1,5 +1,5 @@
 import { type NextRequest } from "next/server";
-import { requireHrPermission, hrScopeWhere } from "@/lib/hrAccess";
+import { requireHrPermission, hrActiveScopeWhere } from "@/lib/hrAccess";
 import { prisma } from "@/lib/prisma";
 import type { Prisma } from "@prisma/client";
 import { statusLabel } from "@/lib/hrStatus";
@@ -47,8 +47,8 @@ export async function GET(req: NextRequest) {
   const from = sp.get("from"), to = sp.get("to");
   if (from || to) filter.createdAt = { ...(from ? { gte: new Date(from) } : {}), ...(to ? { lte: new Date(to + "T23:59:59") } : {}) };
 
-  // Defense-in-depth: scope exported rows to what the caller may see.
-  const where: Prisma.HRCandidateWhereInput = { AND: [hrScopeWhere(me), filter] };
+  // Defense-in-depth: scope exported rows to what the caller may see + exclude soft-deleted.
+  const where: Prisma.HRCandidateWhereInput = { AND: [hrActiveScopeWhere(me), filter] };
 
   const candidates = await prisma.hRCandidate.findMany({
     where, orderBy: { createdAt: "desc" }, take: 25000,

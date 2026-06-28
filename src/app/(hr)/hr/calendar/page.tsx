@@ -1,6 +1,7 @@
 import { requireHrPage, hrScopeWhere } from "@/lib/hrAccess";
 import { prisma } from "@/lib/prisma";
 import Link from "next/link";
+import { Target, CalendarDays, CalendarX2 } from "lucide-react";
 
 export const dynamic = "force-dynamic";
 
@@ -39,7 +40,7 @@ export default async function CalendarPage() {
       where: {
         scheduledAt: { gte: today, lt: next14End },
         attendanceStatus: { in: ["SCHEDULED", "RESCHEDULED"] },
-        candidate: hrScopeWhere(me),
+        candidate: { AND: [hrScopeWhere(me), { deletedAt: null }] },
       },
       orderBy: { scheduledAt: "asc" },
       include: {
@@ -51,7 +52,7 @@ export default async function CalendarPage() {
       where: {
         dueAt: { gte: today, lt: next14End },
         completedAt: null,
-        candidate: hrScopeWhere(me),
+        candidate: { AND: [hrScopeWhere(me), { deletedAt: null }] },
       },
       orderBy: { dueAt: "asc" },
       include: {
@@ -77,7 +78,7 @@ export default async function CalendarPage() {
     ).map(iv => ({
       id: iv.id,
       time: iv.scheduledAt,
-      title: `🎯 ${fmt(iv.type)} — ${iv.candidate.name}`,
+      title: `${fmt(iv.type)} — ${iv.candidate.name}`,
       subtitle: `${fmtTime(iv.scheduledAt)}${iv.interviewer ? ` · ${iv.interviewer.name}` : ""}`,
       href: `/hr/candidates/${iv.candidateId}`,
       colorClass: TYPE_COLOR[iv.type] ?? "bg-gray-100 text-gray-700 border-gray-300",
@@ -89,7 +90,7 @@ export default async function CalendarPage() {
     ).map(fu => ({
       id: fu.id,
       time: fu.dueAt,
-      title: `📅 ${fmt(fu.type)} — ${fu.candidate.name}`,
+      title: `${fmt(fu.type)} — ${fu.candidate.name}`,
       subtitle: `${fmtTime(fu.dueAt)}${fu.candidate.phone ? ` · ${fu.candidate.phone}` : ""}`,
       href: `/hr/candidates/${fu.candidateId}`,
       colorClass: TYPE_COLOR.FOLLOWUP,
@@ -116,18 +117,18 @@ export default async function CalendarPage() {
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div>
           <h1 className="text-xl font-bold text-gray-900 dark:text-white">Calendar</h1>
-          <p className="text-sm text-gray-500">Interviews & follow-ups — next 14 days · {totalEvents} events</p>
+          <p className="text-sm text-gray-500 dark:text-slate-400">Interviews & follow-ups — next 14 days · {totalEvents} events</p>
         </div>
         <div className="flex gap-2 text-xs flex-wrap">
-          <span className="px-2 py-1 rounded-lg border bg-indigo-50 text-indigo-700 border-indigo-200">🎯 Interview</span>
-          <span className="px-2 py-1 rounded-lg border bg-amber-50 text-amber-700 border-amber-200">📅 Follow-Up</span>
+          <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg border bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-900/30 dark:text-indigo-300 dark:border-indigo-800"><Target className="w-3 h-3" /> Interview</span>
+          <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg border bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-900/30 dark:text-amber-300 dark:border-amber-800"><CalendarDays className="w-3 h-3" /> Follow-Up</span>
         </div>
       </div>
 
       {/* Today highlighted */}
       {todayEvents.length > 0 && (
         <div className="bg-[#1a2e4a] text-white rounded-2xl p-4">
-          <div className="text-sm font-bold mb-3">📅 Today — {fmtDateShort(today)}</div>
+          <div className="text-sm font-bold mb-3 flex items-center gap-1.5"><CalendarDays className="w-4 h-4" /> Today — {fmtDateShort(today)}</div>
           <div className="space-y-2">
             {todayEvents.map(ev => (
               <Link key={ev.id} href={ev.href}
@@ -144,7 +145,7 @@ export default async function CalendarPage() {
       )}
       {todayEvents.length === 0 && (
         <div className="bg-[#1a2e4a] text-white rounded-2xl p-4 text-center">
-          <div className="text-sm font-bold mb-1">📅 Today — {fmtDateShort(today)}</div>
+          <div className="text-sm font-bold mb-1 flex items-center justify-center gap-1.5"><CalendarDays className="w-4 h-4" /> Today — {fmtDateShort(today)}</div>
           <div className="text-white/50 text-xs">Nothing scheduled for today.</div>
         </div>
       )}
@@ -178,10 +179,10 @@ export default async function CalendarPage() {
         ))}
 
         {days.slice(1).every(d => d.events.length === 0) && (
-          <div className="text-center py-10 text-gray-400">
-            <div className="text-3xl mb-2">🗓️</div>
+          <div className="text-center py-10 text-gray-400 dark:text-slate-500">
+            <CalendarX2 className="w-9 h-9 mx-auto mb-2 text-gray-300 dark:text-slate-600" />
             <div className="text-sm">No events in the next 14 days.</div>
-            <Link href="/hr/candidates" className="mt-2 inline-block text-sm text-blue-600 hover:underline">
+            <Link href="/hr/candidates" className="mt-2 inline-block text-sm text-blue-600 dark:text-blue-400 hover:underline">
               Schedule an interview →
             </Link>
           </div>

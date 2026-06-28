@@ -9,7 +9,7 @@ import { getHrUsers } from "@/lib/hrUsers";
 export const dynamic = "force-dynamic";
 
 export default async function CandidatesPage({ searchParams }: { searchParams: Promise<Record<string,string>> }) {
-  const { me } = await requireHrPage();
+  const { me, perms } = await requireHrPage();
   const sp = await searchParams;
   const showClosed = sp.closed === "1";
   const filterStatus = sp.status as HRCandidateStatus | undefined;
@@ -56,7 +56,7 @@ export default async function CandidatesPage({ searchParams }: { searchParams: P
             className="text-xs px-3 py-1.5 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 transition">
             {showClosed ? "Show active" : "Show closed"}
           </Link>
-          {(me.role === "ADMIN" || me.role === "MANAGER") && (
+          {perms.importData && (
             <Link href="/hr/import" className="text-sm px-4 py-1.5 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 transition">📥 Import</Link>
           )}
           <Link href="/hr/candidates/new"
@@ -65,7 +65,20 @@ export default async function CandidatesPage({ searchParams }: { searchParams: P
           </Link>
         </div>
       </div>
-      <HRCandidateTable candidates={rows as never} agents={agents} countMap={countMap} meId={me.id} meRole={me.role} />
+      <HRCandidateTable
+        candidates={rows as never}
+        agents={agents}
+        countMap={countMap}
+        meId={me.id}
+        meRole={me.role}
+        perms={{
+          importData: perms.importData,
+          exportData: perms.exportData,
+          bulkActions: perms.bulkActions,
+          assign: perms.assign,
+          deleteCandidate: perms.deleteCandidate,
+        }}
+      />
     </div>
   );
 }

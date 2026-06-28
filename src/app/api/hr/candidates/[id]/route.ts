@@ -39,6 +39,19 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   // editing their own candidate cannot move it to (or away from) themselves.
   const canAssign = hrCan(me, "assign");
 
+  // Validate any owner target up-front: a candidate may only be assigned to an
+  // ACTIVE HR user (never orphaned onto a Sales/inactive account). Invalid → skip that field.
+  const isActiveHrUser = async (uid: unknown): Promise<boolean> => {
+    if (!uid || typeof uid !== "string") return false;
+    const u = await prisma.user.findFirst({
+      where: { id: uid, active: true, OR: [{ hrOnly: true }, { hrTeam: true }, { role: "ADMIN" }] },
+      select: { id: true },
+    });
+    return !!u;
+  };
+  const okPrimary = ("primaryOwnerId" in body && body.primaryOwnerId) ? await isActiveHrUser(body.primaryOwnerId) : true;
+  const okSecondary = ("secondaryOwnerId" in body && body.secondaryOwnerId) ? await isActiveHrUser(body.secondaryOwnerId) : true;
+
   const data: Record<string, unknown> = {};
   const allowed = ["name","phone","altPhone","whatsappPhone","email","location","city","currentCompany",
     "currentProfile","positionApplied","experience","realEstateExperience","currentSalary","expectedSalary",
@@ -47,6 +60,9 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   for (const key of allowed) {
     if (!(key in body)) continue;
     if ((key === "primaryOwnerId" || key === "secondaryOwnerId") && !canAssign) continue; // silently ignore reassignment by non-assigners
+    // Skip an owner field whose target isn't an active HR user (clearing to null still allowed).
+    if (key === "primaryOwnerId" && body.primaryOwnerId && !okPrimary) continue;
+    if (key === "secondaryOwnerId" && body.secondaryOwnerId && !okSecondary) continue;
     if (key === "currentSalary" || key === "expectedSalary") {
       data[key] = body[key] ? parseFloat(body[key]) : null;
     } else if (key === "nextActionDate" || key === "joiningDate") {

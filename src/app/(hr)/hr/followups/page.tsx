@@ -2,6 +2,7 @@ import { requireHrPage, hrScopeWhere } from "@/lib/hrAccess";
 import { prisma } from "@/lib/prisma";
 import Link from "next/link";
 import HRFollowUpActions from "@/components/HRFollowUpActions";
+import { CheckCircle2, AlertTriangle, CalendarDays } from "lucide-react";
 
 export const dynamic = "force-dynamic";
 
@@ -61,15 +62,15 @@ export default async function FollowUpsPage({ searchParams }: { searchParams: Pr
         {tabs.map(t => (
           <Link key={t.key} href={`/hr/followups?filter=${t.key}`}
             className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition
-              ${filter===t.key ? "border-[#1a2e4a] text-[#1a2e4a] dark:border-blue-400 dark:text-blue-400" : "border-transparent text-gray-500 hover:text-gray-700"}`}>
+              ${filter===t.key ? "border-[#1a2e4a] text-[#1a2e4a] dark:border-blue-400 dark:text-blue-400" : "border-transparent text-gray-500 hover:text-gray-700 dark:text-slate-400 dark:hover:text-slate-200"}`}>
             {t.label}
           </Link>
         ))}
       </div>
 
       {followUps.length === 0 ? (
-        <div className="text-center py-12 text-gray-400">
-          <div className="text-4xl mb-2">✅</div>
+        <div className="text-center py-12 text-gray-400 dark:text-slate-500">
+          <CheckCircle2 className="w-10 h-10 mx-auto mb-2 text-gray-300 dark:text-slate-600" />
           <div className="text-sm">No follow-ups in this category.</div>
         </div>
       ) : (
@@ -79,7 +80,7 @@ export default async function FollowUpsPage({ searchParams }: { searchParams: Pr
             const overdue = dueAt < now;
             return (
               <div key={fu.id}
-                className={`bg-white dark:bg-slate-900 rounded-xl border p-4 flex items-start gap-3 ${overdue ? "border-red-300 bg-red-50/30" : "border-gray-200 dark:border-slate-700"}`}>
+                className={`bg-white dark:bg-slate-900 rounded-xl border p-4 flex items-start gap-3 ${overdue ? "border-red-300 bg-red-50/30 dark:border-red-900/60 dark:bg-red-950/20" : "border-gray-200 dark:border-slate-700"}`}>
                 {/* Candidate info */}
                 <div className="flex-1 min-w-0">
                   <Link href={`/hr/candidates/${fu.candidateId}`}
@@ -91,10 +92,12 @@ export default async function FollowUpsPage({ searchParams }: { searchParams: Pr
                       {fu.candidate.phone}
                     </a>
                   )}
-                  <div className="flex flex-wrap gap-2 mt-1 text-[11px] text-gray-500">
-                    <span className="font-medium text-gray-700">{fmt(fu.type)}</span>
-                    <span className={overdue ? "text-red-600 font-semibold" : "text-amber-600"}>
-                      {overdue ? "⚠ Overdue — " : "📅 "}
+                  <div className="flex flex-wrap gap-2 mt-1 text-[11px] text-gray-500 dark:text-slate-400">
+                    <span className="font-medium text-gray-700 dark:text-slate-200">{fmt(fu.type)}</span>
+                    <span className={`inline-flex items-center gap-1 ${overdue ? "text-red-600 font-semibold" : "text-amber-600"}`}>
+                      {overdue
+                        ? <><AlertTriangle className="w-3 h-3" /> Overdue — </>
+                        : <CalendarDays className="w-3 h-3" />}
                       {dueAt.toLocaleDateString("en-IN",{day:"numeric",month:"short",year:"numeric"})}
                       {" "}
                       {dueAt.toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit"})}
@@ -102,7 +105,7 @@ export default async function FollowUpsPage({ searchParams }: { searchParams: Pr
                     {fu.user?.name && <span>· {fu.user.name}</span>}
                     {fu.candidate.primaryOwner?.name && <span>Owner: {fu.candidate.primaryOwner.name.split(" ")[0]}</span>}
                   </div>
-                  {fu.notes && <div className="text-[11px] text-gray-400 mt-0.5">{fu.notes}</div>}
+                  {fu.notes && <div className="text-[11px] text-gray-400 dark:text-slate-500 mt-0.5">{fu.notes}</div>}
                 </div>
 
                 {/* Action buttons */}

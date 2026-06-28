@@ -124,8 +124,10 @@ export async function POST(req: NextRequest) {
 
     // ── Dedup by mobile / whatsapp / email ────────────────────────────
     const dupWhere = hrDuplicateWhere(d.phone, d.whatsappPhone, normalizedEmail);
+    // Never append a new application onto a soft-deleted (recycle-bin) candidate —
+    // treat that as no match so a fresh candidate is created instead.
     const existing = dupWhere
-      ? await prisma.hRCandidate.findFirst({ where: dupWhere, select: { id: true, status: true, rawRemarks: true } })
+      ? await prisma.hRCandidate.findFirst({ where: { AND: [dupWhere, { deletedAt: null }] }, select: { id: true, status: true, rawRemarks: true } })
       : null;
 
     // ── Resume helper — attach to the profile, make it the active one ──

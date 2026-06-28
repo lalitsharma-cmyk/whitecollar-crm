@@ -2,6 +2,7 @@ import { requireHrPage, hrScopeWhere } from "@/lib/hrAccess";
 import { prisma } from "@/lib/prisma";
 import Link from "next/link";
 import HRInterviewRowActions from "@/components/HRInterviewRowActions";
+import { Target, CalendarDays } from "lucide-react";
 
 export const dynamic = "force-dynamic";
 
@@ -11,18 +12,18 @@ function todayRange() {
 }
 
 const CONF_COLOR: Record<string,string> = {
-  PENDING:"bg-amber-100 text-amber-700",CONFIRMED:"bg-green-100 text-green-700",
-  NOT_CONFIRMED:"bg-red-100 text-red-700",NOT_REACHABLE:"bg-gray-100 text-gray-600",
-  RESCHEDULED:"bg-blue-100 text-blue-700",CANCELLED:"bg-slate-100 text-slate-500",
+  PENDING:"bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300",CONFIRMED:"bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300",
+  NOT_CONFIRMED:"bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300",NOT_REACHABLE:"bg-gray-100 text-gray-600 dark:bg-slate-700 dark:text-slate-300",
+  RESCHEDULED:"bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300",CANCELLED:"bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-400",
 };
 const ATT_COLOR: Record<string,string> = {
-  SCHEDULED:"bg-indigo-100 text-indigo-700",ATTENDED:"bg-green-100 text-green-700",
-  NO_SHOW:"bg-red-100 text-red-700",RESCHEDULED:"bg-blue-100 text-blue-700",
-  CANCELLED:"bg-slate-100 text-slate-500",
+  SCHEDULED:"bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300",ATTENDED:"bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300",
+  NO_SHOW:"bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300",RESCHEDULED:"bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300",
+  CANCELLED:"bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-400",
 };
 const REC_COLOR: Record<string,string> = {
-  SELECTED:"bg-teal-100 text-teal-700",HOLD:"bg-orange-100 text-orange-700",
-  REJECTED:"bg-red-100 text-red-700",
+  SELECTED:"bg-teal-100 text-teal-700 dark:bg-teal-900/40 dark:text-teal-300",HOLD:"bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300",
+  REJECTED:"bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300",
 };
 function fmt(s:string){return s.replace(/_/g," ").replace(/\b\w/g,c=>c.toUpperCase());}
 
@@ -69,15 +70,15 @@ export default async function InterviewsPage({ searchParams }: { searchParams: P
         {tabs.map(t => (
           <Link key={t.key} href={`/hr/interviews?filter=${t.key}`}
             className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition
-              ${filter===t.key ? "border-[#1a2e4a] text-[#1a2e4a] dark:border-blue-400 dark:text-blue-400" : "border-transparent text-gray-500 hover:text-gray-700"}`}>
+              ${filter===t.key ? "border-[#1a2e4a] text-[#1a2e4a] dark:border-blue-400 dark:text-blue-400" : "border-transparent text-gray-500 hover:text-gray-700 dark:text-slate-400 dark:hover:text-slate-200"}`}>
             {t.label}
           </Link>
         ))}
       </div>
 
       {interviews.length === 0 ? (
-        <div className="text-center py-12 text-gray-400">
-          <div className="text-4xl mb-2">🎯</div>
+        <div className="text-center py-12 text-gray-400 dark:text-slate-500">
+          <Target className="w-10 h-10 mx-auto mb-2 text-gray-300 dark:text-slate-600" />
           <div className="text-sm">No interviews found for this filter.</div>
         </div>
       ) : (
@@ -142,16 +143,16 @@ export default async function InterviewsPage({ searchParams }: { searchParams: P
           {/* Mobile cards */}
           <div className="sm:hidden divide-y divide-gray-100 dark:divide-slate-800">
             {interviews.map(iv => (
-              <Link key={iv.id} href={`/hr/candidates/${iv.candidateId}`} className="block p-4 hover:bg-gray-50">
+              <Link key={iv.id} href={`/hr/candidates/${iv.candidateId}`} className="block p-4 hover:bg-gray-50 dark:hover:bg-slate-800/50">
                 <div className="flex items-start justify-between gap-2">
-                  <div className="font-semibold text-sm">{iv.candidate.name}</div>
+                  <div className="font-semibold text-sm text-gray-900 dark:text-white">{iv.candidate.name}</div>
                   <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium shrink-0 ${ATT_COLOR[iv.attendanceStatus] ?? ""}`}>
                     {fmt(iv.attendanceStatus)}
                   </span>
                 </div>
-                <div className="text-xs text-gray-500 mt-1 flex flex-wrap gap-2">
-                  <span>🎯 {fmt(iv.type)}</span>
-                  <span>📅 {new Date(iv.scheduledAt).toLocaleDateString("en-IN",{day:"numeric",month:"short"})} {new Date(iv.scheduledAt).toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit"})}</span>
+                <div className="text-xs text-gray-500 dark:text-slate-400 mt-1 flex flex-wrap gap-2">
+                  <span className="inline-flex items-center gap-1"><Target className="w-3 h-3" /> {fmt(iv.type)}</span>
+                  <span className="inline-flex items-center gap-1"><CalendarDays className="w-3 h-3" /> {new Date(iv.scheduledAt).toLocaleDateString("en-IN",{day:"numeric",month:"short"})} {new Date(iv.scheduledAt).toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit"})}</span>
                   <span className={`px-1.5 py-0 rounded ${CONF_COLOR[iv.confirmationStatus] ?? ""}`}>{fmt(iv.confirmationStatus)}</span>
                   {iv.recommendation && <span className={`px-1.5 py-0 rounded ${REC_COLOR[iv.recommendation] ?? ""}`}>{fmt(iv.recommendation)}</span>}
                 </div>

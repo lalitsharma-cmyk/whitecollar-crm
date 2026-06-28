@@ -93,10 +93,10 @@ export default async function HRReportsPage({ searchParams }: { searchParams: Pr
 
   // ── Offers / Joining summary (current snapshot) ──
   const offerSummary = [
-    { label: "Offers Released", n: fmap["OFFER_RELEASED"] ?? 0, color: "text-amber-700" },
-    { label: "Expected Joinings", n: fmap["EXPECTED_JOINING"] ?? 0, color: "text-lime-700" },
-    { label: "Joined", n: fmap["JOINED"] ?? 0, color: "text-green-700" },
-    { label: "Offers Declined", n: fmap["OFFER_DECLINED"] ?? 0, color: "text-orange-700" },
+    { label: "Offers Released", n: fmap["OFFER_RELEASED"] ?? 0, color: "text-amber-700 dark:text-amber-400" },
+    { label: "Expected Joinings", n: fmap["EXPECTED_JOINING"] ?? 0, color: "text-lime-700 dark:text-lime-400" },
+    { label: "Joined", n: fmap["JOINED"] ?? 0, color: "text-green-700 dark:text-green-400" },
+    { label: "Offers Declined", n: fmap["OFFER_DECLINED"] ?? 0, color: "text-orange-700 dark:text-orange-400" },
   ];
 
   const periods = [["today", "Today"], ["7d", "Last 7 days"], ["30d", "Last 30 days"], ["month", "This month"], ["all", "All time"]];
@@ -108,12 +108,12 @@ export default async function HRReportsPage({ searchParams }: { searchParams: Pr
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div>
           <h1 className="text-xl font-bold text-gray-900 dark:text-white">Reports</h1>
-          <p className="text-sm text-gray-500">Recruiter performance, pipeline &amp; conversion</p>
+          <p className="text-sm text-gray-500 dark:text-slate-400">Recruiter performance, pipeline &amp; conversion</p>
         </div>
         <div className="flex gap-1 flex-wrap">
           {periods.map(([k, label]) => (
             <Link key={k} href={`/hr/reports?period=${k}`}
-              className={`text-xs px-3 py-1.5 rounded-lg border ${period === k ? "bg-[#1a2e4a] text-white border-[#1a2e4a]" : "border-gray-200 text-gray-600 hover:bg-gray-50"}`}>
+              className={`text-xs px-3 py-1.5 rounded-lg border ${period === k ? "bg-[#1a2e4a] text-white border-[#1a2e4a]" : "border-gray-200 text-gray-600 hover:bg-gray-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"}`}>
               {label}
             </Link>
           ))}
@@ -126,7 +126,7 @@ export default async function HRReportsPage({ searchParams }: { searchParams: Pr
           <div key={c.label} className="bg-white dark:bg-slate-900 rounded-2xl border border-gray-200 dark:border-slate-700 p-4">
             <div className="text-[11px] uppercase tracking-wide text-gray-400 font-semibold">{c.label}</div>
             <div className="text-2xl font-extrabold text-gray-800 dark:text-white mt-1">{c.n}</div>
-            <div className="text-[11px] text-gray-500 mt-0.5">{i === 0 ? "in pipeline" : c.of}</div>
+            <div className="text-[11px] text-gray-500 dark:text-slate-400 mt-0.5">{i === 0 ? "in pipeline" : c.of}</div>
           </div>
         ))}
       </div>
@@ -139,7 +139,7 @@ export default async function HRReportsPage({ searchParams }: { searchParams: Pr
             {offerSummary.map(o => (
               <div key={o.label} className="rounded-xl bg-gray-50 dark:bg-slate-800 p-3">
                 <div className={`text-2xl font-extrabold ${o.color}`}>{o.n}</div>
-                <div className="text-[11px] text-gray-500 mt-0.5">{o.label}</div>
+                <div className="text-[11px] text-gray-500 dark:text-slate-400 mt-0.5">{o.label}</div>
               </div>
             ))}
           </div>
@@ -148,20 +148,20 @@ export default async function HRReportsPage({ searchParams }: { searchParams: Pr
           <div className="text-sm font-semibold text-gray-700 dark:text-slate-200 mb-3">Activity in {periodLabel}</div>
           <div className="grid grid-cols-2 gap-3">
             <div className="rounded-xl bg-gray-50 dark:bg-slate-800 p-3">
-              <div className="text-2xl font-extrabold text-teal-700">{totals.added}</div>
-              <div className="text-[11px] text-gray-500 mt-0.5">Candidates Added</div>
+              <div className="text-2xl font-extrabold text-teal-700 dark:text-teal-400">{totals.added}</div>
+              <div className="text-[11px] text-gray-500 dark:text-slate-400 mt-0.5">Candidates Added</div>
             </div>
             <div className="rounded-xl bg-gray-50 dark:bg-slate-800 p-3">
-              <div className="text-2xl font-extrabold text-blue-700">{totals.calls}</div>
-              <div className="text-[11px] text-gray-500 mt-0.5">Calls Logged</div>
+              <div className="text-2xl font-extrabold text-blue-700 dark:text-blue-400">{totals.calls}</div>
+              <div className="text-[11px] text-gray-500 dark:text-slate-400 mt-0.5">Calls Logged</div>
             </div>
             <div className="rounded-xl bg-gray-50 dark:bg-slate-800 p-3">
-              <div className="text-2xl font-extrabold text-amber-700">{offersReleasedPeriod}</div>
-              <div className="text-[11px] text-gray-500 mt-0.5">Offers Released</div>
+              <div className="text-2xl font-extrabold text-amber-700 dark:text-amber-400">{offersReleasedPeriod}</div>
+              <div className="text-[11px] text-gray-500 dark:text-slate-400 mt-0.5">Offers Released</div>
             </div>
             <div className="rounded-xl bg-gray-50 dark:bg-slate-800 p-3">
-              <div className="text-2xl font-extrabold text-green-700">{joinedThisPeriod}</div>
-              <div className="text-[11px] text-gray-500 mt-0.5">Joined</div>
+              <div className="text-2xl font-extrabold text-green-700 dark:text-green-400">{joinedThisPeriod}</div>
+              <div className="text-[11px] text-gray-500 dark:text-slate-400 mt-0.5">Joined</div>
             </div>
           </div>
         </div>
@@ -185,17 +185,17 @@ export default async function HRReportsPage({ searchParams }: { searchParams: Pr
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100 dark:divide-slate-800">
-              {rows.length === 0 && <tr><td colSpan={8} className="px-4 py-10 text-center text-gray-400 text-xs">No recruiter activity in this period.</td></tr>}
+              {rows.length === 0 && <tr><td colSpan={8} className="px-4 py-10 text-center text-gray-400 dark:text-slate-500 text-xs">No recruiter activity in this period.</td></tr>}
               {rows.map(r => (
                 <tr key={r.name} className="hover:bg-gray-50/80 dark:hover:bg-slate-800/50">
                   <td className="px-3 py-2.5 font-medium text-gray-800 dark:text-slate-200 whitespace-nowrap">{r.name}</td>
-                  <td className="px-3 py-2.5 text-center">{r.calls}</td>
-                  <td className="px-3 py-2.5 text-center">{r.added}</td>
-                  <td className="px-3 py-2.5 text-center">{r.sched}</td>
-                  <td className="px-3 py-2.5 text-center">{r.done}</td>
-                  <td className="px-3 py-2.5 text-center text-teal-700 font-medium">{r.short}</td>
-                  <td className="px-3 py-2.5 text-center text-amber-700 font-medium">{r.off}</td>
-                  <td className="px-3 py-2.5 text-center text-green-700 font-semibold">{r.join}</td>
+                  <td className="px-3 py-2.5 text-center text-gray-700 dark:text-slate-300">{r.calls}</td>
+                  <td className="px-3 py-2.5 text-center text-gray-700 dark:text-slate-300">{r.added}</td>
+                  <td className="px-3 py-2.5 text-center text-gray-700 dark:text-slate-300">{r.sched}</td>
+                  <td className="px-3 py-2.5 text-center text-gray-700 dark:text-slate-300">{r.done}</td>
+                  <td className="px-3 py-2.5 text-center text-teal-700 dark:text-teal-400 font-medium">{r.short}</td>
+                  <td className="px-3 py-2.5 text-center text-amber-700 dark:text-amber-400 font-medium">{r.off}</td>
+                  <td className="px-3 py-2.5 text-center text-green-700 dark:text-green-400 font-semibold">{r.join}</td>
                 </tr>
               ))}
             </tbody>
@@ -224,7 +224,7 @@ export default async function HRReportsPage({ searchParams }: { searchParams: Pr
           <span className="text-[11px] font-normal text-gray-400 ml-2">candidates added in {periodLabel.toLowerCase()}</span>
         </div>
         {sourceRows.length === 0 ? (
-          <div className="px-2 py-6 text-center text-gray-400 text-xs">No candidates added in this period.</div>
+          <div className="px-2 py-6 text-center text-gray-400 dark:text-slate-500 text-xs">No candidates added in this period.</div>
         ) : (
           <div className="space-y-1.5">
             {sourceRows.map(s => (

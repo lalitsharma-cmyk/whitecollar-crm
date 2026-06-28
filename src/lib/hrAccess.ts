@@ -59,8 +59,8 @@ export async function loadOwnedCandidate(candidateId: string): Promise<
 > {
   const auth = await hrApiAuth();
   if (auth.error) return { error: auth.error };
-  const candidate = await prisma.hRCandidate.findUnique({
-    where: { id: candidateId },
+  const candidate = await prisma.hRCandidate.findFirst({
+    where: { id: candidateId, deletedAt: null },
     select: { id: true, primaryOwnerId: true, secondaryOwnerId: true, name: true, phone: true },
   });
   if (!candidate) return { error: notFound() };
