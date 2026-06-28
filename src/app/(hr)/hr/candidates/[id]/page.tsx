@@ -1,4 +1,4 @@
-import { requireUser } from "@/lib/auth";
+import { requireHrPage, canTouchCandidate } from "@/lib/hrAccess";
 import { prisma } from "@/lib/prisma";
 import { notFound } from "next/navigation";
 import HRCandidateDetail from "@/components/HRCandidateDetail";
@@ -7,7 +7,7 @@ import { getHrUsers } from "@/lib/hrUsers";
 export const dynamic = "force-dynamic";
 
 export default async function CandidatePage({ params }: { params: Promise<{ id: string }> }) {
-  const me = await requireUser();
+  const { me } = await requireHrPage();
   const { id } = await params;
 
   const [candidate, agents] = await Promise.all([
@@ -27,6 +27,7 @@ export default async function CandidatePage({ params }: { params: Promise<{ id: 
   ]);
 
   if (!candidate) notFound();
+  if (!canTouchCandidate(me, candidate)) notFound();
 
   return <HRCandidateDetail candidate={candidate as never} agents={agents} me={{ id: me.id, name: me.name, role: me.role }} />;
 }

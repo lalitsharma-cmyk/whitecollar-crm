@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { HRInterviewType, HRCandidateStatus } from "@prisma/client";
+import { loadOwnedCandidate } from "@/lib/hrAccess";
 
 const STATUS_MAP: Record<HRInterviewType, HRCandidateStatus> = {
   VIRTUAL:      "VIRTUAL_INTERVIEW_SCHEDULED",
@@ -11,8 +11,10 @@ const STATUS_MAP: Record<HRInterviewType, HRCandidateStatus> = {
 };
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const me = await requireUser();
   const { id } = await params;
+  const access = await loadOwnedCandidate(id);
+  if (access.error) return access.error;
+  const { me } = access;
   const body = await req.json();
 
   if (!body.scheduledAt) return NextResponse.json({ error: "scheduledAt required" }, { status: 400 });
@@ -84,8 +86,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 }
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const me = await requireUser();
   const { id: candidateId } = await params;
+  const access = await loadOwnedCandidate(candidateId);
+  if (access.error) return access.error;
+  const { me } = access;
   const body = await req.json();
 
   const iv = await prisma.hRInterview.update({

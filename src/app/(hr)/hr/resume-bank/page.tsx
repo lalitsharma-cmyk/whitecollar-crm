@@ -1,4 +1,4 @@
-import { requireUser } from "@/lib/auth";
+import { requireHrPage, hrScopeWhere } from "@/lib/hrAccess";
 import { prisma } from "@/lib/prisma";
 import Link from "next/link";
 import HRResumeUploadWidget from "@/components/HRResumeUploadWidget";
@@ -14,20 +14,17 @@ function fmtSize(bytes: number | null) {
 }
 
 export default async function ResumeBankPage() {
-  const me = await requireUser();
-  const scope = me.role === "AGENT"
-    ? { OR: [{ primaryOwnerId: me.id }, { secondaryOwnerId: me.id }] }
-    : {};
+  const { me } = await requireHrPage();
 
   // All candidates — for the "attach to candidate" picker
   const [candidates, resumes] = await Promise.all([
     prisma.hRCandidate.findMany({
-      where: { ...scope, status: { notIn: CLOSED_STATUS_KEYS as never[] } },
+      where: { AND: [ hrScopeWhere(me), { status: { notIn: CLOSED_STATUS_KEYS as never[] } } ] },
       select: { id: true, name: true, currentProfile: true },
       orderBy: { name: "asc" },
     }),
     prisma.hRResume.findMany({
-      where: { candidate: scope },
+      where: { candidate: hrScopeWhere(me) },
       orderBy: { createdAt: "desc" },
       take: 100,
       include: { candidate: { select: { id: true, name: true } }, uploadedBy: { select: { name: true } } },

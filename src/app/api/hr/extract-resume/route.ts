@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
-import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { hrApiAuth } from "@/lib/hrAccess";
 import { aiLive, activeModel, costMicroUsd } from "@/lib/ai";
 
 const MAX_BYTES = 5 * 1024 * 1024;
@@ -18,7 +18,8 @@ Rules:
 // AI vision extraction of candidate fields from an uploaded PDF/image resume.
 // Gated on the admin AI kill-switch (aiLive); cost is logged to AiUsageLog.
 export async function POST(req: NextRequest) {
-  await requireUser();
+  const auth = await hrApiAuth();
+  if (auth.error) return auth.error;
   if (!process.env.ANTHROPIC_API_KEY) return NextResponse.json({ error: "AI is not configured." }, { status: 503 });
   if (!(await aiLive())) return NextResponse.json({ error: "AI is currently turned off by the admin." }, { status: 503 });
 

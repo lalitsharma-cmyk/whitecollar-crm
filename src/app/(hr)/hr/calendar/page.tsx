@@ -1,4 +1,4 @@
-import { requireUser } from "@/lib/auth";
+import { requireHrPage, hrScopeWhere } from "@/lib/hrAccess";
 import { prisma } from "@/lib/prisma";
 import Link from "next/link";
 
@@ -28,10 +28,7 @@ const TYPE_COLOR: Record<string, string> = {
 function fmt(s: string) { return s.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase()); }
 
 export default async function CalendarPage() {
-  const me = await requireUser();
-  const scope = me.role === "AGENT"
-    ? { OR: [{ primaryOwnerId: me.id }, { secondaryOwnerId: me.id }] }
-    : {};
+  const { me } = await requireHrPage();
 
   const today = startOfDay(new Date());
   const next14End = addDays(today, 14);
@@ -42,7 +39,7 @@ export default async function CalendarPage() {
       where: {
         scheduledAt: { gte: today, lt: next14End },
         attendanceStatus: { in: ["SCHEDULED", "RESCHEDULED"] },
-        candidate: scope,
+        candidate: hrScopeWhere(me),
       },
       orderBy: { scheduledAt: "asc" },
       include: {
@@ -54,7 +51,7 @@ export default async function CalendarPage() {
       where: {
         dueAt: { gte: today, lt: next14End },
         completedAt: null,
-        candidate: scope,
+        candidate: hrScopeWhere(me),
       },
       orderBy: { dueAt: "asc" },
       include: {

@@ -1,4 +1,4 @@
-import { requireUser } from "@/lib/auth";
+import { requireHrPage, hrScopeWhere } from "@/lib/hrAccess";
 import { prisma } from "@/lib/prisma";
 import Link from "next/link";
 import HRFollowUpActions from "@/components/HRFollowUpActions";
@@ -9,33 +9,32 @@ export const dynamic = "force-dynamic";
 function fmt(s:string){return s.replace(/_/g," ").replace(/\b\w/g,c=>c.toUpperCase());}
 
 export default async function MissedPage({ searchParams }: { searchParams: Promise<Record<string,string>> }) {
-  const me = await requireUser();
+  const { me } = await requireHrPage();
   const sp = await searchParams;
-  const scope = me.role === "AGENT" ? { OR:[{primaryOwnerId:me.id},{secondaryOwnerId:me.id}] } : {};
   const now = new Date();
   const filter = sp.filter ?? "all";
 
   const [overdueFollowUps, noNextAction, noShowsPending, pendingConfirm] = await Promise.all([
     prisma.hRFollowUp.findMany({
-      where: { completedAt: null, dueAt: { lt: now }, candidate: scope },
+      where: { completedAt: null, dueAt: { lt: now }, candidate: hrScopeWhere(me) },
       orderBy: { dueAt: "asc" },
       take: 50,
       include: { candidate: { select: { id:true, name:true, phone:true, primaryOwner:{ select:{name:true} } } }, user: { select:{name:true} } },
     }),
     prisma.hRCandidate.findMany({
-      where: { ...scope, nextActionDate: null, status: { notIn: CLOSED_STATUS_KEYS as never[] } },
+      where: { AND: [ hrScopeWhere(me), { nextActionDate: null, status: { notIn: CLOSED_STATUS_KEYS as never[] } } ] },
       orderBy: { createdAt: "asc" },
       take: 50,
       select: { id:true, name:true, phone:true, status:true, createdAt:true, primaryOwner:{ select:{name:true} } },
     }),
     prisma.hRInterview.findMany({
-      where: { attendanceStatus: "NO_SHOW", candidate: scope },
+      where: { attendanceStatus: "NO_SHOW", candidate: hrScopeWhere(me) },
       orderBy: { scheduledAt: "desc" },
       take: 30,
       include: { candidate: { select: { id:true, name:true, phone:true, primaryOwner:{ select:{name:true} } } } },
     }),
     prisma.hRInterview.findMany({
-      where: { scheduledAt: { gte: now }, confirmationStatus: "PENDING", candidate: scope },
+      where: { scheduledAt: { gte: now }, confirmationStatus: "PENDING", candidate: hrScopeWhere(me) },
       orderBy: { scheduledAt: "asc" },
       take: 30,
       include: { candidate: { select: { id:true, name:true, phone:true } } },

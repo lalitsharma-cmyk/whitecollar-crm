@@ -1,13 +1,15 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { HRCandidateStatus, HRFollowUpType } from "@prisma/client";
 import { fingerprintFor } from "@/lib/assignment";
 import { hrDuplicateWhere } from "@/lib/hrDuplicates";
 import { CLOSED_STATUS_KEYS } from "@/lib/hrStatus";
+import { hrApiAuth, hrScopeWhere, hrRoleOf } from "@/lib/hrAccess";
 
 export async function GET(req: NextRequest) {
-  const me = await requireUser();
+  const auth = await hrApiAuth();
+  if (auth.error) return auth.error;
+  const { me } = auth;
   const url = new URL(req.url);
   const status = url.searchParams.get("status") ?? undefined;
   const search = url.searchParams.get("q") ?? undefined;
@@ -15,16 +17,16 @@ export async function GET(req: NextRequest) {
   const page = Math.max(1, parseInt(url.searchParams.get("page") ?? "1"));
   const PAGE = 50;
 
-  const where: NonNullable<Parameters<typeof prisma.hRCandidate.findMany>[0]>["where"] = {};
+  const filters: NonNullable<Parameters<typeof prisma.hRCandidate.findMany>[0]>["where"] = {};
 
   if (status) {
-    where.status = status as HRCandidateStatus;
+    filters.status = status as HRCandidateStatus;
   } else if (!showClosed) {
-    where.status = { notIn: CLOSED_STATUS_KEYS };
+    filters.status = { notIn: CLOSED_STATUS_KEYS };
   }
 
   if (search) {
-    where.OR = [
+    filters.OR = [
       { name: { contains: search, mode: "insensitive" } },
       { phone: { contains: search } },
       { email: { contains: search, mode: "insensitive" } },
@@ -33,13 +35,9 @@ export async function GET(req: NextRequest) {
     ];
   }
 
-  // Agents only see candidates they own
-  if (me.role === "AGENT") {
-    where.OR = [
-      { primaryOwnerId: me.id },
-      { secondaryOwnerId: me.id },
-    ];
-  }
+  // Scope by HR role: Junior HR only sees their own candidates; Admin/Senior HR see all.
+  // Combined with the request filters via AND so the search OR isn't clobbered.
+  const where = { AND: [hrScopeWhere(me), filters] };
 
   const [candidates, total] = await Promise.all([
     prisma.hRCandidate.findMany({
@@ -59,7 +57,9 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const me = await requireUser();
+  const auth = await hrApiAuth();
+  if (auth.error) return auth.error;
+  const { me } = auth;
   const body = await req.json();
 
   if (!body.name || !String(body.name).trim()) {
@@ -92,6 +92,11 @@ export async function POST(req: NextRequest) {
 
   const fp = fingerprintFor(body.phone, body.email);
 
+  // Junior HR own what they create — they can never assign an arbitrary owner.
+  const isJunior = hrRoleOf(me) === "JUNIOR_HR";
+  const primaryOwnerId = isJunior ? me.id : (body.primaryOwnerId || me.id);
+  const secondaryOwnerId = isJunior ? null : (body.secondaryOwnerId || null);
+
   const candidate = await prisma.hRCandidate.create({
     data: {
       name: String(body.name).trim(),
@@ -115,8 +120,8 @@ export async function POST(req: NextRequest) {
       tags: body.tags || null,
       nextAction: body.nextAction || null,
       nextActionDate,
-      primaryOwnerId: body.primaryOwnerId || me.id,
-      secondaryOwnerId: body.secondaryOwnerId || null,
+      primaryOwnerId,
+      secondaryOwnerId,
       fingerprint: fp,
     },
   });

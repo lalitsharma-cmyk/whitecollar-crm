@@ -83,6 +83,14 @@ if ! npx tsx scripts/regression.ts; then
   exit 1
 fi
 
+echo "🔎 Regression gate: HR RBAC authorization (tsx scripts/regression-hr-rbac.ts)..."
+if ! npx tsx scripts/regression-hr-rbac.ts; then
+  echo ""
+  echo "❌ REGRESSION GATE FAILED — deploy aborted"
+  echo "   (An HR authorization leak / permission-matrix assertion failed — never ship an RBAC hole.)"
+  exit 1
+fi
+
 echo "✅ Regression gate passed — proceeding to deploy."
 echo ""
 # ─────────────────────────────────────────────────────────────────────────────

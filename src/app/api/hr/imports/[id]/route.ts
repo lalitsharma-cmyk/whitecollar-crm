@@ -1,11 +1,11 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { requireUser } from "@/lib/auth";
+import { requireHrPermission, hrApiAuth } from "@/lib/hrAccess";
 import { prisma } from "@/lib/prisma";
 
 // PATCH — finalize an import batch with its real counts + error report.
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const me = await requireUser();
-  if (me.role !== "ADMIN" && me.role !== "MANAGER") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const access = await requireHrPermission("importData");
+  if (access.error) return access.error;
   const { id } = await params;
   const b = await req.json().catch(() => ({}));
   const data: Record<string, unknown> = {};
@@ -17,8 +17,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
 // GET — download the batch's error report as CSV.
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const me = await requireUser();
-  if (me.role !== "ADMIN" && me.role !== "MANAGER") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const access = await requireHrPermission("importData");
+  if (access.error) return access.error;
   const { id } = await params;
   const rec = await prisma.hRImport.findUnique({ where: { id } });
   if (!rec) return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -38,8 +38,9 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 // removes their follow-ups, interviews, timeline activities and resumes) plus
 // the batch row itself. Used to reverse a wrong import.
 export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const me = await requireUser();
-  if (me.role !== "ADMIN") return NextResponse.json({ error: "Only an Admin can delete an import batch." }, { status: 403 });
+  const access = await hrApiAuth();
+  if (access.error) return access.error;
+  if (access.role !== "ADMIN") return NextResponse.json({ error: "Only an Admin can delete an import batch." }, { status: 403 });
   const { id } = await params;
   const del = await prisma.hRCandidate.deleteMany({ where: { importBatchId: id } });
   await prisma.hRImport.delete({ where: { id } }).catch(() => {});

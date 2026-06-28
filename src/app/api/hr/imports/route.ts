@@ -1,11 +1,12 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { requireUser } from "@/lib/auth";
+import { requireHrPermission } from "@/lib/hrAccess";
 import { prisma } from "@/lib/prisma";
 
 // Record an import run in the history log (called by the client after all batches finish).
 export async function POST(req: NextRequest) {
-  const me = await requireUser();
-  if (me.role !== "ADMIN" && me.role !== "MANAGER") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const access = await requireHrPermission("importData");
+  if (access.error) return access.error;
+  const { me } = access;
   const b = await req.json().catch(() => ({}));
   const rec = await prisma.hRImport.create({
     data: {

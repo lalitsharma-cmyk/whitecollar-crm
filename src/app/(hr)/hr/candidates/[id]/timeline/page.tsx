@@ -1,4 +1,4 @@
-import { requireUser } from "@/lib/auth";
+import { requireHrPage, canTouchCandidate } from "@/lib/hrAccess";
 import { prisma } from "@/lib/prisma";
 import { notFound } from "next/navigation";
 import Link from "next/link";
@@ -17,18 +17,20 @@ const ACT_LABEL: Record<string, string> = {
 function fmt(s: string) { return s.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase()); }
 
 export default async function CandidateTimelinePage({ params }: { params: Promise<{ id: string }> }) {
-  await requireUser();
+  const { me } = await requireHrPage();
   const { id } = await params;
 
   const candidate = await prisma.hRCandidate.findUnique({
     where: { id },
     select: {
       id: true, name: true, status: true, phone: true,
+      primaryOwnerId: true, secondaryOwnerId: true,
       primaryOwner: { select: { name: true } },
       activities: { orderBy: { createdAt: "desc" }, include: { user: { select: { name: true } } } },
     },
   });
   if (!candidate) notFound();
+  if (!canTouchCandidate(me, candidate)) notFound();
 
   // Group activities by IST day, newest first.
   const groups: { day: string; items: typeof candidate.activities }[] = [];

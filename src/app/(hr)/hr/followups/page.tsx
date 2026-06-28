@@ -1,4 +1,4 @@
-import { requireUser } from "@/lib/auth";
+import { requireHrPage, hrScopeWhere } from "@/lib/hrAccess";
 import { prisma } from "@/lib/prisma";
 import Link from "next/link";
 import HRFollowUpActions from "@/components/HRFollowUpActions";
@@ -13,13 +13,12 @@ function todayRange() {
 function fmt(s:string){return s.replace(/_/g," ").replace(/\b\w/g,c=>c.toUpperCase());}
 
 export default async function FollowUpsPage({ searchParams }: { searchParams: Promise<Record<string,string>> }) {
-  const me = await requireUser();
+  const { me } = await requireHrPage();
   const sp = await searchParams;
   const { start, end } = todayRange();
-  const scope = me.role === "AGENT" ? { OR:[{primaryOwnerId:me.id},{secondaryOwnerId:me.id}] } : {};
 
   const filter = sp.filter ?? "today";
-  let where: NonNullable<Parameters<typeof prisma.hRFollowUp.findMany>[0]>["where"] = { completedAt: null, candidate: scope };
+  let where: NonNullable<Parameters<typeof prisma.hRFollowUp.findMany>[0]>["where"] = { completedAt: null, candidate: hrScopeWhere(me) };
   if (filter === "today")    where = { ...where, dueAt: { gte: start, lt: end } };
   if (filter === "overdue")  where = { ...where, dueAt: { lt: start } };
   if (filter === "upcoming") where = { ...where, dueAt: { gte: end } };

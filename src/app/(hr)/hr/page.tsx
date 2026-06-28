@@ -1,4 +1,4 @@
-import { requireUser } from "@/lib/auth";
+import { requireHrPage, hrScopeWhere } from "@/lib/hrAccess";
 import { prisma } from "@/lib/prisma";
 import Link from "next/link";
 import { statusColor, statusLabel, CLOSED_STATUS_KEYS } from "@/lib/hrStatus";
@@ -30,9 +30,9 @@ const FU_EVENT: Record<string, { type: HREventType; label: string }> = {
 };
 
 export default async function HRDashboard() {
-  const me = await requireUser();
+  const { me, perms } = await requireHrPage();
   const { todayIso, start: todayStart, end: todayEnd } = istRange();
-  const scope = me.role === "AGENT" ? { OR: [{ primaryOwnerId: me.id }, { secondaryOwnerId: me.id }] } : {};
+  const scope = hrScopeWhere(me);
   const now = new Date();
   const weekAgo = new Date(todayStart.getTime() - 7 * 24 * 3600_000);
 
@@ -269,7 +269,7 @@ export default async function HRDashboard() {
 
         {/* ── RIGHT: sticky reminders ── */}
         <div className="lg:sticky lg:top-4 lg:self-start">
-          <HRRemindersCard events={reminderEvents} todayIso={todayIso} showOwner={me.role !== "AGENT"} />
+          <HRRemindersCard events={reminderEvents} todayIso={todayIso} showOwner={perms.viewAllCandidates} />
         </div>
       </div>
     </div>

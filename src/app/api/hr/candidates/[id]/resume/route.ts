@@ -1,13 +1,15 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { loadOwnedCandidate } from "@/lib/hrAccess";
 
 // Max file size: 5 MB (base64 encoded ≈ 6.7 MB stored — acceptable for ~10 HR users)
 const MAX_BYTES = 5 * 1024 * 1024;
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const me = await requireUser();
   const { id } = await params;
+  const access = await loadOwnedCandidate(id);
+  if (access.error) return access.error;
+  const { me } = access;
 
   const fd = await req.formData();
   const file = fd.get("file");
@@ -61,8 +63,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 // import-attached rows stored the raw Excel cell as `url` (→ 404). This route
 // decodes + streams the bytes, or redirects if the value is a real http(s) URL.
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  await requireUser();
   const { id: candidateId } = await params;
+  const access = await loadOwnedCandidate(candidateId);
+  if (access.error) return access.error;
   const url = new URL(req.url);
   const resumeId = url.searchParams.get("resumeId");
   const download = url.searchParams.get("download") === "1";
@@ -100,11 +103,19 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 }
 
 export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  await requireUser();
   const { id: candidateId } = await params;
+  const access = await loadOwnedCandidate(candidateId);
+  if (access.error) return access.error;
   const url = new URL(req.url);
   const resumeId = url.searchParams.get("resumeId");
   if (!resumeId) return NextResponse.json({ error: "resumeId required" }, { status: 400 });
+
+  // Verify the resume actually belongs to this candidate before deleting
+  // (prevents deleting another candidate's resume by id).
+  const resume = await prisma.hRResume.findUnique({ where: { id: resumeId }, select: { candidateId: true } });
+  if (!resume || resume.candidateId !== candidateId) {
+    return NextResponse.json({ error: "Resume not found" }, { status: 404 });
+  }
 
   await prisma.hRResume.delete({ where: { id: resumeId } });
   return NextResponse.json({ ok: true });

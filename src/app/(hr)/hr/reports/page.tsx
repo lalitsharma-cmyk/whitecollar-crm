@@ -1,5 +1,4 @@
-import { requireUser } from "@/lib/auth";
-import { redirect } from "next/navigation";
+import { requireHrPagePermission } from "@/lib/hrAccess";
 import { prisma } from "@/lib/prisma";
 import Link from "next/link";
 import { statusColor, statusLabel } from "@/lib/hrStatus";
@@ -17,8 +16,7 @@ function countBy<T extends string>(arr: { _count: number }[], key: T): Record<st
 }
 
 export default async function HRReportsPage({ searchParams }: { searchParams: Promise<Record<string, string>> }) {
-  const me = await requireUser();
-  if (me.role !== "ADMIN") redirect("/hr");
+  await requireHrPagePermission("reports");
   const sp = await searchParams;
   const period = sp.period ?? "30d";
 

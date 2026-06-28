@@ -1,19 +1,24 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { hrDuplicateWhere } from "@/lib/hrDuplicates";
+import { hrApiAuth, hrScopeWhere } from "@/lib/hrAccess";
 
 // Live duplicate lookup as the user fills the Add Candidate form.
 // Matches on mobile, WhatsApp, or email; returns up to 5 existing candidates.
 export async function GET(req: NextRequest) {
-  await requireUser();
+  const auth = await hrApiAuth();
+  if (auth.error) return auth.error;
+  const { me } = auth;
   const url = new URL(req.url);
-  const where = hrDuplicateWhere(
+  const dupWhere = hrDuplicateWhere(
     url.searchParams.get("phone"),
     url.searchParams.get("whatsapp"),
     url.searchParams.get("email"),
   );
-  if (!where) return NextResponse.json({ matches: [] });
+  if (!dupWhere) return NextResponse.json({ matches: [] });
+
+  // Scope so a Junior HR cannot discover candidates outside their own scope.
+  const where = { AND: [hrScopeWhere(me), dupWhere] };
 
   const matches = await prisma.hRCandidate.findMany({
     where,

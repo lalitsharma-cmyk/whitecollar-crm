@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { requireUser } from "@/lib/auth";
+import { requireHrPermission, hrScopeWhere, hrCan } from "@/lib/hrAccess";
 import { prisma } from "@/lib/prisma";
 import { HRCandidateStatus } from "@prisma/client";
 
@@ -7,21 +7,40 @@ import { HRCandidateStatus } from "@prisma/client";
 // set a follow-up date (creates a call-back task + next action for each
 // selected candidate — the fast way to put fresh imports into the work queue).
 export async function POST(req: NextRequest) {
-  const me = await requireUser();
-  const body = await req.json();
-  const ids: string[] = Array.isArray(body.ids) ? body.ids : [];
-  if (ids.length === 0) return NextResponse.json({ error: "No candidates selected" }, { status: 400 });
+  // Bulk actions are privileged — Junior HR is blocked entirely.
+  const auth = await requireHrPermission("bulkActions");
+  if (auth.error) return auth.error;
+  const { me } = auth;
 
-  // Bulk delete — ADMIN only. Removes the candidates + cascaded workflow records.
+  const body = await req.json();
+  const requestedIds: string[] = Array.isArray(body.ids) ? body.ids : [];
+  if (requestedIds.length === 0) return NextResponse.json({ error: "No candidates selected" }, { status: 400 });
+
+  // CRITICAL: restrict the operation to candidates IN SCOPE. Intersect the
+  // requested id list with ids matching hrScopeWhere(me) so a user can never act
+  // on candidates outside their scope. (Admin/Senior HR scope is {} → all pass.)
+  const inScope = await prisma.hRCandidate.findMany({
+    where: { AND: [hrScopeWhere(me), { id: { in: requestedIds } }] },
+    select: { id: true },
+  });
+  const ids = inScope.map(c => c.id);
+  if (ids.length === 0) return NextResponse.json({ error: "No candidates in your scope were selected" }, { status: 403 });
+
+  // Bulk delete — requires the deleteCandidate permission. Removes the
+  // candidates + cascaded workflow records.
   if (body.action === "delete") {
-    if (me.role !== "ADMIN") return NextResponse.json({ error: "Only an Admin can delete candidates." }, { status: 403 });
+    if (!hrCan(me, "deleteCandidate")) return NextResponse.json({ error: "You don't have permission to delete candidates." }, { status: 403 });
     const del = await prisma.hRCandidate.deleteMany({ where: { id: { in: ids } } });
     return NextResponse.json({ ok: true, deleted: del.count });
   }
 
   const data: { status?: HRCandidateStatus; primaryOwnerId?: string } = {};
   if (body.status) data.status = body.status as HRCandidateStatus;
-  if (body.primaryOwnerId) data.primaryOwnerId = body.primaryOwnerId;
+  if (body.primaryOwnerId) {
+    // Owner reassignment requires the assign permission.
+    if (!hrCan(me, "assign")) return NextResponse.json({ error: "You don't have permission to reassign candidate ownership." }, { status: 403 });
+    data.primaryOwnerId = body.primaryOwnerId;
+  }
   if (data.status === "OFFER_RELEASED" && me.role === "AGENT") {
     return NextResponse.json({ error: "Interns can't release offers — ask a manager." }, { status: 403 });
   }

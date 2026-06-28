@@ -1,5 +1,5 @@
 import { type NextRequest } from "next/server";
-import { requireUser } from "@/lib/auth";
+import { requireHrPermission, hrScopeWhere } from "@/lib/hrAccess";
 import { prisma } from "@/lib/prisma";
 import type { Prisma } from "@prisma/client";
 import { statusLabel } from "@/lib/hrStatus";
@@ -33,18 +33,22 @@ function cell(s: string) { return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"
 
 // Server export (CSV) — supports All + filtered (status/position/source/date) + selected ids.
 export async function GET(req: NextRequest) {
-  const me = await requireUser();
-  if (me.role !== "ADMIN" && me.role !== "MANAGER") return new Response("Forbidden", { status: 403 });
+  const access = await requireHrPermission("exportData");
+  if (access.error) return access.error;
+  const { me } = access;
   const sp = req.nextUrl.searchParams;
 
-  const where: Prisma.HRCandidateWhereInput = {};
+  const filter: Prisma.HRCandidateWhereInput = {};
   const ids = sp.get("ids");
-  if (ids) where.id = { in: ids.split(",").filter(Boolean) };
-  const status = sp.get("status"); if (status) where.status = status as Cand["status"];
-  const position = sp.get("position"); if (position) where.positionApplied = position;
-  const source = sp.get("source"); if (source) where.source = source;
+  if (ids) filter.id = { in: ids.split(",").filter(Boolean) };
+  const status = sp.get("status"); if (status) filter.status = status as Cand["status"];
+  const position = sp.get("position"); if (position) filter.positionApplied = position;
+  const source = sp.get("source"); if (source) filter.source = source;
   const from = sp.get("from"), to = sp.get("to");
-  if (from || to) where.createdAt = { ...(from ? { gte: new Date(from) } : {}), ...(to ? { lte: new Date(to + "T23:59:59") } : {}) };
+  if (from || to) filter.createdAt = { ...(from ? { gte: new Date(from) } : {}), ...(to ? { lte: new Date(to + "T23:59:59") } : {}) };
+
+  // Defense-in-depth: scope exported rows to what the caller may see.
+  const where: Prisma.HRCandidateWhereInput = { AND: [hrScopeWhere(me), filter] };
 
   const candidates = await prisma.hRCandidate.findMany({
     where, orderBy: { createdAt: "desc" }, take: 25000,

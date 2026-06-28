@@ -1,4 +1,4 @@
-import { requireUser } from "@/lib/auth";
+import { requireHrPage, hrScopeWhere } from "@/lib/hrAccess";
 import { prisma } from "@/lib/prisma";
 import Link from "next/link";
 import type { HRCandidateStatus } from "@prisma/client";
@@ -9,12 +9,12 @@ import { getHrUsers } from "@/lib/hrUsers";
 export const dynamic = "force-dynamic";
 
 export default async function CandidatesPage({ searchParams }: { searchParams: Promise<Record<string,string>> }) {
-  const me = await requireUser();
+  const { me } = await requireHrPage();
   const sp = await searchParams;
   const showClosed = sp.closed === "1";
   const filterStatus = sp.status as HRCandidateStatus | undefined;
 
-  const scope = me.role === "AGENT" ? { OR: [{ primaryOwnerId: me.id }, { secondaryOwnerId: me.id }] } : {};
+  const scope = hrScopeWhere(me);
   const where: NonNullable<Parameters<typeof prisma.hRCandidate.findMany>[0]>["where"] = { ...scope };
   if (sp.batch) {
     // Viewing the records created by a specific import batch — show all statuses.

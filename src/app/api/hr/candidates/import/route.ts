@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { requireUser } from "@/lib/auth";
+import { requireHrPermission } from "@/lib/hrAccess";
 import { prisma } from "@/lib/prisma";
 import { HRCandidateStatus, Prisma } from "@prisma/client";
 import { fingerprintFor } from "@/lib/assignment";
@@ -135,8 +135,9 @@ function buildWorkflow(r: Row, status: HRCandidateStatus, ownerId: string) {
 // Batched candidate import. The client sends rows in chunks (~100) and shows
 // progress, so no single request risks the serverless timeout.
 export async function POST(req: NextRequest) {
-  const me = await requireUser();
-  if (me.role !== "ADMIN" && me.role !== "MANAGER") return NextResponse.json({ error: "Only Admin / HR Manager can import." }, { status: 403 });
+  const access = await requireHrPermission("importData");
+  if (access.error) return access.error;
+  const { me } = access;
 
   const body = await req.json();
   const rows: Row[] = Array.isArray(body.rows) ? body.rows : [];

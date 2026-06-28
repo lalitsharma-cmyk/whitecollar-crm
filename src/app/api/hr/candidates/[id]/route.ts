@@ -1,11 +1,14 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { HRCandidateStatus } from "@prisma/client";
+import { loadOwnedCandidate, hrCan, hrRoleOf, hrNotFound } from "@/lib/hrAccess";
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  await requireUser();
   const { id } = await params;
+  // RBAC: 404 if the caller can't see this candidate.
+  const access = await loadOwnedCandidate(id);
+  if (access.error) return access.error;
+
   const c = await prisma.hRCandidate.findUnique({
     where: { id },
     include: {
@@ -17,17 +20,24 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       resumes:        { orderBy: { createdAt: "desc" } },
     },
   });
-  if (!c) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  if (!c) return hrNotFound();
   return NextResponse.json({ candidate: c });
 }
 
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const me = await requireUser();
   const { id } = await params;
+  // RBAC: must be allowed to act on this candidate.
+  const access = await loadOwnedCandidate(id);
+  if (access.error) return access.error;
+  const { me } = access;
   const body = await req.json();
 
   const existing = await prisma.hRCandidate.findUnique({ where: { id }, select: { status: true } });
-  if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  if (!existing) return hrNotFound();
+
+  // Ownership reassignment is gated on the `assign` permission — a Junior HR
+  // editing their own candidate cannot move it to (or away from) themselves.
+  const canAssign = hrCan(me, "assign");
 
   const data: Record<string, unknown> = {};
   const allowed = ["name","phone","altPhone","whatsappPhone","email","location","city","currentCompany",
@@ -35,19 +45,19 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     "noticePeriod","source","status","remarks","tags","nextAction","nextActionDate","joiningDate","primaryOwnerId","secondaryOwnerId",
     "fitExperience","fitCommunication","fitStability","fitSalary","fitNotice","interviewFeedback","joiningProbability"];
   for (const key of allowed) {
-    if (key in body) {
-      if (key === "currentSalary" || key === "expectedSalary") {
-        data[key] = body[key] ? parseFloat(body[key]) : null;
-      } else if (key === "nextActionDate" || key === "joiningDate") {
-        data[key] = body[key] ? new Date(body[key]) : null;
-      } else {
-        data[key] = body[key] || null;
-      }
+    if (!(key in body)) continue;
+    if ((key === "primaryOwnerId" || key === "secondaryOwnerId") && !canAssign) continue; // silently ignore reassignment by non-assigners
+    if (key === "currentSalary" || key === "expectedSalary") {
+      data[key] = body[key] ? parseFloat(body[key]) : null;
+    } else if (key === "nextActionDate" || key === "joiningDate") {
+      data[key] = body[key] ? new Date(body[key]) : null;
+    } else {
+      data[key] = body[key] || null;
     }
   }
 
-  if (data.status === "OFFER_RELEASED" && me.role === "AGENT") {
-    return NextResponse.json({ error: "Interns can't release offers — ask a manager." }, { status: 403 });
+  if (data.status === "OFFER_RELEASED" && hrRoleOf(me) === "JUNIOR_HR") {
+    return NextResponse.json({ error: "Junior HR can't release offers — ask a Senior HR." }, { status: 403 });
   }
 
   // A manual status change overrides the imported original-status label so the

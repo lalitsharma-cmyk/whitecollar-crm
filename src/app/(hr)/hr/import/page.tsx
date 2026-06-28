@@ -1,5 +1,4 @@
-import { requireUser } from "@/lib/auth";
-import { redirect } from "next/navigation";
+import { requireHrPagePermission } from "@/lib/hrAccess";
 import { prisma } from "@/lib/prisma";
 import Link from "next/link";
 import HRImportClient from "@/components/HRImportClient";
@@ -9,8 +8,7 @@ import { getHrUsers } from "@/lib/hrUsers";
 export const dynamic = "force-dynamic";
 
 export default async function HRImportPage() {
-  const me = await requireUser();
-  if (me.role !== "ADMIN" && me.role !== "MANAGER") redirect("/hr");
+  const { me, role } = await requireHrPagePermission("importData");
 
   const [agents, history] = await Promise.all([
     getHrUsers(),
@@ -33,7 +31,7 @@ export default async function HRImportPage() {
         <div className="bg-white dark:bg-slate-900 rounded-2xl border border-gray-200 dark:border-slate-700 overflow-hidden">
           <div className="px-4 py-2.5 border-b border-gray-100 dark:border-slate-800 text-sm font-semibold text-gray-700 dark:text-slate-200">Import History <span className="text-[11px] font-normal text-gray-400">— times in IST</span></div>
           <HRImportHistory
-            isAdmin={me.role === "ADMIN"}
+            isAdmin={role === "ADMIN"}
             rows={history.map(h => ({
               id: h.id, fileName: h.fileName, by: h.importedBy?.name ?? null, createdAt: h.createdAt.toISOString(),
               total: h.total, imported: h.imported, updated: h.updated, skipped: h.skipped, failed: h.failed,

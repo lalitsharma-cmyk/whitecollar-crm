@@ -1,5 +1,4 @@
-import { requireUser } from "@/lib/auth";
-import { redirect } from "next/navigation";
+import { requireHrPagePermission, hrCan } from "@/lib/hrAccess";
 import { prisma } from "@/lib/prisma";
 import HRUserManager from "@/components/HRUserManager";
 import { getHrUsers } from "@/lib/hrUsers";
@@ -9,13 +8,15 @@ import { setHrWebsiteOwner } from "./actions";
 export const dynamic = "force-dynamic";
 
 export default async function HRSettingsPage() {
-  const me = await requireUser();
-  if (me.role !== "ADMIN") redirect("/hr");
+  const { me } = await requireHrPagePermission("settings");
+  const canManageUsers = hrCan(me, "manageUsers");
 
-  const users = await prisma.user.findMany({
-    orderBy: [{ active: "desc" }, { name: "asc" }],
-    select: { id: true, name: true, email: true, role: true, team: true, active: true, hrOnly: true, hrTeam: true },
-  });
+  const users = canManageUsers
+    ? await prisma.user.findMany({
+        orderBy: [{ active: "desc" }, { name: "asc" }],
+        select: { id: true, name: true, email: true, role: true, team: true, active: true, hrOnly: true, hrTeam: true },
+      })
+    : [];
 
   // Website intake config: default owner + the active HR intake key.
   const [hrUsers, currentOwnerId, hrKey] = await Promise.all([
@@ -28,10 +29,10 @@ export default async function HRSettingsPage() {
     <div className="p-4 sm:p-6 max-w-4xl mx-auto space-y-5">
       <div>
         <h1 className="text-xl font-bold text-gray-900 dark:text-white">Settings</h1>
-        <p className="text-sm text-gray-500">Manage users &amp; HR access</p>
+        <p className="text-sm text-gray-500">{canManageUsers ? "Manage users & HR access" : "HR settings"}</p>
       </div>
 
-      <HRUserManager initialUsers={users as never} meId={me.id} />
+      {canManageUsers && <HRUserManager initialUsers={users as never} meId={me.id} />}
 
       {/* Website → HR real-time intake */}
       <div className="card p-4 space-y-3">

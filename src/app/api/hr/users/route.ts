@@ -1,18 +1,13 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireUser } from "@/lib/auth";
+import { requireHrPermission } from "@/lib/hrAccess";
 import bcrypt from "bcryptjs";
 
 const ROLES = ["ADMIN", "MANAGER", "AGENT"];
 
-async function adminOnly() {
-  const me = await requireUser();
-  return me.role === "ADMIN" ? me : null;
-}
-
 export async function GET() {
-  const me = await adminOnly();
-  if (!me) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const access = await requireHrPermission("manageUsers");
+  if (access.error) return access.error;
   const users = await prisma.user.findMany({
     orderBy: [{ active: "desc" }, { name: "asc" }],
     select: { id: true, name: true, email: true, role: true, team: true, active: true, hrOnly: true, hrTeam: true },
@@ -21,8 +16,8 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
-  const me = await adminOnly();
-  if (!me) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const access = await requireHrPermission("manageUsers");
+  if (access.error) return access.error;
   const body = await req.json().catch(() => ({}));
 
   const name = String(body.name ?? "").trim();
@@ -48,8 +43,9 @@ export async function POST(req: NextRequest) {
 }
 
 export async function PATCH(req: NextRequest) {
-  const me = await adminOnly();
-  if (!me) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const access = await requireHrPermission("manageUsers");
+  if (access.error) return access.error;
+  const { me } = access;
   const body = await req.json().catch(() => ({}));
   const id = String(body.id ?? "");
   if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });

@@ -1,11 +1,13 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { HRActivityType, HRCandidateStatus } from "@prisma/client";
+import { loadOwnedCandidate } from "@/lib/hrAccess";
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const me = await requireUser();
   const { id } = await params;
+  const access = await loadOwnedCandidate(id);
+  if (access.error) return access.error;
+  const { me } = access;
   const body = await req.json();
 
   const type = body.type as HRActivityType;

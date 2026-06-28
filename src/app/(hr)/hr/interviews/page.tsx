@@ -1,4 +1,4 @@
-import { requireUser } from "@/lib/auth";
+import { requireHrPage, hrScopeWhere } from "@/lib/hrAccess";
 import { prisma } from "@/lib/prisma";
 import Link from "next/link";
 import HRInterviewRowActions from "@/components/HRInterviewRowActions";
@@ -23,13 +23,12 @@ const ATT_COLOR: Record<string,string> = {
 function fmt(s:string){return s.replace(/_/g," ").replace(/\b\w/g,c=>c.toUpperCase());}
 
 export default async function InterviewsPage({ searchParams }: { searchParams: Promise<Record<string,string>> }) {
-  const me = await requireUser();
+  const { me } = await requireHrPage();
   const sp = await searchParams;
   const { start, end, tomorrow } = todayRange();
-  const scope = me.role === "AGENT" ? { OR:[{primaryOwnerId:me.id},{secondaryOwnerId:me.id}] } : {};
 
   const filter = sp.filter ?? "upcoming";
-  let where: NonNullable<Parameters<typeof prisma.hRInterview.findMany>[0]>["where"] = { candidate: scope };
+  let where: NonNullable<Parameters<typeof prisma.hRInterview.findMany>[0]>["where"] = { candidate: hrScopeWhere(me) };
   if (filter === "today")    where = { ...where, scheduledAt: { gte: start, lt: end }, attendanceStatus: "SCHEDULED" };
   if (filter === "tomorrow") where = { ...where, scheduledAt: { gte: end, lt: tomorrow }, attendanceStatus: "SCHEDULED" };
   if (filter === "pending-confirm") where = { ...where, scheduledAt: { gte: new Date() }, confirmationStatus: "PENDING" };

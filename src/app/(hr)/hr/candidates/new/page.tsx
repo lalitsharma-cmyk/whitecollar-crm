@@ -1,4 +1,4 @@
-import { requireUser } from "@/lib/auth";
+import { requireHrPage } from "@/lib/hrAccess";
 import { prisma } from "@/lib/prisma";
 import HRAddCandidateForm from "@/components/HRAddCandidateForm";
 import { getHrUsers } from "@/lib/hrUsers";
@@ -6,7 +6,7 @@ import { getHrUsers } from "@/lib/hrUsers";
 export const dynamic = "force-dynamic";
 
 export default async function NewCandidatePage() {
-  const me = await requireUser();
+  const { me } = await requireHrPage();
   const agents = await getHrUsers();
   return (
     <div className="p-4 sm:p-6 max-w-2xl mx-auto">

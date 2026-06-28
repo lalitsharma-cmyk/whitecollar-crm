@@ -17,11 +17,17 @@ const NAV: NavItem[] = [
   { href: "/hr/followups",   label: "Follow Ups", Icon: Clock },
   { href: "/hr/resume-bank", label: "Resume Bank",Icon: FileText },
 ];
-// Super Admin only
-const ADMIN_NAV: NavItem[] = [
-  { href: "/hr/reports",  label: "Reports",  Icon: BarChart3 },
-  { href: "/hr/settings", label: "Settings", Icon: Settings },
-];
+const REPORTS_NAV: NavItem = { href: "/hr/reports",  label: "Reports",  Icon: BarChart3 };
+const SETTINGS_NAV: NavItem = { href: "/hr/settings", label: "Settings", Icon: Settings };
+
+function hrRoleLabelFor(role?: string | null) {
+  switch (role) {
+    case "ADMIN": return "Admin";
+    case "SENIOR_HR": return "Senior HR";
+    case "JUNIOR_HR": return "Junior HR";
+    default: return "HR";
+  }
+}
 
 const BOTTOM_NAV: NavItem[] = [
   { href: "/hr",            label: "Home",       Icon: LayoutDashboard },
@@ -34,10 +40,14 @@ const BOTTOM_NAV: NavItem[] = [
 interface Props {
   children: React.ReactNode;
   user: { name: string; role: string; avatarColor?: string };
+  /** HR role label source — purely informational here; nav gating uses `perms`. */
+  hrRole?: string | null;
+  /** Which permission-gated nav items to show. Backend still enforces each. */
+  perms?: { reports?: boolean; settings?: boolean; importData?: boolean };
   overdueCount?: number;
 }
 
-export default function HRShell({ children, user, overdueCount = 0 }: Props) {
+export default function HRShell({ children, user, hrRole, perms, overdueCount = 0 }: Props) {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
   // Collapsed (icons only) BY DEFAULT. Expands on hover (overlay, no reflow) or
@@ -47,14 +57,15 @@ export default function HRShell({ children, user, overdueCount = 0 }: Props) {
   const expanded = !collapsed || hovered;
 
   const initials = user.name.split(" ").map(w => w[0]).join("").slice(0, 2).toUpperCase();
-  // RBAC: HR recruiters (MANAGER/AGENT) see Dashboard, Candidates, Interviews,
-  // Follow Ups, Resume Bank. Import / Reports / Settings are Admin (Super Admin)
-  // only — gated below by role === "ADMIN".
-  const isAdmin = user.role === "ADMIN";
+  // RBAC nav hiding: the backend enforces every permission; this only hides nav
+  // items the user lacks so they don't follow dead/forbidden links. Reports /
+  // Settings / Import are permission-gated (Admin + Senior HR have them; Junior
+  // HR does not). All other links stay visible to every HR user.
   const navItems: NavItem[] = [
     ...NAV,
-    ...(isAdmin ? [{ href: "/hr/import", label: "Import", Icon: Upload }] : []),
-    ...(isAdmin ? ADMIN_NAV : []),
+    ...(perms?.importData ? [{ href: "/hr/import", label: "Import", Icon: Upload }] : []),
+    ...(perms?.reports ? [REPORTS_NAV] : []),
+    ...(perms?.settings ? [SETTINGS_NAV] : []),
   ];
 
   function isActive(href: string) {
@@ -140,7 +151,7 @@ export default function HRShell({ children, user, overdueCount = 0 }: Props) {
                 <div className={`avatar ${user.avatarColor ?? "bg-indigo-500"} w-7 h-7 text-[11px] shrink-0`}>{initials}</div>
                 <div className="min-w-0">
                   <div className="text-xs font-semibold text-white truncate">{user.name}</div>
-                  <div className="text-[10px] text-slate-400">HR</div>
+                  <div className="text-[10px] text-slate-400">{hrRoleLabelFor(hrRole)}</div>
                 </div>
               </div>
             )}

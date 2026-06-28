@@ -9,6 +9,13 @@ Legend: ✅ Completed · 🟡 In Progress · 🔵 In QA · 🚀 Deployed · 🔴
 
 ---
 
+## 🟢 HR ATS PRODUCTIZATION (started 2026-06-28, Lalit) — make /hr as polished as Sales CRM
+**Audit:** `docs/HR-ATS-AUDIT.md` (13-area parallel audit). Module was ~40–60% of Sales parity, NOT production-safe (systemic RBAC hole). Plan: Phase0 safety → Phase1 schema+roles → Phase2 security → Phase3 modules+voice → Phase4 polish → Phase5 QA.
+- ✅ **Phase 0 — Safety:** full DB backup ×2 (`backups/FULL-2026-06-28T13-56-16-581Z` + offsite) + dedicated HR archive; prod schema-drift risk cleared (`hrOnly/hrTeam` exist).
+- ✅ **HR data reset:** ⚠️ the "447 candidates" were REAL career-page applicants (not dummy) — flagged, then on Lalit's re-confirmation reset HR to clean shell, fully reversible (txn + integrity check). Restore: `backups/HR-ARCHIVE-*`. See [[project-hr-data-is-real]]. Scripts: `audit-hr-test-data.ts`, `cleanup-hr-data.ts`.
+- ✅ **Phase 2 — RBAC (SHIPPING):** centralized engine `src/lib/hrPermissions.ts` (pure) + `src/lib/hrAccess.ts` (server guards); 3 roles DERIVED (Admin / Senior HR=hrTeam|hrOnly+MANAGER / Junior HR=hrOnly+AGENT) — NO migration. Every HR route (12) + page (13) + nav gated; 404-not-403 on candidate denial; bulk scope-intersected. Junior=owned-only/no reports-settings-import-export-users/escalation-only; Senior(Nisha)=all+assign+reports+voice-guidance, no user-mgmt/system-settings. Gate `scripts/regression-hr-rbac.ts` (matrix + static leak-scan) wired into `deploy.sh`. tsc 0 · rbac PASS · regression 107/0.
+- ⏳ **NEXT:** Phase 1 migration (voice/escalation, interview-feedback, saved-filters, salary range, source enum, deletedAt) → shared voice engine (Sales+HR) → parallel module parity (list/detail/timeline/interview/followups/reports/dashboard/resume-bank/import) → UI polish → QA.
+
 ## 🚀 DEPLOYED — overnight 2026-06-28 (15 batches, all health-verified, regression 101/0)
 1. **Smart Timeline P0** — never parse dates from client-message content (no torn messages / fake dated cards). `dd7fb37`
 2. **'todue' pill** → friendly "Today + Overdue" label. `ba208c2`
