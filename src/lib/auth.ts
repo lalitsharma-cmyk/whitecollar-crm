@@ -21,22 +21,52 @@ export const getCurrentUser = cache(async () => {
   const payload = await verifySession(token, secret());
   if (!payload) return null;
   const user = await prisma.user.findUnique({ where: { id: payload.uid } });
-  if (!user || !user.active) return null;
+  if (!user || !user.active) return null;          // disabled account → out immediately
+  // Role/permissions are read LIVE from `user` on every request, so a role change
+  // takes effect on the user's very next request (no stale-permission window).
 
-  // New (DB-backed) sessions carry a `sid` — verify the session row is still live
-  // so revocation / force-logout / device-block all take effect here. Legacy
-  // tokens (no sid) stay valid until they expire — back-compat so the rollout
-  // logs nobody out.
+  // New (DB-backed) sessions carry a `sid` — verify the session row + its device on
+  // EVERY request so revocation / force-logout / device-block / password-reset all
+  // take effect server-side, not just at login. Super-admin (Lalit) is exempt from
+  // the DEVICE checks only (safety hatch — can never be device-locked-out).
   if (payload.sid) {
     const s = await prisma.userSession.findUnique({
       where: { id: payload.sid },
-      select: { userId: true, revokedAt: true, expiresAt: true, lastActiveAt: true },
+      select: {
+        userId: true, revokedAt: true, expiresAt: true, lastActiveAt: true, createdAt: true,
+        deviceRef: true, device: { select: { status: true, deviceId: true } },
+      },
     });
-    if (!s || s.userId !== user.id || s.revokedAt || s.expiresAt < new Date()) return null;
-    // Throttled "last active" update — best-effort, never blocks the request.
-    if (Date.now() - s.lastActiveAt.getTime() > 60_000) {
-      prisma.userSession.update({ where: { id: payload.sid }, data: { lastActiveAt: new Date() } }).catch(() => {});
+    const now = new Date();
+    if (!s || s.userId !== user.id || s.revokedAt || s.expiresAt < now) return null;
+
+    // ── Password epoch ── any session created BEFORE the user's last password change
+    // is dead → forces re-login on ALL devices after an admin reset or self-change.
+    if (user.passwordChangedAt && s.createdAt < user.passwordChangedAt) return null;
+
+    // ── Per-request DEVICE binding (super-admin exempt) ──
+    if (!user.isSuperAdmin && s.deviceRef) {
+      // Session tied to a device that is no longer APPROVED (revoked/blocked/removed/
+      // pending) loses access immediately.
+      if (!s.device || s.device.status !== "APPROVED") return null;
+      // Copied-cookie guard: this browser's wcr_did must match the session's device.
+      // Stops a stolen/copied wcr_session cookie working in ANOTHER browser (which
+      // carries its own different wcr_did). Absent wcr_did is tolerated (avoids edge-
+      // case lockouts) — the APPROVED-device check above still binds to a real device.
+      const did = (jar.get("wcr_did")?.value ?? "").trim();
+      if (did && s.device.deviceId && did !== s.device.deviceId) return null;
     }
+
+    // Throttled "last active" update — best-effort, never blocks the request.
+    if (now.getTime() - s.lastActiveAt.getTime() > 60_000) {
+      prisma.userSession.update({ where: { id: payload.sid }, data: { lastActiveAt: now } }).catch(() => {});
+    }
+  } else if (enforcementOn() && !user.isSuperAdmin) {
+    // Under enforcement a session MUST be device-bound (carry a sid). Legacy no-sid
+    // cookies (pre-device-security) are no longer trusted — force a fresh, device-
+    // bound login. (Everyone was force-logged-out at rollout, so no real user relies
+    // on a legacy cookie.) Super-admin exempt.
+    return null;
   }
   return user;
 });

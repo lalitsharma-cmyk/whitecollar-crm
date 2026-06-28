@@ -5120,6 +5120,60 @@ const checks: Check[] = [
       results.push({ name: "  ↳ note", ok: true, detail: "login resolves did via localStorage→cookie→uuid; no desktop-only error; Safari vs PWA labelled; OS version shown" });
     },
   },
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // 51. SESSION / DEVICE / PASSWORD HARDENING (2026-06-28, Lalit security audit).
+  //   getCurrentUser now re-validates on EVERY request (not just at login):
+  //     • disabled account → out (user.active)        • role read live (no stale perms)
+  //     • password epoch → session created before passwordChangedAt is dead
+  //     • device binding → session's device must still be APPROVED (super-admin exempt)
+  //     • copied-cookie guard → wcr_did cookie must match the session's device
+  //     • under enforcement a session MUST be device-bound (sid); legacy cookies rejected
+  //   Password change (admin reset + self) → stamp passwordChangedAt + bump sessionEpoch
+  //   + revoke ALL sessions, so old/saved passwords can't reopen access on any device.
+  //   (c) DATA note — active sessions whose device is NOT approved (would be logged out
+  //       by the new binding on deploy; expected to be 0 since all devices are approved).
+  // ───────────────────────────────────────────────────────────────────────────
+  {
+    name: "session-device-password-hardening — per-request device+password+role binding; password change revokes all sessions",
+    run: async () => {
+      const fs = await import("fs");
+      const auth = fs.readFileSync("src/lib/auth.ts", "utf8");
+      // Password epoch
+      assert(/s\.createdAt < user\.passwordChangedAt/.test(auth), "getCurrentUser must kill sessions created before the last password change");
+      // Per-request device binding (super-admin exempt)
+      assert(/!user\.isSuperAdmin && s\.deviceRef/.test(auth) && /s\.device\.status !== "APPROVED"/.test(auth),
+        "getCurrentUser must reject a session whose device is no longer APPROVED (super-admin exempt)");
+      // Copied-cookie guard
+      assert(/did !== s\.device\.deviceId/.test(auth), "getCurrentUser must reject when wcr_did doesn't match the session's device (copied-cookie guard)");
+      // Legacy no-sid rejected under enforcement
+      assert(/enforcementOn\(\) && !user\.isSuperAdmin/.test(auth) && /return null;/.test(auth),
+        "under enforcement a session must be device-bound (sid); legacy no-sid cookies rejected");
+      // disabled account
+      assert(/!user \|\| !user\.active/.test(auth), "disabled account must lose access immediately");
+
+      // Password endpoints revoke sessions + stamp passwordChangedAt.
+      const adminPw = fs.readFileSync("src/app/api/admin/users/[id]/password/route.ts", "utf8");
+      assert(/passwordChangedAt: now/.test(adminPw) && /userSession\.updateMany/.test(adminPw) && /admin_password_reset/.test(adminPw),
+        "admin password reset must stamp passwordChangedAt + revoke all sessions");
+      const selfPw = fs.readFileSync("src/app/api/profile/password/route.ts", "utf8");
+      assert(/passwordChangedAt: now/.test(selfPw) && /userSession\.updateMany/.test(selfPw) && /self_password_change/.test(selfPw),
+        "self password change must stamp passwordChangedAt + revoke all sessions");
+
+      // Admin panel shows the approver.
+      const devPage = fs.readFileSync("src/app/(app)/admin/devices/page.tsx", "utf8");
+      assert(/approvedBy: \{ select: \{ name: true \} \}/.test(devPage) && /by \{d\.approvedBy/.test(devPage),
+        "admin devices panel must show 'approved by'");
+
+      // (c) DATA note — sessions that the new device-binding would terminate now.
+      const live = await prisma.userSession.findMany({
+        where: { revokedAt: null, expiresAt: { gt: new Date() }, deviceRef: { not: null } },
+        select: { device: { select: { status: true } }, user: { select: { isSuperAdmin: true } } },
+      });
+      const wouldDrop = live.filter((s) => !s.user?.isSuperAdmin && s.device?.status !== "APPROVED").length;
+      results.push({ name: "  ↳ note", ok: true, detail: `live device-bound sessions=${live.length}; would be dropped by device-binding=${wouldDrop} (expect 0 — all devices approved)` });
+    },
+  },
 ];
 
 // ── runner ────────────────────────────────────────────────────────────────────

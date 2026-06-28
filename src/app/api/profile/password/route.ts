@@ -22,7 +22,18 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Current password is wrong" }, { status: 401 });
   }
   const hash = await bcrypt.hash(next, 10);
-  await prisma.user.update({ where: { id: me.id }, data: { passwordHash: hash } });
-  await audit({ userId: me.id, action: "auth.password.change", entity: "User", entityId: me.id, request: reqMeta(req) });
-  return NextResponse.json({ ok: true });
+  const now = new Date();
+  // Same hardening as admin reset: stamp passwordChangedAt + bump sessionEpoch + revoke
+  // ALL active sessions (incl. this one). The user re-logs-in with the new password on
+  // every device; old saved passwords can't reopen access.
+  await prisma.user.update({
+    where: { id: me.id },
+    data: { passwordHash: hash, passwordChangedAt: now, sessionEpoch: { increment: 1 } },
+  });
+  const revoked = await prisma.userSession.updateMany({
+    where: { userId: me.id, revokedAt: null },
+    data: { revokedAt: now, revokedReason: "self_password_change" },
+  });
+  await audit({ userId: me.id, action: "auth.password.change", entity: "User", entityId: me.id, meta: { sessionsRevoked: revoked.count }, request: reqMeta(req) });
+  return NextResponse.json({ ok: true, sessionsRevoked: revoked.count });
 }

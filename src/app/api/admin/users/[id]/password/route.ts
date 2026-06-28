@@ -22,13 +22,26 @@ export async function POST(
   if (!target) return NextResponse.json({ error: "User not found" }, { status: 404 });
 
   const hash = await bcrypt.hash(newPassword, 10);
-  await prisma.user.update({ where: { id: targetId }, data: { passwordHash: hash } });
+  const now = new Date();
+  // Stamp passwordChangedAt (getCurrentUser kills any session created before it) AND
+  // bump sessionEpoch AND hard-revoke every active session → the user is logged out of
+  // ALL devices immediately; the old password (and any saved-password autofill) cannot
+  // start a new session either. Three layers so revocation is instant + durable.
+  await prisma.user.update({
+    where: { id: targetId },
+    data: { passwordHash: hash, passwordChangedAt: now, sessionEpoch: { increment: 1 } },
+  });
+  const revoked = await prisma.userSession.updateMany({
+    where: { userId: targetId, revokedAt: null },
+    data: { revokedAt: now, revokedReason: "admin_password_reset" },
+  });
   await audit({
     userId: me.id,
     action: "admin.password.reset",
     entity: "User",
     entityId: targetId,
+    meta: { sessionsRevoked: revoked.count },
     request: reqMeta(req),
   });
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ ok: true, sessionsRevoked: revoked.count });
 }

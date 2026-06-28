@@ -25,7 +25,7 @@ export default async function DevicesPage() {
     orderBy: [{ role: "asc" }, { name: "asc" }],
     select: {
       id: true, name: true, email: true, role: true, isSuperAdmin: true, deviceLimitExtra: true,
-      devices: { orderBy: [{ status: "asc" }, { lastSeenAt: "desc" }] },
+      devices: { orderBy: [{ status: "asc" }, { lastSeenAt: "desc" }], include: { approvedBy: { select: { name: true } } } },
       loginSessions: {
         where: { revokedAt: null, expiresAt: { gt: now } },
         orderBy: { lastActiveAt: "desc" },
@@ -115,7 +115,10 @@ export default async function DevicesPage() {
                         </td>
                         <td className="px-3 py-2 hidden lg:table-cell text-xs text-gray-500 whitespace-nowrap tabular-nums">{fmt(d.createdAt)}</td>
                         <td className="px-3 py-2 hidden sm:table-cell text-xs text-gray-500 whitespace-nowrap tabular-nums">{fmt(d.lastSeenAt)}</td>
-                        <td className="px-3 py-2"><span className={`text-xs px-2 py-0.5 rounded-full border ${STATUS_CHIP[d.status] ?? ""}`}>{d.status}</span></td>
+                        <td className="px-3 py-2">
+                          <span className={`text-xs px-2 py-0.5 rounded-full border ${STATUS_CHIP[d.status] ?? ""}`}>{d.status === "BLOCKED" ? "BLOCKED / REJECTED" : d.status}</span>
+                          {d.status === "APPROVED" && d.approvedBy?.name && <div className="text-[10px] text-gray-400 mt-0.5">by {d.approvedBy.name}{d.approvedAt ? ` · ${fmt(d.approvedAt)}` : ""}</div>}
+                        </td>
                         <td className="px-3 py-2"><DeviceRowActions deviceId={d.id} status={d.status} /></td>
                       </tr>
                     ))}
