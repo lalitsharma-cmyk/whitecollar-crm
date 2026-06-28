@@ -35,9 +35,12 @@ interface Props {
    * stay available. Computed server-side on the lead-detail page.
    */
   hasContactToday?: boolean;
+  /** Compact density — smaller buttons for the dense Lead/Buyer/Revival action bar
+   * (Lalit's detail-view density rule). Default false keeps every other caller as-is. */
+  compact?: boolean;
 }
 
-export default function LeadFollowupActions({ leadId, leadName, followupDate, hasContactToday = false }: Props) {
+export default function LeadFollowupActions({ leadId, leadName, followupDate, hasContactToday = false, compact = false }: Props) {
   const router = useRouter();
   const [busy, setBusy] = useState<null | "complete" | "snooze" | "escalate">(null);
   const [showEscalate, setShowEscalate] = useState(false);
@@ -139,9 +142,10 @@ export default function LeadFollowupActions({ leadId, leadName, followupDate, ha
   // (see parent + the `contents` wrapper below), so each control adds that sizing.
   // Snooze + Escalate keep their bespoke shells (CRMDatePicker chip / popover
   // toggle) but borrow the token colours/icon. Layout-only; handlers unchanged.
-  const sizing = "grow basis-28";
+  const sizing = compact ? "grow basis-24" : "grow basis-28";
+  const btnSize = compact ? "sm" : "md";
   const SnoozeIcon = ACTION_TOKENS.snooze.icon;
-  const snoozeChip = `${sizing} inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-sm font-semibold transition shadow-sm min-h-10 disabled:opacity-60 ${ACTION_TOKENS.snooze.solid}`;
+  const snoozeChip = `${sizing} inline-flex items-center justify-center gap-1.5 rounded-lg font-semibold transition shadow-sm disabled:opacity-60 ${compact ? "px-2.5 py-1.5 text-xs min-h-9" : "px-3 py-2 text-sm min-h-10"} ${ACTION_TOKENS.snooze.solid}`;
 
   return (
     // `contents` makes this wrapper layout-transparent: its children become direct
@@ -150,7 +154,7 @@ export default function LeadFollowupActions({ leadId, leadName, followupDate, ha
     <div className="contents">
       <ActionButton
         action="complete"
-        size="md"
+        size={btnSize}
         onClick={doComplete}
         disabled={!!busy || !hasContactToday}
         loading={busy === "complete"}
@@ -175,7 +179,7 @@ export default function LeadFollowupActions({ leadId, leadName, followupDate, ha
             "Saving…"
           ) : (
             <span className="inline-flex items-center gap-1.5">
-              <SnoozeIcon className="w-4 h-4" /> Snooze
+              <SnoozeIcon className={compact ? "w-3.5 h-3.5" : "w-4 h-4"} /> Snooze
             </span>
           )
         }
@@ -189,7 +193,7 @@ export default function LeadFollowupActions({ leadId, leadName, followupDate, ha
       <div ref={escalateRef} className={`relative ${sizing}`}>
         <ActionButton
           action="escalate"
-          size="md"
+          size={btnSize}
           onClick={() => setShowEscalate((s) => !s)}
           disabled={!!busy}
           loading={busy === "escalate"}

@@ -925,11 +925,11 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
       {lead.deletedAt && (
         <DeletedLeadBanner leadId={lead.id} deletedAtISO={lead.deletedAt.toISOString()} canRestore={me.isSuperAdmin} />
       )}
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 pb-24 lg:pb-0">
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 pb-24 lg:pb-0">
       {/* Mobile back link removed — MobileShell now renders a global back
           button in the mobile header (chevron-left next to hamburger) so
           every non-root page has it, not just lead detail. */}
-      <div className="lg:col-span-2 space-y-4">
+      <div className="lg:col-span-2 space-y-3">
         {/* INVESTOR BANNER — Agent V (Round 6). Surfaces "returning client"
             status above everything else. Hides itself when categorization
             !== "Investor" AND no matched leads exist (the component handles it). */}
@@ -1112,6 +1112,7 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
                       leadName={lead.name}
                       followupDate={lead.followupDate ? lead.followupDate.toISOString() : null}
                       hasContactToday={leadHasContactToday}
+                      compact
                     />
                   }
                 />

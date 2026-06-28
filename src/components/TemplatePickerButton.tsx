@@ -149,7 +149,7 @@ export default function TemplatePickerButton({ lead, kind, suggestedTrigger, com
           compact
             // Compact variant: horizontal icon+label, smaller padding, fits the
             // mobile-first action bar on /leads/[id].
-            ? `flex items-center justify-center gap-1 py-2 rounded-lg ${labelColor} text-xs font-semibold hover:opacity-90 disabled:opacity-30 transition shadow-sm min-h-10`
+            ? `flex items-center justify-center gap-1 px-2.5 py-1.5 rounded-lg ${labelColor} text-xs font-semibold hover:opacity-90 disabled:opacity-30 transition shadow-sm min-h-9`
             // Default: full-size vertical card (used elsewhere in the app).
             : `flex flex-col items-center justify-center py-3 rounded-xl ${labelColor} font-semibold hover:opacity-90 disabled:opacity-30 transition shadow-sm`
         }

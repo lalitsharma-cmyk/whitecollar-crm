@@ -350,15 +350,17 @@ export default function LeadActionsClient({ leadId, phone, altPhone, email, curr
           direct child (primary buttons + the injected follow-up buttons) gets
           `flex-1 basis-28` so they size uniformly and wrap gracefully on narrow
           widths — compact, above-the-fold, no overlap. */}
-      <div className="flex flex-wrap gap-2 mt-3 [&>*]:grow [&>*]:basis-28">
+      <div className="flex flex-wrap gap-1.5 mt-2 [&>*]:grow [&>*]:basis-24">
         {/* Call / Log Call / Note now render from the central Action Design System
             (src/lib/actionDesign.ts) — same icon+colour everywhere. WhatsApp &
             Email stay as TemplatePickerButton (they open the template/gallery
             picker, not a plain link) but use the same WA/Email token colours.
             Handlers/hrefs are unchanged. The Note token bakes in the dark-navy-
-            on-amber contrast fix (no global rule can hijack `bg-[#fcd34d]`). */}
+            on-amber contrast fix (no global rule can hijack `bg-[#fcd34d]`).
+            size="sm" = the shared compact density (Lalit's detail-view density
+            rule) — smaller height + padding, icons + labels kept. */}
         {phone && (
-          <ActionButton action="call" href={telUrl(phone)} onClick={logCallClick} />
+          <ActionButton action="call" size="sm" href={telUrl(phone)} onClick={logCallClick} />
         )}
         {phone && (
           <TemplatePickerButton lead={{ id: leadId, name: leadName, phone, email }} kind="WHATSAPP" compact />
@@ -366,9 +368,10 @@ export default function LeadActionsClient({ leadId, phone, altPhone, email, curr
         {email && (
           <TemplatePickerButton lead={{ id: leadId, name: leadName, phone, email }} kind="EMAIL" compact />
         )}
-        <ActionButton action="logCall" onClick={() => setShowCall(true)} />
+        <ActionButton action="logCall" size="sm" onClick={() => setShowCall(true)} />
         <ActionButton
           action="note"
+          size="sm"
           onClick={() => window.dispatchEvent(new CustomEvent(`open-sticky-${leadId}`))}
         />
         {/* Follow-up actions (Complete / Snooze / Escalate) — injected by the
