@@ -35,6 +35,7 @@ import BuyingSignalsCard from "@/components/BuyingSignalsCard";
 import VoiceNoteRecorder from "@/components/VoiceNoteRecorder";
 import LeadVoiceGuidance from "@/components/LeadVoiceGuidance";
 import VoiceGuidancePin from "@/components/VoiceGuidancePin";
+import LeadEscalationThread from "@/components/LeadEscalationThread";
 import LeadReactivateButton from "@/components/LeadReactivateButton";
 import LeadResourceShare from "@/components/LeadResourceShare";
 import QuickNoteCard from "@/components/QuickNoteCard";
@@ -206,6 +207,44 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
     understood: v.reads.length > 0,
     mine: v.createdById === me.id,
   }));
+
+  // Channel ② Escalation Thread — this lead's escalation threads + their messages
+  // (audio bytes streamed by the play endpoint, not selected here).
+  const escalationsRaw = await prisma.leadEscalation.findMany({
+    where: { leadId: id },
+    orderBy: { createdAt: "desc" },
+    select: {
+      id: true, reason: true, status: true,
+      raisedBy: { select: { name: true } },
+      messages: {
+        orderBy: { createdAt: "asc" },
+        select: {
+          id: true, kind: true, createdAt: true, transcript: true, textNote: true,
+          durationSec: true, createdById: true, createdBy: { select: { name: true } },
+        },
+      },
+    },
+  });
+  const escalations = escalationsRaw.map((e) => ({
+    id: e.id,
+    reason: e.reason,
+    status: e.status as "PENDING" | "MANAGER_REPLIED" | "RESOLVED",
+    raisedBy: e.raisedBy?.name ?? "Agent",
+    messages: e.messages
+      .filter((m) => m.kind === "ESCALATION" || m.kind === "ESCALATION_REPLY")
+      .map((m) => ({
+        id: m.id,
+        kind: m.kind as "ESCALATION" | "ESCALATION_REPLY",
+        by: m.createdBy?.name ?? "—",
+        at: m.createdAt.toISOString(),
+        transcript: m.transcript,
+        textNote: m.textNote,
+        durationSec: m.durationSec,
+        mine: m.createdById === me.id,
+      })),
+  }));
+  // The assigned agent (lead owner) opens/continues a thread; managers reply.
+  const canEscalate = !!lead.ownerId && me.id === lead.ownerId;
 
   // Confidentiality scope (AGENT → own leads, MANAGER → own team, ADMIN → all).
   // Passed into the history/intent/investor surfaces so an Agent/Manager never
@@ -1151,6 +1190,20 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
         <div id="lead-voice-guidance" data-lead-section="timeline" className="scroll-mt-24 rounded-xl">
           <LeadVoiceGuidance leadId={lead.id} isAdmin={me.role === "ADMIN"} messages={voiceGuidance} />
         </div>
+
+        {/* Channel ② Escalation Thread — the assigned agent raises a voice escalation
+            to the manager; the manager replies; either side resolves. Shown when there
+            is a thread to view, or when this viewer (the owner agent) can raise one. */}
+        {(escalations.length > 0 || canEscalate) && (
+          <div id="lead-escalation" data-lead-section="timeline" className="scroll-mt-24 rounded-xl">
+            <LeadEscalationThread
+              leadId={lead.id}
+              isManager={me.role === "ADMIN" || me.role === "MANAGER"}
+              canRaise={canEscalate}
+              threads={escalations}
+            />
+          </div>
+        )}
 
         {/* QUICK NOTE — secondary (spec §9: Quick Note is secondary, must not dominate).
             Moved AFTER conversation history so agents see history first. */}

@@ -4888,6 +4888,37 @@ const checks: Check[] = [
       results.push({ name: "  ↳ note", ok: true, detail: `overdue=${overdue} + today=${today} == todue=${todue} (disjoint); 5 surfaces canonical` });
     },
   },
+  {
+    name: "voice-channel-2-escalation — Escalation Thread API + UI wired; thread/message linkage intact; reply manager-gated",
+    run: async () => {
+      const fs = await import("fs");
+      // SOURCE: the 3 routes exist + the component is mounted on the lead page.
+      const raise = "src/app/api/leads/[id]/escalation/route.ts";
+      const reply = "src/app/api/leads/[id]/escalation/[escId]/reply/route.ts";
+      const resolve = "src/app/api/leads/[id]/escalation/[escId]/resolve/route.ts";
+      for (const f of [raise, reply, resolve]) assert(fs.existsSync(f), `${f} must exist`);
+      const raiseSrc = fs.readFileSync(raise, "utf8");
+      const replySrc = fs.readFileSync(reply, "utf8");
+      assert(/kind:\s*"ESCALATION"/.test(raiseSrc), "raise must create an ESCALATION message");
+      assert(/role:\s*\{\s*in:\s*\["ADMIN",\s*"MANAGER"\]/.test(raiseSrc), "raise must notify admins/managers");
+      assert(/kind:\s*"ESCALATION_REPLY"/.test(replySrc) && /MANAGER_REPLIED/.test(replySrc), "reply must add ESCALATION_REPLY + flip status");
+      assert(/me\.role !== "ADMIN" && me\.role !== "MANAGER"/.test(replySrc), "reply must be manager-gated");
+      const page = fs.readFileSync("src/app/(app)/leads/[id]/page.tsx", "utf8");
+      assert(/LeadEscalationThread/.test(page) && /leadEscalation\.findMany/.test(page), "lead page must fetch + mount the escalation thread");
+      assert(fs.existsSync("src/components/useVoiceRecorder.ts"), "shared voice-recorder hook must exist");
+      // LOGIC: the kinds exist in the generated client.
+      const { VoiceMessageKind } = await import("@prisma/client");
+      assert(!!(VoiceMessageKind as Record<string, string>).ESCALATION && !!(VoiceMessageKind as Record<string, string>).ESCALATION_REPLY, "VoiceMessageKind must include ESCALATION + ESCALATION_REPLY");
+      // DATA: no orphan threads (every escalation has ≥1 message) + every escalation
+      // message carries its escalationId (thread linkage integrity).
+      const threads = await prisma.leadEscalation.findMany({ select: { id: true, _count: { select: { messages: true } } } });
+      const orphan = threads.filter((t) => t._count.messages === 0).length;
+      assert(orphan === 0, `${orphan} escalation thread(s) have no messages`);
+      const unlinked = await prisma.leadVoiceMessage.count({ where: { kind: { in: ["ESCALATION", "ESCALATION_REPLY"] }, escalationId: null } });
+      assert(unlinked === 0, `${unlinked} escalation message(s) missing escalationId linkage`);
+      results.push({ name: "  ↳ note", ok: true, detail: `Channel ② wired (3 routes + hook + thread UI); ${threads.length} thread(s), 0 orphan, 0 unlinked` });
+    },
+  },
 ];
 
 // ── runner ────────────────────────────────────────────────────────────────────
