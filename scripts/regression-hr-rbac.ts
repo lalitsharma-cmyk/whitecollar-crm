@@ -109,7 +109,11 @@ for (const f of routes) {
 if (!routes.length) bad("no HR routes found — scan misconfigured");
 
 const PAGE_GUARD = /requireHrPage|requireHrPagePermission|canTouchCandidate/;
-const SCOPE = /hrScopeWhere/;
+// Accept BOTH scope helpers: hrScopeWhere and hrActiveScopeWhere (the latter is
+// hrScopeWhere + {deletedAt:null} — strictly stronger). The HR dashboard redesign
+// scopes via hrActiveScopeWhere, which is a genuine candidate scope; the regex must
+// recognize it or it false-positives "not candidate-scoped" and blocks every deploy.
+const SCOPE = /hr(?:Active)?ScopeWhere/;
 const mustScope = ["candidates/page.tsx", "followups/page.tsx", "missed/page.tsx", "interviews/page.tsx", "calendar/page.tsx", "resume-bank/page.tsx", "hr/page.tsx"];
 const pages = ls("src/app/(hr)/**/page.tsx");
 for (const f of pages) {
