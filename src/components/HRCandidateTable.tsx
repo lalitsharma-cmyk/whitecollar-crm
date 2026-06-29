@@ -1,9 +1,11 @@
 "use client";
-import { useState, useMemo, useEffect, useCallback } from "react";
+import { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Phone, MessageCircle, Target, CalendarPlus, Bookmark, BookmarkPlus, Trash2, Columns3, X, Mic, AlertTriangle } from "lucide-react";
+import { Phone, MessageCircle, Target, Bookmark, BookmarkPlus, Trash2, Columns3, X, Mic, AlertTriangle, Mail, StickyNote, ExternalLink, Sparkles } from "lucide-react";
 import { ACTIVE_STATUS_DEFS, CLOSED_STATUS_DEFS, CLOSED_STATUS_KEYS, statusColor, displayStatus } from "@/lib/hrStatus";
+import ColumnHeaderFilter, { type ColKind, type ColFilterState, type ColSortDir, isColFilterActive } from "@/components/ColumnHeaderFilter";
+import HRCandidateRowPreview, { type PreviewData } from "@/components/HRCandidateRowPreview";
 import * as XLSX from "xlsx";
 
 const SOURCES = ["Naukri", "Indeed", "Referral", "Walk-in", "LinkedIn", "Database", "Consultant", "Email", "Whatsapp", "Other"];
@@ -19,32 +21,32 @@ const CHIPS: [string, string][] = [
   ["offer", "Offer Released"], ["joined", "Joined"], ["closed", "Closed"],
 ];
 
-// Toggleable table columns. `key` doubles as the persisted hidden-set token and
-// the header label source. `always` columns can't be hidden (Candidate + Actions).
+// Toggleable table columns, in the canonical spec order (Created Date first).
+// `key` doubles as the persisted hidden-set token and the header label source.
+// `always` columns can't be hidden (Candidate Name + Actions).
 const COLUMNS: { key: string; label: string; always?: boolean }[] = [
-  { key: "candidate", label: "Candidate", always: true },
+  { key: "createdDate", label: "Created Date", always: true },
+  { key: "candidate", label: "Candidate Name", always: true },
   { key: "phone", label: "Phone" },
+  { key: "position", label: "Position Applied" },
   { key: "profile", label: "Current Profile" },
-  { key: "exp", label: "Exp" },
-  { key: "currentSal", label: "Current ₹" },
-  { key: "expectedSal", label: "Expected ₹" },
-  { key: "notice", label: "Notice Period" },
-  { key: "source", label: "Source" },
-  { key: "status", label: "Status" },
+  { key: "exp", label: "Experience" },
+  { key: "currentSal", label: "Current Salary" },
+  { key: "expectedSal", label: "Expected Salary" },
+  { key: "status", label: "Current Status" },
   { key: "nextAction", label: "Next Action" },
-  { key: "followUp", label: "Follow-Up" },
+  { key: "followUp", label: "Follow-up Date" },
   { key: "interview", label: "Interview" },
   { key: "owner", label: "Owner" },
-  { key: "createdDate", label: "Created Date" },
-  { key: "createdTime", label: "Created Time" },
   { key: "lastActivity", label: "Last Activity" },
   { key: "actions", label: "Actions", always: true },
 ];
-// Columns hidden by default to keep the table from being overwhelming on first load.
-const DEFAULT_HIDDEN = new Set<string>(["createdTime", "source", "notice"]);
-const HIDDEN_COLS_KEY = "hr-candidate-hidden-cols";
+// Columns hidden by default to keep the first load compact.
+const DEFAULT_HIDDEN = new Set<string>([]);
+const HIDDEN_COLS_KEY = "hr-candidate-hidden-cols-v2";
 
 interface Interview { scheduledAt: string; type: string; confirmationStatus: string; attendanceStatus: string; }
+interface Activity { type: string; createdAt: string; notes?: string | null; }
 interface Candidate {
   id: string; name: string; phone: string | null; whatsappPhone: string | null; email: string | null;
   location: string | null; currentCompany: string | null; currentProfile: string | null; positionApplied: string | null;
@@ -53,7 +55,7 @@ interface Candidate {
   primaryOwner: { id: string; name: string } | null; secondaryOwnerId: string | null;
   followUps: { dueAt: string }[];
   interviews: Interview[];
-  activities: { type: string; createdAt: string }[];
+  activities: Activity[];
   hasResume: boolean;
   // Unread voice/escalation signals (computed server-side, scoped to the viewer).
   unreadVoiceCount?: number;
@@ -105,6 +107,60 @@ function signals(c: Candidate, now: Date) {
   return { nextFU, nextIV, interviewToday, pendingConfirm, hasNoShow, fuOverdue, fuToday };
 }
 
+// ── Excel header-filter column model (drives ColumnHeaderFilter + sort) ───────
+// Same model the Buyer/Master-Data tables use: every filterable column declares
+// a kind, a display-string accessor (multi-select picker + text match) and, for
+// number/date kinds, a numeric accessor. The non-business columns (selection,
+// Candidate Name link, Actions) are excluded from this list so they get no
+// header filter — exactly like the Sales/Buyer tables.
+type ColKey = "createdDate" | "phone" | "position" | "profile" | "exp" | "currentSal" | "expectedSal" | "status" | "nextAction" | "followUp" | "interview" | "owner" | "lastActivity";
+
+type HFCol = {
+  key: ColKey;
+  kind: ColKind;
+  str: (c: Candidate, s: ReturnType<typeof signals>) => string;
+  num?: (c: Candidate, s: ReturnType<typeof signals>) => number;
+  ordered?: boolean;
+  options?: (rows: Candidate[]) => string[];
+};
+
+const STATUS_ORDER = [...ACTIVE_STATUS_DEFS, ...CLOSED_STATUS_DEFS];
+
+const HF_COLS: HFCol[] = [
+  { key: "createdDate", kind: "date", str: (c) => fmtDateFull(c.createdAt), num: (c) => +new Date(c.createdAt) },
+  { key: "phone", kind: "text", str: (c) => c.phone ?? "—" },
+  { key: "position", kind: "select", ordered: false, str: (c) => c.positionApplied ?? "—", options: () => POSITIONS },
+  { key: "profile", kind: "text", str: (c) => c.currentProfile ?? "—" },
+  { key: "exp", kind: "number", str: (c) => c.experience ?? "—", num: (c) => expYears(c.experience) ?? -1 },
+  { key: "currentSal", kind: "number", str: (c) => fmtSal(c.currentSalary), num: (c) => c.currentSalary ?? -1 },
+  { key: "expectedSal", kind: "number", str: (c) => fmtSal(c.expectedSalary), num: (c) => c.expectedSalary ?? -1 },
+  // Status filters on the LABEL the user sees (displayStatus); options = canonical order.
+  { key: "status", kind: "select", ordered: true, str: (c) => displayStatus(c), options: (rows) => {
+      const canon = STATUS_ORDER.map(s => s.label);
+      const seen = Array.from(new Set(rows.map(displayStatus)));
+      // Keep canonical order first, then any verbatim originalStatus values not in it.
+      return [...canon, ...seen.filter(v => !canon.includes(v))];
+    } },
+  { key: "nextAction", kind: "text", str: (c) => c.nextAction ?? "—" },
+  { key: "followUp", kind: "date", str: (_c, s) => (s.nextFU ? fmtDateFull(s.nextFU) : "—"), num: (_c, s) => (s.nextFU ? +new Date(s.nextFU) : -1) },
+  { key: "interview", kind: "date", str: (_c, s) => (s.nextIV ? fmtDateFull(s.nextIV.scheduledAt) : "—"), num: (_c, s) => (s.nextIV ? +new Date(s.nextIV.scheduledAt) : -1) },
+  { key: "owner", kind: "text", str: (c) => c.primaryOwner?.name ?? "—" },
+  { key: "lastActivity", kind: "date", str: (c) => (c.activities[0] ? fmtDateFull(c.activities[0].createdAt) : "—"), num: (c) => (c.activities[0] ? +new Date(c.activities[0].createdAt) : -1) },
+];
+const HF_BY_KEY = new Map(HF_COLS.map(c => [c.key, c]));
+
+// ── Saved-view presets (spec #11) ────────────────────────────────────────────
+// Recruiter-friendly one-click views layered on top of the saved-filters bar.
+// Each maps to a snapshot the table understands (same shape as snapshotState()).
+const PRESETS: { name: string; build: () => Record<string, unknown> }[] = [
+  { name: "Today's Calls", build: () => ({ chip: "today" }) },
+  { name: "Interview Today", build: () => ({ chip: "interview-today" }) },
+  { name: "Salary Above ₹50K", build: () => ({ curMin: "50000" }) },
+  { name: "Team Leader Candidates", build: () => ({ fPosition: "Team Leader" }) },
+  { name: "Gurgaon Candidates", build: () => ({ fLocation: "Gurgaon" }) },
+  { name: "Dubai Candidates", build: () => ({ fLocation: "Dubai" }) },
+];
+
 export default function HRCandidateTable({ candidates, agents, perms = NO_PERMS }: Props) {
   const now = new Date();
   // UI gating is driven by the permission matrix (server re-enforces every action).
@@ -140,6 +196,11 @@ export default function HRCandidateTable({ candidates, agents, perms = NO_PERMS 
   const [fuFrom, setFuFrom] = useState(""); const [fuTo, setFuTo] = useState("");
   const [ivFrom, setIvFrom] = useState(""); const [ivTo, setIvTo] = useState("");
 
+  // ── Excel per-column header filters + sort (client-state) ──────────────────
+  const [colFilters, setColFilters] = useState<Record<string, ColFilterState>>({});
+  const [sortKey, setSortKey] = useState<ColKey>("createdDate");
+  const [sortDir, setSortDir] = useState<ColSortDir>("desc");
+
   // ── Column show/hide (persisted client-side via localStorage) ──────────────
   const [hidden, setHidden] = useState<Set<string>>(new Set(DEFAULT_HIDDEN));
   useEffect(() => {
@@ -174,17 +235,21 @@ export default function HRCandidateTable({ candidates, agents, perms = NO_PERMS 
   }
   useEffect(() => { loadViews(); }, []);
 
-  // Snapshot every filter + column-visibility piece of state into one JSON blob.
+  // Snapshot every filter + column-visibility + per-column-filter + sort piece of
+  // state into one JSON blob (serializing Sets → arrays).
+  function serCol(cf: Record<string, ColFilterState>) {
+    return Object.fromEntries(Object.entries(cf).filter(([, f]) => isColFilterActive(f)).map(([k, f]) => [k, { values: [...f.values], min: f.min, max: f.max }]));
+  }
   function snapshotState() {
     return {
-      search, chip, hidden: [...hidden],
+      search, chip, hidden: [...hidden], sortKey, sortDir, colFilters: serCol(colFilters),
       fStatus, fSource, fPosition, fProfile, fLocation, fOwner, fNotice, fConfirm, fResume, fNoShow,
       expMin, expMax, curMin, curMax, expSalMin, expSalMax, fuFrom, fuTo, ivFrom, ivTo,
     };
   }
-  function applySnapshot(raw: string) {
-    let v: Record<string, unknown>;
-    try { v = JSON.parse(raw); } catch { return; }
+  // Apply a snapshot object (from a saved view OR a preset). Anything absent
+  // resets to its default, so presets behave as clean one-click views.
+  function applySnapshotObj(v: Record<string, unknown>) {
     const str = (k: string) => (typeof v[k] === "string" ? (v[k] as string) : "");
     setSearch(str("search")); setChip(str("chip") || "all");
     setFStatus(str("fStatus")); setFSource(str("fSource")); setFPosition(str("fPosition"));
@@ -194,10 +259,19 @@ export default function HRCandidateTable({ candidates, agents, perms = NO_PERMS 
     setExpMin(str("expMin")); setExpMax(str("expMax")); setCurMin(str("curMin")); setCurMax(str("curMax"));
     setExpSalMin(str("expSalMin")); setExpSalMax(str("expSalMax"));
     setFuFrom(str("fuFrom")); setFuTo(str("fuTo")); setIvFrom(str("ivFrom")); setIvTo(str("ivTo"));
+    setSortKey((typeof v.sortKey === "string" && HF_BY_KEY.has(v.sortKey as ColKey)) ? (v.sortKey as ColKey) : "createdDate");
+    setSortDir(v.sortDir === "asc" ? "asc" : "desc");
     if (Array.isArray(v.hidden)) {
       const h = new Set((v.hidden as unknown[]).filter(x => typeof x === "string") as string[]);
       setHidden(h); persistHidden(h);
-    }
+    } else { setHidden(new Set(DEFAULT_HIDDEN)); persistHidden(new Set(DEFAULT_HIDDEN)); }
+    const cf = v.colFilters as Record<string, { values: string[]; min: string; max: string }> | undefined;
+    setColFilters(cf ? Object.fromEntries(Object.entries(cf).map(([k, f]) => [k, { values: new Set(f.values), min: f.min, max: f.max }])) : {});
+  }
+  function applySnapshot(raw: string) {
+    let v: Record<string, unknown>;
+    try { v = JSON.parse(raw); } catch { return; }
+    applySnapshotObj(v);
   }
   async function saveView() {
     if (savingView || !saveName.trim()) return;
@@ -261,12 +335,36 @@ export default function HRCandidateTable({ candidates, agents, perms = NO_PERMS 
     return true;
   }
 
+  // Per-column Excel header-filter match (composes AND with chip/adv/search).
+  const colEntries = useMemo(() => Object.entries(colFilters).filter(([, f]) => isColFilterActive(f)), [colFilters]);
+  function colMatch(c: Candidate, s: ReturnType<typeof signals>): boolean {
+    const dayStart = (str: string) => { const t = new Date(str + "T00:00:00").getTime(); return isNaN(t) ? null : t; };
+    const dayEnd = (str: string) => { const t = new Date(str + "T23:59:59.999").getTime(); return isNaN(t) ? null : t; };
+    for (const [key, f] of colEntries) {
+      const col = HF_BY_KEY.get(key as ColKey);
+      if (!col) continue;
+      if (col.kind === "text" || col.kind === "select") {
+        if (f.values.size > 0 && !f.values.has(col.str(c, s) || "—")) return false;
+      } else if (col.kind === "number") {
+        const v = col.num ? col.num(c, s) : 0;
+        if (f.min !== "" && v < Number(f.min)) return false;
+        if (f.max !== "" && v > Number(f.max)) return false;
+      } else if (col.kind === "date") {
+        const v = col.num ? col.num(c, s) : 0;
+        if (f.min !== "") { const lo = dayStart(f.min); if (lo != null && (v < 0 || v < lo)) return false; }
+        if (f.max !== "") { const hi = dayEnd(f.max); if (hi != null && (v < 0 || v > hi)) return false; }
+      }
+    }
+    return true;
+  }
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return candidates.filter(c => {
+    const out = candidates.filter(c => {
       const s = signals(c, now);
       if (!chipMatch(c, s)) return false;
       if (!advMatch(c, s)) return false;
+      if (!colMatch(c, s)) return false;
       if (q && !(
         c.name.toLowerCase().includes(q) || (c.phone ?? "").includes(q) ||
         (c.email ?? "").toLowerCase().includes(q) || (c.currentCompany ?? "").toLowerCase().includes(q) ||
@@ -274,14 +372,44 @@ export default function HRCandidateTable({ candidates, agents, perms = NO_PERMS 
       )) return false;
       return true;
     });
+    // Sort by the active header-filter column.
+    const dir = sortDir === "asc" ? 1 : -1;
+    const col = HF_BY_KEY.get(sortKey);
+    return out.slice().sort((a, b) => {
+      const sa = signals(a, now), sb = signals(b, now);
+      if (col?.num) return (col.num(a, sa) - col.num(b, sb)) * dir;
+      const va = col ? col.str(a, sa) : "";
+      const vb = col ? col.str(b, sb) : "";
+      return va.localeCompare(vb, undefined, { numeric: true }) * dir;
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [candidates, search, chip, fStatus, fSource, fPosition, fProfile, fLocation, fOwner, fNotice, fConfirm, fResume, fNoShow, expMin, expMax, curMin, curMax, expSalMin, expSalMax, fuFrom, fuTo, ivFrom, ivTo]);
+  }, [candidates, search, chip, fStatus, fSource, fPosition, fProfile, fLocation, fOwner, fNotice, fConfirm, fResume, fNoShow, expMin, expMax, curMin, curMax, expSalMin, expSalMax, fuFrom, fuTo, ivFrom, ivTo, colFilters, sortKey, sortDir]);
+
+  // Distinct option lists for text/select header filters (over loaded rows).
+  const colOptions = useMemo(() => {
+    const m = new Map<ColKey, string[]>();
+    for (const col of HF_COLS) {
+      if (col.kind !== "text" && col.kind !== "select") continue;
+      if (col.options) { m.set(col.key, col.options(candidates)); continue; }
+      const vals = Array.from(new Set(candidates.map(c => col.str(c, signals(c, now)) || "—"))).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+      m.set(col.key, vals);
+    }
+    return m;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [candidates]);
+
+  const setColFilter = (key: ColKey, next: ColFilterState) => {
+    setColFilters(prev => { const n = { ...prev }; if (isColFilterActive(next)) n[key] = next; else delete n[key]; return n; });
+  };
+  const setSort = (key: ColKey, dir: ColSortDir) => { setSortKey(key); setSortDir(dir); };
+  const activeColCount = colEntries.length;
 
   function resetAdv() {
     setFStatus(""); setFSource(""); setFPosition(""); setFProfile(""); setFLocation(""); setFOwner("");
     setFNotice(""); setFConfirm(""); setFResume(""); setFNoShow(false);
     setExpMin(""); setExpMax(""); setCurMin(""); setCurMax(""); setExpSalMin(""); setExpSalMax("");
     setFuFrom(""); setFuTo(""); setIvFrom(""); setIvTo("");
+    setColFilters({});
   }
 
   function toggleSel(id: string) { setSelected(s => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; }); }
@@ -344,9 +472,7 @@ export default function HRCandidateTable({ candidates, agents, perms = NO_PERMS 
   const inp = "w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs dark:bg-slate-800 dark:border-slate-600";
   const lbl = "block text-[10px] font-semibold text-gray-500 mb-1 uppercase tracking-wide";
 
-  // Unread voice / open-escalation badges next to a candidate's name. Voice =
-  // blue Mic (unread GUIDANCE for the viewer), escalation = amber AlertTriangle
-  // (open thread). Nothing renders when there's nothing unread.
+  // Unread voice / open-escalation badges next to a candidate's name.
   const UnreadBadges = ({ c }: { c: Candidate }) => {
     const voice = c.unreadVoiceCount ?? 0;
     const esc = c.openEscalationCount ?? 0;
@@ -355,33 +481,117 @@ export default function HRCandidateTable({ candidates, agents, perms = NO_PERMS 
       <span className="inline-flex items-center gap-1 align-middle">
         {voice > 0 && (
           <span title={`${voice} unread voice guidance message${voice === 1 ? "" : "s"}`}
-            className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">
-            <Mic className="w-3 h-3" />{voice}
+            className="inline-flex items-center gap-0.5 px-1 py-0.5 rounded-full text-[9px] font-bold bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">
+            <Mic className="w-2.5 h-2.5" />{voice}
           </span>
         )}
         {esc > 0 && (
           <span title={`${esc} open escalation${esc === 1 ? "" : "s"}`}
-            className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
-            <AlertTriangle className="w-3 h-3" />{esc}
+            className="inline-flex items-center gap-0.5 px-1 py-0.5 rounded-full text-[9px] font-bold bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
+            <AlertTriangle className="w-2.5 h-2.5" />{esc}
           </span>
         )}
       </span>
     );
   };
 
-  // Row action buttons (reuse the detail deep-links for schedule/follow-up).
+  // Row action buttons. Each stops row-click propagation so the row's open-on-click
+  // never fights a quick action. Reuse the detail deep-links for schedule/note/voice.
+  const stop = (e: React.MouseEvent) => e.stopPropagation();
   const RowActions = ({ c }: { c: Candidate }) => (
-    <div className="flex items-center gap-1">
-      {c.phone && <a href={`tel:${c.phone}`} title="Call" className="p-1.5 rounded hover:bg-blue-50 dark:hover:bg-blue-900/30 text-blue-600 dark:text-blue-400"><Phone className="w-3.5 h-3.5" /></a>}
-      {(c.whatsappPhone ?? c.phone) && <a href={waLink((c.whatsappPhone ?? c.phone)!)} target="_blank" rel="noopener noreferrer" title="WhatsApp" className="p-1.5 rounded hover:bg-green-50 dark:hover:bg-green-900/30 text-green-600 dark:text-green-400"><MessageCircle className="w-3.5 h-3.5" /></a>}
-      <Link href={`/hr/candidates/${c.id}?do=interview`} title="Schedule Interview" className="p-1.5 rounded hover:bg-purple-50 dark:hover:bg-purple-900/30 text-purple-600 dark:text-purple-400"><Target className="w-3.5 h-3.5" /></Link>
-      <Link href={`/hr/candidates/${c.id}?do=followup`} title="Add Follow-Up" className="p-1.5 rounded hover:bg-amber-50 dark:hover:bg-amber-900/30 text-amber-600 dark:text-amber-400"><CalendarPlus className="w-3.5 h-3.5" /></Link>
-      <Link href={`/hr/candidates/${c.id}`} title="Open" className="px-2 py-1 rounded-lg bg-[#1a2e4a] text-white text-[11px] hover:bg-[#243d60]">Open</Link>
+    <div className="flex items-center gap-0.5" onClick={stop}>
+      {c.phone && <a href={`tel:${c.phone}`} onClick={stop} title="Call" className="p-1 rounded hover:bg-blue-50 dark:hover:bg-blue-900/30 text-blue-600 dark:text-blue-400"><Phone className="w-3.5 h-3.5" /></a>}
+      {(c.whatsappPhone ?? c.phone) && <a href={waLink((c.whatsappPhone ?? c.phone)!)} target="_blank" rel="noopener noreferrer" onClick={stop} title="WhatsApp" className="p-1 rounded hover:bg-green-50 dark:hover:bg-green-900/30 text-green-600 dark:text-green-400"><MessageCircle className="w-3.5 h-3.5" /></a>}
+      <Link href={`/hr/candidates/${c.id}?do=voice`} onClick={stop} title="Voice Note" className="p-1 rounded hover:bg-sky-50 dark:hover:bg-sky-900/30 text-sky-600 dark:text-sky-400"><Mic className="w-3.5 h-3.5" /></Link>
+      {c.email && <a href={`mailto:${c.email}`} onClick={stop} title="Email" className="p-1 rounded hover:bg-rose-50 dark:hover:bg-rose-900/30 text-rose-600 dark:text-rose-400"><Mail className="w-3.5 h-3.5" /></a>}
+      <Link href={`/hr/candidates/${c.id}?do=interview`} onClick={stop} title="Schedule Interview" className="p-1 rounded hover:bg-purple-50 dark:hover:bg-purple-900/30 text-purple-600 dark:text-purple-400"><Target className="w-3.5 h-3.5" /></Link>
+      <Link href={`/hr/candidates/${c.id}?do=note`} onClick={stop} title="Add Note" className="p-1 rounded hover:bg-amber-50 dark:hover:bg-amber-900/30 text-amber-600 dark:text-amber-400"><StickyNote className="w-3.5 h-3.5" /></Link>
+      <Link href={`/hr/candidates/${c.id}`} onClick={stop} title="Open" className="p-1 rounded hover:bg-gray-100 dark:hover:bg-slate-700 text-gray-500 dark:text-slate-400"><ExternalLink className="w-3.5 h-3.5" /></Link>
     </div>
   );
 
-  // Header cells in column order, honoring visibility.
-  const headers = COLUMNS.filter(col => col.key !== "candidate" && col.key !== "actions" && visible(col.key));
+  // Build the hover-preview payload for a candidate from already-loaded fields.
+  function previewOf(c: Candidate, s: ReturnType<typeof signals>): PreviewData {
+    const lastNoteAct = c.activities.find(a => a.type === "NOTE_ADDED" && a.notes && a.notes.trim());
+    const lastCallAct = c.activities.find(a => a.type.startsWith("CALL_"));
+    return {
+      name: c.name,
+      lastNote: lastNoteAct?.notes?.trim() ?? null,
+      lastCallDate: lastCallAct?.createdAt ?? null,
+      lastFollowUp: s.nextFU,
+      lastFollowUpOverdue: s.fuOverdue,
+      recruiter: c.primaryOwner?.name ?? null,
+      hasResume: c.hasResume,
+      currentStage: displayStatus(c),
+      statusClass: statusColor(c.status),
+    };
+  }
+
+  // ── Hover preview positioning (fixed card next to the hovered row) ──────────
+  const [preview, setPreview] = useState<{ data: PreviewData; top: number; left: number } | null>(null);
+  const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  function onRowEnter(e: React.MouseEvent, c: Candidate, s: ReturnType<typeof signals>) {
+    if (hoverTimer.current) clearTimeout(hoverTimer.current);
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const data = previewOf(c, s);
+    hoverTimer.current = setTimeout(() => {
+      // Prefer right of the row; flip left if it would overflow the viewport.
+      const cardW = 288; // w-72
+      const left = rect.right + cardW + 12 < window.innerWidth ? rect.right + 8 : Math.max(8, rect.left - cardW - 8);
+      const top = Math.min(rect.top, window.innerHeight - 260);
+      setPreview({ data, top: Math.max(8, top), left });
+    }, 350);
+  }
+  function onRowLeave() {
+    if (hoverTimer.current) clearTimeout(hoverTimer.current);
+    setPreview(null);
+  }
+  useEffect(() => () => { if (hoverTimer.current) clearTimeout(hoverTimer.current); }, []);
+
+  // Sticky-column offsets (selection 32px → Created Date → Candidate → Phone).
+  // These let the first three business columns stay pinned on horizontal scroll.
+  const STICKY = {
+    sel: "left-0 w-8",
+    created: "left-8",
+    candidate: "left-[136px]",
+    phone: "left-[256px]",
+  };
+  const stickyBg = "bg-white dark:bg-slate-900 group-hover:bg-gray-50/80 dark:group-hover:bg-slate-800/50";
+  const stickyHeadBg = "bg-gray-50 dark:bg-slate-800";
+
+  // Header cells in column order, honoring visibility (excludes the always cols
+  // which are rendered explicitly so they can be sticky).
+  const dynHeaders = COLUMNS.filter(col => !["createdDate", "candidate", "phone", "actions"].includes(col.key) && visible(col.key));
+
+  // Sort-trigger label + Excel header filter (a SPAN, so it can live inside any
+  // <th> — sticky headers wrap it, dynamic headers wrap it via renderTh()). These
+  // are render HELPERS (functions returning JSX), not nested components, so they
+  // don't trip the static-components lint rule.
+  const renderHeaderLabel = (colKey: ColKey, label: string, right = false) => (
+    <span className={`inline-flex items-center ${right ? "justify-end" : ""}`}>
+      <span className="cursor-pointer" onClick={() => setSort(colKey, sortKey === colKey && sortDir === "asc" ? "desc" : "asc")}>{label}</span>
+      <ColumnHeaderFilter
+        label={label}
+        kind={HF_BY_KEY.get(colKey)!.kind}
+        sortActive={sortKey === colKey}
+        sortDir={sortDir}
+        onSort={(dir) => setSort(colKey, dir)}
+        filter={colFilters[colKey]}
+        onApply={(next) => setColFilter(colKey, next)}
+        options={colOptions.get(colKey) ?? []}
+      />
+    </span>
+  );
+
+  // Compact dynamic header cell (non-sticky columns). `cls` carries extra classes.
+  const renderTh = (colKey: ColKey, label: string, cls = "", right = false) => (
+    <th key={colKey} className={`px-2 py-2 whitespace-nowrap font-semibold ${right ? "text-right" : "text-left"} ${cls}`}>
+      {renderHeaderLabel(colKey, label, right)}
+    </th>
+  );
+
+  const anyAdv = !!(fStatus || fSource || fPosition || fProfile || fLocation || fOwner || fNotice || fConfirm || fResume || fNoShow ||
+    expMin || expMax || curMin || curMax || expSalMin || expSalMax || fuFrom || fuTo || ivFrom || ivTo || activeColCount > 0);
 
   return (
     <div className="space-y-3">
@@ -391,8 +601,8 @@ export default function HRCandidateTable({ candidates, agents, perms = NO_PERMS 
           placeholder="🔍  Search name, phone, email, company, profile…"
           className="flex-1 min-w-[220px] border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1a2e4a]/20 dark:bg-slate-800 dark:border-slate-600" />
         <button type="button" onClick={() => setShowAdv(s => !s)}
-          className={`px-3 py-2 rounded-xl text-sm border ${showAdv ? "bg-[#1a2e4a] text-white border-[#1a2e4a]" : "border-gray-300 dark:border-slate-700 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-slate-800"}`}>
-          ⚙ Filters
+          className={`px-3 py-2 rounded-xl text-sm border ${showAdv || anyAdv ? "bg-[#1a2e4a] text-white border-[#1a2e4a]" : "border-gray-300 dark:border-slate-700 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-slate-800"}`}>
+          ⚙ Filters{anyAdv ? " •" : ""}
         </button>
         {/* Column show/hide */}
         <div className="relative">
@@ -431,12 +641,21 @@ export default function HRCandidateTable({ candidates, agents, perms = NO_PERMS 
         )}
       </div>
 
-      {/* Saved Views bar */}
+      {/* Saved Views bar — presets + user-saved views */}
       <div className="flex flex-wrap items-center gap-1.5 bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-xl px-3 py-2">
         <Bookmark className="w-3.5 h-3.5 text-gray-400" />
         <span className="text-[10px] text-gray-500 font-bold tracking-widest uppercase mr-1">Saved views</span>
+        {/* One-click presets (spec #11) */}
+        {PRESETS.map(p => (
+          <button key={p.name} type="button" onClick={() => applySnapshotObj(p.build())}
+            className="text-xs px-2.5 py-1 rounded-full font-semibold whitespace-nowrap bg-[#1a2e4a]/5 dark:bg-blue-900/20 text-[#1a2e4a] dark:text-blue-300 border border-[#1a2e4a]/15 dark:border-blue-800 hover:bg-[#1a2e4a]/10 inline-flex items-center gap-1 transition"
+            title={`Preset: ${p.name}`}>
+            <Sparkles className="w-3 h-3" />{p.name}
+          </button>
+        ))}
+        <span className="w-px h-4 bg-gray-200 dark:bg-slate-700 mx-0.5" />
         {!viewsLoaded && <span className="text-xs text-gray-400">Loading…</span>}
-        {viewsLoaded && views.length === 0 && <span className="text-xs text-gray-400">None yet — set filters, then save.</span>}
+        {viewsLoaded && views.length === 0 && <span className="text-xs text-gray-400">Set filters, then save your own.</span>}
         {views.map(v => (
           <span key={v.id} className="inline-flex items-center group">
             <button type="button" onClick={() => applySnapshot(v.query)}
@@ -503,7 +722,7 @@ export default function HRCandidateTable({ candidates, agents, perms = NO_PERMS 
         </div>
       )}
 
-      {/* Bulk toolbar — only for users who can perform bulk actions (hides dead controls from Junior HR). */}
+      {/* Bulk toolbar — only for users who can perform bulk actions. */}
       {selected.size > 0 && perms.bulkActions && (
         <div className="bg-[#1a2e4a] text-white rounded-xl px-3 py-2 text-sm space-y-1.5">
           <div className="flex items-center gap-2 flex-wrap">
@@ -526,56 +745,78 @@ export default function HRCandidateTable({ candidates, agents, perms = NO_PERMS 
           {bulkError && <div className="text-xs font-medium text-red-200 bg-red-900/40 rounded px-2 py-1">{bulkError}</div>}
         </div>
       )}
-      <div className="text-xs text-gray-500">{filtered.length} candidate{filtered.length !== 1 ? "s" : ""}</div>
+      <div className="text-xs text-gray-500">
+        {filtered.length} candidate{filtered.length !== 1 ? "s" : ""}
+        {anyAdv && <span className="text-amber-600 dark:text-amber-400"> (filtered{activeColCount > 0 ? ` · ${activeColCount} column${activeColCount === 1 ? "" : "s"}` : ""})</span>}
+      </div>
 
-      {/* Table view — columns honor show/hide */}
+      {/* Table view — sticky header + sticky first 3 columns, compact density */}
       {view === "table" && (
-        <div className="hidden sm:block overflow-x-auto rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900">
-          <table className="min-w-[1000px] w-full text-sm">
-            <thead>
-              <tr className="bg-gray-50 dark:bg-slate-800 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wide">
-                <th className="px-2 py-2.5 w-8"><input type="checkbox" aria-label="Select all" checked={filtered.length > 0 && selected.size === filtered.length} onChange={toggleAll} /></th>
-                <th className="px-3 py-2.5 whitespace-nowrap">Candidate</th>
-                {headers.map(col => <th key={col.key} className="px-3 py-2.5 whitespace-nowrap">{col.label}</th>)}
-                <th className="px-3 py-2.5 whitespace-nowrap">Actions</th>
+        <div className="hidden sm:block overflow-x-auto overflow-y-auto max-h-[72vh] rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900">
+          <table className="min-w-[1100px] w-full text-xs border-separate border-spacing-0">
+            <thead className="sticky top-0 z-20">
+              <tr className="text-left text-[11px] text-gray-500 uppercase tracking-wide">
+                <th className={`px-2 py-2 ${stickyHeadBg} sticky ${STICKY.sel} z-10 border-b border-gray-200 dark:border-slate-700`}>
+                  <input type="checkbox" aria-label="Select all" checked={filtered.length > 0 && selected.size === filtered.length} onChange={toggleAll} />
+                </th>
+                {visible("createdDate") && <th className={`px-2 py-2 whitespace-nowrap font-semibold ${stickyHeadBg} sticky ${STICKY.created} z-10 border-b border-r border-gray-100 dark:border-slate-700`}>{renderHeaderLabel("createdDate", "Created")}</th>}
+                <th className={`px-2 py-2 whitespace-nowrap font-semibold ${stickyHeadBg} sticky ${STICKY.candidate} z-10 border-b border-gray-200 dark:border-slate-700`}>Candidate</th>
+                {visible("phone") && <th className={`px-2 py-2 whitespace-nowrap font-semibold ${stickyHeadBg} sticky ${STICKY.phone} z-10 border-b border-r border-gray-200 dark:border-slate-700`}>{renderHeaderLabel("phone", "Phone")}</th>}
+                {dynHeaders.map(col => {
+                  const right = col.key === "currentSal" || col.key === "expectedSal" || col.key === "exp";
+                  return renderTh(col.key as ColKey, col.label, `${stickyHeadBg} border-b border-gray-200 dark:border-slate-700`, right);
+                })}
+                <th className={`px-2 py-2 whitespace-nowrap font-semibold ${stickyHeadBg} border-b border-gray-200 dark:border-slate-700`}>Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-100 dark:divide-slate-800">
-              {filtered.length === 0 && <tr><td colSpan={headers.length + 3} className="px-4 py-10 text-center text-gray-400 text-xs">No candidates match these filters.</td></tr>}
+            <tbody>
+              {filtered.length === 0 && <tr><td colSpan={dynHeaders.length + 4} className="px-4 py-10 text-center text-gray-400 text-xs">No candidates match these filters.</td></tr>}
               {filtered.map(c => {
                 const s = signals(c, now);
                 const lastAct = c.activities[0];
+                const sel = selected.has(c.id);
                 return (
-                  <tr key={c.id} className="hover:bg-gray-50/80 dark:hover:bg-slate-800/50 transition align-top">
-                    <td className="px-2 py-2.5"><input type="checkbox" aria-label="Select" checked={selected.has(c.id)} onChange={() => toggleSel(c.id)} /></td>
-                    <td className="px-3 py-2.5 min-w-[150px]">
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        <Link href={`/hr/candidates/${c.id}`} className="font-semibold text-[#1a2e4a] dark:text-blue-400 hover:underline">{c.name}</Link>
+                  <tr key={c.id}
+                    onClick={() => router.push(`/hr/candidates/${c.id}`)}
+                    onMouseEnter={(e) => onRowEnter(e, c, s)}
+                    onMouseLeave={onRowLeave}
+                    className={`group cursor-pointer hover:bg-gray-50/80 dark:hover:bg-slate-800/50 transition ${sel ? "bg-amber-50/40 dark:bg-amber-900/10" : ""}`}>
+                    <td className={`px-2 py-1.5 sticky ${STICKY.sel} z-[5] ${sel ? "bg-amber-50/40 dark:bg-amber-900/10" : stickyBg} border-b border-gray-100 dark:border-slate-800`} onClick={stop}>
+                      <input type="checkbox" aria-label="Select" checked={sel} onChange={() => toggleSel(c.id)} />
+                    </td>
+                    {visible("createdDate") && <td className={`px-2 py-1.5 text-gray-500 whitespace-nowrap sticky ${STICKY.created} z-[5] ${sel ? "bg-amber-50/40 dark:bg-amber-900/10" : stickyBg} border-b border-r border-gray-100 dark:border-slate-800`}>{fmtDateFull(c.createdAt)}</td>}
+                    <td className={`px-2 py-1.5 min-w-[120px] sticky ${STICKY.candidate} z-[5] ${sel ? "bg-amber-50/40 dark:bg-amber-900/10" : stickyBg} border-b border-gray-100 dark:border-slate-800`}>
+                      <div className="flex items-center gap-1 flex-wrap">
+                        <Link href={`/hr/candidates/${c.id}`} onClick={stop} className="font-semibold text-[#1a2e4a] dark:text-blue-400 hover:underline">{c.name}</Link>
                         <UnreadBadges c={c} />
                       </div>
-                      {c.currentCompany && <div className="text-[11px] text-gray-400 truncate max-w-[160px]">{c.currentCompany}</div>}
+                      {c.currentCompany && <div className="text-[10px] text-gray-400 truncate max-w-[140px]">{c.currentCompany}</div>}
                     </td>
-                    {visible("phone") && <td className="px-3 py-2.5 text-xs text-gray-600 whitespace-nowrap">{c.phone ? <a href={`tel:${c.phone}`} className="hover:text-blue-600">{c.phone}</a> : "—"}</td>}
-                    {visible("profile") && <td className="px-3 py-2.5 text-xs text-gray-600 max-w-[130px] truncate">{c.currentProfile ?? "—"}</td>}
-                    {visible("exp") && <td className="px-3 py-2.5 text-xs text-gray-600 whitespace-nowrap">{c.experience ?? "—"}</td>}
-                    {visible("currentSal") && <td className="px-3 py-2.5 text-xs text-gray-600 whitespace-nowrap">{fmtSal(c.currentSalary)}</td>}
-                    {visible("expectedSal") && <td className="px-3 py-2.5 text-xs font-medium text-gray-800 dark:text-slate-200 whitespace-nowrap">{fmtSal(c.expectedSalary)}</td>}
-                    {visible("notice") && <td className="px-3 py-2.5 text-xs text-gray-600 whitespace-nowrap">{c.noticePeriod ?? "—"}</td>}
-                    {visible("source") && <td className="px-3 py-2.5 text-xs text-gray-600 whitespace-nowrap">{c.source ?? "—"}</td>}
-                    {visible("status") && <td className="px-3 py-2.5"><span className={`text-[10px] px-2 py-0.5 rounded-full font-medium whitespace-nowrap ${statusColor(c.status)}`}>{displayStatus(c)}</span></td>}
-                    {visible("nextAction") && <td className="px-3 py-2.5 text-xs text-gray-600 max-w-[140px]"><div className="truncate">{c.nextAction ?? "—"}</div></td>}
-                    {visible("followUp") && <td className="px-3 py-2.5 text-xs whitespace-nowrap">{s.nextFU ? <span className={s.fuOverdue ? "text-red-600 font-semibold" : "text-amber-600"}>{s.fuOverdue ? "⚠ " : ""}{fmtDate(s.nextFU)}</span> : "—"}</td>}
-                    {visible("interview") && <td className="px-3 py-2.5 text-xs whitespace-nowrap">{s.nextIV ? <span className="text-indigo-600">🎯 {fmtDate(s.nextIV.scheduledAt)}</span> : "—"}</td>}
-                    {visible("owner") && <td className="px-3 py-2.5 text-xs text-gray-500 whitespace-nowrap">{c.primaryOwner?.name?.split(" ")[0] ?? "—"}</td>}
-                    {visible("createdDate") && <td className="px-3 py-2.5 text-xs text-gray-500 whitespace-nowrap">{fmtDateFull(c.createdAt)}</td>}
-                    {visible("createdTime") && <td className="px-3 py-2.5 text-xs text-gray-500 whitespace-nowrap">{fmtTime(c.createdAt)}</td>}
-                    {visible("lastActivity") && <td className="px-3 py-2.5 text-[11px] text-gray-500 whitespace-nowrap">{lastAct ? <><div className="text-gray-700 dark:text-slate-300">{fmtAct(lastAct.type).slice(0, 16)}</div><div>{fmtDate(lastAct.createdAt)}</div></> : "—"}</td>}
-                    <td className="px-3 py-2.5"><RowActions c={c} /></td>
+                    {visible("phone") && <td className={`px-2 py-1.5 text-gray-600 whitespace-nowrap sticky ${STICKY.phone} z-[5] ${sel ? "bg-amber-50/40 dark:bg-amber-900/10" : stickyBg} border-b border-r border-gray-100 dark:border-slate-800`}>{c.phone ? <a href={`tel:${c.phone}`} onClick={stop} className="hover:text-blue-600">{c.phone}</a> : "—"}</td>}
+                    {visible("position") && <td className="px-2 py-1.5 text-gray-600 whitespace-nowrap border-b border-gray-100 dark:border-slate-800">{c.positionApplied ?? "—"}</td>}
+                    {visible("profile") && <td className="px-2 py-1.5 text-gray-600 max-w-[120px] truncate border-b border-gray-100 dark:border-slate-800">{c.currentProfile ?? "—"}</td>}
+                    {visible("exp") && <td className="px-2 py-1.5 text-gray-600 whitespace-nowrap text-right border-b border-gray-100 dark:border-slate-800">{c.experience ?? "—"}</td>}
+                    {visible("currentSal") && <td className="px-2 py-1.5 text-gray-600 whitespace-nowrap text-right tabular-nums border-b border-gray-100 dark:border-slate-800">{fmtSal(c.currentSalary)}</td>}
+                    {visible("expectedSal") && <td className="px-2 py-1.5 font-medium text-gray-800 dark:text-slate-200 whitespace-nowrap text-right tabular-nums border-b border-gray-100 dark:border-slate-800">{fmtSal(c.expectedSalary)}</td>}
+                    {visible("status") && <td className="px-2 py-1.5 border-b border-gray-100 dark:border-slate-800"><span className={`text-[10px] px-2 py-0.5 rounded-full font-medium whitespace-nowrap ${statusColor(c.status)}`}>{displayStatus(c)}</span></td>}
+                    {visible("nextAction") && <td className="px-2 py-1.5 text-gray-600 max-w-[130px] border-b border-gray-100 dark:border-slate-800"><div className="truncate">{c.nextAction ?? "—"}</div></td>}
+                    {visible("followUp") && <td className="px-2 py-1.5 whitespace-nowrap border-b border-gray-100 dark:border-slate-800">{s.nextFU ? <span className={s.fuOverdue ? "text-red-600 font-semibold" : "text-amber-600"}>{s.fuOverdue ? "⚠ " : ""}{fmtDate(s.nextFU)}</span> : "—"}</td>}
+                    {visible("interview") && <td className="px-2 py-1.5 whitespace-nowrap border-b border-gray-100 dark:border-slate-800">{s.nextIV ? <span className="text-indigo-600">🎯 {fmtDate(s.nextIV.scheduledAt)}</span> : "—"}</td>}
+                    {visible("owner") && <td className="px-2 py-1.5 text-gray-500 whitespace-nowrap border-b border-gray-100 dark:border-slate-800">{c.primaryOwner?.name?.split(" ")[0] ?? "—"}</td>}
+                    {visible("lastActivity") && <td className="px-2 py-1.5 text-[11px] text-gray-500 whitespace-nowrap border-b border-gray-100 dark:border-slate-800">{lastAct ? <><div className="text-gray-700 dark:text-slate-300">{fmtAct(lastAct.type).slice(0, 16)}</div><div>{fmtDate(lastAct.createdAt)}</div></> : "—"}</td>}
+                    <td className="px-2 py-1.5 border-b border-gray-100 dark:border-slate-800"><RowActions c={c} /></td>
                   </tr>
                 );
               })}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {/* Fixed hover preview card (desktop table only) */}
+      {preview && view === "table" && (
+        <div className="hidden sm:block fixed z-[60] pointer-events-none" style={{ top: preview.top, left: preview.left }}>
+          <HRCandidateRowPreview data={preview.data} />
         </div>
       )}
 
@@ -592,7 +833,7 @@ export default function HRCandidateTable({ candidates, agents, perms = NO_PERMS 
                   </div>
                   <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium shrink-0 ${statusColor(c.status)}`}>{displayStatus(c)}</span>
                 </div>
-                <div className="text-[11px] text-gray-500 mt-0.5">{[c.currentProfile, c.currentCompany].filter(Boolean).join(" · ") || "—"}</div>
+                <div className="text-[11px] text-gray-500 mt-0.5">{[c.positionApplied, c.currentProfile, c.currentCompany].filter(Boolean).join(" · ") || "—"}</div>
                 <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1.5 text-[11px] text-gray-500">
                   {c.phone && <span>📞 {c.phone}</span>}
                   {c.source && <span>🏷 {c.source}</span>}
@@ -619,7 +860,7 @@ export default function HRCandidateTable({ candidates, agents, perms = NO_PERMS 
               <div className="font-semibold text-lg text-gray-900 dark:text-white">Save current view</div>
               <button type="button" onClick={() => setShowSaveDialog(false)} className="text-gray-400 hover:text-gray-700"><X className="w-5 h-5" /></button>
             </div>
-            <p className="text-xs text-gray-500 mb-3">Snapshots the active filters, search and visible columns.</p>
+            <p className="text-xs text-gray-500 mb-3">Snapshots the active filters, search, column filters and visible columns.</p>
             <label className="text-xs font-semibold text-gray-600 dark:text-slate-300">Name</label>
             <input value={saveName} onChange={e => setSaveName(e.target.value)} placeholder="e.g. Sales — Immediate Joiners" className="w-full mt-1 mb-3 border border-gray-200 dark:border-slate-600 dark:bg-slate-800 rounded-lg px-3 py-2 text-sm" autoFocus />
             <label className="flex items-center gap-2 text-xs text-gray-600 dark:text-slate-300 mb-4">

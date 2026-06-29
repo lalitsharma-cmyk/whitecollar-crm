@@ -35,7 +35,9 @@ export default async function CandidatesPage({ searchParams }: { searchParams: P
         primaryOwner: { select: { id: true, name: true } },
         followUps: { where: { completedAt: null }, orderBy: { dueAt: "asc" }, take: 1, select: { dueAt: true } },
         interviews: { orderBy: { scheduledAt: "desc" }, take: 5, select: { scheduledAt: true, type: true, confirmationStatus: true, attendanceStatus: true } },
-        activities: { orderBy: { createdAt: "desc" }, take: 1, select: { type: true, createdAt: true } },
+        // A small window of recent activity feeds both the "Last Activity" column
+        // (index 0) and the hover preview (most-recent NOTE_ADDED + CALL_* lookup).
+        activities: { orderBy: { createdAt: "desc" }, take: 12, select: { type: true, createdAt: true, notes: true } },
         _count: {
           select: {
             resumes: true,

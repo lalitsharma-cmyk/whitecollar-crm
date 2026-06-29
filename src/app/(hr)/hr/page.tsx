@@ -1,23 +1,37 @@
-import { requireHrPage, hrScopeWhere } from "@/lib/hrAccess";
+import { requireHrPage, hrActiveScopeWhere } from "@/lib/hrAccess";
 import { prisma } from "@/lib/prisma";
-import Link from "next/link";
-import { statusColor, statusLabel, CLOSED_STATUS_KEYS } from "@/lib/hrStatus";
-import HRRemindersCard, { type HRReminderEvent, type HREventType } from "@/components/HRRemindersCard";
-import HRFollowUpTabs, { type FU } from "@/components/HRFollowUpTabs";
+import { CLOSED_STATUS_KEYS } from "@/lib/hrStatus";
 import { getHrUsers } from "@/lib/hrUsers";
+import { greetingFor, tzForTeam, istDayRange } from "@/lib/datetime";
 import type { HRActivityType } from "@prisma/client";
-import {
-  Phone, CalendarCheck, CheckCircle2, FileText, Handshake, Activity,
-  UserPlus, AlertTriangle, Ban, Inbox, Target, ClipboardList, RotateCcw,
-  MessageCircle,
-} from "lucide-react";
-import { ActionIconButton } from "@/components/actions/ActionIconButton";
+
+import HRRemindersCard, { type HRReminderEvent, type HREventType } from "@/components/HRRemindersCard";
+
+import { HrDashboardChrome } from "@/components/hr-dashboard/HrDashboardChrome";
+import { ActionCenterKpis, type HrKpiTile } from "@/components/hr-dashboard/ActionCenterKpis";
+import { AiSuggestions, type AiSuggestion } from "@/components/hr-dashboard/AiSuggestions";
+import { CallNowQueue, type CallNowItem } from "@/components/hr-dashboard/CallNowQueue";
+import { NoNextActionQueue, type NoNextActionItem } from "@/components/hr-dashboard/NoNextActionQueue";
+import { TodaysInterviews, type TodaysInterviewItem } from "@/components/hr-dashboard/TodaysInterviews";
+import { PendingConfirmations, type PendingConfirmItem } from "@/components/hr-dashboard/PendingConfirmations";
+import { NoShowRecovery, type NoShowItem } from "@/components/hr-dashboard/NoShowRecovery";
+import { ExpectedJoinings, type ExpectedJoiningItem } from "@/components/hr-dashboard/ExpectedJoinings";
+import { RecruitmentFunnel, type FunnelStage } from "@/components/hr-dashboard/RecruitmentFunnel";
+import { DailyProductivity } from "@/components/hr-dashboard/DailyProductivity";
+import { Leaderboard, type LeaderboardRow } from "@/components/hr-dashboard/Leaderboard";
+import { RecentActivityFeed, type RecentActivityRow } from "@/components/hr-dashboard/RecentActivityFeed";
 
 export const dynamic = "force-dynamic";
 
-const CALL_TYPES: HRActivityType[] = ["CALL_CONNECTED", "CALL_NOT_ANSWERED", "CALL_BUSY", "CALL_SWITCHED_OFF", "CALL_WRONG_NUMBER", "CALL_LATER"];
+// Daily per-recruiter call target (spec item 15). Calls completed today vs this.
+const CALL_TARGET = 40;
 
-// Human-readable label for an activity type, used in the Recent Activities feed.
+const CALL_TYPES: HRActivityType[] = [
+  "CALL_CONNECTED", "CALL_NOT_ANSWERED", "CALL_BUSY",
+  "CALL_SWITCHED_OFF", "CALL_WRONG_NUMBER", "CALL_LATER",
+];
+
+// Human-readable label for an activity type, used in the Recent Activity feed.
 const ACTIVITY_LABEL: Record<string, string> = {
   CALL_CONNECTED: "Call connected", CALL_NOT_ANSWERED: "Call not answered", CALL_BUSY: "Call busy",
   CALL_SWITCHED_OFF: "Phone switched off", CALL_WRONG_NUMBER: "Wrong number", CALL_LATER: "Call later",
@@ -31,15 +45,7 @@ const ACTIVITY_LABEL: Record<string, string> = {
   ESCALATION_REPLIED: "Escalation reply", ESCALATION_RESOLVED: "Escalation resolved",
 };
 
-function istRange() {
-  const todayIso = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
-  const start = new Date(todayIso + "T00:00:00+05:30");
-  return { todayIso, start, end: new Date(start.getTime() + 24 * 3600_000) };
-}
-function fmt(s: string) { return s.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase()); }
-function fmtTime(d: Date) { return d.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: true, timeZone: "Asia/Kolkata" }); }
-function fmtDate(d: Date) { return d.toLocaleDateString("en-IN", { day: "numeric", month: "short", timeZone: "Asia/Kolkata" }); }
-
+// HRFollowUp.type → the reminder card's event type + label (legacy HRRemindersCard).
 const FU_EVENT: Record<string, { type: HREventType; label: string }> = {
   CALL_BACK: { type: "FOLLOWUP", label: "Call" },
   INTERVIEW_CONFIRMATION: { type: "CONFIRM", label: "Confirm Interview" },
@@ -53,387 +59,499 @@ const FU_EVENT: Record<string, { type: HREventType; label: string }> = {
   CUSTOM: { type: "FOLLOWUP", label: "Follow-up" },
 };
 
+// Interview-type enum label (mirrors TodaysInterviews / readable form elsewhere).
+function fmtType(s: string) {
+  return s.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function firstNameOf(name: string | null | undefined): string | null {
+  const n = (name ?? "").trim();
+  return n ? n.split(/\s+/)[0] : null;
+}
+
+// Whole-day difference between two instants, IST calendar-day based, floored.
+function daysBetween(from: Date, to: Date): number {
+  return Math.floor((to.getTime() - from.getTime()) / 86_400_000);
+}
+
+// Human "in N days / hours" relative label for a FUTURE instant (PendingConfirmations).
+function relativeFuture(target: Date, now: Date): string {
+  const ms = target.getTime() - now.getTime();
+  if (ms <= 0) return "Due now";
+  const hours = Math.round(ms / 3_600_000);
+  if (hours < 1) return "in under an hour";
+  if (hours < 24) return `in ${hours} ${hours === 1 ? "hour" : "hours"}`;
+  const days = Math.round(hours / 24);
+  return `in ${days} ${days === 1 ? "day" : "days"}`;
+}
+
 export default async function HRDashboard() {
   const { me, perms } = await requireHrPage();
-  const { todayIso, start: todayStart, end: todayEnd } = istRange();
-  // All candidate-scoped queries must hide soft-deleted candidates.
-  const scope = { AND: [hrScopeWhere(me), { deletedAt: null }] };
-  const scopedCandidate = { AND: [hrScopeWhere(me), { deletedAt: null }] }; // for { candidate: ... } relation filters
+
   const now = new Date();
+  const { start: todayStart, end: todayEnd } = istDayRange(); // today (IST) [start, end)
+  const todayIso = todayStart.toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
   const weekAgo = new Date(todayStart.getTime() - 7 * 24 * 3600_000);
-  const isLeader = perms.viewAllCandidates; // Admin / Senior HR see the team leaderboard
+
+  // Scope EVERY candidate read: Junior HR → own only; Admin/Senior → all.
+  const scope = hrActiveScopeWhere(me);
+  // For { candidate: <scope> } relation filters on HRFollowUp / HRInterview / HRActivity.
+  const scopedCandidate = hrActiveScopeWhere(me);
+
+  const isLeader = perms.reports; // Leaderboard only when the viewer has reports perm.
+  const showOwner = perms.viewAllCandidates; // Admin / Senior HR see the owning recruiter.
 
   const [
-    followUps, interviews, newCount, expectedList, noNextAction, noNextActionCount,
-    todaysCalls, offersPending, recentActivities, leaderAdded, leaderJoined, hrUsers,
+    followUps,
+    interviews,
+    newCount,
+    expectedRows,
+    noNextRows,
+    noNextActionCount,
+    callsToday,
+    recentRows,
+    funnelGroup,
+    funnelTotal,
+    // ── Leaderboard groupings (reports perm only) ──
+    hrUsers,
+    lbCalls,
+    lbFollowups,
+    lbIvSched,
+    lbIvDone,
+    lbOffers,
+    lbJoined,
   ] = await Promise.all([
+    // Open follow-ups (scoped) — drives Call-Now queue, Calls-Due/Overdue KPIs + reminders.
     prisma.hRFollowUp.findMany({
       where: { completedAt: null, candidate: scopedCandidate },
-      orderBy: { dueAt: "asc" }, take: 200,
-      include: { candidate: { select: { id: true, name: true, phone: true, whatsappPhone: true, status: true, nextAction: true, primaryOwner: { select: { name: true } } } } },
-    }),
-    prisma.hRInterview.findMany({
-      where: { candidate: scopedCandidate, scheduledAt: { gte: weekAgo } },
-      orderBy: { scheduledAt: "asc" }, take: 200,
-      include: { candidate: { select: { id: true, name: true, phone: true, positionApplied: true, primaryOwner: { select: { name: true } } } }, interviewer: { select: { name: true } } },
-    }),
-    prisma.hRCandidate.count({ where: { status: "NEW", ...scope } }),
-    prisma.hRCandidate.findMany({
-      where: { AND: [scope, { OR: [{ status: "EXPECTED_JOINING" }, { joiningDate: { not: null } }] }] },
-      orderBy: { joiningDate: "asc" }, take: 20,
-      select: { id: true, name: true, positionApplied: true, joiningDate: true, status: true },
-    }),
-    prisma.hRCandidate.findMany({
-      where: { AND: [scope, { nextActionDate: null, status: { notIn: CLOSED_STATUS_KEYS } }] },
-      orderBy: { createdAt: "desc" }, take: 20,
-      select: { id: true, name: true, phone: true, whatsappPhone: true, status: true, positionApplied: true, primaryOwner: { select: { name: true } } },
-    }),
-    prisma.hRCandidate.count({ where: { AND: [scope, { nextActionDate: null, status: { notIn: CLOSED_STATUS_KEYS } }] } }),
-    // Today's Calls — call activities logged today (IST), scoped to my candidates.
-    prisma.hRActivity.count({
-      where: {
-        type: { in: CALL_TYPES },
-        createdAt: { gte: todayStart, lt: todayEnd },
-        candidate: scopedCandidate,
+      orderBy: { dueAt: "asc" },
+      take: 300,
+      include: {
+        candidate: {
+          select: {
+            id: true, name: true, phone: true, whatsappPhone: true,
+            status: true, nextAction: true, positionApplied: true,
+            primaryOwner: { select: { name: true } },
+          },
+        },
       },
     }),
-    // Offers Pending — released offers not yet joined/declined.
-    prisma.hRCandidate.count({ where: { status: "OFFER_RELEASED", ...scope } }),
-    // Recent Activities feed (scoped).
+    // Interviews in the recent window (scoped) — Today / Pending-confirm / No-show buckets.
+    prisma.hRInterview.findMany({
+      where: { candidate: scopedCandidate, scheduledAt: { gte: weekAgo } },
+      orderBy: { scheduledAt: "asc" },
+      take: 300,
+      include: {
+        candidate: { select: { id: true, name: true, phone: true, whatsappPhone: true, positionApplied: true } },
+      },
+    }),
+    // New Candidates KPI.
+    prisma.hRCandidate.count({ where: { AND: [scope, { status: "NEW" }] } }),
+    // Expected Joinings (scoped).
+    prisma.hRCandidate.findMany({
+      where: { AND: [scope, { OR: [{ status: "EXPECTED_JOINING" }, { joiningDate: { not: null } }] }] },
+      orderBy: { joiningDate: "asc" },
+      take: 20,
+      select: {
+        id: true, name: true, positionApplied: true, joiningDate: true, status: true,
+        phone: true, whatsappPhone: true, primaryOwner: { select: { name: true } },
+      },
+    }),
+    // No-Next-Action queue rows (scoped) — active candidates with nothing scheduled.
+    prisma.hRCandidate.findMany({
+      where: { AND: [scope, { nextActionDate: null, status: { notIn: CLOSED_STATUS_KEYS } }] },
+      orderBy: { createdAt: "desc" },
+      take: 20,
+      select: {
+        id: true, name: true, phone: true, whatsappPhone: true,
+        status: true, positionApplied: true, createdAt: true,
+        primaryOwner: { select: { name: true } },
+      },
+    }),
+    // No-Next-Action total (scoped).
+    prisma.hRCandidate.count({
+      where: { AND: [scope, { nextActionDate: null, status: { notIn: CLOSED_STATUS_KEYS } }] },
+    }),
+    // Daily Productivity — CALL_* activities logged today (IST), scoped to my candidates.
+    prisma.hRActivity.count({
+      where: { type: { in: CALL_TYPES }, createdAt: { gte: todayStart, lt: todayEnd }, candidate: scopedCandidate },
+    }),
+    // Recent Activity feed (scoped).
     prisma.hRActivity.findMany({
       where: { candidate: scopedCandidate },
-      orderBy: { createdAt: "desc" }, take: 12,
-      include: { candidate: { select: { id: true, name: true } }, user: { select: { name: true } } },
+      orderBy: { createdAt: "desc" },
+      take: 10,
+      include: {
+        candidate: { select: { id: true, name: true, phone: true, whatsappPhone: true, email: true } },
+        user: { select: { name: true } },
+      },
     }),
-    // Recruiter leaderboard (Admin / Senior only) — candidates added per owner this week.
-    isLeader
-      ? prisma.hRCandidate.groupBy({
-          by: ["primaryOwnerId"],
-          where: { deletedAt: null, primaryOwnerId: { not: null }, createdAt: { gte: weekAgo } },
-          _count: true,
-        })
-      : Promise.resolve([] as { primaryOwnerId: string | null; _count: number }[]),
-    // Leaderboard — candidates joined per owner this week.
-    isLeader
-      ? prisma.hRActivity.groupBy({
-          by: ["userId"],
-          where: { type: "CANDIDATE_JOINED", userId: { not: null }, createdAt: { gte: weekAgo }, candidate: { deletedAt: null } },
-          _count: true,
-        })
-      : Promise.resolve([] as { userId: string | null; _count: number }[]),
+    // Recruitment funnel — current candidate snapshot by status (scoped).
+    prisma.hRCandidate.groupBy({ by: ["status"], where: scope, _count: true }),
+    prisma.hRCandidate.count({ where: scope }),
+    // ── Leaderboard (reports perm only). Activity over the week window, by recruiter. ──
     isLeader ? getHrUsers() : Promise.resolve([] as { id: string; name: string }[]),
+    isLeader
+      ? prisma.hRActivity.groupBy({ by: ["userId"], where: { type: { in: CALL_TYPES }, userId: { not: null }, createdAt: { gte: weekAgo }, candidate: { deletedAt: null } }, _count: true })
+      : Promise.resolve([] as { userId: string | null; _count: number }[]),
+    isLeader
+      ? prisma.hRActivity.groupBy({ by: ["userId"], where: { type: "FOLLOWUP_COMPLETED", userId: { not: null }, createdAt: { gte: weekAgo }, candidate: { deletedAt: null } }, _count: true })
+      : Promise.resolve([] as { userId: string | null; _count: number }[]),
+    isLeader
+      ? prisma.hRActivity.groupBy({ by: ["userId"], where: { type: "INTERVIEW_SCHEDULED", userId: { not: null }, createdAt: { gte: weekAgo }, candidate: { deletedAt: null } }, _count: true })
+      : Promise.resolve([] as { userId: string | null; _count: number }[]),
+    isLeader
+      ? prisma.hRActivity.groupBy({ by: ["userId"], where: { type: "INTERVIEW_ATTENDED", userId: { not: null }, createdAt: { gte: weekAgo }, candidate: { deletedAt: null } }, _count: true })
+      : Promise.resolve([] as { userId: string | null; _count: number }[]),
+    isLeader
+      ? prisma.hRActivity.groupBy({ by: ["userId"], where: { type: "OFFER_RELEASED", userId: { not: null }, createdAt: { gte: weekAgo }, candidate: { deletedAt: null } }, _count: true })
+      : Promise.resolve([] as { userId: string | null; _count: number }[]),
+    isLeader
+      ? prisma.hRActivity.groupBy({ by: ["userId"], where: { type: "CANDIDATE_JOINED", userId: { not: null }, createdAt: { gte: weekAgo }, candidate: { deletedAt: null } }, _count: true })
+      : Promise.resolve([] as { userId: string | null; _count: number }[]),
   ]);
 
-  // ── Build leaderboard rows (added + joined this week, per recruiter) ──
-  const addedByOwner: Record<string, number> = {};
-  for (const r of leaderAdded) if (r.primaryOwnerId) addedByOwner[r.primaryOwnerId] = r._count;
-  const joinedByOwner: Record<string, number> = {};
-  for (const r of leaderJoined) if (r.userId) joinedByOwner[r.userId] = r._count;
-  const leaderboard = hrUsers
-    .map(u => ({ name: u.name, added: addedByOwner[u.id] ?? 0, joined: joinedByOwner[u.id] ?? 0 }))
-    .filter(r => r.added || r.joined)
-    .sort((a, b) => (b.joined - a.joined) || (b.added - a.added))
-    .slice(0, 8);
+  // ── Follow-up buckets (day-granular: overdue = due before start-of-today-IST) ──
+  const overdueFU = followUps.filter((f) => new Date(f.dueAt) < todayStart);
+  const todayFU = followUps.filter((f) => {
+    const d = new Date(f.dueAt);
+    return d >= todayStart && d < todayEnd;
+  });
 
-  // ── Derive follow-up buckets ──
-  const overdueFU = followUps.filter(f => new Date(f.dueAt) < todayStart);
-  const todayFU = followUps.filter(f => { const d = new Date(f.dueAt); return d >= todayStart && d < todayEnd; });
-  const upcomingFU = followUps.filter(f => new Date(f.dueAt) >= todayEnd).slice(0, 30);
-
-  // Main action list — one row per candidate needing action today (overdue + due today, soonest first).
-  const seen = new Set<string>();
-  const actionItems = [...overdueFU, ...todayFU]
+  // Call-Now queue — one row per candidate (overdue + due-today, soonest first).
+  const callNowSeen = new Set<string>();
+  const callNowItems: CallNowItem[] = [...overdueFU, ...todayFU]
     .sort((a, b) => +new Date(a.dueAt) - +new Date(b.dueAt))
-    .filter(f => { if (seen.has(f.candidateId)) return false; seen.add(f.candidateId); return true; })
-    .slice(0, 25);
+    .filter((f) => {
+      if (callNowSeen.has(f.candidateId)) return false;
+      callNowSeen.add(f.candidateId);
+      return true;
+    })
+    .slice(0, 25)
+    .map((f) => ({
+      followUpId: f.id,
+      candidateId: f.candidateId,
+      name: f.candidate.name,
+      position: f.candidate.positionApplied,
+      status: f.candidate.status,
+      nextAction: f.candidate.nextAction ?? null,
+      ownerFirstName: firstNameOf(f.candidate.primaryOwner?.name),
+      phone: f.candidate.phone,
+      whatsappPhone: f.candidate.whatsappPhone,
+      dueIso: new Date(f.dueAt).toISOString(),
+      overdue: new Date(f.dueAt) < todayStart,
+    }));
 
-  // ── Derive interview buckets ──
-  const ivToday = interviews.filter(iv => { const d = new Date(iv.scheduledAt); return d >= todayStart && d < todayEnd && (iv.attendanceStatus === "SCHEDULED" || iv.attendanceStatus === "RESCHEDULED"); });
-  const confirmPending = interviews.filter(iv => new Date(iv.scheduledAt) >= now && iv.confirmationStatus === "PENDING" && (iv.attendanceStatus === "SCHEDULED" || iv.attendanceStatus === "RESCHEDULED"));
+  // ── Interview buckets ──
+  const ivToday = interviews.filter((iv) => {
+    const d = new Date(iv.scheduledAt);
+    return (
+      d >= todayStart && d < todayEnd &&
+      (iv.attendanceStatus === "SCHEDULED" || iv.attendanceStatus === "RESCHEDULED")
+    );
+  });
+  const confirmPending = interviews.filter(
+    (iv) =>
+      new Date(iv.scheduledAt) >= now &&
+      iv.confirmationStatus === "PENDING" &&
+      (iv.attendanceStatus === "SCHEDULED" || iv.attendanceStatus === "RESCHEDULED"),
+  );
   const noShowSeen = new Set<string>();
-  const noShowList = interviews.filter(iv => iv.attendanceStatus === "NO_SHOW").reverse()
-    .filter(iv => { if (noShowSeen.has(iv.candidateId)) return false; noShowSeen.add(iv.candidateId); return true; }).slice(0, 10);
+  const noShowInterviews = interviews
+    .filter((iv) => iv.attendanceStatus === "NO_SHOW")
+    .reverse()
+    .filter((iv) => {
+      if (noShowSeen.has(iv.candidateId)) return false;
+      noShowSeen.add(iv.candidateId);
+      return true;
+    })
+    .slice(0, 10);
 
-  // ── Reminder events ──
+  // ── Component item shapes ──
+  const todaysInterviewItems: TodaysInterviewItem[] = ivToday.map((iv) => ({
+    interviewId: iv.id,
+    candidateId: iv.candidateId,
+    name: iv.candidate.name,
+    position: iv.candidate.positionApplied,
+    type: iv.type,
+    timeIso: new Date(iv.scheduledAt).toISOString(),
+    confirmationStatus: iv.confirmationStatus,
+    attendanceStatus: iv.attendanceStatus,
+    phone: iv.candidate.phone,
+    whatsappPhone: iv.candidate.whatsappPhone,
+  }));
+
+  const pendingConfirmItems: PendingConfirmItem[] = confirmPending.map((iv) => ({
+    interviewId: iv.id,
+    candidateId: iv.candidateId,
+    name: iv.candidate.name,
+    position: iv.candidate.positionApplied,
+    scheduledIso: new Date(iv.scheduledAt).toISOString(),
+    relativeLabel: relativeFuture(new Date(iv.scheduledAt), now),
+    phone: iv.candidate.phone,
+    whatsappPhone: iv.candidate.whatsappPhone,
+    attendanceStatus: iv.attendanceStatus,
+  }));
+
+  const noShowItems: NoShowItem[] = noShowInterviews.map((iv) => ({
+    interviewId: iv.id,
+    candidateId: iv.candidateId,
+    name: iv.candidate.name,
+    type: iv.type,
+    missedIso: new Date(iv.scheduledAt).toISOString(),
+    daysSince: Math.max(0, daysBetween(new Date(iv.scheduledAt), now)),
+    reason: iv.noShowReason ?? null,
+    phone: iv.candidate.phone,
+    whatsappPhone: iv.candidate.whatsappPhone,
+  }));
+
+  const expectedItems: ExpectedJoiningItem[] = expectedRows.map((c) => ({
+    candidateId: c.id,
+    name: c.name,
+    position: c.positionApplied,
+    status: c.status,
+    joiningIso: c.joiningDate ? new Date(c.joiningDate).toISOString() : null,
+    daysUntil: c.joiningDate ? daysBetween(todayStart, new Date(c.joiningDate)) : null,
+    ownerFirstName: firstNameOf(c.primaryOwner?.name),
+    phone: c.phone,
+    whatsappPhone: c.whatsappPhone,
+  }));
+
+  const noNextItems: NoNextActionItem[] = noNextRows.map((c) => ({
+    candidateId: c.id,
+    name: c.name,
+    position: c.positionApplied,
+    status: c.status,
+    ownerFirstName: firstNameOf(c.primaryOwner?.name),
+    daysSinceCreated: Math.max(0, daysBetween(new Date(c.createdAt), now)),
+    phone: c.phone,
+    whatsappPhone: c.whatsappPhone,
+  }));
+
+  const recentItems: RecentActivityRow[] = recentRows.map((a) => ({
+    id: a.id,
+    label: ACTIVITY_LABEL[a.type] ?? fmtType(a.type),
+    candidateId: a.candidateId,
+    candidateName: a.candidate.name,
+    userFirstName: firstNameOf(a.user?.name),
+    whenIso: new Date(a.createdAt).toISOString(),
+    // Optional contact extras the feed renders quick actions from when present.
+    phone: a.candidate.phone,
+    whatsappPhone: a.candidate.whatsappPhone,
+    email: a.candidate.email,
+  }));
+
+  // ── Recruitment funnel (canonical order; counts from the scoped status snapshot) ──
+  const statusCount: Record<string, number> = {};
+  for (const r of funnelGroup) statusCount[r.status] = r._count;
+  const sum = (...keys: string[]) => keys.reduce((n, k) => n + (statusCount[k] ?? 0), 0);
+  const funnelDefs: { key: string; label: string; count: number }[] = [
+    { key: "NEW", label: "New", count: sum("NEW") },
+    { key: "NOT_CALLED", label: "Not Called", count: sum("NOT_CALLED") },
+    { key: "INTERESTED", label: "Interested", count: sum("INTERESTED") },
+    { key: "PIPELINE", label: "Pipeline", count: sum("PIPELINE") },
+    { key: "VIRTUAL_INTERVIEW_SCHEDULED", label: "Interview Scheduled", count: sum("VIRTUAL_INTERVIEW_SCHEDULED", "F2F_INTERVIEW_SCHEDULED") },
+    { key: "INTERVIEW_HELD", label: "Interview Held", count: sum("INTERVIEW_HELD") },
+    { key: "SHORTLISTED", label: "Shortlisted", count: sum("SHORTLISTED") },
+    { key: "OFFER_RELEASED", label: "Offer Released", count: sum("OFFER_RELEASED") },
+    { key: "JOINED", label: "Joined", count: sum("JOINED") },
+  ];
+  const funnelStages: FunnelStage[] = funnelDefs.map((s) => ({
+    key: s.key,
+    label: s.label,
+    count: s.count,
+    pct: funnelTotal > 0 ? Math.round((s.count / funnelTotal) * 100) : 0,
+  }));
+
+  // ── Reminder events (legacy HRRemindersCard, shrunk in the sidebar) ──
   const reminderEvents: HRReminderEvent[] = [
-    ...followUps.map(f => ({ id: f.id, candidateId: f.candidateId, candidateName: f.candidate.name, type: FU_EVENT[f.type]?.type ?? "FOLLOWUP", label: FU_EVENT[f.type]?.label ?? "Follow-up", timeIso: new Date(f.dueAt).toISOString(), ownerName: f.candidate.primaryOwner?.name ?? null })),
-    ...interviews.filter(iv => iv.attendanceStatus === "SCHEDULED" || iv.attendanceStatus === "RESCHEDULED").map(iv => ({ id: iv.id, candidateId: iv.candidateId, candidateName: iv.candidate.name, type: "INTERVIEW" as HREventType, label: `${fmt(iv.type)} Interview`, timeIso: new Date(iv.scheduledAt).toISOString(), ownerName: iv.candidate.primaryOwner?.name ?? null })),
+    ...followUps.map((f) => ({
+      id: f.id,
+      candidateId: f.candidateId,
+      candidateName: f.candidate.name,
+      type: FU_EVENT[f.type]?.type ?? "FOLLOWUP",
+      label: FU_EVENT[f.type]?.label ?? "Follow-up",
+      timeIso: new Date(f.dueAt).toISOString(),
+      ownerName: f.candidate.primaryOwner?.name ?? null,
+    })),
+    ...interviews
+      .filter((iv) => iv.attendanceStatus === "SCHEDULED" || iv.attendanceStatus === "RESCHEDULED")
+      .map((iv) => ({
+        id: iv.id,
+        candidateId: iv.candidateId,
+        candidateName: iv.candidate.name,
+        type: "INTERVIEW" as HREventType,
+        label: `${fmtType(iv.type)} Interview`,
+        timeIso: new Date(iv.scheduledAt).toISOString(),
+        ownerName: null,
+      })),
   ];
 
-  const toFU = (f: typeof followUps[number]): FU => ({ id: f.id, candidateId: f.candidateId, candidateName: f.candidate.name, phone: f.candidate.phone, type: f.type, dueAt: new Date(f.dueAt).toISOString(), notes: f.notes });
+  // ── Leaderboard rows (reports perm only) ──
+  const byUser = (rows: { userId: string | null; _count: number }[]) => {
+    const m: Record<string, number> = {};
+    for (const r of rows) if (r.userId) m[r.userId] = r._count;
+    return m;
+  };
+  const cCalls = byUser(lbCalls), cFollow = byUser(lbFollowups), cSched = byUser(lbIvSched);
+  const cDone = byUser(lbIvDone), cOffers = byUser(lbOffers), cJoined = byUser(lbJoined);
+  const leaderboardRows: LeaderboardRow[] = hrUsers
+    .map((u) => ({
+      userId: u.id,
+      name: u.name,
+      calls: cCalls[u.id] ?? 0,
+      followUpsCompleted: cFollow[u.id] ?? 0,
+      interviewsScheduled: cSched[u.id] ?? 0,
+      interviewsConducted: cDone[u.id] ?? 0,
+      offersReleased: cOffers[u.id] ?? 0,
+      joined: cJoined[u.id] ?? 0,
+    }))
+    .filter((r) => r.calls || r.followUpsCompleted || r.interviewsScheduled || r.interviewsConducted || r.offersReleased || r.joined)
+    .slice(0, 12);
 
-  const metrics = [
-    { label: "New Candidates", n: newCount, href: "/hr/candidates?status=NEW", Icon: UserPlus, color: "border-blue-400 text-blue-700 bg-blue-50 dark:bg-blue-900/20 dark:text-blue-300 dark:border-blue-500/60" },
-    { label: "Calls Due Today", n: todayFU.length, href: "#action", Icon: Phone, color: "border-amber-400 text-amber-700 bg-amber-50 dark:bg-amber-900/20 dark:text-amber-300 dark:border-amber-500/60" },
-    { label: "Interviews Today", n: ivToday.length, href: "#interviews", Icon: Target, color: "border-indigo-400 text-indigo-700 bg-indigo-50 dark:bg-indigo-900/20 dark:text-indigo-300 dark:border-indigo-500/60" },
-    { label: "Confirmations Pending", n: confirmPending.length, href: "#interviews", Icon: CheckCircle2, color: "border-orange-400 text-orange-700 bg-orange-50 dark:bg-orange-900/20 dark:text-orange-300 dark:border-orange-500/60" },
-    { label: "Overdue Follow-Ups", n: overdueFU.length, href: "#followups", Icon: AlertTriangle, color: "border-red-400 text-red-700 bg-red-50 dark:bg-red-900/20 dark:text-red-300 dark:border-red-500/60" },
-    { label: "No-Shows", n: noShowList.length, href: "#noshow", Icon: Ban, color: "border-rose-400 text-rose-700 bg-rose-50 dark:bg-rose-900/20 dark:text-rose-300 dark:border-rose-500/60" },
-    { label: "Expected Joinings", n: expectedList.length, href: "#joinings", Icon: Handshake, color: "border-green-400 text-green-700 bg-green-50 dark:bg-green-900/20 dark:text-green-300 dark:border-green-500/60" },
-    { label: "No Next Action", n: noNextActionCount, href: "#nonext", Icon: Inbox, color: "border-slate-400 text-slate-700 bg-slate-50 dark:bg-slate-800/60 dark:text-slate-300 dark:border-slate-600" },
+  // ── 8 deduped KPI tiles (Action Center) ──
+  const kpiTiles: HrKpiTile[] = [
+    { kind: "new", label: "New Candidates", count: newCount, href: "/hr/candidates?status=NEW" },
+    { kind: "callsDue", label: "Calls Due Today", count: todayFU.length, href: "#call-now" },
+    { kind: "overdue", label: "Overdue Follow-Ups", count: overdueFU.length, href: "#call-now" },
+    { kind: "interviewsToday", label: "Interviews Today", count: ivToday.length, href: "#interviews-today" },
+    { kind: "pendingConfirm", label: "Pending Confirmations", count: confirmPending.length, href: "#pending-confirmations" },
+    { kind: "noShow", label: "No-Shows", count: noShowItems.length, href: "#no-show-recovery" },
+    { kind: "expectedJoin", label: "Expected Joinings", count: expectedItems.length, href: "#expected-joinings" },
+    { kind: "noNextAction", label: "No Next Action", count: noNextActionCount, href: "#no-next-action" },
   ];
 
-  const wa = (p: string | null, alt: string | null) => { const x = p ?? alt; return x ? `https://wa.me/${x.replace(/\D/g, "")}` : null; };
+  // ── Rule-based AI suggestions (no LLM) ──
+  const suggestions: AiSuggestion[] = [];
+  if (overdueFU.length > 0) {
+    const first = callNowItems.find((i) => i.overdue);
+    suggestions.push({
+      id: "overdue-followups",
+      severity: "high",
+      message: first
+        ? `Call ${first.name} first — ${overdueFU.length} overdue follow-up${overdueFU.length === 1 ? "" : "s"} need attention.`
+        : `${overdueFU.length} overdue follow-up${overdueFU.length === 1 ? "" : "s"} need attention.`,
+      count: overdueFU.length,
+      href: "#call-now",
+    });
+  }
+  if (confirmPending.length > 0) {
+    const c = confirmPending[0];
+    suggestions.push({
+      id: "unconfirmed-interviews",
+      severity: "medium",
+      message: `${c.candidate.name}${confirmPending.length > 1 ? ` and ${confirmPending.length - 1} other${confirmPending.length - 1 === 1 ? "" : "s"}` : ""} may ghost — confirm the upcoming interview.`,
+      count: confirmPending.length,
+      href: "#pending-confirmations",
+    });
+  }
+  if (noShowItems.length > 0) {
+    suggestions.push({
+      id: "no-show-recovery",
+      severity: "high",
+      message: `${noShowItems.length} candidate${noShowItems.length === 1 ? "" : "s"} missed an interview — recover before they go cold.`,
+      count: noShowItems.length,
+      href: "#no-show-recovery",
+    });
+  }
+  // Candidates waiting too long with no next action (≥ 3 days since created).
+  const staleNoNext = noNextItems.filter((i) => i.daysSinceCreated >= 3);
+  if (staleNoNext.length > 0) {
+    suggestions.push({
+      id: "stale-no-next-action",
+      severity: "medium",
+      message: `${staleNoNext.length} active candidate${staleNoNext.length === 1 ? "" : "s"} waiting ${staleNoNext.length === 1 ? `${staleNoNext[0].daysSinceCreated} days` : "3+ days"} with no next step set.`,
+      count: staleNoNext.length,
+      href: "#no-next-action",
+    });
+  }
+  // Offers released with a joining date → joining follow-up.
+  const joiningSoon = expectedItems.filter((i) => i.status === "OFFER_RELEASED" || (i.daysUntil !== null && i.daysUntil <= 7));
+  if (joiningSoon.length > 0) {
+    suggestions.push({
+      id: "joining-followups",
+      severity: "info",
+      message: `${joiningSoon.length} offered candidate${joiningSoon.length === 1 ? "" : "s"} joining soon — confirm documents and joining date.`,
+      count: joiningSoon.length,
+      href: "#expected-joinings",
+    });
+  }
+  // Salary discussion follow-ups pending.
+  const salaryPending = followUps.filter((f) => f.type === "SALARY_DISCUSSION");
+  if (salaryPending.length > 0) {
+    suggestions.push({
+      id: "salary-pending",
+      severity: "info",
+      message: `${salaryPending.length} salary discussion${salaryPending.length === 1 ? "" : "s"} pending — close the loop on compensation.`,
+      count: salaryPending.length,
+      href: "#call-now",
+    });
+  }
 
-  // Spec cards — "today at a glance" (Lucide icons for new UI).
-  const specCards = [
-    { label: "Today's Calls", n: todaysCalls, href: "#action", Icon: Phone, color: "text-blue-600" },
-    { label: "Interviews Today", n: ivToday.length, href: "#interviews", Icon: CalendarCheck, color: "text-indigo-600" },
-    { label: "Pending Confirmations", n: confirmPending.length, href: "#interviews", Icon: CheckCircle2, color: "text-orange-600" },
-    { label: "Offers Pending", n: offersPending, href: "/hr/candidates?status=OFFER_RELEASED", Icon: FileText, color: "text-amber-600" },
-    { label: "Expected Joinings", n: expectedList.length, href: "#joinings", Icon: Handshake, color: "text-green-600" },
-  ];
+  const greeting = greetingFor(now, tzForTeam(me.team));
+  const firstName = firstNameOf(me.name) ?? me.name;
+
+  // ── LEFT column (action content) ──
+  const left = (
+    <>
+      <ActionCenterKpis tiles={kpiTiles} />
+      <AiSuggestions suggestions={suggestions} />
+      <div id="call-now">
+        <CallNowQueue items={callNowItems} showOwner={showOwner} />
+      </div>
+      <div id="no-next-action">
+        <NoNextActionQueue items={noNextItems} totalCount={noNextActionCount} showOwner={showOwner} />
+      </div>
+      <TodaysInterviews items={todaysInterviewItems} />
+      <div id="pending-confirmations">
+        <PendingConfirmations items={pendingConfirmItems} />
+      </div>
+      <div id="no-show-recovery">
+        <NoShowRecovery items={noShowItems} />
+      </div>
+      <div id="expected-joinings">
+        <ExpectedJoinings items={expectedItems} showOwner={showOwner} />
+      </div>
+      <RecruitmentFunnel stages={funnelStages} total={funnelTotal} />
+    </>
+  );
+
+  // ── RIGHT column (sticky sidebar) ──
+  const right = (
+    <>
+      <DailyProductivity callsCompleted={callsToday} callsTarget={CALL_TARGET} />
+
+      {/* Existing reminders/calendar card — SHRUNK into a collapsible <details> so
+          it never dominates the redesigned sidebar (spec: keep it small). */}
+      <details className="group rounded-2xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-sm">
+        <summary className="flex items-center justify-between gap-2 px-4 py-3 cursor-pointer select-none list-none">
+          <span className="text-sm font-bold text-gray-900 dark:text-white">
+            Reminders &amp; Calendar
+          </span>
+          <span className="inline-flex items-center gap-2">
+            {reminderEvents.length > 0 && (
+              <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 dark:bg-slate-800 dark:text-slate-300">
+                {reminderEvents.length}
+              </span>
+            )}
+            <span className="text-[11px] text-gray-400 dark:text-slate-500 group-open:hidden">Show</span>
+            <span className="text-[11px] text-gray-400 dark:text-slate-500 hidden group-open:inline">Hide</span>
+          </span>
+        </summary>
+        <div className="px-2 pb-2">
+          <HRRemindersCard events={reminderEvents} todayIso={todayIso} showOwner={showOwner} />
+        </div>
+      </details>
+
+      {isLeader && (
+        <Leaderboard rows={leaderboardRows} periodLabel="Last 7 days" />
+      )}
+
+      <RecentActivityFeed rows={recentItems} />
+    </>
+  );
 
   return (
-    <div className="p-4 sm:p-6 max-w-7xl mx-auto">
-      <div className="flex items-center justify-between flex-wrap gap-2 mb-4">
-        <h1 className="text-xl font-bold text-gray-900 dark:text-white">
-          {now.getHours() < 12 ? "Good morning" : now.getHours() < 17 ? "Good afternoon" : "Good evening"}, {me.name.split(" ")[0]}
-        </h1>
-        <Link href="/hr/candidates/new" className="inline-flex items-center gap-2 bg-[#1a2e4a] text-white text-sm font-semibold px-4 py-2 rounded-xl hover:bg-[#243d60] transition">
-          <UserPlus className="w-4 h-4" /> Add Candidate
-        </Link>
-      </div>
-
-      {/* Today at a glance — spec cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mb-4">
-        {specCards.map(c => (
-          <a key={c.label} href={c.href} className="bg-white dark:bg-slate-900 rounded-2xl border border-gray-200 dark:border-slate-700 p-4 hover:shadow-md transition flex items-center gap-3">
-            <div className={`shrink-0 ${c.color}`}><c.Icon className="w-6 h-6" /></div>
-            <div className="min-w-0">
-              <div className="text-2xl font-extrabold text-gray-800 dark:text-white leading-none">{c.n}</div>
-              <div className="text-[11px] text-gray-500 dark:text-slate-400 mt-1 truncate">{c.label}</div>
-            </div>
-          </a>
-        ))}
-      </div>
-
-      <div className="grid lg:grid-cols-3 gap-4">
-        {/* ── LEFT: action content ── */}
-        <div className="lg:col-span-2 space-y-4">
-          {/* Top summary bar */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-            {metrics.map(m => (
-              <a key={m.label} href={m.href} className={`rounded-xl border-l-4 ${m.color} p-3 hover:shadow-md transition`}>
-                <div className="text-2xl font-extrabold text-gray-800 dark:text-white">{m.n}</div>
-                <div className="text-[10px] text-gray-600 dark:text-slate-300 mt-0.5 flex items-center gap-1">
-                  <m.Icon className="w-3 h-3 shrink-0" /> {m.label}
-                </div>
-              </a>
-            ))}
-          </div>
-
-          {/* Main action list */}
-          <section id="action" className="bg-white dark:bg-slate-900 rounded-2xl border border-gray-200 dark:border-slate-700 overflow-hidden">
-            <div className="px-4 py-2.5 border-b border-gray-100 dark:border-slate-800 text-sm font-bold text-gray-700 dark:text-slate-200 flex items-center gap-2">
-              <ClipboardList className="w-4 h-4 text-gray-400" /> Who to call now ({actionItems.length})
-            </div>
-            {actionItems.length === 0 ? (
-              <div className="px-4 py-8 text-center">
-                <CheckCircle2 className="w-7 h-7 mx-auto text-emerald-400 mb-2" />
-                <div className="text-xs text-gray-400 dark:text-slate-500">Nothing due — you&apos;re all caught up.</div>
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead><tr className="bg-gray-50 dark:bg-slate-800 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide">
-                    {["Candidate", "Phone", "Status", "Next Action", "Due", "Owner", "Actions"].map(h => <th key={h} className="px-3 py-2 whitespace-nowrap">{h}</th>)}
-                  </tr></thead>
-                  <tbody className="divide-y divide-gray-100 dark:divide-slate-800">
-                    {actionItems.map(f => {
-                      const due = new Date(f.dueAt); const overdue = due < todayStart;
-                      const waHref = wa(f.candidate.whatsappPhone, f.candidate.phone);
-                      return (
-                        <tr key={f.id} className="hover:bg-gray-50/80 dark:hover:bg-slate-800/50">
-                          <td className="px-3 py-2"><Link href={`/hr/candidates/${f.candidateId}`} className="font-semibold text-[#1a2e4a] dark:text-blue-400 hover:underline">{f.candidate.name}</Link></td>
-                          <td className="px-3 py-2 text-xs text-gray-600 dark:text-slate-300 whitespace-nowrap">{f.candidate.phone ?? "—"}</td>
-                          <td className="px-3 py-2"><span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${statusColor(f.candidate.status)}`}>{statusLabel(f.candidate.status)}</span></td>
-                          <td className="px-3 py-2 text-xs text-gray-600 dark:text-slate-300 max-w-[140px] truncate">{f.candidate.nextAction ?? fmt(f.type)}</td>
-                          <td className="px-3 py-2 text-xs whitespace-nowrap"><span className={overdue ? "text-red-600 dark:text-red-400 font-semibold inline-flex items-center gap-1" : "text-amber-600 dark:text-amber-400"}>{overdue && <AlertTriangle className="w-3 h-3" />}{fmtTime(due)}</span></td>
-                          <td className="px-3 py-2 text-xs text-gray-500 dark:text-slate-400 whitespace-nowrap">{f.candidate.primaryOwner?.name?.split(" ")[0] ?? "—"}</td>
-                          <td className="px-3 py-2"><div className="flex items-center gap-1">
-                            {f.candidate.phone && <ActionIconButton action="call" href={`tel:${f.candidate.phone}`} />}
-                            {waHref && <ActionIconButton action="whatsapp" href={waHref} external />}
-                            <Link href={`/hr/candidates/${f.candidateId}?do=interview`} title="Schedule" className="inline-flex items-center justify-center w-7 h-7 rounded-lg text-purple-600 hover:bg-purple-50 dark:text-purple-400 dark:hover:bg-purple-900/30"><CalendarCheck className="w-4 h-4" /></Link>
-                            <Link href={`/hr/candidates/${f.candidateId}?do=note`} title="Note" className="inline-flex items-center justify-center w-7 h-7 rounded-lg text-gray-600 hover:bg-gray-100 dark:text-slate-300 dark:hover:bg-slate-800"><FileText className="w-4 h-4" /></Link>
-                          </div></td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </section>
-
-          {/* No Next Action — fresh candidates needing a first follow-up */}
-          <section id="nonext" className="bg-white dark:bg-slate-900 rounded-2xl border border-gray-200 dark:border-slate-700 overflow-hidden">
-            <div className="px-4 py-2.5 border-b border-gray-100 dark:border-slate-800 text-sm font-bold text-gray-700 dark:text-slate-200 flex items-center gap-2">
-              <Inbox className="w-4 h-4 text-gray-400" /> No Next Action — needs a first follow-up ({noNextActionCount})
-            </div>
-            {noNextAction.length === 0 ? <div className="px-4 py-6 text-center text-xs text-gray-400 dark:text-slate-500">Every active candidate has a next action.</div> : (
-              <div className="divide-y divide-gray-100 dark:divide-slate-800">
-                {noNextAction.map(c => {
-                  const waHref = wa(c.whatsappPhone, c.phone);
-                  return (
-                    <div key={c.id} className="flex items-center gap-3 px-4 py-2.5">
-                      <div className="flex-1 min-w-0">
-                        <Link href={`/hr/candidates/${c.id}`} className="text-sm font-semibold text-gray-800 dark:text-slate-100 hover:underline">{c.name}</Link>
-                        <div className="text-[11px] text-gray-500 dark:text-slate-400">{[c.positionApplied, statusLabel(c.status)].filter(Boolean).join(" · ") || "—"}</div>
-                      </div>
-                      <div className="flex items-center gap-1 shrink-0">
-                        {c.phone && <a href={`tel:${c.phone}`} className="inline-flex items-center gap-1 text-[11px] px-2 py-1 rounded-lg border border-blue-300 text-blue-700 hover:bg-blue-50 dark:border-blue-500/50 dark:text-blue-300 dark:hover:bg-blue-900/30"><Phone className="w-3 h-3" /> Call</a>}
-                        {waHref && <a href={waHref} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-[11px] px-2 py-1 rounded-lg border border-green-300 text-green-700 hover:bg-green-50 dark:border-green-500/50 dark:text-green-300 dark:hover:bg-green-900/30"><MessageCircle className="w-3 h-3" /> WA</a>}
-                        <Link href={`/hr/candidates/${c.id}?do=followup`} className="inline-flex items-center gap-1 text-[11px] px-2 py-1 rounded-lg border border-amber-300 text-amber-700 hover:bg-amber-50 dark:border-amber-500/50 dark:text-amber-300 dark:hover:bg-amber-900/30"><CalendarCheck className="w-3 h-3" /> Schedule</Link>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-            {noNextActionCount > noNextAction.length && (
-              <div className="px-4 py-2 border-t border-gray-100 dark:border-slate-800 text-center">
-                <Link href="/hr/candidates" className="text-xs font-medium text-[#1a2e4a] dark:text-blue-400 hover:underline">
-                  Showing {noNextAction.length} of {noNextActionCount} — open Candidates to select all &amp; bulk-set a follow-up date →
-                </Link>
-              </div>
-            )}
-          </section>
-
-          {/* Follow-up tabs */}
-          <section id="followups"><HRFollowUpTabs today={todayFU.map(toFU)} overdue={overdueFU.map(toFU)} upcoming={upcomingFU.map(toFU)} /></section>
-
-          {/* Today's interviews */}
-          <section id="interviews" className="bg-white dark:bg-slate-900 rounded-2xl border border-gray-200 dark:border-slate-700 overflow-hidden">
-            <div className="px-4 py-2.5 border-b border-gray-100 dark:border-slate-800 text-sm font-bold text-gray-700 dark:text-slate-200 flex items-center gap-2">
-              <Target className="w-4 h-4 text-gray-400" /> Today&apos;s Interviews ({ivToday.length})
-            </div>
-            {ivToday.length === 0 ? <div className="px-4 py-6 text-center text-xs text-gray-400 dark:text-slate-500">No interviews scheduled today.</div> : (
-              <div className="overflow-x-auto"><table className="w-full text-sm">
-                <thead><tr className="bg-gray-50 dark:bg-slate-800 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide">
-                  {["Candidate", "Position", "Time", "Interviewer", "Status"].map(h => <th key={h} className="px-3 py-2 whitespace-nowrap">{h}</th>)}
-                </tr></thead>
-                <tbody className="divide-y divide-gray-100 dark:divide-slate-800">
-                  {ivToday.map(iv => (
-                    <tr key={iv.id} className="hover:bg-gray-50/80 dark:hover:bg-slate-800/50">
-                      <td className="px-3 py-2"><Link href={`/hr/candidates/${iv.candidateId}`} className="font-medium text-[#1a2e4a] dark:text-blue-400 hover:underline">{iv.candidate.name}</Link></td>
-                      <td className="px-3 py-2 text-xs text-gray-600 dark:text-slate-300">{iv.candidate.positionApplied ?? "—"}</td>
-                      <td className="px-3 py-2 text-xs font-medium whitespace-nowrap text-gray-700 dark:text-slate-200">{fmtTime(new Date(iv.scheduledAt))}</td>
-                      <td className="px-3 py-2 text-xs text-gray-500 dark:text-slate-400">{iv.interviewer?.name?.split(" ")[0] ?? "—"}</td>
-                      <td className="px-3 py-2"><span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${iv.confirmationStatus === "CONFIRMED" ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300" : "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300"}`}>{fmt(iv.confirmationStatus)}</span></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table></div>
-            )}
-          </section>
-
-          {/* No-show recovery */}
-          <section id="noshow" className="bg-white dark:bg-slate-900 rounded-2xl border border-gray-200 dark:border-slate-700 overflow-hidden">
-            <div className="px-4 py-2.5 border-b border-gray-100 dark:border-slate-800 text-sm font-bold text-gray-700 dark:text-slate-200 flex items-center gap-2">
-              <Ban className="w-4 h-4 text-gray-400" /> No-Show Recovery ({noShowList.length})
-            </div>
-            {noShowList.length === 0 ? <div className="px-4 py-6 text-center text-xs text-gray-400 dark:text-slate-500">No pending no-shows.</div> : (
-              <div className="divide-y divide-gray-100 dark:divide-slate-800">
-                {noShowList.map(iv => {
-                  const waHref = wa(iv.candidate.phone, null);
-                  return (
-                    <div key={iv.id} className="flex items-center gap-3 px-4 py-2.5">
-                      <div className="flex-1 min-w-0">
-                        <Link href={`/hr/candidates/${iv.candidateId}`} className="text-sm font-semibold text-gray-800 dark:text-slate-100 hover:underline">{iv.candidate.name}</Link>
-                        <div className="text-[11px] text-gray-500 dark:text-slate-400">Missed {fmt(iv.type)} on {fmtDate(new Date(iv.scheduledAt))}</div>
-                      </div>
-                      <div className="flex items-center gap-1 shrink-0">
-                        {iv.candidate.phone && <a href={`tel:${iv.candidate.phone}`} className="inline-flex items-center gap-1 text-[11px] px-2 py-1 rounded-lg border border-blue-300 text-blue-700 hover:bg-blue-50 dark:border-blue-500/50 dark:text-blue-300 dark:hover:bg-blue-900/30"><Phone className="w-3 h-3" /> Call</a>}
-                        {waHref && <a href={waHref} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-[11px] px-2 py-1 rounded-lg border border-green-300 text-green-700 hover:bg-green-50 dark:border-green-500/50 dark:text-green-300 dark:hover:bg-green-900/30"><MessageCircle className="w-3 h-3" /> WA</a>}
-                        <Link href={`/hr/candidates/${iv.candidateId}?do=interview`} className="inline-flex items-center gap-1 text-[11px] px-2 py-1 rounded-lg border border-purple-300 text-purple-700 hover:bg-purple-50 dark:border-purple-500/50 dark:text-purple-300 dark:hover:bg-purple-900/30"><RotateCcw className="w-3 h-3" /> Reschedule</Link>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </section>
-
-          {/* Expected joinings */}
-          <section id="joinings" className="bg-white dark:bg-slate-900 rounded-2xl border border-gray-200 dark:border-slate-700 overflow-hidden">
-            <div className="px-4 py-2.5 border-b border-gray-100 dark:border-slate-800 text-sm font-bold text-gray-700 dark:text-slate-200 flex items-center gap-2">
-              <Handshake className="w-4 h-4 text-gray-400" /> Expected Joinings ({expectedList.length})
-            </div>
-            {expectedList.length === 0 ? <div className="px-4 py-6 text-center text-xs text-gray-400 dark:text-slate-500">No expected joinings yet — set a joining date on offered candidates.</div> : (
-              <div className="overflow-x-auto"><table className="w-full text-sm">
-                <thead><tr className="bg-gray-50 dark:bg-slate-800 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide">
-                  {["Candidate", "Joining Date", "Position", "Offer Status"].map(h => <th key={h} className="px-3 py-2 whitespace-nowrap">{h}</th>)}
-                </tr></thead>
-                <tbody className="divide-y divide-gray-100 dark:divide-slate-800">
-                  {expectedList.map(c => (
-                    <tr key={c.id} className="hover:bg-gray-50/80 dark:hover:bg-slate-800/50">
-                      <td className="px-3 py-2"><Link href={`/hr/candidates/${c.id}`} className="font-medium text-[#1a2e4a] dark:text-blue-400 hover:underline">{c.name}</Link></td>
-                      <td className="px-3 py-2 text-xs font-medium whitespace-nowrap text-gray-700 dark:text-slate-200">{c.joiningDate ? fmtDate(new Date(c.joiningDate)) : "—"}</td>
-                      <td className="px-3 py-2 text-xs text-gray-600 dark:text-slate-300">{c.positionApplied ?? "—"}</td>
-                      <td className="px-3 py-2"><span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${statusColor(c.status)}`}>{statusLabel(c.status)}</span></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table></div>
-            )}
-          </section>
-        </div>
-
-        {/* ── RIGHT: sticky reminders + activity + leaderboard ── */}
-        <div className="lg:sticky lg:top-4 lg:self-start space-y-4">
-          <HRRemindersCard events={reminderEvents} todayIso={todayIso} showOwner={perms.viewAllCandidates} />
-
-          {/* Recruiter leaderboard (Admin / Senior HR) */}
-          {isLeader && (
-            <section className="bg-white dark:bg-slate-900 rounded-2xl border border-gray-200 dark:border-slate-700 overflow-hidden">
-              <div className="px-4 py-2.5 border-b border-gray-100 dark:border-slate-800 text-sm font-bold text-gray-700 dark:text-slate-200">Leaderboard — this week</div>
-              {leaderboard.length === 0 ? (
-                <div className="px-4 py-6 text-center text-xs text-gray-400 dark:text-slate-500">No recruiter activity this week yet.</div>
-              ) : (
-                <div className="divide-y divide-gray-100 dark:divide-slate-800">
-                  {leaderboard.map((r, i) => (
-                    <div key={r.name} className="flex items-center gap-3 px-4 py-2">
-                      <div className={`w-5 text-center text-xs font-bold ${i === 0 ? "text-amber-500" : i === 1 ? "text-slate-400" : i === 2 ? "text-orange-400" : "text-gray-300"}`}>{i + 1}</div>
-                      <div className="flex-1 min-w-0 text-sm font-medium text-gray-800 dark:text-slate-200 truncate">{r.name}</div>
-                      <div className="text-[11px] text-gray-500 dark:text-slate-400 whitespace-nowrap">
-                        <span className="font-semibold text-teal-700 dark:text-teal-400">{r.added}</span> added
-                        <span className="mx-1 text-gray-300 dark:text-slate-600">·</span>
-                        <span className="font-semibold text-green-700 dark:text-green-400">{r.joined}</span> joined
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </section>
-          )}
-
-          {/* Recent activities feed */}
-          <section className="bg-white dark:bg-slate-900 rounded-2xl border border-gray-200 dark:border-slate-700 overflow-hidden">
-            <div className="px-4 py-2.5 border-b border-gray-100 dark:border-slate-800 text-sm font-bold text-gray-700 dark:text-slate-200 flex items-center gap-2">
-              <Activity className="w-4 h-4 text-gray-400" /> Recent Activity
-            </div>
-            {recentActivities.length === 0 ? (
-              <div className="px-4 py-6 text-center text-xs text-gray-400 dark:text-slate-500">No recent activity.</div>
-            ) : (
-              <div className="divide-y divide-gray-100 dark:divide-slate-800">
-                {recentActivities.map(a => (
-                  <div key={a.id} className="px-4 py-2">
-                    <div className="text-xs text-gray-700 dark:text-slate-200">
-                      <span className="font-medium">{ACTIVITY_LABEL[a.type] ?? fmt(a.type)}</span>
-                      {" · "}
-                      <Link href={`/hr/candidates/${a.candidateId}`} className="text-[#1a2e4a] dark:text-blue-400 hover:underline">{a.candidate.name}</Link>
-                    </div>
-                    <div className="text-[10px] text-gray-400 mt-0.5">
-                      {a.user?.name?.split(" ")[0] ? `${a.user.name.split(" ")[0]} · ` : ""}{fmtDate(new Date(a.createdAt))} {fmtTime(new Date(a.createdAt))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </section>
-        </div>
-      </div>
-    </div>
+    <HrDashboardChrome firstName={firstName} greeting={greeting} left={left} right={right} />
   );
 }
