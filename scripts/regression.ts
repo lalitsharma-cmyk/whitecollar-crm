@@ -4990,7 +4990,7 @@ const checks: Check[] = [
       // SAFETY: enforcement is still env-gated (this deploy must NOT silently enable lockdown).
       const ds = fs.readFileSync("src/lib/deviceSecurity.ts", "utf8");
       assert(/process\.env\.DEVICE_SECURITY_ENFORCE === "true"/.test(ds), "enforcement must remain env-gated (monitor by default)");
-      assert(/return Math\.max\(1, 2 \+ \(extra/.test(ds), "device limit must be 2 + admin extra, floored at 1 (allows locking to a single device)");
+      assert(/return Math\.max\(1, 3 \+ \(extra/.test(ds), "device limit must be 3 + admin extra, floored at 1 (default 3 = laptop+mobile+spare; 1 locks to a single device)");
       // EVERY new device needs admin approval under enforcement — auto-approve ONLY in
       // monitor mode or for a super-admin (NOT 'first N devices auto-pass').
       assert(/const autoApprove = !enforcementOn\(\) \|\| user\.isSuperAdmin;/.test(ds), "new devices must NOT auto-approve up to the limit — only monitor/super-admin auto-approve");
@@ -5144,8 +5144,9 @@ const checks: Check[] = [
       // Per-request device binding (super-admin exempt)
       assert(/!user\.isSuperAdmin && s\.deviceRef/.test(auth) && /s\.device\.status !== "APPROVED"/.test(auth),
         "getCurrentUser must reject a session whose device is no longer APPROVED (super-admin exempt)");
-      // Copied-cookie guard
-      assert(/did !== s\.device\.deviceId/.test(auth), "getCurrentUser must reject when wcr_did doesn't match the session's device (copied-cookie guard)");
+      // Copied-cookie guard — HARD DENY (absent OR mismatched wcr_did)
+      assert(/if \(!did \|\| \(s\.device\.deviceId && did !== s\.device\.deviceId\)\) return null/.test(auth),
+        "getCurrentUser must HARD-DENY a missing or mismatched wcr_did (copied-cookie guard, max security)");
       // Legacy no-sid rejected under enforcement
       assert(/enforcementOn\(\) && !user\.isSuperAdmin/.test(auth) && /return null;/.test(auth),
         "under enforcement a session must be device-bound (sid); legacy no-sid cookies rejected");
@@ -5164,6 +5165,18 @@ const checks: Check[] = [
       const devPage = fs.readFileSync("src/app/(app)/admin/devices/page.tsx", "utf8");
       assert(/approvedBy: \{ select: \{ name: true \} \}/.test(devPage) && /by \{d\.approvedBy/.test(devPage),
         "admin devices panel must show 'approved by'");
+
+      // Logout revokes the server session row (not just the cookie) → no stale access.
+      const logoutSrc = fs.readFileSync("src/app/api/logout/route.ts", "utf8");
+      assert(/logout\(\)/.test(logoutSrc) && /auth\.logout/.test(logoutSrc), "logout must revoke the session row server-side + audit (not just delete the cookie)");
+      // Role change + account disable revoke all of the user's sessions.
+      const userUpd = fs.readFileSync("src/app/api/admin/users/[id]/update/route.ts", "utf8");
+      assert(/role_change/.test(userUpd) && /userSession\.updateMany/.test(userUpd), "role change must revoke all the user's sessions (logout after role change)");
+      const toggle = fs.readFileSync("src/app/api/admin/users/[id]/toggle-active/route.ts", "utf8");
+      assert(/account_disabled/.test(toggle) && /userSession\.updateMany/.test(toggle), "disabling an account must revoke all its sessions");
+      // Country-change security event (IP-monitoring seed) audits + alerts admins.
+      const ds2 = fs.readFileSync("src/lib/deviceSecurity.ts", "utf8");
+      assert(/auth\.device\.country_change/.test(ds2), "a country change on a known device must be audited + alert admins");
 
       // (c) DATA note — sessions that the new device-binding would terminate now.
       const live = await prisma.userSession.findMany({

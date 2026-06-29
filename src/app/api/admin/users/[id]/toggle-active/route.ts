@@ -25,14 +25,25 @@ export async function PATCH(
     select: { id: true, name: true, email: true, role: true, team: true, active: true },
   });
 
+  // Disabling an account → kill all its sessions immediately so it loses access on
+  // every device (Lalit: "logout after account disable"). Reactivating doesn't revoke.
+  let sessionsRevoked = 0;
+  if (!updated.active) {
+    const r = await prisma.userSession.updateMany({
+      where: { userId: id, revokedAt: null },
+      data: { revokedAt: new Date(), revokedReason: "account_disabled" },
+    });
+    sessionsRevoked = r.count;
+  }
+
   await audit({
     userId: me.id,
     action: updated.active ? "user.reactivate" : "user.deactivate",
     entity: "User",
     entityId: id,
-    meta: { active: updated.active },
+    meta: { active: updated.active, sessionsRevoked },
     request: reqMeta(req),
   });
 
-  return NextResponse.json({ ok: true, user: updated });
+  return NextResponse.json({ ok: true, user: updated, sessionsRevoked });
 }
