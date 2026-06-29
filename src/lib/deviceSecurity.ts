@@ -14,13 +14,13 @@ export function enforcementOn(): boolean {
   return process.env.DEVICE_SECURITY_ENFORCE === "true";
 }
 
-// Default policy: 1 mobile + 1 desktop = 2, adjustable per user via deviceLimitExtra
-// (total = 2 + extra, floored at 1 so an admin can lock a user to a SINGLE device;
-// extra ranges −1…3 → total 1…5). This is the CAP on APPROVED devices (enforced at
-// approval time), NOT an auto-approve threshold. Exported so the admin approve
-// action shares the rule.
+// Default policy (Lalit 2026-06-28): 3 approved devices — laptop + mobile + 1 spare —
+// adjustable per user via deviceLimitExtra (total = 3 + extra, floored at 1 so an admin
+// can lock a user to a SINGLE device; extra ranges −2…2 → total 1…5). This is the CAP
+// on APPROVED devices (enforced at approval time), NOT an auto-approve threshold.
+// Exported so the admin approve action shares the rule.
 export function deviceLimit(extra: number): number {
-  return Math.max(1, 2 + (extra || 0));
+  return Math.max(1, 3 + (extra || 0));
 }
 
 export type DeviceDecision =
@@ -66,7 +66,21 @@ export async function evaluateDevice(opts: {
   // existing rows self-heal to the enriched labels (OS version + Safari/App context)
   // on next login — no migration needed.
   if (device?.status === "APPROVED") {
+    // Security-event auditing: a COUNTRY change on a known device is notable (possible
+    // impossible-travel / shared credential) → audit + alert admins. (IP-only drift is
+    // captured by lastIp.)
+    const prevCountry = device.lastCountry ?? null;
+    const countryChanged = !!meta.country && !!prevCountry && meta.country !== prevCountry;
     await prisma.device.update({ where: { id: device.id }, data: { name, browser, os, type: p.type, lastSeenAt: now, lastIp: meta.ip, lastCity: meta.city ?? null, lastCountry: meta.country ?? null } });
+    if (countryChanged) {
+      await audit({ userId: user.id, action: "auth.device.country_change", entity: "Device", entityId: device.id, meta: { from: prevCountry, to: meta.country, ip: meta.ip, name } }).catch(() => {});
+      await notifyRoles(["ADMIN"], {
+        kind: NotifKind.SYSTEM, severity: "WARNING",
+        title: `🌍 Location change — ${user.name}`,
+        body: `${name} signed in from ${locationLabel(meta.city, meta.country)} (was ${prevCountry}). If unexpected, block the device on /admin/devices.`,
+        linkUrl: "/admin/devices",
+      }).catch(() => {});
+    }
     return { ok: true, deviceRowId: device.id };
   }
 

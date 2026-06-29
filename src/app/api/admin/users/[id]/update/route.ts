@@ -46,14 +46,26 @@ export async function PATCH(
     select: { id: true, name: true, email: true, role: true, team: true, active: true },
   });
 
+  // Role change → force re-login everywhere so the NEW permissions apply on a fresh
+  // session (Lalit: "logout after role/permission change"). A team-only change does
+  // not revoke (permissions unchanged).
+  let sessionsRevoked = 0;
+  if (data.role) {
+    const r = await prisma.userSession.updateMany({
+      where: { userId: id, revokedAt: null },
+      data: { revokedAt: new Date(), revokedReason: "role_change" },
+    });
+    sessionsRevoked = r.count;
+  }
+
   await audit({
     userId: me.id,
     action: "user.update",
     entity: "User",
     entityId: id,
-    meta: data,
+    meta: { ...data, sessionsRevoked },
     request: reqMeta(req),
   });
 
-  return NextResponse.json({ ok: true, user: updated });
+  return NextResponse.json({ ok: true, user: updated, sessionsRevoked });
 }

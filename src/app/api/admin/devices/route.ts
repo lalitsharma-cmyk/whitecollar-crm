@@ -84,11 +84,11 @@ export async function POST(req: NextRequest) {
   }
 
   if (action === "set_device_limit") {
-    // Per-user device allowance, stored as EXTRA on top of the default 2.
-    // Clamped −1…3 (total 1…5): extra=-1 → 1 device (lock to a single device),
-    // extra=0 → 2 (default), extra=3 → 5.
+    // Per-user device allowance, stored as EXTRA on top of the default 3.
+    // Clamped −2…2 (total 1…5): extra=-2 → 1 device (lock to one), extra=0 → 3
+    // (default: laptop + mobile + spare), extra=2 → 5.
     const userId = String(body.userId ?? "");
-    const extra = Math.max(-1, Math.min(3, Math.round(Number(body.extra) || 0)));
+    const extra = Math.max(-2, Math.min(2, Math.round(Number(body.extra) || 0)));
     const totalAllowed = deviceLimit(extra);
     const u = await prisma.user.update({ where: { id: userId }, data: { deviceLimitExtra: extra }, select: { id: true, name: true } });
     await audit({ userId: me.id, action: "device.set_limit", entity: "User", entityId: userId, meta: { extra, totalAllowed, name: u.name }, request: meta });

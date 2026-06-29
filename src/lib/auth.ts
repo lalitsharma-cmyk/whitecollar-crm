@@ -49,12 +49,13 @@ export const getCurrentUser = cache(async () => {
       // Session tied to a device that is no longer APPROVED (revoked/blocked/removed/
       // pending) loses access immediately.
       if (!s.device || s.device.status !== "APPROVED") return null;
-      // Copied-cookie guard: this browser's wcr_did must match the session's device.
-      // Stops a stolen/copied wcr_session cookie working in ANOTHER browser (which
-      // carries its own different wcr_did). Absent wcr_did is tolerated (avoids edge-
-      // case lockouts) — the APPROVED-device check above still binds to a real device.
+      // Copied-cookie guard — HARD DENY (Lalit, max security): the wcr_did cookie must
+      // be PRESENT and MATCH the session's device. Missing OR mismatched → reject and
+      // force fresh auth. A copied/restored wcr_session used in another browser carries
+      // that browser's own (different or absent) wcr_did, so it can't reopen access.
+      // Super-admin is exempt via the outer `!user.isSuperAdmin` guard (lockout backstop).
       const did = (jar.get("wcr_did")?.value ?? "").trim();
-      if (did && s.device.deviceId && did !== s.device.deviceId) return null;
+      if (!did || (s.device.deviceId && did !== s.device.deviceId)) return null;
     }
 
     // Throttled "last active" update — best-effort, never blocks the request.
