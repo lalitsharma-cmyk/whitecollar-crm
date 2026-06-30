@@ -2134,6 +2134,17 @@ const checks: Check[] = [
       const composed = composeRemarkFromFields({ Status: "Moved To MIS", "Follow-Up": "46152" });
       assert(/Status: Moved To MIS/.test(composed) && /Follow-Up: 2026-05-10/.test(composed), `composeRemarkFromFields must preserve values + convert Excel serial (got ${JSON.stringify(composed)})`);
       assert(composeRemarkFromFields({ Status: "" }) === "", "all-blank status fields → empty composed remark");
+      // FOLLOW-UP DATE PARSING (R8 fix) — buyer follow-up routes through the shared
+      // parseImportDate so DECIMAL Excel serials (the "46-199" garbage = a serial
+      // with a time fraction) + dd/mm/yyyy + ISO all normalize, while bare numbers
+      // and unparseable text stay verbatim (never misread as a 1900s date).
+      const fu = (v: string) => composeRemarkFromFields({ "Follow-Up": v });
+      assert(/^Follow-Up: 20\d\d-\d\d-\d\d$/.test(fu("46199.625")), `decimal Excel serial must normalize to a date (got ${JSON.stringify(fu("46199.625"))})`);
+      assert(fu("22/05/2026") === "Follow-Up: 2026-05-22", `dd/mm/yyyy must normalize (got ${JSON.stringify(fu("22/05/2026"))})`);
+      assert(fu("2026-05-22") === "Follow-Up: 2026-05-22", "ISO follow-up must pass through");
+      assert(fu("46-199") === "Follow-Up: 46-199", "unparseable two-part value stays verbatim (never crashes/misconverts)");
+      assert(fu("2026") === "Follow-Up: 2026", "a bare year must NOT be read as an Excel serial");
+      assert(fu("5") === "Follow-Up: 5", "a small bare integer must NOT be read as a 1900s date");
 
       // (c) ROUTE WIRING (static) — the import route must do all four jobs.
       const route = read("src/app/api/buyer-data/import/route.ts");

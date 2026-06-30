@@ -24,6 +24,7 @@
 // ────────────────────────────────────────────────────────────────────────────
 
 import { parseRemarksTimeline, type RemarkEventType } from "@/lib/remarkParser";
+import { parseImportDate } from "@/lib/parseImportDate";
 
 /** A single BuyerActivity row to create, derived from one parsed remark entry. */
 export interface BuyerActivityPlan {
@@ -115,20 +116,34 @@ export function isImportedActivityDescription(description: string | null | undef
 // preserving each value verbatim. A real "Remarks"/"Notes" free-text column, when
 // present, is used as-is by the caller and takes precedence — this is the fallback.
 //
-// Excel serial follow-up dates ("46152") are converted to a readable date so the
-// composed remark isn't a meaningless number; any non-serial value is kept verbatim.
-const EXCEL_EPOCH_MS = Date.UTC(1899, 11, 30); // Excel serial 0 = 1899-12-30
+// Imported follow-up values are normalized to a readable ISO date so the composed
+// remark isn't a meaningless number. Uses the SAME parser the Lead import + the
+// buyer import route use (parseImportDate) — it handles Excel serials INCLUDING
+// the decimal date+time form ("46199.625", which the old narrow `^\d{4,6}$` test
+// silently dumped verbatim → the "46-199" garbage), dd/mm/yyyy, dd-mm-yyyy, and
+// ISO. Guards: a pure integer is only treated as a serial inside the plausible
+// date range (≈1982–2119) so a stray small number / bare year ("2026") isn't
+// misread as a 1900s date; genuinely unparseable values are kept verbatim.
 function readableFollowup(v: string): string {
   const s = v.trim();
-  // Pure-integer Excel serial in the plausible date range → ISO date.
-  if (/^\d{4,6}$/.test(s)) {
-    const n = parseInt(s, 10);
+  // ANY bare integer/decimal → treat as an Excel serial ONLY inside the plausible
+  // date range (≈1982–2119). Every other bare number — a small int ("5"), a bare
+  // year ("2026"), a huge number — stays verbatim so a stray number can never
+  // become a 1900s date. (Handles this branch itself; the date-string branch
+  // below never sees a pure number, so parseImportDate can't misread it.)
+  if (/^\d+(\.\d+)?$/.test(s)) {
+    const n = parseFloat(s);
     if (n > 30000 && n < 80000) {
-      const d = new Date(EXCEL_EPOCH_MS + n * 86400000);
-      if (!isNaN(d.getTime())) return d.toISOString().slice(0, 10);
+      const d = parseImportDate(s);
+      if (d) return d.toISOString().slice(0, 10);
     }
+    return s;
   }
-  return s;
+  // Non-numeric date-like strings (dd/mm/yyyy, dd-mm-yyyy, ISO, "9 Jun 2026") →
+  // normalize; truly unparseable text ("Call back next week", "46-199") stays
+  // verbatim (no parser can know a malformed value was meant to be a date).
+  const d = parseImportDate(s);
+  return d ? d.toISOString().slice(0, 10) : s;
 }
 
 /** Build a single labeled remark line from a map of status-like fields, e.g.
