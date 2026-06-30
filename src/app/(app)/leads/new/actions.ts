@@ -66,6 +66,7 @@ export async function quickCreateLeadAction(
       notesShort: notes,
       source,
       team,
+      autoAssign: true, // Lalit 2026-06-30: Quick-Add has no owner picker → route by team rule
     });
 
     // Mirror the full form: also persist remarks into the rich `remarks` column

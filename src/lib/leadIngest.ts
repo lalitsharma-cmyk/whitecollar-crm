@@ -16,6 +16,7 @@ import { websiteMessageRemark } from "@/lib/websiteRemark";
 import { sourceEnumLabel } from "@/lib/sourceLabel";
 import { BOOKED_STATUSES } from "@/lib/lead-statuses";
 import { resolveTeam, routingFieldsFor, automationGate } from "@/lib/teamRouting";
+import { resolveTeamAutoAssignee } from "@/lib/teamAutoAssign";
 import type { Classification } from "@/lib/leadClassifier";
 import { cleanNeedSnapshot } from "@/lib/needSnapshot";
 import { runIntelligenceCheck } from "@/lib/intelligenceCheck";
@@ -69,6 +70,12 @@ export interface RawLeadInput {
    *  every other caller (website / manual / merge-mode import) dedupes exactly
    *  as before. */
   skipDedup?: boolean;
+  /** Real-time SINGLE-lead intake (website / Meta / email / manual-without-owner
+   *  / quick-add) sets this true to OPT IN to team auto-assignment (Dubai→Lalit,
+   *  Tuesday-IST India→Yasir, else Tanuj). Bulk importers + buyer-convert leave it
+   *  false/undefined so they are NEVER auto-routed (parked for triage). WEBSITE-
+   *  source leads auto-assign regardless (back-compat). New-leads-only. */
+  autoAssign?: boolean;
 }
 
 const FIRST_CALL_SLA_MIN = 15;
@@ -484,25 +491,33 @@ export async function ingestLead(input: RawLeadInput) {
   // NEVER touches imports / manual creation / existing leads (only this fresh
   // WEBSITE intake path). Best-effort: a failure here never blocks lead creation.
   const isWebLead = input.source === LeadSource.WEBSITE;
+  // Auto-assign fires for real-time SINGLE-lead intake: WEBSITE-source forms (back-
+  // compat) PLUS any caller that opted in via input.autoAssign (Meta, email, the
+  // universal intake key, manual-without-owner, quick-add). NEVER for bulk imports
+  // or buyer-convert (they don't set the flag) — they stay parked for triage. WHO
+  // gets the lead now comes from the central business rule resolveTeamAutoAssignee()
+  // (Dubai→Lalit · Tuesday-IST India→Yasir · else Tanuj), NOT the static
+  // websiteLeadAssignees map. The websiteAutoAssignEnabled toggle still gates it.
+  const wantsAutoAssign = isWebLead || input.autoAssign === true;
   let autoAssigned = false;
-  if (isWebLead && lead.forwardedTeam) {
+  if (wantsAutoAssign && lead.forwardedTeam) {
     try {
-      const cfg = await getWebsiteAutoAssign();
-      const targetUserId = cfg.assignees[lead.forwardedTeam];
+      const cfg = await getWebsiteAutoAssign();          // keep ONLY for the enable toggle
+      const targetUserId = resolveTeamAutoAssignee(lead.forwardedTeam);
       if (cfg.enabled && targetUserId && !lead.ownerId) {
-        // Validate the mapped user is real, active and not HR-only before assigning.
+        // Validate the resolved user is real, active and not HR-only before assigning.
         const assignee = await prisma.user.findFirst({
           where: { id: targetUserId, active: true, hrOnly: false },
           select: { id: true },
         });
         if (assignee) {
-          await assignLeadTo(lead.id, assignee.id, `website auto-assign (${lead.forwardedTeam} team)`);
+          await assignLeadTo(lead.id, assignee.id, `auto-assign (${lead.forwardedTeam} team)`);
           lead.ownerId = assignee.id; // reflect locally so the alert block below adapts
           autoAssigned = true;
         }
       }
     } catch (err) {
-      console.error("[ingestLead] website auto-assign failed for lead", lead.id, err);
+      console.error("[ingestLead] auto-assign failed for lead", lead.id, err);
     }
   }
 

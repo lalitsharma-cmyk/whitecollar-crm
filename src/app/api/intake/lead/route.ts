@@ -100,6 +100,7 @@ export async function POST(req: NextRequest) {
     city: d.city,
     country: d.country,
     source: key.source,
+    autoAssign: true, // Lalit 2026-06-30: every real-time intake key routes via the team rule
     currentStatus: "Fresh Lead", // real-time intake → Fresh Lead (imports set their own)
     sourceRaw,
     sourceDetail,

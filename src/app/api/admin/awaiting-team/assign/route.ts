@@ -16,7 +16,8 @@ import { chooseOwnerForNewLead, currentWindow } from "@/lib/assignmentWindow";
 import { assignLeadTo } from "@/lib/leadIngest";
 import { audit, reqMeta } from "@/lib/audit";
 import { resolveTeam, routingFieldsFor } from "@/lib/teamRouting";
-import { getRoundRobinEnabled, getAutoAssignmentEnabled } from "@/lib/settings";
+import { getRoundRobinEnabled, getAutoAssignmentEnabled, getWebsiteAutoAssign } from "@/lib/settings";
+import { resolveTeamAutoAssignee } from "@/lib/teamAutoAssign";
 
 const TEAMS = ["Dubai", "India"] as const;
 type Team = (typeof TEAMS)[number];
@@ -52,10 +53,18 @@ export async function POST(req: NextRequest) {
   // Round Robin was globally OFF. Now it only auto-picks when auto-assignment is
   // actually enabled; otherwise it tags the team ONLY and leaves the lead UNOWNED
   // for manual assignment.
-  const autoAssignOn = (await getAutoAssignmentEnabled()) && (await getRoundRobinEnabled());
-  const choice = autoAssignOn
-    ? await chooseOwnerForNewLead(team)
-    : { userId: null as string | null, window: currentWindow(), fallbackReason: "auto-assign disabled (round-robin off)" };
+  // Lalit 2026-06-30: tagging the team routes by the FIXED business rule
+  // (Dubai→Lalit · Tue-IST India→Yasir · else Tanuj), gated by the same enable
+  // toggle as website intake. Falls back to the legacy round-robin only if the
+  // rule returns null (unknown team) AND round-robin is on.
+  const fixedTarget = resolveTeamAutoAssignee(team);
+  const featureOn = (await getWebsiteAutoAssign()).enabled;
+  const rrOn = (await getAutoAssignmentEnabled()) && (await getRoundRobinEnabled());
+  const choice = (fixedTarget && featureOn)
+    ? { userId: fixedTarget as string | null, window: currentWindow(), fallbackReason: "fixed team rule (Lalit 2026-06-30)" }
+    : rrOn
+      ? await chooseOwnerForNewLead(team)
+      : { userId: null as string | null, window: currentWindow(), fallbackReason: "auto-assign disabled (round-robin off)" };
 
   let agentName: string | null = null;
   if (choice.userId) {
@@ -69,7 +78,7 @@ export async function POST(req: NextRequest) {
     action: "lead.team.assign",
     entity: "Lead",
     entityId: leadId,
-    meta: { team, autoAssignedTo: choice.userId ?? null, window: choice.window.kind, fallbackReason: choice.fallbackReason ?? null, autoAssignEnabled: autoAssignOn },
+    meta: { team, autoAssignedTo: choice.userId ?? null, window: choice.window.kind, fallbackReason: choice.fallbackReason ?? null, autoAssignEnabled: (featureOn || rrOn) },
     request: reqMeta(req),
   });
 
@@ -77,7 +86,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       ok: true,
       assignedTo: null,
-      note: autoAssignOn
+      note: (featureOn || rrOn)
         ? "Team tagged. No agent on shift right now; reconciler will retry."
         : "Team tagged. Auto-assignment is OFF — assign an owner manually.",
     });

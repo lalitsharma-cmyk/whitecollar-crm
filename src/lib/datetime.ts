@@ -164,6 +164,16 @@ export function istDateKey(d: Date = new Date()): string {
 }
 
 /**
+ * IST weekday: 0=Sun … 6=Sat (JS getDay convention). Tuesday = 2.
+ * Computed against the IST CALENDAR date (via istDateKey + the +05:30 anchor,
+ * the same idiom istDayRange uses), so it's correct regardless of server TZ —
+ * e.g. 11pm Monday IST (which is already Tuesday UTC) still returns Monday.
+ */
+export function istWeekday(d: Date = new Date()): number {
+  return new Date(`${istDateKey(d)}T00:00:00+05:30`).getUTCDay();
+}
+
+/**
  * UTC instants bounding a single IST calendar day [start, end).
  *   • No arg            → today (IST)
  *   • "YYYY-MM-DD"      → that IST day

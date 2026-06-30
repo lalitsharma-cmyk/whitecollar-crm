@@ -5303,6 +5303,72 @@ const checks: Check[] = [
         "action-escalate must notify sales managers (ADMIN/MANAGER) and EXCLUDE leadOpsOnly data-admins");
     },
   },
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // LEAD AUTO-ASSIGNMENT RULE (2026-06-30) — Dubai NEW leads → Lalit; India NEW
+  //   leads → Yasir on Tuesday (IST), else Tanuj. Applies to real-time intake
+  //   (website / Meta / email / manual-without-owner / quick-add), NOT bulk
+  //   imports / buyer-convert. Existing leads untouched. The resolver is PURE so
+  //   we import + exercise it directly (a real test, not just code-presence).
+  // ───────────────────────────────────────────────────────────────────────────
+  {
+    name: "lead-autoassign-rule — Dubai→Lalit · Tuesday-IST India→Yasir · else Tanuj + every real-time intake opts in",
+    run: async () => {
+      const { resolveTeamAutoAssignee, ASSIGN_AGENTS } = await import("../src/lib/teamAutoAssign");
+      const { istWeekday } = await import("../src/lib/datetime");
+
+      // Sweep a full IST week so a Tuesday is guaranteed present without hard-coding
+      // which calendar date is a Tuesday. For each day: Dubai→Lalit always; India→
+      // Yasir iff that IST day is Tuesday(2), else Tanuj — checked against istWeekday.
+      const week = ["2026-06-29", "2026-06-30", "2026-07-01", "2026-07-02", "2026-07-03", "2026-07-04", "2026-07-05"];
+      const seen = new Set<number>();
+      let tuesdays = 0;
+      for (const ds of week) {
+        const d = new Date(`${ds}T06:00:00Z`); // 11:30am IST that day
+        const wd = istWeekday(d);
+        seen.add(wd);
+        if (wd === 2) tuesdays++;
+        assert(resolveTeamAutoAssignee("Dubai", d) === ASSIGN_AGENTS.LALIT, `Dubai must → Lalit on ${ds}`);
+        const expectIndia = wd === 2 ? ASSIGN_AGENTS.YASIR : ASSIGN_AGENTS.TANUJ;
+        assert(resolveTeamAutoAssignee("India", d) === expectIndia, `India ${ds} (IST weekday ${wd}) must → ${wd === 2 ? "Yasir" : "Tanuj"}`);
+      }
+      assert(seen.size === 7, `istWeekday must yield all 7 distinct IST weekdays across a week (got ${seen.size})`);
+      assert(tuesdays === 1, `a 7-day window must contain exactly one IST Tuesday (got ${tuesdays})`);
+      // Unknown / non-canonical team → null (caller normalizes UAE→Dubai before this).
+      assert(resolveTeamAutoAssignee(null) === null && resolveTeamAutoAssignee("UAE") === null,
+        "unknown/non-canonical team must resolve to null");
+
+      // The 3 target ids must be active + non-HR, else the ingest validation silently skips.
+      const [lalit, yasir, tanuj] = await Promise.all([
+        prisma.user.findUnique({ where: { id: ASSIGN_AGENTS.LALIT }, select: { name: true, active: true, hrOnly: true } }),
+        prisma.user.findUnique({ where: { id: ASSIGN_AGENTS.YASIR }, select: { name: true, active: true, hrOnly: true } }),
+        prisma.user.findUnique({ where: { id: ASSIGN_AGENTS.TANUJ }, select: { name: true, active: true, hrOnly: true } }),
+      ]);
+      assert(!!lalit && lalit.active && !lalit.hrOnly, "LALIT target id must be an active, non-HR user");
+      assert(!!yasir && yasir.active && !yasir.hrOnly, "YASIR target id must be an active, non-HR user");
+      assert(!!tanuj && tanuj.active && !tanuj.hrOnly, "TANUJ target id must be an active, non-HR user");
+
+      // Wiring: leadIngest routes via the resolver under the broadened gate.
+      const fs = await import("fs");
+      const ingest = fs.readFileSync("src/lib/leadIngest.ts", "utf8");
+      assert(/resolveTeamAutoAssignee\(lead\.forwardedTeam\)/.test(ingest) && /wantsAutoAssign/.test(ingest),
+        "leadIngest must resolve the target via resolveTeamAutoAssignee under the autoAssign/WEBSITE gate");
+      // Real-time intake + manual paths opt in; importers do NOT (so bulk imports stay parked).
+      for (const f of [
+        "src/app/api/intake/meta/route.ts",
+        "src/app/api/intake/email/route.ts",
+        "src/app/api/intake/lead/route.ts",
+        "src/app/(app)/leads/new/actions.ts",
+      ]) {
+        assert(/autoAssign:\s*true/.test(fs.readFileSync(f, "utf8")), `${f} must pass autoAssign:true`);
+      }
+      assert(/autoAssign:\s*!String\(formData\.get\("ownerId"\)/.test(fs.readFileSync("src/app/(app)/leads/new/page.tsx", "utf8")),
+        "manual /leads/new must auto-assign ONLY when no explicit owner is picked");
+      for (const f of ["src/app/api/intake/csv/route.ts", "src/app/api/intake/google-sheet/route.ts"]) {
+        assert(!/autoAssign:\s*true/.test(fs.readFileSync(f, "utf8")), `${f} (bulk import) must NOT opt into auto-assign`);
+      }
+    },
+  },
 ];
 
 // ── runner ────────────────────────────────────────────────────────────────────

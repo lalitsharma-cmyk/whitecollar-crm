@@ -77,16 +77,17 @@ const DEFAULTS = {
   // NEW website-form leads auto-assign by team: Dubai → Mehak, India → Tanuj —
   // "until manually disabled". Default ON. Flip to "false" in /settings (or via
   // setSetting) to revert to the awaiting-team/manual-route behaviour. ONLY new
-  // WEBSITE-source leads with a resolved team and no owner are touched — never
-  // imports, manual creation, or existing leads. The assignee user-IDs live in
-  // `websiteLeadAssignees` (JSON) so they can be re-pointed without a code change.
+  // `websiteAutoAssignEnabled` is the master ON/OFF for ALL real-time auto-assign
+  // (website + Meta + email + manual-without-owner + quick-add). Default ON; flip
+  // to "false" to disable every auto-assignment path at once.
   "websiteAutoAssignEnabled": "true",
-  // JSON: { "Dubai": "<userId>", "India": "<userId>" }. Resolved 2026-06-24 from
-  // the active roster — Mehak Mukhija (Dubai) + Tanuj Chopra (India). Editable from
-  // /settings later; an empty / missing team key just means "don't auto-assign that
-  // team" (the lead falls through to the normal awaiting-team flow).
+  // NOTE (Lalit 2026-06-30): WHO a new lead is auto-assigned to is now decided by
+  // the business rule in src/lib/teamAutoAssign.ts → resolveTeamAutoAssignee()
+  // (Dubai→Lalit · Tuesday-IST India→Yasir · else Tanuj), NOT this map. This
+  // `websiteLeadAssignees` JSON is retained for back-compat/reference only and is
+  // no longer read for the routing target.
   "websiteLeadAssignees": JSON.stringify({
-    Dubai: "cmpidrrjp0002vphgqb432xq7", // Mehak Mukhija
+    Dubai: "cmpidrrjp0002vphgqb432xq7", // Mehak Mukhija (legacy — superseded by the resolver)
     India: "cmpidrs1n0005vphgg1tj84pj", // Tanuj Chopra
   }),
   // ── BUYER DATA daily auto-distribution (Part 5b) ─────────────────────────────

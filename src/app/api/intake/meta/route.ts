@@ -99,6 +99,7 @@ export async function POST(req: NextRequest) {
           email: f["email"],
           city: f["city"],
           source: LeadSource.FACEBOOK_ADS,
+          autoAssign: true, // Lalit 2026-06-30: Meta Dubai→Lalit, Tue-IST India→Yasir
           currentStatus: "Fresh Lead",
           sourceRaw: change.value.platform === "instagram" ? "Instagram Lead Ad" : "Meta Lead Ad",
           sourceDetail: detail || undefined,

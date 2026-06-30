@@ -99,6 +99,7 @@ export async function POST(req: NextRequest) {
     phone,
     email: prospectEmail,
     source,
+    autoAssign: true, // Lalit 2026-06-30: email-intake routes via the team rule
     sourceDetail: detail,
     // No truncation — store the full inbound email body verbatim (notesShort is
     // unlimited Postgres text). Previously sliced to 1500 chars (data loss).

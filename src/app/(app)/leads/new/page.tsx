@@ -42,6 +42,11 @@ async function createLeadAction(formData: FormData) {
     budgetMax: Number(formData.get("budgetMax")) || undefined,
     notesShort: remarksText,
     source,
+    // Lalit 2026-06-30: a manual lead with NO explicit owner auto-routes by the team
+    // rule (Dubai→Lalit / Tue-IST India→Yasir). If the admin picks an owner below,
+    // that explicit choice wins (assignLeadTo overrides post-create), so we suppress
+    // auto-assign here to avoid a spurious double-assignment.
+    autoAssign: !String(formData.get("ownerId") ?? "").trim(),
     // ITEM 2: attribute the LEAD_CREATED Activity to the creator so the initial
     // remark shows in Smart Timeline with date + time + USER. The remark text
     // itself renders once as a dated Conversation-History entry (leadIngest's
