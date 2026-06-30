@@ -53,7 +53,7 @@ export default async function CandidateTimelinePage({ params }: { params: Promis
         deletedAt: true,
         primaryOwnerId: true, secondaryOwnerId: true,
         primaryOwner: { select: { name: true } },
-        activities: { orderBy: { createdAt: "desc" }, include: { user: { select: { name: true } } } },
+        activities: { orderBy: { createdAt: "desc" }, take: 200, include: { user: { select: { name: true } } } },
         interviews: { orderBy: { scheduledAt: "desc" }, include: { interviewer: { select: { name: true } } } },
         voiceMessages: {
           orderBy: { createdAt: "desc" },
@@ -96,13 +96,16 @@ export default async function CandidateTimelinePage({ params }: { params: Promis
   }
   entries.sort((a, b) => +b.at - +a.at);
 
-  // Group by IST day.
+  // Group by IST day. Day groups stay newest-first (entries are sorted desc),
+  // but items WITHIN each day read morning→evening (ascending) so a single day's
+  // conversation flows chronologically top-to-bottom.
   const groups: { day: string; items: Entry[] }[] = [];
   for (const e of entries) {
     const day = fmtDayLong(e.at);
     const g = groups.find(x => x.day === day);
     if (g) g.items.push(e); else groups.push({ day, items: [e] });
   }
+  for (const g of groups) g.items.sort((a, b) => +a.at - +b.at);
 
   return (
     <div className="p-4 sm:p-6 max-w-3xl mx-auto space-y-4">

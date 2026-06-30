@@ -4,7 +4,11 @@ import { useRouter } from "next/navigation";
 import { ACTIVE_STATUS_DEFS, CLOSED_STATUS_DEFS } from "@/lib/hrStatus";
 
 interface Agent { id: string; name: string; }
-interface Props { agents: Agent[]; meId: string; }
+// canAssign: whether this user may pick an owner other than themselves.
+// Optional + defaults to true so existing callers keep their current behaviour;
+// the page passes `false` for Junior HR (server already forces owner = self, so
+// the picker was a no-op for them). Server enforcement is unchanged either way.
+interface Props { agents: Agent[]; meId: string; canAssign?: boolean }
 interface DupMatch { id: string; name: string; phone: string | null; whatsappPhone: string | null; email: string | null; status: string; }
 
 const POSITIONS = ["Sales Executive", "BDE", "BDM", "Team Leader", "Manager", "HR", "Marketing", "Other"];
@@ -18,14 +22,19 @@ const FOLLOWUP_TYPES: [string, string][] = [
   ["CUSTOM", "Custom"],
 ];
 
-export default function HRAddCandidateForm({ agents, meId }: Props) {
+export default function HRAddCandidateForm({ agents, meId, canAssign = true }: Props) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [ok, setOk] = useState<string | null>(null);
   const [showMore, setShowMore] = useState(false);
   const [dupBlock, setDupBlock] = useState<{ id: string; name: string } | null>(null);
   const [dupMatches, setDupMatches] = useState<DupMatch[]>([]);
+  // Override gate: when live duplicates exist the user must explicitly confirm
+  // before we attempt the create (the server still hard-blocks with a 409).
+  const [dupOverride, setDupOverride] = useState(false);
+  const meName = agents.find(a => a.id === meId)?.name ?? "You";
 
   const [form, setForm] = useState({
     name: "", phone: "", whatsappPhone: "", email: "",
@@ -57,7 +66,10 @@ export default function HRAddCandidateForm({ agents, meId }: Props) {
       try {
         const res = await fetch(`/api/hr/candidates/check-duplicate?${qs.toString()}`);
         const json = await res.json();
-        setDupMatches(Array.isArray(json.matches) ? json.matches : []);
+        const matches = Array.isArray(json.matches) ? json.matches : [];
+        setDupMatches(matches);
+        // Contact details changed → re-arm the override gate.
+        if (matches.length === 0) setDupOverride(false);
       } catch { /* ignore transient errors */ }
     }, 450);
     return () => clearTimeout(t);
@@ -99,11 +111,22 @@ export default function HRAddCandidateForm({ agents, meId }: Props) {
   }
 
   async function submit(mode: "save" | "interview" | "followup") {
-    setErr(null); setDupBlock(null);
+    setErr(null); setOk(null); setDupBlock(null);
     if (!form.name.trim()) { setErr("Candidate name is required."); return; }
     if (!form.phone.trim()) { setErr("Mobile number is required."); return; }
     if (!form.positionApplied) { setErr("Position applied for is required."); return; }
-    const nextActionDate = followDate && followTime ? `${followDate}T${followTime}` : "";
+
+    // Hard-stop on a known duplicate unless the user explicitly overrides — the
+    // server returns a 409 for these, so submitting without override just fails.
+    if (dupMatches.length > 0 && !dupOverride) {
+      setErr("This looks like a duplicate. Open the existing profile above, or tick “Add anyway” to continue.");
+      return;
+    }
+
+    // A follow-up DATE with no TIME was previously dropped silently. Default the
+    // time to 09:00 (IST working-day start) so the follow-up is actually saved.
+    const effectiveTime = followDate && !followTime ? "09:00" : followTime;
+    const nextActionDate = followDate && effectiveTime ? `${followDate}T${effectiveTime}` : "";
 
     setBusy(true);
     let res: Response, json: { candidate?: { id: string }; existingId?: string; existingName?: string; error?: string };
@@ -115,10 +138,18 @@ export default function HRAddCandidateForm({ agents, meId }: Props) {
       json = await res.json();
     } catch { setBusy(false); setErr("Network error — please try again."); return; }
 
-    if (res.status === 409) { setBusy(false); setDupBlock({ id: json.existingId!, name: json.existingName! }); return; }
+    // Duplicate hard-block from the server (mobile / WhatsApp / email already on file).
+    if (res.status === 409) {
+      setBusy(false);
+      if (json.existingId) setDupBlock({ id: json.existingId, name: json.existingName ?? "this candidate" });
+      setErr("A candidate with the same mobile / WhatsApp / email already exists — open the existing profile above.");
+      return;
+    }
     if (!res.ok || !json.candidate) { setBusy(false); setErr(json.error ?? "Failed to add candidate."); return; }
 
     const id = json.candidate.id;
+    // Brief success confirmation before we navigate away.
+    setOk(`✅ ${form.name.trim()} added.${followDate && !followTime ? " Follow-up set for 9:00 AM." : ""}`);
 
     // Attach any resumes to the freshly-created candidate.
     if (files.length) {
@@ -141,6 +172,8 @@ export default function HRAddCandidateForm({ agents, meId }: Props) {
   const section = "text-[11px] font-bold uppercase tracking-wide text-gray-400 border-b border-gray-100 dark:border-slate-700 pb-1.5 mb-3";
 
   const showDupWarning = dupBlock || dupMatches.length > 0;
+  // Submission is blocked while a live duplicate is unresolved (unless overridden).
+  const dupGate = dupMatches.length > 0 && !dupOverride;
 
   return (
     <form onSubmit={e => { e.preventDefault(); submit("save"); }} className="card p-5 space-y-6">
@@ -164,6 +197,10 @@ export default function HRAddCandidateForm({ agents, meId }: Props) {
                   <span className="text-[11px] text-amber-500"> · {m.status.replace(/_/g, " ").toLowerCase()}</span>
                 </div>
               ))}
+              <label className="flex items-center gap-1.5 mt-2 text-[12px] font-medium text-amber-800 dark:text-amber-200 cursor-pointer">
+                <input type="checkbox" checked={dupOverride} onChange={e => setDupOverride(e.target.checked)} />
+                Add anyway — I&apos;ve checked this isn&apos;t the same person
+              </label>
             </div>
           )}
         </div>
@@ -194,9 +231,17 @@ export default function HRAddCandidateForm({ agents, meId }: Props) {
           </div>
           <div>
             <label className={lbl}>Primary Owner</label>
-            <select className={inp} value={form.primaryOwnerId} onChange={set("primaryOwnerId")}>
-              {agents.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
-            </select>
+            {canAssign ? (
+              <select className={inp} value={form.primaryOwnerId} onChange={set("primaryOwnerId")}>
+                {agents.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+              </select>
+            ) : (
+              // Junior HR can't reassign — the server forces owner = self, so show
+              // a read-only value instead of a picker that silently does nothing.
+              <div className={`${inp} bg-gray-50 dark:bg-slate-900/40 text-gray-600 dark:text-slate-300 flex items-center`}>
+                {meName} <span className="ml-1 text-[11px] text-gray-400">(you)</span>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -230,6 +275,9 @@ export default function HRAddCandidateForm({ agents, meId }: Props) {
           </div>
         </div>
         <p className="text-[11px] text-gray-400 mt-1.5">Follow-up is optional — leave it blank for fresh data; the candidate then shows under “No Next Action” until you schedule one.</p>
+        {followDate && !followTime && (
+          <p className="text-[11px] text-amber-600 dark:text-amber-400 mt-0.5">No time set — this follow-up will be scheduled for 9:00 AM. Set a time above to change it.</p>
+        )}
       </div>
 
       {/* ── More Details (collapsible — reduces data-entry burden) ── */}
@@ -309,10 +357,15 @@ export default function HRAddCandidateForm({ agents, meId }: Props) {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className={lbl}>Secondary Owner</label>
-                  <select className={inp} value={form.secondaryOwnerId} onChange={set("secondaryOwnerId")}>
-                    <option value="">— None —</option>
-                    {agents.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
-                  </select>
+                  {canAssign ? (
+                    <select className={inp} value={form.secondaryOwnerId} onChange={set("secondaryOwnerId")}>
+                      <option value="">— None —</option>
+                      {agents.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                    </select>
+                  ) : (
+                    // Server forces no secondary owner for Junior HR — keep it read-only.
+                    <div className={`${inp} bg-gray-50 dark:bg-slate-900/40 text-gray-400 dark:text-slate-500 flex items-center`}>— None —</div>
+                  )}
                 </div>
                 <div>
                   <label className={lbl}>Follow-up Type</label>
@@ -371,19 +424,23 @@ export default function HRAddCandidateForm({ agents, meId }: Props) {
       </div>
 
       {err && <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded p-2 dark:bg-red-900/20 dark:border-red-700">{err}</div>}
+      {ok && <div className="text-sm text-green-700 bg-green-50 border border-green-200 rounded p-2 dark:bg-green-900/20 dark:border-green-700 dark:text-green-300">{ok}</div>}
 
       {/* ── Quick actions ── */}
       <div className="flex flex-col sm:flex-row gap-2 pt-1">
-        <button type="button" disabled={busy} onClick={() => submit("save")}
-          className="btn btn-primary flex-1 justify-center">
+        <button type="button" disabled={busy || dupGate} onClick={() => submit("save")}
+          title={dupGate ? "Possible duplicate — open the existing profile or tick “Add anyway”." : undefined}
+          className="btn btn-primary flex-1 justify-center disabled:opacity-50 disabled:cursor-not-allowed">
           {busy ? (uploading ? "Uploading resume…" : "Saving…") : "Save"}
         </button>
-        <button type="button" disabled={busy} onClick={() => submit("interview")}
-          className="btn justify-center flex-1 border border-purple-300 text-purple-700 hover:bg-purple-50 rounded-lg text-sm dark:border-purple-700 dark:text-purple-300">
+        <button type="button" disabled={busy || dupGate} onClick={() => submit("interview")}
+          title={dupGate ? "Possible duplicate — open the existing profile or tick “Add anyway”." : undefined}
+          className="btn justify-center flex-1 border border-purple-300 text-purple-700 hover:bg-purple-50 rounded-lg text-sm dark:border-purple-700 dark:text-purple-300 disabled:opacity-50 disabled:cursor-not-allowed">
           🎯 Save &amp; Schedule Interview
         </button>
-        <button type="button" disabled={busy} onClick={() => submit("followup")}
-          className="btn justify-center flex-1 border border-amber-300 text-amber-700 hover:bg-amber-50 rounded-lg text-sm dark:border-amber-700 dark:text-amber-300">
+        <button type="button" disabled={busy || dupGate} onClick={() => submit("followup")}
+          title={dupGate ? "Possible duplicate — open the existing profile or tick “Add anyway”." : undefined}
+          className="btn justify-center flex-1 border border-amber-300 text-amber-700 hover:bg-amber-50 rounded-lg text-sm dark:border-amber-700 dark:text-amber-300 disabled:opacity-50 disabled:cursor-not-allowed">
           📅 Save &amp; Add Follow-up
         </button>
         <a href="/hr/candidates" className="btn justify-center flex-none px-4 border border-gray-300 text-gray-700 hover:bg-gray-50 rounded-lg text-sm dark:border-slate-600 dark:text-slate-300">

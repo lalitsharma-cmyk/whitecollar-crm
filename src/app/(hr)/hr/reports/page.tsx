@@ -45,31 +45,60 @@ export default async function HRReportsPage({ searchParams }: { searchParams: Pr
       _count: true,
     });
 
+  // Per-recruiter, period-scoped, DISTINCT-candidate activity counting.
+  // groupBy [userId, candidateId] → one row per (recruiter, candidate). Counting
+  // rows per userId then yields DISTINCT candidates that recruiter progressed in
+  // the window — so a reschedule / re-log does NOT double-credit the recruiter
+  // (matches how the funnel counts distinct candidates, not activity rows).
+  const distinctPerRecruiter = (filter: Prisma.HRActivityWhereInput) =>
+    prisma.hRActivity.groupBy({
+      by: ["userId", "candidateId"],
+      where: { ...filter, userId: { not: null }, createdAt: actWindow, candidate: { deletedAt: null } },
+    });
+  // Collapse [userId, candidateId] rows → distinct-candidate count per userId.
+  const distinctByUser = (rows: { userId: string | null }[]): Record<string, number> => {
+    const m: Record<string, number> = {};
+    for (const r of rows) if (r.userId) m[r.userId] = (m[r.userId] ?? 0) + 1;
+    return m;
+  };
+
+  // Per-promise fallback: one failed query must NOT blank the whole report.
+  // `safe` preserves the SUCCESS type (fallback must match it), so no widened
+  // union breaks downstream inference — on error it logs and yields the fallback.
+  const safe = <T,>(label: string, p: Promise<T>, fallback: T): Promise<T> =>
+    p.catch((e) => { console.error(`[hr-reports] query failed: ${label}`, e); return fallback; });
+
   const [
-    users, calls, added, ivSched, ivDone, shortlisted, offers, joined, funnel,
+    users, calls, added, ivSchedRows, ivDoneRows, shortlistedRows, offerRows, joinedRows, funnel,
     sourceGroup, joinedThisPeriod, offersReleasedPeriod,
     pvInterviewed, pvOffered, pvJoined, timeToHireRaw,
   ] = await Promise.all([
-    getHrUsers(),
-    prisma.hRActivity.groupBy({ by: ["userId"], where: { type: { in: CALL_TYPES as never[] }, ...actWhere }, _count: true }),
-    prisma.hRCandidate.groupBy({ by: ["primaryOwnerId"], where: candWhere, _count: true }),
-    prisma.hRActivity.groupBy({ by: ["userId"], where: { type: "INTERVIEW_SCHEDULED", ...actWhere }, _count: true }),
-    prisma.hRActivity.groupBy({ by: ["userId"], where: { type: "INTERVIEW_ATTENDED", ...actWhere }, _count: true }),
-    prisma.hRCandidate.groupBy({ by: ["primaryOwnerId"], where: { status: "SHORTLISTED", deletedAt: null }, _count: true }),
-    prisma.hRCandidate.groupBy({ by: ["primaryOwnerId"], where: { status: "OFFER_RELEASED", deletedAt: null }, _count: true }),
-    prisma.hRCandidate.groupBy({ by: ["primaryOwnerId"], where: { status: "JOINED", deletedAt: null }, _count: true }),
-    prisma.hRCandidate.groupBy({ by: ["status"], where: { deletedAt: null }, _count: true }),
+    safe("users", getHrUsers(), []),
+    safe("calls", prisma.hRActivity.groupBy({ by: ["userId"], where: { type: { in: CALL_TYPES as never[] }, ...actWhere }, _count: true }), []),
+    safe("added", prisma.hRCandidate.groupBy({ by: ["primaryOwnerId"], where: candWhere, _count: true }), []),
+    // Iv Sched / Iv Done — DISTINCT candidates per recruiter, in-window (not activity rows).
+    safe("ivSched", distinctPerRecruiter({ type: "INTERVIEW_SCHEDULED" }), []),
+    safe("ivDone", distinctPerRecruiter({ type: "INTERVIEW_ATTENDED" }), []),
+    // Shortlisted / Offers / Joined — PERIOD-SCOPED via progression activities in-window,
+    // DISTINCT candidate per recruiter, replacing the previous all-time status snapshot.
+    // Shortlisted has no dedicated activity type → detect STATUS_CHANGED → SHORTLISTED.
+    safe("shortlisted", distinctPerRecruiter({ type: "STATUS_CHANGED", newStatus: "SHORTLISTED" }), []),
+    safe("offers", distinctPerRecruiter({ type: "OFFER_RELEASED" }), []),
+    safe("joined", distinctPerRecruiter({ type: "CANDIDATE_JOINED" }), []),
+    safe("funnel", prisma.hRCandidate.groupBy({ by: ["status"], where: { deletedAt: null }, _count: true }), []),
     // Source performance — group candidates added in the period by source.
-    prisma.hRCandidate.groupBy({ by: ["source"], where: candWhere, _count: true }),
-    prisma.hRActivity.count({ where: { type: "CANDIDATE_JOINED", ...actWhere } }),
-    prisma.hRActivity.count({ where: { type: "OFFER_RELEASED", ...actWhere } }),
+    safe("sourceGroup", prisma.hRCandidate.groupBy({ by: ["source"], where: candWhere, _count: true }), []),
+    safe("joinedThisPeriod", prisma.hRActivity.count({ where: { type: "CANDIDATE_JOINED", ...actWhere } }), 0),
+    safe("offersReleasedPeriod", prisma.hRActivity.count({ where: { type: "OFFER_RELEASED", ...actWhere } }), 0),
     // ── Period-scoped conversion funnel (distinct candidates by activity type, in-window) ──
-    distinctCandActivity(["INTERVIEW_SCHEDULED", "INTERVIEW_ATTENDED"]),
-    distinctCandActivity(["OFFER_RELEASED"]),
-    distinctCandActivity(["CANDIDATE_JOINED"]),
+    // "Attended Interview" = candidates who ATTENDED (INTERVIEW_ATTENDED), not merely
+    // scheduled — scheduled-but-no-show should not count as having reached interview.
+    safe("pvInterviewed", distinctCandActivity(["INTERVIEW_ATTENDED"]), []),
+    safe("pvOffered", distinctCandActivity(["OFFER_RELEASED"]), []),
+    safe("pvJoined", distinctCandActivity(["CANDIDATE_JOINED"]), []),
     // ── Time-to-hire: days from candidate.createdAt → earliest CANDIDATE_JOINED activity in-window ──
     // DISTINCT-on candidateId (GROUP BY) to avoid double counting if multiple join activities exist.
-    prisma.$queryRaw<{ avg_days: number | null; min_days: number | null; max_days: number | null; n: bigint }[]>(
+    safe("timeToHire", prisma.$queryRaw<{ avg_days: number | null; min_days: number | null; max_days: number | null; n: bigint }[]>(
       Prisma.sql`
       SELECT
         AVG(diff_days)::float AS avg_days,
@@ -89,12 +118,14 @@ export default async function HRReportsPage({ searchParams }: { searchParams: Pr
         GROUP BY a."candidateId", c."createdAt"
       ) sub
       WHERE diff_days >= 0
-    `),
+    `), []),
   ]);
 
   const cCalls = countBy(calls, "userId"), cAdded = countBy(added, "primaryOwnerId");
-  const cSched = countBy(ivSched, "userId"), cDone = countBy(ivDone, "userId");
-  const cShort = countBy(shortlisted, "primaryOwnerId"), cOff = countBy(offers, "primaryOwnerId"), cJoin = countBy(joined, "primaryOwnerId");
+  // Iv Sched / Iv Done / Shortlisted / Offers / Joined — distinct candidates per recruiter,
+  // in-period (activity-derived; credited to the recruiter who logged the progression).
+  const cSched = distinctByUser(ivSchedRows), cDone = distinctByUser(ivDoneRows);
+  const cShort = distinctByUser(shortlistedRows), cOff = distinctByUser(offerRows), cJoin = distinctByUser(joinedRows);
   const fmap = countBy(funnel, "status");
 
   const rows = users.map(u => ({
@@ -123,14 +154,16 @@ export default async function HRReportsPage({ searchParams }: { searchParams: Pr
   // Each later stage = DISTINCT candidates with the matching progression activity IN-WINDOW.
   // "all" period → these become lifetime totals (since/window unbounded below), accurately.
   const pct = (n: number, d: number) => d > 0 ? Math.round((n / d) * 1000) / 10 : 0;
-  const appliedAll = added.reduce((a, r) => a + r._count, 0);
-  const interviewedN = pvInterviewed.length;   // distinct candidates with interview activity in-window
+  const appliedAll = added.reduce((a: number, r) => a + r._count, 0);
+  // "Attended Interview" = candidates who actually ATTENDED (INTERVIEW_ATTENDED) in-window —
+  // NOT merely scheduled. Scheduled-but-no-show no longer inflates this stage.
+  const interviewedN = pvInterviewed.length;   // distinct candidates who attended an interview in-window
   const offeredN = pvOffered.length;           // distinct candidates with offer-released activity in-window
   const joinedN = pvJoined.length;             // distinct candidates with join activity in-window
   const conv = [
     { label: "Applied", n: appliedAll, of: "added in period" },
-    { label: "Reached Interview", n: interviewedN, of: appliedAll > 0 ? `${pct(interviewedN, appliedAll)}% of applied` : "—" },
-    { label: "Offered", n: offeredN, of: interviewedN > 0 ? `${pct(offeredN, interviewedN)}% of interviewed` : "—" },
+    { label: "Attended Interview", n: interviewedN, of: appliedAll > 0 ? `${pct(interviewedN, appliedAll)}% of applied` : "—" },
+    { label: "Offered", n: offeredN, of: interviewedN > 0 ? `${pct(offeredN, interviewedN)}% of attended` : "—" },
     { label: "Joined", n: joinedN, of: offeredN > 0 ? `${pct(joinedN, offeredN)}% of offered` : "—" },
   ];
 
@@ -256,7 +289,7 @@ export default async function HRReportsPage({ searchParams }: { searchParams: Pr
         <div className="px-4 py-2.5 border-b border-gray-100 dark:border-slate-800 flex items-center justify-between gap-2">
           <div className="text-sm font-semibold text-gray-700 dark:text-slate-200">
             Recruiter Performance
-            <span className="text-[11px] font-normal text-gray-400 ml-2 hidden sm:inline">period activity; status counts are current</span>
+            <span className="text-[11px] font-normal text-gray-400 ml-2 hidden sm:inline">all columns are {periodLabel.toLowerCase()} activity (distinct candidates per stage)</span>
           </div>
           <HRRecruiterCsvButton rows={csvRows} period={period} />
         </div>

@@ -116,11 +116,15 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       data: { dueAt: newDue, notes: body.notes ? body.notes : undefined },
     });
 
+    // Log as a NOTE (not FOLLOWUP_CREATED) — a snooze isn't a new follow-up, and
+    // the timeline renders FOLLOWUP_CREATED as "Follow-up Set", which misrepresents
+    // a snooze. Behaviour (push due date, keep open) is unchanged.
+    const snoozeWhen = `${newDue.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })} ${newDue.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Kolkata" })}`;
     await prisma.hRActivity.create({
       data: {
         candidateId, userId: me.id,
-        type: "FOLLOWUP_CREATED",
-        notes: `Follow-up snoozed: ${fmtType(fu.type)} → ${newDue.toLocaleDateString("en-IN")} ${newDue.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}`,
+        type: "NOTE_ADDED",
+        notes: `Follow-up snoozed to ${snoozeWhen}`,
       },
     });
 

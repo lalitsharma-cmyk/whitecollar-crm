@@ -118,17 +118,27 @@ function InlineField({ candidateId, field, value, type = "text", options, placeh
   const [editing, setEditing] = useState(false);
   const [val, setVal] = useState("");
   const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState(false);
   const mini = "w-full border border-gray-200 rounded px-2 py-1 text-xs dark:bg-slate-800 dark:border-slate-600 dark:text-slate-100";
 
   async function save() {
     setSaving(true);
+    setErr(false);
     try {
-      await fetch(`/api/hr/candidates/${candidateId}`, {
+      const res = await fetch(`/api/hr/candidates/${candidateId}`, {
         method: "PUT", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ [field]: val === "" ? null : val }),
       });
-    } finally { setSaving(false); setEditing(false); }
-    router.refresh();
+      // Only close + refresh on success — on failure keep the editor open with
+      // the user's input intact and surface an error so nothing silently reverts.
+      if (!res.ok) { setErr(true); return; }
+      setEditing(false);
+      router.refresh();
+    } catch {
+      setErr(true);
+    } finally {
+      setSaving(false);
+    }
   }
 
   if (!editing) {
@@ -142,22 +152,25 @@ function InlineField({ candidateId, field, value, type = "text", options, placeh
     );
   }
   return (
-    <div className="flex items-center gap-1">
-      {type === "select" ? (
-        <select autoFocus value={val} onChange={e => setVal(e.target.value)} className={mini}>
-          <option value="">—</option>
-          {options?.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
-        </select>
-      ) : type === "textarea" ? (
-        <textarea autoFocus value={val} placeholder={placeholder} onChange={e => setVal(e.target.value)} rows={3} className={mini} />
-      ) : (
-        <input autoFocus type={type} value={val} placeholder={placeholder}
-          onChange={e => setVal(e.target.value)}
-          onKeyDown={e => { if (e.key === "Enter") save(); if (e.key === "Escape") setEditing(false); }}
-          className={mini} />
-      )}
-      <button type="button" disabled={saving} onClick={save} className="text-green-600 px-1 shrink-0"><Check size={14} /></button>
-      <button type="button" onClick={() => setEditing(false)} className="text-gray-400 px-1 shrink-0"><X size={14} /></button>
+    <div className="flex flex-col gap-0.5">
+      <div className="flex items-center gap-1">
+        {type === "select" ? (
+          <select autoFocus value={val} onChange={e => setVal(e.target.value)} className={mini}>
+            <option value="">—</option>
+            {options?.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+          </select>
+        ) : type === "textarea" ? (
+          <textarea autoFocus value={val} placeholder={placeholder} onChange={e => setVal(e.target.value)} rows={3} className={mini} />
+        ) : (
+          <input autoFocus type={type} value={val} placeholder={placeholder}
+            onChange={e => setVal(e.target.value)}
+            onKeyDown={e => { if (e.key === "Enter") save(); if (e.key === "Escape" && !saving) setEditing(false); }}
+            className={mini} />
+        )}
+        <button type="button" disabled={saving} onClick={save} className="text-green-600 px-1 shrink-0 disabled:opacity-40"><Check size={14} /></button>
+        <button type="button" disabled={saving} onClick={() => setEditing(false)} className="text-gray-400 px-1 shrink-0 disabled:opacity-40"><X size={14} /></button>
+      </div>
+      {err && <span className="text-[10px] text-red-600 dark:text-red-400">Couldn&apos;t save — try again.</span>}
     </div>
   );
 }
@@ -194,13 +207,22 @@ function FitPill({ value }: { value: string | null }) {
   return <span className={`inline-block text-[11px] font-medium px-1.5 py-0.5 rounded-full ${cls}`}>{value}</span>;
 }
 
+// Compact stat shown in the full-width summary bar (label above, value below).
+function SummaryStat({ icon: Icon, label, value, accent = false }: { icon?: IconCmp; label: string; value: React.ReactNode; accent?: boolean }) {
+  return (
+    <div className="min-w-0">
+      <div className="text-[10px] uppercase tracking-wide text-gray-400 dark:text-slate-500 inline-flex items-center gap-1">{Icon && <Icon size={10} />}{label}</div>
+      <div className={`text-xs font-medium truncate ${accent ? "text-[#0b1a33] dark:text-blue-300" : "text-gray-700 dark:text-slate-200"}`}>{value}</div>
+    </div>
+  );
+}
+
 // ─── Component ────────────────────────────────────────────────────────────────
 export default function HRCandidateDetail({ candidate: c, agents, me, voicePerms }: Props) {
   const router = useRouter();
   const [, startT] = useTransition();
   const [busy, setBusy] = useState(false);
   const [tab, setTab] = useState<"timeline"|"interviews"|"followups"|"resumes"|"applications">("timeline");
-  const [mobilePane, setMobilePane] = useState<"activity"|"info">("activity");
   const [panel, setPanel] = useState<"none"|"call"|"wa"|"followup"|"interview"|"status"|"note">("none");
   const [rawOpen, setRawOpen] = useState(false);
   const [resultFor, setResultFor] = useState<string|null>(null);
@@ -217,6 +239,9 @@ export default function HRCandidateDetail({ candidate: c, agents, me, voicePerms
   const [waPickerOpen, setWaPickerOpen] = useState(false);
   const [showShortcuts, setShowShortcuts] = useState(false);
   const [ivConflict, setIvConflict] = useState<string|null>(null);
+  // Surfaces a failure from any quick-action handler so nothing fails silently.
+  // Cleared at the start of each action; rendered as a dismissible red banner.
+  const [actionErr, setActionErr] = useState<string|null>(null);
   // Refs so keyboard shortcuts can focus the first field of a just-opened panel.
   const callNotesRef = useRef<HTMLTextAreaElement>(null);
   const noteTextRef = useRef<HTMLTextAreaElement>(null);
@@ -263,24 +288,47 @@ export default function HRCandidateDetail({ candidate: c, agents, me, voicePerms
 
   const inp = "w-full border border-[#e5e7eb] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0b1a33]/20 dark:bg-slate-800 dark:border-slate-600 dark:text-slate-100";
 
+  // Generic fallback used everywhere so permission/validation errors are visible.
+  const ERR_FALLBACK = "Couldn't save — try again.";
   async function post(path: string, body: object) {
     setBusy(true);
     try {
       const res = await fetch(`/api/hr/candidates/${c.id}${path}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-      if (!res.ok) throw new Error((await res.json()).error ?? "Failed");
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data?.error || ERR_FALLBACK);
+      }
     } finally { setBusy(false); }
   }
   async function logCall(outcome: HRActivityType) {
-    await post("/log", { type: outcome, notes: callNotes || null, nextAction: callNext||null, nextActionDate: callNextDate||null });
+    setActionErr(null);
+    try {
+      await post("/log", { type: outcome, notes: callNotes || null, nextAction: callNext||null, nextActionDate: callNextDate||null });
+    } catch (e) {
+      setActionErr(e instanceof Error ? e.message : ERR_FALLBACK);
+      return;
+    }
     setPanel("none"); setCallNotes(""); setCallNext(""); setCallNextDate(""); startT(() => router.refresh());
   }
   async function logWA(type: "WHATSAPP_SENT"|"WHATSAPP_RECEIVED") {
-    await post("/log", { type, notes: waNotes || null });
+    setActionErr(null);
+    try {
+      await post("/log", { type, notes: waNotes || null });
+    } catch (e) {
+      setActionErr(e instanceof Error ? e.message : ERR_FALLBACK);
+      return;
+    }
     setPanel("none"); setWaNotes(""); startT(() => router.refresh());
   }
   async function createFollowUp() {
     if (!fuDate) return;
-    await post("/followup", { type: fuType, dueAt: fuDate, notes: fuNotes||null });
+    setActionErr(null);
+    try {
+      await post("/followup", { type: fuType, dueAt: fuDate, notes: fuNotes||null });
+    } catch (e) {
+      setActionErr(e instanceof Error ? e.message : ERR_FALLBACK);
+      return;
+    }
     setPanel("none"); setFuDate(""); setFuNotes(""); startT(() => router.refresh());
   }
   async function scheduleInterview() {
@@ -305,38 +353,82 @@ export default function HRCandidateDetail({ candidate: c, agents, me, voicePerms
     setPanel("none"); setIvDate(""); setIvNotes(""); startT(() => router.refresh());
   }
   async function updateStatus() {
+    setActionErr(null);
     setBusy(true);
     try {
-      await fetch(`/api/hr/candidates/${c.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status: newStatus, statusNote: statusNote||null }) });
+      const res = await fetch(`/api/hr/candidates/${c.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status: newStatus, statusNote: statusNote||null }) });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setActionErr(data?.error || ERR_FALLBACK);
+        return; // keep the panel open so the change isn't silently lost
+      }
+    } catch {
+      setActionErr(ERR_FALLBACK);
+      return;
     } finally { setBusy(false); }
     setPanel("none"); setStatusNote(""); startT(() => router.refresh());
   }
   async function addNote() {
     if (!noteText.trim()) return;
-    await post("/log", { type: "NOTE_ADDED", notes: noteText });
+    setActionErr(null);
+    try {
+      await post("/log", { type: "NOTE_ADDED", notes: noteText });
+    } catch (e) {
+      setActionErr(e instanceof Error ? e.message : ERR_FALLBACK);
+      return;
+    }
     setPanel("none"); setNoteText(""); startT(() => router.refresh());
   }
   async function completeFollowUp(fuId: string) {
+    setActionErr(null);
     setBusy(true);
-    await fetch(`/api/hr/candidates/${c.id}/followup`, { method: "PATCH", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ followUpId: fuId }) });
-    setBusy(false); startT(() => router.refresh());
+    try {
+      const res = await fetch(`/api/hr/candidates/${c.id}/followup`, { method: "PATCH", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ followUpId: fuId }) });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setActionErr(data?.error || ERR_FALLBACK);
+        return; // don't pretend the follow-up was completed
+      }
+    } catch {
+      setActionErr(ERR_FALLBACK);
+      return;
+    } finally { setBusy(false); }
+    startT(() => router.refresh());
   }
   async function deleteInterview(ivId: string) {
     if (!window.confirm("Delete this interview? Its open auto-created confirmation/reminder follow-ups will also be cleared.")) return;
+    setActionErr(null);
     setBusy(true);
     try {
-      await fetch(`/api/hr/candidates/${c.id}/interview?interviewId=${encodeURIComponent(ivId)}`, { method: "DELETE" });
+      const res = await fetch(`/api/hr/candidates/${c.id}/interview?interviewId=${encodeURIComponent(ivId)}`, { method: "DELETE" });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setActionErr(data?.error || ERR_FALLBACK);
+        return; // surface the failure instead of silently ending busy state
+      }
+    } catch {
+      setActionErr(ERR_FALLBACK);
+      return;
     } finally { setBusy(false); }
     startT(() => router.refresh());
   }
   async function recordResult(ivId: string) {
     if (!resReco && !resResult.trim() && !resNotes.trim()) return;
+    setActionErr(null);
     setBusy(true);
     try {
-      await fetch(`/api/hr/candidates/${c.id}/interview`, {
+      const res = await fetch(`/api/hr/candidates/${c.id}/interview`, {
         method: "PATCH", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ interviewId: ivId, action: "result", recommendation: resReco || undefined, result: resResult || undefined, notes: resNotes || undefined }),
       });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setActionErr(data?.error || ERR_FALLBACK);
+        return; // keep the form open + inputs intact on failure
+      }
+    } catch {
+      setActionErr(ERR_FALLBACK);
+      return;
     } finally { setBusy(false); }
     setResultFor(null); setResReco(""); setResResult(""); setResNotes(""); startT(() => router.refresh());
   }
@@ -375,7 +467,13 @@ export default function HRCandidateDetail({ candidate: c, agents, me, voicePerms
     if (waPhone) {
       window.open(`https://wa.me/${waPhone.replace(/\D/g,"")}?text=${encodeURIComponent(renderedText)}`, "_blank", "noopener,noreferrer");
     }
-    await post("/log", { type: "WHATSAPP_SENT", notes: renderedText || null });
+    setActionErr(null);
+    try {
+      await post("/log", { type: "WHATSAPP_SENT", notes: renderedText || null });
+    } catch (e) {
+      setActionErr(e instanceof Error ? e.message : ERR_FALLBACK);
+      return;
+    }
     startT(() => router.refresh());
   }
   const activeStatusDefs = me.role === "AGENT" ? ACTIVE_STATUS_DEFS.filter(s => s.key !== "OFFER_RELEASED") : ACTIVE_STATUS_DEFS;
@@ -413,7 +511,9 @@ export default function HRCandidateDetail({ candidate: c, agents, me, voicePerms
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [c.activities, c.interviews, c.voiceMessages]);
 
-  // Group timeline by IST day (newest first).
+  // Group timeline by IST day. Day groups stay newest-first (since `timeline` is
+  // newest-first), but items WITHIN each day read top-to-bottom morning→evening
+  // (ascending) so a day's conversation flows chronologically.
   const timelineGroups = useMemo(() => {
     const groups: { day: string; items: Entry[] }[] = [];
     for (const e of timeline) {
@@ -421,14 +521,15 @@ export default function HRCandidateDetail({ candidate: c, agents, me, voicePerms
       const g = groups.find(x => x.day === day);
       if (g) g.items.push(e); else groups.push({ day, items: [e] });
     }
+    for (const g of groups) g.items.sort((a, b) => +new Date(a.at) - +new Date(b.at));
     return groups;
   }, [timeline]);
 
   const btn = "btn text-sm border rounded-lg gap-1.5 inline-flex items-center";
 
   return (
-    <div className="p-3 sm:p-6 max-w-6xl mx-auto space-y-4">
-      {/* ── Top summary card ── */}
+    <div className="p-3 sm:p-6 max-w-[100rem] mx-auto space-y-4">
+      {/* ── TOP full-width summary bar ── */}
       <div className="card p-4 sm:p-5">
         <div className="flex items-start justify-between flex-wrap gap-3">
           <div className="min-w-0">
@@ -437,11 +538,6 @@ export default function HRCandidateDetail({ candidate: c, agents, me, voicePerms
               {c.positionApplied && <span className="text-[#0b1a33] dark:text-blue-300 font-medium inline-flex items-center gap-1"><Briefcase size={12} />Applied: {c.positionApplied}</span>}
               {c.currentProfile && <span>{c.currentProfile}</span>}
               {c.currentCompany && <span className="inline-flex items-center gap-1"><Building2 size={12} />{c.currentCompany}</span>}
-            </div>
-            <div className="flex gap-3 mt-1.5 text-xs text-gray-500 dark:text-slate-400 flex-wrap">
-              {c.phone && <a href={`tel:${c.phone}`} className="hover:text-blue-600 inline-flex items-center gap-1"><Phone size={12} />{c.phone}</a>}
-              {c.email && <a href={`mailto:${c.email}`} className="hover:text-blue-600 inline-flex items-center gap-1"><Mail size={12} />{c.email}</a>}
-              {c.location && <span className="inline-flex items-center gap-1"><MapPin size={12} />{c.location}</span>}
             </div>
           </div>
           <div className="flex flex-col items-end gap-2 shrink-0">
@@ -454,24 +550,70 @@ export default function HRCandidateDetail({ candidate: c, agents, me, voicePerms
           </div>
         </div>
 
-        {/* Quick contact + action buttons */}
-        <div className="flex gap-2 mt-4 flex-wrap">
-          {c.phone && <a href={`tel:${c.phone}`} className={`${btn} border-gray-300 dark:border-slate-600 text-gray-700 dark:text-slate-200 hover:bg-gray-50 dark:hover:bg-slate-800`}><Phone size={14} />Call</a>}
-          {waPhone && <a href={`https://wa.me/${waPhone.replace(/\D/g,"")}`} target="_blank" rel="noopener noreferrer" className={`${btn} border-green-300 text-green-700 hover:bg-green-50`}><MessageSquare size={14} />WhatsApp</a>}
-          {waPhone && <button type="button" onClick={() => setWaPickerOpen(true)} className={`${btn} border-green-300 text-green-700 hover:bg-green-50`}><Send size={14} />Quick WA</button>}
-          {waPhone && <button type="button" onClick={() => setPanel(p => p==="wa"?"none":"wa")} className={`${btn} border-green-300 text-green-700 hover:bg-green-50`}><MessageSquare size={14} />Log WA</button>}
-          {c.email && <a href={`mailto:${c.email}`} className={`${btn} border-blue-300 text-blue-700 hover:bg-blue-50`}><Mail size={14} />Email</a>}
-          <button type="button" onClick={() => setPanel(p => p==="call"?"none":"call")} className={`${btn} border-blue-300 text-blue-700 hover:bg-blue-50`}><PhoneCall size={14} />Log Call</button>
-          <button type="button" onClick={() => setPanel(p => p==="note"?"none":"note")} className={`${btn} border-gray-300 dark:border-slate-600 text-gray-700 dark:text-slate-200 hover:bg-gray-50 dark:hover:bg-slate-800`}><StickyNote size={14} />Add Note</button>
-          <button type="button" onClick={() => setPanel(p => p==="interview"?"none":"interview")} className={`${btn} border-purple-300 text-purple-700 hover:bg-purple-50`}><Target size={14} />Schedule Interview</button>
-          <button type="button" onClick={() => setPanel(p => p==="followup"?"none":"followup")} className={`${btn} border-amber-300 text-amber-700 hover:bg-amber-50`}><CalendarPlus size={14} />Add Follow-Up</button>
-          <button type="button" onClick={() => setTab("resumes")} className={`${btn} border-gray-300 dark:border-slate-600 text-gray-700 dark:text-slate-200 hover:bg-gray-50 dark:hover:bg-slate-800`}><Paperclip size={14} />Upload Resume</button>
-          {/* Keyboard-shortcuts hint — opens the help overlay; also bound to "?". */}
-          <button type="button" onClick={() => setShowShortcuts(true)} title="Keyboard shortcuts (?)"
-            className="hidden sm:inline-flex items-center gap-1 text-[11px] px-2 py-1 rounded-lg border border-gray-200 dark:border-slate-700 text-gray-400 dark:text-slate-500 hover:bg-gray-50 dark:hover:bg-slate-800 ml-auto">
-            <Keyboard size={13} />Shortcuts (?)
-          </button>
+        {/* Key facts at a glance — contact, owner, next action, follow-up, interview */}
+        <div className="mt-3.5 pt-3.5 border-t border-gray-100 dark:border-slate-800 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-x-4 gap-y-3">
+          <SummaryStat icon={Phone} label="Phone" value={c.phone ? <a href={`tel:${c.phone}`} className="hover:text-blue-600">{c.phone}</a> : "—"} />
+          <SummaryStat icon={MessageSquare} label="WhatsApp" value={waPhone ? <a href={`https://wa.me/${waPhone.replace(/\D/g,"")}`} target="_blank" rel="noopener noreferrer" className="hover:text-green-600">{waPhone}</a> : "—"} />
+          <SummaryStat icon={Mail} label="Email" value={c.email ? <a href={`mailto:${c.email}`} className="hover:text-blue-600">{c.email}</a> : "—"} />
+          <SummaryStat icon={UserIcon} label="Owner" value={c.primaryOwner?.name?.split(" ")[0] ?? "Unassigned"} />
+          <SummaryStat icon={Target} label="Next Action" value={c.nextAction || "—"} accent={!!c.nextAction} />
+          <SummaryStat icon={CalendarClock} label="Follow-Up" value={nextFU ? fmtDayTime(nextFU.dueAt) : "—"} accent={!!nextFU} />
+          <SummaryStat icon={CalendarCheck} label="Interview" value={nextIV ? `${fmt(nextIV.type)} · ${fmtDayTime(nextIV.scheduledAt)}` : "—"} accent={!!nextIV} />
+          {nextIV && <SummaryStat icon={CheckCircle2} label="Confirm" value={fmt(nextIV.confirmationStatus)} />}
+          {c.location && <SummaryStat icon={MapPin} label="Location" value={c.location} />}
         </div>
+
+        {/* Action error — surfaced when any quick-action handler fails so the
+            user sees permission/validation problems instead of a silent no-op. */}
+        {actionErr && (
+          <div className="mt-3 p-3 rounded-lg bg-red-50 dark:bg-red-950/30 border border-red-300 dark:border-red-800 flex items-start gap-2" role="alert">
+            <AlertTriangle size={16} className="text-red-600 dark:text-red-400 shrink-0 mt-0.5" />
+            <div className="flex-1 min-w-0 text-xs text-red-800 dark:text-red-200">
+              <span className="font-semibold">Action failed — </span>{actionErr}
+            </div>
+            <button type="button" onClick={() => setActionErr(null)} className="text-red-500 hover:text-red-700 shrink-0" aria-label="Dismiss"><X size={14} /></button>
+          </div>
+        )}
+
+        {/* Non-blocking interview conflict warning — the interview still SAVED. */}
+        {ivConflict && (
+          <div className="mt-3 p-3 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-800 flex items-start gap-2">
+            <AlertTriangle size={16} className="text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+            <div className="flex-1 min-w-0 text-xs text-amber-800 dark:text-amber-200">
+              <span className="font-semibold">Scheduling conflict — </span>the interview was still saved, but the slot overlaps another booking: {ivConflict}
+            </div>
+            <button type="button" onClick={() => setIvConflict(null)} className="text-amber-500 hover:text-amber-700 shrink-0" aria-label="Dismiss"><X size={14} /></button>
+          </div>
+        )}
+      </div>
+
+      {/* ── 3-column body (lg). Source order = actions → timeline → details so the
+           mobile stack reads summary → actions → timeline → details; lg:order-*
+           rearranges desktop to details | timeline | actions. ── */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
+
+        {/* ───── RIGHT column · Quick Actions + Ownership + Voice (sticky on lg) ───── */}
+        <div className="lg:col-span-3 order-1 lg:order-3 space-y-4 lg:sticky lg:top-4">
+          <div className="card p-4">
+            <div className="flex items-center justify-between gap-2 mb-2.5">
+              <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-gray-400 dark:text-slate-500"><ClipboardList size={13} />Quick Actions</div>
+              <button type="button" onClick={() => setShowShortcuts(true)} title="Keyboard shortcuts (?)"
+                className="hidden sm:inline-flex items-center gap-1 text-[10px] text-gray-400 dark:text-slate-500 hover:text-gray-600 dark:hover:text-slate-300"><Keyboard size={12} />?</button>
+            </div>
+            {/* Quick contact + action buttons */}
+            <div className="grid grid-cols-2 gap-2">
+              {c.phone && <a href={`tel:${c.phone}`} className={`${btn} justify-center border-gray-300 dark:border-slate-600 text-gray-700 dark:text-slate-200 hover:bg-gray-50 dark:hover:bg-slate-800`}><Phone size={14} />Call</a>}
+              {waPhone && <a href={`https://wa.me/${waPhone.replace(/\D/g,"")}`} target="_blank" rel="noopener noreferrer" className={`${btn} justify-center border-green-300 text-green-700 hover:bg-green-50`}><MessageSquare size={14} />WhatsApp</a>}
+              {waPhone && <button type="button" onClick={() => setWaPickerOpen(true)} className={`${btn} justify-center border-green-300 text-green-700 hover:bg-green-50`}><Send size={14} />Quick WA</button>}
+              {waPhone && <button type="button" onClick={() => setPanel(p => p==="wa"?"none":"wa")} className={`${btn} justify-center border-green-300 text-green-700 hover:bg-green-50`}><MessageSquare size={14} />Log WA</button>}
+              {c.email && <a href={`mailto:${c.email}`} className={`${btn} justify-center border-blue-300 text-blue-700 hover:bg-blue-50`}><Mail size={14} />Email</a>}
+              <button type="button" onClick={() => setPanel(p => p==="call"?"none":"call")} className={`${btn} justify-center border-blue-300 text-blue-700 hover:bg-blue-50`}><PhoneCall size={14} />Log Call</button>
+              <button type="button" onClick={() => setPanel(p => p==="interview"?"none":"interview")} className={`${btn} justify-center border-purple-300 text-purple-700 hover:bg-purple-50`}><Target size={14} />Interview</button>
+              <button type="button" onClick={() => setPanel(p => p==="followup"?"none":"followup")} className={`${btn} justify-center border-amber-300 text-amber-700 hover:bg-amber-50`}><CalendarPlus size={14} />Follow-Up</button>
+              <button type="button" onClick={() => setPanel(p => p==="status"?"none":"status")} className={`${btn} justify-center border-gray-300 dark:border-slate-600 text-gray-700 dark:text-slate-200 hover:bg-gray-50 dark:hover:bg-slate-800`}><RotateCcw size={14} />Status</button>
+              <button type="button" onClick={() => setPanel(p => p==="note"?"none":"note")} className={`${btn} justify-center border-gray-300 dark:border-slate-600 text-gray-700 dark:text-slate-200 hover:bg-gray-50 dark:hover:bg-slate-800`}><StickyNote size={14} />Add Note</button>
+              <button type="button" onClick={() => setTab("resumes")} className={`${btn} justify-center border-gray-300 dark:border-slate-600 text-gray-700 dark:text-slate-200 hover:bg-gray-50 dark:hover:bg-slate-800`}><Paperclip size={14} />Resume</button>
+            </div>
 
         {/* Action panels */}
         {panel === "call" && (
@@ -551,29 +693,27 @@ export default function HRCandidateDetail({ candidate: c, agents, me, voicePerms
             <button type="button" disabled={busy||!noteText.trim()} onClick={addNote} className="btn text-sm bg-amber-500 text-white hover:bg-amber-600">Save Note</button>
           </div>
         )}
-
-        {/* Non-blocking interview conflict warning — the interview still SAVED. */}
-        {ivConflict && (
-          <div className="mt-3 p-3 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-800 flex items-start gap-2">
-            <AlertTriangle size={16} className="text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
-            <div className="flex-1 min-w-0 text-xs text-amber-800 dark:text-amber-200">
-              <span className="font-semibold">Scheduling conflict — </span>the interview was still saved, but the slot overlaps another booking: {ivConflict}
-            </div>
-            <button type="button" onClick={() => setIvConflict(null)} className="text-amber-500 hover:text-amber-700 shrink-0" aria-label="Dismiss"><X size={14} /></button>
           </div>
-        )}
-      </div>
 
-      {/* ── Mobile pane switcher (cards stack on small screens) ── */}
-      <div className="lg:hidden flex rounded-lg border border-gray-200 dark:border-slate-700 overflow-hidden text-sm font-medium">
-        <button type="button" onClick={()=>setMobilePane("activity")} className={`flex-1 py-2 ${mobilePane==="activity"?"bg-[#0b1a33] text-white":"text-gray-600 dark:text-slate-300"}`}>Activity</button>
-        <button type="button" onClick={()=>setMobilePane("info")} className={`flex-1 py-2 ${mobilePane==="info"?"bg-[#0b1a33] text-white":"text-gray-600 dark:text-slate-300"}`}>Details</button>
-      </div>
+          {/* Ownership / assignment */}
+          <Card title="Ownership" icon={UserIcon}>
+            <Row label="Source"><InlineField candidateId={c.id} field="source" value={c.source} type="select" options={SOURCE_OPTS} /></Row>
+            <Row label="Primary"><InlineField candidateId={c.id} field="primaryOwnerId" value={c.primaryOwnerId} type="select" options={ownerOpts} format={ownerName} /></Row>
+            <Row label="Secondary"><InlineField candidateId={c.id} field="secondaryOwnerId" value={c.secondaryOwnerId} type="select" options={ownerOpts} format={ownerName} /></Row>
+            {lastAct?.user && <Row label="Last touch"><span className="text-sm text-gray-700 dark:text-slate-200">{lastAct.user.name.split(" ")[0]} · {timeAgo(lastAct.createdAt)}</span></Row>}
+          </Card>
 
-      {/* ── 2-column body ── */}
-      <div className="grid lg:grid-cols-3 gap-4">
-        {/* Main column */}
-        <div className={`lg:col-span-2 space-y-4 ${mobilePane==="activity"?"":"hidden"} lg:block`}>
+          {/* Voice guidance + escalations */}
+          <HRCandidateVoice
+            candidateId={c.id}
+            canGuide={voicePerms?.canGuide ?? false}
+            canEscalate={voicePerms?.canEscalate ?? false}
+            canReview={voicePerms?.canReview ?? false}
+          />
+        </div>
+
+        {/* ───── CENTER column · Conversation timeline (widest, primary) ───── */}
+        <div className="lg:col-span-6 order-2 lg:order-2 space-y-4">
           {pendingFollowUps.length > 0 && (
             <div className="card p-3 border-l-4 border-amber-400 bg-amber-50 dark:bg-amber-950/20">
               <div className="text-xs font-semibold text-amber-800 dark:text-amber-300 mb-2 inline-flex items-center gap-1"><CalendarClock size={13} />Pending Follow-Ups ({pendingFollowUps.length})</div>
@@ -738,15 +878,8 @@ export default function HRCandidateDetail({ candidate: c, agents, me, voicePerms
           )}
         </div>
 
-        {/* Right panels (Details / info) */}
-        <div className={`space-y-4 ${mobilePane==="info"?"":"hidden"} lg:block`}>
-          <HRCandidateVoice
-            candidateId={c.id}
-            canGuide={voicePerms?.canGuide ?? false}
-            canEscalate={voicePerms?.canEscalate ?? false}
-            canReview={voicePerms?.canReview ?? false}
-          />
-
+        {/* ───── LEFT column · Candidate details (compact) ───── */}
+        <div className="lg:col-span-3 order-3 lg:order-1 space-y-4">
           <Card title="Candidate Information" icon={UserIcon}>
             <Row label="Phone"><InlineField candidateId={c.id} field="phone" value={c.phone} type="tel" /></Row>
             <Row label="WhatsApp"><InlineField candidateId={c.id} field="whatsappPhone" value={c.whatsappPhone} type="tel" /></Row>
@@ -767,21 +900,27 @@ export default function HRCandidateDetail({ candidate: c, agents, me, voicePerms
           </Card>
 
           <Card title="Candidate Fit" icon={Award}>
-            <Row label="Experience"><FitInline candidateId={c.id} field="fitExperience" value={c.fitExperience} /></Row>
-            <Row label="Communication"><FitInline candidateId={c.id} field="fitCommunication" value={c.fitCommunication} /></Row>
-            <Row label="Stability"><FitInline candidateId={c.id} field="fitStability" value={c.fitStability} /></Row>
-            <Row label="Salary Fit"><FitInline candidateId={c.id} field="fitSalary" value={c.fitSalary} /></Row>
-            <Row label="Notice Fit"><FitInline candidateId={c.id} field="fitNotice" value={c.fitNotice} /></Row>
-            <Row label="Joining Prob."><FitInline candidateId={c.id} field="joiningProbability" value={c.joiningProbability} options={PROB_OPTS} /></Row>
-            <div className="pt-1.5"><div className="text-[11px] text-gray-400 mb-1">Interview Feedback</div><InlineField candidateId={c.id} field="interviewFeedback" value={c.interviewFeedback} type="textarea" placeholder="add feedback" /></div>
+            {/* Compact 2-col label|pill grid */}
+            <div className="grid grid-cols-2 gap-x-3 gap-y-1">
+              {([
+                ["Experience", "fitExperience", c.fitExperience, FIT_OPTS],
+                ["Communication", "fitCommunication", c.fitCommunication, FIT_OPTS],
+                ["Stability", "fitStability", c.fitStability, FIT_OPTS],
+                ["Salary Fit", "fitSalary", c.fitSalary, FIT_OPTS],
+                ["Notice Fit", "fitNotice", c.fitNotice, FIT_OPTS],
+                ["Joining Prob.", "joiningProbability", c.joiningProbability, PROB_OPTS],
+              ] as [string, string, string|null, [string,string][]][]).map(([label, field, value, opts]) => (
+                <div key={field} className="flex items-center justify-between gap-1.5 py-0.5 min-w-0">
+                  <span className="text-[11px] text-gray-400 dark:text-slate-500 truncate">{label}</span>
+                  <div className="shrink-0"><FitInline candidateId={c.id} field={field} value={value} options={opts} /></div>
+                </div>
+              ))}
+            </div>
+            <div className="pt-2 mt-1 border-t border-gray-50 dark:border-slate-800/60"><div className="text-[11px] text-gray-400 mb-1">Interview Feedback</div><InlineField candidateId={c.id} field="interviewFeedback" value={c.interviewFeedback} type="textarea" placeholder="add feedback" /></div>
           </Card>
 
-          <Card title="Interview & Follow-Up" icon={CalendarClock}>
+          <Card title="Schedule" icon={CalendarClock}>
             <Row label="Next Action"><InlineField candidateId={c.id} field="nextAction" value={c.nextAction} /></Row>
-            <Row label="Follow-Up"><span className="text-sm text-gray-700 dark:text-slate-200">{nextFU ? fmtDayTime(nextFU.dueAt) : "—"}</span></Row>
-            <Row label="Interview"><span className="text-sm text-gray-700 dark:text-slate-200">{nextIV ? fmtDayTime(nextIV.scheduledAt) : "—"}</span></Row>
-            <Row label="Type"><span className="text-sm text-gray-700 dark:text-slate-200">{nextIV ? fmt(nextIV.type) : "—"}</span></Row>
-            <Row label="Confirm"><span className="text-sm text-gray-700 dark:text-slate-200">{nextIV ? fmt(nextIV.confirmationStatus) : "—"}</span></Row>
             <Row label="Joining"><InlineField candidateId={c.id} field="joiningDate" value={c.joiningDate} type="date" format={v => new Date(v as string).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })} /></Row>
           </Card>
 
@@ -794,13 +933,6 @@ export default function HRCandidateDetail({ candidate: c, agents, me, voicePerms
             ) : (
               <button type="button" onClick={()=>setTab("resumes")} className="text-xs px-2.5 py-1 rounded-lg border border-gray-300 dark:border-slate-600 text-gray-600 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-800">Upload Resume</button>
             )}
-          </Card>
-
-          <Card title="Ownership" icon={UserIcon}>
-            <Row label="Source"><InlineField candidateId={c.id} field="source" value={c.source} type="select" options={SOURCE_OPTS} /></Row>
-            <Row label="Primary"><InlineField candidateId={c.id} field="primaryOwnerId" value={c.primaryOwnerId} type="select" options={ownerOpts} format={ownerName} /></Row>
-            <Row label="Secondary"><InlineField candidateId={c.id} field="secondaryOwnerId" value={c.secondaryOwnerId} type="select" options={ownerOpts} format={ownerName} /></Row>
-            {lastAct?.user && <Row label="Last touch"><span className="text-sm text-gray-700 dark:text-slate-200">{lastAct.user.name.split(" ")[0]} · {timeAgo(lastAct.createdAt)}</span></Row>}
           </Card>
 
           {/* ── RAW HISTORY (collapsible, read-only, verbatim import) ── */}
@@ -867,20 +999,37 @@ function FitInline({ candidateId, field, value, options = FIT_OPTS }: { candidat
   const router = useRouter();
   const [editing, setEditing] = useState(false);
   const [val, setVal] = useState(value ?? "");
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState(false);
   async function save(v: string) {
-    await fetch(`/api/hr/candidates/${candidateId}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ [field]: v || null }) });
-    setEditing(false); router.refresh();
+    setSaving(true);
+    setErr(false);
+    try {
+      const res = await fetch(`/api/hr/candidates/${candidateId}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ [field]: v || null }) });
+      // Only close + refresh on success; keep the editor open on failure so the
+      // pill doesn't silently snap back to the stale value.
+      if (!res.ok) { setErr(true); return; }
+      setEditing(false);
+      router.refresh();
+    } catch {
+      setErr(true);
+    } finally {
+      setSaving(false);
+    }
   }
   if (!editing) {
-    return <button type="button" onClick={()=>{ setVal(value??""); setEditing(true); }} className="text-left w-full"><FitPill value={value} /></button>;
+    return <button type="button" onClick={()=>{ setVal(value??""); setErr(false); setEditing(true); }} className="text-left w-full"><FitPill value={value} /></button>;
   }
   return (
-    <div className="flex items-center gap-1">
-      <select autoFocus value={val} onChange={e=>{ setVal(e.target.value); save(e.target.value); }} className="w-full border border-gray-200 rounded px-2 py-1 text-xs dark:bg-slate-800 dark:border-slate-600 dark:text-slate-100">
-        <option value="">—</option>
-        {options.map(([k,l])=><option key={k} value={k}>{l}</option>)}
-      </select>
-      <button type="button" onClick={()=>setEditing(false)} className="text-gray-400 px-1"><X size={13} /></button>
+    <div className="flex flex-col gap-0.5">
+      <div className="flex items-center gap-1">
+        <select autoFocus disabled={saving} value={val} onChange={e=>{ setVal(e.target.value); save(e.target.value); }} className="w-full border border-gray-200 rounded px-2 py-1 text-xs dark:bg-slate-800 dark:border-slate-600 dark:text-slate-100 disabled:opacity-60">
+          <option value="">—</option>
+          {options.map(([k,l])=><option key={k} value={k}>{l}</option>)}
+        </select>
+        <button type="button" disabled={saving} onClick={()=>setEditing(false)} className="text-gray-400 px-1 disabled:opacity-40"><X size={13} /></button>
+      </div>
+      {err && <span className="text-[10px] text-red-600 dark:text-red-400">Couldn&apos;t save — try again.</span>}
     </div>
   );
 }

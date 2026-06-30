@@ -20,14 +20,21 @@ export default function HRImportHistory({ rows, isAdmin }: { rows: ImportRow[]; 
   const router = useRouter();
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
   const confirmRow = rows.find(r => r.id === confirmId) ?? null;
 
   async function del() {
     if (!confirmRow) return;
-    setBusy(true);
+    setBusy(true); setErr(null);
     try {
       const r = await fetch(`/api/hr/imports/${confirmRow.id}`, { method: "DELETE" });
-      if (r.ok) { setConfirmId(null); router.refresh(); }
+      if (r.ok) { setConfirmId(null); router.refresh(); return; }
+      // Surface the server's reason (403 not-admin / 404 stale id) instead of
+      // silently leaving the dialog open as if nothing happened.
+      const j = await r.json().catch(() => ({}));
+      setErr(j.error ?? "Could not delete this import batch. Please try again.");
+    } catch {
+      setErr("Network error — could not delete this import batch.");
     } finally { setBusy(false); }
   }
 
@@ -53,7 +60,7 @@ export default function HRImportHistory({ rows, isAdmin }: { rows: ImportRow[]; 
                   <div className="flex items-center gap-2">
                     <Link href={`/hr/candidates?batch=${h.id}`} className="text-blue-600 hover:underline">View</Link>
                     {h.failed > 0 && <a href={`/api/hr/imports/${h.id}`} className="text-gray-600 hover:underline" title="Download error report">Errors</a>}
-                    {isAdmin && <button type="button" onClick={() => setConfirmId(h.id)} className="text-red-600 hover:underline">Delete</button>}
+                    {isAdmin && <button type="button" onClick={() => { setErr(null); setConfirmId(h.id); }} className="text-red-600 hover:underline">Delete</button>}
                   </div>
                 </td>
               </tr>
@@ -71,8 +78,9 @@ export default function HRImportHistory({ rows, isAdmin }: { rows: ImportRow[]; 
               created by <b className="break-all">{confirmRow.fileName}</b> — their follow-ups, interviews, timeline entries and resumes.
             </p>
             <p className="text-xs text-red-600 dark:text-red-400 mt-2 font-semibold">This cannot be undone.</p>
+            {err && <div className="mt-3 text-sm text-red-700 bg-red-50 border border-red-200 rounded p-2 dark:bg-red-900/20 dark:border-red-700 dark:text-red-300">{err}</div>}
             <div className="flex justify-end gap-2 mt-5">
-              <button type="button" onClick={() => setConfirmId(null)} disabled={busy} className="btn btn-ghost">Cancel</button>
+              <button type="button" onClick={() => { setErr(null); setConfirmId(null); }} disabled={busy} className="btn btn-ghost">Cancel</button>
               <button type="button" onClick={del} disabled={busy} className="btn bg-red-600 hover:bg-red-700 text-white border-red-600">{busy ? "Deleting…" : "Delete batch"}</button>
             </div>
           </div>

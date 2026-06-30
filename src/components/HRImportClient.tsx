@@ -188,6 +188,14 @@ export default function HRImportClient({ agents, defaultOwnerId }: { agents: Age
         // rowIndex from the server is chunk-relative — offset it back to the full set.
         if (Array.isArray(j.rows)) for (const pr of j.rows as PreviewRow[]) acc.rows.push({ ...pr, rowIndex: pr.rowIndex + i });
       }
+      // Integrity guard: every mapped row must be accounted for. If a batch
+      // returned a partial result (fewer rows than sent, no error thrown), the
+      // accumulated summary is wrong — refuse to show a misleading preview.
+      if (acc.summary.total !== mapped.length || acc.rows.length !== mapped.length) {
+        setErr(`Preview is incomplete — only ${acc.rows.length} of ${mapped.length} rows came back. Please retry; do not import from this preview.`);
+        setPreviewData(null); setShowPreview(false);
+        return;
+      }
       setPreviewData(acc); setShowPreview(true);
     } catch {
       setErr("Could not generate preview — check your connection and try again.");

@@ -58,6 +58,10 @@ function fmtSize(bytes: number | null) {
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
+/** Pluralize a noun for a count: 1 → "candidate", 0/2+ → "candidates". */
+function plural(n: number, noun: string) {
+  return n === 1 ? noun : `${noun}s`;
+}
 function fmtDate(iso: string) {
   return new Date(iso).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
 }
@@ -182,9 +186,9 @@ export default function HRResumeBankClient({ groups, duplicateHashes = [] }: Pro
 
       <div className="text-[11px] text-gray-500 dark:text-slate-400">
         Showing {filtered.length === 0 ? 0 : safePage * PAGE_SIZE + 1}
-        –{Math.min(filtered.length, safePage * PAGE_SIZE + PAGE_SIZE)} of {filtered.length} candidate
-        {filtered.length !== 1 ? "s" : ""}
-        {q && ` · matched in ${totalResumes} stored resume${totalResumes !== 1 ? "s" : ""}`}
+        –{Math.min(filtered.length, safePage * PAGE_SIZE + PAGE_SIZE)} of{" "}
+        {filtered.length} {plural(filtered.length, "candidate")}
+        {q && ` · matched in ${totalResumes} stored ${plural(totalResumes, "resume")}`}
       </div>
 
       {/* List */}

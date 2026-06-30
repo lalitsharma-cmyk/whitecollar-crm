@@ -26,11 +26,21 @@ export async function POST(req: NextRequest) {
   const ids = inScope.map(c => c.id);
   if (ids.length === 0) return NextResponse.json({ error: "No candidates in your scope were selected" }, { status: 403 });
 
-  // Bulk delete — requires the deleteCandidate permission. Removes the
-  // candidates + cascaded workflow records.
+  // Validate the requested action against the known set so an unrecognised
+  // action can't slip through to the update path and return a misleading
+  // {updated:0} success. Status/owner/follow-up updates carry NO `action`
+  // field (only `delete` is an explicit action), so anything else is invalid.
+  const KNOWN_ACTIONS = ["delete"];
+  if (body.action != null && !KNOWN_ACTIONS.includes(body.action)) {
+    return NextResponse.json({ error: `Unknown bulk action: ${body.action}` }, { status: 400 });
+  }
+
+  // Bulk delete — requires the deleteCandidate permission. SOFT-deletes the
+  // candidates (recycle bin) by stamping deletedAt; never hard-deletes, so the
+  // rows + their workflow history can be recovered.
   if (body.action === "delete") {
     if (!hrCan(me, "deleteCandidate")) return NextResponse.json({ error: "You don't have permission to delete candidates." }, { status: 403 });
-    const del = await prisma.hRCandidate.deleteMany({ where: { id: { in: ids } } });
+    const del = await prisma.hRCandidate.updateMany({ where: { id: { in: ids } }, data: { deletedAt: new Date() } });
     return NextResponse.json({ ok: true, deleted: del.count });
   }
 

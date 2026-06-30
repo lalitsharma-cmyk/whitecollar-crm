@@ -16,7 +16,9 @@ export default async function CandidatePage({ params }: { params: Promise<{ id: 
       include: {
         primaryOwner:   { select: { id: true, name: true, avatarColor: true } },
         secondaryOwner: { select: { id: true, name: true, avatarColor: true } },
-        activities:     { orderBy: { createdAt: "desc" }, include: { user: { select: { name: true } } } },
+        // Cap activities to the 60 newest (desc) for perf — the timeline still
+        // renders ascending-within-day client-side, so the newest day shows in full.
+        activities:     { orderBy: { createdAt: "desc" }, take: 60, include: { user: { select: { name: true } } } },
         interviews:     { orderBy: { scheduledAt: "asc" }, include: { interviewer: { select: { name: true } } } },
         followUps:      { orderBy: { dueAt: "asc" }, include: { user: { select: { name: true } } } },
         resumes:        { orderBy: { createdAt: "desc" }, take: 5 },

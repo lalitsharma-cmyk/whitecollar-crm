@@ -42,7 +42,12 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
   if (access.error) return access.error;
   if (access.role !== "ADMIN") return NextResponse.json({ error: "Only an Admin can delete an import batch." }, { status: 403 });
   const { id } = await params;
+  // 404 if the batch doesn't exist, so the client shows a real error instead of
+  // a false success on a stale/wrong id.
+  const batch = await prisma.hRImport.findUnique({ where: { id }, select: { id: true } });
+  if (!batch) return NextResponse.json({ error: "Import batch not found." }, { status: 404 });
   const del = await prisma.hRCandidate.deleteMany({ where: { importBatchId: id } });
-  await prisma.hRImport.delete({ where: { id } }).catch(() => {});
+  // Let any delete error propagate (no silent .catch) so the client can surface it.
+  await prisma.hRImport.delete({ where: { id } });
   return NextResponse.json({ ok: true, deleted: del.count });
 }

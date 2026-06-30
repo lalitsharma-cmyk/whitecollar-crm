@@ -6,7 +6,6 @@ import { Phone, MessageCircle, Target, Bookmark, BookmarkPlus, Trash2, Columns3,
 import { ACTIVE_STATUS_DEFS, CLOSED_STATUS_DEFS, CLOSED_STATUS_KEYS, statusColor, displayStatus } from "@/lib/hrStatus";
 import ColumnHeaderFilter, { type ColKind, type ColFilterState, type ColSortDir, isColFilterActive } from "@/components/ColumnHeaderFilter";
 import HRCandidateRowPreview, { type PreviewData } from "@/components/HRCandidateRowPreview";
-import * as XLSX from "xlsx";
 
 const SOURCES = ["Naukri", "Indeed", "Referral", "Walk-in", "LinkedIn", "Database", "Consultant", "Email", "Whatsapp", "Other"];
 const POSITIONS = ["Sales Executive", "BDE", "BDM", "Team Leader", "Manager", "HR", "Marketing", "Other"];
@@ -20,6 +19,27 @@ const CHIPS: [string, string][] = [
   ["pending-confirm", "Pending Confirmation"], ["no-show", "No Show"], ["shortlisted", "Shortlisted"],
   ["offer", "Offer Released"], ["joined", "Joined"], ["closed", "Closed"],
 ];
+
+// Map each quick-filter chip to the status key(s) it counts (countMap is keyed by
+// HRCandidate.status). Chips that are pure derived signals (today / overdue /
+// interview-today / pending-confirm) have no status count and render 0.
+const CHIP_STATUS_KEYS: Record<string, string[]> = {
+  "not-called": ["NOT_CALLED"],
+  "pipeline": ["PIPELINE"],
+  "f2f": ["F2F_INTERVIEW_SCHEDULED"],
+  "no-show": ["NO_SHOW"],
+  "shortlisted": ["SHORTLISTED"],
+  "offer": ["OFFER_RELEASED"],
+  "joined": ["JOINED"],
+  "closed": [...CLOSED_STATUS_KEYS],
+};
+// Resolve a chip's count from the server-supplied status countMap.
+function chipCount(key: string, countMap: Record<string, number>): number {
+  if (key === "all") return Object.values(countMap).reduce((a, b) => a + b, 0);
+  const keys = CHIP_STATUS_KEYS[key];
+  if (!keys) return 0;
+  return keys.reduce((sum, k) => sum + (countMap[k] ?? 0), 0);
+}
 
 // Toggleable table columns, in the canonical spec order (Created Date first).
 // `key` doubles as the persisted hidden-set token and the header label source.
@@ -83,7 +103,6 @@ interface SavedView { id: string; name: string; query: string; isShared: boolean
 
 function fmtDate(s: string) { return new Date(s).toLocaleDateString("en-IN", { day: "numeric", month: "short" }); }
 function fmtDateFull(s: string) { return new Date(s).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }); }
-function fmtTime(s: string) { return new Date(s).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: true }); }
 function fmtAct(s: string) { return s.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase()); }
 function fmtSal(n: number | null) { if (!n) return "—"; return n >= 100000 ? `₹${(n / 100000).toFixed(1)}L` : `₹${(n / 1000).toFixed(0)}K`; }
 function expYears(s: string | null): number | null { if (!s) return null; const m = s.match(/\d+(\.\d+)?/); return m ? parseFloat(m[0]) : null; }
@@ -161,10 +180,13 @@ const PRESETS: { name: string; build: () => Record<string, unknown> }[] = [
   { name: "Dubai Candidates", build: () => ({ fLocation: "Dubai" }) },
 ];
 
-export default function HRCandidateTable({ candidates, agents, perms = NO_PERMS }: Props) {
+export default function HRCandidateTable({ candidates, agents, countMap = {}, perms = NO_PERMS }: Props) {
   const now = new Date();
   // UI gating is driven by the permission matrix (server re-enforces every action).
   const canExport = perms.exportData;
+  // Only users who can run bulk actions get the row-selection checkboxes + toolbar
+  // (no point letting Junior HR select rows that lead to an empty/absent toolbar).
+  const canBulk = perms.bulkActions;
   const router = useRouter();
   const [bulkError, setBulkError] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -405,6 +427,9 @@ export default function HRCandidateTable({ candidates, agents, perms = NO_PERMS 
   const activeColCount = colEntries.length;
 
   function resetAdv() {
+    // "Reset all" — clears the advanced drawer AND the top-level chip + search so
+    // nothing stays silently active after the user clears filters.
+    setSearch(""); setChip("all");
     setFStatus(""); setFSource(""); setFPosition(""); setFProfile(""); setFLocation(""); setFOwner("");
     setFNotice(""); setFConfirm(""); setFResume(""); setFNoShow(false);
     setExpMin(""); setExpMax(""); setCurMin(""); setCurMax(""); setExpSalMin(""); setExpSalMax("");
@@ -422,10 +447,16 @@ export default function HRCandidateTable({ candidates, agents, perms = NO_PERMS 
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ids: [...selected], status: bulkStatus || undefined, primaryOwnerId: bulkOwner || undefined, followUpDate: bulkFollowUp || undefined }),
       });
+      const j = await res.json().catch(() => ({}));
       if (!res.ok) {
-        const j = await res.json().catch(() => ({}));
         setBulkError(j?.error || "Bulk update failed. Please try again.");
         return; // do NOT clear the selection or pretend success
+      }
+      // A 200 with updated:0 means nothing actually changed (e.g. no-op / invalid
+      // action) — warn instead of pretending success.
+      if (typeof j?.updated === "number" && j.updated <= 0) {
+        setBulkError("No candidates were updated.");
+        return;
       }
       setSelected(new Set()); setBulkStatus(""); setBulkOwner(""); setBulkFollowUp(""); router.refresh();
     } catch {
@@ -436,13 +467,18 @@ export default function HRCandidateTable({ candidates, agents, perms = NO_PERMS 
   }
   async function bulkDelete() {
     if (selected.size === 0) return;
-    if (!window.confirm(`Delete ${selected.size} candidate${selected.size === 1 ? "" : "s"} and ALL of their follow-ups, interviews, timeline and resumes? This cannot be undone.`)) return;
+    if (!window.confirm(`Move ${selected.size} candidate${selected.size === 1 ? "" : "s"} to the recycle bin? Their follow-ups, interviews, timeline and resumes are preserved and can be restored.`)) return;
     setBulkBusy(true); setBulkError(null);
     try {
       const res = await fetch("/api/hr/candidates/bulk", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: [...selected], action: "delete" }) });
+      const j = await res.json().catch(() => ({}));
       if (!res.ok) {
-        const j = await res.json().catch(() => ({}));
         setBulkError(j?.error || "Delete failed. Please try again.");
+        return;
+      }
+      // Confirm the server actually deleted rows before claiming success.
+      if (typeof j?.deleted === "number" && j.deleted <= 0) {
+        setBulkError("No candidates were deleted.");
         return;
       }
       setSelected(new Set()); router.refresh();
@@ -453,20 +489,23 @@ export default function HRCandidateTable({ candidates, agents, perms = NO_PERMS 
     }
   }
 
-  function exportRows(which: "filtered" | "selected", fmt: "xlsx" | "csv") {
-    const src = which === "selected" ? candidates.filter(c => selected.has(c.id)) : filtered;
-    const data = src.map(c => ({
-      Name: c.name, Phone: c.phone ?? "", WhatsApp: c.whatsappPhone ?? "", Email: c.email ?? "",
-      "Current Profile": c.currentProfile ?? "", Position: c.positionApplied ?? "", Company: c.currentCompany ?? "",
-      "Total Experience": c.experience ?? "", "Current Salary": c.currentSalary ?? "", "Expected Salary": c.expectedSalary ?? "",
-      "Notice Period": c.noticePeriod ?? "", Status: displayStatus(c), "Next Action": c.nextAction ?? "",
-      Source: c.source ?? "", Owner: c.primaryOwner?.name ?? "",
-      "Created Date": fmtDateFull(c.createdAt), "Created Time": fmtTime(c.createdAt),
-    }));
-    const ws = XLSX.utils.json_to_sheet(data);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Candidates");
-    XLSX.writeFile(wb, `candidates.${fmt}`, { bookType: fmt });
+  // RBAC-safe export: build a link to the server endpoint, which re-checks the
+  // exportData permission AND re-scopes rows server-side. NEVER assemble the CSV
+  // in-memory here (that would let a Junior HR call exportRows() via the console
+  // and read rows outside their scope). The endpoint only emits the
+  // server-derivable filters (status/position/source/date); the on-screen "All"
+  // link stays unfiltered. "Selected" passes the chosen ids.
+  function exportHref(which: "all" | "filtered" | "selected"): string {
+    const params = new URLSearchParams({ format: "csv" });
+    if (which === "selected") {
+      params.set("ids", [...selected].join(","));
+    } else if (which === "filtered") {
+      if (fStatus) params.set("status", fStatus);
+      if (fPosition) params.set("position", fPosition);
+      if (fSource) params.set("source", fSource);
+    }
+    // "all" → no extra filters (server still scopes to the caller).
+    return `/api/hr/candidates/export?${params.toString()}`;
   }
 
   const inp = "w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs dark:bg-slate-800 dark:border-slate-600";
@@ -630,11 +669,12 @@ export default function HRCandidateTable({ candidates, agents, perms = NO_PERMS 
           <div className="relative">
             <button type="button" onClick={() => setShowExport(s => !s)} className="px-3 py-2 rounded-xl text-sm border border-gray-300 dark:border-slate-700 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-slate-800">⬇ Export</button>
             {showExport && (
-              <div className="absolute right-0 mt-1 z-20 bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-xl shadow-lg py-1 text-sm w-56">
-                <button type="button" onClick={() => { exportRows("filtered", "xlsx"); setShowExport(false); }} className="block w-full text-left px-3 py-1.5 hover:bg-gray-50 dark:hover:bg-slate-800">Filtered → Excel ({filtered.length})</button>
-                <button type="button" onClick={() => { exportRows("filtered", "csv"); setShowExport(false); }} className="block w-full text-left px-3 py-1.5 hover:bg-gray-50 dark:hover:bg-slate-800">Filtered → CSV</button>
-                {selected.size > 0 && <button type="button" onClick={() => { exportRows("selected", "xlsx"); setShowExport(false); }} className="block w-full text-left px-3 py-1.5 hover:bg-gray-50 dark:hover:bg-slate-800">Selected → Excel ({selected.size})</button>}
-                <a href="/api/hr/candidates/export?format=csv" className="block w-full text-left px-3 py-1.5 hover:bg-gray-50 dark:hover:bg-slate-800 border-t border-gray-100 dark:border-slate-800">All candidates → CSV</a>
+              <div className="absolute right-0 mt-1 z-20 bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-xl shadow-lg py-1 text-sm w-64">
+                {/* All export links hit the server endpoint, which re-checks the
+                    exportData permission and re-scopes rows — no client-side CSV. */}
+                <a href={exportHref("filtered")} onClick={() => setShowExport(false)} className="block w-full text-left px-3 py-1.5 hover:bg-gray-50 dark:hover:bg-slate-800">Filtered → CSV</a>
+                {selected.size > 0 && <a href={exportHref("selected")} onClick={() => setShowExport(false)} className="block w-full text-left px-3 py-1.5 hover:bg-gray-50 dark:hover:bg-slate-800">Selected → CSV ({selected.size})</a>}
+                <a href={exportHref("all")} onClick={() => setShowExport(false)} className="block w-full text-left px-3 py-1.5 hover:bg-gray-50 dark:hover:bg-slate-800 border-t border-gray-100 dark:border-slate-800">All candidates → CSV</a>
               </div>
             )}
           </div>
@@ -682,7 +722,7 @@ export default function HRCandidateTable({ candidates, agents, perms = NO_PERMS 
         {CHIPS.map(([k, label]) => (
           <button key={k} type="button" onClick={() => setChip(k)}
             className={`px-3 py-1 rounded-full text-xs font-medium border transition ${chip === k ? "bg-[#1a2e4a] text-white border-[#1a2e4a]" : "bg-white dark:bg-slate-900 border-gray-200 dark:border-slate-700 text-gray-600 dark:text-slate-300 hover:border-gray-400"}`}>
-            {label}
+            {label} ({chipCount(k, countMap)})
           </button>
         ))}
       </div>
@@ -718,12 +758,12 @@ export default function HRCandidateTable({ candidates, agents, perms = NO_PERMS 
             <div><label className={lbl}>Interview From → To</label><div className="flex gap-1"><input className={inp} value={ivFrom} onChange={e => setIvFrom(e.target.value)} type="date" /><input className={inp} value={ivTo} onChange={e => setIvTo(e.target.value)} type="date" /></div></div>
             <label className="flex items-center gap-2 text-xs text-gray-600 mt-5"><input type="checkbox" checked={fNoShow} onChange={e => setFNoShow(e.target.checked)} /> No-show only</label>
           </div>
-          <div className="flex justify-end"><button type="button" onClick={resetAdv} className="text-xs text-gray-500 hover:text-gray-700 underline">Clear filters</button></div>
+          <div className="flex justify-end"><button type="button" onClick={resetAdv} className="text-xs text-gray-500 hover:text-gray-700 underline">Reset all</button></div>
         </div>
       )}
 
       {/* Bulk toolbar — only for users who can perform bulk actions. */}
-      {selected.size > 0 && perms.bulkActions && (
+      {selected.size > 0 && canBulk && (
         <div className="bg-[#1a2e4a] text-white rounded-xl px-3 py-2 text-sm space-y-1.5">
           <div className="flex items-center gap-2 flex-wrap">
             <span className="font-semibold">{selected.size} selected</span>
@@ -757,7 +797,7 @@ export default function HRCandidateTable({ candidates, agents, perms = NO_PERMS 
             <thead className="sticky top-0 z-20">
               <tr className="text-left text-[11px] text-gray-500 uppercase tracking-wide">
                 <th className={`px-2 py-2 ${stickyHeadBg} sticky ${STICKY.sel} z-10 border-b border-gray-200 dark:border-slate-700`}>
-                  <input type="checkbox" aria-label="Select all" checked={filtered.length > 0 && selected.size === filtered.length} onChange={toggleAll} />
+                  {canBulk && <input type="checkbox" aria-label="Select all" checked={filtered.length > 0 && selected.size === filtered.length} onChange={toggleAll} />}
                 </th>
                 {visible("createdDate") && <th className={`px-2 py-2 whitespace-nowrap font-semibold ${stickyHeadBg} sticky ${STICKY.created} z-10 border-b border-r border-gray-100 dark:border-slate-700`}>{renderHeaderLabel("createdDate", "Created")}</th>}
                 <th className={`px-2 py-2 whitespace-nowrap font-semibold ${stickyHeadBg} sticky ${STICKY.candidate} z-10 border-b border-gray-200 dark:border-slate-700`}>Candidate</th>
@@ -782,7 +822,7 @@ export default function HRCandidateTable({ candidates, agents, perms = NO_PERMS 
                     onMouseLeave={onRowLeave}
                     className={`group cursor-pointer hover:bg-gray-50/80 dark:hover:bg-slate-800/50 transition ${sel ? "bg-amber-50/40 dark:bg-amber-900/10" : ""}`}>
                     <td className={`px-2 py-1.5 sticky ${STICKY.sel} z-[5] ${sel ? "bg-amber-50/40 dark:bg-amber-900/10" : stickyBg} border-b border-gray-100 dark:border-slate-800`} onClick={stop}>
-                      <input type="checkbox" aria-label="Select" checked={sel} onChange={() => toggleSel(c.id)} />
+                      {canBulk && <input type="checkbox" aria-label="Select" checked={sel} onChange={() => toggleSel(c.id)} />}
                     </td>
                     {visible("createdDate") && <td className={`px-2 py-1.5 text-gray-500 whitespace-nowrap sticky ${STICKY.created} z-[5] ${sel ? "bg-amber-50/40 dark:bg-amber-900/10" : stickyBg} border-b border-r border-gray-100 dark:border-slate-800`}>{fmtDateFull(c.createdAt)}</td>}
                     <td className={`px-2 py-1.5 min-w-[120px] sticky ${STICKY.candidate} z-[5] ${sel ? "bg-amber-50/40 dark:bg-amber-900/10" : stickyBg} border-b border-gray-100 dark:border-slate-800`}>

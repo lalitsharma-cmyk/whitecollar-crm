@@ -69,6 +69,11 @@ export async function POST(req: NextRequest) {
   if (!body.phone || !String(body.phone).trim()) {
     return NextResponse.json({ error: "Mobile number is required." }, { status: 400 });
   }
+  // Phone format guard — reject placeholder junk like "----" / whitespace.
+  // A real number must have at least 7 digits once non-digits are stripped.
+  if (String(body.phone).replace(/\D/g, "").length < 7) {
+    return NextResponse.json({ error: "Enter a valid mobile number (at least 7 digits)." }, { status: 400 });
+  }
   if (!body.positionApplied || !String(body.positionApplied).trim()) {
     return NextResponse.json({ error: "Position applied for is required." }, { status: 400 });
   }

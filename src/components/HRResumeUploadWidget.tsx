@@ -1,9 +1,17 @@
 "use client";
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 
 interface Candidate { id: string; name: string; currentProfile: string | null; }
 interface Props { candidates: Candidate[]; preselectedCandidateId?: string; }
+
+// Mirrors fmtSize in HRResumeBankClient so <1KB files show bytes instead of "0 KB".
+function fmtSize(bytes: number | null) {
+  if (!bytes) return "";
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
 
 export default function HRResumeUploadWidget({ candidates, preselectedCandidateId }: Props) {
   const router = useRouter();
@@ -13,6 +21,13 @@ export default function HRResumeUploadWidget({ candidates, preselectedCandidateI
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [done, setDone] = useState(false);
+
+  // Auto-clear the success message after ~3.5s so it doesn't linger.
+  useEffect(() => {
+    if (!done) return;
+    const t = setTimeout(() => setDone(false), 3500);
+    return () => clearTimeout(t);
+  }, [done]);
 
   async function upload() {
     if (!candidateId || !file) return;
@@ -58,7 +73,7 @@ export default function HRResumeUploadWidget({ candidates, preselectedCandidateI
         {file ? (
           <div className="text-sm font-medium text-green-700">
             {file.type.startsWith("image/") ? "🖼️" : "📄"} {file.name}
-            <div className="text-[11px] text-green-600 mt-0.5">{(file.size / 1024).toFixed(0)} KB</div>
+            <div className="text-[11px] text-green-600 mt-0.5">{fmtSize(file.size)}</div>
           </div>
         ) : (
           <div className="text-sm text-gray-500">

@@ -101,6 +101,86 @@ export default async function HRDashboard() {
   const isLeader = perms.reports; // Leaderboard only when the viewer has reports perm.
   const showOwner = perms.viewAllCandidates; // Admin / Senior HR see the owning recruiter.
 
+  // Per-promise fallback defaults: one failed query must NOT blank the whole
+  // dashboard. Each `.catch` logs and resolves to an empty/zero shape of the
+  // SAME type as the query, so downstream code keeps rendering the rest.
+  type FollowUpRow = Awaited<ReturnType<typeof loadFollowUps>>[number];
+  type InterviewRow = Awaited<ReturnType<typeof loadInterviews>>[number];
+  type ExpectedRow = Awaited<ReturnType<typeof loadExpected>>[number];
+  type NoNextRow = Awaited<ReturnType<typeof loadNoNext>>[number];
+  type RecentRow = Awaited<ReturnType<typeof loadRecent>>[number];
+  type StatusGroupRow = { status: string; _count: number };
+  type UserGroupRow = { userId: string | null; _count: number };
+
+  function loadFollowUps() {
+    // Open follow-ups (scoped) — drives Call-Now queue, Calls-Due/Overdue KPIs + reminders.
+    return prisma.hRFollowUp.findMany({
+      where: { completedAt: null, candidate: scopedCandidate },
+      orderBy: { dueAt: "asc" },
+      take: 300,
+      include: {
+        candidate: {
+          select: {
+            id: true, name: true, phone: true, whatsappPhone: true,
+            status: true, nextAction: true, positionApplied: true,
+            primaryOwner: { select: { name: true } },
+          },
+        },
+      },
+    });
+  }
+  function loadInterviews() {
+    // Interviews in the recent window (scoped) — Today / Pending-confirm / No-show buckets.
+    return prisma.hRInterview.findMany({
+      where: { candidate: scopedCandidate, scheduledAt: { gte: weekAgo } },
+      orderBy: { scheduledAt: "asc" },
+      take: 300,
+      include: {
+        candidate: { select: { id: true, name: true, phone: true, whatsappPhone: true, positionApplied: true } },
+      },
+    });
+  }
+  function loadExpected() {
+    // Expected Joinings (scoped).
+    return prisma.hRCandidate.findMany({
+      where: { AND: [scope, { OR: [{ status: "EXPECTED_JOINING" }, { joiningDate: { not: null } }] }] },
+      orderBy: { joiningDate: "asc" },
+      take: 20,
+      select: {
+        id: true, name: true, positionApplied: true, joiningDate: true, status: true,
+        phone: true, whatsappPhone: true, primaryOwner: { select: { name: true } },
+      },
+    });
+  }
+  function loadNoNext() {
+    // No-Next-Action queue rows (scoped) — active candidates with nothing scheduled.
+    return prisma.hRCandidate.findMany({
+      where: { AND: [scope, { nextActionDate: null, status: { notIn: CLOSED_STATUS_KEYS } }] },
+      orderBy: { createdAt: "desc" },
+      take: 20,
+      select: {
+        id: true, name: true, phone: true, whatsappPhone: true,
+        status: true, positionApplied: true, createdAt: true,
+        primaryOwner: { select: { name: true } },
+      },
+    });
+  }
+  function loadRecent() {
+    // Recent Activity feed (scoped).
+    return prisma.hRActivity.findMany({
+      where: { candidate: scopedCandidate },
+      orderBy: { createdAt: "desc" },
+      take: 10,
+      include: {
+        candidate: { select: { id: true, name: true, phone: true, whatsappPhone: true, email: true } },
+        user: { select: { name: true } },
+      },
+    });
+  }
+  const onErr = (label: string) => (e: unknown) => {
+    console.error(`[hr-dashboard] query failed: ${label}`, e);
+  };
+
   const [
     followUps,
     interviews,
@@ -108,6 +188,7 @@ export default async function HRDashboard() {
     expectedRows,
     noNextRows,
     noNextActionCount,
+    noShowFullCount,
     callsToday,
     recentRows,
     funnelGroup,
@@ -121,94 +202,62 @@ export default async function HRDashboard() {
     lbOffers,
     lbJoined,
   ] = await Promise.all([
-    // Open follow-ups (scoped) — drives Call-Now queue, Calls-Due/Overdue KPIs + reminders.
-    prisma.hRFollowUp.findMany({
-      where: { completedAt: null, candidate: scopedCandidate },
-      orderBy: { dueAt: "asc" },
-      take: 300,
-      include: {
-        candidate: {
-          select: {
-            id: true, name: true, phone: true, whatsappPhone: true,
-            status: true, nextAction: true, positionApplied: true,
-            primaryOwner: { select: { name: true } },
-          },
-        },
-      },
-    }),
-    // Interviews in the recent window (scoped) — Today / Pending-confirm / No-show buckets.
-    prisma.hRInterview.findMany({
-      where: { candidate: scopedCandidate, scheduledAt: { gte: weekAgo } },
-      orderBy: { scheduledAt: "asc" },
-      take: 300,
-      include: {
-        candidate: { select: { id: true, name: true, phone: true, whatsappPhone: true, positionApplied: true } },
-      },
-    }),
+    loadFollowUps().catch((e) => { onErr("followUps")(e); return [] as FollowUpRow[]; }),
+    loadInterviews().catch((e) => { onErr("interviews")(e); return [] as InterviewRow[]; }),
     // New Candidates KPI.
-    prisma.hRCandidate.count({ where: { AND: [scope, { status: "NEW" }] } }),
-    // Expected Joinings (scoped).
-    prisma.hRCandidate.findMany({
-      where: { AND: [scope, { OR: [{ status: "EXPECTED_JOINING" }, { joiningDate: { not: null } }] }] },
-      orderBy: { joiningDate: "asc" },
-      take: 20,
-      select: {
-        id: true, name: true, positionApplied: true, joiningDate: true, status: true,
-        phone: true, whatsappPhone: true, primaryOwner: { select: { name: true } },
-      },
-    }),
-    // No-Next-Action queue rows (scoped) — active candidates with nothing scheduled.
-    prisma.hRCandidate.findMany({
-      where: { AND: [scope, { nextActionDate: null, status: { notIn: CLOSED_STATUS_KEYS } }] },
-      orderBy: { createdAt: "desc" },
-      take: 20,
-      select: {
-        id: true, name: true, phone: true, whatsappPhone: true,
-        status: true, positionApplied: true, createdAt: true,
-        primaryOwner: { select: { name: true } },
-      },
-    }),
+    prisma.hRCandidate.count({ where: { AND: [scope, { status: "NEW" }] } })
+      .catch((e) => { onErr("newCount")(e); return 0; }),
+    loadExpected().catch((e) => { onErr("expectedRows")(e); return [] as ExpectedRow[]; }),
+    loadNoNext().catch((e) => { onErr("noNextRows")(e); return [] as NoNextRow[]; }),
     // No-Next-Action total (scoped).
     prisma.hRCandidate.count({
       where: { AND: [scope, { nextActionDate: null, status: { notIn: CLOSED_STATUS_KEYS } }] },
-    }),
+    }).catch((e) => { onErr("noNextActionCount")(e); return 0; }),
+    // FULL distinct No-Show count (scoped, recent window) — drives the KPI tile so it
+    // is NOT capped at the 10-row recovery list below. One candidate counts once even
+    // with multiple no-show interviews (groupBy candidateId → number of groups).
+    prisma.hRInterview.groupBy({
+      by: ["candidateId"],
+      where: { candidate: scopedCandidate, scheduledAt: { gte: weekAgo }, attendanceStatus: "NO_SHOW" },
+    }).then((g) => g.length).catch((e) => { onErr("noShowFullCount")(e); return 0; }),
     // Daily Productivity — CALL_* activities logged today (IST), scoped to my candidates.
     prisma.hRActivity.count({
       where: { type: { in: CALL_TYPES }, createdAt: { gte: todayStart, lt: todayEnd }, candidate: scopedCandidate },
-    }),
-    // Recent Activity feed (scoped).
-    prisma.hRActivity.findMany({
-      where: { candidate: scopedCandidate },
-      orderBy: { createdAt: "desc" },
-      take: 10,
-      include: {
-        candidate: { select: { id: true, name: true, phone: true, whatsappPhone: true, email: true } },
-        user: { select: { name: true } },
-      },
-    }),
+    }).catch((e) => { onErr("callsToday")(e); return 0; }),
+    loadRecent().catch((e) => { onErr("recentRows")(e); return [] as RecentRow[]; }),
     // Recruitment funnel — current candidate snapshot by status (scoped).
-    prisma.hRCandidate.groupBy({ by: ["status"], where: scope, _count: true }),
-    prisma.hRCandidate.count({ where: scope }),
+    prisma.hRCandidate.groupBy({ by: ["status"], where: scope, _count: true })
+      .catch((e) => { onErr("funnelGroup")(e); return [] as StatusGroupRow[]; }),
+    prisma.hRCandidate.count({ where: scope })
+      .catch((e) => { onErr("funnelTotal")(e); return 0; }),
     // ── Leaderboard (reports perm only). Activity over the week window, by recruiter. ──
-    isLeader ? getHrUsers() : Promise.resolve([] as { id: string; name: string }[]),
+    isLeader
+      ? getHrUsers().catch((e) => { onErr("hrUsers")(e); return [] as { id: string; name: string }[]; })
+      : Promise.resolve([] as { id: string; name: string }[]),
     isLeader
       ? prisma.hRActivity.groupBy({ by: ["userId"], where: { type: { in: CALL_TYPES }, userId: { not: null }, createdAt: { gte: weekAgo }, candidate: { deletedAt: null } }, _count: true })
-      : Promise.resolve([] as { userId: string | null; _count: number }[]),
+          .catch((e) => { onErr("lbCalls")(e); return [] as UserGroupRow[]; })
+      : Promise.resolve([] as UserGroupRow[]),
     isLeader
       ? prisma.hRActivity.groupBy({ by: ["userId"], where: { type: "FOLLOWUP_COMPLETED", userId: { not: null }, createdAt: { gte: weekAgo }, candidate: { deletedAt: null } }, _count: true })
-      : Promise.resolve([] as { userId: string | null; _count: number }[]),
+          .catch((e) => { onErr("lbFollowups")(e); return [] as UserGroupRow[]; })
+      : Promise.resolve([] as UserGroupRow[]),
     isLeader
       ? prisma.hRActivity.groupBy({ by: ["userId"], where: { type: "INTERVIEW_SCHEDULED", userId: { not: null }, createdAt: { gte: weekAgo }, candidate: { deletedAt: null } }, _count: true })
-      : Promise.resolve([] as { userId: string | null; _count: number }[]),
+          .catch((e) => { onErr("lbIvSched")(e); return [] as UserGroupRow[]; })
+      : Promise.resolve([] as UserGroupRow[]),
     isLeader
       ? prisma.hRActivity.groupBy({ by: ["userId"], where: { type: "INTERVIEW_ATTENDED", userId: { not: null }, createdAt: { gte: weekAgo }, candidate: { deletedAt: null } }, _count: true })
-      : Promise.resolve([] as { userId: string | null; _count: number }[]),
+          .catch((e) => { onErr("lbIvDone")(e); return [] as UserGroupRow[]; })
+      : Promise.resolve([] as UserGroupRow[]),
     isLeader
       ? prisma.hRActivity.groupBy({ by: ["userId"], where: { type: "OFFER_RELEASED", userId: { not: null }, createdAt: { gte: weekAgo }, candidate: { deletedAt: null } }, _count: true })
-      : Promise.resolve([] as { userId: string | null; _count: number }[]),
+          .catch((e) => { onErr("lbOffers")(e); return [] as UserGroupRow[]; })
+      : Promise.resolve([] as UserGroupRow[]),
     isLeader
       ? prisma.hRActivity.groupBy({ by: ["userId"], where: { type: "CANDIDATE_JOINED", userId: { not: null }, createdAt: { gte: weekAgo }, candidate: { deletedAt: null } }, _count: true })
-      : Promise.resolve([] as { userId: string | null; _count: number }[]),
+          .catch((e) => { onErr("lbJoined")(e); return [] as UserGroupRow[]; })
+      : Promise.resolve([] as UserGroupRow[]),
   ]);
 
   // ── Follow-up buckets (day-granular: overdue = due before start-of-today-IST) ──
@@ -416,7 +465,7 @@ export default async function HRDashboard() {
     { kind: "overdue", label: "Overdue Follow-Ups", count: overdueFU.length, href: "#call-now" },
     { kind: "interviewsToday", label: "Interviews Today", count: ivToday.length, href: "#interviews-today" },
     { kind: "pendingConfirm", label: "Pending Confirmations", count: confirmPending.length, href: "#pending-confirmations" },
-    { kind: "noShow", label: "No-Shows", count: noShowItems.length, href: "#no-show-recovery" },
+    { kind: "noShow", label: "No-Shows", count: noShowFullCount, href: "#no-show-recovery" },
     { kind: "expectedJoin", label: "Expected Joinings", count: expectedItems.length, href: "#expected-joinings" },
     { kind: "noNextAction", label: "No Next Action", count: noNextActionCount, href: "#no-next-action" },
   ];
@@ -445,12 +494,12 @@ export default async function HRDashboard() {
       href: "#pending-confirmations",
     });
   }
-  if (noShowItems.length > 0) {
+  if (noShowFullCount > 0) {
     suggestions.push({
       id: "no-show-recovery",
       severity: "high",
-      message: `${noShowItems.length} candidate${noShowItems.length === 1 ? "" : "s"} missed an interview — recover before they go cold.`,
-      count: noShowItems.length,
+      message: `${noShowFullCount} candidate${noShowFullCount === 1 ? "" : "s"} missed an interview — recover before they go cold.`,
+      count: noShowFullCount,
       href: "#no-show-recovery",
     });
   }

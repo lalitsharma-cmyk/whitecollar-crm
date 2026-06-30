@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createHash } from "crypto";
 import { prisma } from "@/lib/prisma";
-import { loadOwnedCandidate } from "@/lib/hrAccess";
+import { loadOwnedCandidate, hrScopeWhere } from "@/lib/hrAccess";
 
 // Max file size: 5 MB (base64 encoded ≈ 6.7 MB stored — acceptable for ~10 HR users)
 const MAX_BYTES = 5 * 1024 * 1024;
@@ -32,8 +32,15 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   // Same file already on a DIFFERENT candidate? Surface it (don't block — a real
   // duplicate applicant is useful to know about, not an error).
+  // SCOPE the match to candidates the uploader may already see: a Junior HR must
+  // never have an out-of-scope candidate's NAME leaked back to them via this
+  // duplicate hint. (Admin/Senior HR scope is {} → all candidates pass.)
   const dup = await prisma.hRResume.findFirst({
-    where: { contentHash, candidateId: { not: id }, candidate: { deletedAt: null } },
+    where: {
+      contentHash,
+      candidateId: { not: id },
+      candidate: { AND: [hrScopeWhere(access.me), { deletedAt: null }] },
+    },
     select: { candidate: { select: { id: true, name: true } } },
   });
 

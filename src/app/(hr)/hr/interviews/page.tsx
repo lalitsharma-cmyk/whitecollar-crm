@@ -110,8 +110,8 @@ export default async function InterviewsPage({ searchParams }: { searchParams: P
                     </td>
                     <td className="px-4 py-3 text-xs font-medium">{fmt(iv.type)}</td>
                     <td className="px-4 py-3 text-xs">
-                      <div className="font-medium">{new Date(iv.scheduledAt).toLocaleDateString("en-IN",{day:"numeric",month:"short",year:"numeric"})}</div>
-                      <div className="text-gray-500">{new Date(iv.scheduledAt).toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit"})}</div>
+                      <div className="font-medium">{new Date(iv.scheduledAt).toLocaleDateString("en-IN",{day:"numeric",month:"short",year:"numeric",timeZone:"Asia/Kolkata"})}</div>
+                      <div className="text-gray-500">{new Date(iv.scheduledAt).toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit",timeZone:"Asia/Kolkata"})}</div>
                     </td>
                     <td className="px-4 py-3 text-xs text-gray-600">{iv.interviewer?.name ?? "—"}</td>
                     <td className="px-4 py-3">
@@ -152,7 +152,7 @@ export default async function InterviewsPage({ searchParams }: { searchParams: P
                 </div>
                 <div className="text-xs text-gray-500 dark:text-slate-400 mt-1 flex flex-wrap gap-2">
                   <span className="inline-flex items-center gap-1"><Target className="w-3 h-3" /> {fmt(iv.type)}</span>
-                  <span className="inline-flex items-center gap-1"><CalendarDays className="w-3 h-3" /> {new Date(iv.scheduledAt).toLocaleDateString("en-IN",{day:"numeric",month:"short"})} {new Date(iv.scheduledAt).toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit"})}</span>
+                  <span className="inline-flex items-center gap-1"><CalendarDays className="w-3 h-3" /> {new Date(iv.scheduledAt).toLocaleDateString("en-IN",{day:"numeric",month:"short",timeZone:"Asia/Kolkata"})} {new Date(iv.scheduledAt).toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit",timeZone:"Asia/Kolkata"})}</span>
                   <span className={`px-1.5 py-0 rounded ${CONF_COLOR[iv.confirmationStatus] ?? ""}`}>{fmt(iv.confirmationStatus)}</span>
                   {iv.recommendation && <span className={`px-1.5 py-0 rounded ${REC_COLOR[iv.recommendation] ?? ""}`}>{fmt(iv.recommendation)}</span>}
                 </div>

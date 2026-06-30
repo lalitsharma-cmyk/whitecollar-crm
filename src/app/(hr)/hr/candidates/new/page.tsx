@@ -8,7 +8,7 @@ import { UserPlus, ArrowLeft } from "lucide-react";
 export const dynamic = "force-dynamic";
 
 export default async function NewCandidatePage() {
-  const { me } = await requireHrPage();
+  const { me, perms } = await requireHrPage();
   const agents = await getHrUsers();
   return (
     <div className="p-4 sm:p-6 max-w-2xl mx-auto space-y-4">
@@ -26,7 +26,7 @@ export default async function NewCandidatePage() {
           <ArrowLeft className="w-4 h-4" /> Candidates
         </Link>
       </div>
-      <HRAddCandidateForm agents={agents} meId={me.id} />
+      <HRAddCandidateForm agents={agents} meId={me.id} canAssign={perms.assign} />
     </div>
   );
 }

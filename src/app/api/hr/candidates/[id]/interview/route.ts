@@ -19,7 +19,7 @@ const RECOMMENDATION_STATUS: Record<string, HRCandidateStatus> = {
 };
 
 const fmtDateTime = (d: Date) =>
-  d.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
+  d.toLocaleString("en-IN", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Kolkata" });
 
 // ── Interview CONFLICT detection (NON-blocking warning) ──────────────────────
 // Does `interviewerId` already have another interview within ±60 min of `at`?
@@ -121,7 +121,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           candidateId: id, userId: me.id,
           type: "INTERVIEW_CONFIRMATION",
           dueAt: dayBefore,
-          notes: `Confirm ${itype.replace(/_/g, " ")} interview for ${scheduledAt.toLocaleDateString("en-IN")}`,
+          notes: `Confirm ${itype.replace(/_/g, " ")} interview for ${scheduledAt.toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata" })}`,
           autoCreated: true,
         },
       });
@@ -136,7 +136,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           candidateId: id, userId: me.id,
           type: "REMINDER",
           dueAt: morning,
-          notes: `Interview day reminder — ${itype.replace(/_/g, " ")} at ${scheduledAt.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}`,
+          notes: `Interview day reminder — ${itype.replace(/_/g, " ")} at ${scheduledAt.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Kolkata" })}`,
           autoCreated: true,
         },
       });
@@ -218,7 +218,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         await tx.hRFollowUp.create({
           data: {
             candidateId, userId: me.id, type: "INTERVIEW_CONFIRMATION", dueAt: dayBefore,
-            notes: `Confirm ${itype.replace(/_/g, " ")} interview for ${newAt.toLocaleDateString("en-IN")}`,
+            notes: `Confirm ${itype.replace(/_/g, " ")} interview for ${newAt.toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata" })}`,
             autoCreated: true,
           },
         });
@@ -229,7 +229,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         await tx.hRFollowUp.create({
           data: {
             candidateId, userId: me.id, type: "REMINDER", dueAt: morning,
-            notes: `Interview day reminder — ${itype.replace(/_/g, " ")} at ${newAt.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}`,
+            notes: `Interview day reminder — ${itype.replace(/_/g, " ")} at ${newAt.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Kolkata" })}`,
             autoCreated: true,
           },
         });
