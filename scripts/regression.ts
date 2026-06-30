@@ -1478,7 +1478,7 @@ const checks: Check[] = [
       //     whole page looked different even though shared cards matched.
       assert(/Client information/.test(page), "buyer right rail MUST carry a 'Client information' card (parity with the Lead right rail)");
       assert(/📍 Location/.test(page), "buyer right rail MUST carry a '📍 Location' card (parity with the Lead Location card)");
-      assert(/data-lead-section="actions"[\s\S]{0,200}Purchase summary/.test(page), "buyer right rail MUST fill the Lead 'Scheduling & next action' slot (Purchase summary card)");
+      assert(/data-lead-section="actions"[\s\S]{0,200}Status & next action/.test(page), "buyer right rail MUST fill the Lead 'Scheduling & next action' slot (Status & next action card)");
     },
   },
 
@@ -4898,6 +4898,30 @@ const checks: Check[] = [
       assert(/aria-pressed=\{!!active\}/.test(cl) && /tabKey: "rejected"/.test(cl), "summary cards must be clickable + include Rejected");
       assert(/rejected: rejectedCount/.test(pg) && /summary=\{\{/.test(pg), "page must pass a summary incl. rejectedCount to the buyer list");
       results.push({ name: "  ↳ note", ok: true, detail: "buyer list: default Active (terminal excluded), Rejected+Converted tabs, clickable summary cards" });
+    },
+  },
+  {
+    name: "buyer-status-followup-columns — businessStatus (≠ poolStatus) + followupDate are typed BuyerRecord columns, imported via parseImportDate, shown split on the buyer view (R4/R5)",
+    run: async () => {
+      const fs = await import("fs");
+      const schema = fs.readFileSync("prisma/schema.prisma", "utf8");
+      const route = fs.readFileSync("src/app/api/buyer-data/import/route.ts", "utf8");
+      const page = fs.readFileSync("src/app/(app)/buyer-data/[id]/page.tsx", "utf8");
+      // SCHEMA: the additive columns exist on BuyerRecord, DISTINCT from poolStatus.
+      const i = schema.indexOf("model BuyerRecord");
+      const nextModel = schema.indexOf("\nmodel ", i + 10);
+      const buyerBlock = schema.slice(i, nextModel === -1 ? undefined : nextModel);
+      assert(/businessStatus\s+String\?/.test(buyerBlock), "BuyerRecord must have a nullable businessStatus column");
+      assert(/followupDate\s+DateTime\?/.test(buyerBlock), "BuyerRecord must have a nullable followupDate column");
+      assert(/@@index\(\[followupDate\]\)/.test(buyerBlock), "followupDate must be indexed (drives follow-up queries)");
+      // IMPORT WRITE PATH: new imports populate both; follow-up parsed via parseImportDate.
+      assert(/businessStatus:\s*importedStatus/.test(route), "import route must write businessStatus from the imported Status column");
+      assert(/followupDate:\s*importedFollowupDate/.test(route) && /parseImportDate\(importedFollowupRaw\)/.test(route), "import route must write followupDate parsed via parseImportDate");
+      // DISPLAY (R4): Status = businessStatus, Pool = poolStatus, shown SEPARATELY.
+      assert(/rec\.businessStatus/.test(page), "buyer view must render the imported Status (businessStatus)");
+      assert(/Pool: \{poolLabel\}/.test(page), "buyer view must label the pool chip 'Pool' (separate from the imported Status)");
+      assert(/fmtDate\(rec\.followupDate\)/.test(page), "buyer view must show the follow-up date");
+      results.push({ name: "  ↳ note", ok: true, detail: "buyer Status (businessStatus) distinct from Data Pool (poolStatus); follow-up parsed + shown like a lead's" });
     },
   },
   {

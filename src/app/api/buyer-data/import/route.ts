@@ -99,6 +99,21 @@ function composeFromExtra(extra: Record<string, string>): string {
   return composeRemarkFromFields(picked);
 }
 
+// The imported Status + Follow-Up columns ALSO populate the dedicated typed columns
+// (businessStatus / followupDate, added migration 20260630170000) — so buyer Status
+// is distinct from the Admin-Pool lifecycle (R4) and buyer follow-up behaves like a
+// lead's (R5). NARROW key lists — ONLY the real status / follow-up columns (NOT
+// remarks/notes). Read from the verbatim rawImport so it works whether or not
+// composeFromExtra consumes the same keys from `extra`. Mirrors the backfill script.
+const STATUS_COLS = ["status", "lead status", "buyer status", "current status", "status 2", "status2"];
+const FOLLOWUP_COLS = ["follow-up", "followup", "follow up", "next follow up", "follow up date", "followup date", "follow-up date", "next followup"];
+function pickByKeys(row: Record<string, string>, keys: string[]): string | null {
+  for (const [k, v] of Object.entries(row)) {
+    if (keys.includes(k.trim().toLowerCase()) && String(v ?? "").trim()) return String(v).trim();
+  }
+  return null;
+}
+
 // Free-text conversation / interaction-history columns. The Dubai buyer sheets
 // carry a "Conversation History" column = the REAL dated conversation ("On 5 June
 // 2026 (4:31PM) he called back…"). When the admin maps a short Status column to
@@ -252,6 +267,14 @@ export async function POST(req: NextRequest) {
         if (k.trim() && s) rawRow[k] = s;
       }
 
+      // Typed columns (additive): the imported Status → businessStatus, the imported
+      // Follow-Up → followupDate (parsed exactly like the backfill + the lead import,
+      // via parseImportDate). Read from the verbatim rawRow so it is independent of
+      // whether composeFromExtra consumed the same keys from `extra`.
+      const importedStatus = (pickByKeys(rawRow, STATUS_COLS) ?? "").slice(0, 200) || null;
+      const importedFollowupRaw = pickByKeys(rawRow, FOLLOWUP_COLS);
+      const importedFollowupDate = importedFollowupRaw ? (parseImportDate(importedFollowupRaw) ?? null) : null;
+
       // Remarks (verbatim) → Raw History + Smart Timeline. Priority (Lalit P0,
       // 2026-06-27): an explicit conversation-history column FIRST (the buyer
       // sheets' real dated conversation — pulled OUT of extra so it isn't stranded
@@ -302,6 +325,7 @@ export async function POST(req: NextRequest) {
             transactionValue: num(r.transactionValue), pricePerSqFt: num(r.pricePerSqFt),
             transactionDate: txnDate, transactionId: str(r.transactionId),
             transactionType: str(r.transactionType), role: str(r.role), agentName: normalizeName(str(r.agentName)),
+            businessStatus: importedStatus, followupDate: importedFollowupDate,
           };
           const current = await prisma.buyerRecord.findUnique({ where: { id: existing.id } });
           for (const [k, v] of Object.entries(fill)) {
@@ -365,6 +389,9 @@ export async function POST(req: NextRequest) {
           transactionType: str(r.transactionType),
           role: str(r.role),
           agentName: normalizeName(str(r.agentName)),
+          // Imported buyer Status + parsed Follow-Up date (typed columns, R4/R5).
+          businessStatus: importedStatus,
+          followupDate: importedFollowupDate,
           // Remarks verbatim → Raw History (never reformatted).
           remarks: remark,
           // Dubai Buyer Data — every import into THIS module is a Dubai-market

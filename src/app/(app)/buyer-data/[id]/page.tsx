@@ -174,9 +174,16 @@ export default async function BuyerDetail({ params }: { params: Promise<{ id: st
                       ? <BuyerInlineEdit recordId={rec.id} field="clientName" value={rec.clientName} />
                       : rec.clientName}
                   </h2>
-                  {/* Status chip — styled like the Lead status chip. */}
-                  <span className={`text-xs px-2.5 py-0.5 rounded-full border font-semibold inline-flex items-center ${statusChipCls}`}>
-                    {poolLabel}
+                  {/* Status = the REAL imported buyer status (R4) — primary chip.
+                      The Admin-Pool / assignment lifecycle is a SEPARATE, explicitly
+                      labeled chip so "Status" is never again read as "Admin Pool". */}
+                  {rec.businessStatus && (
+                    <span className="text-xs px-2.5 py-0.5 rounded-full border font-semibold inline-flex items-center bg-blue-100 text-blue-800 border-blue-200 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-700">
+                      {rec.businessStatus}
+                    </span>
+                  )}
+                  <span className={`text-xs px-2.5 py-0.5 rounded-full border font-semibold inline-flex items-center ${statusChipCls}`} title="Data Pool / assignment lifecycle — separate from the imported Status">
+                    Pool: {poolLabel}
                   </span>
                   {/* Classification tier — First-Time / Investor / Whale (matches the list badge). */}
                   <span className={`text-[10px] px-2 py-0.5 rounded-full border font-semibold inline-flex items-center gap-0.5 ${BUYER_CLASS_META[buyerClass].tone}`}>
@@ -429,15 +436,22 @@ export default async function BuyerDetail({ params }: { params: Promise<{ id: st
             </div>
           </div>
 
-          {/* 💳 Purchase summary — occupies the Lead "📅 Scheduling & next action"
-              slot in the right rail, SAME CARD + FIELD_GRID_2 style, so the right
-              rail keeps the same rhythm (no hole). A buyer is a post-purchase record
-              with no follow-up scheduler, so this surfaces the headline purchase
-              facts (value + date) here; the full editable Transaction Details card
-              lives in the main column (no field duplication of type/role/id). */}
+          {/* 💳 Status, follow-up & purchase — occupies the Lead "📅 Scheduling &
+              next action" slot in the right rail, SAME CARD + FIELD_GRID_2 style.
+              The imported buyer Status + the Follow-up date (parity with leads,
+              R4/R5) lead the card, alongside the headline purchase facts; the full
+              editable Transaction Details card lives in the main column. */}
           <div data-lead-section="actions" className={CARD}>
-            <div className={CARD_TITLE}>💳 Purchase summary</div>
+            <div className={CARD_TITLE}>💳 Status & next action</div>
             <div className={FIELD_GRID_2}>
+              <div>
+                <div className={`${FIELD_LABEL} mb-0.5`}>Status</div>
+                <span className="text-gray-800 dark:text-slate-200 break-words font-medium">{rec.businessStatus || "—"}</span>
+              </div>
+              <div>
+                <div className={`${FIELD_LABEL} mb-0.5`}>Follow-up</div>
+                <span className="text-gray-800 dark:text-slate-200 break-words">{fmtDate(rec.followupDate)}</span>
+              </div>
               <div>
                 <div className={`${FIELD_LABEL} mb-0.5`}>Transaction Value</div>
                 <span className="text-gray-800 dark:text-slate-200 break-words font-semibold">{formatTxnValue(rec.transactionValue, ccy)}</span>

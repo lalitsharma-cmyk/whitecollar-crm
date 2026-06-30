@@ -432,7 +432,7 @@
 // platform-aware WhatsApp, server search, activity-logging, dashboard count fixes.
 // The SW had been stuck at v125 since Jun-24 so NONE of the Jun-28→30 HR UI was
 // reaching cached clients — this bump force-reloads every shell to the new HR UI.
-const CACHE = "wcr-shell-v126";
+const CACHE = "wcr-shell-v127";
 const SHELL = ["/login", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", (event) => {

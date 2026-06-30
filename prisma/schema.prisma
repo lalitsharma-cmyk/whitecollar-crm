@@ -2401,6 +2401,15 @@ model BuyerRecord {
   owner            User?     @relation("BuyerOwner", fields: [ownerId], references: [id], onDelete: SetNull)
   assignedAt       DateTime? // when ownerId was last set
   poolStatus       String    @default("ADMIN_POOL") // ADMIN_POOL | ASSIGNED | CONVERTED | REJECTED
+  // ── Imported buyer status + follow-up (additive migration 20260630170000) ────
+  // businessStatus = the REAL imported buyer status (e.g. "Hot", "Cool Off",
+  // "Booked") — DISTINCT from poolStatus (the Admin-Pool/Assigned lifecycle). The
+  // Buyer view shows them as two separate fields so "Status" is no longer mistaken
+  // for "Admin Pool" (R4). followupDate makes buyer follow-up behave like a lead's
+  // (drives follow-up lists/sorting); parsed from the import via parseImportDate —
+  // Excel serials incl. decimals, dd/mm/yyyy, ISO (R5). Both nullable + additive.
+  businessStatus   String?
+  followupDate     DateTime?
   attemptCount     Int       @default(0) // contact attempts (No Answer / Not Picked / WA No Response). Auto-return to pool at 5.
   remarks          String? // free-text working notes — RETAINED across reassignments
   // Conversion → a real Lead.
@@ -2434,6 +2443,7 @@ model BuyerRecord {
   @@index([ownerId, poolStatus])
   @@index([deletedAt])
   @@index([market])
+  @@index([followupDate])
 }
 
 // ── BuyerAssignment — agent-handling history ─────────────────────────────────
