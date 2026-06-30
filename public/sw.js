@@ -424,9 +424,10 @@
 // v120: admin device-limit dropdown now offers "1 device" (lock a user to a single device).
 // v121: security finishers — hard-deny cookie, device default 3, logout/role/disable session
 // revocation, country-change alert, admin "approved by". Bump so shells reload the new UI.
-// v124: "Needs Lalit" manager-escalation — fixed dashboard label + clickable
-// drill + Mark-resolved button on the lead banner. Bump so the new UI loads.
-const CACHE = "wcr-shell-v124";
+// v125: Live Lead Assignment widget relabel — "by current owner (live)" (was
+// "by assignment history"). Data was already current-owner (WS-D); this bump
+// forces stale cached dashboards to reload the corrected labels + fresh counts.
+const CACHE = "wcr-shell-v125";
 const SHELL = ["/login", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", (event) => {
