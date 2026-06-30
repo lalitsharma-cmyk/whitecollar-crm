@@ -38,6 +38,9 @@ export type BuyerRow = {
   ownerId: string;
   poolStatus: string;    // ADMIN_POOL | ASSIGNED | CONVERTED | REJECTED
   poolStatusLabel: string;
+  businessStatus: string;   // the REAL imported buyer status (R4) — distinct from poolStatus
+  followupDisplay: string;  // formatted follow-up date (R5); "—" when none
+  followupMs: number;       // follow-up date in ms for sort/range (0 = none)
   attemptCount: number;
   repeat: boolean;
   propertiesOwned: number;
@@ -75,7 +78,7 @@ interface Props {
 // date columns — a numeric accessor (transaction date is sorted/ranged on its ms
 // value, not the formatted string). The Actions column is NOT in this list, so
 // it gets no header filter (per spec).
-type ColKey = "clientName" | "poolStatus" | "project" | "towerUnit" | "propertyType" | "txnValue" | "txnDate" | "nationality" | "agent" | "attempts" | "buyer";
+type ColKey = "clientName" | "businessStatus" | "followup" | "poolStatus" | "project" | "towerUnit" | "propertyType" | "txnValue" | "txnDate" | "nationality" | "agent" | "attempts" | "buyer";
 type SortKey = ColKey;
 // "active" = the working pipeline (Admin Pool + Assigned) and is the DEFAULT, so
 // terminal CONVERTED/REJECTED records no longer inflate the main view. Terminal

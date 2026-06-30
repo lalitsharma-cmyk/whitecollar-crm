@@ -115,6 +115,12 @@ jobs:
             -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
             https://crm.whitecollarrealty.com/api/cron/revival-sweep \
             || echo "::warning::revival-sweep cron failed"
+      - name: HR auto-join — flip EXPECTED_JOINING → JOINED on joining date
+        run: |
+          curl -sf --max-time 60 \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            https://crm.whitecollarrealty.com/api/cron/hr-auto-join \
+            || echo "::warning::hr-auto-join cron failed"
 
   weekly_digest:
     # Sunday-night leaderboard email to admins + managers.
