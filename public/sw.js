@@ -424,7 +424,9 @@
 // v120: admin device-limit dropdown now offers "1 device" (lock a user to a single device).
 // v121: security finishers — hard-deny cookie, device default 3, logout/role/disable session
 // revocation, country-change alert, admin "approved by". Bump so shells reload the new UI.
-const CACHE = "wcr-shell-v121";
+// v122: conversation history — CALL remarks now editable (agent own+today / admin any) + clearer
+// ✏️ Edit affordances on every conversation item. Bump so the lead view reloads the new UI.
+const CACHE = "wcr-shell-v122";
 const SHELL = ["/login", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", (event) => {

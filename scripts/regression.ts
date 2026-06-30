@@ -5187,6 +5187,34 @@ const checks: Check[] = [
       results.push({ name: "  ↳ note", ok: true, detail: `live device-bound sessions=${live.length}; would be dropped by device-binding=${wouldDrop} (expect 0 — all devices approved)` });
     },
   },
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // 52. CONVERSATION CALL-REMARK EDIT (2026-06-30, Lalit — "requested multiple times,
+  //     still not visible"). The edit feature existed for NOTE + meeting activities
+  //     but NOT for CALL remarks — the dominant conversation entry (~97%) — so it read
+  //     as missing. Call remarks (CallLog.notes) are now editable with the SAME rule
+  //     (ADMIN/MANAGER any · agent own + same-IST-day, via canEditRemark) + a preserved
+  //     original (RemarkAuditLog action EDIT_CALL) + an "Edited by …" badge. Locked so
+  //     it can't silently regress again.
+  // ───────────────────────────────────────────────────────────────────────────
+  {
+    name: "conversation-call-remark-edit — call remarks editable (agent own+today / admin any) + audited + wired into the lead view",
+    run: async () => {
+      const fs = await import("fs");
+      const route = fs.readFileSync("src/app/api/leads/[id]/calls/[callId]/route.ts", "utf8");
+      assert(/canEditRemark\(\{ id: me\.id, role \}/.test(route), "call-edit route must enforce the shared canEditRemark rule (agent own+same-IST-day; admin/manager any)");
+      assert(/action: "EDIT_CALL"/.test(route) && /remarkAuditLog\.create/.test(route), "call-edit must preserve the original in RemarkAuditLog (action EDIT_CALL)");
+      assert(/callLog\.update\(\{ where: \{ id: callId \}, data: \{ notes/.test(route), "call-edit must update CallLog.notes in place (never delete)");
+      const comp = fs.readFileSync("src/components/ConversationStreamCard.tsx", "utf8");
+      assert(/startEditCall\(/.test(comp) && /saveEditCall\(/.test(comp), "ConversationStreamCard must offer the per-call edit affordance + save");
+      assert(/editedCalls\[c\.id\]/.test(comp), "call row must show the 'Edited by …' badge from editedCalls");
+      assert(/callEditable = canEditRemark\(/.test(comp), "call edit must be gated by canEditRemark (identical to the server rule)");
+      // Affordances must be VISIBLE (not the old faint gray-400 pencil).
+      assert(!/text-\[10px\] text-gray-400 hover:text-gray-(600|700)[^>]*>✏️ Edit/.test(comp), "the ✏️ Edit affordances must be clearly visible (not faint gray-400)");
+      const page = fs.readFileSync("src/app/(app)/leads/[id]/page.tsx", "utf8");
+      assert(/"EDIT_CALL"/.test(page) && /editedCalls=\{editedCalls\}/.test(page), "lead page must query EDIT_CALL + pass editedCalls to the conversation card");
+    },
+  },
 ];
 
 // ── runner ────────────────────────────────────────────────────────────────────

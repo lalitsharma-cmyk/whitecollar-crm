@@ -477,7 +477,7 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
   // the clean corrected text).
   const editLogs = (lead.remarks || lead.rawRemarks)
     ? await prisma.remarkAuditLog.findMany({
-        where: { leadId: lead.id, action: { in: ["EDIT_RAW", "EDIT_NOTE"] } },
+        where: { leadId: lead.id, action: { in: ["EDIT_RAW", "EDIT_NOTE", "EDIT_CALL"] } },
         orderBy: { createdAt: "desc" },
         select: { remarkKey: true, action: true, actorName: true, createdAt: true },
       })
@@ -485,9 +485,13 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
   const rawEditLog = editLogs.find((l) => l.action === "EDIT_RAW");
   const rawEdit = rawEditLog ? { by: rawEditLog.actorName ?? "Lalit", at: rawEditLog.createdAt.toISOString() } : null;
   const editedNotes: Record<string, { by: string; at: string }> = {};
+  const editedCalls: Record<string, { by: string; at: string }> = {};
   for (const l of editLogs) {
     if (l.action === "EDIT_NOTE" && l.remarkKey && !editedNotes[l.remarkKey]) {
       editedNotes[l.remarkKey] = { by: l.actorName ?? "Lalit", at: l.createdAt.toISOString() };
+    }
+    if (l.action === "EDIT_CALL" && l.remarkKey && !editedCalls[l.remarkKey]) {
+      editedCalls[l.remarkKey] = { by: l.actorName ?? "Lalit", at: l.createdAt.toISOString() };
     }
   }
 
@@ -1182,6 +1186,7 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
             viewerRole={me.role}
             rawEdit={rawEdit}
             editedNotes={editedNotes}
+            editedCalls={editedCalls}
             leadOwnerName={lead.owner?.name ?? null}
           />
         </div>

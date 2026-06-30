@@ -122,6 +122,8 @@ interface Props {
   rawEdit?: { by: string; at: string } | null;
   /** noteId → edit marker, for the per-note "Edited by Lalit" badge (admins only). */
   editedNotes?: Record<string, { by: string; at: string }>;
+  /** callId → edit marker, for the per-call "Edited by …" badge. */
+  editedCalls?: Record<string, { by: string; at: string }>;
   /** The lead OWNER's display name — the truthful fallback actor for stream rows
    *  whose own author is unknown (a Note/Activity with no recorded user, or an
    *  outbound WhatsApp which has no actor column). NEVER show the literal "Agent":
@@ -208,7 +210,7 @@ type FilterType = "ALL" | "CONNECTED" | "NO_ANSWER" | "WA";
 export default function ConversationStreamCard({
   callLogs, waMessages, notes = [], activities = [], forwardedTeam, rawRemarks, leadCreatedAt, agentNames = [],
   leadId = "", canControl = false, viewerId, viewerTeam, controls = [],
-  isAdmin = false, meId, viewerRole, rawEdit = null, editedNotes = {}, leadOwnerName = null,
+  isAdmin = false, meId, viewerRole, rawEdit = null, editedNotes = {}, editedCalls = {}, leadOwnerName = null,
 }: Props) {
   // Truthful fallback actor when a row's own author is unknown. NEVER "Agent":
   // prefer the lead owner's real name; if even that is missing, "Unknown User".
@@ -263,6 +265,37 @@ export default function ConversationStreamCard({
       setEditError("Network error — couldn't save the edit.");
     } finally {
       setEditBusy(false);
+    }
+  }
+
+  // ── Inline CALL-REMARK editing (✏️) ──
+  // The note typed when a call is logged (CallLog.notes) is the agent's OWN free-text
+  // remark and the MOST COMMON conversation entry — so it's editable too, with the
+  // identical rule (ADMIN/MANAGER any · agent own + same IST day, enforced server-side
+  // by canEditRemark). Only the remark TEXT changes; the call's outcome/time/recording
+  // stay immutable. The original is preserved in RemarkAuditLog (action EDIT_CALL).
+  const [editCallId, setEditCallId] = useState<string | null>(null);
+  const [callDraft, setCallDraft] = useState("");
+  const [callBusy, setCallBusy] = useState(false);
+  const [callError, setCallError] = useState<string | null>(null);
+  function startEditCall(id: string, body: string) { setEditCallId(id); setCallDraft(body); setCallError(null); }
+  function cancelEditCall() { setEditCallId(null); setCallDraft(""); setCallError(null); setCallBusy(false); }
+  async function saveEditCall(id: string) {
+    if (callBusy) return;
+    setCallBusy(true); setCallError(null);
+    try {
+      const r = await fetch(`/api/leads/${leadId}/calls/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ notes: callDraft.trim() }),
+      });
+      if (r.ok) { cancelEditCall(); router.refresh(); return; }
+      const j = await r.json().catch(() => ({}));
+      setCallError(j.error ?? "Couldn't save the edit.");
+    } catch {
+      setCallError("Network error — couldn't save the edit.");
+    } finally {
+      setCallBusy(false);
     }
   }
 
@@ -597,6 +630,14 @@ export default function ConversationStreamCard({
             const notesClean = c.notes
               ? c.notes.replace(/^[A-Z][A-Za-z]{1,15}(?:\s+[A-Z][A-Za-z]{1,15}){0,2}\s*:\s*/, "")
               : null;
+            // Per-call REMARK edit — ADMIN/MANAGER any · agent own + same IST day
+            // (canEditRemark off the call's author + startedAt). Server re-checks (403).
+            const callEdited = editedCalls[c.id];
+            const callEditing = editCallId === c.id;
+            const callEditable = canEditRemark(
+              { id: meId ?? "", role: viewerRole ?? (isAdmin ? "ADMIN" : "AGENT") },
+              { createdById: c.userId ?? null, createdAt: c.startedAt },
+            );
             return (
               <div key={it.id} className={`border-l-2 ${col.border} ${col.bg} pl-3 pr-2 py-1.5 rounded-r`}>
                 <div className="flex items-center justify-between flex-wrap gap-1 text-[11px] text-gray-500">
@@ -604,9 +645,35 @@ export default function ConversationStreamCard({
                     📞 <b>{displayName}</b> · {fmtIST12Paren(c.startedAt)} IST
                     {c.durationSec ? ` · ${Math.floor(c.durationSec / 60)}m ${c.durationSec % 60}s` : ""}
                   </span>
-                  <span className={`chip ${col.pill} text-[9px]`}>{callOutcomeLabel(c.outcome, c.notes)}</span>
+                  <span className="inline-flex items-center gap-1.5">
+                    {callEdited && (
+                      <span className="text-[9px] text-gray-400 italic"
+                        title={`Edited ${new Date(callEdited.at).toLocaleString("en-GB", { timeZone: "Asia/Kolkata" })} IST`}>✏️ Edited by {callEdited.by}</span>
+                    )}
+                    <span className={`chip ${col.pill} text-[9px]`}>{callOutcomeLabel(c.outcome, c.notes)}</span>
+                    {callEditable && !callEditing && (
+                      <button type="button" onClick={() => startEditCall(c.id, c.notes ?? "")}
+                        title="Edit this call remark (the original is kept in the audit log)"
+                        className="text-[11px] font-semibold text-indigo-600 hover:text-indigo-800 hover:underline">✏️ Edit</button>
+                    )}
+                  </span>
                 </div>
-                {notesClean && <div className="text-xs mt-1 text-gray-700 whitespace-pre-wrap">{notesClean}</div>}
+                {callEditing ? (
+                  <div className="mt-1">
+                    <textarea value={callDraft} onChange={(e) => setCallDraft(e.target.value)} rows={3} autoFocus
+                      className="w-full text-xs border border-indigo-300 rounded px-2 py-1 dark:bg-slate-800 dark:border-slate-600"
+                      placeholder="Call remark…" />
+                    {callError && <div className="text-[10px] text-rose-600 mt-0.5">{callError}</div>}
+                    <div className="flex gap-2 mt-1">
+                      <button type="button" onClick={() => saveEditCall(c.id)} disabled={callBusy}
+                        className="text-[11px] font-semibold px-2.5 py-0.5 rounded bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50">{callBusy ? "Saving…" : "Save"}</button>
+                      <button type="button" onClick={cancelEditCall} disabled={callBusy}
+                        className="text-[11px] px-2.5 py-0.5 rounded border border-gray-300 text-gray-600 dark:border-slate-600 dark:text-slate-300">Cancel</button>
+                    </div>
+                  </div>
+                ) : (
+                  notesClean && <div className="text-xs mt-1 text-gray-700 dark:text-slate-200 whitespace-pre-wrap">{notesClean}</div>
+                )}
                 {c.recordingUrl && (
                   <audio controls preload="none" src={c.recordingUrl} title={audioTitle} className="mt-1 h-7 max-w-full" />
                 )}
@@ -650,7 +717,7 @@ export default function ConversationStreamCard({
                     {canEditRemark({ id: meId ?? "", role: viewerRole ?? (isAdmin ? "ADMIN" : "AGENT") }, { createdById: n.userId ?? null, createdAt: n.createdAt }) && !editing && (
                       <button type="button" onClick={() => startEditNote(n.id, n.body)}
                         title="Edit this remark"
-                        className="text-[10px] text-gray-400 hover:text-gray-600">✏️ Edit</button>
+                        className="text-[11px] font-semibold text-indigo-600 hover:text-indigo-800 hover:underline">✏️ Edit</button>
                     )}
                     <span className="chip text-[9px] border border-amber-300 bg-amber-100 text-amber-700">Note</span>
                   </span>
@@ -773,7 +840,7 @@ export default function ConversationStreamCard({
                   ) && (
                     <button type="button" onClick={() => setEditActivity(a)}
                       title="Edit this timeline entry (original kept in the audit log)"
-                      className="text-[10px] text-gray-400 hover:text-gray-700 dark:hover:text-slate-200">✏️ Edit</button>
+                      className="text-[11px] font-semibold text-indigo-600 hover:text-indigo-800 hover:underline">✏️ Edit</button>
                   )}
                 </span>
               </div>
