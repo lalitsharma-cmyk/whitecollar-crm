@@ -4916,7 +4916,7 @@ const checks: Check[] = [
       assert(/@@index\(\[followupDate\]\)/.test(buyerBlock), "followupDate must be indexed (drives follow-up queries)");
       // IMPORT WRITE PATH: new imports populate both; follow-up parsed via parseImportDate.
       assert(/businessStatus:\s*importedStatus/.test(route), "import route must write businessStatus from the imported Status column");
-      assert(/followupDate:\s*importedFollowupDate/.test(route) && /parseImportDate\(importedFollowupRaw\)/.test(route), "import route must write followupDate parsed via parseImportDate");
+      assert(/followupDate:\s*importedFollowupDate/.test(route) && /parseFollowupDate\(importedFollowupRaw\)/.test(route), "import route must write followupDate parsed via the guarded parseFollowupDate");
       // DISPLAY (R4): Status = businessStatus, Pool = poolStatus, shown SEPARATELY.
       assert(/rec\.businessStatus/.test(page), "buyer view must render the imported Status (businessStatus)");
       assert(/Pool: \{poolLabel\}/.test(page), "buyer view must label the pool chip 'Pool' (separate from the imported Status)");
@@ -4928,6 +4928,38 @@ const checks: Check[] = [
       assert(/key:\s*"followup",\s*label:\s*"Follow-up"/.test(list), "buyer list must have a Follow-up column");
       assert(/key:\s*"poolStatus",\s*label:\s*"Pool"/.test(list), "buyer list pool column must be relabeled 'Pool' (not 'Status')");
       results.push({ name: "  ↳ note", ok: true, detail: "buyer Status (businessStatus) distinct from Data Pool (poolStatus); follow-up parsed + shown like a lead's; list has Status+Follow-up columns" });
+    },
+  },
+  {
+    name: "buyer-followup-guard-and-editable — followupDate uses ONE guarded parser everywhere (stray numbers never become 1900s dates); Status/Follow-up are priority-picked + editable in-app",
+    run: async () => {
+      const fs = await import("fs");
+      // FIX-1: the guarded parser — a bare number is a date ONLY when it's a plausible
+      // Excel serial (30000–80000); a small int / bare year / text is NOT a date.
+      const { parseFollowupDate } = await import("../src/lib/parseImportDate");
+      assert(parseFollowupDate("5") === undefined, "'5' must NOT become a 1900s date");
+      assert(parseFollowupDate("100") === undefined, "'100' must NOT become a date");
+      assert(parseFollowupDate("2026") === undefined, "bare year '2026' must NOT become a date");
+      assert(parseFollowupDate("999") === undefined, "'999' must NOT become a date");
+      assert(parseFollowupDate("46199") instanceof Date, "a real Excel serial (46199) must parse to a date");
+      assert(parseFollowupDate("46199.625") instanceof Date, "a decimal serial must parse");
+      assert(parseFollowupDate("22/05/2026") instanceof Date, "dd/mm/yyyy must parse");
+      assert(parseFollowupDate("") === undefined && parseFollowupDate("Call back") === undefined, "blank/unparseable text → undefined");
+      // ALL three paths (import route, backfill, remark display) route through parseFollowupDate.
+      const route = fs.readFileSync("src/app/api/buyer-data/import/route.ts", "utf8");
+      const backfill = fs.readFileSync("scripts/backfill-buyer-status-followup.ts", "utf8");
+      const timeline = fs.readFileSync("src/lib/buyerRemarkTimeline.ts", "utf8");
+      assert(/parseFollowupDate\(importedFollowupRaw\)/.test(route), "import route must parse follow-up via the guarded parseFollowupDate");
+      assert(/parseFollowupDate\(fuRaw\)/.test(backfill), "backfill must parse follow-up via parseFollowupDate");
+      assert(/parseFollowupDate\(v\)/.test(timeline), "remark display (readableFollowup) must use parseFollowupDate");
+      // FIX-3: priority-ordered pick (iterate KEYS, not the row) so primary "Status" beats "Status 2".
+      assert(/for \(const key of keys\)/.test(route) && /for \(const key of keys\)/.test(backfill), "Status/Follow-up pick must iterate keys in priority order");
+      // FIX-2: businessStatus + followupDate editable — in the update ALLOWED set + wired on the detail page.
+      const upd = fs.readFileSync("src/app/api/buyer-data/[id]/update/route.ts", "utf8");
+      assert(/businessStatus:\s*"string"/.test(upd) && /followupDate:\s*"date"/.test(upd), "buyer update route must allow editing businessStatus + followupDate");
+      const page = fs.readFileSync("src/app/(app)/buyer-data/[id]/page.tsx", "utf8");
+      assert(/editable\("businessStatus"/.test(page) && /editable\("followupDate"/.test(page), "buyer detail must render businessStatus + followupDate as editable");
+      results.push({ name: "  ↳ note", ok: true, detail: "follow-up guarded parser unified (route+backfill+display); Status/Follow-up editable + priority-ordered pick" });
     },
   },
   {

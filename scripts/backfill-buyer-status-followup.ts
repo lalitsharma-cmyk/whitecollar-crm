@@ -22,7 +22,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { readFileSync, existsSync, readdirSync } from "node:fs";
 import { PrismaClient } from "@prisma/client";
-import { parseImportDate } from "../src/lib/parseImportDate";
+import { parseFollowupDate } from "../src/lib/parseImportDate";
 
 const APPLY = process.argv.includes("--apply");
 
@@ -36,8 +36,16 @@ const FOLLOWUP_KEYS = ["follow-up", "followup", "follow up", "next follow up", "
 
 function findVal(obj: unknown, keys: string[]): string | null {
   if (!obj || typeof obj !== "object") return null;
+  // Normalize then iterate KEYS in priority order (primary "status" beats "status 2"),
+  // mirroring the import route's pickByKeys so backfill + import agree.
+  const norm = new Map<string, string>();
   for (const [k, v] of Object.entries(obj as Record<string, unknown>)) {
-    if (keys.includes(k.trim().toLowerCase()) && String(v ?? "").trim()) return String(v).trim();
+    const s = String(v ?? "").trim();
+    if (s) norm.set(k.trim().toLowerCase(), s);
+  }
+  for (const key of keys) {
+    const v = norm.get(key);
+    if (v) return v;
   }
   return null;
 }
@@ -66,7 +74,7 @@ async function main() {
     if (b.followupDate == null) {
       const fuRaw = findVal(b.extraFields, FOLLOWUP_KEYS) ?? findVal(b.rawImport, FOLLOWUP_KEYS);
       if (fuRaw) {
-        const d = parseImportDate(fuRaw);
+        const d = parseFollowupDate(fuRaw);
         if (d) { data.followupDate = d; followupFills++; }
         else followupUnparseable++;
       }

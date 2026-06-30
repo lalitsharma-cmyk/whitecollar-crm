@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { parseImportDate } from "@/lib/parseImportDate";
+import { parseImportDate, parseFollowupDate } from "@/lib/parseImportDate";
 import { normalizeBuyerKey, toJsonArray, primaryPhone, parseJsonArray } from "@/lib/buyerIntelligence";
 import { buildBuyerTimelinePlan, composeRemarkFromFields, isImportedActivityDescription } from "@/lib/buyerRemarkTimeline";
 import { normalizeName, normalizeNameList } from "@/lib/nameFormat";
@@ -108,8 +108,17 @@ function composeFromExtra(extra: Record<string, string>): string {
 const STATUS_COLS = ["status", "lead status", "buyer status", "current status", "status 2", "status2"];
 const FOLLOWUP_COLS = ["follow-up", "followup", "follow up", "next follow up", "follow up date", "followup date", "follow-up date", "next followup"];
 function pickByKeys(row: Record<string, string>, keys: string[]): string | null {
+  // Normalize the row once, then iterate KEYS in PRIORITY order so the primary
+  // "status" always beats "status 2" regardless of the sheet's column order
+  // (insertion-order iteration would silently pick whichever appears first).
+  const norm = new Map<string, string>();
   for (const [k, v] of Object.entries(row)) {
-    if (keys.includes(k.trim().toLowerCase()) && String(v ?? "").trim()) return String(v).trim();
+    const s = String(v ?? "").trim();
+    if (s) norm.set(k.trim().toLowerCase(), s);
+  }
+  for (const key of keys) {
+    const v = norm.get(key);
+    if (v) return v;
   }
   return null;
 }
@@ -273,7 +282,9 @@ export async function POST(req: NextRequest) {
       // whether composeFromExtra consumed the same keys from `extra`.
       const importedStatus = (pickByKeys(rawRow, STATUS_COLS) ?? "").slice(0, 200) || null;
       const importedFollowupRaw = pickByKeys(rawRow, FOLLOWUP_COLS);
-      const importedFollowupDate = importedFollowupRaw ? (parseImportDate(importedFollowupRaw) ?? null) : null;
+      // Guarded parser (parseFollowupDate): a bare number is a date ONLY when it's a
+      // plausible Excel serial (30000–80000), so "5"/"2026" never write a 1900s date.
+      const importedFollowupDate = importedFollowupRaw ? (parseFollowupDate(importedFollowupRaw) ?? null) : null;
 
       // Remarks (verbatim) → Raw History + Smart Timeline. Priority (Lalit P0,
       // 2026-06-27): an explicit conversation-history column FIRST (the buyer

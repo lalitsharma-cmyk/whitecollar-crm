@@ -24,7 +24,7 @@
 // ────────────────────────────────────────────────────────────────────────────
 
 import { parseRemarksTimeline, type RemarkEventType } from "@/lib/remarkParser";
-import { parseImportDate } from "@/lib/parseImportDate";
+import { parseFollowupDate } from "@/lib/parseImportDate";
 
 /** A single BuyerActivity row to create, derived from one parsed remark entry. */
 export interface BuyerActivityPlan {
@@ -125,25 +125,12 @@ export function isImportedActivityDescription(description: string | null | undef
 // date range (≈1982–2119) so a stray small number / bare year ("2026") isn't
 // misread as a 1900s date; genuinely unparseable values are kept verbatim.
 function readableFollowup(v: string): string {
-  const s = v.trim();
-  // ANY bare integer/decimal → treat as an Excel serial ONLY inside the plausible
-  // date range (≈1982–2119). Every other bare number — a small int ("5"), a bare
-  // year ("2026"), a huge number — stays verbatim so a stray number can never
-  // become a 1900s date. (Handles this branch itself; the date-string branch
-  // below never sees a pure number, so parseImportDate can't misread it.)
-  if (/^\d+(\.\d+)?$/.test(s)) {
-    const n = parseFloat(s);
-    if (n > 30000 && n < 80000) {
-      const d = parseImportDate(s);
-      if (d) return d.toISOString().slice(0, 10);
-    }
-    return s;
-  }
-  // Non-numeric date-like strings (dd/mm/yyyy, dd-mm-yyyy, ISO, "9 Jun 2026") →
-  // normalize; truly unparseable text ("Call back next week", "46-199") stays
-  // verbatim (no parser can know a malformed value was meant to be a date).
-  const d = parseImportDate(s);
-  return d ? d.toISOString().slice(0, 10) : s;
+  // Single source of truth (parseFollowupDate): a bare number is a date only when
+  // it's a plausible Excel serial (30000–80000); "5"/"2026"/"46-199" stay verbatim.
+  // The import write-path + backfill use the SAME parser, so the displayed remark
+  // text and the indexed followupDate column can never disagree.
+  const d = parseFollowupDate(v);
+  return d ? d.toISOString().slice(0, 10) : v.trim();
 }
 
 /** Build a single labeled remark line from a map of status-like fields, e.g.

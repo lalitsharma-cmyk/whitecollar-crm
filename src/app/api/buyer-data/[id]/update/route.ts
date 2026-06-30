@@ -35,6 +35,8 @@ const ALLOWED: Record<string, "string" | "number" | "date"> = {
   transactionType: "string",
   role: "string",
   agentName: "string",
+  businessStatus: "string", // the imported buyer status (R4) — correctable in-app
+  followupDate: "date",     // follow-up date (R5) — editable like a lead's follow-up
   remarks: "string",
 };
 

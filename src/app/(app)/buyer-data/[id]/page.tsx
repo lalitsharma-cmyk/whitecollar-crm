@@ -446,11 +446,11 @@ export default async function BuyerDetail({ params }: { params: Promise<{ id: st
             <div className={FIELD_GRID_2}>
               <div>
                 <div className={`${FIELD_LABEL} mb-0.5`}>Status</div>
-                <span className="text-gray-800 dark:text-slate-200 break-words font-medium">{rec.businessStatus || "—"}</span>
+                <span className="text-gray-800 dark:text-slate-200 break-words font-medium">{editable("businessStatus", rec.businessStatus)}</span>
               </div>
               <div>
                 <div className={`${FIELD_LABEL} mb-0.5`}>Follow-up</div>
-                <span className="text-gray-800 dark:text-slate-200 break-words">{fmtDate(rec.followupDate)}</span>
+                <span className="text-gray-800 dark:text-slate-200 break-words">{editable("followupDate", rec.followupDate ? rec.followupDate.toISOString().slice(0, 10) : null, { type: "date", display: fmtDate(rec.followupDate) })}</span>
               </div>
               <div>
                 <div className={`${FIELD_LABEL} mb-0.5`}>Transaction Value</div>

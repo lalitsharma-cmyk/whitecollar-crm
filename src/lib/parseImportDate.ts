@@ -42,6 +42,28 @@ export function parseImportDate(s?: string): Date | undefined {
   return isNaN(d.getTime()) ? undefined : noonISTifMidnight(d);
 }
 
+/**
+ * Guarded follow-up parser for IMPORTED columns that may hold stray numbers.
+ * Unlike parseImportDate, a BARE integer/decimal is only treated as an Excel
+ * serial inside the plausible date range (≈1982–2119, i.e. 30000–80000), so a
+ * Follow-Up cell of "5" / "100" / "2026" / "999" is NOT misread as a 1900s date
+ * (parseImportDate alone maps any 1<n<100000 to a serial). Date-like strings
+ * (dd/mm/yyyy, dd-mm-yyyy, ISO, "9 Jun 2026") parse exactly as parseImportDate.
+ *
+ * THIS is the single source of truth for a buyer follow-up cell → Date: the
+ * import write-path, the backfill, and the remark-display sibling all route
+ * through it so the indexed column and the displayed text can never disagree.
+ */
+export function parseFollowupDate(s?: string | null): Date | undefined {
+  const v = String(s ?? "").trim();
+  if (!v) return undefined;
+  if (/^\d+(\.\d+)?$/.test(v)) {
+    const n = parseFloat(v);
+    return n > 30000 && n < 80000 ? parseImportDate(v) : undefined;
+  }
+  return parseImportDate(v);
+}
+
 export function detectDateColumn(headers: string[]): string | undefined {
   const datePatterns = ['date', 'leaddate', 'createdon', 'createddate', 'entrydate', 'created', 'dategenerated', 'generateddate'];
   const normalized = (s: string) => s.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '');
