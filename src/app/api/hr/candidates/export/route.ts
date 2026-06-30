@@ -3,6 +3,7 @@ import { requireHrPermission, hrActiveScopeWhere } from "@/lib/hrAccess";
 import { prisma } from "@/lib/prisma";
 import type { Prisma } from "@prisma/client";
 import { statusLabel } from "@/lib/hrStatus";
+import { istDayRange, isValidDateKey } from "@/lib/datetime";
 
 const COLS: [string, (c: Cand) => string][] = [
   ["Name", c => c.name],
@@ -44,8 +45,18 @@ export async function GET(req: NextRequest) {
   const status = sp.get("status"); if (status) filter.status = status as Cand["status"];
   const position = sp.get("position"); if (position) filter.positionApplied = position;
   const source = sp.get("source"); if (source) filter.source = source;
+  // from/to are "YYYY-MM-DD" calendar dates — treat them as Asia/Kolkata day
+  // boundaries (not browser/UTC), so a Jun-30 export captures the whole IST day.
+  // gte = start of the `from` IST day; lt = start of the day AFTER `to` (so the
+  // whole `to` IST day is inclusive). Ignore malformed params rather than NaN.
   const from = sp.get("from"), to = sp.get("to");
-  if (from || to) filter.createdAt = { ...(from ? { gte: new Date(from) } : {}), ...(to ? { lte: new Date(to + "T23:59:59") } : {}) };
+  const fromValid = isValidDateKey(from), toValid = isValidDateKey(to);
+  if (fromValid || toValid) {
+    const range: Prisma.DateTimeFilter = {};
+    if (fromValid) range.gte = istDayRange(from!).start;
+    if (toValid) range.lt = istDayRange(to!).end; // end = start of next IST day (exclusive)
+    filter.createdAt = range;
+  }
 
   // Defense-in-depth: scope exported rows to what the caller may see + exclude soft-deleted.
   const where: Prisma.HRCandidateWhereInput = { AND: [hrActiveScopeWhere(me), filter] };

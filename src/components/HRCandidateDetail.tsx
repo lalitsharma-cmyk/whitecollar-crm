@@ -227,6 +227,11 @@ export default function HRCandidateDetail({ candidate: c, agents, me, voicePerms
   const [rawOpen, setRawOpen] = useState(false);
   const [resultFor, setResultFor] = useState<string|null>(null);
   const [resReco, setResReco] = useState(""); const [resResult, setResResult] = useState(""); const [resNotes, setResNotes] = useState("");
+  // Inline reschedule (per-interview): which row is open + its new datetime value.
+  const [rescheduleFor, setRescheduleFor] = useState<string|null>(null);
+  const [rescheduleAt, setRescheduleAt] = useState("");
+  // Which follow-up is mid-complete, so its row button can show an in-flight state.
+  const [completingFu, setCompletingFu] = useState<string|null>(null);
 
   const [callNotes, setCallNotes] = useState(""); const [callNext, setCallNext] = useState(""); const [callNextDate, setCallNextDate] = useState("");
   const [waNotes, setWaNotes] = useState("");
@@ -242,6 +247,16 @@ export default function HRCandidateDetail({ candidate: c, agents, me, voicePerms
   // Surfaces a failure from any quick-action handler so nothing fails silently.
   // Cleared at the start of each action; rendered as a dismissible red banner.
   const [actionErr, setActionErr] = useState<string|null>(null);
+  // Brief green confirmation after a successful inline save / status change.
+  // Auto-clears after ~2.5s; the counterpart to actionErr above.
+  const [actionOk, setActionOk] = useState<string|null>(null);
+  const okTimer = useRef<ReturnType<typeof setTimeout>|null>(null);
+  const flashOk = useCallback((msg: string) => {
+    setActionOk(msg);
+    if (okTimer.current) clearTimeout(okTimer.current);
+    okTimer.current = setTimeout(() => setActionOk(null), 2500);
+  }, []);
+  useEffect(() => () => { if (okTimer.current) clearTimeout(okTimer.current); }, []);
   // Refs so keyboard shortcuts can focus the first field of a just-opened panel.
   const callNotesRef = useRef<HTMLTextAreaElement>(null);
   const noteTextRef = useRef<HTMLTextAreaElement>(null);
@@ -308,7 +323,7 @@ export default function HRCandidateDetail({ candidate: c, agents, me, voicePerms
       setActionErr(e instanceof Error ? e.message : ERR_FALLBACK);
       return;
     }
-    setPanel("none"); setCallNotes(""); setCallNext(""); setCallNextDate(""); startT(() => router.refresh());
+    setPanel("none"); setCallNotes(""); setCallNext(""); setCallNextDate(""); flashOk("Call logged."); startT(() => router.refresh());
   }
   async function logWA(type: "WHATSAPP_SENT"|"WHATSAPP_RECEIVED") {
     setActionErr(null);
@@ -318,7 +333,7 @@ export default function HRCandidateDetail({ candidate: c, agents, me, voicePerms
       setActionErr(e instanceof Error ? e.message : ERR_FALLBACK);
       return;
     }
-    setPanel("none"); setWaNotes(""); startT(() => router.refresh());
+    setPanel("none"); setWaNotes(""); flashOk("WhatsApp logged."); startT(() => router.refresh());
   }
   async function createFollowUp() {
     if (!fuDate) return;
@@ -329,7 +344,7 @@ export default function HRCandidateDetail({ candidate: c, agents, me, voicePerms
       setActionErr(e instanceof Error ? e.message : ERR_FALLBACK);
       return;
     }
-    setPanel("none"); setFuDate(""); setFuNotes(""); startT(() => router.refresh());
+    setPanel("none"); setFuDate(""); setFuNotes(""); flashOk("Follow-up created."); startT(() => router.refresh());
   }
   async function scheduleInterview() {
     if (!ivDate) return;
@@ -350,7 +365,7 @@ export default function HRCandidateDetail({ candidate: c, agents, me, voicePerms
         setIvConflict(null);
       }
     } finally { setBusy(false); }
-    setPanel("none"); setIvDate(""); setIvNotes(""); startT(() => router.refresh());
+    setPanel("none"); setIvDate(""); setIvNotes(""); flashOk("Interview scheduled."); startT(() => router.refresh());
   }
   async function updateStatus() {
     setActionErr(null);
@@ -366,7 +381,7 @@ export default function HRCandidateDetail({ candidate: c, agents, me, voicePerms
       setActionErr(ERR_FALLBACK);
       return;
     } finally { setBusy(false); }
-    setPanel("none"); setStatusNote(""); startT(() => router.refresh());
+    setPanel("none"); setStatusNote(""); flashOk("Status updated."); startT(() => router.refresh());
   }
   async function addNote() {
     if (!noteText.trim()) return;
@@ -377,11 +392,12 @@ export default function HRCandidateDetail({ candidate: c, agents, me, voicePerms
       setActionErr(e instanceof Error ? e.message : ERR_FALLBACK);
       return;
     }
-    setPanel("none"); setNoteText(""); startT(() => router.refresh());
+    setPanel("none"); setNoteText(""); flashOk("Note added."); startT(() => router.refresh());
   }
   async function completeFollowUp(fuId: string) {
     setActionErr(null);
     setBusy(true);
+    setCompletingFu(fuId);
     try {
       const res = await fetch(`/api/hr/candidates/${c.id}/followup`, { method: "PATCH", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ followUpId: fuId }) });
       if (!res.ok) {
@@ -392,8 +408,8 @@ export default function HRCandidateDetail({ candidate: c, agents, me, voicePerms
     } catch {
       setActionErr(ERR_FALLBACK);
       return;
-    } finally { setBusy(false); }
-    startT(() => router.refresh());
+    } finally { setBusy(false); setCompletingFu(null); }
+    flashOk("Follow-up completed."); startT(() => router.refresh());
   }
   async function deleteInterview(ivId: string) {
     if (!window.confirm("Delete this interview? Its open auto-created confirmation/reminder follow-ups will also be cleared.")) return;
@@ -410,7 +426,7 @@ export default function HRCandidateDetail({ candidate: c, agents, me, voicePerms
       setActionErr(ERR_FALLBACK);
       return;
     } finally { setBusy(false); }
-    startT(() => router.refresh());
+    flashOk("Interview deleted."); startT(() => router.refresh());
   }
   async function recordResult(ivId: string) {
     if (!resReco && !resResult.trim() && !resNotes.trim()) return;
@@ -430,10 +446,54 @@ export default function HRCandidateDetail({ candidate: c, agents, me, voicePerms
       setActionErr(ERR_FALLBACK);
       return;
     } finally { setBusy(false); }
-    setResultFor(null); setResReco(""); setResResult(""); setResNotes(""); startT(() => router.refresh());
+    setResultFor(null); setResReco(""); setResResult(""); setResNotes(""); flashOk("Result recorded."); startT(() => router.refresh());
   }
 
+  // Inline reschedule of an existing interview (PATCH action:'reschedule').
+  // Surfaces a non-blocking conflict warning the same way scheduleInterview does.
+  async function rescheduleInterview(ivId: string) {
+    if (!rescheduleAt) return;
+    setActionErr(null);
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/hr/candidates/${c.id}/interview`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ interviewId: ivId, action: "reschedule", scheduledAt: rescheduleAt }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setActionErr(data?.error || ERR_FALLBACK);
+        return; // keep the inline form open + value intact on failure
+      }
+      if (data?.conflict) {
+        const cf = data.conflict;
+        setIvConflict(typeof cf === "string" ? cf : (cf?.message ?? cf?.with ?? "Another interview overlaps this time slot."));
+      } else {
+        setIvConflict(null);
+      }
+    } catch {
+      setActionErr(ERR_FALLBACK);
+      return;
+    } finally { setBusy(false); }
+    setRescheduleFor(null); setRescheduleAt(""); flashOk("Interview rescheduled."); startT(() => router.refresh());
+  }
+
+  // Quick "Record Result" on an interview row that marks attendance/no-show via
+  // the result action without forcing a recommendation — kept for the inline form.
+
   const now = new Date();
+  // Urgency for a future/overdue moment: red if already past, amber if <24h away,
+  // otherwise no tint. Used on interview rows + the pending follow-up list.
+  const urgency = (iso: string): "overdue" | "soon" | null => {
+    const diff = +new Date(iso) - +now;
+    if (diff < 0) return "overdue";
+    if (diff < 24 * 60 * 60 * 1000) return "soon";
+    return null;
+  };
+  const URGENCY_CARD: Record<"overdue"|"soon", string> = {
+    overdue: "border-red-300 bg-red-50/40 dark:border-red-900 dark:bg-red-950/20",
+    soon: "border-amber-300 bg-amber-50/40 dark:border-amber-900 dark:bg-amber-950/20",
+  };
   const pendingFollowUps = c.followUps.filter(f => !f.completedAt).sort((a,b) => +new Date(a.dueAt) - +new Date(b.dueAt));
   const upcomingInterviews = c.interviews.filter(i => i.attendanceStatus === "SCHEDULED" || i.attendanceStatus === "RESCHEDULED").sort((a,b) => +new Date(a.scheduledAt) - +new Date(b.scheduledAt));
   const nextFU = pendingFollowUps[0];
@@ -572,6 +632,15 @@ export default function HRCandidateDetail({ candidate: c, agents, me, voicePerms
               <span className="font-semibold">Action failed — </span>{actionErr}
             </div>
             <button type="button" onClick={() => setActionErr(null)} className="text-red-500 hover:text-red-700 shrink-0" aria-label="Dismiss"><X size={14} /></button>
+          </div>
+        )}
+
+        {/* Brief success confirmation — the green counterpart to actionErr above.
+            Auto-clears after ~2.5s (flashOk) so it doesn't linger. */}
+        {actionOk && (
+          <div className="mt-3 p-2.5 rounded-lg bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-300 dark:border-emerald-800 flex items-center gap-2" role="status">
+            <CheckCircle2 size={15} className="text-emerald-600 dark:text-emerald-400 shrink-0" />
+            <span className="flex-1 min-w-0 text-xs font-medium text-emerald-800 dark:text-emerald-200">{actionOk}</span>
           </div>
         )}
 
@@ -718,13 +787,21 @@ export default function HRCandidateDetail({ candidate: c, agents, me, voicePerms
             <div className="card p-3 border-l-4 border-amber-400 bg-amber-50 dark:bg-amber-950/20">
               <div className="text-xs font-semibold text-amber-800 dark:text-amber-300 mb-2 inline-flex items-center gap-1"><CalendarClock size={13} />Pending Follow-Ups ({pendingFollowUps.length})</div>
               <div className="space-y-1.5">
-                {pendingFollowUps.slice(0,3).map(fu => { const d=new Date(fu.dueAt); const overdue=d<now; return (
+                {pendingFollowUps.slice(0,3).map(fu => { const urg=urgency(fu.dueAt); return (
                   <div key={fu.id} className="flex items-center justify-between gap-2">
-                    <div className="text-xs"><span className={overdue?"text-red-600 font-semibold inline-flex items-center gap-0.5":"text-amber-700 dark:text-amber-300"}>{overdue&&<AlertTriangle size={11} />}{overdue?"Overdue — ":""}{fmtDayTime(fu.dueAt)}</span><span className="text-gray-500 dark:text-slate-400 ml-1.5">{fmt(fu.type)}</span>{fu.notes && <span className="text-gray-400 ml-1">· {fu.notes}</span>}</div>
-                    <button type="button" disabled={busy} onClick={() => completeFollowUp(fu.id)} className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded border border-green-300 bg-white dark:bg-slate-800 text-green-700 dark:text-green-300 hover:bg-green-50 shrink-0"><Check size={11} />Done</button>
+                    <div className="text-xs"><span className={urg==="overdue"?"text-red-600 font-semibold inline-flex items-center gap-0.5":urg==="soon"?"text-amber-700 dark:text-amber-300 font-medium inline-flex items-center gap-0.5":"text-amber-700 dark:text-amber-300"}>{urg&&<AlertTriangle size={11} />}{urg==="overdue"?"Overdue — ":urg==="soon"?"Soon — ":""}{fmtDayTime(fu.dueAt)}</span><span className="text-gray-500 dark:text-slate-400 ml-1.5">{fmt(fu.type)}</span>{fu.notes && <span className="text-gray-400 ml-1">· {fu.notes}</span>}</div>
+                    <button type="button" disabled={busy} onClick={() => completeFollowUp(fu.id)} className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded border border-green-300 bg-white dark:bg-slate-800 text-green-700 dark:text-green-300 hover:bg-green-50 shrink-0 disabled:opacity-60">{completingFu===fu.id ? <><RefreshCw size={11} className="animate-spin" />Saving…</> : <><Check size={11} />Done</>}</button>
                   </div>
                 ); })}
               </div>
+              {/* Overflow hint — only the first 3 are shown above; link to the rest. */}
+              {pendingFollowUps.length > 3 && (
+                <button type="button" onClick={() => setTab("followups")}
+                  className="mt-1.5 inline-flex items-center gap-1 text-[11px] font-medium text-amber-700 dark:text-amber-300 hover:underline">
+                  (Showing 3 of {pendingFollowUps.length}) · See all
+                  <ChevronRight size={11} />
+                </button>
+              )}
             </div>
           )}
 
@@ -767,12 +844,20 @@ export default function HRCandidateDetail({ candidate: c, agents, me, voicePerms
           {tab === "interviews" && (
             <div className="space-y-3">
               {c.interviews.length === 0 && <div className="text-sm text-gray-400 text-center py-6">No interviews yet.</div>}
-              {c.interviews.map(iv => (
-                <div key={iv.id} className="card p-4 border border-[#e5e7eb] dark:border-slate-700">
+              {c.interviews.map(iv => {
+                // Urgency only applies while the interview is still pending (not yet
+                // attended / no-show / concluded with a result).
+                const pending = iv.attendanceStatus !== "ATTENDED" && iv.attendanceStatus !== "NO_SHOW" && !iv.result && !iv.recommendation;
+                const urg = pending ? urgency(iv.scheduledAt) : null;
+                return (
+                <div key={iv.id} className={`card p-4 border ${urg ? URGENCY_CARD[urg] : "border-[#e5e7eb] dark:border-slate-700"}`}>
                   <div className="flex items-start justify-between flex-wrap gap-2">
                     <div>
                       <div className="font-semibold text-sm inline-flex items-center gap-1.5"><Target size={14} className="text-purple-600" />{fmt(iv.type)} Interview</div>
-                      <div className="text-xs text-gray-500 dark:text-slate-400 mt-0.5">{fmtDate(iv.scheduledAt)}</div>
+                      <div className={`text-xs mt-0.5 inline-flex items-center gap-1 ${urg==="overdue"?"text-red-600 font-semibold":urg==="soon"?"text-amber-700 dark:text-amber-300 font-medium":"text-gray-500 dark:text-slate-400"}`}>
+                        {urg && <AlertTriangle size={11} />}
+                        {urg==="overdue" ? "Overdue — " : urg==="soon" ? "Soon — " : ""}{fmtDate(iv.scheduledAt)}
+                      </div>
                       {iv.interviewer && <div className="text-xs text-gray-500 dark:text-slate-400">Interviewer: {iv.interviewer.name}</div>}
                     </div>
                     <div className="flex gap-1.5 flex-wrap items-start">
@@ -797,11 +882,13 @@ export default function HRCandidateDetail({ candidate: c, agents, me, voicePerms
                   {iv.notes && <div className="text-xs text-gray-600 dark:text-slate-300 mt-2 whitespace-pre-wrap">{iv.notes}</div>}
                   {iv.noShowReason && <div className="text-xs text-red-600 mt-1">No-show: {iv.noShowReason}</div>}
 
-                  {/* Actions */}
+                  {/* Actions — Record Result, Reschedule, Delete */}
                   <div className="flex items-center gap-2 mt-2.5 flex-wrap">
-                    <button type="button" onClick={() => { setResultFor(resultFor===iv.id?null:iv.id); setResReco(iv.recommendation??""); setResResult(iv.result??""); setResNotes(""); }}
-                      className="inline-flex items-center gap-1 text-[11px] px-2.5 py-1 rounded-lg border border-emerald-300 text-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-950/30"><ClipboardCheck size={13} />{iv.recommendation||iv.result?"Update Result":"Record Result"}</button>
-                    <button type="button" disabled={busy} onClick={() => deleteInterview(iv.id)} className="inline-flex items-center gap-1 text-[11px] px-2.5 py-1 rounded-lg border border-red-200 text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30"><Trash2 size={13} />Delete</button>
+                    <button type="button" disabled={busy} onClick={() => { const open=resultFor===iv.id; setResultFor(open?null:iv.id); if(!open){ setRescheduleFor(null); setResReco(iv.recommendation??""); setResResult(iv.result??""); setResNotes(""); } }}
+                      className={`inline-flex items-center gap-1 text-[11px] px-2.5 py-1 rounded-lg border border-emerald-300 text-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 disabled:opacity-50 ${resultFor===iv.id?"bg-emerald-100 dark:bg-emerald-900/30 font-semibold":""}`}><ClipboardCheck size={13} />{iv.recommendation||iv.result?"Update Result":"Record Result"}</button>
+                    <button type="button" disabled={busy} onClick={() => { const open=rescheduleFor===iv.id; setRescheduleFor(open?null:iv.id); if(!open){ setResultFor(null); setRescheduleAt(new Date(iv.scheduledAt).toISOString().slice(0,16)); } }}
+                      className={`inline-flex items-center gap-1 text-[11px] px-2.5 py-1 rounded-lg border border-indigo-300 text-indigo-700 hover:bg-indigo-50 dark:hover:bg-indigo-950/30 disabled:opacity-50 ${rescheduleFor===iv.id?"bg-indigo-100 dark:bg-indigo-900/30 font-semibold":""}`}><RefreshCw size={13} />Reschedule</button>
+                    <button type="button" disabled={busy} onClick={() => deleteInterview(iv.id)} className="inline-flex items-center gap-1 text-[11px] px-2.5 py-1 rounded-lg border border-red-200 text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 disabled:opacity-50"><Trash2 size={13} />Delete</button>
                   </div>
 
                   {/* Inline record-result form */}
@@ -815,14 +902,26 @@ export default function HRCandidateDetail({ candidate: c, agents, me, voicePerms
                         <input className={inp} placeholder="Result (e.g. Strong, 7/10)" value={resResult} onChange={e=>setResResult(e.target.value)} />
                       </div>
                       <textarea className={inp} rows={2} placeholder="Feedback notes…" value={resNotes} onChange={e=>setResNotes(e.target.value)} />
-                      <div className="flex gap-2">
-                        <button type="button" disabled={busy} onClick={()=>recordResult(iv.id)} className="btn text-sm bg-emerald-600 text-white hover:bg-emerald-700">Save Result</button>
-                        <button type="button" onClick={()=>setResultFor(null)} className="text-xs text-gray-500 hover:text-gray-700 underline">Cancel</button>
+                      <div className="flex items-center gap-2">
+                        <button type="button" disabled={busy} onClick={()=>recordResult(iv.id)} className="btn text-sm bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-60 inline-flex items-center gap-1.5">{busy && <RefreshCw size={13} className="animate-spin" />}{busy?"Saving…":"Save Result"}</button>
+                        <button type="button" disabled={busy} onClick={()=>setResultFor(null)} className="text-xs text-gray-500 hover:text-gray-700 underline disabled:opacity-50">Cancel</button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Inline reschedule form */}
+                  {rescheduleFor === iv.id && (
+                    <div className="mt-2.5 p-3 rounded-lg bg-indigo-50/60 dark:bg-indigo-950/20 border border-indigo-200 dark:border-indigo-900 space-y-2">
+                      <div className="text-[11px] font-semibold text-indigo-700 dark:text-indigo-300 inline-flex items-center gap-1"><CalendarClock size={12} />New date &amp; time</div>
+                      <input className={inp} type="datetime-local" value={rescheduleAt} onChange={e=>setRescheduleAt(e.target.value)} />
+                      <div className="flex items-center gap-2">
+                        <button type="button" disabled={busy || !rescheduleAt} onClick={()=>rescheduleInterview(iv.id)} className="btn text-sm bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-60 inline-flex items-center gap-1.5">{busy && <RefreshCw size={13} className="animate-spin" />}{busy?"Saving…":"Save New Time"}</button>
+                        <button type="button" disabled={busy} onClick={()=>setRescheduleFor(null)} className="text-xs text-gray-500 hover:text-gray-700 underline disabled:opacity-50">Cancel</button>
                       </div>
                     </div>
                   )}
                 </div>
-              ))}
+              ); })}
             </div>
           )}
 
@@ -837,7 +936,7 @@ export default function HRCandidateDetail({ candidate: c, agents, me, voicePerms
                       <div className={`text-[11px] mt-0.5 inline-flex items-center gap-0.5 ${fu.completedAt?"text-green-600":overdue?"text-red-600 font-semibold":"text-amber-700 dark:text-amber-300"}`}>{fu.completedAt ? <><Check size={11} />Done {new Date(fu.completedAt).toLocaleDateString("en-IN",{day:"numeric",month:"short",timeZone:"Asia/Kolkata"})}</> : <>{overdue&&<AlertTriangle size={11} />}{overdue?"Overdue — ":""}{fmtDayTime(fu.dueAt)}</>}</div>
                       {fu.notes && <div className="text-[11px] text-gray-500 dark:text-slate-400 mt-0.5">{fu.notes}</div>}
                     </div>
-                    {!fu.completedAt && <button type="button" disabled={busy} onClick={() => completeFollowUp(fu.id)} className="inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded border border-green-300 bg-white dark:bg-slate-800 text-green-700 dark:text-green-300 hover:bg-green-50 shrink-0"><Check size={12} />Mark Done</button>}
+                    {!fu.completedAt && <button type="button" disabled={busy} onClick={() => completeFollowUp(fu.id)} className="inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded border border-green-300 bg-white dark:bg-slate-800 text-green-700 dark:text-green-300 hover:bg-green-50 shrink-0 disabled:opacity-60">{completingFu===fu.id ? <><RefreshCw size={12} className="animate-spin" />Saving…</> : <><Check size={12} />Mark Done</>}</button>}
                   </div>
                 </div>
               ); })}
@@ -864,7 +963,11 @@ export default function HRCandidateDetail({ candidate: c, agents, me, voicePerms
           )}
           {tab === "resumes" && (
             <div className="space-y-4">
-              <div className="card p-4"><div className="text-xs font-semibold text-gray-700 dark:text-slate-200 mb-3 inline-flex items-center gap-1.5"><Paperclip size={13} />Upload Resume — PDF, DOC, image, or phone photo</div><HRResumeUploadWidget candidates={[]} preselectedCandidateId={c.id} /></div>
+              <div className="card p-4">
+                <div className="text-xs font-semibold text-gray-700 dark:text-slate-200 mb-1 inline-flex items-center gap-1.5"><Paperclip size={13} />Add a Resume Version — PDF, DOC, image, or phone photo</div>
+                <div className="text-[11px] text-gray-400 dark:text-slate-500 mb-3">Uploading adds a new version and marks it active. Earlier resumes are kept below, not replaced.</div>
+                <HRResumeUploadWidget candidates={[]} preselectedCandidateId={c.id} />
+              </div>
               {c.resumes.length === 0 ? <div className="text-sm text-gray-400 text-center py-6">No resumes uploaded yet.</div> : (
                 <div className="space-y-2">{c.resumes.map(r => (
                   <div key={r.id} className="card p-3 flex items-center gap-3">
@@ -931,7 +1034,10 @@ export default function HRCandidateDetail({ candidate: c, agents, me, voicePerms
                 <button type="button" onClick={()=>setTab("resumes")} className="text-xs px-2.5 py-1 rounded-lg border border-gray-300 dark:border-slate-600 text-gray-600 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-800">Replace</button>
               </div>
             ) : (
-              <button type="button" onClick={()=>setTab("resumes")} className="text-xs px-2.5 py-1 rounded-lg border border-gray-300 dark:border-slate-600 text-gray-600 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-800">Upload Resume</button>
+              <div className="flex items-center gap-2">
+                <button type="button" onClick={()=>setTab("resumes")} className="inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg border border-blue-300 text-blue-700 bg-white dark:bg-slate-800 hover:bg-blue-50"><Paperclip size={12} />Add a Resume</button>
+                <span className="text-[10px] text-gray-400 dark:text-slate-500">No resume yet</span>
+              </div>
             )}
           </Card>
 

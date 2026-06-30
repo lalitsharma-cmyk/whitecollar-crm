@@ -26,6 +26,27 @@ export default async function CandidatesPage({ searchParams }: { searchParams: P
     where.status = { notIn: showClosed ? [] : CLOSED_STATUS_KEYS };
   }
 
+  // SERVER-SIDE SEARCH (spans ALL pages). A non-empty ?q= is applied as an OR over
+  // the headline candidate fields, combined with the existing scope + status/batch
+  // filters via AND — so it filters the whole result set BEFORE pagination, not
+  // just the 50 rows the client already received. We use `where.AND` (rather than a
+  // top-level `where.OR`) so this NEVER clobbers the scope's own OR clause — the
+  // JUNIOR_HR scope is `{ OR: [primaryOwnerId, secondaryOwnerId] }`, and overwriting
+  // that would leak candidates outside the user's scope.
+  const q = (sp.q ?? "").trim();
+  if (q) {
+    const contains = { contains: q, mode: "insensitive" as const };
+    where.AND = [{
+      OR: [
+        { name: contains },
+        { phone: contains },
+        { email: contains },
+        { positionApplied: contains },
+        { currentCompany: contains },
+      ],
+    }];
+  }
+
   // Server pagination — 50 rows/page, navigated via ?page= (1-based). This caps
   // the per-row include fan-out (follow-ups / interviews / activities / resume
   // count) to a single page instead of the old fixed 300-row load.
@@ -96,14 +117,15 @@ export default async function CandidatesPage({ searchParams }: { searchParams: P
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const fromRow = total === 0 ? 0 : skip + 1;
   const toRow = Math.min(skip + PAGE_SIZE, total);
-  // Preserve the current query string (closed / status / batch) across page links.
+  // Preserve the current query string (closed / status / batch / q) across page links.
   const pageHref = (p: number) => {
-    const q = new URLSearchParams();
-    if (sp.closed) q.set("closed", sp.closed);
-    if (sp.status) q.set("status", sp.status);
-    if (sp.batch) q.set("batch", sp.batch);
-    q.set("page", String(p));
-    return `/hr/candidates?${q.toString()}`;
+    const params = new URLSearchParams();
+    if (sp.closed) params.set("closed", sp.closed);
+    if (sp.status) params.set("status", sp.status);
+    if (sp.batch) params.set("batch", sp.batch);
+    if (q) params.set("q", q);
+    params.set("page", String(p));
+    return `/hr/candidates?${params.toString()}`;
   };
 
   return (
@@ -128,6 +150,7 @@ export default async function CandidatesPage({ searchParams }: { searchParams: P
         candidates={rows as never}
         agents={agents}
         countMap={countMap}
+        serverSearch={q}
         meId={me.id}
         meRole={me.role}
         perms={{

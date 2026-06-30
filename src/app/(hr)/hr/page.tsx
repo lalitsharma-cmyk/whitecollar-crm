@@ -4,6 +4,7 @@ import { CLOSED_STATUS_KEYS } from "@/lib/hrStatus";
 import { getHrUsers } from "@/lib/hrUsers";
 import { greetingFor, tzForTeam, istDayRange } from "@/lib/datetime";
 import type { HRActivityType } from "@prisma/client";
+import { AlertTriangle, X } from "lucide-react";
 
 import HRRemindersCard, { type HRReminderEvent, type HREventType } from "@/components/HRRemindersCard";
 
@@ -85,8 +86,32 @@ function relativeFuture(target: Date, now: Date): string {
   return `in ${days} ${days === 1 ? "day" : "days"}`;
 }
 
-export default async function HRDashboard() {
+// Friendly names for the perms the auth engine bounces Junior HR away from
+// (requireHrPagePermission redirects e.g. /hr?denied=reports). Anything not
+// listed falls back to a generic "that page" message so the banner never
+// shows a raw permission key.
+const DENIED_LABELS: Record<string, string> = {
+  reports: "Reports",
+  importData: "Import",
+  settings: "Settings",
+  exportData: "Export",
+  manageUsers: "User Management",
+  systemSettings: "Settings",
+};
+
+export default async function HRDashboard({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string>>;
+}) {
   const { me, perms } = await requireHrPage();
+  const sp = await searchParams;
+
+  // Permission-denied banner: the auth engine redirects a Junior HR who hits a
+  // forbidden page back here as /hr?denied=<perm>. Surface a friendly, dismissible
+  // amber notice instead of a silent bounce.
+  const deniedPerm = sp.denied;
+  const deniedLabel = deniedPerm ? DENIED_LABELS[deniedPerm] ?? null : null;
 
   const now = new Date();
   const { start: todayStart, end: todayEnd } = istDayRange(); // today (IST) [start, end)
@@ -543,22 +568,53 @@ export default async function HRDashboard() {
   // ── LEFT column (action content) ──
   const left = (
     <>
+      {deniedPerm && (
+        // Dismissible (CSS-only) amber permission-denied banner. The peer checkbox
+        // toggles the wrapper's visibility so it works in this SERVER component
+        // without any client JS — closing it needs no re-render.
+        <div className="has-[:checked]:hidden">
+          <div
+            role="alert"
+            className="flex items-start gap-3 rounded-xl border-l-4 border-amber-400 bg-amber-50 dark:bg-amber-900/20 dark:border-amber-500/60 px-4 py-3 text-amber-800 dark:text-amber-200"
+          >
+            <AlertTriangle className="w-5 h-5 shrink-0 mt-0.5 text-amber-600 dark:text-amber-300" />
+            <p className="text-sm font-medium leading-snug flex-1 min-w-0">
+              {deniedLabel
+                ? `You don't have access to ${deniedLabel}.`
+                : "You don't have access to that page."}
+            </p>
+            <label
+              className="shrink-0 cursor-pointer rounded-md p-1 -m-1 text-amber-600 hover:bg-amber-100 dark:text-amber-300 dark:hover:bg-amber-900/40 transition"
+              aria-label="Dismiss"
+              title="Dismiss"
+            >
+              <input type="checkbox" className="sr-only" />
+              <X className="w-4 h-4" />
+            </label>
+          </div>
+        </div>
+      )}
       <ActionCenterKpis tiles={kpiTiles} />
       <AiSuggestions suggestions={suggestions} />
-      <div id="call-now">
+      <div id="call-now" className="scroll-mt-20">
         <CallNowQueue items={callNowItems} showOwner={showOwner} />
       </div>
-      <div id="no-next-action">
+      <div id="no-next-action" className="scroll-mt-20">
         <NoNextActionQueue items={noNextItems} totalCount={noNextActionCount} showOwner={showOwner} />
       </div>
-      <TodaysInterviews items={todaysInterviewItems} />
-      <div id="pending-confirmations">
+      {/* TodaysInterviews owns <section id="interviews-today">; push its scroll
+          offset down so the #interviews-today KPI anchor clears the header on
+          mobile single-column without editing that component. */}
+      <div className="[&_#interviews-today]:scroll-mt-20">
+        <TodaysInterviews items={todaysInterviewItems} />
+      </div>
+      <div id="pending-confirmations" className="scroll-mt-20">
         <PendingConfirmations items={pendingConfirmItems} />
       </div>
-      <div id="no-show-recovery">
+      <div id="no-show-recovery" className="scroll-mt-20">
         <NoShowRecovery items={noShowItems} />
       </div>
-      <div id="expected-joinings">
+      <div id="expected-joinings" className="scroll-mt-20">
         <ExpectedJoinings items={expectedItems} showOwner={showOwner} />
       </div>
       <RecruitmentFunnel stages={funnelStages} total={funnelTotal} />

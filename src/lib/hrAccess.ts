@@ -87,7 +87,9 @@ export async function requireHrPage(): Promise<{ me: Me; role: HrRole; perms: Hr
 /** Require a specific permission for a server page; redirect to /hr if lacking. */
 export async function requireHrPagePermission(perm: keyof HrPermissions): Promise<{ me: Me; role: HrRole; perms: HrPermissions }> {
   const ctx = await requireHrPage();
-  if (!ctx.perms[perm]) redirect("/hr");
+  // Carry the denied permission so the dashboard can explain why (instead of a
+  // silent bounce). e.g. /hr?denied=reports.
+  if (!ctx.perms[perm]) redirect(`/hr?denied=${perm}`);
   return ctx;
 }
 

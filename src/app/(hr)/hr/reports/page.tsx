@@ -170,7 +170,11 @@ export default async function HRReportsPage({ searchParams }: { searchParams: Pr
   // ── Time-to-hire (PERIOD-SCOPED): avg days from candidate.createdAt → join activity, for in-window joins ──
   const tth = timeToHireRaw?.[0];
   const tthCount = tth?.n != null ? Number(tth.n) : 0;
-  const fmt1 = (v: number | null | undefined) => v == null ? null : Math.round(v * 10) / 10;
+  // Round to 1dp; guard against negative/zero diffs (e.g. a join activity backdated
+  // before the candidate's createdAt) — these are meaningless as a "time to hire",
+  // so collapse anything ≤ 0 (or non-finite) to null → renders "—", never a negative.
+  const fmt1 = (v: number | null | undefined) =>
+    v == null || !Number.isFinite(v) || v <= 0 ? null : Math.round(v * 10) / 10;
   const tthAvg = tthCount > 0 ? fmt1(tth?.avg_days) : null;
   const tthMin = tthCount > 0 ? fmt1(tth?.min_days) : null;
   const tthMax = tthCount > 0 ? fmt1(tth?.max_days) : null;
@@ -246,6 +250,10 @@ export default async function HRReportsPage({ searchParams }: { searchParams: Pr
             <div className="text-[11px] text-gray-500 dark:text-slate-400 mt-0.5">Slowest</div>
           </div>
         </div>
+        {/* One-line caption — explains exactly what "time to hire" measures. */}
+        <p className="text-[11px] text-gray-400 dark:text-slate-500 mt-3">
+          Calendar days from when a candidate was added (created) to their join activity, for candidates joined in {periodLabel.toLowerCase()}.
+        </p>
       </div>
 
       {/* Offers / Joining summary + new this period */}
@@ -289,7 +297,9 @@ export default async function HRReportsPage({ searchParams }: { searchParams: Pr
         <div className="px-4 py-2.5 border-b border-gray-100 dark:border-slate-800 flex items-center justify-between gap-2">
           <div className="text-sm font-semibold text-gray-700 dark:text-slate-200">
             Recruiter Performance
-            <span className="text-[11px] font-normal text-gray-400 ml-2 hidden sm:inline">all columns are {periodLabel.toLowerCase()} activity (distinct candidates per stage)</span>
+            {/* Period-vs-snapshot hint — visible on mobile too (was hidden sm:inline).
+                On phones it wraps onto its own line; on ≥sm it sits inline after the title. */}
+            <span className="text-[11px] font-normal text-gray-400 sm:ml-2 block sm:inline mt-0.5 sm:mt-0">all columns are {periodLabel.toLowerCase()} activity (distinct candidates per stage)</span>
           </div>
           <HRRecruiterCsvButton rows={csvRows} period={period} />
         </div>

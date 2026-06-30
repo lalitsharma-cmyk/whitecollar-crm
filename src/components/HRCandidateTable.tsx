@@ -1,8 +1,8 @@
 "use client";
 import { useState, useMemo, useEffect, useCallback, useRef } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { Phone, MessageCircle, Target, Bookmark, BookmarkPlus, Trash2, Columns3, X, Mic, AlertTriangle, Mail, StickyNote, ExternalLink, Sparkles } from "lucide-react";
+import { Phone, MessageCircle, Target, Bookmark, BookmarkPlus, Trash2, Columns3, X, Mic, AlertTriangle, Mail, StickyNote, ExternalLink, Sparkles, Search, CheckCircle2 } from "lucide-react";
 import { ACTIVE_STATUS_DEFS, CLOSED_STATUS_DEFS, CLOSED_STATUS_KEYS, statusColor, displayStatus } from "@/lib/hrStatus";
 import ColumnHeaderFilter, { type ColKind, type ColFilterState, type ColSortDir, isColFilterActive } from "@/components/ColumnHeaderFilter";
 import HRCandidateRowPreview, { type PreviewData } from "@/components/HRCandidateRowPreview";
@@ -14,7 +14,7 @@ const CONFIRM = ["PENDING", "CONFIRMED", "NOT_CONFIRMED", "NOT_REACHABLE", "RESC
 const CLOSED_SET = new Set<string>(CLOSED_STATUS_KEYS);
 
 const CHIPS: [string, string][] = [
-  ["all", "All"], ["today", "Today"], ["overdue", "Overdue"], ["not-called", "Not Called"],
+  ["all", "All"], ["today", "Today's Actions"], ["overdue", "Overdue"], ["not-called", "Not Called"],
   ["pipeline", "Pipeline"], ["interview-today", "Interview Today"], ["f2f", "F2F Scheduled"],
   ["pending-confirm", "Pending Confirmation"], ["no-show", "No Show"], ["shortlisted", "Shortlisted"],
   ["offer", "Offer Released"], ["joined", "Joined"], ["closed", "Closed"],
@@ -95,6 +95,10 @@ interface Props {
   candidates: Candidate[];
   agents: { id: string; name: string }[];
   countMap: Record<string, number>;
+  // Current server-side ?q= value. The server search box is seeded with this and
+  // submits a fresh ?q= (resetting to page 1) so search spans ALL pages, not just
+  // the loaded one. Empty string = no active server search.
+  serverSearch?: string;
   meId: string; meRole: string;
   perms?: TablePerms;
 }
@@ -180,7 +184,7 @@ const PRESETS: { name: string; build: () => Record<string, unknown> }[] = [
   { name: "Dubai Candidates", build: () => ({ fLocation: "Dubai" }) },
 ];
 
-export default function HRCandidateTable({ candidates, agents, countMap = {}, perms = NO_PERMS }: Props) {
+export default function HRCandidateTable({ candidates, agents, countMap = {}, serverSearch = "", perms = NO_PERMS }: Props) {
   const now = new Date();
   // UI gating is driven by the permission matrix (server re-enforces every action).
   const canExport = perms.exportData;
@@ -188,12 +192,20 @@ export default function HRCandidateTable({ candidates, agents, countMap = {}, pe
   // (no point letting Junior HR select rows that lead to an empty/absent toolbar).
   const canBulk = perms.bulkActions;
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [bulkError, setBulkError] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkStatus, setBulkStatus] = useState("");
   const [bulkOwner, setBulkOwner] = useState("");
   const [bulkFollowUp, setBulkFollowUp] = useState("");
   const [bulkBusy, setBulkBusy] = useState(false);
+  // Brief confirmation shown after a successful bulk Apply (e.g. "✓ 3 updated").
+  // Auto-clears after a few seconds; cleared eagerly on the next bulk action.
+  const [bulkSuccess, setBulkSuccess] = useState<string | null>(null);
+  // Server-side search box value (submits ?q= to the page, spanning ALL pages).
+  // Seeded from the current server param so it survives navigation/refresh.
+  const [serverQ, setServerQ] = useState(serverSearch);
+  useEffect(() => { setServerQ(serverSearch); }, [serverSearch]);
   const [search, setSearch] = useState("");
   const [chip, setChip] = useState("all");
   const [view, setView] = useState<"table" | "cards">("table");
@@ -310,6 +322,28 @@ export default function HRCandidateTable({ candidates, agents, countMap = {}, pe
     if (!confirm(`Delete saved view "${v.name}"?`)) return;
     const r = await fetch(`/api/hr/saved-filters?id=${encodeURIComponent(v.id)}`, { method: "DELETE" });
     if (r.ok) await loadViews();
+  }
+
+  // Submit the server-side search: navigate to the page with a fresh ?q= and
+  // page reset to 1, preserving the existing closed/status/batch params. This
+  // makes search span ALL pages (server filters before pagination) rather than
+  // only the 50 rows already loaded.
+  function submitServerSearch(e?: React.FormEvent) {
+    e?.preventDefault();
+    const params = new URLSearchParams(searchParams?.toString() ?? "");
+    const v = serverQ.trim();
+    if (v) params.set("q", v); else params.delete("q");
+    params.delete("page"); // back to page 1 on any new search
+    const qs = params.toString();
+    router.push(qs ? `/hr/candidates?${qs}` : "/hr/candidates");
+  }
+  function clearServerSearch() {
+    setServerQ("");
+    const params = new URLSearchParams(searchParams?.toString() ?? "");
+    params.delete("q");
+    params.delete("page");
+    const qs = params.toString();
+    router.push(qs ? `/hr/candidates?${qs}` : "/hr/candidates");
   }
 
   function chipMatch(c: Candidate, s: ReturnType<typeof signals>): boolean {
@@ -441,7 +475,7 @@ export default function HRCandidateTable({ candidates, agents, countMap = {}, pe
   function toggleAll() { setSelected(s => s.size === filtered.length ? new Set() : new Set(filtered.map(c => c.id))); }
   async function applyBulk() {
     if (selected.size === 0 || (!bulkStatus && !bulkOwner && !bulkFollowUp)) return;
-    setBulkBusy(true); setBulkError(null);
+    setBulkBusy(true); setBulkError(null); setBulkSuccess(null);
     try {
       const res = await fetch("/api/hr/candidates/bulk", {
         method: "POST", headers: { "Content-Type": "application/json" },
@@ -458,6 +492,10 @@ export default function HRCandidateTable({ candidates, agents, countMap = {}, pe
         setBulkError("No candidates were updated.");
         return;
       }
+      // Show a brief success confirmation with the actual count the server reported
+      // (falls back to the selected count) before clearing the selection.
+      const n = typeof j?.updated === "number" ? j.updated : selected.size;
+      setBulkSuccess(`✓ ${n} updated`);
       setSelected(new Set()); setBulkStatus(""); setBulkOwner(""); setBulkFollowUp(""); router.refresh();
     } catch {
       setBulkError("Network error — bulk update did not complete.");
@@ -587,6 +625,13 @@ export default function HRCandidateTable({ candidates, agents, countMap = {}, pe
   }
   useEffect(() => () => { if (hoverTimer.current) clearTimeout(hoverTimer.current); }, []);
 
+  // Auto-dismiss the bulk-success confirmation after a few seconds.
+  useEffect(() => {
+    if (!bulkSuccess) return;
+    const t = setTimeout(() => setBulkSuccess(null), 4000);
+    return () => clearTimeout(t);
+  }, [bulkSuccess]);
+
   // Sticky-column offsets (selection 32px → Created Date → Candidate → Phone).
   // These let the first three business columns stay pinned on horizontal scroll.
   const STICKY = {
@@ -634,10 +679,36 @@ export default function HRCandidateTable({ candidates, agents, countMap = {}, pe
 
   return (
     <div className="space-y-3">
+      {/* Server-side search — spans ALL pages (filters before pagination), unlike the
+          client search below which only refines the rows already loaded on this page. */}
+      <form onSubmit={submitServerSearch} className="flex gap-2 items-center">
+        <div className="relative flex-1 min-w-[220px]">
+          <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+          <input value={serverQ} onChange={e => setServerQ(e.target.value)}
+            placeholder="Search all candidates — name, phone, email, position, company…"
+            className="w-full border border-gray-200 rounded-xl pl-9 pr-9 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1a2e4a]/20 dark:bg-slate-800 dark:border-slate-600" />
+          {serverQ && (
+            <button type="button" onClick={clearServerSearch} title="Clear search"
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-700 dark:hover:text-slate-200">
+              <X className="w-4 h-4" />
+            </button>
+          )}
+        </div>
+        <button type="submit"
+          className="px-4 py-2 rounded-xl text-sm font-semibold bg-[#1a2e4a] text-white hover:bg-[#243d60] transition whitespace-nowrap inline-flex items-center gap-1.5">
+          <Search className="w-4 h-4" /> Search
+        </button>
+      </form>
+      {serverSearch && (
+        <div className="text-xs text-gray-500 dark:text-slate-400 -mt-1">
+          Showing all-pages results for <span className="font-semibold text-gray-700 dark:text-slate-200">“{serverSearch}”</span>.
+          <button type="button" onClick={clearServerSearch} className="ml-1 text-[#1a2e4a] dark:text-blue-400 underline hover:no-underline">Clear</button>
+        </div>
+      )}
       {/* Search + view toggle */}
       <div className="flex gap-2 flex-wrap items-center">
         <input value={search} onChange={e => setSearch(e.target.value)}
-          placeholder="🔍  Search name, phone, email, company, profile…"
+          placeholder="🔍  Refine this page — name, phone, email, company, profile…"
           className="flex-1 min-w-[220px] border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1a2e4a]/20 dark:bg-slate-800 dark:border-slate-600" />
         <button type="button" onClick={() => setShowAdv(s => !s)}
           className={`px-3 py-2 rounded-xl text-sm border ${showAdv || anyAdv ? "bg-[#1a2e4a] text-white border-[#1a2e4a]" : "border-gray-300 dark:border-slate-700 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-slate-800"}`}>
@@ -783,6 +854,13 @@ export default function HRCandidateTable({ candidates, agents, countMap = {}, pe
             <button type="button" onClick={() => setSelected(new Set())} className="text-xs text-white/70 hover:text-white">Clear</button>
           </div>
           {bulkError && <div className="text-xs font-medium text-red-200 bg-red-900/40 rounded px-2 py-1">{bulkError}</div>}
+        </div>
+      )}
+      {/* Bulk success confirmation — rendered OUTSIDE the toolbar (which unmounts once
+          the selection clears) so the user sees the result of their Apply. */}
+      {bulkSuccess && (
+        <div className="flex items-center gap-1.5 text-sm font-semibold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-900/30 border border-emerald-200 dark:border-emerald-800 rounded-xl px-3 py-2">
+          <CheckCircle2 className="w-4 h-4" /> {bulkSuccess}
         </div>
       )}
       <div className="text-xs text-gray-500">
