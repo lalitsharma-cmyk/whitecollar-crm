@@ -213,6 +213,7 @@ export default async function HRDashboard({
     expectedRows,
     noNextRows,
     noNextActionCount,
+    expectedFullCount,
     noShowFullCount,
     callsToday,
     recentRows,
@@ -238,6 +239,11 @@ export default async function HRDashboard({
     prisma.hRCandidate.count({
       where: { AND: [scope, { nextActionDate: null, status: { notIn: CLOSED_STATUS_KEYS } }] },
     }).catch((e) => { onErr("noNextActionCount")(e); return 0; }),
+    // FULL Expected-Joinings count (scoped) — drives the KPI tile so it is NOT capped
+    // at the 20-row list rendered in the widget. Mirrors loadExpected()'s WHERE exactly.
+    prisma.hRCandidate.count({
+      where: { AND: [scope, { OR: [{ status: "EXPECTED_JOINING" }, { joiningDate: { not: null } }] }] },
+    }).catch((e) => { onErr("expectedFullCount")(e); return 0; }),
     // FULL distinct No-Show count (scoped, recent window) — drives the KPI tile so it
     // is NOT capped at the 10-row recovery list below. One candidate counts once even
     // with multiple no-show interviews (groupBy candidateId → number of groups).
@@ -291,6 +297,11 @@ export default async function HRDashboard({
     const d = new Date(f.dueAt);
     return d >= todayStart && d < todayEnd;
   });
+  // DISTINCT-candidate counts for the Calls-Due / Overdue KPIs. The Call-Now queue
+  // dedupes one row per candidate, so the KPI tiles must count distinct candidates
+  // (not raw follow-up rows) to reconcile 1:1 with that "who to call" queue.
+  const overdueCandidateCount = new Set(overdueFU.map((f) => f.candidateId)).size;
+  const todayCandidateCount = new Set(todayFU.map((f) => f.candidateId)).size;
 
   // Call-Now queue — one row per candidate (overdue + due-today, soonest first).
   const callNowSeen = new Set<string>();
@@ -486,12 +497,12 @@ export default async function HRDashboard({
   // ── 8 deduped KPI tiles (Action Center) ──
   const kpiTiles: HrKpiTile[] = [
     { kind: "new", label: "New Candidates", count: newCount, href: "/hr/candidates?status=NEW" },
-    { kind: "callsDue", label: "Calls Due Today", count: todayFU.length, href: "#call-now" },
-    { kind: "overdue", label: "Overdue Follow-Ups", count: overdueFU.length, href: "#call-now" },
+    { kind: "callsDue", label: "Calls Due Today", count: todayCandidateCount, href: "#call-now" },
+    { kind: "overdue", label: "Overdue Follow-Ups", count: overdueCandidateCount, href: "#call-now" },
     { kind: "interviewsToday", label: "Interviews Today", count: ivToday.length, href: "#interviews-today" },
     { kind: "pendingConfirm", label: "Pending Confirmations", count: confirmPending.length, href: "#pending-confirmations" },
     { kind: "noShow", label: "No-Shows", count: noShowFullCount, href: "#no-show-recovery" },
-    { kind: "expectedJoin", label: "Expected Joinings", count: expectedItems.length, href: "#expected-joinings" },
+    { kind: "expectedJoin", label: "Expected Joinings", count: expectedFullCount, href: "#expected-joinings" },
     { kind: "noNextAction", label: "No Next Action", count: noNextActionCount, href: "#no-next-action" },
   ];
 
@@ -613,6 +624,13 @@ export default async function HRDashboard({
       </div>
       <div id="no-show-recovery" className="scroll-mt-20">
         <NoShowRecovery items={noShowItems} />
+        {/* The recovery list shows the most recent 10 no-shows; the KPI tile counts
+            ALL distinct no-show candidates. Footnote reconciles the two when capped. */}
+        {noShowFullCount > noShowItems.length && (
+          <p className="mt-1 px-1 text-[11px] text-gray-400 dark:text-slate-500">
+            Showing {noShowItems.length} of {noShowFullCount} no-show candidates.
+          </p>
+        )}
       </div>
       <div id="expected-joinings" className="scroll-mt-20">
         <ExpectedJoinings items={expectedItems} showOwner={showOwner} />

@@ -21,7 +21,9 @@ export default async function CandidatePage({ params }: { params: Promise<{ id: 
         activities:     { orderBy: { createdAt: "desc" }, take: 60, include: { user: { select: { name: true } } } },
         interviews:     { orderBy: { scheduledAt: "asc" }, include: { interviewer: { select: { name: true } } } },
         followUps:      { orderBy: { dueAt: "asc" }, include: { user: { select: { name: true } } } },
-        resumes:        { orderBy: { createdAt: "desc" }, take: 5 },
+        // Resume History: keep ALL versions (never lose previous), active first
+        // then newest. uploadedBy name powers the "uploaded by" line in the tab.
+        resumes:        { orderBy: [{ isActive: "desc" }, { createdAt: "desc" }], include: { uploadedBy: { select: { name: true } } } },
         applications:   { orderBy: { submittedAt: "desc" } },  // website/form application history
         // Voice + escalations feed the unified conversation timeline. Audio bytes
         // (audioData) are NEVER selected here — they stream from the play endpoint.

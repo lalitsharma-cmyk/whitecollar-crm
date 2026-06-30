@@ -41,6 +41,14 @@ export async function POST(req: NextRequest) {
   if (body.action === "delete") {
     if (!hrCan(me, "deleteCandidate")) return NextResponse.json({ error: "You don't have permission to delete candidates." }, { status: 403 });
     const del = await prisma.hRCandidate.updateMany({ where: { id: { in: ids } }, data: { deletedAt: new Date() } });
+    // Log one activity per candidate so the deletion shows in the timeline
+    // (matches the bulk status/owner/follow-up paths below).
+    await prisma.hRActivity.createMany({
+      data: ids.map(id => ({
+        candidateId: id, userId: me.id,
+        type: "NOTE_ADDED" as const, notes: "Candidate moved to recycle bin",
+      })),
+    });
     return NextResponse.json({ ok: true, deleted: del.count });
   }
 

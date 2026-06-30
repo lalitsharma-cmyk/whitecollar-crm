@@ -3,11 +3,13 @@ import { prisma } from "@/lib/prisma";
 import { getHrUsers } from "@/lib/hrUsers";
 import { notFound } from "next/navigation";
 import { statusLabel, displayStatus } from "@/lib/hrStatus";
+import { waHref } from "@/lib/waOpen";
 import Link from "next/link";
 import {
   Phone, PhoneOff, PhoneMissed, PhoneCall, MessageSquare, Mail, PhoneForwarded, Ban, Clock,
   Target, CheckCircle2, AlertTriangle, RefreshCw, FileSignature, XCircle, PartyPopper,
   CalendarPlus, CalendarCheck, RotateCcw, StickyNote, Mic, Activity as ActivityIcon,
+  FileText, Pencil, MessageCircleReply,
 } from "lucide-react";
 
 export const dynamic = "force-dynamic";
@@ -34,6 +36,11 @@ const ACT_META: Record<string, { label: string; icon: IconCmp; tint: string }> =
   FOLLOWUP_COMPLETED: { label: "Follow-up Done",        icon: CalendarCheck, tint: "text-green-600 bg-green-50 dark:bg-green-900/30" },
   STATUS_CHANGED:     { label: "Status Changed",        icon: RotateCcw,     tint: "text-slate-600 bg-slate-100 dark:bg-slate-800" },
   NOTE_ADDED:         { label: "Note / Remark",         icon: StickyNote,    tint: "text-amber-600 bg-amber-50 dark:bg-amber-900/30" },
+  RESUME_UPLOADED:    { label: "Resume Uploaded",       icon: FileText,      tint: "text-red-600 bg-red-50 dark:bg-red-900/30" },
+  FIELD_UPDATED:      { label: "Field Updated",         icon: Pencil,        tint: "text-slate-600 bg-slate-100 dark:bg-slate-800" },
+  ESCALATION_RAISED:  { label: "Escalation Raised",     icon: AlertTriangle, tint: "text-red-600 bg-red-50 dark:bg-red-900/30" },
+  ESCALATION_REPLIED: { label: "Escalation Reply",      icon: MessageCircleReply, tint: "text-amber-600 bg-amber-50 dark:bg-amber-900/30" },
+  ESCALATION_RESOLVED:{ label: "Escalation Resolved",   icon: CheckCircle2,  tint: "text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30" },
 };
 function fmt(s: string) { return s.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase()); }
 function actMeta(t: string) { return ACT_META[t] ?? { label: fmt(t), icon: ActivityIcon, tint: "text-slate-600 bg-slate-100 dark:bg-slate-800" }; }
@@ -123,7 +130,7 @@ export default async function CandidateTimelinePage({ params }: { params: Promis
         {candidate.phone && (
           <div className="flex gap-2 shrink-0">
             <a href={`tel:${candidate.phone}`} className="inline-flex items-center gap-1 text-sm px-3 py-1.5 rounded-lg border border-blue-300 text-blue-700 hover:bg-blue-50"><Phone size={14} />Call</a>
-            <a href={`https://wa.me/${candidate.phone.replace(/\D/g, "")}`} target="_blank" rel="noopener noreferrer"
+            <a href={waHref(candidate.phone)} target="_blank" rel="noopener noreferrer"
               className="inline-flex items-center gap-1 text-sm px-3 py-1.5 rounded-lg border border-green-300 text-green-700 hover:bg-green-50"><MessageSquare size={14} />WA</a>
           </div>
         )}

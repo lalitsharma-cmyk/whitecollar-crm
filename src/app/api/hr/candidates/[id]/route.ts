@@ -32,7 +32,22 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   const { me } = access;
   const body = await req.json();
 
-  const existing = await prisma.hRCandidate.findUnique({ where: { id }, select: { status: true } });
+  // Fetch the full editable surface so we can DIFF old vs new and log an
+  // HRActivity per meaningful field change (timeline + Recent Activity must be
+  // complete — previously only a status change was recorded).
+  const existing = await prisma.hRCandidate.findUnique({
+    where: { id },
+    select: {
+      status: true, name: true, phone: true, altPhone: true, whatsappPhone: true,
+      email: true, location: true, city: true, currentCompany: true, currentProfile: true,
+      positionApplied: true, experience: true, realEstateExperience: true,
+      currentSalary: true, expectedSalary: true, noticePeriod: true, source: true,
+      remarks: true, tags: true, nextAction: true, nextActionDate: true, joiningDate: true,
+      primaryOwnerId: true, secondaryOwnerId: true,
+      fitExperience: true, fitCommunication: true, fitStability: true, fitSalary: true,
+      fitNotice: true, interviewFeedback: true, joiningProbability: true,
+    },
+  });
   if (!existing) return hrNotFound();
 
   // Ownership reassignment is gated on the `assign` permission — a Junior HR
@@ -82,7 +97,8 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 
   const updated = await prisma.hRCandidate.update({ where: { id }, data });
 
-  // Log status change
+  // Log status change (kept as a distinct STATUS_CHANGED activity with the
+  // old/new badge, exactly as before).
   if (body.status && body.status !== existing.status) {
     await prisma.hRActivity.create({
       data: {
@@ -92,6 +108,72 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
         oldStatus: existing.status as HRCandidateStatus,
         newStatus: body.status as HRCandidateStatus,
       },
+    });
+  }
+
+  // DIFF every other editable field that actually changed and write one
+  // NOTE_ADDED activity per change so the timeline + Recent Activity are
+  // complete (owner/salary/fit/feedback/joiningDate/remarks/nextAction/… were
+  // previously silent). Status is excluded — handled above.
+  const fmtMoney = (v: number | null | undefined) =>
+    v == null ? "—" : `${(v / 100000).toLocaleString("en-IN", { maximumFractionDigits: 2 })}L`;
+  const fmtDate = (v: Date | null | undefined) =>
+    v == null ? "—" : new Date(v).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric", timeZone: "Asia/Kolkata" });
+  const fmtText = (v: unknown) => (v == null || v === "" ? "—" : String(v));
+  const sameDate = (a: Date | null | undefined, b: unknown) =>
+    (a == null && b == null) || (a != null && b instanceof Date && new Date(a).getTime() === b.getTime());
+
+  // Resolve owner names once (only if an owner field is in the changeset).
+  const ownerName = async (uid: unknown): Promise<string> => {
+    if (!uid || typeof uid !== "string") return "—";
+    const u = await prisma.user.findUnique({ where: { id: uid }, select: { name: true } });
+    return u?.name || "Unknown";
+  };
+
+  // [field key, human label, kind]
+  const fieldDefs: Array<[string, string, "text" | "money" | "date" | "owner"]> = [
+    ["name", "Name", "text"], ["phone", "Phone", "text"], ["altPhone", "Alt Phone", "text"],
+    ["whatsappPhone", "WhatsApp", "text"], ["email", "Email", "text"], ["location", "Location", "text"],
+    ["city", "City", "text"], ["currentCompany", "Current Company", "text"],
+    ["currentProfile", "Current Profile", "text"], ["positionApplied", "Position Applied", "text"],
+    ["experience", "Experience", "text"], ["realEstateExperience", "Real Estate Experience", "text"],
+    ["currentSalary", "Current Salary", "money"], ["expectedSalary", "Expected Salary", "money"],
+    ["noticePeriod", "Notice Period", "text"], ["source", "Source", "text"],
+    ["remarks", "Remarks", "text"], ["tags", "Tags", "text"], ["nextAction", "Next Action", "text"],
+    ["nextActionDate", "Next Action Date", "date"], ["joiningDate", "Joining Date", "date"],
+    ["fitExperience", "Fit: Experience", "text"], ["fitCommunication", "Fit: Communication", "text"],
+    ["fitStability", "Fit: Stability", "text"], ["fitSalary", "Fit: Salary", "text"],
+    ["fitNotice", "Fit: Notice", "text"], ["interviewFeedback", "Interview Feedback", "text"],
+    ["joiningProbability", "Joining Probability", "text"],
+    ["primaryOwnerId", "Owner", "owner"], ["secondaryOwnerId", "Secondary Owner", "owner"],
+  ];
+
+  const ex = existing as Record<string, unknown>;
+  const changeNotes: string[] = [];
+  for (const [key, label, kind] of fieldDefs) {
+    if (!(key in data)) continue; // field wasn't part of the (permission-filtered) update
+    const before = ex[key];
+    const after = data[key];
+    if (kind === "date") {
+      if (sameDate(before as Date | null, after)) continue;
+      changeNotes.push(`Updated ${label}: ${fmtDate(before as Date | null)} → ${fmtDate(after as Date | null)}`);
+    } else if (kind === "money") {
+      if ((before ?? null) === (after ?? null)) continue;
+      changeNotes.push(`Updated ${label}: ${fmtMoney(before as number | null)} → ${fmtMoney(after as number | null)}`);
+    } else if (kind === "owner") {
+      if ((before ?? null) === (after ?? null)) continue;
+      changeNotes.push(`${label} changed: ${await ownerName(before)} → ${await ownerName(after)}`);
+    } else {
+      if ((before ?? null) === (after ?? null)) continue;
+      changeNotes.push(`Updated ${label}: ${fmtText(before)} → ${fmtText(after)}`);
+    }
+  }
+
+  if (changeNotes.length > 0) {
+    await prisma.hRActivity.createMany({
+      data: changeNotes.map(notes => ({
+        candidateId: id, userId: me.id, type: "NOTE_ADDED" as const, notes,
+      })),
     });
   }
 

@@ -152,12 +152,23 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
   if (!resumeId) return NextResponse.json({ error: "resumeId required" }, { status: 400 });
 
   // Verify the resume actually belongs to this candidate before deleting
-  // (prevents deleting another candidate's resume by id).
-  const resume = await prisma.hRResume.findUnique({ where: { id: resumeId }, select: { candidateId: true } });
+  // (prevents deleting another candidate's resume by id). Fetch the filename
+  // up-front so the deletion can be logged to the timeline.
+  const resume = await prisma.hRResume.findUnique({ where: { id: resumeId }, select: { candidateId: true, filename: true } });
   if (!resume || resume.candidateId !== candidateId) {
     return NextResponse.json({ error: "Resume not found" }, { status: 404 });
   }
 
   await prisma.hRResume.delete({ where: { id: resumeId } });
+
+  // Log activity so resume removals show in the timeline + Recent Activity.
+  await prisma.hRActivity.create({
+    data: {
+      candidateId, userId: access.me.id,
+      type: "NOTE_ADDED",
+      notes: `Resume deleted: ${resume.filename || "resume"}`,
+    },
+  });
+
   return NextResponse.json({ ok: true });
 }

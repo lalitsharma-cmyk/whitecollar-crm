@@ -6,6 +6,7 @@ import { Phone, MessageCircle, Target, Bookmark, BookmarkPlus, Trash2, Columns3,
 import { ACTIVE_STATUS_DEFS, CLOSED_STATUS_DEFS, CLOSED_STATUS_KEYS, statusColor, displayStatus } from "@/lib/hrStatus";
 import ColumnHeaderFilter, { type ColKind, type ColFilterState, type ColSortDir, isColFilterActive } from "@/components/ColumnHeaderFilter";
 import HRCandidateRowPreview, { type PreviewData } from "@/components/HRCandidateRowPreview";
+import { waHref, openWhatsApp } from "@/lib/waOpen";
 
 const SOURCES = ["Naukri", "Indeed", "Referral", "Walk-in", "LinkedIn", "Database", "Consultant", "Email", "Whatsapp", "Other"];
 const POSITIONS = ["Sales Executive", "BDE", "BDM", "Team Leader", "Manager", "HR", "Marketing", "Other"];
@@ -66,10 +67,10 @@ const DEFAULT_HIDDEN = new Set<string>([]);
 const HIDDEN_COLS_KEY = "hr-candidate-hidden-cols-v2";
 
 interface Interview { scheduledAt: string; type: string; confirmationStatus: string; attendanceStatus: string; }
-interface Activity { type: string; createdAt: string; notes?: string | null; }
+interface Activity { type: string; createdAt: string; notes?: string | null; user?: { name: string | null } | null; }
 interface Candidate {
   id: string; name: string; phone: string | null; whatsappPhone: string | null; email: string | null;
-  location: string | null; currentCompany: string | null; currentProfile: string | null; positionApplied: string | null;
+  location: string | null; city: string | null; remarks: string | null; currentCompany: string | null; currentProfile: string | null; positionApplied: string | null;
   experience: string | null; currentSalary: number | null; expectedSalary: number | null; noticePeriod: string | null;
   source: string | null; status: string; originalStatus: string | null; nextAction: string | null; nextActionDate: string | null; createdAt: string;
   primaryOwner: { id: string; name: string } | null; secondaryOwnerId: string | null;
@@ -108,11 +109,42 @@ interface SavedView { id: string; name: string; query: string; isShared: boolean
 function fmtDate(s: string) { return new Date(s).toLocaleDateString("en-IN", { day: "numeric", month: "short" }); }
 function fmtDateFull(s: string) { return new Date(s).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }); }
 function fmtAct(s: string) { return s.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase()); }
+// Time-of-day in IST (e.g. "06:15 PM"), independent of the viewer's locale/zone.
+function fmtTimeIST(s: string) { return new Date(s).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: true, timeZone: "Asia/Kolkata" }); }
+// Map an HRActivity.type to a short, friendly action label for the Last Activity cell.
+const ACTIVITY_LABELS: Record<string, string> = {
+  CALL_CONNECTED: "Call Connected",
+  CALL_NOT_ANSWERED: "Call Not Answered",
+  CALL_BUSY: "Call Busy",
+  CALL_SWITCHED_OFF: "Call Switched Off",
+  CALL_WRONG_NUMBER: "Wrong Number",
+  CALL_LATER: "Call Later",
+  WHATSAPP_SENT: "WhatsApp Sent",
+  WHATSAPP_RECEIVED: "WhatsApp Received",
+  EMAIL_LOGGED: "Email Logged",
+  INTERVIEW_SCHEDULED: "Interview Scheduled",
+  INTERVIEW_ATTENDED: "Interview Attended",
+  INTERVIEW_NO_SHOW: "Interview No-Show",
+  INTERVIEW_RESCHEDULED: "Interview Rescheduled",
+  OFFER_RELEASED: "Offer Released",
+  OFFER_DECLINED: "Offer Declined",
+  CANDIDATE_JOINED: "Candidate Joined",
+  FOLLOWUP_CREATED: "Follow-up Set",
+  FOLLOWUP_COMPLETED: "Follow-up Done",
+  STATUS_CHANGED: "Status Changed",
+  NOTE_ADDED: "Note Added",
+  RESUME_UPLOADED: "Resume Uploaded",
+  VOICE_NOTE: "Voice Note",
+  VOICE_GUIDANCE: "Voice Guidance",
+  ESCALATION_RAISED: "Escalation Raised",
+  ESCALATION_REPLIED: "Escalation Replied",
+  ESCALATION_RESOLVED: "Escalation Resolved",
+};
+function friendlyAct(type: string) { return ACTIVITY_LABELS[type] ?? fmtAct(type); }
 function fmtSal(n: number | null) { if (!n) return "—"; return n >= 100000 ? `₹${(n / 100000).toFixed(1)}L` : `₹${(n / 1000).toFixed(0)}K`; }
 function expYears(s: string | null): number | null { if (!s) return null; const m = s.match(/\d+(\.\d+)?/); return m ? parseFloat(m[0]) : null; }
 function startOfToday() { const d = new Date(); d.setHours(0, 0, 0, 0); return d; }
 function endOfToday() { const d = startOfToday(); return new Date(d.getTime() + 24 * 3600_000); }
-function waLink(p: string) { return `https://wa.me/${p.replace(/\D/g, "")}`; }
 
 // Derived per-candidate signals used by chips, columns and filters.
 function signals(c: Candidate, now: Date) {
@@ -219,7 +251,12 @@ export default function HRCandidateTable({ candidates, agents, countMap = {}, se
   const [fPosition, setFPosition] = useState("");
   const [fProfile, setFProfile] = useState("");
   const [fLocation, setFLocation] = useState("");
+  const [fCity, setFCity] = useState("");
+  const [fEmail, setFEmail] = useState("");
+  const [fRemarks, setFRemarks] = useState("");
   const [fOwner, setFOwner] = useState("");
+  // Free-text owner NAME match (complements the id-based fOwner dropdown).
+  const [fOwnerName, setFOwnerName] = useState("");
   const [fNotice, setFNotice] = useState("");
   const [fConfirm, setFConfirm] = useState("");
   const [fResume, setFResume] = useState("");
@@ -277,7 +314,7 @@ export default function HRCandidateTable({ candidates, agents, countMap = {}, se
   function snapshotState() {
     return {
       search, chip, hidden: [...hidden], sortKey, sortDir, colFilters: serCol(colFilters),
-      fStatus, fSource, fPosition, fProfile, fLocation, fOwner, fNotice, fConfirm, fResume, fNoShow,
+      fStatus, fSource, fPosition, fProfile, fLocation, fCity, fEmail, fRemarks, fOwner, fOwnerName, fNotice, fConfirm, fResume, fNoShow,
       expMin, expMax, curMin, curMax, expSalMin, expSalMax, fuFrom, fuTo, ivFrom, ivTo,
     };
   }
@@ -288,6 +325,7 @@ export default function HRCandidateTable({ candidates, agents, countMap = {}, se
     setSearch(str("search")); setChip(str("chip") || "all");
     setFStatus(str("fStatus")); setFSource(str("fSource")); setFPosition(str("fPosition"));
     setFProfile(str("fProfile")); setFLocation(str("fLocation")); setFOwner(str("fOwner"));
+    setFCity(str("fCity")); setFEmail(str("fEmail")); setFRemarks(str("fRemarks")); setFOwnerName(str("fOwnerName"));
     setFNotice(str("fNotice")); setFConfirm(str("fConfirm")); setFResume(str("fResume"));
     setFNoShow(v.fNoShow === true);
     setExpMin(str("expMin")); setExpMax(str("expMax")); setCurMin(str("curMin")); setCurMax(str("curMax"));
@@ -371,7 +409,11 @@ export default function HRCandidateTable({ candidates, agents, countMap = {}, se
     if (fPosition && (c.positionApplied ?? "") !== fPosition) return false;
     if (fProfile && !(c.currentProfile ?? "").toLowerCase().includes(fProfile.toLowerCase())) return false;
     if (fLocation && !(c.location ?? "").toLowerCase().includes(fLocation.toLowerCase())) return false;
+    if (fCity && !(c.city ?? "").toLowerCase().includes(fCity.toLowerCase())) return false;
+    if (fEmail && !(c.email ?? "").toLowerCase().includes(fEmail.toLowerCase())) return false;
+    if (fRemarks && !(c.remarks ?? "").toLowerCase().includes(fRemarks.toLowerCase())) return false;
     if (fOwner && c.primaryOwner?.id !== fOwner) return false;
+    if (fOwnerName && !(c.primaryOwner?.name ?? "").toLowerCase().includes(fOwnerName.toLowerCase())) return false;
     if (fNotice && (c.noticePeriod ?? "") !== fNotice) return false;
     if (fResume === "yes" && !c.hasResume) return false;
     if (fResume === "no" && c.hasResume) return false;
@@ -423,8 +465,11 @@ export default function HRCandidateTable({ candidates, agents, countMap = {}, se
       if (!colMatch(c, s)) return false;
       if (q && !(
         c.name.toLowerCase().includes(q) || (c.phone ?? "").includes(q) ||
+        (c.whatsappPhone ?? "").includes(q) ||
         (c.email ?? "").toLowerCase().includes(q) || (c.currentCompany ?? "").toLowerCase().includes(q) ||
-        (c.currentProfile ?? "").toLowerCase().includes(q)
+        (c.currentProfile ?? "").toLowerCase().includes(q) ||
+        (c.city ?? "").toLowerCase().includes(q) || (c.remarks ?? "").toLowerCase().includes(q) ||
+        (c.primaryOwner?.name ?? "").toLowerCase().includes(q)
       )) return false;
       return true;
     });
@@ -439,7 +484,7 @@ export default function HRCandidateTable({ candidates, agents, countMap = {}, se
       return va.localeCompare(vb, undefined, { numeric: true }) * dir;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [candidates, search, chip, fStatus, fSource, fPosition, fProfile, fLocation, fOwner, fNotice, fConfirm, fResume, fNoShow, expMin, expMax, curMin, curMax, expSalMin, expSalMax, fuFrom, fuTo, ivFrom, ivTo, colFilters, sortKey, sortDir]);
+  }, [candidates, search, chip, fStatus, fSource, fPosition, fProfile, fLocation, fCity, fEmail, fRemarks, fOwner, fOwnerName, fNotice, fConfirm, fResume, fNoShow, expMin, expMax, curMin, curMax, expSalMin, expSalMax, fuFrom, fuTo, ivFrom, ivTo, colFilters, sortKey, sortDir]);
 
   // Distinct option lists for text/select header filters (over loaded rows).
   const colOptions = useMemo(() => {
@@ -465,6 +510,7 @@ export default function HRCandidateTable({ candidates, agents, countMap = {}, se
     // nothing stays silently active after the user clears filters.
     setSearch(""); setChip("all");
     setFStatus(""); setFSource(""); setFPosition(""); setFProfile(""); setFLocation(""); setFOwner("");
+    setFCity(""); setFEmail(""); setFRemarks(""); setFOwnerName("");
     setFNotice(""); setFConfirm(""); setFResume(""); setFNoShow(false);
     setExpMin(""); setExpMax(""); setCurMin(""); setCurMax(""); setExpSalMin(""); setExpSalMax("");
     setFuFrom(""); setFuTo(""); setIvFrom(""); setIvTo("");
@@ -578,7 +624,7 @@ export default function HRCandidateTable({ candidates, agents, countMap = {}, se
   const RowActions = ({ c }: { c: Candidate }) => (
     <div className="flex items-center gap-0.5" onClick={stop}>
       {c.phone && <a href={`tel:${c.phone}`} onClick={stop} title="Call" className="p-1 rounded hover:bg-blue-50 dark:hover:bg-blue-900/30 text-blue-600 dark:text-blue-400"><Phone className="w-3.5 h-3.5" /></a>}
-      {(c.whatsappPhone ?? c.phone) && <a href={waLink((c.whatsappPhone ?? c.phone)!)} target="_blank" rel="noopener noreferrer" onClick={stop} title="WhatsApp" className="p-1 rounded hover:bg-green-50 dark:hover:bg-green-900/30 text-green-600 dark:text-green-400"><MessageCircle className="w-3.5 h-3.5" /></a>}
+      {(c.whatsappPhone ?? c.phone) && <a href={waHref(c.whatsappPhone ?? c.phone)} target="_blank" rel="noopener noreferrer" onClick={(e) => { stop(e); e.preventDefault(); openWhatsApp(c.whatsappPhone ?? c.phone); }} title="WhatsApp" className="p-1 rounded hover:bg-green-50 dark:hover:bg-green-900/30 text-green-600 dark:text-green-400"><MessageCircle className="w-3.5 h-3.5" /></a>}
       <Link href={`/hr/candidates/${c.id}?do=voice`} onClick={stop} title="Voice Note" className="p-1 rounded hover:bg-sky-50 dark:hover:bg-sky-900/30 text-sky-600 dark:text-sky-400"><Mic className="w-3.5 h-3.5" /></Link>
       {c.email && <a href={`mailto:${c.email}`} onClick={stop} title="Email" className="p-1 rounded hover:bg-rose-50 dark:hover:bg-rose-900/30 text-rose-600 dark:text-rose-400"><Mail className="w-3.5 h-3.5" /></a>}
       <Link href={`/hr/candidates/${c.id}?do=interview`} onClick={stop} title="Schedule Interview" className="p-1 rounded hover:bg-purple-50 dark:hover:bg-purple-900/30 text-purple-600 dark:text-purple-400"><Target className="w-3.5 h-3.5" /></Link>
@@ -674,7 +720,7 @@ export default function HRCandidateTable({ candidates, agents, countMap = {}, se
     </th>
   );
 
-  const anyAdv = !!(fStatus || fSource || fPosition || fProfile || fLocation || fOwner || fNotice || fConfirm || fResume || fNoShow ||
+  const anyAdv = !!(fStatus || fSource || fPosition || fProfile || fLocation || fCity || fEmail || fRemarks || fOwner || fOwnerName || fNotice || fConfirm || fResume || fNoShow ||
     expMin || expMax || curMin || curMax || expSalMin || expSalMax || fuFrom || fuTo || ivFrom || ivTo || activeColCount > 0);
 
   return (
@@ -685,7 +731,7 @@ export default function HRCandidateTable({ candidates, agents, countMap = {}, se
         <div className="relative flex-1 min-w-[220px]">
           <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
           <input value={serverQ} onChange={e => setServerQ(e.target.value)}
-            placeholder="Search all candidates — name, phone, email, position, company…"
+            placeholder="Search all candidates — name, phone, email, position, company, city, owner, notes…"
             className="w-full border border-gray-200 rounded-xl pl-9 pr-9 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1a2e4a]/20 dark:bg-slate-800 dark:border-slate-600" />
           {serverQ && (
             <button type="button" onClick={clearServerSearch} title="Clear search"
@@ -708,7 +754,7 @@ export default function HRCandidateTable({ candidates, agents, countMap = {}, se
       {/* Search + view toggle */}
       <div className="flex gap-2 flex-wrap items-center">
         <input value={search} onChange={e => setSearch(e.target.value)}
-          placeholder="🔍  Refine this page — name, phone, email, company, profile…"
+          placeholder="🔍  Refine this page — name, phone, email, company, profile, city, owner, notes…"
           className="flex-1 min-w-[220px] border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1a2e4a]/20 dark:bg-slate-800 dark:border-slate-600" />
         <button type="button" onClick={() => setShowAdv(s => !s)}
           className={`px-3 py-2 rounded-xl text-sm border ${showAdv || anyAdv ? "bg-[#1a2e4a] text-white border-[#1a2e4a]" : "border-gray-300 dark:border-slate-700 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-slate-800"}`}>
@@ -814,8 +860,12 @@ export default function HRCandidateTable({ candidates, agents, countMap = {}, se
               <select className={inp} value={fPosition} onChange={e => setFPosition(e.target.value)}><option value="">Any</option>{POSITIONS.map(s => <option key={s} value={s}>{s}</option>)}</select></div>
             <div><label className={lbl}>Current Profile</label><input className={inp} value={fProfile} onChange={e => setFProfile(e.target.value)} placeholder="e.g. Sales" /></div>
             <div><label className={lbl}>Location</label><input className={inp} value={fLocation} onChange={e => setFLocation(e.target.value)} /></div>
+            <div><label className={lbl}>City</label><input className={inp} value={fCity} onChange={e => setFCity(e.target.value)} placeholder="home city" /></div>
+            <div><label className={lbl}>Email</label><input className={inp} value={fEmail} onChange={e => setFEmail(e.target.value)} placeholder="contains…" /></div>
+            <div><label className={lbl}>Remarks / Notes</label><input className={inp} value={fRemarks} onChange={e => setFRemarks(e.target.value)} placeholder="contains…" /></div>
             <div><label className={lbl}>Owner</label>
               <select className={inp} value={fOwner} onChange={e => setFOwner(e.target.value)}><option value="">Any</option>{agents.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}</select></div>
+            <div><label className={lbl}>Owner Name</label><input className={inp} value={fOwnerName} onChange={e => setFOwnerName(e.target.value)} placeholder="name contains…" /></div>
             <div><label className={lbl}>Notice Period</label>
               <select className={inp} value={fNotice} onChange={e => setFNotice(e.target.value)}><option value="">Any</option>{NOTICE.map(s => <option key={s} value={s}>{s}</option>)}</select></div>
             <div><label className={lbl}>Confirmation Status</label>
@@ -871,7 +921,7 @@ export default function HRCandidateTable({ candidates, agents, countMap = {}, se
       {/* Table view — sticky header + sticky first 3 columns, compact density */}
       {view === "table" && (
         <div className="hidden sm:block overflow-x-auto overflow-y-auto max-h-[72vh] rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900">
-          <table className="min-w-[1100px] w-full text-xs border-separate border-spacing-0">
+          <table className="min-w-[900px] w-full text-xs border-separate border-spacing-0">
             <thead className="sticky top-0 z-20">
               <tr className="text-left text-[11px] text-gray-500 uppercase tracking-wide">
                 <th className={`px-2 py-2 ${stickyHeadBg} sticky ${STICKY.sel} z-10 border-b border-gray-200 dark:border-slate-700`}>
@@ -921,7 +971,7 @@ export default function HRCandidateTable({ candidates, agents, countMap = {}, se
                     {visible("followUp") && <td className="px-2 py-1.5 whitespace-nowrap border-b border-gray-100 dark:border-slate-800">{s.nextFU ? <span className={s.fuOverdue ? "text-red-600 font-semibold" : "text-amber-600"}>{s.fuOverdue ? "⚠ " : ""}{fmtDate(s.nextFU)}</span> : "—"}</td>}
                     {visible("interview") && <td className="px-2 py-1.5 whitespace-nowrap border-b border-gray-100 dark:border-slate-800">{s.nextIV ? <span className="text-indigo-600">🎯 {fmtDate(s.nextIV.scheduledAt)}</span> : "—"}</td>}
                     {visible("owner") && <td className="px-2 py-1.5 text-gray-500 whitespace-nowrap border-b border-gray-100 dark:border-slate-800">{c.primaryOwner?.name?.split(" ")[0] ?? "—"}</td>}
-                    {visible("lastActivity") && <td className="px-2 py-1.5 text-[11px] text-gray-500 whitespace-nowrap border-b border-gray-100 dark:border-slate-800">{lastAct ? <><div className="text-gray-700 dark:text-slate-300">{fmtAct(lastAct.type).slice(0, 16)}</div><div>{fmtDate(lastAct.createdAt)}</div></> : "—"}</td>}
+                    {visible("lastActivity") && <td className="px-2 py-1.5 text-[11px] text-gray-500 whitespace-nowrap border-b border-gray-100 dark:border-slate-800">{lastAct ? <><div className="text-gray-700 dark:text-slate-300 font-medium">{friendlyAct(lastAct.type)}</div><div>{fmtDate(lastAct.createdAt)} · {fmtTimeIST(lastAct.createdAt)}</div>{lastAct.user?.name && <div className="text-gray-400">By {lastAct.user.name}</div>}</> : "—"}</td>}
                     <td className="px-2 py-1.5 border-b border-gray-100 dark:border-slate-800"><RowActions c={c} /></td>
                   </tr>
                 );

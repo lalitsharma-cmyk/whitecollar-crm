@@ -36,13 +36,20 @@ export default async function CandidatesPage({ searchParams }: { searchParams: P
   const q = (sp.q ?? "").trim();
   if (q) {
     const contains = { contains: q, mode: "insensitive" as const };
+    // Kept under where.AND (NOT a top-level where.OR) so the JUNIOR_HR scope OR
+    // (primaryOwnerId / secondaryOwnerId) is preserved. Broadened to also cover
+    // whatsappPhone, city, remarks and the primary owner's NAME (via relation).
     where.AND = [{
       OR: [
         { name: contains },
         { phone: contains },
+        { whatsappPhone: contains },
         { email: contains },
         { positionApplied: contains },
         { currentCompany: contains },
+        { city: contains },
+        { remarks: contains },
+        { primaryOwner: { is: { name: contains } } },
       ],
     }];
   }
@@ -67,7 +74,7 @@ export default async function CandidatesPage({ searchParams }: { searchParams: P
         interviews: { orderBy: { scheduledAt: "desc" }, take: 5, select: { scheduledAt: true, type: true, confirmationStatus: true, attendanceStatus: true } },
         // A small window of recent activity feeds both the "Last Activity" column
         // (index 0) and the hover preview (most-recent NOTE_ADDED + CALL_* lookup).
-        activities: { orderBy: { createdAt: "desc" }, take: 12, select: { type: true, createdAt: true, notes: true } },
+        activities: { orderBy: { createdAt: "desc" }, take: 12, select: { type: true, createdAt: true, notes: true, user: { select: { name: true } } } },
         // Resume presence stays a per-row relation count (cheap, direct relation).
         _count: { select: { resumes: true } },
       },

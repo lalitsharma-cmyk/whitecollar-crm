@@ -184,7 +184,7 @@ export default async function HRReportsPage({ searchParams }: { searchParams: Pr
   const offerSummary = [
     { label: "Offers Released", n: fmap["OFFER_RELEASED"] ?? 0, color: "text-amber-700 dark:text-amber-400" },
     { label: "Expected Joinings", n: fmap["EXPECTED_JOINING"] ?? 0, color: "text-lime-700 dark:text-lime-400" },
-    { label: "Joined", n: fmap["JOINED"] ?? 0, color: "text-green-700 dark:text-green-400" },
+    { label: "Joined (total)", n: fmap["JOINED"] ?? 0, color: "text-green-700 dark:text-green-400" },
     { label: "Offers Declined", n: fmap["OFFER_DECLINED"] ?? 0, color: "text-orange-700 dark:text-orange-400" },
   ];
 
@@ -252,7 +252,7 @@ export default async function HRReportsPage({ searchParams }: { searchParams: Pr
         </div>
         {/* One-line caption — explains exactly what "time to hire" measures. */}
         <p className="text-[11px] text-gray-400 dark:text-slate-500 mt-3">
-          Calendar days from when a candidate was added (created) to their join activity, for candidates joined in {periodLabel.toLowerCase()}.
+          Calendar days from when a candidate was added (created) to their join activity, for candidates joined in {periodLabel.toLowerCase()}. Excludes join activity backdated before the candidate was added (only non-negative durations are counted).
         </p>
       </div>
 
@@ -286,7 +286,7 @@ export default async function HRReportsPage({ searchParams }: { searchParams: Pr
             </div>
             <div className="rounded-xl bg-gray-50 dark:bg-slate-800 p-3">
               <div className="text-2xl font-extrabold text-green-700 dark:text-green-400">{joinedThisPeriod}</div>
-              <div className="text-[11px] text-gray-500 dark:text-slate-400 mt-0.5">Joined</div>
+              <div className="text-[11px] text-gray-500 dark:text-slate-400 mt-0.5">Joined (this period)</div>
             </div>
           </div>
         </div>

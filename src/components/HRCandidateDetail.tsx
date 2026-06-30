@@ -6,6 +6,7 @@ import HRResumeUploadWidget from "@/components/HRResumeUploadWidget";
 import HRCandidateVoice from "@/components/HRCandidateVoice";
 import HRWhatsAppTemplatePicker, { type HRTemplateContext } from "@/components/HRWhatsAppTemplatePicker";
 import { ACTIVE_STATUS_DEFS, CLOSED_STATUS_DEFS, statusColor, statusLabel, displayStatus } from "@/lib/hrStatus";
+import { waHref, openWhatsApp } from "@/lib/waOpen";
 import type { HRCandidateStatus, HRActivityType, HRFollowUpType, HRInterviewType } from "@prisma/client";
 import {
   Phone, PhoneOff, PhoneMissed, PhoneCall, MessageSquare, Mail, MapPin, Pencil, Check, X,
@@ -13,7 +14,7 @@ import {
   PhoneForwarded, Voicemail, Ban, RotateCcw, Target, CheckCircle2, AlertTriangle, RefreshCw,
   FileSignature, XCircle, PartyPopper, CalendarCheck, StickyNote, History, User as UserIcon,
   Mic, Trash2, ClipboardCheck, Building2, Briefcase, Wallet, Award, Activity as ActivityIcon,
-  Keyboard, Send,
+  Keyboard, Send, Download, Eye, MessageCircleReply,
 } from "lucide-react";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -21,7 +22,7 @@ interface User { id: string; name: string; }
 interface Activity { id: string; type: string; notes: string|null; createdAt: string; oldStatus:string|null; newStatus:string|null; user:{name:string}|null; }
 interface Interview { id: string; type: string; scheduledAt: string; confirmationStatus: string; attendanceStatus: string; result: string|null; recommendation: string|null; notes: string|null; noShowReason: string|null; interviewer: {name:string}|null; }
 interface FollowUp { id: string; type: string; dueAt: string; completedAt: string|null; notes: string|null; autoCreated: boolean; user: {name:string}|null; }
-interface Resume { id: string; filename: string; url: string; mimeType: string; isActive: boolean; createdAt: string; }
+interface Resume { id: string; filename: string; url: string; mimeType: string; isActive: boolean; createdAt: string; uploadedBy?: { name: string }|null; }
 interface Application { id: string; positionApplied: string; source: string; locationPreference: string|null; experience: string|null; statusAtApply: string; submittedAt: string; }
 interface VoiceMessage { id: string; kind: string; createdById: string; title: string|null; textNote: string|null; transcript: string|null; durationSec: number|null; escalationId: string|null; createdAt: string; }
 interface Escalation { id: string; reason: string; status: string; raisedById: string; resolvedAt: string|null; createdAt: string; }
@@ -91,6 +92,11 @@ const ACT_META: Record<string, { label: string; icon: IconCmp; tint: string }> =
   FOLLOWUP_COMPLETED: { label: "Follow-up Done",        icon: CalendarCheck, tint: "text-green-600 bg-green-50 dark:bg-green-900/30" },
   STATUS_CHANGED:     { label: "Status Changed",        icon: RotateCcw,     tint: "text-slate-600 bg-slate-100 dark:bg-slate-800" },
   NOTE_ADDED:         { label: "Note / Remark",         icon: StickyNote,    tint: "text-amber-600 bg-amber-50 dark:bg-amber-900/30" },
+  RESUME_UPLOADED:    { label: "Resume Uploaded",       icon: FileText,      tint: "text-red-600 bg-red-50 dark:bg-red-900/30" },
+  FIELD_UPDATED:      { label: "Field Updated",         icon: Pencil,        tint: "text-slate-600 bg-slate-100 dark:bg-slate-800" },
+  ESCALATION_RAISED:  { label: "Escalation Raised",     icon: AlertTriangle, tint: "text-red-600 bg-red-50 dark:bg-red-900/30" },
+  ESCALATION_REPLIED: { label: "Escalation Reply",      icon: MessageCircleReply, tint: "text-amber-600 bg-amber-50 dark:bg-amber-900/30" },
+  ESCALATION_RESOLVED:{ label: "Escalation Resolved",   icon: CheckCircle2,  tint: "text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30" },
 };
 function actMeta(t: string) { return ACT_META[t] ?? { label: fmt(t), icon: ActivityIcon, tint: "text-slate-600 bg-slate-100 dark:bg-slate-800" }; }
 
@@ -146,7 +152,7 @@ function InlineField({ candidateId, field, value, type = "text", options, placeh
     return (
       <button type="button" onClick={() => { setVal(value == null ? "" : (type === "date" ? new Date(value as string).toISOString().slice(0, 10) : String(value))); setEditing(true); }}
         className="group text-left text-sm text-gray-800 dark:text-slate-100 hover:bg-blue-50/60 dark:hover:bg-slate-800 rounded px-1 -mx-1 w-full truncate flex items-center">
-        <span className={empty ? "text-gray-300 dark:text-slate-600 italic" : ""}>{empty ? "add" : (format ? format(value as string | number) : String(value))}</span>
+        <span className={empty ? "text-gray-300 dark:text-slate-600" : ""}>{empty ? "—" : (format ? format(value as string | number) : String(value))}</span>
         <Pencil size={10} className="opacity-0 group-hover:opacity-100 text-blue-500 ml-1 shrink-0" />
       </button>
     );
@@ -200,7 +206,7 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
   );
 }
 function FitPill({ value }: { value: string | null }) {
-  if (!value) return <span className="text-gray-300 dark:text-slate-600 italic text-xs">add</span>;
+  if (!value) return <span className="text-gray-300 dark:text-slate-600 text-xs">—</span>;
   const cls = value === "Good" || value === "High" ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300"
     : value === "Average" || value === "Medium" ? "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300"
     : "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300";
@@ -223,6 +229,9 @@ export default function HRCandidateDetail({ candidate: c, agents, me, voicePerms
   const [, startT] = useTransition();
   const [busy, setBusy] = useState(false);
   const [tab, setTab] = useState<"timeline"|"interviews"|"followups"|"resumes"|"applications">("timeline");
+  // Left-column sub-toggle so "Candidate Information" stays compact (not 3 screens
+  // tall): Details = basic info + salary; Assessment = Candidate Fit + feedback.
+  const [leftView, setLeftView] = useState<"details"|"assessment">("details");
   const [panel, setPanel] = useState<"none"|"call"|"wa"|"followup"|"interview"|"status"|"note">("none");
   const [rawOpen, setRawOpen] = useState(false);
   const [resultFor, setResultFor] = useState<string|null>(null);
@@ -498,7 +507,16 @@ export default function HRCandidateDetail({ candidate: c, agents, me, voicePerms
   const upcomingInterviews = c.interviews.filter(i => i.attendanceStatus === "SCHEDULED" || i.attendanceStatus === "RESCHEDULED").sort((a,b) => +new Date(a.scheduledAt) - +new Date(b.scheduledAt));
   const nextFU = pendingFollowUps[0];
   const nextIV = upcomingInterviews[0] ?? c.interviews[0];
-  const activeResume = c.resumes.find(r => r.isActive) ?? c.resumes[0];
+  // Candidate Fit: true when ALL six scores are blank → show "Not evaluated yet"
+  // instead of a grid of empty "—" pills (LALIT #4).
+  const fitAllEmpty = !c.fitExperience && !c.fitCommunication && !c.fitStability && !c.fitSalary && !c.fitNotice && !c.joiningProbability;
+  // Resume version numbers — v1 = oldest upload. Built once from a chronological
+  // sort so the Resume History list can label each version (never loses earlier ones).
+  const resumeVersionNo = useMemo<Record<string, number>>(() => {
+    const map: Record<string, number> = {};
+    [...c.resumes].sort((a, b) => +new Date(a.createdAt) - +new Date(b.createdAt)).forEach((r, i) => { map[r.id] = i + 1; });
+    return map;
+  }, [c.resumes]);
   const ownerOpts = agents.map(a => [a.id, a.name] as [string, string]);
   const ownerName = (id: string | number) => agents.find(a => a.id === String(id))?.name ?? "—";
   const userName = (id: string) => agents.find(a => a.id === id)?.name ?? "Someone";
@@ -525,7 +543,8 @@ export default function HRCandidateDetail({ candidate: c, agents, me, voicePerms
   // the final rendered string; we open WhatsApp then POST the same /log entry.
   async function quickSendWA(renderedText: string) {
     if (waPhone) {
-      window.open(`https://wa.me/${waPhone.replace(/\D/g,"")}?text=${encodeURIComponent(renderedText)}`, "_blank", "noopener,noreferrer");
+      // Shared opener: desktop → web.whatsapp.com, mobile → wa.me, normalized number.
+      openWhatsApp(waPhone, renderedText);
     }
     setActionErr(null);
     try {
@@ -611,9 +630,9 @@ export default function HRCandidateDetail({ candidate: c, agents, me, voicePerms
         </div>
 
         {/* Key facts at a glance — contact, owner, next action, follow-up, interview */}
-        <div className="mt-3.5 pt-3.5 border-t border-gray-100 dark:border-slate-800 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-x-4 gap-y-3">
+        <div className="mt-3.5 pt-3.5 border-t border-gray-100 dark:border-slate-800 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-x-4 gap-y-3">
           <SummaryStat icon={Phone} label="Phone" value={c.phone ? <a href={`tel:${c.phone}`} className="hover:text-blue-600">{c.phone}</a> : "—"} />
-          <SummaryStat icon={MessageSquare} label="WhatsApp" value={waPhone ? <a href={`https://wa.me/${waPhone.replace(/\D/g,"")}`} target="_blank" rel="noopener noreferrer" className="hover:text-green-600">{waPhone}</a> : "—"} />
+          <SummaryStat icon={MessageSquare} label="WhatsApp" value={waPhone ? <a href={waHref(waPhone)} target="_blank" rel="noopener noreferrer" className="hover:text-green-600">{waPhone}</a> : "—"} />
           <SummaryStat icon={Mail} label="Email" value={c.email ? <a href={`mailto:${c.email}`} className="hover:text-blue-600">{c.email}</a> : "—"} />
           <SummaryStat icon={UserIcon} label="Owner" value={c.primaryOwner?.name?.split(" ")[0] ?? "Unassigned"} />
           <SummaryStat icon={Target} label="Next Action" value={c.nextAction || "—"} accent={!!c.nextAction} />
@@ -656,13 +675,15 @@ export default function HRCandidateDetail({ candidate: c, agents, me, voicePerms
         )}
       </div>
 
-      {/* ── 3-column body (lg). Source order = actions → timeline → details so the
-           mobile stack reads summary → actions → timeline → details; lg:order-*
-           rearranges desktop to details | timeline | actions. ── */}
+      {/* ── 3-column body (lg) · balanced 25 / 50 / 25. Source order = timeline →
+           actions → details so the MOBILE stack reads summary → CENTER conversation
+           (primary, never buried) → quick actions → details. lg:order-* rearranges
+           desktop to details (left) | timeline (center) | actions (right). ── */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
 
-        {/* ───── RIGHT column · Quick Actions + Ownership + Voice (sticky on lg) ───── */}
-        <div className="lg:col-span-3 order-1 lg:order-3 space-y-4 lg:sticky lg:top-4">
+        {/* ───── RIGHT column · Quick Actions + Ownership + Escalation + Voice.
+             max-h + overflow-y-auto on lg so it CANNOT run away past the viewport. ───── */}
+        <div className="lg:col-span-3 order-2 lg:order-3 space-y-4 lg:sticky lg:top-4 lg:max-h-[calc(100vh-160px)] lg:overflow-y-auto pr-0.5">
           <div className="card p-4">
             <div className="flex items-center justify-between gap-2 mb-2.5">
               <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-gray-400 dark:text-slate-500"><ClipboardList size={13} />Quick Actions</div>
@@ -672,7 +693,7 @@ export default function HRCandidateDetail({ candidate: c, agents, me, voicePerms
             {/* Quick contact + action buttons */}
             <div className="grid grid-cols-2 gap-2">
               {c.phone && <a href={`tel:${c.phone}`} className={`${btn} justify-center border-gray-300 dark:border-slate-600 text-gray-700 dark:text-slate-200 hover:bg-gray-50 dark:hover:bg-slate-800`}><Phone size={14} />Call</a>}
-              {waPhone && <a href={`https://wa.me/${waPhone.replace(/\D/g,"")}`} target="_blank" rel="noopener noreferrer" className={`${btn} justify-center border-green-300 text-green-700 hover:bg-green-50`}><MessageSquare size={14} />WhatsApp</a>}
+              {waPhone && <button type="button" onClick={() => openWhatsApp(waPhone)} className={`${btn} justify-center border-green-300 text-green-700 hover:bg-green-50`}><MessageSquare size={14} />WhatsApp</button>}
               {waPhone && <button type="button" onClick={() => setWaPickerOpen(true)} className={`${btn} justify-center border-green-300 text-green-700 hover:bg-green-50`}><Send size={14} />Quick WA</button>}
               {waPhone && <button type="button" onClick={() => setPanel(p => p==="wa"?"none":"wa")} className={`${btn} justify-center border-green-300 text-green-700 hover:bg-green-50`}><MessageSquare size={14} />Log WA</button>}
               {c.email && <a href={`mailto:${c.email}`} className={`${btn} justify-center border-blue-300 text-blue-700 hover:bg-blue-50`}><Mail size={14} />Email</a>}
@@ -703,9 +724,9 @@ export default function HRCandidateDetail({ candidate: c, agents, me, voicePerms
             <div className="text-[11px] text-green-800 dark:text-green-300 font-semibold">Templates — tap to open WhatsApp &amp; pre-fill the log:</div>
             <div className="flex flex-wrap gap-1.5">
               {WA_TEMPLATES.map(t => (
-                <a key={t.label} href={`https://wa.me/${waPhone.replace(/\D/g,"")}?text=${encodeURIComponent(fillTpl(t.text))}`}
-                  target="_blank" rel="noopener noreferrer" onClick={() => setWaNotes(fillTpl(t.text))}
-                  className="text-[11px] px-2 py-1 rounded-full border border-green-300 bg-white dark:bg-slate-800 text-green-700 dark:text-green-300 hover:bg-green-100">{t.label}</a>
+                <button key={t.label} type="button"
+                  onClick={() => { const txt = fillTpl(t.text); setWaNotes(txt); openWhatsApp(waPhone, txt); }}
+                  className="text-[11px] px-2 py-1 rounded-full border border-green-300 bg-white dark:bg-slate-800 text-green-700 dark:text-green-300 hover:bg-green-100">{t.label}</button>
               ))}
             </div>
             <textarea value={waNotes} onChange={e=>setWaNotes(e.target.value)} placeholder="What was discussed / sent…" rows={2} className={inp} />
@@ -781,8 +802,10 @@ export default function HRCandidateDetail({ candidate: c, agents, me, voicePerms
           />
         </div>
 
-        {/* ───── CENTER column · Conversation timeline (widest, primary) ───── */}
-        <div className="lg:col-span-6 order-2 lg:order-2 space-y-4">
+        {/* ───── CENTER column · the WORKSPACE — Conversation (default) · Interviews ·
+             Follow-ups · Resume · Timeline. Widest (50%) + first on mobile so the
+             daily work is the primary surface and never buried. ───── */}
+        <div className="lg:col-span-6 order-1 lg:order-2 space-y-4">
           {pendingFollowUps.length > 0 && (
             <div className="card p-3 border-l-4 border-amber-400 bg-amber-50 dark:bg-amber-950/20">
               <div className="text-xs font-semibold text-amber-800 dark:text-amber-300 mb-2 inline-flex items-center gap-1"><CalendarClock size={13} />Pending Follow-Ups ({pendingFollowUps.length})</div>
@@ -963,26 +986,59 @@ export default function HRCandidateDetail({ candidate: c, agents, me, voicePerms
           )}
           {tab === "resumes" && (
             <div className="space-y-4">
-              <div className="card p-4">
+              <div id="hr-resume-upload" className="card p-4">
                 <div className="text-xs font-semibold text-gray-700 dark:text-slate-200 mb-1 inline-flex items-center gap-1.5"><Paperclip size={13} />Add a Resume Version — PDF, DOC, image, or phone photo</div>
                 <div className="text-[11px] text-gray-400 dark:text-slate-500 mb-3">Uploading adds a new version and marks it active. Earlier resumes are kept below, not replaced.</div>
                 <HRResumeUploadWidget candidates={[]} preselectedCandidateId={c.id} />
               </div>
               {c.resumes.length === 0 ? <div className="text-sm text-gray-400 text-center py-6">No resumes uploaded yet.</div> : (
-                <div className="space-y-2">{c.resumes.map(r => (
-                  <div key={r.id} className="card p-3 flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-lg bg-red-50 dark:bg-red-900/20 flex items-center justify-center shrink-0 text-red-500"><FileText size={18} /></div>
-                    <div className="flex-1 min-w-0"><div className="flex items-center gap-2 flex-wrap"><span className="text-sm font-medium text-gray-800 dark:text-slate-200 truncate">{r.filename}</span>{r.isActive && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-green-100 text-green-700 font-semibold">Active</span>}</div><div className="text-[11px] text-gray-400 mt-0.5">{new Date(r.createdAt).toLocaleDateString("en-IN",{day:"numeric",month:"short",year:"numeric",timeZone:"Asia/Kolkata"})}</div></div>
-                    <a href={`/api/hr/candidates/${c.id}/resume?resumeId=${r.id}${r.mimeType.startsWith("image/") ? "" : "&download=1"}`} target="_blank" rel="noopener noreferrer" className="text-[11px] px-2.5 py-1 rounded-lg border border-blue-300 text-blue-700 bg-white dark:bg-slate-800 hover:bg-blue-50 shrink-0">{r.mimeType.startsWith("image/") ? "View" : "Download"}</a>
-                  </div>
-                ))}</div>
+                <div>
+                  <div className="text-[11px] font-bold uppercase tracking-wide text-gray-400 dark:text-slate-500 mb-2 inline-flex items-center gap-1.5"><History size={13} />Resume History ({c.resumes.length})</div>
+                  <div className="space-y-2">{c.resumes.map((r) => {
+                    // Version # = chronological position (v1 = oldest upload). Rows render
+                    // active-first then newest, so map each id to its place in the
+                    // oldest→newest ordering (computed once in resumeVersionNo).
+                    const versionNo = resumeVersionNo[r.id];
+                    const base = `/api/hr/candidates/${c.id}/resume?resumeId=${r.id}`;
+                    return (
+                    <div key={r.id} className={`card p-3 flex items-start gap-3 ${r.isActive?"border border-green-200 dark:border-green-900":""}`}>
+                      <div className="w-9 h-9 rounded-lg bg-red-50 dark:bg-red-900/20 flex items-center justify-center shrink-0 text-red-500"><FileText size={18} /></div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-sm font-medium text-gray-800 dark:text-slate-200 truncate">{r.filename}</span>
+                          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-gray-100 dark:bg-slate-700 text-gray-500 dark:text-slate-300 font-semibold">v{versionNo}</span>
+                          {r.isActive && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-green-100 text-green-700 font-semibold">Active</span>}
+                        </div>
+                        <div className="text-[11px] text-gray-400 mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                          <span className="inline-flex items-center gap-1"><Clock size={10} />{fmtDate(r.createdAt)}</span>
+                          {r.uploadedBy?.name && <span className="inline-flex items-center gap-1"><UserIcon size={10} />{r.uploadedBy.name.split(" ")[0]}</span>}
+                        </div>
+                        <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                          <a href={base} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-[11px] px-2.5 py-1 rounded-lg border border-blue-300 text-blue-700 bg-white dark:bg-slate-800 hover:bg-blue-50"><Eye size={12} />Preview</a>
+                          <a href={`${base}&download=1`} className="inline-flex items-center gap-1 text-[11px] px-2.5 py-1 rounded-lg border border-gray-300 dark:border-slate-600 text-gray-600 dark:text-slate-300 bg-white dark:bg-slate-800 hover:bg-gray-50 dark:hover:bg-slate-700"><Download size={12} />Download</a>
+                          <button type="button" onClick={()=>{ const el=document.getElementById("hr-resume-upload"); el?.scrollIntoView({behavior:"smooth",block:"center"}); }} className="inline-flex items-center gap-1 text-[11px] px-2.5 py-1 rounded-lg border border-gray-300 dark:border-slate-600 text-gray-600 dark:text-slate-300 bg-white dark:bg-slate-800 hover:bg-gray-50 dark:hover:bg-slate-700"><RefreshCw size={12} />Replace</button>
+                        </div>
+                      </div>
+                    </div>
+                  ); })}</div>
+                </div>
               )}
             </div>
           )}
         </div>
 
-        {/* ───── LEFT column · Candidate details (compact) ───── */}
+        {/* ───── LEFT column (25%) · "Candidate Information" ONLY — compact, with a
+             Details / Assessment sub-toggle so it is never 3 screens tall. ───── */}
         <div className="lg:col-span-3 order-3 lg:order-1 space-y-4">
+          {/* Details / Assessment sub-toggle — keeps this column compact. */}
+          <div className="card p-1 flex gap-1">
+            {([["details","Details"],["assessment","Assessment"]] as ["details"|"assessment",string][]).map(([k,label])=>(
+              <button key={k} type="button" onClick={()=>setLeftView(k)}
+                className={`flex-1 text-xs font-medium px-3 py-1.5 rounded-lg transition-colors ${leftView===k?"bg-[#0b1a33] text-white dark:bg-blue-600":"text-gray-500 dark:text-slate-400 hover:bg-gray-100 dark:hover:bg-slate-800"}`}>{label}</button>
+            ))}
+          </div>
+
+          {leftView === "details" && (<>
           <Card title="Candidate Information" icon={UserIcon}>
             <Row label="Phone"><InlineField candidateId={c.id} field="phone" value={c.phone} type="tel" /></Row>
             <Row label="WhatsApp"><InlineField candidateId={c.id} field="whatsappPhone" value={c.whatsappPhone} type="tel" /></Row>
@@ -990,19 +1046,27 @@ export default function HRCandidateDetail({ candidate: c, agents, me, voicePerms
             <Row label="Location"><InlineField candidateId={c.id} field="location" value={c.location} /></Row>
             <Row label="City"><InlineField candidateId={c.id} field="city" value={c.city} /></Row>
             <Row label="Company"><InlineField candidateId={c.id} field="currentCompany" value={c.currentCompany} /></Row>
-            <Row label="Profile"><InlineField candidateId={c.id} field="currentProfile" value={c.currentProfile} /></Row>
+            <Row label="Designation"><InlineField candidateId={c.id} field="currentProfile" value={c.currentProfile} /></Row>
             <Row label="Position"><InlineField candidateId={c.id} field="positionApplied" value={c.positionApplied} type="select" options={POSITION_OPTS} /></Row>
             <Row label="Experience"><InlineField candidateId={c.id} field="experience" value={c.experience} /></Row>
             <Row label="RE Exp."><InlineField candidateId={c.id} field="realEstateExperience" value={c.realEstateExperience} /></Row>
           </Card>
 
           <Card title="Salary & Notice" icon={Wallet}>
-            <Row label="Current ₹"><InlineField candidateId={c.id} field="currentSalary" value={c.currentSalary} type="number" format={v=>fmtSalary(Number(v))} /></Row>
-            <Row label="Expected ₹"><InlineField candidateId={c.id} field="expectedSalary" value={c.expectedSalary} type="number" format={v=>fmtSalary(Number(v))} /></Row>
+            {/* Salary empty → "—" / "Not updated" (LALIT #4): the format callback only
+                runs for a present value, so an empty cell falls through to InlineField's
+                subtle "—". A populated 0/blank shows "Not updated". */}
+            <Row label="Current ₹"><InlineField candidateId={c.id} field="currentSalary" value={c.currentSalary} type="number" format={v=>fmtSalary(Number(v))||"Not updated"} /></Row>
+            <Row label="Expected ₹"><InlineField candidateId={c.id} field="expectedSalary" value={c.expectedSalary} type="number" format={v=>fmtSalary(Number(v))||"Not updated"} /></Row>
             <Row label="Notice"><InlineField candidateId={c.id} field="noticePeriod" value={c.noticePeriod} type="select" options={NOTICE_OPTS} /></Row>
           </Card>
+          </>)}
 
+          {leftView === "assessment" && (<>
           <Card title="Candidate Fit" icon={Award}>
+            {fitAllEmpty ? (
+              <div className="text-xs text-gray-400 dark:text-slate-500 py-1">Not evaluated yet — set the fit scores below.</div>
+            ) : null}
             {/* Compact 2-col label|pill grid */}
             <div className="grid grid-cols-2 gap-x-3 gap-y-1">
               {([
@@ -1026,20 +1090,7 @@ export default function HRCandidateDetail({ candidate: c, agents, me, voicePerms
             <Row label="Next Action"><InlineField candidateId={c.id} field="nextAction" value={c.nextAction} /></Row>
             <Row label="Joining"><InlineField candidateId={c.id} field="joiningDate" value={c.joiningDate} type="date" format={v => new Date(v as string).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })} /></Row>
           </Card>
-
-          <Card title="Resume" icon={Paperclip}>
-            {activeResume ? (
-              <div className="flex items-center gap-2">
-                <a href={`/api/hr/candidates/${c.id}/resume?resumeId=${activeResume.id}`} target="_blank" rel="noopener noreferrer" className="text-xs px-2.5 py-1 rounded-lg border border-blue-300 text-blue-700 bg-white dark:bg-slate-800 hover:bg-blue-50">View Resume</a>
-                <button type="button" onClick={()=>setTab("resumes")} className="text-xs px-2.5 py-1 rounded-lg border border-gray-300 dark:border-slate-600 text-gray-600 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-800">Replace</button>
-              </div>
-            ) : (
-              <div className="flex items-center gap-2">
-                <button type="button" onClick={()=>setTab("resumes")} className="inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg border border-blue-300 text-blue-700 bg-white dark:bg-slate-800 hover:bg-blue-50"><Paperclip size={12} />Add a Resume</button>
-                <span className="text-[10px] text-gray-400 dark:text-slate-500">No resume yet</span>
-              </div>
-            )}
-          </Card>
+          </>)}
 
           {/* ── RAW HISTORY (collapsible, read-only, verbatim import) ── */}
           {c.rawRemarks && c.rawRemarks.trim() && (
