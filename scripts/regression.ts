@@ -4921,7 +4921,13 @@ const checks: Check[] = [
       assert(/rec\.businessStatus/.test(page), "buyer view must render the imported Status (businessStatus)");
       assert(/Pool: \{poolLabel\}/.test(page), "buyer view must label the pool chip 'Pool' (separate from the imported Status)");
       assert(/fmtDate\(rec\.followupDate\)/.test(page), "buyer view must show the follow-up date");
-      results.push({ name: "  ↳ note", ok: true, detail: "buyer Status (businessStatus) distinct from Data Pool (poolStatus); follow-up parsed + shown like a lead's" });
+      // LIST (R10): a real Status column + a Follow-up column; the pool column is
+      // relabeled "Pool" so the R4 split holds on the list too.
+      const list = fs.readFileSync("src/components/BuyerListClient.tsx", "utf8");
+      assert(/key:\s*"businessStatus",\s*label:\s*"Status"/.test(list), "buyer list must have a Status column reading businessStatus");
+      assert(/key:\s*"followup",\s*label:\s*"Follow-up"/.test(list), "buyer list must have a Follow-up column");
+      assert(/key:\s*"poolStatus",\s*label:\s*"Pool"/.test(list), "buyer list pool column must be relabeled 'Pool' (not 'Status')");
+      results.push({ name: "  ↳ note", ok: true, detail: "buyer Status (businessStatus) distinct from Data Pool (poolStatus); follow-up parsed + shown like a lead's; list has Status+Follow-up columns" });
     },
   },
   {

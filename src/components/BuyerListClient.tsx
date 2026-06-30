@@ -109,8 +109,13 @@ const STATUS_ORDER: { value: string; label: string }[] = [
 
 const COLS: ColDef[] = [
   { key: "clientName", label: "Client Name", kind: "text", str: (r) => r.clientName },
-  // Status filters on the LABEL (what the user sees); options are the canonical order.
-  { key: "poolStatus", label: "Status", kind: "select", ordered: true, str: (r) => r.poolStatusLabel,
+  // R4: the REAL imported buyer status (distinct from the Admin-Pool lifecycle below).
+  { key: "businessStatus", label: "Status", kind: "select", str: (r) => r.businessStatus },
+  // R5: follow-up date — sortable/rangeable on its ms value (parity with txnDate).
+  { key: "followup", label: "Follow-up", kind: "date", str: (r) => r.followupDisplay, num: (r) => r.followupMs },
+  // The Admin-Pool / assignment lifecycle — RELABELED "Pool" so it is never confused
+  // with the imported Status above. Filters on the LABEL; options are the canonical order.
+  { key: "poolStatus", label: "Pool", kind: "select", ordered: true, str: (r) => r.poolStatusLabel,
     options: () => STATUS_ORDER.map((s) => s.label) },
   { key: "project", label: "Project", kind: "text", str: (r) => r.project },
   { key: "towerUnit", label: "Tower / Unit", kind: "text", str: (r) => r.towerUnit },
@@ -580,7 +585,9 @@ export default function BuyerListClient(props: Props) {
                     <th className="px-3 py-2 w-8"><input type="checkbox" checked={allFilteredSelected} onChange={toggleAll} aria-label="Select all" /></th>
                   )}
                   <th className="px-3 py-2 whitespace-nowrap"><span className="cursor-pointer" onClick={() => toggleSort("clientName")}>Client Name{arrow("clientName")}</span>{renderHF("clientName")}</th>
-                  <th className="px-3 py-2 whitespace-nowrap"><span className="cursor-pointer" onClick={() => toggleSort("poolStatus")}>Status{arrow("poolStatus")}</span>{renderHF("poolStatus")}</th>
+                  <th className="px-3 py-2 whitespace-nowrap"><span className="cursor-pointer" onClick={() => toggleSort("businessStatus")}>Status{arrow("businessStatus")}</span>{renderHF("businessStatus")}</th>
+                  <th className="px-3 py-2 whitespace-nowrap"><span className="cursor-pointer" onClick={() => toggleSort("followup")}>Follow-up{arrow("followup")}</span>{renderHF("followup")}</th>
+                  <th className="px-3 py-2 whitespace-nowrap" title="Admin-Pool / assignment lifecycle — separate from the imported Status"><span className="cursor-pointer" onClick={() => toggleSort("poolStatus")}>Pool{arrow("poolStatus")}</span>{renderHF("poolStatus")}</th>
                   <th className="px-3 py-2 whitespace-nowrap"><span className="cursor-pointer" onClick={() => toggleSort("project")}>Project{arrow("project")}</span>{renderHF("project")}</th>
                   <th className="px-3 py-2 whitespace-nowrap"><span className="cursor-pointer" onClick={() => toggleSort("towerUnit")}>Tower / Unit{arrow("towerUnit")}</span>{renderHF("towerUnit")}</th>
                   <th className="px-3 py-2 whitespace-nowrap"><span className="cursor-pointer" onClick={() => toggleSort("propertyType")}>Type{arrow("propertyType")}</span>{renderHF("propertyType")}</th>
@@ -604,6 +611,8 @@ export default function BuyerListClient(props: Props) {
                         <span title={`${BUYER_CLASS_META[r.buyerClass].label} buyer`} className={`ml-1.5 inline-flex items-center gap-0.5 rounded-full border px-1.5 py-0.5 text-[10px] font-semibold align-middle ${BUYER_CLASS_META[r.buyerClass].tone}`}>{BUYER_CLASS_META[r.buyerClass].emoji} {BUYER_CLASS_META[r.buyerClass].label}</span>
                       )}
                     </td>
+                    <td className="px-3 py-2 text-gray-700 dark:text-slate-300 whitespace-nowrap">{r.businessStatus || "—"}</td>
+                    <td className="px-3 py-2 text-gray-600 dark:text-slate-400 whitespace-nowrap">{r.followupDisplay || "—"}</td>
                     <td className="px-3 py-2"><span className={`inline-flex rounded-full border px-2 py-0.5 text-[10px] font-semibold ${statusChip(r.poolStatus)}`}>{r.poolStatusLabel}</span></td>
                     <td className="px-3 py-2 text-gray-700 dark:text-slate-300">{r.project || "—"}</td>
                     <td className="px-3 py-2 text-gray-600 dark:text-slate-400 whitespace-nowrap">{r.towerUnit || "—"}</td>
@@ -649,6 +658,8 @@ export default function BuyerListClient(props: Props) {
                   </div>
                 </div>
                 <Link href={r.href} className="block mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-xs text-gray-600 dark:text-slate-400">
+                  <div><span className="text-gray-400">Status:</span> <span className="font-medium text-gray-800 dark:text-slate-200">{r.businessStatus || "—"}</span></div>
+                  <div><span className="text-gray-400">Follow-up:</span> {r.followupDisplay || "—"}</div>
                   <div><span className="text-gray-400">Value:</span> <span className="font-medium text-gray-800 dark:text-slate-200">{r.txnValueDisplay}</span></div>
                   <div><span className="text-gray-400">Date:</span> {r.txnDate || "—"}</div>
                   <div><span className="text-gray-400">Type:</span> {r.propertyType || "—"}</div>
