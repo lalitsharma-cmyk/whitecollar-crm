@@ -1188,59 +1188,107 @@ const checks: Check[] = [
   },
 
   // ───────────────────────────────────────────────────────────────────────────
-  // 14. AGENT PERFORMANCE (2026-06-23) — the report counts leads by ASSIGNMENT
-  //   HISTORY (Assignment table), not just current owner, and NEVER counts
-  //   deleted leads. Mirrors src/lib/agentPerformance.ts buildAgentReport()
-  //   totalAssigned + drilldownWhere("totalAssigned") inline (server-only lib
-  //   can't be imported under bare tsx). Invariants:
-  //    (a) the count-side (distinct leads via Assignment in window) == the
-  //        drill-side (Lead where assignments.some) for a real agent.
-  //    (b) a soft-deleted lead with an assignment in window is EXCLUDED.
+  // 14. AGENT PERFORMANCE (2026-06-23; reworked 2026-06-30) — "Leads Assigned"
+  //   counts by the lead's CURRENT owner (ownerId), NOT assignment history, and
+  //   NEVER counts deleted leads. A reassigned lead immediately follows the new
+  //   owner (Lalit's rule — fixes the Tanuj→Yasir stale-owner drill-down). A
+  //   rejected lead (ownerId nulled) is still attributed via previousOwnerId.
+  //   Mirrors src/lib/agentPerformance.ts buildAgentReport() totalAssigned +
+  //   drilldownWhere("totalAssigned") inline (server-only lib can't be imported
+  //   under bare tsx). Invariants:
+  //    (a) count-side (attribute each lead to ownerId ?? previousOwnerId) ==
+  //        drill-side (the same OR-where) for a real agent.
+  //    (b) a REASSIGNED lead counts for the current owner ONLY, never the old one.
+  //    (c) a soft-deleted owned lead is EXCLUDED.
   // ───────────────────────────────────────────────────────────────────────────
   {
-    name: "agent-performance — assignment-history attribution reconciles + excludes deleted",
+    name: "agent-performance — Leads Assigned uses CURRENT owner (reassigned follows new owner) + reconciles + excludes deleted",
     run: async () => {
-      // Pick an agent who actually holds assignment history.
-      const withAsg = await prisma.assignment.findFirst({
-        where: { lead: { deletedAt: null } },
-        select: { userId: true, assignedAt: true },
-        orderBy: { assignedAt: "asc" },
+      // Pick an agent who currently owns at least one lead.
+      const withOwn = await prisma.lead.findFirst({
+        where: { deletedAt: null, ownerId: { not: null } },
+        select: { ownerId: true },
       });
-      if (!withAsg) {
-        results.push({ name: "  ↳ note", ok: true, detail: "no assignment history present — attribution check skipped" });
+      if (!withOwn?.ownerId) {
+        results.push({ name: "  ↳ note", ok: true, detail: "no owned leads present — attribution check skipped" });
         return;
       }
-      const agentId = withAsg.userId;
-      // Wide window covering all assignment history.
-      const gte = new Date("2000-01-01T00:00:00Z");
-      const lt = new Date("2999-01-01T00:00:00Z");
-      const win = { gte, lt };
+      const agentId = withOwn.ownerId;
 
-      // COUNT side: distinct leads assigned to this agent in window, lead not deleted.
-      const asgRows = await prisma.assignment.findMany({
-        where: { userId: agentId, assignedAt: win, lead: { deletedAt: null } },
-        select: { leadId: true },
-      });
-      const distinctLeadIds = new Set(asgRows.map((r) => r.leadId));
-      const countSide = distinctLeadIds.size;
+      // Canonical CURRENT-attribution where (mirror of drilldownWhere('totalAssigned')
+      // and the buildAgentReport cohort): owns now, OR a rejected-unassigned lead
+      // the agent previously handled.
+      const ownerWhere = {
+        deletedAt: null,
+        OR: [{ ownerId: agentId }, { ownerId: null, previousOwnerId: agentId }],
+      };
 
-      // DRILL side: leads where an assignment to this agent exists in window (deleted excluded).
-      const drillSide = await prisma.lead.count({
-        where: { deletedAt: null, assignments: { some: { userId: agentId, assignedAt: win } } },
+      // COUNT side: attribute each lead to ownerId ?? previousOwnerId.
+      const rows = await prisma.lead.findMany({
+        where: ownerWhere,
+        select: { ownerId: true, previousOwnerId: true },
       });
+      const countSide = rows.filter((r) => (r.ownerId ?? r.previousOwnerId) === agentId).length;
+
+      // DRILL side: the same where, counted.
+      const drillSide = await prisma.lead.count({ where: ownerWhere });
       assert(countSide === drillSide,
-        `assignment-history count must reconcile with the drill-down query (count=${countSide}, drill=${drillSide})`);
+        `current-owner count must reconcile with the drill-down query (count=${countSide}, drill=${drillSide})`);
 
-      // Deleted-exclusion: a deleted lead with an assignment must NOT be counted.
-      // Baseline (no deletedAt filter) >= filtered, and any deleted-with-assignment drops out.
+      // (b) STALE-OWNER GUARD: a reassigned lead (ownerId != previousOwnerId, both
+      // set) must count for the CURRENT owner and NEVER for the previous owner.
+      const candidates = await prisma.lead.findMany({
+        where: { deletedAt: null, ownerId: { not: null }, previousOwnerId: { not: null } },
+        select: { id: true, ownerId: true, previousOwnerId: true },
+        take: 300,
+      });
+      const reassigned = candidates.find((c) => c.ownerId !== c.previousOwnerId);
+      if (reassigned && reassigned.ownerId && reassigned.previousOwnerId) {
+        const underNew = await prisma.lead.count({
+          where: { id: reassigned.id, deletedAt: null, OR: [{ ownerId: reassigned.ownerId }, { ownerId: null, previousOwnerId: reassigned.ownerId }] },
+        });
+        const underOld = await prisma.lead.count({
+          where: { id: reassigned.id, deletedAt: null, OR: [{ ownerId: reassigned.previousOwnerId }, { ownerId: null, previousOwnerId: reassigned.previousOwnerId }] },
+        });
+        assert(underNew === 1 && underOld === 0,
+          `reassigned lead ${reassigned.id} must count for the CURRENT owner only (new=${underNew}, old=${underOld})`);
+      } else {
+        results.push({ name: "  ↳ note", ok: true, detail: "no reassigned lead (ownerId!=previousOwnerId) present — stale-owner guard skipped" });
+      }
+
+      // (b2) HISTORY-STALE GUARD (the exact Akanksha Chugh bug): a lead owned by
+      // agent A but carrying an Assignment-history row to a DIFFERENT agent B must
+      // count for A (current owner) and NEVER for B. The OLD report counted it for
+      // BOTH (via Assignment.some) — this asserts that can't come back.
+      const withAsg = await prisma.lead.findMany({
+        where: { deletedAt: null, ownerId: { not: null }, assignments: { some: {} } },
+        select: { id: true, ownerId: true, assignments: { select: { userId: true } } },
+        take: 500,
+      });
+      const stale = withAsg.find((l) => l.assignments.some((a) => a.userId !== l.ownerId));
+      if (stale && stale.ownerId) {
+        const otherAgent = stale.assignments.find((a) => a.userId !== stale.ownerId)!.userId;
+        const underOwner = await prisma.lead.count({
+          where: { id: stale.id, deletedAt: null, OR: [{ ownerId: stale.ownerId }, { ownerId: null, previousOwnerId: stale.ownerId }] },
+        });
+        const underOther = await prisma.lead.count({
+          where: { id: stale.id, deletedAt: null, OR: [{ ownerId: otherAgent }, { ownerId: null, previousOwnerId: otherAgent }] },
+        });
+        assert(underOwner === 1 && underOther === 0,
+          `history-stale lead ${stale.id} must count for the CURRENT owner only, not a prior assignee (owner=${underOwner}, oldAssignee=${underOther})`);
+      } else {
+        results.push({ name: "  ↳ note", ok: true, detail: "no lead with a cross-owner assignment row present — history-stale guard skipped" });
+      }
+
+      // (c) Deleted-exclusion: a deleted owned lead must NOT be counted.
       const drillNoDelFilter = await prisma.lead.count({
-        where: { assignments: { some: { userId: agentId, assignedAt: win } } },
+        where: { OR: [{ ownerId: agentId }, { ownerId: null, previousOwnerId: agentId }] },
       });
-      const deletedWithAsg = await prisma.lead.count({
-        where: { deletedAt: { not: null }, assignments: { some: { userId: agentId, assignedAt: win } } },
+      const deletedOwned = await prisma.lead.count({
+        where: { deletedAt: { not: null }, OR: [{ ownerId: agentId }, { ownerId: null, previousOwnerId: agentId }] },
       });
-      assert(drillNoDelFilter - deletedWithAsg === drillSide,
-        `deletedAt:null must remove exactly the deleted-with-assignment leads (all=${drillNoDelFilter}, deleted=${deletedWithAsg}, filtered=${drillSide})`);
+      assert(drillNoDelFilter - deletedOwned === drillSide,
+        `deletedAt:null must remove exactly the deleted owned leads (all=${drillNoDelFilter}, deleted=${deletedOwned}, filtered=${drillSide})`);
     },
   },
 
@@ -3619,11 +3667,15 @@ const checks: Check[] = [
         "action-complete is missing the required contact-required message");
       assert(/actionContext:/.test(ac), "action-complete does not record the contact channel (actionContext)");
 
-      // (d) SNOOZE REASON — reason required when no client response (agent).
+      // (d) SNOOZE — V1: INSTANT, no mandatory reason (Lalit's UX simplification,
+      //     2026-06-30). The agent-without-contact reason gate was REMOVED; snooze
+      //     must still auto-log to the timeline + stamp the snooze report token.
       const asPath = path.join(root, "src/app/api/leads/[id]/action-snooze/route.ts");
       const as = fs.readFileSync(asPath, "utf8");
-      assert(/reasonRequired/.test(as) && /me\.role\s*===\s*"AGENT"/.test(as),
-        "action-snooze does not require a reason for agents without a client response");
+      assert(!/reasonRequired/.test(as),
+        "action-snooze still has the mandatory-reason gate (it must be removed for instant snooze)");
+      assert(/prisma\.activity\.create/.test(as) && /[Ss]noozed/.test(as),
+        "action-snooze no longer auto-logs the snooze to the conversation timeline");
       assert(/actionContext:\s*hasResponse\s*\?\s*"snooze:contacted"\s*:\s*"snooze:no-contact"/.test(as),
         "action-snooze does not stamp the snooze:contacted / snooze:no-contact report token");
 

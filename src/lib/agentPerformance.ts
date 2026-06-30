@@ -3,11 +3,15 @@
 //
 // Single source of truth for the /reports/agent-performance module. Computes a
 // typed per-agent metric object that is:
-//   • DATE-WINDOW aware   — every metric respects an IST day-boundary range.
-//   • ASSIGNMENT-HISTORY based for the "Leads Assigned" group — counts by the
-//     Assignment table (who HELD the lead when it was assigned in the window),
-//     NOT only the current owner. If Lalit assigned a lead to Tanuj on Jun-10,
-//     it counts for Tanuj's Jun-10 window even if ownership later moved.
+//   • DATE-WINDOW aware   — the OUTCOME / activity metrics respect an IST
+//     day-boundary range (calls, meetings, rejected/closed/lost-in-window).
+//   • CURRENT-OWNER based for the "Leads Assigned" group — counts by the lead's
+//     CURRENT owner (ownerId), NOT assignment history. A lead reassigned
+//     Tanuj→Yasir immediately stops counting for Tanuj and counts for Yasir, so
+//     the report reconciles with global search / the Leads list / lead detail /
+//     export. (A lead the agent owned that is now rejected-and-unassigned is
+//     still attributed to them via previousOwnerId.) This group is a point-in-
+//     time snapshot, so it is intentionally NOT date-windowed.
 //   • DELETED / archived EXCLUDED everywhere (lead.deletedAt: null). A
 //     soft-deleted (recycle-bin / rolled-back-import) lead never counts.
 //   • RECONCILABLE — every count has a matching drill-down query in
@@ -18,8 +22,8 @@
 // Value, Collection, Incentive) are ADDITIVE: add fields to AgentMetrics +
 // a compute branch; nothing downstream needs a redesign.
 //
-// Rejected leads STILL COUNT (they are part of an agent's handled volume) — the
-// assignment-history attribution is independent of currentStatus, and outcome
+// Rejected leads STILL COUNT (they are part of an agent's handled volume) — they
+// are attributed via previousOwnerId once reject nulls the owner, and outcome
 // metrics report rejected/closed/lost as their own columns.
 // ────────────────────────────────────────────────────────────────────────────
 
@@ -366,43 +370,48 @@ export async function buildAgentReport(range: DateRange, scope: ReportScope): Pr
 
   const win = { gte: range.gte, lt: range.lt };
 
-  // ── 1. ASSIGNMENT-HISTORY rows in window (the attribution backbone) ──
-  // Pull every Assignment event in the window for these agents, with the lead's
-  // attributes. deletedAt:null on the joined lead drops recycle-bin records.
-  // We DON'T filter isColdCall here — assignment volume is the agent's full
-  // handled book; revival/cold are reported as their own column.
-  const assignmentRows = await prisma.assignment.findMany({
+  // ── 1. CURRENT-OWNER book (the attribution backbone) ──
+  // "Leads Assigned" reflects CURRENT ownership — the agent who owns the lead
+  // NOW — so a reassigned lead immediately moves to the new owner and the metric
+  // reconciles 1:1 with global search, the Leads list (owner filter), the lead
+  // detail page, and export. (Lalit's rule: "Total Leads Assigned" is a CURRENT
+  // metric, NOT assignment history. A lead reassigned Tanuj→Yasir stops counting
+  // for Tanuj and counts for Yasir — it must never linger under the old owner.)
+  //
+  // Rejected leads STILL COUNT for the agent who handled them: reject nulls
+  // ownerId but preserves previousOwnerId, so we attribute (ownerId ?? previous-
+  // OwnerId). This keeps the rejection-rate numerator (curRejected) meaningful —
+  // same (ownerId OR null+previousOwnerId) shape the `rejected`/`lost` drills use.
+  //
+  // No date window: the current book is a point-in-time fact, not a windowed
+  // event — the OUTCOMES section below stays windowed. deletedAt:null drops
+  // recycle-bin records. isColdCall NOT filtered — full holding; revival/cold
+  // are reported as their own column.
+  const ownedRows = await prisma.lead.findMany({
     where: {
-      userId: { in: agentIds },
-      assignedAt: win,
-      lead: { deletedAt: null },
+      deletedAt: null,
+      OR: [
+        { ownerId: { in: agentIds } },
+        { ownerId: null, previousOwnerId: { in: agentIds } },
+      ],
     },
     select: {
-      userId: true,
-      leadId: true,
-      lead: {
-        select: {
-          currentStatus: true,
-          source: true,
-          sourceRaw: true,
-          leadOrigin: true,
-          isColdCall: true,
-          rejectedAt: true,
-        },
-      },
+      ownerId: true,
+      previousOwnerId: true,
+      currentStatus: true,
+      source: true,
+      sourceRaw: true,
+      leadOrigin: true,
+      isColdCall: true,
+      rejectedAt: true,
     },
   });
 
-  // De-dupe (leadId, userId): a lead re-assigned to the SAME agent twice in the
-  // window is one assigned lead for that agent. Keep the lead attributes.
-  const seenPair = new Set<string>();
-  for (const r of assignmentRows) {
-    const key = `${r.userId}::${r.leadId}`;
-    if (seenPair.has(key)) continue;
-    seenPair.add(key);
-    const m = byId.get(r.userId);
+  for (const l of ownedRows) {
+    const aid = l.ownerId ?? l.previousOwnerId; // current owner, or handler of a now-unassigned rejected lead
+    if (!aid) continue;
+    const m = byId.get(aid);
     if (!m) continue;
-    const l = r.lead;
     m.totalAssigned += 1;
     if (isFreshStatus(l.currentStatus)) m.freshAssigned += 1;
     if (WEBSITE_SOURCE_LABELS.has(l.source)) m.websiteAssigned += 1;
@@ -411,10 +420,9 @@ export async function buildAgentReport(range: DateRange, scope: ReportScope): Pr
     // buyerAssigned stays 0 — BuyerRecord exists but records carry a free-text
     // agentName (no User FK), so per-agent attribution would be fuzzy. Left 0 by design.
 
-    // CURRENT-status breakdown of this assigned-in-window lead — DISJOINT
-    // buckets (sum to totalAssigned). Drives the dashboard live grid; uses the
-    // single-source leadStatusColumn() so the columns never drift from the
-    // status vocabulary.
+    // CURRENT-status breakdown of the agent's current book — DISJOINT buckets
+    // (sum to totalAssigned). Uses the single-source leadStatusColumn() so the
+    // columns never drift from the status vocabulary.
     switch (leadStatusColumn(l.currentStatus)) {
       case "FRESH": m.curFresh += 1; break;
       case "CONTACTED": m.curContacted += 1; break;
@@ -427,11 +435,9 @@ export async function buildAgentReport(range: DateRange, scope: ReportScope): Pr
       default: m.curOther += 1; break;
     }
     if (isWorkableStatus(l.currentStatus)) m.assignedActive += 1;
-    // SAME-COHORT rejected: this assigned-in-window lead is CURRENTLY rejected
+    // SAME-COHORT rejected: this attributed lead is CURRENTLY rejected
     // (rejectedAt stamped). Numerator for the cohort rejection rate — guaranteed
-    // ⊆ totalAssigned, so the rate can never exceed 100% (the 233% bug). NOTE
-    // this is intentionally NOT "rejected in the window" (m.rejected, owner-
-    // scoped) — that population is unrelated to the assigned cohort.
+    // ⊆ totalAssigned, so the rate can never exceed 100%.
     if (l.rejectedAt != null) m.curRejected += 1;
   }
 
@@ -784,25 +790,29 @@ const ACTIVE_OR: Prisma.LeadWhereInput["OR"] = [
  */
 export function drilldownWhere(key: DrillKey, agentId: string, range: DateRange): Prisma.LeadWhereInput {
   const win = { gte: range.gte, lt: range.lt };
-  // Assignment-history population: this agent held the lead via an assignment
-  // event inside the window.
-  const assignedInWindow: Prisma.LeadWhereInput = {
+  // CURRENT-attribution population: the agent owns the lead NOW, OR it is a lead
+  // they owned that is now rejected-and-unassigned (reject nulls ownerId but
+  // keeps previousOwnerId — same shape as the `rejected`/`lost` drills). This
+  // matches the count side and reconciles with search / leads-list / export.
+  // Wrapped in AND:[{OR}] so case branches can add their own top-level OR
+  // (status sets) without clobbering the owner clause.
+  const currentlyOwned: Prisma.LeadWhereInput = {
     deletedAt: null,
-    assignments: { some: { userId: agentId, assignedAt: win } },
+    AND: [{ OR: [{ ownerId: agentId }, { ownerId: null, previousOwnerId: agentId }] }],
   };
   switch (key) {
     case "totalAssigned":
-      return assignedInWindow;
+      return currentlyOwned;
     case "freshAssigned":
       // Use the CANONICAL fresh set (8 casings) so the drill matches the card's
       // isFreshStatus()-based count (the local 6-value list under-counted by 2).
-      return { ...assignedInWindow, OR: [{ currentStatus: null }, { currentStatus: "" }, { currentStatus: { in: FRESH_STATUS_IN_VALUES } }] };
+      return { ...currentlyOwned, OR: [{ currentStatus: null }, { currentStatus: "" }, { currentStatus: { in: FRESH_STATUS_IN_VALUES } }] };
     case "websiteAssigned":
-      return { ...assignedInWindow, source: { in: WEBSITE_SOURCE_ENUMS } };
+      return { ...currentlyOwned, source: { in: WEBSITE_SOURCE_ENUMS } };
     case "eventAssigned":
-      return { ...assignedInWindow, source: { in: EVENT_SOURCE_ENUMS } };
+      return { ...currentlyOwned, source: { in: EVENT_SOURCE_ENUMS } };
     case "revivalAssigned":
-      return { ...assignedInWindow, OR: [{ leadOrigin: { in: REVIVAL_ORIGINS } }, { isColdCall: true }] };
+      return { ...currentlyOwned, OR: [{ leadOrigin: { in: REVIVAL_ORIGINS } }, { isColdCall: true }] };
     case "rejected":
       // Rejected leads are UNASSIGNED (ownerId→null) but keep previousOwnerId — match
       // owned (legacy) OR unassigned-with-previousOwner so the drill == the summary.
@@ -831,41 +841,41 @@ export function drilldownWhere(key: DrillKey, agentId: string, range: DateRange)
     case "funnelBookings":
       return { ownerId: agentId, deletedAt: null, currentStatus: { in: BOOKING_STATUSES } };
 
-    // ── CURRENT-status columns: the assigned-in-window population, bucketed by
-    // current status. AND assignedInWindow with the same status predicate
+    // ── CURRENT-status columns: the current-owner population, bucketed by
+    // current status. AND currentlyOwned with the same status predicate
     // leadStatusColumn() uses, so count == drill records exactly. ──
     case "curFresh":
-      return { ...assignedInWindow, OR: [{ currentStatus: null }, { currentStatus: "" }, { currentStatus: { in: FRESH_STATUS_IN_VALUES } }] };
+      return { ...currentlyOwned, OR: [{ currentStatus: null }, { currentStatus: "" }, { currentStatus: { in: FRESH_STATUS_IN_VALUES } }] };
     case "curContacted":
-      return { ...assignedInWindow, currentStatus: { in: COLUMN_STATUS_VALUES.CONTACTED ?? [] } };
+      return { ...currentlyOwned, currentStatus: { in: COLUMN_STATUS_VALUES.CONTACTED ?? [] } };
     case "curQualified":
-      return { ...assignedInWindow, currentStatus: { in: COLUMN_STATUS_VALUES.QUALIFIED ?? [] } };
+      return { ...currentlyOwned, currentStatus: { in: COLUMN_STATUS_VALUES.QUALIFIED ?? [] } };
     case "curMeeting":
-      return { ...assignedInWindow, currentStatus: { in: COLUMN_STATUS_VALUES.MEETING ?? [] } };
+      return { ...currentlyOwned, currentStatus: { in: COLUMN_STATUS_VALUES.MEETING ?? [] } };
     case "curSiteVisit":
-      return { ...assignedInWindow, currentStatus: { in: COLUMN_STATUS_VALUES.SITE_VISIT ?? [] } };
+      return { ...currentlyOwned, currentStatus: { in: COLUMN_STATUS_VALUES.SITE_VISIT ?? [] } };
     case "curNegotiation":
-      return { ...assignedInWindow, currentStatus: { in: COLUMN_STATUS_VALUES.NEGOTIATION ?? [] } };
+      return { ...currentlyOwned, currentStatus: { in: COLUMN_STATUS_VALUES.NEGOTIATION ?? [] } };
     case "curBooked":
-      return { ...assignedInWindow, currentStatus: { in: COLUMN_STATUS_VALUES.BOOKED ?? [] } };
+      return { ...currentlyOwned, currentStatus: { in: COLUMN_STATUS_VALUES.BOOKED ?? [] } };
     case "curLost":
-      return { ...assignedInWindow, currentStatus: { in: COLUMN_STATUS_VALUES.LOST ?? [] } };
+      return { ...currentlyOwned, currentStatus: { in: COLUMN_STATUS_VALUES.LOST ?? [] } };
     case "curOther":
       // Closed-non-win + any unmapped status: NOT fresh, NOT listed in any column.
       return {
-        ...assignedInWindow,
+        ...currentlyOwned,
         currentStatus: { notIn: [...COLUMN_NON_OPEN_STATUSES, ...FRESH_STATUS_IN_VALUES], not: null },
         NOT: { currentStatus: "" },
       };
     case "assignedActive":
       // Assigned-in-window AND currently workable (not terminal).
-      return { ...assignedInWindow, OR: [{ currentStatus: null }, { currentStatus: "" }, { currentStatus: { notIn: TERMINAL_STATUSES } }] };
+      return { ...currentlyOwned, OR: [{ currentStatus: null }, { currentStatus: "" }, { currentStatus: { notIn: TERMINAL_STATUSES } }] };
     case "curRejected":
       // SAME-COHORT rejected: assigned-in-window AND currently rejected
       // (rejectedAt stamped). This is the drill behind the Rejection-Rate
       // numerator — its record count == curRejected exactly. (Distinct from the
       // `rejected` drill, which is owner-scoped rejectedAt-in-window.)
-      return { ...assignedInWindow, rejectedAt: { not: null } };
+      return { ...currentlyOwned, rejectedAt: { not: null } };
 
     default:
       return { deletedAt: null, id: "__none__" }; // never matches

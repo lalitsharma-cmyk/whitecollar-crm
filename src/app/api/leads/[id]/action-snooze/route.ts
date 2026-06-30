@@ -36,19 +36,15 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const body = await req.json().catch(() => ({}));
   const reason = String(body.reason ?? "").trim();
 
-  // ── Snooze reason rule (Lalit's policy) ───────────────────────────────────
-  // If there is NO client response (no connected contact today), the agent must
-  // give a reason for pushing the follow-up out — so a snooze isn't a silent
-  // "kick the can". A connected contact today makes the reason optional. Admins/
-  // managers bypass (corrections). The reason is stored in the timeline entry.
+  // ── Snooze is INSTANT (Lalit's V1 UX rule) ────────────────────────────────
+  // No mandatory reason: an agent postponing a follow-up (30 min / 1 hour /
+  // tomorrow) must not be interrupted by a prompt. We STILL compute whether the
+  // client was actually contacted+connected today, purely to bucket the snooze
+  // in reports (snooze:contacted vs snooze:no-contact). `reason` stays OPTIONAL
+  // — a future build may send it for long/custom postponements and it will be
+  // appended to the timeline title — but nothing requires it now.
   const contact = await contactActivityTodayInfo(id);
   const hasResponse = contact.has && contact.connected;
-  if (me.role === "AGENT" && !hasResponse && !reason) {
-    return NextResponse.json(
-      { error: "No client response yet — add a short reason for snoozing this follow-up.", reasonRequired: true },
-      { status: 400 },
-    );
-  }
 
   // ── Explicit datetime path (Lead-View picker) ──────────────────────────
   // Takes precedence over hours/days. Must be a valid, FUTURE instant.

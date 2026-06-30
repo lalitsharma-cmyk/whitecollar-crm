@@ -176,7 +176,7 @@ export default async function AgentDetailPage({
         </div>
       </div>
 
-      <Group title="Lead Assignment (by assignment history in period)">
+      <Group title="Lead Assignment (by current owner)">
         <Stat label="Total Assigned" value={m.totalAssigned} agentId={agentId} metricKey="totalAssigned" query={query} accent="text-blue-700" />
         <Stat label="Fresh Assigned" value={m.freshAssigned} agentId={agentId} metricKey="freshAssigned" query={query} />
         <Stat label="Website Assigned" value={m.websiteAssigned} agentId={agentId} metricKey="websiteAssigned" query={query} />

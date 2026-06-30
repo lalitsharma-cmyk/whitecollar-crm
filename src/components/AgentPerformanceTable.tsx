@@ -38,7 +38,7 @@ export default function AgentPerformanceTable({
             <th className="sticky left-0 bg-white z-10">Agent</th>
             <th>Team</th>
             {/* Assignment band */}
-            <th className="text-center bg-blue-50/60" title="By assignment history in the period">Assigned</th>
+            <th className="text-center bg-blue-50/60" title="By current owner — a reassigned lead immediately follows its new owner">Assigned</th>
             <th className="text-center bg-blue-50/60">Fresh</th>
             <th className="text-center bg-blue-50/60">Website</th>
             <th className="text-center bg-blue-50/60">Event</th>
@@ -132,7 +132,7 @@ export default function AgentPerformanceTable({
         </tbody>
       </table>
       <div className="text-[10px] text-gray-500 p-3 leading-relaxed">
-        <strong>Assigned</strong> bands count by <strong>assignment history</strong> in the selected period (the agent who held the lead when it was assigned) — not just the current owner.
+        <strong>Assigned</strong> bands count by the lead&apos;s <strong>current owner</strong> — a reassigned lead immediately follows its new owner (so it matches global search, the Leads list, and export).
         <strong> Outcomes / Funnel</strong> reflect the agent&apos;s current book. <strong>Engagement / Meetings / Site visits</strong> count actions in the period.
         Deleted &amp; recycle-bin leads are excluded everywhere. Click an agent for the full drill-down. Buyer = 0 (module not yet live).
       </div>

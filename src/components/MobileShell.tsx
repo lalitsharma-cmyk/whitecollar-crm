@@ -5,7 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import {
   LayoutDashboard, Users, Sparkles, Menu, X,
   Building2, BarChart3, Upload, UserCog, Settings as SettingsIcon, LogOut, Landmark,
-  ChevronLeft, ChevronRight, Gem, HelpCircle, AlertTriangle, Lock, PhoneCall, Briefcase, Database, ShieldCheck, Bot, Inbox, BadgeDollarSign, MapPin, Images, History,
+  ChevronLeft, ChevronRight, Gem, HelpCircle, AlertTriangle, Lock, PhoneCall, Briefcase, Database, ShieldCheck, Bot, Inbox, BadgeDollarSign, MapPin, Images, History, Search,
 } from "lucide-react";
 import GlobalDateFilter from "./GlobalDateFilter";
 import NotifBell from "./NotifBell";
@@ -338,6 +338,17 @@ export default function MobileShell({ children, user, awaitingTeamCount = 0 }: P
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src="/brand/wcr-logo.png" alt="WCR" className="h-7 w-auto object-contain" />
         <div className="flex-1" />
+        {/* Global search — mobile parity with the desktop topbar search.
+            Phones have no Ctrl/Cmd+K, so this button opens the SAME QuickSearch
+            palette by dispatching the same synthetic key event the desktop
+            search bar uses. Never hide search behind a desktop-only key. */}
+        <button
+          onClick={() => window.dispatchEvent(new KeyboardEvent("keydown", { key: "k", ctrlKey: true, bubbles: true }))}
+          aria-label="Search leads"
+          className="p-2 rounded hover:bg-white/10 w-10 h-10 flex items-center justify-center flex-shrink-0"
+        >
+          <Search className="w-5 h-5" />
+        </button>
         <WhatsAppPanel />
         <ThemeToggle />
         <Suspense fallback={<span className="w-9 h-9 inline-block" />}>

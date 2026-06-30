@@ -269,21 +269,12 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
     if (isPastISTLocalInput(v)) throw new Error("Pick a future date/time (IST).");
     setActionBusy({ id: leadId, kind: "snooze" });
     try {
-      const post = (reason?: string) => fetch(`/api/leads/${leadId}/action-snooze`, {
+      // V1: instant snooze — no reason prompt (Lalit's UX simplification).
+      const r = await fetch(`/api/leads/${leadId}/action-snooze`, {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ at: `${v}:00+05:30`, ...(reason ? { reason } : {}) }),
+        body: JSON.stringify({ at: `${v}:00+05:30` }),
       });
-      let r = await post();
-      let j = await r.json().catch(() => ({}));
-      // No client response today → server asks for a reason. Prompt + retry.
-      if (!r.ok && j.reasonRequired) {
-        const reason = (typeof window !== "undefined"
-          ? window.prompt("No client response yet — add a short reason for snoozing this follow-up:")
-          : "")?.trim();
-        if (!reason) throw new Error("A reason is required to snooze without a client response.");
-        r = await post(reason);
-        j = await r.json().catch(() => ({}));
-      }
+      const j = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(j.error ?? "Could not snooze");
       router.refresh();
     } finally { setActionBusy(null); }

@@ -124,10 +124,12 @@ export default async function AgentPerformancePage({
       {!isAgent && rows.length > 1 && <AgentRankings rows={rows} />}
 
       <div className="card p-3 bg-blue-50 border-l-4 border-blue-400 text-[11px] text-blue-800 leading-relaxed">
-        <strong>How to read this:</strong> Assignment metrics use the <strong>assignment history</strong> (the agent who held the lead
-        when it was assigned in the period) — so a lead reassigned later still counts for whoever worked it. Rejected leads are
-        included in handled volume. Deleted / recycle-bin leads are never counted. Every metric respects the period filter, and the
-        counts reconcile 1:1 with the lead lists they link to. Revenue / brokerage / booking-value tracking can be layered on later
+        <strong>How to read this:</strong> Assignment metrics count by the lead&apos;s <strong>current owner</strong> — a lead
+        reassigned from one agent to another immediately follows the new owner, so &quot;Total Assigned&quot; matches global search,
+        the Leads list, the lead detail page, and export. (A lead the agent owned that is now rejected-and-unassigned is still
+        attributed to them.) Rejected leads are included in handled volume. Deleted / recycle-bin leads are never counted. The
+        Assignment group is a current snapshot (not period-filtered); Outcomes / Engagement / Meetings respect the period filter.
+        Counts reconcile 1:1 with the lead lists they link to. Revenue / brokerage / booking-value tracking can be layered on later
         without changing this report.
       </div>
     </>
