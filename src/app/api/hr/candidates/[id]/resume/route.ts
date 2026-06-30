@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { createHash } from "crypto";
 import { prisma } from "@/lib/prisma";
 import { loadOwnedCandidate, hrScopeWhere } from "@/lib/hrAccess";
+import { audit, reqMeta } from "@/lib/audit";
 
 // Max file size: 5 MB (base64 encoded ≈ 6.7 MB stored — acceptable for ~10 HR users)
 const MAX_BYTES = 5 * 1024 * 1024;
@@ -118,6 +119,16 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   if (!resume || resume.candidateId !== candidateId) {
     return NextResponse.json({ error: "Resume not found" }, { status: 404 });
   }
+
+  // Audit the resume/CV access (real applicant PII — who · when · IP · device).
+  await audit({
+    userId: access.me.id,
+    action: "file.download.resume",
+    entity: "HRCandidate",
+    entityId: candidateId,
+    meta: { fileName: resume.filename ?? null, resumeId: resume.id, download },
+    request: reqMeta(req),
+  });
 
   const val = resume.url ?? "";
   // Real external/storage URL → redirect to it.

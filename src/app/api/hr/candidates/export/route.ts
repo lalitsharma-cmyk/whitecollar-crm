@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import type { Prisma } from "@prisma/client";
 import { statusLabel } from "@/lib/hrStatus";
 import { istDayRange, isValidDateKey } from "@/lib/datetime";
+import { audit, reqMeta } from "@/lib/audit";
 
 const COLS: [string, (c: Cand) => string][] = [
   ["Name", c => c.name],
@@ -67,6 +68,14 @@ export async function GET(req: NextRequest) {
   });
 
   const csv = [COLS.map(c => c[0]).join(","), ...candidates.map(c => COLS.map(([, f]) => cell(f(c))).join(","))].join("\n");
+  // Audit the candidate-PII export (who · when · IP · device · row count + filters).
+  await audit({
+    userId: me.id,
+    action: "data.export.hr-candidates",
+    entity: "HRCandidate",
+    meta: { rowCount: candidates.length, ids: ids ?? null, status: status ?? null, position: position ?? null, source: source ?? null },
+    request: reqMeta(req),
+  });
   return new Response("﻿" + csv, {
     headers: { "Content-Type": "text/csv; charset=utf-8", "Content-Disposition": `attachment; filename="candidates-${new Date().toISOString().slice(0, 10)}.csv"` },
   });

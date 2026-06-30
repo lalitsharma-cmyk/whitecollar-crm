@@ -2,6 +2,7 @@ import { type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
 import { normalizeTeam } from "@/lib/teamRouting";
+import { audit, reqMeta } from "@/lib/audit";
 
 // CSV export for call logs — role-scoped:
 //   AGENT   → only their own logs
@@ -94,6 +95,16 @@ export async function GET(req: NextRequest) {
   });
 
   const csvString = [HEADER, ...rows].join("\r\n");
+
+  // Audit the export (who · when · IP · device · row count) — this route is
+  // reachable by any logged-in user incl. AGENTs, so it's a real exfil surface.
+  await audit({
+    userId: me.id,
+    action: "data.export.call-logs",
+    entity: "CallLog",
+    meta: { rowCount: logs.length, filename: "call-logs.csv", from: toIstDate(fromDate), to: toIstDate(toDate), userIdFilter: userIdParam ?? null },
+    request: reqMeta(req),
+  });
 
   return new Response(csvString, {
     headers: {

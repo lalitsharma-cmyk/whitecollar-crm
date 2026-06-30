@@ -10,6 +10,7 @@
 // URL/TEXT resources are not served here (URL shares link straight to fileUrl).
 import { type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { audit, reqMeta } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
 
@@ -26,6 +27,18 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   if (!r || r.deletedAt) {
     return new Response("Not found", { status: 404 });
   }
+
+  // Audit every successful resource-file access. This is a PUBLIC token-gated
+  // link (no session), so userId is null — but reqMeta captures the IP + device
+  // of whoever opened the share link, the only exfil signal available here.
+  await audit({
+    userId: null,
+    action: "file.download.resource",
+    entity: "Resource",
+    entityId: id,
+    meta: { fileName: r.fileName ?? null, type: r.type, download },
+    request: reqMeta(req),
+  });
 
   // External-URL resource → redirect to the hosted file.
   if (r.type === "URL" && r.fileUrl && /^https?:\/\//i.test(r.fileUrl)) {

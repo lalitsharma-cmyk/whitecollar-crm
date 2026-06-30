@@ -5369,6 +5369,28 @@ const checks: Check[] = [
       }
     },
   },
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // EXPORT / DOWNLOAD AUDIT (2026-06-30) — every bulk-export + file-download exfil
+  //   surface writes an AuditLog row (who · when · IP · device via reqMeta).
+  // ───────────────────────────────────────────────────────────────────────────
+  {
+    name: "export-download-audit — bulk export + file download routes write an AuditLog entry",
+    run: async () => {
+      const fs = await import("fs");
+      const checks: Array<[string, RegExp]> = [
+        ["src/app/api/call-logs/export/route.ts", /action:\s*"data\.export\.call-logs"/],
+        ["src/app/api/hr/candidates/export/route.ts", /action:\s*"data\.export\.hr-candidates"/],
+        ["src/app/api/hr/candidates/[id]/resume/route.ts", /action:\s*"file\.download\.resume"/],
+        ["src/app/api/resources/[id]/file/route.ts", /action:\s*"file\.download\.resource"/],
+      ];
+      for (const [f, re] of checks) {
+        const src = fs.readFileSync(f, "utf8");
+        assert(/audit\(\{/.test(src) && re.test(src) && /reqMeta\(req\)/.test(src),
+          `${f} must call audit() with reqMeta(req) and the expected export/download action`);
+      }
+    },
+  },
 ];
 
 // ── runner ────────────────────────────────────────────────────────────────────
