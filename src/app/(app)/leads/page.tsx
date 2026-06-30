@@ -208,6 +208,9 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
   // Meeting / Site Visit filters
   if (sp.hasMeeting === "1") where.meetingDate = { not: null };
   if (sp.hasSiteVisit === "1") where.siteVisitDate = { not: null };
+  // Manager-escalation drill — the dashboard "Needs Lalit" count links here
+  // (?owner=<agent>&needs=1) to show that agent's open escalations.
+  if (sp.needs === "1") where.needsManagerReview = true;
   // Agents are scoped to their own leads (leadScopeWhere above). Only ADMIN/MANAGER
   // may filter by owner — without this guard an agent could read a peer's leads by
   // hand-crafting ?owner=<id>, overriding their ownership scope.
@@ -302,7 +305,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
   // search and show all matching, not just today's.
   // nofollowup filter already sets followupDate: null, so the followup chip
   // default (today) must not compose with it — include it as an "other filter".
-  const hasOtherFilter = !!(sp.q || sp.source || sp.status || sp.cstatus || sp.owner || sp.team || sp.score || sp.ai || sp.untouched || sp.when || sp.notPicked || sp.eoi || sp.smart || sp.potential || sp.fundReady || sp.clientType || sp.whenInvest || sp.project || sp.propertyType || sp.budgetPreset || sp.budgetFrom || sp.budgetTo || sp.city || sp.category || sp.hasMeeting || sp.hasSiteVisit || sp.followupFrom || sp.followupTo || filterTab === "nofollowup");
+  const hasOtherFilter = !!(sp.q || sp.source || sp.status || sp.cstatus || sp.owner || sp.team || sp.score || sp.ai || sp.untouched || sp.when || sp.notPicked || sp.eoi || sp.smart || sp.potential || sp.fundReady || sp.clientType || sp.whenInvest || sp.project || sp.propertyType || sp.budgetPreset || sp.budgetFrom || sp.budgetTo || sp.city || sp.category || sp.hasMeeting || sp.hasSiteVisit || sp.needs || sp.followupFrom || sp.followupTo || filterTab === "nofollowup");
   // ── DEFAULT working view = ALL workable leads (6-tier smart sorted) ─────
   // Updated rule (Lalit, 2026-06-21): show EVERY workable lead by default,
   // ordered by the 6-tier smart sort so today's fresh leads + today's follow-ups

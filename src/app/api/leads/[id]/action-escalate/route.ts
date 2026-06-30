@@ -55,16 +55,21 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     },
   });
 
-  // ── Notify the manager + admins (best-effort; never blocks the escalation) ──
-  // Mirror the reject-route recipient pattern: lead-owner's manager-of-record
-  // plus every active admin, minus the escalator themselves.
+  // ── Notify the sales manager(s) — Lalit, NOT data-admins (best-effort) ──
+  // Manager escalation is a SALES decision: route it to actual sales managers
+  // (role ADMIN/MANAGER) and the owner's manager-of-record. EXCLUDE leadOpsOnly
+  // admins (Sameer = lead/data management, not sales escalation) and hrOnly
+  // users, minus the escalator themselves.
   try {
     const owner = lead.ownerId
       ? await prisma.user.findUnique({ where: { id: lead.ownerId }, select: { name: true, managerId: true } })
       : null;
     const recipientIds = new Set<string>();
-    const admins = await prisma.user.findMany({ where: { role: "ADMIN", active: true }, select: { id: true } });
-    for (const a of admins) recipientIds.add(a.id);
+    const managers = await prisma.user.findMany({
+      where: { role: { in: ["ADMIN", "MANAGER"] }, active: true, leadOpsOnly: false, hrOnly: false },
+      select: { id: true },
+    });
+    for (const a of managers) recipientIds.add(a.id);
     if (owner?.managerId) recipientIds.add(owner.managerId);
     recipientIds.delete(me.id);
 
@@ -74,7 +79,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         userId: uid,
         kind: "REMINDER",
         severity: "WARNING",
-        title: `🆘 ${lead.name} escalated by ${me.name}`,
+        title: `🆘 ${me.name} escalated ${lead.name} for your review`,
         body: `Owner: ${ownerLabel} · Reason: ${reason}`,
         linkUrl: `/leads/${id}`,
         leadId: id,

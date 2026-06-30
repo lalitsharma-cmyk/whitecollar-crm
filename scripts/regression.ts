@@ -5267,6 +5267,42 @@ const checks: Check[] = [
       assert(/"EDIT_CALL"/.test(page) && /editedCalls=\{editedCalls\}/.test(page), "lead page must query EDIT_CALL + pass editedCalls to the conversation card");
     },
   },
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // NEEDS-LALIT ESCALATION (2026-06-30) — replaces the viewer-name "Needs X"
+  //   dashboard column with a fixed "Needs Lalit" manager-escalation workflow:
+  //   clickable count → drill, a manager-resolve endpoint (clear flag + notify
+  //   the agent + timeline), and escalation routed to SALES managers (Lalit),
+  //   never the data-admin (Sameer = leadOpsOnly).
+  // ───────────────────────────────────────────────────────────────────────────
+  {
+    name: "needs-lalit-escalation — manager-resolve endpoint + clickable Needs-Lalit drill + routed to managers (not data-admins)",
+    run: async () => {
+      const fs = await import("fs");
+      // (a) Manager-resolve endpoint: manager-gated, clears the flag, logs + notifies the owner.
+      const mr = fs.readFileSync("src/app/api/leads/[id]/manager-resolve/route.ts", "utf8");
+      assert(/role === "ADMIN" \|\| me\.role === "MANAGER"/.test(mr) && /status: 403/.test(mr),
+        "manager-resolve must be gated to ADMIN/MANAGER (403 otherwise)");
+      assert(/needsManagerReview: false/.test(mr), "manager-resolve must clear needsManagerReview");
+      assert(/prisma\.activity\.create/.test(mr) && /escalate-resolved/.test(mr),
+        "manager-resolve must log a resolution entry to the timeline");
+      assert(/userId: cur\.ownerId/.test(mr) && /has been resolved by/.test(mr),
+        "manager-resolve must notify the lead owner (agent) that it was resolved");
+      // (b) Dashboard: fixed "Needs Lalit" label (NOT the viewer's name) + clickable count.
+      const dash = fs.readFileSync("src/app/(app)/dashboard/page.tsx", "utf8");
+      assert(/>Needs Lalit</.test(dash), "dashboard salesperson table must show the fixed 'Needs Lalit' column");
+      assert(!/Needs \{me\.name\.split/.test(dash), "dashboard must NOT render the viewer-name 'Needs <firstname>' label anymore");
+      assert(/leadsDrill\(\{ owner: s\.id, needs: "1" \}\)/.test(dash), "the Needs-Lalit count must be a clickable drill to that agent's escalations");
+      // (c) /leads honors the ?needs=1 escalation filter (the drill target).
+      const leadsPage = fs.readFileSync("src/app/(app)/leads/page.tsx", "utf8");
+      assert(/sp\.needs === "1"\) where\.needsManagerReview = true/.test(leadsPage), "/leads must filter on ?needs=1 → needsManagerReview");
+      assert(/sp\.needs \|\|/.test(leadsPage), "?needs must count as a targeted filter (bypass the default today's-follow-ups view)");
+      // (d) Escalation routes to SALES managers, NOT data-admin Sameer (leadOpsOnly).
+      const esc = fs.readFileSync("src/app/api/leads/[id]/action-escalate/route.ts", "utf8");
+      assert(/leadOpsOnly: false/.test(esc) && /role: \{ in: \["ADMIN", "MANAGER"\] \}/.test(esc),
+        "action-escalate must notify sales managers (ADMIN/MANAGER) and EXCLUDE leadOpsOnly data-admins");
+    },
+  },
 ];
 
 // ── runner ────────────────────────────────────────────────────────────────────

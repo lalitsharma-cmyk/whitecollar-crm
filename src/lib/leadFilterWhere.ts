@@ -129,6 +129,10 @@ export function leadFilterWhere(sp: SP): Prisma.LeadWhereInput[] {
   if (sp.hasMeeting === "1") and.push({ meetingDate: { not: null } });
   if (sp.hasSiteVisit === "1") and.push({ siteVisitDate: { not: null } });
 
+  // Manager escalation — leads the agent flagged for manager review ("Needs
+  // Lalit"). Drives the dashboard "Needs Lalit" clickable drill-down.
+  if (sp.needs === "1") and.push({ needsManagerReview: true });
+
   // Not picking calls — N days: a no-answer call in the window, none connected.
   const np = sp.notPicked ? parseInt(sp.notPicked) : 0;
   if (np && [2, 3, 5, 7, 14].includes(np)) {

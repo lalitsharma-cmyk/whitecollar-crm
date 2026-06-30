@@ -7,6 +7,7 @@ import { fmtMoney } from "@/lib/money";
 import { requireUser } from "@/lib/auth";
 import LeadActionsClient from "@/components/LeadActionsClient";
 import LeadFollowupActions from "@/components/LeadFollowupActions";
+import ManagerResolveButton from "@/components/ManagerResolveButton";
 import LeadProjectsClient from "@/components/LeadProjectsClient";
 import LeadInterestedClient from "@/components/LeadInterestedClient";
 import LeadMeetingClient from "@/components/LeadMeetingClient";
@@ -945,11 +946,12 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
           bookingsCount={bookingsCount}
         />
 
-        {/* NEEDS YOU BANNER */}
+        {/* NEEDS YOU BANNER — agents see the flag; Lalit/managers get a resolve button. */}
         {lead.needsManagerReview && (
           <div data-lead-section="overview" className="card p-4 border-l-4 border-amber-500 bg-amber-50">
             <div className="font-semibold text-amber-900">🚩 Needs manager attention</div>
             <div className="text-sm text-amber-800 mt-1">{lead.managerReviewReason ?? "Flagged for review"}{lead.flaggedAt && ` · since ${formatDistanceToNow(lead.flaggedAt, { addSuffix: true })}`}</div>
+            {isAdminOrManager && <ManagerResolveButton leadId={lead.id} />}
           </div>
         )}
 

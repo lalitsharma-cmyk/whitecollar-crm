@@ -795,7 +795,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
               <div className="text-xs font-bold tracking-widest text-gray-500 dark:text-slate-400 mb-3">BY SALESPERSON · TEAM · {periodSection}</div>
               <table className="tbl w-full min-w-[640px]">
                 <thead><tr>
-                  <th>Salesperson</th><th>Team</th><th className="text-center">Calls</th><th className="text-center">Connected</th><th className="text-center">Due</th><th className="text-center">Overdue</th><th className="text-center">Closeable</th><th className="text-center">Needs {me.name.split(" ")[0]}</th><th className="text-center">Clients</th>
+                  <th>Salesperson</th><th>Team</th><th className="text-center">Calls</th><th className="text-center">Connected</th><th className="text-center">Due</th><th className="text-center">Overdue</th><th className="text-center">Closeable</th><th className="text-center" title="Open manager escalations — leads this agent flagged for Lalit's review. Click a number to see them.">Needs Lalit</th><th className="text-center">Clients</th>
                 </tr></thead>
                 <tbody>
                   {spStats.map((s) => (
@@ -807,7 +807,11 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
                       <td className="text-center">{s.dueToday}</td>
                       <td className={`text-center ${s.overdue > 0 ? "text-red-600 font-semibold" : ""}`}>{s.overdue}</td>
                       <td className="text-center font-semibold">{s.closeable}</td>
-                      <td className={`text-center ${s.needs > 0 ? "text-amber-600 font-bold" : ""}`}>{s.needs}</td>
+                      <td className={`text-center ${s.needs > 0 ? "text-amber-600 font-bold" : ""}`}>
+                        {s.needs > 0
+                          ? <Link href={leadsDrill({ owner: s.id, needs: "1" })} className="underline decoration-dotted underline-offset-2 hover:text-amber-800">{s.needs}</Link>
+                          : 0}
+                      </td>
                       <td className="text-center">{s.clients}</td>
                     </tr>
                   ))}
