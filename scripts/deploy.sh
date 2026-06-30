@@ -54,6 +54,18 @@ if [ -n "$SCHEMA_CHANGED" ]; then
   echo "$SCHEMA_CHANGED" | sed 's/^/      /'
   echo "    → Confirm the migration is already applied to prod + reported to the owner."
 fi
+
+# ─── SERVICE-WORKER CACHE GUARD ──────────────────────────────────────────────
+# The SW (public/sw.js) caches the app shell; if its CACHE version isn't bumped,
+# users keep seeing the OLD UI ("fixes not visible"). If this deploy changes any
+# UI file (src/** or public/** other than sw.js) but does NOT touch public/sw.js,
+# warn loudly — bump `const CACHE = "wcr-shell-vNN"` so cached clients reload.
+UI_CHANGED="$(echo "$CHANGED" | grep -E '^(src/|public/)' | grep -v '^public/sw.js' || true)"
+SW_CHANGED="$(echo "$CHANGED" | grep -E '^public/sw\.js$' || true)"
+if [ -n "$UI_CHANGED" ] && [ -z "$SW_CHANGED" ]; then
+  echo "⚠️  UI files changed but public/sw.js was NOT bumped — cached clients may keep the OLD UI."
+  echo "    → Bump 'const CACHE = \"wcr-shell-vNN\"' in public/sw.js, commit, and redeploy."
+fi
 echo "🏷  Risk: $RISK   ·   Rollback point: ${PREV_SHA:-unknown} → $HEAD_SHA"
 echo ""
 
