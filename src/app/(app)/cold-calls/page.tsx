@@ -453,10 +453,30 @@ export default async function ColdDataPage({ searchParams }: { searchParams: Pro
       {/* ───────── HIDDEN GEMS (horizontal scroll) ───────── */}
       <HiddenGemsBanner gems={hiddenGems} />
 
-      {/* ───────── TWO-COLUMN: list (left) + leaderboard/streak (right) ───────── */}
-      <div className="grid grid-cols-1 lg:grid-cols-[1fr_280px] gap-4 lg:gap-6">
-        {/* ─── LEFT: leads list ─── */}
-        <div className="space-y-3 min-w-0">
+      {/* ───────── COMPACT STATS STRIP — leaderboard + streak, FULL WIDTH, above the
+           table. Previously a fixed 280px right rail that squeezed the client rows and
+           truncated agent names ("Tanuj Chopra"). Now each card gets ~2× the width and
+           the table below spans the entire row. Pure layout — logic unchanged. */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 lg:gap-4">
+        <RevivalLeaderboard top5={top5} />
+        <div className="card p-3 sm:p-4">
+          <div className="flex items-center justify-between">
+            <div className="min-w-0">
+              <div className="text-[10px] uppercase tracking-wide text-gray-500">Your cold-call streak</div>
+              <div className="text-2xl font-bold tabular-nums leading-tight">
+                {streak} <span className="text-sm font-normal text-gray-500">days</span>
+              </div>
+            </div>
+            <span className="text-2xl" aria-hidden>{streak > 0 ? "🔥" : "✨"}</span>
+          </div>
+          <p className="mt-1 text-[11px] text-gray-500 leading-snug">
+            {streak > 0 ? "Keep showing up — streaks compound XP." : "Make one cold call today to start a streak."}
+          </p>
+        </div>
+      </div>
+
+      {/* ───────── FULL-WIDTH: leads list (table spans the whole row) ───────── */}
+      <div className="space-y-3 min-w-0">
 
           {/* Saved Views — same Smart Lists mechanism as Leads/Master Data */}
           <SavedFiltersBar isAdmin={me.role === "ADMIN"} />
@@ -547,30 +567,6 @@ export default async function ColdDataPage({ searchParams }: { searchParams: Pro
             promoteMeta={promoteMeta}
           />
         </div>
-
-        {/* ─── RIGHT: leaderboard + streak ─── */}
-        <aside className="space-y-3 lg:sticky lg:top-20 lg:self-start">
-          <RevivalLeaderboard top5={top5} />
-          <div className="card p-3 sm:p-4">
-            <div className="flex items-center justify-between">
-              <div className="min-w-0">
-                <div className="text-[10px] uppercase tracking-wide text-gray-500">Your cold-call streak</div>
-                <div className="text-2xl font-bold tabular-nums leading-tight">
-                  {streak} <span className="text-sm font-normal text-gray-500">days</span>
-                </div>
-              </div>
-              <span className="text-2xl" aria-hidden>
-                {streak > 0 ? "🔥" : "✨"}
-              </span>
-            </div>
-            <p className="mt-1 text-[11px] text-gray-500 leading-snug">
-              {streak > 0
-                ? "Keep showing up — streaks compound XP."
-                : "Make one cold call today to start a streak."}
-            </p>
-          </div>
-        </aside>
-      </div>
     </>
   );
 }

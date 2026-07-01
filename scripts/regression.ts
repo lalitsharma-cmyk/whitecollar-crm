@@ -430,6 +430,42 @@ const checks: Check[] = [
   },
 
   // ───────────────────────────────────────────────────────────────────────────
+  {
+    name: "property-enquired-filter — ?project= and ?q= also match sourceDetail (the displayed 'Property Enquired'), not just formal Project relations",
+    run: async () => {
+      const { leadFilterWhere } = await import("../src/lib/leadFilterWhere");
+      type OrClause = { OR?: Record<string, unknown>[] };
+      const firstOr = (and: unknown[]) => (and as OrClause[]).map((c) => c.OR).find(Boolean) as Record<string, unknown>[] | undefined;
+      const hasSourceDetailContains = (or: Record<string, unknown>[] | undefined, val: string) =>
+        !!or && or.some((o) => { const s = o.sourceDetail as { contains?: string; mode?: string } | undefined; return s?.contains === val && s?.mode === "insensitive"; });
+
+      // (1) ?project= must ALSO match sourceDetail (display/filter parity for imported
+      //     cold data that has no formal Project relation, e.g. "Whiteland Westin Residences")
+      //     while STILL matching the discussed + interestedUnits relations (additive).
+      const projOr = firstOr(leadFilterWhere({ project: "Whiteland Westin Residences" }));
+      assert(hasSourceDetailContains(projOr, "Whiteland Westin Residences"),
+        "?project= OR must include { sourceDetail: { contains, mode:'insensitive' } } (display/filter parity)");
+      assert(!!projOr && projOr.some((o) => "discussed" in o) && projOr.some((o) => "interestedUnits" in o),
+        "?project= must STILL match discussed + interestedUnits relations (additive — no regression on /leads)");
+
+      // (2) ?q= free-text must also search sourceDetail (top search finds property enquiry) + keep name/phone/email/company.
+      const qOr = firstOr(leadFilterWhere({ q: "Whiteland" }));
+      assert(hasSourceDetailContains(qOr, "Whiteland"), "?q= OR must include a sourceDetail contains clause");
+      assert(!!qOr && ["name", "phone", "email", "company"].every((f) => qOr!.some((o) => f in o)),
+        "?q= must still search name/phone/email/company (no regression)");
+
+      // (3) DATA reconciliation: on the cold scope the Property-Enquired filter now returns
+      //     the imported Whiteland rows (was 0 before the fix — filter ignored sourceDetail).
+      const coldWhere = { deletedAt: null, OR: [{ isColdCall: true }, { leadOrigin: { in: ["COLD", "REVIVAL"] } }] };
+      const bySourceDetail = await prisma.lead.count({ where: { ...coldWhere, sourceDetail: { contains: "Whiteland Westin Residences", mode: "insensitive" } } });
+      const viaFilter = await prisma.lead.count({ where: { AND: [coldWhere, ...leadFilterWhere({ project: "Whiteland Westin Residences" })] } });
+      assert(bySourceDetail > 0 && viaFilter >= bySourceDetail,
+        `Property-Enquired filter must return the cold Whiteland rows (filter=${viaFilter}, sourceDetail=${bySourceDetail})`);
+      results.push({ name: "  ↳ note", ok: true, detail: `Property-Enquired filter now matches sourceDetail (${bySourceDetail} cold Whiteland rows filterable) + q-search covers it; relations preserved` });
+    },
+  },
+
+  // ───────────────────────────────────────────────────────────────────────────
   // 3d. SITE-VISIT classification (2026-06-20) — sharing collateral (sample video,
   //     brochure, floor plan, price/payment plan, location map, inventory,
   //     presentation, details) must NEVER count as a Site Visit; only explicit

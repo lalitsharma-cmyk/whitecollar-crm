@@ -30,7 +30,10 @@ function endOfDay(d: Date): Date {
 export function leadFilterWhere(sp: SP): Prisma.LeadWhereInput[] {
   const and: Prisma.LeadWhereInput[] = [];
 
-  // Free-text search — name / phone / email / company.
+  // Free-text search — name / phone / email / company / Property Enquired.
+  // sourceDetail is the "Property Enquired" field the table displays, so the top
+  // search box must find it too (e.g. typing "Whiteland" surfaces cold rows whose
+  // property is stored only in sourceDetail, not a formal Project relation).
   if (sp.q) {
     and.push({
       OR: [
@@ -38,6 +41,7 @@ export function leadFilterWhere(sp: SP): Prisma.LeadWhereInput[] {
         { phone: { contains: sp.q } },
         { email: { contains: sp.q, mode: "insensitive" } },
         { company: { contains: sp.q, mode: "insensitive" } },
+        { sourceDetail: { contains: sp.q, mode: "insensitive" } },
       ],
     });
   }
@@ -108,13 +112,21 @@ export function leadFilterWhere(sp: SP): Prisma.LeadWhereInput[] {
     else if (or.length > 1) and.push({ OR: or });
   }
 
-  // Project — multi: match any selected project on discussed OR interested units.
+  // Project / Property Enquired — multi: match a formal Project link (discussed OR
+  // interested units) OR the free-text sourceDetail ("Property Enquired") that the
+  // column actually DISPLAYS (resolveEnquiredProperty falls through to sourceDetail).
+  // Imported cold data commonly sets sourceDetail without a formal Project relation
+  // (e.g. "Whiteland Westin Residences"), so the filter must agree with the shown
+  // value. Case/whitespace-insensitive contains. Additive — every row that matched
+  // before still matches; this only widens. Same canonical behaviour on /leads,
+  // /cold-calls and /master-data (all call leadFilterWhere) — no dual logic.
   const projects = split(sp.project);
   if (projects.length) {
     and.push({
       OR: projects.flatMap((name) => [
         { discussed: { some: { project: { name: { equals: name } } } } },
         { interestedUnits: { some: { unit: { project: { name: { equals: name } } } } } },
+        { sourceDetail: { contains: name, mode: "insensitive" } },
       ]),
     });
   }
