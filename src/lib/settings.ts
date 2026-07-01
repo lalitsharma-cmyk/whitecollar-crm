@@ -176,6 +176,17 @@ export async function getSlaBreachEnabled(): Promise<boolean> {
   return raw.toLowerCase() === "true"; // default OFF
 }
 
+// Fresh-untouched escalation (Lalit, 2026-07-01). A lead assigned today with no
+// first contact logged → nudge the owning agent at 15 min, escalate to managers/
+// Lalit at 45 min. Default OFF (silent-first rollout): the visual layer (badges,
+// counts, sorting, filters) ships first; Lalit flips this ON from Settings once
+// verified on real data. Kept a distinct key so it resumes without touching the
+// call-SLA or automation flags.
+export async function getFreshUntouchedEscalationEnabled(): Promise<boolean> {
+  const raw = await getSetting("freshUntouched.enabled");
+  return raw.toLowerCase() === "true"; // default OFF
+}
+
 /** All automation flags (incl. round-robin) for the Settings UI. */
 export async function getAutomationFlags(): Promise<Record<string, boolean>> {
   const [flags, roundRobin] = await Promise.all([

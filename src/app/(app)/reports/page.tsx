@@ -671,6 +671,11 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
           <div className="font-bold text-sm mt-1">SLA & Meetings</div>
           <div className="text-[10px] text-gray-500 mt-0.5">Site/Office/Virtual: scheduled, rescheduled, no-show</div>
         </Link>
+        <Link href="/reports/fresh-leads" className="card p-4 border-l-4 border-red-500 hover:shadow-md transition">
+          <div className="text-2xl">🆕</div>
+          <div className="font-bold text-sm mt-1">Fresh-Lead Response</div>
+          <div className="text-[10px] text-gray-500 mt-0.5">Assigned today · first contact done · still untouched — per agent</div>
+        </Link>
         <Link href="/reports/travel" className="card p-4 border-l-4 border-sky-500 hover:shadow-md transition">
           <div className="text-2xl">🚗</div>
           <div className="font-bold text-sm mt-1">Travel Reimbursement</div>

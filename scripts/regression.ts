@@ -5031,17 +5031,61 @@ const checks: Check[] = [
     },
   },
   {
-    name: "fresh-lead-service — centralized isFresh = assignedToday(IST) && no meaningful first contact; single source of truth for every surface",
+    name: "fresh-leads — freshLeads.ts single source: assigned-today + untouched subset invariants, tier-0 sort, 5 surfaces wired, escalation default-OFF",
     run: async () => {
-      const fs = await import("fs");
-      assert(fs.existsSync("src/lib/freshLead.ts"), "centralized freshLead service must exist");
-      const s = fs.readFileSync("src/lib/freshLead.ts", "utf8");
-      assert(/isFresh:\s*assignedToday && firstContactPending/.test(s), "isFresh must = assignedToday && firstContactPending");
-      assert(/isConnectedOutcome/.test(s), "a meaningful CALL must require a connected outcome (reuse followupGate, no drift)");
-      assert(/MEETING_ACTIVITY_TYPES/.test(s) && /ActivityType\.WHATSAPP/.test(s), "meaningful contact must include meetings/site-visits + WhatsApp");
-      assert(/istDayRange\(\)/.test(s), "assignedToday must be computed vs the current IST day (auto-expire at midnight, no cron)");
-      assert(/export async function freshLeadStateByLead|export async function meaningfulContactByLead/.test(s), "must expose a batch API for list surfaces (one query per page)");
-      results.push({ name: "  ↳ note", ok: true, detail: "Fresh Lead centralized service: assignedToday(IST) + firstContactPending(meaningful contact); reusable across all surfaces + AI" });
+      const fs = await import("node:fs");
+      const { freshUntouchedWhere, FIRST_CONTACT_ACTIVITY_TYPES } = await import("../src/lib/freshLeads");
+      const { istDayRange } = await import("../src/lib/datetime");
+      const { start, end } = istDayRange();
+
+      // (a) freshUntouched ⊆ assigned/created-today.
+      const fuTotal = await prisma.lead.count({ where: freshUntouchedWhere({}) });
+      const fuAssignedToday = await prisma.lead.count({
+        where: { AND: [
+          freshUntouchedWhere({}),
+          { OR: [{ assignedAt: { gte: start, lt: end } }, { assignedAt: null, createdAt: { gte: start, lt: end } }] },
+        ] },
+      });
+      assert(fuTotal === fuAssignedToday, `fresh-untouched not all assigned/created-today: ${fuTotal} total vs ${fuAssignedToday} assigned-today`);
+
+      // (b) freshUntouched ⊆ untouched — 0 have a call OR a first-contact activity.
+      const fuTouchedLeak = await prisma.lead.count({
+        where: { AND: [
+          freshUntouchedWhere({}),
+          { OR: [{ callLogs: { some: {} } }, { activities: { some: { type: { in: FIRST_CONTACT_ACTIVITY_TYPES } } } }] },
+        ] },
+      });
+      assert(fuTouchedLeak === 0, `${fuTouchedLeak} "fresh-untouched" lead(s) actually have a call/first-contact activity — untouched leak`);
+
+      // (c) leadSortTier pins fresh-untouched at tier 0 (source scan — the pin rule).
+      const statusesSrc = fs.readFileSync("src/lib/lead-statuses.ts", "utf8");
+      assert(/freshUntouchedToday\s*=\s*false/.test(statusesSrc) && /if \(freshUntouchedToday\) return 0;/.test(statusesSrc),
+        "leadSortTier MUST accept freshUntouchedToday and return tier 0 for it (the top-of-list pin)");
+
+      // (d) All 5 surfaces import the single source of truth (DRY / no-drift).
+      const freshLib = fs.readFileSync("src/lib/freshLeads.ts", "utf8");
+      assert(/export function freshUntouchedWhere/.test(freshLib) && /export function freshTodayWhere/.test(freshLib)
+        && /export function assignedTodayWhere/.test(freshLib) && /export function firstContactPendingWhere/.test(freshLib),
+        "freshLeads.ts MUST export the 4 canonical where-builders");
+      for (const [file, path] of [
+        ["Leads page", "src/app/(app)/leads/page.tsx"],
+        ["Master-Data filter", "src/lib/leadFilterWhere.ts"],
+        ["Dashboard", "src/app/(app)/dashboard/page.tsx"],
+        ["Action List", "src/app/(app)/action-list/page.tsx"],
+        ["Reconciler", "src/lib/reconciler.ts"],
+      ] as const) {
+        assert(/@\/lib\/freshLeads/.test(fs.readFileSync(path, "utf8")), `${file} MUST import @/lib/freshLeads (single source)`);
+      }
+
+      // (e) Escalation ships GATED OFF (silent-first). Flag + default-OFF + reconciler wiring.
+      const settingsSrc = fs.readFileSync("src/lib/settings.ts", "utf8");
+      assert(/getFreshUntouchedEscalationEnabled/.test(settingsSrc) && /freshUntouched\.enabled/.test(settingsSrc) && /default OFF/.test(settingsSrc),
+        "settings MUST expose getFreshUntouchedEscalationEnabled('freshUntouched.enabled'), default OFF");
+      const recSrc = fs.readFileSync("src/lib/reconciler.ts", "utf8");
+      assert(/freshUntouchedOn/.test(recSrc) && /if \(freshUntouchedOn\)/.test(recSrc),
+        "reconciler MUST gate the fresh-untouched escalation behind the freshUntouched flag");
+
+      results.push({ name: "  ↳ note", ok: true, detail: `fresh-untouched=${fuTotal} (all assigned-today, 0 touched-leak); tier-0 pin + 5 surfaces wired; escalation default-OFF` });
     },
   },
   {
@@ -5170,21 +5214,56 @@ const checks: Check[] = [
     name: "voice-broadcast-feature1 — dashboard broadcast: admin-only sender, transcript optional, separate from lead voice",
     run: async () => {
       const fs = await import("fs");
-      const { canSendBroadcast } = await import("../src/lib/voiceBroadcast");
+      const { canSendBroadcast, broadcastRecipientWhere } = await import("../src/lib/voiceBroadcast");
       // LOGIC: sender permission — Lalit/admin yes; Sameer(leadOpsOnly)/agent/manager no.
       assert(canSendBroadcast({ role: "ADMIN", leadOpsOnly: false }), "admin must be able to send");
       assert(!canSendBroadcast({ role: "ADMIN", leadOpsOnly: true }), "Sameer (leadOpsOnly admin) must NOT send");
       assert(!canSendBroadcast({ role: "AGENT" }), "agent must NOT send");
       assert(!canSendBroadcast({ role: "MANAGER" }), "manager must NOT send");
+      // ── TARGETING (Lalit's 6 cases) — a broadcast reaches a user IFF one OR-clause of
+      //    broadcastRecipientWhere matches it. Locks: one-agent → ONLY that agent, a team
+      //    → ONLY that team, Everyone → everyone; every non-recipient excluded. ──────────
+      const receives = (user: { id: string; team: string | null }, b: { targetKind: string; targetTeam: string | null; targetUserId: string | null }) => {
+        const w = broadcastRecipientWhere(user) as { OR: Array<Record<string, unknown>> };
+        return w.OR.some((clause) => Object.entries(clause).every(([k, v]) => (b as Record<string, unknown>)[k] === v));
+      };
+      const agentA = { id: "A", team: "Dubai" };   // one specific agent
+      const agentB = { id: "B", team: "India" };   // a different agent
+      const dubai  = { id: "D", team: "Dubai" };
+      const india  = { id: "I", team: "India" };   // "India team" = the Gurgaon office
+      const bUserA = { targetKind: "USER", targetTeam: null, targetUserId: "A" };
+      const bTeamDubai = { targetKind: "TEAM", targetTeam: "Dubai", targetUserId: null };
+      const bTeamIndia = { targetKind: "TEAM", targetTeam: "India", targetUserId: null };
+      const bAll   = { targetKind: "ALL", targetTeam: null, targetUserId: null };
+      // (1) one agent → ONLY that agent
+      assert(receives(agentA, bUserA), "USER broadcast must reach the targeted agent");
+      assert(!receives(agentB, bUserA), "USER broadcast must NOT reach a different agent");
+      assert(!receives(dubai, bUserA) && !receives(india, bUserA), "USER broadcast must NOT reach anyone else (no team/all leak)");
+      // (2) Dubai team → ONLY Dubai
+      assert(receives(dubai, bTeamDubai) && receives(agentA, bTeamDubai), "TEAM=Dubai must reach Dubai users");
+      assert(!receives(india, bTeamDubai) && !receives(agentB, bTeamDubai), "TEAM=Dubai must NOT reach India users");
+      // (3) India (Gurgaon) team → ONLY India
+      assert(receives(india, bTeamIndia) && receives(agentB, bTeamIndia), "TEAM=India must reach India users");
+      assert(!receives(dubai, bTeamIndia) && !receives(agentA, bTeamIndia), "TEAM=India must NOT reach Dubai users");
+      // (4) Everyone → everyone   ·   (5) non-recipient exclusion asserted above
+      assert(receives(agentA, bAll) && receives(agentB, bAll) && receives(dubai, bAll) && receives(india, bAll), "ALL must reach everyone");
       // SOURCE: send route gated + transcript optional (never required); sub-routes exist.
       const send = fs.readFileSync("src/app/api/voice-broadcast/route.ts", "utf8");
       assert(/canSendBroadcast\(me\)/.test(send), "send route must gate on canSendBroadcast");
       assert(!/require.{0,15}transcript|transcript.{0,15}required/i.test(send), "transcript must NOT be required in the send route");
+      // SOURCE: send route scopes the NOTIFY fan-out (USER→that id, TEAM→that team) and never notifies the sender.
+      assert(/targetKind === "USER"\s*\?\s*\{\s*id:\s*targetUserId!/.test(send), "send route must notify ONLY the targeted user for a USER broadcast");
+      assert(/targetKind === "TEAM"\s*\?\s*\{[^}]*team:\s*targetTeam!/.test(send), "send route must notify ONLY the targeted team for a TEAM broadcast");
+      assert(/id:\s*\{\s*not:\s*me\.id\s*\}/.test(send), "send route must exclude the sender from recipients (no self-notification)");
+      // SOURCE: audio playback is access-gated to recipients only (no cross-recipient audio leak).
+      const audio = fs.readFileSync("src/app/api/voice-broadcast/[id]/audio/route.ts", "utf8");
+      assert(/bc\.targetKind === "USER" && bc\.targetUserId === me\.id/.test(audio) && /bc\.targetKind === "TEAM" && bc\.targetTeam === me\.team/.test(audio), "audio route must gate playback to the broadcast's recipients only");
       assert(fs.existsSync("src/app/api/voice-broadcast/[id]/audio/route.ts"), "audio route must exist");
       assert(fs.existsSync("src/app/api/voice-broadcast/[id]/heard/route.ts"), "heard route must exist");
-      // SOURCE: dashboard mounts the recipient inbox (everyone) + the gated sender.
+      // SOURCE: dashboard mounts the recipient inbox (recipient-scoped) + the gated sender.
       const dash = fs.readFileSync("src/app/(app)/dashboard/page.tsx", "utf8");
       assert(/DashboardBroadcastInbox/.test(dash) && /canSendBc && <DashboardVoiceBroadcast/.test(dash), "dashboard must mount inbox + gated sender");
+      assert(/where:\s*broadcastRecipientWhere\(me\)/.test(dash), "dashboard broadcast inbox MUST be scoped by broadcastRecipientWhere (no unfiltered fetch)");
       // SOURCE: separate from lead-specific voice (distinct table + components).
       assert(!/LeadVoiceMessage/.test(send), "broadcast must use its own table, not LeadVoiceMessage");
       // DATA: tables exist + queryable.

@@ -2,20 +2,28 @@ import { prisma } from "@/lib/prisma";
 import { notify, notifyRoles } from "@/lib/notify";
 import { chooseOwnerForNewLead, currentWindow } from "@/lib/assignmentWindow";
 import { resolveTeamAutoAssignee } from "@/lib/teamAutoAssign";
-import { getRoundRobinEnabled, getAutoAssignmentEnabled, getAutoEscalationEnabled, getSlaBreachEnabled } from "@/lib/settings";
+import { getRoundRobinEnabled, getAutoAssignmentEnabled, getAutoEscalationEnabled, getSlaBreachEnabled, getFreshUntouchedEscalationEnabled } from "@/lib/settings";
 import { isTeamClassified } from "@/lib/teamRouting";
 import { SUPPRESSED_STATUSES, CLOSING_STATUSES } from "@/lib/lead-statuses";
+import { COLD_ORIGINS } from "@/lib/leadScope";
+import { FIRST_CONTACT_PENDING_WHERE } from "@/lib/freshLeads";
+import { istDayRange } from "@/lib/datetime";
 
 // The reconciler runs on every dashboard/leads page load (cheap, deduped).
 // It enforces two SLAs without needing a separate cron service:
 //   • 5-min auto-assign: any unassigned lead >5 min old → assign via round-robin
 //   • 15-min call SLA: assigned lead with no call after 15 min → notify agent + admin
+//   • fresh-untouched: assigned-today lead with no first contact → 15m agent nudge,
+//     45m manager/Lalit escalation (gated OFF by default — Lalit flips it on)
 //
-// Idempotent: each notification is only sent once thanks to slaEscalated / ownerId flags.
+// Idempotent: each notification is only sent once thanks to slaEscalated / ownerId
+// flags, or (fresh-untouched) a same-day Notification-ledger check.
 // STATUS IS THE ONLY WORKFLOW — no stage/won/lost checks.
 
 const AUTO_ASSIGN_AFTER_MIN = 5;
 const FIRST_CALL_SLA_MIN = 15;
+const FRESH_AGENT_NUDGE_MIN = 15;     // untouched this long → nudge the owning agent
+const FRESH_MANAGER_ESCALATE_MIN = 45; // still untouched → escalate to managers/Lalit
 
 let lastRunAt = 0;
 const MIN_RERUN_GAP_MS = 30_000; // throttle to once per 30s
@@ -24,6 +32,7 @@ export interface ReconcileResult {
   autoAssigned: number;
   slaEscalated: number;
   flagged?: number;
+  freshEscalated?: number;
   skipped: boolean;
 }
 
@@ -39,8 +48,8 @@ export async function runReconciler(): Promise<ReconcileResult> {
 
   // Notifications + escalation ALERTS always fire here now. Only the automated
   // ACTIONS are gated by their per-feature Automation Controls flag (default OFF).
-  const [autoAssignmentOn, roundRobinFlag, autoEscalationOn, slaBreachOn] = await Promise.all([
-    getAutoAssignmentEnabled(), getRoundRobinEnabled(), getAutoEscalationEnabled(), getSlaBreachEnabled(),
+  const [autoAssignmentOn, roundRobinFlag, autoEscalationOn, slaBreachOn, freshUntouchedOn] = await Promise.all([
+    getAutoAssignmentEnabled(), getRoundRobinEnabled(), getAutoEscalationEnabled(), getSlaBreachEnabled(), getFreshUntouchedEscalationEnabled(),
   ]);
 
   // ── 1) Auto-assign anything unowned >5 minutes (AUTOMATION — gated) ──
@@ -196,5 +205,77 @@ export async function runReconciler(): Promise<ReconcileResult> {
     flagged++;
   }
 
-  return { autoAssigned, slaEscalated, flagged, skipped: false };
+  // ── 4) Fresh-untouched escalation (Lalit 2026-07-01) — GATED OFF by default ──
+  //   A lead assigned TODAY with no first contact logged (no call / WhatsApp /
+  //   email / meeting / note) is the one most likely to be missed. Nudge the
+  //   owning agent at 15 min; escalate to managers/Lalit at 45 min. Idempotent
+  //   via a same-IST-day Notification-ledger check (no schema change / no new
+  //   enum — reuses the REMINDER kind + a stable "⚡ Fresh lead" title marker).
+  let freshEscalated = 0;
+  if (freshUntouchedOn) {
+    const { start } = istDayRange();
+    const nowMs = Date.now();
+    const candidates = await prisma.lead.findMany({
+      where: {
+        ownerId: { not: null },
+        deletedAt: null,
+        rejectedAt: null,
+        isColdCall: false,
+        leadOrigin: { notIn: COLD_ORIGINS },
+        // Assigned today (IST) AND at least the agent-nudge age old.
+        assignedAt: { gte: start, lte: new Date(nowMs - FRESH_AGENT_NUDGE_MIN * 60 * 1000) },
+        currentStatus: { notIn: SUPPRESSED_STATUSES },
+        ...FIRST_CONTACT_PENDING_WHERE, // no call + no first-contact activity
+      },
+      include: { owner: true },
+      take: 50,
+    });
+
+    if (candidates.length > 0) {
+      // One batched ledger read → which leads already got which nudge today.
+      const ids = candidates.map((c) => c.id);
+      const priorNotifs = await prisma.notification.findMany({
+        where: { leadId: { in: ids }, createdAt: { gte: start }, title: { startsWith: "⚡ Fresh lead" } },
+        select: { leadId: true, title: true },
+      });
+      const agentNudged = new Set(priorNotifs.filter((n) => !n.title.includes("STILL")).map((n) => n.leadId));
+      const managerEscalated = new Set(priorNotifs.filter((n) => n.title.includes("STILL")).map((n) => n.leadId));
+
+      for (const lead of candidates) {
+        if (!isTeamClassified(lead.forwardedTeam)) continue;
+        if (!lead.ownerId || !lead.owner) continue;
+        const ageMin = Math.round((nowMs - (lead.assignedAt?.getTime() ?? nowMs)) / 60000);
+
+        // 45-min manager/Lalit escalation (checked first so a badly-late lead
+        // escalates even if the 15-min agent nudge was somehow missed).
+        if (ageMin >= FRESH_MANAGER_ESCALATE_MIN && !managerEscalated.has(lead.id)) {
+          await notifyRoles(["ADMIN", "MANAGER"], {
+            kind: "REMINDER",
+            severity: "CRITICAL",
+            title: `⚡ Fresh lead STILL untouched (${ageMin}m): ${lead.name}`,
+            body: `${lead.owner.name} hasn't logged first contact ${ageMin}m after assignment. Please follow up.`,
+            linkUrl: `/leads/${lead.id}`,
+            leadId: lead.id,
+          });
+          freshEscalated++;
+          continue;
+        }
+        // 15-min agent nudge.
+        if (ageMin >= FRESH_AGENT_NUDGE_MIN && !agentNudged.has(lead.id)) {
+          await notify({
+            userId: lead.ownerId,
+            kind: "REMINDER",
+            severity: "WARNING",
+            title: `⚡ Fresh lead untouched: ${lead.name}`,
+            body: `Assigned ${ageMin}m ago — no call, WhatsApp, or note yet. Make first contact now.`,
+            linkUrl: `/leads/${lead.id}`,
+            leadId: lead.id,
+          });
+          freshEscalated++;
+        }
+      }
+    }
+  }
+
+  return { autoAssigned, slaEscalated, flagged, freshEscalated, skipped: false };
 }

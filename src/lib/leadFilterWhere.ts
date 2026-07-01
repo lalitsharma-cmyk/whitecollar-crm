@@ -7,6 +7,7 @@
 // The caller owns role-gating: /leads gates owner/source for AGENTs before
 // calling; /master-data is ADMIN-only so it passes everything straight through.
 import type { Prisma, FundReadiness, InvestTimeline } from "@prisma/client";
+import { assignedTodayOr, FIRST_CONTACT_PENDING_WHERE, FRESH_STATUS_OR } from "@/lib/freshLeads";
 
 type SP = Record<string, string | undefined>;
 
@@ -128,6 +129,13 @@ export function leadFilterWhere(sp: SP): Prisma.LeadWhereInput[] {
 
   if (sp.hasMeeting === "1") and.push({ meetingDate: { not: null } });
   if (sp.hasSiteVisit === "1") and.push({ siteVisitDate: { not: null } });
+
+  // Fresh-lead filters (?fresh=today|assigned|untouched|pending) — SAME source of
+  // truth as the /leads page (freshLeads.ts), so /master-data filters identically.
+  if (sp.fresh === "today") and.push(assignedTodayOr(), { OR: FRESH_STATUS_OR });
+  else if (sp.fresh === "assigned") and.push(assignedTodayOr());
+  else if (sp.fresh === "untouched") and.push(assignedTodayOr(), FIRST_CONTACT_PENDING_WHERE);
+  else if (sp.fresh === "pending") and.push({ ownerId: { not: null } }, FIRST_CONTACT_PENDING_WHERE);
 
   // Manager escalation — leads the agent flagged for manager review ("Needs
   // Lalit"). Drives the dashboard "Needs Lalit" clickable drill-down.

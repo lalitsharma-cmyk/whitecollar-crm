@@ -20,6 +20,7 @@ import TargetCelebration from "@/components/TargetCelebration";
 import RemindersCard, { type ReminderEvent } from "@/components/RemindersCard";
 import { countUnassignedLeads, countAwaitingTeamLeads } from "@/lib/leadCounts";
 import { hotUntouchedWhere } from "@/lib/dashboardWidgets";
+import { freshUntouchedWhere } from "@/lib/freshLeads";
 import DashboardAssignmentWidget from "@/components/DashboardAssignmentWidget";
 import DashboardGreeting from "@/components/DashboardGreeting";
 import { tzForTeam, greetingFor, overdueFollowupBoundary } from "@/lib/datetime";
@@ -191,7 +192,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   //     Drill: ?smart=visit_potential.
   //   • Cold revival    → cold pool (isColdCall), high-value dormant — drills to
   //                       /cold-calls (its OWN scope), so its count mirrors that page.
-  const [hotUntouched, overdueFollowups, closableDeals, coldRevivalOps] = await Promise.all([
+  const [hotUntouched, overdueFollowups, closableDeals, coldRevivalOps, freshUntouchedTodayCount] = await Promise.all([
     prisma.lead.count({ where: hotUntouchedWhere(meScope) }),
     prisma.lead.count({
       // Overdue = before start of today IST (canonical) so this tile's count
@@ -218,6 +219,9 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         ],
       },
     }),
+    // Fresh untouched today — assigned today, no first contact yet (single source
+    // of truth: freshLeads.ts). count == drill (/leads?fresh=untouched).
+    prisma.lead.count({ where: freshUntouchedWhere(meScope) }),
   ]);
 
   // Today's attendance for THIS user
@@ -676,6 +680,11 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
               📅 {periodSection}
             </div>
             <div className="grid grid-cols-2 gap-3">
+              <Link href={leadsDrill({ fresh: "untouched" })} className={`card p-4 border-l-4 hover:shadow-lg transition ${freshUntouchedTodayCount > 0 ? "border-red-500 active:bg-red-50" : "border-gray-300 active:bg-gray-50"}`}>
+                <div className={`text-3xl font-extrabold ${freshUntouchedTodayCount > 0 ? "text-red-700" : "text-gray-400"}`}>{freshUntouchedTodayCount}</div>
+                <div className="text-xs font-semibold text-red-900 dark:text-red-300 mt-1">⚡ Fresh untouched today</div>
+                <div className="text-[10px] text-red-700/70 mt-0.5">Assigned today · no first contact yet</div>
+              </Link>
               <Link href={leadsDrill({ ai: "HOT", untouched: "1", followup: "all" })} className="card p-4 border-l-4 border-red-500 hover:shadow-lg transition active:bg-red-50">
                 <div className="text-3xl font-extrabold text-red-700">{hotUntouched}</div>
                 <div className="text-xs font-semibold text-red-900 mt-1">🔥 Hot leads untouched</div>

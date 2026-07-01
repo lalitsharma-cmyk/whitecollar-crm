@@ -1,6 +1,5 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
-import { useRouter } from "next/navigation";
 import { CONVO_CARD } from "@/lib/detailLayout";
 
 // ── Buyer Conversation History — VISUAL PARITY with the Lead view's
@@ -13,12 +12,13 @@ import { CONVO_CARD } from "@/lib/detailLayout";
 // the Lead timeline rows rather than re-using the lead-typed component verbatim.
 //
 // It renders the BuyerActivity stream (calls / notes / WA / voice / attempts +
-// lifecycle ASSIGNED/RETURNED/CONVERTED/REJECTED) chronologically. Provides
-// controls to log a CALL / NOTE / WHATSAPP / VOICE_NOTE and an ATTEMPT (No Answer /
-// Not Picked / WA No Response) → POST /api/buyer-data/[id]/activity. Shows
-// attemptCount + a warning as it approaches 5 (auto-return). For admins, also
-// renders the agent-handling history (stints). Read via GET
-// /api/buyer-data/[id]/history. canLog = the assigned agent or admin.
+// lifecycle ASSIGNED/RETURNED/CONVERTED/REJECTED) chronologically — READ-ONLY.
+// Logging (Call / WhatsApp / Log Call / Note / Voice) lives ONLY in the main
+// action row at the top of the page (BuyerActionsClient); the in-card log/attempt
+// buttons were removed so Conversation History shows history + tabs only, never a
+// duplicate action bar (Lalit 2026-07-01). Shows attemptCount + a warning as it
+// approaches 5 (auto-return). For admins, also renders the agent-handling history
+// (stints). Read via GET /api/buyer-data/[id]/history.
 
 type Activity = { id: string; type: string; description: string | null; by: string | null; createdAt: string };
 type Assignment = { id: string; agent: string | null; assignedAt: string; returnedAt: string | null; returnReason: string | null; attemptsInStint: number; open: boolean };
@@ -45,26 +45,9 @@ const TYPE_META: Record<string, { icon: string; label: string; cls: string }> = 
   REJECTED: { icon: "❌", label: "Rejected", cls: "border-red-300 bg-red-50/40 dark:bg-red-900/10" },
 };
 
-const LOG_BTNS: { type: string; icon: string; label: string }[] = [
-  { type: "CALL", icon: "📞", label: "Call" },
-  { type: "NOTE", icon: "📝", label: "Note" },
-  { type: "WHATSAPP", icon: "💬", label: "WhatsApp" },
-  { type: "VOICE_NOTE", icon: "🎤", label: "Voice" },
-];
-const ATTEMPT_BTNS: { type: string; label: string }[] = [
-  { type: "ATTEMPT_NO_ANSWER", label: "No Answer" },
-  { type: "ATTEMPT_NOT_PICKED", label: "Not Picked" },
-  { type: "ATTEMPT_WA_NO_RESPONSE", label: "WA No Response" },
-];
-
 export default function BuyerActivityTimeline({ buyerId, canLog, isAdmin, rawRemarks }: { buyerId: string; canLog: boolean; isAdmin: boolean; rawRemarks?: string | null }) {
-  const router = useRouter();
   const [data, setData] = useState<HistoryResp | null>(null);
   const [loading, setLoading] = useState(true);
-  const [composer, setComposer] = useState<{ type: string; label: string } | null>(null);
-  const [text, setText] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [msg, setMsg] = useState<string | null>(null);
   // View toggle — Smart Timeline (processed activity stream) is the DEFAULT,
   // mirroring the Lead ConversationStreamCard (Lalit's "default Smart Timeline"
   // consistency rule). Raw History (verbatim imported remarks) is one tap away.
@@ -94,22 +77,6 @@ export default function BuyerActivityTimeline({ buyerId, canLog, isAdmin, rawRem
   const attemptCount = data?.record.attemptCount ?? 0;
   const poolStatus = data?.record.poolStatus ?? "";
   const isAssigned = poolStatus === "ASSIGNED";
-
-  async function submit(type: string, description?: string) {
-    setBusy(true); setMsg(null);
-    try {
-      const r = await fetch(`/api/buyer-data/${buyerId}/activity`, {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ type, description: description ?? null }),
-      });
-      const j = await r.json();
-      if (!r.ok) { setMsg(`⚠ ${j.error ?? "Could not log."}`); setBusy(false); return; }
-      setComposer(null); setText("");
-      if (j.autoReturned) { setMsg(`🔁 5 attempts reached — buyer auto-returned to the Admin Pool.`); router.refresh(); }
-      else { await load(); }
-    } catch { setMsg("⚠ Network error."); }
-    finally { setBusy(false); }
-  }
 
   const activities = data?.activities ?? [];
 
@@ -148,46 +115,10 @@ export default function BuyerActivityTimeline({ buyerId, canLog, isAdmin, rawRem
         )}
       </div>
 
-      {/* Log controls (assigned agent / admin only, on an ASSIGNED buyer) —
-          shown above the stream, exactly where the Lead view surfaces its
-          inline log affordances. Hidden in Raw History mode so the verbatim
-          audit text reads cleanly (parity: Raw is read-only). */}
-      {canLog && isAssigned && viewMode === "smart" && (
-        <div className="mb-3 space-y-2">
-          <div className="flex flex-wrap gap-1.5">
-            {LOG_BTNS.map((b) => (
-              <button key={b.type} type="button" disabled={busy}
-                onClick={() => { setComposer({ type: b.type, label: b.label }); setText(""); }}
-                className="px-2.5 py-1.5 rounded-lg text-sm border border-gray-200 dark:border-slate-600 hover:bg-gray-50 dark:hover:bg-slate-800 disabled:opacity-40">
-                {b.icon} {b.label}
-              </button>
-            ))}
-          </div>
-          <div className="flex flex-wrap gap-1.5 items-center">
-            <span className="text-xs text-gray-500 dark:text-slate-400">Log attempt:</span>
-            {ATTEMPT_BTNS.map((b) => (
-              <button key={b.type} type="button" disabled={busy}
-                onClick={() => submit(b.type)}
-                className="px-2.5 py-1 rounded-full text-xs border border-amber-300 text-amber-700 hover:bg-amber-50 dark:border-amber-700 dark:text-amber-300 dark:hover:bg-amber-900/20 disabled:opacity-40">
-                {b.label}
-              </button>
-            ))}
-          </div>
-          {composer && (
-            <div className="flex items-start gap-2">
-              <textarea value={text} onChange={(e) => setText(e.target.value)} rows={2}
-                placeholder={`${composer.label} note (optional)…`}
-                className="flex-1 border border-[#c9a24b] rounded-lg px-2.5 py-2 text-base sm:text-sm dark:bg-slate-800 dark:text-slate-100" autoFocus />
-              <div className="flex flex-col gap-1">
-                <button type="button" disabled={busy} onClick={() => submit(composer.type, text)} className="btn btn-primary text-sm disabled:opacity-40">Log {composer.label}</button>
-                <button type="button" onClick={() => setComposer(null)} className="btn btn-ghost text-xs">Cancel</button>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {msg && <div className="text-xs px-2.5 py-1.5 rounded bg-gray-100 dark:bg-slate-800 text-gray-700 dark:text-slate-200 mb-2">{msg}</div>}
+      {/* NOTE: no in-card log/attempt buttons here. Logging (Call / WhatsApp /
+          Log Call / Note / Voice) is done ONLY from the main action row at the
+          top of the page (BuyerActionsClient) — Conversation History stays a
+          read-only record so there is no duplicate action bar. */}
 
       {/* ── Main stream — same scroll container as the Lead view (space-y-1.5,
           text-sm, capped height with internal scroll). ── */}
@@ -214,7 +145,7 @@ export default function BuyerActivityTimeline({ buyerId, canLog, isAdmin, rawRem
             <div className="text-gray-500 text-xs text-center py-4">Loading activity…</div>
           ) : activities.length === 0 ? (
             <div className="text-gray-500 text-xs text-center py-4">
-              No calls, WhatsApp messages, or notes logged yet.{canLog && isAssigned ? " Use the buttons above to log a call, note, or attempt." : ""}
+              No calls, WhatsApp messages, or notes logged yet.{canLog && isAssigned ? " Use the action buttons at the top to log a call, note, or attempt." : ""}
             </div>
           ) : (
             activities.map((a) => {

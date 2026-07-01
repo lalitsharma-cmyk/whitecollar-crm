@@ -485,19 +485,28 @@ export function isFreshStatus(s: string | null | undefined): boolean {
 }
 
 /**
- * Default Leads-table priority tier (Lalit, 2026-06-21). Lower = higher on the
- * list. Today's fresh leads always sit on top — never buried under old follow-ups.
+ * Default Leads-table priority tier (Lalit, 2026-06-21; tier-0 added 2026-07-01).
+ * Lower = higher on the list. Today's fresh leads always sit on top — never buried
+ * under old follow-ups.
+ *   0 today's FRESH UNTOUCHED  (assigned today AND no first contact yet) ← the pin
  *   1 today's FRESH leads      (fresh status AND created today IST)
  *   2 today's FOLLOW-UPS       (followupDate within today IST)
  *   3 old FRESH leads          (fresh status, created before today)
  *   4 OVERDUE follow-ups       (followupDate before today IST)
  *   5 FUTURE follow-ups        (followupDate after today IST)
  *   6 everything else
+ *
+ * `freshUntouchedToday` is supplied by the caller (a batch query over
+ * freshLeads.freshUntouchedWhere — "assigned today AND first-contact pending"), so
+ * this function stays pure and free of the freshLeads import. When true it wins
+ * outright: a brand-new lead the agent hasn't touched outranks every follow-up.
  */
 export function leadSortTier(
   lead: { currentStatus?: string | null; followupDate?: Date | null; createdAt: Date },
   today: { gte: Date; lt: Date },
+  freshUntouchedToday = false,
 ): number {
+  if (freshUntouchedToday) return 0;
   const fresh = isFreshStatus(lead.currentStatus);
   const createdToday = lead.createdAt >= today.gte && lead.createdAt < today.lt;
   const fu = lead.followupDate ?? null;

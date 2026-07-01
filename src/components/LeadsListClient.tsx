@@ -172,6 +172,31 @@ export interface Row {
   /** True when a contact attempt (call/WA/email) was logged today (IST). Gates the
    *  Complete button — disabled + tooltip until a touch is logged (Lalit's policy). */
   hasContactToday: boolean;
+  /** Fresh-lead visibility (Lalit, 2026-07-01). assignedToday → 🆕 NEW TODAY badge;
+   *  untouched → no first contact logged; freshUntouchedToday (both) → row highlight
+   *  + ⚡ Untouched badge. Computed server-side against freshLeads.ts (single source). */
+  assignedToday?: boolean;
+  untouched?: boolean;
+  freshUntouchedToday?: boolean;
+}
+
+/** Fresh-lead badges — the loud, instantly-visible "don't miss this" markers.
+ *  🆕 NEW TODAY on any lead assigned today; ⚡ Untouched when no first contact yet.
+ *  Rendered next to the client name in every view (table + cards + mobile). */
+function FreshBadges({ row, className = "" }: { row: Row; className?: string }) {
+  if (!row.assignedToday && !row.untouched) return null;
+  return (
+    <span className={`inline-flex items-center gap-1 align-middle ${className}`}>
+      {row.assignedToday && (
+        <span className="inline-flex items-center rounded-full bg-amber-100 text-amber-800 border border-amber-300 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide dark:bg-amber-950/40 dark:text-amber-200 dark:border-amber-700"
+          title="Assigned to you today — contact them first">🆕 New Today</span>
+      )}
+      {row.freshUntouchedToday && (
+        <span className="inline-flex items-center rounded-full bg-red-100 text-red-700 border border-red-300 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide dark:bg-red-950/40 dark:text-red-200 dark:border-red-700"
+          title="No call, WhatsApp, or note logged yet — first contact pending">⚡ Untouched</span>
+      )}
+    </span>
+  );
 }
 
 export default function LeadsListClient({ leads, canBulk, canReassign = false, canSetStatus = false, canDelete = false, agents, projectOptions = [], statusOptions = [], sourceOptions = [], meRole = "AGENT", showSource = true, view = "cards", searchParamsStr = "", detailBasePath = "/leads", listBasePath = "/leads", extraRowAction }: { leads: Row[]; canBulk: boolean; canReassign?: boolean; canSetStatus?: boolean; canDelete?: boolean; agents: { id: string; name: string; team: string | null }[]; projectOptions?: string[]; statusOptions?: string[]; sourceOptions?: string[]; meRole?: string; showSource?: boolean; view?: "cards" | "table"; searchParamsStr?: string;
@@ -737,7 +762,12 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
                       return (
                       <tr key={l.id}
                         onClick={() => router.push(`${detailBasePath}/${l.id}`)}
-                        className={`border-b border-gray-100 dark:border-slate-700/60 cursor-pointer hover:bg-blue-50/60 dark:hover:bg-blue-900/20 transition-colors ${i % 2 === 1 ? "bg-gray-50/30 dark:bg-slate-800/30" : "bg-white dark:bg-slate-800"}`}>
+                        className={`border-b border-gray-100 dark:border-slate-700/60 cursor-pointer hover:bg-blue-50/60 dark:hover:bg-blue-900/20 transition-colors ${
+                          l.freshUntouchedToday
+                            ? "bg-red-50/70 dark:bg-red-950/20 border-l-4 border-l-red-500"
+                            : l.assignedToday
+                              ? "bg-amber-50/60 dark:bg-amber-950/15 border-l-4 border-l-amber-400"
+                              : i % 2 === 1 ? "bg-gray-50/30 dark:bg-slate-800/30" : "bg-white dark:bg-slate-800"}`}>
 
                         {/* 1. Checkbox */}
                         <td className="px-2 py-1.5" onClick={e => e.stopPropagation()}>
@@ -779,9 +809,12 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
                         </td>
 
                         {/* 3. Name */}
-                        <td className="px-3 py-1.5 font-medium text-gray-900 dark:text-slate-100 truncate">
-                          <Link href={`${detailBasePath}/${l.id}`} onClick={e => e.stopPropagation()}
-                            className="hover:text-[#0b1a33] dark:hover:text-blue-300 hover:underline">{l.name}</Link>
+                        <td className="px-3 py-1.5 font-medium text-gray-900 dark:text-slate-100">
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <Link href={`${detailBasePath}/${l.id}`} onClick={e => e.stopPropagation()}
+                              className="hover:text-[#0b1a33] dark:hover:text-blue-300 hover:underline truncate">{l.name}</Link>
+                            <FreshBadges row={l} className="shrink-0" />
+                          </div>
                         </td>
 
                         {/* 4. Property Enquired — the CANONICAL `sourceDetail`
@@ -929,7 +962,12 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
           <div className="sm:hidden space-y-2">
             {leads.length === 0 && <div className="card p-5 text-center text-gray-500 text-sm">No leads match these filters.</div>}
             {leads.map(l => (
-              <div key={l.id} className="bg-white dark:bg-slate-800 rounded-xl border border-gray-100 dark:border-slate-700 p-3 shadow-sm">
+              <div key={l.id} className={`rounded-xl border p-3 shadow-sm ${
+                l.freshUntouchedToday
+                  ? "bg-red-50/80 dark:bg-red-950/20 border-red-300 dark:border-red-800 border-l-4 border-l-red-500"
+                  : l.assignedToday
+                    ? "bg-amber-50/70 dark:bg-amber-950/15 border-amber-300 dark:border-amber-800 border-l-4 border-l-amber-400"
+                    : "bg-white dark:bg-slate-800 border-gray-100 dark:border-slate-700"}`}>
                 {/* Row 1: Name + Status badge */}
                 <div className="flex items-center justify-between gap-2 mb-1.5">
                   <Link href={`${detailBasePath}/${l.id}`} className="font-bold text-sm text-[#0b1a33] dark:text-white truncate">
@@ -939,6 +977,9 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
                     {l.currentStatus ?? "—"}
                   </span>
                 </div>
+                {(l.assignedToday || l.untouched) && (
+                  <div className="mb-1.5"><FreshBadges row={l} /></div>
+                )}
                 {/* Row 2: Phone + Budget */}
                 <div className="flex items-center gap-3 text-xs text-gray-500 dark:text-slate-400 mb-1">
                   {l.phone && (
@@ -1030,7 +1071,10 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
           const intel = l.intelligenceMatch;
           const nextAction = l.todoNext ?? (l.followupDate ? `Follow-up: ${l.followupDate}` : null);
           return (
-            <div key={l.id} className="card p-3 active:bg-amber-50">
+            <div key={l.id} className={`card p-3 active:bg-amber-50 ${
+              l.freshUntouchedToday
+                ? "!bg-red-50/70 dark:!bg-red-950/20 border-l-4 border-l-red-500"
+                : l.assignedToday ? "!bg-amber-50/60 dark:!bg-amber-950/15 border-l-4 border-l-amber-400" : ""}`}>
               <div className="flex items-start gap-2">
                 {canSel && (
                   <input type="checkbox" checked={selected.has(l.id)} onChange={() => toggle(l.id)} className="mt-1" />
@@ -1040,6 +1084,7 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
                   <div className="flex items-center justify-between gap-1">
                     <div className="flex items-center gap-1.5 flex-wrap min-w-0">
                       <span className="font-bold text-sm text-[#0b1a33] truncate">{l.name}</span>
+                      <FreshBadges row={l} />
                       {maskedPhone && <span className="text-[10px] text-gray-400 dark:text-slate-500 font-mono flex-none">{maskedPhone}</span>}
                     </div>
                     <div className="flex items-center gap-1 flex-none relative" data-status-popover>
@@ -1200,7 +1245,12 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
               return (
                 <tr
                   key={l.id}
-                  className={`transition-colors hover:bg-amber-50/40 dark:hover:bg-slate-800/40 ${selected.has(l.id) ? "bg-blue-50/50 dark:bg-blue-950/20" : ""}`}
+                  className={`transition-colors hover:bg-amber-50/40 dark:hover:bg-slate-800/40 ${
+                    l.freshUntouchedToday
+                      ? "bg-red-50/70 dark:bg-red-950/20 border-l-4 border-l-red-500"
+                      : l.assignedToday
+                        ? "bg-amber-50/60 dark:bg-amber-950/15 border-l-4 border-l-amber-400"
+                        : selected.has(l.id) ? "bg-blue-50/50 dark:bg-blue-950/20" : ""}`}
                 >
                   {/* Checkbox */}
                   <td className="px-3 py-3 w-8 align-top">
@@ -1212,6 +1262,7 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
                     {/* Row 1: Name · Phone */}
                     <div className="flex items-center gap-1.5 flex-wrap mb-0.5">
                       <span className="font-bold text-[#0b1a33] dark:text-white text-sm leading-tight">{l.name}</span>
+                      <FreshBadges row={l} />
                       {maskedPhone && (
                         <span className="text-[11px] text-gray-400 dark:text-slate-500 font-mono">{maskedPhone}</span>
                       )}

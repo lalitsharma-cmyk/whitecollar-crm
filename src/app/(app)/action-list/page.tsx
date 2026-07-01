@@ -5,6 +5,7 @@ import { formatBudget } from "@/lib/budgetParse";
 import { formatDistanceToNow } from "date-fns";
 import { runReconciler } from "@/lib/reconciler";
 import { leadScopeWhere, ACTIVE_ORIGIN_WHERE, activeBoardWhere } from "@/lib/leadScope";
+import { freshUntouchedWhere } from "@/lib/freshLeads";
 import { istDayRange, istDateKey, isValidDateKey } from "@/lib/datetime";
 import { contactActivityByLeadToday } from "@/lib/followupGate";
 import { waDraftLink } from "@/lib/wa";
@@ -31,7 +32,7 @@ interface CardData {
   remarks: string | null; whoIsClient: string | null;
   budget: { min: number | null; max: number | null; currency: string };
   needsManagerReason?: string | null;
-  flagKind: "ready_close" | "overdue" | "needs_you" | "followup";
+  flagKind: "ready_close" | "overdue" | "needs_you" | "followup" | "fresh";
   needSummary: string | null;
   configuration: string | null;
   whenCanInvest: string | null;
@@ -213,7 +214,15 @@ export default async function ActionListPage({
   // For Overdue we list soonest-overdue first (closest to today). For dated
   // views we order by the time-of-day of the follow-up so the agent's day is
   // sequenced. Count and list use the SAME where → count == records, always.
-  const [followups, followupCount, readyToClose, needsYou, agents] = await Promise.all([
+  // Fresh-untouched-today section (Lalit, 2026-07-01) — assigned today, no first
+  // contact yet. Independent of followupDate (they often have none), so they get
+  // their own top section rather than living on the follow-up board. Respects the
+  // agent/team filters. Single source of truth: freshLeads.freshUntouchedWhere.
+  const freshWhere: Prisma.LeadWhereInput = { ...freshUntouchedWhere(scopeWhere) };
+  if (agentFilter) freshWhere.ownerId = agentFilter;
+  if (teamFilter) freshWhere.forwardedTeam = teamFilter;
+
+  const [followups, followupCount, readyToClose, needsYou, freshUntouched, agents] = await Promise.all([
     prisma.lead.findMany({
       where: followupWhere,
       orderBy: { followupDate: effectiveWhen === "overdue" ? "desc" : "asc" },
@@ -233,6 +242,12 @@ export default async function ActionListPage({
       where: { ...scopeWhere, ...ACTIVE_ORIGIN_WHERE, needsManagerReview: true, currentStatus: { notIn: SUPPRESSED_STATUSES } },
       orderBy: { flaggedAt: "desc" },
       take: 15,
+      select: leadSelect,
+    }),
+    prisma.lead.findMany({
+      where: freshWhere,
+      orderBy: { assignedAt: "desc" }, // newest assignment first
+      take: 50,
       select: leadSelect,
     }),
     // Agent dropdown — scoped to who the viewer can see. AGENT gets no list
@@ -259,6 +274,7 @@ export default async function ActionListPage({
     ...followups.map((l) => l.id),
     ...readyToClose.map((l) => l.id),
     ...needsYou.map((l) => l.id),
+    ...freshUntouched.map((l) => l.id),
   ]));
   const contactByLead = await contactActivityByLeadToday(allCardLeadIds);
 
@@ -269,6 +285,14 @@ export default async function ActionListPage({
     : statusesForTeam(null); // ALL_STATUSES union
 
   const sections = [
+    {
+      key: "fresh" as const,
+      title: "🆕 FRESH — CONTACT FIRST",
+      caption: "Assigned today · no call, WhatsApp, or note logged yet.",
+      accent: "border-l-red-500",
+      tint: "bg-red-50/60",
+      items: freshUntouched.map((l) => makeCard(l, "fresh")),
+    },
     {
       key: "ready_close" as const,
       title: "💎 READY TO CLOSE",
@@ -409,7 +433,7 @@ export default async function ActionListPage({
           leadName={card.name}
           phone={card.phone}
           waLink={waLink}
-          flagKind={card.flagKind === "followup" ? "overdue" : card.flagKind}
+          flagKind={card.flagKind === "followup" ? "overdue" : card.flagKind === "fresh" ? "needs_you" : card.flagKind}
           hasContactToday={contactByLead.has(card.id)}
         />
 

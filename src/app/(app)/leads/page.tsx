@@ -11,6 +11,10 @@ import { leadScopeWhere, COLD_ORIGINS, workableWhere, activeBoardWhere, MASTER_D
 import { overdueFollowupBoundary } from "@/lib/datetime";
 import { contactActivityByLeadToday } from "@/lib/followupGate";
 import { CONTACT_ACTIVITY_TYPES } from "@/lib/dashboardWidgets";
+import {
+  freshTodayWhere, freshUntouchedWhere, assignedTodayWhere, firstContactPendingWhere,
+  assignedTodayOr, FIRST_CONTACT_PENDING_WHERE, FRESH_STATUS_OR, isAssignedToday,
+} from "@/lib/freshLeads";
 import { projectWhereForUser } from "@/lib/propertyScope";
 import { PROPERTY_TYPES } from "@/lib/propertyType";
 import { displayBudget } from "@/lib/budgetParse";
@@ -134,6 +138,33 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
   if (sp.untouched === "1") {
     where.callLogs = { none: {} };
     where.activities = { none: { type: { in: CONTACT_ACTIVITY_TYPES } } };
+  }
+  // ── Fresh-lead filters (?fresh=today|assigned|untouched|pending) ────────────
+  // Today's freshly-assigned leads must never get lost among old follow-ups
+  // (Lalit, 2026-07-01). All four lenses key off the SINGLE source of truth in
+  // freshLeads.ts so the chip count == the rows that open here == the badge on
+  // the row == the escalation cron. Composed via AND so they layer on top of the
+  // scope + workable envelope without clobbering the search OR. Each is treated
+  // as an "other filter" below, so it turns OFF the default follow-up narrowing.
+  const freshAnd: Prisma.LeadWhereInput[] = [];
+  if (sp.fresh === "today") {
+    // Fresh Today — assigned today (IST) AND still a fresh/uncontacted status.
+    freshAnd.push(assignedTodayOr(), { OR: FRESH_STATUS_OR });
+  } else if (sp.fresh === "assigned") {
+    // Assigned Today — landed in this agent's queue today, any status.
+    freshAnd.push(assignedTodayOr());
+  } else if (sp.fresh === "untouched") {
+    // Fresh Untouched — assigned today AND no first contact logged yet.
+    freshAnd.push(assignedTodayOr(), FIRST_CONTACT_PENDING_WHERE);
+  } else if (sp.fresh === "pending") {
+    // First Contact Pending — any assigned workable lead never contacted (any day).
+    freshAnd.push({ ownerId: { not: null } }, FIRST_CONTACT_PENDING_WHERE);
+  }
+  if (freshAnd.length > 0) {
+    where.AND = [
+      ...(Array.isArray(where.AND) ? where.AND : where.AND ? [where.AND] : []),
+      ...freshAnd,
+    ];
   }
   // Team filter — now multi-select (comma-separated) so the Excel "Team" column
   // header filter can tick India + Dubai together. Single value stays a plain
@@ -305,13 +336,25 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
   // search and show all matching, not just today's.
   // nofollowup filter already sets followupDate: null, so the followup chip
   // default (today) must not compose with it — include it as an "other filter".
-  const hasOtherFilter = !!(sp.q || sp.source || sp.status || sp.cstatus || sp.owner || sp.team || sp.score || sp.ai || sp.untouched || sp.when || sp.notPicked || sp.eoi || sp.smart || sp.potential || sp.fundReady || sp.clientType || sp.whenInvest || sp.project || sp.propertyType || sp.budgetPreset || sp.budgetFrom || sp.budgetTo || sp.city || sp.category || sp.hasMeeting || sp.hasSiteVisit || sp.needs || sp.followupFrom || sp.followupTo || filterTab === "nofollowup");
+  const hasOtherFilter = !!(sp.q || sp.source || sp.status || sp.cstatus || sp.owner || sp.team || sp.score || sp.ai || sp.untouched || sp.fresh || sp.when || sp.notPicked || sp.eoi || sp.smart || sp.potential || sp.fundReady || sp.clientType || sp.whenInvest || sp.project || sp.propertyType || sp.budgetPreset || sp.budgetFrom || sp.budgetTo || sp.city || sp.category || sp.hasMeeting || sp.hasSiteVisit || sp.needs || sp.followupFrom || sp.followupTo || filterTab === "nofollowup");
   // ── DEFAULT working view = ALL workable leads (6-tier smart sorted) ─────
   // Updated rule (Lalit, 2026-06-21): show EVERY workable lead by default,
   // ordered by the 6-tier smart sort so today's fresh leads + today's follow-ups
   // stay on top and future / no-follow-up leads sink to the bottom (never hidden).
   // Explicit chips (Today / Overdue / Future / No Follow-up) still narrow on demand.
   const endOfTodayUTC = istWindow(0).lt;  // start of tomorrow IST, as a UTC instant
+  // "Needs action TODAY" = a follow-up due today/overdue OR a lead assigned today
+  // that the agent hasn't contacted yet (Lalit, 2026-07-01). Fresh leads assigned
+  // today often have no follow-up date (bulk-assign) or a future one, so the plain
+  // Today+Overdue window used to HIDE them — the exact "fresh leads get lost" bug.
+  // This one fragment backs BOTH the default list rows AND the "Today+Overdue" chip
+  // count, so count == drill still holds. (Applied only to the "todue" view.)
+  const todueOrFresh: Prisma.LeadWhereInput = {
+    OR: [
+      { followupDate: { lt: endOfTodayUTC, not: null } },
+      { AND: [assignedTodayOr(), FIRST_CONTACT_PENDING_WHERE] },
+    ],
+  };
   let effectiveFollowup: string;
   if (sp.followupFrom || sp.followupTo) effectiveFollowup = "range";
   else if (sp.followup) effectiveFollowup = sp.followup;        // explicit chip
@@ -339,8 +382,12 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
     // disjoint and the count matches the Dashboard tile + Action List.
     where.followupDate = { lt: overdueFollowupBoundary(), not: null };
   } else if (effectiveFollowup === "todue") {
-    // Today + Overdue: every follow-up up to end of today IST (excludes future + null).
-    where.followupDate = { lt: endOfTodayUTC, not: null };
+    // Today + Overdue + today's fresh-untouched. Added under AND (not a direct
+    // followupDate assignment) so a fresh lead with NO follow-up date still shows.
+    where.AND = [
+      ...(Array.isArray(where.AND) ? where.AND : where.AND ? [where.AND] : []),
+      todueOrFresh,
+    ];
   } else if (effectiveFollowup === "future") {
     // Tomorrow (IST) onward.
     where.followupDate = { gte: endOfTodayUTC };
@@ -471,16 +518,25 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
   let smartSortTotal: number | null = null;
 
   if (useSmartSort) {
-    const priorityRows = await prisma.lead.findMany({
-      where,
-      // currentStatus drives the "fresh" test (the `status` enum is vestigial).
-      select: { id: true, currentStatus: true, followupDate: true, createdAt: true },
-    });
+    // Fresh-untouched-today ids within the CURRENT filter scope — the tier-0 pin.
+    // Single source of truth (freshLeads.freshUntouchedWhere) so the sort, the
+    // badge, the count widget, and the escalation cron all agree on "fresh untouched".
+    const [priorityRows, fuRows] = await Promise.all([
+      prisma.lead.findMany({
+        where,
+        // currentStatus drives the "fresh" test (the `status` enum is vestigial).
+        select: { id: true, currentStatus: true, followupDate: true, createdAt: true },
+      }),
+      prisma.lead.findMany({ where: freshUntouchedWhere(where), select: { id: true } }),
+    ]);
+    const fuSet = new Set(fuRows.map(r => r.id));
 
-    // 6-tier default order (Lalit, 2026-06-21): today's fresh → today's follow-ups
-    // → old fresh → overdue → future → other. Today's new leads never get buried.
+    // 7-tier default order (tier-0 added 2026-07-01): today's fresh UNTOUCHED →
+    // today's fresh → today's follow-ups → old fresh → overdue → future → other.
+    // Today's new leads never get buried; the untouched ones sit at the very top.
     priorityRows.sort((a, b) => {
-      const pa = leadSortTier(a, todayWindow), pb = leadSortTier(b, todayWindow);
+      const pa = leadSortTier(a, todayWindow, fuSet.has(a.id));
+      const pb = leadSortTier(b, todayWindow, fuSet.has(b.id));
       if (pa !== pb) return pa - pb;
       // Within same tier: newer lead first
       return b.createdAt.getTime() - a.createdAt.getTime();
@@ -547,13 +603,27 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
   // Counts for the follow-up chips (segment-scoped, workable). Today+Overdue is
   // the true UNION (not today+overdue summed — they overlap on earlier-today);
   // allWorkable backs the "All Active" chip so it matches the segment, not 160.
-  const [followupTodue, followupFuture, followupNone, allWorkable] = await Promise.all([
-    // Board chips (Today+Overdue, Future) — boardScope so they match the Action List.
-    prisma.lead.count({ where: { ...boardScope, followupDate: { lt: endOfTodayUTC, not: null } } }),
+  const [followupTodue, followupFuture, followupNone, allWorkable,
+    freshUntouchedCount, freshTodayCount, assignedTodayCount, firstContactPendingCount] = await Promise.all([
+    // "Today+Overdue" chip — widened to the SAME union the default list uses
+    // (follow-ups due today/overdue OR today's fresh-untouched), so count == drill
+    // still holds now that fresh leads with no follow-up date surface in this view.
+    prisma.lead.count({ where: {
+      ...boardScope,
+      AND: [
+        ...(Array.isArray(boardScope.AND) ? boardScope.AND : boardScope.AND ? [boardScope.AND] : []),
+        todueOrFresh,
+      ],
+    } }),
     prisma.lead.count({ where: { ...boardScope, followupDate: { gte: endOfTodayUTC } } }),
     // Non-board chips (No Follow-up, All Active) describe the broad workable pipeline.
     prisma.lead.count({ where: { ...activeScope, followupDate: null } }),
     prisma.lead.count({ where: activeScope }),
+    // ── Fresh-lead widgets + chips (single source of truth: freshLeads.ts) ──────
+    prisma.lead.count({ where: freshUntouchedWhere(activeScope) }),   // ⚡ Untouched Fresh
+    prisma.lead.count({ where: freshTodayWhere(activeScope) }),        // 🆕 Fresh Today
+    prisma.lead.count({ where: assignedTodayWhere(activeScope) }),     // Assigned Today
+    prisma.lead.count({ where: firstContactPendingWhere(activeScope) }), // First Contact Pending
   ]);
 
   // Re-sort smart-sort results to match the computed priority order.
@@ -636,6 +706,16 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
     ? await contactActivityByLeadToday(leadIds)
     : new Set<string>();
 
+  // "Untouched" (first-contact-pending) flags for the current page — one batch
+  // query over the SAME FIRST_CONTACT_PENDING_WHERE the counts/sort/cron use, so a
+  // row's ⚡ badge is exact. Drives the NEW TODAY / Untouched badge + row highlight.
+  const untouchedSet = leadIds.length > 0
+    ? new Set((await prisma.lead.findMany({
+        where: { id: { in: leadIds }, ...FIRST_CONTACT_PENDING_WHERE },
+        select: { id: true },
+      })).map((l) => l.id))
+    : new Set<string>();
+
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const canBulk = me.role === "ADMIN" || me.role === "MANAGER";
 
@@ -650,6 +730,16 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
               ? <><span className="font-semibold text-[#0b1a33] dark:text-blue-300">{total} filtered</span> · {totalAll} total</>
               : <><span className="font-semibold">{totalAll}</span> total · {newToday} new today · {hot} hot</>}
           </p>
+          {/* Fresh-lead count widgets — always visible so no agent misses today's
+              newly assigned leads. Click to drill into the matching filter. */}
+          <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+            <Link href={`/leads?fresh=today`} className="inline-flex items-center gap-1 rounded-md border border-amber-300 bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-800 hover:bg-amber-100 dark:border-amber-600 dark:bg-amber-950/30 dark:text-amber-200">
+              🆕 Fresh Leads Today <span className="tabular-nums">{freshTodayCount}</span>
+            </Link>
+            <Link href={`/leads?fresh=untouched`} className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-xs font-semibold ${freshUntouchedCount > 0 ? "border-red-300 bg-red-50 text-red-800 hover:bg-red-100 dark:border-red-700 dark:bg-red-950/30 dark:text-red-200 animate-pulse" : "border-gray-200 bg-gray-50 text-gray-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-400"}`}>
+              ⚡ Untouched Fresh <span className="tabular-nums">{freshUntouchedCount}</span>
+            </Link>
+          </div>
         </div>
         <div className="flex flex-wrap gap-2">
           {me.role !== "AGENT" && (
@@ -779,9 +869,24 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
             {count != null && count > 0 && <span className={`px-1 rounded text-[10px] ${active ? "bg-white/25" : "bg-black/10 dark:bg-white/10"}`}>{count}</span>}
           </Link>
         );
+        // Fresh-lead chips (Lalit, 2026-07-01) — the four lenses on today's newly
+        // assigned leads. Clicking a fresh chip clears any follow-up narrowing (it's
+        // an "other filter"), and toggles off when clicked again. Warm colours so
+        // they stand apart from the cool follow-up chips.
+        const fr = (val: string, label: string, count: number, on: string, off: string) => (
+          <Link href={chipHref({ fresh: sp.fresh === val ? null : val, followup: null })} className={chip(sp.fresh === val, on, off)}>
+            {label}
+            {count > 0 && <span className={`px-1 rounded text-[10px] ${sp.fresh === val ? "bg-white/25" : "bg-black/10 dark:bg-white/10"}`}>{count}</span>}
+          </Link>
+        );
 
         return (
           <div className="flex gap-2 overflow-x-auto pb-1 -mx-3 px-3 sm:mx-0 sm:px-0" style={{ scrollbarWidth: "thin" }}>
+            {fr("untouched", "⚡ Fresh Untouched", freshUntouchedCount, "bg-red-600 text-white border-red-600", "bg-red-50 border-red-300 text-red-800 dark:bg-red-950/30 dark:border-red-700 dark:text-red-200")}
+            {fr("today", "🆕 Fresh Today", freshTodayCount, "bg-amber-500 text-white border-amber-500", "bg-amber-50 border-amber-300 text-amber-800 dark:bg-amber-950/30 dark:border-amber-600 dark:text-amber-200")}
+            {fr("assigned", "📥 Assigned Today", assignedTodayCount, "bg-blue-600 text-white border-blue-600", "bg-blue-50 border-blue-300 text-blue-800 dark:bg-blue-950/30 dark:border-blue-700 dark:text-blue-200")}
+            {fr("pending", "☎ First Contact Pending", firstContactPendingCount, "bg-orange-600 text-white border-orange-600", "bg-orange-50 border-orange-300 text-orange-800 dark:bg-orange-950/30 dark:border-orange-700 dark:text-orange-200")}
+            <span className="w-px self-stretch bg-gray-200 dark:bg-slate-600 shrink-0" aria-hidden />
             {fc("todue", effectiveFollowup === "todue", "🎯 Today + Overdue", followupTodue, "bg-[#0b1a33] text-white border-[#0b1a33] dark:bg-blue-700 dark:border-blue-700", neutral.off)}
             {fc("today", effectiveFollowup === "today", "📅 Today", followupToday, "bg-emerald-600 text-white border-emerald-600", "bg-emerald-50 border-emerald-300 text-emerald-800 dark:bg-emerald-950/30 dark:border-emerald-700 dark:text-emerald-200")}
             {fc("overdue", effectiveFollowup === "overdue", "⏰ Overdue", followupOverdue, "bg-red-600 text-white border-red-600", "bg-red-50 border-red-300 text-red-800 dark:bg-red-950/30 dark:border-red-700 dark:text-red-200")}
@@ -950,6 +1055,12 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
             connectedCount: l.callLogs.filter(c => ["CONNECTED","INTERESTED"].includes(c.outcome)).length,
             notPickedCount: l.callLogs.filter(c => ["NOT_PICKED","BUSY","SWITCHED_OFF"].includes(c.outcome)).length,
             hasContactToday: contactTodaySet.has(l.id),
+            // Fresh-lead visibility flags (Lalit, 2026-07-01) — drive the NEW TODAY
+            // / Untouched badge + row highlight. assignedToday from assignedAt (or
+            // createdAt fallback); untouched from the batch FIRST_CONTACT_PENDING set.
+            assignedToday: isAssignedToday({ assignedAt: l.assignedAt, createdAt: l.createdAt }),
+            untouched: untouchedSet.has(l.id),
+            freshUntouchedToday: isAssignedToday({ assignedAt: l.assignedAt, createdAt: l.createdAt }) && untouchedSet.has(l.id),
             intelligenceMatch: intel ? {
               matchType: intel.matchType,
               confidence: intel.confidence,
