@@ -6,6 +6,8 @@ import ImportedFieldsCard from "@/components/ImportedFieldsCard";
 import BuyerInlineEdit from "@/components/BuyerInlineEdit";
 import BuyerActivityTimeline from "@/components/BuyerActivityTimeline";
 import BuyerActionsClient from "@/components/BuyerActionsClient";
+import LeadFollowupActions from "@/components/LeadFollowupActions";
+import { hasBuyerContactToday } from "@/lib/buyerFollowup";
 import BuyerAdminPanel from "@/components/BuyerAdminPanel";
 import BuyerQuickNoteCard from "@/components/BuyerQuickNoteCard";
 import BuyerNotesCard from "@/components/BuyerNotesCard";
@@ -75,6 +77,10 @@ export default async function BuyerDetail({ params }: { params: Promise<{ id: st
   // Inline edits are allowed for anyone who can touch the buyer (admin any; assigned
   // agent their own) — the PATCH route re-checks canTouchBuyer server-side.
   const canEditFields = canConvertReject;
+  // Contact-today gate for the follow-up "Complete" button (parity with leads:
+  // an agent must log a real touch before completing). Only needed when the
+  // follow-up bar renders (canLog); admins bypass the gate server-side anyway.
+  const buyerHasContactToday = canLog ? await hasBuyerContactToday(id) : false;
 
   // Repeat-buyer rollup: all LIVE records sharing this buyerKey (incl. this one).
   const siblings = rec.buyerKey
@@ -224,7 +230,21 @@ export default async function BuyerDetail({ params }: { params: Promise<{ id: st
                   clientName={rec.clientName}
                   agentName={me.name}
                   canLog={canLog}
-                />
+                >
+                  {/* Complete / Snooze / Escalate — the SAME follow-up bar as the
+                      Lead view, pointed at the buyer follow-up endpoints. Renders
+                      inline with Call/WhatsApp/…/Voice. Only on an ASSIGNED buyer. */}
+                  {canLog && (
+                    <LeadFollowupActions
+                      apiBase="/api/buyer-data"
+                      leadId={rec.id}
+                      leadName={rec.clientName}
+                      followupDate={rec.followupDate ? rec.followupDate.toISOString() : null}
+                      hasContactToday={buyerHasContactToday}
+                      compact
+                    />
+                  )}
+                </BuyerActionsClient>
               </div>
             </div>
           </div>

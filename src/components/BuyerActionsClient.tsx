@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { Phone, AlertCircle, Mic } from "lucide-react";
 import { whatsappLink, telLink, hasDialableNumber } from "@/lib/phone";
@@ -29,6 +29,10 @@ interface Props {
   clientName: string;
   agentName: string;
   canLog: boolean; // buyer is ASSIGNED and viewer may log activity
+  /** Extra action controls rendered INLINE in the same action row, after Voice —
+   *  the Buyer view passes LeadFollowupActions (Complete/Snooze/Escalate) here so the
+   *  follow-up buttons sit in the same fluid row as the Lead view (not a second line). */
+  children?: ReactNode;
 }
 
 const LOG_OUTCOMES: { key: string; type: string; label: string }[] = [
@@ -40,7 +44,7 @@ const LOG_OUTCOMES: { key: string; type: string; label: string }[] = [
   { key: "NOTE",             type: "NOTE",     label: "📝 Note only" },
 ];
 
-export default function BuyerActionsClient({ buyerId, phone, altPhone, email, clientName, agentName, canLog }: Props) {
+export default function BuyerActionsClient({ buyerId, phone, altPhone, email, clientName, agentName, canLog, children }: Props) {
   const router = useRouter();
   const waGreeting = `Hi ${clientName}, this is ${agentName} from White Collar Realty regarding your property. May I know a convenient time to connect?`;
 
@@ -168,6 +172,10 @@ export default function BuyerActionsClient({ buyerId, phone, altPhone, email, cl
             <Mic className="w-4 h-4" /> Voice
           </button>
         )}
+        {/* Follow-up controls (Complete / Snooze / Escalate) — passed by the Buyer
+            page as LeadFollowupActions; its `contents` wrapper makes each button a
+            direct flex child of this row, inline with Call/WhatsApp/…/Voice. */}
+        {children}
       </div>
 
       {/* Alternate number — render after the primary bar, only when both are

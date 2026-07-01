@@ -48,6 +48,13 @@ export const BUYER_ACTIVITY_TYPE = {
   RETURNED: "RETURNED",
   CONVERTED: "CONVERTED",
   REJECTED: "REJECTED",
+  // Follow-up lifecycle (buyer parity with the Lead follow-up bar). Written by the
+  // buyer action-complete / action-snooze / action-escalate endpoints, NOT the
+  // generic /activity logger. Plain strings — the type column is TEXT so these add
+  // no migration.
+  COMPLETED: "COMPLETED",
+  SNOOZED: "SNOOZED",
+  ESCALATED: "ESCALATED",
 } as const;
 export type BuyerActivityType = (typeof BUYER_ACTIVITY_TYPE)[keyof typeof BUYER_ACTIVITY_TYPE];
 
@@ -65,6 +72,18 @@ export const ATTEMPT_TYPES: ReadonlySet<string> = new Set([
 export const LOGGABLE_ACTIVITY_TYPES: ReadonlySet<string> = new Set([
   BUYER_ACTIVITY_TYPE.CALL,
   BUYER_ACTIVITY_TYPE.NOTE,
+  BUYER_ACTIVITY_TYPE.WHATSAPP,
+  BUYER_ACTIVITY_TYPE.VOICE_NOTE,
+  BUYER_ACTIVITY_TYPE.ATTEMPT_NO_ANSWER,
+  BUYER_ACTIVITY_TYPE.ATTEMPT_NOT_PICKED,
+  BUYER_ACTIVITY_TYPE.ATTEMPT_WA_NO_RESPONSE,
+]);
+
+/** Contact-type activities that satisfy the "logged a touch today" completion gate
+ *  (parity with the Lead followup gate — see src/lib/buyerFollowup.ts). NOTE-only
+ *  does NOT count as a contact, so an agent can't complete a follow-up on a bare note. */
+export const CONTACT_ACTIVITY_TYPES: ReadonlySet<string> = new Set([
+  BUYER_ACTIVITY_TYPE.CALL,
   BUYER_ACTIVITY_TYPE.WHATSAPP,
   BUYER_ACTIVITY_TYPE.VOICE_NOTE,
   BUYER_ACTIVITY_TYPE.ATTEMPT_NO_ANSWER,

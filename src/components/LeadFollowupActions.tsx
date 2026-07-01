@@ -38,9 +38,17 @@ interface Props {
   /** Compact density — smaller buttons for the dense Lead/Buyer/Revival action bar
    * (Lalit's detail-view density rule). Default false keeps every other caller as-is. */
   compact?: boolean;
+  /**
+   * API base for the three follow-up endpoints. Defaults to "/api/leads" so every
+   * existing Lead/Revival caller is unchanged. The Buyer Data view passes
+   * "/api/buyer-data", which exposes the SAME action-complete / action-snooze /
+   * action-escalate contract for BuyerRecords — so this one bar drives follow-up on
+   * both models without duplicating the UI (same pattern as StickyNoteWidget.apiBase).
+   */
+  apiBase?: string;
 }
 
-export default function LeadFollowupActions({ leadId, leadName, followupDate, hasContactToday = false, compact = false }: Props) {
+export default function LeadFollowupActions({ leadId, leadName, followupDate, hasContactToday = false, compact = false, apiBase = "/api/leads" }: Props) {
   const router = useRouter();
   const [busy, setBusy] = useState<null | "complete" | "snooze" | "escalate">(null);
   const [showEscalate, setShowEscalate] = useState(false);
@@ -65,7 +73,7 @@ export default function LeadFollowupActions({ leadId, leadName, followupDate, ha
     if (busy) return;
     setBusy("complete");
     try {
-      const r = await fetch(`/api/leads/${leadId}/action-complete`, {
+      const r = await fetch(`${apiBase}/${leadId}/action-complete`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({}),
@@ -95,7 +103,7 @@ export default function LeadFollowupActions({ leadId, leadName, followupDate, ha
     if (isPastISTLocalInput(v)) throw new Error("Pick a future date/time (IST).");
     setBusy("snooze");
     try {
-      const r = await fetch(`/api/leads/${leadId}/action-snooze`, {
+      const r = await fetch(`${apiBase}/${leadId}/action-snooze`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ at: `${v}:00+05:30` }),
@@ -113,7 +121,7 @@ export default function LeadFollowupActions({ leadId, leadName, followupDate, ha
     setBusy("escalate");
     setShowEscalate(false);
     try {
-      const r = await fetch(`/api/leads/${leadId}/action-escalate`, {
+      const r = await fetch(`${apiBase}/${leadId}/action-escalate`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ reason: escalateReason.trim() || undefined }),
