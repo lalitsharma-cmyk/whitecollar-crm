@@ -1601,6 +1601,32 @@ const checks: Check[] = [
     },
   },
 
+  {
+    // SV-2 stale site-visit/meeting watch. Proves the additive tracking columns are
+    // live in prod, the watcher is wired into the reliable heartbeat, and the
+    // 2h→4h→6h thresholds + agent-facing copy are intact.
+    name: "site-visit-watch — stale-watch columns live + heartbeat-wired + 2h/4h/6h thresholds",
+    run: async () => {
+      const fs = await import("fs");
+      // (a) selectable → migration applied in prod (throws if columns missing).
+      await prisma.agentStatusEvent.findFirst({
+        select: { staleRemindersSent: true, staleReviewFlagged: true, staleLastRemindedAt: true },
+      });
+      // (b) watcher exists with the escalating thresholds + Lalit's exact reminder copy.
+      // (siteVisitWatch.ts is "server-only" → check the source, per this file's convention.)
+      const watch = fs.readFileSync("src/lib/siteVisitWatch.ts", "utf8");
+      assert(/SV_REMIND_1_MIN\s*=\s*120/.test(watch), "reminder #1 must trigger at 2h (120 min)");
+      assert(/SV_REMIND_2_MIN\s*=\s*240/.test(watch), "reminder #2 must trigger at 4h (240 min)");
+      assert(/SV_REVIEW_MIN\s*=\s*360/.test(watch), "Requires-Review must trigger at 6h (360 min)");
+      assert(/still active\. Please remember to close it/.test(watch), "reminder copy must match the spec");
+      assert(/staleReviewFlagged/.test(watch) && /resolveManagerUserId/.test(watch),
+        "6h path must flag Requires-Review + escalate to the manager");
+      // (c) dispatched by the reliable heartbeat (GitHub-Actions crons don't fire).
+      assert(/site-visit-watch/.test(fs.readFileSync("src/app/api/cron/warm/route.ts", "utf8")),
+        "site-visit-watch must be wired into the /api/cron/warm heartbeat");
+    },
+  },
+
   // ───────────────────────────────────────────────────────────────────────────
   // 40. BUYER LIFECYCLE — the worked-pipeline invariants (Part 5a).
   //   (a) the new columns + tables exist (selecting them must not throw → proves

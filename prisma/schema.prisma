@@ -1708,6 +1708,13 @@ model AgentStatusEvent {
   note          String?
   createdAt     DateTime        @default(now())
 
+  // SV-2 stale-watch (heartbeat): dedup state for "your site visit is still active"
+  // reminders on an open GOING_* row — nudged at 2h/4h, escalated once to Requires-
+  // Review at 6h. Existing rows default to 0 / false (unwatched).
+  staleRemindersSent  Int      @default(0)
+  staleReviewFlagged  Boolean  @default(false)
+  staleLastRemindedAt DateTime?
+
   @@index([userId, createdAt])
   @@index([userId, status])
   @@index([userId, status, endedAt]) // fast "open Going event for this user" lookup

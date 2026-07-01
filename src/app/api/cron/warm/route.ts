@@ -23,6 +23,7 @@ export const maxDuration = 60;
 const HEARTBEAT_JOBS: Array<{ path: string; name: string; everyMin: number }> = [
   { path: "pre-meeting-reminder", name: "pre-meeting-reminder", everyMin: 5 },
   { path: "unassigned-reminders", name: "unassigned-escalation", everyMin: 5 },
+  { path: "site-visit-watch", name: "site-visit-watch", everyMin: 15 },
 ];
 
 /** Run at most ONE due sub-daily job this tick (keeps warm fast). Best-effort. */
