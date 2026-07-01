@@ -55,3 +55,22 @@ export const PAGE_GRID = "grid grid-cols-1 lg:grid-cols-3 gap-4 pb-24 lg:pb-0";
 export const MAIN_COL = "lg:col-span-2 space-y-4";
 /** Right-rail wrapper. */
 export const RIGHT_RAIL = "space-y-3";
+
+// ── Phase-A shared-shell tokens (2026-07-02) — added so ALL detail pages (Lead,
+//    Buyer, Cold/Revival, Master, Sale Off, Lease Off) share one DetailShell.
+//    Additive: existing pages are unaffected until they adopt <DetailShell>. ──────
+
+/** Header card shell (name + status + action row) — used by every detail page. */
+export const HEADER_CARD = "card p-4";
+
+/** Cold/Revival "this is data-bank" badge (amber, full-width, above the header). */
+export const COLD_BADGE =
+  "rounded-xl border-2 border-amber-400 bg-amber-50 dark:bg-amber-900/20 px-4 py-3 flex items-center gap-3";
+
+/** Generic alert banner (needs-manager / duplicate / SLA / follow-up) above header. */
+export const BANNER_ALERT =
+  "rounded-lg border-l-4 border-amber-500 bg-amber-50 dark:bg-amber-900/10 px-4 py-3";
+
+/** Small-caps section eyebrow inside a card (distinct from the card title). */
+export const SECTION_EYEBROW =
+  "text-[10px] uppercase tracking-widest text-gray-500 dark:text-slate-400 font-semibold mb-2";
