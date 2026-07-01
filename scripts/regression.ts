@@ -5031,6 +5031,20 @@ const checks: Check[] = [
     },
   },
   {
+    name: "fresh-lead-service — centralized isFresh = assignedToday(IST) && no meaningful first contact; single source of truth for every surface",
+    run: async () => {
+      const fs = await import("fs");
+      assert(fs.existsSync("src/lib/freshLead.ts"), "centralized freshLead service must exist");
+      const s = fs.readFileSync("src/lib/freshLead.ts", "utf8");
+      assert(/isFresh:\s*assignedToday && firstContactPending/.test(s), "isFresh must = assignedToday && firstContactPending");
+      assert(/isConnectedOutcome/.test(s), "a meaningful CALL must require a connected outcome (reuse followupGate, no drift)");
+      assert(/MEETING_ACTIVITY_TYPES/.test(s) && /ActivityType\.WHATSAPP/.test(s), "meaningful contact must include meetings/site-visits + WhatsApp");
+      assert(/istDayRange\(\)/.test(s), "assignedToday must be computed vs the current IST day (auto-expire at midnight, no cron)");
+      assert(/export async function freshLeadStateByLead|export async function meaningfulContactByLead/.test(s), "must expose a batch API for list surfaces (one query per page)");
+      results.push({ name: "  ↳ note", ok: true, detail: "Fresh Lead centralized service: assignedToday(IST) + firstContactPending(meaningful contact); reusable across all surfaces + AI" });
+    },
+  },
+  {
     name: "customer-computed-layer — pure compute/detect/search suites (Customer layer Step-1 foundation) all green",
     run: async () => {
       const { runComputeTests } = await import("../src/lib/customer/compute.test");
