@@ -451,9 +451,14 @@ model Lead {
   // live from the linked enquiries — never stored on Customer.
   customerId          String?
   customer            Customer?       @relation("CustomerEnquiries", fields: [customerId], references: [id], onDelete: SetNull)
-  forwardedTeam       String? // "Dubai" / "India" — canonical team marker. NULL = not yet
+  forwardedTeam       String? // TEAM marker "Dubai" / "India" — NULL = not yet
   // classified → ALL automation is suppressed until a team is set
   // (the mandatory pre-assignment routing gate; see src/lib/teamRouting.ts).
+  // MARKET (India / UAE) — DISTINCT from Team (Lalit's permanent segregation rule,
+  // 2026-07-02). Team = who works it (India Team / Dubai Team); Market = the
+  // property market (India / UAE). Backfilled from forwardedTeam (India→India,
+  // Dubai→UAE) + budgetCurrency for null-team. Additive; forwardedTeam unchanged.
+  market              String? // "India" | "UAE" — see src/lib/market.ts (resolveMarket)
   assignedAt          DateTime? // when ownerId was last set — for 15-min SLA
   // ── Routing provenance (Lead Routing Architecture) ──
   // Captures HOW/WHY this lead landed on its team, for audit + the lead-detail

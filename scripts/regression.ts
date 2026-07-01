@@ -5125,6 +5125,28 @@ const checks: Check[] = [
     },
   },
   {
+    name: "lead-market-segregation — Market (India/UAE) is a DISTINCT field from Team; resolveMarket single-source + backfill integrity",
+    run: async () => {
+      const { resolveMarket, teamToMarket, currencyToMarket } = await import("../src/lib/market");
+      // Team → Market mapping (India-family → India; Dubai/UAE → UAE; else null).
+      assert(teamToMarket("India") === "India" && teamToMarket("Gurgaon") === "India", "India-family team → India market");
+      assert(teamToMarket("Dubai") === "UAE" && teamToMarket("uae") === "UAE", "Dubai/UAE team → UAE market");
+      assert(teamToMarket("") === null && teamToMarket(null) === null, "unknown team → null market");
+      assert(currencyToMarket("INR") === "India" && currencyToMarket("AED") === "UAE", "INR→India, AED→UAE");
+      // resolveMarket priority: explicit market > team > currency.
+      assert(resolveMarket({ market: "UAE", forwardedTeam: "India" }) === "UAE", "explicit market wins over team");
+      assert(resolveMarket({ forwardedTeam: "India" }) === "India", "derive from team when no explicit market");
+      assert(resolveMarket({ budgetCurrency: "AED" }) === "UAE", "derive from currency when no team");
+      assert(resolveMarket({}) === null, "truly-unclassifiable → null (surfaces in Awaiting Market)");
+      // DATA integrity (backfill): every live lead with a team carries a market; market ⊆ {India,UAE}.
+      const gap = await prisma.lead.count({ where: { deletedAt: null, market: null, forwardedTeam: { not: null } } });
+      assert(gap === 0, `${gap} live lead(s) have a team but no market (backfill gap)`);
+      const bad = await prisma.lead.count({ where: { deletedAt: null, NOT: { market: null }, market: { notIn: ["India", "UAE"] } } });
+      assert(bad === 0, `${bad} live lead(s) have a market outside {India,UAE}`);
+      results.push({ name: "  ↳ note", ok: true, detail: "Market(India/UAE) distinct from Team(forwardedTeam); resolveMarket single-source; 0 team-without-market, 0 out-of-range" });
+    },
+  },
+  {
     name: "customer-computed-layer — pure compute/detect/search suites (Customer layer Step-1 foundation) all green",
     run: async () => {
       const { runComputeTests } = await import("../src/lib/customer/compute.test");
