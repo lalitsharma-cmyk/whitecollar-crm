@@ -1627,6 +1627,20 @@ const checks: Check[] = [
     },
   },
 
+  {
+    // Data-quality: a terminal lead (booked/sold/lost/rejected) must NOT keep an
+    // active followupDate — it would wrongly surface on the Action-List follow-up
+    // board. Every status-change/reject/import path clears it; this catches drift.
+    name: "followup-terminal-clear — no terminal lead carries an active followupDate",
+    run: async () => {
+      const { TERMINAL_STATUSES } = await import("../src/lib/lead-statuses");
+      const orphans = await prisma.lead.count({
+        where: { deletedAt: null, followupDate: { not: null }, currentStatus: { in: TERMINAL_STATUSES } },
+      });
+      assert(orphans === 0, `${orphans} terminal leads still carry a followupDate — clear it on the status-change/import path`);
+    },
+  },
+
   // ───────────────────────────────────────────────────────────────────────────
   // 40. BUYER LIFECYCLE — the worked-pipeline invariants (Part 5a).
   //   (a) the new columns + tables exist (selecting them must not throw → proves
