@@ -984,7 +984,7 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
                 <div className="flex items-center gap-3 text-xs text-gray-500 dark:text-slate-400 mb-1">
                   {l.phone && (
                     <span className="flex items-center gap-1 font-mono">
-                      📞 ···{l.phone.slice(-4)}
+                      📞 {isAdmin ? l.phone : `···${l.phone.slice(-4)}`}
                     </span>
                   )}
                   {l.budgetFormatted && (
@@ -1067,7 +1067,7 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
       <div className={`${view === "table" ? "hidden" : ""} lg:hidden space-y-2`}>
         {leads.length === 0 && <div className="card p-6 text-center text-gray-500 dark:text-slate-400 text-sm">No leads match these filters.</div>}
         {leads.map((l) => {
-          const maskedPhone = l.phone ? `···${l.phone.slice(-4)}` : null;
+          const maskedPhone = l.phone ? (isAdmin ? l.phone : `···${l.phone.slice(-4)}`) : null;
           const intel = l.intelligenceMatch;
           const nextAction = l.todoNext ?? (l.followupDate ? `Follow-up: ${l.followupDate}` : null);
           return (
@@ -1238,7 +1238,7 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
               </tr>
             )}
             {leads.map((l) => {
-              const maskedPhone = l.phone ? `···${l.phone.slice(-4)}` : null;
+              const maskedPhone = l.phone ? (isAdmin ? l.phone : `···${l.phone.slice(-4)}`) : null;
               const intel = l.intelligenceMatch;
               const nextAction = l.todoNext ?? (l.followupDate ? `Follow-up: ${l.followupDate}` : null);
 

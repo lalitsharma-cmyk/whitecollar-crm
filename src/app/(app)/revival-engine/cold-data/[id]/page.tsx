@@ -19,8 +19,12 @@ import { statusColor } from "@/lib/lead-statuses";
 import ColdDataPromoteButton from "@/components/ColdDataPromoteButton";
 import RejectLeadModal from "@/components/RejectLeadModal";
 import ImportedFieldsCard from "@/components/ImportedFieldsCard";
-function maskPhone(p?: string | null): string | null {
+// Mask a cold-data phone to its last 4 digits (PII protection on the data-bank).
+// reveal=true → return the full number: admins / super-admins / Lalit need the real
+// contact to work the pipeline; agents & managers still see the masked (last-4) form.
+function maskPhone(p?: string | null, reveal = false): string | null {
   if (!p) return null;
+  if (reveal) return p;
   const d = p.replace(/\D/g, "");
   return d.length >= 4 ? `···${d.slice(-4)}` : p;
 }
@@ -35,6 +39,10 @@ export default async function ColdDataDetailPage({ params, searchParams }: { par
   const backHref = sp.back && sp.back.startsWith("/") && !sp.back.startsWith("//") ? sp.back : "/cold-calls";
   const me = await requireUser();
   const scope = await leadScopeWhere(me);
+  // Admin / super-admin / Lalit see the FULL phone on cold data (no PII mask); every
+  // super-admin + Lalit is role ADMIN, so this one check covers all three. Agents &
+  // managers still see the masked (last-4) form.
+  const canSeeContact = me.role === "ADMIN" || me.isSuperAdmin === true;
 
   const lead = await prisma.lead.findFirst({
     where: { id, OR: [{ isColdCall: true }, { leadOrigin: { in: COLD_ORIGINS } }], ...scope },
@@ -105,8 +113,8 @@ export default async function ColdDataDetailPage({ params, searchParams }: { par
 
             {/* Phone + email */}
             <div className="text-sm text-gray-500 dark:text-slate-400 flex flex-wrap gap-x-3 gap-y-0.5 mb-3">
-              {lead.phone && <span>📞 {maskPhone(lead.phone)}</span>}
-              {lead.altPhone && <span>📱 {maskPhone(lead.altPhone)}</span>}
+              {lead.phone && <span>📞 {maskPhone(lead.phone, canSeeContact)}</span>}
+              {lead.altPhone && <span>📱 {maskPhone(lead.altPhone, canSeeContact)}</span>}
               {lead.email && <span>✉️ {lead.email}</span>}
               {lead.city && <span>📍 {lead.city}</span>}
             </div>
@@ -137,8 +145,8 @@ export default async function ColdDataDetailPage({ params, searchParams }: { par
               currentOwnerId={lead.ownerId}
               canReassign={canReassign}
               agents={agents.map(a => ({ id: a.id, name: a.name, role: a.role, team: a.team, avatarColor: a.avatarColor }))}
-              phoneMasked={maskPhone(lead.phone)}
-              altPhoneMasked={maskPhone(lead.altPhone)}
+              phoneMasked={maskPhone(lead.phone, canSeeContact)}
+              altPhoneMasked={maskPhone(lead.altPhone, canSeeContact)}
               leadName={lead.name}
               agentName={me.name}
               acefoneEnabled={acefoneEnabled()}
