@@ -160,6 +160,7 @@ model User {
   buyersOwned      BuyerRecord[]      @relation("BuyerOwner")
   buyerAssignments BuyerAssignment[]  @relation("BuyerAssignmentAgent")
   buyerActivities  BuyerActivity[]    @relation("BuyerActivityUser")
+  buyerVoiceMessages BuyerVoiceMessage[] @relation("BuyerVoiceMsgCreator")
   buyerStickyNotes BuyerStickyNote[]  @relation("BuyerStickyNoteUser")
 
   assistantRuns AssistantRun[] @relation("AssistantRunBy")
@@ -2441,9 +2442,10 @@ model BuyerRecord {
   deletedById      String? // admin who soft-deleted it
 
   // Agent-handling history (who worked it, attempts, returns) + buyer-scoped activity log.
-  assignments BuyerAssignment[]
-  activities  BuyerActivity[]
-  stickyNotes BuyerStickyNote[]
+  assignments   BuyerAssignment[]
+  activities    BuyerActivity[]
+  stickyNotes   BuyerStickyNote[]
+  voiceMessages BuyerVoiceMessage[]
 
   @@index([buyerKey])
   @@index([projectName])
@@ -2700,6 +2702,44 @@ model VoiceMessageRead {
   voiceMessage   LeadVoiceMessage @relation(fields: [voiceMessageId], references: [id], onDelete: Cascade)
   userId         String
   understoodAt   DateTime         @default(now())
+
+  @@unique([voiceMessageId, userId])
+}
+
+// ── Buyer Manager Voice Guidance (Buyer-view parity with the Lead voice channel) ─
+// Mirrors LeadVoiceMessage for the Buyer Data module (separate BuyerRecord model),
+// following the HRVoiceMessage precedent. Admin/Lalit records one-way voice
+// GUIDANCE on a buyer; the assigned agent plays it + marks understood. Audio bytes
+// stored verbatim (bytea, ≤5MB enforced in the API), streamed INLINE by the play
+// endpoint, NEVER selected in list queries. Reuses the shared VoiceMessageKind enum;
+// the ESCALATION kinds are reserved for a later buyer-escalation increment.
+model BuyerVoiceMessage {
+  id             String                  @id @default(cuid())
+  buyerId        String
+  buyer          BuyerRecord             @relation(fields: [buyerId], references: [id], onDelete: Cascade)
+  kind           VoiceMessageKind
+  createdById    String
+  createdBy      User                    @relation("BuyerVoiceMsgCreator", fields: [createdById], references: [id])
+  audioData      Bytes
+  mimeType       String                  @default("audio/webm")
+  durationSec    Int?
+  transcript     String?
+  transcriptLang String?
+  textNote       String?
+  title          String?
+  escalationId   String? // reserved for a future buyer escalation thread (no FK yet)
+  createdAt      DateTime                @default(now())
+  reads          BuyerVoiceMessageRead[]
+
+  @@index([buyerId, kind])
+}
+
+model BuyerVoiceMessageRead {
+  id             String            @id @default(cuid())
+  voiceMessageId String
+  voiceMessage   BuyerVoiceMessage @relation(fields: [voiceMessageId], references: [id], onDelete: Cascade)
+  userId         String
+  understoodAt   DateTime          @default(now())
 
   @@unique([voiceMessageId, userId])
 }

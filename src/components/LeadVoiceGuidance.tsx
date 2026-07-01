@@ -26,6 +26,14 @@ interface Props {
   leadId: string;
   isAdmin: boolean;
   messages: VoiceGuidanceMsg[];
+  /**
+   * API base for the voice-message endpoints. Defaults to "/api/leads" so every
+   * existing Lead caller is unchanged. The Buyer Data view passes "/api/buyer-data",
+   * which exposes the SAME voice-message contract for BuyerRecords — so this one
+   * component renders Manager Voice Guidance identically on both modules
+   * (same pattern as StickyNoteWidget.apiBase / LeadFollowupActions.apiBase).
+   */
+  apiBase?: string;
 }
 
 const fmtIST = (iso: string) =>
@@ -76,7 +84,7 @@ function VoicePlayer({ src, durationSec }: { src: string; durationSec: number | 
 }
 
 // ── One guidance message card ──
-function MessageCard({ leadId, m }: { leadId: string; m: VoiceGuidanceMsg }) {
+function MessageCard({ leadId, m, apiBase }: { leadId: string; m: VoiceGuidanceMsg; apiBase: string }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [understood, setUnderstood] = useState(m.understood);
@@ -84,7 +92,7 @@ function MessageCard({ leadId, m }: { leadId: string; m: VoiceGuidanceMsg }) {
   async function markUnderstood() {
     setBusy(true);
     try {
-      const r = await fetch(`/api/leads/${leadId}/voice-message/${m.id}/understood`, { method: "POST" });
+      const r = await fetch(`${apiBase}/${leadId}/voice-message/${m.id}/understood`, { method: "POST" });
       if (r.ok) { setUnderstood(true); router.refresh(); }
     } finally { setBusy(false); }
   }
@@ -101,7 +109,7 @@ function MessageCard({ leadId, m }: { leadId: string; m: VoiceGuidanceMsg }) {
           </div>
           <div className="text-[11px] text-gray-500 dark:text-slate-400">{fmtIST(m.at)}{m.title ? ` · ${m.title}` : ""}</div>
         </div>
-        <VoicePlayer src={`/api/leads/${leadId}/voice-message/${m.id}/audio`} durationSec={m.durationSec} />
+        <VoicePlayer src={`${apiBase}/${leadId}/voice-message/${m.id}/audio`} durationSec={m.durationSec} />
       </div>
       {m.transcript && (
         <div className="mt-1.5">
@@ -130,7 +138,7 @@ function MessageCard({ leadId, m }: { leadId: string; m: VoiceGuidanceMsg }) {
 }
 
 // ── Admin recorder (MediaRecorder audio + Web Speech transcript) ──
-function Recorder({ leadId }: { leadId: string }) {
+function Recorder({ leadId, apiBase }: { leadId: string; apiBase: string }) {
   const router = useRouter();
   type Phase = "idle" | "recording" | "review" | "saving";
   const [phase, setPhase] = useState<Phase>("idle");
@@ -225,7 +233,7 @@ function Recorder({ leadId }: { leadId: string }) {
       fd.append("title", title.trim());
       fd.append("durationSec", String(durRef.current || 0));
       fd.append("lang", "en-IN");
-      const r = await fetch(`/api/leads/${leadId}/voice-message`, { method: "POST", body: fd });
+      const r = await fetch(`${apiBase}/${leadId}/voice-message`, { method: "POST", body: fd });
       if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error(j.error ?? `HTTP ${r.status}`); }
       blobRef.current = null; setTranscript(""); setTitle(""); setPhase("idle");
       router.refresh();
@@ -285,7 +293,7 @@ function Recorder({ leadId }: { leadId: string }) {
   );
 }
 
-export default function LeadVoiceGuidance({ leadId, isAdmin, messages }: Props) {
+export default function LeadVoiceGuidance({ leadId, isAdmin, messages, apiBase = "/api/leads" }: Props) {
   const unread = messages.filter((m) => !m.mine && !m.understood).length;
   if (!isAdmin && messages.length === 0) return null; // agents see nothing until guidance exists
   return (
@@ -298,12 +306,12 @@ export default function LeadVoiceGuidance({ leadId, isAdmin, messages }: Props) 
           </span>
         )}
       </div>
-      {isAdmin && <div className="mb-3"><Recorder leadId={leadId} /></div>}
+      {isAdmin && <div className="mb-3"><Recorder leadId={leadId} apiBase={apiBase} /></div>}
       {messages.length === 0 ? (
         <p className="text-xs text-gray-400 dark:text-slate-500">No voice guidance yet.</p>
       ) : (
         <ul className="space-y-2">
-          {messages.map((m) => <MessageCard key={m.id} leadId={leadId} m={m} />)}
+          {messages.map((m) => <MessageCard key={m.id} leadId={leadId} m={m} apiBase={apiBase} />)}
         </ul>
       )}
     </div>

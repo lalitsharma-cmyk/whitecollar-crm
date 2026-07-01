@@ -7,6 +7,7 @@ import BuyerInlineEdit from "@/components/BuyerInlineEdit";
 import BuyerActivityTimeline from "@/components/BuyerActivityTimeline";
 import BuyerActionsClient from "@/components/BuyerActionsClient";
 import LeadFollowupActions from "@/components/LeadFollowupActions";
+import LeadVoiceGuidance from "@/components/LeadVoiceGuidance";
 import { hasBuyerContactToday } from "@/lib/buyerFollowup";
 import BuyerAdminPanel from "@/components/BuyerAdminPanel";
 import BuyerQuickNoteCard from "@/components/BuyerQuickNoteCard";
@@ -116,6 +117,29 @@ export default async function BuyerDetail({ params }: { params: Promise<{ id: st
     create: { buyerId: rec.id, userId: me.id, body: "" },
     update: {},
   });
+
+  // Manager Voice Guidance (Channel ①) — buyer parity with the Lead view. Admin
+  // records; the assigned agent plays + marks understood. Mapped to the SAME
+  // VoiceGuidanceMsg shape the shared LeadVoiceGuidance component consumes.
+  const voiceGuidanceRaw = await prisma.buyerVoiceMessage.findMany({
+    where: { buyerId: rec.id, kind: "GUIDANCE" },
+    orderBy: { createdAt: "desc" },
+    select: {
+      id: true, createdAt: true, transcript: true, title: true, durationSec: true, createdById: true,
+      createdBy: { select: { name: true } },
+      reads: { where: { userId: me.id }, select: { id: true } },
+    },
+  });
+  const voiceGuidance = voiceGuidanceRaw.map((v) => ({
+    id: v.id,
+    by: v.createdBy?.name ?? "Admin",
+    at: v.createdAt.toISOString(),
+    transcript: v.transcript,
+    title: v.title,
+    durationSec: v.durationSec,
+    understood: v.reads.length > 0,
+    mine: v.createdById === me.id,
+  }));
 
   const ccy = inferBuyerCurrency({ nationality: rec.nationality, projectName: rec.projectName, source: rec.source, market: rec.market });
   const buyerClass = classifyBuyer({ totalPropertiesOwned: rollup.totalPropertiesOwned, totalInvestmentValue: rollup.totalInvestmentValue }, ccy);
@@ -287,6 +311,13 @@ export default async function BuyerDetail({ params }: { params: Promise<{ id: st
               same card look as the Lead Conversation History (CONVO_CARD). */}
           <div data-lead-section="timeline">
             <BuyerActivityTimeline buyerId={rec.id} canLog={canLog} isAdmin={isAdmin} rawRemarks={rec.remarks} />
+          </div>
+
+          {/* Manager Voice Guidance — same shared component + placement as the Lead
+              view (after Conversation History), pointed at the buyer voice endpoints.
+              Admin sees the recorder; agents see guidance once it exists. */}
+          <div data-lead-section="timeline">
+            <LeadVoiceGuidance apiBase="/api/buyer-data" leadId={rec.id} isAdmin={isAdmin} messages={voiceGuidance} />
           </div>
 
           {/* Quick Note — secondary, after Conversation History (parity with Lead view). */}
