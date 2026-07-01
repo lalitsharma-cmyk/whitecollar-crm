@@ -25,45 +25,81 @@
 import { useEffect, useState } from "react";
 import { Sparkles } from "lucide-react";
 
-/** Message templates. {name} is substituted with the user's first name. Kept as
- *  a module constant so it is created once, not per render. */
-const MESSAGES = [
-  "Hi {name} 👋 Weekend is here! Perfect time to meet more clients — schedule more Site Visits & Meetings.",
-  "Hi {name} 💪 June is almost over. Let's close this month strong — more meetings, more deals.",
-  "Hi {name} 🚀 Weekend opportunity! More Site Visits = More Conversions.",
-  "Hi {name} 🏆 End of June — let's make it our best one yet.",
-  "Hi {name} 📅 Plan today's follow-ups and convert them into meetings.",
-] as const;
-
 const ROTATE_MS = 7000;
 
-export default function MotivationBanner({ firstName }: { firstName: string }) {
-  // Trim + fall back so we never render "Hi  👋" if the name is empty.
+/** Evergreen fallback — always valid, date-independent. Used for the deterministic
+ *  first (SSR + hydration) render so there is NO React #418 text mismatch; the
+ *  date/context set is computed client-side in useEffect after mount. */
+function fallbackLine(name: string): string {
+  return `Hi ${name} ✨ Stay focused — today's follow-ups can become tomorrow's closures.`;
+}
+
+/** Build the rotating set from LIVE date/context + team. No hardcoded month names —
+ *  every line is derived from `now` (browser-local ≈ IST) so it is never stale. */
+function buildMessages(name: string, team: string | null, now: Date): string[] {
+  const day = now.getDate();
+  const dow = now.getDay(); // 0=Sun … 6=Sat
+  const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  const msgs: string[] = [];
+
+  // ── Month phase ──
+  if (day <= 5) msgs.push(`Hi ${name} 🌅 New month started — fresh targets, fresh energy.`);
+  else if (day >= daysInMonth - 4) msgs.push(`Hi ${name} 🏁 Month-end push — close strong.`);
+  else msgs.push(`Hi ${name} 💪 Keep pushing — every lead can become revenue.`);
+
+  // ── Week phase ──
+  if (dow === 1) msgs.push(`Hi ${name} 📅 New week started — plan calls, follow-ups, and meetings.`);
+  if (dow === 4 || dow === 5) msgs.push(`Hi ${name} 🗓 Weekend is approaching — schedule more meetings and site visits.`);
+
+  // ── Team / market flavour ──
+  const t = (team || "").trim().toLowerCase();
+  if (t === "india" || t === "gurgaon" || t === "gurugram")
+    msgs.push(`Hi ${name} 🇮🇳 India team — every Gurgaon follow-up moves the revenue needle.`);
+  else if (t === "dubai" || t === "uae")
+    msgs.push(`Hi ${name} 🇦🇪 Dubai team — more site visits, more AED closings.`);
+  else
+    msgs.push(`Hi ${name} 🌍 India + Dubai — steady follow-ups across both markets win the month.`);
+
+  // Always include the evergreen line so the rotation never feels repetitive.
+  msgs.push(fallbackLine(name));
+  return msgs;
+}
+
+export default function MotivationBanner({ firstName, team = null }: { firstName: string; team?: string | null }) {
+  // Trim + fall back so we never render "Hi  ✨" if the name is empty.
   const name = (firstName || "").trim() || "there";
+  // Deterministic initial state (fallback only) → SSR == first client render → no
+  // hydration mismatch. useEffect swaps in the live date/context set after mount.
+  const [messages, setMessages] = useState<string[]>(() => [fallbackLine(name)]);
   const [idx, setIdx] = useState(0);
   // Drives the fade/slide: we briefly mark the line "leaving", swap text, then
   // mark it "entering" so the CSS transition animates in. Reduced-motion users
   // skip the visual transition entirely.
   const [visible, setVisible] = useState(true);
 
+  // Swap in the live date/context set after mount (client-only → no SSR mismatch).
   useEffect(() => {
+    setMessages(buildMessages(name, team, new Date()));
+    setIdx(0);
+  }, [name, team]);
+
+  useEffect(() => {
+    const count = messages.length;
+    if (count <= 1) return; // nothing to rotate yet (SSR fallback)
     const reduce =
       typeof window !== "undefined" &&
       window.matchMedia &&
       window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
     let swapTimer: ReturnType<typeof setTimeout> | undefined;
-
     const id = setInterval(() => {
       if (reduce) {
-        // No animation — just swap the text.
-        setIdx((i) => (i + 1) % MESSAGES.length);
+        setIdx((i) => (i + 1) % count);
         return;
       }
-      // Fade/slide out → swap text → fade/slide in.
       setVisible(false);
       swapTimer = setTimeout(() => {
-        setIdx((i) => (i + 1) % MESSAGES.length);
+        setIdx((i) => (i + 1) % count);
         setVisible(true);
       }, 300); // matches the 300ms CSS transition below
     }, ROTATE_MS);
@@ -72,9 +108,9 @@ export default function MotivationBanner({ firstName }: { firstName: string }) {
       clearInterval(id);
       if (swapTimer) clearTimeout(swapTimer);
     };
-  }, []);
+  }, [messages.length]);
 
-  const text = MESSAGES[idx].replace("{name}", name);
+  const text = messages[idx] ?? messages[0];
 
   return (
     <div
@@ -118,7 +154,7 @@ export default function MotivationBanner({ firstName }: { firstName: string }) {
       {/* Carousel dots — current message highlighted in brand gold. Hidden on the
           smallest screens to protect the one-line height for the message. */}
       <div className="hidden sm:flex flex-none items-center gap-1.5" aria-hidden="true">
-        {MESSAGES.map((_, i) => (
+        {messages.map((_, i) => (
           <span
             key={i}
             className={[

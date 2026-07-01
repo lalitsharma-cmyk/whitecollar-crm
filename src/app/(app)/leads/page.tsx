@@ -774,7 +774,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
           Sits ABOVE the filters/table. Personalised with the logged-in user's
           first name; rotates every 7s. Isolated client island — no impact on
           the table/filters below. */}
-      <MotivationBanner firstName={(me.name ?? "").split(" ")[0]} />
+      <MotivationBanner firstName={(me.name ?? "").split(" ")[0]} team={me.team ?? null} />
 
       {/* ── Segment selector: My / India / Dubai / All (admin only) ───────── */}
       {isAdmin && (() => {
