@@ -24,6 +24,7 @@ import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { cleanNeedSnapshot } from "@/lib/needSnapshot";
 import { formatLeadName } from "@/lib/leadName";
+import { formatBudgetAmount } from "@/lib/budgetParse";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -100,10 +101,8 @@ function fmtDate(iso: string | null | undefined): string {
 }
 
 function fmtAed(v: number | null): string {
-  if (v == null) return "—";
-  if (v >= 1_000_000) return `${(v / 1_000_000).toFixed(1)}M AED`;
-  if (v >= 1_000) return `${(v / 1_000).toFixed(0)}K AED`;
-  return `${v} AED`;
+  // Canonical Dubai/AED house format ("2M AED", "600K AED", empty/0 → "—").
+  return formatBudgetAmount(v, "DUBAI");
 }
 
 function truncate(text: string, n: number): string {

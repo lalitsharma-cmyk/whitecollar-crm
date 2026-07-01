@@ -6,6 +6,7 @@ import { COLD_ORIGINS } from "@/lib/leadScope";
 import Link from "next/link";
 import { fmtIST12, fmtISTTime12, overdueFollowupBoundary } from "@/lib/datetime";
 import { waDraftLink, WA_TEMPLATES } from "@/lib/wa";
+import { formatBudgetAmount } from "@/lib/budgetParse";
 
 export const dynamic = "force-dynamic";
 
@@ -25,15 +26,12 @@ function istDayBoundaries(): { start: Date; end: Date } {
 }
 
 function fmtBudget(min: number | null, max: number | null, currency: string): string {
-  if (!min && !max) return "—";
-  const fmt = (v: number) => {
-    if (currency === "INR") return `₹${(v / 1e7).toFixed(1)} Cr`;
-    return `${currency} ${(v / 1e6).toFixed(1)} M`;
-  };
-  // Range only when max is a genuine upper bound (> min); garbage maxes collapse
-  // to the single value so we never show "10 M – 0 M".
-  if (min && max && max > min) return `${fmt(min)}–${fmt(max)}`;
-  return fmt((min ?? max)!);
+  // Route through the canonical formatter (Dubai "2M AED" / India "21 Cr", empty→"—")
+  // so the activity feed matches every other surface — no more "INR 0.0M" / "AED 0.0 M".
+  const market = currency === "INR" ? "INDIA" : "DUBAI";
+  // Range only when max is a genuine upper bound (> min).
+  if (min && max && max > min) return `${formatBudgetAmount(min, market)} – ${formatBudgetAmount(max, market)}`;
+  return formatBudgetAmount(min && min > 0 ? min : max, market);
 }
 
 function statusChipClass(status: string | null): string {
