@@ -21,6 +21,7 @@ import InlineEdit from "@/components/InlineEdit";
 import ContactField from "@/components/ContactField";
 import LinkedInField from "@/components/LinkedInField";
 import LeadTagsEditor from "@/components/LeadTagsEditor";
+import { displayBudget } from "@/lib/budgetParse";
 
 function maskPhone(p?: string | null): string {
   if (!p) return "";
@@ -61,7 +62,7 @@ const label = "text-xs text-gray-500 dark:text-slate-400";
 
 export default function ColdClientInfoCard({ lead, isAdmin }: { lead: ColdClientLead; isAdmin: boolean }) {
   const budgetHint = lead.budgetCurrency === "INR" ? "type 30L · 3Cr · 500K" : "type 2.5M · 500K";
-  const budgetDisplay = lead.budgetMin ? `${lead.budgetCurrency ?? ""} ${(lead.budgetMin / 1_000_000).toFixed(1)}M` : undefined;
+  const budgetDisplay = displayBudget(lead) !== "—" ? displayBudget(lead) : undefined;
   const configOptions = lead.forwardedTeam === "India"
     ? [
         { value: "1BHK", label: "1 BHK" }, { value: "2BHK", label: "2 BHK" }, { value: "3BHK", label: "3 BHK" },
