@@ -77,7 +77,11 @@ export const FIELD_CANDIDATES: Record<string, string[]> = {
   categorization:  ["categorization", "category"],
   tags:            ["tags", "tag"],
   message:         ["message", "requirement"],
-  remarks:         ["remarks", "remark"],
+  // Remarks / conversation column — future-proofed with common header variants so a
+  // sheet's remarks aren't dropped (2026-07: many old cold sheets simply had NO
+  // remarks column, hence empty timelines; this ensures future sheets that DO carry
+  // one are captured). "message" stays a separate field (matched before remarks).
+  remarks:         ["remarks", "remark", "conversation", "notes", "comments", "discussion", "lastdiscussion", "clientremarks", "propertydetails"],
   stage:           ["stage"],
   status:          ["status", "callstatus"],
   potential:       ["potential"],
