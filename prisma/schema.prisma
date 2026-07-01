@@ -178,6 +178,10 @@ model User {
   sentBroadcasts     VoiceBroadcast[]     @relation("BroadcastCreator")
   targetedBroadcasts VoiceBroadcast[]     @relation("BroadcastTarget")
   broadcastReads     VoiceBroadcastRead[]
+
+  // ── Customer layer (Step 1 foundation) relations ──
+  canonicalCustomers    Customer[]          @relation("CustomerCanonicalOwner")
+  customerLinkActions   CustomerLinkAudit[] @relation("CustomerLinkAuditActor")
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -435,6 +439,13 @@ model Lead {
   // ownership
   ownerId             String?
   owner               User?           @relation("LeadOwner", fields: [ownerId], references: [id])
+  // ── Customer layer (Step 1 foundation) — optional link to the canonical Customer
+  // this enquiry belongs to. NULL = standalone (default for EVERY existing lead, so
+  // adding this column changes ZERO existing rows). Set/cleared ONLY via the audited
+  // link/unlink service (src/lib/customer/link.ts). Status/owner/phone are computed
+  // live from the linked enquiries — never stored on Customer.
+  customerId          String?
+  customer            Customer?       @relation("CustomerEnquiries", fields: [customerId], references: [id], onDelete: SetNull)
   forwardedTeam       String? // "Dubai" / "India" — canonical team marker. NULL = not yet
   // classified → ALL automation is suppressed until a team is set
   // (the mandatory pre-assignment routing gate; see src/lib/teamRouting.ts).
@@ -587,6 +598,7 @@ model Lead {
   @@index([leadOrigin])
   @@index([ownerId, deletedAt])
   @@index([forwardedTeam, deletedAt])
+  @@index([customerId]) // Customer layer — group an enquiry's siblings by canonical Customer
 }
 
 // =====================================================
@@ -2736,4 +2748,61 @@ model VoiceBroadcastRead {
   heardAt     DateTime       @default(now())
 
   @@unique([broadcastId, userId])
+}
+
+// =====================================================
+// CUSTOMER LAYER (Step 1 foundation — additive only)
+// =====================================================
+// A Customer is the canonical HUMAN behind one-or-more enquiries (Leads). The
+// link between a Lead and its Customer is the ONLY thing stored about the
+// relationship; everything describing the customer's CURRENT state — status,
+// owner-of-record, confidence, contact rollup, health — is COMPUTED LIVE from the
+// set of linked enquiries (src/lib/customer/compute.ts). Nothing derivable is
+// persisted, so a new enquiry can never make a stored value go stale.
+model Customer {
+  // IMMUTABLE surrogate identity — never a mobile/email/name (those change).
+  id               String   @id @default(uuid())
+  // OPTIONAL admin display-name override; NULL ⇒ computed from linked enquiries.
+  displayName      String?
+  // Admin-selected canonical owner-of-record; NULL ⇒ computed ("Multiple Owners").
+  canonicalOwnerId String?
+  canonicalOwner   User?    @relation("CustomerCanonicalOwner", fields: [canonicalOwnerId], references: [id], onDelete: SetNull)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  // All enquiries currently linked. Unlink clears the lead's customerId (SetNull).
+  enquiries        Lead[]               @relation("CustomerEnquiries")
+  // Immutable, append-only audit of every link/unlink decision.
+  linkAudits       CustomerLinkAudit[]
+
+  @@index([canonicalOwnerId])
+}
+
+// IMMUTABLE, APPEND-ONLY audit of every merge/link/unlink decision. Written ONCE
+// when an admin links/unlinks an enquiry; NEVER updated or deleted. Together these
+// rows are a complete, replayable history + the basis for one-click reversibility.
+model CustomerLinkAudit {
+  id                 String    @id @default(cuid())
+  customerId         String?
+  customer           Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  leadId             String
+  action             String    // "LINK" | "UNLINK" (text, no enum — the log can't be invalidated by a future enum edit)
+  performedById      String?
+  performedBy        User?     @relation("CustomerLinkAuditActor", fields: [performedById], references: [id], onDelete: SetNull)
+  performedAt        DateTime  @default(now())
+  reason             String?
+  // Live confidence + factors snapshotted at decision time (never otherwise stored).
+  confidenceSnapshot Int?
+  matchFactors       Json?
+  previousOwnerId    String?
+  currentOwnerId     String?
+  // Membership transition (makes a link/unlink exactly reversible).
+  prevCustomerId     String?
+  newCustomerId      String?
+  rollbackAvailable  Boolean   @default(true)
+
+  @@index([customerId])
+  @@index([leadId])
+  @@index([performedById])
+  @@index([performedAt])
 }

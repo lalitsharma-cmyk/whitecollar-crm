@@ -4963,6 +4963,17 @@ const checks: Check[] = [
     },
   },
   {
+    name: "customer-computed-layer — pure compute/detect/search suites (Customer layer Step-1 foundation) all green",
+    run: async () => {
+      const { runComputeTests } = await import("../src/lib/customer/compute.test");
+      const { runDetectTests } = await import("../src/lib/customer/detect.test");
+      const { runSearchTests } = await import("../src/lib/customer/search.test");
+      const c = runComputeTests(), d = runDetectTests(), s = runSearchTests();
+      assert(c.failed === 0 && d.failed === 0 && s.failed === 0, `customer pure suites must be green (compute ${c.passed}/${c.failed}, detect ${d.passed}/${d.failed}, search ${s.passed}/${s.failed})`);
+      results.push({ name: "  ↳ note", ok: true, detail: `customer-layer pure suites green: compute ${c.passed}, detect ${d.passed}, search ${s.passed}` });
+    },
+  },
+  {
     name: "master-data-export-filtered — export POSTs the exact on-screen id-set (builtin view + column filters), not just URL params",
     run: async () => {
       const fs = await import("fs");
