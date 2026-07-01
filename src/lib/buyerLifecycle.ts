@@ -29,9 +29,10 @@ export type BuyerPoolStatus = (typeof BUYER_POOL_STATUS)[keyof typeof BUYER_POOL
 
 /** BuyerAssignment.returnReason values. */
 export const BUYER_RETURN_REASON = {
-  MANUAL_REJECT: "MANUAL_REJECT",
-  AUTO_5_ATTEMPTS: "AUTO_5_ATTEMPTS",
-  ADMIN_REASSIGN: "ADMIN_REASSIGN",
+  MANUAL_REJECT: "MANUAL_REJECT",     // stint closed because the buyer was REJECTED (terminal)
+  AUTO_5_ATTEMPTS: "AUTO_5_ATTEMPTS", // auto-returned to pool after 5 attempts (still active)
+  ADMIN_REASSIGN: "ADMIN_REASSIGN",   // stint closed to hand the buyer to another agent
+  RETURN_TO_POOL: "RETURN_TO_POOL",   // manual "Return to Pool" (still active, distinct from reject)
 } as const;
 export type BuyerReturnReason = (typeof BUYER_RETURN_REASON)[keyof typeof BUYER_RETURN_REASON];
 
@@ -55,6 +56,8 @@ export const BUYER_ACTIVITY_TYPE = {
   COMPLETED: "COMPLETED",
   SNOOZED: "SNOOZED",
   ESCALATED: "ESCALATED",
+  // Terminal reject + its reversal (AI Reactivation flow). Plain strings — TEXT column.
+  REACTIVATED: "REACTIVATED",
 } as const;
 export type BuyerActivityType = (typeof BUYER_ACTIVITY_TYPE)[keyof typeof BUYER_ACTIVITY_TYPE];
 
@@ -154,6 +157,7 @@ export async function assignBuyerInTx(
       rejectedAt: null,
       rejectedById: null,
       rejectionReason: null,
+      rejectCategory: null,
     },
   });
   const stint = await tx.buyerAssignment.create({
@@ -191,20 +195,100 @@ export async function returnBuyerToPoolInTx(
       ownerId: null,
       assignedAt: null,
       poolStatus: BUYER_POOL_STATUS.ADMIN_POOL,
-      rejectedAt: now,
-      rejectedById: actorId,
-      rejectionReason: rejectionReason ?? (reason === BUYER_RETURN_REASON.AUTO_5_ATTEMPTS ? "Auto-returned after 5 contact attempts" : null),
       returnedToPoolAt: now,
+      // A return to pool is NOT a reject — the buyer stays ACTIVE, just unassigned.
+      // Reject-audit fields belong ONLY to rejectBuyerInTx (terminal). Clear any
+      // stale reject markers so a re-pooled buyer reads cleanly as an active record.
+      rejectedAt: null,
+      rejectedById: null,
+      rejectionReason: null,
+      rejectCategory: null,
       // attemptCount is intentionally LEFT as-is on the record for the audit trail
       // of "this buyer has been hard to reach"; the next assignment resets it.
     },
   });
   const isAuto = reason === BUYER_RETURN_REASON.AUTO_5_ATTEMPTS;
   await logBuyerActivity(
-    tx, buyerId, actorId, BUYER_ACTIVITY_TYPE.REJECTED,
-    isAuto ? `Auto-returned to pool (${AUTO_RETURN_ATTEMPTS} attempts)` : (rejectionReason ? `Rejected: ${rejectionReason}` : "Rejected / returned to pool"),
+    tx, buyerId, actorId, BUYER_ACTIVITY_TYPE.RETURNED,
+    isAuto ? `Auto-returned to pool (${AUTO_RETURN_ATTEMPTS} attempts)` : (rejectionReason ? `Returned to pool: ${rejectionReason}` : "Returned to Admin Buyer Pool"),
   );
-  await logBuyerActivity(tx, buyerId, actorId, BUYER_ACTIVITY_TYPE.RETURNED, "Returned to Admin Buyer Pool");
+}
+
+/**
+ * TERMINAL REJECT — the buyer leaves the working pipeline entirely (parity with a
+ * rejected Lead). Sets poolStatus=REJECTED, clears ownerId (removed from the agent
+ * queue + the active/working list), closes the open stint (MANUAL_REJECT), and
+ * stamps the FULL reject audit (reason + category + who + when + AI-revival
+ * eligibility). This is DISTINCT from returnBuyerToPoolInTx: a rejected buyer does
+ * NOT go back to the Admin Pool and is NEVER auto-reassigned — it sits in the
+ * Rejected tab until an admin explicitly REACTIVATES it (the AI Reactivation flow:
+ * Rejected → recommendation → admin approval → reactivate → assign). History is
+ * never deleted — the timeline retains every prior activity + the reject event.
+ */
+export async function rejectBuyerInTx(
+  tx: Tx,
+  buyerId: string,
+  actorId: string | null,
+  opts: { reason?: string | null; category?: string | null; aiEligibleForRevival?: boolean | null } = {},
+): Promise<void> {
+  const now = new Date();
+  const open = await openStint(tx, buyerId);
+  if (open) {
+    await tx.buyerAssignment.update({
+      where: { id: open.id },
+      data: { returnedAt: now, returnReason: BUYER_RETURN_REASON.MANUAL_REJECT },
+    });
+  }
+  await tx.buyerRecord.update({
+    where: { id: buyerId },
+    data: {
+      ownerId: null,
+      assignedAt: null,
+      poolStatus: BUYER_POOL_STATUS.REJECTED, // TERMINAL — not ADMIN_POOL
+      rejectedAt: now,
+      rejectedById: actorId,
+      rejectionReason: opts.reason ?? null,
+      rejectCategory: opts.category ?? null,
+      aiEligibleForRevival: opts.aiEligibleForRevival ?? null,
+      // returnedToPoolAt is intentionally NOT set — a reject is not a pool return.
+    },
+  });
+  const bits = [
+    opts.category ? `[${opts.category}]` : null,
+    opts.reason ?? null,
+    opts.aiEligibleForRevival ? "AI-revival-eligible" : null,
+  ].filter(Boolean).join(" · ");
+  await logBuyerActivity(tx, buyerId, actorId, BUYER_ACTIVITY_TYPE.REJECTED, `Rejected${bits ? `: ${bits}` : ""}`);
+}
+
+/**
+ * REACTIVATE a REJECTED buyer → back to the Admin Pool, clearing the terminal
+ * markers so it can be assigned again. The entry point for the AI Reactivation
+ * Engine (admin-approved). The reject audit is preserved in the timeline (the
+ * REJECTED + REACTIVATED BuyerActivity rows), so "reactivated history" is never
+ * lost; aiEligibleForRevival is left on the record as the historical assessment.
+ */
+export async function reactivateBuyerInTx(
+  tx: Tx,
+  buyerId: string,
+  actorId: string | null,
+  note?: string | null,
+): Promise<void> {
+  const now = new Date();
+  await tx.buyerRecord.update({
+    where: { id: buyerId },
+    data: {
+      poolStatus: BUYER_POOL_STATUS.ADMIN_POOL,
+      ownerId: null,
+      assignedAt: null,
+      rejectedAt: null,
+      rejectedById: null,
+      rejectionReason: null,
+      rejectCategory: null,
+      returnedToPoolAt: now,
+    },
+  });
+  await logBuyerActivity(tx, buyerId, actorId, BUYER_ACTIVITY_TYPE.REACTIVATED, `Reactivated to Admin Pool${note ? `: ${note}` : ""}`);
 }
 
 /**

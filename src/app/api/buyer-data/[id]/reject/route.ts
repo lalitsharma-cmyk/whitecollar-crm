@@ -4,21 +4,26 @@ import { prisma } from "@/lib/prisma";
 import { notify } from "@/lib/notify";
 import { audit, reqMeta } from "@/lib/audit";
 import { canTouchBuyer } from "@/lib/buyerScope";
-import { returnBuyerToPoolInTx, BUYER_POOL_STATUS, BUYER_RETURN_REASON } from "@/lib/buyerLifecycle";
+import { rejectBuyerInTx, BUYER_POOL_STATUS } from "@/lib/buyerLifecycle";
 
-// ── Reject / Return a buyer to the Admin Pool ────────────────────────────────
-// Assigned AGENT (their own ASSIGNED buyer) — or admin. Returns the buyer to the
-// Admin Pool: clears ownerId, poolStatus=ADMIN_POOL, stamps rejectedAt/ById/reason
-// + returnedToPoolAt, closes the open BuyerAssignment stint (MANUAL_REJECT), and
-// RETAINS all remarks + BuyerActivity history (the buyer goes back for reassignment,
-// nothing is lost). Logs BuyerActivity REJECTED + RETURNED, notifies admins.
+// ── TERMINAL Reject a buyer ──────────────────────────────────────────────────
+// Assigned AGENT (their own ASSIGNED buyer) — or admin. Moves the buyer to the
+// TERMINAL Rejected state: clears ownerId (removed from the agent queue + the
+// active/working list), poolStatus=REJECTED, closes the open stint (MANUAL_REJECT),
+// and stamps the FULL reject audit (reason + category + who + when + AI-revival
+// eligibility). It is NOT returned to the Admin Pool — a rejected buyer stays in the
+// Rejected tab until an admin REACTIVATES it (POST /reactivate). "Return to Pool" is
+// a SEPARATE action (POST /return-to-pool). RETAINS all remarks + BuyerActivity
+// history — nothing is ever deleted.
 //
-// Body: { reason?: string } — optional rejection reason (free text).
+// Body: { reason?: string; category?: string; aiEligibleForRevival?: boolean }
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const me = await requireUser();
   const { id } = await params;
   const body = await req.json().catch(() => ({}));
   const reason = String(body.reason ?? "").trim() || null;
+  const category = String(body.category ?? "").trim() || null;
+  const aiEligibleForRevival = typeof body.aiEligibleForRevival === "boolean" ? body.aiEligibleForRevival : null;
 
   const buyer = await prisma.buyerRecord.findUnique({ where: { id } });
   if (!buyer) return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -26,16 +31,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
   if (buyer.poolStatus !== BUYER_POOL_STATUS.ASSIGNED) {
-    return NextResponse.json({ error: "Only an assigned buyer can be returned to the pool." }, { status: 400 });
+    return NextResponse.json({ error: "Only an assigned buyer can be rejected." }, { status: 400 });
   }
 
   await prisma.$transaction(async (tx) => {
-    await returnBuyerToPoolInTx(tx, id, BUYER_RETURN_REASON.MANUAL_REJECT, me.id, reason);
+    await rejectBuyerInTx(tx, id, me.id, { reason, category, aiEligibleForRevival });
   });
 
-  // Tell admins a buyer is back in the pool (best-effort). Use notifyRoles-style
-  // single notify to each admin via the existing helper would be heavier; the
-  // pool is admin-managed, so a lightweight SYSTEM notice to admins suffices.
+  // Notify admins that a buyer was rejected (terminal). Best-effort.
   const admins = await prisma.user.findMany({ where: { role: "ADMIN", active: true }, select: { id: true } });
   await Promise.all(
     admins.map((a) =>
@@ -43,8 +46,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         userId: a.id,
         kind: "BUYER_RETURNED",
         severity: "INFO",
-        title: `↩️ Buyer returned to pool: ${buyer.clientName}`,
-        body: `${me.name} returned this buyer to the Admin Buyer Pool${reason ? ` — ${reason}` : ""}. Ready for reassignment.`,
+        title: `🚫 Buyer rejected: ${buyer.clientName}`,
+        body: `${me.name} rejected this buyer${category ? ` [${category}]` : ""}${reason ? ` — ${reason}` : ""}. It has left the active list (now in the Rejected tab).`,
         linkUrl: `/buyer-data/${id}`,
       }).catch(() => null),
     ),
@@ -55,9 +58,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     action: "buyer.reject",
     entity: "BuyerRecord",
     entityId: id,
-    meta: { reason },
+    meta: { reason, category, aiEligibleForRevival, terminal: true },
     request: reqMeta(req),
   });
 
-  return NextResponse.json({ ok: true, returnedToPool: true });
+  return NextResponse.json({ ok: true, rejected: true });
 }

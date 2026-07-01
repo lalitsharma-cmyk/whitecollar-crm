@@ -497,6 +497,7 @@ export default async function BuyerDetail({ params }: { params: Promise<{ id: st
             canConvertReject={canConvertReject}
             canAssign={canAssign}
             showHistory={isAdminOrMgr}
+            isAdmin={isAdmin}
             agents={agents}
           />
 

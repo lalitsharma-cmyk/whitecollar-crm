@@ -26,19 +26,29 @@ interface Props {
   canConvertReject: boolean;   // assigned agent or admin
   canAssign: boolean;          // admin or manager
   showHistory: boolean;        // admin/manager — render the stint Transfer History
+  isAdmin: boolean;            // ADMIN — gates Reactivate (rejected → pool)
   agents: Agent[];
 }
+
+// Reject buckets (the reject "category") — drives the AI Reactivation eligibility.
+const REJECT_CATEGORIES = ["Not Interested", "Wrong Number", "Invalid Number", "Already Bought", "Budget Too Low", "Funds Issue", "Postponed / Call Later", "Duplicate", "Do Not Contact", "Other"];
 
 const IST = { timeZone: "Asia/Kolkata", day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" } as const;
 const fmt = (s: string) => new Date(s).toLocaleString("en-IN", IST);
 
-export default function BuyerAdminPanel({ buyerId, poolStatus, ownerName, convertedLeadId, canConvertReject, canAssign, showHistory, agents }: Props) {
+export default function BuyerAdminPanel({ buyerId, poolStatus, ownerName, convertedLeadId, canConvertReject, canAssign, showHistory, isAdmin, agents }: Props) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string; leadId?: string } | null>(null);
   const [assignTo, setAssignTo] = useState("");
+  // Reject (terminal) form state.
   const [rejectOpen, setRejectOpen] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
+  const [rejectCategory, setRejectCategory] = useState("");
+  const [aiEligible, setAiEligible] = useState(true);
+  // Return-to-Pool (separate, non-terminal) form state.
+  const [returnOpen, setReturnOpen] = useState(false);
+  const [returnReason, setReturnReason] = useState("");
 
   // Live lifecycle state (attemptCount + stints) — read from the history endpoint.
   const [attemptCount, setAttemptCount] = useState<number>(0);
@@ -81,16 +91,49 @@ export default function BuyerAdminPanel({ buyerId, poolStatus, ownerName, conver
   async function reject() {
     setBusy(true); setMsg(null);
     try {
-      const r = await fetch(`/api/buyer-data/${buyerId}/reject`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reason: rejectReason || null }) });
+      const r = await fetch(`/api/buyer-data/${buyerId}/reject`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason: rejectReason || null, category: rejectCategory || null, aiEligibleForRevival: aiEligible }),
+      });
       const j = await r.json();
       if (!r.ok) { setMsg({ ok: false, text: j.error ?? "Reject failed." }); setBusy(false); return; }
-      setRejectOpen(false); setRejectReason("");
-      // The buyer is now back in the Admin Pool (ownerId cleared). An AGENT can no
-      // longer view a pooled buyer — canTouchBuyer would 404 the re-rendered detail
-      // page (the "reject → 404" bug). replace() (not refresh) sends the user back to
-      // the Buyer Data list AND drops the now-inaccessible detail URL from history,
-      // so the browser Back button doesn't 404 either.
+      setRejectOpen(false); setRejectReason(""); setRejectCategory("");
+      // TERMINAL reject — the buyer leaves the working pipeline (poolStatus=REJECTED).
+      // An AGENT can no longer view it (canTouchBuyer requires ASSIGNED) → a self-
+      // refresh would 404. replace() back to the Buyer list + drop the URL from
+      // history so the browser Back button doesn't 404 either.
       router.replace("/buyer-data");
+    } catch { setMsg({ ok: false, text: "Network error." }); }
+    finally { setBusy(false); }
+  }
+
+  async function returnToPool() {
+    setBusy(true); setMsg(null);
+    try {
+      const r = await fetch(`/api/buyer-data/${buyerId}/return-to-pool`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason: returnReason || null }),
+      });
+      const j = await r.json();
+      if (!r.ok) { setMsg({ ok: false, text: j.error ?? "Return to pool failed." }); setBusy(false); return; }
+      setReturnOpen(false); setReturnReason("");
+      // Buyer returns to the Admin Pool (ownerId cleared) — same access-loss as reject,
+      // so navigate back to the Buyer list (no self-refresh 404, no Back-button 404).
+      router.replace("/buyer-data");
+    } catch { setMsg({ ok: false, text: "Network error." }); }
+    finally { setBusy(false); }
+  }
+
+  async function reactivate() {
+    if (!window.confirm("Reactivate this rejected buyer back to the Admin Pool for reassignment?")) return;
+    setBusy(true); setMsg(null);
+    try {
+      const r = await fetch(`/api/buyer-data/${buyerId}/reactivate`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+      const j = await r.json();
+      if (!r.ok) { setMsg({ ok: false, text: j.error ?? "Reactivate failed." }); setBusy(false); return; }
+      // Rejected → Admin Pool. Admin retains access (sees all), so refresh in place.
+      setMsg({ ok: true, text: "Reactivated to the Admin Pool — ready to reassign." });
+      router.refresh();
     } catch { setMsg({ ok: false, text: "Network error." }); }
     finally { setBusy(false); }
   }
@@ -136,21 +179,56 @@ export default function BuyerAdminPanel({ buyerId, poolStatus, ownerName, conver
         </div>
       )}
 
-      {/* Lifecycle actions — stacked (vertical) for the right rail. */}
+      {/* Lifecycle actions — stacked (vertical). Reject (terminal) and Return to
+          Pool (non-terminal) are DISTINCT business actions with separate buttons. */}
       <div className="space-y-2">
-        {canConvertReject && !isConverted && (
+        {canConvertReject && !isConverted && poolStatus !== "REJECTED" && (
           <button type="button" disabled={busy} onClick={convert} className="btn btn-primary w-full justify-center text-sm disabled:opacity-40">⤴ Convert to Lead</button>
         )}
+
+        {/* REJECT (terminal) — reason + category + AI-revival eligibility. Moves the
+            buyer to the Rejected tab; it leaves the active list. */}
         {canConvertReject && isAssigned && (
-          <button type="button" disabled={busy} onClick={() => setRejectOpen((o) => !o)} className="btn w-full justify-center text-sm text-red-600 border border-red-200 hover:bg-red-50 dark:border-red-800 dark:hover:bg-red-900/20 disabled:opacity-40">↩ Reject / Return to Pool</button>
+          <>
+            <button type="button" disabled={busy} onClick={() => { setRejectOpen((o) => !o); setReturnOpen(false); }} className="btn w-full justify-center text-sm text-red-600 border border-red-200 hover:bg-red-50 dark:border-red-800 dark:hover:bg-red-900/20 disabled:opacity-40">🚫 Reject</button>
+            {rejectOpen && (
+              <div className="space-y-2 rounded-lg border border-red-200 dark:border-red-800 p-2.5 bg-red-50/40 dark:bg-red-900/10">
+                <select value={rejectCategory} onChange={(e) => setRejectCategory(e.target.value)} className={sel}>
+                  <option value="">Reject category…</option>
+                  {REJECT_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+                </select>
+                <input value={rejectReason} onChange={(e) => setRejectReason(e.target.value)} placeholder="Reason / note (optional)…" className={sel} />
+                <label className="flex items-center gap-2 text-xs text-gray-600 dark:text-slate-300">
+                  <input type="checkbox" checked={aiEligible} onChange={(e) => setAiEligible(e.target.checked)} />
+                  Eligible for AI revival later
+                </label>
+                <button type="button" disabled={busy} onClick={reject} className="btn w-full justify-center text-sm text-white bg-red-600 hover:bg-red-700 disabled:opacity-40">Confirm reject → Rejected tab</button>
+              </div>
+            )}
+          </>
         )}
-        {rejectOpen && (
-          <div className="space-y-2">
-            <input value={rejectReason} onChange={(e) => setRejectReason(e.target.value)} placeholder="Reason (optional)…" className={sel} />
-            <button type="button" disabled={busy} onClick={reject} className="btn w-full justify-center text-sm text-red-600 border border-red-300 hover:bg-red-50 disabled:opacity-40">Confirm return to pool</button>
-          </div>
+
+        {/* RETURN TO POOL (separate, non-terminal) — buyer stays ACTIVE, unassigned. */}
+        {canConvertReject && isAssigned && (
+          <>
+            <button type="button" disabled={busy} onClick={() => { setReturnOpen((o) => !o); setRejectOpen(false); }} className="btn btn-ghost w-full justify-center text-sm disabled:opacity-40">↩ Return to Pool</button>
+            {returnOpen && (
+              <div className="space-y-2 rounded-lg border border-gray-200 dark:border-slate-700 p-2.5">
+                <input value={returnReason} onChange={(e) => setReturnReason(e.target.value)} placeholder="Reason (optional)…" className={sel} />
+                <button type="button" disabled={busy} onClick={returnToPool} className="btn w-full justify-center text-sm border border-gray-300 dark:border-slate-600 hover:bg-gray-50 dark:hover:bg-slate-800 disabled:opacity-40">Confirm return (stays active)</button>
+              </div>
+            )}
+          </>
         )}
-        {canAssign && !isConverted && (
+
+        {/* REACTIVATE (admin) — rejected → Admin Pool. The admin-approval step of the
+            AI Reactivation flow: Rejected → recommendation → approve → reactivate → assign. */}
+        {isAdmin && poolStatus === "REJECTED" && (
+          <button type="button" disabled={busy} onClick={reactivate} className="btn w-full justify-center text-sm text-emerald-700 border border-emerald-300 hover:bg-emerald-50 dark:border-emerald-700 dark:hover:bg-emerald-900/20 disabled:opacity-40">♻️ Reactivate to Pool</button>
+        )}
+
+        {/* Assign / Transfer — not for a rejected buyer (reactivate it first). */}
+        {canAssign && !isConverted && poolStatus !== "REJECTED" && (
           <div className="space-y-1.5">
             <label className="text-[10px] uppercase tracking-widest text-gray-500 dark:text-slate-400 font-semibold">{isAssigned ? "Transfer to agent" : "Assign to agent"}</label>
             <select value={assignTo} onChange={(e) => setAssignTo(e.target.value)} className={sel}>

@@ -4992,7 +4992,7 @@ const checks: Check[] = [
       const fs = await import("fs");
       const c = fs.readFileSync("src/components/BuyerAdminPanel.tsx", "utf8");
       const convertFn = c.slice(c.indexOf("async function convert"), c.indexOf("async function reject"));
-      const rejectFn = c.slice(c.indexOf("async function reject"), c.indexOf("async function assign"));
+      const rejectFn = c.slice(c.indexOf("async function reject"), c.indexOf("async function returnToPool"));
       // Reject returns the buyer to the Admin Pool (ownerId cleared) → an agent can no
       // longer view it (canTouchBuyer → 404 on refresh). Must navigate to the list.
       assert(/router\.replace\("\/buyer-data"\)/.test(rejectFn), "reject must navigate to /buyer-data (not refresh the now-pooled buyer → 404)");
@@ -5001,6 +5001,33 @@ const checks: Check[] = [
       assert(/router\.replace\(/.test(convertFn) && /leads\/\$\{j\.leadId\}/.test(convertFn), "convert must navigate to the newly-created lead");
       assert(!/router\.refresh\(\)/.test(convertFn), "convert must NOT router.refresh() the now-converted buyer page");
       results.push({ name: "  ↳ note", ok: true, detail: "buyer reject → /buyer-data, convert → new lead; no self-refresh 404 (agent loses access after both)" });
+    },
+  },
+  {
+    name: "buyer-terminal-reject — Reject is TERMINAL (poolStatus=REJECTED + audit fields); Return-to-Pool + Reactivate are SEPARATE routes/actions",
+    run: async () => {
+      const fs = await import("fs");
+      const life = fs.readFileSync("src/lib/buyerLifecycle.ts", "utf8");
+      // Engine: rejectBuyerInTx → REJECTED (terminal) + stamps rejectCategory/aiEligible.
+      const rejFn = life.slice(life.indexOf("export async function rejectBuyerInTx"), life.indexOf("export async function reactivateBuyerInTx"));
+      assert(rejFn.length > 0, "rejectBuyerInTx must exist");
+      assert(/poolStatus:\s*BUYER_POOL_STATUS\.REJECTED/.test(rejFn), "rejectBuyerInTx must set poolStatus=REJECTED (terminal, not ADMIN_POOL)");
+      assert(/rejectCategory/.test(rejFn) && /aiEligibleForRevival/.test(rejFn), "rejectBuyerInTx must stamp rejectCategory + aiEligibleForRevival");
+      assert(/export async function reactivateBuyerInTx/.test(life), "reactivateBuyerInTx must exist (AI reactivation flow)");
+      // Return-to-pool must NOT stamp reject markers (a return is not a reject).
+      const retFn = life.slice(life.indexOf("export async function returnBuyerToPoolInTx"), life.indexOf("export async function rejectBuyerInTx"));
+      assert(/poolStatus:\s*BUYER_POOL_STATUS\.ADMIN_POOL/.test(retFn) && /rejectedAt:\s*null/.test(retFn), "returnBuyerToPoolInTx must go to ADMIN_POOL + clear reject markers (return != reject)");
+      // Separate routes exist + wired correctly.
+      assert(fs.existsSync("src/app/api/buyer-data/[id]/return-to-pool/route.ts"), "return-to-pool route must exist");
+      assert(fs.existsSync("src/app/api/buyer-data/[id]/reactivate/route.ts"), "reactivate route must exist");
+      assert(/rejectBuyerInTx/.test(fs.readFileSync("src/app/api/buyer-data/[id]/reject/route.ts", "utf8")), "reject route must call rejectBuyerInTx (terminal)");
+      const reactRoute = fs.readFileSync("src/app/api/buyer-data/[id]/reactivate/route.ts", "utf8");
+      assert(/me\.role !== "ADMIN"/.test(reactRoute) && /BUYER_POOL_STATUS\.REJECTED/.test(reactRoute), "reactivate must be admin-only + only for a REJECTED buyer");
+      // UI: three distinct actions; 404 nav preserved.
+      const panel = fs.readFileSync("src/components/BuyerAdminPanel.tsx", "utf8");
+      assert(/\/reject`/.test(panel) && /\/return-to-pool`/.test(panel) && /\/reactivate`/.test(panel), "panel must call all three distinct endpoints");
+      assert(/router\.replace\("\/buyer-data"\)/.test(panel), "reject/return must navigate to /buyer-data (keep the 404 fix)");
+      results.push({ name: "  ↳ note", ok: true, detail: "Reject terminal (REJECTED + audit); Return-to-Pool + Reactivate separate; 404 nav preserved" });
     },
   },
   {
