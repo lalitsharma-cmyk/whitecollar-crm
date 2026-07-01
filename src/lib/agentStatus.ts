@@ -221,6 +221,12 @@ export async function logAgentStatus(
   let durationMin: number | null = null;
   let pairedClosed = false;
   let pairedEventId: string | null = null;
+  // When a "Returned" tap closes a matching open "Going", the Returned row
+  // represents the WHOLE meeting/visit span (Going start → now), so its startedAt
+  // is the paired Going's startedAt. This keeps durationMin == (endedAt-startedAt)
+  // on the Returned row — the `agent-status` invariant — instead of a 0-min span
+  // that carried a non-zero paired duration.
+  let pairStartedAt: Date | null = null;
 
   // ── HERE is once-per-day (IST) ──
   // If this user already checked in today, DON'T create a 2nd HERE row, don't
@@ -255,6 +261,7 @@ export async function logAgentStatus(
     if (open) {
       durationMin = minutesBetween(open.startedAt, now);
       pairedEventId = open.id;
+      pairStartedAt = open.startedAt;
       pairedClosed = true;
       // Back-fill the opening row so it's no longer "open" and carries the duration.
       await prisma.agentStatusEvent.update({
@@ -265,14 +272,16 @@ export async function logAgentStatus(
   }
 
   // ── Create the event row ──
-  // GOING_* rows are OPEN (endedAt null). RETURNED_* + point events are closed
-  // at creation (endedAt = startedAt) so they never count as "currently out".
+  // GOING_* rows are OPEN (endedAt null). A PAIRED "Returned" row spans the
+  // meeting/visit (startedAt = paired Going start → endedAt = now) so
+  // durationMin == endedAt-startedAt. Unpaired "Returned" + point events are a
+  // zero-span instant at `now` (durationMin stays null). None count as "out".
   const isGoing = GOING_KINDS.includes(status);
   const created = await prisma.agentStatusEvent.create({
     data: {
       userId: user.id,
       status,
-      startedAt: now,
+      startedAt: pairStartedAt ?? now,
       endedAt: isGoing ? null : now,
       durationMin,
       pairedEventId,

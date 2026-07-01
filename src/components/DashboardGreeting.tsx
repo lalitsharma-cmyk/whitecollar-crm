@@ -47,7 +47,12 @@ export default function DashboardGreeting({
   }, [tz]);
 
   return (
-    <h2 className="font-display text-lg sm:text-xl font-bold text-[#0b1a33] dark:text-slate-100">
+    // suppressHydrationWarning: `band` is derived from `new Date()` in the useState
+    // initializer, which runs during SSR too — so the server-rendered band can differ
+    // from the client's first render if the moment crosses a greeting boundary (React
+    // #418 text mismatch). The value is intentionally time-varying (updates live via
+    // useEffect), so suppress the benign warning on this node.
+    <h2 suppressHydrationWarning className="font-display text-lg sm:text-xl font-bold text-[#0b1a33] dark:text-slate-100">
       <span aria-hidden="true">{greetingEmojiFor(band)}</span> Good {band}, {firstName}
     </h2>
   );
