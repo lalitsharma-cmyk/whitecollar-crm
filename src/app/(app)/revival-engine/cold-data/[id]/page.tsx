@@ -19,6 +19,8 @@ import { statusColor } from "@/lib/lead-statuses";
 import ColdDataPromoteButton from "@/components/ColdDataPromoteButton";
 import RejectLeadModal from "@/components/RejectLeadModal";
 import ImportedFieldsCard from "@/components/ImportedFieldsCard";
+import LeadVoiceGuidance from "@/components/LeadVoiceGuidance";
+import LeadEscalationThread from "@/components/LeadEscalationThread";
 function maskPhone(p?: string | null): string | null {
   if (!p) return null;
   const d = p.replace(/\D/g, "");
@@ -61,6 +63,50 @@ export default async function ColdDataDetailPage({ params, searchParams }: { par
   });
 
   const canReassign = me.role === "ADMIN" || me.role === "MANAGER";
+  const isAdmin = me.role === "ADMIN";
+  const isManager = me.role === "ADMIN" || me.role === "MANAGER";
+  // Cold/Revival reads the SAME Lead model, so the shared Manager Voice Guidance
+  // (Channel ①) + Escalation Thread (Channel ②) components work directly with the
+  // default /api/leads endpoints — no new backend. Parity with the Lead detail view.
+  const voiceGuidanceRaw = await prisma.leadVoiceMessage.findMany({
+    where: { leadId: id, kind: "GUIDANCE" },
+    orderBy: { createdAt: "desc" },
+    select: {
+      id: true, createdAt: true, transcript: true, title: true, durationSec: true, createdById: true,
+      createdBy: { select: { name: true } },
+      reads: { where: { userId: me.id }, select: { id: true } },
+    },
+  });
+  const voiceGuidance = voiceGuidanceRaw.map((v) => ({
+    id: v.id, by: v.createdBy?.name ?? "Admin", at: v.createdAt.toISOString(),
+    transcript: v.transcript, title: v.title, durationSec: v.durationSec,
+    understood: v.reads.length > 0, mine: v.createdById === me.id,
+  }));
+
+  const escalationsRaw = await prisma.leadEscalation.findMany({
+    where: { leadId: id },
+    orderBy: { createdAt: "desc" },
+    select: {
+      id: true, reason: true, status: true,
+      raisedBy: { select: { name: true } },
+      messages: {
+        orderBy: { createdAt: "asc" },
+        select: { id: true, kind: true, createdAt: true, transcript: true, textNote: true, durationSec: true, createdById: true, createdBy: { select: { name: true } } },
+      },
+    },
+  });
+  const escalations = escalationsRaw.map((t) => ({
+    id: t.id, reason: t.reason, status: t.status as "PENDING" | "MANAGER_REPLIED" | "RESOLVED",
+    raisedBy: t.raisedBy?.name ?? "Agent",
+    messages: t.messages.map((m) => ({
+      id: m.id, kind: m.kind as "ESCALATION" | "ESCALATION_REPLY", by: m.createdBy?.name ?? "—",
+      at: m.createdAt.toISOString(), transcript: m.transcript, textNote: m.textNote,
+      durationSec: m.durationSec, mine: m.createdById === me.id,
+    })),
+  }));
+  // Agent who owns the cold record may raise an escalation (admins too).
+  const canRaiseEscalation = isAdmin || lead.ownerId === me.id;
+
   const lastTouched = lead.lastTouchedAt
     ? formatDistanceToNow(lead.lastTouchedAt, { addSuffix: true })
     : "never touched";
@@ -201,6 +247,17 @@ export default async function ColdDataDetailPage({ params, searchParams }: { par
         meId={me.id}
         leadOwnerName={lead.owner?.name ?? null}
       />
+
+      {/* ── Manager Voice Guidance (Channel ①) — same shared component + placement
+          as the Lead view (after Conversation History). Admin records; the owner
+          plays + marks understood. ── */}
+      <LeadVoiceGuidance leadId={lead.id} isAdmin={isAdmin} messages={voiceGuidance} />
+
+      {/* ── Escalation Thread (Channel ②) — agent→manager voice thread, same shared
+          component as the Lead view. Shows when there's a thread or the owner can raise. ── */}
+      {(escalations.length > 0 || canRaiseEscalation) && (
+        <LeadEscalationThread leadId={lead.id} isManager={isManager} canRaise={canRaiseEscalation} threads={escalations} />
+      )}
 
       {/* ── Quick note ── */}
       <QuickNoteCard leadId={lead.id} isAdmin={me.role === "ADMIN"} />
