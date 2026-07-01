@@ -2751,8 +2751,11 @@ const checks: Check[] = [
 
       // (d) DRY — Lead-View follow-up bar reuses the SAME endpoints; no new logic.
       const lf = fs.readFileSync("src/components/LeadFollowupActions.tsx", "utf8");
+      // The bar reuses the SAME endpoints via an apiBase prop (default "/api/leads";
+      // the buyer view passes "/api/buyer-data") — ONE component, no duplicated logic.
+      assert(/apiBase = "\/api\/leads"/.test(lf), "LeadFollowupActions apiBase must default to /api/leads");
       for (const ep of ["action-complete", "action-snooze", "action-escalate"]) {
-        assert(lf.includes(`/api/leads/${"${leadId}"}/${ep}`), `LeadFollowupActions must POST to /api/leads/[id]/${ep} (reuse, not duplicate)`);
+        assert(lf.includes(`${"${apiBase}"}/${"${leadId}"}/${ep}`), `LeadFollowupActions must POST to {apiBase}/[id]/${ep} (reuse, not duplicate)`);
       }
       const leadPage = fs.readFileSync("src/app/(app)/leads/[id]/page.tsx", "utf8");
       assert(/<LeadFollowupActions/.test(leadPage), "Lead detail page must render <LeadFollowupActions> in the header");
@@ -4981,6 +4984,23 @@ const checks: Check[] = [
       const map = fs.readFileSync("src/lib/buyerImportMap.ts", "utf8");
       assert(/primary mobile number/i.test(map), "phones aliases must include 'primary mobile number' so the wizard auto-maps it");
       results.push({ name: "  ↳ note", ok: true, detail: "unmapped Primary Mobile Number rescued; Unit Number never a phone; route falls back + alias added" });
+    },
+  },
+  {
+    name: "buyer-reject-convert-redirect — after reject/convert an agent loses buyer access; the panel navigates AWAY (no self-refresh 404)",
+    run: async () => {
+      const fs = await import("fs");
+      const c = fs.readFileSync("src/components/BuyerAdminPanel.tsx", "utf8");
+      const convertFn = c.slice(c.indexOf("async function convert"), c.indexOf("async function reject"));
+      const rejectFn = c.slice(c.indexOf("async function reject"), c.indexOf("async function assign"));
+      // Reject returns the buyer to the Admin Pool (ownerId cleared) → an agent can no
+      // longer view it (canTouchBuyer → 404 on refresh). Must navigate to the list.
+      assert(/router\.replace\("\/buyer-data"\)/.test(rejectFn), "reject must navigate to /buyer-data (not refresh the now-pooled buyer → 404)");
+      assert(!/router\.refresh\(\)/.test(rejectFn), "reject must NOT router.refresh() the now-inaccessible buyer page");
+      // Convert → poolStatus CONVERTED → same access loss → go to the new lead.
+      assert(/router\.replace\(/.test(convertFn) && /leads\/\$\{j\.leadId\}/.test(convertFn), "convert must navigate to the newly-created lead");
+      assert(!/router\.refresh\(\)/.test(convertFn), "convert must NOT router.refresh() the now-converted buyer page");
+      results.push({ name: "  ↳ note", ok: true, detail: "buyer reject → /buyer-data, convert → new lead; no self-refresh 404 (agent loses access after both)" });
     },
   },
   {

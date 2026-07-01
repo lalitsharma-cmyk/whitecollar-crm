@@ -67,8 +67,13 @@ export default function BuyerAdminPanel({ buyerId, poolStatus, ownerName, conver
       const r = await fetch(`/api/buyer-data/${buyerId}/convert`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
       const j = await r.json();
       if (!r.ok) { setMsg({ ok: false, text: j.error ?? "Convert failed." }); setBusy(false); return; }
-      setMsg({ ok: true, text: "Converted to a lead.", leadId: j.leadId });
-      router.refresh();
+      // Buyer is now CONVERTED — an AGENT can no longer view the buyer detail
+      // (canTouchBuyer requires ASSIGNED), so a self-refresh would 404. Go straight
+      // to the newly-created lead (the natural next step); replace() so the browser
+      // Back button doesn't land on the now-inaccessible buyer detail. Fall back to
+      // the Buyer Data list if no leadId came back.
+      if (j.leadId) router.replace(`/leads/${j.leadId}`);
+      else router.replace("/buyer-data");
     } catch { setMsg({ ok: false, text: "Network error." }); }
     finally { setBusy(false); }
   }
@@ -79,9 +84,13 @@ export default function BuyerAdminPanel({ buyerId, poolStatus, ownerName, conver
       const r = await fetch(`/api/buyer-data/${buyerId}/reject`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reason: rejectReason || null }) });
       const j = await r.json();
       if (!r.ok) { setMsg({ ok: false, text: j.error ?? "Reject failed." }); setBusy(false); return; }
-      setMsg({ ok: true, text: "Returned to the Admin Pool." });
       setRejectOpen(false); setRejectReason("");
-      router.refresh();
+      // The buyer is now back in the Admin Pool (ownerId cleared). An AGENT can no
+      // longer view a pooled buyer — canTouchBuyer would 404 the re-rendered detail
+      // page (the "reject → 404" bug). replace() (not refresh) sends the user back to
+      // the Buyer Data list AND drops the now-inaccessible detail URL from history,
+      // so the browser Back button doesn't 404 either.
+      router.replace("/buyer-data");
     } catch { setMsg({ ok: false, text: "Network error." }); }
     finally { setBusy(false); }
   }
