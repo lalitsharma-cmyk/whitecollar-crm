@@ -9,6 +9,7 @@ import BuyerActivityTimeline from "@/components/BuyerActivityTimeline";
 import BuyerActionsClient from "@/components/BuyerActionsClient";
 import LeadFollowupActions from "@/components/LeadFollowupActions";
 import LeadVoiceGuidance from "@/components/LeadVoiceGuidance";
+import LeadEscalationThread from "@/components/LeadEscalationThread";
 import { hasBuyerContactToday } from "@/lib/buyerFollowup";
 import BuyerAdminPanel from "@/components/BuyerAdminPanel";
 import BuyerQuickNoteCard from "@/components/BuyerQuickNoteCard";
@@ -152,6 +153,38 @@ export default async function BuyerDetail({ params }: { params: Promise<{ id: st
         select: { id: true, field: true, oldValue: true, newValue: true, changedAt: true, source: true, changedBy: { select: { name: true } } },
       })
     : [];
+
+  // Escalation Thread (Channel ②) — buyer parity with the Lead view. Assigned agent
+  // raises a voice escalation; manager replies by voice; either resolves. Mapped to
+  // the SAME EscThread shape the shared LeadEscalationThread consumes.
+  const escalationsRaw = await prisma.buyerEscalation.findMany({
+    where: { buyerId: rec.id },
+    orderBy: { createdAt: "desc" },
+    select: {
+      id: true, reason: true, status: true,
+      raisedBy: { select: { name: true } },
+      messages: {
+        orderBy: { createdAt: "asc" },
+        select: { id: true, kind: true, createdAt: true, transcript: true, textNote: true, durationSec: true, createdById: true, createdBy: { select: { name: true } } },
+      },
+    },
+  });
+  const escalations = escalationsRaw.map((t) => ({
+    id: t.id,
+    reason: t.reason,
+    status: t.status as "PENDING" | "MANAGER_REPLIED" | "RESOLVED",
+    raisedBy: t.raisedBy?.name ?? "Agent",
+    messages: t.messages.map((m) => ({
+      id: m.id,
+      kind: m.kind as "ESCALATION" | "ESCALATION_REPLY",
+      by: m.createdBy?.name ?? "—",
+      at: m.createdAt.toISOString(),
+      transcript: m.transcript,
+      textNote: m.textNote,
+      durationSec: m.durationSec,
+      mine: m.createdById === me.id,
+    })),
+  }));
 
   const ccy = inferBuyerCurrency({ nationality: rec.nationality, projectName: rec.projectName, source: rec.source, market: rec.market });
   const buyerClass = classifyBuyer({ totalPropertiesOwned: rollup.totalPropertiesOwned, totalInvestmentValue: rollup.totalInvestmentValue }, ccy);
@@ -331,6 +364,15 @@ export default async function BuyerDetail({ params }: { params: Promise<{ id: st
           <div data-lead-section="timeline">
             <LeadVoiceGuidance apiBase="/api/buyer-data" leadId={rec.id} isAdmin={isAdmin} messages={voiceGuidance} />
           </div>
+
+          {/* Escalation Thread (Channel ②) — same shared component + placement as the
+              Lead view, pointed at the buyer escalation endpoints. Shows when there's
+              an open/resolved thread or the assigned agent can raise one. */}
+          {(escalations.length > 0 || canLog) && (
+            <div data-lead-section="timeline">
+              <LeadEscalationThread apiBase="/api/buyer-data" leadId={rec.id} isManager={isAdminOrMgr} canRaise={canLog} threads={escalations} />
+            </div>
+          )}
 
           {/* Quick Note — secondary, after Conversation History (parity with Lead view). */}
           <div data-lead-section="timeline">

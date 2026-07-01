@@ -32,6 +32,13 @@ interface Props {
   isManager: boolean;   // ADMIN/MANAGER — can reply
   canRaise: boolean;    // viewer may open/continue a thread (agent who owns the lead)
   threads: EscThread[];
+  /**
+   * API base for the escalation + audio endpoints. Defaults to "/api/leads" so
+   * every existing Lead caller is unchanged. The Buyer Data view passes
+   * "/api/buyer-data", which exposes the SAME escalation contract for BuyerRecords
+   * (raise / reply / resolve + voice-message audio stream).
+   */
+  apiBase?: string;
 }
 
 const fmtIST = (iso: string) =>
@@ -113,7 +120,7 @@ function RecorderBox({ label, onSend }: { label: string; onSend: (fd: FormData) 
   );
 }
 
-export default function LeadEscalationThread({ leadId, isManager, canRaise, threads }: Props) {
+export default function LeadEscalationThread({ leadId, isManager, canRaise, threads, apiBase = "/api/leads" }: Props) {
   const router = useRouter();
   const [msg, setMsg] = useState<string | null>(null);
 
@@ -130,7 +137,7 @@ export default function LeadEscalationThread({ leadId, isManager, canRaise, thre
     router.refresh();
   }
 
-  const audioSrc = (mId: string) => `/api/leads/${leadId}/voice-message/${mId}/audio`;
+  const audioSrc = (mId: string) => `${apiBase}/${leadId}/voice-message/${mId}/audio`;
 
   const Message = ({ m }: { m: EscMsg }) => (
     <div className={`rounded-lg border p-2.5 ${m.kind === "ESCALATION_REPLY" ? "border-blue-200 bg-blue-50/50 dark:border-blue-800 dark:bg-blue-900/15 ml-4" : "border-gray-200 bg-white dark:border-slate-700 dark:bg-slate-800 mr-4"}`}>
@@ -158,20 +165,20 @@ export default function LeadEscalationThread({ leadId, isManager, canRaise, thre
         <div className="space-y-2">
           <div className="flex items-center justify-between gap-2">
             <span className={`inline-flex rounded-full border px-2 py-0.5 text-[11px] font-semibold ${STATUS_CHIP[open.status].cls}`}>{STATUS_CHIP[open.status].label}</span>
-            <button type="button" onClick={() => post(`/api/leads/${leadId}/escalation/${open.id}/resolve`, {})}
+            <button type="button" onClick={() => post(`${apiBase}/${leadId}/escalation/${open.id}/resolve`, {})}
               className="inline-flex items-center gap-1 text-xs text-emerald-700 dark:text-emerald-400 hover:underline">
               <CheckCircle2 size={13} /> Mark resolved
             </button>
           </div>
           <div className="space-y-2">{open.messages.map((m) => <Message key={m.id} m={m} />)}</div>
           {isManager
-            ? <RecorderBox label="Record reply" onSend={(fd) => post(`/api/leads/${leadId}/escalation/${open.id}/reply`, fd)} />
-            : <RecorderBox label="Add a message" onSend={(fd) => post(`/api/leads/${leadId}/escalation`, fd)} />}
+            ? <RecorderBox label="Record reply" onSend={(fd) => post(`${apiBase}/${leadId}/escalation/${open.id}/reply`, fd)} />
+            : <RecorderBox label="Add a message" onSend={(fd) => post(`${apiBase}/${leadId}/escalation`, fd)} />}
         </div>
       ) : canRaise ? (
         <div className="space-y-1.5">
           <p className="text-xs text-gray-500 dark:text-slate-400">Stuck on this lead? Record a voice escalation — Lalit gets notified instantly and replies here.</p>
-          <RecorderBox label="Raise escalation" onSend={(fd) => post(`/api/leads/${leadId}/escalation`, fd)} />
+          <RecorderBox label="Raise escalation" onSend={(fd) => post(`${apiBase}/${leadId}/escalation`, fd)} />
         </div>
       ) : (
         <p className="text-xs text-gray-500 dark:text-slate-400">No open escalation on this lead.</p>

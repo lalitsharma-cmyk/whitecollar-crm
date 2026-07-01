@@ -162,6 +162,7 @@ model User {
   buyerActivities  BuyerActivity[]    @relation("BuyerActivityUser")
   buyerVoiceMessages BuyerVoiceMessage[] @relation("BuyerVoiceMsgCreator")
   buyerFieldChanges  BuyerFieldHistory[] @relation("BuyerFieldChangedBy")
+  buyerEscalationsRaised BuyerEscalation[] @relation("BuyerEscalationRaiser")
   buyerStickyNotes BuyerStickyNote[]  @relation("BuyerStickyNoteUser")
 
   assistantRuns AssistantRun[] @relation("AssistantRunBy")
@@ -2448,6 +2449,7 @@ model BuyerRecord {
   stickyNotes   BuyerStickyNote[]
   voiceMessages BuyerVoiceMessage[]
   fieldHistory  BuyerFieldHistory[]
+  escalations   BuyerEscalation[]
 
   @@index([buyerKey])
   @@index([projectName])
@@ -2729,11 +2731,35 @@ model BuyerVoiceMessage {
   transcriptLang String?
   textNote       String?
   title          String?
-  escalationId   String? // reserved for a future buyer escalation thread (no FK yet)
+  escalationId   String? // null for GUIDANCE; set for ESCALATION / ESCALATION_REPLY
+  escalation     BuyerEscalation?        @relation(fields: [escalationId], references: [id], onDelete: Cascade)
   createdAt      DateTime                @default(now())
   reads          BuyerVoiceMessageRead[]
 
   @@index([buyerId, kind])
+  @@index([escalationId])
+}
+
+// ── Buyer Escalation thread (Buyer-view parity with LeadEscalation, Channel ②) ──
+// The assigned agent raises a VOICE escalation to the manager; the manager replies
+// by voice; either resolves. One open thread per buyer. Mirrors LeadEscalation;
+// the audio lives on BuyerVoiceMessage (kind ESCALATION / ESCALATION_REPLY).
+model BuyerEscalation {
+  id           String              @id @default(cuid())
+  buyerId      String
+  buyer        BuyerRecord         @relation(fields: [buyerId], references: [id], onDelete: Cascade)
+  raisedById   String
+  raisedBy     User                @relation("BuyerEscalationRaiser", fields: [raisedById], references: [id])
+  reason       String
+  status       String              @default("PENDING") // PENDING | MANAGER_REPLIED | RESOLVED
+  resolvedById String?
+  resolvedAt   DateTime?
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+  messages     BuyerVoiceMessage[]
+
+  @@index([buyerId])
+  @@index([status])
 }
 
 model BuyerVoiceMessageRead {
