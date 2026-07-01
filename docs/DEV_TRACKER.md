@@ -24,7 +24,11 @@ Legend: ✅ Completed · 🟡 In Progress · 🔵 In QA · 🚀 Deployed · 🔴
 
 ---
 
-## 🔵 ACTOR vs OWNER — timeline shows who PERFORMED the action (started 2026-07-01, Lalit — audit/compliance) — IN QA, awaiting approval to deploy
+## 🚀 ACTOR vs OWNER — timeline shows who PERFORMED the action (2026-07-01, Lalit — audit/compliance) — SHIPPED + RECONCILED
+**DEPLOYED prod `c15a918`** (from a9b2f56; rollback=a9b2f56). Migration `20260701140000_actor_owner_attribution` hand-applied to Neon + verified. Gate green (tsc0 · regression 120/0 · HR RBAC PASS). SW v131→v132. Full backup `FULL-2026-07-01T12-57-12-631Z`.
+**Reconcile DONE** (Lalit-approved, batched+audited): 130 duplicate-intake rows owner→System · 130 AuditLog `activity.actor-reconcile` · 0 skipped/exceptions/remaining · reversible backup `reconcile-actor-owner-2026-07-01T13-05.json`. Acefone 40 + WA 77 left unchanged (unrecoverable, never guess).
+**Validation:** CallLog actor 1647/1647 · 490 calls + 2219 activities actor≠owner (performer shown not owner) · dup-intake owner-stamped now 0 · inbound-unmatched→unassigned.
+**Future (designed, not built):** Unmatched Calls Queue (`docs/ACTOR_VS_OWNER_TIMELINE.md`).
 **Rule:** Conversation History/Timeline ALWAYS shows the Activity Actor (logged-in user who did it), NEVER the Lead Owner. Separate concepts; never conflate. Branch `ws-actor-vs-owner-timeline`. Design: `docs/ACTOR_VS_OWNER_TIMELINE.md`. See [[feedback-actor-vs-owner-timeline]].
 - **Root cause (verified):** 3 tiers — (1) render fallback painted the OWNER when a row had no actor (`ConversationStreamCard` fallbackActor); (2) `WhatsAppMessage` had NO actor column → every outbound WA showed the owner; (3) 4 write paths stamped the owner as actor (leadIngest dup-intake, workflowEngine task, revivalImport, acefone unmatched-call fallback). CallLog was already correct.
 - ✅ **Render fix:** null actor → "System" (never owner); outbound WA → `m.actor` sender else "Outbound"; unmatched call → "Unknown Agent".
