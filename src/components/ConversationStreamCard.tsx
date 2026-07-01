@@ -35,7 +35,12 @@ interface NoteWithUser {
   user: { name: string } | null;
 }
 
-type CallLogWithUser = CallLog & { user: { name: string } };
+// `user` is nullable: an unmatched inbound telephony call is left UNASSIGNED
+// (userId null) and shown via `attributedAgentName` ("Unknown Agent") instead.
+type CallLogWithUser = CallLog & { user: { name: string } | null };
+// An outbound WhatsApp carries its sender in `actor` (nullable: inbound + all
+// automation-sent messages have no human actor).
+type WAMessageWithActor = WhatsAppMessage & { actor?: { name: string } | null };
 
 // A CRM-logged Activity event (meeting/visit/status-change/reopen/…) shown in the
 // conversation stream so EVERY agent action appears in Conversation History.
@@ -89,7 +94,7 @@ const ACTIVITY_LABEL: Record<string, string> = {
 
 interface Props {
   callLogs: CallLogWithUser[];
-  waMessages: WhatsAppMessage[];
+  waMessages: WAMessageWithActor[];
   notes?: NoteWithUser[];
   /** CRM-logged activity events — rendered in BOTH views so every action shows. */
   activities?: ActivityStreamRow[];
@@ -129,6 +134,15 @@ interface Props {
    *  outbound WhatsApp which has no actor column). NEVER show the literal "Agent":
    *  resolve user → System (system-cron rows) → this owner → "Unknown User". */
   leadOwnerName?: string | null;
+  /** Which surface renders this card — makes the component CONTEXT-AWARE instead
+   *  of hardcoding per-page conditions. Only the active Lead view ("lead") shows
+   *  the inline edit / raw-correction affordances; the data-bank / staging
+   *  surfaces (cold · revival · archived) render the SAME timeline READ-ONLY,
+   *  matching the Buyer Data view (BuyerActivityTimeline). Defaults to "lead" so
+   *  the Lead view is byte-identical to before — purely additive, no Lead change.
+   *  Future surfaces (Revival, Archived) can pass their own value to diverge
+   *  layout without duplicating the component. */
+  context?: "lead" | "cold" | "revival" | "archived";
 }
 
 // ─── Outcome helpers ─────────────────────────────────────────────────────────
@@ -212,9 +226,17 @@ export default function ConversationStreamCard({
   leadId = "", canControl = false, viewerId, viewerTeam, controls = [],
   isAdmin = false, meId, viewerRole, rawEdit = null, editedNotes = {}, editedCalls = {}, leadOwnerName = null,
 }: Props) {
-  // Truthful fallback actor when a row's own author is unknown. NEVER "Agent":
-  // prefer the lead owner's real name; if even that is missing, "Unknown User".
-  const fallbackActor = (leadOwnerName && leadOwnerName.trim()) || "Unknown User";
+  // Actor attribution rule (Lalit, 2026-07-01): the timeline shows WHO PERFORMED
+  // the action, never who OWNS the lead. When a row has no stored actor (userId
+  // null) we must NOT fall back to the owner — that fabricates false authorship.
+  // A null actor means either a system/automation event or an actor we can't
+  // recover; either way the truthful label is "System", never the owner.
+  // (Human-driven rows always store their actor, so they never reach this.)
+  const SYSTEM_ACTOR = "System";
+  const fallbackActor = SYSTEM_ACTOR;
+  // `leadOwnerName` is intentionally no longer used for authorship — retained only
+  // for the outbound-WhatsApp legacy rows that predate the actor column (see below).
+  void leadOwnerName;
   const [filter, setFilter] = useState<FilterType>("ALL");
   // View mode — "smart" = Smart Timeline (Processed View) is the DEFAULT (Lalit,
   // 2026-06-20) so agents see the tidy parsed conversation first. "raw" = Raw
@@ -430,7 +452,7 @@ export default function ConversationStreamCard({
   // pre-sorted buckets) guarantees the order is correct regardless of source.
   type StreamKind = "call" | "wa" | "note" | "activity" | "remark";
   type StreamItem = { kind: StreamKind; at: number; id: string;
-    call?: CallLogWithUser; wa?: WhatsAppMessage; note?: NoteWithUser; act?: ActivityStreamRow;
+    call?: CallLogWithUser; wa?: WAMessageWithActor; note?: NoteWithUser; act?: ActivityStreamRow;
     remark?: RemarkEntry; remarkUndated?: boolean };
 
   const unifiedStream = useMemo<StreamItem[]>(() => {
@@ -626,7 +648,7 @@ export default function ConversationStreamCard({
           if (it.kind === "call") {
             const c = it.call!;
             const col = callColour(c.outcome, c.notes);
-            const displayName = canonicalAgentName(c.attributedAgentName ?? c.user.name, agentNames);
+            const displayName = canonicalAgentName(c.attributedAgentName ?? c.user?.name ?? "Unknown Agent", agentNames);
             const notesClean = c.notes
               ? c.notes.replace(/^[A-Z][A-Za-z]{1,15}(?:\s+[A-Z][A-Za-z]{1,15}){0,2}\s*:\s*/, "")
               : null;
@@ -688,11 +710,12 @@ export default function ConversationStreamCard({
             return (
               <div key={it.id} className={`border-l-2 ${col.border} ${col.bg} pl-3 pr-2 py-1.5 rounded-r`}>
                 <div className="flex items-center justify-between flex-wrap gap-1 text-[11px] text-gray-500">
-                  {/* WhatsAppMessage has no actor column, so an OUTBOUND message can't
-                      be attributed to a specific person. Show a truthful label — the
-                      lead owner's name when known, else the neutral "Outbound" — NEVER
-                      a fabricated "Agent". Inbound stays "Client". */}
-                  <span>💬 <b>{m.direction === "INBOUND" ? "📥 Client" : `📤 ${(leadOwnerName && leadOwnerName.trim()) || "Outbound"}`}</b> · {fmtIST12Paren(m.receivedAt)} IST</span>
+                  {/* Actor attribution (Lalit, 2026-07-01): an OUTBOUND message shows
+                      the agent who actually SENT it (m.actor), canonicalised. When
+                      there is no actor — automation-sent, or a legacy row that predates
+                      the actorUserId column — show the neutral "Outbound", NEVER the
+                      lead owner and NEVER a fabricated "Agent". Inbound stays "Client". */}
+                  <span>💬 <b>{m.direction === "INBOUND" ? "📥 Client" : `📤 ${m.actor?.name ? canonicalAgentName(m.actor.name, agentNames) : "Outbound"}`}</b> · {fmtIST12Paren(m.receivedAt)} IST</span>
                   <span className={`chip ${col.pill} text-[9px]`}>{m.direction === "INBOUND" ? "📥 Inbound" : "📤 Outbound"}</span>
                 </div>
                 <div className="text-xs mt-1 text-gray-800 whitespace-pre-wrap">{m.body}</div>

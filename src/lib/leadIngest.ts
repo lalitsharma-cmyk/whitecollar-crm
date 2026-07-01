@@ -149,7 +149,10 @@ export async function ingestLead(input: RawLeadInput) {
       await prisma.activity.create({
         data: {
           leadId: existing.id,
-          userId: existing.ownerId,
+          // Actor = null → renders as "System". A duplicate-intake event is
+          // detected by the ingest pipeline, NOT performed by the lead owner.
+          // Stamping the owner here fabricated false authorship (Lalit, 2026-07-01).
+          userId: null,
           type: ActivityType.NOTE,
           status: ActivityStatus.DONE,
           title: `Duplicate intake from ${input.source}`,

@@ -249,7 +249,10 @@ export async function applyRevivalMerge(args: RevivalMergeArgs): Promise<Revival
   await db.activity.create({
     data: {
       lead: { connect: { id: existingId } },
-      ...(existing.ownerId ? { user: { connect: { id: existing.ownerId as string } } } : {}),
+      // Actor = the user who RAN the import (changedById), never the lead owner.
+      // A revival import is a human-initiated action owned by the importer
+      // (Lalit, 2026-07-01). Null only if somehow run without a user → "System".
+      ...(changedById ? { user: { connect: { id: changedById } } } : {}),
       type: ActivityType.NOTE,
       status: ActivityStatus.DONE,
       title: `Revival import — re-engaged from ${fileName}`,

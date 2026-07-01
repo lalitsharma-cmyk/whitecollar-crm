@@ -73,7 +73,7 @@ export default async function PersonalScoreboard({ userId }: { userId: string })
     orderBy: { _count: { userId: "desc" } },
     take: SAMPLE_SIZE,
   });
-  const callsRank = findRank(callsAgg.map((c) => c.userId), userId);
+  const callsRank = findRank(callsAgg.map((c) => c.userId).filter((id): id is string => id != null), userId);
   const callsTotal = callsAgg.length;
 
   // ── 2. Most follow-ups completed (this week) ───────────────────────
@@ -122,7 +122,7 @@ export default async function PersonalScoreboard({ userId }: { userId: string })
     }))
     .sort((a, b) => b.pct - a.pct)
     .slice(0, SAMPLE_SIZE);
-  const connectRank = findRank(connectRanked.map((r) => r.userId), userId);
+  const connectRank = findRank(connectRanked.map((r) => r.userId).filter((id): id is string => id != null), userId);
   const connectTotal = connectRanked.length;
 
   // ── Star of the Month — most WON deals in current calendar month ──

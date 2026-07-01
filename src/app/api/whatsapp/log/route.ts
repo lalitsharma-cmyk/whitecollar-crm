@@ -53,7 +53,11 @@ export async function POST(req: NextRequest) {
     const leadRow = await prisma.lead.findUnique({ where: { id: leadId }, select: { phone: true } });
     if (leadRow?.phone) {
       await prisma.whatsAppMessage.create({
-        data: { leadId, phoneNumber: leadRow.phone, direction: WAMessageDirection.OUTBOUND, body: message },
+        // actorUserId = the agent who sent it (the logged-in user), so the
+        // timeline shows WHO sent the message, never the lead owner (Lalit,
+        // 2026-07-01). Automation-sent WA (after-hours / speed-to-lead) leaves
+        // this null → rendered "Outbound".
+        data: { leadId, phoneNumber: leadRow.phone, direction: WAMessageDirection.OUTBOUND, body: message, actorUserId: me.id },
       }).catch(() => {});
     }
   }

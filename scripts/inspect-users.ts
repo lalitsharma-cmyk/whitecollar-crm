@@ -17,7 +17,7 @@ const p = new PrismaClient();
   console.log("\nCall logs by attributed user:");
   const byUser = new Map(users.map((u) => [u.id, u.name]));
   for (const c of callLogs) {
-    const name = byUser.get(c.userId) ?? `<deleted: ${c.userId.slice(0, 8)}>`;
+    const name = (c.userId ? byUser.get(c.userId) : null) ?? `<deleted: ${(c.userId ?? "").slice(0, 8)}>`;
     console.log(`  ${name.padEnd(25)} ${c._count._all} calls`);
   }
   await p.$disconnect();

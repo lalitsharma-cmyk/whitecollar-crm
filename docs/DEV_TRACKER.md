@@ -24,6 +24,20 @@ Legend: ✅ Completed · 🟡 In Progress · 🔵 In QA · 🚀 Deployed · 🔴
 
 ---
 
+## 🔵 ACTOR vs OWNER — timeline shows who PERFORMED the action (started 2026-07-01, Lalit — audit/compliance) — IN QA, awaiting approval to deploy
+**Rule:** Conversation History/Timeline ALWAYS shows the Activity Actor (logged-in user who did it), NEVER the Lead Owner. Separate concepts; never conflate. Branch `ws-actor-vs-owner-timeline`. Design: `docs/ACTOR_VS_OWNER_TIMELINE.md`. See [[feedback-actor-vs-owner-timeline]].
+- **Root cause (verified):** 3 tiers — (1) render fallback painted the OWNER when a row had no actor (`ConversationStreamCard` fallbackActor); (2) `WhatsAppMessage` had NO actor column → every outbound WA showed the owner; (3) 4 write paths stamped the owner as actor (leadIngest dup-intake, workflowEngine task, revivalImport, acefone unmatched-call fallback). CallLog was already correct.
+- ✅ **Render fix:** null actor → "System" (never owner); outbound WA → `m.actor` sender else "Outbound"; unmatched call → "Unknown Agent".
+- ✅ **Write-path fixes:** dup-intake→null, workflow task→null, revival import→importer (`changedById`), acefone unmatched→UNASSIGNED (no owner/admin fallback).
+- ✅ **Schema (additive):** `WhatsAppMessage.actorUserId` (nullable) + populated on human sends; `CallLog.userId` made nullable (unmatched calls unassigned). Ripple to reporting/leaderboards/digest handled (null excluded from per-agent counts). **Needs prod migration — gated.**
+- ✅ **Regression:** new `actor-never-owner` invariant (write paths + render + schema locked). tsc 0.
+- ✅ **Read-only prod analysis** (`scripts/actor-owner-analysis.ts`): historical DATA bug = **130 duplicate-intake rows** (owner-stamped). Workflow/revival = 0 rows. Acefone 40 inbound owner-stamped = unrecoverable (leave). Outbound WA 77 = no actor data (leave). 737 null-activities were rendering-only (fixed by UI, no data touch).
+- ⏳ **Historical reconciliation (GATED):** `scripts/reconcile-actor-owner.ts` dry-run verified (130 rows). Backup-first + txn + `--apply`. **NOT run — awaiting Lalit approval.**
+- ⏳ **DEPLOY (GATED):** schema migration data-risky per production-safety → backup + approval, then reconcile.
+- 🔵 **Future (designed, not built):** Unmatched Calls Queue (admin maps unassigned inbound calls → separate audit event, never rewrites original). Owner-at-time derivable from Assignment history.
+
+---
+
 ## 🟢 HR ATS PRODUCTIZATION (started 2026-06-28, Lalit) — make /hr as polished as Sales CRM
 **Audit:** `docs/HR-ATS-AUDIT.md` (13-area parallel audit). Module was ~40–60% of Sales parity, NOT production-safe (systemic RBAC hole). Plan: Phase0 safety → Phase1 schema+roles → Phase2 security → Phase3 modules+voice → Phase4 polish → Phase5 QA.
 - ✅ **Phase 0 — Safety:** full DB backup ×2 (`backups/FULL-2026-06-28T13-56-16-581Z` + offsite) + dedicated HR archive; prod schema-drift risk cleared (`hrOnly/hrTeam` exist).

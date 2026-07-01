@@ -137,7 +137,7 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
         interestedProjects: { include: { project: true }, orderBy: { interestedAt: "desc" } },
         activities: { orderBy: { createdAt: "desc" }, take: 100, include: { user: true } },
         callLogs:   { orderBy: { startedAt: "desc" }, take: 50, include: { user: true } },
-        waMessages: { orderBy: { receivedAt: "desc" }, take: 20 },
+        waMessages: { orderBy: { receivedAt: "desc" }, take: 20, include: { actor: { select: { name: true } } } },
         notes:      { orderBy: { createdAt: "desc" }, take: 50, include: { user: true } },
         assignments:{ orderBy: { assignedAt: "desc" }, take: 5, include: { user: true } },
         importBatch: { select: { id: true, fileName: true, createdAt: true, importedBy: { select: { name: true } } } },

@@ -300,7 +300,7 @@ export default async function CallLogsPage({
                     {fmtIst(log.startedAt)}
                   </td>
                   <td className="text-sm font-medium">
-                    {log.attributedAgentName ?? log.user.name}
+                    {log.attributedAgentName ?? log.user?.name ?? "Unknown Agent"}
                   </td>
                   <td className="text-sm">
                     {log.lead ? (

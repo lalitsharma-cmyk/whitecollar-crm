@@ -25,7 +25,7 @@ async function main() {
   });
   console.log("\nSample 6 most recent:");
   for (const c of sample) {
-    console.log(`  ${c.startedAt.toISOString()}  user=${c.user.name}  attribName=${c.attributedAgentName ?? "-"}  outcome=${c.outcome}  notes=${(c.notes ?? "").slice(0, 60)}`);
+    console.log(`  ${c.startedAt.toISOString()}  user=${c.user?.name ?? "Unknown Agent"}  attribName=${c.attributedAgentName ?? "-"}  outcome=${c.outcome}  notes=${(c.notes ?? "").slice(0, 60)}`);
   }
 }
 

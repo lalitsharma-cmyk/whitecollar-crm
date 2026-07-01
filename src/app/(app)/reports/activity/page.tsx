@@ -113,7 +113,7 @@ export default async function ActivityFeedPage({
       // isHistorical: attributedAgentName is set → entry was created by MIS import,
       // the real caller is not a registered user in the system
       isHistorical: c.attributedAgentName != null,
-      agentName: c.attributedAgentName ?? c.user.name,
+      agentName: c.attributedAgentName ?? c.user?.name ?? "Unknown Agent",
       leadName: c.lead?.name ? formatLeadName(c.lead.name) : null,
       outcome: c.outcome,
       durationSec: c.durationSec,

@@ -189,7 +189,9 @@ async function executeAction(type: WorkflowActionType, configJson: string, leadI
       const title = String(config.title ?? "Workflow follow-up");
       const dueInMinutes = Number(config.dueInMinutes ?? 60);
       await prisma.activity.create({
-        data: { leadId, userId: lead.ownerId, type: "TASK", status: "PLANNED",
+        // Actor = null → renders as "System". A workflow-engine task is created
+        // by automation, not by the lead owner (Lalit, 2026-07-01).
+        data: { leadId, userId: null, type: "TASK", status: "PLANNED",
           title: `🤖 ${title}`,
           scheduledAt: new Date(Date.now() + dueInMinutes * 60_000) },
       });

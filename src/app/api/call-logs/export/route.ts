@@ -79,7 +79,7 @@ export async function GET(req: NextRequest) {
   const HEADER = "Date,Time,Agent,Lead Name,Phone,Outcome,Duration (sec),Notes";
 
   const rows = logs.map((log) => {
-    const agentName = log.attributedAgentName ?? log.user.name;
+    const agentName = log.attributedAgentName ?? log.user?.name ?? "Unknown Agent";
     return [
       toIstDate(log.startedAt),
       toIstTime(log.startedAt),

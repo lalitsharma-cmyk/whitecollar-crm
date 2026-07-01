@@ -84,25 +84,23 @@ async function handle(req: NextRequest) {
   }
 
   // ── Match Acefone agent → CRM user ─────────────────────────────────
+  // Actor-attribution rule (Lalit, 2026-07-01): attribute the call ONLY to the
+  // agent whose telephony extension matches a CRM user. If the extension can't be
+  // matched we leave the call UNASSIGNED (userId = null) and label it
+  // "Unknown Agent". We NEVER fall back to the lead owner or an admin — that
+  // fabricates false authorship. An admin can later reconcile it via the
+  // Unmatched Calls Queue, which writes a SEPARATE audit event without rewriting
+  // this record.
   let userId: string | null = null;
   if (agentExt) {
     const user = await prisma.user.findFirst({ where: { acefoneAgentId: agentExt } });
     if (user) userId = user.id;
   }
-  // Fallback to the lead's owner if we couldn't match the extension
-  if (!userId && leadId) {
-    const l = await prisma.lead.findUnique({ where: { id: leadId }, select: { ownerId: true } });
-    userId = l?.ownerId ?? null;
-  }
-  // Last resort: first admin (so the CallLog isn't orphaned — userId is required)
-  if (!userId) {
-    const admin = await prisma.user.findFirst({ where: { role: "ADMIN" } });
-    userId = admin?.id ?? null;
-  }
-  if (!userId) {
-    // No users in DB at all — nothing we can do
-    return NextResponse.json({ ok: false, error: "No user to attribute call to" }, { status: 500 });
-  }
+  // Display label for an unmatched call (preserves the raw extension for the
+  // future reconciliation queue). Null when we DID match a real user.
+  const unmatchedAgentName: string | null = userId
+    ? null
+    : agentExt ? `Unknown Agent (ext ${agentExt})` : "Unknown Agent";
 
   const outcome = mapOutcome(data.call_status);
   const durationSec = Number(data.billsec || data.duration || 0) || undefined;
@@ -118,6 +116,8 @@ async function handle(req: NextRequest) {
       data: {
         leadId: existingLog.leadId ?? leadId,
         userId: existingLog.userId ?? userId,
+        // Only stamp the "Unknown Agent" label if we still have no real actor.
+        attributedAgentName: existingLog.userId ?? userId ? existingLog.attributedAgentName : (existingLog.attributedAgentName ?? unmatchedAgentName),
         durationSec: durationSec ?? existingLog.durationSec,
         outcome,
         endedAt: endedAt ?? existingLog.endedAt,

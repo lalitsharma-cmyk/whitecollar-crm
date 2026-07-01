@@ -54,7 +54,7 @@ async function main() {
 
     console.log("\n7. Sample 3 callLogs (any with weird data?)");
     for (const c of lead.callLogs.slice(0, 3)) {
-      console.log(`   ${c.id.slice(0,8)} outcome=${c.outcome} attribName=${c.attributedAgentName ?? "-"} user=${c.user.name}`);
+      console.log(`   ${c.id.slice(0,8)} outcome=${c.outcome} attribName=${c.attributedAgentName ?? "-"} user=${c.user?.name ?? "Unknown Agent"}`);
     }
 
     console.log("\n✅ All data fetches succeeded. The 500 must be in JSX rendering — check Vercel function logs.");

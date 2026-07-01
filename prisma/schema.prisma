@@ -132,6 +132,7 @@ model User {
   activities      Activity[]
   callLogs        CallLog[]
   notes           Note[]
+  waMessagesSent  WhatsAppMessage[]  @relation("WAMessageActor")
   auditLogs       AuditLog[]
   fieldChanges    LeadFieldHistory[] @relation("FieldChangedBy")
   activityEdits   ActivityEdit[]     @relation("ActivityEditedBy")
@@ -1111,8 +1112,13 @@ model CallLog {
   id                  String        @id @default(cuid())
   leadId              String?
   lead                Lead?         @relation(fields: [leadId], references: [id])
-  userId              String
-  user                User          @relation(fields: [userId], references: [id])
+  // Actor = the agent who made/took the call. Nullable (Lalit, 2026-07-01) so an
+  // INBOUND call whose telephony extension can't be matched to a CRM user is left
+  // UNASSIGNED (rendered "Unknown Agent") instead of being falsely stamped with
+  // the lead owner or an admin. A later manual reconciliation sets this + logs a
+  // separate audit event; the original record is never rewritten.
+  userId              String?
+  user                User?         @relation(fields: [userId], references: [id])
   direction           CallDirection @default(OUTBOUND)
   phoneNumber         String
   durationSec         Int?
@@ -1167,10 +1173,19 @@ model WhatsAppMessage {
   body          String
   templateId    String?
   providerMsgId String?            @unique
+  // ── Actor attribution (Lalit, 2026-07-01) ──
+  // Who actually SENT an OUTBOUND message. Nullable: INBOUND messages have no
+  // actor (the client sent them → rendered "Client"), and automation-sent
+  // outbound (after-hours welcome, speed-to-lead) has no human actor →
+  // rendered "System". A human agent send stamps their session user id here.
+  // The timeline NEVER derives the sender from the lead owner.
+  actorUserId   String?
+  actor         User?              @relation("WAMessageActor", fields: [actorUserId], references: [id])
   receivedAt    DateTime           @default(now())
 
   @@index([phoneNumber])
   @@index([leadId])
+  @@index([actorUserId])
 }
 
 // =====================================================

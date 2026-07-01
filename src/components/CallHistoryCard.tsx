@@ -91,12 +91,12 @@ function groupCalls(callLogs: CallLogWithUser[]): Group[] {
     }
     // Look ahead: extend the streak while the next entry is also a no-answer
     // by the SAME displayed agent (so collapsing doesn't muddy who tried).
-    const displayName = c.attributedAgentName ?? c.user.name;
+    const displayName = c.attributedAgentName ?? c.user?.name ?? "Unknown Agent";
     const streak: CallLogWithUser[] = [c];
     let j = i + 1;
     while (j < callLogs.length) {
       const n = callLogs[j];
-      const nName = n.attributedAgentName ?? n.user.name;
+      const nName = n.attributedAgentName ?? n.user?.name ?? "Unknown Agent";
       if (NO_ANSWER_OUTCOMES.has(n.outcome) && nName === displayName) {
         streak.push(n);
         j++;
@@ -237,7 +237,7 @@ export default function CallHistoryCard({ callLogs }: Props) {
           }
           // Single entry
           const c = g.call;
-          const displayName = c.attributedAgentName ?? c.user.name;
+          const displayName = c.attributedAgentName ?? c.user?.name ?? "Unknown Agent";
           const notesClean = c.notes
             ? c.notes.replace(/^[A-Z][A-Za-z]{1,15}(?:\s+[A-Z][A-Za-z]{1,15}){0,2}\s*:\s*/, "")
             : null;

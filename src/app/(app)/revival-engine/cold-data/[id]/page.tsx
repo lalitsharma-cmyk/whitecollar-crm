@@ -41,7 +41,7 @@ export default async function ColdDataDetailPage({ params, searchParams }: { par
     include: {
       owner: { select: { id: true, name: true, avatarColor: true } },
       callLogs: { orderBy: { startedAt: "desc" }, take: 50, include: { user: { select: { name: true } } } },
-      waMessages: { orderBy: { receivedAt: "desc" }, take: 30 },
+      waMessages: { orderBy: { receivedAt: "desc" }, take: 30, include: { actor: { select: { name: true } } } },
       notes: { orderBy: { createdAt: "desc" }, include: { user: { select: { name: true } } } },
       activities: { orderBy: { createdAt: "desc" }, take: 20, include: { user: { select: { name: true } } } },
     },

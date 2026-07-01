@@ -120,7 +120,8 @@ export async function GET(req: NextRequest) {
       title: "Most calls",
       unit: "calls",
       rows: callsAgg
-        .filter((c) => nameById.has(c.userId))
+        // CallLog.userId is nullable (unassigned inbound); WHERE excludes null — narrow it.
+        .filter((c): c is typeof c & { userId: string } => c.userId != null && nameById.has(c.userId))
         .map((c) => ({ name: nameById.get(c.userId)!, value: c._count._all })),
     };
 
@@ -130,7 +131,7 @@ export async function GET(req: NextRequest) {
       emoji: "📈",
       title: "Most connected (≥5 calls)",
       rows: totalsAgg
-        .filter((t) => t._count._all >= 5 && nameById.has(t.userId))
+        .filter((t): t is typeof t & { userId: string } => t.userId != null && t._count._all >= 5 && nameById.has(t.userId))
         .map((t) => {
           const conn = connectedByUser.get(t.userId) ?? 0;
           const pct = (conn / t._count._all) * 100;

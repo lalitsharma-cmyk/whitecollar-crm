@@ -25,7 +25,7 @@ async function main() {
   for (const c of lead.callLogs) {
     try {
       const stamp = fmtIST12Paren(c.startedAt);
-      const displayName = c.attributedAgentName ?? c.user.name;
+      const displayName = c.attributedAgentName ?? c.user?.name ?? "Unknown Agent";
       console.log("  " + displayName.padEnd(20) + " " + stamp + " " + c.outcome);
     } catch (e) { console.log("  THREW on " + c.id + ": " + (e instanceof Error ? e.message : e)); }
   }
@@ -65,12 +65,12 @@ async function main() {
       const c = callLogs[i];
       const isNoAnswer = NO_ANSWER.has(c.outcome);
       if (!isNoAnswer) { out.push({ kind: "single", call: c }); i++; continue; }
-      const displayName = c.attributedAgentName ?? c.user.name;
+      const displayName = c.attributedAgentName ?? c.user?.name ?? "Unknown Agent";
       const streak: C[] = [c];
       let j = i + 1;
       while (j < callLogs.length) {
         const n = callLogs[j];
-        const nName = n.attributedAgentName ?? n.user.name;
+        const nName = n.attributedAgentName ?? n.user?.name ?? "Unknown Agent";
         if (NO_ANSWER.has(n.outcome) && nName === displayName) { streak.push(n); j++; } else break;
       }
       if (streak.length >= 2) {
@@ -86,7 +86,7 @@ async function main() {
   console.log("groups:", groups.length);
   for (const g of groups) {
     if (g.kind === "single") {
-      const displayName = g.call.attributedAgentName ?? g.call.user.name;
+      const displayName = g.call.attributedAgentName ?? g.call.user?.name ?? "Unknown Agent";
       // Reproduce the NOTES-CLEAN regex
       try {
         const notesClean = g.call.notes

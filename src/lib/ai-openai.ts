@@ -317,7 +317,7 @@ export function buildLeadPrompt(lead: LeadForAnalysis): string {
   if (realCalls.length > 0) {
     lines.push(`\n=== CALL HISTORY (${realCalls.length} calls) ===`);
     for (const c of realCalls.slice(0, 30)) {
-      const agent = c.user.name;
+      const agent = c.user?.name ?? "Unknown Agent";
       const date = c.startedAt.toISOString().split("T")[0];
       lines.push(`[${date}] ${agent} → ${c.direction} | Outcome: ${c.outcome}${c.notes ? ` | Notes: ${c.notes}` : ""}`);
     }

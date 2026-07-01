@@ -5298,6 +5298,72 @@ const checks: Check[] = [
   },
 
   // ───────────────────────────────────────────────────────────────────────────
+  // 49b. ACTOR-vs-OWNER — the timeline shows WHO PERFORMED the action, never the
+  //   lead OWNER (Lalit, 2026-07-01). Actor (Activity/Note/CallLog.userId,
+  //   WhatsAppMessage.actorUserId) and Lead.ownerId are separate concepts and must
+  //   never be conflated. Locks the fixed write paths + the render fallback +
+  //   schema so a future edit can't silently reintroduce owner-as-actor.
+  // ───────────────────────────────────────────────────────────────────────────
+  {
+    name: "actor-never-owner — timeline actor is the performer, never the lead owner (write paths + render + schema locked)",
+    run: async () => {
+      const fs = await import("fs");
+
+      // (a) WRITE PATHS — no timeline create may stamp the owner as the actor.
+      //     (Scope the check to the specific activity.create block — a legitimate
+      //      notify({ userId: owner }) elsewhere must NOT trip this.)
+      const ingest = fs.readFileSync("src/lib/leadIngest.ts", "utf8");
+      const dupBlock = ingest.match(/prisma\.activity\.create\(\{[\s\S]*?Duplicate intake from[\s\S]*?\}\);/);
+      assert(!!dupBlock && !/ownerId/.test(dupBlock[0]),
+        "leadIngest duplicate-intake Activity must NOT stamp the owner as actor (a system event → userId null)");
+      const wf = fs.readFileSync("src/lib/workflowEngine.ts", "utf8");
+      const taskBlock = wf.match(/prisma\.activity\.create\(\{[\s\S]*?type:\s*"TASK"[\s\S]*?\}\);/);
+      assert(!!taskBlock && !/ownerId/.test(taskBlock[0]),
+        "workflowEngine CREATE_TASK must NOT stamp lead.ownerId as actor (system automation → userId null)");
+      const rev = fs.readFileSync("src/lib/revivalImport.ts", "utf8");
+      assert(!/connect:\s*\{\s*id:\s*existing\.ownerId/.test(rev),
+        "revivalImport Activity must NOT connect the owner as actor — the importer (changedById) is the actor");
+      assert(/connect:\s*\{\s*id:\s*changedById/.test(rev),
+        "revivalImport Activity must connect changedById (the user who ran the import) as the actor");
+      const ace = fs.readFileSync("src/app/api/acefone/webhook/route.ts", "utf8");
+      assert(!/userId\s*=\s*l\?\.ownerId/.test(ace),
+        "acefone webhook must NOT fall back to the lead owner for an unmatched call (leave UNASSIGNED / Unknown Agent)");
+      assert(!/userId\s*=\s*admin\?\.id/.test(ace),
+        "acefone webhook must NOT fall back to the first admin for an unmatched call");
+
+      // (b) RENDER — the conversation stream never resolves an actor to the owner.
+      const card = fs.readFileSync("src/components/ConversationStreamCard.tsx", "utf8");
+      assert(/const fallbackActor = SYSTEM_ACTOR/.test(card),
+        "ConversationStreamCard fallbackActor must be SYSTEM_ACTOR (\"System\"), never the lead owner name");
+      assert(!/\$\{\(leadOwnerName && leadOwnerName\.trim\(\)\) \|\| "Outbound"\}/.test(card),
+        "outbound WhatsApp must show the actor (m.actor), never the lead owner");
+      assert(/m\.actor\?\.name \? canonicalAgentName\(m\.actor\.name/.test(card),
+        "outbound WhatsApp must render m.actor (the sender), falling back to neutral \"Outbound\" — never the owner");
+
+      // (c) SCHEMA — actor columns exist and are nullable where required.
+      const schema = fs.readFileSync("prisma/schema.prisma", "utf8");
+      assert(/model WhatsAppMessage[\s\S]*?actorUserId\s+String\?/.test(schema),
+        "WhatsAppMessage must have a nullable actorUserId column (who sent an outbound message)");
+      assert(/model CallLog[\s\S]*?userId\s+String\?/.test(schema),
+        "CallLog.userId must be nullable so an unmatched inbound call can be left unassigned (never owner/admin)");
+
+      // (d) DATA (note, non-fatal) — system-created Activity rows still stamped
+      //     with a real user (owner-as-actor legacy). Trends to 0 after the
+      //     approved reconcile-actor-owner.ts run.
+      const [dup, task, revI] = await Promise.all([
+        prisma.activity.count({ where: { title: { startsWith: "Duplicate intake from" }, userId: { not: null } } }),
+        prisma.activity.count({ where: { title: { startsWith: "🤖 " }, userId: { not: null } } }),
+        prisma.activity.count({ where: { title: { startsWith: "Revival import — re-engaged from" }, userId: { not: null } } }),
+      ]);
+      results.push({
+        name: "  ↳ note",
+        ok: true,
+        detail: `legacy owner-stamped system rows remaining: duplicate-intake=${dup}, workflow-task=${task}, revival-import=${revI} (reconcile-actor-owner.ts --apply clears these after approval)`,
+      });
+    },
+  },
+
+  // ───────────────────────────────────────────────────────────────────────────
   // 50. DEVICE LOGIN RESILIENCE + CONTEXT SEPARATION (2026-06-28, Lalit P0).
   //   iPhone Safari / iOS PWA were hard-blocked ("Couldn't verify this device…
   //   Ctrl+Shift+R") whenever localStorage was blocked/cleared and no deviceId
