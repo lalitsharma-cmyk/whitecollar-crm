@@ -395,7 +395,7 @@ export default function LeadFilters({
       <div className="flex gap-2">
         <input
           type="search"
-          placeholder="Search name / phone / email / company…"
+          placeholder="Search name / phone / email / company / property…"
           value={q}
           onChange={e => setQ(e.target.value)}
           className="flex-1 border border-[#e5e7eb] dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#0b1a33]/20"

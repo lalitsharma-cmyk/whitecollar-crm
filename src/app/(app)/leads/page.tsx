@@ -113,6 +113,9 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
       { phone: { contains: sp.q } },
       { email: { contains: sp.q, mode: "insensitive" } },
       { company: { contains: sp.q, mode: "insensitive" } },
+      // Property enquired lives in sourceDetail for imported cold leads — search it
+      // too, so "Whiteland" finds them (matches leadFilterWhere on /cold-calls).
+      { sourceDetail: { contains: sp.q, mode: "insensitive" } },
     ];
   }
   // Agents never see source — they can't filter by it either, even by hand-crafting
@@ -214,6 +217,10 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
         OR: projectNames.flatMap(name => ([
           { discussed: { some: { project: { name: { equals: name } } } } },
           { interestedUnits: { some: { unit: { project: { name: { equals: name } } } } } },
+          // Imported cold leads store the enquired property in sourceDetail only (no
+          // formal Project relation) — match it too, or "Whiteland Westin Residences"
+          // returns 0 here while /cold-calls (leadFilterWhere) correctly finds 228.
+          { sourceDetail: { contains: name, mode: "insensitive" } },
         ])),
       };
       where.AND = where.AND
