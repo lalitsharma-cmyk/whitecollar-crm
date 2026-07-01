@@ -4963,6 +4963,27 @@ const checks: Check[] = [
     },
   },
   {
+    name: "buyer-contact-rescue — an unmapped phone/email column ('Primary Mobile Number') is rescued into phones/emails; 'Unit Number' is never treated as a phone; import route falls back",
+    run: async () => {
+      const fs = await import("fs");
+      const { rescuePhones, rescueEmails } = await import("../src/lib/buyerContactRescue");
+      const row = { "Buyer Name": "X", "Primary Mobile Number": "7021109292", "Unit Number": "WG-1404", "WhatsApp No": "9999888877", "Email ID": "a@b.com" };
+      const ph = rescuePhones(row);
+      assert(ph.includes("7021109292"), "must rescue the Primary Mobile Number");
+      assert(ph.includes("9999888877"), "must also collect the WhatsApp number");
+      assert(!ph.includes("WG-1404"), "must NOT treat 'Unit Number' as a phone");
+      assert(rescueEmails(row).includes("a@b.com"), "must rescue the Email ID column");
+      assert(rescuePhones({ "Followup Date": "46199", "Conversation History": "called" }).length === 0, "no phone-like column → no false rescue");
+      // The import route falls back to the rescue when the mapped phone/email is empty.
+      const route = fs.readFileSync("src/app/api/buyer-data/import/route.ts", "utf8");
+      assert(/rescuePhones\(rescueSrc\)/.test(route) && /rescueEmails\(rescueSrc\)/.test(route), "import route MUST fall back to rescuePhones/rescueEmails when the mapped phone/email is empty");
+      // The wizard aliases now catch the real-world header so future imports auto-map it.
+      const map = fs.readFileSync("src/lib/buyerImportMap.ts", "utf8");
+      assert(/primary mobile number/i.test(map), "phones aliases must include 'primary mobile number' so the wizard auto-maps it");
+      results.push({ name: "  ↳ note", ok: true, detail: "unmapped Primary Mobile Number rescued; Unit Number never a phone; route falls back + alias added" });
+    },
+  },
+  {
     name: "customer-computed-layer — pure compute/detect/search suites (Customer layer Step-1 foundation) all green",
     run: async () => {
       const { runComputeTests } = await import("../src/lib/customer/compute.test");

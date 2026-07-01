@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { parseImportDate, parseFollowupDate } from "@/lib/parseImportDate";
+import { rescuePhones, rescueEmails } from "@/lib/buyerContactRescue";
 import { normalizeBuyerKey, toJsonArray, primaryPhone, parseJsonArray } from "@/lib/buyerIntelligence";
 import { buildBuyerTimelinePlan, composeRemarkFromFields, isImportedActivityDescription } from "@/lib/buyerRemarkTimeline";
 import { normalizeName, normalizeNameList } from "@/lib/nameFormat";
@@ -122,6 +123,9 @@ function pickByKeys(row: Record<string, string>, keys: string[]): string | null 
   }
   return null;
 }
+
+// Phone/email rescue helpers (rescuePhones / rescueEmails) live in
+// @/lib/buyerContactRescue — shared with the backfill + regression harness.
 
 // Free-text conversation / interaction-history columns. The Dubai buyer sheets
 // carry a "Conversation History" column = the REAL dated conversation ("On 5 June
@@ -259,8 +263,16 @@ export async function POST(req: NextRequest) {
       continue;
     }
     try {
-      const phonesJson = toJsonArray((r.phones ?? "").split(/[,;|]/));
-      const emailsJson = toJsonArray((r.emails ?? "").split(/[,;|]/).map((e) => e.toLowerCase()));
+      // Phone/Email → typed JSON arrays. If the mapped column is empty (the wizard
+      // failed to map it, e.g. a "Primary Mobile Number" header), RESCUE from the
+      // verbatim raw row by column pattern so a phone/email is NEVER silently lost.
+      const rescueSrc = (r._raw && typeof r._raw === "object" ? r._raw : r._extra && typeof r._extra === "object" ? r._extra : {}) as Record<string, unknown>;
+      let phoneList = (r.phones ?? "").split(/[,;|/]/).map((s) => s.trim()).filter(Boolean);
+      if (phoneList.length === 0) phoneList = rescuePhones(rescueSrc);
+      const phonesJson = toJsonArray(phoneList);
+      let emailList = (r.emails ?? "").split(/[,;|/]/).map((e) => e.trim().toLowerCase()).filter(Boolean);
+      if (emailList.length === 0) emailList = rescueEmails(rescueSrc);
+      const emailsJson = toJsonArray(emailList);
       // Co-buyer names are also names — Proper-Case each element of the array.
       const coBuyersJson = toJsonArray((r.coBuyerNames ?? "").split(/[,;|]/).map((n) => normalizeName(n)));
       const buyerKey = normalizeBuyerKey(clientName, primaryPhone(phonesJson, null));

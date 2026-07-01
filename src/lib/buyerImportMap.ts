@@ -34,8 +34,8 @@ export function normHeader(s: string): string {
 export const BUYER_FIELD_ALIASES: Record<string, string[]> = {
   clientName:       ["Client Name", "buyer name", "name", "customer", "customer name", "name of buyer", "purchaser", "applicant", "primary buyer", "full name", "client"],
   coBuyerNames:     ["Co-Buyers", "co buyer", "cobuyer", "joint buyer", "co applicant", "co-applicant", "second buyer", "secondary buyer", "co owner", "joint owner"],
-  phones:           ["Phone", "phones", "mobile", "mobile number", "contact", "contact number", "phone number", "cell", "whatsapp", "whatsapp number", "tel", "telephone"],
-  emails:           ["Email", "emails", "email id", "e-mail", "mail", "email address", "e mail"],
+  phones:           ["Phone", "phones", "mobile", "mobile number", "mobile no", "primary mobile number", "primary mobile", "primary phone", "primary contact number", "primary contact", "primary number", "contact", "contact number", "contact no", "phone number", "phone no", "cell", "cell number", "whatsapp", "whatsapp number", "whatsapp no", "tel", "telephone", "alternate mobile", "alternate number", "alternate phone", "secondary mobile", "other mobile", "mob", "mob no"],
+  emails:           ["Email", "emails", "email id", "e-mail", "mail", "email address", "e mail", "primary email", "e-mail id", "e-mail address", "email address id"],
   passport:         ["Passport No", "passport", "passport number", "passportno"],
   passportExpiry:   ["Passport Expiry", "passport expiry date", "passport exp", "passport valid till", "passport validity"],
   nationality:      ["Nationality", "citizenship", "nationality country", "passport country"],
