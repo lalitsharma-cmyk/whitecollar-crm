@@ -102,7 +102,20 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     data.buyerKey = normalizeBuyerKey(String(data.clientName), phone);
   }
 
-  await prisma.buyerRecord.update({ where: { id }, data });
+  // Field-level change history (parity with LeadFieldHistory) — record each REAL
+  // change (old→new + who + when) so the buyer detail's Change History card shows a
+  // financial-grade audit trail. Values stringified; no-op edits (from == to) skipped.
+  const stringifyVal = (v: unknown): string | null =>
+    v == null || v === "" ? null : v instanceof Date ? v.toISOString() : String(v);
+  const historyRows = Object.entries(changed)
+    .map(([field, { from, to }]) => ({ field, oldValue: stringifyVal(from), newValue: stringifyVal(to) }))
+    .filter((r) => r.oldValue !== r.newValue)
+    .map((r) => ({ buyerId: id, field: r.field, oldValue: r.oldValue, newValue: r.newValue, changedById: me.id, source: "inline-edit" }));
+
+  await prisma.$transaction([
+    prisma.buyerRecord.update({ where: { id }, data }),
+    ...(historyRows.length ? [prisma.buyerFieldHistory.createMany({ data: historyRows })] : []),
+  ]);
 
   await audit({
     userId: me.id,

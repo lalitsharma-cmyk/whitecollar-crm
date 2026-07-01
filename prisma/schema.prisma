@@ -161,6 +161,7 @@ model User {
   buyerAssignments BuyerAssignment[]  @relation("BuyerAssignmentAgent")
   buyerActivities  BuyerActivity[]    @relation("BuyerActivityUser")
   buyerVoiceMessages BuyerVoiceMessage[] @relation("BuyerVoiceMsgCreator")
+  buyerFieldChanges  BuyerFieldHistory[] @relation("BuyerFieldChangedBy")
   buyerStickyNotes BuyerStickyNote[]  @relation("BuyerStickyNoteUser")
 
   assistantRuns AssistantRun[] @relation("AssistantRunBy")
@@ -2446,6 +2447,7 @@ model BuyerRecord {
   activities    BuyerActivity[]
   stickyNotes   BuyerStickyNote[]
   voiceMessages BuyerVoiceMessage[]
+  fieldHistory  BuyerFieldHistory[]
 
   @@index([buyerKey])
   @@index([projectName])
@@ -2742,6 +2744,27 @@ model BuyerVoiceMessageRead {
   understoodAt   DateTime          @default(now())
 
   @@unique([voiceMessageId, userId])
+}
+
+// ── Buyer field-level change history (Buyer-view parity with LeadFieldHistory) ──
+// Financial-grade audit of every inline-edit to a BuyerRecord (old→new + who +
+// when + source). Mirrors LeadFieldHistory; written by the buyer update route,
+// rendered by the shared ChangeHistoryCard on the buyer detail (admin/manager).
+model BuyerFieldHistory {
+  id          String      @id @default(cuid())
+  buyerId     String
+  buyer       BuyerRecord @relation(fields: [buyerId], references: [id], onDelete: Cascade)
+  field       String
+  oldValue    String?
+  newValue    String?
+  changedById String?
+  changedBy   User?       @relation("BuyerFieldChangedBy", fields: [changedById], references: [id])
+  changedAt   DateTime    @default(now())
+  source      String? // "inline-edit" | "bulk-import" | "system"
+
+  @@index([buyerId, changedAt])
+  @@index([changedById, changedAt])
+  @@index([field, changedAt])
 }
 
 // ── Dashboard Voice Broadcast (admin → team / individual) ────────────────────

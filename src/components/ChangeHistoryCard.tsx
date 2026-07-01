@@ -18,6 +18,14 @@ const FIELD_LABEL: Record<string, string> = {
   name: "Name", altName: "Alt name", phone: "Phone", altPhone: "Alt phone",
   email: "Email", altEmail: "Alt email", company: "Company", profession: "Profession",
   linkedInUrl: "LinkedIn",
+  // Buyer Data fields (shared card is used by the buyer detail's Change History too).
+  clientName: "Client name", ownerName: "Owner name", agentName: "Sales agent",
+  nationality: "Nationality", passport: "Passport", passportExpiry: "Passport expiry",
+  projectName: "Project", tower: "Tower / Building", unitNumber: "Unit number",
+  size: "Size", actualSize: "Actual size", area: "Area",
+  transactionValue: "Transaction value", pricePerSqFt: "Price / sq.ft",
+  transactionDate: "Transaction date", transactionId: "Transaction ID",
+  transactionType: "Transaction type", role: "Role", businessStatus: "Status",
 };
 
 // Imported/custom-field changes are recorded as "customFields.<Original Header>".

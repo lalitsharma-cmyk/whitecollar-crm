@@ -3,6 +3,7 @@ import { requireUser } from "@/lib/auth";
 import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
 import ImportedFieldsCard from "@/components/ImportedFieldsCard";
+import ChangeHistoryCard from "@/components/ChangeHistoryCard";
 import BuyerInlineEdit from "@/components/BuyerInlineEdit";
 import BuyerActivityTimeline from "@/components/BuyerActivityTimeline";
 import BuyerActionsClient from "@/components/BuyerActionsClient";
@@ -140,6 +141,17 @@ export default async function BuyerDetail({ params }: { params: Promise<{ id: st
     understood: v.reads.length > 0,
     mine: v.createdById === me.id,
   }));
+
+  // Field-level Change History (admin/manager) — parity with the Lead detail's
+  // ChangeHistoryCard; every inline-edit is now recorded in BuyerFieldHistory.
+  const fieldHistory = isAdminOrMgr
+    ? await prisma.buyerFieldHistory.findMany({
+        where: { buyerId: rec.id },
+        orderBy: { changedAt: "desc" },
+        take: 60,
+        select: { id: true, field: true, oldValue: true, newValue: true, changedAt: true, source: true, changedBy: { select: { name: true } } },
+      })
+    : [];
 
   const ccy = inferBuyerCurrency({ nationality: rec.nationality, projectName: rec.projectName, source: rec.source, market: rec.market });
   const buyerClass = classifyBuyer({ totalPropertiesOwned: rollup.totalPropertiesOwned, totalInvestmentValue: rollup.totalInvestmentValue }, ccy);
@@ -365,6 +377,10 @@ export default async function BuyerDetail({ params }: { params: Promise<{ id: st
           {/* Imported Fields — unmapped import columns (extraFields) + the verbatim
               full original row (rawImport, collapsible "Original Imported Row"). */}
           <ImportedFieldsCard customFields={rec.extraFields} rawImport={rec.rawImport} />
+
+          {/* Change History — field-level audit (admin/manager), same shared card
+              as the Lead view. Populated from BuyerFieldHistory going forward. */}
+          {isAdminOrMgr && <ChangeHistoryCard rows={fieldHistory} />}
 
           {/* Multiple Properties table — all records sharing this buyerKey. */}
           {others.length > 0 && (
