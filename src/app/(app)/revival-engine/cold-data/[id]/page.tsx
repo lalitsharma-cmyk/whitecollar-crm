@@ -13,6 +13,7 @@ import { formatLeadName } from "@/lib/leadName";
 import { formatDistanceToNow, format } from "date-fns";
 import ConversationStreamCard from "@/components/ConversationStreamCard";
 import QuickNoteCard from "@/components/QuickNoteCard";
+import StickyNoteWidget from "@/components/StickyNoteWidget";
 import LeadActionsClient from "@/components/LeadActionsClient";
 import { acefoneEnabled } from "@/lib/acefone";
 import { statusColor } from "@/lib/lead-statuses";
@@ -65,6 +66,15 @@ export default async function ColdDataDetailPage({ params, searchParams }: { par
     notFound();
   }
 
+  // Sticky note — private per-agent. Upsert anchors updatedAt on first view. This
+  // also mounts the listener for the "Note" action button (open-sticky-<leadId>),
+  // which otherwise had no listener on cold data → the Note button did nothing.
+  const stickyNote = await prisma.stickyNote.upsert({
+    where: { leadId_userId: { leadId: id, userId: me.id } },
+    create: { leadId: id, userId: me.id, body: "" },
+    update: {},
+  });
+
   const agents = await prisma.user.findMany({
     where: { active: true, hrOnly: false, role: { in: ["AGENT", "MANAGER", "ADMIN"] } },
     orderBy: { name: "asc" },
@@ -78,6 +88,14 @@ export default async function ColdDataDetailPage({ params, searchParams }: { par
 
   return (
     <div className="max-w-4xl mx-auto space-y-4 pb-16">
+      {/* Sticky note (floating) — listens for the "Note" action button's
+          open-sticky-<leadId> event so Note works on cold data too. */}
+      <StickyNoteWidget
+        leadId={lead.id}
+        initialBody={stickyNote.body}
+        initialUpdatedAt={stickyNote.updatedAt ? stickyNote.updatedAt.toISOString() : null}
+      />
+
       {/* ── COLD DATA RECORD badge — visible at all times ── */}
       <div className="rounded-xl border-2 border-amber-400 bg-amber-50 dark:bg-amber-900/20 px-4 py-3 flex items-center gap-3">
         <span className="text-2xl">❄️</span>
