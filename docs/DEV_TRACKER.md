@@ -18,8 +18,12 @@ Legend: ✅ Completed · 🟡 In Progress · 🔵 In QA · 🚀 Deployed · 🔴
 - ✅ **B3a — Buyer Escalation thread / Voice Channel ② (COMMITTED `7f34118`):** shared `LeadEscalationThread` (gained `apiBase`), new additive `BuyerEscalation` table + `escalationId` FK on `BuyerVoiceMessage` + migration `20260701140000`; buyer routes raise/reply/resolve (canTouchBuyer-scoped), reuses B2 audio stream. tsc 0.
 - ✅ **B3d — Assignment History:** already at parity (buyer transfer/stint history shown in `BuyerAdminPanel` via `/api/buyer-data/[id]/history`). No new work.
 - ⚠️ **B3b — Meeting / Site-Visit blocks: DEFERRED, needs Lalit's call.** The Lead version is a heavy GPS-track + Expo/Dubai-site-visit + travel-reimbursement stack on the rich `Activity` table. Replicating it for *buyers* (past-transaction records) needs major `BuyerActivity` schema expansion for unclear value. Options: (a) skip for buyers, (b) lightweight "log a meeting/site-visit" as a simple BuyerActivity type (no GPS), (c) full parity. Recommend (a) or (b).
-- ⏳ **C1 — Cold/Revival parity** (same Lead model; add the missing shared sections — low risk, no new backend since it reuses Lead components/APIs).
-- **AWAITING LALIT:** deploy decision for B1 (built + typechecked, not shipped — per production-safety, first deploy of this initiative needs your go) + UAT.
+- 🟡 **C1 — Cold/Revival parity (part 1 COMMITTED `2113d35`):** Manager Voice Guidance + Escalation Thread added (same Lead model → shared components work with default /api/leads, NO new backend/migration). ⏳ Remaining Cold parity is a product call (see below) — client-info/scheduling cards, follow-up bar, sticky note, mobile tabs. The cold page is deliberately a lighter single-column "not yet a lead" view with a ❄️ badge; how far to push toward the full Lead field-card layout needs Lalit.
+- **AWAITING LALIT (decisions):**
+  1. **B3b Meeting/Site-Visit** — skip for buyers / lightweight log / full GPS parity?
+  2. **Cold/Revival scope** — keep it a lighter view (voice+escalation added) or push to full Lead field-card parity?
+  3. **Deploy** — whole initiative held (per Lalit). When ready: hand-apply the 3 migrations to Neon FIRST (backup-first), then deploy.
+- **DEPLOY CHECKLIST (when approved):** backup → apply migrations `20260701120000_buyer_voice_guidance`, `20260701130000_buyer_field_history`, `20260701140000_buyer_escalation` to Neon (schema leads code) → merge `ws-unify-lead-view` → main → `tsc + regression` gate → `npm run push` → verify `/api/health` commit.
 
 ---
 
