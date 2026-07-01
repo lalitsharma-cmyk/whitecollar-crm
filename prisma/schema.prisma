@@ -160,9 +160,7 @@ model User {
   buyersOwned      BuyerRecord[]      @relation("BuyerOwner")
   buyerAssignments BuyerAssignment[]  @relation("BuyerAssignmentAgent")
   buyerActivities  BuyerActivity[]    @relation("BuyerActivityUser")
-  buyerVoiceMessages BuyerVoiceMessage[] @relation("BuyerVoiceMsgCreator")
   buyerFieldChanges  BuyerFieldHistory[] @relation("BuyerFieldChangedBy")
-  buyerEscalationsRaised BuyerEscalation[] @relation("BuyerEscalationRaiser")
   buyerStickyNotes BuyerStickyNote[]  @relation("BuyerStickyNoteUser")
 
   assistantRuns AssistantRun[] @relation("AssistantRunBy")
@@ -2434,9 +2432,16 @@ model BuyerRecord {
   convertedById    String? // user who converted
   // Rejection / return to pool.
   rejectedAt       DateTime?
-  rejectedById     String? // agent who rejected/returned
+  rejectedById     String? // agent/admin who rejected
   rejectionReason  String?
-  returnedToPoolAt DateTime? // when it last went back to the Admin Pool (reject OR auto-5-attempts)
+  // Terminal-reject audit (additive 20260701_..): a Rejected buyer leaves the working
+  // pipeline (poolStatus=REJECTED) and stays in the Rejected tab until an admin
+  // REACTIVATES it. rejectCategory = the reject bucket (e.g. Not Interested / Wrong
+  // Number / Already Bought / Budget); aiEligibleForRevival = the reject-time call on
+  // whether the AI Reactivation Engine may later recommend re-engaging this client.
+  rejectCategory       String?
+  aiEligibleForRevival Boolean?
+  returnedToPoolAt DateTime? // when it last went back to the Admin Pool (return-to-pool OR auto-5-attempts)
   // Recycle-bin (Part 5b) — admin bulk-delete is REVERSIBLE. A soft-deleted buyer
   // is excluded from every list/pool/rollup/dedup read (deletedAt:null filter) but
   // the row + its assignment/activity history are retained and can be restored.
@@ -2447,9 +2452,7 @@ model BuyerRecord {
   assignments   BuyerAssignment[]
   activities    BuyerActivity[]
   stickyNotes   BuyerStickyNote[]
-  voiceMessages BuyerVoiceMessage[]
   fieldHistory  BuyerFieldHistory[]
-  escalations   BuyerEscalation[]
 
   @@index([buyerKey])
   @@index([projectName])
@@ -2706,68 +2709,6 @@ model VoiceMessageRead {
   voiceMessage   LeadVoiceMessage @relation(fields: [voiceMessageId], references: [id], onDelete: Cascade)
   userId         String
   understoodAt   DateTime         @default(now())
-
-  @@unique([voiceMessageId, userId])
-}
-
-// ── Buyer Manager Voice Guidance (Buyer-view parity with the Lead voice channel) ─
-// Mirrors LeadVoiceMessage for the Buyer Data module (separate BuyerRecord model),
-// following the HRVoiceMessage precedent. Admin/Lalit records one-way voice
-// GUIDANCE on a buyer; the assigned agent plays it + marks understood. Audio bytes
-// stored verbatim (bytea, ≤5MB enforced in the API), streamed INLINE by the play
-// endpoint, NEVER selected in list queries. Reuses the shared VoiceMessageKind enum;
-// the ESCALATION kinds are reserved for a later buyer-escalation increment.
-model BuyerVoiceMessage {
-  id             String                  @id @default(cuid())
-  buyerId        String
-  buyer          BuyerRecord             @relation(fields: [buyerId], references: [id], onDelete: Cascade)
-  kind           VoiceMessageKind
-  createdById    String
-  createdBy      User                    @relation("BuyerVoiceMsgCreator", fields: [createdById], references: [id])
-  audioData      Bytes
-  mimeType       String                  @default("audio/webm")
-  durationSec    Int?
-  transcript     String?
-  transcriptLang String?
-  textNote       String?
-  title          String?
-  escalationId   String? // null for GUIDANCE; set for ESCALATION / ESCALATION_REPLY
-  escalation     BuyerEscalation?        @relation(fields: [escalationId], references: [id], onDelete: Cascade)
-  createdAt      DateTime                @default(now())
-  reads          BuyerVoiceMessageRead[]
-
-  @@index([buyerId, kind])
-  @@index([escalationId])
-}
-
-// ── Buyer Escalation thread (Buyer-view parity with LeadEscalation, Channel ②) ──
-// The assigned agent raises a VOICE escalation to the manager; the manager replies
-// by voice; either resolves. One open thread per buyer. Mirrors LeadEscalation;
-// the audio lives on BuyerVoiceMessage (kind ESCALATION / ESCALATION_REPLY).
-model BuyerEscalation {
-  id           String              @id @default(cuid())
-  buyerId      String
-  buyer        BuyerRecord         @relation(fields: [buyerId], references: [id], onDelete: Cascade)
-  raisedById   String
-  raisedBy     User                @relation("BuyerEscalationRaiser", fields: [raisedById], references: [id])
-  reason       String
-  status       String              @default("PENDING") // PENDING | MANAGER_REPLIED | RESOLVED
-  resolvedById String?
-  resolvedAt   DateTime?
-  createdAt    DateTime            @default(now())
-  updatedAt    DateTime            @updatedAt
-  messages     BuyerVoiceMessage[]
-
-  @@index([buyerId])
-  @@index([status])
-}
-
-model BuyerVoiceMessageRead {
-  id             String            @id @default(cuid())
-  voiceMessageId String
-  voiceMessage   BuyerVoiceMessage @relation(fields: [voiceMessageId], references: [id], onDelete: Cascade)
-  userId         String
-  understoodAt   DateTime          @default(now())
 
   @@unique([voiceMessageId, userId])
 }

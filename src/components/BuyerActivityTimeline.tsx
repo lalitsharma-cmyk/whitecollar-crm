@@ -43,10 +43,6 @@ const TYPE_META: Record<string, { icon: string; label: string; cls: string }> = 
   RETURNED: { icon: "↩️", label: "Returned to pool", cls: "border-slate-300 bg-slate-50 dark:bg-slate-800/40" },
   CONVERTED: { icon: "✅", label: "Converted", cls: "border-purple-400 bg-purple-50/40 dark:bg-purple-900/10" },
   REJECTED: { icon: "❌", label: "Rejected", cls: "border-red-300 bg-red-50/40 dark:bg-red-900/10" },
-  // Follow-up lifecycle (buyer parity with the Lead follow-up bar).
-  COMPLETED: { icon: "✅", label: "Follow-up completed", cls: "border-emerald-400 bg-emerald-50/40 dark:bg-emerald-900/10" },
-  SNOOZED: { icon: "⏸", label: "Snoozed", cls: "border-slate-300 bg-slate-50 dark:bg-slate-800/40" },
-  ESCALATED: { icon: "🆘", label: "Escalated to manager", cls: "border-rose-400 bg-rose-50/40 dark:bg-rose-900/10" },
 };
 
 const LOG_BTNS: { type: string; icon: string; label: string }[] = [
