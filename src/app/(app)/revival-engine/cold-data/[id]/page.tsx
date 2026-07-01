@@ -19,6 +19,8 @@ import { statusColor } from "@/lib/lead-statuses";
 import ColdDataPromoteButton from "@/components/ColdDataPromoteButton";
 import RejectLeadModal from "@/components/RejectLeadModal";
 import ImportedFieldsCard from "@/components/ImportedFieldsCard";
+import ColdClientInfoCard from "@/components/ColdClientInfoCard";
+import ChangeHistoryCard from "@/components/ChangeHistoryCard";
 // Mask a cold-data phone to its last 4 digits (PII protection on the data-bank).
 // reveal=true → return the full number: admins / super-admins / Lalit need the real
 // contact to work the pipeline; agents & managers still see the masked (last-4) form.
@@ -52,6 +54,7 @@ export default async function ColdDataDetailPage({ params, searchParams }: { par
       waMessages: { orderBy: { receivedAt: "desc" }, take: 30, include: { actor: { select: { name: true } } } },
       notes: { orderBy: { createdAt: "desc" }, include: { user: { select: { name: true } } } },
       activities: { orderBy: { createdAt: "desc" }, take: 20, include: { user: { select: { name: true } } } },
+      fieldHistory: { orderBy: { changedAt: "desc" }, take: 60, include: { changedBy: { select: { name: true } } } },
     },
   });
 
@@ -157,6 +160,10 @@ export default async function ColdDataDetailPage({ params, searchParams }: { par
         </div>
       </div>
 
+      {/* ── Client Information (inline-editable · Cold Data Bank) — data fields only,
+          no Lead-only workflow. Edits save to the master record + log field history. ── */}
+      <ColdClientInfoCard lead={lead} isAdmin={me.role === "ADMIN"} />
+
       {/* ── Convert to Lead — primary CTA ── */}
       <div className="card p-5">
         <div className="font-semibold text-sm mb-2">🚀 Convert to Active Lead</div>
@@ -195,6 +202,12 @@ export default async function ColdDataDetailPage({ params, searchParams }: { par
       {/* ── Imported sheet columns (verbatim) — Admin/Super-Admin/Lalit only ── */}
       {me.role === "ADMIN" && (
         <ImportedFieldsCard customFields={lead.customFields} rawImport={lead.rawImport} />
+      )}
+
+      {/* ── Change History — field-level audit of Cold Data Bank edits (who · old→new ·
+          timestamp), logged automatically on every inline edit via recordFieldChanges. ── */}
+      {(me.role === "ADMIN" || me.role === "MANAGER") && lead.fieldHistory.length > 0 && (
+        <ChangeHistoryCard rows={lead.fieldHistory} />
       )}
 
       {/* ── Conversation history (single source of truth) ── */}
