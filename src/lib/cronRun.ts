@@ -50,3 +50,25 @@ export async function finishCronRun(
     console.warn(`[cronRun] finishCronRun(${id}) failed:`, e);
   }
 }
+
+/**
+ * True when a job named `name` has NOT started within the last `minutes`. Used by
+ * the /api/cron/warm heartbeat to throttle sub-daily jobs it dispatches, so a
+ * frequently-hit (public) warm endpoint runs each job at most once per window.
+ * Checks the newest CronRun regardless of status, so an in-flight run also blocks a
+ * duplicate dispatch. On any DB error returns false (fail-safe: do NOT dispatch).
+ */
+export async function cronDueMinutes(name: string, minutes: number): Promise<boolean> {
+  try {
+    const last = await prisma.cronRun.findFirst({
+      where: { name },
+      orderBy: { startedAt: "desc" },
+      select: { startedAt: true },
+    });
+    if (!last) return true;
+    return Date.now() - last.startedAt.getTime() >= minutes * 60_000;
+  } catch (e) {
+    console.warn(`[cronRun] cronDueMinutes(${name}) failed:`, e);
+    return false;
+  }
+}
