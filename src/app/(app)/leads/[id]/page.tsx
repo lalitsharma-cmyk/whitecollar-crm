@@ -54,17 +54,12 @@ import LinkedContactsCard from "@/components/LinkedContactsCard";
 import InvestorBanner from "@/components/InvestorBanner";
 import StageDurationBadge from "@/components/StageDurationBadge";
 import SchedulingField from "@/components/SchedulingField";
-import AIComparisonWorkspace from "@/components/AIComparisonWorkspace";
 import ChangeHistoryCard from "@/components/ChangeHistoryCard";
 import ImportedFieldsCard from "@/components/ImportedFieldsCard";
 import PreviousHistoryCard from "@/components/PreviousHistoryCard";
 import { getCustomerHistory } from "@/lib/customerHistory";
 import DuplicateIntentBanner from "@/components/DuplicateIntentBanner";
 import { getDuplicateIntent } from "@/lib/duplicateIntent";
-import { isAiPilotLead } from "@/lib/ai-openai";
-import { getLatestClaudeAnalysis, claudeEnabled } from "@/lib/ai-claude";
-import { getLatestGptIntelligence, gptIntelligenceEnabled } from "@/lib/ai-gpt-intelligence";
-import { getLatestGeminiIntelligence, geminiIntelligenceEnabled } from "@/lib/ai-gemini-intelligence";
 import { formatMedium, getAvailableMediums } from "@/lib/mediumManager";
 
 export const dynamic = "force-dynamic";
@@ -407,31 +402,10 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
   // ask: "Move this [Expo / Dubai site visit] button down.").
   const travelRatePerKmInr = await getTravelRatePerKmInr();
 
-  const isPilotLead = isAiPilotLead(lead.ownerId);
-
-  // AI Intelligence Workspace — Claude, GPT, Gemini (all parallel)
-  const claudeEnabledFlag = claudeEnabled();
-  const gptEnabledFlag = gptIntelligenceEnabled();
-  const geminiEnabledFlag = geminiIntelligenceEnabled();
-  const [latestClaudeAnalysis, latestGptAnalysis, latestGeminiAnalysis] = await Promise.all([
-    (claudeEnabledFlag && isPilotLead) ? getLatestClaudeAnalysis(lead.id) : Promise.resolve(null),
-    (gptEnabledFlag && isPilotLead) ? getLatestGptIntelligence(lead.id) : Promise.resolve(null),
-    (geminiEnabledFlag && isPilotLead) ? getLatestGeminiIntelligence(lead.id) : Promise.resolve(null),
-  ]);
-  const toAnalysisState = (a: typeof latestClaudeAnalysis) => a ? {
-    id: a.id,
-    createdAt: a.createdAt.toISOString(),
-    model: a.model,
-    inputTokens: a.inputTokens,
-    outputTokens: a.outputTokens,
-    costMicroUsd: a.costMicroUsd,
-    ok: a.ok,
-    error: a.error,
-    result: a.ok ? JSON.parse(a.resultJson) : null,
-  } : null;
-  const claudeInitialAnalysis = toAnalysisState(latestClaudeAnalysis);
-  const gptInitialAnalysis = toAnalysisState(latestGptAnalysis);
-  const geminiInitialAnalysis = toAnalysisState(latestGeminiAnalysis);
+  // AI Decision War Room (Model Comparison / Consensus) removed 2026-07-02 per Lalit —
+  // the CRM will consolidate on one Gemini 2.5 Flash engine later. The provider libs
+  // (ai-openai/analyze/feedback) stay; only the 3-way comparison UI + its routes/libs
+  // were deleted.
 
   // WhatsApp click-to-message link — only built when lead.phone is non-empty.
   const waPhone = formatPhoneForWA(lead.phone);
@@ -1534,22 +1508,7 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
 
       {/* Mobile Timeline removed — merged into Conversation History above. */}
     </div>
-
-    {/* AI Model Evaluation Workspace — full-width, below the main CRM grid.
-        Visible on the "ai" mobile tab; always visible on desktop. */}
-    {isPilotLead && (
-      <div data-lead-section="ai" className="mt-4 pb-24 lg:pb-0">
-        <AIComparisonWorkspace
-          leadId={lead.id}
-          claudeEnabled={claudeEnabledFlag}
-          gptEnabled={gptEnabledFlag}
-          geminiEnabled={geminiEnabledFlag}
-          initialClaude={claudeInitialAnalysis}
-          initialGpt={gptInitialAnalysis}
-          initialGemini={geminiInitialAnalysis}
-        />
-      </div>
-    )}
+    {/* AI Decision War Room removed 2026-07-02 (Lalit) — see note near the data fetch. */}
     </>
   );
 }

@@ -23,7 +23,6 @@ const TABS = [
   { id: "actions",   label: "Actions",   emoji: "⚡" },
   { id: "projects",  label: "Projects",  emoji: "🏢" },
   { id: "admin",     label: "Admin",     emoji: "🛠" },
-  { id: "ai",        label: "AI",        emoji: "🤖" },
 ] as const;
 
 type TabId = (typeof TABS)[number]["id"];
@@ -59,7 +58,7 @@ export default function LeadMobileTabs() {
         Tablet-portrait (768-1023px, md to lg): 5-column grid so every tab fills
         equal width, no overflow, no crowding.
       */}
-      <div className="flex overflow-x-auto px-1 py-1.5 gap-1 no-scrollbar md:grid md:grid-cols-6 md:overflow-x-visible md:gap-1.5 md:px-2">
+      <div className="flex overflow-x-auto px-1 py-1.5 gap-1 no-scrollbar md:grid md:grid-cols-5 md:overflow-x-visible md:gap-1.5 md:px-2">
         {TABS.map((t) => {
           const isActive = t.id === active;
           return (
