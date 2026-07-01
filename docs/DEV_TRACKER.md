@@ -9,6 +9,17 @@ Legend: ✅ Completed · 🟡 In Progress · 🔵 In QA · 🚀 Deployed · 🔴
 
 ---
 
+## 🟡 LEAD-VIEW UNIFICATION (started 2026-07-01, Lalit — URGENT)
+**Goal:** one unified Lead View across all 3 modules — team should never learn 3 interfaces. **Approach APPROVED by Lalit: Leads View = master template, left 100% UNTOUCHED; bring Buyer + Cold/Revival up to it by reusing shared components; additive only; no schema-breaking changes; 100% existing data preserved; NO re-import (these are live views over existing tables — field-mapping at render, not data migration).** Order: **Buyer first**, then Cold/Revival. Branch `ws-unify-lead-view`.
+- **Baseline:** Buyer + Cold detail already share `detailLayout.ts` tokens (colors/card shells) from prior passes. Cold/Revival reads the SAME `Lead` model (parity = mostly un-hiding sections). Buyer is a separate `BuyerRecord` model (parity = reuse Lead components + buyer-side additive endpoints).
+- ✅ **B1 — Buyer follow-up bar (COMMITTED `73e4bc7`, branch, NOT deployed):** Complete/Snooze/Escalate now the SAME `LeadFollowupActions` bar, inline in the buyer action row. `LeadFollowupActions` gained `apiBase` prop (default `/api/leads`, every existing caller unchanged). New buyer endpoints `action-complete`/`action-snooze`/`action-escalate` (buyer-scoped, canTouchBuyer + ASSIGNED/owner-or-admin); complete rolls `followupDate` +1d, escalate notifies managers. Completion gate ported (`src/lib/buyerFollowup.ts`). Additive — `followupDate`+`BuyerActivity.type` are existing columns, no migration. tsc 0.
+- ⏳ **B2 — Buyer Manager Voice Guidance** (needs additive `BuyerVoiceMessage` table + generalize `LeadVoiceGuidance`).
+- ⏳ **B3 — Buyer Escalation thread + Meeting/Site-Visit blocks + field-level Change History + Assignment History card.**
+- ⏳ **C1 — Cold/Revival parity** (same Lead model; add the missing shared sections).
+- **AWAITING LALIT:** deploy decision for B1 (built + typechecked, not shipped — per production-safety, first deploy of this initiative needs your go) + UAT.
+
+---
+
 ## 🟢 HR ATS PRODUCTIZATION (started 2026-06-28, Lalit) — make /hr as polished as Sales CRM
 **Audit:** `docs/HR-ATS-AUDIT.md` (13-area parallel audit). Module was ~40–60% of Sales parity, NOT production-safe (systemic RBAC hole). Plan: Phase0 safety → Phase1 schema+roles → Phase2 security → Phase3 modules+voice → Phase4 polish → Phase5 QA.
 - ✅ **Phase 0 — Safety:** full DB backup ×2 (`backups/FULL-2026-06-28T13-56-16-581Z` + offsite) + dedicated HR archive; prod schema-drift risk cleared (`hrOnly/hrTeam` exist).
