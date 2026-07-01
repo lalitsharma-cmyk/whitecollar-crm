@@ -295,7 +295,11 @@ export default function GlobalDateFilter() {
                    transition-colors min-h-9"
       >
         <Calendar className="w-4 h-4 flex-none opacity-70" />
-        <span className="hidden md:inline text-xs font-medium leading-none max-w-[200px] truncate">
+        {/* suppressHydrationWarning: headerLabel derives from todayIST() (Date.now()
+            at render), so the SSR (server UTC) and client (browser tz) values can
+            differ across a day/minute boundary → React #418. The label is genuinely
+            time-dependent, so suppress the benign mismatch on this node. */}
+        <span suppressHydrationWarning className="hidden md:inline text-xs font-medium leading-none max-w-[200px] truncate">
           {headerLabel}
         </span>
         {/* Gold × — only shown when the active filter is NOT today */}

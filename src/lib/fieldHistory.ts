@@ -32,7 +32,7 @@ export const TRACKED_FIELDS = [
   "source", "sourceRaw", "sourceDetail", "medium", "mediumOther", "leadOrigin",
   // identity / contact
   "name", "altName", "phone", "altPhone", "email", "altEmail",
-  "company", "profession", "linkedInUrl",
+  "company", "profession", "designation", "nationality", "preferredLocation", "linkedInUrl",
   // requirement
   "configuration", "propertyType",
   // location

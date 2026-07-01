@@ -421,6 +421,9 @@ model Lead {
   // are preserved verbatim as strings. The Profession enum below is kept only
   // for backward reference; this column no longer uses it.
   profession          String?
+  designation         String? // job title, distinct from profession (data-bank editable)
+  nationality         String? // country of citizenship, e.g. "Indian", "UAE National"
+  preferredLocation   String? // desired property location / area
   linkedInUrl         String? // full https://linkedin.com/in/... URL
   // Purchase history — captured at intake for cold data or filled after qualification
   alreadyBought       String? // comma-separated project names client already owns

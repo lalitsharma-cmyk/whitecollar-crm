@@ -37,6 +37,9 @@ export type ColdClientLead = {
   altEmail: string | null;
   company: string | null;
   profession: string | null;
+  designation: string | null;
+  nationality: string | null;
+  preferredLocation: string | null;
   country: string | null;
   city: string | null;
   state: string | null;
@@ -115,10 +118,25 @@ export default function ColdClientInfoCard({ lead, isAdmin }: { lead: ColdClient
           <div className={label}>🏢 Company</div>
           <InlineEdit leadId={lead.id} field="company" value={lead.company ?? ""} placeholder="Add value" />
         </div>
-        {/* Profession / Designation */}
+        {/* Profession */}
         <div>
-          <div className={label}>💼 Profession / Designation</div>
+          <div className={label}>💼 Profession</div>
           <InlineEdit leadId={lead.id} field="profession" value={lead.profession ?? ""} placeholder="Add value" />
+        </div>
+        {/* Designation — job title */}
+        <div>
+          <div className={label}>🪪 Designation</div>
+          <InlineEdit leadId={lead.id} field="designation" value={lead.designation ?? ""} placeholder="Add value" />
+        </div>
+        {/* Nationality */}
+        <div>
+          <div className={label}>🌍 Nationality</div>
+          <InlineEdit leadId={lead.id} field="nationality" value={lead.nationality ?? ""} placeholder="Add value" />
+        </div>
+        {/* Preferred Location */}
+        <div>
+          <div className={label}>📍 Preferred Location</div>
+          <InlineEdit leadId={lead.id} field="preferredLocation" value={lead.preferredLocation ?? ""} placeholder="Add value" />
         </div>
         {/* Purpose — Investment / End Use (clientType) */}
         <div>

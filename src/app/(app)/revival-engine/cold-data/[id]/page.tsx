@@ -14,6 +14,8 @@ import { formatDistanceToNow, format } from "date-fns";
 import ConversationStreamCard from "@/components/ConversationStreamCard";
 import QuickNoteCard from "@/components/QuickNoteCard";
 import StickyNoteWidget from "@/components/StickyNoteWidget";
+import DuplicateIntentBanner from "@/components/DuplicateIntentBanner";
+import { getDuplicateIntent } from "@/lib/duplicateIntent";
 import LeadActionsClient from "@/components/LeadActionsClient";
 import { acefoneEnabled } from "@/lib/acefone";
 import { statusColor } from "@/lib/lead-statuses";
@@ -75,6 +77,11 @@ export default async function ColdDataDetailPage({ params, searchParams }: { par
     update: {},
   });
 
+  // Duplicate-intent — same detection the Lead detail uses (excludes soft-deleted,
+  // scope-confidential). Server-computed, so an inline edit's router.refresh()
+  // re-runs it → the banner auto-re-checks after every save.
+  const dupIntent = await getDuplicateIntent(lead.phone, lead.email, lead.id, scope).catch(() => null);
+
   const agents = await prisma.user.findMany({
     where: { active: true, hrOnly: false, role: { in: ["AGENT", "MANAGER", "ADMIN"] } },
     orderBy: { name: "asc" },
@@ -112,6 +119,10 @@ export default async function ColdDataDetailPage({ params, searchParams }: { par
           ← Back
         </Link>
       </div>
+
+      {/* ── Duplicate-intent banner — reused from the Lead view; re-checks on every
+          inline edit (router.refresh re-runs getDuplicateIntent). ── */}
+      <DuplicateIntentBanner intent={dupIntent} />
 
       {/* ── Main header card ── */}
       <div className="card p-5">
