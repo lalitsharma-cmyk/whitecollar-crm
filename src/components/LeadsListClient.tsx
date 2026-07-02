@@ -271,6 +271,21 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
   const [escalateTarget, setEscalateTarget] = useState<{ id: string; name: string } | null>(null);
   const [escalateReason, setEscalateReason] = useState("");
 
+  // ── Hydration-safe clock gate ────────────────────────────────────────────
+  // Relative-time output — the "· 2h ago" Last-Activity string, the >7-day "idle"
+  // chip, and the idleClass() colour — is derived from Date.now() AT RENDER. SSR
+  // (server clock) and the first client render run at different instants, so a
+  // value can land in a different bucket ("59m" vs "1h") → React hydration
+  // text/element mismatch (minified #418) on the hottest page in the CRM. We keep
+  // SSR and the first client render byte-identical by emitting the volatile bits
+  // ONLY once `mounted` flips true (post-hydration, in the effect below). The
+  // server-stable `l.lastTouched` string keeps rendering throughout, so only the
+  // colour + the tiny idle chip land a frame later. Same class of fix as the
+  // shared shell date chip (GlobalDateFilter, commit 97251b8) — mounted-gate
+  // variant chosen here for correctness over suppressHydrationWarning.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+
   async function doActionComplete(leadId: string) {
     if (actionBusy) return;
     setActionBusy({ id: leadId, kind: "complete" });
@@ -758,7 +773,9 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
                       <tr><td colSpan={9 + (showSource ? 1 : 0)} className="px-4 py-10 text-center text-gray-400 text-sm">No leads match these filters.</td></tr>
                     )}
                     {leads.map((l, i) => {
-                      const lastAct = fmtLastActivity(l.lastActivityType, l.lastActivityAt);
+                      // Clock-gated: null until mounted so SSR/first-render match
+                      // (fmtLastActivity uses Date.now()). Falls back to the "—" cell.
+                      const lastAct = mounted ? fmtLastActivity(l.lastActivityType, l.lastActivityAt) : null;
                       return (
                       <tr key={l.id}
                         onClick={() => router.push(`${detailBasePath}/${l.id}`)}
@@ -1142,9 +1159,11 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
                       <span className="text-[9px] font-semibold px-1 py-0 rounded bg-amber-100 text-amber-700">~ Possible</span>
                     )}
                     {l.lastTouched && (
-                      <span className={idleClass(l.lastTouchedAt as string | null)}>
+                      // idleClass() colour + the >7-day idle chip are Date.now()-derived →
+                      // gate both on `mounted`; the "· {lastTouched} ago" text is server-stable.
+                      <span className={mounted ? idleClass(l.lastTouchedAt as string | null) : undefined}>
                         · {l.lastTouched} ago
-                        {(() => { const d = l.lastTouchedAt ? (Date.now() - new Date(l.lastTouchedAt as string).getTime()) / (1000 * 60 * 60 * 24) : 0; return d > 7 ? <span className="ml-1 text-[10px] bg-red-100 text-red-700 px-1 rounded">idle</span> : null; })()}
+                        {mounted && (() => { const d = l.lastTouchedAt ? (Date.now() - new Date(l.lastTouchedAt as string).getTime()) / (1000 * 60 * 60 * 24) : 0; return d > 7 ? <span className="ml-1 text-[10px] bg-red-100 text-red-700 px-1 rounded">idle</span> : null; })()}
                       </span>
                     )}
                   </div>
@@ -1294,9 +1313,12 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
                         <span className="bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 px-1.5 rounded text-[10px] truncate max-w-[120px]">{prettyProjectName(l.interest, projectOptions) ?? l.interest}</span>
                       ) : null}
                       {l.lastTouched && (
-                        <span className={`${idleClass(l.lastTouchedAt as string | null)} ml-1`}>
+                        // Clock-gated like the card view: keep the static `ml-1` layout class
+                        // stable, add the Date.now()-derived idleClass colour + idle chip only
+                        // after mount so SSR and first client render stay identical.
+                        <span className={mounted ? `${idleClass(l.lastTouchedAt as string | null)} ml-1` : "ml-1"}>
                           · {l.lastTouched} ago
-                          {(() => {
+                          {mounted && (() => {
                             const d = l.lastTouchedAt ? (Date.now() - new Date(l.lastTouchedAt as string).getTime()) / (1000 * 60 * 60 * 24) : 0;
                             return d > 7 ? <span className="ml-1 text-[10px] bg-red-100 text-red-700 px-1 rounded">idle</span> : null;
                           })()}
