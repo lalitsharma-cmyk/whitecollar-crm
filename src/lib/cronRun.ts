@@ -14,6 +14,7 @@
 // down (which would also break the cron itself), we still want the cron to
 // run its actual work. So both functions swallow errors with console.warn.
 import { prisma } from "@/lib/prisma";
+import { istDayRange } from "@/lib/datetime";
 
 export async function startCronRun(name: string): Promise<string> {
   try {
@@ -70,5 +71,27 @@ export async function cronDueMinutes(name: string, minutes: number): Promise<boo
   } catch (e) {
     console.warn(`[cronRun] cronDueMinutes(${name}) failed:`, e);
     return false;
+  }
+}
+
+/**
+ * True when a job named `name` has ALREADY started at least once within TODAY's
+ * IST calendar day (any status — OK / RUNNING / ERROR). Used by the /api/cron/warm
+ * heartbeat to run daily jobs (morning/evening reminder) as a BACKUP for Vercel's
+ * best-effort native scheduler: the backup fires only when there is NO run today,
+ * so it never double-fires when the native Vercel cron already ran the job.
+ * On any DB error returns true (fail-safe: assume it ran → do NOT double-dispatch).
+ */
+export async function cronRanTodayIST(name: string): Promise<boolean> {
+  try {
+    const { start } = istDayRange(); // start of today, IST, as a UTC instant
+    const row = await prisma.cronRun.findFirst({
+      where: { name, startedAt: { gte: start } },
+      select: { id: true },
+    });
+    return !!row;
+  } catch (e) {
+    console.warn(`[cronRun] cronRanTodayIST(${name}) failed:`, e);
+    return true; // fail-safe: assume it ran so we never double-notify
   }
 }

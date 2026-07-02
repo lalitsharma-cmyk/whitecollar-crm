@@ -17,6 +17,7 @@ import { sourceEnumLabel } from "@/lib/sourceLabel";
 import { BOOKED_STATUSES } from "@/lib/lead-statuses";
 import { resolveTeam, routingFieldsFor, automationGate } from "@/lib/teamRouting";
 import { resolveActiveAssignee } from "@/lib/leave";
+import { resolveMarket } from "@/lib/market";
 import type { Classification } from "@/lib/leadClassifier";
 import { cleanNeedSnapshot } from "@/lib/needSnapshot";
 import { runIntelligenceCheck } from "@/lib/intelligenceCheck";
@@ -281,6 +282,11 @@ export async function ingestLead(input: RawLeadInput) {
       budgetMax: input.budgetMax,
       budgetCurrency: currency,
       forwardedTeam: team,
+      // Set the derived India/UAE market at CREATION so there is never a gap
+      // (the lead-market-segregation invariant requires market whenever team is
+      // set). The data-quality self-heal is only a periodic backstop for other
+      // create paths (imports / buyer-convert); this closes the main one.
+      market: resolveMarket({ forwardedTeam: team, budgetCurrency: currency }),
       // Routing provenance — set at intake so every lead has a full audit trail
       routingMethod: routingFields.routingMethod,
       routingSource: routingFields.routingSource,

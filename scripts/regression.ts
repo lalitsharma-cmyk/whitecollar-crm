@@ -1628,6 +1628,27 @@ const checks: Check[] = [
   },
 
   {
+    // Daily reminders (morning 10:00 / evening 18:00 IST) have Vercel-native crons,
+    // but Vercel Hobby crons are best-effort and silently skip (evening-reminder
+    // missed 2026-07-01). The warm heartbeat runs them as a BACKUP: after the IST
+    // hour, only if no run exists today (cronRanTodayIST) — so it never double-notifies.
+    name: "daily-reminder-backup — morning/evening reminders heartbeat-backed + deduped by ran-today",
+    run: async () => {
+      const fs = await import("fs");
+      const warm = fs.readFileSync("src/app/api/cron/warm/route.ts", "utf8");
+      assert(/DAILY_BACKUP_JOBS/.test(warm) && /morning-reminder/.test(warm) && /evening-reminder/.test(warm),
+        "warm heartbeat must back BOTH morning + evening reminders");
+      assert(/cronRanTodayIST/.test(warm) && /afterIstHour/.test(warm),
+        "daily backup must gate on IST hour + skip when already ran today (no double-notify)");
+      assert(/export async function cronRanTodayIST/.test(fs.readFileSync("src/lib/cronRun.ts", "utf8")),
+        "cronRun must export cronRanTodayIST");
+      const vj = fs.readFileSync("vercel.json", "utf8");
+      assert(/morning-reminder/.test(vj) && /evening-reminder/.test(vj),
+        "vercel.json must keep both native crons as the primary trigger");
+    },
+  },
+
+  {
     // Data-quality: a terminal lead (booked/sold/lost/rejected) must NOT keep an
     // active followupDate — it would wrongly surface on the Action-List follow-up
     // board. Every status-change/reject/import path clears it; this catches drift.

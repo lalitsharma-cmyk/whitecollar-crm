@@ -13,7 +13,8 @@
 
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { startCronRun, finishCronRun, cronDueMinutes } from "@/lib/cronRun";
+import { startCronRun, finishCronRun, cronDueMinutes, cronRanTodayIST } from "@/lib/cronRun";
+import { hourInTZ } from "@/lib/datetime";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -28,14 +29,27 @@ const HEARTBEAT_JOBS: Array<{ path: string; name: string; everyMin: number }> = 
   { path: "re-engage", name: "re-engage", everyMin: 360 }, // ~every 6h — reactivate due re-engage leads
 ];
 
-/** Run at most ONE due sub-daily job this tick (keeps warm fast). Best-effort. */
+// DAILY jobs that ALSO have a Vercel-native cron (vercel.json) — but Vercel Hobby
+// crons are best-effort and silently skip (evening-reminder missed 2026-07-01). We
+// run them here as a BACKUP: fire once/day AFTER the IST hour, but ONLY if no run
+// exists for today (cronRanTodayIST) — so when Vercel's native cron DID fire, this
+// is a no-op and we never double-notify. afterIstHour matches the vercel.json time.
+const DAILY_BACKUP_JOBS: Array<{ path: string; name: string; afterIstHour: number }> = [
+  { path: "morning-reminder", name: "morning-reminder", afterIstHour: 10 }, // vercel 04:30 UTC
+  { path: "evening-reminder", name: "evening-reminder", afterIstHour: 18 }, // vercel 12:30 UTC
+];
+
+const IST = "Asia/Kolkata";
+
+/** Run at most ONE due job this tick (keeps warm fast). Best-effort. Daily backups
+ *  are checked first — they're due at most once/day and self-skip once fired, so
+ *  they "steal" only one tick/day and never starve the sub-daily jobs. */
 async function dispatchDueHeartbeatJob(): Promise<string | null> {
   const secret = process.env.CRON_SECRET;
   const base = process.env.PUBLIC_BASE_URL || "https://crm.whitecollarrealty.com";
-  for (const job of HEARTBEAT_JOBS) {
-    if (!(await cronDueMinutes(job.name, job.everyMin))) continue;
+  const hit = async (path: string) => {
     try {
-      await fetch(`${base}/api/cron/${job.path}`, {
+      await fetch(`${base}/api/cron/${path}`, {
         headers: secret ? { authorization: `Bearer ${secret}` } : {},
         signal: AbortSignal.timeout(30_000),
       });
@@ -43,6 +57,21 @@ async function dispatchDueHeartbeatJob(): Promise<string | null> {
       // The dispatched job logs its own CronRun; a fetch timeout/error here is
       // non-fatal — jobs are idempotent, so a partial run won't double-notify.
     }
+  };
+
+  // 1) Daily-native backups (morning/evening) — fire after the IST hour iff no run today.
+  const istHour = hourInTZ(new Date(), IST);
+  for (const job of DAILY_BACKUP_JOBS) {
+    if (istHour < job.afterIstHour) continue;
+    if (await cronRanTodayIST(job.name)) continue; // Vercel already ran it → skip (no double-notify)
+    await hit(job.path);
+    return `${job.name} (daily-backup)`;
+  }
+
+  // 2) Sub-daily jobs — throttled by last-run.
+  for (const job of HEARTBEAT_JOBS) {
+    if (!(await cronDueMinutes(job.name, job.everyMin))) continue;
+    await hit(job.path);
     return job.name; // one job per tick
   }
   return null;
