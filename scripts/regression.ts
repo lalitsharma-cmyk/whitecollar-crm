@@ -5934,6 +5934,27 @@ const checks: Check[] = [
       assert(stranded === 0, `no buyer may keep a Developer value stranded in extraFields (found ${stranded})`);
     },
   },
+
+  {
+    // Customer Identity Resolution Center (Phase E) — ADMIN-only page that surfaces
+    // UNLINKED same-phone/email duplicate groups + links them into ONE virtual
+    // Customer (records stay separate, reversible via unlinkEnquiry, audited).
+    name: "customer-identity-resolution — admin-only center: unlinked candidates + reversible gated link",
+    run: async () => {
+      const fsl = await import("fs");
+      assert(/requireRole\("ADMIN"\)/.test(fsl.readFileSync("src/app/(app)/admin/identity/page.tsx", "utf8")),
+        "identity Resolution Center page MUST be ADMIN-only");
+      const linkRoute = fsl.readFileSync("src/app/api/admin/identity/link/route.ts", "utf8");
+      assert(/requireRole\("ADMIN"\)/.test(linkRoute),
+        "identity link API MUST be ADMIN-only");
+      assert(/linkEnquiryInTx/.test(linkRoute) && /tx\.customer\.create/.test(linkRoute) && /action:\s*"identity\.link"/.test(linkRoute),
+        "identity link MUST create a Customer + link via linkEnquiryInTx (reversible) + write an AuditLog");
+      assert(/customerId: null/.test(fsl.readFileSync("src/lib/customer/candidates.ts", "utf8")),
+        "candidate detection MUST surface only UNLINKED leads (customerId null) — never re-link an already-resolved enquiry");
+      assert(/\/admin\/identity/.test(fsl.readFileSync("src/components/MobileShell.tsx", "utf8")),
+        "nav MUST expose /admin/identity (admin section)");
+    },
+  },
 ];
 
 // ── runner ────────────────────────────────────────────────────────────────────

@@ -5,7 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import {
   LayoutDashboard, Users, Sparkles, Menu, X,
   Building2, BarChart3, Upload, UserCog, Settings as SettingsIcon, LogOut, Landmark,
-  ChevronLeft, ChevronRight, Gem, HelpCircle, AlertTriangle, Lock, PhoneCall, Briefcase, Database, ShieldCheck, Bot, Inbox, BadgeDollarSign, MapPin, Images, History, Search, Tag, KeyRound,
+  ChevronLeft, ChevronRight, Gem, HelpCircle, AlertTriangle, Lock, PhoneCall, Briefcase, Database, ShieldCheck, Bot, Inbox, BadgeDollarSign, MapPin, Images, History, Search, Tag, KeyRound, Fingerprint,
 } from "lucide-react";
 import GlobalDateFilter from "./GlobalDateFilter";
 import NotifBell from "./NotifBell";
@@ -126,6 +126,7 @@ const fullNav: NavSection[] = [
   // reach it multiple times per day.
   { section: "ADMIN", adminOnly: true, items: [
     { href: "/leads?owner=unassigned&seg=all", label: "Unassigned Leads",   Icon: Inbox },
+    { href: "/admin/identity",        label: "Customer Identity",  Icon: Fingerprint },
     { href: "/admin/assistant",       label: "AI Assistant",       Icon: Bot },
     { href: "/intake",                label: "Lead Intake",        Icon: Upload, leadOpsHidden: true },
     { href: "/admin/projects",        label: "Project Master",     Icon: Landmark },
