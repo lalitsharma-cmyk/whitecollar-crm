@@ -14,6 +14,7 @@ import { normalizeNameList } from "@/lib/nameFormat";
 import { notify } from "@/lib/notify";
 import { assignLeadTo } from "@/lib/leadIngest";
 import { hasContactActivityToday } from "@/lib/followupGate";
+import { teamToMarket } from "@/lib/market";
 import { NotifKind, type Prisma } from "@prisma/client";
 
 // Inline-edit endpoint — accepts one or more field updates and logs an Activity
@@ -282,6 +283,14 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       updates.currentStatus = NEEDS_REVIEW;
       activityNotes.push(`status → ${NEEDS_REVIEW} (team changed)`);
     }
+  }
+
+  // MARKET tracks TEAM — whenever a team is (re)assigned via inline edit, derive
+  // the India/UAE market in the SAME write so the lead-market-segregation invariant
+  // can never drift. Only set on a non-null team (clearing a team leaves any
+  // currency-derived market intact — additive, never destructive).
+  if ("forwardedTeam" in updates && updates.forwardedTeam) {
+    updates.market = teamToMarket(updates.forwardedTeam as string);
   }
 
   // Proper-Case name fields on inline edit (name/altName only — never phone/

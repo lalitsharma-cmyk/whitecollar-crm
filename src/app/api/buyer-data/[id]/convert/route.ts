@@ -9,6 +9,7 @@ import { audit, reqMeta } from "@/lib/audit";
 import { toE164 } from "@/lib/phone";
 import { normalizeNameList } from "@/lib/nameFormat";
 import { normalizeTeam } from "@/lib/teamRouting";
+import { resolveMarket } from "@/lib/market";
 import {
   parseJsonArray,
   inferBuyerCurrency,
@@ -127,6 +128,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         budgetRaw: txn != null ? String(buyer.transactionValue) : null,
         categorization: "Investor",
         forwardedTeam: team,
+        // Market (India/UAE) must be set wherever a team is written so the
+        // lead-market-segregation invariant can never drift — this create
+        // bypasses ingestLead, which is the only other path that sets it.
+        market: resolveMarket({ forwardedTeam: team, budgetCurrency }),
         routingMethod: "manual",
         routingSource: "buyer_data_conversion",
         routingReason: `Converted from Buyer Data by ${me.name}`,

@@ -39,6 +39,7 @@
 import { ActivityType, ActivityStatus, type Prisma } from "@prisma/client";
 import { mergeRawRemark } from "@/lib/rawRemarks";
 import { recordFieldChanges } from "@/lib/fieldHistory";
+import { resolveMarket } from "@/lib/market";
 
 // Minimal DB shape satisfied by BOTH `prisma` and an interactive-transaction `tx`
 // — so the routes pass `prisma` and the rolled-back test harness passes `tx`.
@@ -94,7 +95,7 @@ const FILL_IF_EMPTY_FIELDS = [
 // decisions, plus the audit/append sources (rawRemarks, remarks, tags,
 // sourceDetail, leadOrigin, isColdCall, coldCallReason, customFields, ownerId).
 const SNAPSHOT_SELECT: Prisma.LeadSelect = {
-  id: true, ownerId: true,
+  id: true, ownerId: true, market: true,
   rawRemarks: true, remarks: true, tags: true, sourceDetail: true,
   leadOrigin: true, isColdCall: true, coldCallReason: true, customFields: true,
   ...Object.fromEntries(FILL_IF_EMPTY_FIELDS.map((f) => [f, true])),
@@ -192,6 +193,18 @@ export async function applyRevivalMerge(args: RevivalMergeArgs): Promise<Revival
     data.sourceDetail = project.trim();
     before.sourceDetail = existing.sourceDetail ?? null;
     after.sourceDetail = project.trim();
+  }
+
+  // MARKET tracks TEAM — fill-if-empty. When the lead has no India/UAE market yet,
+  // derive it from the resulting team (or currency) so lead-market-segregation
+  // stays green after revival enrichment. This ALSO heals a pre-existing team-
+  // without-market drift on any revival touch. Never overwrites an existing market.
+  if (isBlank(existing.market)) {
+    const m = resolveMarket({
+      forwardedTeam: (data.forwardedTeam ?? existing.forwardedTeam) as string | null,
+      budgetCurrency: (data.budgetCurrency ?? existing.budgetCurrency) as string | null,
+    });
+    if (m) data.market = m;
   }
 
   // (2) Append the imported remark — append-only, never truncates/overwrites.

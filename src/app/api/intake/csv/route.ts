@@ -18,6 +18,7 @@ const notDate = (v?: string): string | undefined => (v && looksLikeDate(v) ? und
 import { splitPhones, normalizePhone, toE164 } from "@/lib/phone";
 import { fingerprintFor } from "@/lib/assignment";
 import { resolveTeam, routingFieldsFor } from "@/lib/teamRouting";
+import { teamToMarket } from "@/lib/market";
 import { interpretBudget, resolveBudgetCurrency } from "@/lib/budgetCurrency";
 import { inferCountryFromCity } from "@/lib/cityCountry";
 import { detectConversationColumn } from "@/lib/conversationColumn";
@@ -771,6 +772,9 @@ export async function POST(req: NextRequest) {
         });
         if (teamResult.team) {
           update.forwardedTeam = teamResult.team;
+          // Market tracks team — set the derived India/UAE market so imported
+          // team-tagged rows never leave a lead-market-segregation gap.
+          update.market = teamToMarket(teamResult.team);
           const rf = routingFieldsFor(teamResult);
           update.routingMethod = rf.routingMethod;
           update.routingSource = rf.routingSource;
@@ -982,7 +986,12 @@ export async function POST(req: NextRequest) {
           sourceDetail: (update.sourceDetail ?? r.lead.sourceDetail) as string | null,
           forwardedTeam: (update.forwardedTeam ?? r.lead.forwardedTeam) as string | null,
         };
-        const toApply = mergeSuggestions(existing as never, suggestions, false);
+        const toApply = mergeSuggestions(existing as never, suggestions, false) as Record<string, unknown>;
+        // If remark-autofill just set a team on a previously-unclassified lead,
+        // co-write the derived India/UAE market so the invariant can't drift.
+        if (toApply.forwardedTeam && toApply.market == null) {
+          toApply.market = teamToMarket(toApply.forwardedTeam as string);
+        }
         if (Object.keys(toApply).length > 0) {
           await prisma.lead.update({ where: { id: r.lead.id }, data: toApply as never });
           autofilled++;

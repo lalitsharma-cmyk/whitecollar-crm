@@ -16,6 +16,7 @@ import { chooseOwnerForNewLead, currentWindow } from "@/lib/assignmentWindow";
 import { assignLeadTo } from "@/lib/leadIngest";
 import { audit, reqMeta } from "@/lib/audit";
 import { resolveTeam, routingFieldsFor } from "@/lib/teamRouting";
+import { teamToMarket } from "@/lib/market";
 import { getRoundRobinEnabled, getAutoAssignmentEnabled, getWebsiteAutoAssign } from "@/lib/settings";
 import { resolveTeamAutoAssignee } from "@/lib/teamAutoAssign";
 
@@ -43,6 +44,10 @@ export async function POST(req: NextRequest) {
     where: { id: leadId },
     data: {
       forwardedTeam: team,
+      // Set the derived India/UAE market alongside the team so tagging an
+      // awaiting-team lead can never leave a team-without-market gap (the
+      // lead-market-segregation deploy-gate invariant).
+      market: teamToMarket(team),
       ...routingFieldsFor(routing),
     },
   });

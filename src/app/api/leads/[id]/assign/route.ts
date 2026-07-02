@@ -4,6 +4,7 @@ import { assignLeadTo } from "@/lib/leadIngest";
 import { prisma } from "@/lib/prisma";
 import { canTouchLead } from "@/lib/leadScope";
 import { crossTeamWarning, resolveTeam, routingFieldsFor, normalizeTeam } from "@/lib/teamRouting";
+import { teamToMarket } from "@/lib/market";
 
 // Manual reassign — Admin or Manager only.
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -29,6 +30,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         where: { id },
         data: {
           forwardedTeam: routing.team,
+          // Market tracks the team being set (never leave a team-without-market gap).
+          market: teamToMarket(routing.team),
           ...routingFieldsFor(routing),
         },
       });

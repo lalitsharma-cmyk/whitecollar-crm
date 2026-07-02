@@ -10,6 +10,7 @@ import { prisma } from "@/lib/prisma";
 import { loadOwnedLead } from "@/lib/leadScope";
 import { extractFromRemarks, mergeSuggestions } from "@/lib/remarkAutofill";
 import { audit, reqMeta } from "@/lib/audit";
+import { teamToMarket } from "@/lib/market";
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -37,7 +38,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     whenCanInvest: lead.whenCanInvest, company: lead.company,
     sourceDetail: lead.sourceDetail, forwardedTeam: lead.forwardedTeam,
   };
-  const toApply = mergeSuggestions(existing as never, suggestions, force);
+  const toApply = mergeSuggestions(existing as never, suggestions, force) as Record<string, unknown>;
+  // MARKET tracks TEAM — if the remark autofill sets a team, co-write the derived
+  // India/UAE market so the lead-market-segregation invariant can't drift.
+  if (toApply.forwardedTeam && toApply.market == null) {
+    toApply.market = teamToMarket(toApply.forwardedTeam as string);
+  }
 
   if (!apply) {
     return NextResponse.json({ ok: true, dryRun: true, suggestions, toApply, fieldsFound: Object.keys(toApply).length });

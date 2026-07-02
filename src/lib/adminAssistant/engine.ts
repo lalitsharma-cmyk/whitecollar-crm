@@ -13,6 +13,7 @@
 
 import { prisma } from "@/lib/prisma";
 import type { Prisma } from "@prisma/client";
+import { teamToMarket } from "@/lib/market";
 import type { ParsedCommand, LeadFilter } from "./parse";
 
 export type AgentLite = { id: string; name: string; role: string; team: string | null };
@@ -165,7 +166,9 @@ export async function executeRun(runId: string, meId: string): Promise<{ ok: boo
         await tx.lead.updateMany({ where: { id: { in: leads.map((l) => l.id) } }, data: { ownerId: value, assignedAt: now } });
       } else if (field === "forwardedTeam") {
         for (const l of leads) before.push({ id: l.id, old: l.forwardedTeam ?? null });
-        await tx.lead.updateMany({ where: { id: { in: leads.map((l) => l.id) } }, data: { forwardedTeam: value } });
+        // Market tracks team — write the derived India/UAE market in the same
+        // updateMany so lead-market-segregation can't drift (value is a validated team).
+        await tx.lead.updateMany({ where: { id: { in: leads.map((l) => l.id) } }, data: { forwardedTeam: value, market: teamToMarket(value) } });
       } else if (field === "followupDate") {
         for (const l of leads) before.push({ id: l.id, old: l.followupDate ? l.followupDate.toISOString() : null });
         await tx.lead.updateMany({ where: { id: { in: leads.map((l) => l.id) } }, data: { followupDate: new Date(value) } });
@@ -202,7 +205,7 @@ export async function undoRun(runId: string, meId: string): Promise<{ ok: boolea
           field === "followupDate" ? { followupDate: b.old ? new Date(b.old) : null }
           : field === "ownerId"    ? { owner: b.old ? { connect: { id: b.old } } : { disconnect: true } }
           : field === "tags"       ? { tags: b.old }
-          :                          { forwardedTeam: b.old };
+          :                          { forwardedTeam: b.old, market: b.old ? teamToMarket(b.old) : null };
         await tx.lead.update({ where: { id: b.id }, data });
         await tx.leadFieldHistory.create({ data: { leadId: b.id, field, oldValue: run.newValue ?? "", newValue: b.old, changedById: meId, source: "assistant-undo" } });
       }

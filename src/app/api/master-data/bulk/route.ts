@@ -4,6 +4,7 @@ import { requireUser } from "@/lib/auth";
 import { audit, reqMeta } from "@/lib/audit";
 import { isStatusValidForTeam, NEEDS_REVIEW, statusesForTeam } from "@/lib/lead-statuses";
 import { validateMedium } from "@/lib/mediumManager";
+import { teamToMarket } from "@/lib/market";
 
 // =====================================================================
 // MASTER DATA — bulk actions (ADMIN only). Master Data is the complete
@@ -98,7 +99,9 @@ export async function POST(req: NextRequest) {
     const changed = before.filter((b) => b.forwardedTeam !== team);
     let flagged = 0;
     if (changed.length) {
-      await prisma.lead.updateMany({ where: { id: { in: changed.map((c) => c.id) } }, data: { forwardedTeam: team } });
+      // Market tracks team — set the derived India/UAE market in the same write
+      // (team is validated Dubai/India above, so teamToMarket is never null).
+      await prisma.lead.updateMany({ where: { id: { in: changed.map((c) => c.id) } }, data: { forwardedTeam: team, market: teamToMarket(team) } });
       writeHistory(changed.map((c) => ({ leadId: c.id, field: "forwardedTeam", oldValue: c.forwardedTeam, newValue: team, changedById: me.id, source: "master-data-bulk" })));
       // Revalidate status against the NEW team's master. A status that doesn't
       // exist for the new team becomes "Needs Review" (old value kept in history)

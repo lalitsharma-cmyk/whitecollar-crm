@@ -7,6 +7,7 @@ import { leadScopeWhere } from "@/lib/leadScope";
 import { LeadStatus, LeadSource, ActivityType, ActivityStatus } from "@prisma/client";
 import { isStatusValidForTeam, NEEDS_REVIEW, statusesForTeam } from "@/lib/lead-statuses";
 import { crossTeamWarning, normalizeTeam } from "@/lib/teamRouting";
+import { teamToMarket } from "@/lib/market";
 import { parseBudget } from "@/lib/budgetParse";
 import { resolveBudgetCurrency } from "@/lib/budgetCurrency";
 import { inferCountryFromCity } from "@/lib/cityCountry";
@@ -405,7 +406,9 @@ export async function POST(req: NextRequest) {
     const changed = before.filter((b) => b.forwardedTeam !== team);
     let flagged = 0;
     if (changed.length) {
-      await prisma.lead.updateMany({ where: { id: { in: changed.map((c) => c.id) } }, data: { forwardedTeam: team } });
+      // Market tracks team — set the derived India/UAE market in the same write
+      // (team is validated Dubai/India above, so teamToMarket is never null).
+      await prisma.lead.updateMany({ where: { id: { in: changed.map((c) => c.id) } }, data: { forwardedTeam: team, market: teamToMarket(team) } });
       prisma.leadFieldHistory.createMany({
         data: changed.map((c) => ({ leadId: c.id, field: "forwardedTeam", oldValue: c.forwardedTeam, newValue: team, changedById: me.id, source: "bulk" })),
       }).catch(() => {});

@@ -5,6 +5,7 @@ import { LeadSource, Potential, FundReadiness, MoodStatus, InvestTimeline } from
 import { requireRole } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { resolveTeam, routingFieldsFor } from "@/lib/teamRouting";
+import { teamToMarket } from "@/lib/market";
 import { interpretBudget, resolveBudgetCurrency } from "@/lib/budgetCurrency";
 import { inferCountryFromCity } from "@/lib/cityCountry";
 import { canonicalStatus, isStatusValidForTeam, NEEDS_REVIEW } from "@/lib/lead-statuses";
@@ -494,6 +495,9 @@ export async function POST(req: NextRequest) {
         });
         if (teamResult.team) {
           update.forwardedTeam = teamResult.team;
+          // Market tracks team — set the derived India/UAE market so imported
+          // team-tagged rows never leave a lead-market-segregation gap.
+          update.market = teamToMarket(teamResult.team);
           const rf = routingFieldsFor(teamResult);
           update.routingMethod = rf.routingMethod;
           update.routingSource = rf.routingSource;
