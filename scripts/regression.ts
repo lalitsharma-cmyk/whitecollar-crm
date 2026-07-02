@@ -5891,6 +5891,10 @@ const checks: Check[] = [
       const cold = fs.readFileSync("src/app/(app)/revival-engine/cold-data/[id]/page.tsx", "utf8");
       assert(/getReturningClientView\(me, lead\)/.test(cold) && /returningClient && <ReturningClientCard/.test(cold),
         "Cold/Revival detail must also surface the ReturningClientCard (same flag, zero feature drift)");
+      // Buyer detail: a BuyerRecord is adapted into the resolver input (customerId null → advisory).
+      const buyer = fs.readFileSync("src/app/(app)/buyer-data/[id]/page.tsx", "utf8");
+      assert(/getReturningClientView\(me, \{/.test(buyer) && /returningClient && <ReturningClientCard/.test(buyer),
+        "Buyer detail must also surface the ReturningClientCard (BuyerRecord adapter, zero feature drift)");
     },
   },
 ];

@@ -13,6 +13,9 @@ import BuyerNotesCard from "@/components/BuyerNotesCard";
 import StickyNoteWidget from "@/components/StickyNoteWidget";
 import LeadMobileTabs from "@/components/LeadMobileTabs";
 import { canTouchBuyer, canAccessDubaiBuyers, isDubaiAssignable } from "@/lib/buyerScope";
+import { getReturningClientCardEnabled } from "@/lib/settings";
+import { getReturningClientView } from "@/lib/customer/returningClient";
+import ReturningClientCard from "@/components/ReturningClientCard";
 import {
   parseJsonArray,
   rollupForRecords,
@@ -132,6 +135,20 @@ export default async function BuyerDetail({ params }: { params: Promise<{ id: st
   const altPhone = phones[1] ?? null;
   const primaryEmail = emails[0] ?? null;
 
+  // Unified Lead Detail (Phase E / WS-J J5) — cross-module Returning Client card on
+  // the Buyer detail too (zero feature drift #3). A BuyerRecord isn't a Lead, so map
+  // it into the resolver's input; customerId is null → the advisory path scans the
+  // scoped LEAD pool for this buyer's phone/email. Flag-gated (default OFF → no-op),
+  // read-only + scope-safe.
+  const returningClient = (await getReturningClientCardEnabled())
+    ? await getReturningClientView(me, {
+        id: rec.id, name: rec.clientName, phone: primaryPhone, altPhone,
+        email: primaryEmail, altEmail: emails[1] ?? null, company: null,
+        currentStatus: null, ownerId: rec.ownerId ?? null, createdAt: rec.createdAt,
+        customerId: null,
+      })
+    : null;
+
   // poolStatus → status-chip colour, styled like the Lead status chip.
   const poolLabel = rec.poolStatus.replace(/_/g, " ");
   const statusChipCls =
@@ -175,6 +192,9 @@ export default async function BuyerDetail({ params }: { params: Promise<{ id: st
       <div className={PAGE_GRID}>
         {/* ── MAIN COLUMN (col-span-2) ──────────────────────────────────────── */}
         <div className={MAIN_COL}>
+          {/* Unified Lead Detail (Phase E / J5) — cross-module Returning Client card:
+              this buyer's other enquiries across modules. Renders only on a match. */}
+          {returningClient && <ReturningClientCard view={returningClient} />}
           {/* Header — name + status chip + action button row (always visible, no
               data-lead-section so the mobile tabs never hide it; matches Lead view). */}
           <div className={CARD}>
