@@ -3,7 +3,7 @@ import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { notify } from "@/lib/notify";
 import { audit, reqMeta } from "@/lib/audit";
-import { canTouchBuyer, visibleBuyerOwnerIds, isBuyerAdmin, isDubaiAssignable, DUBAI_MARKET } from "@/lib/buyerScope";
+import { canTouchBuyer, visibleBuyerOwnerIds, isBuyerAdmin, isBuyerAssignableForMarket, marketOfBuyer, type BuyerMarket } from "@/lib/buyerScope";
 import { assignBuyerInTx, BUYER_POOL_STATUS } from "@/lib/buyerLifecycle";
 import { normalizeNameList } from "@/lib/nameFormat";
 
@@ -51,10 +51,6 @@ export async function POST(req: NextRequest) {
     if (!agentId) return NextResponse.json({ error: "agentId required" }, { status: 400 });
     const agent = await prisma.user.findUnique({ where: { id: agentId }, select: { id: true, name: true, active: true, role: true, team: true } });
     if (!agent || !agent.active) return NextResponse.json({ error: "Target agent not found or inactive" }, { status: 400 });
-    // DUBAI ONLY: the transfer target must be a Dubai-team user or an admin.
-    if (!isDubaiAssignable(agent)) {
-      return NextResponse.json({ error: "Dubai Buyer Data can only be transferred to Dubai-team users or admins." }, { status: 403 });
-    }
     // MANAGER may only transfer to / within their subtree.
     if (me.role === "MANAGER") {
       const allowed = await visibleBuyerOwnerIds({ id: me.id, role: me.role, team: me.team });
@@ -62,11 +58,18 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: "You can only transfer buyers to agents on your team." }, { status: 403 });
       }
     }
-    // Only live, non-converted, Dubai-market buyers the caller may touch.
+    // Live, non-converted buyers the caller may touch. Load the market so we can gate the
+    // transfer target to it — an India buyer only to an India agent/admin, and vice-versa.
     const buyers = await prisma.buyerRecord.findMany({
-      where: { id: { in: buyerIds }, deletedAt: null, market: DUBAI_MARKET },
+      where: { id: { in: buyerIds }, deletedAt: null },
       select: { id: true, ownerId: true, poolStatus: true, deletedAt: true, market: true },
     });
+    const markets = new Set(buyers.map((b) => marketOfBuyer(b)));
+    if (markets.size > 1) return NextResponse.json({ error: "Cannot transfer buyers from different markets in one action." }, { status: 400 });
+    const market: BuyerMarket = markets.size === 1 ? ([...markets][0] as BuyerMarket) : "Dubai";
+    if (!isBuyerAssignableForMarket(agent, market)) {
+      return NextResponse.json({ error: `${market} Buyer Data can only be transferred to ${market}-team users or admins.` }, { status: 403 });
+    }
     let transferred = 0;
     const skipped: string[] = [];
     for (const b of buyers) {
@@ -92,7 +95,7 @@ export async function POST(req: NextRequest) {
   if (action === "delete") {
     if (!isBuyerAdmin(me)) return NextResponse.json({ error: "Only an admin can delete buyers." }, { status: 403 });
     const res = await prisma.buyerRecord.updateMany({
-      where: { id: { in: buyerIds }, deletedAt: null, market: DUBAI_MARKET },
+      where: { id: { in: buyerIds }, deletedAt: null },
       data: { deletedAt: new Date(), deletedById: me.id },
     });
     await audit({ userId: me.id, action: "buyer.bulk.delete", entity: "BuyerRecord", meta: { count: res.count, ids: buyerIds.slice(0, 50) }, request: reqMeta(req) });
@@ -103,7 +106,7 @@ export async function POST(req: NextRequest) {
   if (action === "restore") {
     if (!isBuyerAdmin(me)) return NextResponse.json({ error: "Only an admin can restore buyers." }, { status: 403 });
     const res = await prisma.buyerRecord.updateMany({
-      where: { id: { in: buyerIds }, deletedAt: { not: null }, market: DUBAI_MARKET },
+      where: { id: { in: buyerIds }, deletedAt: { not: null } },
       data: { deletedAt: null, deletedById: null },
     });
     await audit({ userId: me.id, action: "buyer.bulk.restore", entity: "BuyerRecord", meta: { count: res.count }, request: reqMeta(req) });
@@ -133,7 +136,7 @@ export async function POST(req: NextRequest) {
     // Apply only to records the caller may touch (admin = any live Dubai; agent =
     // own ASSIGNED Dubai). Dubai-market only — this is the Dubai module.
     const buyers = await prisma.buyerRecord.findMany({
-      where: { id: { in: buyerIds }, deletedAt: null, market: DUBAI_MARKET },
+      where: { id: { in: buyerIds }, deletedAt: null },
       select: { id: true, ownerId: true, poolStatus: true, deletedAt: true, market: true },
     });
     const touchable: string[] = [];

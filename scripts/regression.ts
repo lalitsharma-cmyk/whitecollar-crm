@@ -1978,9 +1978,11 @@ const checks: Check[] = [
       assert(/canAccessBuyerMarket\(me,\s*buyerMarket\)/.test(scopeSrc), "canTouchBuyer MUST gate via canAccessBuyerMarket (reject a cross-market buyer)");
 
       // (c) assign + transfer + convert REJECT a non-Dubai/non-admin target (server-side).
-      assert(/isDubaiAssignable/.test(read("src/app/api/buyer-data/assign/route.ts")), "assign route MUST gate the target via isDubaiAssignable");
-      assert(/isDubaiAssignable/.test(read("src/app/api/buyer-data/bulk/route.ts")), "bulk transfer MUST gate the target via isDubaiAssignable");
-      assert(/isDubaiAssignable/.test(read("src/app/api/buyer-data/[id]/convert/route.ts")), "convert route MUST gate an on-behalf owner via isDubaiAssignable");
+      // Assign/bulk-transfer/convert gate the target to the BUYER'S market team (or admin)
+      // via isBuyerAssignableForMarket — a cross-market assignment (Dubai↔India) is rejected.
+      assert(/isBuyerAssignableForMarket/.test(read("src/app/api/buyer-data/assign/route.ts")), "assign route MUST gate the target via isBuyerAssignableForMarket");
+      assert(/isBuyerAssignableForMarket/.test(read("src/app/api/buyer-data/bulk/route.ts")), "bulk transfer MUST gate the target via isBuyerAssignableForMarket");
+      assert(/isBuyerAssignableForMarket/.test(read("src/app/api/buyer-data/[id]/convert/route.ts")), "convert route MUST gate an on-behalf owner via isBuyerAssignableForMarket");
 
       // (d) pages + reports redirect non-Dubai users; nav item is dubaiBuyerOnly.
       assert(/canAccessDubaiBuyers/.test(read("src/app/(app)/buyer-data/page.tsx")), "buyer list page MUST guard via canAccessDubaiBuyers (redirect non-Dubai)");

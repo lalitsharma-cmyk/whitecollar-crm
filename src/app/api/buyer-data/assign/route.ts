@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { notify } from "@/lib/notify";
 import { audit, reqMeta } from "@/lib/audit";
 import { assignBuyerInTx, BUYER_POOL_STATUS } from "@/lib/buyerLifecycle";
-import { visibleBuyerOwnerIds, isDubaiAssignable, DUBAI_MARKET } from "@/lib/buyerScope";
+import { visibleBuyerOwnerIds, isBuyerAssignableForMarket, marketOfBuyer, type BuyerMarket } from "@/lib/buyerScope";
 
 // ── Assign buyers from the Admin Pool to an agent ────────────────────────────
 // ADMIN / MANAGER only. Supports bulk (array of buyerIds → one agent). For each
@@ -36,11 +36,8 @@ export async function POST(req: NextRequest) {
   const agent = await prisma.user.findUnique({ where: { id: agentId }, select: { id: true, name: true, active: true, role: true, team: true } });
   if (!agent || !agent.active) return NextResponse.json({ error: "Target agent not found or inactive" }, { status: 400 });
 
-  // DUBAI ONLY: the target must be a Dubai-team user or an admin. A tampered
-  // request that names an India/Gurgaon/HR user is rejected here, server-side.
-  if (!isDubaiAssignable(agent)) {
-    return NextResponse.json({ error: "Dubai Buyer Data can only be assigned to Dubai-team users or admins." }, { status: 403 });
-  }
+  // (Market gate is applied below, once we know the buyers' market — the target must
+  //  belong to that market's team, or be an admin.)
 
   // MANAGER may only assign to an agent within their org subtree.
   if (me.role === "MANAGER") {
@@ -54,12 +51,22 @@ export async function POST(req: NextRequest) {
   // terminal; an ASSIGNED buyer would be a reassign, which assignBuyerInTx handles
   // but we surface as a separate count).
   const buyers = await prisma.buyerRecord.findMany({
-    // never assign a recycle-bin buyer, and ONLY Dubai-market buyers (this is the
-    // Dubai module — a non-Dubai buyer is silently skipped as "not found").
-    where: { id: { in: buyerIds }, deletedAt: null, market: DUBAI_MARKET },
-    select: { id: true, clientName: true, poolStatus: true, ownerId: true },
+    // never assign a recycle-bin buyer. Load the buyers' market so we can gate the
+    // target agent to it — the per-market UI only ever selects one market's buyers.
+    where: { id: { in: buyerIds }, deletedAt: null },
+    select: { id: true, clientName: true, poolStatus: true, ownerId: true, market: true },
   });
   const byId = new Map(buyers.map((b) => [b.id, b]));
+
+  // Derive the market — a single action must not mix markets. Gate the target agent to
+  // THAT market's team (or admin): an India buyer can only go to an India agent/admin,
+  // a Dubai buyer only to a Dubai agent/admin. Passport/financial data never crosses.
+  const markets = new Set(buyers.map((b) => marketOfBuyer(b)));
+  if (markets.size > 1) return NextResponse.json({ error: "Cannot assign buyers from different markets in one action." }, { status: 400 });
+  const market: BuyerMarket = markets.size === 1 ? ([...markets][0] as BuyerMarket) : "Dubai";
+  if (!isBuyerAssignableForMarket(agent, market)) {
+    return NextResponse.json({ error: `${market} Buyer Data can only be assigned to ${market}-team users or admins.` }, { status: 403 });
+  }
 
   const assigned: string[] = [];
   const skipped: { id: string; reason: string }[] = [];

@@ -65,12 +65,22 @@ export function canAccessDubaiBuyers(me: { role: Role; team?: string | null }): 
   return canAccessBuyerMarket(me, DUBAI_MARKET);
 }
 
-/** True if a user is a VALID assignment target for a Dubai buyer: a Dubai-team
- *  user OR an admin. Used to filter the assign roster (UI) AND to reject a
- *  tampered server-side assignment to a non-Dubai, non-admin user. */
-export function isDubaiAssignable(u: { role?: Role | string | null; team?: string | null }): boolean {
+/** True if a user is a VALID assignment target for a buyer of THIS market: an admin,
+ *  OR a user whose team matches the market's team. Used to filter the assign roster (UI)
+ *  AND to reject a tampered server-side assignment to a wrong-market, non-admin user. */
+export function isBuyerAssignableForMarket(u: { role?: Role | string | null; team?: string | null }, market: BuyerMarket): boolean {
   if (u.role === "ADMIN") return true;
-  return normalizeTeam(u.team) === "Dubai";
+  return normalizeTeam(u.team) === teamForBuyerMarket(market);
+}
+
+/** True if a user is a valid assignment target for a DUBAI buyer. Thin wrapper. */
+export function isDubaiAssignable(u: { role?: Role | string | null; team?: string | null }): boolean {
+  return isBuyerAssignableForMarket(u, DUBAI_MARKET);
+}
+
+/** The buyer market a record belongs to (legacy rows without a market → Dubai). */
+export function marketOfBuyer(buyer: { market?: string | null }): BuyerMarket {
+  return buyer.market === INDIA_MARKET ? "India" : "Dubai";
 }
 
 /**

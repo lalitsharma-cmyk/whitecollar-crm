@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { LeadSource, ActivityType } from "@prisma/client";
 import { notify } from "@/lib/notify";
 import { assignLeadTo } from "@/lib/leadIngest";
-import { canTouchBuyer, isDubaiAssignable } from "@/lib/buyerScope";
+import { canTouchBuyer, isBuyerAssignableForMarket, marketOfBuyer } from "@/lib/buyerScope";
 import { audit, reqMeta } from "@/lib/audit";
 import { toE164 } from "@/lib/phone";
 import { normalizeNameList } from "@/lib/nameFormat";
@@ -72,12 +72,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const ownerId = requestedOwner || buyer.ownerId || me.id;
   const owner = await prisma.user.findUnique({ where: { id: ownerId }, select: { id: true, name: true, team: true, active: true, role: true } });
   if (!owner || !owner.active) return NextResponse.json({ error: "Resolved lead owner not found or inactive" }, { status: 400 });
-  // When an admin converts ON BEHALF of a specific agent, that agent must be a
-  // Dubai-team user or an admin (this is the Dubai module). The buyer's own current
-  // owner is already a Dubai-assignable user (assignment enforced it), and falling
-  // back to the actor (me) is also fine — but a tampered explicit ownerId is checked.
-  if (requestedOwner && !isDubaiAssignable(owner)) {
-    return NextResponse.json({ error: "Dubai buyers can only be converted on behalf of Dubai-team users or admins." }, { status: 403 });
+  // When an admin converts ON BEHALF of a specific agent, that agent must belong to the
+  // BUYER'S market team (or be an admin) — an India buyer can't be converted onto a Dubai
+  // agent, or vice-versa. The buyer's own current owner already passed this at assignment.
+  const bMarket = marketOfBuyer(buyer);
+  if (requestedOwner && !isBuyerAssignableForMarket(owner, bMarket)) {
+    return NextResponse.json({ error: `${bMarket} buyers can only be converted on behalf of ${bMarket}-team users or admins.` }, { status: 403 });
   }
 
   // ── Map buyer → lead fields ────────────────────────────────────────────────
