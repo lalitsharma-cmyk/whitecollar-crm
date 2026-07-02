@@ -4932,17 +4932,21 @@ const checks: Check[] = [
     name: "cold-all-eq-sum-chips — Revival 'All' == Fresh(unstatused) + Σ(per-status chips) (no cold lead is chip-less)",
     run: async () => {
       const fs = await import("fs");
-      const { INDIA_STATUSES, DUBAI_STATUSES } = await import("../src/lib/lead-statuses");
+      const { INDIA_STATUSES, DUBAI_STATUSES, NEEDS_REVIEW } = await import("../src/lib/lead-statuses");
       // SOURCE: the Fresh/Unstatused chip + its filter sentinel must exist so the
       // ~45 status-less cold leads are represented (closing the All ≠ Σchips gap).
       const cold = fs.readFileSync("src/app/(app)/cold-calls/page.tsx", "utf8");
       assert(/FRESH_SENTINEL/.test(cold) && /unstatusedWhere/.test(cold), "cold-calls must add the Fresh/Unstatused chip (FRESH_SENTINEL + unstatusedWhere)");
       assert(/unstatusedCount\s*>\s*0/.test(cold), "cold-calls must render the Fresh chip when unstatusedCount > 0");
+      // The market-neutral "Needs Review" sentinel must be in the page's status universe
+      // so revalidation-flagged cold leads get a chip (never chip-less → keeps All==Σchips).
+      assert(/NEEDS_REVIEW/.test(cold), "cold-calls must include NEEDS_REVIEW in ALL_POSSIBLE_STATUSES so flagged leads get a chip");
 
       // DATA: All == unstatused + Σ(known-status counts), and CRUCIALLY no cold lead
-      // carries a status outside the known India∪Dubai set (which would be chip-less).
+      // carries a status outside the known set (which would be chip-less). "Needs Review"
+      // is a legitimate cross-market sentinel, so it counts as a known chip here too.
       const COLD_ORIGINS = ["COLD", "REVIVAL"];
-      const known = Array.from(new Set([...INDIA_STATUSES, ...DUBAI_STATUSES])) as string[];
+      const known = Array.from(new Set([...INDIA_STATUSES, ...DUBAI_STATUSES, NEEDS_REVIEW])) as string[];
       const base = { leadOrigin: { in: COLD_ORIGINS }, deletedAt: null };
       const all = await prisma.lead.count({ where: base });
       const unstatused = await prisma.lead.count({ where: { ...base, OR: [{ currentStatus: null }, { currentStatus: "" }] } });

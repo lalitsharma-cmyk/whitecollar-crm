@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
 import { LeadSource, Prisma } from "@prisma/client";
-import { SUPPRESSED_STATUSES, statusColor, INDIA_STATUSES, DUBAI_STATUSES, compareStatusDisplay } from "@/lib/lead-statuses";
+import { SUPPRESSED_STATUSES, statusColor, INDIA_STATUSES, DUBAI_STATUSES, compareStatusDisplay, NEEDS_REVIEW } from "@/lib/lead-statuses";
 import { COLD_ORIGINS } from "@/lib/leadScope";
 import { leadFilterWhere } from "@/lib/leadFilterWhere";
 import { getAvailableMediums } from "@/lib/mediumManager";
@@ -49,7 +49,10 @@ export const dynamic = "force-dynamic";
 const COLD_DAYS = REVIVAL_MISSION.dormantDays;
 
 // All possible statuses across both teams — Revival serves cold data from both.
-const ALL_POSSIBLE_STATUSES = new Set([...INDIA_STATUSES, ...DUBAI_STATUSES]);
+// India ∪ Dubai master statuses PLUS the market-neutral "Needs Review" sentinel — a
+// lead flagged for team/status revalidation carries this instead of a market status, so
+// including it here gives those leads a real chip + count + filter (never chip-less).
+const ALL_POSSIBLE_STATUSES = new Set([...INDIA_STATUSES, ...DUBAI_STATUSES, NEEDS_REVIEW]);
 
 const PAGE_SIZE = 200;
 
