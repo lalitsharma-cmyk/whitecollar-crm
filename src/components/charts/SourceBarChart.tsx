@@ -7,7 +7,7 @@ const colors: Record<string, string> = {
 export default function SourceBarChart({ data }: { data: { source: string; n: number }[] }) {
   return (
     <div className="h-[200px] mt-3">
-      <ResponsiveContainer>
+      <ResponsiveContainer width="100%" height="100%" minWidth={0}>
         <BarChart data={data}>
           <XAxis dataKey="source" tick={{ fontSize: 10, fill: "#6b7280" }} />
           <YAxis tick={{ fontSize: 10, fill: "#6b7280" }} allowDecimals={false} />
