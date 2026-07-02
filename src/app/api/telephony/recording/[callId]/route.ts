@@ -39,16 +39,15 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ call
   }
   if (!allowed) return NextResponse.json({ error: "Not permitted" }, { status: 403 });
 
-  // ── Fetch from provider (auth header only when same-host as the API) ────────
+  // ── Fetch from provider — SSRF-guarded (recordingUrl originates from a webhook,
+  //    so a spoofed one must not turn the CRM into a proxy to internal services).
+  //    Block loopback/private/link-local/metadata hosts, validate every redirect
+  //    hop, and only attach the provider auth header to the provider's own host. ──
   const cfg = telephonyConfig();
-  const headers: Record<string, string> = {};
-  try {
-    const recHost = new URL(call.recordingUrl).host;
-    const apiHost = new URL(cfg.baseUrl || providerSpec(cfg.provider).defaultBaseUrl).host;
-    if (cfg.apiKey && recHost === apiHost) headers.Authorization = `Bearer ${cfg.apiKey}`;
-  } catch { /* non-absolute URL — fetch as-is */ }
+  let apiHost = "";
+  try { apiHost = new URL(cfg.baseUrl || providerSpec(cfg.provider).defaultBaseUrl).host; } catch { /* ignore */ }
 
-  const upstream = await fetch(call.recordingUrl, { headers }).catch(() => null);
+  const upstream = await safeRecordingFetch(call.recordingUrl, cfg.apiKey, apiHost);
   if (!upstream || !upstream.ok || !upstream.body) {
     return NextResponse.json({ error: "Could not fetch recording from provider" }, { status: 502 });
   }
@@ -70,4 +69,42 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ call
   const len = upstream.headers.get("content-length");
   if (len) res.headers.set("Content-Length", len);
   return res;
+}
+
+/** Block loopback / private / link-local / CGNAT / cloud-metadata hosts (SSRF guard). */
+function isBlockedHost(host: string): boolean {
+  const h = host.toLowerCase().replace(/^\[|\]$/g, "").replace(/:\d+$/, "");
+  if (h === "localhost" || h.endsWith(".localhost") || h.endsWith(".internal") || h.endsWith(".local")) return true;
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(h)) {
+    const [a, b] = h.split(".").map(Number);
+    if (a === 127 || a === 10 || a === 0) return true;          // loopback / private / this-network
+    if (a === 169 && b === 254) return true;                     // link-local incl. 169.254.169.254 metadata
+    if (a === 172 && b >= 16 && b <= 31) return true;            // private
+    if (a === 192 && b === 168) return true;                     // private
+    if (a === 100 && b >= 64 && b <= 127) return true;           // CGNAT
+    return false;
+  }
+  if (h === "::1" || h.startsWith("fe80") || h.startsWith("fc") || h.startsWith("fd")) return true; // IPv6 loopback/link-local/ULA
+  return false;
+}
+
+/** Fetch a recording with per-hop host validation (max 3 redirects). The provider
+ *  auth header is attached ONLY to the provider's own host, never a redirect target. */
+async function safeRecordingFetch(rawUrl: string, apiKey: string | null, apiHost: string): Promise<Response | null> {
+  let url = rawUrl;
+  for (let hop = 0; hop < 3; hop++) {
+    let u: URL;
+    try { u = new URL(url); } catch { return null; }
+    if (u.protocol !== "http:" && u.protocol !== "https:") return null;
+    if (isBlockedHost(u.host)) return null;
+    const headers: Record<string, string> = apiKey && u.host === apiHost ? { Authorization: `Bearer ${apiKey}` } : {};
+    const resp = await fetch(url, { headers, redirect: "manual" }).catch(() => null);
+    if (!resp) return null;
+    if (resp.status >= 300 && resp.status < 400 && resp.headers.get("location")) {
+      url = new URL(resp.headers.get("location")!, url).toString();
+      continue;
+    }
+    return resp;
+  }
+  return null;
 }

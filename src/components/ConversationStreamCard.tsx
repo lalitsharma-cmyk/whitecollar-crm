@@ -13,6 +13,7 @@ import { useRouter } from "next/navigation";
 import { fmtIST12Paren, fmtISTDate, toISTLocalInput } from "@/lib/datetime";
 import { canonicalAgentName } from "@/lib/agentName";
 import { canEditRemark, canEditActivity } from "@/lib/remarkPerms";
+import CallRecordingPlayer from "@/components/CallRecordingPlayer";
 import type { CallLog, WhatsAppMessage } from "@prisma/client";
 import {
   parseRemarksTimeline,
@@ -697,7 +698,9 @@ export default function ConversationStreamCard({
                   notesClean && <div className="text-xs mt-1 text-gray-700 dark:text-slate-200 whitespace-pre-wrap">{notesClean}</div>
                 )}
                 {c.recordingUrl && (
-                  <audio controls preload="none" src={c.recordingUrl} title={audioTitle} className="mt-1 h-7 max-w-full" />
+                  // Stream through the scope-checked proxy (never expose the provider
+                  // URL/token to the browser) + download — parity with the Buyer timeline.
+                  <div className="mt-1" title={audioTitle}><CallRecordingPlayer callId={c.id} compact /></div>
                 )}
               </div>
             );

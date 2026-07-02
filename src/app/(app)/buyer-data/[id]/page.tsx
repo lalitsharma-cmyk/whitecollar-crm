@@ -12,7 +12,7 @@ import BuyerQuickNoteCard from "@/components/BuyerQuickNoteCard";
 import BuyerNotesCard from "@/components/BuyerNotesCard";
 import StickyNoteWidget from "@/components/StickyNoteWidget";
 import LeadMobileTabs from "@/components/LeadMobileTabs";
-import { canTouchBuyer, canAccessBuyerMarket, isDubaiAssignable } from "@/lib/buyerScope";
+import { canTouchBuyer, canAccessBuyerMarket, isBuyerAssignableForMarket, teamForBuyerMarket, marketOfBuyer } from "@/lib/buyerScope";
 import { getReturningClientCardEnabled } from "@/lib/settings";
 import { getReturningClientView } from "@/lib/customer/returningClient";
 import ReturningClientCard from "@/components/ReturningClientCard";
@@ -93,21 +93,25 @@ export default async function BuyerDetail({ params }: { params: Promise<{ id: st
   const rollup = rollupForRecords(siblings);
   const others = siblings.filter((s) => s.id !== rec.id);
 
-  // Agent roster for the admin panel (admin/mgr only). DUBAI ONLY — Dubai-team
-  // AGENT/MANAGER + admins; India/Gurgaon + HR excluded (the assign endpoint
-  // re-enforces this server-side via isDubaiAssignable).
+  // Agent roster for the admin panel (admin/mgr only). MARKET-AWARE — this is the
+  // SHARED buyer detail (serves both Dubai and India buyers), so the roster follows
+  // the record's own market: that market's AGENT/MANAGER team + admins (the assign
+  // endpoint re-enforces this server-side via isBuyerAssignableForMarket). A Dubai
+  // buyer offers Dubai agents; an India buyer offers India agents — no cross-market.
+  const buyerMarket = marketOfBuyer(rec);
+  const rosterTeam = teamForBuyerMarket(buyerMarket);
   const agents = canAssign
     ? (await prisma.user.findMany({
         where: {
           active: true,
           hrOnly: false,
           OR: [
-            { team: "Dubai", role: { in: ["AGENT", "MANAGER"] } },
+            { team: rosterTeam, role: { in: ["AGENT", "MANAGER"] } },
             { role: "ADMIN" },
           ],
         },
         select: { id: true, name: true, team: true, role: true }, orderBy: { name: "asc" },
-      })).filter((a) => isDubaiAssignable(a)).map(({ id, name, team }) => ({ id, name, team }))
+      })).filter((a) => isBuyerAssignableForMarket(a, buyerMarket)).map(({ id, name, team }) => ({ id, name, team }))
     : [];
 
   // Sticky note — private to the calling user, upserted so the widget renders
@@ -544,7 +548,7 @@ export default async function BuyerDetail({ params }: { params: Promise<{ id: st
             </div>
           )}
 
-          <Link href="/buyer-data" className="text-xs text-[#0b1a33] dark:text-blue-300 font-semibold inline-block">← Back to Dubai Buyer Data</Link>
+          <Link href={buyerMarket === "India" ? "/india-buyer-data" : "/buyer-data"} className="text-xs text-[#0b1a33] dark:text-blue-300 font-semibold inline-block">← Back to {buyerMarket} Buyer Data</Link>
         </>}
       />
     </>

@@ -483,10 +483,12 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
   }
 
   // Imported MIS remarks were stored as synthetic CallLog rows (attributedAgentName
-  // set). They are Historical Notes, not real calls — exclude them from every call
-  // count / stat on this page so only genuine dialled calls are reflected (and so
-  // the first-call SLA still counts a remark-only lead as "not yet called").
-  const realCallLogs = lead.callLogs.filter((c) => c.attributedAgentName == null);
+  // set, NO ivrProvider). They are Historical Notes, not real calls — exclude them
+  // from every call count / stat on this page. But a genuine TELEPHONY call
+  // (ivrProvider set) whose agent extension couldn't be matched ALSO carries an
+  // attributedAgentName ("Unknown Agent (ext …)"), so we must NOT drop it — keep any
+  // row that is a live telephony call OR a UI-logged call (attributedAgentName null).
+  const realCallLogs = lead.callLogs.filter((c) => c.ivrProvider != null || c.attributedAgentName == null);
 
   // SLA countdown — show timer if assigned recently and no call yet
   const callsCount = realCallLogs.length;
@@ -938,24 +940,24 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
 
         {/* NEEDS YOU BANNER — agents see the flag; Lalit/managers get a resolve button. */}
         {lead.needsManagerReview && (
-          <div data-lead-section="overview" className="card p-4 border-l-4 border-amber-500 bg-amber-50">
-            <div className="font-semibold text-amber-900">🚩 Needs manager attention</div>
-            <div className="text-sm text-amber-800 mt-1">{lead.managerReviewReason ?? "Flagged for review"}{lead.flaggedAt && ` · since ${formatDistanceToNow(lead.flaggedAt, { addSuffix: true })}`}</div>
+          <div data-lead-section="overview" className="card p-4 border-l-4 border-amber-500 bg-amber-50 dark:bg-amber-900/20">
+            <div className="font-semibold text-amber-900 dark:text-amber-200">🚩 Needs manager attention</div>
+            <div className="text-sm text-amber-800 dark:text-amber-300 mt-1">{lead.managerReviewReason ?? "Flagged for review"}{lead.flaggedAt && ` · since ${formatDistanceToNow(lead.flaggedAt, { addSuffix: true })}`}</div>
             {isAdminOrManager && <ManagerResolveButton leadId={lead.id} />}
           </div>
         )}
 
         {/* DUPLICATE BANNER */}
         {(lead.duplicateCount ?? 0) > 0 && (
-          <div data-lead-section="overview" className="card p-4 border-l-4 border-amber-500 bg-amber-50">
-            <div className="font-semibold text-amber-900">🔁 This client has contacted us {lead.duplicateCount} extra {lead.duplicateCount === 1 ? "time" : "times"}</div>
-            <div className="text-sm text-amber-800 mt-1">Last duplicate hit: {lead.lastDuplicateAt ? formatDistanceToNow(lead.lastDuplicateAt, { addSuffix: true }) : "—"}. Treat as high intent — they keep coming back.</div>
+          <div data-lead-section="overview" className="card p-4 border-l-4 border-amber-500 bg-amber-50 dark:bg-amber-900/20">
+            <div className="font-semibold text-amber-900 dark:text-amber-200">🔁 This client has contacted us {lead.duplicateCount} extra {lead.duplicateCount === 1 ? "time" : "times"}</div>
+            <div className="text-sm text-amber-800 dark:text-amber-300 mt-1">Last duplicate hit: {lead.lastDuplicateAt ? formatDistanceToNow(lead.lastDuplicateAt, { addSuffix: true }) : "—"}. Treat as high intent — they keep coming back.</div>
           </div>
         )}
 
         {/* SLA TIMER */}
         {slaActive && (
-          <div data-lead-section="overview" className={`card p-4 border-l-4 ${slaMs > 5 * 60_000 ? "border-emerald-500 bg-emerald-50" : slaMs > 0 ? "border-amber-500 bg-amber-50" : "border-red-500 bg-red-50"}`}>
+          <div data-lead-section="overview" className={`card p-4 border-l-4 ${slaMs > 5 * 60_000 ? "border-emerald-500 bg-emerald-50 dark:bg-emerald-900/20" : slaMs > 0 ? "border-amber-500 bg-amber-50 dark:bg-amber-900/20" : "border-red-500 bg-red-50 dark:bg-red-900/20"}`}>
             <div className="text-sm font-semibold">
               {slaMs > 0
                 ? `⏱  Call within ${Math.max(0, Math.floor(slaMs / 60_000))}m ${Math.max(0, Math.floor((slaMs % 60_000) / 1000))}s`

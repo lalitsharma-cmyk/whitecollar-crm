@@ -29,6 +29,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     data: {
       isColdCall: false,
       coldCallReason: null,
+      // Flip the ORIGIN too — active metrics allow-list on ACTIVE_ORIGINS, so a true
+      // COLD/REVIVAL-origin row promoted here would otherwise stay invisible to
+      // Leads/Dashboard/Reports despite isColdCall=false (parity with /promote).
+      leadOrigin: "ACTIVE_LEAD",
       status: nextStatus,
       lastTouchedAt: now,
     },

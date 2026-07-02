@@ -9,7 +9,6 @@ import "server-only";
 // context). Soft-deleted records are never matched. Returns nulls when nothing
 // matches → the call is stored UNLINKED (Unmatched Calls Queue) and never lost.
 import { prisma } from "@/lib/prisma";
-import { fingerprintFor } from "@/lib/assignment";
 import { normalizePhone } from "./normalize";
 
 export interface CallLink {
@@ -52,11 +51,13 @@ export async function resolveCallLink(rawPhone: string | null, explicit?: string
   const phone = normalizePhone(rawPhone);
   if (!phone) return EMPTY;
 
-  // 2) Active Lead by fingerprint (covers regular AND revival/cold leads).
-  const fp = fingerprintFor(phone, undefined);
-  if (fp) {
+  // 2) Active Lead by PHONE (covers regular AND revival/cold leads). Match on the
+  //    trailing digits of the phone / alt-phone — NOT the composite fingerprint,
+  //    which embeds the email ("digits|email") and so silently fails to match any
+  //    lead that has an email when we only know the caller's number.
+  for (const cand of digitCandidates(phone)) {
     const lead = await prisma.lead.findFirst({
-      where: { fingerprint: fp, deletedAt: null },
+      where: { deletedAt: null, OR: [{ phone: { contains: cand } }, { altPhone: { contains: cand } }] },
       select: { id: true, isColdCall: true, leadOrigin: true },
       orderBy: { lastTouchedAt: "desc" },
     });

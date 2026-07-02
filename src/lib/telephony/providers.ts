@@ -74,8 +74,10 @@ const asphone: TelephonyProviderSpec = {
     // Either guard is sufficient. Prefer HMAC when a Secret is configured.
     if (c.secret && verifyHmac(input.rawBody, c.secret, input.signature)) return true;
     if (c.webhookToken) return safeEqual(input.token, c.webhookToken);
-    // No guard configured yet (initial setup) → allow, but the console flags it.
-    return !c.secret && !c.webhookToken;
+    // FAIL-CLOSED: with neither a Secret nor a Webhook Token configured the endpoint
+    // has no legitimate caller (no credentials = telephony is inert), so an unsigned
+    // webhook is rejected. The setup doc requires setting at least one guard.
+    return false;
   },
 
   parseWebhook: (data): NormalizedCallEvent | null => {
@@ -160,7 +162,7 @@ const acefone: TelephonyProviderSpec = {
   },
 
   verifyWebhook: (input, c): boolean => {
-    if (!c.webhookToken) return true; // allow during initial setup
+    if (!c.webhookToken) return false; // fail-closed: no token configured → reject
     return safeEqual(input.token, c.webhookToken);
   },
   parseWebhook: (data): NormalizedCallEvent | null => {

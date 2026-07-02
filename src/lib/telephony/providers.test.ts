@@ -58,7 +58,7 @@ ok("valid HMAC with sha256= prefix passes", as.verifyWebhook({ token: null, sign
 ok("wrong HMAC fails", !as.verifyWebhook({ token: null, signature: "deadbeef", rawBody: raw }, cfg()));
 ok("token fallback passes when no secret set", as.verifyWebhook({ token: "TOK", signature: null, rawBody: raw }, cfg({ secret: null })));
 ok("wrong token fails when no secret", !as.verifyWebhook({ token: "NOPE", signature: null, rawBody: raw }, cfg({ secret: null })));
-ok("no secret + no token configured → allow (initial setup)", as.verifyWebhook({ token: null, signature: null, rawBody: raw }, cfg({ secret: null, webhookToken: null })));
+ok("no secret + no token configured → REJECT (fail-closed)", !as.verifyWebhook({ token: null, signature: null, rawBody: raw }, cfg({ secret: null, webhookToken: null })));
 
 // ── Acefone provider (legacy) ─────────────────────────────────────────────────
 const ac = PROVIDERS.acefone;

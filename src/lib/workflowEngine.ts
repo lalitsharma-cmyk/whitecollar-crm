@@ -157,7 +157,7 @@ async function executeAction(type: WorkflowActionType, configJson: string, leadI
       const body = renderTemplate(tpl.body, ctx);
       await sendAfterHoursWelcome(leadId, lead.phone, lead.name); // reuses stub/real sender pattern
       await prisma.activity.create({
-        data: { leadId, userId: agent?.id, type: "WHATSAPP", status: "DONE",
+        data: { leadId, userId: null, type: "WHATSAPP", status: "DONE",
           title: `🤖 Workflow WA: ${tpl.name}`, description: body, completedAt: new Date() },
       });
       return;
@@ -178,7 +178,7 @@ async function executeAction(type: WorkflowActionType, configJson: string, leadI
         });
       }
       await prisma.activity.create({
-        data: { leadId, userId: agent?.id, type: "EMAIL", status: "DONE",
+        data: { leadId, userId: null, type: "EMAIL", status: "DONE",
           title: `🤖 Workflow email: ${tpl.name}`,
           description: `Subject: ${subject}\n\n${text.slice(0, 400)}`,
           completedAt: new Date() },

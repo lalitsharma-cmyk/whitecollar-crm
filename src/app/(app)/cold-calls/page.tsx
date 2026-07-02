@@ -419,9 +419,9 @@ export default async function ColdDataPage({ searchParams }: { searchParams: Pro
   return (
     <>
       {/* ───────── COLD DATA NOTICE ───────── */}
-      <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-2 text-sm text-blue-800 flex items-center gap-2">
+      <div className="rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/20 px-4 py-2 text-sm text-blue-800 dark:text-blue-300 flex items-center gap-2">
         <span className="font-semibold">❄ Cold Data</span>
-        <span className="text-blue-700">— Not yet promoted to active leads. Use &quot;Promote to Lead&quot; to move a contact into your live pipeline.</span>
+        <span className="text-blue-700 dark:text-blue-400">— Not yet promoted to active leads. Use &quot;Promote to Lead&quot; to move a contact into your live pipeline.</span>
       </div>
 
       {/* ───────── HEADER ───────── */}

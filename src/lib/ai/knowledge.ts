@@ -31,7 +31,14 @@ export const KNOWLEDGE_BASE: KnowledgeEntry[] = [
     id: "kb.sla.fresh",
     topic: "Fresh-lead 15-minute SLA",
     body: "A newly assigned lead should get its first call within 15 minutes. Fresh, uncontacted leads are the highest-priority queue.",
-    tags: ["fresh", "sla", "first call", "new lead", "uncontacted", "hot", "response time"],
+    tags: ["fresh", "sla", "first call", "new lead", "uncontacted", "response time"],
+    market: "both",
+  },
+  {
+    id: "kb.hot.priority",
+    topic: "Hot lead priority",
+    body: "A hot (high-intent) lead with no contact logged today is the day's top priority — call before intent cools; every day without contact lowers the conversion odds.",
+    tags: ["hot", "high intent", "priority", "uncontacted", "cooling", "today", "convert"],
     market: "both",
   },
   {

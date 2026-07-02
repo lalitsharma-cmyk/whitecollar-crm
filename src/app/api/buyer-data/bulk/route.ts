@@ -83,8 +83,8 @@ export async function POST(req: NextRequest) {
       await notify({
         userId: agentId, kind: "BUYER_ASSIGNED", severity: "INFO",
         title: transferred === 1 ? `🔁 A buyer was transferred to you` : `🔁 ${transferred} buyers transferred to you`,
-        body: `${transferred} buyer${transferred === 1 ? "" : "s"} ${transferred === 1 ? "is" : "are"} now yours in Dubai Buyer Data.`,
-        linkUrl: "/buyer-data",
+        body: `${transferred} buyer${transferred === 1 ? "" : "s"} ${transferred === 1 ? "is" : "are"} now yours in ${market} Buyer Data.`,
+        linkUrl: market === "India" ? "/india-buyer-data" : "/buyer-data",
       }).catch(() => null);
     }
     await audit({ userId: me.id, action: "buyer.bulk.transfer", entity: "BuyerRecord", meta: { agentId, transferred, skipped: skipped.length }, request: reqMeta(req) });

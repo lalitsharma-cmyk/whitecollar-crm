@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { LeadSource, ActivityType } from "@prisma/client";
+import { LeadSource, ActivityType, ActivityStatus } from "@prisma/client";
 import { notify } from "@/lib/notify";
 import { assignLeadTo } from "@/lib/leadIngest";
 import { canTouchBuyer, isBuyerAssignableForMarket, marketOfBuyer } from "@/lib/buyerScope";
@@ -142,6 +142,31 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         rawRemarks: buyer.remarks ?? null,
       },
     });
+
+    // ── Carry the buyer's conversation timeline into the Lead (ZERO data loss) ──
+    // Buyer calls/notes/WhatsApp/voice/attempts + lifecycle live in BuyerActivity;
+    // without this they'd be orphaned on the converted buyer and the new Lead would
+    // open with a blank history. Copy every BuyerActivity as a Lead timeline Activity
+    // (preserving the original actor + timestamp), and re-link any telephony CallLogs
+    // (with their recordings) to the Lead so its call history is complete.
+    const buyerActs = await tx.buyerActivity.findMany({ where: { buyerId: buyer.id }, orderBy: { createdAt: "asc" } });
+    if (buyerActs.length > 0) {
+      await tx.activity.createMany({
+        data: buyerActs.map((a) => ({
+          leadId: lead.id,
+          userId: a.userId,
+          type: a.type === "CALL" ? ActivityType.CALL : ActivityType.NOTE,
+          status: ActivityStatus.DONE,
+          title: `[from Buyer Data] ${a.type.replaceAll("_", " ").toLowerCase()}`,
+          description: a.description ?? null,
+          completedAt: a.createdAt,
+          createdAt: a.createdAt,
+        })),
+      });
+    }
+    // Re-link telephony calls (+ recordings) from the buyer to the new lead. No-op
+    // until AS Phone is live; keeps recordings playable in the Lead call history.
+    await tx.callLog.updateMany({ where: { buyerId: buyer.id, leadId: null }, data: { leadId: lead.id } });
 
     // Mark the buyer CONVERTED + link the lead. Close the open stint (terminal —
     // not a return-to-pool; conversion is a successful exit, returnReason stays null).

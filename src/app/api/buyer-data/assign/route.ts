@@ -88,16 +88,17 @@ export async function POST(req: NextRequest) {
     const title = assigned.length === 1
       ? `🏷️ Buyer assigned: ${first?.clientName ?? "buyer"}`
       : `🏷️ ${assigned.length} buyers assigned to you`;
+    const listUrl = market === "India" ? "/india-buyer-data" : "/buyer-data";
     const body2 = assigned.length === 1
-      ? `You have a new buyer to work in Dubai Buyer Data.`
-      : `${assigned.length} buyers from the Admin Pool are now yours in Dubai Buyer Data.`;
+      ? `You have a new buyer to work in ${market} Buyer Data.`
+      : `${assigned.length} buyers from the Admin Pool are now yours in ${market} Buyer Data.`;
     await notify({
       userId: agentId,
       kind: "BUYER_ASSIGNED",
       severity: "INFO",
       title,
       body: body2,
-      linkUrl: assigned.length === 1 ? `/buyer-data/${assigned[0]}` : `/buyer-data`,
+      linkUrl: assigned.length === 1 ? `/buyer-data/${assigned[0]}` : listUrl,
     });
   }
 
