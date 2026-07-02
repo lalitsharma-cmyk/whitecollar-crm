@@ -20,7 +20,7 @@ const MEDAL = ["🥇", "🥈", "🥉"];
 export default async function LeaderboardPage() {
   const me = await requireUser();
 
-  // BUG-005: block AGENT role from accessing leaderboard
+  // Leaderboard is team data — agents see only their own performance elsewhere.
   if (me.role === "AGENT") redirect("/dashboard");
 
   const managerTeam = me.role === "MANAGER" ? normalizeTeam(me.team) : null;

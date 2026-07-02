@@ -24,6 +24,7 @@ const HEARTBEAT_JOBS: Array<{ path: string; name: string; everyMin: number }> = 
   { path: "pre-meeting-reminder", name: "pre-meeting-reminder", everyMin: 5 },
   { path: "unassigned-reminders", name: "unassigned-escalation", everyMin: 5 },
   { path: "site-visit-watch", name: "site-visit-watch", everyMin: 15 },
+  { path: "data-quality", name: "data-quality", everyMin: 720 }, // ~twice daily — detect + notify only
 ];
 
 /** Run at most ONE due sub-daily job this tick (keeps warm fast). Best-effort. */

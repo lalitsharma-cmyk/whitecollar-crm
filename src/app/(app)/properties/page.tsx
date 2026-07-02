@@ -6,6 +6,7 @@ import { projectWhereForUser } from "@/lib/propertyScope";
 import { leadScopeWhere } from "@/lib/leadScope";
 import Link from "next/link";
 import { formatLeadName } from "@/lib/leadName";
+import { formatBudgetAmount } from "@/lib/budgetParse";
 
 export const dynamic = "force-dynamic";
 
@@ -142,11 +143,9 @@ export default async function PropertiesPage({ searchParams }: { searchParams: P
     ),
   );
 
-  const fmtBudget = (amount: number, currency: string, indiaTeam: boolean): string => {
-    if (!amount || amount <= 0) return "—";
-    if (indiaTeam || currency === "INR") return `₹${(amount / 1e7).toFixed(1)} Cr`;
-    return `${currency || "AED"} ${(amount / 1e6).toFixed(1)}M`;
-  };
+  // Canonical formatter (Dubai "2M AED" / India "21 Cr", empty→"—") — no bespoke divisors.
+  const fmtBudget = (amount: number, currency: string, indiaTeam: boolean): string =>
+    formatBudgetAmount(amount, (indiaTeam || currency === "INR") ? "INDIA" : "DUBAI");
 
   // ── Helpers to build chip hrefs that preserve unrelated filters ──
   // Each chip toggles ONE param while keeping team, q, sort, and other filters.

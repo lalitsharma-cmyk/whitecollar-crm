@@ -6,6 +6,7 @@
 // text actually looks on a phone.
 
 import { useEffect, useRef, useState } from "react";
+import { displayBudget } from "@/lib/budgetParse";
 
 interface Props {
   templateId: string;
@@ -122,7 +123,7 @@ export default function TemplatePreview({ templateId, templateBody, templatePlac
                 <div className="font-medium">{l.name}</div>
                 <div className="text-[10px] text-gray-500">
                   {l.phone ?? "no phone"}
-                  {l.budgetMin ? ` · ${l.budgetCurrency ?? ""} ${l.budgetMin.toLocaleString()}` : ""}
+                  {l.budgetMin ? ` · ${displayBudget({ budgetMin: l.budgetMin, budgetCurrency: l.budgetCurrency })}` : ""}
                 </div>
               </button>
             ))}
