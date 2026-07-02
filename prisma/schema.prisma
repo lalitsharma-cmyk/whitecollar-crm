@@ -523,6 +523,14 @@ model Lead {
   // Kept as a reference after reactivate (reactivate → re-assign is the path).
   previousOwnerId String?
 
+  // Future Re-engage on Reject (Lalit 2026-07-02): when rejecting, the agent may
+  // opt to re-engage the client on a future date. On that date a cron reassigns the
+  // lead back to reEngageOwnerId (its owner at reject time; falls back to Lalit if
+  // that agent is inactive), reactivates it, and notifies agent + admin. Cleared once
+  // fired. Additive/nullable — no existing row changes.
+  reEngageAt      DateTime?
+  reEngageOwnerId String?
+
   // ── EOI / Booking workflow (Phase 6 of CRM master spec §13) ──
   // Stage in the booking funnel — populated once a Lead enters NEGOTIATION
   // or beyond. Pipeline UI shows EOI sub-stages once eoiStage is set.

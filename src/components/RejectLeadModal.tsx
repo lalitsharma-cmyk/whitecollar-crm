@@ -41,6 +41,8 @@ export default function RejectLeadModal({ leadId, forwardedTeam, redirectTo = "/
   // Reasons offered for THIS lead's team — Dubai leads additionally get "Expo Only".
   const reasons = rejectReasonsForTeam(forwardedTeam);
   const [note, setNote] = useState("");
+  const [reEngage, setReEngage] = useState(false);
+  const [reEngageDate, setReEngageDate] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   useBodyScrollLock(open);
@@ -63,6 +65,10 @@ export default function RejectLeadModal({ leadId, forwardedTeam, redirectTo = "/
       setErr(`Remarks are too long — max ${NOTE_MAX} characters.`);
       return;
     }
+    if (reEngage && !reEngageDate) {
+      setErr("Pick a future date to re-engage this client, or uncheck re-engage.");
+      return;
+    }
 
     setBusy(true);
     try {
@@ -72,6 +78,7 @@ export default function RejectLeadModal({ leadId, forwardedTeam, redirectTo = "/
         body: JSON.stringify({
           reason,
           note: note.trim(),
+          reEngageAt: reEngage && reEngageDate ? reEngageDate : undefined,
         }),
       });
       const data = await res.json().catch(() => ({} as { error?: string }));
@@ -161,6 +168,41 @@ export default function RejectLeadModal({ leadId, forwardedTeam, redirectTo = "/
             />
             <div className="text-[10px] text-gray-400 mt-0.5 text-right">
               {note.length}/{NOTE_MAX}
+            </div>
+
+            {/* Future Re-engage — keep the client for a future date instead of losing
+                them for good. On that date the CRM reassigns them back to you and pings
+                you + admin. */}
+            <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3">
+              <label className="flex items-center gap-2 text-sm font-medium text-amber-900 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={reEngage}
+                  disabled={busy}
+                  onChange={(e) => setReEngage(e.target.checked)}
+                  className="w-4 h-4 accent-amber-600"
+                />
+                🔁 Re-engage this client in the future?
+              </label>
+              {reEngage && (
+                <div className="mt-2">
+                  <label htmlFor="reengage-date" className="text-[11px] font-semibold text-amber-800">
+                    Re-engage on <span className="text-red-600">*</span>
+                  </label>
+                  <input
+                    id="reengage-date"
+                    type="date"
+                    value={reEngageDate}
+                    disabled={busy}
+                    min={new Date(Date.now() + 86400000).toISOString().slice(0, 10)}
+                    onChange={(e) => setReEngageDate(e.target.value)}
+                    className="w-full mt-1 border border-amber-300 rounded-lg px-3 py-2 text-sm bg-white"
+                  />
+                  <p className="text-[10px] text-amber-700 mt-1">
+                    On this date we reassign the lead back to you (or Lalit if you&apos;re away) and notify you + admin.
+                  </p>
+                </div>
+              )}
             </div>
 
             {err && (

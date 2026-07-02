@@ -61,7 +61,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   }
 
   // Parse + validate the body.
-  const body = await req.json().catch(() => ({} as { reason?: unknown; note?: unknown }));
+  const body = await req.json().catch(() => ({} as { reason?: unknown; note?: unknown; reEngageAt?: unknown }));
   const reason = typeof body.reason === "string" ? body.reason.toUpperCase() : "";
   const note = typeof body.note === "string" ? body.note.trim() : "";
 
@@ -74,6 +74,17 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   }
   if (note.length > NOTE_MAX) {
     return NextResponse.json({ error: `Remarks must be ${NOTE_MAX} characters or fewer` }, { status: 400 });
+  }
+
+  // Future Re-engage (optional): a future date on which the CRM reassigns the lead
+  // back to its owner-at-reject-time and reactivates it (cron: re-engage-due).
+  let reEngageAt: Date | null = null;
+  if (typeof body.reEngageAt === "string" && body.reEngageAt.trim()) {
+    const d = new Date(`${body.reEngageAt.trim()}T09:00:00+05:30`); // 9 AM IST that day
+    if (isNaN(d.getTime()) || d.getTime() <= Date.now()) {
+      return NextResponse.json({ error: "Re-engage date must be a valid future date." }, { status: 400 });
+    }
+    reEngageAt = d;
   }
 
   const now = new Date();
@@ -104,6 +115,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       followupDate: null,
       followupReminderSentAt: null,
       lastTouchedAt: now,
+      // Future Re-engage: remember when + to whom to reactivate (owner at reject time).
+      reEngageAt,
+      reEngageOwnerId: reEngageAt ? lead.ownerId : null,
     },
   });
 

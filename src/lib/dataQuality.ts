@@ -9,6 +9,7 @@ import "server-only";
 
 import { prisma } from "@/lib/prisma";
 import { TERMINAL_STATUSES } from "@/lib/lead-statuses";
+import { resolveMarket } from "@/lib/market";
 import { notify } from "@/lib/notify";
 import { resolveManagerUserId } from "@/lib/agentStatus";
 
@@ -17,15 +18,30 @@ const norm = (p: string | null) => (p ?? "").replace(/\D/g, "").slice(-10);
 
 export interface DataQualityResult {
   orphanFollowups: number;
-  marketNull: number;
+  marketFixed: number;
   duplicatePhoneGroups: number;
   notified: boolean;
 }
 
 export async function runDataQualityScan(): Promise<DataQualityResult> {
-  const [orphanFollowups, marketNull, withPhone] = await Promise.all([
+  // SELF-HEAL: set the derived India/UAE market on any lead missing it. The market
+  // is deterministic from Team/currency (resolveMarket), so this is safe + reversible
+  // — it keeps the lead-market-segregation invariant green as new leads arrive
+  // (create paths don't set market and the reconciler cron is offline). Only safe,
+  // derived, non-destructive fixes run here; everything else is detect + notify.
+  const missingMarket = await prisma.lead.findMany({
+    where: { deletedAt: null, market: null, forwardedTeam: { not: null } },
+    select: { id: true, forwardedTeam: true, budgetCurrency: true },
+    take: 500,
+  });
+  let marketFixed = 0;
+  for (const l of missingMarket) {
+    const m = resolveMarket(l);
+    if (m) { try { await prisma.lead.update({ where: { id: l.id }, data: { market: m } }); marketFixed++; } catch {} }
+  }
+
+  const [orphanFollowups, withPhone] = await Promise.all([
     prisma.lead.count({ where: { deletedAt: null, followupDate: { not: null }, currentStatus: { in: TERMINAL_STATUSES } } }),
-    prisma.lead.count({ where: { deletedAt: null, currentStatus: { notIn: TERMINAL_STATUSES }, market: null } }),
     prisma.lead.findMany({ where: { deletedAt: null, phone: { not: null } }, select: { phone: true } }),
   ]);
 
@@ -39,22 +55,20 @@ export async function runDataQualityScan(): Promise<DataQualityResult> {
 
   // Notify only on actionable anomalies (orphan follow-ups or market drift). Dup
   // phones are chronic + need human merge — surfaced in the value, not a repeat ping.
+  // Notify admin only on issues that need a HUMAN (orphan follow-ups) — market gaps
+  // are self-healed above, so they're reported in the value, not a repeat ping.
   let notified = false;
-  if (orphanFollowups > 0 || marketNull > 0) {
+  if (orphanFollowups > 0) {
     const mgr = await resolveManagerUserId();
     if (mgr) {
-      const issues = [
-        orphanFollowups > 0 ? `${orphanFollowups} terminal lead(s) with a stray follow-up` : null,
-        marketNull > 0 ? `${marketNull} live lead(s) missing India/UAE market` : null,
-      ].filter(Boolean).join(" · ");
       await notify({
         userId: mgr, kind: "SYSTEM", severity: "WARNING",
-        title: `🧹 Data-quality scan flagged an issue`,
-        body: `${issues}. (Duplicate-phone groups: ${duplicatePhoneGroups}.) Read-only scan — nothing was changed.`,
+        title: `🧹 Data-quality: ${orphanFollowups} terminal lead(s) with a stray follow-up`,
+        body: `Auto-healed ${marketFixed} missing market(s). Duplicate-phone groups: ${duplicatePhoneGroups}. The orphan follow-ups need a look (terminal leads shouldn't carry a follow-up).`,
         linkUrl: "/dashboard", email: false,
       });
       notified = true;
     }
   }
-  return { orphanFollowups, marketNull, duplicatePhoneGroups, notified };
+  return { orphanFollowups, marketFixed, duplicatePhoneGroups, notified };
 }
