@@ -47,7 +47,7 @@ Status legend: ✅ Fixed & deployed · 🔜 Batched (Medium, prepared) · ⏸️
 | L1 | Icon-only `aria-label`: NotifBell bell, MobileShell drawer-close | ✅ **Fixed** `ca67ae1` |
 | L2 | Hydration: HR `fmtDate/fmtDateFull` missing `timeZone` (near-midnight mismatch) | ✅ **Fixed** `ca67ae1` |
 | L3 | Icon-only `aria-label`: WorkflowControls pause/play/delete | ⏸️ queued (low-traffic admin) |
-| L4 | Tap targets < 36px: BuyerInlineEdit, CustomerIntelligenceCard, LeadInterestedClient | ⏸️ queued (low-freq detail actions) |
+| L4 | ~~Tap targets < 36px~~ | ✓ **agent misread** — BuyerInlineEdit is `min-w-9`=36px (at safe min) + already has aria-labels; only CustomerIntelligenceCard/LeadInterestedClient use `min-h-8`=32px (marginal, deferred — not worth churn) |
 | L5 | LeadFilters checkbox group missing `role="group"` | ⏸️ queued |
 
 ### ⚪ Cosmetic — auto-fixed (safe) or intentional
@@ -61,12 +61,17 @@ Status legend: ✅ Fixed & deployed · 🔜 Batched (Medium, prepared) · ⏸️
 | C6 | `grid-cols-7` calendars, emoji/color pickers | ✓ intentional fixed-column — no change |
 
 ### Fix log (deployed this cycle)
+- `74c2c3d` — loading skeletons for 6 hot routes (H4; additive, no blank screens) (batch 2)
 - `ca67ae1` — 14 responsive grids + 2 a11y labels + HR date `timeZone` (batch 1)
 - `08f62a6` — empty-state density + Customer 360 card token (prior)
 - `7607e5b` — Revival "Needs Review" chip (42 leads un-hidden)
 - `e1afaa6` — market write-at-source + backfill
 
-### Next actions
-- **Medium batch:** M1 (groupBy) + M2 (Promise.all) + H4 (loading skeletons) + M4 (tab semantics) — prepared, gated, deployed together.
-- **Verify-then-batch:** H1/H2/H3 over-fetch reductions (confirm no rendered field is dropped), M3 row memoization.
-- **Monitoring:** re-run regression + market-gap + duplicate scan each cycle; watch for new drift.
+### Cycle-1 disposition
+- ✅ **Deployed (safe, high-value):** responsive grids · a11y labels · hydration-safe dates · loading skeletons. Regression 129/129 after each.
+- ⏸️ **Deferred — perf query refactors (H1/H2/H3/M1/M2/M3):** these touch hot query paths (lead-detail, cold-calls, leads-list). They are **latency**, not stability, and during a stabilization phase a query refactor is a *regression risk* — the opposite of the goal. Prepared + documented here; to be done as a dedicated, closely-monitored performance pass AFTER the multi-day stability window, one query at a time.
+- ⏸️ **Marginal cosmetic (deferred, not worth churn):** WorkflowControls admin aria-labels · `min-h-8`→`min-h-9` on 2 buttons · dashboard `p-3/p-4` · LeadFilters `role="group"`/`items-center`.
+- ✓ **Non-issues (agent over-rating):** `key={index}` on append-only lists · BuyerInlineEdit tap targets.
+
+### Monitoring (each cycle)
+Re-run `scripts/regression.ts` (129 invariants) + market-gap check + `scripts/export-duplicate-review.ts`. Baseline held green through both deploy batches. Watch for: new team-without-market drift, new duplicates, any invariant regression.
