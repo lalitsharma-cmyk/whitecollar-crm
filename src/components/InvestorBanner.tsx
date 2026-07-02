@@ -35,6 +35,10 @@ interface Props {
   /** Ids of matched leads — when empty AND categorization!=Investor, banner hides. */
   matchedLeadIds: string[];
   bookingsCount: number;
+  /** When true, the richer cross-module ReturningClientCard is already showing, so
+   *  suppress the redundant non-investor "Returning contact" banner (governance
+   *  #1/#2: one source of truth). The distinct "Existing investor" case still shows. */
+  hideReturningContact?: boolean;
 }
 
 const statusChipClass: Record<string, string> = {
@@ -54,14 +58,17 @@ export default function InvestorBanner({
   alreadyBought,
   matchedLeadIds,
   bookingsCount,
+  hideReturningContact = false,
 }: Props) {
   const [open, setOpen] = useState(false);
   const [history, setHistory] = useState<MatchedLeadDetail[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  // Hide silently when there's no investor signal AND no matches at all.
-  if (categorization !== "Investor" && matchedLeadIds.length === 0) return null;
+  // Hide silently when there's no investor signal AND (no matches at all, OR the
+  // richer ReturningClientCard already covers the returning story). The distinct
+  // "Existing investor" case (owned properties) always still shows.
+  if (categorization !== "Investor" && (matchedLeadIds.length === 0 || hideReturningContact)) return null;
 
   const isInvestor = categorization === "Investor";
   const projectChips = alreadyBought

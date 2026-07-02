@@ -929,6 +929,7 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
           alreadyBought={lead.alreadyBought}
           matchedLeadIds={matchedLeadIds}
           bookingsCount={bookingsCount}
+          hideReturningContact={!!returningClient}
         />
 
         {/* Unified Lead Detail (Phase E / WS-J J5) — cross-module Returning Client

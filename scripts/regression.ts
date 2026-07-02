@@ -5880,6 +5880,13 @@ const checks: Check[] = [
         "lead detail must call the resolver ONLY when the flag is enabled");
       assert(/returningClient && <ReturningClientCard/.test(page),
         "ReturningClientCard must render only when a match exists (returningClient truthy)");
+      // Consolidation: the redundant non-investor "Returning contact" InvestorBanner
+      // is suppressed when the richer card shows (one source of truth).
+      assert(/hideReturningContact=\{!!returningClient\}/.test(page),
+        "InvestorBanner must receive hideReturningContact={!!returningClient} to avoid a duplicate returning surface");
+      const banner = fs.readFileSync("src/components/InvestorBanner.tsx", "utf8");
+      assert(/hideReturningContact/.test(banner) && /matchedLeadIds\.length === 0 \|\| hideReturningContact/.test(banner),
+        "InvestorBanner must hide the non-investor returning case when hideReturningContact is set");
     },
   },
 ];
