@@ -12,7 +12,7 @@ import BuyerQuickNoteCard from "@/components/BuyerQuickNoteCard";
 import BuyerNotesCard from "@/components/BuyerNotesCard";
 import StickyNoteWidget from "@/components/StickyNoteWidget";
 import LeadMobileTabs from "@/components/LeadMobileTabs";
-import { canTouchBuyer, canAccessDubaiBuyers, isDubaiAssignable } from "@/lib/buyerScope";
+import { canTouchBuyer, canAccessBuyerMarket, isDubaiAssignable } from "@/lib/buyerScope";
 import { getReturningClientCardEnabled } from "@/lib/settings";
 import { getReturningClientView } from "@/lib/customer/returningClient";
 import ReturningClientCard from "@/components/ReturningClientCard";
@@ -60,14 +60,16 @@ const toDateInput = (d: Date | null) =>
 export default async function BuyerDetail({ params }: { params: Promise<{ id: string }> }) {
   const me = await requireUser();
   const { id } = await params;
-  // Dubai Buyer Data — visible only to Admin + Dubai-team users. Non-Dubai
-  // (India/Gurgaon) agents/managers are redirected away (parity with the list).
-  if (!canAccessDubaiBuyers(me)) redirect("/dashboard");
+  // Shared buyer detail for BOTH markets. Early gate: users who can't access ANY buyer
+  // market (e.g. HR / non-sales) go to the dashboard. The precise per-buyer check is
+  // canTouchBuyer below (market-aware) — a Dubai user opening an India buyer, or the
+  // reverse, gets 404 there. No passport/financial data crosses the market seam.
+  if (!canAccessBuyerMarket(me, "Dubai") && !canAccessBuyerMarket(me, "India")) redirect("/dashboard");
 
   const rec = await prisma.buyerRecord.findUnique({ where: { id }, include: { owner: { select: { id: true, name: true } } } });
   if (!rec) notFound();
-  // 404 (not 403) if this user can't see this buyer — also blocks a soft-deleted
-  // one AND a non-Dubai-market buyer (canTouchBuyer enforces market="Dubai").
+  // 404 (not 403) if this user can't see this buyer — also blocks a soft-deleted one AND
+  // a cross-market buyer (canTouchBuyer requires access to the buyer's OWN market).
   if (!(await canTouchBuyer(me, { ownerId: rec.ownerId, poolStatus: rec.poolStatus, deletedAt: rec.deletedAt, market: rec.market }))) notFound();
 
   const isAdmin = me.role === "ADMIN";

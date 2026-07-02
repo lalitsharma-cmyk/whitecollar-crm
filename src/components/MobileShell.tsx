@@ -19,7 +19,7 @@ import KeyboardShortcutsHelp from "./KeyboardShortcutsHelp";
 import PWAInstallNudge from "./PWAInstallNudge";
 import { useBodyScrollLock } from "@/hooks/useBodyScrollLock";
 
-type NavItem = { href: string; label: string; Icon: React.ElementType; tag?: string; agentHidden?: boolean; adminOnly?: boolean; leadOpsHidden?: boolean; dubaiBuyerOnly?: boolean };
+type NavItem = { href: string; label: string; Icon: React.ElementType; tag?: string; agentHidden?: boolean; adminOnly?: boolean; leadOpsHidden?: boolean; dubaiBuyerOnly?: boolean; indiaBuyerOnly?: boolean };
 type NavSection = { section: string; adminOnly?: boolean; managerOrAdmin?: boolean; items: NavItem[] };
 
 // §6 — Global Back button + breadcrumb. Every page has a back button that
@@ -91,6 +91,8 @@ const fullNav: NavSection[] = [
     // it — the page guards also redirect them. A future Gurgaon Buyer Data module
     // would be a SEPARATE nav item with its own market gate.
     { href: "/buyer-data",  label: "Dubai Buyer Data", Icon: BadgeDollarSign, dubaiBuyerOnly: true },
+    // India Buyer Data (INR/Cr) — the India-market sibling; visible to admins + India team.
+    { href: "/india-buyer-data", label: "India Buyer Data", Icon: BadgeDollarSign, indiaBuyerOnly: true },
     { href: "/cold-calls",  label: "Revival Engine", Icon: Gem },
     { href: "/sale-off",    label: "Sale Off",       Icon: Tag },
     { href: "/lease-off",   label: "Lease Off",      Icon: KeyRound },
@@ -248,7 +250,7 @@ export default function MobileShell({ children, user, awaitingTeamCount = 0, myO
               )}
               {sidebarCollapsed && <div className="mb-1 mt-3 first:mt-0 border-t border-white/10 mx-1" />}
 
-              {group.items.filter((item) => !(item.agentHidden && user.role === "AGENT") && !(item.adminOnly && user.role !== "ADMIN") && !(item.leadOpsHidden && user.leadOpsOnly) && !(item.dubaiBuyerOnly && !(user.role === "ADMIN" || user.team === "Dubai"))).map(({ href, label, Icon, tag }) => {
+              {group.items.filter((item) => !(item.agentHidden && user.role === "AGENT") && !(item.adminOnly && user.role !== "ADMIN") && !(item.leadOpsHidden && user.leadOpsOnly) && !(item.dubaiBuyerOnly && !(user.role === "ADMIN" || user.team === "Dubai")) && !(item.indiaBuyerOnly && !(user.role === "ADMIN" || user.team === "India"))).map(({ href, label, Icon, tag }) => {
                 const active = pathname === href || (href !== "/dashboard" && pathname?.startsWith(href));
                 const showAwaitingBadge = href === "/admin/awaiting-team" && awaitingTeamCount > 0;
                 const showOverdueBadge = href === "/leads" && myOverdueFollowups > 0;
@@ -406,7 +408,7 @@ export default function MobileShell({ children, user, awaitingTeamCount = 0, myO
               }).map((group) => (
                 <div key={group.section}>
                   <div className="text-[10px] uppercase tracking-widest text-white/40 px-3 mb-1 mt-3 first:mt-0">{group.section}</div>
-                  {group.items.filter((item) => !(item.agentHidden && user.role === "AGENT") && !(item.adminOnly && user.role !== "ADMIN") && !(item.leadOpsHidden && user.leadOpsOnly) && !(item.dubaiBuyerOnly && !(user.role === "ADMIN" || user.team === "Dubai"))).map(({ href, label, Icon, tag }) => {
+                  {group.items.filter((item) => !(item.agentHidden && user.role === "AGENT") && !(item.adminOnly && user.role !== "ADMIN") && !(item.leadOpsHidden && user.leadOpsOnly) && !(item.dubaiBuyerOnly && !(user.role === "ADMIN" || user.team === "Dubai")) && !(item.indiaBuyerOnly && !(user.role === "ADMIN" || user.team === "India"))).map(({ href, label, Icon, tag }) => {
                     const active = pathname === href || (href !== "/dashboard" && pathname?.startsWith(href));
                     const showAwaitingBadge = href === "/admin/awaiting-team" && awaitingTeamCount > 0;
                     const showOverdueBadge = href === "/leads" && myOverdueFollowups > 0;

@@ -1984,7 +1984,11 @@ const checks: Check[] = [
 
       // (d) pages + reports redirect non-Dubai users; nav item is dubaiBuyerOnly.
       assert(/canAccessDubaiBuyers/.test(read("src/app/(app)/buyer-data/page.tsx")), "buyer list page MUST guard via canAccessDubaiBuyers (redirect non-Dubai)");
-      assert(/canAccessDubaiBuyers/.test(read("src/app/(app)/buyer-data/[id]/page.tsx")), "buyer detail page MUST guard via canAccessDubaiBuyers");
+      // Detail is the SHARED market-aware page: it early-gates via canAccessBuyerMarket
+      // and does the precise per-buyer check via canTouchBuyer (which enforces the buyer's
+      // OWN market) — a cross-market buyer can never be opened.
+      { const d = read("src/app/(app)/buyer-data/[id]/page.tsx");
+        assert(/canAccessBuyerMarket/.test(d) && /canTouchBuyer/.test(d), "buyer detail page MUST guard via canAccessBuyerMarket + canTouchBuyer (market-aware)"); }
       assert(/canAccessDubaiBuyers/.test(read("src/app/(app)/reports/buyer-performance/page.tsx")), "buyer report MUST guard via canAccessDubaiBuyers");
       const shell = read("src/components/MobileShell.tsx");
       assert(/dubaiBuyerOnly/.test(shell), "the nav MUST gate the Dubai Buyer Data item via dubaiBuyerOnly");
@@ -1993,7 +1997,10 @@ const checks: Check[] = [
       // (e) distribution pool + import + export are market-scoped.
       assert(/market:\s*DUBAI_MARKET/.test(read("src/lib/buyerDistribution.ts")), "poolableWhere MUST pin market:DUBAI_MARKET (distribution is Dubai-only)");
       assert(/market:\s*"Dubai"/.test(read("src/app/api/buyer-data/import/route.ts")), "import MUST stamp market='Dubai'");
-      assert(/market:\s*"Dubai"/.test(read("src/app/api/buyer-data/export/route.ts")), "export MUST pin market='Dubai'");
+      // Export scopes to ONE market — default Dubai, ?market=India for the India set —
+      // and never mixes markets (admin-only route; both handlers 403 non-admins).
+      { const e = read("src/app/api/buyer-data/export/route.ts");
+        assert(/=== "India" \? "India" : "Dubai"/.test(e) && /market,\s/.test(e), "export MUST scope to one market (default Dubai; ?market=India), never cross-market"); }
 
       // (f) label renamed on the key visible surfaces (route paths unchanged).
       assert(/Dubai Buyer Data/.test(read("src/app/(app)/buyer-data/page.tsx")), "list page header MUST read 'Dubai Buyer Data'");

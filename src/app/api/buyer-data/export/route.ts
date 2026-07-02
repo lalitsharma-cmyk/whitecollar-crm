@@ -38,10 +38,12 @@ async function buildExport(
   where: Record<string, unknown>,
   note: string | null,
 ) {
+  // Market — Dubai by default; ?market=India exports the India-market set. Admin-only
+  // route (both handlers 403 non-admins), so an admin may export either market.
+  const market = new URL(req.url).searchParams.get("market") === "India" ? "India" : "Dubai";
   const records = await prisma.buyerRecord.findMany({
-    // Dubai Buyer Data export — recycle-bin records never exported, and ONLY
-    // Dubai-market buyers (this module never exports another market's data).
-    where: { deletedAt: null, market: "Dubai", ...where },
+    // Recycle-bin records never exported; one market at a time (no cross-market mixing).
+    where: { deletedAt: null, market, ...where },
     orderBy: { transactionDate: "desc" },
   });
 
