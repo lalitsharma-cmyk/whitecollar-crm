@@ -2399,6 +2399,7 @@ model BuyerRecord {
   ownerName        String? // Registered owner name (may differ from the buyer/client)
   country          String? // Property / buyer country (e.g. "UAE", "India")
   // Property details
+  developer        String? // Developer / builder (e.g. "Emaar", "Godrej Properties") — first-class property attribute, backfilled from extraFields
   projectName      String? // e.g. "Burj Vista", "Godrej Properties Mumbai"
   tower            String? // Tower / Building name
   unitNumber       String? // Unit/Apartment/Villa number

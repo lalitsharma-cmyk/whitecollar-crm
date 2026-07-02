@@ -40,6 +40,7 @@ type ImportRow = {
   nationality?: string;
   ownerName?: string;
   country?: string;
+  developer?: string;
   projectName?: string;
   tower?: string;
   unitNumber?: string;
@@ -342,6 +343,7 @@ export async function POST(req: NextRequest) {
             coBuyerNames: coBuyersJson, phones: phonesJson, emails: emailsJson,
             passport: str(r.passport), passportExpiry: str(r.passportExpiry), nationality: str(r.nationality),
             ownerName: normalizeName(str(r.ownerName)), country: str(r.country),
+            developer: str(r.developer),
             projectName: str(r.projectName), tower: str(r.tower), unitNumber: str(r.unitNumber),
             propertyType: str(r.propertyType), configuration: str(r.configuration),
             size: str(r.size), actualSize: str(r.actualSize), area: str(r.area),
@@ -396,6 +398,7 @@ export async function POST(req: NextRequest) {
           nationality: str(r.nationality),
           ownerName: normalizeName(str(r.ownerName)),
           country: str(r.country),
+          developer: str(r.developer),
           projectName: str(r.projectName),
           tower: str(r.tower),
           unitNumber: str(r.unitNumber),

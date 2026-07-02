@@ -5903,6 +5903,35 @@ const checks: Check[] = [
         "Buyer detail must also surface the ReturningClientCard (BuyerRecord adapter, zero feature drift)");
     },
   },
+
+  {
+    // Buyer Developer field (Lalit 2026-07-02) — a FIRST-CLASS property attribute:
+    // import-mapped, editable, exported, shown in Buyer Property Details (not
+    // stranded in Imported Fields). Existing buyers backfilled from extraFields.
+    name: "buyer-developer-field — developer wired through import/edit/detail/export + backfilled out of extraFields",
+    run: async () => {
+      const fsl = await import("fs");
+      assert(/developer:\s*\[/.test(fsl.readFileSync("src/lib/buyerImportMap.ts", "utf8")),
+        "buyerImportMap must map Developer/Builder headers → the developer field");
+      assert(/developer:\s*"string"/.test(fsl.readFileSync("src/app/api/buyer-data/[id]/update/route.ts", "utf8")),
+        "buyer inline-edit whitelist must allow editing developer");
+      assert(/developer: str\(r\.developer\)/.test(fsl.readFileSync("src/app/api/buyer-data/import/route.ts", "utf8")),
+        "buyer import must write developer to the column (both create + update paths)");
+      assert(/label="Developer">\{editable\("developer"/.test(fsl.readFileSync("src/app/(app)/buyer-data/[id]/page.tsx", "utf8")),
+        "Buyer Property Details must show an editable Developer field");
+      assert(/developer: r\.developer/.test(fsl.readFileSync("src/app/api/buyer-data/export/route.ts", "utf8")),
+        "buyer CSV export must include the developer column");
+      // Integrity: no buyer keeps a Developer value stranded in extraFields (it lives
+      // in the column now; future imports write the column, never extraFields).
+      const { BUYER_FIELD_ALIASES, matchBuyerField } = await import("../src/lib/buyerImportMap");
+      const rows = await prisma.buyerRecord.findMany({ where: { developer: null }, select: { extraFields: true }, take: 3000 });
+      const stranded = rows.filter((b) => {
+        const e = b.extraFields as Record<string, unknown> | null;
+        return !!e && typeof e === "object" && Object.keys(e).some((k) => matchBuyerField(k, BUYER_FIELD_ALIASES.developer) && String((e as Record<string, unknown>)[k] ?? "").trim());
+      }).length;
+      assert(stranded === 0, `no buyer may keep a Developer value stranded in extraFields (found ${stranded})`);
+    },
+  },
 ];
 
 // ── runner ────────────────────────────────────────────────────────────────────

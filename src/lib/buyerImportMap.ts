@@ -41,6 +41,7 @@ export const BUYER_FIELD_ALIASES: Record<string, string[]> = {
   nationality:      ["Nationality", "citizenship", "nationality country", "passport country"],
   ownerName:        ["Registered Owner", "owner of record", "title owner", "property owner", "registered owner name"],
   country:          ["Country", "property country", "buyer country", "residence country", "country of residence"],
+  developer:        ["Developer", "developer name", "builder", "builder name", "builder/developer", "developer/builder", "promoter", "developed by"],
   projectName:      ["Project", "project name", "development", "property name", "scheme", "master project"],
   tower:            ["Tower", "building", "block", "wing", "building name", "tower name"],
   unitNumber:       ["Unit", "unit no", "unit number", "apartment", "apartment no", "flat", "flat no", "villa no", "villa number", "apt"],
@@ -63,7 +64,7 @@ export const BUYER_FIELD_ALIASES: Record<string, string[]> = {
 export const BUYER_FIELD_LABELS: Record<string, string> = {
   clientName: "Client Name", coBuyerNames: "Co-Buyers", phones: "Phone", emails: "Email",
   passport: "Passport No", passportExpiry: "Passport Expiry", nationality: "Nationality",
-  ownerName: "Registered Owner", country: "Country", projectName: "Project", tower: "Tower",
+  ownerName: "Registered Owner", country: "Country", developer: "Developer", projectName: "Project", tower: "Tower",
   unitNumber: "Unit", propertyType: "Property Type", configuration: "Configuration",
   size: "Size", actualSize: "Actual Size", area: "Area", transactionValue: "Transaction Value",
   pricePerSqFt: "Price Per SqFt", transactionDate: "Transaction Date", transactionId: "Transaction ID",

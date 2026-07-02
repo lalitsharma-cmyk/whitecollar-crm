@@ -20,6 +20,7 @@ const ALLOWED: Record<string, "string" | "number" | "date"> = {
   nationality: "string",
   ownerName: "string",
   country: "string",
+  developer: "string",
   projectName: "string",
   tower: "string",
   unitNumber: "string",

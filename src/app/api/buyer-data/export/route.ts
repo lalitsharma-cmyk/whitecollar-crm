@@ -55,6 +55,7 @@ async function buildExport(
       emails: parseJsonArray(r.emails).join("; "),
       passport: r.passport ?? "",
       nationality: r.nationality ?? "",
+      developer: r.developer ?? "",
       project: r.projectName ?? "",
       tower: r.tower ?? "",
       unit: r.unitNumber ?? "",
