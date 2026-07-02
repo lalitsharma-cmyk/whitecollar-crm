@@ -5,7 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import {
   LayoutDashboard, Users, Sparkles, Menu, X,
   Building2, BarChart3, Upload, UserCog, Settings as SettingsIcon, LogOut, Landmark,
-  ChevronLeft, ChevronRight, Gem, HelpCircle, AlertTriangle, Lock, PhoneCall, Briefcase, Database, ShieldCheck, Bot, Inbox, BadgeDollarSign, MapPin, Images, History, Search,
+  ChevronLeft, ChevronRight, Gem, HelpCircle, AlertTriangle, Lock, PhoneCall, Briefcase, Database, ShieldCheck, Bot, Inbox, BadgeDollarSign, MapPin, Images, History, Search, Tag, KeyRound,
 } from "lucide-react";
 import GlobalDateFilter from "./GlobalDateFilter";
 import NotifBell from "./NotifBell";
@@ -92,6 +92,8 @@ const fullNav: NavSection[] = [
     // would be a SEPARATE nav item with its own market gate.
     { href: "/buyer-data",  label: "Dubai Buyer Data", Icon: BadgeDollarSign, dubaiBuyerOnly: true },
     { href: "/cold-calls",  label: "Revival Engine", Icon: Gem },
+    { href: "/sale-off",    label: "Sale Off",       Icon: Tag },
+    { href: "/lease-off",   label: "Lease Off",      Icon: KeyRound },
     { href: "/action-list", label: "Action List",    Icon: Sparkles, leadOpsHidden: true },
     // Revisit Queue — terminal/rejected leads that still carry a follow-up date
     // (a "Revisit"). They are OFF the Active Board (Action List); this read-only

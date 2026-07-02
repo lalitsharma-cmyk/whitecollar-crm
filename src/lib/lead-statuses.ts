@@ -275,6 +275,14 @@ export const CLOSED_OUTCOME_STATUSES: string[] = [
   "Purchased Elsewhere", "Booked Through Another Channel",
 ];
 
+// ─── Sale Off / Lease Off module registries (single source) ────────────────
+// Leads in these (terminal) statuses are the SELLER / re-sale / rental inventory.
+// They're excluded from the working /leads view and instead surface in their own
+// Sale Off / Lease Off modules. Add a new sell/lease status here ONCE and it
+// auto-appears in the module (Lalit 2026-07-02). India "Sell Off" + Dubai "Sell Out".
+export const SALE_OFF_STATUSES: string[] = ["Sell Out", "Sell Off"];
+export const LEASE_OFF_STATUSES: string[] = ["Leasing", "Rent Out"];
+
 // Lost / rejected — non-actionable. Sourced from the Reject modal (minus the
 // closed outcomes) plus the dead-end suppressed statuses + India equivalents.
 export const LOST_STATUSES: string[] = [
