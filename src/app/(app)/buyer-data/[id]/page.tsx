@@ -26,8 +26,9 @@ import {
 } from "@/lib/buyerIntelligence";
 import {
   CARD, VERDICT_CARD, VERDICT_EYEBROW, CARD_TITLE, CARD_TITLE_HINT,
-  ADMIN_EYEBROW, FIELD_GRID_2, FIELD_LABEL, PAGE_GRID, MAIN_COL, RIGHT_RAIL,
+  ADMIN_EYEBROW, FIELD_GRID_2, FIELD_LABEL,
 } from "@/lib/detailLayout";
+import DetailShell from "@/components/DetailShell";
 
 // ── Buyer Data detail — UNIFIED with the Lead detail view (Lead = master template).
 // Both pages now share the class tokens in src/lib/detailLayout.ts (3rd alignment
@@ -177,9 +178,6 @@ export default async function BuyerDetail({ params }: { params: Promise<{ id: st
 
   return (
     <>
-      {/* Mobile tab bar — identical mechanism to the Lead view (sets body[data-lead-tab]). */}
-      <LeadMobileTabs />
-
       {/* Floating private sticky note — reuses the EXACT Lead widget, pointed at the
           buyer sticky-note API. Renders nothing until opened (or when a body exists). */}
       <StickyNoteWidget
@@ -189,9 +187,15 @@ export default async function BuyerDetail({ params }: { params: Promise<{ id: st
         apiBase="/api/buyer-data"
       />
 
-      <div className={PAGE_GRID}>
+      {/* Shared DetailShell — ONE layout for every detail page (Phase C migration).
+          The buyer header lives inside the main content, so header={null}; mobileTabs
+          uses the same Lead mechanism (body[data-lead-tab]). */}
+      <DetailShell
+        module="buyer"
+        mobileTabs={<LeadMobileTabs />}
+        header={null}
+        mainColumn={<>
         {/* ── MAIN COLUMN (col-span-2) ──────────────────────────────────────── */}
-        <div className={MAIN_COL}>
           {/* Unified Lead Detail (Phase E / J5) — cross-module Returning Client card:
               this buyer's other enquiries across modules. Renders only on a match. */}
           {returningClient && <ReturningClientCard view={returningClient} />}
@@ -395,14 +399,11 @@ export default async function BuyerDetail({ params }: { params: Promise<{ id: st
               </div>
             </div>
           )}
-        </div>
-
-        {/* ── RIGHT RAIL ────────────────────────────────────────────────────────
-            SAME density + card styles as the Lead right rail. Lead order is:
-            Sticky → Client information → Location → Scheduling → … → admin.
-            Buyer mirrors: Client information → Location → Transaction & next action
-            → Buyer admin → Working notes → Source. ──────────────────────────── */}
-        <div className={RIGHT_RAIL}>
+        </>}
+        rightRail={<>
+          {/* ── RIGHT RAIL — SAME density + card styles as the Lead right rail:
+              Client information → Location → Transaction & next action → Buyer admin
+              → Working notes → Source (mirrors the Lead right-rail order). ── */}
           {/* Client information — RIGHT-RAIL 2-col card, byte-identical shell + grid
               + label style to the Lead view's `qualificationCard` (the Client
               Information card). Buyer-specific fields (nationality/passport/co-buyers)
@@ -542,8 +543,8 @@ export default async function BuyerDetail({ params }: { params: Promise<{ id: st
           )}
 
           <Link href="/buyer-data" className="text-xs text-[#0b1a33] dark:text-blue-300 font-semibold inline-block">← Back to Dubai Buyer Data</Link>
-        </div>
-      </div>
+        </>}
+      />
     </>
   );
 }

@@ -1496,7 +1496,7 @@ const checks: Check[] = [
       // The buyer page imports + uses the shared tokens (header card, verdict card,
       // field grid, right-rail wrappers).
       assert(/from "@\/lib\/detailLayout"/.test(page), "buyer detail page MUST import shared tokens from @/lib/detailLayout");
-      assert(/className=\{PAGE_GRID\}/.test(page) && /className=\{MAIN_COL\}/.test(page) && /className=\{RIGHT_RAIL\}/.test(page), "buyer detail page MUST use the shared PAGE_GRID/MAIN_COL/RIGHT_RAIL wrappers");
+      assert(/<DetailShell/.test(page) && /module="buyer"/.test(page), "buyer detail page MUST use the shared <DetailShell> wrapper (Phase-C migration)");
       // The LEAD detail (the source-of-truth view) now ALSO references the shared
       // grid tokens instead of hardcoding gap-3/space-y-3 — so Lead + Buyer can
       // never silently drift apart again (Phase-C DetailShell migration, step 1).
