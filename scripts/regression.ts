@@ -1501,8 +1501,8 @@ const checks: Check[] = [
       // grid tokens instead of hardcoding gap-3/space-y-3 — so Lead + Buyer can
       // never silently drift apart again (Phase-C DetailShell migration, step 1).
       const leadPage = read("src/app/(app)/leads/[id]/page.tsx");
-      assert(/from "@\/lib\/detailLayout"/.test(leadPage), "lead detail page MUST import shared tokens from @/lib/detailLayout");
-      assert(/className=\{PAGE_GRID\}/.test(leadPage) && /className=\{MAIN_COL\}/.test(leadPage) && /className=\{RIGHT_RAIL\}/.test(leadPage), "lead detail page MUST use the shared PAGE_GRID/MAIN_COL/RIGHT_RAIL wrappers (no hardcoded grid)");
+      assert(/<DetailShell/.test(leadPage) && /module="lead"/.test(leadPage),
+        "lead detail page MUST use the shared <DetailShell> wrapper (Phase-C migration — all 3 detail pages now on the shell)");
       assert(/className=\{VERDICT_CARD\}/.test(page), "buyer Intelligence card MUST use the shared VERDICT_CARD shell (same as the Lead BANT card)");
 
       // (h) The buyer action row component uses the shared ACTION_ROW token (fluid

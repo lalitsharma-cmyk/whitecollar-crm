@@ -22,7 +22,7 @@ import AdvancedActivityLogger from "@/components/AdvancedActivityLogger";
 import { getTravelRatePerKmInr, getReturningClientCardEnabled } from "@/lib/settings";
 import { getReturningClientView } from "@/lib/customer/returningClient";
 import ReturningClientCard from "@/components/ReturningClientCard";
-import { PAGE_GRID, MAIN_COL, RIGHT_RAIL } from "@/lib/detailLayout";
+import DetailShell from "@/components/DetailShell";
 import { runReconciler } from "@/lib/reconciler";
 import InlineEdit from "@/components/InlineEdit";
 import { sourceLabel } from "@/lib/lead-sources";
@@ -908,19 +908,16 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
        nav (~56px + safe-area). The per-lead action bar is now in-flow inside
        the header card so no extra reservation needed for it. */
     <>
-      {/* §9.4 — sticky mobile-only tab bar. Renders Overview / Timeline /
-          Actions / Projects / Admin chips. Sets body[data-lead-tab] so
-          globals.css can hide non-matching [data-lead-section] cards on
-          phones. Desktop ignores this entirely. */}
-      <LeadMobileTabs />
-      {lead.deletedAt && (
-        <DeletedLeadBanner leadId={lead.id} deletedAtISO={lead.deletedAt.toISOString()} canRestore={me.isSuperAdmin} />
-      )}
-    <div className={PAGE_GRID}>
-      {/* Mobile back link removed — MobileShell now renders a global back
-          button in the mobile header (chevron-left next to hamburger) so
-          every non-root page has it, not just lead detail. */}
-      <div className={MAIN_COL}>
+      {/* Shared DetailShell (Phase C) — SAME layout wrapper as Buyer + Cold.
+          header={null} because the lead's banners + header card live in the main
+          content; mobileTabs uses the §9.4 sticky tab bar (body[data-lead-tab]);
+          the DeletedLeadBanner (rare recycle-bin view) rides the banners slot. */}
+      <DetailShell
+        module="lead"
+        mobileTabs={<LeadMobileTabs />}
+        banners={lead.deletedAt ? <DeletedLeadBanner leadId={lead.id} deletedAtISO={lead.deletedAt.toISOString()} canRestore={me.isSuperAdmin} /> : null}
+        header={null}
+        mainColumn={<>
         {/* INVESTOR BANNER — Agent V (Round 6). Surfaces "returning client"
             status above everything else. Hides itself when categorization
             !== "Investor" AND no matched leads exist (the component handles it). */}
@@ -1220,18 +1217,10 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
             duplicative + harder to scan. The Lead.remarks field still stores
             the original import data (used by Smart CMA + AI summary); the agent
             just doesn't see two cards saying the same thing. */}
-      </div>
-
-      {/* Right rail
-          Order per Lalit's layout request:
-            1. Address
-            2. Meeting counts (LeadMeetingClient)
-            3. Start a Site Visit (SiteVisitTracker) — "below meeting counts, at last"
-            4. Scheduling & next action — moved from left column
-            5. Projects discussed
-            ... rest unchanged
-      */}
-      <div className={RIGHT_RAIL}>
+      </>}
+        rightRail={<>
+        {/* Right rail (Lalit's layout order): Address · Meeting counts · Site Visit
+            · Scheduling & next action · Projects discussed · … */}
         {/* ── Routing info panel (small, read-only) ──
             Shows the team classification provenance so managers/admins can
             audit how this lead ended up on the current team. Hidden from
@@ -1523,10 +1512,8 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
         )}
 
         <Link href={backHref} className="text-xs text-[#0b1a33] font-semibold inline-block">← Back</Link>
-      </div>
-
-      {/* Mobile Timeline removed — merged into Conversation History above. */}
-    </div>
+        </>}
+      />
     {/* AI Decision War Room removed 2026-07-02 (Lalit) — see note near the data fetch. */}
     </>
   );
