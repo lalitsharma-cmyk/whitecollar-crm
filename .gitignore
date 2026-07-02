@@ -15,3 +15,6 @@ backups/
 # Deploy safety: local-only state + log (machine-specific)
 .last-deploy-sha
 docs/DEPLOY_LOG.md
+
+# Generated review/report snapshots (contain PII — regenerate on demand)
+docs/reviews/
