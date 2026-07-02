@@ -1953,24 +1953,29 @@ const checks: Check[] = [
       const fs = await import("node:fs");
       const read = (f: string) => fs.readFileSync(f, "utf8");
 
-      // (a) market column exists + every live buyer is Dubai (default + backfill).
+      // (a) market column exists + every live buyer is in a KNOWN market {Dubai, India}
+      // (default+backfill Dubai; India Buyer Data is a separate market over the same table).
       await prisma.buyerRecord.findFirst({ select: { id: true, market: true } });
       const liveTotal = await prisma.buyerRecord.count({ where: { deletedAt: null } });
-      const liveDubai = await prisma.buyerRecord.count({ where: { deletedAt: null, market: "Dubai" } });
-      assert(liveTotal === liveDubai, `every live buyer must be market="Dubai" (live ${liveTotal}, Dubai ${liveDubai}) — backfill missing`);
-      const nonDubai = await prisma.buyerRecord.count({ where: { market: { not: "Dubai" } } });
-      assert(nonDubai === 0, `${nonDubai} buyer(s) have a non-Dubai market — this module is Dubai-only today`);
+      const liveKnown = await prisma.buyerRecord.count({ where: { deletedAt: null, market: { in: ["Dubai", "India"] } } });
+      assert(liveTotal === liveKnown, `every live buyer must be market ∈ {Dubai, India} (live ${liveTotal}, known ${liveKnown}) — backfill missing`);
+      const badMarket = await prisma.buyerRecord.count({ where: { market: { notIn: ["Dubai", "India"] } } });
+      assert(badMarket === 0, `${badMarket} buyer(s) have a market outside {Dubai, India}`);
 
       // (b) buyerScope pins market + has the Dubai gates + the impossible no-access filter.
       const scopeSrc = read("src/lib/buyerScope.ts");
       assert(/DUBAI_MARKET\s*=\s*"Dubai"/.test(scopeSrc), "buyerScope MUST define DUBAI_MARKET = 'Dubai'");
       assert(/export function canAccessDubaiBuyers/.test(scopeSrc), "buyerScope MUST export canAccessDubaiBuyers");
       assert(/export function isDubaiAssignable/.test(scopeSrc), "buyerScope MUST export isDubaiAssignable");
-      // Every where branch pins market (>=4: no-access, ADMIN, AGENT, MANAGER variants).
-      const marketBranches = (scopeSrc.match(/market:\s*DUBAI_MARKET/g) ?? []).length;
-      assert(marketBranches >= 4, `buyerScopeWhere must pin market:DUBAI_MARKET in every branch (found ${marketBranches}, expected >=4)`);
-      assert(/__no_access__/.test(scopeSrc), "a non-Dubai non-admin user MUST get an impossible filter (no buyer leak)");
-      assert(/buyer\.market\s*!==\s*DUBAI_MARKET/.test(scopeSrc), "canTouchBuyer MUST reject a non-Dubai-market buyer");
+      // Dubai scope is now a thin wrapper over the market-generic buyerScopeWhereForMarket
+      // (byte-identical). Verify the delegation + that every branch pins the market param.
+      assert(/export async function buyerScopeWhereForMarket/.test(scopeSrc), "buyerScope MUST export buyerScopeWhereForMarket");
+      assert(/buyerScopeWhereForMarket\(me,\s*DUBAI_MARKET\)/.test(scopeSrc), "buyerScopeWhere MUST delegate to buyerScopeWhereForMarket(me, DUBAI_MARKET)");
+      // Every where branch pins the market param (>=4: no-access, ADMIN, AGENT, MANAGER).
+      const marketBranches = (scopeSrc.match(/\{ market,/g) ?? []).length;
+      assert(marketBranches >= 4, `buyerScopeWhereForMarket must pin the market in every branch (found ${marketBranches}, expected >=4)`);
+      assert(/__no_access__/.test(scopeSrc), "a wrong-market non-admin user MUST get an impossible filter (no buyer leak)");
+      assert(/canAccessBuyerMarket\(me,\s*buyerMarket\)/.test(scopeSrc), "canTouchBuyer MUST gate via canAccessBuyerMarket (reject a cross-market buyer)");
 
       // (c) assign + transfer + convert REJECT a non-Dubai/non-admin target (server-side).
       assert(/isDubaiAssignable/.test(read("src/app/api/buyer-data/assign/route.ts")), "assign route MUST gate the target via isDubaiAssignable");

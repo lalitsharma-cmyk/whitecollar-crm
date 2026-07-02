@@ -30,9 +30,19 @@ import type { Role } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { normalizeTeam } from "@/lib/teamRouting";
 
-/** The market this module is scoped to. The single source of truth — every buyer
- *  read pins this. A future Gurgaon module would define its own constant. */
+/** The Dubai market constant (kept for the many existing Dubai call-sites). */
 export const DUBAI_MARKET = "Dubai" as const;
+export const INDIA_MARKET = "India" as const;
+
+/** Buyer-Data markets. Dubai (AED/M) and India (INR/Cr) are SEPARATE modules over the
+ *  same BuyerRecord table, distinguished by the `market` column. Each is scoped to its
+ *  own team; a Dubai agent can never see India buyers and vice-versa. */
+export type BuyerMarket = "Dubai" | "India";
+
+/** The sales TEAM that owns a buyer market (Dubai market ↔ Dubai team; India ↔ India). */
+export function teamForBuyerMarket(market: BuyerMarket): "Dubai" | "India" {
+  return market === "India" ? "India" : "Dubai";
+}
 
 export interface BuyerScopedUser { id: string; role: Role; team?: string | null; }
 
@@ -41,13 +51,18 @@ export function isDubaiTeamUser(me: { team?: string | null }): boolean {
   return normalizeTeam(me.team) === "Dubai";
 }
 
-/** True if this user may access Dubai Buyer Data AT ALL: an ADMIN/super-admin, OR
- *  a Dubai-team user (AGENT/MANAGER). India/Gurgaon-team + HR/non-sales users are
- *  excluded. This is the single gate for page access, nav visibility, and the
- *  assignment pool. NOT name-based — driven off role + team. */
-export function canAccessDubaiBuyers(me: { role: Role; team?: string | null }): boolean {
+/** True if `me` may access buyers of THIS market at all: an ADMIN/super-admin, OR a
+ *  user whose team matches the market's team. The single gate for page access, nav
+ *  visibility and the assignment pool, per market. Role+team driven (never name-based). */
+export function canAccessBuyerMarket(me: { role: Role; team?: string | null }, market: BuyerMarket): boolean {
   if (me.role === "ADMIN") return true;
-  return isDubaiTeamUser(me);
+  return normalizeTeam(me.team) === teamForBuyerMarket(market);
+}
+
+/** True if this user may access Dubai Buyer Data AT ALL. Thin wrapper over
+ *  canAccessBuyerMarket("Dubai") — Dubai behaviour is byte-identical (admin or Dubai team). */
+export function canAccessDubaiBuyers(me: { role: Role; team?: string | null }): boolean {
+  return canAccessBuyerMarket(me, DUBAI_MARKET);
 }
 
 /** True if a user is a VALID assignment target for a Dubai buyer: a Dubai-team
@@ -106,18 +121,25 @@ export function dubaiBuyerWhere<T extends Record<string, unknown>>(extra?: T): T
  * buyers. Use this in EVERY buyer read so the Dubai module only ever shows Dubai
  * buyers, and a non-Dubai agent can never see a row.
  */
-export async function buyerScopeWhere(me: BuyerScopedUser): Promise<BuyerScopeWhere> {
-  // Hard gate: a non-Dubai, non-admin user gets an impossible filter.
-  if (!canAccessDubaiBuyers(me)) {
-    return { market: DUBAI_MARKET, deletedAt: null, id: "__no_access__" };
+export async function buyerScopeWhereForMarket(me: BuyerScopedUser, market: BuyerMarket): Promise<BuyerScopeWhere> {
+  // Hard gate: a user whose team doesn't own this market (and isn't admin) gets an
+  // impossible filter — pinned to the market so it can NEVER match another market's rows.
+  if (!canAccessBuyerMarket(me, market)) {
+    return { market, deletedAt: null, id: "__no_access__" };
   }
-  if (me.role === "ADMIN") return { market: DUBAI_MARKET, deletedAt: null };
-  if (me.role === "AGENT") return { market: DUBAI_MARKET, ownerId: me.id, poolStatus: "ASSIGNED", deletedAt: null };
-  // MANAGER (Dubai) — their org subtree's owned Dubai buyers (any pool status).
+  if (me.role === "ADMIN") return { market, deletedAt: null };
+  if (me.role === "AGENT") return { market, ownerId: me.id, poolStatus: "ASSIGNED", deletedAt: null };
+  // MANAGER — their org subtree's owned buyers in this market (any pool status).
   const ids = await visibleBuyerOwnerIds(me);
-  if (ids === null) return { market: DUBAI_MARKET, deletedAt: null };
-  if (ids.length === 1) return { market: DUBAI_MARKET, ownerId: ids[0], deletedAt: null };
-  return { market: DUBAI_MARKET, ownerId: { in: ids }, deletedAt: null };
+  if (ids === null) return { market, deletedAt: null };
+  if (ids.length === 1) return { market, ownerId: ids[0], deletedAt: null };
+  return { market, ownerId: { in: ids }, deletedAt: null };
+}
+
+/** Dubai scope — thin wrapper (byte-identical to the original). Every existing Dubai
+ *  call-site keeps working unchanged; India uses buyerScopeWhereForMarket(me,"India"). */
+export async function buyerScopeWhere(me: BuyerScopedUser): Promise<BuyerScopeWhere> {
+  return buyerScopeWhereForMarket(me, DUBAI_MARKET);
 }
 
 /** True if `me` may access this specific buyer. Same rules as buyerScopeWhere,
@@ -130,11 +152,12 @@ export async function canTouchBuyer(
   buyer: { ownerId: string | null; poolStatus: string; deletedAt?: Date | null; market?: string | null },
 ): Promise<boolean> {
   if (buyer.deletedAt) return false;
-  // Market gate: this module only ever touches Dubai-market buyers. A record
-  // loaded WITHOUT a market selected (older callers) is treated as in-scope only
-  // when the caller didn't ask — but every caller in this module selects market.
-  if (buyer.market != null && buyer.market !== DUBAI_MARKET) return false;
-  if (!canAccessDubaiBuyers(me)) return false;
+  // Market gate: derive the buyer's market (legacy rows without a market → Dubai) and
+  // require `me` to have access to THAT market. A Dubai buyer + Dubai/admin user is
+  // byte-identical to before; a cross-market touch (Dubai user ↔ India buyer, or the
+  // reverse) can NEVER pass — no passport/financial data crosses the market seam.
+  const buyerMarket: BuyerMarket = buyer.market === INDIA_MARKET ? "India" : "Dubai";
+  if (!canAccessBuyerMarket(me, buyerMarket)) return false;
   if (me.role === "ADMIN") return true;
   if (me.role === "AGENT") return buyer.ownerId === me.id && buyer.poolStatus === "ASSIGNED";
   // MANAGER (Dubai) — owner must be in their org subtree.
