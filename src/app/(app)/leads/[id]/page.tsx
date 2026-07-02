@@ -19,7 +19,9 @@ import SiteVisitTracker from "@/components/SiteVisitTracker";
 // EOIPanel (Agent K's replacement) is built and available in src/components/EOIPanel.tsx
 // for a future round when EOI is ready to surface again.
 import AdvancedActivityLogger from "@/components/AdvancedActivityLogger";
-import { getTravelRatePerKmInr } from "@/lib/settings";
+import { getTravelRatePerKmInr, getReturningClientCardEnabled } from "@/lib/settings";
+import { getReturningClientView } from "@/lib/customer/returningClient";
+import ReturningClientCard from "@/components/ReturningClientCard";
 import { runReconciler } from "@/lib/reconciler";
 import InlineEdit from "@/components/InlineEdit";
 import { sourceLabel } from "@/lib/lead-sources";
@@ -163,6 +165,15 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
     getAvailableMediums(),
   ]);
   if (!lead) notFound();
+
+  // Unified Lead Detail (Phase E / WS-J J5) — cross-module "Returning Client" view.
+  // Flag-gated (default OFF via getReturningClientCardEnabled): when disabled this
+  // is a strict no-op — no extra query runs and no card renders. Read-only +
+  // scope-safe (getReturningClientView scopes every read via leadScopeWhere), so an
+  // agent only ever sees their own sibling enquiries.
+  const returningClient = (await getReturningClientCardEnabled())
+    ? await getReturningClientView(me, lead)
+    : null;
 
   // §14 Module context rule: cold-call records must stay inside Revival Engine.
   // If someone navigates to /leads/:id for a cold/revival record, redirect them.
@@ -919,6 +930,12 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
           matchedLeadIds={matchedLeadIds}
           bookingsCount={bookingsCount}
         />
+
+        {/* Unified Lead Detail (Phase E / WS-J J5) — cross-module Returning Client
+            card: the SAME client's other enquiries + merged summary, from the
+            scope-safe resolver. Renders ONLY when a real match exists AND the flag
+            is enabled (returningClient is null otherwise → no card). */}
+        {returningClient && <ReturningClientCard view={returningClient} />}
 
         {/* NEEDS YOU BANNER — agents see the flag; Lalit/managers get a resolve button. */}
         {lead.needsManagerReview && (

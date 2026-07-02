@@ -140,6 +140,14 @@ export async function getTestingModeEnabled(): Promise<boolean> {
   return raw.toLowerCase() === "true";
 }
 
+// Unified Lead Detail (Phase E / WS-J J5): the cross-module "Returning Client"
+// card on the lead detail. Default OFF so the code deploys as a no-op (no extra
+// query, no card) and is enabled deliberately after live verification.
+export async function getReturningClientCardEnabled(): Promise<boolean> {
+  const raw = await getSetting("unifiedDetail.returningClient.enabled");
+  return raw.toLowerCase() === "true"; // default OFF
+}
+
 // ── AUTOMATION CONTROLS (decoupled from notifications) ──────────────────
 // Every flag defaults OFF: an automated action runs ONLY when its flag is
 // explicitly "true". Notifications never consult these — they always fire.

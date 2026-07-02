@@ -5856,6 +5856,32 @@ const checks: Check[] = [
       }
     },
   },
+
+  {
+    // Unified Lead Detail (Phase E / WS-J J5) — the cross-module Returning Client
+    // card. Read-only + scope-safe resolver, flag-gated (default OFF) so it's a
+    // no-op until deliberately enabled. Governance rule #6: assert it's wired.
+    name: "unified-returning-client — scope-safe resolver + flag-gated card wired into lead detail",
+    run: async () => {
+      const fs = await import("fs");
+      // Resolver scopes every read (agent never sees another owner's siblings).
+      const resolver = fs.readFileSync("src/lib/customer/returningClient.ts", "utf8");
+      assert(/leadScopeWhere\(me\)/.test(resolver) && /getCustomer360\(me,/.test(resolver),
+        "returning-client resolver must scope reads via leadScopeWhere + getCustomer360");
+      assert(/tier === "Very High"/.test(resolver),
+        "advisory match must be phone/email only (Very High) — never name-only");
+      // Flag defaults OFF (no-op deploy).
+      const settings = fs.readFileSync("src/lib/settings.ts", "utf8");
+      assert(/getReturningClientCardEnabled/.test(settings) && /unifiedDetail\.returningClient\.enabled/.test(settings),
+        "returning-client card must be gated by getReturningClientCardEnabled (default OFF)");
+      // Wired into the lead detail behind the flag.
+      const page = fs.readFileSync("src/app/(app)/leads/[id]/page.tsx", "utf8");
+      assert(/getReturningClientCardEnabled\(\)/.test(page) && /getReturningClientView\(me, lead\)/.test(page),
+        "lead detail must call the resolver ONLY when the flag is enabled");
+      assert(/returningClient && <ReturningClientCard/.test(page),
+        "ReturningClientCard must render only when a match exists (returningClient truthy)");
+    },
+  },
 ];
 
 // ── runner ────────────────────────────────────────────────────────────────────
