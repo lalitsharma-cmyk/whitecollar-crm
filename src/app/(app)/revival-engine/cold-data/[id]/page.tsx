@@ -12,6 +12,7 @@ import { leadScopeWhere, COLD_ORIGINS } from "@/lib/leadScope";
 import { getReturningClientCardEnabled } from "@/lib/settings";
 import { getReturningClientView } from "@/lib/customer/returningClient";
 import ReturningClientCard from "@/components/ReturningClientCard";
+import DetailShell from "@/components/DetailShell";
 import { formatLeadName } from "@/lib/leadName";
 import { formatDistanceToNow, format } from "date-fns";
 import ConversationStreamCard from "@/components/ConversationStreamCard";
@@ -106,7 +107,7 @@ export default async function ColdDataDetailPage({ params, searchParams }: { par
     : "never touched";
 
   return (
-    <div className="max-w-4xl mx-auto space-y-4 pb-16">
+    <>
       {/* Sticky note (floating) — listens for the "Note" action button's
           open-sticky-<leadId> event so Note works on cold data too. */}
       <StickyNoteWidget
@@ -114,6 +115,14 @@ export default async function ColdDataDetailPage({ params, searchParams }: { par
         initialBody={stickyNote.body}
         initialUpdatedAt={stickyNote.updatedAt ? stickyNote.updatedAt.toISOString() : null}
       />
+
+      {/* Shared DetailShell (Phase C) — centered single-column data-bank layout,
+          preserving the Cold view's max-w-4xl centering via singleColClassName. */}
+      <DetailShell
+        module="cold"
+        singleColClassName="max-w-4xl mx-auto pb-16"
+        header={null}
+        mainColumn={<>
 
       {/* ── COLD DATA RECORD badge — visible at all times ── */}
       <div className="rounded-xl border-2 border-amber-400 bg-amber-50 dark:bg-amber-900/20 px-4 py-3 flex items-center gap-3">
@@ -277,6 +286,8 @@ export default async function ColdDataDetailPage({ params, searchParams }: { par
         {lead.owner && <div>Assigned to: <span className="font-medium text-gray-700 dark:text-slate-300">{lead.owner.name}</span></div>}
         <div>Created: {format(lead.createdAt, "dd MMM yyyy")}</div>
       </div>
-    </div>
+        </>}
+      />
+    </>
   );
 }

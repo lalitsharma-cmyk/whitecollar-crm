@@ -27,14 +27,18 @@ interface DetailShellProps {
   rightRail?: ReactNode;
   /** Optional mobile section-tab bar node (e.g. <LeadMobileTabs/>), passed by the page. */
   mobileTabs?: ReactNode;
+  /** Optional outer class for the NO-RAIL (single-column) layout — e.g. the Cold/
+   *  data-bank views that render a centered, max-width column. Defaults to the
+   *  full-width single column. Ignored when a right rail is present. */
+  singleColClassName?: string;
 }
 
-export default function DetailShell({ module, banners, header, mainColumn, rightRail, mobileTabs }: DetailShellProps) {
+export default function DetailShell({ module, banners, header, mainColumn, rightRail, mobileTabs, singleColClassName }: DetailShellProps) {
   const hasRail = rightRail != null;
   return (
     <div data-detail-module={module}>
       {mobileTabs}
-      <div className={hasRail ? PAGE_GRID : "space-y-4 pb-24 lg:pb-0"}>
+      <div className={hasRail ? PAGE_GRID : (singleColClassName ?? "space-y-4 pb-24 lg:pb-0")}>
         {/* Main column — banners → header → content. When there is no right rail
             (data-bank views), it spans full width instead of col-span-2. */}
         <div className={hasRail ? MAIN_COL : "space-y-4"}>
