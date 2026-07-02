@@ -31,7 +31,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  const [assignments, activities] = await Promise.all([
+  const [assignments, activities, calls] = await Promise.all([
     prisma.buyerAssignment.findMany({
       where: { buyerId: id },
       orderBy: { assignedAt: "asc" },
@@ -42,6 +42,14 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       orderBy: { createdAt: "desc" },
       include: { user: { select: { id: true, name: true } } },
       take: 500,
+    }),
+    // Telephony calls auto-linked to this buyer that carry a recording — rendered
+    // as scope-proxied players in the timeline (parity with the Lead call history).
+    prisma.callLog.findMany({
+      where: { buyerId: id, recordingUrl: { not: null } },
+      orderBy: { startedAt: "desc" },
+      select: { id: true, direction: true, outcome: true, durationSec: true, startedAt: true, ivrProvider: true },
+      take: 100,
     }),
   ]);
 
@@ -65,6 +73,14 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       by: ev.user?.name ?? null,
       byId: ev.userId,
       createdAt: ev.createdAt,
+    })),
+    calls: calls.map((c) => ({
+      id: c.id,
+      direction: c.direction,
+      outcome: c.outcome,
+      durationSec: c.durationSec,
+      startedAt: c.startedAt,
+      provider: c.ivrProvider,
     })),
   });
 }

@@ -6003,6 +6003,60 @@ const checks: Check[] = [
         "nav MUST expose /admin/identity (admin section)");
     },
   },
+  {
+    name: "telephony-layer — provider-agnostic, authed webhook, idempotent record, cross-module linking, scope-checked click/recording, additive schema",
+    run: async () => {
+      const fsl = await import("fs");
+      const read = (f: string) => fsl.readFileSync(f, "utf8");
+
+      // (a) Additive schema is live on prod (buyerId/ivrAccountId + CallEvent + CallSyncTask).
+      await prisma.callEvent.count();
+      await prisma.callSyncTask.count();
+      await prisma.callLog.findFirst({ select: { id: true, buyerId: true, ivrAccountId: true } });
+
+      // (b) Webhook receiver AUTHENTICATES (verifyWebhook) BEFORE recording, logs the
+      //     raw event, and never loses a call (retry-enqueue on failure).
+      const wh = read("src/app/api/telephony/webhook/route.ts");
+      assert(/verifyWebhook\(/.test(wh) && /status:\s*401/.test(wh), "telephony webhook MUST verify signature/token → 401 on failure");
+      assert(/logRawEvent\(/.test(wh), "telephony webhook MUST log the raw event verbatim (audit) before processing");
+      assert(/recordCallEvent\(/.test(wh) && /enqueue\(\s*["']WEBHOOK/.test(wh), "telephony webhook MUST record + enqueue a retry on failure (never lose a call)");
+
+      // (c) The sink is idempotent + drops into the RIGHT record's timeline.
+      const rec = read("src/lib/telephony/recordCall.ts");
+      assert(/findUnique\(\{\s*where:\s*\{\s*ivrCallId/.test(rec), "recordCallEvent MUST be idempotent (upsert keyed on ivrCallId)");
+      assert(/prisma\.activity\.create/.test(rec) && /prisma\.buyerActivity\.create/.test(rec), "recordCallEvent MUST write to BOTH the Lead timeline (Activity) AND the Buyer timeline (BuyerActivity)");
+      assert(/auditLog\.create/.test(rec), "recordCallEvent MUST audit every write");
+
+      // (d) Cross-module linking covers Lead (incl. revival) AND Buyer, active-only.
+      const link = read("src/lib/telephony/linkResolver.ts");
+      assert(/prisma\.lead\.findFirst/.test(link) && /prisma\.buyerRecord\.findFirst/.test(link), "linkResolver MUST resolve BOTH Lead and BuyerRecord by phone");
+      assert(/deletedAt:\s*null/.test(link), "linkResolver MUST match ACTIVE records only (never a soft-deleted lead/buyer)");
+      assert(/isRevival/.test(link), "linkResolver MUST flag revival/cold leads");
+
+      // (e) Click-to-call is scope-checked for BOTH lead and buyer paths.
+      const ctc = read("src/app/api/telephony/click-to-call/route.ts");
+      assert(/loadOwnedLead\(/.test(ctc) && /canTouchBuyer\(/.test(ctc), "click-to-call MUST scope-check leads (loadOwnedLead) AND buyers (canTouchBuyer)");
+
+      // (f) Recording is proxied + scope-checked (never exposes the provider URL).
+      const rrec = read("src/app/api/telephony/recording/[callId]/route.ts");
+      assert(/requireUser\(/.test(rrec) && /canTouchBuyer\(/.test(rrec) && /loadOwnedLead\(/.test(rrec), "recording route MUST scope-check (admin/manager | own lead | own buyer)");
+      assert(/status:\s*403/.test(rrec), "recording route MUST 403 when not permitted");
+
+      // (g) Provider-agnostic registry (asphone + acefone) + config placeholders.
+      const prov = read("src/lib/telephony/providers.ts");
+      assert(/asphone/.test(prov) && /acefone/.test(prov), "telephony registry MUST include asphone + acefone");
+      const cfgSrc = read("src/lib/telephony/config.ts");
+      for (const k of ["AS_PHONE_ACCOUNT_ID", "AS_PHONE_API_KEY", "AS_PHONE_SECRET", "AS_PHONE_BASE_URL", "AS_PHONE_DID"]) {
+        assert(cfgSrc.includes(k), `config MUST read the ${k} placeholder`);
+      }
+
+      // (h) Admin console is ADMIN-only + wired into the heartbeat cron.
+      assert(/requireRole\("ADMIN"\)/.test(read("src/app/(app)/admin/telephony/page.tsx")), "AS Phone console MUST be ADMIN-only");
+      assert(/requireRole\("ADMIN"\)/.test(read("src/app/api/admin/telephony/route.ts")), "AS Phone admin API MUST be ADMIN-only");
+      const warm = read("src/app/api/cron/warm/route.ts");
+      assert(/telephony-retry/.test(warm) && /telephony-sync/.test(warm), "heartbeat MUST dispatch telephony-retry + telephony-sync");
+    },
+  },
 ];
 
 // ── runner ────────────────────────────────────────────────────────────────────

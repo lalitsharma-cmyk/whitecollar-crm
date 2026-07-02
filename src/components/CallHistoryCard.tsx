@@ -10,6 +10,7 @@
 
 import { fmtIST12Paren, fmtISTDate } from "@/lib/datetime";
 import { aggregateCalls } from "@/lib/callStats";
+import CallRecordingPlayer from "@/components/CallRecordingPlayer";
 import type { CallLog } from "@prisma/client";
 
 // Accept any Prisma CallLog row that includes the user relation. The page-level
@@ -252,8 +253,8 @@ export default function CallHistoryCard({ callLogs }: Props) {
               {notesClean && <div className="text-xs mt-1 text-gray-700 whitespace-pre-wrap">{notesClean}</div>}
               {c.recordingUrl && (
                 <div className="mt-1.5">
-                  <audio controls preload="none" src={c.recordingUrl} className="w-full h-8" />
-                  <a href={c.recordingUrl} target="_blank" rel="noopener noreferrer" className="text-[10px] text-[#0b1a33] underline">Open recording in new tab ↗</a>
+                  {/* Streams through the scope-checked proxy (no raw provider URL) + download. */}
+                  <CallRecordingPlayer callId={c.id} compact />
                 </div>
               )}
             </div>

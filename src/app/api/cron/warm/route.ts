@@ -27,6 +27,10 @@ const HEARTBEAT_JOBS: Array<{ path: string; name: string; everyMin: number }> = 
   { path: "site-visit-watch", name: "site-visit-watch", everyMin: 15 },
   { path: "data-quality", name: "data-quality", everyMin: 720 }, // ~twice daily — detect + notify only
   { path: "re-engage", name: "re-engage", everyMin: 360 }, // ~every 6h — reactivate due re-engage leads
+  // Telephony (AS Phone / Acefone). Both self-skip instantly when telephony is
+  // unconfigured or the queue is empty, so they cost ~nothing until numbers go live.
+  { path: "telephony-retry", name: "telephony-retry", everyMin: 5 }, // drain failed webhooks/dials
+  { path: "telephony-sync", name: "telephony-sync", everyMin: 30 }, // reconcile dropped webhooks
 ];
 
 // DAILY jobs that ALSO have a Vercel-native cron (vercel.json) — but Vercel Hobby

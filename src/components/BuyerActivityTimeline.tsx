@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
 import { CONVO_CARD } from "@/lib/detailLayout";
+import CallRecordingPlayer from "@/components/CallRecordingPlayer";
 
 // ── Buyer Conversation History — VISUAL PARITY with the Lead view's
 // ConversationStreamCard (src/components/ConversationStreamCard.tsx). Same card
@@ -22,10 +23,12 @@ import { CONVO_CARD } from "@/lib/detailLayout";
 
 type Activity = { id: string; type: string; description: string | null; by: string | null; createdAt: string };
 type Assignment = { id: string; agent: string | null; assignedAt: string; returnedAt: string | null; returnReason: string | null; attemptsInStint: number; open: boolean };
+type CallRec = { id: string; direction: string; outcome: string; durationSec: number | null; startedAt: string; provider: string | null };
 type HistoryResp = {
   record: { poolStatus: string; attemptCount: number; ownerName?: string | null; owner?: { name: string | null } | null };
   assignments: Assignment[];
   activities: Activity[];
+  calls?: CallRec[];
 };
 
 const IST = { timeZone: "Asia/Kolkata", day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" } as const;
@@ -136,6 +139,23 @@ export default function BuyerActivityTimeline({ buyerId, canLog, isAdmin, rawRem
           ) : (
             <div className="text-gray-500 text-xs text-center py-4">No imported remarks on this buyer.</div>
           )
+        )}
+
+        {/* CALL RECORDINGS — telephony calls auto-linked to this buyer that carry a
+            recording. Scope-proxied player + download, identical to the Lead call
+            history. Shows at the top of the Smart Timeline. */}
+        {viewMode === "smart" && (data?.calls?.length ?? 0) > 0 && (
+          <div className="border-l-2 border-emerald-400 bg-emerald-50/40 dark:bg-emerald-900/10 pl-3 pr-2 py-2 rounded-r mb-1.5">
+            <div className="text-[10px] font-semibold uppercase tracking-wide text-emerald-700 dark:text-emerald-400 mb-1.5">🎙 Call recordings</div>
+            <div className="space-y-1.5">
+              {data!.calls!.map((c) => (
+                <div key={c.id} className="text-[11px]">
+                  <span className="text-gray-500">{fmt(c.startedAt)} · {c.direction.toLowerCase()} · {c.outcome.replaceAll("_", " ").toLowerCase()}{c.durationSec ? ` · ${Math.round(c.durationSec)}s` : ""}{c.provider ? ` · ${c.provider}` : ""}</span>
+                  <div className="mt-0.5"><CallRecordingPlayer callId={c.id} compact /></div>
+                </div>
+              ))}
+            </div>
+          </div>
         )}
 
         {/* SMART TIMELINE — the buyer's processed CRM-activity stream (calls ·

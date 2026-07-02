@@ -157,12 +157,12 @@ model User {
   deletedImportBatches ImportBatch[] @relation("ImportBatchDeleter")
 
   // ── Buyer Data module relations ──
-  buyerImports     BuyerImportBatch[] @relation("BuyerImports")
-  buyersOwned      BuyerRecord[]      @relation("BuyerOwner")
-  buyerAssignments BuyerAssignment[]  @relation("BuyerAssignmentAgent")
-  buyerActivities  BuyerActivity[]    @relation("BuyerActivityUser")
-  buyerFieldChanges  BuyerFieldHistory[] @relation("BuyerFieldChangedBy")
-  buyerStickyNotes BuyerStickyNote[]  @relation("BuyerStickyNoteUser")
+  buyerImports      BuyerImportBatch[]  @relation("BuyerImports")
+  buyersOwned       BuyerRecord[]       @relation("BuyerOwner")
+  buyerAssignments  BuyerAssignment[]   @relation("BuyerAssignmentAgent")
+  buyerActivities   BuyerActivity[]     @relation("BuyerActivityUser")
+  buyerFieldChanges BuyerFieldHistory[] @relation("BuyerFieldChangedBy")
+  buyerStickyNotes  BuyerStickyNote[]   @relation("BuyerStickyNoteUser")
 
   assistantRuns AssistantRun[] @relation("AssistantRunBy")
 
@@ -182,8 +182,8 @@ model User {
   broadcastReads     VoiceBroadcastRead[]
 
   // ── Customer layer (Step 1 foundation) relations ──
-  canonicalCustomers    Customer[]          @relation("CustomerCanonicalOwner")
-  customerLinkActions   CustomerLinkAudit[] @relation("CustomerLinkAuditActor")
+  canonicalCustomers  Customer[]          @relation("CustomerCanonicalOwner")
+  customerLinkActions CustomerLinkAudit[] @relation("CustomerLinkAuditActor")
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1128,6 +1128,14 @@ model CallLog {
   id                  String        @id @default(cuid())
   leadId              String?
   lead                Lead?         @relation(fields: [leadId], references: [id])
+  // Cross-module call linking (telephony layer). A call is auto-linked to a Lead
+  // (incl. Revival/cold leads — they ARE Lead rows) OR a BuyerRecord by phone
+  // fingerprint, so the recording + outcome surface in the RIGHT record's timeline.
+  // Both nullable & additive: a call with no CRM match stays unlinked (Unmatched
+  // Calls Queue). buyerId + leadId are mutually exclusive in practice but not
+  // enforced at the DB level (a number could theoretically be both — lead wins).
+  buyerId             String?
+  buyer               BuyerRecord?  @relation("BuyerCallLogs", fields: [buyerId], references: [id])
   // Actor = the agent who made/took the call. Nullable (Lalit, 2026-07-01) so an
   // INBOUND call whose telephony extension can't be matched to a CRM user is left
   // UNASSIGNED (rendered "Unknown Agent") instead of being falsely stamped with
@@ -1148,8 +1156,9 @@ model CallLog {
   // Null when an agent logs a call live in the UI (user.name is correct then).
   attributedAgentName String?
   // IVR-ready fields
-  ivrProvider         String? // "exotel" / "knowlarity" / "myoperator" / null for manual
+  ivrProvider         String? // "asphone" / "acefone" / "exotel" / null for manual
   ivrCallId           String?       @unique
+  ivrAccountId        String? // provider Account ID the call belonged to (multi-account setups)
   recordingUrl        String?
   startedAt           DateTime      @default(now())
   endedAt             DateTime?
@@ -1157,7 +1166,58 @@ model CallLog {
 
   @@index([leadId])
   @@index([userId])
+  @@index([buyerId])
   @@index([startedAt])
+}
+
+// ── CallEvent — verbatim inbound telephony webhook audit ─────────────────────
+// EVERY provider webhook (AS Phone / Acefone / …) is logged here verbatim BEFORE
+// processing, so a call is never lost even if linking fails, and any event can be
+// replayed. processed flips true once a CallLog was upserted; error holds the last
+// processing failure (also enqueued in CallSyncTask for retry). Provider-agnostic.
+model CallEvent {
+  id             String   @id @default(cuid())
+  provider       String // "asphone" | "acefone" | …
+  providerCallId String? // the provider's call/uuid (for dedup + replay)
+  direction      String? // "inbound" | "outbound"
+  eventType      String? // provider event/status label, verbatim
+  accountId      String? // provider Account ID
+  rawPayload     Json // the ENTIRE webhook body + query, verbatim (audit/replay)
+  processed      Boolean  @default(false)
+  callLogId      String? // the CallLog this event produced/updated (if any)
+  error          String? // last processing error (null once processed)
+  receivedAt     DateTime @default(now())
+
+  @@index([provider, providerCallId])
+  @@index([processed])
+  @@index([receivedAt])
+}
+
+// ── CallSyncTask — telephony retry queue ─────────────────────────────────────
+// Durable at-least-once queue for telephony work that can transiently fail:
+//   WEBHOOK       — a received CallEvent whose linking/record step threw
+//   CLICK_TO_CALL — an outbound dial the provider API rejected (retryable codes)
+//   SYNC          — a reconciliation pull of recent calls from the provider API
+// Drained by /api/telephony/retry (wired into the cron heartbeat). Exponential
+// backoff via nextAttemptAt; gives up after maxAttempts (status=FAILED, surfaced
+// in the admin console). Provider-agnostic; payload is the job-specific input.
+model CallSyncTask {
+  id            String   @id @default(cuid())
+  kind          String // WEBHOOK | CLICK_TO_CALL | SYNC
+  provider      String
+  refId         String? // providerCallId / CallEvent.id / lead|buyer id — job-specific
+  payload       Json // job input (webhook data, dial params, sync cursor…)
+  status        String   @default("PENDING") // PENDING | DONE | FAILED
+  attempts      Int      @default(0)
+  maxAttempts   Int      @default(6)
+  lastError     String?
+  nextAttemptAt DateTime @default(now())
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([status, nextAttemptAt])
+  @@index([kind])
+  @@index([provider, refId])
 }
 
 model Note {
@@ -1719,8 +1779,8 @@ model AgentStatusEvent {
   // SV-2 stale-watch (heartbeat): dedup state for "your site visit is still active"
   // reminders on an open GOING_* row — nudged at 2h/4h, escalated once to Requires-
   // Review at 6h. Existing rows default to 0 / false (unwatched).
-  staleRemindersSent  Int      @default(0)
-  staleReviewFlagged  Boolean  @default(false)
+  staleRemindersSent  Int       @default(0)
+  staleReviewFlagged  Boolean   @default(false)
   staleLastRemindedAt DateTime?
 
   @@index([userId, createdAt])
@@ -2156,8 +2216,8 @@ model HRCandidate {
   createdAt            DateTime          @default(now())
   updatedAt            DateTime          @updatedAt
 
-  primaryOwner   User?           @relation("HRPrimary", fields: [primaryOwnerId], references: [id])
-  secondaryOwner User?           @relation("HRSecondary", fields: [secondaryOwnerId], references: [id])
+  primaryOwner   User?            @relation("HRPrimary", fields: [primaryOwnerId], references: [id])
+  secondaryOwner User?            @relation("HRSecondary", fields: [secondaryOwnerId], references: [id])
   activities     HRActivity[]
   interviews     HRInterview[]
   followUps      HRFollowUp[]
@@ -2317,21 +2377,21 @@ model HRIntakeLog {
 // Reuses the VoiceMessageKind enum. GUIDANCE = Admin/Senior HR → candidate owner
 // (one-way coaching); ESCALATION / ESCALATION_REPLY = the Junior↔Senior thread.
 model HRVoiceMessage {
-  id             String              @id @default(cuid())
+  id             String               @id @default(cuid())
   candidateId    String
-  candidate      HRCandidate         @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  candidate      HRCandidate          @relation(fields: [candidateId], references: [id], onDelete: Cascade)
   kind           VoiceMessageKind
   createdById    String // User id (resolved in API; no back-relation to keep User model untouched)
   audioData      Bytes
-  mimeType       String              @default("audio/webm")
+  mimeType       String               @default("audio/webm")
   durationSec    Int?
   transcript     String? // OPTIONAL — never blocks save (Lalit rule)
   transcriptLang String?
   textNote       String?
   title          String?
   escalationId   String?
-  escalation     HREscalation?       @relation(fields: [escalationId], references: [id], onDelete: Cascade)
-  createdAt      DateTime            @default(now())
+  escalation     HREscalation?        @relation(fields: [escalationId], references: [id], onDelete: Cascade)
+  createdAt      DateTime             @default(now())
   reads          HRVoiceMessageRead[]
 
   @@index([candidateId, kind])
@@ -2449,10 +2509,10 @@ model BuyerRecord {
   // BuyerRecord is no longer a flat admin repository — it is a lightweight Leads-
   // style pipeline: Admin Pool → assigned to an agent → CONVERTED (became a real
   // Lead) or REJECTED/returned to the pool. ownerId null ⇒ sitting in the pool.
-  ownerId          String? // agent currently working this buyer (null = Admin Buyer Pool)
-  owner            User?     @relation("BuyerOwner", fields: [ownerId], references: [id], onDelete: SetNull)
-  assignedAt       DateTime? // when ownerId was last set
-  poolStatus       String    @default("ADMIN_POOL") // ADMIN_POOL | ASSIGNED | CONVERTED | REJECTED
+  ownerId              String? // agent currently working this buyer (null = Admin Buyer Pool)
+  owner                User?     @relation("BuyerOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  assignedAt           DateTime? // when ownerId was last set
+  poolStatus           String    @default("ADMIN_POOL") // ADMIN_POOL | ASSIGNED | CONVERTED | REJECTED
   // ── Imported buyer status + follow-up (additive migration 20260630170000) ────
   // businessStatus = the REAL imported buyer status (e.g. "Hot", "Cool Off",
   // "Booked") — DISTINCT from poolStatus (the Admin-Pool/Assigned lifecycle). The
@@ -2460,19 +2520,19 @@ model BuyerRecord {
   // for "Admin Pool" (R4). followupDate makes buyer follow-up behave like a lead's
   // (drives follow-up lists/sorting); parsed from the import via parseImportDate —
   // Excel serials incl. decimals, dd/mm/yyyy, ISO (R5). Both nullable + additive.
-  businessStatus   String?
-  followupDate     DateTime?
-  attemptCount     Int       @default(0) // contact attempts (No Answer / Not Picked / WA No Response). Auto-return to pool at 5.
-  remarks          String? // free-text working notes — RETAINED across reassignments
+  businessStatus       String?
+  followupDate         DateTime?
+  attemptCount         Int       @default(0) // contact attempts (No Answer / Not Picked / WA No Response). Auto-return to pool at 5.
+  remarks              String? // free-text working notes — RETAINED across reassignments
   // Conversion → a real Lead.
-  convertedLeadId  String? // FK → Lead (the created lead). SetNull so deleting the lead doesn't delete the buyer.
-  convertedLead    Lead?     @relation("BuyerConvertedLead", fields: [convertedLeadId], references: [id], onDelete: SetNull)
-  convertedAt      DateTime?
-  convertedById    String? // user who converted
+  convertedLeadId      String? // FK → Lead (the created lead). SetNull so deleting the lead doesn't delete the buyer.
+  convertedLead        Lead?     @relation("BuyerConvertedLead", fields: [convertedLeadId], references: [id], onDelete: SetNull)
+  convertedAt          DateTime?
+  convertedById        String? // user who converted
   // Rejection / return to pool.
-  rejectedAt       DateTime?
-  rejectedById     String? // agent/admin who rejected
-  rejectionReason  String?
+  rejectedAt           DateTime?
+  rejectedById         String? // agent/admin who rejected
+  rejectionReason      String?
   // Terminal-reject audit (additive 20260701_..): a Rejected buyer leaves the working
   // pipeline (poolStatus=REJECTED) and stays in the Rejected tab until an admin
   // REACTIVATES it. rejectCategory = the reject bucket (e.g. Not Interested / Wrong
@@ -2480,18 +2540,21 @@ model BuyerRecord {
   // whether the AI Reactivation Engine may later recommend re-engaging this client.
   rejectCategory       String?
   aiEligibleForRevival Boolean?
-  returnedToPoolAt DateTime? // when it last went back to the Admin Pool (return-to-pool OR auto-5-attempts)
+  returnedToPoolAt     DateTime? // when it last went back to the Admin Pool (return-to-pool OR auto-5-attempts)
   // Recycle-bin (Part 5b) — admin bulk-delete is REVERSIBLE. A soft-deleted buyer
   // is excluded from every list/pool/rollup/dedup read (deletedAt:null filter) but
   // the row + its assignment/activity history are retained and can be restored.
-  deletedAt        DateTime?
-  deletedById      String? // admin who soft-deleted it
+  deletedAt            DateTime?
+  deletedById          String? // admin who soft-deleted it
 
   // Agent-handling history (who worked it, attempts, returns) + buyer-scoped activity log.
-  assignments   BuyerAssignment[]
-  activities    BuyerActivity[]
-  stickyNotes   BuyerStickyNote[]
-  fieldHistory  BuyerFieldHistory[]
+  assignments  BuyerAssignment[]
+  activities   BuyerActivity[]
+  stickyNotes  BuyerStickyNote[]
+  fieldHistory BuyerFieldHistory[]
+  // Telephony: calls auto-linked to this buyer by phone (recording + outcome land
+  // in the buyer timeline as a BuyerActivity too — see src/lib/telephony).
+  callLogs     CallLog[]           @relation("BuyerCallLogs")
 
   @@index([buyerKey])
   @@index([projectName])
@@ -2781,25 +2844,25 @@ model BuyerFieldHistory {
 // Transcript is OPTIONAL and NEVER required — the message always saves even if
 // transcription is absent/failed (Lalit rule).
 enum BroadcastTarget {
-  ALL  // every active sales user
+  ALL // every active sales user
   TEAM // a single team (targetTeam)
   USER // one user (targetUserId)
 }
 
 model VoiceBroadcast {
-  id           String          @id @default(cuid())
+  id           String               @id @default(cuid())
   createdById  String
-  createdBy    User            @relation("BroadcastCreator", fields: [createdById], references: [id])
+  createdBy    User                 @relation("BroadcastCreator", fields: [createdById], references: [id])
   audioData    Bytes
-  mimeType     String          @default("audio/webm")
+  mimeType     String               @default("audio/webm")
   durationSec  Int?
-  transcript   String?         // OPTIONAL — never blocks save
+  transcript   String? // OPTIONAL — never blocks save
   title        String?
   targetKind   BroadcastTarget
   targetTeam   String? // "Dubai" | "India" when targetKind = TEAM
   targetUserId String?
-  targetUser   User?           @relation("BroadcastTarget", fields: [targetUserId], references: [id])
-  createdAt    DateTime        @default(now())
+  targetUser   User?                @relation("BroadcastTarget", fields: [targetUserId], references: [id])
+  createdAt    DateTime             @default(now())
   reads        VoiceBroadcastRead[]
 
   @@index([createdAt])
@@ -2840,9 +2903,9 @@ model Customer {
   updatedAt        DateTime @updatedAt
 
   // All enquiries currently linked. Unlink clears the lead's customerId (SetNull).
-  enquiries        Lead[]               @relation("CustomerEnquiries")
+  enquiries  Lead[]              @relation("CustomerEnquiries")
   // Immutable, append-only audit of every link/unlink decision.
-  linkAudits       CustomerLinkAudit[]
+  linkAudits CustomerLinkAudit[]
 
   @@index([canonicalOwnerId])
 }
@@ -2855,7 +2918,7 @@ model CustomerLinkAudit {
   customerId         String?
   customer           Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
   leadId             String
-  action             String    // "LINK" | "UNLINK" (text, no enum — the log can't be invalidated by a future enum edit)
+  action             String // "LINK" | "UNLINK" (text, no enum — the log can't be invalidated by a future enum edit)
   performedById      String?
   performedBy        User?     @relation("CustomerLinkAuditActor", fields: [performedById], references: [id], onDelete: SetNull)
   performedAt        DateTime  @default(now())
