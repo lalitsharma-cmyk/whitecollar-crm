@@ -2,6 +2,17 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import ImportMappingTable, { type MappingRow, type CrmFieldOption } from "./ImportMappingTable";
+import { leadTemplateHeaders } from "@/lib/importMapping";
+
+// Blank CSV of the canonical lead-import headers (client-side blob — no route, no
+// data). Shared by Leads / Master Data / Revival since all import via this wizard.
+function downloadLeadTemplate(label: string) {
+  const csv = leadTemplateHeaders().map((h) => (/[",\r\n]/.test(h) ? `"${h.replace(/"/g, '""')}"` : h)).join(",") + "\r\n";
+  const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8;" }));
+  const a = document.createElement("a");
+  a.href = url; a.download = `${label}-import-template.csv`;
+  a.click(); URL.revokeObjectURL(url);
+}
 
 // ────────────────────────────────────────────────────────────────────────────
 // LeadImportWizard — the SHARED Import-Mapping-Approval wizard used by every
@@ -119,6 +130,8 @@ export default function LeadImportWizard({
 
   const isCsv = mode === "csv";
   const canPreview = isCsv ? !!file : sheetUrl.trim().length > 0;
+  // Template filename per module (all three import via this one wizard).
+  const templateLabel = extraFields?.isColdCall === "true" ? "revival" : defaultDupMode === "skip" ? "master-data" : "leads";
 
   // ── Request builders ───────────────────────────────────────────────────────
   function csvBody(withMapping: boolean): FormData {
@@ -265,6 +278,14 @@ export default function LeadImportWizard({
               </div>
             </>
           )}
+          {/* Blank template — the exact columns the CRM expects. Fill it in and
+              re-import; the wizard auto-maps every column. Shared across modules. */}
+          <div className="text-[11px] text-gray-500">
+            Not sure of the format?{" "}
+            <button type="button" onClick={() => downloadLeadTemplate(templateLabel)} className="text-[#0b1a33] font-semibold underline hover:text-[#c9a24b]">
+              ⬇ Download blank {templateLabel === "master-data" ? "Master Data" : templateLabel === "revival" ? "Revival" : "Leads"} template (CSV)
+            </button>
+          </div>
           {showCampaign && (
             <input
               type="text"

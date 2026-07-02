@@ -116,6 +116,14 @@ export const FIELD_LABELS: Record<string, string> = {
   alreadyBought: "Already bought", alreadyBoughtBy: "Already bought via",
 };
 
+/** Canonical lead-import template headers, in field-catalog order. Human-readable
+ *  labels (FIELD_LABELS) so a non-technical user knows what each column is; the
+ *  import wizard auto-maps every one of them back to its CRM field on re-import.
+ *  Shared by Leads, Master Data and Revival (they all import via the same wizard). */
+export function leadTemplateHeaders(): string[] {
+  return Object.keys(FIELD_CANDIDATES).map((f) => FIELD_LABELS[f] ?? f);
+}
+
 /** The full catalog of assignable CRM fields, for the per-column dropdown. */
 export function crmFieldOptions(): CrmFieldOption[] {
   return Object.keys(FIELD_CANDIDATES).map((field) => ({

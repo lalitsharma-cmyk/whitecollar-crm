@@ -762,13 +762,22 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
             }
             params.set("type", "leads");
             return (
-              <a
-                href={`/api/reports/export?${params.toString()}`}
-                className="btn btn-ghost flex-1 sm:flex-none justify-center"
-                title="Export currently filtered leads to CSV"
-              >
-                ⬇ Export CSV
-              </a>
+              <>
+                <a
+                  href={`/api/reports/export?${params.toString()}`}
+                  className="btn btn-ghost flex-1 sm:flex-none justify-center"
+                  title="Export currently filtered leads to CSV"
+                >
+                  ⬇ Export CSV
+                </a>
+                <a
+                  href={`/api/reports/export?${params.toString()}&format=xlsx`}
+                  className="btn btn-ghost flex-1 sm:flex-none justify-center"
+                  title="Export currently filtered leads to Excel"
+                >
+                  ⬇ Excel
+                </a>
+              </>
             );
           })()}
           {me.role !== "AGENT" && (

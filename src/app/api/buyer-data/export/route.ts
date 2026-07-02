@@ -4,6 +4,7 @@ import { requireUser } from "@/lib/auth";
 import { audit, reqMeta } from "@/lib/audit";
 import { parseJsonArray, formatTxnValue, inferBuyerCurrency } from "@/lib/buyerIntelligence";
 import { NextResponse } from "next/server";
+import * as XLSX from "xlsx";
 
 // Buyer Data CSV export — ADMIN ONLY (passport + financial data). Watermarked +
 // audited like the lead export so a leaked file traces back to the downloader.
@@ -47,7 +48,7 @@ async function buildExport(
     orderBy: { transactionDate: "desc" },
   });
 
-  const csv = toCsv(records.map((r) => {
+  const rows = records.map((r) => {
     const ccy = inferBuyerCurrency({ nationality: r.nationality, projectName: r.projectName, source: r.source });
     return {
       id: r.id,
@@ -73,31 +74,46 @@ async function buildExport(
       buyerKey: r.buyerKey ?? "",
       createdAt: istDate(r.createdAt),
     };
-  }));
+  });
+  const csv = toCsv(rows);
+  const format = new URL(req.url).searchParams.get("format")?.toLowerCase() === "xlsx" ? "xlsx" : "csv";
 
   const stamp = new Date().toISOString();
-  const watermark = [
-    `# Confidential Dubai Buyer Data export from White Collar Realty CRM`,
+  const watermarkLines = [
+    `# Confidential ${market} Buyer Data export from White Collar Realty CRM`,
     `# Downloaded by: ${me.email} (${me.name}) at ${stamp}`,
     `# Rows: ${records.length}${note ? `  ·  ${note}` : ""}  ·  Contains passport & financial data — do NOT share outside the company.`,
-    "",
-  ].join("\r\n");
+  ];
   const footer = `\r\n# Exported by ${me.name} at ${stamp} — confidential\r\n`;
 
   await audit({
     userId: me.id,
     action: "export.buyer-data",
     entity: "BuyerRecord",
-    meta: { rowCount: records.length, note: note ?? undefined },
+    meta: { rowCount: records.length, market, format, note: note ?? undefined },
     request: reqMeta(req),
   });
 
-  const filename = `wcr-buyer-data-${new Date().toISOString().slice(0, 10).replace(/-/g, "")}.csv`;
-  return new Response(watermark + csv + footer, {
+  const base = `wcr-${market.toLowerCase()}-buyer-data-${new Date().toISOString().slice(0, 10).replace(/-/g, "")}`;
+  if (format === "xlsx") {
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), `${market} Buyers`);
+    const infoRows = [...watermarkLines.map((l) => ({ Info: l.replace(/^# ?/, "") })), { Info: footer.trim().replace(/^# ?/, "") }];
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(infoRows, { skipHeader: true }), "Export Info");
+    const buf = XLSX.write(wb, { type: "buffer", bookType: "xlsx" }) as Buffer;
+    return new Response(new Uint8Array(buf), {
+      status: 200,
+      headers: {
+        "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "Content-Disposition": `attachment; filename="${base}.xlsx"`,
+      },
+    });
+  }
+  return new Response(watermarkLines.join("\r\n") + "\r\n" + csv + footer, {
     status: 200,
     headers: {
       "Content-Type": "text/csv; charset=utf-8",
-      "Content-Disposition": `attachment; filename="${filename}"`,
+      "Content-Disposition": `attachment; filename="${base}.csv"`,
     },
   });
 }

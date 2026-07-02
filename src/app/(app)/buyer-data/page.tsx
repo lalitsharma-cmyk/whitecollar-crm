@@ -182,6 +182,7 @@ export default async function BuyerDataPage() {
           <div className="flex items-center gap-2 self-start sm:self-auto">
             <Link href="/buyer-data/import" className="btn btn-primary" title="Import buyer transaction data">⬆ Import</Link>
             <a href="/api/buyer-data/export" className="btn btn-ghost" title="Export buyer data to CSV">⬇ Export CSV</a>
+            <a href="/api/buyer-data/export?format=xlsx" className="btn btn-ghost" title="Export buyer data to Excel">⬇ Excel</a>
           </div>
         )}
       </div>

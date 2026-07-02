@@ -2,11 +2,12 @@ import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/auth";
 import { audit, reqMeta } from "@/lib/audit";
-import { leadScopeWhere } from "@/lib/leadScope";
+import { leadScopeWhere, COLD_ORIGINS } from "@/lib/leadScope";
 import { TERMINAL_STATUSES, CLOSED_OUTCOME_STATUSES, LOST_STATUSES } from "@/lib/lead-statuses";
 import { effectiveSource } from "@/lib/sourceLabel";
 import { overdueFollowupBoundary } from "@/lib/datetime";
 import { LeadSource, LeadStatus, AIScore, Prisma } from "@prisma/client";
+import * as XLSX from "xlsx";
 
 // CSV export — ADMIN ONLY. Every export is audited and the CSV is watermarked
 // with the downloader's email + timestamp, so a leaked file traces back to
@@ -169,6 +170,7 @@ export async function GET(req: NextRequest) {
   const type = sp.type ?? "leads";
 
   let csv = "", filename = "export.csv", rowCount = 0;
+  let rows: Record<string, unknown>[] = [];
   let appliedFilters: Record<string, string> = {};
 
   if (type === "leads") {
@@ -331,63 +333,102 @@ export async function GET(req: NextRequest) {
       include: LEAD_EXPORT_INCLUDE,
       orderBy: { createdAt: "desc" },
     });
-    rowCount = leads.length;
-    csv = toCsv(leads.map(leadCsvRow));
-    filename = `wcr-leads-filtered-${new Date().toISOString().slice(0, 10).replace(/-/g, "")}.csv`;
+    rows = leads.map(leadCsvRow);
+    rowCount = rows.length;
+    filename = `wcr-leads-filtered-${new Date().toISOString().slice(0, 10).replace(/-/g, "")}`;
+  } else if (type === "revival") {
+    // ── Revival / Cold export — mirrors /cold-calls (the Revival Engine) ────
+    // Cold leads are Lead rows flagged isColdCall or with a revival origin.
+    // Active (non-deleted) by default; ?showRejected=1 includes rejected.
+    const scope = await leadScopeWhere(me);
+    const where: Prisma.LeadWhereInput = {
+      ...scope,
+      deletedAt: null,
+      OR: [{ isColdCall: true }, { leadOrigin: { in: COLD_ORIGINS } }],
+    };
+    if (sp.showRejected !== "1") where.rejectedAt = null;
+    if (sp.team) where.forwardedTeam = sp.team;
+    // Unassigned = ready-to-assign only → always exclude rejected (never re-surface
+    // a rejected lead as assignable), matching the leads arm above.
+    if (sp.owner === "unassigned") { where.ownerId = null; where.rejectedAt = null; }
+    else if (sp.owner) where.ownerId = sp.owner;
+    if (sp.q) {
+      where.AND = [{ OR: [
+        { name: { contains: sp.q, mode: "insensitive" } },
+        { phone: { contains: sp.q } },
+        { email: { contains: sp.q, mode: "insensitive" } },
+      ] }];
+    }
+    const cold = await prisma.lead.findMany({ where, include: LEAD_EXPORT_INCLUDE, orderBy: { createdAt: "desc" } });
+    rows = cold.map(leadCsvRow);
+    rowCount = rows.length;
+    appliedFilters = Object.fromEntries((["q", "team", "owner", "showRejected"] as const).flatMap((k) => (sp[k] ? [[k, String(sp[k])]] : [])));
+    filename = `wcr-revival-${new Date().toISOString().slice(0, 10).replace(/-/g, "")}`;
   } else if (type === "calls") {
     // Per Lalit's feedback (2026-06): the CSV export must NOT carry an
     // "Agents" / agent-name column — exports were getting forwarded to
     // brokers and partners, and agent attribution was leaking. We still
     // pull `user` for any future auditing, but omit it from the rendered row.
     const calls = await prisma.callLog.findMany({ include: { lead: true, user: true } });
-    rowCount = calls.length;
-    csv = toCsv(calls.map(c => ({
+    rows = calls.map(c => ({
       id: c.id, startedAt: c.startedAt.toISOString(), lead: c.lead?.name ?? c.phoneNumber,
       direction: c.direction, outcome: c.outcome, durationSec: c.durationSec,
       notes: c.notes,
-    })));
-    filename = `calls-${new Date().toISOString().slice(0, 10)}.csv`;
+    }));
+    rowCount = rows.length;
+    filename = `calls-${new Date().toISOString().slice(0, 10)}`;
   } else {
     return NextResponse.json({ error: "Unknown type" }, { status: 400 });
   }
 
-  // Watermark — first 3 lines are a comment header. Excel ignores them as long
-  // as they start with "#"; lets us trace any leaked CSV back to the downloader.
+  csv = toCsv(rows);
+  const isLeadType = type === "leads" || type === "revival";
+  const format = (sp.format ?? "csv").toLowerCase() === "xlsx" ? "xlsx" : "csv";
+
+  // Watermark — first lines are a comment header. Excel ignores "#"-prefixed
+  // lines; lets us trace any leaked file back to the downloader.
   const stamp = new Date().toISOString();
-  const filterSummary = type === "leads" && Object.keys(appliedFilters).length > 0
+  const filterSummary = isLeadType && Object.keys(appliedFilters).length > 0
     ? Object.entries(appliedFilters).map(([k, v]) => `${k}=${v}`).join(" · ")
     : "(no filters)";
-  const watermark = [
+  const watermarkLines = [
     `# Confidential export from White Collar Realty CRM`,
     `# Downloaded by: ${me.email} (${me.name}) at ${stamp}`,
     `# Type: ${type}  ·  Rows: ${rowCount}  ·  Sharing this file outside the company breaches the Data Handling policy.`,
-    ...(type === "leads" ? [`# Filters: ${filterSummary}`] : []),
-    "",
-  ].join("\r\n");
-
-  // End-of-file watermark row — required so a CSV that's been truncated
-  // (e.g. attached to an email with a chunk dropped) still carries the
-  // exporter's name. Kept distinct from the header watermark so even a
-  // copy-paste of just the rows loses the trail unless the bottom row stays.
+    ...(isLeadType ? [`# Filters: ${filterSummary}`] : []),
+  ];
   const footer = `\r\n# Exported by ${me.name} at ${stamp} — confidential\r\n`;
 
   await audit({
     userId: me.id,
     action: `export.${type}`,
-    entity: type === "leads" ? "Lead" : "CallLog",
-    meta: {
-      rowCount,
-      filename,
-      ...(type === "leads" ? { filters: appliedFilters } : {}),
-    },
+    entity: isLeadType ? "Lead" : "CallLog",
+    meta: { rowCount, filename: `${filename}.${format}`, format, ...(isLeadType ? { filters: appliedFilters } : {}) },
     request: reqMeta(req),
   });
 
-  return new Response(watermark + csv + footer, {
+  // ── Excel (.xlsx) — same data + the watermark preserved on a second sheet so
+  //    traceability survives even in the binary format. ────────────────────────
+  if (format === "xlsx") {
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), type.slice(0, 28) || "Export");
+    const infoRows = [...watermarkLines.map((l) => ({ Info: l.replace(/^# ?/, "") })), { Info: footer.trim().replace(/^# ?/, "") }];
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(infoRows, { skipHeader: true }), "Export Info");
+    const buf = XLSX.write(wb, { type: "buffer", bookType: "xlsx" }) as Buffer;
+    return new Response(new Uint8Array(buf), {
+      status: 200,
+      headers: {
+        "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "Content-Disposition": `attachment; filename="${filename}.xlsx"`,
+      },
+    });
+  }
+
+  return new Response(watermarkLines.join("\r\n") + "\r\n" + csv + footer, {
     status: 200,
     headers: {
       "Content-Type": "text/csv; charset=utf-8",
-      "Content-Disposition": `attachment; filename="${filename}"`,
+      "Content-Disposition": `attachment; filename="${filename}.csv"`,
     },
   });
 }
