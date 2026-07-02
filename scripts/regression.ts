@@ -5887,6 +5887,10 @@ const checks: Check[] = [
       const banner = fs.readFileSync("src/components/InvestorBanner.tsx", "utf8");
       assert(/hideReturningContact/.test(banner) && /matchedLeadIds\.length === 0 \|\| hideReturningContact/.test(banner),
         "InvestorBanner must hide the non-investor returning case when hideReturningContact is set");
+      // Zero feature drift (#3): the card is surfaced on Cold/Revival detail too.
+      const cold = fs.readFileSync("src/app/(app)/revival-engine/cold-data/[id]/page.tsx", "utf8");
+      assert(/getReturningClientView\(me, lead\)/.test(cold) && /returningClient && <ReturningClientCard/.test(cold),
+        "Cold/Revival detail must also surface the ReturningClientCard (same flag, zero feature drift)");
     },
   },
 ];

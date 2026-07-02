@@ -9,6 +9,9 @@ import Link from "next/link";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { leadScopeWhere, COLD_ORIGINS } from "@/lib/leadScope";
+import { getReturningClientCardEnabled } from "@/lib/settings";
+import { getReturningClientView } from "@/lib/customer/returningClient";
+import ReturningClientCard from "@/components/ReturningClientCard";
 import { formatLeadName } from "@/lib/leadName";
 import { formatDistanceToNow, format } from "date-fns";
 import ConversationStreamCard from "@/components/ConversationStreamCard";
@@ -69,6 +72,14 @@ export default async function ColdDataDetailPage({ params, searchParams }: { par
     notFound();
   }
 
+  // Unified Lead Detail (Phase E / WS-J J5) — cross-module Returning Client card,
+  // now on Cold/Revival too (zero feature drift, governance #3: the same client's
+  // data is visible everywhere). Flag-gated (default OFF → no-op); read-only +
+  // scope-safe (agents only ever see their own sibling enquiries).
+  const returningClient = (await getReturningClientCardEnabled())
+    ? await getReturningClientView(me, lead)
+    : null;
+
   // Sticky note — private per-agent. Upsert anchors updatedAt on first view. This
   // also mounts the listener for the "Note" action button (open-sticky-<leadId>),
   // which otherwise had no listener on cold data → the Note button did nothing.
@@ -124,6 +135,10 @@ export default async function ColdDataDetailPage({ params, searchParams }: { par
       {/* ── Duplicate-intent banner — reused from the Lead view; re-checks on every
           inline edit (router.refresh re-runs getDuplicateIntent). ── */}
       <DuplicateIntentBanner intent={dupIntent} />
+
+      {/* Unified Lead Detail (Phase E / J5) — cross-module Returning Client card:
+          the same client's other enquiries across modules, shown on Cold too. */}
+      {returningClient && <ReturningClientCard view={returningClient} />}
 
       {/* ── Main header card ── */}
       <div className="card p-5">
