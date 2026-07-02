@@ -51,7 +51,8 @@ export default function ReturningClientCard({ view }: { view: ReturningClientVie
           <Rollup label="Projects" value={summary.projects.join(", ") || "—"} />
           {summary.firstEnquiryAt && <Rollup label="First seen" value={fmtISTDate(summary.firstEnquiryAt)} />}
           {summary.lastEnquiryAt && <Rollup label="Last seen" value={fmtISTDate(summary.lastEnquiryAt)} />}
-          {summary.owners.length > 0 && <Rollup label="Owners" value={summary.owners.join(", ")} />}
+          {/* Owners rollup intentionally omitted — the summary holds raw ownerIds, and
+              the sibling rows below already show owner NAMES (no raw cuid in the UI). */}
           {summary.sources.length > 0 && <Rollup label="Sources" value={summary.sources.join(", ")} />}
         </div>
       )}
