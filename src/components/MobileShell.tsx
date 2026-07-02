@@ -149,10 +149,13 @@ const bottomNav = [
 
 interface Props {
   children: React.ReactNode;
-  user: { name: string; role: string; avatarColor: string; photoUrl?: string | null; team?: string | null; leadOpsOnly?: boolean };
+  user: { id?: string; name: string; role: string; avatarColor: string; photoUrl?: string | null; team?: string | null; leadOpsOnly?: boolean };
   // Red badge count next to ADMIN → "Awaiting Team" — only ever >0 for
   // ADMIN/MANAGER. Server-fetched in (app)/layout.tsx, 0 for agents.
   awaitingTeamCount?: number;
+  // Red badge on "Leads" = MY overdue follow-ups (leads I own past their
+  // follow-up date). Server-fetched per-user in (app)/layout.tsx. FU-4 safeguard.
+  myOverdueFollowups?: number;
 }
 
 /** Inline avatar — uses uploaded photo if present, falls back to colored initials. */
@@ -164,7 +167,7 @@ function Avatar({ user, initials, size }: { user: Props["user"]; initials: strin
   return <div className={`avatar ${user.avatarColor} ${size}`}>{initials}</div>;
 }
 
-export default function MobileShell({ children, user, awaitingTeamCount = 0 }: Props) {
+export default function MobileShell({ children, user, awaitingTeamCount = 0, myOverdueFollowups = 0 }: Props) {
   const pathname = usePathname();
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -180,6 +183,10 @@ export default function MobileShell({ children, user, awaitingTeamCount = 0 }: P
     if (typeof window !== "undefined") localStorage.setItem("sidebar_collapsed", String(next));
   }
   const initials = user.name.split(" ").map((s) => s[0]).slice(0, 2).join("");
+  // Clicking the "Leads" overdue badge opens exactly MY overdue follow-ups
+  // (followup=overdue keys off the canonical boundary; owner=me keeps the drill
+  // count == the badge count for admins/managers too, not just agents).
+  const overdueHref = user.id ? `/leads?followup=overdue&owner=${user.id}` : "/leads?followup=overdue";
 
   // Root pages = the 5 bottom-nav destinations + profile. On these, the
   // hamburger menu is the primary nav so no back button needed. On any
@@ -243,11 +250,12 @@ export default function MobileShell({ children, user, awaitingTeamCount = 0 }: P
               {group.items.filter((item) => !(item.agentHidden && user.role === "AGENT") && !(item.adminOnly && user.role !== "ADMIN") && !(item.leadOpsHidden && user.leadOpsOnly) && !(item.dubaiBuyerOnly && !(user.role === "ADMIN" || user.team === "Dubai"))).map(({ href, label, Icon, tag }) => {
                 const active = pathname === href || (href !== "/dashboard" && pathname?.startsWith(href));
                 const showAwaitingBadge = href === "/admin/awaiting-team" && awaitingTeamCount > 0;
+                const showOverdueBadge = href === "/leads" && myOverdueFollowups > 0;
                 return (
                   <Link
                     key={href}
-                    href={href}
-                    title={sidebarCollapsed ? label : undefined}
+                    href={showOverdueBadge ? overdueHref : href}
+                    title={sidebarCollapsed ? (showOverdueBadge ? `${label} — ${myOverdueFollowups} overdue follow-up${myOverdueFollowups === 1 ? "" : "s"}` : label) : undefined}
                     className={`nav-item ${active ? "active" : ""} ${sidebarCollapsed ? "justify-center px-0 py-2" : ""}`}
                   >
                     {/* Icon with badge dot in collapsed mode */}
@@ -255,6 +263,9 @@ export default function MobileShell({ children, user, awaitingTeamCount = 0 }: P
                       <Icon className="w-[18px] h-[18px]" strokeWidth={2} />
                       {showAwaitingBadge && sidebarCollapsed && (
                         <span className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-red-500 rounded-full" />
+                      )}
+                      {showOverdueBadge && sidebarCollapsed && (
+                        <span className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-amber-500 rounded-full" />
                       )}
                     </span>
                     {/* Label + badges — only in expanded mode */}
@@ -264,7 +275,10 @@ export default function MobileShell({ children, user, awaitingTeamCount = 0 }: P
                         {showAwaitingBadge && (
                           <span className="ml-auto text-[10px] bg-red-600 text-white px-2 py-0.5 rounded-full font-bold">{awaitingTeamCount}</span>
                         )}
-                        {!showAwaitingBadge && tag && (
+                        {showOverdueBadge && (
+                          <span className="ml-auto text-[10px] bg-amber-500 text-[#0b1a33] px-2 py-0.5 rounded-full font-bold" title={`${myOverdueFollowups} overdue follow-up${myOverdueFollowups === 1 ? "" : "s"}`}>{myOverdueFollowups}</span>
+                        )}
+                        {!showAwaitingBadge && !showOverdueBadge && tag && (
                           <span className="ml-auto text-[10px] bg-[#c9a24b] text-[#0b1a33] px-2 py-0.5 rounded-full font-bold">{tag}</span>
                         )}
                       </>
@@ -394,8 +408,9 @@ export default function MobileShell({ children, user, awaitingTeamCount = 0 }: P
                   {group.items.filter((item) => !(item.agentHidden && user.role === "AGENT") && !(item.adminOnly && user.role !== "ADMIN") && !(item.leadOpsHidden && user.leadOpsOnly) && !(item.dubaiBuyerOnly && !(user.role === "ADMIN" || user.team === "Dubai"))).map(({ href, label, Icon, tag }) => {
                     const active = pathname === href || (href !== "/dashboard" && pathname?.startsWith(href));
                     const showAwaitingBadge = href === "/admin/awaiting-team" && awaitingTeamCount > 0;
+                    const showOverdueBadge = href === "/leads" && myOverdueFollowups > 0;
                     return (
-                      <Link key={href} href={href} onClick={() => setOpen(false)} className={`nav-item ${active ? "active" : ""}`}>
+                      <Link key={href} href={showOverdueBadge ? overdueHref : href} onClick={() => setOpen(false)} className={`nav-item ${active ? "active" : ""}`}>
                         <Icon className="w-[18px] h-[18px] flex-none" />
                         <span>{label}</span>
                         {showAwaitingBadge && (
@@ -403,7 +418,12 @@ export default function MobileShell({ children, user, awaitingTeamCount = 0 }: P
                             {awaitingTeamCount}
                           </span>
                         )}
-                        {!showAwaitingBadge && tag && <span className="ml-auto text-[10px] bg-[#c9a24b] text-[#0b1a33] px-2 py-0.5 rounded-full font-bold">{tag}</span>}
+                        {showOverdueBadge && (
+                          <span className="ml-auto text-[10px] bg-amber-500 text-[#0b1a33] px-2 py-0.5 rounded-full font-bold">
+                            {myOverdueFollowups}
+                          </span>
+                        )}
+                        {!showAwaitingBadge && !showOverdueBadge && tag && <span className="ml-auto text-[10px] bg-[#c9a24b] text-[#0b1a33] px-2 py-0.5 rounded-full font-bold">{tag}</span>}
                       </Link>
                     );
                   })}
