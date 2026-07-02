@@ -671,6 +671,11 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
           <div className="font-bold text-sm mt-1">SLA & Meetings</div>
           <div className="text-[10px] text-gray-500 mt-0.5">Site/Office/Virtual: scheduled, rescheduled, no-show</div>
         </Link>
+        <Link href="/reports/followup-compliance" className="card p-4 border-l-4 border-orange-500 hover:shadow-md transition">
+          <div className="text-2xl">⏰</div>
+          <div className="font-bold text-sm mt-1">Follow-up Compliance</div>
+          <div className="text-[10px] text-gray-500 mt-0.5">Per-agent overdue · due today · chronically-rolled leads</div>
+        </Link>
         <Link href="/reports/fresh-leads" className="card p-4 border-l-4 border-red-500 hover:shadow-md transition">
           <div className="text-2xl">🆕</div>
           <div className="font-bold text-sm mt-1">Fresh-Lead Response</div>
