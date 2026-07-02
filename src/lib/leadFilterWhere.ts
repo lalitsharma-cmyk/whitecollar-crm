@@ -71,6 +71,15 @@ export function leadFilterWhere(sp: SP): Prisma.LeadWhereInput[] {
   if (sp.tag) and.push({ tags: { contains: sp.tag, mode: "insensitive" } });
   if (sp.team) and.push({ forwardedTeam: sp.team });
 
+  // Market (India / UAE) — DISTINCT from Team (see src/lib/market.ts). Matches the
+  // stored `market` column with a Team fallback for any not-yet-backfilled row.
+  // Additive + opt-in (?market=india|uae|dubai); powers the India/Dubai Revival split.
+  if (sp.market) {
+    const m = sp.market.trim().toLowerCase();
+    if (m === "india") and.push({ OR: [{ market: "India" }, { forwardedTeam: "India" }] });
+    else if (m === "uae" || m === "dubai") and.push({ OR: [{ market: "UAE" }, { forwardedTeam: "Dubai" }] });
+  }
+
   // Source — verbatim sourceRaw, multi.
   const srcs = split(sp.source);
   if (srcs.length === 1) and.push({ sourceRaw: srcs[0] });

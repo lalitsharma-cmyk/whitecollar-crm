@@ -77,6 +77,11 @@ export default async function ColdDataPage({ searchParams }: { searchParams: Pro
   // Active status filter — "all" means no status restriction. Kept as a top-level
   // param (?status=) for the chip-tab UX, AND-composed with the shared filters.
   const statusFilter = sp.status ?? "all";
+  // India/Dubai Revival split (Lalit): ?market=india|dubai narrows to that market.
+  // Filtering flows through leadFilterWhere (→ the view + every chip count); the
+  // "All" total also gets it via marketOnlyAnd so counts reconcile per tab.
+  const marketFilter = (sp.market ?? "all").toLowerCase();
+  const marketOnlyAnd = sp.market ? leadFilterWhere({ market: sp.market }) : [];
   const cutoff = new Date(Date.now() - COLD_DAYS * 86400 * 1000);
   const todayStart = startOfDay(new Date());
   const weekStart = startOfWeek(new Date(), { weekStartsOn: 1 });
@@ -136,7 +141,7 @@ export default async function ColdDataPage({ searchParams }: { searchParams: Pro
           : {};
 
   // allCold = everything in scope (for the "All" tab + total). where = the active view.
-  const allCold: Prisma.LeadWhereInput = { AND: [baseScope, originCold] };
+  const allCold: Prisma.LeadWhereInput = { AND: [baseScope, originCold, ...marketOnlyAnd] };
   const where: Prisma.LeadWhereInput = { AND: [baseScope, originCold, statusWhere, ...sharedAnd] };
 
   // Hidden-gem filter: high-value dormant leads (Revival-specific — preserved).
@@ -492,6 +497,36 @@ export default async function ColdDataPage({ searchParams }: { searchParams: Pro
             mediums={mediumOptions}
             propertyTypes={PROPERTY_TYPES}
           />
+
+          {/* India / Dubai Revival split — market tabs (admin/manager). Preserves the
+              current status + filters via the shared param-carry-through. */}
+          {isAdminOrMgr && (
+            <div className="flex gap-2">
+              {(() => {
+                const params = () => {
+                  const p = new URLSearchParams();
+                  for (const [k, v] of Object.entries(sp)) if (v != null && v !== "" && k !== "page") p.set(k, String(v));
+                  return p;
+                };
+                const mHref = (m: string | null) => {
+                  const p = params();
+                  if (m) p.set("market", m); else p.delete("market");
+                  const qs = p.toString();
+                  return qs ? `/cold-calls?${qs}` : "/cold-calls";
+                };
+                const seg = "px-3 py-1.5 rounded-full text-xs font-semibold border min-h-9 inline-flex items-center";
+                const on = "bg-[#0b1a33] text-white border-[#0b1a33] dark:bg-blue-700 dark:border-blue-700";
+                const off = "bg-white dark:bg-slate-700 border-[#e5e7eb] dark:border-slate-600 text-gray-700 dark:text-slate-100 hover:bg-gray-50";
+                return (
+                  <>
+                    <Link href={mHref(null)} className={`${seg} ${marketFilter === "all" ? on : off}`}>All Markets</Link>
+                    <Link href={mHref("india")} className={`${seg} ${marketFilter === "india" ? on : off}`}>🇮🇳 India Revival</Link>
+                    <Link href={mHref("dubai")} className={`${seg} ${marketFilter === "dubai" ? on : off}`}>🇦🇪 Dubai Revival</Link>
+                  </>
+                );
+              })()}
+            </div>
+          )}
 
           {/* Status-based filter tabs (Excel/MIS values) — chip count == records applied */}
           <div className="flex gap-2 overflow-x-auto pb-1 -mx-3 px-3 sm:mx-0 sm:px-0" style={{ scrollbarWidth: "thin" }}>
