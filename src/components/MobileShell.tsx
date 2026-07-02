@@ -130,6 +130,7 @@ const fullNav: NavSection[] = [
     { href: "/leads?owner=unassigned&seg=all", label: "Unassigned Leads",   Icon: Inbox },
     { href: "/admin/identity",        label: "Customer Identity",  Icon: Fingerprint },
     { href: "/admin/assistant",       label: "AI Assistant",       Icon: Bot },
+    { href: "/admin/ai-console",      label: "AI Sales OS",        Icon: Sparkles },
     { href: "/intake",                label: "Lead Intake",        Icon: Upload, leadOpsHidden: true },
     { href: "/admin/projects",        label: "Project Master",     Icon: Landmark },
     { href: "/admin/devices",         label: "Devices",            Icon: ShieldCheck },
