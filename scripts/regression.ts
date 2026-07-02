@@ -5757,11 +5757,16 @@ const checks: Check[] = [
       assert(!!yasir && yasir.active && !yasir.hrOnly, "YASIR target id must be an active, non-HR user");
       assert(!!tanuj && tanuj.active && !tanuj.hrOnly, "TANUJ target id must be an active, non-HR user");
 
-      // Wiring: leadIngest routes via the resolver under the broadened gate.
+      // Wiring: leadIngest routes via resolveActiveAssignee (= the fixed rule +
+      // leave-cover #16) under the broadened gate. resolveActiveAssignee wraps
+      // resolveTeamAutoAssignee, so the Dubai/Tuesday/Tanuj rule still governs.
       const fs = await import("fs");
       const ingest = fs.readFileSync("src/lib/leadIngest.ts", "utf8");
-      assert(/resolveTeamAutoAssignee\(lead\.forwardedTeam\)/.test(ingest) && /wantsAutoAssign/.test(ingest),
-        "leadIngest must resolve the target via resolveTeamAutoAssignee under the autoAssign/WEBSITE gate");
+      assert(/resolveActiveAssignee\(lead\.forwardedTeam\)/.test(ingest) && /wantsAutoAssign/.test(ingest),
+        "leadIngest must resolve the target via resolveActiveAssignee under the autoAssign/WEBSITE gate");
+      const leaveSrc = fs.readFileSync("src/lib/leave.ts", "utf8");
+      assert(/resolveTeamAutoAssignee\(team, now\)/.test(leaveSrc),
+        "resolveActiveAssignee must delegate to resolveTeamAutoAssignee (fixed team rule stays the source of truth)");
       // Real-time intake + manual paths opt in; importers do NOT (so bulk imports stay parked).
       for (const f of [
         "src/app/api/intake/meta/route.ts",
@@ -5776,6 +5781,36 @@ const checks: Check[] = [
       for (const f of ["src/app/api/intake/csv/route.ts", "src/app/api/intake/google-sheet/route.ts"]) {
         assert(!/autoAssign:\s*true/.test(fs.readFileSync(f, "utf8")), `${f} (bulk import) must NOT opt into auto-assign`);
       }
+    },
+  },
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // LEAVE-COVER (#16, 2026-07-02) — an on-leave agent NEVER receives an auto-
+  //   assigned NEW lead: resolveActiveAssignee redirects to a free teammate →
+  //   manager → park. Passthrough when nobody's on leave (no behavior change).
+  //   Pure core is imported + exercised; both auto-assign call sites are wired.
+  // ───────────────────────────────────────────────────────────────────────────
+  {
+    name: "leave-cover — on-leave agent never auto-assigned; redirect teammate→manager→park; both call sites wired",
+    run: async () => {
+      const { pickCoverAssignee, parseLeaveEntries, entriesInEffect } = await import("../src/lib/leaveCover");
+      const Y = "yasir", T = "tanuj", L = "lalit", INDIA = [T, Y];
+      assert(pickCoverAssignee(Y, new Set(), INDIA, L) === Y, "free target passes through");
+      assert(pickCoverAssignee(Y, new Set([Y]), INDIA, L) === T, "on-leave target → free teammate");
+      assert(pickCoverAssignee(T, new Set([T, Y]), INDIA, L) === L, "no free teammate → manager");
+      assert(pickCoverAssignee(T, new Set([T, Y, L]), INDIA, L) === null, "nobody free → park (null)");
+      assert(pickCoverAssignee(null, new Set(), INDIA, L) === null, "null target → null");
+      // `until` is inclusive + auto-expires (ISO lexical compare).
+      const raw = JSON.stringify([{ userId: Y, until: "2026-07-02" }, { userId: T, until: "2026-07-01" }, { userId: "x" }]);
+      assert(parseLeaveEntries(raw).length === 2, "parse drops malformed rows");
+      assert(entriesInEffect(parseLeaveEntries(raw), "2026-07-02").length === 1, "expired entry (until<today) dropped, today kept");
+      assert(entriesInEffect(parseLeaveEntries(raw), "2026-07-03").length === 0, "all expired the next day");
+      // Both auto-assign call sites route through the leave-aware resolver.
+      const fsl = await import("fs");
+      assert(/resolveActiveAssignee\(/.test(fsl.readFileSync("src/lib/leadIngest.ts", "utf8")),
+        "leadIngest must call resolveActiveAssignee (leave-aware)");
+      assert(/resolveActiveAssignee\(/.test(fsl.readFileSync("src/lib/reconciler.ts", "utf8")),
+        "reconciler must call resolveActiveAssignee (leave-aware)");
     },
   },
 

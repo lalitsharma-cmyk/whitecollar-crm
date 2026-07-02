@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { notify, notifyRoles } from "@/lib/notify";
 import { chooseOwnerForNewLead, currentWindow } from "@/lib/assignmentWindow";
-import { resolveTeamAutoAssignee } from "@/lib/teamAutoAssign";
+import { resolveActiveAssignee } from "@/lib/leave";
 import { getRoundRobinEnabled, getAutoAssignmentEnabled, getAutoEscalationEnabled, getSlaBreachEnabled, getFreshUntouchedEscalationEnabled } from "@/lib/settings";
 import { isTeamClassified } from "@/lib/teamRouting";
 import { SUPPRESSED_STATUSES, CLOSING_STATUSES } from "@/lib/lead-statuses";
@@ -75,7 +75,7 @@ export async function runReconciler(): Promise<ReconcileResult> {
     // Lalit 2026-06-30: prefer the fixed team rule (Dubai→Lalit / Tue-IST India→
     // Yasir); fall back to legacy round-robin only for an unknown team. (This sweep
     // only runs when round-robin is ON — OFF by default → dormant.)
-    const fixed = resolveTeamAutoAssignee(team);
+    const fixed = await resolveActiveAssignee(team); // fixed team rule + leave-cover (#16)
     const choice = fixed
       ? { userId: fixed as string | null, window: currentWindow(), fallbackReason: "fixed team rule (Lalit 2026-06-30)" }
       : await chooseOwnerForNewLead(team);

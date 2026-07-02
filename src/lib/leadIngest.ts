@@ -16,7 +16,7 @@ import { websiteMessageRemark } from "@/lib/websiteRemark";
 import { sourceEnumLabel } from "@/lib/sourceLabel";
 import { BOOKED_STATUSES } from "@/lib/lead-statuses";
 import { resolveTeam, routingFieldsFor, automationGate } from "@/lib/teamRouting";
-import { resolveTeamAutoAssignee } from "@/lib/teamAutoAssign";
+import { resolveActiveAssignee } from "@/lib/leave";
 import type { Classification } from "@/lib/leadClassifier";
 import { cleanNeedSnapshot } from "@/lib/needSnapshot";
 import { runIntelligenceCheck } from "@/lib/intelligenceCheck";
@@ -506,7 +506,10 @@ export async function ingestLead(input: RawLeadInput) {
   if (wantsAutoAssign && lead.forwardedTeam) {
     try {
       const cfg = await getWebsiteAutoAssign();          // keep ONLY for the enable toggle
-      const targetUserId = resolveTeamAutoAssignee(lead.forwardedTeam);
+      // Leave-cover (#16): resolveActiveAssignee = the fixed team rule, but if the
+      // resolved agent is on leave today it redirects to a cover (teammate → Lalit →
+      // park). Passthrough when nobody's on leave, so common-path behavior is unchanged.
+      const targetUserId = await resolveActiveAssignee(lead.forwardedTeam);
       if (cfg.enabled && targetUserId && !lead.ownerId) {
         // Validate the resolved user is real, active and not HR-only before assigning.
         const assignee = await prisma.user.findFirst({
