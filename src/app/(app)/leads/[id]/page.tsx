@@ -22,6 +22,7 @@ import AdvancedActivityLogger from "@/components/AdvancedActivityLogger";
 import { getTravelRatePerKmInr, getReturningClientCardEnabled } from "@/lib/settings";
 import { getReturningClientView } from "@/lib/customer/returningClient";
 import ReturningClientCard from "@/components/ReturningClientCard";
+import { PAGE_GRID, MAIN_COL, RIGHT_RAIL } from "@/lib/detailLayout";
 import { runReconciler } from "@/lib/reconciler";
 import InlineEdit from "@/components/InlineEdit";
 import { sourceLabel } from "@/lib/lead-sources";
@@ -915,11 +916,11 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
       {lead.deletedAt && (
         <DeletedLeadBanner leadId={lead.id} deletedAtISO={lead.deletedAt.toISOString()} canRestore={me.isSuperAdmin} />
       )}
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 pb-24 lg:pb-0">
+    <div className={PAGE_GRID}>
       {/* Mobile back link removed — MobileShell now renders a global back
           button in the mobile header (chevron-left next to hamburger) so
           every non-root page has it, not just lead detail. */}
-      <div className="lg:col-span-2 space-y-3">
+      <div className={MAIN_COL}>
         {/* INVESTOR BANNER — Agent V (Round 6). Surfaces "returning client"
             status above everything else. Hides itself when categorization
             !== "Investor" AND no matched leads exist (the component handles it). */}
@@ -1230,7 +1231,7 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
             5. Projects discussed
             ... rest unchanged
       */}
-      <div className="space-y-3">
+      <div className={RIGHT_RAIL}>
         {/* ── Routing info panel (small, read-only) ──
             Shows the team classification provenance so managers/admins can
             audit how this lead ended up on the current team. Hidden from

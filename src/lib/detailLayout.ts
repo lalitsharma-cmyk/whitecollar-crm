@@ -49,10 +49,14 @@ export const FIELD_LABEL = "text-xs text-gray-500 dark:text-slate-400";
  *  the EXACT primitive LeadActionsClient uses for Call/WhatsApp/Email/Log/Note. */
 export const ACTION_ROW = "flex flex-wrap gap-2 mt-3 [&>*]:grow [&>*]:basis-28";
 
+// EXACT values used by the Lead detail (the source-of-truth view) so adopting the
+// tokens there is a zero-visual-change swap. Prior drift had these at gap-4/space-y-4;
+// restored to the Lead's gap-3/space-y-3 (the Buyer view, already on the tokens,
+// tightens by 4px to match — the intended single spacing).
 /** Outer page grid — main col-span-2 + right rail. */
-export const PAGE_GRID = "grid grid-cols-1 lg:grid-cols-3 gap-4 pb-24 lg:pb-0";
+export const PAGE_GRID = "grid grid-cols-1 lg:grid-cols-3 gap-3 pb-24 lg:pb-0";
 /** Main column wrapper. */
-export const MAIN_COL = "lg:col-span-2 space-y-4";
+export const MAIN_COL = "lg:col-span-2 space-y-3";
 /** Right-rail wrapper. */
 export const RIGHT_RAIL = "space-y-3";
 
