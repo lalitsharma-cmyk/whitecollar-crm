@@ -15,7 +15,6 @@ import { startOfDay, startOfWeek, formatDistanceToNow } from "date-fns";
 import Link from "next/link";
 import ColdDataAdminControls from "@/components/ColdDataAdminControls";
 import HiddenGemsBanner, { type HiddenGem } from "@/components/HiddenGemsBanner";
-import DailyRevivalMission from "@/components/DailyRevivalMission";
 import RevivalLeaderboard, { type LeaderboardRow } from "@/components/RevivalLeaderboard";
 import RevivalLeadsListClient, { type RevivalPromoteMeta } from "@/components/RevivalLeadsListClient";
 import LeadFilters from "@/components/LeadFilters";
@@ -282,7 +281,6 @@ export default async function ColdDataPage({ searchParams }: { searchParams: Pro
     lastTouchedAt: g.lastTouchedAt,
   }));
 
-  const streak = me.coldCallStreak ?? 0;
 
   // Contact-today flags (gates the Complete row button) — one batch query over the
   // visible page, same helper + meaning as /leads.
@@ -452,33 +450,14 @@ export default async function ColdDataPage({ searchParams }: { searchParams: Pro
         </div>
       </div>
 
-      {/* ───────── DAILY MISSION (full width) ───────── */}
-      <DailyRevivalMission count={convertedTodayCount} target={REVIVAL_MISSION.dailyCallTarget} />
-
       {/* ───────── HIDDEN GEMS (horizontal scroll) ───────── */}
       <HiddenGemsBanner gems={hiddenGems} />
 
-      {/* ───────── COMPACT STATS STRIP — leaderboard + streak, FULL WIDTH, above the
-           table. Previously a fixed 280px right rail that squeezed the client rows and
-           truncated agent names ("Tanuj Chopra"). Now each card gets ~2× the width and
-           the table below spans the entire row. Pure layout — logic unchanged. */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 lg:gap-3">
-        <RevivalLeaderboard top5={top5} />
-        <div className="card p-2.5 sm:p-3">
-          <div className="flex items-center justify-between">
-            <div className="min-w-0">
-              <div className="text-[10px] uppercase tracking-wide text-gray-500">Your cold-call streak</div>
-              <div className="text-xl font-bold tabular-nums leading-tight">
-                {streak} <span className="text-sm font-normal text-gray-500">days</span>
-              </div>
-            </div>
-            <span className="text-2xl" aria-hidden>{streak > 0 ? "🔥" : "✨"}</span>
-          </div>
-          <p className="mt-1 text-[11px] text-gray-500 leading-snug">
-            {streak > 0 ? "Keep showing up — streaks compound XP." : "Make one cold call today to start a streak."}
-          </p>
-        </div>
-      </div>
+      {/* ───────── COMPACT REVIVAL LEADERS strip (full width, single thin row) —
+           Today's Mission + cold-call-streak widgets removed (Lalit 2026-07-02):
+           the working Revival data (search → filters → records) starts right after
+           this thin strip, no marketing/dashboard space. ───────── */}
+      <RevivalLeaderboard top5={top5} />
 
       {/* ───────── FULL-WIDTH: leads list (table spans the whole row) ───────── */}
       <div className="space-y-3 min-w-0">

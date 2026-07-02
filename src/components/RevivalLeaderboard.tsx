@@ -1,15 +1,11 @@
 "use client";
 
-// Revival Engine — small weekly leaderboard for cold-to-warm conversions.
+// Revival Engine — compact weekly leaderboard for cold-to-warm conversions.
 //
-// Shows the top 5 agents who revived the most dormant leads this week.
-// "Revived" = Lead.isColdCall was true AND Lead.status is now CONTACTED+
-// AND Lead.updatedAt is within the current week. The actual aggregation
-// happens in cold-calls/page.tsx — this component just renders.
-//
-// Kept intentionally small (no avatars, no chart) — it sits in the
-// right-hand column next to the cold-data list and must NOT compete
-// visually with the data the agent is working on.
+// Top agents who revived the most dormant leads this week (aggregation in
+// cold-calls/page.tsx). Rendered as a SINGLE thin horizontal strip (name + count
+// medals inline) so it never competes with the data the agent is working on —
+// ~40-50% of the old vertical-list height (Lalit 2026-07-02).
 
 export interface LeaderboardRow {
   ownerId: string;
@@ -26,57 +22,33 @@ const MEDALS = ["🥇", "🥈", "🥉"];
 
 export default function RevivalLeaderboard({ top5 }: Props) {
   return (
-    <div className="card p-2.5 sm:p-3">
-      <div className="flex items-center justify-between mb-1.5">
-        <div className="flex items-center gap-2">
-          <span className="text-base">🏆</span>
-          <h2 className="text-sm sm:text-base font-bold">Revival Leaders</h2>
-        </div>
-        <span className="text-[10px] uppercase tracking-wide text-gray-500">
-          This week
+    <div className="card p-2 sm:p-2.5">
+      <div className="flex items-center gap-x-3 gap-y-1 flex-wrap text-xs">
+        <span className="flex items-center gap-1.5 font-bold flex-none">
+          <span className="text-sm">🏆</span>Revival Leaders
+          <span className="text-[10px] font-normal uppercase tracking-wide text-gray-400">this week</span>
         </span>
-      </div>
-
-      {top5.length === 0 ? (
-        <div className="text-xs text-gray-500 py-4 text-center">
-          No revivals yet this week. Be the first 💎
-        </div>
-      ) : (
-        <ol className="space-y-1">
-          {top5.map((row, i) => {
-            const medal = MEDALS[i] ?? "";
-            const isTop = i < 3;
-            return (
-              <li
+        {top5.length === 0 ? (
+          <span className="text-gray-500">No revivals yet this week. Be the first 💎</span>
+        ) : (
+          <div className="flex items-center gap-1.5 flex-wrap min-w-0">
+            {top5.map((row, i) => (
+              <span
                 key={row.ownerId}
-                className={`flex items-center gap-2 px-2 py-1 rounded-lg text-xs ${
-                  row.isMe
-                    ? "bg-amber-50 border border-amber-200"
-                    : isTop
-                      ? "bg-gray-50"
-                      : ""
+                className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded ${
+                  row.isMe ? "bg-amber-50 border border-amber-200 dark:bg-amber-950/30 dark:border-amber-800" : ""
                 }`}
               >
-                <span className="w-6 text-center font-bold text-gray-500 tabular-nums">
-                  {medal || `#${i + 1}`}
-                </span>
-                <span className="flex-1 min-w-0 truncate font-medium">
+                <span className="text-gray-500 tabular-nums">{MEDALS[i] ?? `#${i + 1}`}</span>
+                <span className="font-medium truncate max-w-[100px]">
                   {row.name}
-                  {row.isMe && (
-                    <span className="ml-1 text-[10px] text-amber-700 font-semibold">
-                      (you)
-                    </span>
-                  )}
+                  {row.isMe && <span className="ml-0.5 text-[10px] text-amber-700 font-semibold">(you)</span>}
                 </span>
                 <span className="font-bold tabular-nums">{row.count}</span>
-              </li>
-            );
-          })}
-        </ol>
-      )}
-
-      <div className="mt-2 text-[10px] text-gray-500 leading-snug">
-        Cold leads revived to active conversations
+              </span>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
