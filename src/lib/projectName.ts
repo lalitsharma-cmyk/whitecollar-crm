@@ -10,12 +10,23 @@
 
 const despace = (s: string) => s.replace(/[\s\-_]+/g, "").toLowerCase();
 
+// Developer / project acronyms that are conventionally ALL-CAPS. Registered
+// projects already resolve to their canonical Project-Master casing; this catches
+// free-text + unregistered enquiries AND fixes mis-cased source data ("Dlf"/"dlf"
+// → "DLF") so the "Property Enquired" cell reads correctly everywhere it's shown.
+const PROJECT_ACRONYMS = new Set([
+  "DLF", "M3M", "ATS", "BPTP", "AIPL", "ILD", "ROF", "MRG", "CRC", "SS", "ACE",
+  "TARC", "GLS", "RPS", "JMS", "DAMAC", "MAG", "AVL", "SBP", "ORO", "KVD",
+]);
+
 function titleCaseProject(s: string): string {
   return s
     .split(/\s+/)
     .map((w) => {
-      if (/^\d/.test(w)) return w.toUpperCase();      // 2BHK, 3BR, 4BHK
-      if (/^[A-Z0-9&]{2,4}$/.test(w)) return w;        // DLF, M3M, AIPL acronyms
+      if (/^\d/.test(w)) return w.toUpperCase();       // 2BHK, 3BR, 4BHK
+      const bare = w.replace(/[^A-Za-z0-9&]/g, "");      // strip stray punctuation for the lookup
+      if (PROJECT_ACRONYMS.has(bare.toUpperCase())) return w.toUpperCase(); // DLF/Dlf/dlf → DLF
+      if (/^[A-Z0-9&]{2,4}$/.test(w)) return w;         // already-uppercase short tokens
       return w.charAt(0).toUpperCase() + w.slice(1).toLowerCase();
     })
     .join(" ");
