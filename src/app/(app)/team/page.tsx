@@ -8,6 +8,8 @@ import AcefoneAgentIdEdit from "@/components/AcefoneAgentIdEdit";
 import WhatsAppNumberEdit from "@/components/WhatsAppNumberEdit";
 import ManagerPicker from "@/components/ManagerPicker";
 import UserSpecializationEditor from "@/components/UserSpecializationEditor";
+import AgentLeavePanel from "@/components/AgentLeavePanel";
+import { getOnLeaveEntries } from "@/lib/leave";
 import Link from "next/link";
 
 export const dynamic = "force-dynamic";
@@ -100,11 +102,21 @@ export default async function TeamPage() {
   const canEditProfile = me.role === "ADMIN" || me.role === "MANAGER";
   const ace = acefoneEnabled();
 
+  // Agent leave-cover (#16) — admin-only panel to mark agents on/off leave today.
+  const onLeaveMap = new Map((await getOnLeaveEntries()).map((e) => [e.userId, e.until]));
+  const leaveAgents = users.map((u) => ({
+    id: u.id, name: u.name, team: u.team,
+    onLeave: onLeaveMap.has(u.id), until: onLeaveMap.get(u.id) ?? null,
+  }));
+
   return (
     <>
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <h1 className="text-xl sm:text-2xl font-bold">Team &amp; Roles</h1>
       </div>
+
+      {/* Leave-cover control — ADMIN only (managers see the roster but don't set leave) */}
+      {me.role === "ADMIN" && <AgentLeavePanel agents={leaveAgents} />}
 
       {/* Acefone setup banner */}
       <div className={`card p-4 border-l-4 ${ace ? "border-emerald-500 bg-emerald-50" : "border-amber-500 bg-amber-50"}`}>
