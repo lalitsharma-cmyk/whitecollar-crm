@@ -323,7 +323,7 @@ export default async function PropertiesPage({ searchParams }: { searchParams: P
                   {p.developer && <span className="chip src">{p.developer}</span>}
                   {p.country && <span className={`chip ${isIndia ? "src-csv" : "src-wa"}`}>{isIndia ? "India" : "Dubai"}</span>}
                 </div>
-                <div className="grid grid-cols-3 gap-3 mt-3 text-sm">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3 text-sm">
                   <div><div className="text-xs text-gray-500">Units</div><div className="font-semibold">{p.units.length}</div></div>
                   <div><div className="text-xs text-gray-500">Available</div><div className="font-semibold">{avail}</div></div>
                   <div><div className="text-xs text-gray-500">From</div><div className="font-semibold">{fromPrice ? (isIndia ? `₹${(fromPrice/1e7).toFixed(1)} Cr` : `AED ${(fromPrice/1e6).toFixed(1)}M`) : "—"}</div></div>

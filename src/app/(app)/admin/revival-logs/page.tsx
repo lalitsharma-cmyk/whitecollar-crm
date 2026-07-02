@@ -84,7 +84,7 @@ export default async function RevivalLogsPage({
       </div>
 
       {/* Quick stats */}
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <div className="card p-4 text-center">
           <div className="text-2xl font-bold text-emerald-600">{promotedTotal}</div>
           <div className="text-[11px] text-gray-500 mt-0.5">Promotions (shown)</div>

@@ -607,7 +607,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
               gets the full management view above). Persistent entry point into the
               Unassigned-Leads console; mirrors the left-menu "Unassigned Leads". */}
           {isAdmin && !isLeadOps && mgmt && (
-            <div className="grid grid-cols-3 gap-2 sm:gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-3">
               <Link href="/leads?owner=unassigned&seg=all" className="card p-3 border-l-4 border-amber-500 hover:shadow-lg transition">
                 <div className="text-2xl font-extrabold text-amber-700">{mgmt.unassigned}</div>
                 <div className="text-[11px] font-semibold text-amber-900 mt-0.5">📥 Unassigned</div>

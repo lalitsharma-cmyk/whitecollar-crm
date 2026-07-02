@@ -396,7 +396,7 @@ export default function MobileShell({ children, user, awaitingTeamCount = 0, myO
             <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src="/brand/wcr-logo.png" alt="WCR" className="h-9 w-auto object-contain" />
-              <button onClick={() => setOpen(false)} className="p-2 rounded hover:bg-white/10"><X className="w-5 h-5" /></button>
+              <button onClick={() => setOpen(false)} aria-label="Close menu" className="p-2 rounded hover:bg-white/10"><X className="w-5 h-5" /></button>
             </div>
             <nav className="flex-1 px-2 py-3 space-y-1 overflow-y-auto">
               {fullNav.filter((g) => {

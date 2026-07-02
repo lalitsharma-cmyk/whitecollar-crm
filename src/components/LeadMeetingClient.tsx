@@ -136,7 +136,7 @@ export default function LeadMeetingClient({
       </div>
 
       {/* Count tiles — click to filter the history list below by type */}
-      <div className="grid grid-cols-3 gap-2 text-center text-sm">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-center text-sm">
         {([
           { t: "OFFICE_MEETING",  emoji: "🏢", label: "Office",     c: counts.officeMeetings },
           { t: "SITE_VISIT",      emoji: "🚗", label: "Site Visit", c: counts.siteVisits },

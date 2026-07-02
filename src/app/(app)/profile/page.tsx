@@ -35,7 +35,7 @@ export default async function ProfilePage() {
       {/* ── Gamification: level + XP progress, then streaks row ────────── */}
       <XPBar xp={me.xp ?? 0} badgeIds={earnedIds} />
 
-      <div className="grid grid-cols-3 gap-2 sm:gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-3">
         <StreakTile emoji="🔥" label="Daily streak"     value={me.dailyStreak ?? 0} />
         <StreakTile emoji="📅" label="Follow-up streak" value={me.followupStreak ?? 0} />
         <StreakTile emoji="📞" label="Cold-call streak" value={me.coldCallStreak ?? 0} />
@@ -69,7 +69,7 @@ export default async function ProfilePage() {
       {/* My stats this month */}
       <div>
         <div className="text-xs font-bold tracking-widest text-gray-500 mb-2">THIS MONTH</div>
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <div className="card p-4 text-center">
             <div className="text-2xl font-bold">{leadsOwned}</div>
             <div className="text-[10px] uppercase tracking-widest text-gray-500 mt-1">Active leads</div>

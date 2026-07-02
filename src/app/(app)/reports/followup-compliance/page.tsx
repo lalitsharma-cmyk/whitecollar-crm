@@ -109,7 +109,7 @@ export default async function FollowupCompliancePage({
         )}
       </div>
 
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <div className="card p-4 border-l-4 border-red-500">
           <div className="text-[10px] uppercase tracking-widest text-red-700 font-bold">Overdue</div>
           <div className="text-2xl font-extrabold text-red-800 mt-1">{tot.overdue}</div>

@@ -158,7 +158,7 @@ export default async function AgentDetailPage({
       </div>
 
       {/* Headline derived ratios */}
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <div className="card p-4 border-l-4 border-emerald-500">
           <div className="text-[10px] uppercase tracking-widest text-emerald-700 font-bold">Conversion</div>
           <div className="text-2xl font-extrabold text-emerald-800 mt-1">{cv.toFixed(1)}%</div>

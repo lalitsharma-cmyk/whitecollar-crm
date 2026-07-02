@@ -120,7 +120,7 @@ export default function NotifBell() {
 
   return (
     <div className="relative">
-      <button onClick={toggleOpen} className="relative p-1">
+      <button onClick={toggleOpen} aria-label="Notifications" className="relative p-1">
         <Bell className="w-[20px] h-[20px] text-gray-500" />
         {unread > 0 && (
           <span className="absolute -top-1 -right-2 bg-[#ef4444] text-white text-[10px] font-bold rounded-full px-1.5">{unread > 99 ? "99+" : unread}</span>

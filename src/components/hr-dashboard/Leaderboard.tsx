@@ -188,7 +188,7 @@ export function Leaderboard({ rows, periodLabel }: LeaderboardProps) {
                 </div>
 
                 {/* ── Rich per-recruiter metrics (spec item 10) ── */}
-                <div className="mt-2.5 grid grid-cols-3 gap-x-3 gap-y-2.5 pl-9">
+                <div className="mt-2.5 grid grid-cols-1 sm:grid-cols-3 gap-x-3 gap-y-2.5 pl-9">
                   <Metric icon={Phone} label="Calls" value={r.calls} />
                   <Metric
                     icon={CheckCircle2}

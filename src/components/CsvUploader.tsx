@@ -203,7 +203,7 @@ export default function CsvUploader({ agents = [] }: { agents?: Agent[] }) {
           </div>
 
           {/* Summary counts */}
-          <div className="grid grid-cols-3 gap-2 text-center">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-center">
             <div className="bg-white rounded-lg p-2.5 border border-blue-100">
               <div className="text-xl font-bold text-[#0b1a33]">{preview.totalRows}</div>
               <div className="text-[10px] text-gray-500">Total rows</div>

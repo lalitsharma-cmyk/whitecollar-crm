@@ -164,7 +164,7 @@ export default function CallHistoryCard({ callLogs }: Props) {
       )}
 
       {/* Breakdown badges — the agent should scan these first */}
-      <div className="grid grid-cols-4 gap-1.5 text-center text-xs mb-3">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 text-center text-xs mb-3">
         <div className="p-2 rounded bg-blue-50 border border-blue-200">
           <div className="text-lg font-bold text-blue-700">{callStats.total}</div>
           <div className="text-[10px] text-gray-600">Dialed</div>

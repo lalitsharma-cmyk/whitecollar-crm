@@ -236,7 +236,7 @@ export default async function HRReportsPage({ searchParams }: { searchParams: Pr
               : `no candidates joined in ${periodLabel.toLowerCase()}`}
           </span>
         </div>
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <div className="rounded-xl bg-gray-50 dark:bg-slate-800 p-3">
             <div className="text-2xl font-extrabold text-indigo-700 dark:text-indigo-400">{dayStr(tthAvg)}</div>
             <div className="text-[11px] text-gray-500 dark:text-slate-400 mt-0.5">Average</div>
