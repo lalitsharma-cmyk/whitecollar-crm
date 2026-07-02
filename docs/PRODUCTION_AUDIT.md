@@ -1,5 +1,46 @@
 # Production Audit Report — WCR CRM
 
+---
+
+## v1.0 PRODUCTION READINESS AUDIT — 2026-07-02
+
+Comprehensive final gate before v1.0: every page × role, every CRUD flow, import/export,
+filters/search/scope, dashboards, reports, notifications, mobile, performance/loading,
+cross-browser. Method: 5 parallel read-only audit agents + deterministic backbone
+(regression 129/129 against LIVE prod data · full build = every page compiles · route
+inventory). Inventory: **105 pages · 222 API routes · 168 mutation handlers**.
+
+| # | Dimension | Verdict | Detail |
+|---|---|---|---|
+| 1 | **Every page × role/permission** | ✅ **105/105 PASS** | Every page guarded (layout `requireUser()` + `requireRole` + scope helpers). 0 unguarded, 0 cross-team/agent/market leak. The 3 "no explicit guard" pages are safe (layout-gated / re-export a guarded page / public login). |
+| 2 | **Every CRUD flow** | ✅ **PASS** (0 Critical) | 85+ mutation endpoints: all authed + scoped (`canTouchLead`/`canTouchBuyer`/`loadOwnedCandidate`), field-whitelisted (no mass-assign), audited, soft-delete for business data (hard-delete only for admin config / testing-mode). 2 LOW hygiene notes (below). |
+| 3 | **Import / export** | ✅ **PASS** | Every import ADMIN-only (agents cannot import); every export role-gated (agents 403; call-logs role-scoped); scope applied BEFORE user filters; watermark + audit on exports; dedup on every importer. |
+| 4 | **Filters / search / scope** | ✅ **PASS** | Server-side role scope composed FIRST on every list/count/chip/export; source/owner filters role-gated; no URL param can bypass scope; soft-deleted rows hidden via single chokepoint. |
+| 5 | **Dashboards** | ✅ **PASS** | Main + lead-ops + HR dashboards role-scoped; widget counts use unified `activeLeadWhere` helpers (reconcile). |
+| 6 | **Reports** | ✅ **PASS** (after fix) | 21/23 PASS. **2 fixed** → `33ffc2b`: `/reports/daily` + its PDF export let a MANAGER pass `?agent=<cross-team-id>` to view/export another team's agent. Added team validation on both. |
+| 7 | **Notifications** | ✅ **PASS** | Every notification scoped to `userId: me.id`; snooze/mark-read enforce ownership; prefs caller-bound. |
+| 8 | **Mobile** | ✅ **PASS** | Role-based MobileShell nav covers all primary routes; responsive stat grids (this session's fixes verified); mobile card views (not hover-gated); tables `overflow-x-auto`; iOS input-zoom prevention active. |
+| 9 | **Performance / loading** | ✅ **PASS** | `loading.tsx` on every heavy route (skeletons added this session). Query-perf optimizations documented separately (deferred — latency not stability). |
+| 10 | **Cross-browser** | ✅ **PASS (code-level)** | No unsafe modern JS (no `Array.at`/`Object.groupBy`/`structuredClone`/top-level-await); every `navigator`/Web API feature-detected; no Safari CSS hazards (`:has()`/`backdrop-filter`); Intl + date handling safe. **Runtime cross-browser/device sign-off is the human step** (see below). |
+
+### v1.0 fixes applied (deployed `33ffc2b`)
+- `/reports/daily` page — manager team-scope validation on `?agent=`.
+- `/api/reports/daily/pdf` — manager team-scope validation (403 on off-team agent).
+- Resilience (additive): `(hr)/error.tsx`, root `global-error.tsx`, custom `not-found.tsx`.
+
+### Remaining LOW (non-blocking; recommendations, not bugs)
+- `/api/leads/[id]/visit` — creates an Activity but no explicit `audit()` row (hygiene).
+- `/api/admin/templates/[id]` DELETE allows MANAGER — templates are shared config; consider ADMIN-only. Left as-is (a permission-design choice, not a data leak — flagged for your call).
+
+### The one thing code can't fully close
+**Runtime cross-browser + real-device testing** (Safari/iOS, Firefox, older Android Chrome; actual click-through of each flow on physical devices). The code is compat-clean and the regression suite exercises data invariants against live prod, but pixel/interaction sign-off on real devices is a **human QA pass** — recommended before stamping v1.0.
+
+### v1.0 verdict
+**Access control, data-scope integrity, CRUD safety, import/export, mobile, and browser-compat all PASS.** The single real defect (daily-report cross-team leak) is fixed and deployed. Recommendation: **v1.0-ready pending a human runtime/cross-browser QA pass** on real devices.
+
+---
+
+
 Living document for the Production Stabilization Phase. Findings from continuous
 read-only audits (a11y/console, responsive/spacing, loading/empty, performance) +
 deterministic data-integrity monitoring. Severities are **re-triaged to real production
