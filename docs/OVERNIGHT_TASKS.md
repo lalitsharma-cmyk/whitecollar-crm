@@ -49,3 +49,8 @@ Every change: tsc + regression (130) + build → deploy → smoke. Never touch r
 _Blockers, deploys, and test results appended below as the loop runs._
 
 ## D. Run log
+- **d469ea1 DEPLOYED+LIVE** — #5 buyer date bug (suppress implausible serials like 461198) · #7 revival reject tag "Revival Engine Rejected" + exclude rejected from active views (kept in Master Data, team preserved) · #8 rollover moved to ~23:00 IST heartbeat (off the premature 18:00). Gate 130/130.
+- **4034eb0 committed** — #1 India Buyer FOUNDATION: market-generic buyer scope (Dubai byte-preserved wrappers; canAccessBuyerMarket / buyerScopeWhereForMarket / market-aware canTouchBuyer; cross-market leak impossible). Gate 130/130, Dubai intact. India pages/nav/import = next.
+- **Verified already-DONE (no change needed):** #3 Revival DetailShell (single-col intentional) · #4 Imported-Fields card (all 4 detail pages) · #6 buyer notes↔timeline (parity).
+- **De-risked by assessment (smaller than feared):** #9 sidebar shell layout is sound (no shift bug in MobileShell — any break is page-specific) · #10 dashboard "Today" IST boundary is correct (only a cosmetic multi-day label) · #12 reports filters apply correctly (team-scope class already fixed+locked).
+- **Remaining:** #1 India pages/nav/import/export/template · #11 exports+templates for Leads/Master/Revival (+xlsx) · #2 (rides #1) · verify #9/#10 in-browser.
