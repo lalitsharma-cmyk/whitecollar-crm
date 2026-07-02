@@ -4962,6 +4962,26 @@ const checks: Check[] = [
     },
   },
   {
+    name: "report-manager-team-scope — a MANAGER's ?agent=/?user= can't reveal another team's data in reports",
+    run: async () => {
+      const fs = await import("fs");
+      // /reports/daily: a MANAGER's ?agent= must be validated against their own team
+      // (the param used to select the target user directly with no team constraint).
+      const daily = fs.readFileSync("src/app/(app)/reports/daily/page.tsx", "utf8");
+      assert(/managerTeam/.test(daily) && /normalizeTeam\(targetUser\.team\)/.test(daily),
+        "reports/daily must validate ?agent= against the manager's team (managerTeam + normalizeTeam(targetUser.team))");
+      // Daily PDF export: explicit ?agent= must not bypass the manager team scope → 403.
+      const dailyPdf = fs.readFileSync("src/app/api/reports/daily/pdf/route.ts", "utf8");
+      assert(/normalizeTeam\(agent\.team\)/.test(dailyPdf) && /\b403\b/.test(dailyPdf),
+        "daily PDF export must 403 a MANAGER exporting an off-team agent");
+      // /reports/changes: leadFieldHistory must be team-scoped for a MANAGER (query + picker).
+      const changes = fs.readFileSync("src/app/(app)/reports/changes/page.tsx", "utf8");
+      assert(/managerTeam/.test(changes) && /lead:\s*\{\s*forwardedTeam:\s*managerTeam/.test(changes),
+        "reports/changes must scope leadFieldHistory to the manager's team (lead.forwardedTeam == managerTeam)");
+      results.push({ name: "  ↳ note", ok: true, detail: "daily(page+pdf) + changes enforce manager team scope on report params" });
+    },
+  },
+  {
     name: "master-data-source-families — canonical labels (incl. WCR_WEBSITE) + Website/Event presets match the source FAMILY (not one label string)",
     run: async () => {
       const fs = await import("fs");

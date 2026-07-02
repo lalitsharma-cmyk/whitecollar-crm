@@ -2,6 +2,7 @@
 // Lalit this month". Reads the LeadFieldHistory audit trail. Admin/manager only.
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
+import { normalizeTeam } from "@/lib/teamRouting";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { startOfDay, startOfWeek, startOfMonth } from "date-fns";
@@ -21,16 +22,20 @@ const FIELD_LABEL: Record<string, string> = {
 export default async function ChangesReportPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const me = await requireUser();
   if (me.role !== "ADMIN" && me.role !== "MANAGER") redirect("/dashboard");
+  // Team segregation: a MANAGER only sees changes on THEIR team's leads (and only
+  // their team's users in the picker). Admin (managerTeam null) sees all.
+  const managerTeam = me.role === "MANAGER" ? normalizeTeam(me.team) : null;
   const sp = await searchParams;
   const period = sp.period === "week" ? "week" : sp.period === "month" ? "month" : "today";
   const since = period === "week" ? startOfWeek(new Date(), { weekStartsOn: 1 }) : period === "month" ? startOfMonth(new Date()) : startOfDay(new Date());
   const periodLabel = period === "week" ? "This week" : period === "month" ? "This month" : "Today";
 
-  const users = await prisma.user.findMany({ where: { active: true, hrOnly: false, role: { in: ["AGENT", "MANAGER", "ADMIN"] } }, select: { id: true, name: true }, orderBy: { name: "asc" } });
+  const users = await prisma.user.findMany({ where: { active: true, hrOnly: false, role: { in: ["AGENT", "MANAGER", "ADMIN"] }, ...(managerTeam ? { team: managerTeam } : {}) }, select: { id: true, name: true }, orderBy: { name: "asc" } });
   const userFilter = sp.user && sp.user !== "all" ? sp.user : null;
 
   const rows = await prisma.leadFieldHistory.findMany({
-    where: { changedAt: { gte: since }, ...(userFilter ? { changedById: userFilter } : {}) },
+    // Manager: only changes on their own team's leads (segregation). Admin: all.
+    where: { changedAt: { gte: since }, ...(userFilter ? { changedById: userFilter } : {}), ...(managerTeam ? { lead: { forwardedTeam: managerTeam } } : {}) },
     orderBy: { changedAt: "desc" },
     take: 500,
     include: { changedBy: { select: { name: true } }, lead: { select: { id: true, name: true } } },
