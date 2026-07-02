@@ -157,11 +157,13 @@ async function findExistingBuyer(
   buyerKey: string | null,
   phonesJson: string | null,
   emailsJson: string | null,
+  market: string,
 ): Promise<{ id: string; remarks: string | null; extraFields: unknown; rawImport: unknown } | null> {
   const select = { id: true, remarks: true, extraFields: true, rawImport: true } as const;
+  // Dedup is ALWAYS within the same market — an India import never matches a Dubai buyer.
   // 1) buyerKey (name+phone-tail hash) — the strongest signal, already computed.
   if (buyerKey) {
-    const byKey = await prisma.buyerRecord.findFirst({ where: { buyerKey, deletedAt: null, market: "Dubai" }, select });
+    const byKey = await prisma.buyerRecord.findFirst({ where: { buyerKey, deletedAt: null, market }, select });
     if (byKey) return byKey;
   }
   // 2) phone tail — any stored buyer whose primary phone shares the last-8 digits.
@@ -171,7 +173,7 @@ async function findExistingBuyer(
     // phones is a JSON string column; contains() on the tail is a safe pre-filter,
     // then we confirm the tail in app code (avoids a false hit on a substring).
     const candidates = await prisma.buyerRecord.findMany({
-      where: { deletedAt: null, market: "Dubai", phones: { contains: t } },
+      where: { deletedAt: null, market, phones: { contains: t } },
       select: { ...select, phones: true },
       take: 25,
     });
@@ -186,7 +188,7 @@ async function findExistingBuyer(
   for (const e of emails) {
     const lc = e.toLowerCase();
     const candidates = await prisma.buyerRecord.findMany({
-      where: { deletedAt: null, market: "Dubai", emails: { contains: lc } },
+      where: { deletedAt: null, market, emails: { contains: lc } },
       select: { ...select, emails: true },
       take: 25,
     });
@@ -238,6 +240,10 @@ export async function POST(req: NextRequest) {
 
   // Dedup behaviour for rows that match an existing live buyer (admin's choice).
   const dupMode: DupMode = DUP_MODES.has(body.dupMode) ? body.dupMode : "skip";
+  // Which market this import writes to. Default Dubai (every existing caller); the India
+  // Buyer Data import passes market:"India". Dedup + create both use it, so the two
+  // markets never cross. (Route is ADMIN-only — validated above.)
+  const importMarket: string = body.market === "India" ? "India" : "Dubai";
 
   // Resolve the batch's first-seen row offset so logged rowNum is global, not
   // per-chunk. The client passes rowOffset (rows already processed).
@@ -317,7 +323,7 @@ export async function POST(req: NextRequest) {
       const timelineFallback = txnDate ?? new Date();
 
       // ── Dedup: does a LIVE buyer already match this row? ────────────────────
-      const existing = dupMode === "create" ? null : await findExistingBuyer(buyerKey, phonesJson, emailsJson);
+      const existing = dupMode === "create" ? null : await findExistingBuyer(buyerKey, phonesJson, emailsJson, importMarket);
 
       if (existing && dupMode === "skip") {
         skipped++;
@@ -420,9 +426,9 @@ export async function POST(req: NextRequest) {
           followupDate: importedFollowupDate,
           // Remarks verbatim → Raw History (never reformatted).
           remarks: remark,
-          // Dubai Buyer Data — every import into THIS module is a Dubai-market
-          // buyer. A future Gurgaon module would stamp its own market value.
-          market: "Dubai",
+          // Market for this import — Dubai by default; the India Buyer Data import
+          // stamps "India" so INR/Cr buyers land in the India module.
+          market: importMarket,
           source: "Excel import",
           sourceFile,
           extraFields: Object.keys(extra).length ? extra : undefined,

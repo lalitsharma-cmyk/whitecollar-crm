@@ -1996,7 +1996,11 @@ const checks: Check[] = [
 
       // (e) distribution pool + import + export are market-scoped.
       assert(/market:\s*DUBAI_MARKET/.test(read("src/lib/buyerDistribution.ts")), "poolableWhere MUST pin market:DUBAI_MARKET (distribution is Dubai-only)");
-      assert(/market:\s*"Dubai"/.test(read("src/app/api/buyer-data/import/route.ts")), "import MUST stamp market='Dubai'");
+      // Import stamps ONE market — default Dubai; India Buyer import passes market:"India".
+      // Dedup + create both use importMarket, so an India import never matches a Dubai buyer.
+      { const imp = read("src/app/api/buyer-data/import/route.ts");
+        assert(/importMarket:\s*string\s*=\s*body\.market === "India" \? "India" : "Dubai"/.test(imp) && /market: importMarket/.test(imp),
+          "import MUST default market=Dubai + support market=India (importMarket), never cross-market"); }
       // Export scopes to ONE market — default Dubai, ?market=India for the India set —
       // and never mixes markets (admin-only route; both handlers 403 non-admins).
       { const e = read("src/app/api/buyer-data/export/route.ts");

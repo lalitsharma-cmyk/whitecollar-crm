@@ -140,6 +140,7 @@ export default async function IndiaBuyerDataPage() {
         </div>
         {isAdmin && (
           <div className="flex items-center gap-2 self-start sm:self-auto">
+            <Link href="/india-buyer-data/import" className="btn btn-primary" title="Import India buyer transaction data">⬆ Import</Link>
             <a href="/api/buyer-data/export?market=India" className="btn btn-ghost" title="Export India buyer data to CSV">⬇ Export CSV</a>
           </div>
         )}

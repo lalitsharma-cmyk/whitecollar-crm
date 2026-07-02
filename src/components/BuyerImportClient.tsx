@@ -53,15 +53,17 @@ function guessColumnMap(headers: string[]): Record<string, ColTarget> {
 // Download a blank CSV of the canonical buyer-import headers. A file built from this
 // re-imports at full auto-map confidence (each template header IS the first alias of
 // its field). Pure client-side blob — no server route, no data, admin-gated page.
-function downloadTemplate() {
+function downloadTemplate(market: "Dubai" | "India" = "Dubai") {
   const csv = buyerTemplateHeaders().map((h) => (/[",\r\n]/.test(h) ? `"${h.replace(/"/g, '""')}"` : h)).join(",") + "\r\n";
   const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8;" }));
   const a = document.createElement("a");
-  a.href = url; a.download = "dubai-buyer-import-template.csv";
+  a.href = url; a.download = `${market.toLowerCase()}-buyer-import-template.csv`;
   a.click(); URL.revokeObjectURL(url);
 }
 
-export default function BuyerImportClient() {
+// `market` decides which Buyer-Data module the rows land in (Dubai=AED default,
+// India=INR). The same mapping wizard + template serve both.
+export default function BuyerImportClient({ market = "Dubai" }: { market?: "Dubai" | "India" } = {}) {
   const router = useRouter();
   const [step, setStep] = useState<"upload" | "map" | "run" | "done">("upload");
   const [fileName, setFileName] = useState("");
@@ -172,7 +174,7 @@ export default function BuyerImportClient() {
       try {
         const res = await fetch("/api/buyer-data/import", {
           method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ batchId: bid, rows: chunk, rowOffset: i, sourceFile: fileName, dupMode }),
+          body: JSON.stringify({ batchId: bid, rows: chunk, rowOffset: i, sourceFile: fileName, dupMode, market }),
         });
         const j = await res.json();
         if (!res.ok) { setNote(`❌ Import failed: ${j.error ?? "server error"}`); setErr(j.error ?? "Import failed."); setStep("map"); return; }
@@ -209,7 +211,7 @@ export default function BuyerImportClient() {
           </label>
           <div className="flex items-center justify-center gap-2 text-xs text-gray-500 dark:text-slate-400">
             <span>Not sure of the column names?</span>
-            <button type="button" onClick={downloadTemplate} className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-slate-200 hover:bg-gray-50 dark:hover:bg-slate-800 font-medium">⬇ Download template</button>
+            <button type="button" onClick={() => downloadTemplate(market)} className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-slate-200 hover:bg-gray-50 dark:hover:bg-slate-800 font-medium">⬇ Download template</button>
           </div>
         </div>
       )}
