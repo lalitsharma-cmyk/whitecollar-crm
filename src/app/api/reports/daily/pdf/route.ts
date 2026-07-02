@@ -4,10 +4,11 @@
 // Mirrors what /reports/daily shows, but rolled up across all agents the
 // caller can scope to. Uses pdfkit (same lib as the CMA generator at
 // src/lib/cmaPdf.ts) so we don't add a new npm dependency.
-import { type NextRequest } from "next/server";
+import { NextResponse, type NextRequest } from "next/server";
 import PDFDocument from "pdfkit";
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/auth";
+import { normalizeTeam } from "@/lib/teamRouting";
 import { ActivityType, CallOutcome } from "@prisma/client";
 import { BOOKED_STATUSES } from "@/lib/lead-statuses";
 import { audit, reqMeta } from "@/lib/audit";
@@ -57,7 +58,18 @@ export async function GET(req: NextRequest) {
   // - manager (not admin) is implicitly limited to their direct reports + self
   const userWhere: { active: boolean; team?: string; id?: string | { in: string[] } } = { active: true };
   if (teamParam && teamParam !== "all") userWhere.team = teamParam;
-  if (agentParam) userWhere.id = agentParam;
+  if (agentParam) {
+    userWhere.id = agentParam;
+    // Team segregation: a MANAGER may only export an agent on their OWN team. An
+    // explicit ?agent= must NOT bypass the team scope (mirrors /reports/daily). Admin
+    // is unrestricted.
+    if (me.role === "MANAGER") {
+      const agent = await prisma.user.findUnique({ where: { id: agentParam }, select: { team: true } });
+      if (!agent || normalizeTeam(agent.team) !== normalizeTeam(me.team)) {
+        return NextResponse.json({ error: "You can only export agents on your own team." }, { status: 403 });
+      }
+    }
+  }
   if (me.role === "MANAGER" && !agentParam) {
     const reports = await prisma.user.findMany({
       where: { managerId: me.id, active: true },

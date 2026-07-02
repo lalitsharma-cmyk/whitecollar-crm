@@ -53,7 +53,13 @@ export default async function DailyReportPage({ searchParams }: { searchParams: 
   // Agent scope: agents always see themselves; admin/manager can pick via ?agent=
   const targetUserId = me.role === "AGENT" ? me.id : (sp.agent ?? me.id);
   const targetUser = await prisma.user.findUnique({ where: { id: targetUserId } });
-  if (!targetUser) return <div className="card p-6">Agent not found</div>;
+  if (!targetUser) return <div className="card p-5">Agent not found</div>;
+  // Team segregation: a MANAGER may only view agents on their OWN team — a crafted
+  // ?agent=<cross-team-id> must not reveal another team's numbers. Admin (managerTeam
+  // null) is unrestricted; agents are already pinned to their own id above.
+  if (managerTeam && normalizeTeam(targetUser.team) !== managerTeam) {
+    return <div className="card p-5">You can only view agents on your own team.</div>;
+  }
 
   // ── Pull actuals for the chosen day, scoped to the chosen agent ─────
   const [calls, connected, virtualDone, f2fDone, freshClients, dealsWonToday] = await Promise.all([
