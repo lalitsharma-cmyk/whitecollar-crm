@@ -130,7 +130,14 @@ function readableFollowup(v: string): string {
   // The import write-path + backfill use the SAME parser, so the displayed remark
   // text and the indexed followupDate column can never disagree.
   const d = parseFollowupDate(v);
-  return d ? d.toISOString().slice(0, 10) : v.trim();
+  if (d) return d.toISOString().slice(0, 10);
+  // Not a real date. Suppress only a clearly-IMPLAUSIBLE big bare number (≥ 80000 — an
+  // Excel serial that far out is year ~2100+, i.e. a mismapped id/serial like 461198,
+  // never a real follow-up) so no raw serial surfaces in the UI. Keep bare years
+  // ("2026") + small refs + genuine text verbatim, exactly as before.
+  const t = v.trim();
+  if (/^\d+(\.\d+)?$/.test(t) && parseFloat(t) >= 80000) return "";
+  return t;
 }
 
 /** Build a single labeled remark line from a map of status-like fields, e.g.

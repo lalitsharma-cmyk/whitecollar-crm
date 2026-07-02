@@ -1,7 +1,8 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // Sales follow-up auto-rollover (Lalit, 2026-06-21).
 //
-// Run nightly at 9 PM IST. Any SALES lead whose follow-up date is today-or-earlier
+// Run nightly ~11 PM IST (end of the working day, via the /api/cron/warm heartbeat) so
+// today's still-open follow-ups are never bumped early. Any SALES lead whose follow-up date is today-or-earlier
 // (IST) and is still pending gets its follow-up moved to the NEXT calendar day
 // (same IST time-of-day), so stale dates never pile up when an agent forgets to
 // reschedule. Example (today = 20 Jun): follow-ups on 18/19/20 Jun → 21 Jun.

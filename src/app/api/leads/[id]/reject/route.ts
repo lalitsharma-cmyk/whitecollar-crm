@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { ActivityType, ActivityStatus } from "@prisma/client";
 import { requireUser } from "@/lib/auth";
-import { canTouchLead } from "@/lib/leadScope";
+import { canTouchLead, COLD_ORIGINS } from "@/lib/leadScope";
 import { audit, reqMeta } from "@/lib/audit";
 import { notify } from "@/lib/notify";
 import { REJECT_REASON_VALUES, rejectReasonLabel, rejectionStatusFor } from "@/lib/reject-reasons";
@@ -46,6 +46,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       ownerId: true,
       currentStatus: true,
       rejectedAt: true,
+      tags: true,
+      isColdCall: true,
+      leadOrigin: true,
       owner: { select: { id: true, name: true, managerId: true } },
     },
   });
@@ -94,6 +97,17 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   // reject flow is the controlled way they get applied.
   const newStatus = rejectionStatusFor(reason);
 
+  // Revival Engine reject tag: when a COLD/REVIVAL lead is rejected, stamp the
+  // "Revival Engine Rejected" tag so it (a) is filterable and (b) is clearly
+  // archived out of the active Revival views into Master Data. Team (forwardedTeam)
+  // is untouched. Non-revival leads are unaffected.
+  const isRevival = lead.isColdCall === true || (lead.leadOrigin != null && (COLD_ORIGINS as readonly string[]).includes(lead.leadOrigin));
+  const existingTags = (lead.tags ?? "").split(",").map((t) => t.trim()).filter(Boolean);
+  const REVIVAL_REJECTED_TAG = "Revival Engine Rejected";
+  const nextTags = isRevival && !existingTags.includes(REVIVAL_REJECTED_TAG)
+    ? [...existingTags, REVIVAL_REJECTED_TAG].join(", ")
+    : (lead.tags ?? null);
+
   // Single update — everything lost-related in one write. lastTouchedAt is
   // bumped so the lead doesn't get flagged as "ghosting" right after rejection.
   await prisma.lead.update({
@@ -115,6 +129,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       followupDate: null,
       followupReminderSentAt: null,
       lastTouchedAt: now,
+      tags: nextTags,
       // Future Re-engage: remember when + to whom to reactivate (owner at reject time).
       reEngageAt,
       reEngageOwnerId: reEngageAt ? lead.ownerId : null,

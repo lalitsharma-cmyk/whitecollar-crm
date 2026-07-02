@@ -8,7 +8,6 @@ import { notify, notifyRoles } from "@/lib/notify";
 import { ActivityStatus, AIScore } from "@prisma/client";
 import { SUPPRESSED_STATUSES } from "@/lib/lead-statuses";
 import { startCronRun, finishCronRun } from "@/lib/cronRun";
-import { runFollowupRollover } from "@/lib/followupRollover";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -87,25 +86,12 @@ export async function GET(req: NextRequest) {
 
   await finishCronRun(runId, "OK", undefined, { agentsNotified: notified });
 
-  // ── Reliability: run the nightly follow-up rollover from HERE ──────────────
-  // The GitHub-Actions schedule ("30 15 * * *" → /api/cron/followup-rollover) is
-  // NOT firing (confirmed 2026-07-02: zero followup-rollover CronRun rows ever;
-  // overdue piled up back to 26 Jun). This evening-reminder cron is Vercel-native
-  // and DOES fire daily, so we run the rollover here as the reliable path — AFTER
-  // the EOD reminders above, so agents are nudged about today's misses before the
-  // roll moves them forward. Idempotent: if the GH job ever recovers, a 2nd same-
-  // day run is a no-op (nothing left to move). Logged as its own run; a rollover
-  // failure never fails the reminder cron.
-  let rollover: Awaited<ReturnType<typeof runFollowupRollover>> | null = null;
-  const rollId = await startCronRun("followup-rollover");
-  try {
-    rollover = await runFollowupRollover(new Date());
-    await finishCronRun(rollId, "OK", undefined, { moved: rollover.moved, via: "evening-reminder" });
-  } catch (e) {
-    await finishCronRun(rollId, "ERROR", String(e));
-  }
-
-  return NextResponse.json({ ok: true, agentsNotified: notified, breakdown: missesByAgent, rollover });
+  // NOTE (Lalit 2026-07-03): the nightly follow-up rollover no longer runs here.
+  // Rolling at 18:00 IST prematurely bumped TODAY's still-open follow-ups to tomorrow
+  // while agents were still working them. It now runs LATE-NIGHT (~23:00 IST, after the
+  // working day is over) via the /api/cron/warm heartbeat dispatcher (DAILY_BACKUP_JOBS
+  // → /api/cron/followup-rollover). Agents still get the EOD nudge above at 18:00.
+  return NextResponse.json({ ok: true, agentsNotified: notified, breakdown: missesByAgent });
   } catch (e) {
     await finishCronRun(runId, "ERROR", String(e));
     throw e;

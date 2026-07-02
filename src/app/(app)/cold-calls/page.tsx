@@ -105,7 +105,10 @@ export default async function ColdDataPage({ searchParams }: { searchParams: Pro
   // leadOrigin ALONE stranded cold leads whose import set isColdCall but left a
   // non-cold origin (e.g. MASTER_DATA) — invisible in BOTH Revival and Master Data.
   // (Lalit 2026-06-28: today's revival import not showing.)
-  const originCold: Prisma.LeadWhereInput = { deletedAt: null, OR: [{ leadOrigin: { in: COLD_ORIGINS } }, { isColdCall: true }] };
+  // rejectedAt:null → a REJECTED revival lead leaves EVERY active Revival view (it's
+  // tagged "Revival Engine Rejected" and archived to Master Data, which shows all
+  // origins incl. rejected). Team is preserved on the record. (Lalit 2026-07-03.)
+  const originCold: Prisma.LeadWhereInput = { deletedAt: null, rejectedAt: null, OR: [{ leadOrigin: { in: COLD_ORIGINS } }, { isColdCall: true }] };
   // "Unassigned" = workable-unassigned only. A rejected cold lead is unassigned for
   // history; it belongs under Lost/Rejected, never the assign queue (Lalit 2026-06-28).
   const unassigned: Prisma.LeadWhereInput = { ownerId: null, rejectedAt: null };

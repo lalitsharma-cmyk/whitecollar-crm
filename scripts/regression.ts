@@ -4667,7 +4667,11 @@ const checks: Check[] = [
         "cold-data detail page must wire the RejectLeadModal");
       const rejectRoute = fs.readFileSync("src/app/api/leads/[id]/reject/route.ts", "utf8");
       // The reject UPDATE must NOT set leadOrigin or isColdCall — keeps the lead cold.
-      assert(!/leadOrigin\s*:/.test(rejectRoute) && !/isColdCall\s*:/.test(rejectRoute),
+      // (The route may READ them in the findUnique select to detect a revival lead for
+      // the "Revival Engine Rejected" tag; scope the check to the UPDATE onward so a
+      // legitimate select isn't a false positive.)
+      const rejectUpdatePart = rejectRoute.slice(rejectRoute.indexOf("prisma.lead.update"));
+      assert(!/leadOrigin\s*:/.test(rejectUpdatePart) && !/isColdCall\s*:/.test(rejectUpdatePart),
         "reject endpoint must NEVER write leadOrigin/isColdCall (rejected cold lead stays in Revival)");
       assert(/rejectionStatusFor\(/.test(rejectRoute) && /rejectedById:\s*me\.id/.test(rejectRoute),
         "reject endpoint must set the rejection status + rejectedById (origin-safe reject)");
@@ -4947,7 +4951,9 @@ const checks: Check[] = [
       // is a legitimate cross-market sentinel, so it counts as a known chip here too.
       const COLD_ORIGINS = ["COLD", "REVIVAL"];
       const known = Array.from(new Set([...INDIA_STATUSES, ...DUBAI_STATUSES, NEEDS_REVIEW])) as string[];
-      const base = { leadOrigin: { in: COLD_ORIGINS }, deletedAt: null };
+      // Mirror the page: rejected revival leads are excluded from the active view
+      // (archived to Master Data with the "Revival Engine Rejected" tag).
+      const base = { leadOrigin: { in: COLD_ORIGINS }, deletedAt: null, rejectedAt: null };
       const all = await prisma.lead.count({ where: base });
       const unstatused = await prisma.lead.count({ where: { ...base, OR: [{ currentStatus: null }, { currentStatus: "" }] } });
       let sumKnown = 0;

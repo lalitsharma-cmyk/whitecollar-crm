@@ -48,8 +48,10 @@ on:
     # Daily DB housekeeping — 21:30 UTC = 03:00 IST, AFTER the 21:00 backup so
     # every trimmed row is already archived in that day's Drive backup.
     - cron: "30 21 * * *"
-    # Sales follow-up auto-rollover — daily 15:30 UTC = 21:00 IST (9 PM IST).
-    - cron: "30 15 * * *"
+    # Sales follow-up auto-rollover — daily 18:00 UTC = 23:30 IST (11:30 PM IST, end of
+    # working day). PRIMARY trigger is the /api/cron/warm heartbeat (~23:00 IST); this GH
+    # schedule is a backup for when GitHub Actions is firing. Idempotent (cronRanTodayIST).
+    - cron: "0 18 * * *"
     # Lunch-break reminders — soft, informational. 08:30 UTC = 2:00 PM IST (start)
     # and 08:55 UTC = 2:25 PM IST (5-min warning). May lag a few min under GitHub
     # scheduler load — acceptable for a gentle break nudge.
@@ -160,11 +162,11 @@ jobs:
             || echo "::warning::cleanup cron failed"
 
   followup_rollover:
-    # Sales follow-up auto-rollover — 15:30 UTC = 21:00 IST (9 PM IST). Moves
-    # every pending today-or-earlier follow-up to the next day so stale dates
+    # Sales follow-up auto-rollover — 18:00 UTC = 23:30 IST (11:30 PM IST, end of day).
+    # Moves every pending today-or-earlier follow-up to the next day so stale dates
     # don't pile up. Closed/rejected/deleted/no-followup/HR excluded; remarks
     # never touched; each move logged to LeadFieldHistory. See followupRollover.ts.
-    if: github.event.schedule == '30 15 * * *' || github.event_name == 'workflow_dispatch'
+    if: github.event.schedule == '0 18 * * *' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - name: Roll pending overdue follow-ups to next day

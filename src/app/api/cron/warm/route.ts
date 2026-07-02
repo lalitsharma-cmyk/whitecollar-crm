@@ -37,6 +37,10 @@ const HEARTBEAT_JOBS: Array<{ path: string; name: string; everyMin: number }> = 
 const DAILY_BACKUP_JOBS: Array<{ path: string; name: string; afterIstHour: number }> = [
   { path: "morning-reminder", name: "morning-reminder", afterIstHour: 10 }, // vercel 04:30 UTC
   { path: "evening-reminder", name: "evening-reminder", afterIstHour: 18 }, // vercel 12:30 UTC
+  // Nightly follow-up rollover — NO Vercel cron (Hobby caps at 2), so the heartbeat is
+  // the PRIMARY trigger: fires once/day after ~23:00 IST (end of the working day) so
+  // today's still-open follow-ups are never bumped early. Idempotent (cronRanTodayIST).
+  { path: "followup-rollover", name: "followup-rollover", afterIstHour: 23 },
 ];
 
 const IST = "Asia/Kolkata";
