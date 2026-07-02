@@ -1082,7 +1082,7 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
 
       {/* CARD VIEW — mobile+desktop cards when view=cards */}
       <div className={`${view === "table" ? "hidden" : ""} lg:hidden space-y-2`}>
-        {leads.length === 0 && <div className="card p-6 text-center text-gray-500 dark:text-slate-400 text-sm">No leads match these filters.</div>}
+        {leads.length === 0 && <div className="card p-5 text-center text-gray-500 dark:text-slate-400 text-sm">No leads match these filters.</div>}
         {leads.map((l) => {
           const maskedPhone = l.phone ? (isAdmin ? l.phone : `···${l.phone.slice(-4)}`) : null;
           const intel = l.intelligenceMatch;

@@ -79,7 +79,7 @@ export default function CallsClient({ calls }: { calls: CallRowData[] }) {
     <>
       {/* MOBILE: card list with bottom-sheet summary on tap */}
       <div className="lg:hidden space-y-2">
-        {calls.length === 0 && <div className="card p-6 text-center text-gray-500 text-sm">No calls logged yet.</div>}
+        {calls.length === 0 && <div className="card p-5 text-center text-gray-500 text-sm">No calls logged yet.</div>}
         {calls.map((c) => (
           <CallCard key={c.id} c={c} onTap={() => { setSelectedId(c.id); setMobileSheetOpen(true); }} />
         ))}
@@ -137,7 +137,7 @@ export default function CallsClient({ calls }: { calls: CallRowData[] }) {
               <SummaryPanel lead={lead} call={selected} />
             </div>
           ) : (
-            <div className="card p-6 text-center text-sm text-gray-500">
+            <div className="card p-5 text-center text-sm text-gray-500">
               Click a call row → the client's summary appears here.
             </div>
           )}

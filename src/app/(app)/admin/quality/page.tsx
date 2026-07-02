@@ -118,7 +118,7 @@ export default async function AdminQualityPage({
       </div>
 
       {sortedUsers.length === 0 && (
-        <div className="card p-6 text-center text-sm text-gray-500">
+        <div className="card p-5 text-center text-sm text-gray-500">
           No active agents in this scope.
         </div>
       )}

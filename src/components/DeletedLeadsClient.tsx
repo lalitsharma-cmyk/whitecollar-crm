@@ -27,7 +27,7 @@ export default function DeletedLeadsClient({ rows }: { rows: DeletedRow[] }) {
 
   if (rows.length === 0) {
     return (
-      <div className="card p-8 text-center text-sm text-gray-500 dark:text-slate-400">
+      <div className="card p-5 text-center text-sm text-gray-500 dark:text-slate-400">
         No deleted leads. Anything you delete is kept here (with a full snapshot) and can be restored.
       </div>
     );

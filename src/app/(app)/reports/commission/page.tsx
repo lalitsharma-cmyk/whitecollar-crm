@@ -345,7 +345,7 @@ export default async function CommissionReportPage({
       />
 
       {!hasBookings ? (
-        <div className="card p-8 text-center">
+        <div className="card p-5 text-center">
           <div className="text-3xl">💸</div>
           <div className="font-semibold mt-2">No bookings in this period</div>
           <div className="text-sm text-gray-500 mt-1">

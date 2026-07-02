@@ -185,7 +185,7 @@ export default async function ActivityFeedPage({
       </form>
 
       {feed.length === 0 ? (
-        <div className="card p-6 text-center text-gray-500 text-sm">
+        <div className="card p-5 text-center text-gray-500 text-sm">
           No activity logged for {currentDateISO} yet
         </div>
       ) : (

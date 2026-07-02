@@ -149,7 +149,7 @@ export default async function DuplicatesPage() {
       </div>
 
       {groups.length === 0 && (
-        <div className="card p-8 text-center text-gray-500 text-sm">
+        <div className="card p-5 text-center text-gray-500 text-sm">
           No duplicates detected. Nice — the DB is clean.
         </div>
       )}

@@ -294,7 +294,7 @@ export default async function PropertiesPage({ searchParams }: { searchParams: P
       </div>
 
       {sortedProjects.length === 0 && (
-        <div className="card p-8 text-center">
+        <div className="card p-5 text-center">
           <div className="text-gray-500">No projects match these filters.</div>
           <Link href="/properties/new" className="btn btn-primary mt-3 inline-flex">+ Add the first project</Link>
         </div>

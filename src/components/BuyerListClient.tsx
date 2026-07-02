@@ -571,7 +571,7 @@ export default function BuyerListClient(props: Props) {
       </div>
 
       {filtered.length === 0 ? (
-        <div className="card p-8 text-center text-sm text-gray-500 dark:text-slate-400">
+        <div className="card p-5 text-center text-sm text-gray-500 dark:text-slate-400">
           {rows.length === 0 ? "No buyer records yet. Use Import to bring in transaction data." : "No records match these filters."}
         </div>
       ) : (

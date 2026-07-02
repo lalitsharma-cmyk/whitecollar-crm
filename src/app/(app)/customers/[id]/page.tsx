@@ -73,7 +73,7 @@ export default async function Customer360Page({ params }: { params: Promise<{ id
       </div>
 
       {/* Computed summary card */}
-      <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-5">
+      <div className="card p-5">
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <Stat label="Owner of record">{ownerLabel}</Stat>
           <Stat label="Enquiries">{c.summary.enquiryCount}</Stat>
@@ -111,7 +111,7 @@ export default async function Customer360Page({ params }: { params: Promise<{ id
       </div>
 
       {/* Enquiries */}
-      <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-5">
+      <div className="card p-5">
         <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-3">
           Enquiries ({c.enquiries.length})
         </h2>
@@ -138,7 +138,7 @@ export default async function Customer360Page({ params }: { params: Promise<{ id
       </div>
 
       {/* Master timeline (filterable; events never removed) */}
-      <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-5">
+      <div className="card p-5">
         <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-3">Master timeline</h2>
         <CustomerTimeline
           events={c.timeline.map((t) => ({

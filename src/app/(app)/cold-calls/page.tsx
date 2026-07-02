@@ -559,7 +559,7 @@ export default async function ColdDataPage({ searchParams }: { searchParams: Pro
           </div>
 
           {statusFilter === "unassigned" && isAdminOrMgr && leads.length === 0 && (
-            <div className="card p-8 text-center text-gray-500 text-sm">
+            <div className="card p-5 text-center text-gray-500 text-sm">
               No unassigned cold data. Import a batch with the Import button above.
             </div>
           )}

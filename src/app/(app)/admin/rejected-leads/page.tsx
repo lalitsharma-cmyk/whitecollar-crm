@@ -164,7 +164,7 @@ export default async function RejectedLeadsPage({
 
       {/* Results table — wide on desktop, falls back to a card list on mobile. */}
       {leads.length === 0 ? (
-        <div className="card p-6 text-center text-gray-500 text-sm">
+        <div className="card p-5 text-center text-gray-500 text-sm">
           No rejected leads {reasonFilter ? `for reason "${rejectReasonLabel(reasonFilter)}"` : "yet"}.
         </div>
       ) : (

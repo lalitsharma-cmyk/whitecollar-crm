@@ -140,7 +140,7 @@ export default async function BuyerAgentDetailPage({
           <h1 className="text-xl sm:text-2xl font-bold">{agent.name}</h1>
           <p className="text-xs sm:text-sm text-gray-500">{agent.team ?? "—"} · {agent.role} · {range.label}</p>
         </div>
-        <div className="card p-6 text-center text-gray-500 text-sm">No buyer activity in this period.</div>
+        <div className="card p-5 text-center text-gray-500 text-sm">No buyer activity in this period.</div>
       </>
     );
   }

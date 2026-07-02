@@ -801,7 +801,7 @@ export default function WorkflowBuilderPanel({ workflows, templates }: PanelProp
       </div>
 
       {workflows.length === 0 && !creating && (
-        <div className="card p-8 text-center">
+        <div className="card p-5 text-center">
           <div className="text-gray-500 mb-2">No workflows yet.</div>
           <p className="text-xs text-gray-500 max-w-md mx-auto">
             Click "+ New workflow" above to build your first IF/THEN automation.

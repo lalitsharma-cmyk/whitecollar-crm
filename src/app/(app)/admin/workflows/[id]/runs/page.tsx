@@ -186,7 +186,7 @@ export default async function WorkflowRunsPage({
 
       {/* Runs table */}
       {runs.length === 0 ? (
-        <div className="card p-8 text-center text-sm text-gray-500">
+        <div className="card p-5 text-center text-sm text-gray-500">
           No runs match this filter yet.
         </div>
       ) : (

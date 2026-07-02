@@ -71,7 +71,7 @@ export default async function AuditLogPage({ searchParams }: { searchParams: Pro
 
       {/* MOBILE: card list */}
       <div className="lg:hidden space-y-2">
-        {entries.length === 0 && <div className="card p-6 text-center text-gray-500 text-sm">No entries.</div>}
+        {entries.length === 0 && <div className="card p-5 text-center text-gray-500 text-sm">No entries.</div>}
         {entries.map((e) => {
           const meta = e.meta ? safeParse(e.meta) : null;
           return (

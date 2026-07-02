@@ -24,7 +24,7 @@ export default function BuyerPerformanceTable({
 }) {
   if (rows.length === 0) {
     return (
-      <div className="card p-6 text-center text-gray-500 text-sm">
+      <div className="card p-5 text-center text-gray-500 text-sm">
         No agents in scope for this period.
       </div>
     );

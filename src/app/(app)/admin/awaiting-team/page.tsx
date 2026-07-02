@@ -47,7 +47,7 @@ export default async function AwaitingTeamPage() {
       </div>
 
       {leads.length === 0 ? (
-        <div className="card p-8 text-center space-y-1">
+        <div className="card p-5 text-center space-y-1">
           <div className="text-gray-700 font-medium">✅ Nothing waiting. Every recent lead has a team tag.</div>
           <div className="text-gray-400 text-xs">If you saw a notification about a lead needing assignment, it was already tagged — click the notification to open that lead directly.</div>
         </div>

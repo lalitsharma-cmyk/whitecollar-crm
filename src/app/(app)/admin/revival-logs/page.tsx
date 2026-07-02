@@ -121,7 +121,7 @@ export default async function RevivalLogsPage({
 
       {/* Activity table */}
       {activities.length === 0 ? (
-        <div className="card p-8 text-center text-gray-500 text-sm">
+        <div className="card p-5 text-center text-gray-500 text-sm">
           No activity logged on cold-data leads yet.
         </div>
       ) : (

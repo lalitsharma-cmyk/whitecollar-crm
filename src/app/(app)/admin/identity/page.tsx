@@ -35,7 +35,7 @@ export default async function IdentityResolutionPage() {
       </div>
 
       {groups.length === 0 ? (
-        <div className="card p-8 text-center text-gray-500">
+        <div className="card p-5 text-center text-gray-500">
           ✅ No unresolved duplicates. Every same-phone / same-email enquiry is already linked.
         </div>
       ) : (
