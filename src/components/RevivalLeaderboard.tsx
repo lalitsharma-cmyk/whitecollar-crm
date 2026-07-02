@@ -26,8 +26,8 @@ const MEDALS = ["🥇", "🥈", "🥉"];
 
 export default function RevivalLeaderboard({ top5 }: Props) {
   return (
-    <div className="card p-3 sm:p-4">
-      <div className="flex items-center justify-between mb-2">
+    <div className="card p-2.5 sm:p-3">
+      <div className="flex items-center justify-between mb-1.5">
         <div className="flex items-center gap-2">
           <span className="text-base">🏆</span>
           <h2 className="text-sm sm:text-base font-bold">Revival Leaders</h2>
@@ -42,14 +42,14 @@ export default function RevivalLeaderboard({ top5 }: Props) {
           No revivals yet this week. Be the first 💎
         </div>
       ) : (
-        <ol className="space-y-1.5">
+        <ol className="space-y-1">
           {top5.map((row, i) => {
             const medal = MEDALS[i] ?? "";
             const isTop = i < 3;
             return (
               <li
                 key={row.ownerId}
-                className={`flex items-center gap-2 px-2 py-1.5 rounded-lg text-xs ${
+                className={`flex items-center gap-2 px-2 py-1 rounded-lg text-xs ${
                   row.isMe
                     ? "bg-amber-50 border border-amber-200"
                     : isTop

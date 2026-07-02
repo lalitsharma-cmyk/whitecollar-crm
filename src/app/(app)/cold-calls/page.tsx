@@ -457,13 +457,13 @@ export default async function ColdDataPage({ searchParams }: { searchParams: Pro
            table. Previously a fixed 280px right rail that squeezed the client rows and
            truncated agent names ("Tanuj Chopra"). Now each card gets ~2× the width and
            the table below spans the entire row. Pure layout — logic unchanged. */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 lg:gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 lg:gap-3">
         <RevivalLeaderboard top5={top5} />
-        <div className="card p-3 sm:p-4">
+        <div className="card p-2.5 sm:p-3">
           <div className="flex items-center justify-between">
             <div className="min-w-0">
               <div className="text-[10px] uppercase tracking-wide text-gray-500">Your cold-call streak</div>
-              <div className="text-2xl font-bold tabular-nums leading-tight">
+              <div className="text-xl font-bold tabular-nums leading-tight">
                 {streak} <span className="text-sm font-normal text-gray-500">days</span>
               </div>
             </div>
