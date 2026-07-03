@@ -12,6 +12,7 @@
     "db:reset": "prisma migrate reset --force",
     "regression": "tsx scripts/regression.ts",
     "sandbox:seed": "tsx scripts/sandbox/seed-sandbox.ts",
+    "sandbox:refresh": "tsx scripts/sandbox/anonymize-from-prod.ts",
     "deploy": "bash scripts/deploy.sh",
     "push": "git push origin main && bash scripts/deploy.sh"
   },

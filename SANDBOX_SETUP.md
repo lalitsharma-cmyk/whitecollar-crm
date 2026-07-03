@@ -33,11 +33,27 @@ the live CRM, because the sandbox never holds a single production credential.
   Prisma client from `sandboxClient()`, which refuses to run unless `SANDBOX_DATABASE_URL`
   is set, ≠ `DATABASE_URL`, and its host/db name contains `sandbox|dev|test|staging|demo`.
   It is **structurally impossible** for the seed to write to prod.
-- `scripts/sandbox/seed-sandbox.ts` — the dummy-data seeder (idempotent).
+- `scripts/sandbox/seed-sandbox.ts` — the pure fictional dummy-data seeder (idempotent).
+- `scripts/sandbox/anonymize.ts` — deterministic realistic-fake generators (names, phones,
+  emails, real-estate conversations, budgets) used by the refresh.
+- `scripts/sandbox/anonymize-from-prod.ts` — **the anonymized refresh**: reads production
+  READ-ONLY and writes an anonymized copy into the sandbox (real structure / volumes /
+  statuses / workflow states, every PII field replaced with a *realistic fake*). The write
+  client is the guarded one, so it can never touch prod.
 - `.env.sandbox.example` — the sandbox env template (prod secrets stripped).
-- Amber **"🧪 SANDBOX ENVIRONMENT — NOT PRODUCTION"** banner shows on every page when
-  `NEXT_PUBLIC_SANDBOX=1`.
-- `npm run sandbox:seed` — runs the guarded seed.
+- Amber **"🟡 DEMO ADMIN MODE — DATA MASKED — NO REAL CLIENT DATA"** banner shows on every
+  page + the login when `NEXT_PUBLIC_SANDBOX=1`.
+- `npm run sandbox:seed` — pure fictional data. `npm run sandbox:refresh -- --confirm` —
+  anonymized snapshot of prod (**refreshable on demand**: re-run any time for a fresh masked copy).
+
+### Two ways to populate the sandbox
+| Command | Data | Use it when |
+|---|---|---|
+| `npm run sandbox:seed -- --confirm` | Fully fictional (Rajesh Sharma, Marina Vista…) | You want a clean, prod-independent demo. |
+| `npm run sandbox:refresh -- --confirm` | **Anonymized copy of production** — real structure + volumes + statuses, PII replaced with realistic fakes (Demo names / +91 90000… / demo-crm.local / fake budgets / fake conversations) | Interns need to see genuine "live CRM issues" without any real client identity. |
+
+Both require `SANDBOX_DATABASE_URL` (guarded). `refresh` also reads `DATABASE_URL` (prod) but
+**only ever reads it** — every write goes through the sandbox guard.
 
 ---
 

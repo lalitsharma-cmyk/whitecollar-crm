@@ -85,7 +85,7 @@ export default async function LoginPage({ searchParams }: { searchParams?: Promi
 
           {process.env.NEXT_PUBLIC_SANDBOX === "1" && (
             <div style={{ marginTop: "14px", fontSize: "12px", fontWeight: 700, background: "#f59e0b", color: "#111", borderRadius: "9px", padding: "8px 11px", textAlign: "center" }}>
-              🧪 SANDBOX ENVIRONMENT — dummy data only, not production
+              🟡 DEMO ADMIN MODE — DATA MASKED — NO REAL CLIENT DATA
             </div>
           )}
 
