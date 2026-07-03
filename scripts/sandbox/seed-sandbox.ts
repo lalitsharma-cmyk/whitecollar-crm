@@ -131,8 +131,8 @@ async function main() {
   });
   const manager = await prisma.user.create({
     data: {
-      email: "dummy.manager@sandbox.local",
-      name: "Dummy Manager",
+      email: "vikram.malhotra@demo-crm.local",
+      name: "Vikram Malhotra",
       passwordHash: pw,
       role: Role.MANAGER,
       team: "Dubai",
@@ -142,8 +142,8 @@ async function main() {
   });
   const agent1 = await prisma.user.create({
     data: {
-      email: "dummy.one@sandbox.local",
-      name: "Dummy One",
+      email: "rajesh.sharma@demo-crm.local",
+      name: "Rajesh Sharma",
       passwordHash: pw,
       role: Role.AGENT,
       team: "Dubai",
@@ -154,8 +154,8 @@ async function main() {
   });
   const agent2 = await prisma.user.create({
     data: {
-      email: "dummy.two@sandbox.local",
-      name: "Dummy Two",
+      email: "priya.gupta@demo-crm.local",
+      name: "Priya Gupta",
       passwordHash: pw,
       role: Role.AGENT,
       team: "India",
@@ -166,8 +166,8 @@ async function main() {
   });
   const agent3 = await prisma.user.create({
     data: {
-      email: "dummy.three@sandbox.local",
-      name: "Dummy Three",
+      email: "ahmed.khan@demo-crm.local",
+      name: "Ahmed Khan",
       passwordHash: pw,
       role: Role.AGENT,
       team: "India",
@@ -193,12 +193,12 @@ async function main() {
     category: string;
     handoverDate?: Date;
   }> = [
-    { name: "Sandbox Heights", developer: "Emaar", city: "Dubai", area: "Downtown Dubai", country: "UAE", status: ProjectStatus.OFF_PLAN, rera: "DUB-SBX-1001", category: "residential", handoverDate: day(540) },
-    { name: "Demo Marina Residences", developer: "Nakheel", city: "Dubai", area: "Dubai Marina", country: "UAE", status: ProjectStatus.UNDER_CONSTRUCTION, rera: "DUB-SBX-1002", category: "residential", handoverDate: day(300) },
-    { name: "Test Valley Towers", developer: "Sobha", city: "Dubai", area: "Mohammed Bin Rashid City", country: "UAE", status: ProjectStatus.READY, category: "residential" },
-    { name: "Sample Business Bay Offices", developer: "DAMAC", city: "Dubai", area: "Business Bay", country: "UAE", status: ProjectStatus.READY, category: "commercial" },
-    { name: "Sandbox Greens Gurgaon", developer: "DLF", city: "Gurgaon", area: "Sector 65", country: "India", status: ProjectStatus.UNDER_CONSTRUCTION, rera: "HR-RERA-GGM-SBX-01", category: "residential", handoverDate: day(420) },
-    { name: "Demo Riverside Mumbai", developer: "Lodha", city: "Mumbai", area: "Lower Parel", country: "India", status: ProjectStatus.READY, rera: "P51900-SBX-02", category: "residential" },
+    { name: "Vida Downtown Residences", developer: "Emaar", city: "Dubai", area: "Downtown Dubai", country: "UAE", status: ProjectStatus.OFF_PLAN, rera: "DUB-2141", category: "residential", handoverDate: day(540) },
+    { name: "Marina Gate", developer: "Nakheel", city: "Dubai", area: "Dubai Marina", country: "UAE", status: ProjectStatus.UNDER_CONSTRUCTION, rera: "DUB-1877", category: "residential", handoverDate: day(300) },
+    { name: "Hartland Greens", developer: "Sobha", city: "Dubai", area: "Mohammed Bin Rashid City", country: "UAE", status: ProjectStatus.READY, category: "residential" },
+    { name: "Bay Square Offices", developer: "DAMAC", city: "Dubai", area: "Business Bay", country: "UAE", status: ProjectStatus.READY, category: "commercial" },
+    { name: "The Crest", developer: "DLF", city: "Gurgaon", area: "Sector 65", country: "India", status: ProjectStatus.UNDER_CONSTRUCTION, rera: "HR-RERA-GGM-1204", category: "residential", handoverDate: day(420) },
+    { name: "Lodha Park", developer: "Lodha", city: "Mumbai", area: "Lower Parel", country: "India", status: ProjectStatus.READY, rera: "P51900-0512", category: "residential" },
   ];
 
   const projects: Project[] = [];
@@ -903,7 +903,7 @@ async function main() {
     { userId: agent1.id, kind: NotifKind.LEAD_ASSIGNED, severity: NotifSeverity.INFO, title: "New lead assigned", body: "A Dubai lead just landed in your queue.", leadId: allLeadIds[0] },
     { userId: agent2.id, kind: NotifKind.REMINDER, severity: NotifSeverity.INFO, title: "Follow-up due today", body: "You have follow-ups scheduled for today.", leadId: allLeadIds[1] },
     { userId: agent1.id, kind: NotifKind.CALL_SLA_BREACH, severity: NotifSeverity.WARNING, title: "Call SLA breach", body: "15 minutes passed with no call logged." },
-    { userId: manager.id, kind: NotifKind.AGENT_STATUS, severity: NotifSeverity.INFO, title: "Agent check-in", body: "Dummy One marked 'On site visit'." },
+    { userId: manager.id, kind: NotifKind.AGENT_STATUS, severity: NotifSeverity.INFO, title: "Agent check-in", body: "Rajesh Sharma marked 'On site visit'." },
     { userId: agent1.id, kind: NotifKind.BUYER_ASSIGNED, severity: NotifSeverity.INFO, title: "Buyer assigned", body: "A Dubai buyer was assigned to you from the pool." },
     { userId: admin.id, kind: NotifKind.SYSTEM, severity: NotifSeverity.INFO, title: "Sandbox seeded", body: "Development sandbox data was regenerated." },
   ];
