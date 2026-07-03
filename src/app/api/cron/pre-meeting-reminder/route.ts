@@ -83,6 +83,7 @@ export async function GET(req: NextRequest) {
       body: `Starts at ${when} IST. ${m.lead?.phone ? `Phone: ${m.lead.phone}` : ""}`,
       linkUrl: m.lead ? `/leads/${m.lead.id}` : "/activities",
       leadId: m.leadId,
+      source: { type: (m.type === "SITE_VISIT" || m.type === "HOME_VISIT") ? "SITE_VISIT" : "MEETING", id: m.id, createdById: null },
     });
     await prisma.activity.update({
       where: { id: m.id },
@@ -136,6 +137,7 @@ export async function GET(req: NextRequest) {
       body: `Your ${isVisit ? "site visit" : "meeting"} with ${client} is at ${when} IST — in 1 hour.${m.lead?.phone ? ` ${m.lead.phone}` : ""}`,
       linkUrl: m.lead ? `/leads/${m.lead.id}` : "/activities",
       leadId: m.leadId,
+      source: { type: (m.type === "SITE_VISIT" || m.type === "HOME_VISIT") ? "SITE_VISIT" : "MEETING", id: m.id, createdById: null },
     });
     // Manager (Lalit) — skip if the agent IS the manager.
     if (manager && manager.id !== m.userId) {
@@ -147,6 +149,7 @@ export async function GET(req: NextRequest) {
         body: `${m.user?.name ?? "An agent"} has a ${isVisit ? "site visit" : "meeting"} with ${client} at ${when} IST — in 1 hour.`,
         linkUrl: m.lead ? `/leads/${m.lead.id}` : "/activities",
         leadId: m.leadId,
+        source: { type: (m.type === "SITE_VISIT" || m.type === "HOME_VISIT") ? "SITE_VISIT" : "MEETING", id: m.id, createdById: null },
       });
     }
     await prisma.activity.update({ where: { id: m.id }, data: { reminderSentAt1h: now } });
@@ -193,6 +196,7 @@ export async function GET(req: NextRequest) {
       body: `Scheduled follow-up at ${fmtISTTime12(l.followupDate)} IST.${l.phone ? ` ${l.phone}` : ""}`,
       linkUrl: `/leads/${l.id}`,
       leadId: l.id,
+      source: { type: "FOLLOWUP", id: l.id, createdById: null },
     });
     await prisma.lead.update({
       where: { id: l.id },

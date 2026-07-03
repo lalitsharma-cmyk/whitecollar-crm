@@ -225,6 +225,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     title: `✅ Buyer converted to lead: ${buyer.clientName}`,
     body: `${me.name} converted this buyer into a Lead. It's now in Leads / Master Data.`,
     linkUrl: `/leads/${result.leadId}`,
+    source: { type: "ASSIGNMENT", id: result.leadId, createdById: me.id },
   }).catch(() => null);
 
   await audit({

@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import type { NotifKind, NotifSeverity, Role } from "@prisma/client";
 import { sendPushToUser } from "@/lib/push";
 import { sendEmail, emailTemplate, emailEnabled } from "@/lib/email";
+import type { NotifSource } from "@/lib/notifSource";
 
 interface NotifyInput {
   userId: string;
@@ -11,6 +12,10 @@ interface NotifyInput {
   body?: string;
   linkUrl?: string;
   leadId?: string;
+  // REQUIRED source tracking (Lalit, 2026-07-03): every notification must trace to a
+  // real CRM record. Mandatory ⇒ a source-less notification cannot be created — the
+  // compiler enforces it at all call sites. See src/lib/notifSource.ts.
+  source: NotifSource;
   // If true, also send email (when configured). Defaults to true for WARNING / CRITICAL.
   email?: boolean;
 }
@@ -31,7 +36,8 @@ const KIND_TO_PREF: Partial<Record<NotifKind, string>> = {
 export async function notify(input: NotifyInput) {
   const severity = input.severity ?? "INFO";
 
-  // 1. In-app notification (always)
+  // 1. In-app notification (always). Source is stored so every row is auditable +
+  //    the UI can render a Source chip + "Open Source" jump to the backing record.
   const notif = await prisma.notification.create({
     data: {
       userId: input.userId,
@@ -41,6 +47,9 @@ export async function notify(input: NotifyInput) {
       body: input.body,
       linkUrl: input.linkUrl,
       leadId: input.leadId,
+      sourceType: input.source.type,
+      sourceId: input.source.id ?? null,
+      createdById: input.source.createdById ?? null,
     },
   });
 

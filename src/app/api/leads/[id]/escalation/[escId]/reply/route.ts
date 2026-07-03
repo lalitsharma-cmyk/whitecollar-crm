@@ -59,6 +59,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       userId: esc.raisedById, kind: NotifKind.SYSTEM, severity: "INFO",
       title: `💬 ${me.name ?? "Manager"} replied to your escalation on ${lead.name}`,
       body: preview, linkUrl: `/leads/${id}`, leadId: id,
+      source: { type: "ESCALATION", id: esc.id, createdById: me.id },
     }).catch(() => {});
   }
   await audit({

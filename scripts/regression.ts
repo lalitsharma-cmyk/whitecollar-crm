@@ -5384,6 +5384,12 @@ const checks: Check[] = [
       const mdt = fs.readFileSync("src/components/MasterDataRecordsTable.tsx", "utf8");
       assert(/!r\.ownerId && r\.bucket === "Workable"/.test(mdt), "Master Data section rank must not put rejected in the Unassigned section");
       assert(/!l\.ownerId && l\.bucket === "Workable" \? unassignedAgeBadge/.test(mdt), "Master Data age badge must not flag rejected as 'please assign'");
+      // SOURCE: the WRITE side — assignLeadTo is the one primitive every assignment
+      // surface funnels through, so it must REFUSE a rejected lead (reactivate-before-
+      // reassign). This is the guard that stops an assignment re-owning a rejected lead
+      // (the mechanism that stranded 17 leads as rejected-but-owned, 2026-07-04).
+      const ingest = fs.readFileSync("src/lib/leadIngest.ts", "utf8");
+      assert(/class LeadRejectedError/.test(ingest) && /if \(lead\.rejectedAt != null\) throw new LeadRejectedError/.test(ingest), "assignLeadTo must REFUSE to assign a rejected lead (reactivate-before-reassign choke-point guard)");
       // DATA: the hard-unassign held — no rejected lead is still owned, and none
       // would slip into the canonical normal-unassigned set.
       const stillOwned = await prisma.lead.count({ where: { rejectedAt: { not: null }, ownerId: { not: null }, deletedAt: null } });
@@ -6173,6 +6179,31 @@ const checks: Check[] = [
       });
       const midnight = dateOnly.filter((r) => { const i = new Date(r.followupDate!.getTime() + 330 * 60000); return i.getUTCHours() === 0 && i.getUTCMinutes() === 0; }).length;
       assert(midnight >= 0, `date-only follow-ups pending: ${midnight} (all skipped by the guard — no fabricated reminder)`);
+    },
+  },
+  {
+    name: "notification-source-required — every notification traces to a real record (notify() requires source; UI exposes Source + Open-source)",
+    run: async () => {
+      const fsl = await import("fs");
+      const read = (f: string) => fsl.readFileSync(f, "utf8");
+
+      // (a) notify() REQUIRES + STORES a source — a source-less notification cannot be
+      //     created (compiler-enforced traceability at all call sites).
+      const notifyTs = read("src/lib/notify.ts");
+      assert(/source: NotifSource;/.test(notifyTs), "notify() NotifyInput MUST require `source: NotifSource`");
+      assert(/sourceType: input\.source\.type/.test(notifyTs), "notify() MUST persist source.type → Notification.sourceType");
+
+      // (b) The Notification model carries the source columns.
+      const notifModel = read("prisma/schema.prisma").match(/model Notification \{[\s\S]*?\n\}/)?.[0] ?? "";
+      assert(/sourceType\s+String\?/.test(notifModel) && /sourceId\s+String\?/.test(notifModel) && /createdById\s+String\?/.test(notifModel),
+        "Notification model MUST have sourceType + sourceId + createdById");
+
+      // (c) The source vocabulary is the single source of truth.
+      assert(/NOTIF_SOURCE_TYPES/.test(read("src/lib/notifSource.ts")), "src/lib/notifSource.ts MUST define NOTIF_SOURCE_TYPES");
+
+      // (d) The notifications UI surfaces the Source chip + an explicit Open-source jump.
+      const ui = read("src/app/(app)/notifications/NotificationsClient.tsx");
+      assert(/notifSourceLabel/.test(ui) && /Open source/.test(ui), "notifications UI MUST show the Source label + an Open-source link to the backing record");
     },
   },
 ];

@@ -39,6 +39,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       userId: esc.raisedById, kind: NotifKind.SYSTEM, severity: "INFO",
       title: `✅ Escalation resolved on ${lead.name}`,
       body: `${me.name ?? "Manager"} marked your escalation resolved.`, linkUrl: `/leads/${id}`, leadId: id,
+      source: { type: "ESCALATION", id: esc.id, createdById: me.id },
     }).catch(() => {});
   } else if (!isManager) {
     const managers = await prisma.user.findMany({
@@ -50,6 +51,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         userId: m.id, kind: NotifKind.SYSTEM, severity: "INFO",
         title: `✅ ${me.name ?? "Agent"} resolved their escalation on ${lead.name}`,
         body: "No further action needed.", linkUrl: `/leads/${id}`, leadId: id,
+        source: { type: "ESCALATION", id: esc.id, createdById: me.id },
       }).catch(() => {});
     }
   }

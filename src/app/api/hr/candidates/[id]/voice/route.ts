@@ -92,6 +92,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         userId: uid, kind: NotifKind.SYSTEM, severity: "INFO",
         title: `🎤 Voice guidance from ${me.name ?? "Manager"} on ${cName}`,
         body: preview(transcript), linkUrl: `/hr/candidates/${id}`,
+        source: { type: "VOICE", id: msg.id, createdById: me.id },
       }).catch(() => {});
     }
     return NextResponse.json({ ok: true, id: msg.id, kind });
@@ -130,6 +131,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         userId: r.id, kind: NotifKind.SYSTEM, severity: "WARNING",
         title: `🚨 Escalation from ${me.name ?? "HR"} on ${cName}`,
         body: preview(transcript), linkUrl: `/hr/candidates/${id}`,
+        source: { type: "ESCALATION", id: escalation.id, createdById: me.id },
       }).catch(() => {});
     }
     return NextResponse.json({ ok: true, id: msg.id, escalationId: escalation.id, kind });
@@ -157,6 +159,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       userId: esc.raisedById, kind: NotifKind.SYSTEM, severity: "INFO",
       title: `💬 ${me.name ?? "Manager"} replied to your escalation on ${cName}`,
       body: preview(transcript), linkUrl: `/hr/candidates/${id}`,
+      source: { type: "ESCALATION", id: esc.id, createdById: me.id },
     }).catch(() => {});
   }
   return NextResponse.json({ ok: true, id: msg.id, escalationId: esc.id, kind });

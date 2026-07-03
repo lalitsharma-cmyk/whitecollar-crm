@@ -174,7 +174,14 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       );
     }
     const newOwnerId = body.ownerId == null || body.ownerId === "" ? null : String(body.ownerId);
-    const cur = await prisma.lead.findUnique({ where: { id }, select: { ownerId: true } });
+    const cur = await prisma.lead.findUnique({ where: { id }, select: { ownerId: true, rejectedAt: true } });
+    // REACTIVATE-BEFORE-REASSIGN — refuse assigning an owner to a rejected lead
+    // (unassigning is still fine). assignLeadTo is the hard backstop; this is the
+    // clean 409 for the inline-assign UI (Master Data / lead detail), which is
+    // exactly where rejected leads are visible and got re-owned.
+    if (newOwnerId !== null && cur?.rejectedAt != null) {
+      return NextResponse.json({ error: "This lead is rejected — reactivate it first, then assign.", rejected: true }, { status: 409 });
+    }
     if (newOwnerId === null) {
       // Unassign — clear owner + SLA. No assignLeadTo (there's no owner to notify).
       if (cur?.ownerId != null) {
@@ -436,6 +443,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         body: scoped.lead.name,
         linkUrl: `/leads/${id}`,
         leadId: id,
+        source: { type: "ASSIGNMENT", id, createdById: me.id },
       }).catch(() => {});
     }
   }

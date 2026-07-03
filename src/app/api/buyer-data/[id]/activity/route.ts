@@ -61,6 +61,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           title: `🔁 Buyer auto-returned to pool: ${buyer.clientName}`,
           body: `${AUTO_RETURN_ATTEMPTS} contact attempts logged by ${me.name} with no success — returned to the Admin Buyer Pool for reassignment.`,
           linkUrl: `/buyer-data/${id}`,
+          source: { type: "ASSIGNMENT", id, createdById: me.id },
         }).catch(() => null),
       ),
     );

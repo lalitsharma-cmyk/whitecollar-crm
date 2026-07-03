@@ -117,6 +117,7 @@ export async function runRevivalSweep(): Promise<RevivalSweepResult> {
           body: `New inbound signal in the last 24h. Reach out today.`,
           linkUrl: `/leads/${lead.id}`,
           leadId: lead.id,
+          source: { type: "LEAD_INTAKE", id: lead.id, createdById: null },
         });
       } catch (e) {
         console.warn("[revivalEngine] notify failed for", lead.id, e);

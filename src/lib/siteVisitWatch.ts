@@ -68,6 +68,7 @@ export async function runSiteVisitWatch(now: Date = new Date()): Promise<SiteVis
         body: `Your ${noun} has shown as active for ${hrs}h. Close it now if it's done — otherwise your reporting will be inaccurate.`,
         linkUrl: "/dashboard",
         email: false,
+        source: { type: "SITE_VISIT", id: ev.id, createdById: null },
       });
       if (managerId && managerId !== ev.userId) {
         const who = formatLeadName(ev.user?.name ?? "") || ev.user?.name || "An agent";
@@ -79,6 +80,7 @@ export async function runSiteVisitWatch(now: Date = new Date()): Promise<SiteVis
           body: `${who}'s ${noun} has been active ${hrs}h without being closed — likely forgotten. Field-time reporting for this ${noun} is unreliable until it's resolved.`,
           linkUrl: "/admin/field-status",
           email: false,
+          source: { type: "SITE_VISIT", id: ev.id, createdById: null },
         });
       }
       await prisma.agentStatusEvent.update({
@@ -99,6 +101,7 @@ export async function runSiteVisitWatch(now: Date = new Date()): Promise<SiteVis
         userId: ev.userId, kind: "AGENT_STATUS", severity: "WARNING",
         title: `🚶 ${Noun} still active`, body: REMINDER_BODY(Noun),
         linkUrl: "/dashboard", email: false,
+        source: { type: "SITE_VISIT", id: ev.id, createdById: null },
       });
       await prisma.agentStatusEvent.update({
         where: { id: ev.id }, data: { staleRemindersSent: 2, staleLastRemindedAt: now },
@@ -113,6 +116,7 @@ export async function runSiteVisitWatch(now: Date = new Date()): Promise<SiteVis
         userId: ev.userId, kind: "AGENT_STATUS", severity: "WARNING",
         title: `🚶 ${Noun} still active`, body: REMINDER_BODY(Noun),
         linkUrl: "/dashboard", email: false,
+        source: { type: "SITE_VISIT", id: ev.id, createdById: null },
       });
       await prisma.agentStatusEvent.update({
         where: { id: ev.id }, data: { staleRemindersSent: 1, staleLastRemindedAt: now },

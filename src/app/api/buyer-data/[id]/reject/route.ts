@@ -49,6 +49,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         title: `🚫 Buyer rejected: ${buyer.clientName}`,
         body: `${me.name} rejected this buyer${category ? ` [${category}]` : ""}${reason ? ` — ${reason}` : ""}. It has left the active list (now in the Rejected tab).`,
         linkUrl: `/buyer-data/${id}`,
+        source: { type: "ASSIGNMENT", id, createdById: me.id },
       }).catch(() => null),
     ),
   );

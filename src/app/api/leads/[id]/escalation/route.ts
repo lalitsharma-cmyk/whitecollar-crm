@@ -75,6 +75,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       userId: m.id, kind: NotifKind.SYSTEM, severity: "WARNING",
       title: `🚨 Escalation from ${me.name ?? "Agent"} on ${lead.name}`,
       body: preview, linkUrl: `/leads/${id}`, leadId: id,
+      source: { type: "ESCALATION", id: escalation.id, createdById: me.id },
     }).catch(() => {});
   }
   await audit({

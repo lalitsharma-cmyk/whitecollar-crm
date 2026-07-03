@@ -1588,6 +1588,12 @@ model Notification {
   body         String?
   linkUrl      String? // where clicking it takes you (e.g. /leads/abc)
   leadId       String? // optional related lead
+  // Source tracking — EVERY notification traces to a real record (notify() requires
+  // it). Nullable only for the historical rows that predate this; new rows always set
+  // sourceType. sourceId = the exact backing record; createdById = who/what fired it.
+  sourceType   String? // NotifSourceType (see src/lib/notifSource.ts)
+  sourceId     String? // the backing record id (Activity / Lead / CallLog / Device …)
+  createdById  String? // user behind the source event, or null for a system/cron job
   readAt       DateTime? // null = unread
   // When set + in the future, the notification is hidden from the inbox until that time.
   // Cleared automatically by simply letting the timestamp pass (no cron needed — queries

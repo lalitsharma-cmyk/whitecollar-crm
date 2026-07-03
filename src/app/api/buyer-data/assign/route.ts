@@ -99,6 +99,7 @@ export async function POST(req: NextRequest) {
       title,
       body: body2,
       linkUrl: assigned.length === 1 ? `/buyer-data/${assigned[0]}` : listUrl,
+      source: { type: "ASSIGNMENT", id: assigned[0], createdById: me.id },
     });
   }
 

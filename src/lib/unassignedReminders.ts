@@ -66,6 +66,7 @@ export async function runUnassignedEscalation(now: Date = new Date()) {
         linkUrl: `/leads/${l.id}`,
         leadId: l.id,
         email: lvl.mins >= 60, // only the 1-hour escalation also emails
+        source: { type: "ASSIGNMENT", id: l.id, createdById: null },
       });
       notified++;
     }
@@ -96,6 +97,7 @@ export async function runUnassignedSummary(now: Date = new Date()) {
     body: `End-of-day check — ${n} real-time lead${n > 1 ? "s have" : " has"} no agent yet (oldest ~${oldestLabel}). e.g. ${names}${n > 5 ? `, +${n - 5} more` : ""}. Please assign in Master Data.`,
     linkUrl: `/master-data?cat=workable`,
     email: true,
+    source: { type: "ASSIGNMENT", id: null, createdById: null },
   });
   return { mode: "summary", count: n, notified: true };
 }

@@ -79,6 +79,7 @@ export async function evaluateDevice(opts: {
         title: `🌍 Location change — ${user.name}`,
         body: `${name} signed in from ${locationLabel(meta.city, meta.country)} (was ${prevCountry}). If unexpected, block the device on /admin/devices.`,
         linkUrl: "/admin/devices",
+        source: { type: "DEVICE", id: device.id, createdById: null },
       }).catch(() => {});
     }
     return { ok: true, deviceRowId: device.id };
@@ -119,6 +120,7 @@ export async function evaluateDevice(opts: {
     title: blocking ? `🔐 New device needs approval — ${user.name}` : `🔐 New device login — ${user.name}`,
     body: `${name} · ${p.os}/${p.browser} · IP ${meta.ip} · ${locationLabel(meta.city, meta.country)}${blocking ? " — open Devices to approve or reject." : ""}`,
     linkUrl: "/admin/devices",
+    source: { type: "DEVICE", id: device.id, createdById: null },
   }).catch(() => {});
   await audit({
     userId: user.id,

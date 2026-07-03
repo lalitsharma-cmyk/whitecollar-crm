@@ -64,6 +64,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       body: transcript ? (transcript.length > 120 ? transcript.slice(0, 120) + "…" : transcript) : "Open the lead to listen.",
       linkUrl: `/leads/${id}`,
       leadId: id,
+      source: { type: "VOICE", id: msg.id, createdById: me.id },
     }).catch(() => {});
   }
   await audit({

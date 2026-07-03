@@ -42,6 +42,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         title: `♻️ Buyer reactivated: ${buyer.clientName}`,
         body: `${me.name} reactivated this rejected buyer to the Admin Pool${note ? ` — ${note}` : ""}. Ready to reassign.`,
         linkUrl: `/buyer-data/${id}`,
+        source: { type: "ASSIGNMENT", id, createdById: me.id },
       }).catch(() => null),
     ),
   );

@@ -64,6 +64,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       body: text.length > 120 ? text.slice(0, 120) + "…" : text,
       linkUrl: `/leads/${id}`,
       leadId: id,
+      source: { type: "MANUAL_NOTE", id: note.id, createdById: me.id },
     }).catch(() => {});
   }
 

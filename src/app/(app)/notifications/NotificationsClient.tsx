@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { formatDistanceToNow } from "date-fns";
 import { fmtIST } from "@/lib/datetime";
+import { notifSourceLabel } from "@/lib/notifSource";
 
 type NotifRow = {
   id: string;
@@ -15,6 +16,10 @@ type NotifRow = {
   linkUrl: string | null;
   readAt: string | null;
   createdAt: string;
+  // Source tracking — where this notification came from (a real CRM record).
+  sourceType: string | null;
+  sourceId: string | null;
+  createdBy: string;
 };
 
 const sevDot: Record<string, string> = {
@@ -92,15 +97,32 @@ export default function NotificationsClient({
                 <span
                   className={`mt-1.5 w-2.5 h-2.5 rounded-full ${sevDot[n.severity] ?? "bg-gray-400"} flex-none`}
                 ></span>
-                <Link href={n.linkUrl ?? "#"} className="flex-1 min-w-0">
-                  <div className={`text-sm text-[#0b1a33] ${isUnread ? "font-semibold" : "font-normal"}`}>
-                    {n.title}
+                <div className="flex-1 min-w-0">
+                  <Link href={n.linkUrl ?? "#"} className="block">
+                    <div className={`text-sm text-[#0b1a33] ${isUnread ? "font-semibold" : "font-normal"}`}>
+                      {n.title}
+                    </div>
+                    {n.body && <div className="text-sm text-gray-600 mt-0.5">{n.body}</div>}
+                  </Link>
+                  {/* Source tracking — every notification names its backing record,
+                      who fired it, and an explicit jump to the exact source. */}
+                  <div className="text-xs text-gray-400 mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
+                    <span
+                      className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 font-medium text-gray-600"
+                      title="What generated this notification"
+                    >
+                      {notifSourceLabel(n.sourceType)}
+                    </span>
+                    <span>by {n.createdBy}</span>
+                    <span>·</span>
+                    <span>{formatDistanceToNow(new Date(n.createdAt), { addSuffix: true })}</span>
+                    {n.linkUrl && (
+                      <Link href={n.linkUrl} className="text-blue-600 hover:underline font-medium">
+                        🔗 Open source
+                      </Link>
+                    )}
                   </div>
-                  {n.body && <div className="text-sm text-gray-600 mt-0.5">{n.body}</div>}
-                  <div className="text-xs text-gray-400 mt-1">
-                    {n.kind} · {formatDistanceToNow(new Date(n.createdAt), { addSuffix: true })}
-                  </div>
-                </Link>
+                </div>
                 {isUnread && (
                   <div className="flex-none relative">
                     <button

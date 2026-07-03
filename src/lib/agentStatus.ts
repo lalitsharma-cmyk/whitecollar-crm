@@ -310,6 +310,7 @@ export async function logAgentStatus(
           : `${STATUS_LABEL[status]} · ${display}`,
         linkUrl: "/admin/field-status",
         email: false, // operational visibility — never email-spam the manager
+        source: { type: "AGENT_STATUS", id: created.id, createdById: user.id },
       });
     }
   } catch {

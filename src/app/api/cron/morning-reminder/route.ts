@@ -90,6 +90,7 @@ export async function GET(req: NextRequest) {
         body: `All clear — no follow-ups, no overnight leads. ${motivation}`,
         linkUrl: "/dashboard",
         email: false,  // skip email when there's no work to surface
+        source: { type: "SYSTEM", id: null, createdById: null },
       });
       notified++;
       continue;
@@ -110,6 +111,7 @@ export async function GET(req: NextRequest) {
       body: `${body}\n\n${motivation}`,
       linkUrl: "/action-list",
       email: true,
+      source: { type: "SYSTEM", id: null, createdById: null },
     });
     notified++;
     // Note: We don't create an Activity here because Activity.leadId is required.

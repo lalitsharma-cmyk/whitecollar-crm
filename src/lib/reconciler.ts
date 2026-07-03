@@ -105,6 +105,7 @@ export async function runReconciler(): Promise<ReconcileResult> {
       body: `${reason}. Call within ${FIRST_CALL_SLA_MIN}m.`,
       linkUrl: `/leads/${lead.id}`,
       leadId: lead.id,
+      source: { type: "ASSIGNMENT", id: lead.id, createdById: null },
     });
     await notifyRoles(["ADMIN", "MANAGER"], {
       kind: "AUTO_ASSIGN_FIRED",
@@ -113,6 +114,7 @@ export async function runReconciler(): Promise<ReconcileResult> {
       body: reason,
       linkUrl: `/leads/${lead.id}`,
       leadId: lead.id,
+      source: { type: "ASSIGNMENT", id: lead.id, createdById: null },
     });
     autoAssigned++;
   }
@@ -149,6 +151,7 @@ export async function runReconciler(): Promise<ReconcileResult> {
       body: `15 minutes passed since assignment. Please call now or mark callback.`,
       linkUrl: `/leads/${lead.id}`,
       leadId: lead.id,
+      source: { type: "ASSIGNMENT", id: lead.id, createdById: null },
     });
     await notifyRoles(["ADMIN", "MANAGER"], {
       kind: "CALL_SLA_BREACH",
@@ -157,6 +160,7 @@ export async function runReconciler(): Promise<ReconcileResult> {
       body: `Assigned ${Math.round((Date.now() - (lead.assignedAt?.getTime() ?? Date.now())) / 60000)}m ago, no call logged.`,
       linkUrl: `/leads/${lead.id}`,
       leadId: lead.id,
+      source: { type: "ASSIGNMENT", id: lead.id, createdById: null },
     });
     slaEscalated++;
   }
@@ -201,6 +205,7 @@ export async function runReconciler(): Promise<ReconcileResult> {
       body: reason,
       linkUrl: `/leads/${lead.id}`,
       leadId: lead.id,
+      source: { type: "ESCALATION", id: lead.id, createdById: null },
     });
     flagged++;
   }
@@ -256,6 +261,7 @@ export async function runReconciler(): Promise<ReconcileResult> {
             body: `${lead.owner.name} hasn't logged first contact ${ageMin}m after assignment. Please follow up.`,
             linkUrl: `/leads/${lead.id}`,
             leadId: lead.id,
+            source: { type: "ESCALATION", id: lead.id, createdById: null },
           });
           freshEscalated++;
           continue;
@@ -270,6 +276,7 @@ export async function runReconciler(): Promise<ReconcileResult> {
             body: `Assigned ${ageMin}m ago — no call, WhatsApp, or note yet. Make first contact now.`,
             linkUrl: `/leads/${lead.id}`,
             leadId: lead.id,
+            source: { type: "ASSIGNMENT", id: lead.id, createdById: null },
           });
           freshEscalated++;
         }

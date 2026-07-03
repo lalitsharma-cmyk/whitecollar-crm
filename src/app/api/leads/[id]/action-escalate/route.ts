@@ -83,6 +83,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         body: `Owner: ${ownerLabel} · Reason: ${reason}`,
         linkUrl: `/leads/${id}`,
         leadId: id,
+        source: { type: "ESCALATION", id, createdById: me.id },
       }).catch(() => {});
     }
   } catch {

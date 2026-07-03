@@ -170,6 +170,7 @@ export async function ingestLead(input: RawLeadInput) {
         body: `New ${input.source} hit on existing lead. Current owner: ${existing.owner?.name ?? "Unassigned"}. ${cleanNeedSnapshot(input.notesShort) ?? ""}`.trim(),
         linkUrl: `/leads/${existing.id}`,
         leadId: existing.id,
+        source: { type: "LEAD_INTAKE", id: existing.id, createdById: null },
       });
       if (existing.ownerId) {
         await notify({
@@ -180,6 +181,7 @@ export async function ingestLead(input: RawLeadInput) {
           body: `Source: ${input.source}. ${cleanNeedSnapshot(input.notesShort) ?? ""}`.trim(),
           linkUrl: `/leads/${existing.id}`,
           leadId: existing.id,
+          source: { type: "LEAD_INTAKE", id: existing.id, createdById: null },
         });
       }
       // Hot-lead Web Push (spec §12.3) — if the dup is an already-HOT owned
@@ -442,6 +444,7 @@ export async function ingestLead(input: RawLeadInput) {
             body,
             linkUrl: `/leads/${lead.id}`,
             leadId: lead.id,
+            source: { type: "LEAD_INTAKE", id: lead.id, createdById: null },
           });
         } else {
           await notifyRoles(["ADMIN", "MANAGER"], {
@@ -451,6 +454,7 @@ export async function ingestLead(input: RawLeadInput) {
             body: `${body} — assign to a senior agent.`,
             linkUrl: `/leads/${lead.id}`,
             leadId: lead.id,
+            source: { type: "LEAD_INTAKE", id: lead.id, createdById: null },
           });
         }
       }
@@ -552,6 +556,7 @@ export async function ingestLead(input: RawLeadInput) {
       body: isWebLead ? webLeadBody : `This ${input.source} lead arrived without a team tag. Open the lead and pick Dubai or India to start the round-robin.`,
       linkUrl: `/leads/${lead.id}`,
       leadId: lead.id,
+      source: { type: "LEAD_INTAKE", id: lead.id, createdById: null },
     });
   } else {
     const adminBody = window.kind === "OFFICE_RR"
@@ -568,6 +573,7 @@ export async function ingestLead(input: RawLeadInput) {
       body: isWebLead ? webLeadBody : adminBody,
       linkUrl: `/leads/${lead.id}`,
       leadId: lead.id,
+      source: { type: "LEAD_INTAKE", id: lead.id, createdById: null },
     });
   }
 
@@ -594,9 +600,27 @@ export async function ingestLead(input: RawLeadInput) {
   return { lead, deduped: false as const };
 }
 
+/** Thrown by assignLeadTo when the target lead is still REJECTED. Every assignment
+ *  surface (inline-assign, bulk reassign, manual assign, awaiting-team round-robin)
+ *  funnels through assignLeadTo, so refusing here is the ONE guard that guarantees a
+ *  rejected lead can never be re-owned — which is exactly the breach that stranded 17
+ *  leads as rejected-but-owned (a bulk reassign swept up already-rejected leads).
+ *  Callers catch this and tell the user to reactivate the lead first (Rejected-Lead
+ *  workflow "reactivate-before-reassign", 2026-06-27). */
+export class LeadRejectedError extends Error {
+  constructor(public leadId: string, public leadName?: string | null) {
+    super("LEAD_REJECTED");
+    this.name = "LeadRejectedError";
+  }
+}
+
 /**
  * Reassign a lead to a specific user (manual or system-triggered).
  * Sets SLA clock and notifies the new owner.
+ *
+ * REACTIVATE-BEFORE-REASSIGN: throws LeadRejectedError if the lead is still rejected.
+ * The reject decision (reason / note / timeline) is left fully intact — the lead must
+ * be reactivated (which clears rejectedAt) before it can be assigned to anyone.
  */
 export async function assignLeadTo(leadId: string, userId: string, reason: string) {
   const now = new Date();
@@ -607,6 +631,11 @@ export async function assignLeadTo(leadId: string, userId: string, reason: strin
     prisma.user.findUnique({ where: { id: userId } }),
   ]);
   if (!lead || !agent) throw new Error("Lead or user not found");
+  // A rejected lead must be reactivated before it can be (re)assigned. This is the
+  // SINGLE choke point every assignment path funnels through, so this one line closes
+  // all of them — and any future caller — against re-owning a rejected lead (the
+  // hard-unassign invariant). Never touches the reject record; only refuses the write.
+  if (lead.rejectedAt != null) throw new LeadRejectedError(leadId, lead.name);
 
   await prisma.lead.update({
     where: { id: leadId },
@@ -621,6 +650,7 @@ export async function assignLeadTo(leadId: string, userId: string, reason: strin
     body: `Source: ${lead.source}. Call within ${FIRST_CALL_SLA_MIN} minutes — ${reason}.`,
     linkUrl: `/leads/${leadId}`,
     leadId,
+    source: { type: "ASSIGNMENT", id: leadId, createdById: null },
   });
   // Hot-lead Web Push (spec §12.3) — if a HOT lead just got an owner, the
   // agent should be alerted even when they're not on the screen. Guarded

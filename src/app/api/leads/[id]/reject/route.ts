@@ -206,6 +206,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       // Important enough to land in inbox too — admins want oversight without
       // having to crawl the in-app bell.
       email: false,
+      source: { type: "ASSIGNMENT", id, createdById: me.id },
     }).catch(() => {});
   }
 

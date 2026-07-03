@@ -266,6 +266,7 @@ export async function applyPlan(
           title: applied === 1 ? `🏷️ A buyer was assigned to you` : `🏷️ ${applied} buyers assigned to you`,
           body: `${applied} buyer${applied === 1 ? "" : "s"} from the Admin Pool ${applied === 1 ? "is" : "are"} now yours in ${market} Buyer Data${opts?.reason ? ` — ${opts.reason}` : ""}.`,
           linkUrl: listUrl,
+          source: { type: "ASSIGNMENT", id: row.agentId, createdById: assignedById ?? null },
         }).catch(() => null);
       }
     }

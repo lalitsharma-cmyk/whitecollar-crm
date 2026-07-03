@@ -29,6 +29,14 @@ export default async function NotificationsPage() {
     }),
   ]);
 
+  // Resolve "Created By" names for source tracking — batch-fetch the distinct
+  // actor ids so each notification can show who/what fired it (or "System").
+  const creatorIds = Array.from(new Set(items.map((n) => n.createdById).filter((x): x is string => !!x)));
+  const creators = creatorIds.length
+    ? await prisma.user.findMany({ where: { id: { in: creatorIds } }, select: { id: true, name: true } })
+    : [];
+  const creatorName = new Map(creators.map((u) => [u.id, u.name]));
+
   const serialized = items.map((n) => ({
     id: n.id,
     kind: n.kind,
@@ -38,6 +46,10 @@ export default async function NotificationsPage() {
     linkUrl: n.linkUrl,
     readAt: n.readAt ? n.readAt.toISOString() : null,
     createdAt: n.createdAt.toISOString(),
+    // Source tracking — every notification traces to a real record.
+    sourceType: n.sourceType,
+    sourceId: n.sourceId,
+    createdBy: n.createdById ? (creatorName.get(n.createdById) ?? "Unknown") : "System",
   }));
 
   const earliestSnoozed = snoozedRows[0]?.snoozedUntil ?? null;

@@ -43,6 +43,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       title: `✅ Escalation resolved on ${candidate.name}`,
       body: `${me.name ?? "Manager"} marked your escalation resolved.`,
       linkUrl: `/hr/candidates/${id}`,
+      source: { type: "ESCALATION", id: esc.id, createdById: me.id },
     }).catch(() => {});
   }
 

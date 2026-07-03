@@ -204,6 +204,7 @@ async function executeAction(type: WorkflowActionType, configJson: string, leadI
         title: `🤖 ${message}`,
         body: `Lead: ${lead.name} (${lead.phone ?? lead.email ?? "—"})`,
         linkUrl: `/leads/${leadId}`, leadId,
+        source: { type: "AI", id: leadId, createdById: null },
       });
       return;
     }
@@ -216,6 +217,7 @@ async function executeAction(type: WorkflowActionType, configJson: string, leadI
         title: `🤖 ${message}`,
         body: `Lead: ${lead.name}`,
         linkUrl: `/leads/${leadId}`, leadId,
+        source: { type: "AI", id: leadId, createdById: null },
       });
       return;
     }

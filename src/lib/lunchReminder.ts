@@ -37,6 +37,7 @@ export async function runLunchReminder(phase: LunchPhase) {
         title: msg.title,
         body: msg.body,
         email: false, // informational reminder only — no email
+        source: { type: "SYSTEM", id: null, createdById: null },
       });
       sent++;
     } catch {

@@ -48,6 +48,7 @@ export async function POST(req: NextRequest) {
       severity: action === "approve" ? "INFO" : "WARNING",
       title: action === "approve" ? `✅ Device approved: ${device.name}` : `⛔ Device ${action}ed: ${device.name}`,
       body: action === "approve" ? "You can now sign in from this device." : "Access from this device has been blocked by an admin.",
+      source: { type: "DEVICE", id, createdById: null },
     }).catch(() => {});
     return NextResponse.json({ ok: true });
   }

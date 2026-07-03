@@ -58,6 +58,7 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
       body: `${me.name} signed off on the booking. You can advance to the next stage.`,
       linkUrl: `/leads/${id}`,
       leadId: id,
+      source: { type: "EOI", id, createdById: me.id },
     }).catch(() => {});
   }
 

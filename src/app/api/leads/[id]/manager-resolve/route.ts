@@ -69,6 +69,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       body: comment || "No further action needed.",
       linkUrl: `/leads/${id}`,
       leadId: id,
+      source: { type: "ESCALATION", id, createdById: me.id },
     }).catch(() => {});
   }
 

@@ -66,6 +66,7 @@ export async function runDataQualityScan(): Promise<DataQualityResult> {
         title: `🧹 Data-quality: ${orphanFollowups} terminal lead(s) with a stray follow-up`,
         body: `Auto-healed ${marketFixed} missing market(s). Duplicate-phone groups: ${duplicatePhoneGroups}. The orphan follow-ups need a look (terminal leads shouldn't carry a follow-up).`,
         linkUrl: "/dashboard", email: false,
+        source: { type: "DATA_QUALITY", id: null, createdById: null },
       });
       notified = true;
     }

@@ -70,6 +70,7 @@ export async function POST(req: NextRequest) {
       title: `🎙 Voice message from ${me.name ?? "Admin"}`,
       body: title ? `${title} — ${preview}` : preview,
       linkUrl: `/dashboard`,
+      source: { type: "VOICE", id: bc.id, createdById: me.id },
     }).catch(() => {});
   }
   await audit({

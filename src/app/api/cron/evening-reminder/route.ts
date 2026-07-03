@@ -66,6 +66,7 @@ export async function GET(req: NextRequest) {
       body: `${body}. Quickly catch up or schedule for tomorrow before logging off.`,
       linkUrl: "/activities",
       email: true,
+      source: { type: "SYSTEM", id: null, createdById: null },
     });
     missesByAgent.push({ name: u.name, missed, uncalled });
     notified++;
@@ -81,6 +82,7 @@ export async function GET(req: NextRequest) {
       body: summary,
       linkUrl: "/dashboard",
       email: true,
+      source: { type: "SYSTEM", id: null, createdById: null },
     });
   }
 

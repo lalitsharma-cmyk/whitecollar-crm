@@ -40,6 +40,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         title: `↩️ Buyer returned to pool: ${buyer.clientName}`,
         body: `${me.name} returned this buyer to the Admin Buyer Pool${reason ? ` — ${reason}` : ""}. Still active — ready for reassignment.`,
         linkUrl: `/buyer-data/${id}`,
+        source: { type: "ASSIGNMENT", id, createdById: me.id },
       }).catch(() => null),
     ),
   );

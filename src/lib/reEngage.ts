@@ -67,6 +67,7 @@ export async function runReEngageDue(now: Date = new Date()): Promise<ReEngageRe
         title: `🔁 Re-engage due — ${l.name ?? "a client"}`,
         body: `You scheduled this client for a future call — today's the day. Reactivated + assigned to you. Give them a ring.`,
         linkUrl: `/leads/${l.id}`, leadId: l.id, email: false,
+        source: { type: "REMINDER", id: l.id, createdById: null },
       });
       if (lalitId && lalitId !== target) {
         await notify({
@@ -74,6 +75,7 @@ export async function runReEngageDue(now: Date = new Date()): Promise<ReEngageRe
           title: `🔁 Re-engage fired — ${l.name ?? "client"}`,
           body: ownerActive ? `Reactivated + assigned back to the original agent.` : `Original agent is inactive — assigned to you instead.`,
           linkUrl: `/leads/${l.id}`, leadId: l.id, email: false,
+          source: { type: "REMINDER", id: l.id, createdById: null },
         });
       }
       reEngaged++;

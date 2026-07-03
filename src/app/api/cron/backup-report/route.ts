@@ -28,6 +28,7 @@ export async function POST(req: NextRequest) {
         : "Daily database backup FAILED — check the GitHub Actions run and docs/BACKUP_SETUP.md."),
       linkUrl: "/admin/cron-health",
       email: true, // backup status always emails admins (success + failure)
+      source: { type: "SYSTEM", id: null, createdById: null },
     });
     await finishCronRun(runId, "OK", undefined, { ok, detail });
     return NextResponse.json({ ok: true });
