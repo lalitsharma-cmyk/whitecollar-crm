@@ -432,7 +432,10 @@
 // platform-aware WhatsApp, server search, activity-logging, dashboard count fixes.
 // The SW had been stuck at v125 since Jun-24 so NONE of the Jun-28→30 HR UI was
 // reaching cached clients — this bump force-reloads every shell to the new HR UI.
-const CACHE = "wcr-shell-v132";
+// v133 (2026-07-03): Leads-list Name column fix — client name always on its own
+// line + prominent; freshness badges (NEW TODAY / Untouched) now wrap BELOW it and
+// can never squeeze the name out. Bump forces cached clients to the corrected layout.
+const CACHE = "wcr-shell-v133";
 const SHELL = ["/login", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", (event) => {

@@ -825,12 +825,14 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
                           {l.enquiryTime ?? <span className="text-gray-300">—</span>}
                         </td>
 
-                        {/* 3. Name */}
-                        <td className="px-3 py-1.5 font-medium text-gray-900 dark:text-slate-100">
-                          <div className="flex items-center gap-1.5 min-w-0">
+                        {/* 3. Name — CLIENT NAME IS PRIMARY: always on its own line,
+                            prominent, and never squeezed out by the freshness badges.
+                            The badges sit BELOW the name, wrapping (secondary metadata). */}
+                        <td className="px-3 py-1.5 font-medium text-gray-900 dark:text-slate-100 min-w-[9rem]">
+                          <div className="flex flex-col gap-0.5 min-w-0">
                             <Link href={`${detailBasePath}/${l.id}`} onClick={e => e.stopPropagation()}
-                              className="hover:text-[#0b1a33] dark:hover:text-blue-300 hover:underline truncate">{l.name}</Link>
-                            <FreshBadges row={l} className="shrink-0" />
+                              className="hover:text-[#0b1a33] dark:hover:text-blue-300 hover:underline font-semibold truncate">{l.name || "—"}</Link>
+                            <FreshBadges row={l} className="flex-wrap" />
                           </div>
                         </td>
 
