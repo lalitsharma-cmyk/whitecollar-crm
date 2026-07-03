@@ -5,9 +5,12 @@
 //      push notification. Dedupes via an Activity flag (reminderSentAt) so the
 //      same activity doesn't get notified twice across overlapping 5-min ticks.
 //
-//   2. Lead.followupDate set for ~10 minutes from now (client said "call me at
-//      3pm") gets the owning agent a "☎ Call X in 10 min — they asked you to
-//      ring at this time" push. Dedupes via Lead.followupReminderSentAt.
+//   2. Lead.followupDate (a SCHEDULED FOLLOW-UP) due in ~10 minutes gets the owning
+//      agent a "☎ Follow-up with X in 10 min — scheduled at HH:MM IST" push. The text
+//      states only what the record holds (a scheduled follow-up); it NEVER claims the
+//      client requested a callback. Date-only (midnight-IST) follow-ups are skipped —
+//      there is no chosen time, so no timed reminder is invented. Dedupe via
+//      Lead.followupReminderSentAt.
 //
 // Both 30-min and 10-min thresholds use a half-open window matched to our 5-min
 // cron cadence: [target - 2.5min, target + 2.5min] so we catch every activity
@@ -150,8 +153,15 @@ export async function GET(req: NextRequest) {
     hourNotified++;
   }
 
-  // ── 2) Lead callbacks in ~10 min ───────────────────────────────
-  // "Client asked agent to call at 3pm" → reminder at 2:50pm.
+  // ── 2) Scheduled follow-ups due in ~10 min ─────────────────────
+  // A follow-up whose Lead.followupDate is ~10 min away → nudge the owner. TRACEABLE
+  // + TRUTHFUL: the ONLY backing record is the Scheduled Follow-up (followupDate), so
+  // the body states exactly that — it never implies the CLIENT requested this time
+  // (that would invent a callback request the record does not contain). Date-only
+  // follow-ups (midnight IST — a date with no chosen time) get NO timed reminder:
+  // there is no callback time to remind about, so a "call at HH:MM" alert would be
+  // fabricating one (this was the "12:00 AM IST" bug). The daily follow-up reminders
+  // cover date-only follow-ups instead.
   const upcomingCallbacks = await prisma.lead.findMany({
     where: {
       followupDate: { gte: callbackFrom, lte: callbackTo },
@@ -166,12 +176,21 @@ export async function GET(req: NextRequest) {
 
   for (const l of upcomingCallbacks) {
     if (!l.ownerId || !l.followupDate) continue;
+    // Skip date-only follow-ups (00:00 IST): no specific time was ever set, so a
+    // timed reminder would be inventing a callback time. Mark handled (dedupe) so we
+    // don't re-evaluate it every 5-min tick; an edit that adds a real time resets
+    // followupReminderSentAt and re-arms it.
+    const ist = new Date(l.followupDate.getTime() + 330 * MIN);
+    if (ist.getUTCHours() === 0 && ist.getUTCMinutes() === 0) {
+      await prisma.lead.update({ where: { id: l.id }, data: { followupReminderSentAt: now } });
+      continue;
+    }
     await notify({
       userId: l.ownerId,
       kind: "REMINDER",
       severity: "WARNING",
-      title: `☎ Call ${l.name} in 10 min`,
-      body: `They asked you to ring at ${fmtISTTime12(l.followupDate)} IST.${l.phone ? ` ${l.phone}` : ""}`,
+      title: `☎ Follow-up with ${l.name} in 10 min`,
+      body: `Scheduled follow-up at ${fmtISTTime12(l.followupDate)} IST.${l.phone ? ` ${l.phone}` : ""}`,
       linkUrl: `/leads/${l.id}`,
       leadId: l.id,
     });

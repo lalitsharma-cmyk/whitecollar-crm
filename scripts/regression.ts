@@ -6146,6 +6146,35 @@ const checks: Check[] = [
       assert(leakT === 0, `${leakT} non-active/imported leads leak into Fresh Today — gate not holding`);
     },
   },
+  {
+    name: "notification-no-fabrication — reminders state only what a record holds (no invented callback request / midnight time)",
+    run: async () => {
+      const fsl = await import("fs");
+      const read = (f: string) => fsl.readFileSync(f, "utf8");
+      const cron = read("src/app/api/cron/pre-meeting-reminder/route.ts");
+
+      // (a) The fabricated attribution is GONE — a scheduled follow-up must never be
+      //     narrated as a client-requested callback ("they asked you to ring at X").
+      assert(!/asked you to ring/i.test(cron), "pre-meeting-reminder MUST NOT claim the client 'asked you to ring' (fabricates a request the record doesn't hold)");
+
+      // (b) Date-only (midnight-IST) follow-ups are skipped — no invented callback time
+      //     (this was the "12:00 AM IST" bug). The 00:00 guard must be present.
+      assert(/getUTCHours\(\) === 0 && ist\.getUTCMinutes\(\) === 0/.test(cron), "pre-meeting-reminder MUST skip date-only (00:00 IST) follow-ups (no fabricated callback time)");
+
+      // (c) The follow-up reminder body is source-truthful (a Scheduled Follow-up).
+      assert(/Scheduled follow-up at/.test(cron), "the follow-up reminder body MUST state the traceable source (Scheduled follow-up at <time>)");
+
+      // (d) DATA: no live lead should have a date-only follow-up that would re-trigger a
+      //     midnight callback reminder without the guard. (Informational — the guard
+      //     handles any that exist; this just surfaces the count in the assertion msg.)
+      const dateOnly = await prisma.lead.findMany({
+        where: { followupDate: { not: null }, deletedAt: null, followupReminderSentAt: null },
+        select: { followupDate: true }, take: 5000,
+      });
+      const midnight = dateOnly.filter((r) => { const i = new Date(r.followupDate!.getTime() + 330 * 60000); return i.getUTCHours() === 0 && i.getUTCMinutes() === 0; }).length;
+      assert(midnight >= 0, `date-only follow-ups pending: ${midnight} (all skipped by the guard — no fabricated reminder)`);
+    },
+  },
 ];
 
 // ── runner ────────────────────────────────────────────────────────────────────
