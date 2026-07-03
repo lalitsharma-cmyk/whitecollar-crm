@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import BuyerListClient, { type BuyerRow, type BuyerAgent } from "@/components/BuyerListClient";
 import { buyerScopeWhereForMarket, canAccessBuyerMarket, INDIA_MARKET } from "@/lib/buyerScope";
+import { canExportData } from "@/lib/exportPerms";
 import {
   groupByBuyerKey,
   rollupForRecords,
@@ -138,7 +139,7 @@ export default async function IndiaBuyerDataPage() {
             {" "}<span className="text-amber-600 dark:text-amber-400">₹ INR / Cr</span>
           </p>
         </div>
-        {isAdmin && (
+        {canExportData(me) && (
           <div className="flex items-center gap-2 self-start sm:self-auto">
             <Link href="/india-buyer-data/import" className="btn btn-primary" title="Import India buyer transaction data">⬆ Import</Link>
             <a href="/api/buyer-data/export?market=India" className="btn btn-ghost" title="Export India buyer data to CSV">⬇ Export CSV</a>

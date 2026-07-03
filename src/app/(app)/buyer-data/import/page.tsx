@@ -2,13 +2,14 @@ import { requireUser } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import BuyerImportClient from "@/components/BuyerImportClient";
+import { canImportData } from "@/lib/exportPerms";
 
-// Buyer import — ADMIN ONLY (passport + financial data).
+// Buyer import — OWNER ONLY (Super Admin): passport + financial data.
 export const dynamic = "force-dynamic";
 
 export default async function BuyerImportPage() {
   const me = await requireUser();
-  if (me.role !== "ADMIN") redirect("/dashboard");
+  if (!canImportData(me)) redirect("/dashboard");
 
   return (
     <div className="space-y-4 max-w-3xl">

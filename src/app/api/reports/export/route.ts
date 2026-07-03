@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/auth";
 import { audit, reqMeta } from "@/lib/audit";
 import { leadScopeWhere, COLD_ORIGINS } from "@/lib/leadScope";
+import { canExportData, EXPORT_DENIED } from "@/lib/exportPerms";
 import { TERMINAL_STATUSES, CLOSED_OUTCOME_STATUSES, LOST_STATUSES } from "@/lib/lead-statuses";
 import { effectiveSource } from "@/lib/sourceLabel";
 import { overdueFollowupBoundary } from "@/lib/datetime";
@@ -152,6 +153,7 @@ async function buildCsvResponse(opts: {
 // ADMIN-only, audited + watermarked exactly like GET.
 export async function POST(req: NextRequest) {
   const me = await requireRole("ADMIN");
+  if (!canExportData(me)) return NextResponse.json({ error: EXPORT_DENIED }, { status: 403 });
   const body = await req.json().catch(() => ({}));
   const ids: string[] = Array.isArray(body?.leadIds) ? body.leadIds.filter((x: unknown) => typeof x === "string") : [];
   if (ids.length === 0) return NextResponse.json({ error: "No rows to export." }, { status: 400 });
@@ -165,6 +167,7 @@ export async function POST(req: NextRequest) {
 
 export async function GET(req: NextRequest) {
   const me = await requireRole("ADMIN");
+  if (!canExportData(me)) return NextResponse.json({ error: EXPORT_DENIED }, { status: 403 });
   const url = new URL(req.url);
   const sp = Object.fromEntries(url.searchParams.entries()) as Record<string, string | undefined>;
   const type = sp.type ?? "leads";

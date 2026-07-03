@@ -4,6 +4,7 @@ import * as XLSX from "xlsx";
 import { ingestLead } from "@/lib/leadIngest";
 import { LeadSource, Potential, FundReadiness, MoodStatus, InvestTimeline, LeadStatus, AIScore, Prisma } from "@prisma/client";
 import { requireRole } from "@/lib/auth";
+import { canImportData, EXPORT_DENIED } from "@/lib/exportPerms";
 import { prisma } from "@/lib/prisma";
 import { extractFromRemarks, mergeSuggestions } from "@/lib/remarkAutofill";
 import { mergeRawRemark } from "@/lib/rawRemarks";
@@ -269,6 +270,9 @@ export async function POST(req: NextRequest) {
   // could POST directly and overwrite leads on dedupe). requireRole("ADMIN")
   // covers super-admins (isSuperAdmin is a flag on an ADMIN).
   const me = await requireRole("ADMIN");
+  // Owner-only (Super Admin): bulk lead import is restricted to Lalit + Super Admin —
+  // a regular ADMIN (e.g. Sameer)/MANAGER/AGENT cannot import, even via a direct POST.
+  if (!canImportData(me)) return NextResponse.json({ error: EXPORT_DENIED }, { status: 403 });
   const url = new URL(req.url);
   // preview=1 → dry-run only. Parse + check duplicates but write NOTHING.
   const isDryRun = url.searchParams.get("preview") === "1";

@@ -4,14 +4,16 @@ import CsvUploader from "@/components/CsvUploader";
 import GoogleSheetImporter from "@/components/GoogleSheetImporter";
 import PreAssignedImporter from "@/components/PreAssignedImporter";
 import { requireUser } from "@/lib/auth";
+import { canImportData } from "@/lib/exportPerms";
 import { getTestingModeEnabled } from "@/lib/settings";
 
 export const dynamic = "force-dynamic";
 
 export default async function IntakePage() {
   const me = await requireUser();
-  // ADMIN-ONLY — the page renders live IntakeKey.key secrets; non-admins must never see them.
-  if (me.role !== "ADMIN") redirect("/dashboard");
+  // OWNER-ONLY (Super Admin) — bulk lead import + live IntakeKey.key secrets. A
+  // regular ADMIN (e.g. Sameer)/MANAGER/AGENT must never reach this, even by URL.
+  if (!canImportData(me)) redirect("/dashboard");
   const [keys, agents, testingModeOn] = await Promise.all([
     prisma.intakeKey.findMany({ orderBy: { createdAt: "asc" } }),
     me.role === "ADMIN" || me.role === "MANAGER"

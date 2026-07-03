@@ -8,6 +8,7 @@ import LeadsListClient from "@/components/LeadsListClient";
 import MotivationBanner from "@/components/MotivationBanner";
 import { runReconciler } from "@/lib/reconciler";
 import { leadScopeWhere, COLD_ORIGINS, workableWhere, activeBoardWhere, MASTER_DATA_BOARD_OR } from "@/lib/leadScope";
+import { canExportData, canImportData } from "@/lib/exportPerms";
 import { overdueFollowupBoundary } from "@/lib/datetime";
 import { contactActivityByLeadToday } from "@/lib/followupGate";
 import { CONTACT_ACTIVITY_TYPES } from "@/lib/dashboardWidgets";
@@ -749,13 +750,13 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
-          {me.role !== "AGENT" && (
+          {canImportData(me) && (
             <Link href="/intake" className="btn btn-ghost flex-1 sm:flex-none justify-center">Import</Link>
           )}
           {me.isSuperAdmin && (
             <Link href="/leads/deleted" className="btn btn-ghost flex-1 sm:flex-none justify-center" title="Deleted leads — Super Admin archive">🗑 Deleted</Link>
           )}
-          {me.role !== "AGENT" && (() => {
+          {canExportData(me) && (() => {
             const params = new URLSearchParams({ type: "leads" });
             for (const [k, v] of Object.entries(sp)) {
               if (v != null && v !== "") params.set(k, String(v));

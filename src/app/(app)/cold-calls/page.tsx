@@ -3,6 +3,7 @@ import { requireUser } from "@/lib/auth";
 import { LeadSource, Prisma } from "@prisma/client";
 import { SUPPRESSED_STATUSES, statusColor, INDIA_STATUSES, DUBAI_STATUSES, compareStatusDisplay, NEEDS_REVIEW } from "@/lib/lead-statuses";
 import { COLD_ORIGINS } from "@/lib/leadScope";
+import { canExportData, canImportData } from "@/lib/exportPerms";
 import { leadFilterWhere } from "@/lib/leadFilterWhere";
 import { getAvailableMediums } from "@/lib/mediumManager";
 import { projectWhereForUser } from "@/lib/propertyScope";
@@ -450,12 +451,12 @@ export default async function ColdDataPage({ searchParams }: { searchParams: Pro
               No cold leads available
             </span>
           )}
-          {isAdminOrMgr && (
+          {canImportData(me) && (
             <ColdDataAdminControls agents={agents.map(a => ({ id: a.id, name: a.name, team: a.team }))} />
           )}
-          {/* Revival export — ADMIN only (endpoint is requireRole ADMIN, watermarked
-              + audited). CSV for spreadsheets, Excel for a native .xlsx workbook. */}
-          {me.role === "ADMIN" && (
+          {/* Revival export — OWNER (Super Admin) only, matching the server gate
+              (watermarked + audited). CSV for spreadsheets, Excel for .xlsx. */}
+          {canExportData(me) && (
             <span className="inline-flex items-center gap-1">
               <a href="/api/reports/export?type=revival" className="btn btn-ghost text-sm" title="Export active revival leads (CSV)">⬇ Export CSV</a>
               <a href="/api/reports/export?type=revival&format=xlsx" className="btn btn-ghost text-sm" title="Export active revival leads (Excel)">⬇ Excel</a>

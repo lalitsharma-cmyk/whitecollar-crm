@@ -2,14 +2,15 @@ import { requireUser } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import BuyerImportClient from "@/components/BuyerImportClient";
+import { canImportData } from "@/lib/exportPerms";
 
-// India Buyer import — ADMIN ONLY (passport + financial data). Same wizard + template as
-// Dubai; rows are stamped market="India" (INR/Cr) via the market prop.
+// India Buyer import — OWNER ONLY (Super Admin): passport + financial data. Same wizard +
+// template as Dubai; rows are stamped market="India" (INR/Cr) via the market prop.
 export const dynamic = "force-dynamic";
 
 export default async function IndiaBuyerImportPage() {
   const me = await requireUser();
-  if (me.role !== "ADMIN") redirect("/dashboard");
+  if (!canImportData(me)) redirect("/dashboard");
 
   return (
     <div className="space-y-4 max-w-3xl">

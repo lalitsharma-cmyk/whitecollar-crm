@@ -427,7 +427,10 @@ export default function MasterDataRecordsTable({ rows, agents, projects, isSuper
         <button onClick={saveCurrentView} className={`${btn} bg-white dark:bg-slate-800 border-dashed border-gray-300 dark:border-slate-600 text-gray-500`}>＋ Save view</button>
 
         <span className="ml-auto inline-flex items-center gap-1.5">
-          <button onClick={exportFiltered} disabled={busy} className={`${btn} bg-white dark:bg-slate-800 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800 disabled:opacity-50`} title="Export exactly the rows shown (after view + column filters)">⬇ Export view ({filtered.length})</button>
+          {/* Export — OWNER (Super Admin) only, matching the server gate. */}
+          {isSuperAdmin && (
+            <button onClick={exportFiltered} disabled={busy} className={`${btn} bg-white dark:bg-slate-800 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800 disabled:opacity-50`} title="Export exactly the rows shown (after view + column filters)">⬇ Export view ({filtered.length})</button>
+          )}
           <button onClick={() => setFrozen((f) => !f)} className={`${btn} ${frozen ? "bg-sky-50 text-sky-700 border-sky-300" : "bg-white dark:bg-slate-800 text-gray-500 border-gray-200 dark:border-slate-600"}`} title="Freeze Created Date / Time / Client Name while scrolling">❄ Freeze {frozen ? "On" : "Off"}</button>
           <span className="relative">
             <button onClick={() => setColsOpen((o) => !o)} className={`${btn} bg-white dark:bg-slate-800 border-gray-200 dark:border-slate-600 text-gray-600 dark:text-slate-300`}>⚙ Columns</button>

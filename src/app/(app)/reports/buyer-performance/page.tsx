@@ -96,15 +96,15 @@ export default async function BuyerPerformancePage({
       {/* Time window selector (shared component — keys off the current path) */}
       <AgentPerfRangeSelector current={range.preset} from={sp.from} to={sp.to} />
 
-      {/* Export (CSV/Excel) — admin gets a watermarked extract; others see a note */}
-      {isAdmin ? (
+      {/* Export (CSV/Excel) — OWNER (Super Admin) only, matching the server gate; others see a note */}
+      {me.isSuperAdmin ? (
         <div className="flex flex-wrap gap-2 items-center">
           <span className="text-xs text-gray-500">Export:</span>
           <a href={`/api/reports/buyer-performance/export${query}&format=csv`} className="btn btn-ghost text-xs">⬇️ CSV</a>
           <a href={`/api/reports/buyer-performance/export${query}&format=xlsx`} className="btn btn-ghost text-xs">⬇️ Excel</a>
         </div>
       ) : (
-        <div className="text-[11px] text-gray-500 italic">CSV/Excel export is Admin-only.</div>
+        <div className="text-[11px] text-gray-500 italic">CSV/Excel export is restricted to the owner (Super Admin).</div>
       )}
 
       {/* Admin summary dashboard (pool health) */}

@@ -1,6 +1,7 @@
 import { type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
+import { canExportData, EXPORT_DENIED } from "@/lib/exportPerms";
 import { normalizeTeam } from "@/lib/teamRouting";
 import { audit, reqMeta } from "@/lib/audit";
 
@@ -38,6 +39,11 @@ export async function GET(req: NextRequest) {
   const me = await getCurrentUser();
   if (!me) {
     return new Response("Unauthorized", { status: 401 });
+  }
+  // Owner-only (Super Admin). Call logs are sensitive customer-contact data — a
+  // regular ADMIN (e.g. Sameer), MANAGER, or AGENT must NOT export, even via URL.
+  if (!canExportData(me)) {
+    return new Response(EXPORT_DENIED, { status: 403 });
   }
 
   const url = new URL(req.url);

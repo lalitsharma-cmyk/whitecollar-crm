@@ -1386,15 +1386,16 @@ const checks: Check[] = [
       //     buyers to each other.
       const fs = await import("node:fs");
       const read = (f: string) => fs.readFileSync(f, "utf8");
-      // Import/export = ADMIN-ONLY (pool management).
+      // Import/export = OWNER-ONLY (Super Admin) — tightened 2026-07-03 from ADMIN to
+      // canImportData/canExportData(me) (see the export-import-owner-only invariant).
       for (const r of [
         "src/app/api/buyer-data/import/route.ts",
         "src/app/api/buyer-data/export/route.ts",
       ]) {
         const src = read(r);
-        assert(/role !== "ADMIN"/.test(src) && /403/.test(src), `${r} MUST stay ADMIN-only (pool management)`);
+        assert(/can(Export|Import)Data\(me\)/.test(src) && /403/.test(src), `${r} MUST stay owner-only (canExport/ImportData → 403)`);
       }
-      assert(/role !== "ADMIN"/.test(read("src/app/(app)/buyer-data/import/page.tsx")), "import page MUST stay ADMIN-only");
+      assert(/canImportData\(me\)/.test(read("src/app/(app)/buyer-data/import/page.tsx")), "import page MUST stay owner-only (canImportData gate)");
       // List + detail = SCOPED reads (must call buyerScopeWhere / canTouchBuyer).
       assert(/buyerScopeWhere/.test(read("src/app/(app)/buyer-data/page.tsx")), "buyer list page MUST scope via buyerScopeWhere (no blanket admin gate, no leak)");
       assert(/canTouchBuyer/.test(read("src/app/(app)/buyer-data/[id]/page.tsx")), "buyer detail page MUST gate via canTouchBuyer");
@@ -1914,11 +1915,11 @@ const checks: Check[] = [
       const md = read("src/components/MasterDataRecordsTable.tsx");
       assert(/from "@\/components\/ColumnHeaderFilter"/.test(md) && /<ColumnHeaderFilter/.test(md), "Master Data MUST reuse the shared ColumnHeaderFilter (DRY across client-side tables)");
 
-      // (e) Export route still ADMIN-only + deletedAt-excluded on BOTH paths; the
-      //     new POST(buyerIds) path is the filtered-export channel (capped, audited).
+      // (e) Export route now OWNER-ONLY (Super Admin) + deletedAt-excluded on BOTH paths;
+      //     the POST(buyerIds) path is the filtered-export channel (capped, audited).
       const exp = read("src/app/api/buyer-data/export/route.ts");
       assert(/export async function POST/.test(exp) && /buyerIds/.test(exp), "export route must accept POST { buyerIds } for filtered export");
-      assert((exp.match(/me\.role !== "ADMIN"/g) ?? []).length >= 2, "BOTH export paths (GET+POST) MUST stay ADMIN-only");
+      assert((exp.match(/canExportData\(me\)/g) ?? []).length >= 2, "BOTH export paths (GET+POST) MUST stay owner-only (canExportData)");
       assert(/deletedAt: null/.test(exp), "export MUST keep recycle-bin (deletedAt) rows excluded");
 
       // (f) Scope guard untouched — no permission/schema drift (UX-only change).
@@ -6055,6 +6056,48 @@ const checks: Check[] = [
       assert(/requireRole\("ADMIN"\)/.test(read("src/app/api/admin/telephony/route.ts")), "AS Phone admin API MUST be ADMIN-only");
       const warm = read("src/app/api/cron/warm/route.ts");
       assert(/telephony-retry/.test(warm) && /telephony-sync/.test(warm), "heartbeat MUST dispatch telephony-retry + telephony-sync");
+    },
+  },
+  {
+    name: "export-import-owner-only — data export/import is Super-Admin (owner) only, server-enforced on every route",
+    run: async () => {
+      const fsl = await import("fs");
+      const read = (f: string) => fsl.readFileSync(f, "utf8");
+
+      // (a) The single predicate = isSuperAdmin (Lalit + Super Admin; NOT a regular ADMIN like Sameer).
+      const perms = read("src/lib/exportPerms.ts");
+      assert(/export function canExportData/.test(perms) && /isSuperAdmin === true/.test(perms), "exportPerms MUST gate on isSuperAdmin === true");
+      assert(/canImportData\s*=\s*canExportData/.test(perms), "import MUST share the export boundary");
+
+      // (b) DATA: verify Lalit is a super-admin and Sameer is NOT (the gate is meaningless otherwise).
+      const lalit = await prisma.user.findFirst({ where: { email: { contains: "lalit", mode: "insensitive" } }, select: { isSuperAdmin: true } });
+      assert(lalit?.isSuperAdmin === true, "Lalit MUST be a Super Admin (else the owner is locked out of export)");
+      const sameerAdminNonSuper = await prisma.user.count({ where: { email: { contains: "sameer", mode: "insensitive" }, isSuperAdmin: true } });
+      assert(sameerAdminNonSuper === 0, "Sameer MUST NOT be a Super Admin (must be blocked from export/import)");
+
+      // (c) EVERY sensitive export/import route enforces the owner gate SERVER-SIDE
+      //     (defense-in-depth: a direct URL/API hit must 403 for a non-owner).
+      const ROUTES = [
+        "src/app/api/reports/export/route.ts",
+        "src/app/api/reports/agent-performance/export/route.ts",
+        "src/app/api/reports/buyer-performance/export/route.ts",
+        "src/app/api/buyer-data/export/route.ts",
+        "src/app/api/buyer-data/import/route.ts",
+        "src/app/api/call-logs/export/route.ts",
+        "src/app/api/intake/csv/route.ts",
+      ];
+      for (const r of ROUTES) {
+        const src = read(r);
+        assert(/can(Export|Import)Data\(me\)/.test(src) && /403/.test(src),
+          `${r} MUST enforce canExportData/canImportData(me) → 403 (owner-only)`);
+      }
+      // call-logs export was the known exfil surface (previously role-scoped to agents/managers).
+      assert(/!canExportData\(me\)/.test(read("src/app/api/call-logs/export/route.ts")), "call-logs export MUST be owner-only (was an agent/manager exfil surface)");
+
+      // (d) Import PAGES redirect a non-owner (no direct-URL access to the wizard).
+      for (const p of ["src/app/(app)/intake/page.tsx", "src/app/(app)/buyer-data/import/page.tsx", "src/app/(app)/india-buyer-data/import/page.tsx"]) {
+        assert(/canImportData\(me\)/.test(read(p)) && /redirect\(/.test(read(p)), `${p} MUST redirect non-owners (canImportData gate)`);
+      }
     },
   },
 ];

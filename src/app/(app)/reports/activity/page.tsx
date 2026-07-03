@@ -169,7 +169,7 @@ export default async function ActivityFeedPage({
             {managerTeam ? ` · ${managerTeam} team` : " · all teams"}
           </p>
         </div>
-        <a href="/api/call-logs/export" className="btn btn-ghost btn-sm">⬇️ Export CSV</a>
+        {me.isSuperAdmin && <a href="/api/call-logs/export" className="btn btn-ghost btn-sm">⬇️ Export CSV</a>}
       </div>
 
       {/* BUG-020: date selector — ?date=YYYY-MM-DD, defaults to today */}

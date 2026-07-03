@@ -14,6 +14,7 @@ import {
 } from "@/lib/lead-statuses";
 import MasterDataRecordsTable, { type MDRow } from "@/components/MasterDataRecordsTable";
 import MasterDataImportControls from "@/components/MasterDataImportControls";
+import { canImportData } from "@/lib/exportPerms";
 import LeadFilters from "@/components/LeadFilters";
 import { leadFilterWhere } from "@/lib/leadFilterWhere";
 import { COLD_ORIGINS } from "@/lib/leadScope";
@@ -232,10 +233,9 @@ export default async function MasterDataPage({ searchParams }: { searchParams: P
           </p>
         </div>
         <div className="flex items-center gap-2 self-start sm:self-auto">
-          {/* Admin-only Import (the page already redirects non-admins; the
-              /api/intake/csv endpoint is role-gated to ADMIN). Mounts the shared
-              Import-Mapping-Approval wizard configured for Master Data. */}
-          <MasterDataImportControls />
+          {/* Owner-only Import (Super Admin) — matches the /api/intake/csv server gate.
+              Mounts the shared Import-Mapping-Approval wizard for Master Data. */}
+          {canImportData(me) && <MasterDataImportControls />}
           {/* Export lives in the table toolbar ("⬇ Export view") so it can POST the
               EXACT filtered id-set (builtin view + column filters), not just URL params. */}
         </div>

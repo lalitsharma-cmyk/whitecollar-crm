@@ -742,9 +742,9 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
         </Link>
       </div>
 
-      {isAdmin ? (
+      {me.isSuperAdmin ? (
         <div className="flex flex-wrap gap-2 items-center">
-          <span className="text-xs text-gray-500">CSV exports (admin-only):</span>
+          <span className="text-xs text-gray-500">CSV exports (owner / Super Admin only):</span>
           <a href="/api/reports/export?type=leads" className="btn btn-ghost text-xs">Leads CSV</a>
           <a href="/api/reports/export?type=calls" className="btn btn-ghost text-xs">Calls CSV</a>
         </div>

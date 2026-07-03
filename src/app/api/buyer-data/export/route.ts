@@ -1,6 +1,7 @@
 import { type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
+import { canExportData, EXPORT_DENIED } from "@/lib/exportPerms";
 import { audit, reqMeta } from "@/lib/audit";
 import { parseJsonArray, formatTxnValue, inferBuyerCurrency } from "@/lib/buyerIntelligence";
 import { NextResponse } from "next/server";
@@ -120,7 +121,7 @@ async function buildExport(
 
 export async function GET(req: NextRequest) {
   const me = await requireUser();
-  if (me.role !== "ADMIN") return NextResponse.json({ error: "Admin only" }, { status: 403 });
+  if (!canExportData(me)) return NextResponse.json({ error: EXPORT_DENIED }, { status: 403 });
   const project = new URL(req.url).searchParams.get("project")?.trim() || null;
   return buildExport(req, me, project ? { projectName: { equals: project, mode: "insensitive" } } : {}, project ? `Project: ${project}` : null);
 }
@@ -128,7 +129,7 @@ export async function GET(req: NextRequest) {
 // POST { buyerIds } → export exactly the filtered set the table currently shows.
 export async function POST(req: NextRequest) {
   const me = await requireUser();
-  if (me.role !== "ADMIN") return NextResponse.json({ error: "Admin only" }, { status: 403 });
+  if (!canExportData(me)) return NextResponse.json({ error: EXPORT_DENIED }, { status: 403 });
   const body = await req.json().catch(() => ({}));
   const ids = Array.isArray(body?.buyerIds) ? body.buyerIds.filter((x: unknown): x is string => typeof x === "string").slice(0, 20000) : [];
   if (ids.length === 0) return NextResponse.json({ error: "No rows to export" }, { status: 400 });

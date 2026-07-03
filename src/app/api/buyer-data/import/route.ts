@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { requireUser } from "@/lib/auth";
+import { canImportData, EXPORT_DENIED } from "@/lib/exportPerms";
 import { prisma } from "@/lib/prisma";
 import { parseImportDate, parseFollowupDate } from "@/lib/parseImportDate";
 import { rescuePhones, rescueEmails } from "@/lib/buyerContactRescue";
@@ -215,7 +216,7 @@ function mergeRemark(prev: string | null | undefined, incoming: string): string 
 
 export async function POST(req: NextRequest) {
   const me = await requireUser();
-  if (me.role !== "ADMIN") return NextResponse.json({ error: "Admin only — buyer data is restricted." }, { status: 403 });
+  if (!canImportData(me)) return NextResponse.json({ error: EXPORT_DENIED }, { status: 403 });
 
   const body = await req.json().catch(() => ({}));
 

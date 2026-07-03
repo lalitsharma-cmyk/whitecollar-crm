@@ -435,7 +435,9 @@
 // v133 (2026-07-03): Leads-list Name column fix — client name always on its own
 // line + prominent; freshness badges (NEW TODAY / Untouched) now wrap BELOW it and
 // can never squeeze the name out. Bump forces cached clients to the corrected layout.
-const CACHE = "wcr-shell-v133";
+// v134 (2026-07-03): RBAC — data export/import restricted to owner (Super Admin) only;
+// export/import buttons hidden for agents/managers/regular-admins (incl. Sameer).
+const CACHE = "wcr-shell-v134";
 const SHELL = ["/login", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", (event) => {

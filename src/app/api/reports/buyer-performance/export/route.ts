@@ -1,5 +1,6 @@
-import { type NextRequest } from "next/server";
+import { NextResponse, type NextRequest } from "next/server";
 import { requireRole } from "@/lib/auth";
+import { canExportData, EXPORT_DENIED } from "@/lib/exportPerms";
 import { audit, reqMeta } from "@/lib/audit";
 import { normalizeTeam } from "@/lib/teamRouting";
 import {
@@ -28,6 +29,7 @@ function csvEscape(v: unknown): string {
 
 export async function GET(req: NextRequest) {
   const me = await requireRole("ADMIN");
+  if (!canExportData(me)) return NextResponse.json({ error: EXPORT_DENIED }, { status: 403 });
   const url = new URL(req.url);
   const sp = Object.fromEntries(url.searchParams.entries()) as Record<string, string | undefined>;
 
