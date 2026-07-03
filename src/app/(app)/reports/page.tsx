@@ -8,7 +8,7 @@ import LegacyFunnelChart from "@/components/charts/FunnelChart";
 import StatusFunnelChart from "@/components/FunnelChart";
 import SourceChart from "@/components/SourceChart";
 import { requireUser } from "@/lib/auth";
-import { canAccessDubaiBuyers } from "@/lib/buyerScope";
+import { canAccessBuyerMarket } from "@/lib/buyerScope";
 import { projectWhereForUser } from "@/lib/propertyScope";
 import { ACTIVE_ORIGIN_WHERE } from "@/lib/leadScope";
 import { fmtMoneyDual } from "@/lib/money";
@@ -654,11 +654,18 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
           <div className="font-bold text-sm mt-1">Agent Performance</div>
           <div className="text-[10px] text-gray-500 mt-0.5">Per-agent leads, outcomes, calls, meetings, funnel · by assignment history</div>
         </Link>
-        {canAccessDubaiBuyers(me) && (
+        {canAccessBuyerMarket(me, "Dubai") && (
           <Link href="/reports/buyer-performance" className="card p-4 border-l-4 border-blue-400 hover:shadow-md transition">
             <div className="text-2xl">🇦🇪</div>
             <div className="font-bold text-sm mt-1">Dubai Buyer Data Performance</div>
             <div className="text-[10px] text-gray-500 mt-0.5">Per-agent Dubai buyers assigned, converted, returned, attempts &amp; funnel · pool health</div>
+          </Link>
+        )}
+        {canAccessBuyerMarket(me, "India") && (
+          <Link href="/reports/buyer-performance?market=India" className="card p-4 border-l-4 border-amber-400 hover:shadow-md transition">
+            <div className="text-2xl">🇮🇳</div>
+            <div className="font-bold text-sm mt-1">India Buyer Data Performance</div>
+            <div className="text-[10px] text-gray-500 mt-0.5">Per-agent India buyers (₹) assigned, converted, returned, attempts &amp; funnel · pool health</div>
           </Link>
         )}
         <Link href="/reports/daily" className="card p-4 border-l-4 border-emerald-500 hover:shadow-md transition">

@@ -68,6 +68,7 @@ export default async function BuyerDrillPage({
   const { agentId } = await params;
   const sp = await searchParams;
   const range = resolveDateRange(sp.range, sp.from, sp.to);
+  const market = sp.market === "India" ? "India" : "Dubai"; // market-scope the drill (both-markets)
   const metric = sp.metric;
 
   if (!metric || !VALID_KEYS.has(metric)) notFound();
@@ -86,7 +87,7 @@ export default async function BuyerDrillPage({
     if (myTeam && normalizeTeam(agent.team) !== myTeam) redirect("/reports/buyer-performance");
   }
 
-  const where = buyerDrilldownWhere(key, agentId, range);
+  const where = buyerDrilldownWhere(key, agentId, range, market);
   const isEvent = BUYER_EVENT_METRICS.has(key);
 
   const [buyers, distinctTotal, eventTotal] = await Promise.all([
@@ -118,7 +119,7 @@ export default async function BuyerDrillPage({
       take: 500,
     }),
     prisma.buyerRecord.count({ where }),
-    isEvent ? buyerEventCount(key, agentId, range) : Promise.resolve(0),
+    isEvent ? buyerEventCount(key, agentId, range, market) : Promise.resolve(0),
   ]);
 
   const qs = new URLSearchParams();

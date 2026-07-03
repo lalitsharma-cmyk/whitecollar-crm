@@ -1992,7 +1992,10 @@ const checks: Check[] = [
       // OWN market) — a cross-market buyer can never be opened.
       { const d = read("src/app/(app)/buyer-data/[id]/page.tsx");
         assert(/canAccessBuyerMarket/.test(d) && /canTouchBuyer/.test(d), "buyer detail page MUST guard via canAccessBuyerMarket + canTouchBuyer (market-aware)"); }
-      assert(/canAccessDubaiBuyers/.test(read("src/app/(app)/reports/buyer-performance/page.tsx")), "buyer report MUST guard via canAccessDubaiBuyers");
+      // Report is now BOTH-MARKETS (?market=India|Dubai) — gated per-market via
+      // canAccessBuyerMarket, which still redirects a user who can't see that market.
+      { const rp = read("src/app/(app)/reports/buyer-performance/page.tsx");
+        assert(/canAccessBuyerMarket\(me, market\)/.test(rp) && /redirect\("\/reports"\)/.test(rp), "buyer report MUST market-gate via canAccessBuyerMarket(me, market) + redirect"); }
       const shell = read("src/components/MobileShell.tsx");
       assert(/dubaiBuyerOnly/.test(shell), "the nav MUST gate the Dubai Buyer Data item via dubaiBuyerOnly");
       assert(/dubaiBuyerOnly && !\(user\.role === "ADMIN" \|\| user\.team === "Dubai"\)/.test(shell), "dubaiBuyerOnly MUST hide the item from non-Dubai non-admin users");
@@ -2012,7 +2015,9 @@ const checks: Check[] = [
       // (f) label renamed on the key visible surfaces (route paths unchanged).
       assert(/Dubai Buyer Data/.test(read("src/app/(app)/buyer-data/page.tsx")), "list page header MUST read 'Dubai Buyer Data'");
       assert(/label: "Dubai Buyer Data"/.test(shell), "nav label MUST be 'Dubai Buyer Data'");
-      assert(/Dubai Buyer Data Performance/.test(read("src/app/(app)/reports/buyer-performance/page.tsx")), "report title MUST read 'Dubai Buyer Data Performance'");
+      // Title is now market-aware: "🇮🇳 India" / "🇦🇪 Dubai" + "Buyer Data Performance".
+      { const rp = read("src/app/(app)/reports/buyer-performance/page.tsx");
+        assert(/Buyer Data Performance/.test(rp) && /market === "India"/.test(rp), "report title MUST be market-aware (India/Dubai Buyer Data Performance)"); }
       // Route paths unchanged (links + API still /buyer-data) — the rename is display-only.
       assert(/href:\s*"\/buyer-data"/.test(shell), "the nav ROUTE must stay /buyer-data (rename is display-only)");
 

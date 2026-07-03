@@ -1,7 +1,7 @@
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { redirect } from "next/navigation";
-import { canAccessDubaiBuyers } from "@/lib/buyerScope";
+import { canAccessBuyerMarket, type BuyerMarket } from "@/lib/buyerScope";
 import Link from "next/link";
 import {
   buildBuyerReport,
@@ -32,20 +32,20 @@ export default async function BuyerPerformancePage({
   searchParams: Promise<Record<string, string | undefined>>;
 }) {
   const me = await requireUser();
-  // Dubai Buyer Data Performance — visible to Admin + Dubai-team users only.
-  // A non-Dubai (India/Gurgaon) agent/manager is redirected away.
-  if (!canAccessDubaiBuyers(me)) redirect("/reports");
   const sp = await searchParams;
+  // Market-aware (both-markets rule): ?market=India|Dubai. Access is gated to that
+  // market — a Dubai-team user can't open the India report and vice-versa (admins
+  // see both). Same page, same metrics; only the market (+ currency/team) differs.
+  const market: BuyerMarket = sp.market === "India" ? "India" : "Dubai";
+  if (!canAccessBuyerMarket(me, market)) redirect("/reports");
 
   const range = resolveDateRange(sp.range, sp.from, sp.to);
 
-  // This is the DUBAI module — there is no team toggle (a future Gurgaon module is
-  // separate). The agent universe is already Dubai-team + admins (scopedBuyerAgents),
-  // and every metric is market="Dubai"-scoped.
+  // scope.team drives the agent roster + every buyer query's market in the engine.
   const scope: BuyerReportScope = {
     role: me.role as BuyerReportScope["role"],
     meId: me.id,
-    team: null, // agents are Dubai-scoped in scopedBuyerAgents; no extra team narrowing
+    team: market,
   };
 
   const rows = await buildBuyerReport(range, scope);
@@ -63,7 +63,7 @@ export default async function BuyerPerformancePage({
   // unassigned Admin Pool). Non-admin Dubai users → only their in-scope agents.
   const teamOwnerIds: string[] | null =
     isAdmin ? null : rows.map((r) => r.agentId);
-  const summary = await buildBuyerSummary(teamOwnerIds);
+  const summary = await buildBuyerSummary(teamOwnerIds, market);
 
   // Thread the active filters onto links (detail view + export) so they open in
   // the same window/scope.
@@ -73,7 +73,9 @@ export default async function BuyerPerformancePage({
     if (sp.from) qs.set("from", sp.from);
     if (sp.to) qs.set("to", sp.to);
   }
+  if (market === "India") qs.set("market", "India"); // keep the market on export + range links
   const query = `?${qs.toString()}`;
+  const otherMarket: BuyerMarket = market === "India" ? "Dubai" : "India";
 
   return (
     <>
@@ -82,15 +84,20 @@ export default async function BuyerPerformancePage({
           <Link href="/reports" className="text-xs text-gray-500 hover:underline">
             ← Back to reports
           </Link>
-          <h1 className="text-xl sm:text-2xl font-bold">🇦🇪 Dubai Buyer Data Performance</h1>
+          <h1 className="text-xl sm:text-2xl font-bold">{market === "India" ? "🇮🇳 India" : "🇦🇪 Dubai"} Buyer Data Performance</h1>
           <p className="text-xs sm:text-sm text-gray-500">
             {range.label}
-            {" · Dubai market"}
+            {market === "India" ? " · India market (₹)" : " · Dubai market"}
             {isAgent ? " · your performance" : ""}
           </p>
         </div>
-        {/* No team toggle — this is the Dubai module (a future Gurgaon module is
-            separate). The agent universe + every metric is Dubai-scoped. */}
+        {/* Market toggle — admins can access both; a market-team user only sees their
+            own (canAccessBuyerMarket redirects the other). Same report, other market. */}
+        {canAccessBuyerMarket(me, otherMarket) && (
+          <Link href={`/reports/buyer-performance${otherMarket === "India" ? "?market=India" : ""}`} className="btn btn-ghost text-xs self-start">
+            Switch to {otherMarket} →
+          </Link>
+        )}
       </div>
 
       {/* Time window selector (shared component — keys off the current path) */}

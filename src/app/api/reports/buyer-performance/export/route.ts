@@ -34,7 +34,9 @@ export async function GET(req: NextRequest) {
   const sp = Object.fromEntries(url.searchParams.entries()) as Record<string, string | undefined>;
 
   const range = resolveDateRange(sp.range, sp.from, sp.to);
-  const team = sp.team === "India" || sp.team === "Dubai" ? sp.team : null;
+  // Market-aware: the page threads ?market=India|Dubai; ?team is also honored for
+  // back-compat. Drives the engine's market scope via scope.team.
+  const team = sp.market === "India" || sp.team === "India" ? "India" : "Dubai";
   const scope: BuyerReportScope = { role: "ADMIN", meId: me.id, team };
   // (normalizeTeam imported for parity with other report routes; team already validated.)
   void normalizeTeam;

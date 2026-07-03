@@ -437,7 +437,9 @@
 // can never squeeze the name out. Bump forces cached clients to the corrected layout.
 // v134 (2026-07-03): RBAC — data export/import restricted to owner (Super Admin) only;
 // export/import buttons hidden for agents/managers/regular-admins (incl. Sameer).
-const CACHE = "wcr-shell-v134";
+// v135 (2026-07-03): India Buyer Data Performance report (both-markets parity) —
+// market-aware /reports/buyer-performance + reports-index card + Dubai↔India toggle.
+const CACHE = "wcr-shell-v135";
 const SHELL = ["/login", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", (event) => {
