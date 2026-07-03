@@ -39,6 +39,14 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   ]);
   return (
     <>
+      {process.env.NEXT_PUBLIC_SANDBOX === "1" && (
+        <div className="sticky top-0 z-[210] w-full bg-amber-500 text-black text-[11px] font-bold px-4 py-2 text-center flex items-center justify-center gap-2 border-b border-amber-600">
+          🧪 SANDBOX ENVIRONMENT — NOT PRODUCTION
+          <span className="font-normal opacity-90 hidden sm:inline">
+            &nbsp;—&nbsp; dummy data only. Nothing here affects the live CRM. Safe to import, delete, and experiment.
+          </span>
+        </div>
+      )}
       {testingMode && user.role !== "AGENT" && (
         <div className="sticky top-0 z-[200] w-full bg-red-500 text-white text-[11px] font-bold px-4 py-2 text-center flex items-center justify-center gap-2 border-b border-red-600">
           🧪 DESTRUCTIVE-OPS MODE

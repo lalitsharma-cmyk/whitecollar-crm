@@ -12,6 +12,7 @@ import "server-only";
 // an unmatched call is still stored (unlinked) so nothing is ever lost.
 import { prisma } from "@/lib/prisma";
 import { CallDirection, CallOutcome, ActivityType, ActivityStatus } from "@prisma/client";
+import { callOutcomeLabel } from "@/lib/callOutcome";
 import type { NormalizedCallEvent } from "./types";
 import { resolveCallLink } from "./linkResolver";
 
@@ -109,7 +110,10 @@ export async function recordCallEvent(ev: NormalizedCallEvent): Promise<RecordRe
 
     if (link.leadId) {
       await prisma.activity.create({
-        data: { leadId: link.leadId, userId, type: ActivityType.CALL, status: ActivityStatus.DONE, title, description: desc, completedAt: endedAt ?? new Date() },
+        // outcome mirrors the CallLog's outcome (same format the log-call route
+        // writes) so the Smart-Timeline chip is populated and the CALL-outcome
+        // integrity invariant can't drift as telephony calls flow in.
+        data: { leadId: link.leadId, userId, type: ActivityType.CALL, status: ActivityStatus.DONE, title, description: desc, outcome: callOutcomeLabel(outcome), completedAt: endedAt ?? new Date() },
       });
       await prisma.lead.update({ where: { id: link.leadId }, data: { lastTouchedAt: endedAt ?? new Date(), slaEscalated: false } });
       timelineWritten = true;

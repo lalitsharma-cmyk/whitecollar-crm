@@ -19,6 +19,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { verifyWebhookToken, normalizePhone } from "@/lib/acefone";
 import { CallDirection, CallOutcome, ActivityType, ActivityStatus, LeadSource } from "@prisma/client";
+import { callOutcomeLabel } from "@/lib/callOutcome";
 import { ingestLead } from "@/lib/leadIngest";
 import { fingerprintFor } from "@/lib/assignment";
 
@@ -150,8 +151,11 @@ async function handle(req: NextRequest) {
         userId,
         type: ActivityType.CALL,
         status: ActivityStatus.DONE,
-        title: `Call ${direction.toLowerCase()} · ${outcome.replaceAll("_", " ")}${durationSec ? ` · ${Math.round(durationSec)}s` : ""}`,
+        title: `Call ${direction.toLowerCase()} · ${callOutcomeLabel(outcome)}${durationSec ? ` · ${Math.round(durationSec)}s` : ""}`,
         description: recordingUrl ? `Recording: ${recordingUrl}` : undefined,
+        // Stamp the outcome on the timeline entry (same format as the log-call
+        // route) so the chip renders and the CALL-outcome invariant stays green.
+        outcome: callOutcomeLabel(outcome),
         completedAt: endedAt ?? new Date(),
       },
     });

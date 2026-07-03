@@ -46,6 +46,31 @@ export const FRESH_STATUS_OR: Prisma.LeadWhereInput[] = [
   { currentStatus: { in: FRESH_STATUS_IN_VALUES } },
 ];
 
+// ── ACTIVE-PIPELINE GATE (Lalit, 2026-07-03) ─────────────────────────────────
+// "Fresh Lead" applies ONLY to a NEW entry in the active Leads pipeline — a lead
+// from the website, the capture API/form, or a manual New-Lead entry. It must
+// NEVER apply to Master Data, Dubai/India Buyer Data, Revival/Cold, Sale-Off/
+// Lease-Off, or any BULK-IMPORTED old database. Two DB-expressible gates capture it:
+//   • leadOrigin ∈ ACTIVE  — the record lives in the active Leads section.
+//   • importBatchId = null — created organically, NOT via a bulk import (imports
+//     stamp importBatchId + a non-active origin; organic creates carry neither).
+// ACTIVE_ORIGINS mirrors leadScope.ACTIVE_ORIGINS, kept local so this stays a pure
+// module (regression locks the two in step). Every fresh / assigned-today / backlog
+// predicate folds this in, so the rule holds identically across the Leads list,
+// counts, the fresh-leads report, the tier-0 sort and the escalation cron — ONE def.
+export const ACTIVE_PIPELINE_ORIGINS = ["ACTIVE", "ACTIVE_LEAD"];
+export const ACTIVE_PIPELINE_WHERE: Prisma.LeadWhereInput = {
+  leadOrigin: { in: ACTIVE_PIPELINE_ORIGINS },
+  importBatchId: null,
+};
+
+/** True when a lead row belongs to the active Leads pipeline (fresh-eligible):
+ *  an ACTIVE-origin lead that was NOT bulk-imported. An unknown origin defaults to
+ *  active (back-compat), so callers that don't carry origin keep prior behaviour. */
+export function isActivePipelineRow(lead: { leadOrigin?: string | null; importBatchId?: string | null }): boolean {
+  return ACTIVE_PIPELINE_ORIGINS.includes(lead.leadOrigin ?? "ACTIVE_LEAD") && !lead.importBatchId;
+}
+
 // The Activity types that count as "first contact made". A NOTE counts here
 // (Lalit: a logged note = the agent has engaged the lead) even though it is NOT
 // in dashboardWidgets.CONTACT_ACTIVITY_TYPES (that list is contact-channel only).
@@ -87,13 +112,13 @@ function withAnd<T extends Prisma.LeadWhereInput>(
 /** ASSIGNED TODAY — assigned today (IST) + workable. Any status, touched or not.
  *  Backs the "Assigned Today" filter chip. */
 export function assignedTodayWhere<T extends Prisma.LeadWhereInput>(scope: T, day?: Date): Prisma.LeadWhereInput {
-  return withAnd({ ...scope, deletedAt: null }, [assignedTodayOr(day), { OR: WORKABLE_STATUS_OR }]);
+  return withAnd({ ...scope, deletedAt: null }, [assignedTodayOr(day), { OR: WORKABLE_STATUS_OR }, ACTIVE_PIPELINE_WHERE]);
 }
 
 /** FRESH TODAY — assigned today (IST) + fresh status. The "Fresh Leads Today"
  *  count + the "Fresh Today" filter chip. */
 export function freshTodayWhere<T extends Prisma.LeadWhereInput>(scope: T, day?: Date): Prisma.LeadWhereInput {
-  return withAnd({ ...scope, deletedAt: null }, [assignedTodayOr(day), { OR: FRESH_STATUS_OR }]);
+  return withAnd({ ...scope, deletedAt: null }, [assignedTodayOr(day), { OR: FRESH_STATUS_OR }, ACTIVE_PIPELINE_WHERE]);
 }
 
 /** FRESH UNTOUCHED TODAY — assigned today (IST) + workable + no first contact yet.
@@ -104,6 +129,7 @@ export function freshUntouchedWhere<T extends Prisma.LeadWhereInput>(scope: T, d
     assignedTodayOr(day),
     { OR: WORKABLE_STATUS_OR },
     FIRST_CONTACT_PENDING_WHERE,
+    ACTIVE_PIPELINE_WHERE,
   ]);
 }
 
@@ -118,6 +144,7 @@ export function firstContactPendingWhere<T extends Prisma.LeadWhereInput>(scope:
     { ownerId: { not: null } },
     { OR: WORKABLE_STATUS_OR },
     FIRST_CONTACT_PENDING_WHERE,
+    ACTIVE_PIPELINE_WHERE,
   ]);
 }
 
@@ -126,6 +153,9 @@ export interface FreshRowInput {
   assignedAt?: Date | null;
   createdAt: Date;
   currentStatus?: string | null;
+  // Origin + import provenance gate the fresh flags to the active Leads pipeline.
+  leadOrigin?: string | null;
+  importBatchId?: string | null;
 }
 
 /** True when the lead was (re)assigned to its current owner today (IST), or — for
@@ -147,10 +177,13 @@ export interface FreshFlags {
 /** Compute the badge/highlight flags for one lead row. `untouched` is supplied by
  *  the caller (a batch query over FIRST_CONTACT_PENDING_WHERE) so this stays pure. */
 export function freshRowFlags(lead: FreshRowInput, untouched: boolean, day?: Date): FreshFlags {
-  const assignedToday = isAssignedToday(lead, day);
+  // A non-active-pipeline row (Master Data / Buyer / Revival-Cold / Sale-Lease-Off /
+  // bulk-imported) is NEVER fresh — every flag is gated on the active pipeline.
+  const active = isActivePipelineRow(lead);
+  const assignedToday = active && isAssignedToday(lead, day);
   return {
     assignedToday,
-    fresh: isFreshStatus(lead.currentStatus),
+    fresh: active && isFreshStatus(lead.currentStatus),
     untouched,
     freshUntouchedToday: assignedToday && untouched,
   };

@@ -83,6 +83,12 @@ export default async function LoginPage({ searchParams }: { searchParams?: Promi
             </div>
           </div>
 
+          {process.env.NEXT_PUBLIC_SANDBOX === "1" && (
+            <div style={{ marginTop: "14px", fontSize: "12px", fontWeight: 700, background: "#f59e0b", color: "#111", borderRadius: "9px", padding: "8px 11px", textAlign: "center" }}>
+              🧪 SANDBOX ENVIRONMENT — dummy data only, not production
+            </div>
+          )}
+
           {sp.error && (
             <div style={{ marginTop: "18px", fontSize: "13px", background: "#fef2f2", border: "1px solid #fecaca", color: "#991b1b", borderRadius: "9px", padding: "9px 11px", textAlign: "center" }}>
               {sp.error}

@@ -11,6 +11,7 @@
     "db:seed": "tsx prisma/seed.ts",
     "db:reset": "prisma migrate reset --force",
     "regression": "tsx scripts/regression.ts",
+    "sandbox:seed": "tsx scripts/sandbox/seed-sandbox.ts",
     "deploy": "bash scripts/deploy.sh",
     "push": "git push origin main && bash scripts/deploy.sh"
   },

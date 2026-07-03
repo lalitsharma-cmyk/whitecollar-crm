@@ -1,6 +1,14 @@
-// Shared call / conversation outcome classification for the lead analytics bar.
-// DISPLAY-ONLY: derives from CallLog.outcome + notes + WhatsAppMessage direction;
-// never changes stored data. Keeps "Connected / Unsuccessful / WhatsApp" consistent.
+// Shared call / conversation outcome vocabulary — the ONE module for both
+// CLASSIFYING a stored outcome (the lead analytics bar) and PRODUCING the
+// free-text label written to Activity.outcome (every CALL write path + the
+// backfill). Centralised so the label format can never drift between the
+// log-call route, the telephony sink, the Acefone webhook, the click-to-call
+// tap and the Buyer→Lead carry-over (data-consistency rule: existing + future,
+// no dual logic).
+//
+// The classification helpers below are DISPLAY-ONLY (derive from CallLog.outcome
+// + notes + WhatsAppMessage direction; never change stored data). The write-side
+// label helpers are at the bottom of the file.
 
 export const CONNECTED_OUTCOMES = new Set(["CONNECTED", "INTERESTED", "NOT_INTERESTED"]);
 export const UNSUCCESSFUL_OUTCOMES = new Set(["NOT_PICKED", "BUSY", "SWITCHED_OFF", "WRONG_NUMBER", "CALLBACK"]);
@@ -43,3 +51,37 @@ const UNSUCCESSFUL_TEXT = new RegExp(
 export function isUnsuccessfulText(notes: string | null | undefined): boolean {
   return !!notes && UNSUCCESSFUL_TEXT.test(notes);
 }
+
+// ── WRITE-SIDE: the canonical Activity.outcome label ─────────────────────────
+// Used by every path that CREATES a CALL Activity, so the stored value is
+// identical forward and historical. FORMAT = the CallOutcome enum token with
+// underscores → spaces (CONNECTED → "CONNECTED", NOT_PICKED → "NOT PICKED").
+// This is byte-for-byte what the primary log-call route has always written and
+// what the 2000+ historical rows + scripts/backfill-activity-outcome.ts use, so
+//   • ConversationStreamCard renders it verbatim as a chip (old == new), and
+//   • followupGate.isConnectedOutcome() (which upper-cases before matching
+//     {"CONNECTED","INTERESTED"}) keeps recognising a connected call.
+// Param is typed `string` (not the Prisma CallOutcome) so this client-usable
+// file stays free of a @prisma/client value import; enum members ARE strings.
+
+/** Free-text Activity.outcome label for a structured CallOutcome / outcome token. */
+export function callOutcomeLabel(outcome: string): string {
+  return String(outcome).replaceAll("_", " ");
+}
+
+/**
+ * Outcome for a CALL Activity that records the agent TAPPING the call button
+ * (click-to-call) — a dial placed with no result captured yet. The real call
+ * outcome, once the agent logs it, lands on its OWN Activity via log-call; this
+ * tap is a distinct event and its honest label is "Initiated". Non-null so a
+ * tap can never erode the CALL-outcome data-integrity invariant.
+ */
+export const CALL_OUTCOME_INITIATED = "Initiated";
+
+/**
+ * Safe generic outcome for a CALL Activity with no structured CallOutcome to
+ * derive from — e.g. a buyer-conversation call carried into a Lead timeline on
+ * Buyer→Lead conversion (the real detail is preserved in the entry description).
+ * Non-null so the carry-over can't reintroduce the null-outcome gap.
+ */
+export const CALL_OUTCOME_LOGGED = "Logged";

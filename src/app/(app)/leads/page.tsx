@@ -14,7 +14,7 @@ import { contactActivityByLeadToday } from "@/lib/followupGate";
 import { CONTACT_ACTIVITY_TYPES } from "@/lib/dashboardWidgets";
 import {
   freshTodayWhere, freshUntouchedWhere, assignedTodayWhere, firstContactPendingWhere,
-  assignedTodayOr, FIRST_CONTACT_PENDING_WHERE, FRESH_STATUS_OR, isAssignedToday,
+  assignedTodayOr, FIRST_CONTACT_PENDING_WHERE, FRESH_STATUS_OR, isAssignedToday, isActivePipelineRow,
 } from "@/lib/freshLeads";
 import { projectWhereForUser } from "@/lib/propertyScope";
 import { PROPERTY_TYPES } from "@/lib/propertyType";
@@ -1075,9 +1075,11 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
             // Fresh-lead visibility flags (Lalit, 2026-07-01) — drive the NEW TODAY
             // / Untouched badge + row highlight. assignedToday from assignedAt (or
             // createdAt fallback); untouched from the batch FIRST_CONTACT_PENDING set.
-            assignedToday: isAssignedToday({ assignedAt: l.assignedAt, createdAt: l.createdAt }),
+            // Fresh badges apply ONLY to active-pipeline leads (not Master Data /
+            // Revival-Cold / bulk-imported rows that may appear in a list view).
+            assignedToday: isActivePipelineRow(l) && isAssignedToday({ assignedAt: l.assignedAt, createdAt: l.createdAt }),
             untouched: untouchedSet.has(l.id),
-            freshUntouchedToday: isAssignedToday({ assignedAt: l.assignedAt, createdAt: l.createdAt }) && untouchedSet.has(l.id),
+            freshUntouchedToday: isActivePipelineRow(l) && isAssignedToday({ assignedAt: l.assignedAt, createdAt: l.createdAt }) && untouchedSet.has(l.id),
             intelligenceMatch: intel ? {
               matchType: intel.matchType,
               confidence: intel.confidence,

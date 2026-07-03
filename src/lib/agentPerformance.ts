@@ -42,6 +42,7 @@ import {
   FRESH_STATUS_IN_VALUES,
 } from "@/lib/lead-statuses";
 import { ACTIVE_ORIGIN_WHERE } from "@/lib/leadScope";
+import { isActivePipelineRow } from "@/lib/freshLeads";
 
 // Typed enum arrays for Prisma `in` filters (string-backed enums; we keep them
 // as proper enum arrays so the queries are type-checked). Connected = picked up;
@@ -402,6 +403,7 @@ export async function buildAgentReport(range: DateRange, scope: ReportScope): Pr
       source: true,
       sourceRaw: true,
       leadOrigin: true,
+      importBatchId: true,
       isColdCall: true,
       rejectedAt: true,
     },
@@ -413,7 +415,8 @@ export async function buildAgentReport(range: DateRange, scope: ReportScope): Pr
     const m = byId.get(aid);
     if (!m) continue;
     m.totalAssigned += 1;
-    if (isFreshStatus(l.currentStatus)) m.freshAssigned += 1;
+    // Fresh = active Leads pipeline only (not Master Data / Revival-Cold / imported).
+    if (isActivePipelineRow(l) && isFreshStatus(l.currentStatus)) m.freshAssigned += 1;
     if (WEBSITE_SOURCE_LABELS.has(l.source)) m.websiteAssigned += 1;
     if (EVENT_SOURCE_LABELS.has(l.source)) m.eventAssigned += 1;
     if (REVIVAL_ORIGINS.includes(l.leadOrigin) || l.isColdCall) m.revivalAssigned += 1;

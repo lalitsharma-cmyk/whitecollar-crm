@@ -7,7 +7,7 @@
 // The caller owns role-gating: /leads gates owner/source for AGENTs before
 // calling; /master-data is ADMIN-only so it passes everything straight through.
 import type { Prisma, FundReadiness, InvestTimeline } from "@prisma/client";
-import { assignedTodayOr, FIRST_CONTACT_PENDING_WHERE, FRESH_STATUS_OR } from "@/lib/freshLeads";
+import { assignedTodayOr, FIRST_CONTACT_PENDING_WHERE, FRESH_STATUS_OR, ACTIVE_PIPELINE_WHERE } from "@/lib/freshLeads";
 
 type SP = Record<string, string | undefined>;
 
@@ -152,11 +152,14 @@ export function leadFilterWhere(sp: SP): Prisma.LeadWhereInput[] {
   if (sp.hasSiteVisit === "1") and.push({ siteVisitDate: { not: null } });
 
   // Fresh-lead filters (?fresh=today|assigned|untouched|pending) — SAME source of
-  // truth as the /leads page (freshLeads.ts), so /master-data filters identically.
-  if (sp.fresh === "today") and.push(assignedTodayOr(), { OR: FRESH_STATUS_OR });
-  else if (sp.fresh === "assigned") and.push(assignedTodayOr());
-  else if (sp.fresh === "untouched") and.push(assignedTodayOr(), FIRST_CONTACT_PENDING_WHERE);
-  else if (sp.fresh === "pending") and.push({ ownerId: { not: null } }, FIRST_CONTACT_PENDING_WHERE);
+  // truth as the /leads page (freshLeads.ts). Fresh applies ONLY to the active Leads
+  // pipeline (Lalit, 2026-07-03): ACTIVE_PIPELINE_WHERE gates every branch, so the
+  // FILTERED list matches the gated counts and a fresh filter on Master Data / Cold /
+  // imported rows returns nothing (those modules keep their own status logic).
+  if (sp.fresh === "today") and.push(assignedTodayOr(), { OR: FRESH_STATUS_OR }, ACTIVE_PIPELINE_WHERE);
+  else if (sp.fresh === "assigned") and.push(assignedTodayOr(), ACTIVE_PIPELINE_WHERE);
+  else if (sp.fresh === "untouched") and.push(assignedTodayOr(), FIRST_CONTACT_PENDING_WHERE, ACTIVE_PIPELINE_WHERE);
+  else if (sp.fresh === "pending") and.push({ ownerId: { not: null } }, FIRST_CONTACT_PENDING_WHERE, ACTIVE_PIPELINE_WHERE);
 
   // Manager escalation — leads the agent flagged for manager review ("Needs
   // Lalit"). Drives the dashboard "Needs Lalit" clickable drill-down.

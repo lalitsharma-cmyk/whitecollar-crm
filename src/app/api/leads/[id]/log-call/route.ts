@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { CallDirection, CallOutcome, ActivityType, ActivityStatus, LeadStatus } from "@prisma/client";
 import { loadOwnedLead } from "@/lib/leadScope";
+import { callOutcomeLabel } from "@/lib/callOutcome";
 import { rescoreLead } from "@/lib/leadRescorer";
 import { awardXp, bumpStreak, type AwardResult } from "@/lib/gamification.server";
 import { aiLive } from "@/lib/ai";
@@ -61,13 +62,15 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       userId: me.id,
       type: ActivityType.CALL,
       status: ActivityStatus.DONE,
-      title: `Call · ${outcome.replaceAll("_", " ")}`,
+      title: `Call · ${callOutcomeLabel(outcome)}`,
       description: remarks || undefined,
       // Persist the structured outcome ON the timeline entry itself so the Smart
       // Timeline card renders the outcome chip, and so the completion-gate can key
       // off a valid contact activity (a CALL/WHATSAPP logged today). We do NOT set
       // followupDate here — logging a conversation no longer sets the follow-up.
-      outcome: outcome.replaceAll("_", " "),
+      // callOutcomeLabel = the ONE shared formatter (identical output to the prior
+      // inline replaceAll) every CALL write path + the backfill now funnel through.
+      outcome: callOutcomeLabel(outcome),
       completedAt: now,
     },
   });

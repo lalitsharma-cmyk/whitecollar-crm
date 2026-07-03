@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { LeadSource, ActivityType, ActivityStatus } from "@prisma/client";
+import { CALL_OUTCOME_LOGGED } from "@/lib/callOutcome";
 import { notify } from "@/lib/notify";
 import { assignLeadTo } from "@/lib/leadIngest";
 import { canTouchBuyer, isBuyerAssignableForMarket, marketOfBuyer } from "@/lib/buyerScope";
@@ -159,6 +160,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           status: ActivityStatus.DONE,
           title: `[from Buyer Data] ${a.type.replaceAll("_", " ").toLowerCase()}`,
           description: a.description ?? null,
+          // A carried-over CALL row has no structured CallOutcome (the buyer
+          // timeline stores it in the text), so stamp a non-null generic label
+          // — otherwise these calls would reintroduce the null-outcome gap the
+          // CALL-outcome integrity invariant guards. NOTE rows keep outcome null.
+          outcome: a.type === "CALL" ? CALL_OUTCOME_LOGGED : null,
           completedAt: a.createdAt,
           createdAt: a.createdAt,
         })),

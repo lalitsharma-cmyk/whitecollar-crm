@@ -6109,6 +6109,43 @@ const checks: Check[] = [
       }
     },
   },
+  {
+    name: "fresh-lead-active-pipeline-only — Fresh applies ONLY to the active Leads pipeline (never Master Data / Buyer / Revival-Cold / Sale-Lease-Off / imported)",
+    run: async () => {
+      const fsl = await import("fs");
+      const read = (f: string) => fsl.readFileSync(f, "utf8");
+      const fl = read("src/lib/freshLeads.ts");
+
+      // (a) The gate exists = leadOrigin ∈ ACTIVE AND importBatchId null.
+      assert(/leadOrigin: \{ in: ACTIVE_PIPELINE_ORIGINS \}/.test(fl) && /importBatchId: null/.test(fl),
+        "freshLeads MUST define ACTIVE_PIPELINE_WHERE = { leadOrigin ∈ ACTIVE, importBatchId: null }");
+
+      // (b) ACTIVE_PIPELINE_ORIGINS is lock-step with leadScope.ACTIVE_ORIGINS.
+      const flOrigins = fl.match(/ACTIVE_PIPELINE_ORIGINS = (\[[^\]]*\])/)?.[1] ?? "";
+      const lsOrigins = read("src/lib/leadScope.ts").match(/ACTIVE_ORIGINS = (\[[^\]]*\])/)?.[1] ?? "";
+      assert(flOrigins !== "" && flOrigins === lsOrigins, `freshLeads.ACTIVE_PIPELINE_ORIGINS must mirror leadScope.ACTIVE_ORIGINS (${flOrigins} vs ${lsOrigins})`);
+
+      // (c) EVERY fresh/today/backlog where-fn folds the gate in.
+      for (const fn of ["assignedTodayWhere", "freshTodayWhere", "freshUntouchedWhere", "firstContactPendingWhere"]) {
+        const body = fl.match(new RegExp(`export function ${fn}[\\s\\S]*?\\n}`))?.[0] ?? "";
+        assert(/ACTIVE_PIPELINE_WHERE/.test(body), `${fn} MUST fold in ACTIVE_PIPELINE_WHERE (fresh = active pipeline only)`);
+      }
+
+      // (d) The ?fresh= URL filter is gated on ALL 4 branches, so the FILTERED list
+      //     matches the gated counts (no Master-Data/imported leak when a chip is clicked).
+      assert((read("src/lib/leadFilterWhere.ts").match(/ACTIVE_PIPELINE_WHERE/g) ?? []).length >= 4,
+        "leadFilterWhere ?fresh= (today/assigned/untouched/pending) MUST each apply ACTIVE_PIPELINE_WHERE");
+
+      // (e) BEHAVIORAL: no non-active-origin or bulk-imported lead may EVER match a
+      //     fresh predicate. Query prod and prove the leak count is exactly 0.
+      const { freshUntouchedWhere, freshTodayWhere } = await import("../src/lib/freshLeads");
+      const nonActiveOrImported = { OR: [{ leadOrigin: { notIn: ["ACTIVE", "ACTIVE_LEAD"] } }, { importBatchId: { not: null } }] };
+      const leakU = await prisma.lead.count({ where: { AND: [freshUntouchedWhere({}), nonActiveOrImported] } });
+      assert(leakU === 0, `${leakU} non-active/imported leads leak into Fresh Untouched — gate not holding`);
+      const leakT = await prisma.lead.count({ where: { AND: [freshTodayWhere({}), nonActiveOrImported] } });
+      assert(leakT === 0, `${leakT} non-active/imported leads leak into Fresh Today — gate not holding`);
+    },
+  },
 ];
 
 // ── runner ────────────────────────────────────────────────────────────────────
