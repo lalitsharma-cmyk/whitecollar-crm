@@ -159,6 +159,7 @@ export default async function IndiaBuyerDataPage() {
           isAdmin={isAdmin}
           isAdminOrMgr={isAdminOrMgr}
           viewerId={me.id}
+          market="India"
           poolAvailable={poolCount}
           convertedCount={convertedCount}
           summary={{ total: totalRecords, uniqueBuyers, repeatBuyers, pool: poolCount, assigned: assignedCount, converted: convertedCount, rejected: rejectedCount, investmentLabel }}

@@ -439,7 +439,9 @@
 // export/import buttons hidden for agents/managers/regular-admins (incl. Sameer).
 // v135 (2026-07-03): India Buyer Data Performance report (both-markets parity) —
 // market-aware /reports/buyer-performance + reports-index card + Dubai↔India toggle.
-const CACHE = "wcr-shell-v135";
+// v136 (2026-07-03): Buyer Distribution both-markets — market-generic engine + daily
+// cron distributes BOTH pools + market-aware distribution panel (India + Dubai).
+const CACHE = "wcr-shell-v136";
 const SHELL = ["/login", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", (event) => {

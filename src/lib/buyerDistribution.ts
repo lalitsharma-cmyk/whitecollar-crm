@@ -30,14 +30,14 @@ import { DUBAI_MARKET } from "@/lib/buyerScope";
 
 // ── eligible-pool helpers ────────────────────────────────────────────────────
 
-/** The where-fragment for "an assignable Admin-Pool buyer": in the DUBAI market,
- *  in the pool, with no owner, not converted/rejected, not soft-deleted. The
- *  single source of truth so the preview, the apply, and the cron can never
- *  diverge on what's eligible — and this Dubai module only ever distributes
- *  Dubai-market buyers (a future Gurgaon module distributes its own market). */
-export function poolableWhere(extra?: Record<string, unknown>) {
+/** The where-fragment for "an assignable Admin-Pool buyer": in the given MARKET
+ *  (default Dubai — the legacy behaviour), in the pool, with no owner, not
+ *  converted/rejected, not soft-deleted. The single source of truth so the preview,
+ *  the apply, and the cron can never diverge on what's eligible. India buyers pass
+ *  market="India"; each market only ever distributes its own buyers to its own team. */
+export function poolableWhere(market: string = DUBAI_MARKET, extra?: Record<string, unknown>) {
   return {
-    market: DUBAI_MARKET,
+    market,
     poolStatus: BUYER_POOL_STATUS.ADMIN_POOL,
     ownerId: null,
     deletedAt: null,
@@ -45,9 +45,9 @@ export function poolableWhere(extra?: Record<string, unknown>) {
   };
 }
 
-/** Count of buyers currently sitting in the Admin Pool (optionally region-filtered). */
-export async function poolCount(extra?: Record<string, unknown>): Promise<number> {
-  return prisma.buyerRecord.count({ where: poolableWhere(extra) });
+/** Count of buyers currently sitting in the Admin Pool (market + optional region). */
+export async function poolCount(market: string = DUBAI_MARKET, extra?: Record<string, unknown>): Promise<number> {
+  return prisma.buyerRecord.count({ where: poolableWhere(market, extra) });
 }
 
 // Minimal buyer shape a plan needs.
@@ -62,11 +62,11 @@ type PoolBuyer = {
 
 const POOL_SELECT = { id: true, clientName: true, nationality: true, projectName: true, source: true, createdAt: true } as const;
 
-/** Load up to `take` oldest pool buyers (optionally region-filtered). */
-async function loadPool(take: number, extra?: Record<string, unknown>): Promise<PoolBuyer[]> {
+/** Load up to `take` oldest pool buyers (market + optional region filter). */
+async function loadPool(take: number, market: string = DUBAI_MARKET, extra?: Record<string, unknown>): Promise<PoolBuyer[]> {
   if (take <= 0) return [];
   return prisma.buyerRecord.findMany({
-    where: poolableWhere(extra),
+    where: poolableWhere(market, extra),
     orderBy: { createdAt: "asc" }, // oldest / longest-waiting first
     take,
     select: POOL_SELECT,
@@ -112,22 +112,23 @@ export type DistAgent = { id: string; name: string; team: string | null };
  *  HR/non-sales users are EXCLUDED (this is the Dubai module). `team` may further
  *  narrow within the allowed set (the daily cron's optional team scope) but can
  *  never widen it beyond Dubai-assignable. */
-export async function activeAgents(team?: string | null): Promise<DistAgent[]> {
-  const rows = await prisma.user.findMany({
+export async function activeAgents(market: string = DUBAI_MARKET): Promise<DistAgent[]> {
+  // The market's OWN team AGENT/MANAGER (India buyers → India team, Dubai → Dubai
+  // team) PLUS admins (admins can hold any market). The other market's team + HR are
+  // excluded — a buyer is never auto-assigned across the market seam.
+  const marketTeam = market === "India" ? "India" : "Dubai";
+  return prisma.user.findMany({
     where: {
       active: true,
       hrOnly: false,
       OR: [
-        { team: "Dubai", role: { in: ["AGENT", "MANAGER"] } },
+        { team: marketTeam, role: { in: ["AGENT", "MANAGER"] } },
         { role: "ADMIN" },
       ],
     },
     select: { id: true, name: true, team: true },
     orderBy: { name: "asc" },
   });
-  // Optional extra team narrowing (cron scope). Only ever narrows within the
-  // Dubai-assignable set already selected above.
-  return team ? rows.filter((r) => r.team === team) : rows;
 }
 
 // ── plan types ───────────────────────────────────────────────────────────────
@@ -156,12 +157,13 @@ export async function planAssignN(
   agent: DistAgent,
   n: number,
   region?: string | null,
+  market: string = DUBAI_MARKET,
 ): Promise<DistributionPlan> {
   const extra = regionWhere(region);
-  const available = await poolCount(extra);
+  const available = await poolCount(market, extra);
   const want = Math.max(0, Math.floor(n));
   if (want === 0) return emptyPlan(available, "Nothing to assign (N = 0).");
-  const buyers = await loadPool(want, extra);
+  const buyers = await loadPool(want, market, extra);
   const buyerIds = buyers.map((b) => b.id);
   const shortfall = Math.max(0, want - buyerIds.length);
   const regionLabel = (region ?? "").trim() ? ` ${(region as string).trim()}` : "";
@@ -182,14 +184,15 @@ export async function planAssignN(
  */
 export async function planSplitEqually(
   agents: DistAgent[],
-  opts?: { region?: string | null; limit?: number },
+  opts?: { region?: string | null; limit?: number; market?: string },
 ): Promise<DistributionPlan> {
+  const market = opts?.market ?? DUBAI_MARKET;
   const extra = regionWhere(opts?.region);
-  const available = await poolCount(extra);
+  const available = await poolCount(market, extra);
   if (agents.length === 0) return emptyPlan(available, "No agents selected.");
   const cap = opts?.limit && opts.limit > 0 ? Math.min(opts.limit, available) : available;
   if (cap === 0) return emptyPlan(available, "The Admin Pool is empty — nothing to split.");
-  const buyers = await loadPool(cap, extra);
+  const buyers = await loadPool(cap, market, extra);
   // Round-robin deal.
   const byAgent = new Map<string, string[]>();
   agents.forEach((a) => byAgent.set(a.id, []));
@@ -230,8 +233,10 @@ export type ApplyResult = {
 export async function applyPlan(
   plan: DistributionPlan,
   assignedById: string | null,
-  opts?: { reason?: string; silent?: boolean },
+  opts?: { reason?: string; silent?: boolean; market?: string },
 ): Promise<ApplyResult> {
+  const market = opts?.market ?? DUBAI_MARKET;
+  const listUrl = market === "India" ? "/india-buyer-data" : "/buyer-data";
   const perAgent: { agentId: string; agentName: string; assigned: number }[] = [];
   let total = 0;
 
@@ -259,8 +264,8 @@ export async function applyPlan(
           kind: "LEAD_ASSIGNED",
           severity: "INFO",
           title: applied === 1 ? `🏷️ A buyer was assigned to you` : `🏷️ ${applied} buyers assigned to you`,
-          body: `${applied} buyer${applied === 1 ? "" : "s"} from the Admin Pool ${applied === 1 ? "is" : "are"} now yours in Dubai Buyer Data${opts?.reason ? ` — ${opts.reason}` : ""}.`,
-          linkUrl: "/buyer-data",
+          body: `${applied} buyer${applied === 1 ? "" : "s"} from the Admin Pool ${applied === 1 ? "is" : "are"} now yours in ${market} Buyer Data${opts?.reason ? ` — ${opts.reason}` : ""}.`,
+          linkUrl: listUrl,
         }).catch(() => null);
       }
     }
@@ -305,23 +310,35 @@ export async function runBuyerDailyDistribute(opts?: { dryRun?: boolean }): Prom
   const cfg = await getBuyerAutoDistribute();
   if (!cfg.enabled) return { ran: false, reason: "toggle off", totalAssigned: 0, perAgent: [] };
 
-  const team = cfg.team || null;
-  const agents = await activeAgents(team);
-  if (agents.length === 0) return { ran: false, reason: team ? `no active agents on team ${team}` : "no active agents", totalAssigned: 0, perAgent: [] };
+  // BOTH-MARKETS: a configured team scopes to that one market; otherwise distribute
+  // BOTH pools — each market's Admin Pool to its OWN team (never across the seam).
+  const markets: string[] = cfg.team === "India" ? ["India"] : cfg.team === "Dubai" ? ["Dubai"] : ["Dubai", "India"];
 
-  const available = await poolCount();
-  if (available === 0) return { ran: false, reason: "empty pool", totalAssigned: 0, perAgent: [] };
+  let totalAssigned = 0;
+  const perAgent: { agentId: string; agentName: string; assigned: number }[] = [];
+  const skips: string[] = [];
 
-  const plan = await planSplitEqually(agents);
-  if (opts?.dryRun) {
-    return {
-      ran: true,
-      reason: "dry-run",
-      totalAssigned: plan.totalAssigned,
-      perAgent: plan.rows.map((r) => ({ agentId: r.agentId, agentName: r.agentName, assigned: r.count })),
-    };
+  for (const market of markets) {
+    const agents = await activeAgents(market);
+    if (agents.length === 0) { skips.push(`${market}: no active agents`); continue; }
+    const available = await poolCount(market);
+    if (available === 0) { skips.push(`${market}: empty pool`); continue; }
+    const plan = await planSplitEqually(agents, { market });
+    if (opts?.dryRun) {
+      totalAssigned += plan.totalAssigned;
+      for (const r of plan.rows) perAgent.push({ agentId: r.agentId, agentName: r.agentName, assigned: r.count });
+      continue;
+    }
+    const result = await applyPlan(plan, null, { reason: "Daily auto-distribution", market });
+    totalAssigned += result.totalAssigned;
+    perAgent.push(...result.perAgent);
   }
 
-  const result = await applyPlan(plan, null, { reason: "Daily auto-distribution" });
-  return { ran: true, totalAssigned: result.totalAssigned, perAgent: result.perAgent };
+  const didWork = perAgent.length > 0;
+  return {
+    ran: didWork,
+    reason: didWork ? (opts?.dryRun ? "dry-run" : undefined) : (skips.join("; ") || "nothing to distribute"),
+    totalAssigned,
+    perAgent,
+  };
 }

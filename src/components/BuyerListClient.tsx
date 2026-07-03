@@ -63,6 +63,8 @@ interface Props {
   isAdmin: boolean;
   isAdminOrMgr: boolean;
   viewerId: string;
+  /** Which market this list is — drives the distribution panel (default Dubai). */
+  market?: "Dubai" | "India";
   poolAvailable: number;
   convertedCount: number;
   summary: {
@@ -481,7 +483,7 @@ export default function BuyerListClient(props: Props) {
 
       {/* AI distribution console (admin) */}
       {isAdmin && showDistribute && (
-        <BuyerDistributionPanel agents={agents} poolAvailable={poolAvailable} onApplied={() => router.refresh()} />
+        <BuyerDistributionPanel agents={agents} poolAvailable={poolAvailable} market={props.market ?? "Dubai"} onApplied={() => router.refresh()} />
       )}
 
       {/* ── Filter panel ───────────────────────────────────────────────────── */}

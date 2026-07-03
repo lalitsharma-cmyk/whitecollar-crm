@@ -2000,8 +2000,12 @@ const checks: Check[] = [
       assert(/dubaiBuyerOnly/.test(shell), "the nav MUST gate the Dubai Buyer Data item via dubaiBuyerOnly");
       assert(/dubaiBuyerOnly && !\(user\.role === "ADMIN" \|\| user\.team === "Dubai"\)/.test(shell), "dubaiBuyerOnly MUST hide the item from non-Dubai non-admin users");
 
-      // (e) distribution pool + import + export are market-scoped.
-      assert(/market:\s*DUBAI_MARKET/.test(read("src/lib/buyerDistribution.ts")), "poolableWhere MUST pin market:DUBAI_MARKET (distribution is Dubai-only)");
+      // (e) distribution pool + import + export are market-scoped. Distribution is now
+      // BOTH-MARKETS: market-parameterized with a Dubai default (byte-identical Dubai
+      // behaviour) + the daily cron distributes BOTH pools to their own teams.
+      { const distSrc = read("src/lib/buyerDistribution.ts");
+        assert(/market: string = DUBAI_MARKET/.test(distSrc), "poolableWhere/poolCount MUST be market-parameterized (default DUBAI_MARKET for back-compat)");
+        assert(/\["Dubai", "India"\]/.test(distSrc), "daily auto-distribution MUST cover BOTH markets (Dubai + India) when no team is configured"); }
       // Import stamps ONE market — default Dubai; India Buyer import passes market:"India".
       // Dedup + create both use importMarket, so an India import never matches a Dubai buyer.
       { const imp = read("src/app/api/buyer-data/import/route.ts");

@@ -18,7 +18,7 @@ type Plan = { rows: PlanRow[]; totalAssigned: number; poolAvailable: number; sho
 // "byRegion" is retained in the server contract but unused by this Dubai console.
 type Mode = "assignN" | "splitEqually" | "byRegion";
 
-export default function BuyerDistributionPanel({ agents, poolAvailable, onApplied }: { agents: BuyerAgent[]; poolAvailable: number; onApplied?: () => void }) {
+export default function BuyerDistributionPanel({ agents, poolAvailable, onApplied, market = "Dubai" }: { agents: BuyerAgent[]; poolAvailable: number; onApplied?: () => void; market?: "Dubai" | "India" }) {
   const [mode, setMode] = useState<Mode>("assignN");
   const [agentId, setAgentId] = useState("");
   const [n, setN] = useState("100");
@@ -32,18 +32,18 @@ export default function BuyerDistributionPanel({ agents, poolAvailable, onApplie
   const [autoTeam, setAutoTeam] = useState("");
   const [autoBusy, setAutoBusy] = useState(false);
   useEffect(() => {
-    fetch("/api/buyer-data/distribute").then((r) => r.json()).then((j) => {
+    fetch(`/api/buyer-data/distribute?market=${market}`).then((r) => r.json()).then((j) => {
       if (j?.autoDistribute) { setAutoOn(!!j.autoDistribute.enabled); setAutoTeam(j.autoDistribute.team ?? ""); }
     }).catch(() => {});
-  }, []);
+  }, [market]);
 
   const busy = phase !== "idle";
   const sel = "border border-gray-200 dark:border-slate-600 rounded-lg px-2.5 py-2 text-base sm:text-sm dark:bg-slate-800 dark:text-slate-100";
 
   function body(): Record<string, unknown> {
-    // Dubai module — no region narrowing (the whole pool is Dubai-market).
-    if (mode === "assignN") return { mode, agentId, n: Number(n) || 0, region: null };
-    return { mode: "splitEqually", agentIds: Array.from(splitIds), region: null };
+    // Market-scoped (the whole pool is this market) — no region narrowing.
+    if (mode === "assignN") return { market, mode, agentId, n: Number(n) || 0, region: null };
+    return { market, mode: "splitEqually", agentIds: Array.from(splitIds), region: null };
   }
 
   async function doPreview() {
