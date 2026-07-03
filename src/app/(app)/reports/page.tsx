@@ -17,6 +17,7 @@ import { normalizeTeam } from "@/lib/teamRouting";
 import { sourceBreakdown } from "@/lib/sourceLabel";
 import { formatMedium } from "@/lib/mediumManager";
 import { redirect } from "next/navigation";
+import HelpDot from "@/components/HelpDot";
 
 export const dynamic = "force-dynamic";
 
@@ -66,7 +67,10 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
     return (
       <>
         <div>
-          <h1 className="text-xl sm:text-2xl font-bold">Reports</h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-xl sm:text-2xl font-bold">Reports</h1>
+            {process.env.NEXT_PUBLIC_SANDBOX === "1" && <HelpDot topic="reports" />}
+          </div>
           <p className="text-xs sm:text-sm text-gray-500">
             These are your personal performance reports
           </p>
@@ -438,11 +442,14 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
     <>
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
-          <h1 className="text-xl sm:text-2xl font-bold">
-            {resolvedTeam === "Dubai" ? "🇦🇪 Dubai — Reports" :
-             resolvedTeam === "India" ? "🇮🇳 India — Reports" :
-             "Reports"}
-          </h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-xl sm:text-2xl font-bold">
+              {resolvedTeam === "Dubai" ? "🇦🇪 Dubai — Reports" :
+               resolvedTeam === "India" ? "🇮🇳 India — Reports" :
+               "Reports"}
+            </h1>
+            {process.env.NEXT_PUBLIC_SANDBOX === "1" && <HelpDot topic="reports" />}
+          </div>
           <p className="text-xs sm:text-sm text-gray-500">Decisions first · raw numbers below · live</p>
         </div>
         {/* Team filter — shown for ADMIN (full control) and MANAGER (locked to their team) */}

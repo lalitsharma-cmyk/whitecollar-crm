@@ -20,6 +20,7 @@ import RevivalLeaderboard, { type LeaderboardRow } from "@/components/RevivalLea
 import RevivalLeadsListClient, { type RevivalPromoteMeta } from "@/components/RevivalLeadsListClient";
 import LeadFilters from "@/components/LeadFilters";
 import SavedFiltersBar from "@/components/SavedFiltersBar";
+import HelpDot from "@/components/HelpDot";
 import { REVIVAL_MISSION } from "@/lib/missions";
 
 export const dynamic = "force-dynamic";
@@ -428,7 +429,10 @@ export default async function ColdDataPage({ searchParams }: { searchParams: Pro
       {/* ───────── HEADER ───────── */}
       <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
         <div>
-          <h1 className="text-xl sm:text-2xl font-bold">💎 Revival Engine</h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-xl sm:text-2xl font-bold">💎 Revival Engine</h1>
+            {process.env.NEXT_PUBLIC_SANDBOX === "1" && <HelpDot topic="cold-calls" />}
+          </div>
           <p className="text-xs sm:text-sm text-gray-500">
             {isFiltered
               ? <><span className="font-semibold text-[#0b1a33] dark:text-blue-300">{filteredCount} filtered</span> · {totalCount} total cold</>

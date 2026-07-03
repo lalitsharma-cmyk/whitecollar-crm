@@ -27,6 +27,7 @@ import { tzForTeam, greetingFor, overdueFollowupBoundary } from "@/lib/datetime"
 import DashboardBroadcastInbox from "@/components/DashboardBroadcastInbox";
 import DashboardVoiceBroadcast from "@/components/DashboardVoiceBroadcast";
 import { canSendBroadcast, broadcastRecipientWhere, broadcastAudienceLabel } from "@/lib/voiceBroadcast";
+import HelpDot from "@/components/HelpDot";
 
 export const dynamic = "force-dynamic";
 
@@ -513,7 +514,10 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
       {/* ── Full-width: page title + team/action controls ── */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
-          <h1 className="font-display text-xl sm:text-2xl font-bold">Dashboard</h1>
+          <div className="flex items-center gap-2">
+            <h1 className="font-display text-xl sm:text-2xl font-bold">Dashboard</h1>
+            {process.env.NEXT_PUBLIC_SANDBOX === "1" && <HelpDot topic="dashboard" />}
+          </div>
           {me.role !== "AGENT" && (
             <p className="text-xs sm:text-sm text-gray-500 dark:text-slate-400">
               {new Date().toLocaleDateString("en-US", { weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: "Asia/Kolkata" })} · {new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Kolkata" })} IST

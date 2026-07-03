@@ -6,6 +6,7 @@ import { requireUser } from "@/lib/auth";
 import LeadFilters from "@/components/LeadFilters";
 import LeadsListClient from "@/components/LeadsListClient";
 import MotivationBanner from "@/components/MotivationBanner";
+import HelpDot from "@/components/HelpDot";
 import { runReconciler } from "@/lib/reconciler";
 import { leadScopeWhere, COLD_ORIGINS, workableWhere, activeBoardWhere, MASTER_DATA_BOARD_OR } from "@/lib/leadScope";
 import { canExportData, canImportData } from "@/lib/exportPerms";
@@ -732,7 +733,10 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
       {/* ── Header ─────────────────────────────────────────────────────── */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
-          <h1 className="text-xl sm:text-2xl font-bold">Leads</h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-xl sm:text-2xl font-bold">Leads</h1>
+            {process.env.NEXT_PUBLIC_SANDBOX === "1" && <HelpDot topic="leads" />}
+          </div>
           <p className="text-xs sm:text-sm text-gray-500 dark:text-slate-400">
             {total < totalAll
               ? <><span className="font-semibold text-[#0b1a33] dark:text-blue-300">{total} filtered</span> · {totalAll} total</>

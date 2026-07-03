@@ -147,6 +147,10 @@ async function main() {
   // ── WIPE the tables we load, FK-safe (children → parents). Makes the refresh
   //    idempotent. Safe because `sb` is guaranteed sandbox-only by the guard. ──
   console.log("🧹 Wiping sandbox tables we load (FK-safe order)…");
+  // GENERATED demo rows (leaf tables that reference User/Lead) — clear FIRST so
+  // the Notifications + AI steps below re-seed cleanly on every refresh.
+  await sb.aiAnalysis.deleteMany();
+  await sb.notification.deleteMany();
   // Buyer children → BuyerRecord
   await sb.buyerActivity.deleteMany();
   await sb.buyerAssignment.deleteMany();
@@ -681,6 +685,182 @@ async function main() {
       createdAt: a.createdAt,
     }),
   );
+
+  // ── GENERATED DEMO CONTENT (Notifications + AI) ─────────────────────────────
+  // These two modules have NO prod rows worth anonymizing (Notification bodies /
+  // AiAnalysis.resultJson would carry verbatim client text + real AI cost), so
+  // instead of copying prod we GENERATE realistic sample rows straight into the
+  // sandbox. Everything below writes ONLY through `sb`, is fully deterministic
+  // (seeded by ids / indices — no Math.random / Date.now), and is idempotent with
+  // the wipe above. Content references the already-anonymized copied lead names so
+  // the demo notifications/analyses read consistently with the rest of the sandbox.
+
+  // Pull back the ids we just copied (the copyModel helper returns only counts).
+  // Small selects — id + the couple of fields we weave into realistic text.
+  const sbUsers = await sb.user.findMany({
+    where: { active: true },
+    select: { id: true },
+    orderBy: { id: "asc" },
+  });
+  const sbLeads = await sb.lead.findMany({
+    where: { deletedAt: null },
+    select: { id: true, name: true, ownerId: true, preferredLocation: true, followupDate: true },
+    orderBy: { id: "asc" },
+    take: 400, // enough to source varied names; we only use a slice per user
+  });
+
+  // Deterministic base timestamp (NO Date.now): anchor to the newest copied lead's
+  // follow-up date if present, else a fixed sandbox epoch. `new Date(base + …)` is
+  // allowed by the determinism rule; the offset is derived from row indices only.
+  const EPOCH = new Date("2026-07-04T09:00:00.000Z").getTime();
+  const HOUR = 3_600_000;
+
+  // ── NOTIFICATIONS (~2–3 per sandbox user, mixed kinds) ──────────────────────
+  // Each row traces to a real copied record (sourceType/sourceId) exactly as the
+  // production notify() helper requires. kind = NotifKind enum; sourceType =
+  // NotifSourceType (src/lib/notifSource.ts). createdById is null (system-fired).
+  if (sbUsers.length > 0 && sbLeads.length > 0) {
+    // 3 canned templates; index i picks which subset each user gets so the mix
+    // varies but stays deterministic. Each template names a copied (fake) lead.
+    const templates: {
+      kind: "REMINDER" | "BUYER_ASSIGNED" | "SYSTEM";
+      severity: "INFO" | "WARNING";
+      sourceType: "FOLLOWUP" | "ASSIGNMENT" | "SITE_VISIT";
+      title: (leadName: string) => string;
+      body: (leadName: string, loc: string | null) => string;
+      link: (leadId: string) => string;
+      hourOffset: number;
+    }[] = [
+      {
+        kind: "REMINDER",
+        severity: "INFO",
+        sourceType: "FOLLOWUP",
+        title: (n) => `☎ Follow-up with ${n} in 10 min`,
+        body: (n, loc) => `Scheduled follow-up call with ${n}${loc ? ` about ${loc}` : ""}. Open the lead to log the outcome.`,
+        link: (id) => `/leads/${id}`,
+        hourOffset: 0,
+      },
+      {
+        kind: "BUYER_ASSIGNED",
+        severity: "INFO",
+        sourceType: "ASSIGNMENT",
+        title: () => `🏷️ 3 buyers assigned to you`,
+        body: (n) => `A new batch of buyer records is in your pool — first up: ${n}. Start dialling from the Buyer Data tab.`,
+        link: () => `/buyer-data`,
+        hourOffset: 2,
+      },
+      {
+        kind: "REMINDER",
+        severity: "WARNING",
+        sourceType: "SITE_VISIT",
+        title: () => `🔔 Site visit in 30 min`,
+        body: (n, loc) => `Site visit with ${n}${loc ? ` at ${loc}` : ""} starts soon. Confirm the meeting point and share the location.`,
+        link: (id) => `/leads/${id}`,
+        hourOffset: 4,
+      },
+    ];
+
+    let notifCount = 0;
+    for (let u = 0; u < sbUsers.length; u++) {
+      const user = sbUsers[u];
+      // 2–3 notifications per user (deterministic: even index → 3, odd → 2).
+      const perUser = u % 2 === 0 ? 3 : 2;
+      for (let k = 0; k < perUser; k++) {
+        const t = templates[(u + k) % templates.length];
+        // Pick a copied lead deterministically to source the notification from.
+        const lead = sbLeads[(u * 3 + k) % sbLeads.length];
+        const when = new Date(EPOCH - (u * perUser + k) * HOUR);
+        await sb.notification.create({
+          data: {
+            userId: user.id,
+            kind: t.kind,
+            severity: t.severity,
+            title: t.title(lead.name),
+            body: t.body(lead.name, lead.preferredLocation),
+            linkUrl: t.link(lead.id),
+            leadId: t.sourceType === "ASSIGNMENT" ? null : lead.id,
+            // Source tracking — points at the exact copied record it "fired" from.
+            sourceType: t.sourceType,
+            sourceId: lead.id,
+            createdById: null, // system/cron-fired demo rows
+            // Roughly half read, half unread (deterministic) for a lifelike inbox.
+            readAt: (u + k) % 2 === 0 ? null : when,
+            createdAt: when,
+          },
+        });
+        notifCount++;
+      }
+    }
+    copied.notification = notifCount;
+    console.log(`   • Notification (generated): ${notifCount}`);
+  }
+
+  // ── AI (AiAnalysis) — ~1 per some leads, capped ~15 ─────────────────────────
+  // Canned, realistic analyses. NO AI API call. model = "sandbox-canned", zero
+  // tokens/cost. resultJson is a valid (minimal) AiAnalysisResult so the Lead AI
+  // panel renders summary / recommended next action / lead quality without error.
+  {
+    const AI_CAP = 15;
+    // Deterministic sample: every Nth lead up to the cap (skip leads with no owner
+    // so the panel's owner-scoped view has something to show).
+    const aiLeads = sbLeads.filter((l) => l.ownerId).filter((_, i) => i % 5 === 0).slice(0, AI_CAP);
+
+    const qualities = ["Hot", "Warm", "Cold"] as const;
+    const probabilities = ["High", "Medium", "Low"] as const;
+    let aiCount = 0;
+    for (let i = 0; i < aiLeads.length; i++) {
+      const l = aiLeads[i];
+      const quality = qualities[i % qualities.length];
+      const prob = probabilities[i % probabilities.length];
+      const loc = l.preferredLocation ?? "a Dubai project";
+      // Minimal but structurally-valid result payload (the UI reads these keys).
+      const result = {
+        summary: `${l.name} is a ${quality.toLowerCase()} lead interested in ${loc}. Budget and timeline look consistent with recent conversations; keep the momentum with a timely follow-up. (Sandbox demo analysis — not from a real AI run.)`,
+        fieldExtraction: {},
+        scheduling: {
+          recommendedNextAction:
+            quality === "Hot"
+              ? `Call ${l.name} today and offer a site visit slot this week.`
+              : quality === "Warm"
+                ? `Send ${l.name} a shortlist for ${loc} and schedule a follow-up call.`
+                : `Nurture ${l.name} with a monthly market update; revisit in 30 days.`,
+          recommendedFollowUpDate: null,
+          reason: `Classified ${quality} based on engagement and stated interest in ${loc}.`,
+          confidence: 60 + (i % 4) * 10,
+          sourceRemark: null,
+        },
+        leadQuality: {
+          classification: quality,
+          closingProbability: prob,
+          reason: `Interest in ${loc} with a workable budget band.`,
+          biggestBlocker: quality === "Cold" ? "Timeline is undecided." : null,
+          missingInfo: [],
+          whyNotClosed: null,
+          leadStatus: quality === "Cold" ? "LongTermFollowUp" : "Active",
+        },
+        objections: [],
+      };
+      const when = new Date(EPOCH - i * HOUR);
+      await sb.aiAnalysis.create({
+        data: {
+          leadId: l.id,
+          triggeredBy: "manual",
+          triggeredById: l.ownerId, // the copied owner "ran" it
+          resultJson: JSON.stringify(result),
+          model: "sandbox-canned",
+          inputTokens: 0,
+          outputTokens: 0,
+          costMicroUsd: 0,
+          ok: true,
+          error: null,
+          createdAt: when,
+        },
+      });
+      aiCount++;
+    }
+    copied.aiAnalysis = aiCount;
+    console.log(`   • AiAnalysis (generated): ${aiCount}`);
+  }
 
   // ── SKIPPED (on purpose) ────────────────────────────────────────────────────
   //   • Voice / recordings (LeadVoiceMessage.audioData bytea, recordingUrl) — never

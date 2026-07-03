@@ -14,6 +14,7 @@ import {
 } from "@/lib/lead-statuses";
 import MasterDataRecordsTable, { type MDRow } from "@/components/MasterDataRecordsTable";
 import MasterDataImportControls from "@/components/MasterDataImportControls";
+import HelpDot from "@/components/HelpDot";
 import { canImportData } from "@/lib/exportPerms";
 import LeadFilters from "@/components/LeadFilters";
 import { leadFilterWhere } from "@/lib/leadFilterWhere";
@@ -225,7 +226,10 @@ export default async function MasterDataPage({ searchParams }: { searchParams: P
       {/* ── Lean ops header — assignment counters, no charts ──────────────── */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
-          <h1 className="text-xl sm:text-2xl font-bold">Master Data</h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-xl sm:text-2xl font-bold">Master Data</h1>
+            {process.env.NEXT_PUBLIC_SANDBOX === "1" && <HelpDot topic="master-data" />}
+          </div>
           <p className="text-xs sm:text-sm text-gray-500 dark:text-slate-400">
             Operations console · <span className="font-semibold">{catCount[cat]}</span> in view ·
             {" "}<Link href={keep({ view: "Unassigned Leads", cat: "" })} className={`hover:underline ${unassignedAgent ? "text-amber-600 font-semibold" : "text-gray-500 dark:text-slate-400"}`} title="Show ready-to-assign leads (excludes rejected)">{unassignedAgent} unassigned</Link> ·

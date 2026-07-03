@@ -3,6 +3,7 @@ import { requireUser } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import BuyerListClient, { type BuyerRow, type BuyerAgent } from "@/components/BuyerListClient";
+import HelpDot from "@/components/HelpDot";
 import { buyerScopeWhere, canAccessDubaiBuyers, isDubaiAssignable } from "@/lib/buyerScope";
 import { canExportData } from "@/lib/exportPerms";
 import {
@@ -173,7 +174,10 @@ export default async function BuyerDataPage() {
       {/* ── Header + actions ──────────────────────────────────────────────── */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
-          <h1 className="text-xl sm:text-2xl font-bold">Dubai Buyer Data</h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-xl sm:text-2xl font-bold">Dubai Buyer Data</h1>
+            {process.env.NEXT_PUBLIC_SANDBOX === "1" && <HelpDot topic="buyer-data" />}
+          </div>
           <p className="text-xs sm:text-sm text-gray-500 dark:text-slate-400">
             {isAdmin ? "Dubai worked pipeline — Admin Pool → agent → convert / reject" : "Dubai buyers assigned to you"} · <span className="font-semibold">{totalRecords}</span> in view ·
             {" "}<span className="text-amber-600 dark:text-amber-400">passport &amp; financial data</span>

@@ -5,7 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import {
   LayoutDashboard, Users, Sparkles, Menu, X,
   Building2, BarChart3, Upload, UserCog, Settings as SettingsIcon, LogOut, Landmark,
-  ChevronLeft, ChevronRight, Gem, HelpCircle, AlertTriangle, Lock, PhoneCall, Briefcase, Database, ShieldCheck, Bot, Inbox, BadgeDollarSign, MapPin, Images, History, Search, Tag, KeyRound, Fingerprint,
+  ChevronLeft, ChevronRight, Gem, HelpCircle, AlertTriangle, Lock, PhoneCall, Briefcase, Database, ShieldCheck, Bot, Inbox, BadgeDollarSign, MapPin, Images, History, Search, Tag, KeyRound, Fingerprint, BookOpen, GraduationCap,
 } from "lucide-react";
 import GlobalDateFilter from "./GlobalDateFilter";
 import NotifBell from "./NotifBell";
@@ -20,7 +20,14 @@ import PWAInstallNudge from "./PWAInstallNudge";
 import { useBodyScrollLock } from "@/hooks/useBodyScrollLock";
 
 type NavItem = { href: string; label: string; Icon: React.ElementType; tag?: string; agentHidden?: boolean; adminOnly?: boolean; leadOpsHidden?: boolean; dubaiBuyerOnly?: boolean; indiaBuyerOnly?: boolean };
-type NavSection = { section: string; adminOnly?: boolean; managerOrAdmin?: boolean; items: NavItem[] };
+type NavSection = { section: string; adminOnly?: boolean; managerOrAdmin?: boolean; sandboxOnly?: boolean; items: NavItem[] };
+
+// Sandbox flag — the intern-training features (CRM Guide + Scenario Mode) are
+// SANDBOX-ONLY. NEXT_PUBLIC_ is inlined at build time, so this is a compile-time
+// constant: in production (flag unset) the whole TRAINING nav section below is
+// filtered out and the links never render. The /guide and /scenarios pages ALSO
+// self-guard, so even a hand-typed URL is inert in prod.
+const SANDBOX = process.env.NEXT_PUBLIC_SANDBOX === "1";
 
 // §6 — Global Back button + breadcrumb. Every page has a back button that
 // preserves filters by using router.back() (keeps the full URL incl. params).
@@ -141,6 +148,13 @@ const fullNav: NavSection[] = [
   { section: "RECRUITMENT", managerOrAdmin: true, items: [
     { href: "/hr", label: "HR Recruitment", Icon: Briefcase, leadOpsHidden: true },
   ]},
+  // TRAINING — intern learning aids. SANDBOX-ONLY: the whole section is dropped
+  // in production via the `sandboxOnly` gate on the section filter below, so
+  // these links never appear on the live CRM. Both target pages also self-guard.
+  { section: "TRAINING", sandboxOnly: true, items: [
+    { href: "/guide",     label: "📘 CRM Guide", Icon: BookOpen },
+    { href: "/scenarios", label: "🎓 Scenarios", Icon: GraduationCap },
+  ]},
 ];
 
 // Bottom nav for mobile — mirrors WORKSPACE order (top 5)
@@ -241,6 +255,7 @@ export default function MobileShell({ children, user, awaitingTeamCount = 0, myO
         {/* Nav items */}
         <nav className={`flex-1 py-3 space-y-0.5 overflow-y-auto overflow-x-hidden ${sidebarCollapsed ? "px-1" : "px-3"}`}>
           {fullNav.filter((g) => {
+            if (g.sandboxOnly) return SANDBOX;
             if (g.adminOnly) return user.role === "ADMIN";
             if (g.managerOrAdmin) return user.role === "ADMIN" || user.role === "MANAGER";
             return true;
@@ -404,6 +419,7 @@ export default function MobileShell({ children, user, awaitingTeamCount = 0, myO
             </div>
             <nav className="flex-1 px-2 py-3 space-y-1 overflow-y-auto">
               {fullNav.filter((g) => {
+                if (g.sandboxOnly) return SANDBOX;
                 if (g.adminOnly) return user.role === "ADMIN";
                 if (g.managerOrAdmin) return user.role === "ADMIN" || user.role === "MANAGER";
                 return true;
