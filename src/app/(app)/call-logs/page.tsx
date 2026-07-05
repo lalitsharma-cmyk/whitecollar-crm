@@ -1,10 +1,20 @@
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
-import { redirect } from "next/navigation";
 import { CallOutcome, Prisma } from "@prisma/client";
 import Link from "next/link";
 import { normalizeTeam } from "@/lib/teamRouting";
 import { formatLeadName } from "@/lib/leadName";
+import { visibleOwnerIds } from "@/lib/leadScope";
+import { canExportData } from "@/lib/exportPerms";
+import {
+  leadSourceModule,
+  buyerSourceModule,
+  moduleHref,
+  isBuyerModule,
+  ALL_SOURCE_MODULES,
+  type SourceModule,
+} from "@/lib/moduleSource";
+import CallLogFilters from "./CallLogFilters";
 
 export const dynamic = "force-dynamic";
 
@@ -31,6 +41,22 @@ function fmtDuration(sec: number | null): string {
   return s > 0 ? `${m}m ${s}s` : `${m}m`;
 }
 
+// First phone out of a BuyerRecord.phones JSON array (["+9711…", …]).
+function firstBuyerPhone(phones: string | null): string | null {
+  if (!phones) return null;
+  try {
+    const arr = JSON.parse(phones);
+    if (Array.isArray(arr)) {
+      const first = arr.map((p) => String(p ?? "").trim()).find(Boolean);
+      return first ?? null;
+    }
+  } catch {
+    /* not JSON — fall through */
+  }
+  const t = phones.trim();
+  return t || null;
+}
+
 // Outcome chip colour mapping
 const outcomeChip: Record<CallOutcome, string> = {
   CONNECTED:      "bg-emerald-100 text-emerald-800",
@@ -54,73 +80,171 @@ const outcomeLabel: Record<CallOutcome, string> = {
   NOT_INTERESTED: "Not Interested",
 };
 
+// Module chip tint (matches the 5 SourceModules).
+const moduleChip: Record<SourceModule, string> = {
+  "Leads":            "bg-indigo-100 text-indigo-800",
+  "Master Data":      "bg-slate-100 text-slate-700",
+  "Revival Engine":   "bg-purple-100 text-purple-800",
+  "Dubai Buyer Data": "bg-amber-100 text-amber-800",
+  "India Buyer Data": "bg-cyan-100 text-cyan-800",
+};
+
 export default async function CallLogsPage({
   searchParams,
 }: {
   searchParams: Promise<Record<string, string | undefined>>;
 }) {
   const me = await requireUser();
-
-  // AGENT guard — redirect to dashboard
-  if (me.role === "AGENT") {
-    redirect("/dashboard");
-  }
-
   const sp = await searchParams;
 
-  // ── Build where clause ──────────────────────────────────────────────────
-  const where: Prisma.CallLogWhereInput = {};
+  const managerTeam = me.role === "MANAGER" ? normalizeTeam(me.team ?? undefined) : null;
 
-  // Role scoping: MANAGER sees own team's calls; ADMIN sees all
-  if (me.role === "MANAGER") {
-    const team = normalizeTeam(me.team ?? undefined);
-    if (team) {
-      where.user = { team };
+  // ── ROLE SCOPE (server-enforced) ─────────────────────────────────────────
+  // Call logs are scoped by the ACTOR (CallLog.userId — the agent who made/took
+  // the call), NOT by lead ownership, so an agent sees exactly the calls they
+  // performed and a manager sees their team's calls.
+  //   AGENT   → userId = me.id                       (only their own calls)
+  //   MANAGER → user.team = <their team>             (their whole team)
+  //   ADMIN   → no actor restriction                 (all calls)
+  // Mirrors the CSV-export route's scoping so the on-screen list and the export
+  // can never diverge. visibleOwnerIds() is reused as the org-membership source.
+  const scopeAnd: Prisma.CallLogWhereInput[] = [];
+  if (me.role === "AGENT") {
+    scopeAnd.push({ userId: me.id });
+  } else if (me.role === "MANAGER") {
+    if (managerTeam) {
+      scopeAnd.push({ user: { team: managerTeam } });
+    } else {
+      // Manager without a team configured → fall back to their org subtree so they
+      // still see something rather than the whole company.
+      const ids = await visibleOwnerIds(me);
+      if (ids) scopeAnd.push({ userId: { in: ids } });
     }
   }
+  // ADMIN → no scope predicate.
 
-  // Filter: by agent (userId)
-  if (sp.agent) {
-    where.userId = sp.agent;
+  // ── Cross-module inclusion ───────────────────────────────────────────────
+  // The ONE line that makes this page centralized: include a call whose linked
+  // Lead is live OR whose linked Buyer is live (the old page dropped buyer-only
+  // calls by filtering `lead:{deletedAt:null}`). Unlinked calls (neither) stay
+  // out. This is pure read-time aggregation — no schema change, no dual-write.
+  const linkedAnd: Prisma.CallLogWhereInput = {
+    OR: [{ lead: { deletedAt: null } }, { buyer: { deletedAt: null } }],
+  };
+
+  // ── User / Team filters (from the URL) ───────────────────────────────────
+  const filterAnd: Prisma.CallLogWhereInput[] = [];
+
+  // User filter (a specific actor). Applied within the role scope, so a manager
+  // can only ever narrow to a user already inside their team.
+  if (sp.user) filterAnd.push({ userId: sp.user });
+
+  // Team filter (ADMIN only meaningfully; a manager is already team-locked).
+  const teamFilter = normalizeTeam(sp.team ?? undefined);
+  if (teamFilter && me.role === "ADMIN") {
+    filterAnd.push({ user: { team: teamFilter } });
   }
 
-  // Filter: by outcome
-  if (sp.outcome && Object.keys(CallOutcome).includes(sp.outcome)) {
-    where.outcome = sp.outcome as CallOutcome;
+  // Call Status (outcome).
+  if (sp.outcome && (Object.keys(CallOutcome) as string[]).includes(sp.outcome)) {
+    filterAnd.push({ outcome: sp.outcome as CallOutcome });
   }
 
-  // Filter: by date range (?from= and ?to= are YYYY-MM-DD in IST)
+  // Date range (?from / ?to are YYYY-MM-DD in IST).
   if (sp.from || sp.to) {
     const dateFilter: Prisma.DateTimeFilter<"CallLog"> = {};
     if (sp.from) {
-      // Parse as start-of-day IST → UTC
       const fromMs = new Date(`${sp.from}T00:00:00Z`).getTime() - IST_OFFSET_MS;
       dateFilter.gte = new Date(fromMs);
     }
     if (sp.to) {
-      // Parse as end-of-day IST → UTC (inclusive: next midnight - 1ms)
       const toMs = new Date(`${sp.to}T00:00:00Z`).getTime() - IST_OFFSET_MS + 24 * 3600 * 1000;
       dateFilter.lt = new Date(toMs);
     }
-    where.startedAt = dateFilter;
+    filterAnd.push({ startedAt: dateFilter });
   }
 
-  // ── Pagination ──────────────────────────────────────────────────────────
+  // Module filter — the 5 SourceModules. A module maps to a predicate on the
+  // linked record: buyer modules → buyer.market; lead modules → the lead's
+  // leadOrigin / isColdCall (mirrors leadSourceModule so the filter and the
+  // per-row label are derived from the SAME rule).
+  const moduleParam = (sp.module ?? "") as SourceModule | "";
+  if (moduleParam && ALL_SOURCE_MODULES.includes(moduleParam as SourceModule)) {
+    const m = moduleParam as SourceModule;
+    if (isBuyerModule(m)) {
+      const market = m === "India Buyer Data" ? "India" : "Dubai";
+      filterAnd.push({ buyer: { is: { market, deletedAt: null } } });
+    } else if (m === "Revival Engine") {
+      filterAnd.push({
+        lead: { is: { deletedAt: null, OR: [{ leadOrigin: { in: ["COLD", "REVIVAL"] } }, { isColdCall: true }] } },
+      });
+    } else if (m === "Master Data") {
+      filterAnd.push({
+        lead: { is: { deletedAt: null, isColdCall: false, leadOrigin: { in: ["MASTER_DATA", "PORTFOLIO", "SYSTEM"] } } },
+      });
+    } else {
+      // Leads = everything that is NOT cold/revival and NOT master-data.
+      filterAnd.push({
+        lead: {
+          is: {
+            deletedAt: null,
+            isColdCall: false,
+            leadOrigin: { notIn: ["COLD", "REVIVAL", "MASTER_DATA", "PORTFOLIO", "SYSTEM"] },
+          },
+        },
+      });
+    }
+  }
+
+  // Search — customer name (lead.name / buyer.clientName), mobile (call number,
+  // lead.phone, buyer.phones), or agent name (user.name / attributedAgentName).
+  const rawQ = (sp.q ?? "").trim();
+  if (rawQ) {
+    const mode = "insensitive" as const;
+    filterAnd.push({
+      OR: [
+        { lead: { is: { name: { contains: rawQ, mode } } } },
+        { lead: { is: { phone: { contains: rawQ, mode } } } },
+        { buyer: { is: { clientName: { contains: rawQ, mode } } } },
+        { buyer: { is: { phones: { contains: rawQ, mode } } } },
+        { phoneNumber: { contains: rawQ, mode } },
+        { user: { is: { name: { contains: rawQ, mode } } } },
+        { attributedAgentName: { contains: rawQ, mode } },
+      ],
+    });
+  }
+
+  const where: Prisma.CallLogWhereInput = {
+    AND: [...scopeAnd, linkedAnd, ...filterAnd],
+  };
+
+  // ── Pagination ───────────────────────────────────────────────────────────
   const page = Math.max(1, parseInt(sp.page ?? "1") || 1);
   const skip = (page - 1) * PAGE_SIZE;
 
-  // ── Fetch agents for the filter dropdown ───────────────────────────────
-  const agentsQuery: Prisma.UserWhereInput = {
-    active: true,
-    hrOnly: false,
-    role: { in: ["AGENT", "MANAGER"] },
-  };
-  if (me.role === "MANAGER") {
-    const team = normalizeTeam(me.team ?? undefined);
-    if (team) agentsQuery.team = team;
+  // ── User roster for the filter dropdown ──────────────────────────────────
+  // Every active, non-HR CRM user per the caller's permissions (Lalit / super
+  // admins / admins / managers / agents). ADMIN → all; MANAGER → their team;
+  // AGENT → none (they don't get scope pickers). Team travels with each user so
+  // the client can do the Team→User cascade without another request.
+  let userRoster: { id: string; name: string; team: string | null }[] = [];
+  if (me.role !== "AGENT") {
+    const rosterWhere: Prisma.UserWhereInput = { active: true, hrOnly: false };
+    if (me.role === "MANAGER") {
+      if (managerTeam) rosterWhere.team = managerTeam;
+      else {
+        const ids = await visibleOwnerIds(me);
+        if (ids) rosterWhere.id = { in: ids };
+      }
+    }
+    userRoster = await prisma.user.findMany({
+      where: rosterWhere,
+      orderBy: { name: "asc" },
+      select: { id: true, name: true, team: true },
+    });
   }
 
-  const [logs, total, agents] = await Promise.all([
+  const [logs, total] = await Promise.all([
     prisma.callLog.findMany({
       where,
       orderBy: { startedAt: "desc" },
@@ -128,37 +252,84 @@ export default async function CallLogsPage({
       take: PAGE_SIZE,
       include: {
         user: { select: { id: true, name: true } },
-        lead: { select: { id: true, name: true } },
+        lead: { select: { id: true, name: true, phone: true, leadOrigin: true, isColdCall: true } },
+        buyer: { select: { id: true, clientName: true, phones: true, market: true } },
       },
     }),
     prisma.callLog.count({ where }),
-    prisma.user.findMany({
-      where: agentsQuery,
-      orderBy: { name: "asc" },
-      select: { id: true, name: true },
-    }),
   ]);
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
-  // Build a URLSearchParams helper that preserves existing filters
+  // Derive the display row (name · mobile · module · href) for each call.
+  const rows = logs.map((log) => {
+    let name = "—";
+    let mobile = log.phoneNumber || "—";
+    let module: SourceModule | null = null;
+    let href: string | null = null;
+
+    if (log.lead) {
+      name = formatLeadName(log.lead.name);
+      mobile = log.lead.phone || log.phoneNumber || "—";
+      // source_module for a lead-linked call = the lead's leadSourceModule.
+      module = leadSourceModule(log.lead.leadOrigin, log.lead.isColdCall);
+      href = moduleHref(module, log.lead.id);
+    } else if (log.buyer) {
+      name = formatLeadName(log.buyer.clientName);
+      mobile = firstBuyerPhone(log.buyer.phones) || log.phoneNumber || "—";
+      // source_module for a buyer-linked call = the buyer's buyerSourceModule.
+      module = buyerSourceModule(log.buyer.market);
+      // Both Dubai + India buyers open the SHARED buyer detail at /buyer-data/[id]
+      // (the India list links there too — there is no /india-buyer-data/[id] route).
+      href = `/buyer-data/${log.buyer.id}`;
+    }
+
+    return {
+      id: log.id,
+      startedAt: log.startedAt,
+      agent: log.attributedAgentName ?? log.user?.name ?? "Unknown Agent",
+      name,
+      mobile,
+      module,
+      href,
+      durationSec: log.durationSec,
+      outcome: log.outcome,
+      notes: log.notes,
+    };
+  });
+
+  // Preserve filters when paginating.
   function pageUrl(p: number) {
     const params = new URLSearchParams();
-    if (sp.agent) params.set("agent", sp.agent);
-    if (sp.outcome) params.set("outcome", sp.outcome);
-    if (sp.from) params.set("from", sp.from);
-    if (sp.to) params.set("to", sp.to);
+    for (const k of ["user", "team", "module", "outcome", "from", "to", "q"] as const) {
+      if (sp[k]) params.set(k, sp[k]!);
+    }
     params.set("page", String(p));
     return `/call-logs?${params.toString()}`;
   }
 
+  const hasFilters = !!(sp.user || sp.team || sp.module || sp.outcome || sp.from || sp.to || sp.q);
+
+  // CSV export params (export route is Super-Admin only; button hidden otherwise).
   const exportParams = new URLSearchParams();
-  if (sp.agent) exportParams.set("agent", sp.agent);
-  if (sp.outcome) exportParams.set("outcome", sp.outcome);
+  if (sp.user) exportParams.set("userId", sp.user);
   if (sp.from) exportParams.set("from", sp.from);
   if (sp.to) exportParams.set("to", sp.to);
+  const canExport = canExportData(me);
 
-  const hasFilters = !!(sp.agent || sp.outcome || sp.from || sp.to);
+  const outcomeOpts = (Object.keys(CallOutcome) as CallOutcome[]).map((o) => ({
+    value: o,
+    label: outcomeLabel[o],
+  }));
+
+  const scopeLabel =
+    me.role === "AGENT"
+      ? " · my calls"
+      : me.role === "MANAGER" && managerTeam
+      ? ` · ${managerTeam} team`
+      : me.role === "MANAGER"
+      ? " · my team"
+      : " · all modules & teams";
 
   return (
     <>
@@ -167,116 +338,31 @@ export default async function CallLogsPage({
         <div>
           <h1 className="text-xl sm:text-2xl font-bold">Call Logs</h1>
           <p className="text-xs sm:text-sm text-gray-500 dark:text-slate-400">
-            {total.toLocaleString()} call{total !== 1 ? "s" : ""}
-            {me.role === "MANAGER" && me.team ? ` · ${normalizeTeam(me.team ?? undefined) ?? me.team} team` : " · all teams"}
+            Centralized call history across all modules · {total.toLocaleString()} call{total !== 1 ? "s" : ""}
+            {scopeLabel}
           </p>
         </div>
-        <a
-          href={`/api/call-logs/export${exportParams.toString() ? `?${exportParams.toString()}` : ""}`}
-          className="btn btn-ghost"
-        >
-          ⬇ Export CSV
-        </a>
+        {canExport && (
+          <a
+            href={`/api/call-logs/export${exportParams.toString() ? `?${exportParams.toString()}` : ""}`}
+            className="btn btn-ghost"
+          >
+            ⬇ Export CSV
+          </a>
+        )}
       </div>
 
       {/* ── Filters ────────────────────────────────────────────────────── */}
-      <form method="get" action="/call-logs" className="card p-4">
-        <div className="flex flex-wrap gap-3 items-end">
-          {/* Agent filter */}
-          <div className="flex flex-col gap-1 min-w-[160px]">
-            <label className="text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wide">
-              Agent
-            </label>
-            <select
-              name="agent"
-              defaultValue={sp.agent ?? ""}
-              className="border border-[#e5e7eb] dark:border-slate-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-slate-700 dark:text-slate-100"
-            >
-              <option value="">All agents</option>
-              {agents.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.name}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Outcome filter */}
-          <div className="flex flex-col gap-1 min-w-[160px]">
-            <label className="text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wide">
-              Outcome
-            </label>
-            <select
-              name="outcome"
-              defaultValue={sp.outcome ?? ""}
-              className="border border-[#e5e7eb] dark:border-slate-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-slate-700 dark:text-slate-100"
-            >
-              <option value="">All outcomes</option>
-              {Object.values(CallOutcome).map((o) => (
-                <option key={o} value={o}>
-                  {outcomeLabel[o]}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* From date */}
-          <div className="flex flex-col gap-1">
-            <label className="text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wide">
-              From
-            </label>
-            <input
-              type="date"
-              name="from"
-              defaultValue={sp.from ?? ""}
-              className="border border-[#e5e7eb] dark:border-slate-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-slate-700 dark:text-slate-100"
-            />
-          </div>
-
-          {/* To date */}
-          <div className="flex flex-col gap-1">
-            <label className="text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wide">
-              To
-            </label>
-            <input
-              type="date"
-              name="to"
-              defaultValue={sp.to ?? ""}
-              className="border border-[#e5e7eb] dark:border-slate-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-slate-700 dark:text-slate-100"
-            />
-          </div>
-
-          <div className="flex gap-2">
-            <button type="submit" className="btn btn-primary">
-              Apply
-            </button>
-            {hasFilters && (
-              <Link href="/call-logs" className="btn btn-ghost">
-                Clear
-              </Link>
-            )}
-          </div>
-        </div>
-      </form>
-
-      {/* ── Active filter banner ────────────────────────────────────────── */}
-      {hasFilters && (
-        <div className="flex items-center gap-3 flex-wrap">
-          <span className="text-xs text-amber-700 dark:text-amber-400 font-medium">
-            ⚠ Filtered — showing {total.toLocaleString()} of all calls
-          </span>
-          <Link
-            href="/call-logs"
-            className="text-xs text-[#0b1a33] dark:text-blue-300 hover:underline font-medium"
-          >
-            ✕ Clear all filters
-          </Link>
-        </div>
-      )}
+      <CallLogFilters
+        users={userRoster}
+        outcomes={outcomeOpts}
+        showScopePickers={me.role !== "AGENT"}
+        showTeamPicker={me.role === "ADMIN"}
+      />
 
       {/* ── Table ──────────────────────────────────────────────────────── */}
       <div className="card overflow-x-auto">
-        {logs.length === 0 ? (
+        {rows.length === 0 ? (
           <div className="p-8 text-center text-gray-500 dark:text-slate-400 text-sm">
             No call logs found
             {hasFilters ? " matching your filters" : ""}.
@@ -287,45 +373,51 @@ export default async function CallLogsPage({
               <tr>
                 <th>Date / Time (IST)</th>
                 <th>Agent</th>
-                <th>Lead</th>
+                <th>Customer</th>
+                <th>Mobile</th>
+                <th>Module</th>
                 <th>Duration</th>
-                <th>Outcome</th>
+                <th>Call Status</th>
                 <th>Notes</th>
               </tr>
             </thead>
             <tbody>
-              {logs.map((log) => (
-                <tr key={log.id}>
+              {rows.map((r) => (
+                <tr key={r.id}>
                   <td className="whitespace-nowrap text-xs text-gray-500 dark:text-slate-400 font-mono">
-                    {fmtIst(log.startedAt)}
+                    {fmtIst(r.startedAt)}
                   </td>
-                  <td className="text-sm font-medium">
-                    {log.attributedAgentName ?? log.user?.name ?? "Unknown Agent"}
-                  </td>
+                  <td className="text-sm font-medium">{r.agent}</td>
                   <td className="text-sm">
-                    {log.lead ? (
+                    {r.href ? (
                       <Link
-                        href={`/leads/${log.lead.id}`}
+                        href={r.href}
                         className="text-blue-600 dark:text-blue-400 hover:underline font-medium"
                       >
-                        {formatLeadName(log.lead.name)}
+                        {r.name}
                       </Link>
+                    ) : (
+                      <span className="text-gray-700 dark:text-slate-200">{r.name}</span>
+                    )}
+                  </td>
+                  <td className="text-sm text-gray-600 dark:text-slate-300 whitespace-nowrap font-mono">
+                    {r.mobile}
+                  </td>
+                  <td>
+                    {r.module ? (
+                      <span className={`chip ${moduleChip[r.module]}`}>{r.module}</span>
                     ) : (
                       <span className="text-gray-400 dark:text-slate-500 text-xs">—</span>
                     )}
                   </td>
                   <td className="text-sm text-gray-600 dark:text-slate-300 whitespace-nowrap">
-                    {fmtDuration(log.durationSec)}
+                    {fmtDuration(r.durationSec)}
                   </td>
                   <td>
-                    <span
-                      className={`chip ${outcomeChip[log.outcome]}`}
-                    >
-                      {outcomeLabel[log.outcome]}
-                    </span>
+                    <span className={`chip ${outcomeChip[r.outcome]}`}>{outcomeLabel[r.outcome]}</span>
                   </td>
                   <td className="text-xs text-gray-500 dark:text-slate-400 max-w-xs truncate">
-                    {log.notes ?? "—"}
+                    {r.notes ?? "—"}
                   </td>
                 </tr>
               ))}

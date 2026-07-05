@@ -1,0 +1,52 @@
+// CANONICAL source_module — the ONE definition of "which module a record / activity
+// belongs to", used by Global Search, Call Logs, Dashboard and Reports so the module
+// label + bifurcation never drift between surfaces (Lalit, 2026-07-06).
+//
+// A customer record lives in exactly one module, derived from where it's stored:
+//   • Lead.leadOrigin (+ isColdCall) → Leads | Master Data | Revival Engine
+//   • BuyerRecord.market            → Dubai Buyer Data | India Buyer Data
+// Activities inherit their record's module (Activity/CallLog by leadId → the lead's
+// module; BuyerActivity/CallLog by buyerId → the buyer's module). PURE module (no
+// prisma / server-only) so client components + the read-time aggregation both use it.
+// Origin sets mirror leadScope.COLD_ORIGINS / MASTER_DATA_ORIGINS (regression locks it).
+
+export type SourceModule =
+  | "Leads"
+  | "Master Data"
+  | "Revival Engine"
+  | "Dubai Buyer Data"
+  | "India Buyer Data";
+
+/** Lead-based module ordering (the 3 lead origins) + buyer modules, for report/tab order. */
+export const LEAD_SOURCE_MODULES: SourceModule[] = ["Leads", "Master Data", "Revival Engine"];
+export const BUYER_SOURCE_MODULES: SourceModule[] = ["Dubai Buyer Data", "India Buyer Data"];
+export const ALL_SOURCE_MODULES: SourceModule[] = [...LEAD_SOURCE_MODULES, ...BUYER_SOURCE_MODULES];
+
+const COLD_ORIGINS = ["COLD", "REVIVAL"];
+const MASTER_DATA_ORIGINS = ["MASTER_DATA", "PORTFOLIO", "SYSTEM"];
+
+/** The module a LEAD row belongs to. */
+export function leadSourceModule(leadOrigin: string | null | undefined, isColdCall?: boolean | null): SourceModule {
+  if ((leadOrigin && COLD_ORIGINS.includes(leadOrigin)) || isColdCall) return "Revival Engine";
+  if (leadOrigin && MASTER_DATA_ORIGINS.includes(leadOrigin)) return "Master Data";
+  return "Leads";
+}
+
+/** The module a BUYER row belongs to. */
+export function buyerSourceModule(market: string | null | undefined): SourceModule {
+  return market === "India" ? "India Buyer Data" : "Dubai Buyer Data";
+}
+
+/** True when a module is one of the two Buyer-Data modules (vs the 3 lead modules). */
+export function isBuyerModule(m: SourceModule): boolean {
+  return m === "Dubai Buyer Data" || m === "India Buyer Data";
+}
+
+/** The detail-page href for a record, by module + id. Leads/Master/Revival share the
+ *  lead detail; buyers open their market's buyer detail. */
+export function moduleHref(module: SourceModule, id: string): string {
+  // BOTH buyer markets open the market-agnostic /buyer-data/[id] detail — there is
+  // NO /india-buyer-data/[id] route (the India list links to /buyer-data/[id] too).
+  if (module === "India Buyer Data" || module === "Dubai Buyer Data") return `/buyer-data/${id}`;
+  return `/leads/${id}`;
+}

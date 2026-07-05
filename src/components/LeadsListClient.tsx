@@ -2,6 +2,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useScrollRestore } from "@/hooks/useScrollRestore";
 import { Phone, MessageCircle, Tag, RefreshCw, XCircle, X, ExternalLink, Pencil, Calendar, Trash2 } from "lucide-react";
 import { REJECT_REASONS as REJECT_REASON_LIST } from "@/lib/reject-reasons";
 import LeadHeaderFilter from "@/components/LeadHeaderFilter";
@@ -217,6 +218,11 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
   // Lalit's policy: agents shouldn't see where each lead came from (avoids them
   // cherry-picking high-converting sources or gaming the round-robin pool).
   const router = useRouter();
+  // Restore scroll position on Back. The Leads/Revival filters, sort, and page
+  // are ALL in the URL, so browser Back already restores them; this adds the
+  // last missing piece — returning to the exact row the user had scrolled to.
+  // Keyed by pathname, so /leads and /cold-calls each remember independently.
+  useScrollRestore();
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const selectedIds = Array.from(selected);
   // Agents see a leaner table (no Assigned/Last-Activity columns — they only ever

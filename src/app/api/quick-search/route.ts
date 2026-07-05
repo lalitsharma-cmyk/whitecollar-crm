@@ -136,7 +136,7 @@ export async function GET(req: NextRequest) {
       phone: firstPhone(b.phones),
       agent: b.owner?.name ?? "Admin Pool",
       status: b.businessStatus?.trim() || b.poolStatus || "—",
-      href: b.market === "India" ? `/india-buyer-data/${b.id}` : `/buyer-data/${b.id}`,
+      href: `/buyer-data/${b.id}`, // both markets share /buyer-data/[id] — no /india-buyer-data/[id] route exists
     })),
   ];
 

@@ -19,7 +19,7 @@ import { formatLeadName } from "@/lib/leadName";
 import TargetCelebration from "@/components/TargetCelebration";
 import RemindersCard, { type ReminderEvent } from "@/components/RemindersCard";
 import { countUnassignedLeads, countAwaitingTeamLeads } from "@/lib/leadCounts";
-import { hotUntouchedWhere } from "@/lib/dashboardWidgets";
+import { hotUntouchedWhere, buyerCallsCount, buyerConnectedCallsCount } from "@/lib/dashboardWidgets";
 import { freshUntouchedWhere } from "@/lib/freshLeads";
 import DashboardAssignmentWidget from "@/components/DashboardAssignmentWidget";
 import DashboardGreeting from "@/components/DashboardGreeting";
@@ -152,11 +152,18 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     meetingsToday, siteVisitsToday, virtualMeetingsToday,
   ] = await Promise.all([
     prisma.activity.findMany({ where: { ...meActWhere, status: ActivityStatus.PLANNED, scheduledAt: { gte: sqlTo } }, orderBy: { scheduledAt: "asc" }, take: 8, include: { lead: { select: { id: true, name: true } } } }), // B-15: only lead.id/name rendered — UPCOMING: after selected period
-    // Calls by this user in the selected period — feeds KPI tiles
+    // Calls by this user in the selected period — feeds the "Total Calls" KPI.
+    // CallLog side counts LEAD calls (deletedAt:null) + UNLINKED calls, but
+    // EXCLUDES buyer-linked rows (buyerId:null) — buyer calls are counted once from
+    // the BuyerActivity ledger below (a telephony buyer call writes BOTH a
+    // CallLog{buyerId} and a BuyerActivity CALL, so sourcing buyers from one place
+    // avoids double-counting). unlinked = leadId null AND buyerId null.
     prisma.callLog.count({
       where: {
         userId: me.id,
         startedAt: { gte: sqlFrom, lt: sqlTo },
+        buyerId: null,
+        OR: [{ lead: { deletedAt: null } }, { leadId: null }],
       },
     }),
     // TODAY section — scheduled activity counts for the selected period
@@ -316,14 +323,30 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   const T = { calls: 150, connected: 50, virtual: 2, f2f: 1, fresh: 5, deals: 5 };
   const targets = targetRow ? { ...T, ...JSON.parse(targetRow.value) } : T;
 
-  // Personal KPI metrics — always userId: me.id (agents AND admin/manager see their OWN numbers)
-  const [connectedPersonal, virtualPersonal, f2fPersonal, freshPersonal, dealsPersonal] = await Promise.all([
-    prisma.callLog.count({ where: { userId: me.id, lead: { deletedAt: null }, startedAt: { gte: sqlFrom, lt: sqlTo }, outcome: CallOutcome.CONNECTED } }),
+  // Personal KPI metrics — always userId: me.id (agents AND admin/manager see their OWN numbers).
+  // CALL counters are widened to include Buyer-Data work (read-time aggregation):
+  //   • connected calls — CallLog counts LEAD connected calls (buyer rows EXCLUDED
+  //     via buyerId:null); buyer connected calls come from the BuyerActivity ledger
+  //     (buyerConnectedCallsCount) so a telephony buyer call — which writes BOTH a
+  //     CallLog and a BuyerActivity — is only counted once. See dashboardWidgets.ts.
+  //   • virtual meetings / site-visits(F2F) / fresh clients / deals are lead-only
+  //     concepts with NO BuyerActivity equivalent (BuyerActivity has no
+  //     meeting/site-visit/cold-to-lead/booking type), so they are unchanged.
+  const [connectedLeadCalls, virtualPersonal, f2fPersonal, freshPersonal, dealsPersonal, connectedBuyerCalls, buyerCallsTotal] = await Promise.all([
+    prisma.callLog.count({ where: { userId: me.id, buyerId: null, lead: { deletedAt: null }, startedAt: { gte: sqlFrom, lt: sqlTo }, outcome: CallOutcome.CONNECTED } }),
     prisma.activity.count({ where: { userId: me.id, lead: { deletedAt: null }, type: ActivityType.VIRTUAL_MEETING, scheduledAt: { gte: sqlFrom, lt: sqlTo }, status: { not: ActivityStatus.CANCELLED } } }),
     prisma.activity.count({ where: { userId: me.id, lead: { deletedAt: null }, type: { in: [ActivityType.SITE_VISIT, ActivityType.HOME_VISIT, ActivityType.OFFICE_MEETING, ActivityType.EXPO_MEETING] }, scheduledAt: { gte: sqlFrom, lt: sqlTo }, status: { not: ActivityStatus.CANCELLED } } }),
     prisma.activity.count({ where: { userId: me.id, lead: { deletedAt: null }, type: ActivityType.COLD_TO_LEAD, completedAt: { gte: sqlFrom, lt: sqlTo } } }),
     prisma.lead.count({ where: { ownerId: me.id, deletedAt: null, currentStatus: { in: BOOKED_STATUSES }, updatedAt: { gte: sqlFrom, lt: sqlTo } } }),
+    // Buyer-Data CALL work by this user, sourced from the BuyerActivity ledger only.
+    buyerConnectedCallsCount(prisma, me.id, sqlFrom, sqlTo),
+    buyerCallsCount(prisma, me.id, sqlFrom, sqlTo),
   ]);
+  // Union the lead-based + buyer-based call figures so Buyer-Data calls reflect on
+  // the dashboard without double-counting (buyer side is disjoint — buyerId:null on
+  // both CallLog queries, buyer side from BuyerActivity).
+  const connectedPersonal = connectedLeadCalls + connectedBuyerCalls;
+  const totalCallsPersonal = todayCallsCount + buyerCallsTotal;
 
   // ── Per-agent morning briefing (also shown to admins) ──
   // What landed since yesterday + what's on the agent's plate today. Mirrors
@@ -792,7 +815,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
               📊 Daily Performance · {periodSection}
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 lg:gap-3">
-              <KpiTarget label="Total Calls" achieved={todayCallsCount} target={targets.calls} />
+              <KpiTarget label="Total Calls" achieved={totalCallsPersonal} target={targets.calls} />
               <KpiTarget label="Connected Calls" achieved={connectedPersonal} target={targets.connected} />
               <KpiTarget label="Virtual Meetings" achieved={virtualPersonal} target={targets.virtual} />
               <KpiTarget label="Site Visits (F2F)" achieved={f2fPersonal} target={targets.f2f} />
@@ -836,7 +859,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
           {/* 🎉 Party poppers — personal, hidden for lead-ops admins */}
           {!isLeadOps && (() => {
             const achievedTargets = [
-              todayCallsCount >= targets.calls      && "calls",
+              totalCallsPersonal >= targets.calls   && "calls",
               connectedPersonal >= targets.connected && "connected",
               virtualPersonal  >= targets.virtual   && "virtual",
               f2fPersonal      >= targets.f2f       && "f2f",

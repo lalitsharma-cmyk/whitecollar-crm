@@ -1,7 +1,8 @@
 "use client";
 import Link from "next/link";
 import { useState, useMemo, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
+import { useScrollRestore } from "@/hooks/useScrollRestore";
 import BuyerDistributionPanel from "@/components/BuyerDistributionPanel";
 import ColumnHeaderFilter, {
   type ColKind,
@@ -153,6 +154,9 @@ const statusChip = (s: string) => {
 export default function BuyerListClient(props: Props) {
   const { rows, projects, propertyTypes, nationalities, owners, agents, isAdmin, isAdminOrMgr, viewerId, poolAvailable, convertedCount, summary } = props;
   const router = useRouter();
+  const pathname = usePathname();
+  // Restore scroll position on Back (open a buyer → Back returns to the same row).
+  useScrollRestore();
 
   const [tab, setTab] = useState<Tab>("active");
   const [q, setQ] = useState("");
@@ -183,11 +187,50 @@ export default function BuyerListClient(props: Props) {
   const VKEY = `wcr_buyer_views_${viewerId}`;
   const [views, setViews] = useState<SavedView[]>([]);
   const [hydrated, setHydrated] = useState(false);
+  // Sticky live-filter state — persisted so the current tab/filters/sort/page/
+  // column-filters SURVIVE opening a buyer and pressing Back (parity with the
+  // URL-restore /leads already gets). Keyed by BOTH viewer AND pathname so the
+  // Dubai (/buyer-data) and India (/india-buyer-data) lists each keep their own.
+  const FKEY = `wcr_buyer_filters_${viewerId}_${pathname}`;
   useEffect(() => {
     try { const raw = localStorage.getItem(VKEY); if (raw) setViews(JSON.parse(raw)); } catch { /* ignore */ }
+    // Restore the last live filter/sort/page snapshot for THIS list.
+    try {
+      const raw = localStorage.getItem(FKEY);
+      if (raw) {
+        const s = JSON.parse(raw) as Partial<SavedView> & { page?: number };
+        if (s.tab) setTab(s.tab);
+        if (typeof s.q === "string") setQ(s.q);
+        if (typeof s.project === "string") setProject(s.project);
+        if (typeof s.ptype === "string") setPtype(s.ptype);
+        if (typeof s.nat === "string") setNat(s.nat);
+        if (typeof s.region === "string") setRegion(s.region);
+        if (typeof s.ownerId === "string") setOwnerId(s.ownerId);
+        if (s.repeatOnly === "" || s.repeatOnly === "yes" || s.repeatOnly === "no") setRepeatOnly(s.repeatOnly);
+        if (s.classFilter === "" || s.classFilter === "First-Time" || s.classFilter === "Investor" || s.classFilter === "Whale") setClassFilter(s.classFilter);
+        if (s.sortKey) setSortKey(s.sortKey);
+        if (s.sortDir === "asc" || s.sortDir === "desc") setSortDir(s.sortDir);
+        if (s.colFilters) setColFilters(deserCol(s.colFilters));
+        if (typeof s.page === "number" && s.page >= 0) setPage(s.page);
+      }
+    } catch { /* ignore corrupt storage */ }
     setHydrated(true);
-  }, [VKEY]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [VKEY, FKEY]);
   const persistViews = (v: SavedView[]) => { setViews(v); try { localStorage.setItem(VKEY, JSON.stringify(v)); } catch { /* ignore */ } };
+
+  // Persist the live filter/sort/page snapshot on every change (post-hydration),
+  // so a subsequent Back re-hydrates the exact same view. Purely additive — the
+  // filters/query logic is untouched; only the state is saved & restored.
+  useEffect(() => {
+    if (!hydrated) return;
+    try {
+      localStorage.setItem(FKEY, JSON.stringify({
+        tab, q, project, ptype, nat, region, ownerId, repeatOnly, classFilter,
+        sortKey, sortDir, colFilters: serCol(colFilters), page,
+      }));
+    } catch { /* quota / private mode — non-fatal */ }
+  }, [tab, q, project, ptype, nat, region, ownerId, repeatOnly, classFilter, sortKey, sortDir, colFilters, page, hydrated, FKEY]);
 
   const resetAll = () => { setTab("active"); setQ(""); setProject(""); setPtype(""); setNat(""); setRegion(""); setOwnerId(""); setRepeatOnly(""); setClassFilter(""); setSortKey("txnDate"); setSortDir("desc"); setColFilters({}); setPage(0); };
 

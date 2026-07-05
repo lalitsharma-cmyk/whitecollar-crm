@@ -9,6 +9,7 @@ import { formatLeadName } from "@/lib/leadName";
 import { parseBudget } from "@/lib/budgetParse";
 import { isWebsiteSource, isEventSource } from "@/lib/lead-sources";
 import ColumnHeaderFilter, { type ColFilterState } from "@/components/ColumnHeaderFilter";
+import { useScrollRestore } from "@/hooks/useScrollRestore";
 
 // Cleaned-up Source list — mirrors ALLOWED_SOURCES in LeadSourceMediumFields.tsx
 // (single "Website"; no Call/WhatsApp/Email/Event; WCR Event kept). The label
@@ -194,6 +195,8 @@ const deserFilters = (o: Record<string, string[]>) => Object.fromEntries(Object.
 
 export default function MasterDataRecordsTable({ rows, agents, projects, isSuperAdmin, viewerId }: Props) {
   const router = useRouter();
+  // Restore scroll position on Back (open a record → Back returns to the same row).
+  useScrollRestore();
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
@@ -228,6 +231,9 @@ export default function MasterDataRecordsTable({ rows, agents, projects, isSuper
         if (s.sort) setSort(s.sort);
         if (s.filters) setFilters(deserFilters(s.filters));
         if (typeof s.activeView === "string") setActiveView(s.activeView);
+        // Restore the page number too, so Back returns to the same page of the list
+        // (the filters/sort/view already persisted here; pageNo was the missing piece).
+        if (typeof s.pageNo === "number" && s.pageNo >= 0) setPageNo(s.pageNo);
       }
       const v = JSON.parse(localStorage.getItem(VKEY) || "null");
       if (Array.isArray(v)) setViews(v);
@@ -245,9 +251,9 @@ export default function MasterDataRecordsTable({ rows, agents, projects, isSuper
   useEffect(() => {
     if (!hydrated) return;
     try {
-      localStorage.setItem(LSKEY, JSON.stringify({ hidden: [...hidden], frozen, sort, filters: serFilters(filters), activeView }));
+      localStorage.setItem(LSKEY, JSON.stringify({ hidden: [...hidden], frozen, sort, filters: serFilters(filters), activeView, pageNo }));
     } catch { /* quota / private mode — non-fatal */ }
-  }, [hidden, frozen, sort, filters, activeView, hydrated, LSKEY]);
+  }, [hidden, frozen, sort, filters, activeView, pageNo, hydrated, LSKEY]);
 
   const persistViews = (next: SavedView[]) => { setViews(next); try { localStorage.setItem(VKEY, JSON.stringify(next)); } catch { /**/ } };
 
