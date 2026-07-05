@@ -141,6 +141,12 @@ const EDITABLE_FIELDS: [string, string][] = [
   ["transactionValue", "Transaction Value"], ["remarks", "Remarks"],
 ];
 
+// followupMs → YYYY-MM-DD for the inline date input, in IST so the value shown in
+// the picker matches the followupDisplay cell (the buyer route stores follow-ups at
+// noon IST). 0 / falsy → "" (empty input). Uses en-CA which formats as YYYY-MM-DD.
+const followupInputValue = (ms: number): string =>
+  ms > 0 ? new Date(ms).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" }) : "";
+
 const statusChip = (s: string) => {
   switch (s) {
     case "ADMIN_POOL": return "bg-blue-100 text-blue-800 border-blue-200 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-700";
@@ -183,8 +189,48 @@ export default function BuyerListClient(props: Props) {
   const [editValue, setEditValue] = useState("");
   const [showDistribute, setShowDistribute] = useState(false);
 
-  // Saved views (per viewer, localStorage — mirrors Master Data).
-  const VKEY = `wcr_buyer_views_${viewerId}`;
+  // ── Per-row inline edit (Status + Follow-up) — parity with Leads/Revival ─────
+  // Buyers were bulk-only; this adds save-on-change inline edits for the SAME two
+  // fields the buyer /update PATCH route already exposes (businessStatus R4 +
+  // followupDate R5), reusing that route + field names verbatim. Owner/assigned
+  // editing is intentionally NOT added here (buyer pool semantics — auto-return
+  // at 5 — live on the assign/return endpoints, not this generic editor).
+  //
+  // canEditRow mirrors the route's canTouchBuyer gate WITHOUT touching pool/org
+  // logic: ADMIN → any row; AGENT → own ASSIGNED row. (A MANAGER's org-subtree
+  // arm needs a server query, so we only surface the control on rows the manager
+  // personally owns — a strict subset the route always allows — never a control
+  // the route would 403.) The route re-enforces canTouchBuyer server-side.
+  const canEditRow = (r: BuyerRow) => isAdmin || (r.ownerId === viewerId && r.poolStatus === "ASSIGNED");
+  const [rowBusy, setRowBusy] = useState<string | null>(null); // `${id}:${field}` mid-save
+
+  async function saveRowField(id: string, field: "businessStatus" | "followupDate", value: string | null) {
+    const key = `${id}:${field}`;
+    if (rowBusy === key) return;
+    setRowBusy(key); setBulkMsg(null);
+    try {
+      const r = await fetch(`/api/buyer-data/${id}/update`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ [field]: value === "" ? null : value }),
+      });
+      if (!r.ok) {
+        const j = await r.json().catch(() => ({}));
+        setBulkMsg(`⚠ ${j.error ?? `Save failed (${r.status})`}`);
+        return;
+      }
+      router.refresh(); // optimistic row-refresh (mirrors LeadsListClient)
+    } catch {
+      setBulkMsg("⚠ Network error saving edit.");
+    } finally { setRowBusy(null); }
+  }
+
+  // Saved views (per viewer, localStorage — mirrors Master Data). Keyed by BOTH
+  // viewer AND pathname (like FKEY below) so the Dubai (/buyer-data) and India
+  // (/india-buyer-data) lists each keep their OWN saved views instead of sharing
+  // one bucket. NOTE: changing the key means saved views stored under the old
+  // pathname-less key won't appear under the new key (acceptable one-time reset).
+  const VKEY = `wcr_buyer_views_${viewerId}_${pathname}`;
   const [views, setViews] = useState<SavedView[]>([]);
   const [hydrated, setHydrated] = useState(false);
   // Sticky live-filter state — persisted so the current tab/filters/sort/page/
@@ -656,8 +702,37 @@ export default function BuyerListClient(props: Props) {
                         <span title={`${BUYER_CLASS_META[r.buyerClass].label} buyer`} className={`ml-1.5 inline-flex items-center gap-0.5 rounded-full border px-1.5 py-0.5 text-[10px] font-semibold align-middle ${BUYER_CLASS_META[r.buyerClass].tone}`}>{BUYER_CLASS_META[r.buyerClass].emoji} {BUYER_CLASS_META[r.buyerClass].label}</span>
                       )}
                     </td>
-                    <td className="px-3 py-2 text-gray-700 dark:text-slate-300 whitespace-nowrap">{r.businessStatus || "—"}</td>
-                    <td className="px-3 py-2 text-gray-600 dark:text-slate-400 whitespace-nowrap">{r.followupDisplay || "—"}</td>
+                    {/* Status (businessStatus, R4) — inline-editable on save-on-blur
+                        for anyone the route allows (canEditRow); free-text to match the
+                        imported value + the route's string field. Others see read-only. */}
+                    <td className="px-3 py-2 text-gray-700 dark:text-slate-300 whitespace-nowrap" onClick={e => e.stopPropagation()}>
+                      {canEditRow(r) ? (
+                        <input
+                          type="text"
+                          defaultValue={r.businessStatus}
+                          disabled={rowBusy === `${r.id}:businessStatus`}
+                          onBlur={e => { const v = e.target.value.trim(); if (v !== (r.businessStatus ?? "")) saveRowField(r.id, "businessStatus", v || null); }}
+                          onKeyDown={e => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); if (e.key === "Escape") { (e.target as HTMLInputElement).value = r.businessStatus; (e.target as HTMLInputElement).blur(); } }}
+                          placeholder="—"
+                          title="Status — click to edit"
+                          className="w-28 border border-transparent hover:border-gray-200 dark:hover:border-slate-600 focus:border-[#c9a24b] rounded px-1 py-0.5 text-sm bg-transparent focus:bg-white dark:focus:bg-slate-800 focus:outline-none"
+                        />
+                      ) : (r.businessStatus || "—")}
+                    </td>
+                    {/* Follow-up (followupDate, R5) — inline date, save-on-change (parity
+                        with the Leads list follow-up cell). Read-only for others. */}
+                    <td className="px-3 py-2 text-gray-600 dark:text-slate-400 whitespace-nowrap" onClick={e => e.stopPropagation()}>
+                      {canEditRow(r) ? (
+                        <input
+                          type="date"
+                          defaultValue={followupInputValue(r.followupMs)}
+                          disabled={rowBusy === `${r.id}:followupDate`}
+                          onChange={e => saveRowField(r.id, "followupDate", e.target.value || null)}
+                          title="Follow-up date — pick to set, clear to remove"
+                          className="border border-transparent hover:border-gray-200 dark:hover:border-slate-600 focus:border-[#c9a24b] rounded px-1 py-0.5 text-xs bg-transparent focus:bg-white dark:focus:bg-slate-800 focus:outline-none"
+                        />
+                      ) : (r.followupDisplay || "—")}
+                    </td>
                     <td className="px-3 py-2"><span className={`inline-flex rounded-full border px-2 py-0.5 text-[10px] font-semibold ${statusChip(r.poolStatus)}`}>{r.poolStatusLabel}</span></td>
                     <td className="px-3 py-2 text-gray-700 dark:text-slate-300">{r.project || "—"}</td>
                     <td className="px-3 py-2 text-gray-600 dark:text-slate-400 whitespace-nowrap">{r.towerUnit || "—"}</td>
@@ -702,9 +777,38 @@ export default function BuyerListClient(props: Props) {
                     {r.repeat && <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 text-amber-800 border border-amber-200 px-2 py-0.5 text-[11px] font-semibold dark:bg-amber-900/30 dark:text-amber-300 dark:border-amber-700">🔁 {r.propertiesOwned}</span>}
                   </div>
                 </div>
+                {/* Inline-editable Status + Follow-up — pulled OUT of the tap-to-open
+                    Link so the inputs work on touch (parity with the desktop cells).
+                    Only when the route would allow the edit (canEditRow); otherwise the
+                    two values render read-only inside the details Link below. */}
+                {canEditRow(r) && (
+                  <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-xs" onClick={e => e.stopPropagation()}>
+                    <div className="flex flex-col gap-0.5">
+                      <span className="text-gray-400">Status</span>
+                      <input
+                        type="text"
+                        defaultValue={r.businessStatus}
+                        disabled={rowBusy === `${r.id}:businessStatus`}
+                        onBlur={e => { const v = e.target.value.trim(); if (v !== (r.businessStatus ?? "")) saveRowField(r.id, "businessStatus", v || null); }}
+                        placeholder="—"
+                        className="border border-gray-200 dark:border-slate-600 rounded px-1.5 py-1 text-base bg-white dark:bg-slate-800 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-[#c9a24b]"
+                      />
+                    </div>
+                    <div className="flex flex-col gap-0.5">
+                      <span className="text-gray-400">Follow-up</span>
+                      <input
+                        type="date"
+                        defaultValue={followupInputValue(r.followupMs)}
+                        disabled={rowBusy === `${r.id}:followupDate`}
+                        onChange={e => saveRowField(r.id, "followupDate", e.target.value || null)}
+                        className="border border-gray-200 dark:border-slate-600 rounded px-1.5 py-1 text-base bg-white dark:bg-slate-800 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-[#c9a24b]"
+                      />
+                    </div>
+                  </div>
+                )}
                 <Link href={r.href} className="block mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-xs text-gray-600 dark:text-slate-400">
-                  <div><span className="text-gray-400">Status:</span> <span className="font-medium text-gray-800 dark:text-slate-200">{r.businessStatus || "—"}</span></div>
-                  <div><span className="text-gray-400">Follow-up:</span> {r.followupDisplay || "—"}</div>
+                  {!canEditRow(r) && <div><span className="text-gray-400">Status:</span> <span className="font-medium text-gray-800 dark:text-slate-200">{r.businessStatus || "—"}</span></div>}
+                  {!canEditRow(r) && <div><span className="text-gray-400">Follow-up:</span> {r.followupDisplay || "—"}</div>}
                   <div><span className="text-gray-400">Value:</span> <span className="font-medium text-gray-800 dark:text-slate-200">{r.txnValueDisplay}</span></div>
                   <div><span className="text-gray-400">Date:</span> {r.txnDate || "—"}</div>
                   <div><span className="text-gray-400">Type:</span> {r.propertyType || "—"}</div>

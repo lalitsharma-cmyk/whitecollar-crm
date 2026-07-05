@@ -16,6 +16,9 @@ import { canTouchBuyer, canAccessBuyerMarket, isBuyerAssignableForMarket, teamFo
 import { getReturningClientCardEnabled } from "@/lib/settings";
 import { getReturningClientView } from "@/lib/customer/returningClient";
 import ReturningClientCard from "@/components/ReturningClientCard";
+import PreviousHistoryCard from "@/components/PreviousHistoryCard";
+import { getCustomerHistory } from "@/lib/customerHistory";
+import { leadScopeWhere } from "@/lib/leadScope";
 import {
   parseJsonArray,
   rollupForRecords,
@@ -156,6 +159,20 @@ export default async function BuyerDetail({ params }: { params: Promise<{ id: st
       })
     : null;
 
+  // Always-on "Previous History Found" card — PARITY with Leads/Revival, which
+  // ALWAYS render one (the returning-client card above is flag-gated → default OFF,
+  // so buyers otherwise saw NO prior-history card). getCustomerHistory scans the
+  // scoped LEAD pool for THIS buyer's primary phone/email and returns the same
+  // person's earlier enquiries (Leads / Revival / Master Data / Closed), or null.
+  // scope = leadScopeWhere(me) makes it confidentiality-safe (an agent only sees
+  // leads they may see). No customerId is passed: a BuyerRecord has none, so the
+  // customerId arm is unused here.
+  // PARKED (needs approval): unified buyer↔buyer + confirmed-link history requires a
+  // BuyerRecord.customerId field to join buyer siblings under one canonical customer;
+  // that's a schema addition, out of scope for this read-side pass.
+  const scope = await leadScopeWhere(me);
+  const customerHistory = await getCustomerHistory(primaryPhone, primaryEmail, undefined, scope).catch(() => null);
+
   // poolStatus → status-chip colour, styled like the Lead status chip.
   const poolLabel = rec.poolStatus.replace(/_/g, " ");
   const statusChipCls =
@@ -205,6 +222,10 @@ export default async function BuyerDetail({ params }: { params: Promise<{ id: st
           {/* Unified Lead Detail (Phase E / J5) — cross-module Returning Client card:
               this buyer's other enquiries across modules. Renders only on a match. */}
           {returningClient && <ReturningClientCard view={returningClient} />}
+          {/* Previous History Found — ALWAYS-ON (parity with Leads/Revival): this
+              buyer's earlier LEAD enquiries for the same phone/email, scope-safe.
+              No currentId — the buyer isn't one of the matched leads. */}
+          {customerHistory && <PreviousHistoryCard history={customerHistory} />}
           {/* Header — name + status chip + action button row (always visible, no
               data-lead-section so the mobile tabs never hide it; matches Lead view). */}
           <div className={CARD}>

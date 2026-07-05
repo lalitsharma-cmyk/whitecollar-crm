@@ -269,8 +269,11 @@ export default async function ColdDataDetailPage({ params, searchParams }: { par
       </div>
 
       {/* ── Imported sheet columns (verbatim) — Admin/Super-Admin/Lalit only ── */}
+      {/* Parity with leads/[id]: pass leadId + editable so admins can inline-edit the
+          imported values. Revival rows ARE Leads, so ImportedFieldEdit's shared MERGE
+          route (/api/leads/[id]/update) applies unchanged — no new route/field. */}
       {me.role === "ADMIN" && (
-        <ImportedFieldsCard customFields={lead.customFields} rawImport={lead.rawImport} />
+        <ImportedFieldsCard customFields={lead.customFields} rawImport={lead.rawImport} leadId={lead.id} editable />
       )}
 
       {/* ── Change History — field-level audit of Cold Data Bank edits (who · old→new ·
