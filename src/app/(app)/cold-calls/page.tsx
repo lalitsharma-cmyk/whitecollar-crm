@@ -10,6 +10,7 @@ import { projectWhereForUser } from "@/lib/propertyScope";
 import { PROPERTY_TYPES } from "@/lib/propertyType";
 import { displayBudget } from "@/lib/budgetParse";
 import { formatLeadName } from "@/lib/leadName";
+import { effectiveSource } from "@/lib/sourceLabel";
 import { contactActivityByLeadToday } from "@/lib/followupGate";
 import { CONTACT_ACTIVITY_TYPES } from "@/lib/dashboardWidgets";
 import { startOfDay, startOfWeek, formatDistanceToNow } from "date-fns";
@@ -66,13 +67,10 @@ const srcChip: Record<LeadSource, string> = {
   REFERRAL: "src", INBOUND_CALL: "src-call", FACEBOOK_ADS: "src-web", GOOGLE_ADS: "src-csv",
   PORTAL_99ACRES: "src", PORTAL_MAGICBRICKS: "src", PORTAL_HOUSING: "src", OTHER: "src",
 };
-const srcLabel: Record<LeadSource, string> = {
-  WEBSITE: "Website", WCR_WEBSITE: "Website", WCR_EVENT: "WCR Event", LANDING_PAGE: "Landing Page",
-  WHATSAPP: "WhatsApp", CSV_IMPORT: "CSV Import", EVENT: "Event",
-  REFERRAL: "Referral", INBOUND_CALL: "Call", FACEBOOK_ADS: "Facebook Ads",
-  GOOGLE_ADS: "Google Ads", PORTAL_99ACRES: "Portal 99acres", PORTAL_MAGICBRICKS: "Portal MagicBricks",
-  PORTAL_HOUSING: "Portal Housing", OTHER: "Other",
-};
+// Source DISPLAY label is resolved by effectiveSource() at row-build time (prefers
+// verbatim sourceRaw, the SAME field the ?source= filter matches). The enum-keyed
+// label map was removed — it collapsed real sourceRaw values (Townscript) to
+// "Other". srcChip above stays enum-keyed (cosmetic chip colour only).
 
 export default async function ColdDataPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const me = await requireUser();
@@ -363,7 +361,11 @@ export default async function ColdDataPage({ searchParams }: { searchParams: Pro
       statusName: l.currentStatus ?? "",
       currentStatus: l.currentStatus ?? null,
       srcChip: srcChip[l.source],
-      srcLabel: srcLabel[l.source],
+      // Same normalized field the Source filter matches (verbatim sourceRaw, e.g.
+      // "Townscript"), enum label only as a legacy fallback — so the Source column
+      // and the ?source= filter agree here exactly as on /leads. (Was the enum-
+      // keyed srcLabel[l.source], which showed "Other" for real Townscript rows.)
+      srcLabel: effectiveSource(l.sourceRaw, l.source),
       statusChip: statusColor(l.currentStatus),
       aiScore: l.aiScore,
       aiScoreValue: l.aiScoreValue,

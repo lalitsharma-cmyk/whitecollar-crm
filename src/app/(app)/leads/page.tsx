@@ -22,6 +22,7 @@ import { PROPERTY_TYPES } from "@/lib/propertyType";
 import { displayBudget } from "@/lib/budgetParse";
 import { getAvailableMediums } from "@/lib/mediumManager";
 import { formatLeadName } from "@/lib/leadName";
+import { effectiveSource } from "@/lib/sourceLabel";
 import { statusColor, BUDGET_PRESETS, SUPPRESSED_STATUSES, ACTIVE_PURSUIT_STATUSES, CLOSING_STATUSES, TERMINAL_STATUSES, CLOSED_OUTCOME_STATUSES, LOST_STATUSES, leadSortTier, compareStatusDisplay } from "@/lib/lead-statuses";
 
 export const dynamic = "force-dynamic";
@@ -34,13 +35,12 @@ const srcChip: Record<LeadSource, string> = {
   REFERRAL: "src", INBOUND_CALL: "src-call", FACEBOOK_ADS: "src-web", GOOGLE_ADS: "src-csv",
   PORTAL_99ACRES: "src", PORTAL_MAGICBRICKS: "src", PORTAL_HOUSING: "src", OTHER: "src",
 };
-const srcLabel: Record<LeadSource, string> = {
-  WEBSITE: "Website", WCR_WEBSITE: "Website", WCR_EVENT: "WCR Event", LANDING_PAGE: "Landing Page",
-  WHATSAPP: "WhatsApp", CSV_IMPORT: "CSV Import", EVENT: "Event",
-  REFERRAL: "Referral", INBOUND_CALL: "Call", FACEBOOK_ADS: "Facebook Ads",
-  GOOGLE_ADS: "Google Ads", PORTAL_99ACRES: "Portal 99acres", PORTAL_MAGICBRICKS: "Portal MagicBricks",
-  PORTAL_HOUSING: "Portal Housing", OTHER: "Other",
-};
+// Source DISPLAY label now comes from effectiveSource() (prefers verbatim
+// sourceRaw, e.g. "Townscript"), the SAME field the ?source= filter matches — so
+// the Source column and the Source filter agree. The old enum-keyed srcLabel map
+// collapsed real sourceRaw values (Townscript/Eventbrite) whose enum was OTHER to
+// "Other", making a row filterable as Townscript display as Other. srcChip below
+// stays enum-keyed (it drives only the cosmetic chip colour, not the label).
 // Status colors now come from statusColor() in lead-statuses.ts — no stage mapping needed.
 
 export default async function LeadsPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
@@ -1035,7 +1035,14 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
             statusName: l.currentStatus ?? "",
             currentStatus: l.currentStatus ?? null,
             srcChip: srcChip[l.source],
-            srcLabel: srcLabel[l.source],
+            // DISPLAY the SAME normalized field the Source filter matches on
+            // (verbatim sourceRaw, e.g. "Townscript"), falling back to the enum
+            // label only for legacy rows with no sourceRaw. Previously this used the
+            // enum-keyed srcLabel[l.source], so a Townscript lead stored as
+            // source=OTHER showed "Other" while being filterable as "Townscript"
+            // (the ?source= where matches sourceRaw). effectiveSource() is the one
+            // canonical resolver reports/exports already use — never a raw token.
+            srcLabel: effectiveSource(l.sourceRaw, l.source),
             statusChip: statusColor(l.currentStatus),
             aiScore: l.aiScore,
             aiScoreValue: l.aiScoreValue,

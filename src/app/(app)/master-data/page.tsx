@@ -19,7 +19,7 @@ import { canImportData } from "@/lib/exportPerms";
 import LeadFilters from "@/components/LeadFilters";
 import { leadFilterWhere } from "@/lib/leadFilterWhere";
 import { COLD_ORIGINS } from "@/lib/leadScope";
-import { sourceLabel } from "@/lib/lead-sources";
+import { effectiveSource } from "@/lib/sourceLabel";
 import { PROPERTY_TYPES } from "@/lib/propertyType";
 import { getAvailableMediums } from "@/lib/mediumManager";
 import { displayBudget } from "@/lib/budgetParse";
@@ -64,9 +64,12 @@ function catWhere(cat: Cat): Prisma.LeadWhereInput {
   }
 }
 
-// Source labels come from the ONE canonical map (src/lib/lead-sources.ts) so
-// WCR_EVENT / WCR_WEBSITE / LANDING_PAGE render as friendly text here exactly as
-// everywhere else — the old page-local map silently dropped those three.
+// The Source column label is resolved per-row by effectiveSource() (verbatim
+// sourceRaw wins, e.g. "Townscript"; enum label as legacy fallback) — the SAME
+// value the client-side Source column filter reads (valueOf → sourceLabel), so
+// display == filter. The raw enum is still carried on the row (`source`) for the
+// isWebsiteSource/isEventSource family tests (section ordering + Website/Event
+// presets), which must key off the enum, not the free-text label.
 const fmtDate = (d: Date | null) =>
   d ? new Date(d).toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short", year: "numeric" }) : "—";
 const fmtTime = (d: Date | null) =>
@@ -205,7 +208,14 @@ export default async function MasterDataPage({ searchParams }: { searchParams: P
       project: l.sourceDetail ?? "—",
       propertyType: l.propertyType ?? "",
       source: l.source,
-      sourceLabel: sourceLabel(l.source),
+      // DISPLAY (and the Source column filter, which reads this same value via
+      // valueOf → sourceLabel) use effectiveSource: verbatim sourceRaw wins (e.g.
+      // "Townscript"), enum label only for legacy rows with no sourceRaw. Was
+      // sourceLabel(l.source) — the enum label — so a Townscript lead stored as
+      // source=OTHER showed "Other" while filterable as "Townscript". The raw enum
+      // is still carried on `source` above for the isWebsite/isEventSource family
+      // tests (section ordering + Website/Event presets).
+      sourceLabel: effectiveSource(l.sourceRaw, l.source),
       sourceRaw: l.sourceRaw ?? "",
       medium: (l as any).medium ?? "",
       mediumOther: (l as any).mediumOther ?? null,

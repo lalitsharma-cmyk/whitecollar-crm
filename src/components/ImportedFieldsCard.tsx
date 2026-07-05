@@ -13,7 +13,15 @@
 // collapsible "Original Imported Row" so the exact imported value of every field
 // is always recoverable, not just the unmapped extras. This block is NEVER
 // editable — it is the verbatim import audit.
+//
+// DISPLAY-ONLY date fix (2026-07-06): Excel/Sheets export date columns as serial
+// numbers (e.g. "FOLLOWUP DATE: 46198"). formatImportedFieldValue renders those
+// as readable "DD MMM YYYY" in the human-facing Imported Fields block ONLY. The
+// raw stored value is passed to the inline editor unchanged (so a save writes
+// back the original, not the formatted string), and the Original Imported Row
+// audit block below stays verbatim — never date-formatted.
 import ImportedFieldEdit from "./ImportedFieldEdit";
+import { formatImportedFieldValue } from "@/lib/importedFieldFormat";
 
 export default function ImportedFieldsCard({ customFields, rawImport, leadId, editable }: { customFields: unknown; rawImport?: unknown; leadId?: string; editable?: boolean }) {
   const entries =
@@ -35,9 +43,11 @@ export default function ImportedFieldsCard({ customFields, rawImport, leadId, ed
               <div key={k} className="flex flex-col min-w-0">
                 <span className="text-[10px] uppercase tracking-wide text-gray-400 truncate" title={k}>{k}</span>
                 {editable && leadId ? (
-                  <ImportedFieldEdit leadId={leadId} fieldKey={k} value={String(v)} />
+                  // value = raw stored string (what a save writes back); displayValue =
+                  // human-readable (Excel date-serials → "DD MMM YYYY"), shown when idle.
+                  <ImportedFieldEdit leadId={leadId} fieldKey={k} value={String(v)} displayValue={formatImportedFieldValue(k, v)} />
                 ) : (
-                  <span className="text-gray-800 dark:text-slate-200 break-words">{String(v)}</span>
+                  <span className="text-gray-800 dark:text-slate-200 break-words">{formatImportedFieldValue(k, v)}</span>
                 )}
               </div>
             ))}

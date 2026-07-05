@@ -5030,12 +5030,16 @@ const checks: Check[] = [
       assert(["WEBSITE", "WCR_WEBSITE", "LANDING_PAGE"].every(isWebsiteSource), "isWebsiteSource must cover Website/WCR Website/Landing Page");
       assert(["WCR_EVENT", "EVENT"].every(isEventSource), "isEventSource must cover Event/WCR Event");
       assert(!isWebsiteSource("REFERRAL") && !isEventSource("WEBSITE"), "family predicates must not over-match");
-      // SOURCE: Master Data must carry the raw enum and test the family, NOT compare a
-      // display label by string (the regression this prevents).
+      // SOURCE: Master Data must carry the raw enum (for family tests) and DISPLAY the
+      // same normalized field the Source column filter reads — the verbatim sourceRaw
+      // via effectiveSource(), NOT the enum-only label. The old enum-keyed label
+      // collapsed real sourceRaw values (e.g. "Townscript", whose enum is OTHER) to
+      // "Other", so a row filterable as Townscript displayed as Other (filter≠display).
+      // Still must NOT compare a display label by string (the other regression here).
       const page = fs.readFileSync("src/app/(app)/master-data/page.tsx", "utf8");
       const tbl = fs.readFileSync("src/components/MasterDataRecordsTable.tsx", "utf8");
-      assert(/sourceLabel:\s*sourceLabel\(/.test(page), "master-data page must use canonical sourceLabel()");
-      assert(/source:\s*l\.source/.test(page), "master-data page must carry the raw enum source on each row");
+      assert(/sourceLabel:\s*effectiveSource\(/.test(page), "master-data page must DISPLAY the Source via effectiveSource(sourceRaw, source) so the column matches the sourceRaw-based filter (real values like Townscript must not collapse to Other)");
+      assert(/source:\s*l\.source/.test(page), "master-data page must carry the raw enum source on each row (isWebsiteSource/isEventSource family tests)");
       assert(/isWebsiteSource\(r\.source\)/.test(tbl) && /isEventSource\(r\.source\)/.test(tbl), "table presets/sectionRank must test the source family via r.source");
       assert(!/sourceLabel === "Website"|sourceLabel === "Event"/.test(tbl), "table must not compare the display label by string anymore");
       // DATA: no LIVE lead carries a source that renders as an unlabeled ALL_CAPS token.

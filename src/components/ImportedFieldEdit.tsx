@@ -15,10 +15,13 @@ import { useRouter } from "next/navigation";
 interface Props {
   leadId: string;
   fieldKey: string;     // the ORIGINAL imported header, used verbatim as the JSON key
-  value: string;
+  value: string;        // the RAW stored value — what the editor starts from and saves back
+  displayValue?: string; // optional human-readable rendering (e.g. Excel date-serial → "DD MMM YYYY")
+                         // shown when NOT editing. Defaults to `value` when omitted, so a save
+                         // always PATCHes the raw value, never the formatted display string.
 }
 
-export default function ImportedFieldEdit({ leadId, fieldKey, value }: Props) {
+export default function ImportedFieldEdit({ leadId, fieldKey, value, displayValue }: Props) {
   const router = useRouter();
   const [editing, setEditing] = useState(false);
   const [v, setV] = useState(value);
@@ -56,13 +59,15 @@ export default function ImportedFieldEdit({ leadId, fieldKey, value }: Props) {
   }
 
   if (!editing) {
+    // Show the readable display (date-serials formatted) but edit/save the raw value.
+    const shown = displayValue ?? value;
     return (
       <span
         onClick={() => setEditing(true)}
         className="cursor-pointer hover:bg-amber-50 dark:hover:bg-slate-700 rounded px-1 -mx-1 text-gray-800 dark:text-slate-200 break-words inline-block"
         title="Click to edit imported value"
       >
-        {value === "" ? <span className="text-gray-400 italic">Add value</span> : value}
+        {value === "" ? <span className="text-gray-400 italic">Add value</span> : shown}
       </span>
     );
   }
