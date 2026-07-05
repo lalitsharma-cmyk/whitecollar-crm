@@ -20,6 +20,8 @@ import QuickNoteCard from "@/components/QuickNoteCard";
 import StickyNoteWidget from "@/components/StickyNoteWidget";
 import DuplicateIntentBanner from "@/components/DuplicateIntentBanner";
 import { getDuplicateIntent } from "@/lib/duplicateIntent";
+import PreviousHistoryCard from "@/components/PreviousHistoryCard";
+import { getCustomerHistory } from "@/lib/customerHistory";
 import { displayBudget } from "@/lib/budgetParse";
 import LeadActionsClient from "@/components/LeadActionsClient";
 import { acefoneEnabled } from "@/lib/acefone";
@@ -95,6 +97,14 @@ export default async function ColdDataDetailPage({ params, searchParams }: { par
   // re-runs it → the banner auto-re-checks after every save.
   const dupIntent = await getDuplicateIntent(lead.phone, lead.email, lead.id, scope).catch(() => null);
 
+  // Previous History Found — the SAME unified prior-enquiry block the Leads detail
+  // renders (governance #3: a linked client's data is visible from EVERY module).
+  // Aggregates by mobile/email AND by canonical Customer (lead.customerId), so an
+  // admin "Link as One Customer" surfaces the full cross-module history here too —
+  // not only on /leads. Scope-confidential + excludes recycle-bin (scope bakes in
+  // deletedAt:null); null when there is no prior record.
+  const customerHistory = await getCustomerHistory(lead.phone, lead.email, lead.id, scope, lead.customerId).catch(() => null);
+
   const agents = await prisma.user.findMany({
     where: { active: true, hrOnly: false, role: { in: ["AGENT", "MANAGER", "ADMIN"] } },
     orderBy: { name: "asc" },
@@ -144,6 +154,12 @@ export default async function ColdDataDetailPage({ params, searchParams }: { par
       {/* ── Duplicate-intent banner — reused from the Lead view; re-checks on every
           inline edit (router.refresh re-runs getDuplicateIntent). ── */}
       <DuplicateIntentBanner intent={dupIntent} />
+
+      {/* ── Previous History Found — SAME card the Leads detail renders, so a client
+          found in both Revival and Leads (and linked via "Link as One Customer")
+          shows the identical unified prior-enquiry history from THIS Revival view.
+          Reuses the shared component (no forked Revival timeline). ── */}
+      {customerHistory && <PreviousHistoryCard history={customerHistory} currentId={lead.id} />}
 
       {/* Unified Lead Detail (Phase E / J5) — cross-module Returning Client card:
           the same client's other enquiries across modules, shown on Cold too. */}

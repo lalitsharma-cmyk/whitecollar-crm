@@ -3,10 +3,15 @@ import { prisma } from "@/lib/prisma";
 import { TERMINAL_STATUSES } from "@/lib/lead-statuses";
 
 // "Previous History Found" — aggregate every prior enquiry from the SAME customer
-// (matched by mobile OR email) across ALL sections: Leads, Revival, Master Data,
-// and Closed/Archived. DELETED / Recycle-Bin records (deletedAt) are EXCLUDED —
-// a recycle-bin record is a recoverable backup, NOT business history, so it must
-// never participate in duplicate detection / Previous History Found.
+// across ALL sections: Leads, Revival, Master Data, and Closed/Archived. A record
+// is the "same customer" when it matches by mobile OR email, OR when it has been
+// explicitly linked under the same canonical Customer via "Link as One Customer"
+// (Lead.customerId — Global Identity Resolution). The customerId arm is what makes
+// an admin-confirmed link show its full unified history from EVERY lead-based
+// module even when the linked records carry different phones/emails.
+// DELETED / Recycle-Bin records (deletedAt) are EXCLUDED — a recycle-bin record is
+// a recoverable backup, NOT business history, so it must never participate in
+// duplicate detection / Previous History Found.
 
 function last10(s?: string | null): string {
   return (s ?? "").replace(/\D/g, "").slice(-10);
@@ -63,12 +68,20 @@ export async function getCustomerHistory(
   // enquiries. When omitted, fall back to the deletedAt:null-only default so
   // existing admin/unscoped callers are unchanged.
   scope?: Prisma.LeadWhereInput,
+  // Canonical Customer id of the record we're viewing (Lead.customerId). When the
+  // current record has been linked under a master Customer via "Link as One
+  // Customer", every OTHER enquiry sharing that customerId is the SAME logical
+  // client — surface it even if its phone/email differ. This is additive to the
+  // phone/email arms and stays scope-safe (it is OR-ed into the match set, then
+  // AND-ed with `scope`), so an agent still only sees linked siblings they may see.
+  customerId?: string | null,
 ): Promise<CustomerHistory | null> {
   const p = last10(phone);
   const e = (email ?? "").trim().toLowerCase();
   const OR: Array<Record<string, unknown>> = [];
   if (p.length >= 7) OR.push({ phone: { endsWith: p } }, { altPhone: { endsWith: p } });
   if (e) OR.push({ email: { equals: e, mode: "insensitive" } });
+  if (customerId) OR.push({ customerId });
   if (OR.length === 0) return null;
 
   const leads = await prisma.lead.findMany({

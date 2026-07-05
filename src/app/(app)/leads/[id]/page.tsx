@@ -278,7 +278,7 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
 
   // Previous History Found — same customer's earlier enquiries anywhere
   // (Leads / Revival / Master Data / Closed). null when there is no prior record.
-  const customerHistory = await getCustomerHistory(lead.phone, lead.email, lead.id, scope).catch(() => null);
+  const customerHistory = await getCustomerHistory(lead.phone, lead.email, lead.id, scope, lead.customerId).catch(() => null);
   const dupIntent = await getDuplicateIntent(lead.phone, lead.email, lead.id, scope).catch(() => null);
 
   // Auto-detection queries — run after notFound() guard.
