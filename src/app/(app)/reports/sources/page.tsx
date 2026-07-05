@@ -7,6 +7,8 @@ import { ACTIVE_PURSUIT_STATUSES, SUPPRESSED_STATUSES, BOOKED_STATUSES } from "@
 import { subDays, startOfYear, startOfMonth, startOfQuarter } from "date-fns";
 import Link from "next/link";
 import ReportDateRangePicker from "@/components/ReportDateRangePicker";
+import { leadSourceModule, type SourceModule } from "@/lib/moduleSource";
+import { ModuleBreakdownTable, type ModuleBreakdownRow } from "@/components/ModuleBreakdown";
 
 export const dynamic = "force-dynamic";
 
@@ -189,23 +191,23 @@ export default async function SourcesReportPage({
   ] = await Promise.all([
     prisma.lead.findMany({
       where: { deletedAt: null, createdAt: { gte: since, lte: until }, ...(managerTeam ? { forwardedTeam: managerTeam } : {}) },
-      select: { source: true, sourceRaw: true, medium: true, mediumOther: true, propertyType: true },
+      select: { source: true, sourceRaw: true, medium: true, mediumOther: true, propertyType: true, leadOrigin: true, isColdCall: true },
     }),
     prisma.lead.findMany({
       where: { deletedAt: null, createdAt: { gte: since, lte: until }, currentStatus: { notIn: SUPPRESSED_STATUSES }, ...(managerTeam ? { forwardedTeam: managerTeam } : {}) },
-      select: { source: true, sourceRaw: true, medium: true, mediumOther: true, propertyType: true },
+      select: { source: true, sourceRaw: true, medium: true, mediumOther: true, propertyType: true, leadOrigin: true, isColdCall: true },
     }),
     prisma.lead.findMany({
       where: { deletedAt: null, createdAt: { gte: since, lte: until }, currentStatus: { in: QUALIFIED_PLUS }, ...(managerTeam ? { forwardedTeam: managerTeam } : {}) },
-      select: { source: true, sourceRaw: true, medium: true, mediumOther: true, propertyType: true },
+      select: { source: true, sourceRaw: true, medium: true, mediumOther: true, propertyType: true, leadOrigin: true, isColdCall: true },
     }),
     prisma.lead.findMany({
       where: { deletedAt: null, createdAt: { gte: since, lte: until }, currentStatus: { in: [...BOOKED] }, ...(managerTeam ? { forwardedTeam: managerTeam } : {}) },
-      select: { source: true, sourceRaw: true, medium: true, mediumOther: true, propertyType: true },
+      select: { source: true, sourceRaw: true, medium: true, mediumOther: true, propertyType: true, leadOrigin: true, isColdCall: true },
     }),
     prisma.lead.findMany({
       where: { deletedAt: null, createdAt: { gte: since, lte: until }, currentStatus: { in: SUPPRESSED_STATUSES }, ...(managerTeam ? { forwardedTeam: managerTeam } : {}) },
-      select: { source: true, sourceRaw: true, medium: true, mediumOther: true, propertyType: true },
+      select: { source: true, sourceRaw: true, medium: true, mediumOther: true, propertyType: true, leadOrigin: true, isColdCall: true },
     }),
     // AI score avg per effective source — pull rows + reduce in JS (below) so the
     // average keys on the verbatim source, consistent with the count breakdowns.
@@ -400,6 +402,27 @@ export default async function SourcesReportPage({
 
   const grandTotal = rows.reduce((s, r) => s + r.total, 0);
 
+  // ── Module (source_module) breakdown of the funnel ───────────────────
+  // The SAME scoped funnel fetches, re-bucketed by the canonical 3-way lead
+  // module (leadSourceModule from leadOrigin + isColdCall). Additive: each
+  // funnel stage's grand total == Leads + Master Data + Revival, because every
+  // fetched lead classifies into exactly one module. Read-only — the per-source
+  // table above is untouched; this is a parallel view of the same rows.
+  type Triple = Record<SourceModule, number>;
+  const zeroTriple = (): Triple => ({ "Leads": 0, "Master Data": 0, "Revival Engine": 0, "Dubai Buyer Data": 0, "India Buyer Data": 0 });
+  const splitOf = (leadRows: Array<{ leadOrigin: string | null; isColdCall: boolean | null }>): Triple => {
+    const t = zeroTriple();
+    for (const r of leadRows) t[leadSourceModule(r.leadOrigin, r.isColdCall)] += 1;
+    return t;
+  };
+  const moduleFunnelRows: ModuleBreakdownRow[] = [
+    { label: "Total", counts: splitOf(totalRows), total: totalRows.length },
+    { label: "Contacted", counts: splitOf(contactedRows), total: contactedRows.length },
+    { label: "Qualified", counts: splitOf(qualifiedRows), total: qualifiedRows.length },
+    { label: "Booked", counts: splitOf(bookedRows), total: bookedRows.length },
+    { label: "Lost", counts: splitOf(lostRows), total: lostRows.length },
+  ];
+
   return (
     <>
       <div className="flex flex-wrap items-end justify-between gap-3">
@@ -556,6 +579,22 @@ export default async function SourcesReportPage({
           <span className="px-1 rounded bg-amber-50 text-amber-800 ml-1">&gt;10%</span> amber ·
           <span className="px-1 rounded bg-rose-50 text-rose-800 ml-1">≤10%</span> red.
           First call = average wall-clock minutes from lead creation to the first logged dial (leads with no call excluded).
+        </p>
+      </div>
+
+      {/* ── Module (source_module) breakdown ────────────────────────────────
+          The same scoped funnel, split across the 3 lead-origin modules
+          (Leads · Master Data · Revival Engine). Additive — every stage's total
+          equals Leads + Master Data + Revival. Mirrors the Agent Lead
+          Performance bifurcation so the module split is consistent across
+          reports. */}
+      <div className="card p-4">
+        <div className="text-xs uppercase tracking-widest text-gray-500 font-semibold mb-3">
+          Module funnel · {rangeLabel} · Leads · Master Data · Revival Engine
+        </div>
+        <ModuleBreakdownTable rows={moduleFunnelRows} showZeroRows minWidth={480} metricHeader="Funnel stage" />
+        <p className="text-[10px] text-gray-500 mt-3">
+          Same scoped leads as the source table above, re-bucketed by origin module. Every stage total = Leads + Master Data + Revival Engine (each lead belongs to exactly one module). Buyer Data is a separate report and is not included here.
         </p>
       </div>
 

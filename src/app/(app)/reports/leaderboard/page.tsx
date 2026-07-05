@@ -1,3 +1,4 @@
+import { Fragment } from "react";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
 import { normalizeTeam } from "@/lib/teamRouting";
@@ -7,6 +8,8 @@ import { activeLeadWhere, ACTIVE_ORIGIN_WHERE } from "@/lib/leadScope";
 import { subDays, startOfDay, format } from "date-fns";
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { leadSourceModule, type SourceModule } from "@/lib/moduleSource";
+import { ModuleBreakdownDetails, type ModuleBreakdownRow } from "@/components/ModuleBreakdown";
 
 const AGENT_ROLES: Role[] = [Role.AGENT, Role.MANAGER];
 
@@ -75,15 +78,19 @@ export default async function LeaderboardPage() {
     // Active leads per agent (CANONICAL activeLeadWhere — ACTIVE_LEAD origin,
     // non-deleted, non-terminal status). Identical to /reports, /team,
     // /reports/agent-performance, /profile, /team/[id] for the same agent.
+    // leadOrigin + isColdCall added to the `by` so the same population also
+    // yields the canonical 3-way module split (leadSourceModule). The flat
+    // per-agent total is the sum over its combo rows → total == Leads + Master
+    // Data + Revival by construction.
     prisma.lead.groupBy({
-      by: ["ownerId"],
+      by: ["ownerId", "leadOrigin", "isColdCall"],
       where: activeLeadWhere({ ownerId: { in: agentIds } }),
       _count: { _all: true },
     }),
 
     // Leads qualified+ per agent (ACTIVE-origin book; own status filter)
     prisma.lead.groupBy({
-      by: ["ownerId"],
+      by: ["ownerId", "leadOrigin", "isColdCall"],
       where: {
         ownerId: { in: agentIds },
         deletedAt: null,
@@ -95,7 +102,7 @@ export default async function LeaderboardPage() {
 
     // Leads won per agent (ACTIVE-origin book; booked status)
     prisma.lead.groupBy({
-      by: ["ownerId"],
+      by: ["ownerId", "leadOrigin", "isColdCall"],
       where: {
         ownerId: { in: agentIds },
         deletedAt: null,
@@ -106,11 +113,36 @@ export default async function LeaderboardPage() {
     }),
   ]);
 
-  // Index by userId / ownerId
+  // Index by userId / ownerId. The three lead metrics fold their [ownerId,
+  // leadOrigin, isColdCall] combo rows into (a) a flat per-agent total and
+  // (b) a per-agent per-module triple. zeroTriple() covers the 3 lead modules
+  // (buyer modules stay 0 — buyers are a separate report).
   const callMap = new Map(callCounts.map((r) => [r.userId, r._count._all]));
-  const leadMap = new Map(leadCounts.map((r) => [r.ownerId as string, r._count._all]));
-  const qualMap = new Map(qualifiedCounts.map((r) => [r.ownerId as string, r._count._all]));
-  const wonMap = new Map(wonCounts.map((r) => [r.ownerId as string, r._count._all]));
+  type Triple = Record<SourceModule, number>;
+  const zeroTriple = (): Triple => ({ "Leads": 0, "Master Data": 0, "Revival Engine": 0, "Dubai Buyer Data": 0, "India Buyer Data": 0 });
+  const leadMap = new Map<string, number>();
+  const qualMap = new Map<string, number>();
+  const wonMap = new Map<string, number>();
+  const leadSplit = new Map<string, Triple>();
+  const qualSplit = new Map<string, Triple>();
+  const wonSplit = new Map<string, Triple>();
+  function foldSplit(
+    rows: Array<{ ownerId: string | null; leadOrigin: string | null; isColdCall: boolean | null; _count: { _all: number } }>,
+    flat: Map<string, number>,
+    split: Map<string, Triple>,
+  ) {
+    for (const r of rows) {
+      if (!r.ownerId) continue;
+      const n = r._count._all;
+      flat.set(r.ownerId, (flat.get(r.ownerId) ?? 0) + n);
+      const t = split.get(r.ownerId) ?? zeroTriple();
+      t[leadSourceModule(r.leadOrigin, r.isColdCall)] += n;
+      split.set(r.ownerId, t);
+    }
+  }
+  foldSplit(leadCounts, leadMap, leadSplit);
+  foldSplit(qualifiedCounts, qualMap, qualSplit);
+  foldSplit(wonCounts, wonMap, wonSplit);
 
   interface AgentRow {
     id: string;
@@ -121,6 +153,10 @@ export default async function LeaderboardPage() {
     leadsQualified: number;
     won: number;
     conversionRate: number;
+    // Per-module (Leads · Master Data · Revival) split of the 3 lead metrics.
+    activeSplit: Triple;
+    qualifiedSplit: Triple;
+    wonSplit: Triple;
   }
 
   const rows: AgentRow[] = agents.map((a) => {
@@ -138,6 +174,9 @@ export default async function LeaderboardPage() {
       leadsQualified,
       won,
       conversionRate,
+      activeSplit: leadSplit.get(a.id) ?? zeroTriple(),
+      qualifiedSplit: qualSplit.get(a.id) ?? zeroTriple(),
+      wonSplit: wonSplit.get(a.id) ?? zeroTriple(),
     };
   });
 
@@ -186,19 +225,35 @@ export default async function LeaderboardPage() {
               const rankLabel = MEDAL[idx] ? `${MEDAL[idx]} ${idx + 1}` : String(idx + 1);
               const convPct = row.conversionRate.toFixed(1);
               const isTop = idx < 3;
+              // Additive per-module split of this agent's 3 lead metrics.
+              const breakdownRows: ModuleBreakdownRow[] = [
+                { label: "Active Leads", counts: row.activeSplit, total: row.leadsAssigned },
+                { label: "Qualified", counts: row.qualifiedSplit, total: row.leadsQualified },
+                { label: "Won", counts: row.wonSplit, total: row.won },
+              ];
+              const hasSplit = row.leadsAssigned + row.leadsQualified + row.won > 0;
               return (
-                <tr key={row.id} className={isTop ? "bg-amber-50" : undefined}>
-                  <td className="text-center font-bold text-sm">{rankLabel}</td>
-                  <td className="font-semibold text-sm">{row.name}</td>
-                  <td className="text-sm text-gray-600">{row.team ?? "—"}</td>
-                  <td className="text-center text-sm font-bold">{row.callsMade}</td>
-                  <td className="text-center text-sm">{row.leadsAssigned}</td>
-                  <td className="text-center text-sm">{row.leadsQualified}</td>
-                  <td className="text-center text-sm font-semibold text-emerald-700">{row.won}</td>
-                  <td className={`text-center text-sm font-semibold ${row.conversionRate >= 20 ? "text-emerald-700" : row.conversionRate >= 10 ? "text-amber-700" : "text-gray-500"}`}>
-                    {convPct}%
-                  </td>
-                </tr>
+                <Fragment key={row.id}>
+                  <tr className={isTop ? "bg-amber-50" : undefined}>
+                    <td className="text-center font-bold text-sm">{rankLabel}</td>
+                    <td className="font-semibold text-sm">{row.name}</td>
+                    <td className="text-sm text-gray-600">{row.team ?? "—"}</td>
+                    <td className="text-center text-sm font-bold">{row.callsMade}</td>
+                    <td className="text-center text-sm">{row.leadsAssigned}</td>
+                    <td className="text-center text-sm">{row.leadsQualified}</td>
+                    <td className="text-center text-sm font-semibold text-emerald-700">{row.won}</td>
+                    <td className={`text-center text-sm font-semibold ${row.conversionRate >= 20 ? "text-emerald-700" : row.conversionRate >= 10 ? "text-amber-700" : "text-gray-500"}`}>
+                      {convPct}%
+                    </td>
+                  </tr>
+                  {hasSplit && (
+                    <tr className={isTop ? "bg-amber-50/60" : "bg-gray-50/60"}>
+                      <td className="px-3 py-0" colSpan={8}>
+                        <ModuleBreakdownDetails rows={breakdownRows} />
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
               );
             })}
             {rows.length === 0 && (
@@ -211,6 +266,7 @@ export default async function LeaderboardPage() {
         <div className="text-[10px] text-gray-500 p-3">
           Calls Made = last 90 days. Active Leads (canonical: live, non-cold, non-terminal),
           Qualified, Won = all time for this scope. Conversion % = Won ÷ Active Leads × 100.
+          Expand any agent to see the lead-metric split across <strong>Leads · Master Data · Revival Engine</strong> — every total = Leads + Master Data + Revival.
         </div>
       </div>
     </>

@@ -10,6 +10,9 @@ import { TERMINAL_STATUSES } from "@/lib/lead-statuses";
 import { normalizeTeam } from "@/lib/teamRouting";
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { Fragment } from "react";
+import { leadSourceModule, type SourceModule } from "@/lib/moduleSource";
+import { ModuleBreakdownDetails, type ModuleBreakdownRow } from "@/components/ModuleBreakdown";
 
 export const dynamic = "force-dynamic";
 
@@ -50,16 +53,21 @@ export default async function FollowupCompliancePage({
     ownerId: { in: agentIds }, ...teamWhere,
   };
 
+  // leadOrigin + isColdCall added to the overdue/today groupBy `by` so the same
+  // populations also yield the canonical 3-way module split (leadSourceModule).
+  // Each agent's flat total is the sum over its combo rows → total == Leads +
+  // Master Data + Revival by construction.
   const [overdueGroups, todayGroups, rolloverGroups] = await Promise.all([
-    prisma.lead.groupBy({ by: ["ownerId"], _count: { _all: true },
+    prisma.lead.groupBy({ by: ["ownerId", "leadOrigin", "isColdCall"], _count: { _all: true },
       where: { ...liveWhere, followupDate: { not: null, lt: start } } }),
-    prisma.lead.groupBy({ by: ["ownerId"], _count: { _all: true },
+    prisma.lead.groupBy({ by: ["ownerId", "leadOrigin", "isColdCall"], _count: { _all: true },
       where: { ...liveWhere, followupDate: { gte: start, lt: end } } }),
     prisma.leadFieldHistory.groupBy({ by: ["leadId"], _count: { _all: true },
       where: { field: "followupDate", source: "system-rollover" } }),
   ]);
 
-  // Chronically-rolled leads (≥3 rollovers) → map to their owner.
+  // Chronically-rolled leads (≥3 rollovers) → map to their owner. Pull origin
+  // fields too so the chronic count carries the same module split.
   const chronicLeadIds = rolloverGroups
     .filter((g) => g._count._all >= ROLLED_CHRONIC)
     .map((g) => g.leadId)
@@ -68,14 +76,41 @@ export default async function FollowupCompliancePage({
     ? await prisma.lead.findMany({
         where: { id: { in: chronicLeadIds }, ownerId: { in: agentIds }, deletedAt: null,
           currentStatus: { notIn: TERMINAL_STATUSES } },
-        select: { ownerId: true },
+        select: { ownerId: true, leadOrigin: true, isColdCall: true },
       })
     : [];
 
-  const overdueBy = new Map(overdueGroups.map((g) => [g.ownerId, g._count._all]));
-  const todayBy = new Map(todayGroups.map((g) => [g.ownerId, g._count._all]));
+  // Per-agent flat totals + per-module (Leads · Master Data · Revival) triples.
+  type Triple = Record<SourceModule, number>;
+  const zeroTriple = (): Triple => ({ "Leads": 0, "Master Data": 0, "Revival Engine": 0, "Dubai Buyer Data": 0, "India Buyer Data": 0 });
+  const overdueBy = new Map<string, number>();
+  const todayBy = new Map<string, number>();
   const chronicBy = new Map<string, number>();
-  for (const l of chronicLeads) if (l.ownerId) chronicBy.set(l.ownerId, (chronicBy.get(l.ownerId) ?? 0) + 1);
+  const overdueSplit = new Map<string, Triple>();
+  const todaySplit = new Map<string, Triple>();
+  const chronicSplit = new Map<string, Triple>();
+  function foldGroup(
+    rows: Array<{ ownerId: string | null; leadOrigin: string | null; isColdCall: boolean | null; _count: { _all: number } }>,
+    flat: Map<string, number>, split: Map<string, Triple>,
+  ) {
+    for (const g of rows) {
+      if (!g.ownerId) continue;
+      const n = g._count._all;
+      flat.set(g.ownerId, (flat.get(g.ownerId) ?? 0) + n);
+      const t = split.get(g.ownerId) ?? zeroTriple();
+      t[leadSourceModule(g.leadOrigin, g.isColdCall)] += n;
+      split.set(g.ownerId, t);
+    }
+  }
+  foldGroup(overdueGroups, overdueBy, overdueSplit);
+  foldGroup(todayGroups, todayBy, todaySplit);
+  for (const l of chronicLeads) {
+    if (!l.ownerId) continue;
+    chronicBy.set(l.ownerId, (chronicBy.get(l.ownerId) ?? 0) + 1);
+    const t = chronicSplit.get(l.ownerId) ?? zeroTriple();
+    t[leadSourceModule(l.leadOrigin, l.isColdCall)] += 1;
+    chronicSplit.set(l.ownerId, t);
+  }
 
   const rows = agents
     .map((a) => ({
@@ -83,6 +118,9 @@ export default async function FollowupCompliancePage({
       overdue: overdueBy.get(a.id) ?? 0,
       today: todayBy.get(a.id) ?? 0,
       chronic: chronicBy.get(a.id) ?? 0,
+      overdueSplit: overdueSplit.get(a.id) ?? zeroTriple(),
+      todaySplit: todaySplit.get(a.id) ?? zeroTriple(),
+      chronicSplit: chronicSplit.get(a.id) ?? zeroTriple(),
     }))
     .filter((r) => r.overdue > 0 || r.today > 0 || r.chronic > 0)
     .sort((x, y) => y.overdue - x.overdue || y.chronic - x.chronic || y.today - x.today);
@@ -138,22 +176,38 @@ export default async function FollowupCompliancePage({
           <tbody className="divide-y divide-[#e5e7eb]">
             {rows.length === 0 ? (
               <tr><td colSpan={5} className="py-8 text-center text-gray-500">✅ No overdue or chronically-postponed follow-ups. Clean board.</td></tr>
-            ) : rows.map((r) => (
-              <tr key={r.id} className="hover:bg-gray-50">
-                <td className="py-2.5 px-3 font-medium">{r.name}{r.team && <span className="ml-1.5 text-[10px] text-gray-400">{r.team}</span>}</td>
-                <td className="text-center px-2">{r.overdue > 0 ? <span className="font-bold text-red-700">{r.overdue}</span> : <span className="text-gray-300">0</span>}</td>
-                <td className="text-center px-2">{r.today > 0 ? <span className="font-semibold text-amber-700">{r.today}</span> : <span className="text-gray-300">0</span>}</td>
-                <td className="text-center px-2">{r.chronic > 0 ? <span className="font-semibold text-violet-700">⟳ {r.chronic}</span> : <span className="text-gray-300">0</span>}</td>
-                <td className="text-right px-3">
-                  <Link href={`/leads?owner=${r.id}&when=overdue`} className="text-[11px] text-blue-600 hover:underline">View →</Link>
-                </td>
-              </tr>
-            ))}
+            ) : rows.map((r) => {
+              // Additive per-module split of this agent's 3 compliance metrics.
+              const breakdownRows: ModuleBreakdownRow[] = [
+                { label: "Overdue", counts: r.overdueSplit, total: r.overdue },
+                { label: "Due today", counts: r.todaySplit, total: r.today },
+                { label: "Chronic", counts: r.chronicSplit, total: r.chronic },
+              ];
+              return (
+              <Fragment key={r.id}>
+                <tr className="hover:bg-gray-50">
+                  <td className="py-2.5 px-3 font-medium">{r.name}{r.team && <span className="ml-1.5 text-[10px] text-gray-400">{r.team}</span>}</td>
+                  <td className="text-center px-2">{r.overdue > 0 ? <span className="font-bold text-red-700">{r.overdue}</span> : <span className="text-gray-300">0</span>}</td>
+                  <td className="text-center px-2">{r.today > 0 ? <span className="font-semibold text-amber-700">{r.today}</span> : <span className="text-gray-300">0</span>}</td>
+                  <td className="text-center px-2">{r.chronic > 0 ? <span className="font-semibold text-violet-700">⟳ {r.chronic}</span> : <span className="text-gray-300">0</span>}</td>
+                  <td className="text-right px-3">
+                    <Link href={`/leads?owner=${r.id}&when=overdue`} className="text-[11px] text-blue-600 hover:underline">View →</Link>
+                  </td>
+                </tr>
+                <tr className="bg-gray-50/60">
+                  <td className="px-3 py-0" colSpan={5}>
+                    <ModuleBreakdownDetails rows={breakdownRows} />
+                  </td>
+                </tr>
+              </Fragment>
+              );
+            })}
           </tbody>
         </table>
       </div>
       <p className="text-[10px] text-gray-400">
         Overdue = follow-up date before today (IST) on a live lead. Chronic = a lead the nightly rollover auto-advanced ≥{ROLLED_CHRONIC}× (agent keeps postponing). Read-only.
+        Expand any agent to split these across <strong>Leads · Master Data · Revival Engine</strong> — every total = Leads + Master Data + Revival.
       </p>
     </>
   );

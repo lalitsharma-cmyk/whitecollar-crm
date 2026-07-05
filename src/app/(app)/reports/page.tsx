@@ -1,6 +1,8 @@
 import { prisma } from "@/lib/prisma";
 import { CallOutcome, Prisma } from "@prisma/client";
-import { ACTIVE_PURSUIT_STATUSES, CLOSING_STATUSES, BOOKED_STATUSES } from "@/lib/lead-statuses";
+import { ACTIVE_PURSUIT_STATUSES, CLOSING_STATUSES, BOOKED_STATUSES, LOST_STATUSES } from "@/lib/lead-statuses";
+import { leadSourceModule, type SourceModule } from "@/lib/moduleSource";
+import { ModuleBreakdownTable, type ModuleBreakdownRow } from "@/components/ModuleBreakdown";
 import { startOfDay } from "date-fns";
 import SourceBarChart from "@/components/charts/SourceBarChart";
 import ConnectRateChart from "@/components/charts/ConnectRateChart";
@@ -132,7 +134,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
   const [
     bySourceRows, callsByDay, funnel, topProjects,
     activeLeadsForForecast, stalledRaw, heatmapRaw,
-    statusCounts, sourceByCountRows,
+    statusCounts, sourceByCountRows, moduleStatusRows,
   ] = await Promise.all([
     prisma.lead.findMany({ where: { ...teamScope, deletedAt: null, createdAt: { gte: today } }, select: { source: true, sourceRaw: true } }),
 
@@ -257,6 +259,19 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
       where: { ...teamScope, deletedAt: null },
       select: { source: true, sourceRaw: true, medium: true, mediumOther: true, propertyType: true },
     }),
+
+    // ── Module (source_module) split of the whole team-scoped book. SAME scope
+    // as statusCounts (MANAGER → own team; ADMIN → teamScope), grouped by
+    // origin + status so we can bucket each combo into BOTH its module
+    // (leadSourceModule) and its status band. Additive — every band total
+    // equals the sum of its 3 module parts because each lead is one combo row.
+    prisma.lead.groupBy({
+      by: ["leadOrigin", "isColdCall", "currentStatus"],
+      _count: { _all: true },
+      where: me.role === "MANAGER"
+        ? { forwardedTeam: normalizeTeam(me.team) ?? undefined, deletedAt: null }
+        : { ...teamScope, deletedAt: null },
+    }),
   ]);
 
   // Group the raw {source, sourceRaw} rows into effective-source breakdowns.
@@ -314,6 +329,41 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
     if (stage.count === 0) return 0;
     return Math.round((next.count / stage.count) * 100);
   });
+
+  // ── Module (source_module) breakdown of the team-scoped book ──────────
+  // Bucket the origin×status combos into status bands, splitting each band by
+  // the canonical 3-way lead module (leadSourceModule). Additive: "Total book"
+  // = Leads + Master Data + Revival, and each status band likewise, because
+  // every lead is exactly one combo row. Read-only parallel view of the same
+  // scoped population that powers the status funnel above.
+  type Triple = Record<SourceModule, number>;
+  const zeroTriple = (): Triple => ({ "Leads": 0, "Master Data": 0, "Revival Engine": 0, "Dubai Buyer Data": 0, "India Buyer Data": 0 });
+  const ACTIVE_PURSUIT_SET = new Set(ACTIVE_PURSUIT_STATUSES);
+  const CLOSING_SET = new Set(CLOSING_STATUSES);
+  const BOOKED_SET = new Set(BOOKED_STATUSES);
+  const LOST_SET = new Set(LOST_STATUSES);
+  const modTotal = zeroTriple();
+  const modActivePursuit = zeroTriple();
+  const modClosing = zeroTriple();
+  const modBooked = zeroTriple();
+  const modLost = zeroTriple();
+  for (const r of moduleStatusRows) {
+    const mod = leadSourceModule(r.leadOrigin, r.isColdCall);
+    const n = r._count._all;
+    const st = r.currentStatus ?? "";
+    modTotal[mod] += n;
+    if (ACTIVE_PURSUIT_SET.has(st)) modActivePursuit[mod] += n;
+    if (CLOSING_SET.has(st)) modClosing[mod] += n;
+    if (BOOKED_SET.has(st)) modBooked[mod] += n;
+    if (LOST_SET.has(st)) modLost[mod] += n;
+  }
+  const moduleBookRows: ModuleBreakdownRow[] = [
+    { label: "Total book", counts: modTotal },
+    { label: "Active pursuit", counts: modActivePursuit },
+    { label: "Closing", counts: modClosing },
+    { label: "Booked", counts: modBooked },
+    { label: "Lost", counts: modLost },
+  ];
 
   // ── Compute decision metrics ───────────────────────────────────────
   // Weighted forecast — sum(budgetMin * weight per stage), split by currency
@@ -580,6 +630,24 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
         <StatusFunnelChart stages={funnelStages} conversionRates={conversionRates} />
         <div className="mt-2 text-[10px] text-gray-400">
           Bar width = % of active pipeline (WON bar relative to active + won). LOST leads excluded.
+        </div>
+      </div>
+
+      {/* ── Module (source_module) breakdown ──────────────────────────────
+          The team-scoped lead book split across the 3 lead-origin modules
+          (Leads · Master Data · Revival Engine). Additive — every band total =
+          Leads + Master Data + Revival Engine. Mirrors the Agent Lead
+          Performance bifurcation so the module split reads the same across
+          reports. Buyer Data is a separate report and is not included. */}
+      <div className="card p-5">
+        <div className="text-xs text-gray-500 tracking-widest uppercase mb-1">
+          Module breakdown · lead book
+          {resolvedTeam !== "all" && <span className="ml-2 text-gray-400 normal-case">({resolvedTeam} team)</span>}
+        </div>
+        <div className="font-semibold text-sm mb-3">Leads · Master Data · Revival Engine</div>
+        <ModuleBreakdownTable rows={moduleBookRows} showZeroRows minWidth={480} metricHeader="Status band" />
+        <div className="mt-2 text-[10px] text-gray-400">
+          Same scoped, non-deleted leads as the funnel above, re-bucketed by origin module. Every band total = Leads + Master Data + Revival Engine (each lead belongs to exactly one module). Status bands overlap the full book, so they do not sum to Total book.
         </div>
       </div>
 

@@ -6,6 +6,8 @@ import { ACTIVE_PURSUIT_STATUSES, BOOKED_STATUSES } from "@/lib/lead-statuses";
 import { fmtMoney, type Currency } from "@/lib/money";
 import Link from "next/link";
 import ReportDateRangePicker from "@/components/ReportDateRangePicker";
+import { leadSourceModule, type SourceModule } from "@/lib/moduleSource";
+import { ModuleBreakdownTable, type ModuleBreakdownRow } from "@/components/ModuleBreakdown";
 
 export const dynamic = "force-dynamic";
 
@@ -77,6 +79,20 @@ function toYmd(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
 
+// Per-module (Leads · Master Data · Revival Engine) tally. Buyer modules are
+// carried as 0 (buyers are a separate report) so the type matches SourceModule.
+type Triple = Record<SourceModule, number>;
+function zeroTriple(): Triple {
+  return { "Leads": 0, "Master Data": 0, "Revival Engine": 0, "Dubai Buyer Data": 0, "India Buyer Data": 0 };
+}
+/** Fold [leadOrigin, isColdCall] groupBy rows into a per-module triple. Each
+ *  lead classifies into exactly one module → the triple sums to the flat count. */
+function foldTriple(rows: Array<{ leadOrigin: string | null; isColdCall: boolean | null; _count: { _all: number } }>): Triple {
+  const t = zeroTriple();
+  for (const r of rows) t[leadSourceModule(r.leadOrigin, r.isColdCall)] += r._count._all;
+  return t;
+}
+
 interface TeamMetrics {
   team: Team;
   currency: Currency;
@@ -91,6 +107,9 @@ interface TeamMetrics {
   pipelineValue: number;   // in team's native currency
   coldRevivals: number;
   avgAiScore: number | null;
+  // ADDITIVE module split of the three pure lead-count metrics. Each triple
+  // sums to its flat metric above (newLeads / activeLeads / bookingsDone).
+  moduleSplit: { newLeads: Triple; activeLeads: Triple; bookingsDone: Triple };
 }
 
 async function computeTeamMetrics(team: Team, since: Date, until: Date): Promise<TeamMetrics> {
@@ -113,6 +132,9 @@ async function computeTeamMetrics(team: Team, since: Date, until: Date): Promise
     coldRevivals,
     aiAvgRow,
     firstCallRows,
+    newLeadsSplitRows,
+    activeLeadsSplitRows,
+    bookingsSplitRows,
   ] = await Promise.all([
     // NEW leads in window — anything created in-range belonging to this team.
     prisma.lead.count({ where: { ...leadWhere, createdAt: { gte: since, lte: until } } }),
@@ -223,6 +245,33 @@ async function computeTeamMetrics(team: Team, since: Date, until: Date): Promise
         AND l."forwardedTeam" = ${team}
         AND fc.first_call_at >= l."createdAt"
     `,
+
+    // ── Module-split groupBys — SAME where clauses as newLeads / activeLeads /
+    // bookingsDone above, with leadOrigin + isColdCall added so each combo row
+    // classifies into its module. Sum over the combos == the flat count, so the
+    // split reconciles 1:1 with the head-to-head figures.
+    prisma.lead.groupBy({
+      by: ["leadOrigin", "isColdCall"],
+      where: { ...leadWhere, createdAt: { gte: since, lte: until } },
+      _count: { _all: true },
+    }),
+    prisma.lead.groupBy({
+      by: ["leadOrigin", "isColdCall"],
+      where: { ...leadWhere, currentStatus: { in: ACTIVE_STAGES } },
+      _count: { _all: true },
+    }),
+    prisma.lead.groupBy({
+      by: ["leadOrigin", "isColdCall"],
+      where: {
+        ...leadWhere,
+        currentStatus: { in: [...BOOKINGS] },
+        OR: [
+          { bookingDoneAt: { gte: since, lte: until } },
+          { updatedAt: { gte: since, lte: until } },
+        ],
+      },
+      _count: { _all: true },
+    }),
   ]);
 
   const pipelineValue = pipelineRows.reduce((s, r) => s + (r.budgetMin ?? 0), 0);
@@ -245,6 +294,11 @@ async function computeTeamMetrics(team: Team, since: Date, until: Date): Promise
     pipelineValue,
     coldRevivals,
     avgAiScore,
+    moduleSplit: {
+      newLeads: foldTriple(newLeadsSplitRows),
+      activeLeads: foldTriple(activeLeadsSplitRows),
+      bookingsDone: foldTriple(bookingsSplitRows),
+    },
   };
 }
 
@@ -589,6 +643,35 @@ export default async function TeamComparisonReportPage({
             </div>
           ))}
         </div>
+      </div>
+
+      {/* ── Module (source_module) breakdown — per team, the three pure
+          lead-count metrics split across Leads · Master Data · Revival Engine.
+          Additive: each row's Total equals the head-to-head figure above. */}
+      <div className="card p-4">
+        <div className="text-xs uppercase tracking-widest text-gray-500 font-semibold mb-3">
+          Module breakdown · Leads · Master Data · Revival Engine · {rangeLabel}
+        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+          {[dubai, india].filter((t): t is TeamMetrics => t != null).map((t) => {
+            const mrows: ModuleBreakdownRow[] = [
+              { label: "New leads", counts: t.moduleSplit.newLeads, total: t.newLeads },
+              { label: "Active leads", counts: t.moduleSplit.activeLeads, total: t.activeLeads },
+              { label: "Bookings done", counts: t.moduleSplit.bookingsDone, total: t.bookingsDone },
+            ];
+            return (
+              <div key={t.team}>
+                <div className="text-[11px] font-semibold text-gray-600 mb-1">
+                  {t.team === "Dubai" ? "🇦🇪 Dubai" : "🇮🇳 India"}
+                </div>
+                <ModuleBreakdownTable rows={mrows} showZeroRows minWidth={420} metricHeader="Metric" />
+              </div>
+            );
+          })}
+        </div>
+        <p className="text-[10px] text-gray-500 mt-3">
+          Only the three pure lead-count metrics carry a module split (New leads · Active leads · Bookings done). Each total = Leads + Master Data + Revival Engine. Calls, meetings, pipeline value and rates are not per-lead counts and are left unsplit.
+        </p>
       </div>
 
       <div className="text-[10px] text-gray-500 leading-relaxed">
