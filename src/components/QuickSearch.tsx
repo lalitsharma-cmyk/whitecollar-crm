@@ -1,20 +1,26 @@
 "use client";
-// Global quick-search command palette — Ctrl+K (Win/Linux) or Cmd+K (Mac).
-// Mounts once at the shell. Listens for the keyboard shortcut, opens a
-// centered modal with a search box, debounces queries 200ms, and groups
-// results into Leads / Projects / Agents. Arrow keys + Enter to navigate,
-// Esc or click-outside to close.
+// GLOBAL SEARCH command palette — the header search box + Ctrl/Cmd+K.
+// Mounts once at the shell. Searches EVERY lead-based module (Leads / Master Data /
+// Revival Engine / Dubai Buyer Data / India Buyer Data) via /api/quick-search, which
+// enforces role scope server-side. Starts at 3 chars, debounced 300 ms, results are
+// grouped by module and each card shows Name · Mobile · Agent · Status. Clicking (or
+// Enter) opens that record's shared detail page. Arrow keys navigate; Esc closes.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { formatBudgetAmount } from "@/lib/budgetParse";
 
-interface LeadHit {
+const MIN_CHARS = 3;
+const DEBOUNCE_MS = 300;
+
+interface SearchHit {
+  recordType: "lead" | "buyer";
+  module: string;
   id: string;
   name: string;
   phone: string | null;
-  budgetMin: number | null;
-  budgetCurrency: string;
+  agent: string;
+  status: string;
+  href: string;
 }
 interface ProjectHit {
   id: string;
@@ -22,199 +28,131 @@ interface ProjectHit {
   city: string;
   country: string;
 }
-interface UserHit {
-  id: string;
-  name: string;
-  role: string;
-  team: string | null;
-}
 interface SearchResults {
-  leads: LeadHit[];
+  results: SearchHit[];
   projects: ProjectHit[];
-  users: UserHit[];
 }
 
-interface FlatItem {
-  group: "leads" | "projects" | "users";
-  href: string;
-  label: string;
-  meta: string;
-}
+const EMPTY: SearchResults = { results: [], projects: [] };
 
-const EMPTY: SearchResults = { leads: [], projects: [], users: [] };
+// Fixed module order + badge colour. Every result carries its module label.
+const MODULE_ORDER = ["Leads", "Master Data", "Revival Engine", "Dubai Buyer Data", "India Buyer Data"] as const;
+const MODULE_BADGE: Record<string, string> = {
+  "Leads": "bg-blue-100 text-blue-700",
+  "Master Data": "bg-slate-200 text-slate-700",
+  "Revival Engine": "bg-purple-100 text-purple-700",
+  "Dubai Buyer Data": "bg-amber-100 text-amber-800",
+  "India Buyer Data": "bg-emerald-100 text-emerald-700",
+};
 
-// Canonical house format (Dubai "2M AED" / India "21 Cr"); "" when no budget so
-// the meta line drops it via filter(Boolean).
-function formatMoney(amount: number | null, currency: string): string {
-  if (amount == null || amount <= 0) return "";
-  return formatBudgetAmount(amount, (currency ?? "").toUpperCase() === "INR" ? "INDIA" : "DUBAI");
-}
+// One flat navigable list: every module's hits in order, then projects last, so
+// ArrowUp/Down + Enter have a stable index across all groups.
+interface FlatItem { href: string; hit?: SearchHit; project?: ProjectHit; }
 
 export default function QuickSearch() {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
-  const [results, setResults] = useState<SearchResults>(EMPTY);
+  const [data, setData] = useState<SearchResults>(EMPTY);
   const [loading, setLoading] = useState(false);
   const [highlight, setHighlight] = useState(0);
   const inputRef = useRef<HTMLInputElement | null>(null);
 
-  // Flatten grouped results into a single array so arrow-key navigation has
-  // a stable index regardless of which group an item lives in.
+  const byModule = useMemo(() => {
+    const m = new Map<string, SearchHit[]>();
+    for (const label of MODULE_ORDER) m.set(label, []);
+    for (const h of data.results) {
+      if (!m.has(h.module)) m.set(h.module, []);
+      m.get(h.module)!.push(h);
+    }
+    return m;
+  }, [data.results]);
+
   const flat: FlatItem[] = useMemo(() => {
     const out: FlatItem[] = [];
-    for (const l of results.leads) {
-      const bits = [l.phone, formatMoney(l.budgetMin, l.budgetCurrency)].filter(Boolean);
-      out.push({ group: "leads", href: `/leads/${l.id}`, label: l.name, meta: bits.join(" · ") });
-    }
-    for (const p of results.projects) {
-      out.push({
-        group: "projects",
-        // No /properties/[id] route exists — link to the list page.
-        href: "/properties",
-        label: p.name,
-        meta: [p.city, p.country].filter(Boolean).join(", "),
-      });
-    }
-    for (const u of results.users) {
-      out.push({
-        group: "users",
-        href: `/team/${u.id}`,
-        label: u.name,
-        meta: [u.role, u.team].filter(Boolean).join(" · "),
-      });
-    }
+    for (const label of MODULE_ORDER) for (const h of byModule.get(label) ?? []) out.push({ href: h.href, hit: h });
+    // any module label the server returned that isn't in the fixed order (future-proof)
+    for (const [label, hits] of byModule) if (!MODULE_ORDER.includes(label as (typeof MODULE_ORDER)[number])) for (const h of hits) out.push({ href: h.href, hit: h });
+    for (const p of data.projects) out.push({ href: "/properties", project: p });
     return out;
-  }, [results]);
+  }, [byModule, data.projects]);
 
-  // ── keyboard: global Ctrl/Cmd+K toggles, Esc closes ──
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      const isToggle = (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k";
-      if (isToggle) {
-        e.preventDefault();
-        setOpen((v) => !v);
-      } else if (e.key === "Escape" && open) {
-        setOpen(false);
-      }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") { e.preventDefault(); setOpen((v) => !v); }
+      else if (e.key === "Escape" && open) setOpen(false);
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [open]);
 
-  // ── focus input + reset state when opened ──
   useEffect(() => {
     if (open) {
-      setQ("");
-      setResults(EMPTY);
-      setHighlight(0);
-      // next tick so the input exists in the DOM
+      setQ(""); setData(EMPTY); setHighlight(0);
       setTimeout(() => inputRef.current?.focus(), 0);
     }
   }, [open]);
 
-  // Reset highlight when result count shrinks so it never points past the end.
-  useEffect(() => {
-    setHighlight((h) => (h >= flat.length ? 0 : h));
-  }, [flat.length]);
+  useEffect(() => { setHighlight((h) => (h >= flat.length ? 0 : h)); }, [flat.length]);
 
-  // ── debounced fetch ──
+  // ── debounced fetch (300 ms), starts at 3 chars ──
   useEffect(() => {
     if (!open) return;
-    const query = q.trim();
-    if (query.length < 2) {
-      setResults(EMPTY);
-      setLoading(false);
-      return;
-    }
+    const query = q.replace(/\s+/g, " ").trim();
+    if (query.length < MIN_CHARS) { setData(EMPTY); setLoading(false); return; }
     setLoading(true);
     const ctrl = new AbortController();
     const t = setTimeout(async () => {
       try {
-        const res = await fetch(`/api/quick-search?q=${encodeURIComponent(query)}`, {
-          signal: ctrl.signal,
-        });
-        if (!res.ok) {
-          setResults(EMPTY);
-        } else {
-          const data: SearchResults = await res.json();
-          setResults(data);
-        }
+        const res = await fetch(`/api/quick-search?q=${encodeURIComponent(query)}`, { signal: ctrl.signal });
+        setData(res.ok ? await res.json() : EMPTY);
       } catch {
-        // aborted or network error — leave previous results
+        /* aborted / network — keep previous */
       } finally {
         setLoading(false);
       }
-    }, 200);
-    return () => {
-      clearTimeout(t);
-      ctrl.abort();
-    };
+    }, DEBOUNCE_MS);
+    return () => { clearTimeout(t); ctrl.abort(); };
   }, [q, open]);
 
   const close = useCallback(() => setOpen(false), []);
-
-  const select = useCallback(
-    (item: FlatItem | undefined) => {
-      if (!item) return;
-      close();
-      router.push(item.href);
-    },
-    [close, router]
-  );
+  const select = useCallback((item: FlatItem | undefined) => {
+    if (!item) return;
+    close();
+    router.push(item.href);
+  }, [close, router]);
 
   function onInputKey(e: React.KeyboardEvent<HTMLInputElement>) {
-    if (e.key === "ArrowDown") {
-      e.preventDefault();
-      setHighlight((h) => (flat.length === 0 ? 0 : (h + 1) % flat.length));
-    } else if (e.key === "ArrowUp") {
-      e.preventDefault();
-      setHighlight((h) => (flat.length === 0 ? 0 : (h - 1 + flat.length) % flat.length));
-    } else if (e.key === "Enter") {
-      e.preventDefault();
-      select(flat[highlight]);
-    }
+    if (e.key === "ArrowDown") { e.preventDefault(); setHighlight((h) => (flat.length === 0 ? 0 : (h + 1) % flat.length)); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); setHighlight((h) => (flat.length === 0 ? 0 : (h - 1 + flat.length) % flat.length)); }
+    else if (e.key === "Enter") { e.preventDefault(); select(flat[highlight]); }
   }
 
   if (!open) return null;
 
-  // Group label rendering — we track a running offset so each row knows its
-  // index in the flat list (for highlight + click handling).
+  const query = q.replace(/\s+/g, " ").trim();
   let cursor = 0;
-  const groups: Array<{ key: keyof SearchResults; title: string; items: FlatItem[] }> = [
-    { key: "leads", title: "Leads", items: flat.filter((i) => i.group === "leads") },
-    { key: "projects", title: "Projects", items: flat.filter((i) => i.group === "projects") },
-    { key: "users", title: "Agents", items: flat.filter((i) => i.group === "users") },
-  ];
 
   return (
-    <div
-      className="fixed inset-0 z-[100] bg-black/50"
-      onClick={close}
-      role="dialog"
-      aria-modal="true"
-      aria-label="Quick search"
-    >
+    <div className="fixed inset-0 z-[100] bg-black/50" onClick={close} role="dialog" aria-modal="true" aria-label="Global search">
       <div
-        className="mx-auto w-[92vw] max-w-2xl bg-white rounded-xl border-2 border-[#c9a24b] shadow-2xl overflow-hidden"
-        style={{ marginTop: "12vh" }}
+        className="mx-auto w-[92vw] max-w-2xl bg-white dark:bg-slate-900 rounded-xl border-2 border-[#c9a24b] shadow-2xl overflow-hidden"
+        style={{ marginTop: "10vh" }}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center gap-2 px-4 py-3 border-b border-gray-200">
-          <span className="text-gray-400 text-sm">Search</span>
+        <div className="flex items-center gap-2 px-4 py-3 border-b border-gray-200 dark:border-slate-700">
+          <span className="text-gray-400 text-sm">🔍</span>
           <input
             ref={inputRef}
             type="text"
             value={q}
             onChange={(e) => setQ(e.target.value)}
             onKeyDown={onInputKey}
-            placeholder="Leads, projects, agents… (min 2 chars)"
-            className="flex-1 bg-transparent outline-none text-sm py-1"
+            placeholder="Search name, mobile, email, company, project… (min 3 chars)"
+            className="flex-1 bg-transparent outline-none text-sm py-1 dark:text-slate-100"
             autoComplete="off"
             spellCheck={false}
           />
-          {/* Proper ✕ close button (44×44 touch target). Esc + click-outside still
-              close the modal — Esc is now a keyboard shortcut only, not a visible chip. */}
           <button
             type="button"
             onClick={close}
@@ -226,54 +164,77 @@ export default function QuickSearch() {
           </button>
         </div>
 
-        <div className="max-h-[60vh] overflow-y-auto">
-          {q.trim().length < 2 && (
-            <div className="px-4 py-8 text-center text-sm text-gray-500">
-              Type at least 2 characters to search.
-            </div>
+        <div className="max-h-[64vh] overflow-y-auto">
+          {query.length < MIN_CHARS && (
+            <div className="px-4 py-8 text-center text-sm text-gray-500">Type at least 3 characters to search across all modules.</div>
           )}
-          {q.trim().length >= 2 && loading && flat.length === 0 && (
+          {query.length >= MIN_CHARS && loading && flat.length === 0 && (
             <div className="px-4 py-8 text-center text-sm text-gray-500">Searching…</div>
           )}
-          {q.trim().length >= 2 && !loading && flat.length === 0 && (
-            <div className="px-4 py-8 text-center text-sm text-gray-500">Not found</div>
+          {query.length >= MIN_CHARS && !loading && flat.length === 0 && (
+            <div className="px-4 py-8 text-center text-sm text-gray-500">No customer found for “{query}”.</div>
           )}
 
-          {groups.map((group) =>
-            group.items.length === 0 ? null : (
-              <div key={group.key}>
-                <div className="px-4 pt-3 pb-1 text-[10px] uppercase tracking-widest text-gray-400 font-semibold">
-                  {group.title}
-                </div>
-                {group.items.map((item) => {
+          {/* Customer results, grouped by module */}
+          {[...MODULE_ORDER, ...[...byModule.keys()].filter((k) => !MODULE_ORDER.includes(k as (typeof MODULE_ORDER)[number]))].map((label) => {
+            const hits = byModule.get(label) ?? [];
+            if (hits.length === 0) return null;
+            return (
+              <div key={label}>
+                <div className="px-4 pt-3 pb-1 text-[10px] uppercase tracking-widest text-gray-400 font-semibold">{label}</div>
+                {hits.map((h) => {
                   const idx = cursor++;
                   const isActive = idx === highlight;
                   return (
                     <button
-                      key={`${item.group}-${item.href}-${idx}`}
+                      key={`${h.recordType}-${h.id}`}
                       type="button"
                       onMouseEnter={() => setHighlight(idx)}
-                      onClick={() => select(item)}
-                      className={`w-full text-left px-4 py-2 flex items-center justify-between gap-3 ${
-                        isActive ? "bg-[#c9a24b]/15" : "hover:bg-gray-50"
-                      }`}
+                      onClick={() => select({ href: h.href, hit: h })}
+                      className={`w-full text-left px-4 py-2 ${isActive ? "bg-[#c9a24b]/15" : "hover:bg-gray-50 dark:hover:bg-slate-800"}`}
                     >
-                      <span className="text-sm text-gray-900 truncate">{item.label}</span>
-                      {item.meta && (
-                        <span className="text-xs text-gray-500 truncate flex-shrink-0">
-                          {item.meta}
-                        </span>
-                      )}
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-sm font-medium text-gray-900 dark:text-slate-100 truncate">{h.name}</span>
+                        <span className={`flex-shrink-0 text-[10px] font-semibold px-1.5 py-0.5 rounded ${MODULE_BADGE[h.module] ?? "bg-gray-100 text-gray-600"}`}>{h.module}</span>
+                      </div>
+                      <div className="mt-0.5 flex items-center gap-2 text-xs text-gray-500 dark:text-slate-400 truncate">
+                        {h.phone && <span className="tabular-nums">📱 {h.phone}</span>}
+                        <span className="truncate">👤 {h.agent}</span>
+                        <span className="ml-auto flex-shrink-0 px-1.5 py-0.5 rounded bg-gray-100 dark:bg-slate-700 text-gray-600 dark:text-slate-300">{h.status}</span>
+                      </div>
                     </button>
                   );
                 })}
               </div>
-            )
+            );
+          })}
+
+          {/* Projects (navigation aid, secondary) */}
+          {data.projects.length > 0 && (
+            <div>
+              <div className="px-4 pt-3 pb-1 text-[10px] uppercase tracking-widest text-gray-400 font-semibold">Projects</div>
+              {data.projects.map((p) => {
+                const idx = cursor++;
+                const isActive = idx === highlight;
+                return (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onMouseEnter={() => setHighlight(idx)}
+                    onClick={() => select({ href: "/properties", project: p })}
+                    className={`w-full text-left px-4 py-2 flex items-center justify-between gap-3 ${isActive ? "bg-[#c9a24b]/15" : "hover:bg-gray-50 dark:hover:bg-slate-800"}`}
+                  >
+                    <span className="text-sm text-gray-900 dark:text-slate-100 truncate">{p.name}</span>
+                    <span className="text-xs text-gray-500 truncate flex-shrink-0">{[p.city, p.country].filter(Boolean).join(", ")}</span>
+                  </button>
+                );
+              })}
+            </div>
           )}
         </div>
 
-        <div className="px-4 py-2 border-t border-gray-200 text-[10px] text-gray-400 flex items-center justify-between">
-          <span>↑↓ to navigate · Enter to open</span>
+        <div className="px-4 py-2 border-t border-gray-200 dark:border-slate-700 text-[10px] text-gray-400 flex items-center justify-between">
+          <span>↑↓ navigate · Enter open · module badge shows the source</span>
           <span>Ctrl/Cmd + K</span>
         </div>
       </div>

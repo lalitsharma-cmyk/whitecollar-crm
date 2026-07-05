@@ -6206,6 +6206,52 @@ const checks: Check[] = [
       assert(/notifSourceLabel/.test(ui) && /Open source/.test(ui), "notifications UI MUST show the Source label + an Open-source link to the backing record");
     },
   },
+  {
+    name: "global-search — cross-module + role-scoped + 3-char (leads by origin, buyers by market; no cross-agent leak)",
+    run: async () => {
+      const fsl = await import("fs");
+      const read = (f: string) => fsl.readFileSync(f, "utf8");
+      const src = read("src/app/api/quick-search/route.ts");
+
+      // (a) BOTH lead + buyer results are role-scoped server-side.
+      assert(/leadScopeWhere\(me\)/.test(src) && /buyerSearchScope\(me\)/.test(src),
+        "global search MUST scope leads via leadScopeWhere(me) + buyers via buyerSearchScope(me)");
+
+      // (b) every required field is searched.
+      for (const f of ["name", "phone", "altPhone", "email", "company"]) {
+        assert(new RegExp(`\\b${f}: \\{ contains`).test(src), `lead search MUST search ${f}`);
+      }
+      for (const f of ["clientName", "phones", "emails", "projectName"]) {
+        assert(new RegExp(`\\b${f}: \\{ contains`).test(src), `buyer search MUST search ${f}`);
+      }
+
+      // (c) all five lead-based modules are labelled.
+      for (const m of ["Master Data", "Revival Engine", "Dubai Buyer Data", "India Buyer Data"]) {
+        assert(src.includes(`"${m}"`), `global search MUST label the "${m}" module`);
+      }
+
+      // (d) 3-character minimum, both server + client, and 300ms client debounce.
+      assert(/MIN_CHARS = 3/.test(src), "search API MUST require >= 3 chars");
+      const qs = read("src/components/QuickSearch.tsx");
+      assert(/MIN_CHARS = 3/.test(qs) && /DEBOUNCE_MS = 300/.test(qs), "QuickSearch MUST trigger at 3 chars + debounce 300ms");
+
+      // (e) BEHAVIORAL: an AGENT's buyer search scope can NEVER match another agent's
+      //     buyer (ownership-pinned) — prove the leak count is exactly 0.
+      const { buyerSearchScope } = await import("../src/lib/buyerScope");
+      const agent = await prisma.user.findFirst({ where: { role: "AGENT", active: true }, select: { id: true } });
+      if (agent) {
+        const scope = await buyerSearchScope({ id: agent.id, role: "AGENT" });
+        const leak = await prisma.buyerRecord.count({ where: { AND: [scope, { ownerId: { not: agent.id } }] } });
+        assert(leak === 0, `${leak} buyers owned by others leak into agent ${agent.id}'s search scope`);
+      }
+
+      // (f) trigram indexes back the partial search (fast at scale).
+      const trgm = await prisma.$queryRawUnsafe<Array<{ n: number }>>(
+        "SELECT count(*)::int n FROM pg_indexes WHERE indexname LIKE '%_trgm'",
+      );
+      assert((trgm[0]?.n ?? 0) >= 6, `expected the pg_trgm search indexes (got ${trgm[0]?.n ?? 0}) — run scripts/search-trgm-indexes.sql`);
+    },
+  },
 ];
 
 // ── runner ────────────────────────────────────────────────────────────────────

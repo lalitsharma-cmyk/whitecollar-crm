@@ -484,7 +484,7 @@ export default function MobileShell({ children, user, awaitingTeamCount = 0, myO
               readOnly
               onClick={() => window.dispatchEvent(new KeyboardEvent("keydown", { key: "k", ctrlKey: true, bubbles: true }))}
               className="w-full pl-4 pr-4 py-2 rounded-lg bg-[#f5f6fa] dark:bg-slate-700 dark:text-slate-100 dark:border-slate-600 border border-transparent hover:bg-white dark:hover:bg-slate-600 hover:border-[#e5e7eb] dark:hover:border-slate-500 outline-none text-sm dark:placeholder:text-slate-500 cursor-pointer"
-              placeholder="Search leads, properties, phone, email…"
+              placeholder="Search name, mobile, email, company, project…"
             />
           </div>
           {user.role !== "AGENT" && <Link href="/leads/new" className="btn btn-ghost">+ New Lead</Link>}

@@ -152,6 +152,25 @@ export async function buyerScopeWhere(me: BuyerScopedUser): Promise<BuyerScopeWh
   return buyerScopeWhereForMarket(me, DUBAI_MARKET);
 }
 
+/** CROSS-MARKET, ownership-scoped buyer filter for GLOBAL SEARCH — finds a user's
+ *  buyers across Dubai AND India in one query (the module wheres are market-pinned;
+ *  search is not). Market access is respected automatically because it keys off
+ *  OWNERSHIP, not market:
+ *    ADMIN   → every live buyer (both markets, incl. pool).
+ *    AGENT   → ONLY their own currently-ASSIGNED buyers (which only exist in their
+ *              own market anyway) — never another agent's, never another market's.
+ *    MANAGER → buyers owned by their org sub-tree (their team ⇒ their market).
+ *  Always excludes soft-deleted rows. Use for read-only search surfaces only. */
+export async function buyerSearchScope(
+  me: BuyerScopedUser,
+): Promise<{ ownerId?: { in: string[] } | string; poolStatus?: string; deletedAt: null }> {
+  if (me.role === "ADMIN") return { deletedAt: null };
+  if (me.role === "AGENT") return { deletedAt: null, ownerId: me.id, poolStatus: "ASSIGNED" };
+  const ids = await visibleBuyerOwnerIds(me);
+  if (ids === null) return { deletedAt: null };
+  return { deletedAt: null, ownerId: ids.length === 1 ? ids[0] : { in: ids } };
+}
+
 /** True if `me` may access this specific buyer. Same rules as buyerScopeWhere,
  *  evaluated against one loaded record. Enforces: (1) the user can access Dubai
  *  buyers at all, (2) the record is Dubai-market, (3) it's not soft-deleted, and
