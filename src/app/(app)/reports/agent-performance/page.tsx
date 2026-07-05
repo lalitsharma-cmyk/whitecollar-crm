@@ -1,15 +1,20 @@
 import { requireUser } from "@/lib/auth";
 import { normalizeTeam } from "@/lib/teamRouting";
+import { canAccessBuyerMarket } from "@/lib/buyerScope";
 import Link from "next/link";
 import {
   buildAgentReport,
   resolveDateRange,
   type ReportScope,
 } from "@/lib/agentPerformance";
+import { LEAD_SOURCE_MODULES, type SourceModule } from "@/lib/moduleSource";
 import AgentPerformanceTable from "@/components/AgentPerformanceTable";
 import AgentRankings from "@/components/AgentRankings";
 import ConversionFunnel, { aggregateFunnel } from "@/components/ConversionFunnel";
 import AgentPerfRangeSelector from "@/components/AgentPerfRangeSelector";
+import ModuleFilter from "@/components/ModuleFilter";
+import ReportViewToggle from "@/components/ReportViewToggle";
+import BuyerPerformanceSection from "@/components/BuyerPerformanceSection";
 
 export const dynamic = "force-dynamic";
 
@@ -47,7 +52,28 @@ export default async function AgentPerformancePage({
     team: resolvedTeam,
   };
 
-  const rows = await buildAgentReport(range, scope);
+  const isAgent = me.role === "AGENT";
+  const isAdmin = me.role === "ADMIN";
+
+  // ── Module filter (All | Leads | Master Data | Revival) — applies to the Lead
+  // section only. Buyers have their own market split (handled in the Buyer section).
+  const module: SourceModule | "all" =
+    sp.module && (LEAD_SOURCE_MODULES as string[]).includes(sp.module)
+      ? (sp.module as SourceModule)
+      : "all";
+
+  // ── Lead / Buyer / Combined view (PARALLEL sections). Default "lead". Buyer &
+  // Combined require access to at least one buyer market (admin, or a market team).
+  const canDubai = canAccessBuyerMarket(me, "Dubai");
+  const canIndia = canAccessBuyerMarket(me, "India");
+  const showBuyer = canDubai || canIndia;
+  const view: "lead" | "buyer" | "combined" =
+    showBuyer && (sp.view === "buyer" || sp.view === "combined") ? sp.view : "lead";
+  const showLeadSection = view === "lead" || view === "combined";
+  const showBuyerSection = showBuyer && (view === "buyer" || view === "combined");
+
+  // Only build the (heavier) lead report when the lead section is visible.
+  const rows = showLeadSection ? await buildAgentReport(range, scope) : [];
   const overallFunnel = aggregateFunnel(rows);
 
   // Thread the active filters onto links (detail view + export) so they open
@@ -59,10 +85,8 @@ export default async function AgentPerformancePage({
     if (sp.to) qs.set("to", sp.to);
   }
   if (resolvedTeam) qs.set("team", resolvedTeam);
+  if (module !== "all") qs.set("module", module);
   const query = `?${qs.toString()}`;
-
-  const isAgent = me.role === "AGENT";
-  const isAdmin = me.role === "ADMIN";
 
   return (
     <>
@@ -100,37 +124,79 @@ export default async function AgentPerformancePage({
       {/* Time window selector */}
       <AgentPerfRangeSelector current={range.preset} from={sp.from} to={sp.to} />
 
+      {/* View toggle (Lead / Buyer / Combined) + Module filter (Lead section only) */}
+      <div className="card p-3 flex flex-col sm:flex-row sm:items-center gap-3 flex-wrap">
+        <ReportViewToggle current={view} showBuyer={showBuyer} />
+        {showLeadSection && <ModuleFilter current={module} />}
+      </div>
+
       {/* Export (CSV) — OWNER (Super Admin) only, matching the server gate; others see a note */}
       {me.isSuperAdmin ? (
         <div className="flex flex-wrap gap-2 items-center">
           <span className="text-xs text-gray-500">Export:</span>
-          <a href={`/api/reports/agent-performance/export${query}&format=csv`} className="btn btn-ghost text-xs">⬇️ CSV</a>
-          <a href={`/api/reports/agent-performance/export${query}&format=xlsx`} className="btn btn-ghost text-xs">⬇️ Excel</a>
+          <a href={`/api/reports/agent-performance/export${query}&format=csv`} className="btn btn-ghost text-xs">⬇️ CSV (leads)</a>
+          <a href={`/api/reports/agent-performance/export${query}&format=xlsx`} className="btn btn-ghost text-xs">⬇️ Excel (leads)</a>
         </div>
       ) : (
         <div className="text-[11px] text-gray-500 italic">CSV/Excel export is restricted to the owner (Super Admin).</div>
       )}
 
-      {/* Per-agent metrics table */}
-      <AgentPerformanceTable rows={rows} query={query} />
+      {/* ── LEAD SECTION (module-bifurcated) ─────────────────────────────── */}
+      {showLeadSection && (
+        <div className="flex flex-col gap-3">
+          {view === "combined" && <h2 className="text-lg font-bold">🧲 Lead Performance</h2>}
 
-      {/* Conversion funnel (overall / scope) */}
-      <ConversionFunnel
-        stages={overallFunnel}
-        title={isAgent ? "Your conversion funnel" : `Conversion funnel — ${resolvedTeam ?? "all agents"}`}
-      />
+          {/* Per-agent metrics table (module-aware) */}
+          <AgentPerformanceTable rows={rows} query={query} module={module} />
 
-      {/* Manager rankings — hidden for AGENT (single-row scope) */}
-      {!isAgent && rows.length > 1 && <AgentRankings rows={rows} />}
+          {/* Conversion funnel (overall / scope) */}
+          <ConversionFunnel
+            stages={overallFunnel}
+            title={isAgent ? "Your conversion funnel" : `Conversion funnel — ${resolvedTeam ?? "all agents"}`}
+          />
+
+          {/* Manager rankings — hidden for AGENT (single-row scope) */}
+          {!isAgent && rows.length > 1 && <AgentRankings rows={rows} />}
+        </div>
+      )}
+
+      {/* ── BUYER SECTION (parallel — Dubai + India, buyer metrics only) ──── */}
+      {showBuyerSection && (
+        <div className="flex flex-col gap-6">
+          {view === "combined" && (
+            <div className="border-t border-gray-200 pt-2 text-[11px] uppercase tracking-widest text-gray-400 font-semibold">
+              Buyer Data — parallel section (separate metrics, not merged with leads)
+            </div>
+          )}
+          {canDubai && (
+            <BuyerPerformanceSection
+              market="Dubai"
+              range={range}
+              meId={me.id}
+              role={me.role as ReportScope["role"]}
+              isAdmin={isAdmin && !resolvedTeam}
+            />
+          )}
+          {canIndia && (
+            <BuyerPerformanceSection
+              market="India"
+              range={range}
+              meId={me.id}
+              role={me.role as ReportScope["role"]}
+              isAdmin={isAdmin && !resolvedTeam}
+            />
+          )}
+        </div>
+      )}
 
       <div className="card p-3 bg-blue-50 border-l-4 border-blue-400 text-[11px] text-blue-800 leading-relaxed">
-        <strong>How to read this:</strong> Assignment metrics count by the lead&apos;s <strong>current owner</strong> — a lead
-        reassigned from one agent to another immediately follows the new owner, so &quot;Total Assigned&quot; matches global search,
-        the Leads list, the lead detail page, and export. (A lead the agent owned that is now rejected-and-unassigned is still
-        attributed to them.) Rejected leads are included in handled volume. Deleted / recycle-bin leads are never counted. The
-        Assignment group is a current snapshot (not period-filtered); Outcomes / Engagement / Meetings respect the period filter.
-        Counts reconcile 1:1 with the lead lists they link to. Revenue / brokerage / booking-value tracking can be layered on later
-        without changing this report.
+        <strong>How to read this:</strong> The report has two PARALLEL sections. <strong>Lead Performance</strong> bifurcates every
+        lead metric across the three lead-origin modules — <strong>Leads · Master Data · Revival Engine</strong> — so every total =
+        Leads + Master Data + Revival (expand any agent row, or use the Module filter). <strong>Buyer Data</strong> is a separate section
+        with buyer-appropriate metrics (assigned / converted / returned / attempts), split Dubai vs India — never lead metrics like
+        Fresh or Follow-up. Lead assignment counts by <strong>current owner</strong> (a reassigned lead follows its new owner, matching
+        global search / the Leads list / export). Rejected leads are included in handled volume; deleted / recycle-bin records are never
+        counted. Assignment is a current snapshot; Outcomes / Engagement / Meetings respect the period filter.
       </div>
     </>
   );

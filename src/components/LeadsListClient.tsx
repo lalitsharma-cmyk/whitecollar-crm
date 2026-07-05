@@ -259,7 +259,12 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
   const [pickerPos, setPickerPos] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
   const [statusOpenFor, setStatusOpenFor] = useState<string | null>(null);
   const [enquiryEditFor, setEnquiryEditFor] = useState<string | null>(null);
-  // §1: Assigned is display-only from the table — no inline reassign dropdown.
+  // Inline Assigned-agent picker (Admin/Manager only — gated by canReassign, and
+  // the Assigned column itself is already hidden from agents). Mirrors the Master
+  // Data agent cell: routes through the SAME audited /update ownerId endpoint
+  // (assignLeadTo → Assignment history + notify + SLA + change-history), so the
+  // Agent Performance report and the new owner's notification both stay correct.
+  const [reassignOpenFor, setReassignOpenFor] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
   const [deleteReason, setDeleteReason] = useState("NOT_INTERESTED");
   const [deleteNote, setDeleteNote] = useState("");
@@ -358,6 +363,23 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
       body: JSON.stringify({ currentStatus }),
     });
     setStatusOpenFor(null);
+    router.refresh();
+  }
+
+  // Inline reassign (Admin/Manager) — set / clear a lead's owner from the list.
+  // Reuses the SAME /update endpoint the Master Data agent cell + lead detail use:
+  // the ownerId branch routes through assignLeadTo() (Assignment history + notify +
+  // SLA) on assign, and clears the SLA on unassign, and records field-change history
+  // both ways. "" (— Unassign —) sends null. Surfaces the server error (e.g. the
+  // "reactivate a rejected lead first" 409) so the picker never silently no-ops.
+  async function quickReassign(leadId: string, ownerId: string) {
+    const r = await fetch(`/api/leads/${leadId}/update`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ownerId: ownerId || null }),
+    });
+    setReassignOpenFor(null);
+    if (!r.ok) { const j = await r.json().catch(() => ({})); if (j.error) alert(j.error); return; }
     router.refresh();
   }
 
@@ -471,6 +493,7 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
     const fn = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
       if (statusOpenFor) { setStatusOpenFor(null); return; }
+      if (reassignOpenFor) { setReassignOpenFor(null); return; }
       if (pickerOpenFor) { setPickerOpenFor(null); return; }
       if (showTagPopover || showReassignPopover || showRejectModal || showWaPopover) {
         setShowTagPopover(false);
@@ -483,19 +506,20 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
     };
     window.addEventListener("keydown", fn);
     return () => window.removeEventListener("keydown", fn);
-  }, [statusOpenFor, showTagPopover, showReassignPopover, showRejectModal, showWaPopover, selected.size]);
+  }, [statusOpenFor, reassignOpenFor, showTagPopover, showReassignPopover, showRejectModal, showWaPopover, selected.size]);
 
   // Click outside to close floating popovers
   useEffect(() => {
-    if (!statusOpenFor && !pickerOpenFor) return;
+    if (!statusOpenFor && !pickerOpenFor && !reassignOpenFor) return;
     const fn = (e: MouseEvent) => {
       const target = e.target as HTMLElement;
       if (!target.closest("[data-status-popover]")) setStatusOpenFor(null);
       if (!target.closest("[data-picker-popover]")) setPickerOpenFor(null);
+      if (!target.closest("[data-reassign-popover]")) setReassignOpenFor(null);
     };
     document.addEventListener("mousedown", fn);
     return () => document.removeEventListener("mousedown", fn);
-  }, [statusOpenFor, pickerOpenFor]);
+  }, [statusOpenFor, pickerOpenFor, reassignOpenFor]);
 
   function togglePickedTag(t: string) {
     setPickedTags((s) => {
@@ -902,10 +926,41 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
                           </button>
                         </td>
 
-                        {/* 6. Assigned — hidden for agents (they only ever see their own leads) */}
+                        {/* 6. Assigned — hidden for agents (they only ever see their own
+                            leads). Admin/Manager (canReassign) get an inline owner picker
+                            here — floating popover, same pattern as Status; the table never
+                            shifts. Everyone else sees display-only text. */}
                         {!isAgent && (
-                          <td className="px-3 py-1.5 text-gray-600 dark:text-slate-300 text-xs truncate">
-                            {l.owner?.name ?? <span className="text-amber-500 text-[10px]">Unassigned</span>}
+                          <td className="px-3 py-1.5 text-gray-600 dark:text-slate-300 text-xs truncate" onClick={e => e.stopPropagation()}>
+                            {canReassign ? (
+                              <div className="relative" data-reassign-popover>
+                                <button type="button"
+                                  onClick={() => setReassignOpenFor(reassignOpenFor === l.id ? null : l.id)}
+                                  className={`text-xs inline-flex items-center gap-0.5 hover:underline max-w-full ${l.owner ? "text-gray-600 dark:text-slate-300" : "text-amber-600 dark:text-amber-400 font-medium"}`}
+                                  title="Click to reassign">
+                                  <span className="truncate">{l.owner?.name ?? "Unassigned"}</span>
+                                  <span className="shrink-0" aria-hidden>▾</span>
+                                </button>
+                                {reassignOpenFor === l.id && (
+                                  <div className="absolute left-0 top-full mt-1 z-50 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-600 rounded-lg shadow-xl w-52 max-h-72 overflow-y-auto py-1"
+                                    onClick={e => e.stopPropagation()}>
+                                    <button type="button" onClick={() => quickReassign(l.id, "")}
+                                      className="w-full text-left px-3 py-1.5 text-xs hover:bg-gray-50 dark:hover:bg-slate-700 text-amber-600 dark:text-amber-400">
+                                      — Unassign —
+                                    </button>
+                                    {agents.map(a => (
+                                      <button key={a.id} type="button" onClick={() => quickReassign(l.id, a.id)}
+                                        className={`w-full text-left px-3 py-1.5 text-xs hover:bg-gray-50 dark:hover:bg-slate-700 flex items-center justify-between gap-2 ${l.owner?.name === a.name ? "font-semibold text-[#0b1a33] dark:text-blue-300" : "text-gray-700 dark:text-slate-200"}`}>
+                                        <span className="truncate">{a.name}</span>
+                                        {a.team && <span className="text-[9px] text-gray-400 shrink-0">{a.team}</span>}
+                                      </button>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            ) : (
+                              l.owner?.name ?? <span className="text-amber-500 text-[10px]">Unassigned</span>
+                            )}
                           </td>
                         )}
 
@@ -1368,24 +1423,49 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
                     </div>
                   </td>
 
-                  {/* ── Assigned to — admin/manager only ── */}
+                  {/* ── Assigned to — admin/manager only. Inline owner picker (same
+                      audited /update ownerId path as the table + Master Data). ── */}
                   {canReassign && (
-                    <td className="px-3 py-3 align-top">
-                      {l.owner ? (
-                        <div className="flex items-center gap-1.5">
-                          <span
-                            className={`avatar ${l.owner.avatarColor} w-6 h-6 text-[9px] flex-none inline-flex items-center justify-center rounded-full font-bold`}
-                            title={l.owner.name}
-                          >
-                            {l.owner.name.split(" ").map((s: string) => s[0]).slice(0, 2).join("")}
-                          </span>
-                          <span className="text-xs text-gray-600 dark:text-slate-300 truncate max-w-[72px]" title={l.owner.name}>
-                            {l.owner.name.split(" ")[0]}
-                          </span>
-                        </div>
-                      ) : (
-                        <span className="text-[11px] text-amber-600 dark:text-amber-400 font-medium">Unassigned</span>
-                      )}
+                    <td className="px-3 py-3 align-top" onClick={(e) => e.stopPropagation()}>
+                      <div className="relative" data-reassign-popover>
+                        <button type="button"
+                          onClick={() => setReassignOpenFor(reassignOpenFor === l.id ? null : l.id)}
+                          className="inline-flex items-center gap-1.5 hover:opacity-80 max-w-full"
+                          title="Click to reassign">
+                          {l.owner ? (
+                            <>
+                              <span
+                                className={`avatar ${l.owner.avatarColor} w-6 h-6 text-[9px] flex-none inline-flex items-center justify-center rounded-full font-bold`}
+                                title={l.owner.name}
+                              >
+                                {l.owner.name.split(" ").map((s: string) => s[0]).slice(0, 2).join("")}
+                              </span>
+                              <span className="text-xs text-gray-600 dark:text-slate-300 truncate max-w-[72px]" title={l.owner.name}>
+                                {l.owner.name.split(" ")[0]}
+                              </span>
+                            </>
+                          ) : (
+                            <span className="text-[11px] text-amber-600 dark:text-amber-400 font-medium">Unassigned</span>
+                          )}
+                          <span className="shrink-0 text-gray-400" aria-hidden>▾</span>
+                        </button>
+                        {reassignOpenFor === l.id && (
+                          <div className="absolute right-0 top-full mt-1 z-50 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-600 rounded-lg shadow-xl w-52 max-h-72 overflow-y-auto py-1"
+                            onClick={e => e.stopPropagation()}>
+                            <button type="button" onClick={() => quickReassign(l.id, "")}
+                              className="w-full text-left px-3 py-1.5 text-xs hover:bg-gray-50 dark:hover:bg-slate-700 text-amber-600 dark:text-amber-400">
+                              — Unassign —
+                            </button>
+                            {agents.map(a => (
+                              <button key={a.id} type="button" onClick={() => quickReassign(l.id, a.id)}
+                                className={`w-full text-left px-3 py-1.5 text-xs hover:bg-gray-50 dark:hover:bg-slate-700 flex items-center justify-between gap-2 ${l.owner?.name === a.name ? "font-semibold text-[#0b1a33] dark:text-blue-300" : "text-gray-700 dark:text-slate-200"}`}>
+                                <span className="truncate">{a.name}</span>
+                                {a.team && <span className="text-[9px] text-gray-400 shrink-0">{a.team}</span>}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
                     </td>
                   )}
 

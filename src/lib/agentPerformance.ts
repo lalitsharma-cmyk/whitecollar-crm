@@ -43,6 +43,8 @@ import {
 } from "@/lib/lead-statuses";
 import { ACTIVE_ORIGIN_WHERE } from "@/lib/leadScope";
 import { isActivePipelineRow } from "@/lib/freshLeads";
+import { leadSourceModule, LEAD_SOURCE_MODULES } from "@/lib/moduleSource";
+import type { SourceModule } from "@/lib/moduleSource";
 
 // Typed enum arrays for Prisma `in` filters (string-backed enums; we keep them
 // as proper enum arrays so the queries are type-checked). Connected = picked up;
@@ -251,10 +253,73 @@ export async function scopedAgents(scope: ReportScope): Promise<AgentLite[]> {
 // One flat typed object per agent. Adding a future metric = add a field here +
 // populate it in buildAgentReport(). Drill-down keys map 1:1 to drilldownWhere().
 
+// ── Module bifurcation (Lalit 2026-07-06) ────────────────────────────────────
+// Every LEAD-derived metric is additionally split across the 3 lead-origin
+// modules — Leads · Master Data · Revival Engine — via the CANONICAL resolver
+// leadSourceModule(leadOrigin, isColdCall). The split is an ADDITIVE structure on
+// top of the existing flat totals: for a bifurcated metric X, the invariant
+//   X === moduleSplit.X["Leads"] + moduleSplit.X["Master Data"] + moduleSplit.X["Revival Engine"]
+// holds by construction (each source row is classified once, into exactly one
+// module). A tiny runtime assertion (assertSplitsSumToTotals) verifies it.
+//
+// Buyer modules (Dubai / India Buyer Data) are NOT part of this split — buyers
+// are a SEPARATE parallel report (buyerPerformance.ts). We never invent lead
+// metrics (Fresh / Follow-up) for buyers.
+
+/** A per-lead-module tally: Leads · Master Data · Revival Engine. */
+export type ModuleTriple = Record<SourceModule, number>;
+
+/** The lead metrics that carry a module breakdown. Keep in sync with
+ *  buildModuleSplit()'s populated fields + MODULE_SPLIT_METRICS below. */
+export interface ModuleSplit {
+  totalAssigned: ModuleTriple;
+  freshAssigned: ModuleTriple;
+  stillActive: ModuleTriple;
+  closedWon: ModuleTriple;
+  lost: ModuleTriple;
+  rejected: ModuleTriple;
+  curBooked: ModuleTriple;
+  callsLogged: ModuleTriple;
+  notesAdded: ModuleTriple;
+  whatsappConversations: ModuleTriple;
+  meetingsScheduled: ModuleTriple;
+  siteVisitsScheduled: ModuleTriple;
+}
+
+/** An empty {Leads:0, Master Data:0, Revival Engine:0} triple (only the 3 lead
+ *  modules — buyers are excluded from the split by design). */
+function zeroTriple(): ModuleTriple {
+  return { "Leads": 0, "Master Data": 0, "Revival Engine": 0, "Dubai Buyer Data": 0, "India Buyer Data": 0 };
+}
+function zeroSplit(): ModuleSplit {
+  return {
+    totalAssigned: zeroTriple(), freshAssigned: zeroTriple(), stillActive: zeroTriple(),
+    closedWon: zeroTriple(), lost: zeroTriple(), rejected: zeroTriple(), curBooked: zeroTriple(),
+    callsLogged: zeroTriple(), notesAdded: zeroTriple(), whatsappConversations: zeroTriple(),
+    meetingsScheduled: zeroTriple(), siteVisitsScheduled: zeroTriple(),
+  };
+}
+
+/** The metric keys that have a module split (drives the UI expandable rows +
+ *  the total==sum assertion). Each names a numeric AgentMetrics field AND a
+ *  ModuleSplit field. */
+export const MODULE_SPLIT_METRICS: Array<keyof ModuleSplit & keyof AgentMetrics> = [
+  "totalAssigned", "freshAssigned", "stillActive", "closedWon", "lost", "rejected",
+  "curBooked", "callsLogged", "notesAdded", "whatsappConversations",
+  "meetingsScheduled", "siteVisitsScheduled",
+];
+
 export interface AgentMetrics {
   agentId: string;
   agentName: string;
   team: string | null;
+
+  /**
+   * Per-lead-module breakdown of the bifurcated metrics (see ModuleSplit).
+   * ADDITIVE — the flat totals below are unchanged; this is a parallel view so
+   * total === Leads + Master Data + Revival for each covered metric.
+   */
+  moduleSplit: ModuleSplit;
 
   // ── Lead Assignment (by ASSIGNMENT HISTORY in window) ──
   totalAssigned: number;
@@ -333,6 +398,7 @@ function zeroMetrics(a: AgentLite): AgentMetrics {
     agentId: a.id,
     agentName: a.name,
     team: a.team,
+    moduleSplit: zeroSplit(),
     totalAssigned: 0, freshAssigned: 0, websiteAssigned: 0, eventAssigned: 0, revivalAssigned: 0, buyerAssigned: 0,
     curFresh: 0, curContacted: 0, curQualified: 0, curMeeting: 0, curSiteVisit: 0, curNegotiation: 0, curBooked: 0, curLost: 0, curOther: 0, assignedActive: 0, curRejected: 0,
     rejected: 0, closedWon: 0, lost: 0, stillActive: 0, awaitingFollowup: 0, noFollowup: 0,
@@ -414,9 +480,15 @@ export async function buildAgentReport(range: DateRange, scope: ReportScope): Pr
     if (!aid) continue;
     const m = byId.get(aid);
     if (!m) continue;
+    // Canonical module for this lead row — the ONE classifier every surface uses.
+    const mod = leadSourceModule(l.leadOrigin, l.isColdCall);
     m.totalAssigned += 1;
+    m.moduleSplit.totalAssigned[mod] += 1;
     // Fresh = active Leads pipeline only (not Master Data / Revival-Cold / imported).
-    if (isActivePipelineRow(l) && isFreshStatus(l.currentStatus)) m.freshAssigned += 1;
+    if (isActivePipelineRow(l) && isFreshStatus(l.currentStatus)) {
+      m.freshAssigned += 1;
+      m.moduleSplit.freshAssigned[mod] += 1;
+    }
     if (WEBSITE_SOURCE_LABELS.has(l.source)) m.websiteAssigned += 1;
     if (EVENT_SOURCE_LABELS.has(l.source)) m.eventAssigned += 1;
     if (REVIVAL_ORIGINS.includes(l.leadOrigin) || l.isColdCall) m.revivalAssigned += 1;
@@ -433,7 +505,7 @@ export async function buildAgentReport(range: DateRange, scope: ReportScope): Pr
       case "MEETING": m.curMeeting += 1; break;
       case "SITE_VISIT": m.curSiteVisit += 1; break;
       case "NEGOTIATION": m.curNegotiation += 1; break;
-      case "BOOKED": m.curBooked += 1; break;
+      case "BOOKED": m.curBooked += 1; m.moduleSplit.curBooked[mod] += 1; break;
       case "LOST": m.curLost += 1; break;
       default: m.curOther += 1; break;
     }
@@ -449,31 +521,37 @@ export async function buildAgentReport(range: DateRange, scope: ReportScope): Pr
   // rejectedAt-in-window (rejection is a dated event); the others are the
   // current standing of leads the agent owns (point-in-time book health).
   // Deleted excluded throughout.
+  // MODULE-AWARE variants: the rejected / closed / lost / active groupBys add
+  // leadOrigin + isColdCall to the `by` so each combo row can be classified into
+  // its module (leadSourceModule). The flat total is the sum over all a lead's
+  // combos → total === Leads + Master Data + Revival by construction. awaiting /
+  // noFollowup are NOT split (they are Leads-pipeline-only via ACTIVE_ORIGIN_WHERE).
   const [
     rejectedRows, closedRows, lostRows, activeRows, awaitingRows, noFuRows,
     rejectedPrevRows, lostPrevRows,
   ] = await Promise.all([
     prisma.lead.groupBy({
-      by: ["ownerId"],
+      by: ["ownerId", "leadOrigin", "isColdCall"],
       where: { ownerId: { in: agentIds }, deletedAt: null, rejectedAt: win },
       _count: { _all: true },
     }),
     prisma.lead.groupBy({
-      by: ["ownerId"],
+      by: ["ownerId", "leadOrigin", "isColdCall"],
       where: { ownerId: { in: agentIds }, deletedAt: null, currentStatus: { in: CLOSED_OUTCOME_STATUSES } },
       _count: { _all: true },
     }),
     prisma.lead.groupBy({
-      by: ["ownerId"],
+      by: ["ownerId", "leadOrigin", "isColdCall"],
       where: { ownerId: { in: agentIds }, deletedAt: null, currentStatus: { in: LOST_STATUSES } },
       _count: { _all: true },
     }),
     prisma.lead.groupBy({
-      by: ["ownerId"],
+      by: ["ownerId", "leadOrigin", "isColdCall"],
       // stillActive — the agent's CANONICAL active book: ACTIVE_LEAD origin (no
       // cold/revival/master-data), non-deleted, non-terminal status. This equals
       // activeLeadWhere({ ownerId }) so the same agent's "active leads" is identical
       // here and on /reports/leaderboard, /reports, /team, /profile, /team/[id].
+      // (Under ACTIVE_ORIGIN_WHERE the split will be ~all "Leads", which is correct.)
       where: {
         ownerId: { in: agentIds }, deletedAt: null, ...ACTIVE_ORIGIN_WHERE,
         OR: [{ currentStatus: null }, { currentStatus: "" }, { currentStatus: { notIn: TERMINAL_STATUSES } }],
@@ -503,35 +581,44 @@ export async function buildAgentReport(range: DateRange, scope: ReportScope): Pr
     // previous owner so per-agent Rejected/Lost stays accurate after the hard-unassign
     // (Lalit 2026-06-27). The owner-scoped rows above still catch any not-yet-migrated.
     prisma.lead.groupBy({
-      by: ["previousOwnerId"],
+      by: ["previousOwnerId", "leadOrigin", "isColdCall"],
       where: { ownerId: null, previousOwnerId: { in: agentIds }, deletedAt: null, rejectedAt: win },
       _count: { _all: true },
     }),
     prisma.lead.groupBy({
-      by: ["previousOwnerId"],
+      by: ["previousOwnerId", "leadOrigin", "isColdCall"],
       where: { ownerId: null, previousOwnerId: { in: agentIds }, deletedAt: null, currentStatus: { in: LOST_STATUSES } },
       _count: { _all: true },
     }),
   ]);
-  applyGroup(byId, rejectedRows, (m, n) => (m.rejected = n));
-  applyGroupP(byId, rejectedPrevRows, (m, n) => (m.rejected += n));
-  applyGroup(byId, closedRows, (m, n) => (m.closedWon = n));
-  applyGroup(byId, lostRows, (m, n) => (m.lost = n));
-  applyGroupP(byId, lostPrevRows, (m, n) => (m.lost += n));
-  applyGroup(byId, activeRows, (m, n) => (m.stillActive = n));
+  // Flat totals + module split from the same combo rows. `metric` names both the
+  // flat AgentMetrics field and the ModuleSplit field (they share the name for
+  // every bifurcated outcome). The owner variant keys on ownerId; the prev
+  // variant keys on previousOwnerId and ADDs onto the same fields.
+  applyGroupModule(byId, rejectedRows, "rejected", "ownerId");
+  applyGroupModule(byId, closedRows, "closedWon", "ownerId");
+  applyGroupModule(byId, lostRows, "lost", "ownerId");
+  applyGroupModule(byId, activeRows, "stillActive", "ownerId");
   applyGroup(byId, awaitingRows, (m, n) => (m.awaitingFollowup = n));
   applyGroup(byId, noFuRows, (m, n) => (m.noFollowup = n));
+  // Previous-owner (unassigned rejected/lost) combos → same fields, ADD onto them.
+  applyGroupModule(byId, rejectedPrevRows, "rejected", "previousOwnerId");
+  applyGroupModule(byId, lostPrevRows, "lost", "previousOwnerId");
 
   // ── 3. ENGAGEMENT (Activity + CallLog + Note, by userId, in window) ──
   // Calls: CallLog is the authoritative call record (the leaderboard uses it).
   // Connected / not-picked split via the shared callOutcome classification.
   // WhatsApp: Activity type=WHATSAPP (the live convention; WhatsAppMessage is
   // barely populated). Notes + voice notes from Note (voiceOriginal != null).
-  const [callRows, connRows, notPickRows, waRows, noteRows, voiceRows] = await Promise.all([
-    prisma.callLog.groupBy({
-      by: ["userId"],
+  // Calls / notes / WhatsApp are additionally split by the LEAD's module. Prisma
+  // groupBy can't group across the lead relation, so these three pull the joined
+  // lead's origin fields via findMany and tally BOTH the flat total and the
+  // per-module split in-memory (one row counted once → total === sum of modules).
+  // Connected / not-picked / voice stay as groupBy counts (not split).
+  const [callActRows, connRows, notPickRows, waActRows, noteActRows, voiceRows] = await Promise.all([
+    prisma.callLog.findMany({
       where: { userId: { in: agentIds }, startedAt: win, lead: { deletedAt: null } },
-      _count: { _all: true },
+      select: { userId: true, lead: { select: { leadOrigin: true, isColdCall: true } } },
     }),
     prisma.callLog.groupBy({
       by: ["userId"],
@@ -543,15 +630,13 @@ export async function buildAgentReport(range: DateRange, scope: ReportScope): Pr
       where: { userId: { in: agentIds }, startedAt: win, lead: { deletedAt: null }, outcome: { in: NOT_PICKED_CALL_OUTCOMES } },
       _count: { _all: true },
     }),
-    prisma.activity.groupBy({
-      by: ["userId"],
+    prisma.activity.findMany({
       where: { userId: { in: agentIds }, type: "WHATSAPP", createdAt: win, lead: { deletedAt: null } },
-      _count: { _all: true },
+      select: { userId: true, lead: { select: { leadOrigin: true, isColdCall: true } } },
     }),
-    prisma.note.groupBy({
-      by: ["userId"],
+    prisma.note.findMany({
       where: { userId: { in: agentIds }, createdAt: win, lead: { deletedAt: null } },
-      _count: { _all: true },
+      select: { userId: true, lead: { select: { leadOrigin: true, isColdCall: true } } },
     }),
     prisma.note.groupBy({
       by: ["userId"],
@@ -559,11 +644,11 @@ export async function buildAgentReport(range: DateRange, scope: ReportScope): Pr
       _count: { _all: true },
     }),
   ]);
-  applyGroupU(byId, callRows, (m, n) => (m.callsLogged = n));
+  applyActivityModule(byId, callActRows, "callsLogged");
   applyGroupU(byId, connRows, (m, n) => (m.connectedCalls = n));
   applyGroupU(byId, notPickRows, (m, n) => (m.notPickedCalls = n));
-  applyGroupU(byId, waRows, (m, n) => (m.whatsappConversations = n));
-  applyGroupU(byId, noteRows, (m, n) => (m.notesAdded = n));
+  applyActivityModule(byId, waActRows, "whatsappConversations");
+  applyActivityModule(byId, noteActRows, "notesAdded");
   applyGroupU(byId, voiceRows, (m, n) => (m.voiceNotesAdded = n));
 
   // ── 4. MEETINGS + SITE VISITS (Activity, by userId, in window) ──
@@ -571,11 +656,13 @@ export async function buildAgentReport(range: DateRange, scope: ReportScope): Pr
   // outcome). "Completed" = status DONE. Office/Virtual counted by type.
   // Site visits: scheduled / DONE / CANCELLED. EXPO_MEETING + HOME_VISIT roll
   // into the meeting bucket so nothing is silently dropped.
-  const [meetSched, meetDone, officeRows, virtualRows, svSched, svDone, svCancel] = await Promise.all([
-    prisma.activity.groupBy({
-      by: ["userId"],
+  // meetingsScheduled + siteVisitsScheduled carry the module split (findMany with
+  // the joined lead origin, tallied in-memory). meetingsCompleted / office /
+  // virtual / site-visit done / cancelled stay as plain groupBy counts.
+  const [meetSchedRows, meetDone, officeRows, virtualRows, svSchedRows, svDone, svCancel] = await Promise.all([
+    prisma.activity.findMany({
       where: { userId: { in: agentIds }, type: { in: MEETING_ACTIVITY_TYPES }, createdAt: win, lead: { deletedAt: null } },
-      _count: { _all: true },
+      select: { userId: true, lead: { select: { leadOrigin: true, isColdCall: true } } },
     }),
     prisma.activity.groupBy({
       by: ["userId"],
@@ -592,10 +679,9 @@ export async function buildAgentReport(range: DateRange, scope: ReportScope): Pr
       where: { userId: { in: agentIds }, type: "VIRTUAL_MEETING", createdAt: win, lead: { deletedAt: null } },
       _count: { _all: true },
     }),
-    prisma.activity.groupBy({
-      by: ["userId"],
+    prisma.activity.findMany({
       where: { userId: { in: agentIds }, type: "SITE_VISIT", createdAt: win, lead: { deletedAt: null } },
-      _count: { _all: true },
+      select: { userId: true, lead: { select: { leadOrigin: true, isColdCall: true } } },
     }),
     prisma.activity.groupBy({
       by: ["userId"],
@@ -608,11 +694,11 @@ export async function buildAgentReport(range: DateRange, scope: ReportScope): Pr
       _count: { _all: true },
     }),
   ]);
-  applyGroupU(byId, meetSched, (m, n) => (m.meetingsScheduled = n));
+  applyActivityModule(byId, meetSchedRows, "meetingsScheduled");
   applyGroupU(byId, meetDone, (m, n) => (m.meetingsCompleted = n));
   applyGroupU(byId, officeRows, (m, n) => (m.officeMeetings = n));
   applyGroupU(byId, virtualRows, (m, n) => (m.virtualMeetings = n));
-  applyGroupU(byId, svSched, (m, n) => (m.siteVisitsScheduled = n));
+  applyActivityModule(byId, svSchedRows, "siteVisitsScheduled");
   applyGroupU(byId, svDone, (m, n) => (m.siteVisitsCompleted = n));
   applyGroupU(byId, svCancel, (m, n) => (m.siteVisitsCancelled = n));
 
@@ -636,8 +722,84 @@ export async function buildAgentReport(range: DateRange, scope: ReportScope): Pr
   applyGroup(byId, fNego, (m, n) => (m.funnelNegotiations = n));
   applyGroup(byId, fBook, (m, n) => (m.funnelBookings = n));
 
+  // Internal invariant: every bifurcated total === the sum of its 3 module parts.
+  // Dev-time guard only (logs on drift; never throws in prod so a report never
+  // 500s over an accounting mismatch). See MODULE_SPLIT_METRICS.
+  for (const m of byId.values()) assertSplitsSumToTotals(m);
+
   // Stable order: by agent name (matches scopedAgents()).
   return agents.map((a) => byId.get(a.id)!);
+}
+
+// ── Module-split appliers ─────────────────────────────────────────────────────
+// applyGroupModule: for a groupBy keyed on [ownerId|previousOwnerId, leadOrigin,
+// isColdCall], accumulate BOTH the flat metric total AND the per-module split.
+// `metric` names the shared field on AgentMetrics + ModuleSplit. `ownerKey`
+// selects which id column attributes the row. Both flat + split use += so the
+// previous-owner pass adds cleanly onto the owner pass.
+function applyGroupModule(
+  byId: Map<string, AgentMetrics>,
+  rows: Array<{
+    ownerId?: string | null;
+    previousOwnerId?: string | null;
+    leadOrigin: string | null;
+    isColdCall: boolean | null;
+    _count: { _all: number };
+  }>,
+  metric: keyof ModuleSplit & keyof AgentMetrics,
+  ownerKey: "ownerId" | "previousOwnerId",
+): void {
+  for (const r of rows) {
+    const id = ownerKey === "ownerId" ? r.ownerId : r.previousOwnerId;
+    if (!id) continue;
+    const m = byId.get(id);
+    if (!m) continue;
+    const n = r._count._all;
+    (m[metric] as number) += n;
+    m.moduleSplit[metric][leadSourceModule(r.leadOrigin, r.isColdCall)] += n;
+  }
+}
+
+// applyActivityModule: for Activity/CallLog/Note rows pulled via findMany with the
+// joined lead's origin, accumulate the flat metric AND its module split by
+// counting one per row (module from the row's lead). Rows whose lead is missing
+// (should not happen — the where filters deletedAt) are skipped defensively.
+function applyActivityModule(
+  byId: Map<string, AgentMetrics>,
+  rows: Array<{ userId: string | null; lead: { leadOrigin: string | null; isColdCall: boolean | null } | null }>,
+  metric: keyof ModuleSplit & keyof AgentMetrics,
+): void {
+  for (const r of rows) {
+    if (!r.userId || !r.lead) continue;
+    const m = byId.get(r.userId);
+    if (!m) continue;
+    (m[metric] as number) += 1;
+    m.moduleSplit[metric][leadSourceModule(r.lead.leadOrigin, r.lead.isColdCall)] += 1;
+  }
+}
+
+/** Sum the 3 lead-module parts of a split field. */
+export function moduleTripleTotal(t: ModuleTriple): number {
+  return LEAD_SOURCE_MODULES.reduce((s, mod) => s + (t[mod] ?? 0), 0);
+}
+
+/**
+ * Dev-time invariant check: for every bifurcated metric, the flat total must
+ * equal Leads + Master Data + Revival. Logs a warning on drift (never throws —
+ * a reporting page must not 500 over an internal accounting mismatch).
+ */
+function assertSplitsSumToTotals(m: AgentMetrics): void {
+  if (process.env.NODE_ENV === "production") return;
+  for (const key of MODULE_SPLIT_METRICS) {
+    const total = m[key] as number;
+    const parts = moduleTripleTotal(m.moduleSplit[key]);
+    if (total !== parts) {
+      // eslint-disable-next-line no-console
+      console.warn(
+        `[agentPerformance] module split mismatch for ${m.agentName} · ${key}: total=${total} parts=${parts}`,
+      );
+    }
+  }
 }
 
 // groupBy result appliers — ownerId variant and userId variant.
@@ -652,20 +814,9 @@ function applyGroup(
     if (m) set(m, r._count._all);
   }
 }
-// Same as applyGroup but keyed on previousOwnerId — used to attribute UNASSIGNED
-// rejected/lost leads (ownerId null) back to their owner-at-rejection so per-agent
-// Rejected/Lost reporting stays accurate after the reject hard-unassign.
-function applyGroupP(
-  byId: Map<string, AgentMetrics>,
-  rows: Array<{ previousOwnerId: string | null; _count: { _all: number } }>,
-  set: (m: AgentMetrics, n: number) => void,
-): void {
-  for (const r of rows) {
-    if (!r.previousOwnerId) continue;
-    const m = byId.get(r.previousOwnerId);
-    if (m) set(m, r._count._all);
-  }
-}
+// (applyGroupP removed 2026-07-06 — the previous-owner rejected/lost attribution
+//  now flows through applyGroupModule with ownerKey:"previousOwnerId", which also
+//  accumulates the module split.)
 function applyGroupU(
   byId: Map<string, AgentMetrics>,
   rows: Array<{ userId: string | null; _count: { _all: number } }>,
@@ -983,4 +1134,15 @@ export const METRIC_COLUMNS: MetricColumn[] = [
   { key: "connectRate", label: "Connect %", group: "Derived", get: (m) => connectRate(m).toFixed(1) },
   { key: "conversionRate", label: "Conversion %", group: "Derived", get: (m) => conversionRate(m).toFixed(1) },
   { key: "followupCompliance", label: "Follow-up Compliance %", group: "Derived", get: (m) => followupCompliance(m).toFixed(1) },
+  // ── Module bifurcation (additive) — each bifurcated metric × 3 lead modules.
+  // Same numbers as the on-screen expandable breakdown; total column already
+  // above (e.g. "Total Assigned") == the sum of its 3 module columns here.
+  ...MODULE_SPLIT_METRICS.flatMap((key) =>
+    LEAD_SOURCE_MODULES.map((mod): MetricColumn => ({
+      key: `${key}__${mod}`,
+      label: `${key} · ${mod}`,
+      group: "Module Split",
+      get: (m) => m.moduleSplit[key][mod],
+    })),
+  ),
 ];
