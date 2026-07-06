@@ -6256,6 +6256,49 @@ const checks: Check[] = [
       assert((trgm[0]?.n ?? 0) >= 6, `expected the pg_trgm search indexes (got ${trgm[0]?.n ?? 0}) — run scripts/search-trgm-indexes.sql`);
     },
   },
+
+  // ── 5-MODULE PARITY: editable status badge (Leads · Master · Revival · Dubai/India Buyer) ──
+  {
+    name: "status-badge-parity — Revival + Buyer detail edit status via the shared InlineEdit; lead route default preserved; buyer edits gated + audited",
+    run: async () => {
+      const fs = await import("node:fs");
+      const rd = (f: string) => fs.readFileSync(f, "utf8");
+
+      // (a) The shared InlineEdit still DEFAULTS to the lead update route when no
+      //     `endpoint` is passed — so every existing lead call-site is unchanged.
+      const inline = rd("src/components/InlineEdit.tsx");
+      assert(/endpoint\s*\?\?/.test(inline) && /\/api\/leads\/\$\{leadId\}\/update/.test(inline),
+        "InlineEdit MUST keep the /api/leads/[id]/update default when endpoint is omitted (lead call-sites must not break)");
+
+      // (b) Revival (cold-data) detail edits currentStatus via InlineEdit + the
+      //     role/team-aware status list — NOT a static chip.
+      const revival = rd("src/app/(app)/revival-engine/cold-data/[id]/page.tsx");
+      assert(/InlineEdit/.test(revival) && /field="currentStatus"/.test(revival) && /selectableStatuses\(/.test(revival),
+        "Revival detail MUST render InlineEdit for currentStatus (status badge editable, parity with Leads)");
+
+      // (c) Buyer detail (both markets) edits businessStatus via InlineEdit pointed
+      //     at the buyer update route, with the market/role status list.
+      const buyer = rd("src/app/(app)/buyer-data/[id]/page.tsx");
+      assert(/InlineEdit/.test(buyer) && /field="businessStatus"/.test(buyer)
+        && /\/api\/buyer-data\/\$\{[^}]+\}\/update/.test(buyer) && /selectableStatuses\(/.test(buyer),
+        "Buyer detail MUST render InlineEdit for businessStatus via /api/buyer-data/[id]/update (status editable on Dubai + India)");
+
+      // (d) The buyer update route allow-lists businessStatus, re-enforces the
+      //     ownership gate, and writes change-history + audit — so status edits are
+      //     permission-gated + traceable, matching the Lead path.
+      const buyerRoute = rd("src/app/api/buyer-data/[id]/update/route.ts");
+      assert(/businessStatus/.test(buyerRoute), "buyer update route MUST allow-list businessStatus");
+      assert(/canTouchBuyer/.test(buyerRoute), "buyer update route MUST re-enforce canTouchBuyer");
+      assert(/buyerFieldHistory/.test(buyerRoute) && /audit\(/.test(buyerRoute),
+        "buyer update route MUST write buyerFieldHistory + audit() so status changes are traceable");
+
+      // (e) Master Data detail re-exports the Lead detail → inherits the editable
+      //     status badge with zero drift (no forked status component anywhere).
+      const master = rd("src/app/(app)/master-data/[id]/page.tsx");
+      assert(/from "\.\.\/\.\.\/leads\/\[id\]\/page"/.test(master),
+        "Master Data detail MUST re-export leads/[id] (shared status editor, no fork)");
+    },
+  },
 ];
 
 // ── runner ────────────────────────────────────────────────────────────────────
