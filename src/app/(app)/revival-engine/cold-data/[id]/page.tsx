@@ -25,7 +25,8 @@ import { getCustomerHistory } from "@/lib/customerHistory";
 import { displayBudget } from "@/lib/budgetParse";
 import LeadActionsClient from "@/components/LeadActionsClient";
 import { acefoneEnabled } from "@/lib/acefone";
-import { statusColor } from "@/lib/lead-statuses";
+import { statusColor, selectableStatuses } from "@/lib/lead-statuses";
+import InlineEdit from "@/components/InlineEdit";
 import ColdDataPromoteButton from "@/components/ColdDataPromoteButton";
 import RejectLeadModal from "@/components/RejectLeadModal";
 import ImportedFieldsCard from "@/components/ImportedFieldsCard";
@@ -172,11 +173,14 @@ export default async function ColdDataDetailPage({ params, searchParams }: { par
             {/* Name + status */}
             <div className="flex flex-wrap items-center gap-2 mb-1">
               <h2 className="text-xl font-bold text-gray-900 dark:text-white">{formatLeadName(lead.name)}</h2>
-              {lead.currentStatus && (
-                <span className={`${statusColor(lead.currentStatus)} text-xs px-2.5 py-0.5 rounded-full border font-semibold`}>
-                  {lead.currentStatus}
-                </span>
-              )}
+              {/* Status — inline-editable via the SHARED InlineEdit (same pattern as
+                  leads/[id]). Revival rows ARE Leads, so the default /api/leads/[id]/update
+                  route + change-history apply unchanged. Role+team-scoped options. */}
+              <span className={`${statusColor(lead.currentStatus)} text-xs px-2.5 py-0.5 rounded-full border font-semibold inline-flex items-center`}>
+                <InlineEdit leadId={lead.id} field="currentStatus" type="select" value={lead.currentStatus ?? ""}
+                  options={selectableStatuses(lead.forwardedTeam, me.role, lead.currentStatus).map(s => ({ value: s, label: s }))}
+                  placeholder="Set status" />
+              </span>
               {lead.forwardedTeam && (
                 <span className={`chip text-[10px] ${lead.forwardedTeam === "India" ? "src-csv" : "src-wa"}`}>
                   {lead.forwardedTeam}

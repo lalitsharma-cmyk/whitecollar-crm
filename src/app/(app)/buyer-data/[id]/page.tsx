@@ -5,6 +5,7 @@ import Link from "next/link";
 import ImportedFieldsCard from "@/components/ImportedFieldsCard";
 import ChangeHistoryCard from "@/components/ChangeHistoryCard";
 import BuyerInlineEdit from "@/components/BuyerInlineEdit";
+import InlineEdit from "@/components/InlineEdit";
 import BuyerActivityTimeline from "@/components/BuyerActivityTimeline";
 import BuyerActionsClient from "@/components/BuyerActionsClient";
 import BuyerAdminPanel from "@/components/BuyerAdminPanel";
@@ -32,6 +33,7 @@ import {
   ADMIN_EYEBROW, FIELD_GRID_2, FIELD_LABEL,
 } from "@/lib/detailLayout";
 import DetailShell from "@/components/DetailShell";
+import { selectableStatuses } from "@/lib/lead-statuses";
 
 // ── Buyer Data detail — UNIFIED with the Lead detail view (Lead = master template).
 // Both pages now share the class tokens in src/lib/detailLayout.ts (3rd alignment
@@ -237,14 +239,19 @@ export default async function BuyerDetail({ params }: { params: Promise<{ id: st
                       ? <BuyerInlineEdit recordId={rec.id} field="clientName" value={rec.clientName} />
                       : rec.clientName}
                   </h2>
-                  {/* Status = the REAL imported buyer status (R4) — primary chip.
-                      The Admin-Pool / assignment lifecycle is a SEPARATE, explicitly
-                      labeled chip so "Status" is never again read as "Admin Pool". */}
-                  {rec.businessStatus && (
-                    <span className="text-xs px-2.5 py-0.5 rounded-full border font-semibold inline-flex items-center bg-blue-100 text-blue-800 border-blue-200 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-700">
-                      {rec.businessStatus}
-                    </span>
-                  )}
+                  {/* Status = the REAL imported buyer status (R4) — primary chip, now
+                      inline-editable via the SHARED InlineEdit (same look/placement),
+                      targeting the buyer update route (canTouchBuyer + buyerFieldHistory
+                      + audit re-enforced server-side). Team arg = rec.market → India
+                      buyer gets INDIA_STATUSES, Dubai gets DUBAI_STATUSES.
+                      The Admin-Pool / assignment lifecycle stays a SEPARATE labeled
+                      chip so "Status" is never again read as "Admin Pool". */}
+                  <span className="text-xs px-2.5 py-0.5 rounded-full border font-semibold inline-flex items-center bg-blue-100 text-blue-800 border-blue-200 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-700">
+                    <InlineEdit endpoint={`/api/buyer-data/${rec.id}/update`} field="businessStatus" type="select"
+                      value={rec.businessStatus ?? ""}
+                      options={selectableStatuses(rec.market, me.role, rec.businessStatus).map(s => ({ value: s, label: s }))}
+                      placeholder="Set status" />
+                  </span>
                   <span className={`text-xs px-2.5 py-0.5 rounded-full border font-semibold inline-flex items-center ${statusChipCls}`} title="Data Pool / assignment lifecycle — separate from the imported Status">
                     Pool: {poolLabel}
                   </span>

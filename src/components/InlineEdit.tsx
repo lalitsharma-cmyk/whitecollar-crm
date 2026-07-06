@@ -8,7 +8,14 @@ import { parseBudget } from "@/lib/budgetParse";
 type FieldType = "text" | "textarea" | "number" | "date" | "select" | "phone";
 
 interface Props {
-  leadId: string;
+  // Optional so this shared editor can target non-lead detail routes (e.g. buyer
+  // data). When `endpoint` is omitted the legacy `/api/leads/${leadId}/update`
+  // path is used, so EVERY existing lead call-site (which passes leadId and no
+  // endpoint) behaves exactly as before.
+  leadId?: string;
+  // Optional PATCH target. When set, save() PATCHes this URL instead of the
+  // default lead update route. Lets Revival/Buyer reuse InlineEdit unchanged.
+  endpoint?: string;
   field: string;       // backend field name
   label?: string;      // display label
   value: string | number | null;
@@ -33,7 +40,7 @@ interface Props {
   editHint?: string;
 }
 
-export default function InlineEdit({ leadId, field, label, value, type = "text", options, placeholder, prefix, className, display, parseAs, editHint }: Props) {
+export default function InlineEdit({ leadId, endpoint, field, label, value, type = "text", options, placeholder, prefix, className, display, parseAs, editHint }: Props) {
   const router = useRouter();
   const [editing, setEditing] = useState(false);
   const [v, setV] = useState<string>(value == null ? "" : String(value));
@@ -76,7 +83,10 @@ export default function InlineEdit({ leadId, field, label, value, type = "text",
         }
         payload = parsed;
       }
-      const r = await fetch(`/api/leads/${leadId}/update`, {
+      // Default to the lead update route; an explicit `endpoint` overrides it so
+      // non-lead detail pages (buyer, etc.) reuse this same editor + save flow.
+      const url = endpoint ?? `/api/leads/${leadId}/update`;
+      const r = await fetch(url, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ [field]: payload }),
