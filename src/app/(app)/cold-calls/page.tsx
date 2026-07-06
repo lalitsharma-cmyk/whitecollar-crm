@@ -150,10 +150,15 @@ export default async function ColdDataPage({ searchParams }: { searchParams: Pro
   const where: Prisma.LeadWhereInput = { AND: [baseScope, originCold, statusWhere, ...sharedAnd] };
 
   // Hidden-gem filter: high-value dormant leads (Revival-specific — preserved).
+  // deletedAt/rejectedAt:null mirror the main list's originCold clause so a
+  // recycled or Revival-rejected cold lead can never resurface in the banner
+  // (the banner otherwise bypassed both exclusions the list enforces).
   const hiddenGemsWhere: Prisma.LeadWhereInput = {
     AND: [
       baseScope,
       { isColdCall: true },
+      { deletedAt: null },
+      { rejectedAt: null },
       {
         OR: [
           { budgetMin: { gt: REVIVAL_MISSION.hiddenGemBudgetThreshold } },
@@ -199,7 +204,7 @@ export default async function ColdDataPage({ searchParams }: { searchParams: Pro
     convertedTodayCount,
     hiddenGemsRaw,
     weeklyRevivals,
-    ...statusCountResults
+    statusCountRows,
   ] = await Promise.all([
     prisma.lead.findMany({
       where,
@@ -245,20 +250,31 @@ export default async function ColdDataPage({ searchParams }: { searchParams: Pro
       orderBy: { _count: { userId: "desc" } },
       take: 5,
     }),
-    // Count per status for filter tabs — counts respect the SHARED filters too, so
-    // a chip's number == the rows returned when that status is applied on top of
-    // the current filter set (same reconciliation invariant as Leads/Master Data).
-    // CRITICAL: deletedAt:null excludes archived/deleted cold leads from counts.
-    ...Array.from(ALL_POSSIBLE_STATUSES).map(s =>
-      prisma.lead.count({ where: { AND: [baseScope, originCold, { deletedAt: null }, ...sharedAnd, { currentStatus: s }] } })
-    ),
+    // Count per status for filter tabs — ONE groupBy replaces the former ~44
+    // per-status COUNT queries (one round-trip instead of 44). Same base scope
+    // the old loop used (baseScope + originCold [carries deletedAt/rejectedAt:null]
+    // + the shared filters), so a chip's number == the rows returned when that
+    // status is applied on top of the current filter set — identical reconciliation
+    // invariant as Leads/Master Data. Mirrors the /leads groupBy shape exactly.
+    prisma.lead.groupBy({
+      by: ["currentStatus"],
+      where: { AND: [baseScope, originCold, { deletedAt: null }, ...sharedAnd] },
+      _count: { _all: true },
+    }),
   ]);
 
-  // Build statusCounts map: { "Fresh Lead": 5, "Follow Up": 12, … }
+  // Build statusCounts map: { "Fresh Lead": 5, "Follow Up": 12, … } from the
+  // groupBy rows. Statuses absent from the result (no rows) default to 0, so the
+  // per-status chips read identically to the old per-status COUNT loop.
   const statusCounts: Record<string, number> = {};
   const statusArray = Array.from(ALL_POSSIBLE_STATUSES);
-  statusArray.forEach((s, i) => {
-    statusCounts[s] = (statusCountResults[i] as number) ?? 0;
+  const statusCountByValue = new Map<string, number>(
+    statusCountRows
+      .filter((r): r is typeof r & { currentStatus: string } => r.currentStatus != null)
+      .map(r => [r.currentStatus, r._count._all])
+  );
+  statusArray.forEach((s) => {
+    statusCounts[s] = statusCountByValue.get(s) ?? 0;
   });
   // Only show status chips that have at least one lead in the current filter set,
   // ordered canonically (Fresh Lead → Office Visit → Follow Up → …). Mirrors Leads.

@@ -3,7 +3,7 @@ import { requireUser } from "@/lib/auth";
 import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
 import ImportedFieldsCard from "@/components/ImportedFieldsCard";
-import ChangeHistoryCard from "@/components/ChangeHistoryCard";
+import ChangeHistoryCard, { type FieldHistoryRow } from "@/components/ChangeHistoryCard";
 import BuyerInlineEdit from "@/components/BuyerInlineEdit";
 import InlineEdit from "@/components/InlineEdit";
 import BuyerActivityTimeline from "@/components/BuyerActivityTimeline";
@@ -78,65 +78,82 @@ export default async function BuyerDetail({ params }: { params: Promise<{ id: st
   if (!(await canTouchBuyer(me, { ownerId: rec.ownerId, poolStatus: rec.poolStatus, deletedAt: rec.deletedAt, market: rec.market }))) notFound();
 
   const isAdmin = me.role === "ADMIN";
-  const isAdminOrMgr = me.role === "ADMIN" || me.role === "MANAGER";
+  const isManager = me.role === "MANAGER";
+  const isAdminOrMgr = isAdmin || isManager;
   // Convert/Reject: the assigned agent (own ASSIGNED) or an admin. Assign/Transfer: admin/manager.
   const canConvertReject = isAdmin || (rec.ownerId === me.id && rec.poolStatus === "ASSIGNED");
   const canAssign = isAdminOrMgr;
-  // canLog (action row + quick note): an ASSIGNED buyer worked by the viewer (or admin).
-  const canLog = isAdmin || (rec.ownerId === me.id && rec.poolStatus === "ASSIGNED");
-  // Inline edits are allowed for anyone who can touch the buyer (admin any; assigned
-  // agent their own) — the PATCH route re-checks canTouchBuyer server-side.
-  const canEditFields = canConvertReject;
+  // canLog / canEditFields (action row, quick note, inline edits): anyone who can
+  // TOUCH this buyer — which the page-level canTouchBuyer gate above already proved
+  // for this viewer. That is: admin (any buyer), a MANAGER over their org subtree
+  // (canTouchBuyer allows a manager on any buyer they can see, regardless of pool
+  // status), or the assigned agent working their own ASSIGNED buyer. Managers were
+  // previously excluded here, so they saw a READ-ONLY buyer detail while Leads /
+  // Master / Revival were editable for them — this restores parity. The PATCH route
+  // re-checks canTouchBuyer server-side, so this only governs what the UI offers.
+  const canLog = isAdmin || isManager || (rec.ownerId === me.id && rec.poolStatus === "ASSIGNED");
+  const canEditFields = canLog;
 
-  // Repeat-buyer rollup: all LIVE records sharing this buyerKey (incl. this one).
-  const siblings = rec.buyerKey
-    ? await prisma.buyerRecord.findMany({
-        where: { buyerKey: rec.buyerKey, deletedAt: null },
-        orderBy: { transactionDate: "asc" },
-      })
-    : [rec];
-  const rollup = rollupForRecords(siblings);
-  const others = siblings.filter((s) => s.id !== rec.id);
-
-  // Agent roster for the admin panel (admin/mgr only). MARKET-AWARE — this is the
-  // SHARED buyer detail (serves both Dubai and India buyers), so the roster follows
-  // the record's own market: that market's AGENT/MANAGER team + admins (the assign
-  // endpoint re-enforces this server-side via isBuyerAssignableForMarket). A Dubai
-  // buyer offers Dubai agents; an India buyer offers India agents — no cross-market.
+  // Roster market — derived synchronously (no query) so the batched roster fetch
+  // below can use it. MARKET-AWARE: this SHARED buyer detail serves both Dubai and
+  // India buyers, so the roster follows the record's own market.
   const buyerMarket = marketOfBuyer(rec);
   const rosterTeam = teamForBuyerMarket(buyerMarket);
-  const agents = canAssign
-    ? (await prisma.user.findMany({
-        where: {
-          active: true,
-          hrOnly: false,
-          OR: [
-            { team: rosterTeam, role: { in: ["AGENT", "MANAGER"] } },
-            { role: "ADMIN" },
-          ],
-        },
-        select: { id: true, name: true, team: true, role: true }, orderBy: { name: "asc" },
-      })).filter((a) => isBuyerAssignableForMarket(a, buyerMarket)).map(({ id, name, team }) => ({ id, name, team }))
-    : [];
 
-  // Sticky note — private to the calling user, upserted so the widget renders
-  // synchronously (mirrors the Lead view's StickyNote upsert).
-  const stickyNote = await prisma.buyerStickyNote.upsert({
-    where: { buyerId_userId: { buyerId: rec.id, userId: me.id } },
-    create: { buyerId: rec.id, userId: me.id, body: "" },
-    update: {},
-  });
-
-  // Field-level Change History (admin/manager) — parity with the Lead detail's
-  // ChangeHistoryCard; every inline-edit is now recorded in BuyerFieldHistory.
-  const fieldHistory = isAdminOrMgr
-    ? await prisma.buyerFieldHistory.findMany({
-        where: { buyerId: rec.id },
-        orderBy: { changedAt: "desc" },
-        take: 60,
-        select: { id: true, field: true, oldValue: true, newValue: true, changedAt: true, source: true, changedBy: { select: { name: true } } },
-      })
-    : [];
+  // These four reads have NO interdependency — run them in one round-trip (perf):
+  //   • siblings   — all LIVE records sharing this buyerKey (repeat-buyer rollup).
+  //   • agents     — assignment roster for the admin panel (admin/mgr only), that
+  //                  market's AGENT/MANAGER team + admins (assign endpoint re-enforces
+  //                  via isBuyerAssignableForMarket — no cross-market).
+  //   • stickyNote — private per-user note, upserted so the widget renders sync.
+  //   • fieldHistory — field-level change log (admin/manager), Lead-detail parity.
+  // siblings selects ONLY the columns the rollup + Multiple-Properties table read
+  // (no remarks/extraFields/rawImport) so this list fetch stays lean.
+  const [siblings, agents, stickyNote, fieldHistory] = await Promise.all([
+    rec.buyerKey
+      ? prisma.buyerRecord.findMany({
+          where: { buyerKey: rec.buyerKey, deletedAt: null },
+          orderBy: { transactionDate: "asc" },
+          select: {
+            id: true, buyerKey: true, clientName: true, projectName: true, tower: true,
+            unitNumber: true, configuration: true, size: true, propertyType: true,
+            transactionValue: true, transactionDate: true, ownerName: true,
+            nationality: true, source: true, market: true,
+          },
+        })
+      : Promise.resolve([rec]),
+    canAssign
+      ? prisma.user.findMany({
+          where: {
+            active: true,
+            hrOnly: false,
+            OR: [
+              { team: rosterTeam, role: { in: ["AGENT", "MANAGER"] } },
+              { role: "ADMIN" },
+            ],
+          },
+          select: { id: true, name: true, team: true, role: true }, orderBy: { name: "asc" },
+        })
+      : Promise.resolve([] as Array<{ id: string; name: string; team: string | null; role: import("@prisma/client").Role }>),
+    prisma.buyerStickyNote.upsert({
+      where: { buyerId_userId: { buyerId: rec.id, userId: me.id } },
+      create: { buyerId: rec.id, userId: me.id, body: "" },
+      update: {},
+    }),
+    isAdminOrMgr
+      ? prisma.buyerFieldHistory.findMany({
+          where: { buyerId: rec.id },
+          orderBy: { changedAt: "desc" },
+          take: 60,
+          select: { id: true, field: true, oldValue: true, newValue: true, changedAt: true, source: true, changedBy: { select: { name: true } } },
+        })
+      : Promise.resolve([] as FieldHistoryRow[]),
+  ]);
+  const rollup = rollupForRecords(siblings);
+  const others = siblings.filter((s) => s.id !== rec.id);
+  const agentOptions = (agents as Array<{ id: string; name: string; team: string | null; role: import("@prisma/client").Role }>)
+    .filter((a) => isBuyerAssignableForMarket(a, buyerMarket))
+    .map(({ id, name, team }) => ({ id, name, team }));
 
   const ccy = inferBuyerCurrency({ nationality: rec.nationality, projectName: rec.projectName, source: rec.source, market: rec.market });
   const buyerClass = classifyBuyer({ totalPropertiesOwned: rollup.totalPropertiesOwned, totalInvestmentValue: rollup.totalInvestmentValue }, ccy);
@@ -152,15 +169,7 @@ export default async function BuyerDetail({ params }: { params: Promise<{ id: st
   // it into the resolver's input; customerId is null → the advisory path scans the
   // scoped LEAD pool for this buyer's phone/email. Flag-gated (default OFF → no-op),
   // read-only + scope-safe.
-  const returningClient = (await getReturningClientCardEnabled())
-    ? await getReturningClientView(me, {
-        id: rec.id, name: rec.clientName, phone: primaryPhone, altPhone,
-        email: primaryEmail, altEmail: emails[1] ?? null, company: null,
-        currentStatus: null, ownerId: rec.ownerId ?? null, createdAt: rec.createdAt,
-        customerId: null,
-      })
-    : null;
-
+  //
   // Always-on "Previous History Found" card — PARITY with Leads/Revival, which
   // ALWAYS render one (the returning-client card above is flag-gated → default OFF,
   // so buyers otherwise saw NO prior-history card). getCustomerHistory scans the
@@ -172,8 +181,22 @@ export default async function BuyerDetail({ params }: { params: Promise<{ id: st
   // PARKED (needs approval): unified buyer↔buyer + confirmed-link history requires a
   // BuyerRecord.customerId field to join buyer siblings under one canonical customer;
   // that's a schema addition, out of scope for this read-side pass.
-  const scope = await leadScopeWhere(me);
-  const customerHistory = await getCustomerHistory(primaryPhone, primaryEmail, undefined, scope).catch(() => null);
+  //
+  // These two derive from the SAME primaryPhone/email rollup and have no interdep —
+  // run them in one round-trip (perf). Their prerequisites (the card feature flag +
+  // the lead scope) are independent too, so resolve those together first.
+  const [rcEnabled, scope] = await Promise.all([getReturningClientCardEnabled(), leadScopeWhere(me)]);
+  const [returningClient, customerHistory] = await Promise.all([
+    rcEnabled
+      ? getReturningClientView(me, {
+          id: rec.id, name: rec.clientName, phone: primaryPhone, altPhone,
+          email: primaryEmail, altEmail: emails[1] ?? null, company: null,
+          currentStatus: null, ownerId: rec.ownerId ?? null, createdAt: rec.createdAt,
+          customerId: null,
+        })
+      : Promise.resolve(null),
+    getCustomerHistory(primaryPhone, primaryEmail, undefined, scope).catch(() => null),
+  ]);
 
   // poolStatus → status-chip colour, styled like the Lead status chip.
   const poolLabel = rec.poolStatus.replace(/_/g, " ");
@@ -554,7 +577,7 @@ export default async function BuyerDetail({ params }: { params: Promise<{ id: st
             canAssign={canAssign}
             showHistory={isAdminOrMgr}
             isAdmin={isAdmin}
-            agents={agents}
+            agents={agentOptions}
           />
 
           {/* Working notes — SHARED free-text notes retained across reassignments

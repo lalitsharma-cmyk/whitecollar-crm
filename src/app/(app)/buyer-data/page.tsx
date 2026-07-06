@@ -51,11 +51,22 @@ export default async function BuyerDataPage() {
   const scope = await buyerScopeWhere(me);
 
   // Load the scoped set (server-capped) — the client filters / sorts / paginates.
+  // Explicit select of ONLY the columns the summary + BuyerRow mapping below read
+  // (plus owner id/name) — large text columns (remarks/extraFields/rawImport/emails/
+  // coBuyerNames) are never used by the list, so dropping them keeps this 5000-row
+  // fetch lean.
   const records = await prisma.buyerRecord.findMany({
     where: scope,
     orderBy: [{ poolStatus: "asc" }, { transactionDate: "desc" }],
     take: 5000,
-    include: { owner: { select: { id: true, name: true } } },
+    select: {
+      id: true, buyerKey: true, clientName: true, projectName: true, tower: true,
+      unitNumber: true, propertyType: true, configuration: true, transactionValue: true,
+      transactionDate: true, nationality: true, source: true, market: true, agentName: true,
+      poolStatus: true, businessStatus: true, followupDate: true, attemptCount: true,
+      createdAt: true, phones: true, passport: true,
+      owner: { select: { id: true, name: true } },
+    },
   });
 
   // Group once on buyerKey so each row knows its buyer's rollup (properties owned +

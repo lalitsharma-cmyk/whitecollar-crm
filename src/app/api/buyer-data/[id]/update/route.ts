@@ -4,6 +4,7 @@ import { requireUser } from "@/lib/auth";
 import { normalizeBuyerKey, primaryPhone } from "@/lib/buyerIntelligence";
 import { normalizeNameList } from "@/lib/nameFormat";
 import { canTouchBuyer } from "@/lib/buyerScope";
+import { selectableStatuses } from "@/lib/lead-statuses";
 import { audit, reqMeta } from "@/lib/audit";
 
 // Buyer record inline-edit — SCOPED (admin = any buyer; assigned agent = their
@@ -54,6 +55,32 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   }
 
   const body = await req.json().catch(() => ({}));
+
+  // ── Status governance (SECURITY — parity with the Lead route) ─────────────────
+  // `businessStatus` is the buyer's REAL sales status. Like the Lead route's
+  // currentStatus guard (leads/[id]/update/route.ts), booking/won + system statuses
+  // (e.g. "Booked With Us", "Fresh Lead") may only be set by roles allowed to set
+  // them — an assigned AGENT must NOT be able to PATCH the buyer into a booked status
+  // and bypass the booking-approval workflow. The client already restricts the
+  // dropdown to selectableStatuses(market, role, current); we enforce the SAME
+  // allow-list server-side, using the buyer's market as the team. buyer businessStatus
+  // also holds imported/free-text values, so selectableStatuses (which always includes
+  // the record's CURRENT value) is the correct gate: it rejects ONLY what the role
+  // couldn't pick (booking/won/Fresh for an agent), never a legitimate non-booking
+  // status nor a no-op re-save of the existing value. Only fires when a non-empty
+  // value is being set to something DIFFERENT from what's stored.
+  if (typeof body.businessStatus === "string" && body.businessStatus) {
+    const next = body.businessStatus.trim();
+    const current = existing.businessStatus ?? "";
+    if (next && next !== current &&
+        !selectableStatuses(existing.market, me.role, current).includes(next)) {
+      return NextResponse.json(
+        { error: `"${next}" can't be set here — booking/outcome statuses are set through the approval workflow, or ask an admin.` },
+        { status: 403 },
+      );
+    }
+  }
+
   const data: Record<string, unknown> = {};
   const changed: Record<string, { from: unknown; to: unknown }> = {};
 

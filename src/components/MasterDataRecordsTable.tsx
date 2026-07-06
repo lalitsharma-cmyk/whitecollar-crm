@@ -521,7 +521,7 @@ export default function MasterDataRecordsTable({ rows, agents, projects, isSuper
             </tr>
           </thead>
           <tbody>
-            {pageRows.length === 0 && <tr><td colSpan={colSpan} className="px-3 py-8 text-center text-gray-400">No matching records.</td></tr>}
+            {pageRows.length === 0 && <tr><td colSpan={colSpan} className="px-3 py-8 text-center text-gray-400">No records match these filters.</td></tr>}
             {pageRows.map((l) => {
               const sel = selected.has(l.id);
               return (
@@ -747,7 +747,7 @@ export default function MasterDataRecordsTable({ rows, agents, projects, isSuper
             the Leads mobile cards for visual consistency. Tap the card → existing
             Preview drawer; the ✏️ chip opens the same per-cell editors as desktop. ─── */}
       <div className="sm:hidden space-y-2">
-        {pageRows.length === 0 && <div className="card p-5 text-center text-gray-400 text-sm">No matching records.</div>}
+        {pageRows.length === 0 && <div className="card p-5 text-center text-gray-400 text-sm">No records match these filters.</div>}
         {pageRows.map((l) => {
           const sel = selected.has(l.id);
           const ageBadge = hydrated && !l.ownerId ? unassignedAgeBadge(l.createdAtMs) : null;

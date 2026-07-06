@@ -255,6 +255,11 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
   const [bulkBusy, setBulkBusy] = useState(false);
   const [bulkErr, setBulkErr] = useState<string | null>(null);
   const [bulkCrossTeamWarn, setBulkCrossTeamWarn] = useState<string | null>(null);
+  // Non-blocking, dismissible in-page message bar for per-row action failures
+  // (Complete / Snooze / Escalate / Reassign / Follow-up / Reject / Delete).
+  // Mirrors the Buyer (setBulkMsg) + Master Data (setMsg) pattern so a failed
+  // row action no longer interrupts the workflow with a modal alert().
+  const [rowMsg, setRowMsg] = useState<string | null>(null);
   const [pickerOpenFor, setPickerOpenFor] = useState<string | null>(null);
   const [pickerPos, setPickerPos] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
   const [statusOpenFor, setStatusOpenFor] = useState<string | null>(null);
@@ -305,7 +310,7 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}),
       });
       const j = await r.json().catch(() => ({}));
-      if (!r.ok) { alert(j.error ?? "Could not complete follow-up"); return; }
+      if (!r.ok) { setRowMsg(j.error ?? "Could not complete follow-up"); return; }
       if (j.awardedXp) {
         showXpToast({ amount: j.awardedXp.amount, label: j.awardedXp.label, leveledUp: j.awardedXp.leveledUp, newLevel: j.awardedXp.newLevel });
       }
@@ -340,7 +345,7 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
         body: JSON.stringify({ reason: escalateReason.trim() || undefined }),
       });
       const j = await r.json().catch(() => ({}));
-      if (!r.ok) { alert(j.error ?? "Could not escalate"); return; }
+      if (!r.ok) { setRowMsg(j.error ?? "Could not escalate"); return; }
       setEscalateTarget(null); setEscalateReason("");
       router.refresh();
     } finally { setActionBusy(null); }
@@ -379,7 +384,7 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
       body: JSON.stringify({ ownerId: ownerId || null }),
     });
     setReassignOpenFor(null);
-    if (!r.ok) { const j = await r.json().catch(() => ({})); if (j.error) alert(j.error); return; }
+    if (!r.ok) { const j = await r.json().catch(() => ({})); if (j.error) setRowMsg(j.error); return; }
     router.refresh();
   }
 
@@ -412,7 +417,7 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
         j = await r.json().catch(() => ({})) as { error?: string };
       }
     }
-    if (!r.ok && j.error) alert(j.error);
+    if (!r.ok && j.error) setRowMsg(j.error);
     setPickerOpenFor(null);
     router.refresh();
   }
@@ -438,7 +443,7 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ reason: deleteReason, note: deleteNote.trim() }),
       });
-      if (!r.ok) { const j = await r.json().catch(() => ({})); alert(j.error ?? "Reject failed."); return; }
+      if (!r.ok) { const j = await r.json().catch(() => ({})); setRowMsg(j.error ?? "Reject failed."); return; }
       setDeleteTarget(null); setDeleteNote("");
       router.refresh();
     } finally {
@@ -452,7 +457,7 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
     setDelLeadBusy(true);
     try {
       const r = await fetch(`/api/leads/${delLeadTarget.id}/delete`, { method: "POST" });
-      if (!r.ok) { const j = await r.json().catch(() => ({})); alert(j.error ?? "Delete failed."); return; }
+      if (!r.ok) { const j = await r.json().catch(() => ({})); setRowMsg(j.error ?? "Delete failed."); return; }
       setDelLeadTarget(null);
       router.refresh();
     } finally {
@@ -697,6 +702,16 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
 
   return (
     <>
+      {/* Non-blocking row-action message bar (parity with Buyer/Master lists).
+          Replaces the old blocking alert() on per-row action failures; dismissible. */}
+      {rowMsg && (
+        <div className="mb-2 flex items-start justify-between gap-2 rounded-lg border border-red-200 dark:border-red-900/60 bg-red-50 dark:bg-red-950/30 px-3 py-2 text-xs text-red-700 dark:text-red-300">
+          <span className="min-w-0">{rowMsg}</span>
+          <button type="button" onClick={() => setRowMsg(null)} className="shrink-0 text-red-400 hover:text-red-700 dark:hover:text-red-200" aria-label="Dismiss">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
       {/* ── TABLE VIEW — desktop only; mobile falls through to cards below ─── */}
       {view === "table" && (
         <>
@@ -800,7 +815,7 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
                   </thead>
                   <tbody>
                     {leads.length === 0 && (
-                      <tr><td colSpan={9 + (showSource ? 1 : 0)} className="px-4 py-10 text-center text-gray-400 text-sm">No leads match these filters.</td></tr>
+                      <tr><td colSpan={9 + (showSource ? 1 : 0)} className="px-4 py-10 text-center text-gray-400 text-sm">No records match these filters.</td></tr>
                     )}
                     {leads.map((l, i) => {
                       // Clock-gated: null until mounted so SSR/first-render match
@@ -1040,7 +1055,7 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
           </div>
           {/* ─── MOBILE CARDS (§7+§8) — dedicated layout, not a shrunken table ─── */}
           <div className="sm:hidden space-y-2">
-            {leads.length === 0 && <div className="card p-5 text-center text-gray-500 text-sm">No leads match these filters.</div>}
+            {leads.length === 0 && <div className="card p-5 text-center text-gray-500 text-sm">No records match these filters.</div>}
             {leads.map(l => (
               <div key={l.id} className={`rounded-xl border p-3 shadow-sm ${
                 l.freshUntouchedToday
@@ -1145,7 +1160,7 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
 
       {/* CARD VIEW — mobile+desktop cards when view=cards */}
       <div className={`${view === "table" ? "hidden" : ""} lg:hidden space-y-2`}>
-        {leads.length === 0 && <div className="card p-5 text-center text-gray-500 dark:text-slate-400 text-sm">No leads match these filters.</div>}
+        {leads.length === 0 && <div className="card p-5 text-center text-gray-500 dark:text-slate-400 text-sm">No records match these filters.</div>}
         {leads.map((l) => {
           const maskedPhone = l.phone ? (isAdmin ? l.phone : `···${l.phone.slice(-4)}`) : null;
           const intel = l.intelligenceMatch;
@@ -1245,7 +1260,7 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
                           type="date"
                           autoFocus
                           className="text-xs border rounded px-1 py-0.5"
-                          defaultValue={l.followupDate ?? ""}
+                          defaultValue={l.followupRaw ?? ""}
                           onChange={(e) => quickSetFollowup(l.id, e.target.value)}
                         />
                       )}
@@ -1315,7 +1330,7 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
             {leads.length === 0 && (
               <tr>
                 <td colSpan={canReassign ? 5 : 4} className="text-center py-8 text-gray-500 dark:text-slate-400">
-                  No leads match these filters. Try clearing some.
+                  No records match these filters.
                 </td>
               </tr>
             )}

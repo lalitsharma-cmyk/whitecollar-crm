@@ -3,6 +3,7 @@ import { requireUser } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import BuyerListClient, { type BuyerRow, type BuyerAgent } from "@/components/BuyerListClient";
+import HelpDot from "@/components/HelpDot";
 import { buyerScopeWhereForMarket, canAccessBuyerMarket, INDIA_MARKET } from "@/lib/buyerScope";
 import { canExportData } from "@/lib/exportPerms";
 import {
@@ -36,11 +37,21 @@ export default async function IndiaBuyerDataPage() {
   const isAdminOrMgr = me.role === "ADMIN" || me.role === "MANAGER";
   const scope = await buyerScopeWhereForMarket(me, INDIA_MARKET);
 
+  // Explicit select — ONLY the columns the summary + BuyerRow mapping below read
+  // (plus owner id/name). Drops large text columns (remarks/extraFields/rawImport/
+  // emails/coBuyerNames) the list never uses, keeping this 5000-row fetch lean.
   const records = await prisma.buyerRecord.findMany({
     where: scope,
     orderBy: [{ poolStatus: "asc" }, { transactionDate: "desc" }],
     take: 5000,
-    include: { owner: { select: { id: true, name: true } } },
+    select: {
+      id: true, buyerKey: true, clientName: true, projectName: true, tower: true,
+      unitNumber: true, propertyType: true, configuration: true, transactionValue: true,
+      transactionDate: true, nationality: true, source: true, market: true, agentName: true,
+      poolStatus: true, businessStatus: true, followupDate: true, attemptCount: true,
+      createdAt: true, phones: true, passport: true,
+      owner: { select: { id: true, name: true } },
+    },
   });
 
   const groups = groupByBuyerKey(records);
@@ -133,7 +144,10 @@ export default async function IndiaBuyerDataPage() {
     <>
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
-          <h1 className="text-xl sm:text-2xl font-bold">India Buyer Data</h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-xl sm:text-2xl font-bold">India Buyer Data</h1>
+            {process.env.NEXT_PUBLIC_SANDBOX === "1" && <HelpDot topic="buyer-data" />}
+          </div>
           <p className="text-xs sm:text-sm text-gray-500 dark:text-slate-400">
             {isAdmin ? "India worked pipeline — Admin Pool → agent → convert / reject" : "India buyers assigned to you"} · <span className="font-semibold">{totalRecords}</span> in view ·
             {" "}<span className="text-amber-600 dark:text-amber-400">₹ INR / Cr</span>

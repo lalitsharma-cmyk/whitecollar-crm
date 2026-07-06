@@ -7,7 +7,7 @@ import { fireWorkflowTrigger } from "@/lib/workflowEngine";
 import { getScheduledActionsEnabled, getBantGateMode } from "@/lib/settings";
 import { evaluateBantGate, type BantFields } from "@/lib/bantGate";
 import { awardXp, type AwardResult, type XpReason } from "@/lib/gamification.server";
-import { canSetStatus, isStatusValidForTeam, isTerminalStatus, NEEDS_REVIEW } from "@/lib/lead-statuses";
+import { canSetStatus, isStatusValidForTeam, isTerminalStatus, isBookedStatus, NEEDS_REVIEW } from "@/lib/lead-statuses";
 import { isPropertyType } from "@/lib/propertyType";
 import { recordFieldChanges, TRACKED_FIELDS } from "@/lib/fieldHistory";
 import { normalizeNameList } from "@/lib/nameFormat";
@@ -506,9 +506,15 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if ("currentStatus" in updates && updates.currentStatus !== prevStatus) {
     let reason: XpReason | null = null;
     const ns = updates.currentStatus as string | null;
-    if (ns && ["Meeting", "Site Visit Schedule", "Visit Dubai", "Want Office Visit", "Zoom Meeting"].includes(ns))
+    // Canonical casings first: office-visit list includes BOTH "Wants Office Visit"
+    // (canonical, lead-statuses) and "Want Office Visit" (legacy); booking uses the
+    // shared isBookedStatus helper so "Booked With Us" (canonical, capital W) AND
+    // "Booked with Us" (legacy) both award BOOKING_DONE. Previously the block matched
+    // only the legacy casings, so a normal inline edit to a canonical booking/office
+    // visit awarded no XP.
+    if (ns && ["Meeting", "Site Visit Schedule", "Visit Dubai", "Wants Office Visit", "Want Office Visit", "Zoom Meeting"].includes(ns))
       reason = "NEGOTIATION_STARTED";
-    else if (ns === "Booked with Us") reason = "BOOKING_DONE";
+    else if (isBookedStatus(ns)) reason = "BOOKING_DONE";
     if (reason) {
       try { awarded = await awardXp(me.id, reason); } catch { /* never block save */ }
     }

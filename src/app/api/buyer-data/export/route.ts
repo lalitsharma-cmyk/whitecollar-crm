@@ -50,7 +50,7 @@ async function buildExport(
   });
 
   const rows = records.map((r) => {
-    const ccy = inferBuyerCurrency({ nationality: r.nationality, projectName: r.projectName, source: r.source });
+    const ccy = inferBuyerCurrency({ nationality: r.nationality, projectName: r.projectName, source: r.source, market: r.market });
     return {
       id: r.id,
       clientName: r.clientName,

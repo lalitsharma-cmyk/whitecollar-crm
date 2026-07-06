@@ -212,7 +212,7 @@ export default function RevivalEngineListClient({
   if (leads.length === 0) {
     return (
       <div className="card p-5 text-center text-gray-500 text-sm">
-        Nothing in this view. Either you&apos;re on top of follow-ups (✅), or no cold leads match the current filters.
+        No records match these filters.
       </div>
     );
   }

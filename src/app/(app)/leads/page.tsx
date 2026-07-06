@@ -671,59 +671,57 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
     .map((r) => r.tag)
     .filter((t): t is string => typeof t === "string" && t.length > 0);
 
-  // Projects list for the project filter dropdown — small table, cheap separate query.
-  // Market-scoped: an agent only sees their own market's projects in the filter
-  // (admins/managers see all).
-  const allProjects = await prisma.project.findMany({
-    where: projectWhereForUser(me),
-    select: { id: true, name: true },
-    orderBy: { name: "asc" },
-  });
-
-  // Source filter options — DISTINCT verbatim sourceRaw values actually present
-  // in the DB. The source dropdown now reads/filters on sourceRaw (human values
-  // like "WhatsApp", "Google Ads"), not the legacy `source` enum. Corrupted
-  // leads with sourceRaw=null are excluded so we never offer a blank option.
-  const sourceRows = await prisma.lead.findMany({
-    where: { deletedAt: null, sourceRaw: { not: null } },
-    distinct: ["sourceRaw"],
-    select: { sourceRaw: true },
-    orderBy: { sourceRaw: "asc" },
-  });
+  // ── Filter-option lists (leadId-INDEPENDENT) — run concurrently ─────────────
+  // These three don't depend on the page slice, so one Promise.all replaces three
+  // serial awaits (one round-trip instead of three). Result vars + order preserved.
+  //   • allProjects   — project filter dropdown (market-scoped; agent sees own market).
+  //   • sourceRows    — DISTINCT verbatim sourceRaw values present in the DB (the
+  //                     Source dropdown filters on sourceRaw, not the legacy enum;
+  //                     sourceRaw=null excluded so we never offer a blank option).
+  //   • mediumOptions — standard channels + custom mediums seen on leads + "Other".
+  const [allProjects, sourceRows, mediumOptions] = await Promise.all([
+    prisma.project.findMany({
+      where: projectWhereForUser(me),
+      select: { id: true, name: true },
+      orderBy: { name: "asc" },
+    }),
+    prisma.lead.findMany({
+      where: { deletedAt: null, sourceRaw: { not: null } },
+      distinct: ["sourceRaw"],
+      select: { sourceRaw: true },
+      orderBy: { sourceRaw: "asc" },
+    }),
+    getAvailableMediums(),
+  ]);
   const sourceOptions = sourceRows.map(r => r.sourceRaw!).filter(Boolean);
 
-  // Medium filter options — standard channels (Call/WhatsApp/Email) + any custom
-  // mediums seen on leads + "Other". Same list the New-Lead form uses, so the
-  // filter offers exactly what can be set. leadFilterWhere translates ?medium=.
-  const mediumOptions = await getAvailableMediums();
-
-  // Fetch intelligence match data for the current page of leads (post-join:
-  // IntelligenceMatch has no FK back-relation on Lead, so we query separately).
+  // ── Per-page row decorations (leadId-DEPENDENT) — run concurrently ──────────
+  // These three key off the current page slice, so they stay AFTER leadIds is
+  // known; one Promise.all replaces three serial awaits. When the page is empty
+  // each short-circuits to an empty result (no DB round-trip), same as before.
+  //   • intelMatches    — Customer Intelligence matches (IntelligenceMatch has no FK
+  //                       back-relation on Lead, so it's queried separately/post-join).
+  //   • contactTodaySet — Complete-button gate (a touch must be logged today).
+  //   • untouchedSet    — first-contact-pending ⚡ badge, via the SAME
+  //                       FIRST_CONTACT_PENDING_WHERE the counts/sort/cron use.
   const leadIds = leads.map((l) => l.id);
-  const intelMatches = leadIds.length > 0
-    ? await prisma.intelligenceMatch.findMany({
-        where: { leadId: { in: leadIds } },
-        select: { leadId: true, matchType: true, confidence: true, totalPropertiesFound: true },
-      })
-    : [];
+  const intelMatchSelect = { leadId: true, matchType: true, confidence: true, totalPropertiesFound: true } as const;
+  const [intelMatches, contactTodaySet, untouchedSet] = await Promise.all([
+    prisma.intelligenceMatch.findMany({
+      where: { leadId: { in: leadIds.length > 0 ? leadIds : ["__none__"] } },
+      select: intelMatchSelect,
+    }),
+    leadIds.length > 0
+      ? contactActivityByLeadToday(leadIds)
+      : Promise.resolve(new Set<string>()),
+    leadIds.length > 0
+      ? prisma.lead.findMany({
+          where: { id: { in: leadIds }, ...FIRST_CONTACT_PENDING_WHERE },
+          select: { id: true },
+        }).then((rows) => new Set(rows.map((l) => l.id)))
+      : Promise.resolve(new Set<string>()),
+  ]);
   const intelByLeadId = new Map(intelMatches.map((m) => [m.leadId, m]));
-
-  // Contact-today flags for the Complete-button gate (one batch query over the
-  // current page). hasContactToday(leadId) → Complete enabled; else disabled +
-  // "Contact attempt required" tooltip. Agent must log a touch before completing.
-  const contactTodaySet = leadIds.length > 0
-    ? await contactActivityByLeadToday(leadIds)
-    : new Set<string>();
-
-  // "Untouched" (first-contact-pending) flags for the current page — one batch
-  // query over the SAME FIRST_CONTACT_PENDING_WHERE the counts/sort/cron use, so a
-  // row's ⚡ badge is exact. Drives the NEW TODAY / Untouched badge + row highlight.
-  const untouchedSet = leadIds.length > 0
-    ? new Set((await prisma.lead.findMany({
-        where: { id: { in: leadIds }, ...FIRST_CONTACT_PENDING_WHERE },
-        select: { id: true },
-      })).map((l) => l.id))
-    : new Set<string>();
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const canBulk = me.role === "ADMIN" || me.role === "MANAGER";
