@@ -321,7 +321,13 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   // Daily targets — read from Setting table, fall back to defaults
   const targetRow = await prisma.setting.findUnique({ where: { key: "dailyTargets" } });
   const T = { calls: 150, connected: 50, virtual: 2, f2f: 1, fresh: 5, deals: 5 };
-  const targets = targetRow ? { ...T, ...JSON.parse(targetRow.value) } : T;
+  // Guard the parse — a corrupt `dailyTargets` setting must NOT 500 the whole
+  // dashboard; fall back to defaults (parity with the guarded getDailyTargets()).
+  const targets = (() => {
+    if (!targetRow) return T;
+    try { return { ...T, ...JSON.parse(targetRow.value) }; }
+    catch { return T; }
+  })();
 
   // Personal KPI metrics — always userId: me.id (agents AND admin/manager see their OWN numbers).
   // CALL counters are widened to include Buyer-Data work (read-time aggregation):
