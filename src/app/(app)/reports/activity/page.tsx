@@ -3,6 +3,8 @@ import { requireRole } from "@/lib/auth";
 import { normalizeTeam } from "@/lib/teamRouting";
 import Link from "next/link";
 import { formatLeadName } from "@/lib/leadName";
+import { leadSourceModule, type SourceModule } from "@/lib/moduleSource";
+import { ModuleBreakdownTable, type ModuleBreakdownRow } from "@/components/ModuleBreakdown";
 
 export const dynamic = "force-dynamic";
 
@@ -79,7 +81,7 @@ export default async function ActivityFeedPage({
   // The end of the selected day in IST = start of next day
   const selectedDayEnd = new Date(selectedDayStart.getTime() + 24 * 60 * 60 * 1000);
 
-  const [callLogs, auditLogs] = await Promise.all([
+  const [callLogs, auditLogs, callModuleRows] = await Promise.all([
     prisma.callLog.findMany({
       where: {
         startedAt: { gte: selectedDayStart, lt: selectedDayEnd },
@@ -102,6 +104,19 @@ export default async function ActivityFeedPage({
       orderBy: { createdAt: "desc" },
       take: 50,
       include: { user: { select: { name: true } } },
+    }),
+    // Uncapped calls for the selected day — SAME scope as the feed's call query
+    // (non-deleted lead, team filter) minus the 100-row display cap — selecting
+    // ONLY the lead's origin fields so we can split the day's total call volume
+    // across the 3 lead-origin modules (Leads · Master Data · Revival Engine).
+    // Read-only + additive: it never changes the feed below, only summarises it.
+    prisma.callLog.findMany({
+      where: {
+        startedAt: { gte: selectedDayStart, lt: selectedDayEnd },
+        lead: { deletedAt: null },
+        ...(managerTeam ? { user: { team: managerTeam } } : {}),
+      },
+      select: { lead: { select: { leadOrigin: true, isColdCall: true } } },
     }),
   ]);
 
@@ -156,6 +171,34 @@ export default async function ActivityFeedPage({
     (a, b) => b[1][0].time.getTime() - a[1][0].time.getTime()
   );
 
+  // ── Calls by module (Leads · Master Data · Revival Engine) ─────────────────
+  // The day's TOTAL call volume (uncapped — from callModuleRows, not the 100-row
+  // feed), split by the canonical origin module of each call's lead. Additive:
+  // the Total == Leads + Master Data + Revival because every call's lead
+  // classifies into exactly one module. Buyer-data calls live in the separate
+  // Buyer report and are never mixed in (we don't invent lead metrics for them).
+  type Triple = Record<SourceModule, number>;
+  const zeroTriple = (): Triple => ({ "Leads": 0, "Master Data": 0, "Revival Engine": 0, "Dubai Buyer Data": 0, "India Buyer Data": 0 });
+  const callsByModule = zeroTriple();
+  for (const c of callModuleRows) {
+    if (!c.lead) continue; // relation filter guarantees a lead, but stay defensive
+    callsByModule[leadSourceModule(c.lead.leadOrigin, c.lead.isColdCall)] += 1;
+  }
+  const totalCallsToday = callModuleRows.length;
+  const moduleCallRows: ModuleBreakdownRow[] = [
+    { label: "Calls", counts: callsByModule, total: totalCallsToday },
+  ];
+  // Internal check (dev-only): the 3-module split must sum to the flat total, or
+  // the bifurcation has drifted. Never throws — a report must not 500 over an
+  // accounting mismatch; it logs so the drift is caught in dev/CI.
+  if (process.env.NODE_ENV !== "production") {
+    const parts = callsByModule["Leads"] + callsByModule["Master Data"] + callsByModule["Revival Engine"];
+    if (parts !== totalCallsToday) {
+      // eslint-disable-next-line no-console
+      console.warn(`[activity] calls-by-module split ${parts} != total ${totalCallsToday}`);
+    }
+  }
+
   return (
     <>
       <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
@@ -183,6 +226,26 @@ export default async function ActivityFeedPage({
         />
         <button type="submit" className="btn btn-sm">View</button>
       </form>
+
+      {/* ── Calls by module (Leads · Master Data · Revival Engine) ─────────────
+          The day's whole call volume, split by the origin module of each call's
+          lead. Additive — Total = Leads + Master Data + Revival Engine (each
+          call's lead is exactly one module). Mirrors the Agent Lead Performance
+          bifurcation so the split reads the same across reports. Buyer Data is a
+          separate report and is not included here. */}
+      {totalCallsToday > 0 && (
+        <div className="card p-4">
+          <div className="text-xs uppercase tracking-widest text-gray-500 font-semibold mb-3">
+            Calls by module · {currentDateISO} · Leads · Master Data · Revival Engine
+          </div>
+          <ModuleBreakdownTable rows={moduleCallRows} showZeroRows minWidth={420} metricHeader="Metric" />
+          <p className="text-[10px] text-gray-500 mt-3">
+            Counts all {totalCallsToday} call{totalCallsToday === 1 ? "" : "s"} for {currentDateISO} (IST), split by the origin module of each
+            call&apos;s lead — every total = Leads + Master Data + Revival Engine (each call&apos;s lead belongs to exactly one module).
+            Buyer-data calls are a separate report. The feed below is capped to the most recent events for readability, so it may show fewer.
+          </p>
+        </div>
+      )}
 
       {feed.length === 0 ? (
         <div className="card p-5 text-center text-gray-500 text-sm">
