@@ -23,6 +23,7 @@ import { displayBudget } from "@/lib/budgetParse";
 import { getAvailableMediums } from "@/lib/mediumManager";
 import { formatLeadName } from "@/lib/leadName";
 import { effectiveSource } from "@/lib/sourceLabel";
+import { isWebsiteSource } from "@/lib/lead-sources";
 import { statusColor, BUDGET_PRESETS, SUPPRESSED_STATUSES, ACTIVE_PURSUIT_STATUSES, CLOSING_STATUSES, TERMINAL_STATUSES, CLOSED_OUTCOME_STATUSES, LOST_STATUSES, leadSortTier, compareStatusDisplay } from "@/lib/lead-statuses";
 
 export const dynamic = "force-dynamic";
@@ -527,25 +528,45 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
   let smartSortTotal: number | null = null;
 
   if (useSmartSort) {
-    // Fresh-untouched-today ids within the CURRENT filter scope — the tier-0 pin.
-    // Single source of truth (freshLeads.freshUntouchedWhere) so the sort, the
-    // badge, the count widget, and the escalation cron all agree on "fresh untouched".
-    const [priorityRows, fuRows] = await Promise.all([
+    // Two id-sets over the CURRENT filter scope drive the new Lalit priority tiers:
+    //   • untouchedSortSet — "no first contact ever logged" (any age) for tier 4.
+    //     Uses the SAME FIRST_CONTACT_PENDING_WHERE the badge / counts / cron use.
+    //   • The per-row active-pipeline / assigned-today / website signals are computed
+    //     inline from the selected columns (isActivePipelineRow / isAssignedToday /
+    //     isWebsiteSource) — no extra query needed.
+    const [priorityRows, untouchedSortRows] = await Promise.all([
       prisma.lead.findMany({
         where,
         // currentStatus drives the "fresh" test (the `status` enum is vestigial).
-        select: { id: true, currentStatus: true, followupDate: true, createdAt: true },
+        // source/assignedAt/leadOrigin/importBatchId feed the new priority tiers.
+        select: {
+          id: true, currentStatus: true, followupDate: true, createdAt: true,
+          assignedAt: true, source: true, leadOrigin: true, importBatchId: true,
+        },
       }),
-      prisma.lead.findMany({ where: freshUntouchedWhere(where), select: { id: true } }),
+      prisma.lead.findMany({
+        where: { ...where, deletedAt: null, ...FIRST_CONTACT_PENDING_WHERE },
+        select: { id: true },
+      }),
     ]);
-    const fuSet = new Set(fuRows.map(r => r.id));
+    const untouchedSortSet = new Set(untouchedSortRows.map(r => r.id));
 
-    // 7-tier default order (tier-0 added 2026-07-01): today's fresh UNTOUCHED →
-    // today's fresh → today's follow-ups → old fresh → overdue → future → other.
-    // Today's new leads never get buried; the untouched ones sit at the very top.
+    // New 10-tier default order (Lalit 2026-07-06): fresh-created-today → website-
+    // today → manual-today → assigned-today → untouched → [existing: due-today →
+    // fresh → overdue → future → other]. Today's new inbound never gets buried.
     priorityRows.sort((a, b) => {
-      const pa = leadSortTier(a, todayWindow, fuSet.has(a.id));
-      const pb = leadSortTier(b, todayWindow, fuSet.has(b.id));
+      const pa = leadSortTier(a, todayWindow, {
+        untouched: untouchedSortSet.has(a.id),
+        assignedToday: isAssignedToday(a),
+        activePipeline: isActivePipelineRow(a),
+        website: isWebsiteSource(a.source),
+      });
+      const pb = leadSortTier(b, todayWindow, {
+        untouched: untouchedSortSet.has(b.id),
+        assignedToday: isAssignedToday(b),
+        activePipeline: isActivePipelineRow(b),
+        website: isWebsiteSource(b.source),
+      });
       if (pa !== pb) return pa - pb;
       // Within same tier: newer lead first
       return b.createdAt.getTime() - a.createdAt.getTime();

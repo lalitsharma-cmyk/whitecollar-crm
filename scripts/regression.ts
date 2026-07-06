@@ -678,21 +678,25 @@ const checks: Check[] = [
   },
 
   // ───────────────────────────────────────────────────────────────────────────
-  // 3e-sext. LEAD DEFAULT SORT TIERS (2026-06-21) — today's fresh on top, future
-  //     / other sink to the bottom.
+  // 3e-sext. LEAD DEFAULT SORT TIERS — the EXISTING lower band, preserved after the
+  //     2026-07-06 Fresh-Lead-priority rewrite. What used to be tiers 2-6 (today-
+  //     followup / old-fresh / overdue / future / other) is now tiers 5-9; a fresh
+  //     lead created today is now tier 0 (was 1). These assertions lock that the old
+  //     band still ranks in the same relative order under the new numbering.
   // ───────────────────────────────────────────────────────────────────────────
   {
-    name: "lead-sort-tier — 6-tier default order (today-fresh top; future/other bottom)",
+    name: "lead-sort-tier — existing lower band preserved (today-followup→5 … other→9)",
     run: async () => {
       const { leadSortTier, isFreshStatus } = await import("../src/lib/lead-statuses");
       const today = { gte: new Date("2026-06-20T18:30:00Z"), lt: new Date("2026-06-21T18:30:00Z") };
       const D = (s: string) => new Date(s);
-      assert(leadSortTier({ currentStatus: "Fresh Lead", createdAt: D("2026-06-21T05:00:00Z"), followupDate: D("2026-06-21T09:00:00Z") }, today) === 1, "fresh created-today = tier 1 (must beat today-followup)");
-      assert(leadSortTier({ currentStatus: "Interested", createdAt: D("2026-06-10T05:00:00Z"), followupDate: D("2026-06-21T08:00:00Z") }, today) === 2, "today follow-up = tier 2");
-      assert(leadSortTier({ currentStatus: "Fresh Lead", createdAt: D("2026-06-18T05:00:00Z"), followupDate: null }, today) === 3, "old fresh = tier 3");
-      assert(leadSortTier({ currentStatus: "Negotiating", createdAt: D("2026-06-01T05:00:00Z"), followupDate: D("2026-06-19T08:00:00Z") }, today) === 4, "overdue follow-up = tier 4");
-      assert(leadSortTier({ currentStatus: "Interested", createdAt: D("2026-06-01T05:00:00Z"), followupDate: D("2026-06-25T08:00:00Z") }, today) === 5, "future follow-up = tier 5 (must sink below actionable)");
-      assert(leadSortTier({ currentStatus: "Call Back Later", createdAt: D("2026-06-01T05:00:00Z"), followupDate: null }, today) === 6, "worked, no follow-up = tier 6");
+      // Fresh created-today is now the TOP tier (0), not 1.
+      assert(leadSortTier({ currentStatus: "Fresh Lead", createdAt: D("2026-06-21T05:00:00Z"), followupDate: D("2026-06-21T09:00:00Z") }, today) === 0, "fresh created-today = tier 0 (new top)");
+      assert(leadSortTier({ currentStatus: "Interested", createdAt: D("2026-06-10T05:00:00Z"), followupDate: D("2026-06-21T08:00:00Z") }, today) === 5, "today follow-up = tier 5");
+      assert(leadSortTier({ currentStatus: "Fresh Lead", createdAt: D("2026-06-18T05:00:00Z"), followupDate: null }, today) === 6, "old fresh = tier 6");
+      assert(leadSortTier({ currentStatus: "Negotiating", createdAt: D("2026-06-01T05:00:00Z"), followupDate: D("2026-06-19T08:00:00Z") }, today) === 7, "overdue follow-up = tier 7");
+      assert(leadSortTier({ currentStatus: "Interested", createdAt: D("2026-06-01T05:00:00Z"), followupDate: D("2026-06-25T08:00:00Z") }, today) === 8, "future follow-up = tier 8 (must sink below actionable)");
+      assert(leadSortTier({ currentStatus: "Call Back Later", createdAt: D("2026-06-01T05:00:00Z"), followupDate: null }, today) === 9, "worked, no follow-up = tier 9");
       assert(isFreshStatus(null) && isFreshStatus("Fresh Lead") && !isFreshStatus("Interested"), "isFreshStatus: null/Fresh true, worked false");
     },
   },
@@ -5222,10 +5226,15 @@ const checks: Check[] = [
       });
       assert(fuTouchedLeak === 0, `${fuTouchedLeak} "fresh-untouched" lead(s) actually have a call/first-contact activity — untouched leak`);
 
-      // (c) leadSortTier pins fresh-untouched at tier 0 (source scan — the pin rule).
-      const statusesSrc = fs.readFileSync("src/lib/lead-statuses.ts", "utf8");
-      assert(/freshUntouchedToday\s*=\s*false/.test(statusesSrc) && /if \(freshUntouchedToday\) return 0;/.test(statusesSrc),
-        "leadSortTier MUST accept freshUntouchedToday and return tier 0 for it (the top-of-list pin)");
+      // (c) leadSortTier takes the flags object + pins a fresh lead created today at
+      //     tier 0 (Lalit 2026-07-06 Fresh-Lead priority). Behaviour-checked, not just
+      //     source-scanned: a fresh active-pipeline lead created today MUST be tier 0.
+      const { leadSortTier: lst } = await import("../src/lib/lead-statuses");
+      const pinToday = { gte: new Date("2026-06-20T18:30:00Z"), lt: new Date("2026-06-21T18:30:00Z") };
+      assert(
+        lst({ currentStatus: "Fresh Lead", createdAt: new Date("2026-06-21T05:00:00Z"), source: "WEBSITE" },
+            pinToday, { activePipeline: true }) === 0,
+        "leadSortTier MUST return tier 0 for a fresh active-pipeline lead created today (top-of-list pin)");
 
       // (d) All 5 surfaces import the single source of truth (DRY / no-drift).
       const freshLib = fs.readFileSync("src/lib/freshLeads.ts", "utf8");
@@ -6310,6 +6319,83 @@ const checks: Check[] = [
         "'Funds Issue' MUST NOT be in ACTIVE_PURSUIT_STATUSES — it's Lost, never Active (Lalit 2026-07-06)");
       assert(TERMINAL_STATUSES.includes("Funds Issue"), "'Funds Issue' MUST be TERMINAL (via LOST)");
       assert(leadCategory("Funds Issue") === "LOST", "leadCategory('Funds Issue') MUST be LOST");
+    },
+  },
+
+  // ── NEW Fresh-Lead sort priority (Lalit 2026-07-06) — the 5 new top tiers ──
+  //    Pure in-memory (no DB): construct synthetic leads + a fixed today window and
+  //    assert leadSortTier resolves each new signal to its tier. Locks first-match-
+  //    wins ordering: fresh-today(0) > website-today(1) > manual-today(2) >
+  //    assigned-today(3) > untouched(4) > [existing lower band]. Also proves the
+  //    active-pipeline gate holds (a non-active row created today can't take 0-3) and
+  //    a plain overdue-followup lands in the existing lower band (7).
+  {
+    name: "fresh-lead-sort-priority — 5 new top tiers (fresh-today→0, website→1, manual→2, assigned→3, untouched→4)",
+    run: async () => {
+      const { leadSortTier } = await import("../src/lib/lead-statuses");
+      // IST 2026-06-21 window (gte 18:30Z prev day .. lt 18:30Z). createdToday = an
+      // instant inside it; "old" = well before.
+      const today = { gte: new Date("2026-06-20T18:30:00Z"), lt: new Date("2026-06-21T18:30:00Z") };
+      const CREATED_TODAY = new Date("2026-06-21T05:00:00Z"); // 10:30 IST, inside window
+      const OLD = new Date("2026-06-01T05:00:00Z");           // 3 weeks earlier
+      const ACTIVE = { activePipeline: true };
+
+      // Tier 0 — fresh status + created today (active pipeline). Website source too,
+      // but fresh wins first-match over website.
+      assert(
+        leadSortTier({ currentStatus: "Fresh Lead", createdAt: CREATED_TODAY, source: "WEBSITE" }, today, ACTIVE) === 0,
+        "fresh lead created today = tier 0");
+
+      // Tier 1 — website source + created today but NOT fresh status (already worked).
+      assert(
+        leadSortTier({ currentStatus: "Follow Up", createdAt: CREATED_TODAY, source: "WEBSITE" }, today, ACTIVE) === 1,
+        "website lead created today (non-fresh) = tier 1");
+      // website flag may also be passed explicitly (caller precomputes it).
+      assert(
+        leadSortTier({ currentStatus: "Follow Up", createdAt: CREATED_TODAY }, today, { ...ACTIVE, website: true }) === 1,
+        "website flag (explicit) created today = tier 1");
+
+      // Tier 2 — created today, non-fresh, non-website (a manual entry).
+      assert(
+        leadSortTier({ currentStatus: "Follow Up", createdAt: CREATED_TODAY, source: "REFERRAL" }, today, ACTIVE) === 2,
+        "manually created today (non-fresh, non-website) = tier 2");
+
+      // Tier 3 — assigned today, but created earlier (not created today), non-fresh.
+      assert(
+        leadSortTier({ currentStatus: "Follow Up", createdAt: OLD, source: "REFERRAL" }, today, { ...ACTIVE, assignedToday: true }) === 3,
+        "assigned today (created earlier, non-fresh) = tier 3");
+
+      // Tier 4 — untouched (no first contact ever), old, non-fresh, not assigned today.
+      assert(
+        leadSortTier({ currentStatus: "Follow Up", createdAt: OLD, source: "REFERRAL" }, today, { ...ACTIVE, untouched: true }) === 4,
+        "untouched (any age) = tier 4");
+      // Untouched is origin-independent — even a non-active-pipeline row can be tier 4.
+      assert(
+        leadSortTier({ currentStatus: "Follow Up", createdAt: OLD }, today, { activePipeline: false, untouched: true }) === 4,
+        "untouched applies regardless of pipeline origin = tier 4");
+
+      // First-match wins: a lead that is BOTH created-today-fresh AND untouched still
+      // takes tier 0, not 4.
+      assert(
+        leadSortTier({ currentStatus: "Fresh Lead", createdAt: CREATED_TODAY, source: "WEBSITE" }, today, { ...ACTIVE, untouched: true }) === 0,
+        "fresh-created-today beats untouched (first match wins) = tier 0");
+
+      // Active-pipeline GATE: a fresh lead created today but NOT active pipeline (e.g.
+      // Master Data / bulk import) cannot occupy tiers 0-3 — it falls to the fresh
+      // lower band (tier 6).
+      assert(
+        leadSortTier({ currentStatus: "Fresh Lead", createdAt: CREATED_TODAY, source: "WEBSITE" }, today, { activePipeline: false }) === 6,
+        "non-active-pipeline fresh-today is barred from tiers 0-3 → fresh lower band (6)");
+      // The activePipeline flag defaults to true when omitted (back-compat) → tier 0.
+      assert(
+        leadSortTier({ currentStatus: "Fresh Lead", createdAt: CREATED_TODAY, source: "WEBSITE" }, today) === 0,
+        "omitted activePipeline flag defaults to active → tier 0 (back-compat)");
+
+      // Existing lower band still reachable: a plain overdue follow-up (worked, old,
+      // has a past followupDate, no new-priority signal) lands at tier 7.
+      assert(
+        leadSortTier({ currentStatus: "Negotiating", createdAt: OLD, followupDate: new Date("2026-06-19T08:00:00Z") }, today, ACTIVE) === 7,
+        "plain overdue follow-up = tier 7 (existing lower band, unchanged)");
     },
   },
 ];

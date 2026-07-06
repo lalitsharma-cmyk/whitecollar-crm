@@ -76,6 +76,13 @@ export const ALLOWED_SOURCES = [
 // Data's section ordering + the "New Website Leads" / "Event Leads" presets, which
 // previously string-matched a single display label ("Website" / "Event") and so
 // silently MISSED WCR_WEBSITE / LANDING_PAGE / WCR_EVENT leads.
+// The DIRECT website-form sources only. Matched against Lead.source, which stores
+// the LeadSource ENUM KEY (not the display label) — so these are keys. Backs the
+// "Website Lead today" sort tier (leadSortTier tier 1). NOTE: paid-ad / portal
+// sources (FACEBOOK_ADS, GOOGLE_ADS, PORTAL_99ACRES, PORTAL_MAGICBRICKS,
+// PORTAL_HOUSING, etc.) are INTENTIONALLY NOT counted as "website" here — they are
+// a different acquisition channel. Lalit can widen this set later if he wants
+// paid/portal inbound to share the website tier.
 export const WEBSITE_SOURCES = ["WEBSITE", "WCR_WEBSITE", "LANDING_PAGE"] as const;
 export const EVENT_SOURCES = ["WCR_EVENT", "EVENT"] as const;
 export const isWebsiteSource = (s: string | null | undefined): boolean =>

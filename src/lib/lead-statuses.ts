@@ -6,6 +6,12 @@
 //
 // STATUS IS THE ONLY WORKFLOW. No stage system. No won/lost/open grouping.
 
+// isWebsiteSource lives in lead-sources.ts (a leaf module with NO imports), so
+// importing it here can't create a cycle. It backs the "Website Lead today" sort
+// tier. lead.source is the LeadSource ENUM (stored as its KEY: "WEBSITE",
+// "WCR_WEBSITE", "LANDING_PAGE"), so we match keys, not display labels.
+import { isWebsiteSource } from "@/lib/lead-sources";
+
 // ─── India Team Status Master ────────────────────────────────────────────────
 export const INDIA_STATUSES = [
   // Active pursuit
@@ -496,37 +502,76 @@ export function isFreshStatus(s: string | null | undefined): boolean {
 }
 
 /**
- * Default Leads-table priority tier (Lalit, 2026-06-21; tier-0 added 2026-07-01).
- * Lower = higher on the list. Today's fresh leads always sit on top — never buried
- * under old follow-ups.
- *   0 today's FRESH UNTOUCHED  (assigned today AND no first contact yet) ← the pin
- *   1 today's FRESH leads      (fresh status AND created today IST)
- *   2 today's FOLLOW-UPS       (followupDate within today IST)
- *   3 old FRESH leads          (fresh status, created before today)
- *   4 OVERDUE follow-ups       (followupDate before today IST)
- *   5 FUTURE follow-ups        (followupDate after today IST)
- *   6 everything else
+ * Default Leads-table priority tier (Lalit, 2026-07-06 — new "Fresh-Lead priority").
+ * Lower = higher on the list. FIRST MATCH WINS; tier 0 = the very top. Today's brand
+ * new leads always sit above old follow-ups, ordered so the freshest/hottest inbound
+ * (a fresh website lead created today) outranks everything.
  *
- * `freshUntouchedToday` is supplied by the caller (a batch query over
- * freshLeads.freshUntouchedWhere — "assigned today AND first-contact pending"), so
- * this function stays pure and free of the freshLeads import. When true it wins
- * outright: a brand-new lead the agent hasn't touched outranks every follow-up.
+ *   0 FRESH LEAD created today   — active-pipeline, createdAt today (IST), fresh status
+ *   1 WEBSITE LEAD today         — active-pipeline, createdAt today, source is a website source
+ *   2 MANUALLY created today     — active-pipeline, createdAt today (anything created today not above)
+ *   3 ASSIGNED today             — active-pipeline, assigned today (assignedToday flag)
+ *   4 UNTOUCHED                  — no first contact ever logged (any age)
+ *   5 FOLLOW-UP due today        — followupDate within today IST      ┐ EXISTING tiers,
+ *   6 FRESH status (any)         — isFreshStatus                       │ preserved 1:1
+ *   7 OVERDUE follow-up          — followupDate before today IST       │ (were tiers 2-6
+ *   8 FUTURE follow-up           — followupDate >= tomorrow IST        │  pre-2026-07-06).
+ *   9 everything else                                                  ┘
+ *
+ * Tiers 0-3 REQUIRE the lead to be in the active Leads pipeline (a NEW website/API/
+ * manual entry, not Master Data / Buyer / Revival / a bulk import). `activePipeline`
+ * comes from the caller (freshLeads.isActivePipelineRow) so this module never imports
+ * freshLeads (which imports THIS module — a cycle). It defaults to TRUE when the flag
+ * is omitted, preserving back-compat for any caller that can't supply origin.
+ *
+ * The other signals are ALSO caller-supplied precomputed flags for the same
+ * anti-cycle reason:
+ *   • untouched      — no first contact logged (freshLeads.FIRST_CONTACT_PENDING_WHERE)
+ *   • assignedToday  — assigned/created today IST  (freshLeads.isAssignedToday)
+ *   • website        — isWebsiteSource(lead.source) — computed here from lead.source,
+ *     but may be passed in too; the flag wins when provided.
  */
 export function leadSortTier(
-  lead: { currentStatus?: string | null; followupDate?: Date | null; createdAt: Date },
+  lead: {
+    currentStatus?: string | null;
+    followupDate?: Date | null;
+    createdAt: Date;
+    assignedAt?: Date | null;
+    source?: string | null;
+    leadOrigin?: string | null;
+    importBatchId?: string | null;
+  },
   today: { gte: Date; lt: Date },
-  freshUntouchedToday = false,
+  flags: {
+    untouched?: boolean;
+    assignedToday?: boolean;
+    activePipeline?: boolean;
+    website?: boolean;
+  } = {},
 ): number {
-  if (freshUntouchedToday) return 0;
   const fresh = isFreshStatus(lead.currentStatus);
   const createdToday = lead.createdAt >= today.gte && lead.createdAt < today.lt;
   const fu = lead.followupDate ?? null;
-  if (fresh && createdToday) return 1;
-  if (fu != null && fu >= today.gte && fu < today.lt) return 2;
-  if (fresh) return 3;
-  if (fu != null && fu < today.gte) return 4;
-  if (fu != null && fu >= today.lt) return 5;
-  return 6;
+  // Back-compat: an omitted activePipeline flag means "assume active" so legacy
+  // callers keep prior behaviour; tiers 0-3 are gated on it.
+  const active = flags.activePipeline ?? true;
+  const website = flags.website ?? isWebsiteSource(lead.source);
+
+  // ── New Lalit priority (tiers 0-4). Only active-pipeline rows can occupy 0-3. ──
+  if (active) {
+    if (createdToday && fresh) return 0;                 // fresh lead created today
+    if (createdToday && website) return 1;               // website lead created today
+    if (createdToday) return 2;                          // any other manual create today
+    if (flags.assignedToday) return 3;                   // assigned today
+  }
+  if (flags.untouched) return 4;                         // never contacted (any age, any origin)
+
+  // ── Existing lower band (was tiers 2-6, now 5-9), preserved verbatim. ──
+  if (fu != null && fu >= today.gte && fu < today.lt) return 5;  // follow-up due today
+  if (fresh) return 6;                                          // fresh status (any age)
+  if (fu != null && fu < today.gte) return 7;                    // overdue follow-up
+  if (fu != null && fu >= today.lt) return 8;                    // future follow-up
+  return 9;                                                      // everything else
 }
 
 // True when two status labels are EFFECTIVELY the same — identical after
