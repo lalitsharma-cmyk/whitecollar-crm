@@ -6299,6 +6299,19 @@ const checks: Check[] = [
         "Master Data detail MUST re-export leads/[id] (shared status editor, no fork)");
     },
   },
+
+  // ── Funds Issue = LOST category (Lalit 2026-07-06) — never Active ──
+  {
+    name: "funds-issue-lost — 'Funds Issue' is LOST-only (in LOST_STATUSES, NOT ACTIVE_PURSUIT); leadCategory→LOST",
+    run: async () => {
+      const { LOST_STATUSES, ACTIVE_PURSUIT_STATUSES, TERMINAL_STATUSES, leadCategory } = await import("../src/lib/lead-statuses");
+      assert(LOST_STATUSES.includes("Funds Issue"), "'Funds Issue' MUST be in LOST_STATUSES");
+      assert(!ACTIVE_PURSUIT_STATUSES.includes("Funds Issue"),
+        "'Funds Issue' MUST NOT be in ACTIVE_PURSUIT_STATUSES — it's Lost, never Active (Lalit 2026-07-06)");
+      assert(TERMINAL_STATUSES.includes("Funds Issue"), "'Funds Issue' MUST be TERMINAL (via LOST)");
+      assert(leadCategory("Funds Issue") === "LOST", "leadCategory('Funds Issue') MUST be LOST");
+    },
+  },
 ];
 
 // ── runner ────────────────────────────────────────────────────────────────────

@@ -229,13 +229,16 @@ export function isBookedStatus(currentStatus: string | null | undefined): boolea
 export const INDIA_ACTIVE_STATUSES: string[] = [
   "Fresh Lead", "Follow Up", "Not Contacted", "Never Contacted",
   "Details Shared", "Site Visit Schedule", "Meeting",
-  "Never Responding", "Funds Issue", "Postponed",
+  "Never Responding", "Postponed",
+  // "Funds Issue" is deliberately NOT here — Lalit 2026-07-06: Funds Issue = LOST
+  // category (reported under Lost, never Active). It lives ONLY in LOST_STATUSES.
 ];
 
 export const DUBAI_ACTIVE_STATUSES: string[] = [
   "Fresh Lead", "Follow Up", "Long Term Follow Up", "Mail Sent",
   "Visit Dubai", "Wants Office Visit", "Want Office Visit",
-  "Zoom Meeting", "Meeting", "Expo Only", "War Fear", "Funds Issue",
+  "Zoom Meeting", "Meeting", "Expo Only", "War Fear",
+  // "Funds Issue" removed — LOST category only (Lalit 2026-07-06). See LOST_STATUSES.
 ];
 
 export const ACTIVE_PURSUIT_STATUSES: string[] = [
