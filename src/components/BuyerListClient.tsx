@@ -401,6 +401,26 @@ export default function BuyerListClient(props: Props) {
   const toggleOne = (id: string) => setSelected((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
   const clearSel = () => setSelected(new Set());
 
+  // ── Select-all safety (Lalit 2026-07-07) ──────────────────────────────────
+  // The header checkbox selects ONLY THE CURRENT PAGE. A header "select all" that
+  // silently grabbed the ENTIRE dataset across every page caused an accidental
+  // bulk transfer of the whole Dubai module. Selecting all matching records is now
+  // a SEPARATE, explicit action, and any full-dataset bulk mutation is confirmed.
+  const pageIdSet = useMemo(() => new Set(pageRows.map((r) => r.id)), [pageRows]);
+  const allPageSelected = pageRows.length > 0 && pageRows.every((r) => selected.has(r.id));
+  const selectedOnPage = pageRows.reduce((n, r) => n + (selected.has(r.id) ? 1 : 0), 0);
+  const togglePage = () => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (allPageSelected) pageRows.forEach((r) => next.delete(r.id));
+      else pageRows.forEach((r) => next.add(r.id));
+      return next;
+    });
+  };
+  // Does the current selection reach BEYOND this page? (i.e. "all matching") — if so
+  // a bulk mutation must be explicitly confirmed as a full-dataset action.
+  const selectionSpansPages = useMemo(() => Array.from(selected).some((id) => !pageIdSet.has(id)), [selected, pageIdSet]);
+
   // Toggle direction on repeat header-text click; default direction per field type
   // (text → A→Z, number/date → high/newest first).
   const toggleSort = (k: SortKey) => {
@@ -445,7 +465,12 @@ export default function BuyerListClient(props: Props) {
   async function runBulk(action: string, extra?: Record<string, unknown>, confirmMsg?: string) {
     const ids = Array.from(selected);
     if (ids.length === 0) { setBulkMsg("Select at least one buyer first."); return; }
-    if (confirmMsg && !window.confirm(confirmMsg.replace("{n}", String(ids.length)))) return;
+    // MANDATORY full-dataset confirmation when the selection reaches BEYOND the current
+    // page ("Select all matching") — never silently mutate every page (Lalit 2026-07-07).
+    if (selectionSpansPages) {
+      const verb = action === "edit" ? "update" : action;
+      if (!window.confirm(`⚠ You are about to ${verb} ${ids.length} records across ALL pages — not just the ${selectedOnPage} on this page. This affects the entire matching dataset. Do you want to continue?`)) return;
+    } else if (confirmMsg && !window.confirm(confirmMsg.replace("{n}", String(ids.length)))) return;
     setBulkBusy(true); setBulkMsg(null);
     try {
       const r = await fetch("/api/buyer-data/bulk", {
@@ -620,13 +645,27 @@ export default function BuyerListClient(props: Props) {
       {/* ── Bulk toolbar (admin/mgr) ───────────────────────────────────────── */}
       {isAdminOrMgr && selected.size > 0 && (
         <div className="card p-3 bg-amber-50/60 dark:bg-amber-900/10 border-amber-200 dark:border-amber-800 flex flex-wrap items-center gap-2">
-          <span className="text-sm font-semibold text-amber-900 dark:text-amber-200">{selected.size} selected</span>
+          <span className="text-sm font-semibold text-amber-900 dark:text-amber-200">
+            {selected.size} selected
+            {selectionSpansPages && <span className="ml-1 font-normal text-red-700 dark:text-red-300">· ⚠ ALL pages</span>}
+          </span>
+          {/* Explicit "select all matching" — the header checkbox only takes THIS page. */}
+          {allPageSelected && filtered.length > pageRows.length && !selectionSpansPages && (
+            <button type="button" onClick={toggleAll}
+              className="text-xs underline font-semibold text-[#9a7b2e] dark:text-[#d9b765]"
+              title="Select every matching record across all pages">
+              Select all {filtered.length} matching (all pages)
+            </button>
+          )}
+          {selectionSpansPages && allFilteredSelected && (
+            <span className="text-xs text-red-700 dark:text-red-300">All {filtered.length} matching records selected across all pages.</span>
+          )}
           {/* Transfer */}
           <select value={transferTo} onChange={(e) => setTransferTo(e.target.value)} className={sel} title="Transfer to agent">
             <option value="">Transfer to…</option>
             {agents.map((a) => <option key={a.id} value={a.id}>{a.name}{a.team ? ` · ${a.team}` : ""}</option>)}
           </select>
-          <button type="button" disabled={!transferTo || bulkBusy} onClick={() => runBulk("transfer", { agentId: transferTo })}
+          <button type="button" disabled={!transferTo || bulkBusy} onClick={() => runBulk("transfer", { agentId: transferTo }, "Transfer {n} buyer(s) to the selected agent?")}
             className="btn btn-primary text-sm disabled:opacity-40">Transfer</button>
           {/* Edit */}
           <select value={editField} onChange={(e) => setEditField(e.target.value)} className={sel} title="Bulk edit field">
@@ -673,7 +712,7 @@ export default function BuyerListClient(props: Props) {
               <thead>
                 <tr className="bg-gray-50 dark:bg-slate-800 text-left text-gray-500 dark:text-slate-400 border-b border-gray-200 dark:border-slate-700">
                   {isAdminOrMgr && (
-                    <th className="px-3 py-2 w-8"><input type="checkbox" checked={allFilteredSelected} onChange={toggleAll} aria-label="Select all" /></th>
+                    <th className="px-3 py-2 w-8"><input type="checkbox" checked={allPageSelected} onChange={togglePage} aria-label="Select all on this page" title="Select all on THIS page" /></th>
                   )}
                   <th className="px-3 py-2 whitespace-nowrap"><span className="cursor-pointer" onClick={() => toggleSort("clientName")}>Client Name{arrow("clientName")}</span>{renderHF("clientName")}</th>
                   <th className="px-3 py-2 whitespace-nowrap"><span className="cursor-pointer" onClick={() => toggleSort("businessStatus")}>Status{arrow("businessStatus")}</span>{renderHF("businessStatus")}</th>
