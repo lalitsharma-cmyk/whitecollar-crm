@@ -399,11 +399,17 @@ export default function BuyerListClient(props: Props) {
     for (const c of COLS) {
       if (c.kind !== "text" && c.kind !== "select") continue;
       if (c.options) { m.set(c.key, c.options(rows)); continue; }
-      const vals = Array.from(new Set(rows.map((r) => c.str(r) || "—"))).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+      // The AGENT column filter must list the COMPLETE agent set — every assignable-roster
+      // agent AND every record-owner — NEVER only agents present in the loaded rows. So
+      // Mehak/Dinesh/Lalit/… always appear regardless of pagination, active filters, or
+      // ownership churn (Lalit 2026-07-07). `owners` already = roster ∪ record-owners.
+      const base = c.key === "agent" ? owners.map((o) => o.name) : [];
+      const vals = Array.from(new Set([...base, ...rows.map((r) => c.str(r) || "—")]))
+        .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
       m.set(c.key, vals);
     }
     return m;
-  }, [rows]);
+  }, [rows, owners]);
 
   const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE));
   const safePage = Math.min(page, pageCount - 1);
