@@ -441,7 +441,12 @@
 // market-aware /reports/buyer-performance + reports-index card + Dubai↔India toggle.
 // v136 (2026-07-03): Buyer Distribution both-markets — market-generic engine + daily
 // cron distributes BOTH pools + market-aware distribution panel (India + Dubai).
-const CACHE = "wcr-shell-v136";
+// v137 (2026-07-07): force-refresh after the overnight batch (cross-module search, call-logs,
+// dashboard/reports bifurcation, editable status, Revival full parity, Funds-Issue=Lost,
+// Fresh-Lead sort, buyer bug/perf/permission fixes, Select-All safety) + the cross-device
+// fix: buyer summary-card filter is now URL-driven (?tab=). Stale bundles (e.g. Mac) were
+// serving old card behaviour — this bump clears every client.
+const CACHE = "wcr-shell-v137";
 const SHELL = ["/login", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", (event) => {

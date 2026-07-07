@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { useState, useMemo, useEffect } from "react";
-import { useRouter, usePathname } from "next/navigation";
+import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import { useScrollRestore } from "@/hooks/useScrollRestore";
 import BuyerDistributionPanel from "@/components/BuyerDistributionPanel";
 import ColumnHeaderFilter, {
@@ -161,10 +161,31 @@ export default function BuyerListClient(props: Props) {
   const { rows, projects, propertyTypes, nationalities, owners, agents, isAdmin, isAdminOrMgr, viewerId, poolAvailable, convertedCount, summary } = props;
   const router = useRouter();
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   // Restore scroll position on Back (open a buyer → Back returns to the same row).
   useScrollRestore();
 
-  const [tab, setTab] = useState<Tab>("active");
+  // The summary-card selection ("tab") is DEVICE-INDEPENDENT: it lives in the URL
+  // (?tab=…), NOT per-device localStorage — so the same user sees the same filtered
+  // result on every device/browser, it survives refresh, and it's shareable (fixes the
+  // Windows-vs-Mac summary-card bug, Lalit 2026-07-07). Only the default "active" omits it.
+  const TAB_VALUES: readonly Tab[] = ["active", "all", "pool", "assigned", "converted", "rejected"];
+  const tabFromUrl = (): Tab | null => {
+    const t = searchParams.get("tab");
+    return t && (TAB_VALUES as readonly string[]).includes(t) ? (t as Tab) : null;
+  };
+  const [tab, setTab] = useState<Tab>(tabFromUrl() ?? "active");
+  // Selecting a card/tab updates BOTH React state and the URL, so the active filter is
+  // reflected in the address bar (device-independent + Back/refresh safe).
+  const selectTab = (t: Tab) => {
+    setTab(t);
+    const sp = new URLSearchParams(Array.from(searchParams.entries()));
+    if (t === "active") sp.delete("tab"); else sp.set("tab", t);
+    const qs = sp.toString();
+    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+  };
+  // Keep the tab in sync when the URL changes (browser Back/Forward, shared link).
+  useEffect(() => { setTab(tabFromUrl() ?? "active"); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [searchParams]);
   const [q, setQ] = useState("");
   const [project, setProject] = useState("");
   const [ptype, setPtype] = useState("");
@@ -245,7 +266,8 @@ export default function BuyerListClient(props: Props) {
       const raw = localStorage.getItem(FKEY);
       if (raw) {
         const s = JSON.parse(raw) as Partial<SavedView> & { page?: number };
-        if (s.tab) setTab(s.tab);
+        // NOTE: tab is NOT restored from localStorage — it's URL-driven (?tab=) so it
+        // stays consistent across devices. Only the convenience filters below persist.
         if (typeof s.q === "string") setQ(s.q);
         if (typeof s.project === "string") setProject(s.project);
         if (typeof s.ptype === "string") setPtype(s.ptype);
@@ -278,7 +300,7 @@ export default function BuyerListClient(props: Props) {
     } catch { /* quota / private mode — non-fatal */ }
   }, [tab, q, project, ptype, nat, region, ownerId, repeatOnly, classFilter, sortKey, sortDir, colFilters, page, hydrated, FKEY]);
 
-  const resetAll = () => { setTab("active"); setQ(""); setProject(""); setPtype(""); setNat(""); setRegion(""); setOwnerId(""); setRepeatOnly(""); setClassFilter(""); setSortKey("txnDate"); setSortDir("desc"); setColFilters({}); setPage(0); };
+  const resetAll = () => { selectTab("active"); setQ(""); setProject(""); setPtype(""); setNat(""); setRegion(""); setOwnerId(""); setRepeatOnly(""); setClassFilter(""); setSortKey("txnDate"); setSortDir("desc"); setColFilters({}); setPage(0); };
 
   // Serialize / deserialize the per-column filters (Set → array) for saved views.
   const serCol = (cf: Record<string, ColFilterState>) =>
@@ -287,7 +309,7 @@ export default function BuyerListClient(props: Props) {
     Object.fromEntries(Object.entries(o || {}).map(([k, f]) => [k, { values: new Set(f.values), min: f.min, max: f.max }]));
 
   function applyView(v: SavedView) {
-    setTab(v.tab); setQ(v.q); setProject(v.project); setPtype(v.ptype); setNat(v.nat); setRegion(v.region);
+    selectTab(v.tab); setQ(v.q); setProject(v.project); setPtype(v.ptype); setNat(v.nat); setRegion(v.region);
     setOwnerId(v.ownerId); setRepeatOnly(v.repeatOnly); setClassFilter(v.classFilter ?? ""); setSortKey(v.sortKey); setSortDir(v.sortDir);
     setColFilters(deserCol(v.colFilters)); setPage(0);
   }
@@ -514,7 +536,7 @@ export default function BuyerListClient(props: Props) {
   }
 
   const tabBtn = (t: Tab, label: string, count?: number) => (
-    <button type="button" onClick={() => { setTab(t); setPage(0); clearSel(); }}
+    <button type="button" onClick={() => { selectTab(t); setPage(0); clearSel(); }}
       className={`px-3 py-1.5 rounded-lg text-sm font-medium whitespace-nowrap ${tab === t ? "bg-[#0b1a33] text-white dark:bg-[#c9a24b] dark:text-[#0b1a33]" : "bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-slate-800 dark:text-slate-300"}`}>
       {label}{count != null ? ` (${count})` : ""}
     </button>
@@ -534,7 +556,7 @@ export default function BuyerListClient(props: Props) {
     );
     if (!opts?.tabKey) return <div className={base}>{inner}</div>;
     return (
-      <button type="button" onClick={() => { setTab(opts.tabKey!); setPage(0); clearSel(); }} className={`${base} hover:border-[#c9a24b] focus:outline-none focus:ring-1 focus:ring-[#c9a24b]`} aria-pressed={!!active} title={`Show ${label}`}>
+      <button type="button" onClick={() => { selectTab(opts.tabKey!); setPage(0); clearSel(); }} className={`${base} hover:border-[#c9a24b] focus:outline-none focus:ring-1 focus:ring-[#c9a24b]`} aria-pressed={!!active} title={`Show ${label}`}>
         {inner}
       </button>
     );
