@@ -412,6 +412,16 @@ export default function BuyerListClient(props: Props) {
   // Selection helpers (operate on the FILTERED set, not just the page).
   const filteredIds = useMemo(() => filtered.map((r) => r.id), [filtered]);
   const allFilteredSelected = filteredIds.length > 0 && filteredIds.every((id) => selected.has(id));
+  // Rule #6 (Lalit 2026-07-07): when filters/search/tab change, drop any selected rows
+  // that no longer match — a bulk action can never touch an out-of-view record.
+  const filteredIdSet = useMemo(() => new Set(filteredIds), [filteredIds]);
+  useEffect(() => {
+    setSelected((prev) => {
+      if (prev.size === 0) return prev;
+      const next = new Set([...prev].filter((id) => filteredIdSet.has(id)));
+      return next.size === prev.size ? prev : next;
+    });
+  }, [filteredIdSet]);
   const toggleAll = () => {
     setSelected((prev) => {
       const next = new Set(prev);
