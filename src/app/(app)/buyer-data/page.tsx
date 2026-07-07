@@ -108,9 +108,11 @@ export default async function BuyerDataPage() {
   const projects = Array.from(new Set(records.map((r) => (r.projectName ?? "").trim()).filter(Boolean))).sort();
   const propertyTypes = Array.from(new Set(records.map((r) => (r.propertyType ?? "").trim()).filter(Boolean))).sort();
   const nationalities = Array.from(new Set(records.map((r) => (r.nationality ?? "").trim()).filter(Boolean))).sort();
-  const owners = Array.from(
-    new Map(records.filter((r) => r.owner).map((r) => [r.owner!.id, r.owner!.name])).entries(),
-  ).map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name));
+  // Owner/Agent FILTER options — the COMPLETE set, NEVER built from only the visible
+  // page or filtered rows. Seed it with every owner that currently holds a record…
+  const ownerMap = new Map<string, string>(
+    records.filter((r) => r.owner).map((r) => [r.owner!.id, r.owner!.name]),
+  );
 
   // The active agent roster (admin/mgr only — powers Assign/Transfer + AI
   // distribution). DUBAI ONLY: assignment is limited to Dubai-team users + admins,
@@ -135,6 +137,13 @@ export default async function BuyerDataPage() {
     // Defensive: keep only genuinely Dubai-assignable users (team=Dubai or admin).
     agents = ag.filter((a) => isDubaiAssignable(a)).map(({ id, name, team }) => ({ id, name, team }));
   }
+  // …then UNION the full assignable roster so the Agent filter ALWAYS lists every valid
+  // agent (Mehak, Dinesh, Lalit, …) — even one with 0 current records — regardless of
+  // pagination, active filters, or ownership churn (Lalit 2026-07-07). Deduped by id.
+  for (const a of agents) if (!ownerMap.has(a.id)) ownerMap.set(a.id, a.name);
+  const owners = Array.from(ownerMap.entries())
+    .map(([id, name]) => ({ id, name }))
+    .sort((a, b) => a.name.localeCompare(b.name));
 
   // Map to table rows.
   const rows: BuyerRow[] = records.map((r) => {

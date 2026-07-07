@@ -83,9 +83,11 @@ export default async function IndiaBuyerDataPage() {
   const projects = Array.from(new Set(records.map((r) => (r.projectName ?? "").trim()).filter(Boolean))).sort();
   const propertyTypes = Array.from(new Set(records.map((r) => (r.propertyType ?? "").trim()).filter(Boolean))).sort();
   const nationalities = Array.from(new Set(records.map((r) => (r.nationality ?? "").trim()).filter(Boolean))).sort();
-  const owners = Array.from(
-    new Map(records.filter((r) => r.owner).map((r) => [r.owner!.id, r.owner!.name])).entries(),
-  ).map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name));
+  // Owner/Agent FILTER options — the COMPLETE set, NEVER built from only the visible
+  // page or filtered rows. Seed it with every owner that currently holds a record…
+  const ownerMap = new Map<string, string>(
+    records.filter((r) => r.owner).map((r) => [r.owner!.id, r.owner!.name]),
+  );
 
   // India assignment roster: India-team AGENT/MANAGER + admins (server endpoints
   // re-enforce). Empty for non-admin/mgr.
@@ -98,6 +100,13 @@ export default async function IndiaBuyerDataPage() {
     });
     agents = ag.map(({ id, name, team }) => ({ id, name, team }));
   }
+  // …then UNION the full India assignable roster so the Agent filter ALWAYS lists every
+  // valid agent — even one with 0 current records — regardless of pagination, active
+  // filters, or ownership churn (Lalit 2026-07-07). Deduped by id.
+  for (const a of agents) if (!ownerMap.has(a.id)) ownerMap.set(a.id, a.name);
+  const owners = Array.from(ownerMap.entries())
+    .map(([id, name]) => ({ id, name }))
+    .sort((a, b) => a.name.localeCompare(b.name));
 
   const rows: BuyerRow[] = records.map((r) => {
     const key = (r.buyerKey ?? "").trim();
