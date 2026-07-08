@@ -165,6 +165,7 @@ model User {
   buyerStickyNotes  BuyerStickyNote[]   @relation("BuyerStickyNoteUser")
 
   assistantRuns AssistantRun[] @relation("AssistantRunBy")
+  operationLogs OperationLog[] @relation("OperationLogBy")
 
   agentStatusEvents AgentStatusEvent[]
 
@@ -215,6 +216,38 @@ model AssistantRun {
 
   @@index([createdById, createdAt])
   @@index([status])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// OPERATION LOG — reversible structural operations (Lalit 2026-07-08).
+// Captures the exact BEFORE + AFTER state of every structural admin action so any
+// of them can be reverted atomically by an admin — accidental transfer / convert /
+// bulk-edit no longer needs DB surgery. Covers single + bulk Transfer, single + bulk
+// Edit-Field, Convert-to-Lead (+ bulk), and assignment changes across all 5 modules.
+// Mirrors the AssistantRun preview→execute→undo pattern: execute snapshots beforeState,
+// revert replays it. PURELY ADDITIVE (new table; no existing row is ever touched).
+model OperationLog {
+  id            String    @id @default(cuid())
+  operation     String // "buyer.transfer" | "buyer.edit" | "buyer.convert" | "lead.transfer" | "lead.edit" | "lead.assign" (bulk variants share the name)
+  entityType    String // "BuyerRecord" | "Lead"
+  module        String // "Dubai Buyer Data" | "India Buyer Data" | "Revival Engine" | "Leads" | "Master Data"
+  field         String? // edit-field ops: which field was changed
+  summary       String? // human label: "Nationality → Singapore" · "Transfer → Mehak"
+  status        String    @default("EXECUTED") // EXECUTED | UNDONE | FAILED
+  affectedCount Int       @default(0)
+  affectedIds   Json // string[] of the record ids the op touched
+  beforeState   Json // [{ id, <captured fields> }] — the pre-op snapshot revert restores
+  afterState    Json? // [{ id, <written fields> }] — for audit / display
+  createdById   String
+  createdBy     User      @relation("OperationLogBy", fields: [createdById], references: [id])
+  createdAt     DateTime  @default(now())
+  undoneAt      DateTime?
+  undoneById    String?
+
+  @@index([createdById, createdAt])
+  @@index([status, operation])
+  @@index([entityType, createdAt])
+  @@index([createdAt])
 }
 
 // =====================================================
