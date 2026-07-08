@@ -14,12 +14,37 @@ export default function PWARegister() {
   const [pushDismissed, setPushDismissed] = useState(false);
   const [enabling, setEnabling] = useState(false);
 
-  // Register SW (always, in production)
+  // Register SW (always, in production) + FORCE fresh code on every deploy.
+  // Root cause of the "iMac shows old behaviour" cross-device bug (Lalit 2026-07-08):
+  // Safari is notoriously lazy about re-checking the service worker, so a device could
+  // keep executing a STALE bundle for hours/days even after a deploy. We now (a) call
+  // registration.update() on load + hourly to force the check, and (b) reload once when a
+  // NEW worker takes control (after the SW's skipWaiting + clients.claim), so the tab
+  // always runs current code. The `hadController` guard means a first-ever install never
+  // triggers a reload — only a genuine version replacement does.
   useEffect(() => {
     if (typeof window === "undefined" || !("serviceWorker" in navigator)) return;
     if (process.env.NODE_ENV !== "production") return;
-    const t = setTimeout(() => { navigator.serviceWorker.register("/sw.js").catch(() => {}); }, 1500);
-    return () => clearTimeout(t);
+    let reloaded = false;
+    const hadController = !!navigator.serviceWorker.controller;
+    const onControllerChange = () => {
+      if (reloaded || !hadController) return;
+      reloaded = true;
+      window.location.reload();
+    };
+    navigator.serviceWorker.addEventListener("controllerchange", onControllerChange);
+    let interval: ReturnType<typeof setInterval> | undefined;
+    const t = setTimeout(() => {
+      navigator.serviceWorker.register("/sw.js").then((reg) => {
+        reg.update().catch(() => {});
+        interval = setInterval(() => reg.update().catch(() => {}), 60 * 60 * 1000);
+      }).catch(() => {});
+    }, 1500);
+    return () => {
+      clearTimeout(t);
+      if (interval) clearInterval(interval);
+      navigator.serviceWorker.removeEventListener("controllerchange", onControllerChange);
+    };
   }, []);
 
   // ── Notification bootstrap (runs on every app load) ─────────────────────────

@@ -2297,8 +2297,18 @@ const checks: Check[] = [
 
       // (d) DATA INVARIANT — no orphaned Smart Timeline: every buyer with an
       // imported-tagged activity has a non-null remarks (the Raw History source).
+      // Scope to genuine CONVERSATION imports (remarks → Smart Timeline). The
+      // property-map backfill (scripts/backfill-buyer-property-map.ts) ALSO tags its
+      // column-fill audit NOTE with "(imported)", but those rows are derived from the
+      // import BLOB (extraFields), NOT from remarks — a buyer legitimately without
+      // remarks isn't an "orphaned conversation timeline". Exclude them by their fixed
+      // prefix so this invariant keeps checking only what it means to (2026-07-08).
       const importedActs = await prisma.buyerActivity.findMany({
-        where: { description: { contains: IMPORTED_TAG.trim() }, buyer: { deletedAt: null } },
+        where: {
+          description: { contains: IMPORTED_TAG.trim() },
+          NOT: { description: { startsWith: "Property fields mapped from import" } },
+          buyer: { deletedAt: null },
+        },
         select: { buyerId: true },
         distinct: ["buyerId"],
         take: 5000,
@@ -5061,15 +5071,24 @@ const checks: Check[] = [
       const pg = fs.readFileSync("src/app/(app)/buyer-data/page.tsx", "utf8");
       // The default view is the working pipeline so terminal CONVERTED/REJECTED no
       // longer inflate it (B2); All is still reachable explicitly.
-      assert(/useState<Tab>\("active"\)/.test(cl), "Buyer list must default to the Active tab");
+      // Default is the working pipeline — now URL-DRIVEN (?tab=) so it's the same on every
+      // device, but still falls back to "active" when no param is present (2026-07-08).
+      assert(/useState<Tab>\(.*"active"\)/.test(cl), "Buyer list must default to the Active tab (URL-driven ?? active)");
       assert(/tab === "active" && r\.poolStatus !== "ADMIN_POOL" && r\.poolStatus !== "ASSIGNED"/.test(cl), "Active tab must include only ADMIN_POOL + ASSIGNED");
       // Rejected has a tab + filter (B1); Converted too. Both gated to admin.
       assert(/tabBtn\("rejected"/.test(cl) && /tab === "rejected" && r\.poolStatus !== "REJECTED"/.test(cl), "Rejected must have a tab + filter");
       assert(/tabBtn\("converted"/.test(cl), "Converted must have a tab");
       // Summary cards are clickable status filters (B3) and the page feeds the counts.
-      assert(/aria-pressed=\{!!active\}/.test(cl) && /tabKey: "rejected"/.test(cl), "summary cards must be clickable + include Rejected");
+      // `active` is now a plain boolean, so aria-pressed={active} (was {!!active}).
+      assert(/aria-pressed=\{!*active\}/.test(cl) && /tabKey: "rejected"/.test(cl), "summary cards must be clickable + include Rejected");
       assert(/rejected: rejectedCount/.test(pg) && /summary=\{\{/.test(pg), "page must pass a summary incl. rejectedCount to the buyer list");
-      results.push({ name: "  ↳ note", ok: true, detail: "buyer list: default Active (terminal excluded), Rejected+Converted tabs, clickable summary cards" });
+      // CROSS-DEVICE (2026-07-08): the tab AND the Unique/Repeat cards are URL-driven
+      // (?tab=, ?repeat=) so a click behaves identically on Windows / iMac / iPad and
+      // survives a refresh or a shared link — the root fix for "cards work on Windows,
+      // not on the iMac". Unique/Repeat are now clickable filters, not dead tiles.
+      assert(/const selectRepeat =/.test(cl) && /sp\.set\("repeat", v\)/.test(cl), "Unique/Repeat filter must be URL-driven (?repeat=)");
+      assert(/onClick: \(\) => selectRepeat\(/.test(cl), "Unique + Repeat summary cards must be clickable (selectRepeat)");
+      results.push({ name: "  ↳ note", ok: true, detail: "buyer list: default Active (terminal excluded), Rejected+Converted tabs, clickable URL-driven summary cards" });
     },
   },
   {

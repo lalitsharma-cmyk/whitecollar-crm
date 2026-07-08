@@ -446,7 +446,12 @@
 // Fresh-Lead sort, buyer bug/perf/permission fixes, Select-All safety) + the cross-device
 // fix: buyer summary-card filter is now URL-driven (?tab=). Stale bundles (e.g. Mac) were
 // serving old card behaviour — this bump clears every client.
-const CACHE = "wcr-shell-v137";
+// v138 (2026-07-08): ROOT-CAUSE cross-device fix — PWARegister now force-updates the SW
+// (registration.update() on load + hourly) and auto-reloads once the new worker takes
+// control, so a device (esp. Safari/iMac) can never keep running a stale bundle. This
+// bump is the one-time kick that lands the self-updating registration on already-stuck
+// clients; the Unique/Repeat buyer summary cards are also URL-driven (?repeat=) now.
+const CACHE = "wcr-shell-v138";
 const SHELL = ["/login", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", (event) => {

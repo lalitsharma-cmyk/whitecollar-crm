@@ -192,7 +192,19 @@ export default function BuyerListClient(props: Props) {
   const [nat, setNat] = useState("");
   const [region, setRegion] = useState("");
   const [ownerId, setOwnerId] = useState("");
-  const [repeatOnly, setRepeatOnly] = useState<"" | "yes" | "no">("");
+  const repeatFromUrl = (): "" | "yes" | "no" => { const r = searchParams.get("repeat"); return r === "yes" || r === "no" ? r : ""; };
+  const [repeatOnly, setRepeatOnly] = useState<"" | "yes" | "no">(repeatFromUrl());
+  // Repeat/Unique summary cards are URL-driven too (?repeat=yes|no) so clicking them is
+  // device-independent + refresh-safe, exactly like the tab (Lalit 2026-07-08).
+  const selectRepeat = (v: "" | "yes" | "no") => {
+    setRepeatOnly(v);
+    const sp = new URLSearchParams(Array.from(searchParams.entries()));
+    if (v) sp.set("repeat", v); else sp.delete("repeat");
+    const qs = sp.toString();
+    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+    setPage(0);
+  };
+  useEffect(() => { setRepeatOnly(repeatFromUrl()); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [searchParams]);
   const [classFilter, setClassFilter] = useState<"" | "First-Time" | "Investor" | "Whale">("");
   const [sortKey, setSortKey] = useState<SortKey>("txnDate");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
@@ -274,7 +286,7 @@ export default function BuyerListClient(props: Props) {
         if (typeof s.nat === "string") setNat(s.nat);
         if (typeof s.region === "string") setRegion(s.region);
         if (typeof s.ownerId === "string") setOwnerId(s.ownerId);
-        if (s.repeatOnly === "" || s.repeatOnly === "yes" || s.repeatOnly === "no") setRepeatOnly(s.repeatOnly);
+        // repeatOnly is URL-driven (?repeat=) — not restored from localStorage.
         if (s.classFilter === "" || s.classFilter === "First-Time" || s.classFilter === "Investor" || s.classFilter === "Whale") setClassFilter(s.classFilter);
         if (s.sortKey) setSortKey(s.sortKey);
         if (s.sortDir === "asc" || s.sortDir === "desc") setSortDir(s.sortDir);
@@ -300,7 +312,11 @@ export default function BuyerListClient(props: Props) {
     } catch { /* quota / private mode — non-fatal */ }
   }, [tab, q, project, ptype, nat, region, ownerId, repeatOnly, classFilter, sortKey, sortDir, colFilters, page, hydrated, FKEY]);
 
-  const resetAll = () => { selectTab("active"); setQ(""); setProject(""); setPtype(""); setNat(""); setRegion(""); setOwnerId(""); setRepeatOnly(""); setClassFilter(""); setSortKey("txnDate"); setSortDir("desc"); setColFilters({}); setPage(0); };
+  const resetAll = () => {
+    setTab("active"); setQ(""); setProject(""); setPtype(""); setNat(""); setRegion(""); setOwnerId("");
+    setRepeatOnly(""); setClassFilter(""); setSortKey("txnDate"); setSortDir("desc"); setColFilters({}); setPage(0);
+    router.replace(pathname, { scroll: false }); // clear ?tab & ?repeat in ONE replace (no double-setter race)
+  };
 
   // Serialize / deserialize the per-column filters (Set → array) for saved views.
   const serCol = (cf: Record<string, ColFilterState>) =>
@@ -309,9 +325,15 @@ export default function BuyerListClient(props: Props) {
     Object.fromEntries(Object.entries(o || {}).map(([k, f]) => [k, { values: new Set(f.values), min: f.min, max: f.max }]));
 
   function applyView(v: SavedView) {
-    selectTab(v.tab); setQ(v.q); setProject(v.project); setPtype(v.ptype); setNat(v.nat); setRegion(v.region);
+    setTab(v.tab); setQ(v.q); setProject(v.project); setPtype(v.ptype); setNat(v.nat); setRegion(v.region);
     setOwnerId(v.ownerId); setRepeatOnly(v.repeatOnly); setClassFilter(v.classFilter ?? ""); setSortKey(v.sortKey); setSortDir(v.sortDir);
     setColFilters(deserCol(v.colFilters)); setPage(0);
+    // Reflect tab + repeat in the URL together (ONE replace — no race between two setters).
+    const sp = new URLSearchParams(Array.from(searchParams.entries()));
+    if (v.tab === "active") sp.delete("tab"); else sp.set("tab", v.tab);
+    if (v.repeatOnly) sp.set("repeat", v.repeatOnly); else sp.delete("repeat");
+    const qs = sp.toString();
+    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
   }
   function saveCurrentView() {
     const name = window.prompt("Name this view:");
@@ -558,11 +580,18 @@ export default function BuyerListClient(props: Props) {
     </button>
   );
 
-  // Clickable summary card — status cards set the tab + reconcile with the rows
-  // below (clicking "Rejected" filters to rejected). Non-status cards (Investment /
-  // Unique / Repeat) are informational and not clickable.
-  const card = (label: string, value: string | number, opts?: { tabKey?: Tab; tone?: string }) => {
-    const active = opts?.tabKey && tab === opts.tabKey;
+  // Clickable summary card. Two kinds are interactive:
+  //   • status cards (tabKey)  → set the tab + reconcile the rows below (Rejected → rejected tab)
+  //   • filter cards (onClick) → toggle a non-tab filter (Unique/Repeat → ?repeat=no|yes)
+  // Only "Investment" stays a plain informational tile. All click state is URL-driven
+  // (tab + repeat), so a click behaves identically on Windows / iMac / iPad and survives
+  // a refresh or a shared link (Lalit cross-device fix, 2026-07-08).
+  const card = (
+    label: string,
+    value: string | number,
+    opts?: { tabKey?: Tab; tone?: string; onClick?: () => void; pressed?: boolean },
+  ) => {
+    const active = (opts?.tabKey ? tab === opts.tabKey : false) || !!opts?.pressed;
     const base = `rounded-lg border p-3 text-left transition ${active ? "border-[#c9a24b] ring-1 ring-[#c9a24b] bg-[#c9a24b]/5" : "border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800"}`;
     const inner = (
       <>
@@ -570,9 +599,12 @@ export default function BuyerListClient(props: Props) {
         <div className="text-[10px] uppercase tracking-wide text-gray-500 dark:text-slate-400">{label}</div>
       </>
     );
-    if (!opts?.tabKey) return <div className={base}>{inner}</div>;
+    if (!opts?.tabKey && !opts?.onClick) return <div className={base}>{inner}</div>;
+    const handleClick = opts?.tabKey
+      ? () => { selectTab(opts.tabKey!); setPage(0); clearSel(); }
+      : () => { opts!.onClick!(); clearSel(); };
     return (
-      <button type="button" onClick={() => { selectTab(opts.tabKey!); setPage(0); clearSel(); }} className={`${base} hover:border-[#c9a24b] focus:outline-none focus:ring-1 focus:ring-[#c9a24b]`} aria-pressed={!!active} title={`Show ${label}`}>
+      <button type="button" onClick={handleClick} className={`${base} hover:border-[#c9a24b] focus:outline-none focus:ring-1 focus:ring-[#c9a24b]`} aria-pressed={active} title={active ? `Clear ${label} filter` : `Show ${label}`}>
         {inner}
       </button>
     );
@@ -587,8 +619,8 @@ export default function BuyerListClient(props: Props) {
         {card("Assigned", summary.assigned, { tabKey: "assigned", tone: summary.assigned ? "text-emerald-600 dark:text-emerald-400" : undefined })}
         {isAdmin && card("Converted", summary.converted, { tabKey: "converted", tone: summary.converted ? "text-purple-600 dark:text-purple-400" : undefined })}
         {isAdmin && card("Rejected", summary.rejected, { tabKey: "rejected", tone: summary.rejected ? "text-gray-500 dark:text-slate-400" : undefined })}
-        {card("Unique Buyers", summary.uniqueBuyers)}
-        {card("Repeat Buyers", summary.repeatBuyers, { tone: summary.repeatBuyers ? "text-amber-600 dark:text-amber-400" : undefined })}
+        {card("Unique Buyers", summary.uniqueBuyers, { onClick: () => selectRepeat(repeatOnly === "no" ? "" : "no"), pressed: repeatOnly === "no" })}
+        {card("Repeat Buyers", summary.repeatBuyers, { onClick: () => selectRepeat(repeatOnly === "yes" ? "" : "yes"), pressed: repeatOnly === "yes", tone: summary.repeatBuyers ? "text-amber-600 dark:text-amber-400" : undefined })}
         {card("Investment", summary.investmentLabel)}
       </div>
 
@@ -665,7 +697,7 @@ export default function BuyerListClient(props: Props) {
               {owners.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
             </select>
           )}
-          <select value={repeatOnly} onChange={(e) => { setRepeatOnly(e.target.value as "" | "yes" | "no"); setPage(0); }} className={sel} title="Repeat buyers">
+          <select value={repeatOnly} onChange={(e) => selectRepeat(e.target.value as "" | "yes" | "no")} className={sel} title="Repeat buyers">
             <option value="">All buyers</option>
             <option value="yes">🔁 Repeat buyers</option>
             <option value="no">First-time buyers</option>
