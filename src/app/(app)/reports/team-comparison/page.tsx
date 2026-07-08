@@ -8,6 +8,7 @@ import Link from "next/link";
 import ReportDateRangePicker from "@/components/ReportDateRangePicker";
 import { leadSourceModule, type SourceModule } from "@/lib/moduleSource";
 import { ModuleBreakdownTable, type ModuleBreakdownRow } from "@/components/ModuleBreakdown";
+import { BUYER_CALL_ACTIVITY_TYPES, BUYER_CONNECTED_ACTIVITY_TYPES } from "@/lib/dashboardWidgets";
 
 export const dynamic = "force-dynamic";
 
@@ -123,8 +124,8 @@ async function computeTeamMetrics(team: Team, since: Date, until: Date): Promise
   const [
     newLeads,
     activeLeads,
-    callsMade,
-    callsConnected,
+    leadCallsMade,
+    leadCallsConnected,
     meetingsBooked,
     siteVisitsDone,
     bookingsDone,
@@ -135,6 +136,8 @@ async function computeTeamMetrics(team: Team, since: Date, until: Date): Promise
     newLeadsSplitRows,
     activeLeadsSplitRows,
     bookingsSplitRows,
+    buyerCallsMade,
+    buyerCallsConnected,
   ] = await Promise.all([
     // NEW leads in window — anything created in-range belonging to this team.
     prisma.lead.count({ where: { ...leadWhere, createdAt: { gte: since, lte: until } } }),
@@ -272,7 +275,36 @@ async function computeTeamMetrics(team: Team, since: Date, until: Date): Promise
       },
       _count: { _all: true },
     }),
+
+    // Buyer-Data calls for this team — a team's buyer calls = BuyerActivity whose
+    // buyer.market equals the team ("Dubai"/"India" == market value). Sourced from
+    // BuyerActivity ONLY (each buyer call counted once); the CallLog query above is
+    // lead-scoped (lead:{...}) so it already excludes buyer CallLog rows — we just
+    // ADD these. Same window as callsMade (startedAt gte/lte → createdAt gte/lte),
+    // live buyers only. (Lalit 2026-07-08)
+    prisma.buyerActivity.count({
+      where: {
+        type: { in: BUYER_CALL_ACTIVITY_TYPES },
+        createdAt: { gte: since, lte: until },
+        buyer: { market: team, deletedAt: null },
+      },
+    }),
+
+    // Connected Buyer-Data calls (BUYER_CONNECTED_ACTIVITY_TYPES = CALL only) — added
+    // to callsConnected so connectRate stays connected/total over the new totals.
+    prisma.buyerActivity.count({
+      where: {
+        type: { in: BUYER_CONNECTED_ACTIVITY_TYPES },
+        createdAt: { gte: since, lte: until },
+        buyer: { market: team, deletedAt: null },
+      },
+    }),
   ]);
+
+  // Fold Buyer-Data calls into the team call totals (lead calls above already exclude
+  // buyer CallLog rows via the lead-scoped where; buyer calls come only from BuyerActivity).
+  const callsMade = leadCallsMade + buyerCallsMade;
+  const callsConnected = leadCallsConnected + buyerCallsConnected;
 
   const pipelineValue = pipelineRows.reduce((s, r) => s + (r.budgetMin ?? 0), 0);
   const connectRate = callsMade > 0 ? callsConnected / callsMade : 0;

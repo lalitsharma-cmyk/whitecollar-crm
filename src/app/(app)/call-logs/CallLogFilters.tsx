@@ -1,7 +1,7 @@
 "use client";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { useState, useEffect } from "react";
-import { ALL_SOURCE_MODULES } from "@/lib/moduleSource";
+import { ACTIVITY_SOURCE_MODULES } from "@/lib/moduleSource";
 
 // Call-Logs filter bar — URL-param driven (mirrors the LeadFilters pattern so the
 // page stays a cache-friendly RSC and every filter is a shareable link).
@@ -161,7 +161,7 @@ export default function CallLogFilters({ users, outcomes, showScopePickers, show
           <label className={lblCls}>Module</label>
           <select value={moduleParam} onChange={(e) => setParam("module", e.target.value)} className={selCls}>
             <option value="">All modules</option>
-            {ALL_SOURCE_MODULES.map((m) => (
+            {ACTIVITY_SOURCE_MODULES.map((m) => (
               <option key={m} value={m}>{m}</option>
             ))}
           </select>

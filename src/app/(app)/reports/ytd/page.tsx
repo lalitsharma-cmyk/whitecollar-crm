@@ -7,6 +7,7 @@ import { sourceBreakdown } from "@/lib/sourceLabel";
 import { fmtMoneyDual } from "@/lib/money";
 import Link from "next/link";
 import ReportDateRangePicker from "@/components/ReportDateRangePicker";
+import { BUYER_CALL_ACTIVITY_TYPES, BUYER_CONNECTED_ACTIVITY_TYPES } from "@/lib/dashboardWidgets";
 
 export const dynamic = "force-dynamic";
 
@@ -68,10 +69,12 @@ async function computeTeamYtd(team: "Dubai" | "India", since: Date, until: Date)
     wonDeals,
     commissionBooked,
     commissionReceived,
-    callsConnected,
-    callsTotal,
+    leadCallsConnected,
+    leadCallsTotal,
     topSourceRows,
     topAgents,
+    buyerCallsTotal,
+    buyerCallsConnected,
   ] = await Promise.all([
     // 1. Leads created in window
     prisma.lead.count({
@@ -152,7 +155,34 @@ async function computeTeamYtd(team: "Dubai" | "India", since: Date, until: Date)
       orderBy: { _count: { id: "desc" } },
       take: 5,
     }),
+    // 10. Buyer-Data calls for this team — a team's buyer calls = BuyerActivity whose
+    //     buyer.market equals the team ("Dubai"/"India" == market value). BuyerActivity
+    //     ONLY (each buyer call counted once); the CallLog queries (#6/#7) are
+    //     lead-scoped so they already exclude buyer CallLog rows — we just ADD these.
+    //     Same window as callsTotal (startedAt gte/lte → createdAt gte/lte), live
+    //     buyers only. (Lalit 2026-07-08)
+    prisma.buyerActivity.count({
+      where: {
+        type: { in: BUYER_CALL_ACTIVITY_TYPES },
+        createdAt: { gte: since, lte: until },
+        buyer: { market: team, deletedAt: null },
+      },
+    }),
+    // 11. Connected Buyer-Data calls (CALL only) — added to callsConnected so
+    //     connectRate = connected / total holds over the new totals.
+    prisma.buyerActivity.count({
+      where: {
+        type: { in: BUYER_CONNECTED_ACTIVITY_TYPES },
+        createdAt: { gte: since, lte: until },
+        buyer: { market: team, deletedAt: null },
+      },
+    }),
   ]);
+
+  // Fold Buyer-Data calls into the team call totals (the CallLog queries above are
+  // lead-scoped, so buyer calls come only from BuyerActivity — no double count).
+  const callsTotal = leadCallsTotal + buyerCallsTotal;
+  const callsConnected = leadCallsConnected + buyerCallsConnected;
 
   // Roll up commission rows into currency-split Pair totals.
   const booked = zeroPair();

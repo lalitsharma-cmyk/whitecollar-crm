@@ -195,8 +195,11 @@ export default async function AgentDetailPage({
       </Group>
 
       <Group title="Engagement (period)">
-        <Stat label="Calls Logged" value={m.callsLogged} agentId={agentId} query={query} accent="text-violet-700" />
-        <Stat label="Connected Calls" value={m.connectedCalls} agentId={agentId} query={query} accent="text-emerald-700" />
+        {/* Total Calls = lead/Revival calls (callsLogged) + Buyer-Data calls (buyerCalls),
+            so the tiles agree with the "Call connect" headline above, which already uses
+            connectRate(m) = (callsLogged + buyerCalls). Buyer-Data work counted (Lalit 2026-07-08). */}
+        <Stat label="Calls Logged" value={m.callsLogged + m.buyerCalls} agentId={agentId} query={query} accent="text-violet-700" />
+        <Stat label="Connected Calls" value={m.connectedCalls + m.buyerConnectedCalls} agentId={agentId} query={query} accent="text-emerald-700" />
         <Stat label="Not Picked" value={m.notPickedCalls} agentId={agentId} query={query} accent="text-gray-500" />
         <Stat label="WhatsApp" value={m.whatsappConversations} agentId={agentId} query={query} />
         <Stat label="Notes Added" value={m.notesAdded} agentId={agentId} query={query} />

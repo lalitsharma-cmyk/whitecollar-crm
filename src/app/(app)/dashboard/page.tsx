@@ -298,8 +298,15 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   // agentPerformance.ts roster (hrOnly:false) used by the Live-Assignment widget.
   const spStatsRaw: SpRow[] = isAdminOrMgr ? await prisma.$queryRaw<SpRow[]>`
     SELECT u.id, u.name, u.team,
-      COALESCE((SELECT COUNT(*) FROM "CallLog" c WHERE c."userId" = u.id AND c."startedAt" >= ${sqlFrom} AND c."startedAt" < ${sqlTo}), 0) as calls,
-      COALESCE((SELECT COUNT(*) FROM "CallLog" c WHERE c."userId" = u.id AND c."startedAt" >= ${sqlFrom} AND c."startedAt" < ${sqlTo} AND c.outcome::text = 'CONNECTED'), 0) as connected,
+      -- Total calls = LEAD + unlinked calls (CallLog, buyerId IS NULL) + BUYER calls
+      -- (BuyerActivity ledger: manual + telephony). CallLog excludes buyerId rows so a
+      -- telephony buyer call — which writes BOTH a CallLog{buyerId} and a BuyerActivity
+      -- CALL — is counted ONCE. Mirrors the personal KPI card's anti-double-count so the
+      -- team scoreboard captures Dubai/India Buyer-Data calls too (Lalit 2026-07-08).
+      COALESCE((SELECT COUNT(*) FROM "CallLog" c WHERE c."userId" = u.id AND c."startedAt" >= ${sqlFrom} AND c."startedAt" < ${sqlTo} AND c."buyerId" IS NULL), 0)
+        + COALESCE((SELECT COUNT(*) FROM "BuyerActivity" ba JOIN "BuyerRecord" b ON b.id = ba."buyerId" WHERE ba."userId" = u.id AND ba."createdAt" >= ${sqlFrom} AND ba."createdAt" < ${sqlTo} AND b."deletedAt" IS NULL AND ba.type IN ('CALL','ATTEMPT_NO_ANSWER','ATTEMPT_NOT_PICKED','ATTEMPT_WA_NO_RESPONSE')), 0) as calls,
+      COALESCE((SELECT COUNT(*) FROM "CallLog" c WHERE c."userId" = u.id AND c."startedAt" >= ${sqlFrom} AND c."startedAt" < ${sqlTo} AND c."buyerId" IS NULL AND c.outcome::text = 'CONNECTED'), 0)
+        + COALESCE((SELECT COUNT(*) FROM "BuyerActivity" ba JOIN "BuyerRecord" b ON b.id = ba."buyerId" WHERE ba."userId" = u.id AND ba."createdAt" >= ${sqlFrom} AND ba."createdAt" < ${sqlTo} AND b."deletedAt" IS NULL AND ba.type = 'CALL'), 0) as connected,
       COALESCE((SELECT COUNT(*) FROM "Activity" a WHERE a."userId" = u.id AND a.status::text = 'PLANNED' AND a."scheduledAt" >= ${sqlFrom} AND a."scheduledAt" < ${sqlTo}), 0) as due_today,
       COALESCE((SELECT COUNT(*) FROM "Activity" a WHERE a."userId" = u.id AND a.status::text = 'PLANNED' AND a."scheduledAt" < ${todayStart}), 0) as overdue,
       COALESCE((SELECT COUNT(*) FROM "Lead" l WHERE l."ownerId" = u.id AND l."deletedAt" IS NULL AND l."leadOrigin" NOT IN ('COLD','REVIVAL') AND l."currentStatus" IN ('Meeting','Site Visit Schedule','Visit Dubai','Want Office Visit','Zoom Meeting','Expo Only')), 0) as closeable,

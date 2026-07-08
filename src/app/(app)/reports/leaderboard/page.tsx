@@ -10,6 +10,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { leadSourceModule, type SourceModule } from "@/lib/moduleSource";
 import { ModuleBreakdownDetails, type ModuleBreakdownRow } from "@/components/ModuleBreakdown";
+import { BUYER_CALL_ACTIVITY_TYPES } from "@/lib/dashboardWidgets";
 
 const AGENT_ROLES: Role[] = [Role.AGENT, Role.MANAGER];
 
@@ -64,13 +65,33 @@ export default async function LeaderboardPage() {
   const agentIds = agents.map((a) => a.id);
 
   // Fetch all counts in parallel
-  const [callCounts, leadCounts, qualifiedCounts, wonCounts] = await Promise.all([
-    // Calls made in last 90 days per agent
+  const [callCounts, buyerCallCounts, leadCounts, qualifiedCounts, wonCounts] = await Promise.all([
+    // Calls made in last 90 days per agent (LEAD + unlinked calls). buyerId:null
+    // EXCLUDES buyer-telephony CallLog rows so buyer calls are counted ONCE — from
+    // the BuyerActivity ledger below (buyerCallCounts), never from CallLog. This
+    // CallLog query has no lead filter, so the buyerId:null guard is required.
     prisma.callLog.groupBy({
       by: ["userId"],
       where: {
         userId: { in: agentIds },
+        buyerId: null,
         startedAt: { gte: rangeStart, lte: rangeEnd },
+      },
+      _count: { _all: true },
+    }),
+
+    // Buyer-Data calls per agent — sourced from BuyerActivity ONLY (manual + mirrored
+    // telephony), so each buyer call counts once. Same window as the CallLog query
+    // (startedAt gte/lte → createdAt gte/lte) and same per-agent userId scope; live
+    // buyers only (buyer.deletedAt:null). Folded into callsMade so the leaderboard
+    // ranks by TOTAL calls (lead + buyer). (Lalit 2026-07-08)
+    prisma.buyerActivity.groupBy({
+      by: ["userId"],
+      where: {
+        userId: { in: agentIds },
+        type: { in: BUYER_CALL_ACTIVITY_TYPES },
+        createdAt: { gte: rangeStart, lte: rangeEnd },
+        buyer: { deletedAt: null },
       },
       _count: { _all: true },
     }),
@@ -118,6 +139,11 @@ export default async function LeaderboardPage() {
   // (b) a per-agent per-module triple. zeroTriple() covers the 3 lead modules
   // (buyer modules stay 0 — buyers are a separate report).
   const callMap = new Map(callCounts.map((r) => [r.userId, r._count._all]));
+  // Buyer-Data calls per agent (userId is nullable on BuyerActivity — skip null rows,
+  // they're system/imported and out of the agentIds scope anyway).
+  const buyerCallMap = new Map(
+    buyerCallCounts.filter((r) => r.userId != null).map((r) => [r.userId as string, r._count._all]),
+  );
   type Triple = Record<SourceModule, number>;
   const zeroTriple = (): Triple => ({ "Leads": 0, "Master Data": 0, "Revival Engine": 0, "Dubai Buyer Data": 0, "India Buyer Data": 0 });
   const leadMap = new Map<string, number>();
@@ -160,7 +186,8 @@ export default async function LeaderboardPage() {
   }
 
   const rows: AgentRow[] = agents.map((a) => {
-    const callsMade = callMap.get(a.id) ?? 0;
+    // Total calls = lead/unlinked (CallLog, buyerId:null) + Buyer-Data (BuyerActivity).
+    const callsMade = (callMap.get(a.id) ?? 0) + (buyerCallMap.get(a.id) ?? 0);
     const leadsAssigned = leadMap.get(a.id) ?? 0;
     const leadsQualified = qualMap.get(a.id) ?? 0;
     const won = wonMap.get(a.id) ?? 0;

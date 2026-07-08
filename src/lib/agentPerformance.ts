@@ -43,8 +43,9 @@ import {
 } from "@/lib/lead-statuses";
 import { ACTIVE_ORIGIN_WHERE } from "@/lib/leadScope";
 import { isActivePipelineRow } from "@/lib/freshLeads";
-import { leadSourceModule, LEAD_SOURCE_MODULES } from "@/lib/moduleSource";
+import { leadSourceModule, activityLeadModule, LEAD_SOURCE_MODULES } from "@/lib/moduleSource";
 import type { SourceModule } from "@/lib/moduleSource";
+import { BUYER_CALL_ACTIVITY_TYPES, BUYER_CONNECTED_ACTIVITY_TYPES } from "@/lib/dashboardWidgets";
 
 // Typed enum arrays for Prisma `in` filters (string-backed enums; we keep them
 // as proper enum arrays so the queries are type-checked). Connected = picked up;
@@ -365,12 +366,24 @@ export interface AgentMetrics {
   noFollowup: number; // followupDate null, still active
 
   // ── Engagement (Activity / CallLog / Note in window, by userId) ──
+  // callsLogged = LEAD-linked calls (with the Leads/Revival module split). Buyer-Data
+  // calls are a separate ledger (below) with no lead-origin split.
   callsLogged: number;
   connectedCalls: number;
   notPickedCalls: number;
   whatsappConversations: number;
   notesAdded: number;
   voiceNotesAdded: number;
+
+  // ── Buyer-Data CALLS (BuyerActivity ledger, by userId, in window) ──
+  // Dubai + India Buyer-Data calls the agent placed (manual "Call connected" +
+  // telephony). SEPARATE from callsLogged because Buyer Data is a parallel module
+  // with no lead-origin split. The report's headline "Total Calls" = callsLogged +
+  // buyerCalls so an agent's Buyer-Data work is reflected (Lalit 2026-07-08).
+  buyerCalls: number;
+  buyerConnectedCalls: number;
+  buyerCallsDubai: number;
+  buyerCallsIndia: number;
 
   // ── Meetings (Activity, by userId, in window) ──
   meetingsScheduled: number;
@@ -403,6 +416,7 @@ function zeroMetrics(a: AgentLite): AgentMetrics {
     curFresh: 0, curContacted: 0, curQualified: 0, curMeeting: 0, curSiteVisit: 0, curNegotiation: 0, curBooked: 0, curLost: 0, curOther: 0, assignedActive: 0, curRejected: 0,
     rejected: 0, closedWon: 0, lost: 0, stillActive: 0, awaitingFollowup: 0, noFollowup: 0,
     callsLogged: 0, connectedCalls: 0, notPickedCalls: 0, whatsappConversations: 0, notesAdded: 0, voiceNotesAdded: 0,
+    buyerCalls: 0, buyerConnectedCalls: 0, buyerCallsDubai: 0, buyerCallsIndia: 0,
     meetingsScheduled: 0, meetingsCompleted: 0, officeMeetings: 0, virtualMeetings: 0,
     siteVisitsScheduled: 0, siteVisitsCompleted: 0, siteVisitsCancelled: 0,
     funnelAssigned: 0, funnelQualified: 0, funnelMeetings: 0, funnelSiteVisits: 0, funnelNegotiations: 0, funnelBookings: 0,
@@ -651,6 +665,26 @@ export async function buildAgentReport(range: DateRange, scope: ReportScope): Pr
   applyActivityModule(byId, noteActRows, "notesAdded");
   applyGroupU(byId, voiceRows, (m, n) => (m.voiceNotesAdded = n));
 
+  // ── 3b. BUYER-DATA CALLS (BuyerActivity ledger, by userId, in window) ──
+  // Buyer calls live in a SEPARATE ledger (manual "Call connected" + telephony
+  // mirror). Counted here so the report's total calls include Dubai/India Buyer-Data
+  // work. Sourced from BuyerActivity ONLY — a buyer's CallLog row has leadId=null, so
+  // the callsLogged query above (lead:{deletedAt:null}) already excludes it → a
+  // telephony buyer call (CallLog + BuyerActivity for the same event) is counted once.
+  const buyerCallActRows = await prisma.buyerActivity.findMany({
+    where: { userId: { in: agentIds }, type: { in: BUYER_CALL_ACTIVITY_TYPES }, createdAt: win, buyer: { deletedAt: null } },
+    select: { userId: true, type: true, buyer: { select: { market: true } } },
+  });
+  for (const r of buyerCallActRows) {
+    if (!r.userId) continue;
+    const m = byId.get(r.userId);
+    if (!m) continue;
+    m.buyerCalls += 1;
+    if (BUYER_CONNECTED_ACTIVITY_TYPES.includes(r.type)) m.buyerConnectedCalls += 1;
+    if (r.buyer?.market === "India") m.buyerCallsIndia += 1;
+    else m.buyerCallsDubai += 1;
+  }
+
   // ── 4. MEETINGS + SITE VISITS (Activity, by userId, in window) ──
   // "Scheduled" = activity rows of that type created in window (regardless of
   // outcome). "Completed" = status DONE. Office/Virtual counted by type.
@@ -774,7 +808,11 @@ function applyActivityModule(
     const m = byId.get(r.userId);
     if (!m) continue;
     (m[metric] as number) += 1;
-    m.moduleSplit[metric][leadSourceModule(r.lead.leadOrigin, r.lead.isColdCall)] += 1;
+    // An ACTIVITY is attributed to the working surface it was performed from, never
+    // "Master Data" (agents don't act from the archive) — so a master-origin lead's
+    // call/note/WhatsApp/meeting counts under "Leads" (activityLeadModule), not
+    // leadSourceModule. Records still split via leadSourceModule above.
+    m.moduleSplit[metric][activityLeadModule(r.lead.leadOrigin, r.lead.isColdCall)] += 1;
   }
 }
 
@@ -898,9 +936,12 @@ export function summarizeReport(rows: AgentMetrics[]): ReportSummary {
 
 // ── Derived ratios (for detail view / rankings) ──────────────────────────────
 
-/** Connect rate = connected ÷ total calls (0 when no calls). */
+/** Connect rate = connected ÷ total calls, counting LEAD + Buyer-Data calls so the
+ *  rate matches the headline "Calls" figure (0 when no calls). */
 export function connectRate(m: AgentMetrics): number {
-  return m.callsLogged > 0 ? (m.connectedCalls / m.callsLogged) * 100 : 0;
+  const calls = m.callsLogged + m.buyerCalls;
+  const connected = m.connectedCalls + m.buyerConnectedCalls;
+  return calls > 0 ? (connected / calls) * 100 : 0;
 }
 /** Conversion = bookings ÷ assigned (current book), 0 when no leads. */
 export function conversionRate(m: AgentMetrics): number {

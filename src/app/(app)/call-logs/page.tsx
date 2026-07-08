@@ -7,11 +7,11 @@ import { formatLeadName } from "@/lib/leadName";
 import { visibleOwnerIds } from "@/lib/leadScope";
 import { canExportData } from "@/lib/exportPerms";
 import {
-  leadSourceModule,
+  activityLeadModule,
   buyerSourceModule,
   moduleHref,
   isBuyerModule,
-  ALL_SOURCE_MODULES,
+  ACTIVITY_SOURCE_MODULES,
   type SourceModule,
 } from "@/lib/moduleSource";
 import CallLogFilters from "./CallLogFilters";
@@ -164,12 +164,14 @@ export default async function CallLogsPage({
     filterAnd.push({ startedAt: dateFilter });
   }
 
-  // Module filter — the 5 SourceModules. A module maps to a predicate on the
-  // linked record: buyer modules → buyer.market; lead modules → the lead's
-  // leadOrigin / isColdCall (mirrors leadSourceModule so the filter and the
-  // per-row label are derived from the SAME rule).
+  // Module filter — the 4 ACTIVITY modules. A module maps to a predicate on the
+  // linked record: buyer modules → buyer.market; lead modules → leadOrigin/isColdCall.
+  // A CALL's module is the WORKING SURFACE it was performed from — never "Master
+  // Data" (agents don't call from the read-only archive). So the filter offers only
+  // the 4 activity modules; a master-origin lead's calls fall under "Leads" (the
+  // queue the agent worked it from), matching the per-row activityLeadModule label.
   const moduleParam = (sp.module ?? "") as SourceModule | "";
-  if (moduleParam && ALL_SOURCE_MODULES.includes(moduleParam as SourceModule)) {
+  if (moduleParam && ACTIVITY_SOURCE_MODULES.includes(moduleParam as SourceModule)) {
     const m = moduleParam as SourceModule;
     if (isBuyerModule(m)) {
       const market = m === "India Buyer Data" ? "India" : "Dubai";
@@ -178,18 +180,16 @@ export default async function CallLogsPage({
       filterAnd.push({
         lead: { is: { deletedAt: null, OR: [{ leadOrigin: { in: ["COLD", "REVIVAL"] } }, { isColdCall: true }] } },
       });
-    } else if (m === "Master Data") {
-      filterAnd.push({
-        lead: { is: { deletedAt: null, isColdCall: false, leadOrigin: { in: ["MASTER_DATA", "PORTFOLIO", "SYSTEM"] } } },
-      });
     } else {
-      // Leads = everything that is NOT cold/revival and NOT master-data.
+      // "Leads" = every NON-revival lead call (master-origin INCLUDED — an activity on
+      // a master-origin lead is worked from the Leads queue, so it never labels as
+      // "Master Data"). Only cold/revival is carved out (that's the Revival module).
       filterAnd.push({
         lead: {
           is: {
             deletedAt: null,
             isColdCall: false,
-            leadOrigin: { notIn: ["COLD", "REVIVAL", "MASTER_DATA", "PORTFOLIO", "SYSTEM"] },
+            leadOrigin: { notIn: ["COLD", "REVIVAL"] },
           },
         },
       });
@@ -271,8 +271,10 @@ export default async function CallLogsPage({
     if (log.lead) {
       name = formatLeadName(log.lead.name);
       mobile = log.lead.phone || log.phoneNumber || "—";
-      // source_module for a lead-linked call = the lead's leadSourceModule.
-      module = leadSourceModule(log.lead.leadOrigin, log.lead.isColdCall);
+      // source_module for a lead-linked CALL = the working surface it was performed
+      // from (activityLeadModule) — Leads or Revival, NEVER "Master Data" (agents have
+      // no Master Data calling UI; a master-origin lead is worked from the Leads queue).
+      module = activityLeadModule(log.lead.leadOrigin, log.lead.isColdCall);
       href = moduleHref(module, log.lead.id);
     } else if (log.buyer) {
       name = formatLeadName(log.buyer.clientName);

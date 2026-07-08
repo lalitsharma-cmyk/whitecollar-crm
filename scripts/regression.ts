@@ -1217,6 +1217,51 @@ const checks: Check[] = [
     },
   },
   {
+    // CALL-TRACKING MODULE (Lalit 2026-07-08): a CALL's module = the working surface
+    // the agent performed it from (Leads / Revival Engine / Dubai|India Buyer Data),
+    // NEVER "Master Data" (agents have no Master Data calling UI). And every call-count
+    // surface must include Buyer-Data calls, not just lead calls.
+    name: "call-tracking-module — a call's module is its activity source (never Master Data) + buyer calls counted",
+    run: async () => {
+      const fs = await import("fs");
+      const { activityLeadModule, ACTIVITY_SOURCE_MODULES, leadSourceModule } = await import("../src/lib/moduleSource");
+      // (a) activityLeadModule NEVER returns "Master Data": a master-origin lead's call
+      //     is attributed to the Leads queue the agent worked it from.
+      for (const o of ["MASTER_DATA", "PORTFOLIO", "SYSTEM"]) {
+        assert(activityLeadModule(o, false) === "Leads", `activityLeadModule(${o}) must be "Leads", got ${activityLeadModule(o, false)}`);
+      }
+      assert(activityLeadModule(null, false) === "Leads" && activityLeadModule("WEBSITE", false) === "Leads", "non-cold lead activity → Leads");
+      assert(activityLeadModule("COLD", false) === "Revival Engine" && activityLeadModule(null, true) === "Revival Engine", "cold / isColdCall activity → Revival Engine");
+      // The RECORD classifier is unchanged (a master-origin RECORD is still Master Data).
+      assert(leadSourceModule("MASTER_DATA", false) === "Master Data", "leadSourceModule must still classify a master-origin RECORD as Master Data");
+      // (b) The activity module set = the 4 working surfaces (no Master Data).
+      assert(!ACTIVITY_SOURCE_MODULES.includes("Master Data"), "ACTIVITY_SOURCE_MODULES must NOT include Master Data");
+      assert(ACTIVITY_SOURCE_MODULES.length === 4, "ACTIVITY_SOURCE_MODULES must be the 4 activity modules");
+      // (c) Call Logs labels + filters a call by its activity module (never Master Data).
+      const callLogs = fs.readFileSync("src/app/(app)/call-logs/page.tsx", "utf8");
+      assert(/activityLeadModule\(log\.lead\.leadOrigin/.test(callLogs) && !/leadSourceModule/.test(callLogs), "Call Logs module column must use activityLeadModule, not leadSourceModule");
+      assert(/ACTIVITY_SOURCE_MODULES\.includes/.test(callLogs), "Call Logs module filter must validate against ACTIVITY_SOURCE_MODULES");
+      const callFilters = fs.readFileSync("src/app/(app)/call-logs/CallLogFilters.tsx", "utf8");
+      assert(/ACTIVITY_SOURCE_MODULES/.test(callFilters) && !/ALL_SOURCE_MODULES/.test(callFilters), "Call Logs filter dropdown must offer ACTIVITY_SOURCE_MODULES (no Master Data)");
+      // (d) Agent Performance: activity splits use activityLeadModule + buyer calls counted.
+      const agentPerf = fs.readFileSync("src/lib/agentPerformance.ts", "utf8");
+      assert(/activityLeadModule\(r\.lead\.leadOrigin/.test(agentPerf), "agentPerformance activity split must use activityLeadModule");
+      assert(/m\.buyerCalls \+= 1/.test(agentPerf) && /BUYER_CALL_ACTIVITY_TYPES/.test(agentPerf), "agentPerformance must count Buyer-Data calls (BuyerActivity)");
+      // (e) Dashboard team scoreboard folds in buyer calls (BuyerActivity ledger).
+      const dash = fs.readFileSync("src/app/(app)/dashboard/page.tsx", "utf8");
+      assert(/FROM "BuyerActivity"/.test(dash), "dashboard team scoreboard must include buyer calls (BuyerActivity)");
+      // (f) DATA belt: no live lead-linked call classifies as Master Data via the column rule.
+      const leadCalls = await prisma.callLog.findMany({
+        where: { lead: { deletedAt: null } },
+        select: { lead: { select: { leadOrigin: true, isColdCall: true } } },
+        take: 5000,
+      });
+      const masterLabeled = leadCalls.filter((c) => c.lead && activityLeadModule(c.lead.leadOrigin, c.lead.isColdCall) === "Master Data").length;
+      assert(masterLabeled === 0, `${masterLabeled} lead-linked call(s) would still render as "Master Data"`);
+      results.push({ name: "  ↳ note", ok: true, detail: `activity module never Master Data (${leadCalls.length} lead calls checked); buyer calls wired into scoreboard + agent-performance` });
+    },
+  },
+  {
     name: "call-outcome — WA-aware connected/unsuccessful classification (display-only)",
     run: async () => {
       const { effectiveOutcome, isWaInbound, isUnsuccessfulText } = await import("../src/lib/callOutcome");

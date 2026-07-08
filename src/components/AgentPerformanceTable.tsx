@@ -207,9 +207,12 @@ export default function AgentPerformanceTable({
                   <td className="text-center">{num(mv(m, "stillActive", module))}</td>
                   <td className="text-center text-amber-700">{num(m.awaitingFollowup)}</td>
                   <td className="text-center text-amber-600">{num(m.noFollowup)}</td>
-                  {/* Engagement (Calls/WhatsApp/Notes bifurcated) */}
-                  <td className="text-center font-semibold">{num(mv(m, "callsLogged", module))}</td>
-                  <td className="text-center text-emerald-700">{num(m.connectedCalls)}</td>
+                  {/* Engagement (Calls/WhatsApp/Notes bifurcated). Calls/Connected in the
+                      "all" view = LEAD calls + BUYER-Data calls (BuyerActivity), so Dubai/India
+                      Buyer work counts. A lead-module slice shows that module's lead calls only;
+                      Master Data shows 0 (activities never originate from the archive). */}
+                  <td className="text-center font-semibold">{num(module === "all" ? m.callsLogged + m.buyerCalls : mv(m, "callsLogged", module))}</td>
+                  <td className="text-center text-emerald-700">{num(module === "all" ? m.connectedCalls + m.buyerConnectedCalls : m.connectedCalls)}</td>
                   <td className="text-center text-gray-500">{num(m.notPickedCalls)}</td>
                   <td className="text-center">{num(mv(m, "whatsappConversations", module))}</td>
                   <td className="text-center">{num(mv(m, "notesAdded", module))}</td>

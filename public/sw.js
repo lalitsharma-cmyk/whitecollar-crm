@@ -455,7 +455,10 @@
 // box (WhatsApp, Log Call, Note, Remark, template, escalate) no longer closes the box or
 // drops the draft. Backdrop modals now close only on a genuine backdrop click, never on a
 // text-selection drag that ends on the backdrop (shared backdropProps/useDismiss helpers).
-const CACHE = "wcr-shell-v139";
+// v140 (2026-07-08): cross-module call tracking — a call's module is the surface it was
+// performed from (Leads/Revival/Dubai·India Buyer), NEVER "Master Data"; Daily Performance,
+// Call Logs, Agent Performance + team reports now count Buyer-Data calls too.
+const CACHE = "wcr-shell-v140";
 const SHELL = ["/login", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", (event) => {
