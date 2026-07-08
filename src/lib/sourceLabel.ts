@@ -33,7 +33,13 @@ export function effectiveSource(
   source: string | null | undefined,
 ): string {
   const raw = (sourceRaw ?? "").trim();
-  if (raw) return raw;
+  // A verbatim sourceRaw is normally a real channel string ("Townscript",
+  // "Eventbrite") and is shown as-is. But some legacy imports stored a bare ENUM
+  // TOKEN in sourceRaw (e.g. "WEBSITE") — surfacing that verbatim leaks a raw token
+  // into reports/filters (the source-migration invariant). If the verbatim value is
+  // itself a known enum token, resolve it through the human label map so no raw
+  // token can EVER reach the UI — for existing rows and future ones alike.
+  if (raw) return SOURCE_ENUM_LABELS[raw] ?? raw;
   return sourceEnumLabel(source);
 }
 

@@ -56,13 +56,25 @@ export function resolveSandboxUrl(opts?: { requireConfirm?: boolean }): string {
     }
   }
 
-  if (!SANDBOX_MARKER.test(host) && !SANDBOX_MARKER.test(db)) {
+  // The name-marker is a SECONDARY heuristic against typos. Vercel-provisioned Neon
+  // DBs get generic names (ep-xxx / neondb) with no marker, so an explicit, verified
+  // override is allowed — but ONLY after the PRIMARY guarantees still hold above
+  // (SANDBOX_DATABASE_URL is set, ≠ DATABASE_URL, and ≠ prod host+db). Set
+  // SANDBOX_DB_VERIFIED=1 only when you have eyeballed the URL and know it's the
+  // fresh sandbox DB. It never relaxes the "must differ from production" checks.
+  const verifiedOverride = process.env.SANDBOX_DB_VERIFIED === "1";
+  if (!verifiedOverride && !SANDBOX_MARKER.test(host) && !SANDBOX_MARKER.test(db)) {
     throw new Error(
       `REFUSING: neither the host ("${host}") nor the database ("${db}") contains a sandbox marker ` +
         `(sandbox|dev|test|staging|demo).\n` +
         "This guard rejects any target that doesn't clearly look like a sandbox, to prevent an accidental " +
-        "production seed. Name your sandbox DB/branch with one of those words.",
+        "production seed. Name your sandbox DB/branch with one of those words, or set SANDBOX_DB_VERIFIED=1 " +
+        "after confirming the URL is your fresh sandbox database.",
     );
+  }
+  if (verifiedOverride && !SANDBOX_MARKER.test(host) && !SANDBOX_MARKER.test(db)) {
+    // eslint-disable-next-line no-console
+    console.log(`⚠️  SANDBOX_DB_VERIFIED override in use — proceeding on the ≠production guarantee alone (${host}/${db}).`);
   }
 
   if ((opts?.requireConfirm ?? true) && !process.argv.includes("--confirm")) {

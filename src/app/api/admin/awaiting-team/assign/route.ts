@@ -71,6 +71,12 @@ export async function POST(req: NextRequest) {
       ? await chooseOwnerForNewLead(team)
       : { userId: null as string | null, window: currentWindow(), fallbackReason: "auto-assign disabled (round-robin off)" };
 
+  // REACTIVATE-BEFORE-REASSIGN — never auto-assign a rejected lead (assignLeadTo
+  // would refuse and 500 this route). Near-impossible here (rejected leads already
+  // carry a team, so they aren't in the awaiting-team queue), but this keeps the
+  // choke-point guard from surfacing as an error: tag the team, leave it unowned.
+  if (lead.rejectedAt != null) choice.userId = null;
+
   let agentName: string | null = null;
   if (choice.userId) {
     await assignLeadTo(leadId, choice.userId, "auto round-robin after team tagging");

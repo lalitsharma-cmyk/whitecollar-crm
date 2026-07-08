@@ -61,12 +61,17 @@ export async function POST(req: NextRequest) {
     // for ADMIN — scope is {} for admin so they get the full set).
     const visible = await prisma.lead.findMany({
       where: { id: { in: ids }, ...scope },
-      select: { id: true, forwardedTeam: true, ownerId: true },
+      select: { id: true, forwardedTeam: true, ownerId: true, rejectedAt: true },
     });
     const visibleIds = visible.map(v => v.id);
     let done = 0;
     let crossTeamCount = 0;
+    let skippedRejected = 0;
     for (const lead of visible) {
+      // REACTIVATE-BEFORE-REASSIGN: never re-own a rejected lead — doing so is what
+      // stranded 17 leads as rejected-but-owned. Skip + count so the result is honest
+      // instead of silently dropping them. assignLeadTo also refuses as a hard backstop.
+      if (lead.rejectedAt != null) { skippedRejected++; continue; }
       try {
         // Write routingMethod = "manual" on the lead if not yet set.
         if (!normalizeTeam(lead.forwardedTeam) || !lead.forwardedTeam) {
@@ -86,12 +91,13 @@ export async function POST(req: NextRequest) {
       catch {}
     }
     await audit({ userId: me.id, action: "lead.bulk.reassign", entity: "Lead",
-      meta: { count: done, toUserId: userId, crossTeamWarnings: crossTeamCount, leadIds: visibleIds.slice(0, 50) }, request: reqMeta(req) });
+      meta: { count: done, toUserId: userId, crossTeamWarnings: crossTeamCount, skippedRejected, leadIds: visibleIds.slice(0, 50) }, request: reqMeta(req) });
     return NextResponse.json({
       ok: true,
       reassigned: done,
       updated: done,
       ...(crossTeamCount > 0 ? { crossTeamWarnings: crossTeamCount, crossTeamWarningMessage: `${crossTeamCount} lead${crossTeamCount === 1 ? "" : "s"} were assigned across teams. Please confirm this was intentional.` } : {}),
+      ...(skippedRejected > 0 ? { skippedRejected, skippedRejectedMessage: `${skippedRejected} rejected lead${skippedRejected === 1 ? " was" : "s were"} skipped — reactivate before reassigning.` } : {}),
     });
   }
 
