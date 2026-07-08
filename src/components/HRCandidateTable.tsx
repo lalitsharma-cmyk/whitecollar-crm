@@ -7,6 +7,7 @@ import { ACTIVE_STATUS_DEFS, CLOSED_STATUS_DEFS, CLOSED_STATUS_KEYS, statusColor
 import ColumnHeaderFilter, { type ColKind, type ColFilterState, type ColSortDir, isColFilterActive } from "@/components/ColumnHeaderFilter";
 import HRCandidateRowPreview, { type PreviewData } from "@/components/HRCandidateRowPreview";
 import { waHref, openWhatsApp } from "@/lib/waOpen";
+import { backdropProps } from "@/lib/useDismiss";
 
 const SOURCES = ["Naukri", "Indeed", "Referral", "Walk-in", "LinkedIn", "Database", "Consultant", "Email", "Whatsapp", "Other"];
 const POSITIONS = ["Sales Executive", "BDE", "BDM", "Team Leader", "Manager", "HR", "Marketing", "Other"];
@@ -1022,7 +1023,7 @@ export default function HRCandidateTable({ candidates, agents, countMap = {}, se
 
       {/* Save view dialog */}
       {showSaveDialog && (
-        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={() => !savingView && setShowSaveDialog(false)}>
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" {...backdropProps(() => !savingView && setShowSaveDialog(false))}>
           <div className="bg-white dark:bg-slate-900 rounded-xl max-w-sm w-full p-5 shadow-2xl" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-3">
               <div className="font-semibold text-lg text-gray-900 dark:text-white">Save current view</div>

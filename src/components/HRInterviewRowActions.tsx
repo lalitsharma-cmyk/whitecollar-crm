@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Phone, MessageCircle, CheckCircle, CalendarClock, ClipboardCheck, X } from "lucide-react";
+import { backdropProps } from "@/lib/useDismiss";
 
 type Recommendation = "SELECTED" | "REJECTED" | "HOLD";
 
@@ -164,7 +165,7 @@ export default function HRInterviewRowActions({
 
 function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" {...backdropProps(onClose)}>
       <div className="w-full max-w-sm rounded-xl bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 shadow-xl p-5 text-left"
         onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-3">

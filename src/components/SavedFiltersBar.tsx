@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { Bookmark, BookmarkPlus, X, Trash2, Pencil, Sprout } from "lucide-react";
 import { canonicalizeQuery, queriesMatch } from "@/lib/savedFilters";
+import { backdropProps } from "@/lib/useDismiss";
 
 interface SavedFilter {
   id: string; name: string; icon: string | null; queryString: string;
@@ -166,7 +167,7 @@ export default function SavedFiltersBar({ isAdmin = false }: { isAdmin?: boolean
       </div>
 
       {showSaveDialog && (
-        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={() => !saving && setShowSaveDialog(false)}>
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" {...backdropProps(() => !saving && setShowSaveDialog(false))}>
           <div className="bg-white rounded-xl max-w-sm w-full p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-3">
               <div className="font-semibold text-lg">💾 Save filter as Smart List</div>

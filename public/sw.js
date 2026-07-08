@@ -451,7 +451,11 @@
 // control, so a device (esp. Safari/iMac) can never keep running a stale bundle. This
 // bump is the one-time kick that lands the self-updating registration on already-stuck
 // clients; the Unique/Repeat buyer summary cards are also URL-driven (?repeat=) now.
-const CACHE = "wcr-shell-v138";
+// v139 (2026-07-08): action-modal text-selection fix — selecting text inside any action
+// box (WhatsApp, Log Call, Note, Remark, template, escalate) no longer closes the box or
+// drops the draft. Backdrop modals now close only on a genuine backdrop click, never on a
+// text-selection drag that ends on the backdrop (shared backdropProps/useDismiss helpers).
+const CACHE = "wcr-shell-v139";
 const SHELL = ["/login", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", (event) => {

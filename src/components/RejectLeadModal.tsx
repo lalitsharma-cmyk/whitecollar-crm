@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { XCircle } from "lucide-react";
 import { useBodyScrollLock } from "@/hooks/useBodyScrollLock";
 import { rejectReasonsForTeam } from "@/lib/reject-reasons";
+import { backdropProps } from "@/lib/useDismiss";
 import { ActionButton } from "@/components/actions/ActionButton";
 
 /**
@@ -119,7 +120,7 @@ export default function RejectLeadModal({ leadId, forwardedTeam, redirectTo = "/
       {open && (
         <div
           className="fixed inset-0 z-50 bg-black/40 flex items-end sm:items-center justify-center sm:p-4"
-          onClick={close}
+          {...backdropProps(close)}
           role="dialog"
           aria-modal="true"
           aria-labelledby="reject-modal-title"

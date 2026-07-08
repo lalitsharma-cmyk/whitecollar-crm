@@ -3,6 +3,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Calendar, AlertCircle, X } from "lucide-react";
 import { fromISTLocalInput } from "@/lib/datetime";
+import { backdropProps } from "@/lib/useDismiss";
 import CRMDatePicker from "./CRMDatePicker";
 
 type AdvancedType = "EXPO_MEETING" | "HOME_VISIT" | "DUBAI_SITE_VISIT";
@@ -94,7 +95,7 @@ export default function AdvancedActivityLogger({ leadId, team, travelRatePerKm }
       </button>
 
       {show && (
-        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={() => !busy && setShow(false)}>
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" {...backdropProps(() => !busy && setShow(false))}>
           <div className="bg-white rounded-xl max-w-md w-full p-5 shadow-2xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-3">
               <div className="font-semibold text-lg">Log specialised activity</div>

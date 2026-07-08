@@ -5,6 +5,7 @@ import { whatsappLink } from "@/lib/phone";
 import { ACTION_TOKENS } from "@/lib/actionDesign";
 import WhatsAppGlyph from "@/components/actions/WhatsAppGlyph";
 import { buildShareMessage, type ResourceTypeStr } from "@/lib/resources";
+import { backdropProps } from "@/lib/useDismiss";
 import { useBodyScrollLock } from "@/hooks/useBodyScrollLock";
 import FollowupNextPopup from "./FollowupNextPopup";
 
@@ -159,7 +160,7 @@ export default function TemplatePickerButton({ lead, kind, suggestedTrigger, com
       </button>
 
       {open && (
-        <div className="fixed inset-0 z-50 bg-black/40 flex items-end sm:items-center justify-center sm:p-4" onClick={() => setOpen(false)}>
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-end sm:items-center justify-center sm:p-4" {...backdropProps(() => setOpen(false))}>
           {/* Bottom-sheet on mobile, centred dialog on desktop. */}
           <div className="bg-white sm:rounded-xl rounded-t-2xl max-w-lg w-full max-h-[90vh] flex flex-col shadow-2xl safe-bottom" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between p-4 border-b border-[#e5e7eb]">

@@ -8,6 +8,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { backdropProps } from "@/lib/useDismiss";
 
 const MIN_CHARS = 3;
 const DEBOUNCE_MS = 300;
@@ -134,7 +135,7 @@ export default function QuickSearch() {
   let cursor = 0;
 
   return (
-    <div className="fixed inset-0 z-[100] bg-black/50" onClick={close} role="dialog" aria-modal="true" aria-label="Global search">
+    <div className="fixed inset-0 z-[100] bg-black/50" {...backdropProps(close)} role="dialog" aria-modal="true" aria-label="Global search">
       <div
         className="mx-auto w-[92vw] max-w-2xl bg-white dark:bg-slate-900 rounded-xl border-2 border-[#c9a24b] shadow-2xl overflow-hidden"
         style={{ marginTop: "10vh" }}

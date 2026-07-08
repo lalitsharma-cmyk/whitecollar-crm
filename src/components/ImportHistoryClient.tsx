@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { backdropProps } from "@/lib/useDismiss";
 
 export interface ImportBatchRow {
   id: string;
@@ -185,7 +186,7 @@ export default function ImportHistoryClient({ batches, isSuperAdmin = false }: {
 
       {/* Confirmation modal */}
       {confirm && (
-        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={() => { if (!busy) { setConfirm(null); setConfirmText(""); } }}>
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" {...backdropProps(() => { if (!busy) { setConfirm(null); setConfirmText(""); } })}>
           <div className="bg-white dark:bg-slate-900 rounded-xl max-w-md w-full p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
             {confirm.action === "delete" && (
               <>

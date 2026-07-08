@@ -3,6 +3,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Upload, Users, X } from "lucide-react";
 import LeadImportWizard from "./LeadImportWizard";
+import { backdropProps } from "@/lib/useDismiss";
 
 interface Agent { id: string; name: string; team: string | null; }
 
@@ -53,7 +54,7 @@ export default function ColdDataAdminControls({ agents }: { agents: Agent[] }) {
 
       {/* Import modal — shared mapping wizard, cold-data preset */}
       {showImport && (
-        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={() => setShowImport(false)}>
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" {...backdropProps(() => setShowImport(false))}>
           <div className="bg-white rounded-xl max-w-lg w-full p-5 shadow-2xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-3">
               <div className="font-semibold text-lg">Import cold-data batch</div>
@@ -82,7 +83,7 @@ export default function ColdDataAdminControls({ agents }: { agents: Agent[] }) {
 
       {/* Assign modal */}
       {showAssign && (
-        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={() => !busy && setShowAssign(false)}>
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" {...backdropProps(() => !busy && setShowAssign(false))}>
           <div className="bg-white rounded-xl max-w-md w-full p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-3">
               <div className="font-semibold text-lg">Assign unassigned cold data</div>

@@ -6,6 +6,7 @@ import { Phone, AlertCircle, Mic } from "lucide-react";
 import { whatsappLink, telLink, hasDialableNumber } from "@/lib/phone";
 import TemplatePickerButton from "./TemplatePickerButton";
 import { ActionButton } from "@/components/actions/ActionButton";
+import { backdropProps } from "@/lib/useDismiss";
 import { useBodyScrollLock } from "@/hooks/useBodyScrollLock";
 import { showXpToast } from "./XPToast";
 import FollowupNextPopup from "./FollowupNextPopup";
@@ -443,7 +444,7 @@ export default function LeadActionsClient({ leadId, phone, altPhone, email, curr
       )}
 
       {showCall && (
-        <div className="fixed inset-0 bg-black/40 z-50 flex items-end sm:items-center justify-center sm:p-4" onClick={() => setShowCall(false)}>
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-end sm:items-center justify-center sm:p-4" {...backdropProps(() => setShowCall(false))}>
           {/* Mobile: bottom-sheet (full-width, slides up from bottom, scrollable).
               Desktop / iPad: centered card. Both cap height at 90vh so the form
               scrolls internally instead of overflowing off-screen. */}

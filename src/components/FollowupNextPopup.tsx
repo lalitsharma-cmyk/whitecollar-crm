@@ -19,6 +19,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { ACTION_TOKENS } from "@/lib/actionDesign";
 import CRMDatePicker from "@/components/CRMDatePicker";
+import { backdropProps } from "@/lib/useDismiss";
 import { isPastISTLocalInput } from "@/lib/datetime";
 import { showXpToast } from "@/components/XPToast";
 
@@ -91,7 +92,7 @@ export default function FollowupNextPopup({ open, leadId, leadName, onClose }: P
 
   return (
     // Bottom-sheet on mobile, centred dialog on desktop — mirrors the Log Call modal.
-    <div className="fixed inset-0 z-[60] bg-black/40 flex items-end sm:items-center justify-center sm:p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-[60] bg-black/40 flex items-end sm:items-center justify-center sm:p-4" {...backdropProps(onClose)}>
       <div
         className="bg-white dark:bg-slate-800 sm:rounded-xl rounded-t-2xl max-w-md w-full p-5 shadow-2xl safe-bottom"
         onClick={(e) => e.stopPropagation()}

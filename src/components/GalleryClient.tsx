@@ -5,6 +5,7 @@ import {
   Copy, Trash2, Pencil, X, Check, Plus, Filter, CheckCircle2,
 } from "lucide-react";
 import { whatsappLink } from "@/lib/phone";
+import { backdropProps } from "@/lib/useDismiss";
 import { ActionButton } from "@/components/actions/ActionButton";
 import WhatsAppGlyph from "@/components/actions/WhatsAppGlyph";
 import {
@@ -466,7 +467,7 @@ function EditModal({ resource, onClose, onSaved }: { resource: ResourceItem; onC
 // ── Shared modal shell (bottom-sheet on mobile, dialog on desktop) ─────────────
 function Modal({ children, title, onClose }: { children: React.ReactNode; title: string; onClose: () => void }) {
   return (
-    <div className="fixed inset-0 z-50 bg-black/40 flex items-end sm:items-center justify-center sm:p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-50 bg-black/40 flex items-end sm:items-center justify-center sm:p-4" {...backdropProps(onClose)}>
       <div className="bg-white dark:bg-slate-800 sm:rounded-xl rounded-t-2xl max-w-lg w-full max-h-[90vh] flex flex-col shadow-2xl" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between p-4 border-b border-[#e5e7eb] dark:border-slate-700">
           <div className="font-semibold text-lg dark:text-slate-100">{title}</div>

@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import { MessageSquare, X, PenLine, FileText, Sparkles } from "lucide-react";
+import { backdropProps } from "@/lib/useDismiss";
 
 // ─── Candidate context for variable substitution ─────────────────────────────
 // Built from HRCandidate fields. The detail page passes a flat object; missing
@@ -157,7 +158,7 @@ export default function HRWhatsAppTemplatePicker({ open, onClose, ctx, waPhone, 
   function reset() { setTyping(false); setFreeText(""); onClose(); }
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/40 flex items-end sm:items-center justify-center sm:p-4" onClick={reset}>
+    <div className="fixed inset-0 z-50 bg-black/40 flex items-end sm:items-center justify-center sm:p-4" {...backdropProps(reset)}>
       <div className="bg-white dark:bg-slate-900 sm:rounded-xl rounded-t-2xl max-w-lg w-full max-h-[90vh] flex flex-col shadow-2xl" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between p-4 border-b border-[#e5e7eb] dark:border-slate-700">
           <div>

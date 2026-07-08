@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { MapPin, AlertCircle, CheckCircle2, X } from "lucide-react";
 import { showCelebration } from "@/components/DealCelebration";
+import { backdropProps } from "@/lib/useDismiss";
 
 interface Props {
   leadId: string;
@@ -215,7 +216,7 @@ export default function SiteVisitTracker({ leadId, leadName, activeVisit }: Prop
       </div>
 
       {showEndModal && (
-        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={() => !busy && setShowEndModal(false)}>
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" {...backdropProps(() => !busy && setShowEndModal(false))}>
           <div className="bg-white rounded-xl max-w-md w-full p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-3">
               <div className="font-semibold text-lg">End visit with {leadName}</div>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
+import { backdropProps } from "@/lib/useDismiss";
 
 interface Props {
   leadId: string;
@@ -127,7 +128,7 @@ export default function StickyNoteWidget({ leadId, initialBody, initialUpdatedAt
   if (isMobile) {
     return (
       <div className="fixed inset-0 z-[9999] flex flex-col justify-end" style={{ background: "rgba(0,0,0,0.4)" }}>
-        <div className="flex-1" onClick={handleClose} />
+        <div className="flex-1" {...backdropProps(handleClose)} />
         <div className="flex flex-col rounded-t-2xl" style={{ background: "#fffde7", maxHeight: "80vh" }}>
           {/* Header */}
           <div className="flex items-center justify-between px-4 py-3 rounded-t-2xl cursor-grab" style={{ background: "#f5e642" }}>

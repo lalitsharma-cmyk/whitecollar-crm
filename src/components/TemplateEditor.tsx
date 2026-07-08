@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { X, Trash2, Pencil, Plus } from "lucide-react";
+import { backdropProps } from "@/lib/useDismiss";
 
 type Kind = "WHATSAPP" | "EMAIL";
 type Trigger = "FIRST_QUERY" | "AFTER_CALL" | "AFTER_NOT_PICKED" | "SCHEDULE_VISIT" | "POST_VISIT" | "NEGOTIATION" | "REENGAGE_COLD" | "GENERIC";
@@ -78,7 +79,7 @@ export default function TemplateEditor({ mode, template }: Props) {
         <button onClick={() => setOpen(true)} className="btn btn-ghost text-[11px]"><Pencil className="w-3 h-3" /> Edit</button>
       )}
       {open && (
-        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={() => !busy && setOpen(false)}>
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" {...backdropProps(() => !busy && setOpen(false))}>
           <div className="bg-white rounded-xl max-w-lg w-full p-5 shadow-2xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-3">
               <div className="font-semibold text-lg">{mode === "new" ? "New template" : "Edit template"}</div>

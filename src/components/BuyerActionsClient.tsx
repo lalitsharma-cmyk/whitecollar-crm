@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { Phone, AlertCircle, Mic } from "lucide-react";
 import { whatsappLink, telLink, hasDialableNumber } from "@/lib/phone";
 import { ActionButton } from "@/components/actions/ActionButton";
+import { backdropProps } from "@/lib/useDismiss";
 import { ACTION_ROW } from "@/lib/detailLayout";
 
 // ── Buyer action button row — EXACT visual parity with LeadActionsClient ──────
@@ -186,7 +187,7 @@ export default function BuyerActionsClient({ buyerId, phone, altPhone, email, cl
 
       {/* Log conversation modal — same bottom-sheet/centered-card pattern as the Lead view. */}
       {showLog && (
-        <div className="fixed inset-0 bg-black/40 z-50 flex items-end sm:items-center justify-center sm:p-4" onClick={() => setShowLog(false)}>
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-end sm:items-center justify-center sm:p-4" {...backdropProps(() => setShowLog(false))}>
           <div className="bg-white dark:bg-slate-900 sm:rounded-xl rounded-t-2xl max-w-lg w-full p-5 shadow-2xl max-h-[90vh] overflow-y-auto safe-bottom" onClick={(e) => e.stopPropagation()}>
             <div className="font-semibold mb-3 text-lg dark:text-slate-100">Log conversation</div>
             <label className="text-xs font-semibold text-gray-600 dark:text-slate-300">Outcome *</label>

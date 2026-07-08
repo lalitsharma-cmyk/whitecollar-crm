@@ -7,6 +7,7 @@ import {
 import { whatsappLink } from "@/lib/phone";
 import { ActionButton } from "@/components/actions/ActionButton";
 import { buildShareMessage, type ResourceTypeStr } from "@/lib/resources";
+import { backdropProps } from "@/lib/useDismiss";
 
 interface ResItem {
   id: string;
@@ -141,7 +142,7 @@ export default function LeadResourceShare({ leadId, leadName, phone, email }: Pr
       )}
 
       {open && (
-        <div className="fixed inset-0 z-50 bg-black/40 flex items-end sm:items-center justify-center sm:p-4" onClick={close}>
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-end sm:items-center justify-center sm:p-4" {...backdropProps(close)}>
           <div className="bg-white dark:bg-slate-800 sm:rounded-xl rounded-t-2xl max-w-lg w-full max-h-[90vh] flex flex-col shadow-2xl" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between p-4 border-b border-[#e5e7eb] dark:border-slate-700">
               <div>

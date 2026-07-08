@@ -20,6 +20,7 @@ import { useBodyScrollLock } from "@/hooks/useBodyScrollLock";
 // Shared source list — same allow-list the New-Lead form uses, so quick-add can't
 // re-offer the deprecated WhatsApp/Inbound-Call/Event values (channel → Medium).
 import { allowedSourceOptions } from "@/lib/lead-sources";
+import { backdropProps } from "@/lib/useDismiss";
 
 type Result = { ok: boolean; leadId?: string; error?: string };
 
@@ -96,7 +97,7 @@ export default function QuickAddLeadFab() {
       {open && (
         <div
           className="fixed inset-0 z-50 bg-black/50 flex items-end sm:items-center justify-center"
-          onClick={close}
+          {...backdropProps(close)}
           role="dialog"
           aria-modal="true"
           aria-label="Quick add lead"

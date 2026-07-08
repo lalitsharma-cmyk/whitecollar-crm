@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { backdropProps } from "@/lib/useDismiss";
 
 export interface RemarkControlState {
   deletedFromView: boolean;
@@ -94,7 +95,7 @@ export default function RemarkControlMenu({
       {open && (
         <>
           {/* click-away backdrop */}
-          <div className="fixed inset-0 z-40" onClick={close} />
+          <div className="fixed inset-0 z-40" {...backdropProps(close)} />
           <div className="absolute right-0 z-50 mt-1 w-52 rounded-lg border border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-800 shadow-xl py-1 text-gray-700 dark:text-slate-100">
             {/* optional reason */}
             <input

@@ -3,6 +3,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { XCircle } from "lucide-react";
 import { useBodyScrollLock } from "@/hooks/useBodyScrollLock";
+import { backdropProps } from "@/lib/useDismiss";
 
 interface Props {
   leadId: string;
@@ -90,7 +91,7 @@ export default function RejectLeadClient({ leadId, leadName, alreadyRejected, cu
       </button>
 
       {open && (
-        <div className="fixed inset-0 z-50 bg-black/40 flex items-end sm:items-center justify-center sm:p-4" onClick={() => setOpen(false)}>
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-end sm:items-center justify-center sm:p-4" {...backdropProps(() => setOpen(false))}>
           <div
             className="bg-white sm:rounded-xl rounded-t-2xl max-w-md w-full p-5 shadow-2xl max-h-[90vh] overflow-y-auto safe-bottom"
             onClick={(e) => e.stopPropagation()}

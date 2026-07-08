@@ -6,6 +6,7 @@ import CRMDatePicker from "./CRMDatePicker";
 import { showXpToast } from "./XPToast";
 import { showCelebration } from "@/components/DealCelebration";
 import EditableNote, { canEditLogNote } from "./EditableNote";
+import { backdropProps } from "@/lib/useDismiss";
 
 interface Counts {
   officeMeetings: { count: number; lastAt: string | null };
@@ -258,7 +259,7 @@ export default function LeadMeetingClient({
 
       {/* Log meeting modal */}
       {open && (
-        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={() => setOpen(false)}>
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" {...backdropProps(() => setOpen(false))}>
           <div className="bg-white dark:bg-slate-900 rounded-xl max-w-md w-full p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
             <div className="font-semibold mb-3 text-lg">Log Meeting / Site Visit</div>
             <label className="text-xs font-semibold text-gray-600 dark:text-slate-300">Type</label>

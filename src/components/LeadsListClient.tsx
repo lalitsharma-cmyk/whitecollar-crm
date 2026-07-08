@@ -24,6 +24,7 @@ import { resolveEnquiredProperty, prettyProjectName } from "@/lib/projectName";
 // bulk Source edit can't re-offer the deprecated WhatsApp/Inbound-Call/Event/Email
 // values (channel → Medium). See src/lib/lead-sources.ts.
 import { allowedSourceOptions } from "@/lib/lead-sources";
+import { backdropProps } from "@/lib/useDismiss";
 
 // ── Row Snooze button ────────────────────────────────────────────────────────
 // Wraps the shared CRMDatePicker (IST, future-only, with time) so a single
@@ -1849,7 +1850,7 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
 
           {/* Reject modal — full-screen overlay so the textarea has room. */}
           {showRejectModal && (
-            <div className="fixed inset-0 z-50 bg-black/40 flex items-end sm:items-center justify-center sm:p-4" onClick={() => !bulkBusy && setShowRejectModal(false)}>
+            <div className="fixed inset-0 z-50 bg-black/40 flex items-end sm:items-center justify-center sm:p-4" {...backdropProps(() => !bulkBusy && setShowRejectModal(false))}>
               <div
                 className="bg-white dark:bg-slate-800 sm:rounded-xl rounded-t-2xl max-w-md w-full p-5 shadow-2xl max-h-[90vh] overflow-y-auto safe-bottom"
                 onClick={(e) => e.stopPropagation()}
@@ -1910,7 +1911,7 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
       {deleteTarget && (
         <div
           className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4"
-          onClick={() => !deleteBusy && setDeleteTarget(null)}
+          {...backdropProps(() => !deleteBusy && setDeleteTarget(null))}
         >
           <div
             className="bg-white dark:bg-slate-900 rounded-xl max-w-sm w-full p-5 shadow-2xl"
@@ -1961,7 +1962,7 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
           (the SAME endpoint the Action List + Lead View use). Sets needsManagerReview
           + notifies the owner's manager + admins + logs a Smart-Timeline entry. */}
       {escalateTarget && (
-        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={() => !actionBusy && setEscalateTarget(null)}>
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" {...backdropProps(() => !actionBusy && setEscalateTarget(null))}>
           <div className="bg-white dark:bg-slate-900 rounded-xl max-w-sm w-full p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center gap-2 mb-1">
               {(() => { const Up = ACTION_TOKENS.escalate.icon; return <Up className={`w-4 h-4 flex-none ${ACTION_TOKENS.escalate.iconColor}`} />; })()}
