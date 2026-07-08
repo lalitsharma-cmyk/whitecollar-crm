@@ -395,12 +395,12 @@ export default function MasterDataRecordsTable({ rows, agents, projects, isSuper
   // Saved View + every column-header filter + sort. POSTs the resolved id-set to
   // the audited, watermarked export so the CSV == the visible table (the old GET
   // link only knew the URL params and silently ignored the client filters).
-  async function exportFiltered() {
+  async function exportFiltered(format: "csv" | "xlsx" = "csv") {
     const ids = filtered.map((r) => r.id);
     if (ids.length === 0) { setMsg("Nothing to export — no rows match the current filters."); return; }
     setBusy(true); setMsg(null);
     try {
-      const r = await fetch("/api/reports/export", {
+      const r = await fetch(`/api/reports/export?format=${format}`, {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ leadIds: ids }),
       });
@@ -408,7 +408,7 @@ export default function MasterDataRecordsTable({ rows, agents, projects, isSuper
       const blob = await r.blob();
       const a = document.createElement("a");
       a.href = URL.createObjectURL(blob);
-      a.download = `wcr-master-data-${new Date().toISOString().slice(0, 10).replace(/-/g, "")}.csv`;
+      a.download = `wcr-master-data-${new Date().toISOString().slice(0, 10).replace(/-/g, "")}.${format}`;
       document.body.appendChild(a); a.click(); a.remove();
       URL.revokeObjectURL(a.href);
       setMsg(`Exported ${ids.length} row${ids.length === 1 ? "" : "s"} (exactly the current view).`);
@@ -433,9 +433,12 @@ export default function MasterDataRecordsTable({ rows, agents, projects, isSuper
         <button onClick={saveCurrentView} className={`${btn} bg-white dark:bg-slate-800 border-dashed border-gray-300 dark:border-slate-600 text-gray-500`}>＋ Save view</button>
 
         <span className="ml-auto inline-flex items-center gap-1.5">
-          {/* Export — OWNER (Super Admin) only, matching the server gate. */}
+          {/* Export — OWNER (Super Admin) only, matching the server gate. CSV + Excel. */}
           {isSuperAdmin && (
-            <button onClick={exportFiltered} disabled={busy} className={`${btn} bg-white dark:bg-slate-800 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800 disabled:opacity-50`} title="Export exactly the rows shown (after view + column filters)">⬇ Export view ({filtered.length})</button>
+            <>
+              <button onClick={() => exportFiltered("csv")} disabled={busy} className={`${btn} bg-white dark:bg-slate-800 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800 disabled:opacity-50`} title="Export exactly the rows shown (after view + column filters) to CSV">⬇ CSV ({filtered.length})</button>
+              <button onClick={() => exportFiltered("xlsx")} disabled={busy} className={`${btn} bg-white dark:bg-slate-800 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800 disabled:opacity-50`} title="Export exactly the rows shown (after view + column filters) to Excel">⬇ Excel</button>
+            </>
           )}
           <button onClick={() => setFrozen((f) => !f)} className={`${btn} ${frozen ? "bg-sky-50 text-sky-700 border-sky-300" : "bg-white dark:bg-slate-800 text-gray-500 border-gray-200 dark:border-slate-600"}`} title="Freeze Created Date / Time / Client Name while scrolling">❄ Freeze {frozen ? "On" : "Off"}</button>
           <span className="relative">

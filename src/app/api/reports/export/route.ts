@@ -109,9 +109,32 @@ function leadCsvRow(l: LeadExportRow): Record<string, unknown> {
     followupDate: istIso(l.followupDate),
     lastTouchedAt: istIso(l.lastTouchedAt),
     createdAt: istIso(l.createdAt),
+    updatedAt: istIso(l.updatedAt),
     linkedInUrl: l.linkedInUrl,
     rejectionReason: l.rejectionReason,
     rejectedAt: istIso(l.rejectedAt),
+    // ── Module / origin identifier (which module this row lives in) ──
+    module: l.isColdCall || l.leadOrigin === "REVIVAL" || l.leadOrigin === "COLD"
+      ? "Revival Engine"
+      : l.leadOrigin === "MASTER_DATA" || l.leadOrigin === "PORTFOLIO" || l.leadOrigin === "SYSTEM"
+      ? "Master Data" : "Leads",
+    leadOrigin: l.leadOrigin,
+    isColdCall: l.isColdCall ? "Yes" : "No",
+    // ── Extended / imported profile fields (hidden on the list, present in the sheet) ──
+    altName: l.altName,
+    state: l.state,
+    address: l.address,
+    sourceRaw: l.sourceRaw,
+    sourceDetail: l.sourceDetail,
+    medium: l.medium,
+    budgetRaw: l.budgetRaw,
+    // ── Notes / remarks (display + IMMUTABLE imported audit source) ──
+    remarks: l.remarks,
+    rawRemarks: l.rawRemarks,
+    // ── Linked customer identity (blank if unlinked) ──
+    customerId: l.customerId ?? "",
+    // ── The ENTIRE original imported row, verbatim (every header→value) ──
+    rawImport: l.rawImport != null ? JSON.stringify(l.rawImport) : "",
   };
 }
 
@@ -160,9 +183,31 @@ export async function POST(req: NextRequest) {
   // Fetch exactly the requested rows (no deletedAt filter — Master Data exports
   // include the deleted/archived categories; the id-set already scopes it).
   const leads = await prisma.lead.findMany({ where: { id: { in: ids } }, include: LEAD_EXPORT_INCLUDE, orderBy: { createdAt: "desc" } });
-  const csv = toCsv(leads.map(leadCsvRow));
-  const filename = `wcr-master-data-${new Date().toISOString().slice(0, 10).replace(/-/g, "")}.csv`;
-  return buildCsvResponse({ csv, filename, rowCount: leads.length, type: "leads", appliedFilters: { selection: `${leads.length} filtered rows` }, me, req });
+  const rows = leads.map(leadCsvRow);
+  const base = `wcr-master-data-${new Date().toISOString().slice(0, 10).replace(/-/g, "")}`;
+  // Master Data now supports Excel too (was CSV-only) — parity with the other modules.
+  const format = new URL(req.url).searchParams.get("format")?.toLowerCase() === "xlsx" ? "xlsx" : "csv";
+  if (format === "xlsx") {
+    const stamp = new Date().toISOString();
+    const watermarkLines = [
+      `Confidential Master Data export from White Collar Realty CRM`,
+      `Downloaded by: ${me.email} (${me.name}) at ${stamp}`,
+      `Rows: ${leads.length}  ·  Selection: ${leads.length} filtered rows  ·  do NOT share outside the company.`,
+    ];
+    await audit({ userId: me.id, action: "export.leads", entity: "Lead", meta: { rowCount: leads.length, filename: `${base}.xlsx`, format, filters: { selection: `${leads.length} filtered rows` } }, request: reqMeta(req) });
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), "Master Data");
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(watermarkLines.map((l) => ({ Info: l })), { skipHeader: true }), "Export Info");
+    const buf = XLSX.write(wb, { type: "buffer", bookType: "xlsx" }) as Buffer;
+    return new Response(new Uint8Array(buf), {
+      status: 200,
+      headers: {
+        "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "Content-Disposition": `attachment; filename="${base}.xlsx"`,
+      },
+    });
+  }
+  return buildCsvResponse({ csv: toCsv(rows), filename: `${base}.csv`, rowCount: leads.length, type: "leads", appliedFilters: { selection: `${leads.length} filtered rows` }, me, req });
 }
 
 export async function GET(req: NextRequest) {

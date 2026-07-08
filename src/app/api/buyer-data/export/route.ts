@@ -46,6 +46,7 @@ async function buildExport(
   const records = await prisma.buyerRecord.findMany({
     // Recycle-bin records never exported; one market at a time (no cross-market mixing).
     where: { deletedAt: null, market, ...where },
+    include: { owner: { select: { name: true } } }, // assigned agent (owner) name for the export
     orderBy: { transactionDate: "desc" },
   });
 
@@ -73,7 +74,21 @@ async function buildExport(
       agent: r.agentName ?? "",
       source: r.source ?? "",
       buyerKey: r.buyerKey ?? "",
+      // ── Assignment / pipeline state (was missing) ──
+      module: market === "India" ? "India Buyer Data" : "Dubai Buyer Data",
+      ownerName: r.owner?.name ?? "",
+      ownerId: r.ownerId ?? "",
+      poolStatus: r.poolStatus ?? "",
+      businessStatus: r.businessStatus ?? "",
+      attemptCount: r.attemptCount,
+      followupDate: istDate(r.followupDate),
+      assignedAt: istDate(r.assignedAt),
+      // ── Working notes + audit timestamps ──
+      remarks: r.remarks ?? "",
       createdAt: istDate(r.createdAt),
+      updatedAt: istDate(r.updatedAt),
+      // ── The ENTIRE original imported row, verbatim (every header→value) ──
+      rawImport: r.rawImport != null ? JSON.stringify(r.rawImport) : "",
     };
   });
   const csv = toCsv(rows);

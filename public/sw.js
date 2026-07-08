@@ -458,7 +458,10 @@
 // v140 (2026-07-08): cross-module call tracking — a call's module is the surface it was
 // performed from (Leads/Revival/Dubai·India Buyer), NEVER "Master Data"; Daily Performance,
 // Call Logs, Agent Performance + team reports now count Buyer-Data calls too.
-const CACHE = "wcr-shell-v140";
+// v141 (2026-07-08): admin export completeness — all 5 modules export hidden/imported fields
+// (rawImport, remarks, owner, pool/business status, follow-up, module id, timestamps); Master
+// Data gains Excel export. Additive; no data change.
+const CACHE = "wcr-shell-v141";
 const SHELL = ["/login", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", (event) => {
