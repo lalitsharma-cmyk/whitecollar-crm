@@ -5257,10 +5257,18 @@ const checks: Check[] = [
       // (d) The helper restores only the op's fields (edit → the one field; transfer → ownership).
       const helper = fs.readFileSync("src/lib/operationLog.ts", "utf8");
       assert(/status: "UNDONE"/.test(helper) && /buyerRestoreData/.test(helper), "revertOperation must restore before-state + mark UNDONE");
+      // Helper handles BOTH entity types + convert (delete created lead) + lead revert.
+      assert(/leadRestoreData/.test(helper) && /snapshotLeads/.test(helper), "operationLog must support Lead revert (snapshotLeads + leadRestoreData)");
+      assert(/op\.operation === "buyer\.convert"/.test(helper) && /deletedAt: new Date\(\)/.test(helper), "convert revert must soft-delete the created lead");
       // (e) OperationLog model exists in the schema.
       const schema = fs.readFileSync("prisma/schema.prisma", "utf8");
       assert(/model OperationLog \{/.test(schema) && /beforeState\s+Json/.test(schema), "OperationLog model must exist with beforeState");
-      results.push({ name: "  ↳ note", ok: true, detail: "buyer bulk transfer/edit: admin-only, OperationLog-captured, admin-revertable" });
+      // (f) Convert + Lead transfer + Buyer import-revert are all wired.
+      assert(/logOperation\(/.test(fs.readFileSync("src/app/api/buyer-data/[id]/convert/route.ts", "utf8")), "convert route must logOperation (revertable)");
+      assert(/logOperation\(/.test(fs.readFileSync("src/app/api/leads/bulk/route.ts", "utf8")), "leads bulk must logOperation (revertable transfer)");
+      const bimp = fs.readFileSync("src/app/api/buyer-data/import/history/[id]/route.ts", "utf8");
+      assert(/isSuperAdmin/.test(bimp) && /deleteMany/.test(bimp) && /status: "DELETED"/.test(bimp), "buyer import-revert route: soft-delete + super-admin purge");
+      results.push({ name: "  ↳ note", ok: true, detail: "buyer bulk transfer/edit/convert + lead transfer OperationLog-captured + admin-revertable; buyer import revert (soft→purge) wired" });
     },
   },
   {

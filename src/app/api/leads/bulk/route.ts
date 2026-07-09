@@ -15,10 +15,12 @@ import { inferCountryFromCity } from "@/lib/cityCountry";
 // reject route, so the bulk path can never drift (it previously had a stale,
 // divergent allow-list that didn't include the new reasons).
 import { REJECT_REASON_VALUES, rejectionStatusFor } from "@/lib/reject-reasons";
+import { snapshotLeads, logOperation } from "@/lib/operationLog";
 
 export async function POST(req: NextRequest) {
-  // Most actions are agent-safe (scoped to leads they own). Reassign is the
-  // only action restricted to ADMIN/MANAGER — gated inside its branch.
+  // Most actions are agent-safe (scoped to leads they own). Reassign and
+  // set_followup (reversible bulk ops) are ADMIN-only; other admin/manager
+  // actions are gated inside their own branch.
   const me = await requireUser();
   const body = await req.json().catch(() => ({}));
   const action = String(body.action ?? "");
@@ -37,26 +39,19 @@ export async function POST(req: NextRequest) {
   const scope = await leadScopeWhere(me);
 
   if (action === "reassign") {
-    // Reassign is admin/manager only — agents can't hand off their leads.
-    if (me.role !== "ADMIN" && me.role !== "MANAGER") {
+    // BULK transfer is Admin / Super-Admin ONLY (Lalit's rule: bulk reassign is a
+    // reversible admin op, gated tighter than single-assign). Super-admins carry
+    // role ADMIN, so this check accepts them too. Single-lead assign stays
+    // manager-friendly in /api/leads/[id]/assign.
+    if (me.role !== "ADMIN") {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
     const userId = String(body.assignToUserId ?? body.ownerId ?? body.userId ?? "");
     if (!userId) return NextResponse.json({ error: "assignToUserId required" }, { status: 400 });
-    // For MANAGER: verify target user exists and shares the same team as the
-    // manager — prevents cross-team reassigns being silently allowed at the
-    // API layer (the frontend only soft-warns, but we hard-block here).
-    if (me.role === "MANAGER") {
-      const targetUser = await prisma.user.findUnique({ where: { id: userId }, select: { id: true, team: true, active: true } });
-      if (!targetUser || !targetUser.active) {
-        return NextResponse.json({ error: "Target user not found" }, { status: 404 });
-      }
-      const meTeam = normalizeTeam(me.team);
-      const targetTeam = normalizeTeam(targetUser.team);
-      if (meTeam && targetTeam && meTeam !== targetTeam) {
-        return NextResponse.json({ error: "Managers can only reassign leads to agents on their own team" }, { status: 403 });
-      }
-    }
+    // Look up the target user's display name for the operation-log summary
+    // ("Transfer → <name>"). Admin-only path, so no per-team validation needed.
+    const targetUser = await prisma.user.findUnique({ where: { id: userId }, select: { name: true, email: true } });
+    const targetUserName = targetUser?.name || targetUser?.email || "user";
     // Restrict to leads the caller is allowed to touch (scope applies even
     // for ADMIN — scope is {} for admin so they get the full set).
     const visible = await prisma.lead.findMany({
@@ -64,6 +59,10 @@ export async function POST(req: NextRequest) {
       select: { id: true, forwardedTeam: true, ownerId: true, rejectedAt: true },
     });
     const visibleIds = visible.map(v => v.id);
+    // Snapshot the pre-reassign state of the visible ids BEFORE the loop mutates
+    // them — this is the revert source for the OperationLog entry below.
+    const before = await snapshotLeads(prisma, visibleIds);
+    const reassignedIds: string[] = [];
     let done = 0;
     let crossTeamCount = 0;
     let skippedRejected = 0;
@@ -86,9 +85,25 @@ export async function POST(req: NextRequest) {
         if (lead.ownerId !== userId) {
           prisma.leadFieldHistory.create({ data: { leadId: lead.id, field: "ownerId", oldValue: lead.ownerId, newValue: userId, changedById: me.id, source: "reassign" } }).catch(() => {});
         }
+        reassignedIds.push(lead.id);
         done++;
       }
       catch {}
+    }
+    // OperationLog — record the reversible transfer so an admin can undo an
+    // accidental bulk reassign. beforeState is the array of snapshots for the ids
+    // that actually got reassigned (rejected-skips are excluded).
+    if (reassignedIds.length) {
+      await logOperation(prisma, {
+        operation: "lead.transfer",
+        entityType: "Lead",
+        module: "Leads",
+        summary: `Transfer → ${targetUserName}`,
+        affectedIds: reassignedIds,
+        beforeState: before.filter((b) => reassignedIds.includes(b.id)),
+        afterState: { toUserId: userId },
+        createdById: me.id,
+      }).catch(() => {});
     }
     await audit({ userId: me.id, action: "lead.bulk.reassign", entity: "Lead",
       meta: { count: done, toUserId: userId, crossTeamWarnings: crossTeamCount, skippedRejected, leadIds: visibleIds.slice(0, 50) }, request: reqMeta(req) });
@@ -238,12 +253,20 @@ export async function POST(req: NextRequest) {
   }
 
   if (action === "set_followup") {
+    // Bulk edit of follow-up date is a reversible admin op → ADMIN/Super-Admin only
+    // (mirrors bulk reassign; single follow-up edits stay open elsewhere).
+    if (me.role !== "ADMIN") {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
     const dateStr = String(body.followupDate ?? "").trim();
     const followupDate = dateStr ? new Date(dateStr) : null;
     if (dateStr && isNaN(followupDate!.getTime())) {
       return NextResponse.json({ error: "Invalid followupDate" }, { status: 400 });
     }
     const beforeFu = await prisma.lead.findMany({ where: { id: { in: ids }, ...scope }, select: { id: true, followupDate: true } });
+    // Snapshot the touched ids BEFORE the update — revert source for the
+    // OperationLog "lead.edit" entry (restores the followupDate field only).
+    const before = await snapshotLeads(prisma, beforeFu.map((b) => b.id));
     const r = await prisma.lead.updateMany({
       where: { id: { in: ids }, ...scope },
       data: {
@@ -252,12 +275,30 @@ export async function POST(req: NextRequest) {
       },
     });
     // Audit history — old→new follow-up date per changed lead.
+    const newIso = followupDate ? followupDate.toISOString() : null;
+    const changedIds = beforeFu
+      .filter((b) => (b.followupDate ? b.followupDate.toISOString() : null) !== newIso)
+      .map((b) => b.id);
     {
-      const newIso = followupDate ? followupDate.toISOString() : null;
       const hist = beforeFu
         .filter((b) => (b.followupDate ? b.followupDate.toISOString() : null) !== newIso)
         .map((b) => ({ leadId: b.id, field: "followupDate", oldValue: b.followupDate ? b.followupDate.toISOString() : null, newValue: newIso, changedById: me.id, source: "bulk" }));
       if (hist.length) prisma.leadFieldHistory.createMany({ data: hist }).catch(() => {});
+    }
+    // OperationLog — reversible bulk field edit. Only the rows whose followupDate
+    // actually changed are logged (and their captured snapshots kept).
+    if (changedIds.length) {
+      await logOperation(prisma, {
+        operation: "lead.edit",
+        entityType: "Lead",
+        module: "Leads",
+        field: "followupDate",
+        summary: `Follow-up → ${dateStr || "cleared"}`,
+        affectedIds: changedIds,
+        beforeState: before.filter((b) => changedIds.includes(b.id)),
+        afterState: { followupDate: newIso },
+        createdById: me.id,
+      }).catch(() => {});
     }
     await audit({
       userId: me.id, action: "lead.bulk.followup", entity: "Lead",

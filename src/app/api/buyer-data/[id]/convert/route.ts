@@ -11,6 +11,8 @@ import { toE164 } from "@/lib/phone";
 import { normalizeNameList } from "@/lib/nameFormat";
 import { normalizeTeam } from "@/lib/teamRouting";
 import { resolveMarket } from "@/lib/market";
+import { buyerSourceModule } from "@/lib/moduleSource";
+import { snapshotBuyers, logOperation } from "@/lib/operationLog";
 import {
   parseJsonArray,
   inferBuyerCurrency,
@@ -103,6 +105,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     ? buyer.transactionValue : null;
 
   const coBuyers = parseJsonArray(buyer.coBuyerNames);
+
+  // Capture the buyer's EXACT pre-convert state (ownership / pool / convert
+  // pointers) for the OperationLog BEFORE any mutation, so an admin can revert an
+  // accidental conversion (revertOperation restores this + soft-deletes the lead).
+  const [before] = await snapshotBuyers(prisma, [buyer.id]);
 
   // ── Create the lead, mark the buyer, write history — atomically ────────────
   const result = await prisma.$transaction(async (tx) => {
@@ -226,6 +233,21 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     body: `${me.name} converted this buyer into a Lead. It's now in Leads / Master Data.`,
     linkUrl: `/leads/${result.leadId}`,
     source: { type: "ASSIGNMENT", id: result.leadId, createdById: me.id },
+  }).catch(() => null);
+
+  // Reversible OperationLog entry — lets an admin undo an accidental conversion.
+  // beforeState MUST be an array of snapshots; afterState carries the created lead
+  // id so revertOperation can soft-delete it. Runs after the tx commits (a failed
+  // convert logs nothing).
+  await logOperation(prisma, {
+    operation: "buyer.convert",
+    entityType: "BuyerRecord",
+    module: buyerSourceModule(buyer.market),
+    summary: `Convert → Lead (${buyer.clientName})`,
+    affectedIds: [buyer.id],
+    beforeState: [before],
+    afterState: { leadId: result.leadId },
+    createdById: me.id,
   }).catch(() => null);
 
   await audit({

@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { canTouchLead } from "@/lib/leadScope";
 import { crossTeamWarning, resolveTeam, routingFieldsFor, normalizeTeam } from "@/lib/teamRouting";
 import { teamToMarket } from "@/lib/market";
+import { snapshotLeads, logOperation } from "@/lib/operationLog";
 
 // Manual reassign — Admin or Manager only.
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -25,6 +26,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   if (lead.rejectedAt != null) {
     return NextResponse.json({ error: "This lead is rejected — reactivate it first, then assign.", rejected: true }, { status: 409 });
   }
+
+  // Snapshot the pre-assign state BEFORE any mutation (the forceTeam write below
+  // and assignLeadTo both change routing/ownership). This is the OperationLog
+  // revert source so an accidental single reassign can be undone.
+  const before = await snapshotLeads(prisma, [id]);
 
   // If the caller is explicitly setting a team (admin pulling from awaiting-team queue),
   // resolve and write routing provenance alongside the assignment.
@@ -48,6 +54,21 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   }
 
   await assignLeadTo(id, userId, "manual assignment");
+
+  // OperationLog — record the reversible single transfer so an admin can undo an
+  // accidental reassignment (same op type / revert path as the bulk reassign).
+  const targetUser = await prisma.user.findUnique({ where: { id: userId }, select: { name: true, email: true } });
+  const targetName = targetUser?.name || targetUser?.email || "user";
+  await logOperation(prisma, {
+    operation: "lead.transfer",
+    entityType: "Lead",
+    module: "Leads",
+    summary: `Transfer → ${targetName}`,
+    affectedIds: [id],
+    beforeState: before,
+    afterState: { toUserId: userId },
+    createdById: me.id,
+  }).catch(() => {});
 
   // Soft cross-team warning — re-read lead after potential forwardedTeam update.
   const updatedLead = await prisma.lead.findUnique({ where: { id }, select: { forwardedTeam: true } });

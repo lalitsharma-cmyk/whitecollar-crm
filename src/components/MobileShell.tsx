@@ -140,6 +140,7 @@ const fullNav: NavSection[] = [
     { href: "/admin/ai-console",      label: "AI Sales OS",        Icon: Sparkles },
     { href: "/admin/telephony",       label: "AS Phone",           Icon: PhoneCall },
     { href: "/intake",                label: "Lead Intake",        Icon: Upload, leadOpsHidden: true },
+    { href: "/admin/buyer-imports",   label: "Buyer Imports",      Icon: Upload },
     { href: "/admin/projects",        label: "Project Master",     Icon: Landmark },
     { href: "/admin/devices",         label: "Devices",            Icon: ShieldCheck },
     { href: "/admin/revival-logs",    label: "Revival Logs",       Icon: Gem },

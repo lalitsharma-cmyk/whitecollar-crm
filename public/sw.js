@@ -464,7 +464,10 @@
 // v142 (2026-07-09): reversible bulk ops — buyer bulk Transfer + Edit-Field are now
 // Admin-only, record an OperationLog (before/after), and are one-click revertable from
 // Admin → Operations; Edit-Field gets dropdowns + exact "update N selected" preview.
-const CACHE = "wcr-shell-v142";
+// v143 (2026-07-09): reversible ops completed — Convert-to-Lead + Lead transfer/edit now
+// captured + admin-revertable via Admin → Operations; Buyer Import Revert (Admin → Buyer
+// Imports: soft-delete → restore → super-admin hard purge) mirrors the Leads import history.
+const CACHE = "wcr-shell-v143";
 const SHELL = ["/login", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", (event) => {

@@ -4,17 +4,17 @@ import { prisma } from "@/lib/prisma";
 import { BUYER_POOL_STATUS } from "@/lib/buyerLifecycle";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// OPERATION LOG — reversible structural operations (Lalit 2026-07-08).
+// OPERATION LOG — reversible structural operations (Lalit 2026-07-08/09).
 //
 // One shared helper for every structural admin action (transfer / edit-field /
-// convert / assignment, single + bulk, all modules). On execute it snapshots the
+// convert / assignment, single + bulk, buyer + lead). On execute it snapshots the
 // EXACT pre-op state of the affected rows; revertOperation() replays that snapshot
 // so an accidental action can be undone atomically without DB surgery.
 //
-// Design mirrors the AssistantRun preview→execute→undo pattern already in the app.
 // Revert restores ONLY the fields the op changed (so a later, unrelated edit by
-// someone else is never clobbered), and reconciles buyer assignment stints so the
-// pool/ownership history stays honest.
+// someone else is never clobbered), reconciles buyer assignment stints, and — for a
+// convert — soft-deletes the lead the convert created + clears the buyer's convert
+// pointers. Conversation history / remarks / call logs are NEVER touched.
 // ─────────────────────────────────────────────────────────────────────────────
 
 export type OperationType =
@@ -26,21 +26,33 @@ export type OperationType =
 
 type DB = typeof prisma | Prisma.TransactionClient;
 
-// The buyer columns we snapshot — the union of what transfer changes (ownership /
-// pool) and what edit-field can change (the whitelisted fields). Capturing the
-// whole set is cheap and lets one snapshot serve both op types.
+// ── BUYER snapshot — the union of what transfer changes (ownership / pool),
+//    what edit-field can change (whitelisted fields), and the convert pointers. ──
 export const BUYER_SNAPSHOT_SELECT = {
   id: true,
   ownerId: true, assignedAt: true, poolStatus: true, attemptCount: true,
   rejectedAt: true, rejectedById: true, rejectionReason: true, rejectCategory: true,
+  convertedLeadId: true, convertedAt: true, convertedById: true,
   nationality: true, projectName: true, tower: true, propertyType: true,
   configuration: true, agentName: true, transactionValue: true, remarks: true,
   businessStatus: true,
 } satisfies Prisma.BuyerRecordSelect;
 
+// ── LEAD snapshot — what transfer/assign changes (ownership + routing + SLA) plus
+//    the fields a lead bulk-edit could touch (status / follow-up / tags / team). ──
+export const LEAD_SNAPSHOT_SELECT = {
+  id: true, ownerId: true, previousOwnerId: true, assignedAt: true,
+  forwardedTeam: true, market: true, currentStatus: true, followupDate: true,
+  tags: true, slaFirstCallBy: true, slaEscalated: true, routingMethod: true,
+} satisfies Prisma.LeadSelect;
+
 /** Snapshot the current state of the given buyer ids (call BEFORE the mutation). */
 export function snapshotBuyers(db: DB, ids: string[]) {
   return db.buyerRecord.findMany({ where: { id: { in: ids } }, select: BUYER_SNAPSHOT_SELECT });
+}
+/** Snapshot the current state of the given lead ids (call BEFORE the mutation). */
+export function snapshotLeads(db: DB, ids: string[]) {
+  return db.lead.findMany({ where: { id: { in: ids } }, select: LEAD_SNAPSHOT_SELECT });
 }
 
 /** Record an executed operation with its before-state (the revert source). */
@@ -75,17 +87,16 @@ export async function logOperation(
   });
 }
 
-type BuyerSnap = Record<string, unknown> & { id: string };
+type Snap = Record<string, unknown> & { id: string };
+const asDate = (v: unknown) => (v ? new Date(String(v)) : null);
 
-// Build the exact update payload that RESTORES a buyer to its pre-op state — only
-// the fields the op touched, so a later unrelated edit isn't reverted too.
-function buyerRestoreData(op: { operation: string; field: string | null }, snap: BuyerSnap): Prisma.BuyerRecordUpdateInput {
-  const asDate = (v: unknown) => (v ? new Date(String(v)) : null);
+// Build the BUYER update that RESTORES the pre-op state — only the fields the op
+// touched, so a later unrelated edit isn't reverted too.
+function buyerRestoreData(op: { operation: string; field: string | null }, snap: Snap): Prisma.BuyerRecordUpdateInput {
   if (op.operation === "buyer.edit" && op.field) {
-    // Restore just the one edited field to its captured value.
     return { [op.field]: snap[op.field] ?? null } as Prisma.BuyerRecordUpdateInput;
   }
-  // transfer / convert — restore ownership + pool provenance.
+  // transfer / convert — restore ownership + pool provenance (+ clear convert pointers).
   return {
     owner: snap.ownerId ? { connect: { id: String(snap.ownerId) } } : { disconnect: true },
     assignedAt: asDate(snap.assignedAt),
@@ -95,6 +106,30 @@ function buyerRestoreData(op: { operation: string; field: string | null }, snap:
     rejectedById: (snap.rejectedById as string | null) ?? null,
     rejectionReason: (snap.rejectionReason as string | null) ?? null,
     rejectCategory: (snap.rejectCategory as string | null) ?? null,
+    convertedLead: snap.convertedLeadId ? { connect: { id: String(snap.convertedLeadId) } } : { disconnect: true },
+    convertedAt: asDate(snap.convertedAt),
+    convertedById: (snap.convertedById as string | null) ?? null,
+  };
+}
+
+// Build the LEAD update that RESTORES the pre-op state.
+function leadRestoreData(op: { operation: string; field: string | null }, snap: Snap): Prisma.LeadUpdateInput {
+  if (op.operation === "lead.edit" && op.field) {
+    if (op.field === "followupDate") return { followupDate: asDate(snap.followupDate) };
+    if (op.field === "owner" || op.field === "ownerId") {
+      return snap.ownerId ? { owner: { connect: { id: String(snap.ownerId) } } } : { owner: { disconnect: true } };
+    }
+    return { [op.field]: snap[op.field] ?? null } as Prisma.LeadUpdateInput;
+  }
+  // transfer / assign — restore ownership + routing + SLA.
+  return {
+    owner: snap.ownerId ? { connect: { id: String(snap.ownerId) } } : { disconnect: true },
+    previousOwnerId: (snap.previousOwnerId as string | null) ?? null,
+    assignedAt: asDate(snap.assignedAt),
+    forwardedTeam: (snap.forwardedTeam as string | null) ?? null,
+    market: (snap.market as string | null) ?? null,
+    slaFirstCallBy: asDate(snap.slaFirstCallBy),
+    slaEscalated: Boolean(snap.slaEscalated),
   };
 }
 
@@ -109,10 +144,11 @@ export async function revertOperation(
   const op = await prisma.operationLog.findUnique({ where: { id: opId } });
   if (!op) return { ok: false, restored: 0, error: "Operation not found." };
   if (op.status !== "EXECUTED") return { ok: false, restored: 0, error: `This operation is ${op.status.toLowerCase()} — nothing to revert.` };
-  const before = (op.beforeState as unknown as BuyerSnap[] | null) ?? [];
+  const before = (op.beforeState as unknown as Snap[] | null) ?? [];
   if (before.length === 0) return { ok: false, restored: 0, error: "No captured state to restore." };
 
   let restored = 0;
+
   if (op.entityType === "BuyerRecord") {
     await prisma.$transaction(async (tx) => {
       for (const snap of before) {
@@ -120,8 +156,7 @@ export async function revertOperation(
         const live = await tx.buyerRecord.findUnique({ where: { id }, select: { id: true } });
         if (!live) continue; // record gone (e.g. hard-purged) — skip, don't fail the batch
         await tx.buyerRecord.update({ where: { id }, data: buyerRestoreData(op, snap) });
-        // Stint reconciliation for ownership reverts: close any stint the op opened,
-        // then re-open one for the restored owner (or leave unassigned if null).
+        // Ownership reverts: close the stint the op opened, re-open the restored owner's.
         if (op.operation === "buyer.transfer" || op.operation === "buyer.convert") {
           await tx.buyerAssignment.updateMany({ where: { buyerId: id, returnedAt: null }, data: { returnedAt: new Date(), returnReason: "ADMIN_REVERT" } });
           if (snap.ownerId) {
@@ -130,11 +165,31 @@ export async function revertOperation(
         }
         restored++;
       }
+      // Convert revert: undo the lead the convert created. The convert relinked the
+      // buyer's CallLogs onto that lead — un-relink them (leave the calls buyer-only, so
+      // call history stays intact on the restored buyer) — then soft-delete the lead.
+      // The copied Activity rows ride along on the soft-deleted (hidden) lead.
+      if (op.operation === "buyer.convert") {
+        const after = (op.afterState as { leadId?: string } | null) ?? {};
+        if (after.leadId) {
+          await tx.callLog.updateMany({ where: { leadId: after.leadId, buyerId: { not: null } }, data: { leadId: null } });
+          await tx.lead.updateMany({ where: { id: after.leadId, deletedAt: null }, data: { deletedAt: new Date(), deletedById: meId } });
+        }
+      }
       await tx.operationLog.update({ where: { id: opId }, data: { status: "UNDONE", undoneAt: new Date(), undoneById: meId } });
     });
   } else {
-    // Lead reverts land in a later increment — guard so we never half-apply.
-    return { ok: false, restored: 0, error: "Lead operation revert is not enabled yet." };
+    // Lead — transfer / assign / edit reverts.
+    await prisma.$transaction(async (tx) => {
+      for (const snap of before) {
+        const id = String(snap.id);
+        const live = await tx.lead.findUnique({ where: { id }, select: { id: true } });
+        if (!live) continue;
+        await tx.lead.update({ where: { id }, data: leadRestoreData(op, snap) });
+        restored++;
+      }
+      await tx.operationLog.update({ where: { id: opId }, data: { status: "UNDONE", undoneAt: new Date(), undoneById: meId } });
+    });
   }
   return { ok: true, restored };
 }

@@ -2683,8 +2683,16 @@ model BuyerImportBatch {
   importedById String? // User who ran the import
   importedBy   User?    @relation("BuyerImports", fields: [importedById], references: [id])
   rawPayload   Json? // Original sheet data (for audit / replay)
+  // ── Import revert (mirrors ImportBatch) — soft-delete → restore → hard-purge ──
+  // status ACTIVE | DELETED. On revert, every BuyerRecord stamped with this batch id
+  // is soft-deleted (deletedAt) and the batch flips DELETED; purge hard-deletes them.
+  status       String    @default("ACTIVE")
+  deletedAt    DateTime?
+  deletedById  String?
+  deleteReason String?
 
   @@index([importedAt])
+  @@index([status])
 }
 
 // Import error log — one row per failed record during BuyerImportBatch
