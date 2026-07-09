@@ -6,6 +6,13 @@ import { audit, reqMeta } from "@/lib/audit";
 import { canTouchBuyer, visibleBuyerOwnerIds, isBuyerAdmin, isBuyerAssignableForMarket, marketOfBuyer, type BuyerMarket } from "@/lib/buyerScope";
 import { assignBuyerInTx, BUYER_POOL_STATUS } from "@/lib/buyerLifecycle";
 import { normalizeNameList } from "@/lib/nameFormat";
+import { snapshotBuyers, logOperation } from "@/lib/operationLog";
+import { buyerSourceModule } from "@/lib/moduleSource";
+
+// Bulk Transfer + Bulk Edit-Field are ADMIN / Super-Admin ONLY (Lalit 2026-07-08):
+// they restructure ownership or overwrite fields across many records, so only an
+// admin may run them — never a manager or agent. Both also record an OperationLog
+// (before/after state) so the action can be reverted from Admin → Operations.
 
 // ── Buyer bulk actions ───────────────────────────────────────────────────────
 // One endpoint for the list-page bulk toolbar. Actions:
@@ -28,6 +35,7 @@ const EDITABLE: Record<string, "string" | "number"> = {
   propertyType: "string",
   configuration: "string",
   agentName: "string",
+  businessStatus: "string",
   transactionValue: "number",
   remarks: "string",
 };
@@ -42,10 +50,10 @@ export async function POST(req: NextRequest) {
   if (buyerIds.length === 0) return NextResponse.json({ error: "buyerIds required" }, { status: 400 });
   if (buyerIds.length > 5000) return NextResponse.json({ error: "Too many records in one bulk action (max 5000)." }, { status: 400 });
 
-  // ── transfer (reassign to a different agent) — ADMIN / MANAGER ──────────────
+  // ── transfer (reassign to a different agent) — ADMIN / Super-Admin ONLY ──────
   if (action === "transfer") {
-    if (me.role !== "ADMIN" && me.role !== "MANAGER") {
-      return NextResponse.json({ error: "Only an admin or manager can transfer buyers." }, { status: 403 });
+    if (!isBuyerAdmin(me)) {
+      return NextResponse.json({ error: "Only an admin can transfer buyers." }, { status: 403 });
     }
     const agentId = String(body.agentId ?? "").trim();
     if (!agentId) return NextResponse.json({ error: "agentId required" }, { status: 400 });
@@ -70,7 +78,12 @@ export async function POST(req: NextRequest) {
     if (!isBuyerAssignableForMarket(agent, market)) {
       return NextResponse.json({ error: `${market} Buyer Data can only be transferred to ${market}-team users or admins.` }, { status: 403 });
     }
+    // Snapshot BEFORE mutating so an accidental transfer can be reverted to the exact
+    // prior owner/pool state from Admin → Operations.
+    const beforeSnap = await snapshotBuyers(prisma, buyers.map((b) => b.id));
+    const snapById = new Map(beforeSnap.map((s) => [s.id, s]));
     let transferred = 0;
+    const transferredIds: string[] = [];
     const skipped: string[] = [];
     for (const b of buyers) {
       if (b.poolStatus === BUYER_POOL_STATUS.CONVERTED) { skipped.push(b.id); continue; }
@@ -78,6 +91,15 @@ export async function POST(req: NextRequest) {
       if (b.ownerId === agentId) { continue; } // already theirs — no-op
       await prisma.$transaction(async (tx) => { await assignBuyerInTx(tx, b.id, agentId, me.id); });
       transferred++;
+      transferredIds.push(b.id);
+    }
+    if (transferredIds.length > 0) {
+      await logOperation(prisma, {
+        operation: "buyer.transfer", entityType: "BuyerRecord", module: buyerSourceModule(market),
+        summary: `Transfer → ${agent.name}`, affectedIds: transferredIds,
+        beforeState: transferredIds.map((id) => snapById.get(id)).filter(Boolean),
+        afterState: { agentId, agentName: agent.name }, createdById: me.id,
+      });
     }
     if (transferred > 0) {
       await notify({
@@ -114,8 +136,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, restored: res.count });
   }
 
-  // ── edit (set one whitelisted field) — scoped per record ────────────────────
+  // ── edit (set one whitelisted field) — ADMIN / Super-Admin ONLY ─────────────
   if (action === "edit") {
+    if (!isBuyerAdmin(me)) {
+      return NextResponse.json({ error: "Only an admin can bulk-edit buyer fields." }, { status: 403 });
+    }
     const field = String(body.field ?? "").trim();
     const t = EDITABLE[field];
     if (!t) return NextResponse.json({ error: `Field "${field}" is not bulk-editable.` }, { status: 400 });
@@ -143,7 +168,15 @@ export async function POST(req: NextRequest) {
     const touchable: string[] = [];
     for (const b of buyers) if (await canTouchBuyer(me, b)) touchable.push(b.id);
     if (touchable.length === 0) return NextResponse.json({ error: "None of the selected buyers are editable by you." }, { status: 403 });
+    // Snapshot BEFORE the update so the edit is revertible to the exact prior values.
+    const beforeSnap = await snapshotBuyers(prisma, touchable);
     const res = await prisma.buyerRecord.updateMany({ where: { id: { in: touchable } }, data: { [field]: value } });
+    const editMarket: BuyerMarket = buyers.find((b) => touchable.includes(b.id) && b.market === "India") ? "India" : "Dubai";
+    await logOperation(prisma, {
+      operation: "buyer.edit", entityType: "BuyerRecord", module: buyerSourceModule(editMarket),
+      field, summary: `${field} → ${value == null || value === "" ? "(cleared)" : String(value)}`,
+      affectedIds: touchable, beforeState: beforeSnap, afterState: { field, value }, createdById: me.id,
+    });
     await audit({ userId: me.id, action: "buyer.bulk.edit", entity: "BuyerRecord", meta: { field, value, count: res.count }, request: reqMeta(req) });
     return NextResponse.json({ ok: true, updated: res.count, field });
   }

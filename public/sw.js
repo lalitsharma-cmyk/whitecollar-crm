@@ -461,7 +461,10 @@
 // v141 (2026-07-08): admin export completeness — all 5 modules export hidden/imported fields
 // (rawImport, remarks, owner, pool/business status, follow-up, module id, timestamps); Master
 // Data gains Excel export. Additive; no data change.
-const CACHE = "wcr-shell-v141";
+// v142 (2026-07-09): reversible bulk ops — buyer bulk Transfer + Edit-Field are now
+// Admin-only, record an OperationLog (before/after), and are one-click revertable from
+// Admin → Operations; Edit-Field gets dropdowns + exact "update N selected" preview.
+const CACHE = "wcr-shell-v142";
 const SHELL = ["/login", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", (event) => {

@@ -143,6 +143,7 @@ const fullNav: NavSection[] = [
     { href: "/admin/projects",        label: "Project Master",     Icon: Landmark },
     { href: "/admin/devices",         label: "Devices",            Icon: ShieldCheck },
     { href: "/admin/revival-logs",    label: "Revival Logs",       Icon: Gem },
+    { href: "/admin/operations",      label: "Operations (Undo)",  Icon: History },
   ]},
   // HR Recruitment — single entry point that opens the HR workspace
   { section: "RECRUITMENT", managerOrAdmin: true, items: [

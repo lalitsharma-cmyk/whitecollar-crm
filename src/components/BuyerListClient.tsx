@@ -138,7 +138,7 @@ const PAGE = 50;
 const EDITABLE_FIELDS: [string, string][] = [
   ["nationality", "Nationality"], ["projectName", "Project"], ["tower", "Tower / Building"],
   ["propertyType", "Property Type"], ["configuration", "Configuration"], ["agentName", "Agent (name)"],
-  ["transactionValue", "Transaction Value"], ["remarks", "Remarks"],
+  ["businessStatus", "Business Status"], ["transactionValue", "Transaction Value"], ["remarks", "Remarks"],
 ];
 
 // followupMs → YYYY-MM-DD for the inline date input, in IST so the value shown in
@@ -730,24 +730,54 @@ export default function BuyerListClient(props: Props) {
           {selectionSpansPages && allFilteredSelected && (
             <span className="text-xs text-red-700 dark:text-red-300">All {filtered.length} matching records selected across all pages.</span>
           )}
-          {/* Transfer */}
-          <select value={transferTo} onChange={(e) => setTransferTo(e.target.value)} className={sel} title="Transfer to agent">
-            <option value="">Transfer to…</option>
-            {agents.map((a) => <option key={a.id} value={a.id}>{a.name}{a.team ? ` · ${a.team}` : ""}</option>)}
-          </select>
-          <button type="button" disabled={!transferTo || bulkBusy} onClick={() => runBulk("transfer", { agentId: transferTo }, "Transfer {n} buyer(s) to the selected agent?")}
-            className="btn btn-primary text-sm disabled:opacity-40">Transfer</button>
-          {/* Edit */}
-          <select value={editField} onChange={(e) => setEditField(e.target.value)} className={sel} title="Bulk edit field">
-            <option value="">Edit field…</option>
-            {EDITABLE_FIELDS.map(([f, l]) => <option key={f} value={f}>{l}</option>)}
-          </select>
-          {editField && (
-            <input value={editValue} onChange={(e) => setEditValue(e.target.value)} placeholder="New value" className={`${sel} w-36`} />
-          )}
-          {editField && (
-            <button type="button" disabled={bulkBusy} onClick={() => runBulk("edit", { field: editField, value: editValue }, "Set this field on {n} buyers?")}
-              className="btn btn-ghost text-sm disabled:opacity-40">Apply edit</button>
+          {/* Transfer + Edit are ADMIN / Super-Admin ONLY, and kept in two VISUALLY
+              DISTINCT groups so they're never confused: Transfer (blue) changes the
+              OWNER; Edit field (violet) changes METADATA. Both are reversible from
+              Admin → Operations, and both preview an exact count before applying. */}
+          {isAdmin && (
+            <>
+              {/* ── TRANSFER — ownership (blue) ── */}
+              <div className="flex items-center gap-1.5 rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50/50 dark:bg-blue-900/10 px-2 py-1">
+                <span className="text-[10px] font-bold uppercase tracking-wide text-blue-700 dark:text-blue-300">🔁 Transfer</span>
+                <select value={transferTo} onChange={(e) => setTransferTo(e.target.value)} className={sel} title="Transfer selected buyers to an agent (changes owner)">
+                  <option value="">to agent…</option>
+                  {agents.map((a) => <option key={a.id} value={a.id}>{a.name}{a.team ? ` · ${a.team}` : ""}</option>)}
+                </select>
+                <button type="button" disabled={!transferTo || bulkBusy}
+                  onClick={() => runBulk("transfer", { agentId: transferTo }, `You are about to transfer {n} selected buyer(s) to ${agents.find((a) => a.id === transferTo)?.name ?? "the selected agent"}. Continue?`)}
+                  className="btn btn-primary text-sm disabled:opacity-40">Transfer</button>
+              </div>
+              {/* ── EDIT FIELD — metadata (violet) ── */}
+              <div className="flex items-center gap-1.5 rounded-lg border border-violet-200 dark:border-violet-800 bg-violet-50/50 dark:bg-violet-900/10 px-2 py-1">
+                <span className="text-[10px] font-bold uppercase tracking-wide text-violet-700 dark:text-violet-300">✎ Edit field</span>
+                <select value={editField} onChange={(e) => { setEditField(e.target.value); setEditValue(""); }} className={sel} title="Change one metadata field on the selected buyers">
+                  <option value="">choose field…</option>
+                  {EDITABLE_FIELDS.map(([f, l]) => <option key={f} value={f}>{l}</option>)}
+                </select>
+                {editField && (() => {
+                  // Dropdown for enumerated fields (values pulled from the data in view);
+                  // free text for Remarks / Transaction Value / Tower / Configuration.
+                  const opts = editField === "nationality" ? nationalities
+                    : editField === "projectName" ? projects
+                    : editField === "propertyType" ? propertyTypes
+                    : editField === "agentName" ? agents.map((a) => a.name)
+                    : null;
+                  return opts ? (
+                    <select value={editValue} onChange={(e) => setEditValue(e.target.value)} className={`${sel} min-w-[9rem]`} title="New value">
+                      <option value="">select value…</option>
+                      {opts.map((o) => <option key={o} value={o}>{o}</option>)}
+                    </select>
+                  ) : (
+                    <input value={editValue} onChange={(e) => setEditValue(e.target.value)} placeholder="new value" className={`${sel} w-36`} title="New value" />
+                  );
+                })()}
+                {editField && (
+                  <button type="button" disabled={bulkBusy}
+                    onClick={() => runBulk("edit", { field: editField, value: editValue }, `You are about to change ${EDITABLE_FIELDS.find(([f]) => f === editField)?.[1] ?? editField} to "${editValue || "(blank)"}" for {n} selected buyer(s). Continue?`)}
+                    className="btn btn-ghost text-sm disabled:opacity-40">Apply</button>
+                )}
+              </div>
+            </>
           )}
           {/* Export */}
           <button type="button" disabled={bulkBusy} onClick={exportCsv} className="btn btn-ghost text-sm" title="Export to CSV">⬇ Export</button>

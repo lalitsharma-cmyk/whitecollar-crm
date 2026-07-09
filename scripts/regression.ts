@@ -1805,7 +1805,7 @@ const checks: Check[] = [
   //   (a) the recycle-bin `deletedAt` column exists and buyerScopeWhere EXCLUDES
   //       soft-deleted buyers in EVERY branch (a deleted buyer never appears).
   //   (b) the new write surfaces are role-gated: bulk delete/restore = ADMIN,
-  //       transfer = ADMIN/MANAGER; distribute = ADMIN/MANAGER; settings toggle = ADMIN.
+  //       transfer + edit = ADMIN-only (no manager); distribute = ADMIN/MANAGER; settings toggle = ADMIN.
   //   (c) the rule-based distribution planner math (pure, in memory): assign-N caps
   //       at the pool size; split-equally round-robins evenly.
   //   (d) the daily auto-distribution toggle DEFAULTS OFF (no buyers move on a
@@ -1837,7 +1837,8 @@ const checks: Check[] = [
       const bulkSrc = read("src/app/api/buyer-data/bulk/route.ts");
       assert(/isBuyerAdmin\(me\)/.test(bulkSrc) && /Only an admin can delete buyers/.test(bulkSrc), "bulk delete MUST be ADMIN-only");
       assert(/Only an admin can restore buyers/.test(bulkSrc), "bulk restore MUST be ADMIN-only");
-      assert(/Only an admin or manager can transfer buyers/.test(bulkSrc), "bulk transfer MUST be ADMIN/MANAGER");
+      // Bulk transfer is now ADMIN / Super-Admin ONLY (Lalit 2026-07-08) — no manager.
+      assert(/Only an admin can transfer buyers/.test(bulkSrc), "bulk transfer MUST be ADMIN-only (no manager)");
       const distSrc = read("src/app/api/buyer-data/distribute/route.ts");
       assert(/requireRole\("ADMIN", "MANAGER"\)/.test(distSrc), "distribute route MUST be ADMIN/MANAGER");
       assert(/requireRole\("ADMIN"\)/.test(read("src/app/api/settings/buyer-distribute/route.ts")), "buyer-distribute settings toggle MUST be ADMIN-only");
@@ -5234,6 +5235,32 @@ const checks: Check[] = [
       assert(/router\.replace\(/.test(convertFn) && /leads\/\$\{j\.leadId\}/.test(convertFn), "convert must navigate to the newly-created lead");
       assert(!/router\.refresh\(\)/.test(convertFn), "convert must NOT router.refresh() the now-converted buyer page");
       results.push({ name: "  ↳ note", ok: true, detail: "buyer reject → /buyer-data, convert → new lead; no self-refresh 404 (agent loses access after both)" });
+    },
+  },
+  {
+    // REVERSIBLE BULK OPS (Lalit 2026-07-08): buyer bulk Transfer + Edit-Field are
+    // ADMIN-only, each records an OperationLog (before-state), and an admin can revert
+    // them from Admin → Operations. Locks the safety + reversibility so it can't regress.
+    name: "reversible-bulk-ops — buyer bulk transfer/edit are admin-only + logged + revertable",
+    run: async () => {
+      const fs = await import("fs");
+      const bulk = fs.readFileSync("src/app/api/buyer-data/bulk/route.ts", "utf8");
+      // (a) Transfer + Edit gated to admin (isBuyerAdmin) — no manager, no agent.
+      assert(/if \(action === "transfer"\)[\s\S]{0,120}isBuyerAdmin\(me\)/.test(bulk), "bulk transfer must be admin-only (isBuyerAdmin)");
+      assert(/if \(action === "edit"\)[\s\S]{0,160}isBuyerAdmin\(me\)/.test(bulk), "bulk edit must be admin-only (isBuyerAdmin)");
+      assert(!/me\.role !== "ADMIN" && me\.role !== "MANAGER"/.test(bulk), "bulk transfer must NOT allow MANAGER anymore");
+      // (b) Both ops capture a before-snapshot + log an OperationLog for revert.
+      assert((bulk.match(/logOperation\(/g) ?? []).length >= 2 && /snapshotBuyers\(/.test(bulk), "transfer + edit must snapshot + logOperation");
+      // (c) The revert route exists and is admin-only.
+      const revert = fs.readFileSync("src/app/api/admin/operations/[id]/revert/route.ts", "utf8");
+      assert(/me\.role !== "ADMIN"/.test(revert) && /revertOperation\(/.test(revert), "revert route must be admin-only + call revertOperation");
+      // (d) The helper restores only the op's fields (edit → the one field; transfer → ownership).
+      const helper = fs.readFileSync("src/lib/operationLog.ts", "utf8");
+      assert(/status: "UNDONE"/.test(helper) && /buyerRestoreData/.test(helper), "revertOperation must restore before-state + mark UNDONE");
+      // (e) OperationLog model exists in the schema.
+      const schema = fs.readFileSync("prisma/schema.prisma", "utf8");
+      assert(/model OperationLog \{/.test(schema) && /beforeState\s+Json/.test(schema), "OperationLog model must exist with beforeState");
+      results.push({ name: "  ↳ note", ok: true, detail: "buyer bulk transfer/edit: admin-only, OperationLog-captured, admin-revertable" });
     },
   },
   {
