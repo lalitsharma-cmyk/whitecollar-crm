@@ -3161,8 +3161,19 @@ const checks: Check[] = [
       //     — this is the DATA invariant that the count helper and the list
       //     query agree; the page applies the same scopeWhere to both).
       const todayWhere = { deletedAt: null, followupDate: { gte: start, lt: end } } as const;
-      const listed = await prisma.lead.findMany({ where: todayWhere, select: { id: true, followupDate: true, currentStatus: true }, take: 1000 });
-      const counted = await prisma.lead.count({ where: todayWhere });
+      // Both reads MUST see the same snapshot. Run against the live CRM, a `findMany`
+      // followed by a separate `count` is racy: an agent completing a follow-up between
+      // the two statements shifts one of them by a row and aborts the deploy gate on a
+      // phantom failure (observed 2026-07-10: count 486 vs records 487). Postgres'
+      // default READ COMMITTED takes a fresh snapshot per statement, so pin both inside
+      // one REPEATABLE READ transaction — the invariant then tests the data, not the clock.
+      const { listed, counted } = await prisma.$transaction(
+        async (tx) => ({
+          listed: await tx.lead.findMany({ where: todayWhere, select: { id: true, followupDate: true, currentStatus: true }, take: 1000 }),
+          counted: await tx.lead.count({ where: todayWhere }),
+        }),
+        { isolationLevel: "RepeatableRead" },
+      );
       // (Bounded list at 1000; only assert equality when not truncated.)
       if (listed.length < 1000) {
         assert(listed.length === counted, `Action List today: count (${counted}) must equal records (${listed.length}) — no silent hiding`);
