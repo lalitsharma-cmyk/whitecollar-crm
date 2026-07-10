@@ -471,7 +471,11 @@
 // unassigned (Agent → Unassigned), its follow-up is cleared, and the last working agent is
 // preserved in a new read-only "Previous Owner" column + filter in Master Data. Won/Closed
 // deliberately KEEPS its owner (booking attribution). 111 historical leads backfilled.
-const CACHE = "wcr-shell-v144";
+// v145 (2026-07-10): Master-Data Assign asks for Status + Follow-up. Assigning reactivates
+// the record (clears the rejection) into a working lead — default status "Not Contacted",
+// default follow-up now+15min — so it lands on the Action List under its new owner. The
+// pre-reactivation status is kept as an admin-only "Previous Status". Reversible.
+const CACHE = "wcr-shell-v145";
 const SHELL = ["/login", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", (event) => {

@@ -4,8 +4,9 @@ import { createPortal } from "react-dom";
 import { useState, useMemo, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { PROPERTY_TYPES } from "@/lib/propertyType";
-import { statusesForTeam, compareStatusDisplay } from "@/lib/lead-statuses";
+import { statusesForTeam, compareStatusDisplay, TERMINAL_STATUSES } from "@/lib/lead-statuses";
 import { formatLeadName } from "@/lib/leadName";
+import { backdropProps } from "@/lib/useDismiss";
 import { parseBudget } from "@/lib/budgetParse";
 import { isWebsiteSource, isEventSource } from "@/lib/lead-sources";
 import ColumnHeaderFilter, { type ColFilterState } from "@/components/ColumnHeaderFilter";
@@ -162,6 +163,25 @@ function statusMenuOptions(team: string, current: string | null): { value: strin
 
 const todayIST = () => new Date().toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short", year: "numeric" });
 
+// Format a Date as the "YYYY-MM-DDTHH:mm" wall-clock string an <input
+// type="datetime-local"> expects, in the USER'S LOCAL timezone. Date.toISOString()
+// is UTC, so we subtract the local offset FIRST; the sliced ISO then reads as the
+// local wall clock (never shifted). Converting back is just new Date(value) — a
+// zone-less datetime-local string parses as LOCAL — then .toISOString() for the API.
+function toLocalDatetimeValue(d: Date): string {
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
+}
+
+// "10 Jul 2026, 2:15 PM" — friendly local rendering of a datetime-local value for
+// the confirmation line (formatted in the SAME local zone the input shows).
+function fmtLocalFollowup(local: string): string {
+  const d = new Date(local);
+  if (isNaN(d.getTime())) return "—";
+  const date = d.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+  const time = d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
+  return `${date}, ${time}`;
+}
+
 // Unassigned age badge (Orange ≥15m · Red ≥30m · Critical ≥60m). Computed
 // client-side from createdAt; only rendered after hydration to avoid a
 // server/client time mismatch.
@@ -207,6 +227,10 @@ export default function MasterDataRecordsTable({ rows, agents, projects, isSuper
   const [assignTo, setAssignTo] = useState("");
   const [statusTo, setStatusTo] = useState("");
   const [teamTo, setTeamTo] = useState("");
+  // Assign modal (agent + initial status + follow-up) — replaces the old bare picker.
+  const [assignOpen, setAssignOpen] = useState(false);
+  const [assignStatus, setAssignStatus] = useState("Not Contacted");
+  const [assignFollowup, setAssignFollowup] = useState("");
   const [edit, setEdit] = useState<{ id: string; field: ColKey } | null>(null);
   const [editVal, setEditVal] = useState("");
   const [sort, setSort] = useState<{ col: ColKey; dir: "asc" | "desc" } | null>(null);
@@ -305,7 +329,14 @@ export default function MasterDataRecordsTable({ rows, agents, projects, isSuper
       const r = await fetch("/api/master-data/bulk", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action, ids, ...extra }) });
       const j = await r.json().catch(() => ({}));
       if (!r.ok) { setMsg(j.error ?? `Failed (${r.status})`); return; }
-      setMsg(`Done — ${j.moved ?? j.assigned ?? j.updated ?? j.deleted ?? j.restored ?? 0} updated.`);
+      if (typeof j.assigned === "number") {
+        // Assign returns { assigned, skipped } — skipped = records whose team
+        // rejected the chosen status. Surface it so the partial outcome is visible.
+        const skipped = typeof j.skipped === "number" ? j.skipped : 0;
+        setMsg(`Done — ${j.assigned} assigned${skipped > 0 ? `, ${skipped} skipped (status not valid for their team)` : ""}.`);
+      } else {
+        setMsg(`Done — ${j.moved ?? j.updated ?? j.deleted ?? j.restored ?? 0} updated.`);
+      }
       setEdit(null); router.refresh();
     } catch (e) { setMsg(`Network error: ${String(e).slice(0, 80)}`); }
     finally { setBusy(false); }
@@ -395,6 +426,48 @@ export default function MasterDataRecordsTable({ rows, agents, projects, isSuper
   const bulkOneTeam = selectedTeams.size === 1 ? [...selectedTeams][0] : "";
   const bulkStatusOptions = bulkOneTeam === "Dubai" || bulkOneTeam === "India" ? [...statusesForTeam(bulkOneTeam)].sort(compareStatusDisplay) : [];
 
+  // ── Assign modal — status options + handlers ──────────────────────────────
+  // Status list = the team master MINUS every terminal (Lost/Rejected/Booked)
+  // status; default "Not Contacted". Owner rule (never a combined India+Dubai
+  // master): only a single-team selection exposes that team's statuses — a
+  // multi-team / teamless selection offers just the universal default, so two
+  // masters are never blended. "Not Contacted" is always present so the default
+  // is selectable even for a Dubai-only selection (server skips per-team-invalid).
+  const assignStatusOptions = (() => {
+    // Mirror bulkStatusOptions' guard EXACTLY: only a wholly-Dubai or wholly-India
+    // selection exposes that team's master. Mixed OR teamless ("—") → [] → just the
+    // universal default below, so a combined India+Dubai list is never shown.
+    const base = bulkOneTeam === "Dubai" || bulkOneTeam === "India"
+      ? [...statusesForTeam(bulkOneTeam)].filter((s) => !TERMINAL_STATUSES.includes(s))
+      : [];
+    if (!base.includes("Not Contacted")) base.unshift("Not Contacted");
+    return [...new Set(base)].sort(compareStatusDisplay);
+  })();
+  const assignAgentName = agents.find((a) => a.id === assignTo)?.name ?? "";
+
+  const openAssign = () => {
+    if (busy) return;
+    setAssignTo("");
+    setAssignStatus("Not Contacted");
+    setAssignFollowup(toLocalDatetimeValue(new Date(Date.now() + 15 * 60_000)));
+    setAssignOpen(true);
+  };
+  const submitAssign = () => {
+    if (busy || !assignTo || !assignFollowup) return;
+    // datetime-local is a zone-less LOCAL wall-clock string; new Date() parses it
+    // as local, .toISOString() gives the unambiguous UTC ISO 8601 the API expects.
+    const followupDate = new Date(assignFollowup).toISOString();
+    setAssignOpen(false);
+    runBulk("assign", { userId: assignTo, status: assignStatus, followupDate });
+  };
+  // Escape closes the assign modal (backdropProps handles the backdrop click).
+  useEffect(() => {
+    if (!assignOpen) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setAssignOpen(false); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [assignOpen]);
+
   // Export EXACTLY the rows currently on screen — i.e. after the active builtin /
   // Saved View + every column-header filter + sort. POSTs the resolved id-set to
   // the audited, watermarked export so the CSV == the visible table (the old GET
@@ -469,10 +542,7 @@ export default function MasterDataRecordsTable({ rows, agents, projects, isSuper
       {selected.size > 0 && (
         <div className="sticky top-0 z-30 card p-2.5 flex flex-wrap items-center gap-2 border border-[#c9a24b]/40 bg-amber-50/60 dark:bg-slate-800">
           <span className="text-sm font-semibold text-gray-700 dark:text-slate-200">{selected.size} selected</span>
-          <span className="inline-flex items-center gap-1">
-            <select value={assignTo} onChange={(e) => setAssignTo(e.target.value)} className="text-xs border rounded-lg px-2 py-1.5 dark:bg-slate-800 dark:border-slate-600"><option value="">Assign to…</option>{agents.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}</select>
-            <button disabled={busy || !assignTo} onClick={() => runBulk("assign", { userId: assignTo })} className={`${btn} bg-blue-50 text-blue-800 border-blue-300`}>Assign</button>
-          </span>
+          <button disabled={busy} onClick={openAssign} className={`${btn} bg-blue-50 text-blue-800 border-blue-300`}>Assign…</button>
           <span className="inline-flex items-center gap-1">
             <select value={teamTo} onChange={(e) => setTeamTo(e.target.value)} className="text-xs border rounded-lg px-2 py-1.5 dark:bg-slate-800 dark:border-slate-600"><option value="">Team…</option>{TEAMS.map((t) => <option key={t} value={t}>{t}</option>)}</select>
             <button disabled={busy || !teamTo} onClick={() => runBulk("change_team", { team: teamTo })} className={`${btn} bg-teal-50 text-teal-800 border-teal-300`}>Change team</button>
@@ -821,6 +891,84 @@ export default function MasterDataRecordsTable({ rows, agents, projects, isSuper
       </div>
 
       {preview && <PreviewDrawer l={preview} onClose={() => setPreview(null)} />}
+
+      {/* ── Assign modal (agent + status + follow-up) — Lalit 2026-07-10. Backdrop
+            uses backdropProps so a drag-select inside the box never closes it;
+            Escape + Cancel + Assign all close. Acts on the CURRENT selection. ── */}
+      {assignOpen && selected.size > 0 && (
+        <div
+          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 sm:p-4"
+          {...backdropProps(() => setAssignOpen(false))}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="md-assign-title"
+        >
+          <div
+            className="bg-white dark:bg-slate-900 sm:rounded-xl rounded-t-2xl border border-gray-200 dark:border-slate-700 w-full max-w-md p-5 shadow-2xl max-h-[90vh] overflow-y-auto safe-bottom"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-1">
+              <div id="md-assign-title" className="font-semibold text-lg text-[#0b1a33] dark:text-blue-200">
+                Assign {selected.size} record{selected.size === 1 ? "" : "s"}
+              </div>
+              <button type="button" onClick={() => setAssignOpen(false)} aria-label="Close" className="text-gray-400 hover:text-gray-700 dark:hover:text-slate-200 text-xl leading-none">×</button>
+            </div>
+            <p className="text-xs text-gray-500 dark:text-slate-400 mb-4">Choose the agent, the status to apply, and when to follow up.</p>
+
+            {/* 1 · Assign To */}
+            <label htmlFor="md-assign-agent" className="text-xs font-semibold text-gray-600 dark:text-slate-300">
+              Assign To <span className="text-red-600">*</span>
+            </label>
+            <select
+              id="md-assign-agent"
+              value={assignTo}
+              onChange={(e) => setAssignTo(e.target.value)}
+              disabled={busy}
+              className="w-full mt-1 mb-3 border border-gray-300 dark:border-slate-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-slate-800 dark:text-slate-100"
+            >
+              <option value="">Assign to…</option>
+              {agents.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+            </select>
+
+            {/* 2 · New Status — workable statuses only, pre-selected "Not Contacted" */}
+            <label htmlFor="md-assign-status" className="text-xs font-semibold text-gray-600 dark:text-slate-300">New Status</label>
+            <select
+              id="md-assign-status"
+              value={assignStatus}
+              onChange={(e) => setAssignStatus(e.target.value)}
+              disabled={busy}
+              className="w-full mt-1 mb-3 border border-gray-300 dark:border-slate-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-slate-800 dark:text-slate-100"
+            >
+              {assignStatusOptions.map((s) => <option key={s} value={s}>{s}</option>)}
+            </select>
+
+            {/* 3 · Follow-up date & time — defaults to now + 15 min (user's local time) */}
+            <label htmlFor="md-assign-followup" className="text-xs font-semibold text-gray-600 dark:text-slate-300">Follow-up Date &amp; Time</label>
+            <input
+              id="md-assign-followup"
+              type="datetime-local"
+              value={assignFollowup}
+              onChange={(e) => setAssignFollowup(e.target.value)}
+              disabled={busy}
+              className="w-full mt-1 mb-3 border border-gray-300 dark:border-slate-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-slate-800 dark:text-slate-100"
+            />
+
+            {/* Preview + confirmation (exact counts / chosen values) */}
+            <p className="text-xs text-gray-700 dark:text-slate-300 bg-amber-50 dark:bg-slate-800 border border-amber-200 dark:border-slate-700 rounded-lg px-3 py-2">
+              {assignTo
+                ? <>You are about to assign <strong>{selected.size} selected record{selected.size === 1 ? "" : "s"}</strong> to <strong>{assignAgentName}</strong> with status <strong>{assignStatus}</strong> and follow-up <strong>{fmtLocalFollowup(assignFollowup)}</strong>.</>
+                : <>Choose an agent above to continue.</>}
+            </p>
+
+            <div className="flex justify-end gap-2 mt-4">
+              <button type="button" onClick={() => setAssignOpen(false)} disabled={busy} className="btn btn-ghost">Cancel</button>
+              <button type="button" onClick={submitAssign} disabled={busy || !assignTo || !assignFollowup} className="btn bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-60">
+                {busy ? "Assigning…" : "Assign"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

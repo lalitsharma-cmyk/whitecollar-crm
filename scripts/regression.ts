@@ -1786,6 +1786,66 @@ const checks: Check[] = [
     },
   },
   {
+    // MASTER-DATA ASSIGN/TRANSFER (Lalit 2026-07-10): assigning a Master-Data record hands
+    // it to an agent as a NORMAL working lead — it must LEAVE Lost/Rejected, land on a
+    // workable status (default "Not Contacted") with a follow-up (default now+15min), and
+    // keep the pre-reactivation status in previousStatus for the admin-only audit line.
+    name: "master-data-assign-reactivates — assign sets status+follow-up, clears the rejection, stashes Previous Status, stays revertable",
+    run: async () => {
+      const fs = await import("fs");
+      const { isTerminalStatus, isFreshStatus } = await import("../src/lib/lead-statuses");
+      const route = fs.readFileSync("src/app/api/master-data/bulk/route.ts", "utf8");
+
+      // (a) The mandatory default + the 15-minute follow-up.
+      assert(/\|\|\s*"Not Contacted"/.test(route), 'assign must default the status to "Not Contacted" when none is chosen');
+      assert(/15\s*\*\s*60\s*\*\s*1000/.test(route), "assign must default the follow-up to now + 15 minutes");
+      // (b) HARD GUARD — an owner + a terminal status together would recreate the
+      //     Lost/Rejected-still-owned bug that lostRejected.ts exists to prevent.
+      assert(/isTerminalStatus\(status\)/.test(route), "assign must refuse a terminal status (400), never assign an owner into Lost/Closed");
+      assert(!isTerminalStatus("Not Contacted") && isFreshStatus("Not Contacted"), '"Not Contacted" must be a fresh, non-terminal status');
+      // (c) REACTIVATION — and its ORDER. assignLeadTo() throws LeadRejectedError while
+      //     rejectedAt is set, and activeBoardWhere filters rejectedAt:null, so the
+      //     rejection stamp must be cleared BEFORE the assign call or the record would
+      //     either fail to assign or assign but stay invisible on the Action List.
+      assert(/rejectedAt: null/.test(route), "assign must clear the rejection stamp (reactivate) so the record returns to the working board");
+      assert(/assignLeadTo\(/.test(route), "assign must funnel through assignLeadTo (Assignment row + SLA + agent notification)");
+      assert(route.indexOf("rejectedAt: null") < route.indexOf("assignLeadTo("),
+        "assign must clear rejectedAt BEFORE calling assignLeadTo — it throws LeadRejectedError on a rejected lead");
+      // (d) Previous Status captured; previous OWNER left alone (the Lost/Rejected rule owns it).
+      assert(/previousStatus: lead\.currentStatus/.test(route), "assign must stash the pre-reactivation status in previousStatus");
+      assert(!/previousOwnerId:/.test(route.slice(route.indexOf('action === "assign"'), route.indexOf('action === "set_status"'))),
+        "assign must NOT touch previousOwnerId — the previous owner stays preserved (Rule 4)");
+      // (e) Reversible from Admin → Operations, with a snapshot rich enough to restore the
+      //     rejection stamp (otherwise an undo would leave the record un-rejected).
+      assert(/operation: "lead\.assign"/.test(route), "assign must write a revertable OperationLog row");
+      const opLog = fs.readFileSync("src/lib/operationLog.ts", "utf8");
+      assert(/"lead\.assign"/.test(opLog) && /previousStatus: true/.test(opLog) && /rejectedAt: true/.test(opLog),
+        "operationLog must snapshot previousStatus + the rejection stamp and restore them on a lead.assign revert");
+      // (f) UI — three-field modal, workable statuses only, drag-select safe.
+      const mdt = fs.readFileSync("src/components/MasterDataRecordsTable.tsx", "utf8");
+      assert(/TERMINAL_STATUSES/.test(mdt), "the assign modal must filter terminal statuses out of its status picker");
+      assert(/backdropProps\(/.test(mdt), "the assign modal must use backdropProps so drag-selecting text never closes it");
+      assert(/datetime-local/.test(mdt), "the assign modal must offer a Follow-up Date & Time input");
+      // (g) Previous Status is admin-only AND must NOT be nested in the rejected-only
+      //     branch — assignment CLEARS rejectedAt, so that branch never renders for the
+      //     very records that have a previousStatus.
+      const detail = fs.readFileSync("src/app/(app)/leads/[id]/page.tsx", "utf8");
+      assert(/me\.role === "ADMIN" && lead\.previousStatus/.test(detail), "lead detail must show Previous Status to admins only");
+      const psIdx = detail.indexOf("lead.previousStatus &&");
+      const rejBranchEnd = detail.indexOf("<RejectLeadModal");
+      assert(psIdx > rejBranchEnd, "Previous Status must render OUTSIDE the rejectedAt-only branch (assign clears rejectedAt)");
+
+      // (h) DATA — an assigned record is never still rejected, and previousStatus is never
+      //     just a copy of the live status.
+      const assignedButRejected = await prisma.lead.count({
+        where: { deletedAt: null, ownerId: { not: null }, followupDate: { not: null }, rejectedAt: { not: null } },
+      });
+      assert(assignedButRejected === 0, `${assignedButRejected} assigned+scheduled lead(s) still carry a rejection stamp (invisible on the Action List)`);
+      const withPrevStatus = await prisma.lead.count({ where: { deletedAt: null, previousStatus: { not: null } } });
+      results.push({ name: "  ↳ note", ok: true, detail: `${withPrevStatus} lead(s) carry a Previous Status; 0 assigned leads still rejected` });
+    },
+  },
+  {
     // board. Every status-change/reject/import path clears it; this catches drift.
     name: "followup-terminal-clear — no terminal lead carries an active followupDate",
     run: async () => {

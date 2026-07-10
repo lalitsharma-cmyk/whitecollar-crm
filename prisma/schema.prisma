@@ -555,6 +555,12 @@ model Lead {
   // owner is preserved here for the "Previous Owner" display + permanent audit.
   // Kept as a reference after reactivate (reactivate → re-assign is the path).
   previousOwnerId String?
+  // Master-Data Assign/Transfer (Lalit 2026-07-10): assigning a Master-Data record
+  // reactivates it into a working state under a fresh status (default "Not Contacted").
+  // The status it carried BEFORE that reset — typically the Lost/Rejected one — is
+  // preserved here for the admin-only "Previous Status" audit line. Never shown to the
+  // assigned agent, who only ever sees the current working status.
+  previousStatus  String?
 
   // Future Re-engage on Reject (Lalit 2026-07-02): when rejecting, the agent may
   // opt to re-engage the client on a future date. On that date a cron reassigns the

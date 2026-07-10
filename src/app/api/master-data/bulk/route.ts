@@ -2,10 +2,13 @@ import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
 import { audit, reqMeta } from "@/lib/audit";
-import { isStatusValidForTeam, NEEDS_REVIEW, statusesForTeam } from "@/lib/lead-statuses";
+import { isStatusValidForTeam, NEEDS_REVIEW, statusesForTeam, isTerminalStatus, isFreshStatus } from "@/lib/lead-statuses";
 import { validateMedium } from "@/lib/mediumManager";
 import { teamToMarket } from "@/lib/market";
 import { terminalStatusSideEffects, groupTerminalUpdates } from "@/lib/lostRejected";
+import { assignLeadTo } from "@/lib/leadIngest";
+import { snapshotLeads, logOperation } from "@/lib/operationLog";
+import { ActivityType, ActivityStatus } from "@prisma/client";
 
 // =====================================================================
 // MASTER DATA — bulk actions (ADMIN only). Master Data is the complete
@@ -20,6 +23,11 @@ import { terminalStatusSideEffects, groupTerminalUpdates } from "@/lib/lostRejec
 //   soft_delete      Super-Admin only — deletedAt set (recoverable)
 //   restore          clear deletedAt
 // =====================================================================
+
+// `assign` reactivates + assigns one lead at a time (assignLeadTo writes the Assignment
+// row and pushes a notification per lead, and previousStatus differs per row), so a full
+// 50-record page is ~6 sequential round-trips × 50. The 10s default would clip that.
+export const maxDuration = 60;
 
 type HistRow = { leadId: string; field: string; oldValue: string | null; newValue: string | null; changedById: string; source: string };
 
@@ -53,22 +61,143 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, moved: changed.length });
   }
 
-  // ── Assign owner ─────────────────────────────────────────────────────
+  // ── Assign owner — REACTIVATE a Master-Data record into a working lead ───────
+  // Business rule (Lalit 2026-07-10): assigning a Master-Data record hands it to an
+  // agent as a NORMAL working lead. It must LEAVE the Lost/Rejected state and land on
+  // a workable status with a follow-up — otherwise it stays invisible on the Action
+  // List (leadScope.activeBoardWhere requires rejectedAt:null + a non-terminal status,
+  // and for a Master-Data-origin lead BOTH ownerId and followupDate). The whole batch
+  // is wrapped in an OperationLog so an admin can undo it from Admin → Operations.
   if (action === "assign") {
     const userId = String(body.userId ?? "").trim();
     if (!userId) return NextResponse.json({ error: "userId required" }, { status: 400 });
     // hrOnly:false — never let leads be bulk-assigned to an HR/non-sales user
     // (the picker already excludes them; this hardens the server path too).
-    const target = await prisma.user.findFirst({ where: { id: userId, active: true, hrOnly: false }, select: { id: true } });
+    const target = await prisma.user.findFirst({ where: { id: userId, active: true, hrOnly: false }, select: { id: true, name: true, email: true } });
     if (!target) return NextResponse.json({ error: "Target user not found" }, { status: 404 });
-    const before = await prisma.lead.findMany({ where: { id: { in: ids } }, select: { id: true, ownerId: true } });
-    const changed = before.filter((b) => b.ownerId !== userId);
-    if (changed.length) {
-      await prisma.lead.updateMany({ where: { id: { in: changed.map((c) => c.id) } }, data: { ownerId: userId, assignedAt: new Date() } });
-      writeHistory(changed.map((c) => ({ leadId: c.id, field: "ownerId", oldValue: c.ownerId, newValue: userId, changedById: me.id, source: "master-data-bulk" })));
+
+    // Status = caller value, else the MANDATORY default "Not Contacted" (a fresh,
+    // not-yet-called landing state — the natural status for a freshly-handed record).
+    const status = String(body.status ?? "").trim() || "Not Contacted";
+    // HARD GUARD — never assign a record into a terminal (Lost/Rejected OR booked/sold)
+    // status: an owner + a terminal status together would recreate the just-fixed bug
+    // where a Lost/Rejected lead wrongly kept an owner and a follow-up (lostRejected.ts).
+    if (isTerminalStatus(status)) {
+      return NextResponse.json(
+        { error: `Cannot assign a record into a terminal status (${status}). Assignment must put the record into a workable state.` },
+        { status: 400 },
+      );
     }
-    await audit({ userId: me.id, action: "masterdata.bulk.assign", entity: "Lead", meta: { userId, assigned: changed.length, leadIds: ids.slice(0, 50) }, request: reqMeta(req) });
-    return NextResponse.json({ ok: true, assigned: changed.length });
+
+    // Follow-up = caller ISO datetime, else now + 15 minutes.
+    const now = new Date();
+    const rawFollowup = String(body.followupDate ?? "").trim();
+    const followupDate = rawFollowup ? new Date(rawFollowup) : new Date(now.getTime() + 15 * 60 * 1000);
+    if (rawFollowup && isNaN(followupDate.getTime())) {
+      return NextResponse.json({ error: "Invalid followupDate" }, { status: 400 });
+    }
+    const followupIso = followupDate.toISOString();
+    const followupHuman = followupDate.toLocaleString("en-IN", { timeZone: "Asia/Kolkata", dateStyle: "medium", timeStyle: "short" });
+
+    // Pre-write state — for eligibility, previousStatus, per-field audit + the op-log snapshot.
+    const beforeRows = await prisma.lead.findMany({
+      where: { id: { in: ids } },
+      select: { id: true, currentStatus: true, previousStatus: true, forwardedTeam: true, ownerId: true, followupDate: true },
+    });
+    // Team-strict eligibility (mirrors set_status): the status must belong to the lead's
+    // team master. A FRESH status is ALWAYS allowed — the mandatory default "Not Contacted"
+    // is in the India master but NOT the Dubai master (though Dubai AGENTS can set it), so
+    // without this exception EVERY Dubai reactivation would be silently skipped. Fresh
+    // statuses are team-agnostic reactivation states. Ineligible leads are skipped + counted
+    // (isStatusValidForTeam also passes terminals + NEEDS_REVIEW, but terminals were 400'd).
+    const eligible = beforeRows.filter((b) => isFreshStatus(status) || isStatusValidForTeam(status, b.forwardedTeam));
+    let skipped = beforeRows.length - eligible.length;
+
+    // Snapshot BEFORE any mutation — the revert source for the OperationLog entry below.
+    const beforeSnap = await snapshotLeads(prisma, eligible.map((e) => e.id));
+
+    const hist: HistRow[] = [];
+    const assignedIds: string[] = [];
+    for (const lead of eligible) {
+      const statusChanged = lead.currentStatus !== status;
+      try {
+        // 1) Reactivate + set workable status/follow-up. Clearing rejectedAt is REQUIRED
+        //    before assignLeadTo (which throws on a rejected lead) and so activeBoardWhere
+        //    (rejectedAt:null) will surface the lead. previousOwnerId is deliberately NOT
+        //    touched (Rule 4 — the previous owner stays preserved).
+        await prisma.lead.update({
+          where: { id: lead.id },
+          data: {
+            currentStatus: status,
+            // previousStatus = the status held BEFORE this reactivation; REPLACE it each
+            // time the status actually changes (only-set-on-change, so re-assigning at the
+            // same status never overwrites a real prior status with itself).
+            ...(statusChanged ? { previousStatus: lead.currentStatus } : {}),
+            followupDate,
+            status: "NEW",
+            rejectedAt: null,
+            rejectionReason: null,
+            rejectionNote: null,
+            rejectedById: null,
+            lastTouchedAt: now,
+          },
+        });
+        // 2) Assign — MUST run after rejectedAt is cleared. Sets ownerId/assignedAt/SLA,
+        //    writes the Assignment row + fires the LEAD_ASSIGNED push to the agent.
+        await assignLeadTo(lead.id, userId, "Assigned from Master Data");
+        assignedIds.push(lead.id);
+
+        // Per-field audit — only fields that actually changed.
+        if (lead.ownerId !== userId) {
+          hist.push({ leadId: lead.id, field: "ownerId", oldValue: lead.ownerId, newValue: userId, changedById: me.id, source: "master-data-assign" });
+        }
+        if (statusChanged) {
+          hist.push({ leadId: lead.id, field: "currentStatus", oldValue: lead.currentStatus, newValue: status, changedById: me.id, source: "master-data-assign" });
+          hist.push({ leadId: lead.id, field: "previousStatus", oldValue: lead.previousStatus, newValue: lead.currentStatus, changedById: me.id, source: "master-data-assign" });
+        }
+        const oldFuIso = lead.followupDate ? lead.followupDate.toISOString() : null;
+        if (oldFuIso !== followupIso) {
+          hist.push({ leadId: lead.id, field: "followupDate", oldValue: oldFuIso, newValue: followupIso, changedById: me.id, source: "master-data-assign" });
+        }
+        // Timeline card (best-effort — .catch keeps a failure from ever aborting the batch).
+        await prisma.activity.create({
+          data: {
+            leadId: lead.id,
+            userId: me.id,
+            type: ActivityType.STATUS_CHANGE,
+            status: ActivityStatus.DONE,
+            title: "♻️ Assigned from Master Data",
+            description: `Assigned to ${target.name ?? target.email ?? "agent"} · status "${status}" · follow-up ${followupHuman} IST.`,
+            completedAt: now,
+          },
+        }).catch(() => {});
+      } catch {
+        // assignLeadTo (or the reactivation write) threw for THIS lead — count it as
+        // skipped and keep going. One bad row must never abort the whole batch.
+        skipped++;
+      }
+    }
+
+    const assigned = assignedIds.length;
+    writeHistory(hist);
+
+    // OperationLog — reversible. beforeState = snapshots of the leads that ACTUALLY got
+    // assigned (team-skips + failures excluded), captured BEFORE the mutation above.
+    if (assignedIds.length) {
+      await logOperation(prisma, {
+        operation: "lead.assign",
+        entityType: "Lead",
+        module: "Master Data",
+        summary: `Assigned ${assigned} record(s) from Master Data to ${target.name ?? target.email ?? "user"} · status ${status} · follow-up ${followupHuman}`,
+        affectedIds: assignedIds,
+        beforeState: beforeSnap.filter((b) => assignedIds.includes(b.id)),
+        afterState: { toUserId: userId, status, followupDate: followupIso },
+        createdById: me.id,
+      }).catch(() => {});
+    }
+
+    await audit({ userId: me.id, action: "masterdata.bulk.assign", entity: "Lead", meta: { userId, status, followupDate: followupIso, assigned, skipped, leadIds: ids.slice(0, 50) }, request: reqMeta(req) });
+    return NextResponse.json({ ok: true, assigned, skipped, status, followupDate: followupIso });
   }
 
   // ── Set status ───────────────────────────────────────────────────────

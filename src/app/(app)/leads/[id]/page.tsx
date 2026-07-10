@@ -1379,6 +1379,18 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
                 )}
               </>
             )}
+            {/* Previous Status = the status this record held immediately BEFORE an Admin
+                reactivated it from Master Data (which resets it to a working status,
+                default "Not Contacted") — typically the Lost/Rejected one. Rendered
+                OUTSIDE the rejected-only branch on purpose: assignment CLEARS rejectedAt,
+                so a record that has a previousStatus is precisely the one that is no
+                longer rejected. Admin / Super-Admin ONLY (role "ADMIN" covers super-admins
+                via isSuperAdmin) — the working agent must only ever see the current status. */}
+            {me.role === "ADMIN" && lead.previousStatus && (
+              <div className="text-[11px] text-gray-600 dark:text-slate-300">
+                Previous Status: <span className="font-semibold text-gray-800 dark:text-slate-100">{lead.previousStatus}</span>
+              </div>
+            )}
           </div>
         )}
 

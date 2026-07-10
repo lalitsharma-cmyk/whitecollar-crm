@@ -1,5 +1,5 @@
 import "server-only";
-import { Prisma } from "@prisma/client";
+import { Prisma, LeadStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { BUYER_POOL_STATUS } from "@/lib/buyerLifecycle";
 
@@ -22,7 +22,11 @@ export type OperationType =
   | "buyer.edit"
   | "buyer.convert"
   | "lead.transfer"
-  | "lead.edit";
+  | "lead.edit"
+  // Master-Data assign (Lalit 2026-07-10): reactivates a Lost/Rejected record into a
+  // working lead under a fresh owner + status + follow-up. Reversible — see the
+  // dedicated leadRestoreData() branch below (restores the full rejection stamp).
+  | "lead.assign";
 
 type DB = typeof prisma | Prisma.TransactionClient;
 
@@ -44,6 +48,11 @@ export const LEAD_SNAPSHOT_SELECT = {
   id: true, ownerId: true, previousOwnerId: true, assignedAt: true,
   forwardedTeam: true, market: true, currentStatus: true, followupDate: true,
   tags: true, slaFirstCallBy: true, slaEscalated: true, routingMethod: true,
+  // Master-Data assign (lead.assign) revert needs the FULL pre-reactivation stamp so an
+  // undo can put the record back to Lost/Rejected exactly as it was. Additive: the
+  // existing transfer/edit reverts never read these keys, so their behaviour is unchanged.
+  previousStatus: true, rejectedAt: true, rejectionReason: true,
+  rejectionNote: true, rejectedById: true, status: true,
 } satisfies Prisma.LeadSelect;
 
 /** Snapshot the current state of the given buyer ids (call BEFORE the mutation). */
@@ -121,7 +130,31 @@ function leadRestoreData(op: { operation: string; field: string | null }, snap: 
     }
     return { [op.field]: snap[op.field] ?? null } as Prisma.LeadUpdateInput;
   }
-  // transfer / assign — restore ownership + routing + SLA.
+  // Master-Data assign (lead.assign) — undo the reactivation: return the record to its
+  // captured pre-assign state (unassigned Lost/Rejected in Master Data, no follow-up).
+  // Restore ownership + SLA (what assignLeadTo set), the status pair, the follow-up, and
+  // the full rejection stamp + the vestigial `status` enum. Each genuinely-new key is
+  // guarded by presence in the snapshot (`key in snap`) so a row captured before that
+  // column existed leaves the column ALONE rather than nulling it (back-compat).
+  if (op.operation === "lead.assign") {
+    const d: Prisma.LeadUpdateInput = {
+      owner: snap.ownerId ? { connect: { id: String(snap.ownerId) } } : { disconnect: true },
+      previousOwnerId: (snap.previousOwnerId as string | null) ?? null,
+      assignedAt: asDate(snap.assignedAt),
+      currentStatus: (snap.currentStatus as string | null) ?? null,
+      followupDate: asDate(snap.followupDate),
+      slaFirstCallBy: asDate(snap.slaFirstCallBy),
+      slaEscalated: Boolean(snap.slaEscalated),
+    };
+    if ("previousStatus" in snap) d.previousStatus = (snap.previousStatus as string | null) ?? null;
+    if ("rejectedAt" in snap) d.rejectedAt = asDate(snap.rejectedAt);
+    if ("rejectionReason" in snap) d.rejectionReason = (snap.rejectionReason as string | null) ?? null;
+    if ("rejectionNote" in snap) d.rejectionNote = (snap.rejectionNote as string | null) ?? null;
+    if ("rejectedById" in snap) d.rejectedById = (snap.rejectedById as string | null) ?? null;
+    if ("status" in snap && snap.status) d.status = snap.status as LeadStatus;
+    return d;
+  }
+  // transfer — restore ownership + routing + SLA.
   return {
     owner: snap.ownerId ? { connect: { id: String(snap.ownerId) } } : { disconnect: true },
     previousOwnerId: (snap.previousOwnerId as string | null) ?? null,
