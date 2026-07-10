@@ -6,6 +6,7 @@ import { parseImportDate, parseFollowupDate } from "@/lib/parseImportDate";
 import { rescuePhones, rescueEmails } from "@/lib/buyerContactRescue";
 import { normalizeBuyerKey, toJsonArray, primaryPhone, parseJsonArray } from "@/lib/buyerIntelligence";
 import { buildBuyerTimelinePlan, composeRemarkFromFields, isImportedActivityDescription } from "@/lib/buyerRemarkTimeline";
+import { canonicalizePhone, nationalityFromPhone } from "@/lib/phoneCountry";
 import { normalizeName, normalizeNameList } from "@/lib/nameFormat";
 import { audit, reqMeta } from "@/lib/audit";
 
@@ -277,7 +278,17 @@ export async function POST(req: NextRequest) {
       const rescueSrc = (r._raw && typeof r._raw === "object" ? r._raw : r._extra && typeof r._extra === "object" ? r._extra : {}) as Record<string, unknown>;
       let phoneList = (r.phones ?? "").split(/[,;|/]/).map((s) => s.trim()).filter(Boolean);
       if (phoneList.length === 0) phoneList = rescuePhones(rescueSrc);
-      const phonesJson = toJsonArray(phoneList);
+      // Req 6 (DUBAI imports ONLY): store phones canonically (+CC) so 447…/+447… never
+      // diverge (dedup already collapses them by last-8 tail; this makes STORAGE canonical),
+      // and infer Nationality from the phone prefix when the sheet leaves it blank. Uses the
+      // imported nationality as the hint for a bare local number (UAE 501234567 → +971…).
+      const rawNat = str(r.nationality);
+      const phonesJson = importMarket === "Dubai"
+        ? toJsonArray(phoneList.map((p) => canonicalizePhone(p, rawNat)))
+        : toJsonArray(phoneList);
+      const nationalityFinal = rawNat || (importMarket === "Dubai"
+        ? (nationalityFromPhone(primaryPhone(phonesJson, null)) ?? "")
+        : "");
       let emailList = (r.emails ?? "").split(/[,;|/]/).map((e) => e.trim().toLowerCase()).filter(Boolean);
       if (emailList.length === 0) emailList = rescueEmails(rescueSrc);
       const emailsJson = toJsonArray(emailList);
@@ -348,7 +359,7 @@ export async function POST(req: NextRequest) {
           // Fill blanks only — additive, never clobber an existing value.
           const fill: Record<string, unknown> = {
             coBuyerNames: coBuyersJson, phones: phonesJson, emails: emailsJson,
-            passport: str(r.passport), passportExpiry: str(r.passportExpiry), nationality: str(r.nationality),
+            passport: str(r.passport), passportExpiry: str(r.passportExpiry), nationality: nationalityFinal,
             ownerName: normalizeName(str(r.ownerName)), country: str(r.country),
             developer: str(r.developer),
             projectName: str(r.projectName), tower: str(r.tower), unitNumber: str(r.unitNumber),
@@ -402,7 +413,7 @@ export async function POST(req: NextRequest) {
           emails: emailsJson,
           passport: str(r.passport),
           passportExpiry: str(r.passportExpiry),
-          nationality: str(r.nationality),
+          nationality: nationalityFinal,
           ownerName: normalizeName(str(r.ownerName)),
           country: str(r.country),
           developer: str(r.developer),
