@@ -1707,6 +1707,85 @@ const checks: Check[] = [
   {
     // Data-quality: a terminal lead (booked/sold/lost/rejected) must NOT keep an
     // active followupDate — it would wrongly surface on the Action-List follow-up
+    // LOST/REJECTED OWNERSHIP RULE (Lalit 2026-07-10): the instant a lead goes Lost or
+    // Rejected it stops being anyone's active work — the assignment is removed, the last
+    // agent is preserved in previousOwnerId, and the follow-up is cleared. Won/Closed is
+    // deliberately EXEMPT from the unassign (its owner IS the booking attribution).
+    name: "lost-rejected-unassigned — Lost/Rejected leads carry no owner + no follow-up; Previous Owner preserved; Won/Closed keeps its owner",
+    run: async () => {
+      const fs = await import("fs");
+      const { isLostStatus, isClosedStatus, terminalStatusSideEffects, groupTerminalUpdates } = await import("../src/lib/lostRejected");
+      const { LOST_STATUSES, CLOSED_OUTCOME_STATUSES } = await import("../src/lib/lead-statuses");
+      // (a) LOGIC — a Lost status unassigns + stashes the owner + clears the follow-up.
+      assert(isLostStatus("War Fear") && isLostStatus("Not Interested"), "LOST_STATUSES must classify as lost");
+      assert(!isLostStatus("Booked With Us") && isClosedStatus("Booked With Us"), "a booked lead is CLOSED, never lost");
+      const lostFx = terminalStatusSideEffects("War Fear", { ownerId: "agent-1", previousOwnerId: null });
+      assert(lostFx.ownerId === null && lostFx.assignedAt === null, "Lost must remove the assignment");
+      assert(lostFx.previousOwnerId === "agent-1", "Lost must stash the current owner as Previous Owner");
+      assert(lostFx.followupDate === null && lostFx.followupReminderSentAt === null, "Lost must clear the follow-up");
+      // Previous Owner = the LAST ACTIVE owner, matching `previousOwnerId: lead.ownerId`
+      // in the reject route. A lead lost under agent-1, then reactivated + reassigned to
+      // agent-2 and lost again, must read agent-2 — the CURRENT owner wins.
+      const reassigned = terminalStatusSideEffects("War Fear", { ownerId: "agent-2", previousOwnerId: "agent-1" });
+      assert(reassigned.previousOwnerId === "agent-2", "Previous Owner must be the LAST ACTIVE owner, not a stale earlier one");
+      // …but re-saving a status on an ALREADY-unassigned lost lead must not wipe it to
+      // null (the hazard bulk-reject guards with `ownerId IS NOT NULL`). Idempotent.
+      const again = terminalStatusSideEffects("War Fear", { ownerId: null, previousOwnerId: "agent-1" });
+      assert(again.previousOwnerId === "agent-1", "re-saving a lost lead must not wipe its Previous Owner");
+      // (b) Won/Closed keeps its owner — only the follow-up goes.
+      const wonFx = terminalStatusSideEffects("Booked With Us", { ownerId: "agent-1", previousOwnerId: null });
+      assert(!("ownerId" in wonFx) && wonFx.followupDate === null, "Won/Closed must KEEP its owner (booking attribution) and only lose the follow-up");
+      // (c) A non-terminal status changes nothing.
+      assert(Object.keys(terminalStatusSideEffects("Follow Up", { ownerId: "a", previousOwnerId: null })).length === 0, "a workable status must have no side effects");
+      // (c2) BULK grouping — a bulk status change must collapse into one updateMany per
+      //      distinct previous-owner, NOT one write per lead (a 500-lead bulk would
+      //      otherwise fire 500 sequential round-trips and time the function out).
+      const many = Array.from({ length: 50 }, (_, i) => ({ id: `l${i}`, ownerId: `agent-${i % 3}`, previousOwnerId: null }));
+      const lostGroups = groupTerminalUpdates("War Fear", many);
+      assert(lostGroups.length === 3, `Lost bulk must group by previous-owner (got ${lostGroups.length} groups for 3 owners / 50 leads)`);
+      assert(lostGroups.reduce((n, g) => n + g.ids.length, 0) === 50, "grouping must cover every selected lead exactly once");
+      assert(lostGroups.every((g) => g.data.ownerId === null && g.data.followupDate === null), "every Lost group must unassign + clear the follow-up");
+      // Each lead must land in the group whose previousOwnerId equals its own owner.
+      assert(lostGroups.every((g) => g.ids.every((id) => `agent-${Number(id.slice(1)) % 3}` === g.data.previousOwnerId)), "a lead must be grouped under ITS OWN owner's previousOwnerId");
+      assert(groupTerminalUpdates("Booked With Us", many).length === 1, "Won/Closed is uniform → exactly ONE updateMany group");
+      assert(groupTerminalUpdates("Follow Up", many).length === 1 && Object.keys(groupTerminalUpdates("Follow Up", many)[0].data).length === 0, "a workable bulk status must issue one plain updateMany");
+      assert(groupTerminalUpdates("War Fear", []).length === 0, "an empty selection must issue no writes");
+      // (d) The rule is wired into the reject route (inline) AND every other status-write
+      //     path via the shared helper — so a lead that goes Lost by a plain status change
+      //     behaves exactly like a rejected one. EOI/booking is deliberately NOT listed
+      //     (CLOSED keeps its owner; the helper enforces that).
+      const rej = fs.readFileSync("src/app/api/leads/[id]/reject/route.ts", "utf8");
+      assert(/previousOwnerId: lead\.ownerId/.test(rej) && /ownerId: null/.test(rej) && /followupDate: null/.test(rej), "reject route must unassign + preserve previousOwnerId + clear follow-up");
+      for (const f of [
+        "src/app/api/leads/[id]/update/route.ts",
+        "src/app/api/leads/bulk/route.ts",
+        "src/app/api/master-data/bulk/route.ts",
+      ]) {
+        assert(/terminalStatusSideEffects\(/.test(fs.readFileSync(f, "utf8")), `${f} must apply terminalStatusSideEffects on a status write`);
+      }
+      // (d1) The two BULK routes must batch via groupTerminalUpdates — never loop
+      //      `prisma.lead.update` per selected lead (serverless timeout on big bulks).
+      for (const f of ["src/app/api/leads/bulk/route.ts", "src/app/api/master-data/bulk/route.ts"]) {
+        assert(/groupTerminalUpdates\(/.test(fs.readFileSync(f, "utf8")), `${f} must batch the status write with groupTerminalUpdates`);
+      }
+      // (d2) Master Data surfaces the preserved Previous Owner (column + auto filter).
+      const mdt = fs.readFileSync("src/components/MasterDataRecordsTable.tsx", "utf8");
+      assert(/previousOwner/.test(mdt) && /label: "Previous Owner"/.test(mdt), "Master Data must show a Previous Owner column (filterable)");
+      // (e) DATA — no live Lost/Rejected lead still carries an owner or an active follow-up.
+      const offenders = await prisma.lead.count({
+        where: {
+          deletedAt: null,
+          OR: [{ currentStatus: { in: LOST_STATUSES } }, { rejectedAt: { not: null } }],
+          AND: [{ OR: [{ ownerId: { not: null } }, { followupDate: { not: null } }] }],
+        },
+      });
+      assert(offenders === 0, `${offenders} Lost/Rejected lead(s) still carry an owner or an active follow-up`);
+      // (f) Won/Closed leads are NOT stripped of their owner by this rule.
+      const wonOwned = await prisma.lead.count({ where: { deletedAt: null, currentStatus: { in: CLOSED_OUTCOME_STATUSES }, ownerId: { not: null } } });
+      results.push({ name: "  ↳ note", ok: true, detail: `0 Lost/Rejected leads owned or with a follow-up; ${wonOwned} Won/Closed leads correctly keep their owner` });
+    },
+  },
+  {
     // board. Every status-change/reject/import path clears it; this catches drift.
     name: "followup-terminal-clear — no terminal lead carries an active followupDate",
     run: async () => {
@@ -4429,9 +4508,18 @@ const checks: Check[] = [
       // lead doesn't silently keep an active reminder unless an admin re-adds one.
       const rejectRoute = fs.readFileSync("src/app/api/leads/[id]/reject/route.ts", "utf8");
       assert(/followupDate:\s*null/.test(rejectRoute), "reject route MUST clear followupDate on a terminal status (defense-in-depth)");
+      // The /update route no longer hand-rolls this: it spreads the SHARED
+      // terminalStatusSideEffects() (src/lib/lostRejected.ts), which clears followupDate
+      // for LOST *and* CLOSED. That set is asserted equal to TERMINAL_STATUSES just
+      // below, so the defense-in-depth guarantee is unchanged — only its owner moved.
       const updateRoute = fs.readFileSync("src/app/api/leads/[id]/update/route.ts", "utf8");
-      assert(/isTerminalStatus\(/.test(updateRoute) && /updates\.followupDate\s*=\s*null/.test(updateRoute),
-        "/update route MUST clear followupDate when the new currentStatus isTerminalStatus() (defense-in-depth)");
+      assert(/terminalStatusSideEffects\(/.test(updateRoute),
+        "/update route MUST apply terminalStatusSideEffects() so a terminal status clears followupDate (defense-in-depth)");
+      const { LOST_STATUSES: LOST_S, CLOSED_OUTCOME_STATUSES: CLOSED_S } = await import("../src/lib/lead-statuses");
+      const covered = new Set<string>([...LOST_S, ...CLOSED_S]);
+      const uncovered = TERMINAL_STATUSES.filter((s) => !covered.has(s));
+      assert(uncovered.length === 0,
+        `every TERMINAL status must be LOST or CLOSED, else terminalStatusSideEffects() silently stops clearing its follow-up: ${uncovered.join(", ")}`);
       assert(typeof isTerminalStatus === "function" && isTerminalStatus("Booked With Us") && !isTerminalStatus("Follow Up"),
         "isTerminalStatus() must classify booked/lost as terminal, workable as not");
 

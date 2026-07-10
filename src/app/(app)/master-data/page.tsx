@@ -131,6 +131,15 @@ export default async function MasterDataPage({ searchParams }: { searchParams: P
   ]);
   const statuses = Array.from(new Set([...INDIA_STATUSES, ...DUBAI_STATUSES]));
 
+  // Previous Owner names — Lead.previousOwnerId is a scalar String? with NO
+  // `previousOwner` relation (so it can't be `include`d). When a lead goes Lost/
+  // Rejected the CRM unassigns it and stashes the last working agent here; resolve
+  // those ids → names with ONE lookup. NOT the `agents` list above — that's active,
+  // non-HR users only, and a previous owner may now be inactive (e.g. a departed agent).
+  const prevIds = Array.from(new Set(leads.map((l) => l.previousOwnerId).filter((v): v is string => !!v)));
+  const prevUsers = prevIds.length ? await prisma.user.findMany({ where: { id: { in: prevIds } }, select: { id: true, name: true } }) : [];
+  const prevMap = new Map(prevUsers.map((u) => [u.id, u.name]));
+
   // Latest conversation remark per lead — READ-ONLY (DISTINCT ON leadId, newest
   // first). Powers the Quick-Preview drawer's "Last Remark" without opening the
   // full lead. Falls back to lead.remarks. No writes, no migration.
@@ -204,6 +213,10 @@ export default async function MasterDataPage({ searchParams }: { searchParams: P
       bucketClass: bucketChip(bucket),
       owner: l.owner?.name ?? "Unassigned",
       ownerId: l.ownerId ?? null,
+      // Previous Owner — last working agent, stashed on unassign at Lost/Reject.
+      // Read-only historical field (no relation → resolved via prevMap above).
+      previousOwner: l.previousOwnerId ? (prevMap.get(l.previousOwnerId) ?? "") : "",
+      previousOwnerId: l.previousOwnerId ?? null,
       team: l.forwardedTeam ?? "—",
       project: l.sourceDetail ?? "—",
       propertyType: l.propertyType ?? "",

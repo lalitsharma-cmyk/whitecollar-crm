@@ -47,6 +47,8 @@ export type MDRow = {
   bucketClass: string;
   owner: string;
   ownerId: string | null;
+  previousOwner: string;         // last working agent (Lost/Reject unassign) — read-only
+  previousOwnerId: string | null;
   team: string;            // "Dubai" | "India" | "—"
   project: string;
   propertyType: string;    // "Residential" | "Commercial" | ""
@@ -73,7 +75,7 @@ interface Props {
 }
 
 type ColKey =
-  | "name" | "agent" | "team"
+  | "name" | "agent" | "previousOwner" | "team"
   | "createdDate" | "createdTime" | "budget" | "project" | "propertyType" | "source" | "medium" | "message" | "status" | "bucket" | "email" | "phone";
 
 const TEAMS = ["Dubai", "India"];
@@ -90,6 +92,7 @@ const COLS: { key: ColKey; label: string; frozen?: boolean; w?: number; minW?: n
   { key: "createdTime", label: "Created Time", frozen: true, w: 78 },
   { key: "name", label: "Client Name", frozen: true, w: 150 },
   { key: "agent", label: "Agent", minW: 104 },
+  { key: "previousOwner", label: "Previous Owner", minW: 120 },
   { key: "team", label: "Team", minW: 60 },
   { key: "project", label: "Property Enquired", minW: 150 },
   { key: "budget", label: "Budget", minW: 96 },
@@ -118,6 +121,7 @@ function valueOf(r: MDRow, c: ColKey): string {
   switch (c) {
     case "name": return r.name;
     case "agent": return r.owner;
+    case "previousOwner": return r.previousOwner;
     case "team": return r.team;
     case "createdDate": return r.createdDate;
     case "createdTime": return r.createdTime;
@@ -575,6 +579,11 @@ export default function MasterDataRecordsTable({ rows, agents, projects, isSuper
                         </td>
                       );
                     }
+                    case "previousOwner":
+                      // Historical, READ-ONLY — the last working agent stashed on
+                      // Lead.previousOwnerId when a Lost/Rejected lead was unassigned.
+                      // Plain text (never a MenuCell): you don't re-assign the past.
+                      return <td key={c.key} className="px-3 py-2 text-gray-600 dark:text-slate-400 whitespace-nowrap">{l.previousOwner || "—"}</td>;
                     case "team":
                       // forwardedTeam via the update route — it re-validates the
                       // existing status against the NEW team's master (→ Needs Review

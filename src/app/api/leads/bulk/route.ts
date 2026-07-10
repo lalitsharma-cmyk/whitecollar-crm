@@ -16,6 +16,7 @@ import { inferCountryFromCity } from "@/lib/cityCountry";
 // divergent allow-list that didn't include the new reasons).
 import { REJECT_REASON_VALUES, rejectionStatusFor } from "@/lib/reject-reasons";
 import { snapshotLeads, logOperation } from "@/lib/operationLog";
+import { terminalStatusSideEffects, groupTerminalUpdates } from "@/lib/lostRejected";
 
 export async function POST(req: NextRequest) {
   // Most actions are agent-safe (scoped to leads they own). Reassign and
@@ -410,16 +411,39 @@ export async function POST(req: NextRequest) {
     if (!status) return NextResponse.json({ error: "status required" }, { status: 400 });
     const before = await prisma.lead.findMany({
       where: { id: { in: ids }, ...scope },
-      select: { id: true, currentStatus: true, forwardedTeam: true },
+      // ownerId + previousOwnerId + followupDate are read so the SHARED lost/rejected
+      // rule can unassign a LOST lead (owner → previousOwner) and so we can audit the
+      // ownership/follow-up removals below.
+      select: { id: true, currentStatus: true, forwardedTeam: true, ownerId: true, previousOwnerId: true, followupDate: true },
     });
     const eligible = before.filter((b) => status === NEEDS_REVIEW || (statusesForTeam(b.forwardedTeam) as readonly string[]).includes(status));
     const skipped = before.length - eligible.length;
     const changed = eligible.filter((b) => b.currentStatus !== status);
     if (changed.length) {
-      await prisma.lead.updateMany({ where: { id: { in: changed.map((c) => c.id) } }, data: { currentStatus: status, lastTouchedAt: new Date() } });
-      prisma.leadFieldHistory.createMany({
-        data: changed.map((c) => ({ leadId: c.id, field: "currentStatus", oldValue: c.currentStatus, newValue: status, changedById: me.id, source: "bulk" })),
-      }).catch(() => {});
+      const now = new Date();
+      // SHARED terminal-status side-effects (src/lib/lostRejected.ts): a LOST status
+      // unassigns the lead (owner → previousOwner, owner + assignedAt cleared) and
+      // clears its follow-up; a CLOSED/WON status keeps the owner (booking attribution)
+      // and only clears the follow-up. previousOwnerId is per-lead, so updateMany can't
+      // reference a sibling column — groupTerminalUpdates() collapses the writes into
+      // one updateMany per distinct previous-owner (bounded by the agent count) rather
+      // than one round-trip per lead.
+      for (const g of groupTerminalUpdates(status, changed)) {
+        await prisma.lead.updateMany({ where: { id: { in: g.ids } }, data: { currentStatus: status, lastTouchedAt: now, ...g.data } });
+      }
+      const hist: { leadId: string; field: string; oldValue: string | null; newValue: string | null; changedById: string; source: string }[] = [];
+      for (const c of changed) {
+        const eff = terminalStatusSideEffects(status, { ownerId: c.ownerId, previousOwnerId: c.previousOwnerId });
+        hist.push({ leadId: c.id, field: "currentStatus", oldValue: c.currentStatus, newValue: status, changedById: me.id, source: "bulk" });
+        // Audit trail whenever the rule actually removes an assignment or a follow-up.
+        if (eff.ownerId === null && c.ownerId != null) {
+          hist.push({ leadId: c.id, field: "ownerId", oldValue: c.ownerId, newValue: null, changedById: me.id, source: "lost-rejected-rule" });
+        }
+        if (eff.followupDate === null && c.followupDate != null) {
+          hist.push({ leadId: c.id, field: "followupDate", oldValue: c.followupDate.toISOString(), newValue: null, changedById: me.id, source: "lost-rejected-rule" });
+        }
+      }
+      prisma.leadFieldHistory.createMany({ data: hist }).catch(() => {});
     }
     await audit({ userId: me.id, action: "lead.bulk.current_status", entity: "Lead",
       meta: { status, updated: changed.length, skipped, leadIds: changed.map((c) => c.id).slice(0, 50) }, request: reqMeta(req) });

@@ -5,6 +5,7 @@ import { audit, reqMeta } from "@/lib/audit";
 import { isStatusValidForTeam, NEEDS_REVIEW, statusesForTeam } from "@/lib/lead-statuses";
 import { validateMedium } from "@/lib/mediumManager";
 import { teamToMarket } from "@/lib/market";
+import { terminalStatusSideEffects, groupTerminalUpdates } from "@/lib/lostRejected";
 
 // =====================================================================
 // MASTER DATA — bulk actions (ADMIN only). Master Data is the complete
@@ -74,7 +75,10 @@ export async function POST(req: NextRequest) {
   if (action === "set_status") {
     const status = String(body.status ?? "").trim();
     if (!status) return NextResponse.json({ error: "status required" }, { status: 400 });
-    const before = await prisma.lead.findMany({ where: { id: { in: ids } }, select: { id: true, currentStatus: true, forwardedTeam: true } });
+    // ownerId + previousOwnerId + followupDate are read so the SHARED lost/rejected
+    // rule can unassign a LOST lead (owner → previousOwner) and so we can audit the
+    // ownership/follow-up removals below.
+    const before = await prisma.lead.findMany({ where: { id: { in: ids } }, select: { id: true, currentStatus: true, forwardedTeam: true, ownerId: true, previousOwnerId: true, followupDate: true } });
     // Team-strict: only apply to leads whose TEAM master includes this status —
     // never force a Dubai status onto a Gurgaon lead (or vice-versa). The sentinel
     // "Needs Review" is allowed for any team. Ineligible leads are skipped + counted.
@@ -82,8 +86,30 @@ export async function POST(req: NextRequest) {
     const skipped = before.length - eligible.length;
     const changed = eligible.filter((b) => b.currentStatus !== status);
     if (changed.length) {
-      await prisma.lead.updateMany({ where: { id: { in: changed.map((c) => c.id) } }, data: { currentStatus: status, lastTouchedAt: new Date() } });
-      writeHistory(changed.map((c) => ({ leadId: c.id, field: "currentStatus", oldValue: c.currentStatus, newValue: status, changedById: me.id, source: "master-data-bulk" })));
+      const now = new Date();
+      // SHARED terminal-status side-effects (src/lib/lostRejected.ts): a LOST status
+      // unassigns the lead (owner → previousOwner, owner + assignedAt cleared) and
+      // clears its follow-up; a CLOSED/WON status keeps the owner (booking attribution)
+      // and only clears the follow-up. previousOwnerId is per-lead, so updateMany can't
+      // reference a sibling column — groupTerminalUpdates() collapses the writes into
+      // one updateMany per distinct previous-owner (bounded by the agent count) rather
+      // than one round-trip per lead.
+      for (const g of groupTerminalUpdates(status, changed)) {
+        await prisma.lead.updateMany({ where: { id: { in: g.ids } }, data: { currentStatus: status, lastTouchedAt: now, ...g.data } });
+      }
+      const hist: HistRow[] = [];
+      for (const c of changed) {
+        const eff = terminalStatusSideEffects(status, { ownerId: c.ownerId, previousOwnerId: c.previousOwnerId });
+        hist.push({ leadId: c.id, field: "currentStatus", oldValue: c.currentStatus, newValue: status, changedById: me.id, source: "master-data-bulk" });
+        // Audit trail whenever the rule actually removes an assignment or a follow-up.
+        if (eff.ownerId === null && c.ownerId != null) {
+          hist.push({ leadId: c.id, field: "ownerId", oldValue: c.ownerId, newValue: null, changedById: me.id, source: "lost-rejected-rule" });
+        }
+        if (eff.followupDate === null && c.followupDate != null) {
+          hist.push({ leadId: c.id, field: "followupDate", oldValue: c.followupDate.toISOString(), newValue: null, changedById: me.id, source: "lost-rejected-rule" });
+        }
+      }
+      writeHistory(hist);
     }
     await audit({ userId: me.id, action: "masterdata.bulk.status", entity: "Lead", meta: { status, updated: changed.length, skipped, leadIds: ids.slice(0, 50) }, request: reqMeta(req) });
     return NextResponse.json({ ok: true, updated: changed.length, skipped });

@@ -7,7 +7,8 @@ import { fireWorkflowTrigger } from "@/lib/workflowEngine";
 import { getScheduledActionsEnabled, getBantGateMode } from "@/lib/settings";
 import { evaluateBantGate, type BantFields } from "@/lib/bantGate";
 import { awardXp, type AwardResult, type XpReason } from "@/lib/gamification.server";
-import { canSetStatus, isStatusValidForTeam, isTerminalStatus, isBookedStatus, NEEDS_REVIEW } from "@/lib/lead-statuses";
+import { canSetStatus, isStatusValidForTeam, isBookedStatus, NEEDS_REVIEW } from "@/lib/lead-statuses";
+import { terminalStatusSideEffects } from "@/lib/lostRejected";
 import { isPropertyType } from "@/lib/propertyType";
 import { recordFieldChanges, TRACKED_FIELDS } from "@/lib/fieldHistory";
 import { normalizeNameList } from "@/lib/nameFormat";
@@ -312,18 +313,28 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
   if (Object.keys(updates).length === 0) return NextResponse.json({ error: "Nothing to update" }, { status: 400 });
 
-  // ── Terminal-status → clear follow-up (Action-List reconciliation) ────────────
-  // When this edit moves the lead INTO a terminal status (booked/sold/leased OR
-  // lost/rejected), the lead is done and must leave the follow-up board. The
-  // Action List intentionally applies NO status filter, so the only correct place
-  // to drop a terminal lead off it is at the SOURCE: clear followupDate (+ the
-  // 10-min reminder dedupe). Mirrors the reject flow, which already does this.
-  // Skipped if the caller is explicitly SETTING a followupDate in the same PATCH
-  // (an admin deliberately scheduling one wins — we don't fight an explicit value).
-  if (typeof updates.currentStatus === "string" && isTerminalStatus(updates.currentStatus) &&
-      !(("followupDate" in updates) && updates.followupDate != null)) {
-    updates.followupDate = null;
-    updates.followupReminderSentAt = null;
+  // ── Terminal-status side-effects — SHARED lost/rejected + closed/won rule ──────
+  // The single source of truth (src/lib/lostRejected.ts), identical to the rule the
+  // reject route applies: moving a lead INTO a LOST status unassigns it (owner →
+  // previousOwner, owner + assignedAt cleared) AND clears its follow-up; a CLOSED/WON
+  // status KEEPS its owner (that ownership is the booking attribution) and only clears
+  // the follow-up. A workable status returns {}, so the spread is a no-op there — we
+  // apply it unconditionally. Read the lead's CURRENT ownership BEFORE the update
+  // (previousOwnerId isn't on the slim loadOwnedLead select, so fetch it here). The
+  // ownerId + followupDate old→new transitions are captured by the existing
+  // recordFieldChanges below (both are TRACKED_FIELDS) — no separate history write.
+  if (typeof updates.currentStatus === "string" && updates.currentStatus) {
+    const curOwn = await prisma.lead.findUnique({
+      where: { id },
+      select: { ownerId: true, previousOwnerId: true },
+    });
+    Object.assign(
+      updates,
+      terminalStatusSideEffects(updates.currentStatus, {
+        ownerId: curOwn?.ownerId ?? null,
+        previousOwnerId: curOwn?.previousOwnerId ?? null,
+      }),
+    );
   }
 
   // §17 — Location enrichment on City edit + manual-lock + impossible-combo guard.

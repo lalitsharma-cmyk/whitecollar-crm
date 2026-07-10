@@ -467,7 +467,11 @@
 // v143 (2026-07-09): reversible ops completed — Convert-to-Lead + Lead transfer/edit now
 // captured + admin-revertable via Admin → Operations; Buyer Import Revert (Admin → Buyer
 // Imports: soft-delete → restore → super-admin hard purge) mirrors the Leads import history.
-const CACHE = "wcr-shell-v143";
+// v144 (2026-07-10): Lost/Rejected ownership rule — a lead that goes Lost or Rejected is
+// unassigned (Agent → Unassigned), its follow-up is cleared, and the last working agent is
+// preserved in a new read-only "Previous Owner" column + filter in Master Data. Won/Closed
+// deliberately KEEPS its owner (booking attribution). 111 historical leads backfilled.
+const CACHE = "wcr-shell-v144";
 const SHELL = ["/login", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", (event) => {
