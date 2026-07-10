@@ -475,7 +475,11 @@
 // the record (clears the rejection) into a working lead — default status "Not Contacted",
 // default follow-up now+15min — so it lands on the Action List under its new owner. The
 // pre-reactivation status is kept as an admin-only "Previous Status". Reversible.
-const CACHE = "wcr-shell-v145";
+// v146 (2026-07-10): "Workable leads belong to agents, terminal leads belong to the system."
+// The Lost/Rejected rule now fires on EVERY source — manual, bulk, CSV, Google Sheet, API,
+// and any future intake — including skipping auto-assign. Ten bulk actions are Admin-only.
+// Bulk status changes are revertable. Master Data's Agent column reads "Current Owner".
+const CACHE = "wcr-shell-v146";
 const SHELL = ["/login", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", (event) => {

@@ -26,7 +26,12 @@ export type OperationType =
   // Master-Data assign (Lalit 2026-07-10): reactivates a Lost/Rejected record into a
   // working lead under a fresh owner + status + follow-up. Reversible — see the
   // dedicated leadRestoreData() branch below (restores the full rejection stamp).
-  | "lead.assign";
+  | "lead.assign"
+  // Bulk status change (Lalit 2026-07-10): set_current_status (leads/bulk) + set_status
+  // (master-data/bulk) mutate currentStatus and — for a terminal status, via
+  // terminalStatusSideEffects — also ownerId / previousOwnerId / assignedAt / followupDate.
+  // Reversible via the dedicated leadRestoreData() branch below.
+  | "lead.status";
 
 type DB = typeof prisma | Prisma.TransactionClient;
 
@@ -153,6 +158,22 @@ function leadRestoreData(op: { operation: string; field: string | null }, snap: 
     if ("rejectedById" in snap) d.rejectedById = (snap.rejectedById as string | null) ?? null;
     if ("status" in snap && snap.status) d.status = snap.status as LeadStatus;
     return d;
+  }
+  // Bulk status change (lead.status) — restore the pre-change currentStatus TOGETHER with
+  // the ownership + follow-up a terminal status may have stripped: a LOST status moves
+  // ownerId → previousOwnerId and clears assignedAt + followupDate; a Won/Closed status
+  // clears only the follow-up; a non-terminal change touches just currentStatus, so
+  // re-writing the captured owner/follow-up there is a harmless no-op. Every key here is a
+  // long-standing member of LEAD_SNAPSHOT_SELECT (this op type is new as of 2026-07-10, so
+  // no older row can be missing them), hence no presence guard is needed.
+  if (op.operation === "lead.status") {
+    return {
+      currentStatus: (snap.currentStatus as string | null) ?? null,
+      followupDate: asDate(snap.followupDate),
+      owner: snap.ownerId ? { connect: { id: String(snap.ownerId) } } : { disconnect: true },
+      previousOwnerId: (snap.previousOwnerId as string | null) ?? null,
+      assignedAt: asDate(snap.assignedAt),
+    };
   }
   // transfer — restore ownership + routing + SLA.
   return {

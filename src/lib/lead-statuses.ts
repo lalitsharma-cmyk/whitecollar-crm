@@ -306,6 +306,13 @@ export const LOST_STATUSES: string[] = [
   // Only ever set on a rejected lead, so it's terminal — it must leave the working
   // view. (Verified: 0 active/non-rejected leads carry it. Lalit 2026-06-28.)
   "Other",
+  // Import-safety terminals (Lalit 2026-07-10). No CRM picker produces these and 0 prod
+  // leads carry them — they exist so that a CSV / Google-Sheet / API import carrying one
+  // is classified terminal on arrival and therefore lands UNASSIGNED with no follow-up,
+  // instead of slipping in as a workable lead. isStatusValidForTeam() passes every
+  // terminal for any team, so these survive import intact rather than becoming
+  // "Needs Review". LOST_STATUSES is a classification list only (never a picker).
+  "Lost", "Rejected", "Duplicate", "Out of Scope",
 ];
 
 // Every terminal status — both CLOSED and LOST leave the working Leads view.

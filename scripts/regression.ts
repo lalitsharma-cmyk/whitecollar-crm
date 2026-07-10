@@ -1846,6 +1846,112 @@ const checks: Check[] = [
     },
   },
   {
+    // TERMINAL LEADS BELONG TO THE SYSTEM (Lalit 2026-07-10). A lead that ARRIVES from any
+    // import/intake source already carrying a terminal status must never land in an agent's
+    // active queue: no auto-assign, no owner, no follow-up. Won/Closed is exempt from the
+    // unassign (booking attribution). Applies to CSV, Google Sheet, API, and every future
+    // intake route — enforced at the shared choke point, not per-route.
+    name: "terminal-intake-rule — an imported terminal lead is never auto-assigned, owned, or scheduled",
+    run: async () => {
+      const fs = await import("fs");
+      const { isTerminalStatus, isFreshStatus, LOST_STATUSES } = await import("../src/lib/lead-statuses");
+      const { terminalStatusSideEffects } = await import("../src/lib/lostRejected");
+
+      // (a) The four import-only terminal statuses Lalit named must classify as terminal —
+      //     no CRM picker produces them, so only an import can introduce them.
+      for (const s of ["Lost", "Rejected", "Duplicate", "Out of Scope"]) {
+        assert(isTerminalStatus(s), `"${s}" must be a terminal status so an import can't sneak it in as workable`);
+      }
+      // (b) The shared helper — LOST unassigns, Won/Closed KEEPS its owner.
+      const lost = terminalStatusSideEffects("Junk", { ownerId: "a1", previousOwnerId: null });
+      assert(lost.ownerId === null && lost.previousOwnerId === "a1" && lost.followupDate === null,
+        "an imported LOST lead must be unassigned, stash its owner, and lose its follow-up");
+      const won = terminalStatusSideEffects("Booked With Us", { ownerId: "a1", previousOwnerId: null });
+      assert(!("ownerId" in won) && won.followupDate === null,
+        "an imported Won/Closed lead must KEEP its owner (booking attribution) and only lose the follow-up");
+
+      // (c) THE AUTO-ASSIGN SKIP — the single choke point. A lead imported as "Not Interested"
+      //     must not be handed to an agent by the auto-assign rule. This is the one that
+      //     actually put terminal leads in an agent's queue.
+      const ingest = fs.readFileSync("src/lib/leadIngest.ts", "utf8");
+      assert(/isTerminalStatus\(/.test(ingest), "leadIngest must know what a terminal status is");
+      assert(/wantsAutoAssign[\s\S]{0,120}?!arrivedTerminal/.test(ingest),
+        "ingestLead's auto-assign choke point MUST skip terminal-on-arrival leads (so every future intake route inherits it)");
+      assert(/export function terminalIntakeFields/.test(ingest), "leadIngest must export the shared terminalIntakeFields helper");
+      // It must DELEGATE, never re-derive the rule (or intake drifts from bulk/inline).
+      assert(/terminalStatusSideEffects\(status, cur\)/.test(ingest),
+        "terminalIntakeFields must delegate to terminalStatusSideEffects — never re-derive the rule");
+
+      // (d) Every import path that can carry a status applies it.
+      for (const f of ["src/app/api/intake/csv/route.ts", "src/app/api/intake/google-sheet/route.ts"]) {
+        assert(/terminalIntakeFields\(/.test(fs.readFileSync(f, "utf8")), `${f} must apply the terminal-intake rule on its update path`);
+      }
+      // Revival sheet-merge fills a blank status and can fill it with a terminal one.
+      const rev = fs.readFileSync("src/lib/revivalImport.ts", "utf8");
+      assert(/terminalStatusSideEffects\(/.test(rev) && /previousOwnerId: true/.test(rev),
+        "revivalImport must apply the terminal rule (and read previousOwnerId so it can't wipe a stored Previous Owner)");
+
+      // (e) DATA — no live lead carries a LOST status together with an owner or a follow-up,
+      //     whatever route created it. This is the end-state the whole rule exists to hold.
+      const offenders = await prisma.lead.count({
+        where: { deletedAt: null, currentStatus: { in: LOST_STATUSES },
+          AND: [{ OR: [{ ownerId: { not: null } }, { followupDate: { not: null } }] }] },
+      });
+      assert(offenders === 0, `${offenders} LOST lead(s) still carry an owner or a follow-up`);
+      assert(isFreshStatus("Not Contacted"), '"Not Contacted" must stay fresh — the Master-Data assign default depends on it');
+    },
+  },
+  {
+    // BULK ACTIONS ARE ADMIN-ONLY (Lalit 2026-07-10): Bulk Assign · Reassign · Transfer ·
+    // Edit Field · Set Follow-up · Convert · Status Update · Delete · Revert · Import Revert.
+    // Managers and agents keep only their own single-lead work.
+    name: "bulk-actions-admin-only — every bulk mutation is Admin/Super-Admin gated and reversible",
+    run: async () => {
+      const fs = await import("fs");
+      const leadsBulk = fs.readFileSync("src/app/api/leads/bulk/route.ts", "utf8");
+      const mdBulk = fs.readFileSync("src/app/api/master-data/bulk/route.ts", "utf8");
+      const buyerBulk = fs.readFileSync("src/app/api/buyer-data/bulk/route.ts", "utf8");
+
+      // (a) Each of the named-ten bulk actions in leads/bulk must be ADMIN-gated. Checked
+      //     per-action (slice from the action guard to the next one), because `set_team`
+      //     is deliberately still MANAGER-capable — changing a lead's team is a manager
+      //     duty and Lalit did not name it. A blanket "no MANAGER anywhere" scan would
+      //     therefore fail on set_team and tell us nothing.
+      const actionSlice = (src: string, action: string) => {
+        const i = src.indexOf(`action === "${action}"`);
+        assert(i > 0, `leads/bulk must still define the "${action}" action`);
+        return src.slice(i, i + 700);
+      };
+      for (const a of ["reassign", "set_status", "set_current_status", "set_followup", "set_fields"]) {
+        const slice = actionSlice(leadsBulk, a);
+        assert(/me\.role !== "ADMIN"/.test(slice) && !/me\.role === "MANAGER"/.test(slice),
+          `leads/bulk "${a}" must be Admin/Super-Admin only (managers + agents blocked)`);
+      }
+      // (b) Master Data is whole-route admin; buyer bulk is admin via isBuyerAdmin.
+      assert(/me\.role !== "ADMIN"/.test(mdBulk), "master-data/bulk must be whole-route ADMIN");
+      assert(/isBuyerAdmin\(me\)/.test(buyerBulk), "buyer-data/bulk must gate every action behind isBuyerAdmin");
+      // (c) Delete stays SUPER-admin (tighter than required — never loosen it).
+      assert(/!me\.isSuperAdmin/.test(leadsBulk), "bulk delete must remain Super-Admin only");
+
+      // (d) REVERSIBILITY — bulk status change mutates ownership + follow-up via
+      //     terminalStatusSideEffects, so it must be undoable from Admin → Operations.
+      for (const [f, src] of [["leads/bulk", leadsBulk], ["master-data/bulk", mdBulk]] as const) {
+        assert(/operation: "lead\.status"/.test(src), `${f} bulk status change must write a revertable OperationLog`);
+        // The snapshot must be captured BEFORE the mutation, or the revert restores the new state.
+        assert(src.indexOf("snapshotLeads") < src.indexOf("groupTerminalUpdates("),
+          `${f} must snapshot BEFORE it mutates, else the revert is a no-op`);
+        // And the batching must survive (a 500-lead bulk must not fire 500 sequential writes).
+        assert(/groupTerminalUpdates\(/.test(src), `${f} must batch the status write`);
+      }
+      // (e) The revert actually restores the status AND the ownership a terminal status stripped.
+      const opLog = fs.readFileSync("src/lib/operationLog.ts", "utf8");
+      assert(/"lead\.status"/.test(opLog), "operationLog must define the lead.status op type");
+      const branch = opLog.slice(opLog.indexOf('op.operation === "lead.status"'));
+      assert(/currentStatus:/.test(branch.slice(0, 400)) && /followupDate:/.test(branch.slice(0, 400)) && /previousOwnerId:/.test(branch.slice(0, 400)),
+        "reverting a bulk status change must restore currentStatus + followupDate + ownership together");
+    },
+  },
+  {
     // board. Every status-change/reject/import path clears it; this catches drift.
     name: "followup-terminal-clear — no terminal lead carries an active followupDate",
     run: async () => {
@@ -4960,7 +5066,11 @@ const checks: Check[] = [
       const fs = await import("fs");
       const ingest = fs.readFileSync("src/lib/leadIngest.ts", "utf8");
       // (a) SOURCE — the +10-min default is present and the old 7pm stamp is gone.
-      assert(/followupDate:\s*followupDefault/.test(ingest), "ingestLead must set followupDate: followupDefault (createdAt+10min)");
+      // A lead that ARRIVES terminal gets NO follow-up at all (terminal-intake rule,
+      // Lalit 2026-07-10) — hence the ternary. Every other lead still gets createdAt+10min.
+      assert(/followupDate:[^,\n]*followupDefault/.test(ingest), "ingestLead must set followupDate to followupDefault (createdAt+10min)");
+      assert(/followupDate:\s*arrivedTerminalOnCreate\s*\?\s*null\s*:\s*followupDefault/.test(ingest),
+        "a lead that arrives with a terminal status must get NO default follow-up");
       assert(/getTime\(\)\s*\+\s*10\s*\*\s*60\s*\*\s*1000/.test(ingest), "ingestLead must compute createdAt+10min for the follow-up default");
       assert(!/todayEodIST/.test(ingest), "the old todayEodIST() 7pm default must be removed from ingestLead");
       assert(!/setUTCHours\(19/.test(ingest), "ingestLead must not stamp 19:00 (7pm) as the follow-up default");

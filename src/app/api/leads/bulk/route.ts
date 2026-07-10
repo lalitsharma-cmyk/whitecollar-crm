@@ -233,9 +233,11 @@ export async function POST(req: NextRequest) {
   }
 
   if (action === "set_status") {
-    // Set status is admin/manager only — agents can't bulk-move pipeline stages.
-    if (me.role !== "ADMIN" && me.role !== "MANAGER") {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    // Bulk Status Update = Admin / Super-Admin ONLY (Lalit 2026-07-10). Managers + agents
+    // can no longer bulk-move pipeline stages (super-admins carry role ADMIN, so this
+    // check accepts them). Single-lead status changes stay open elsewhere.
+    if (me.role !== "ADMIN") {
+      return NextResponse.json({ error: "Only an admin can bulk-update lead status." }, { status: 403 });
     }
     const statusValue = String(body.status ?? "").trim();
     if (!statusValue || !(Object.values(LeadStatus) as string[]).includes(statusValue)) {
@@ -398,14 +400,15 @@ export async function POST(req: NextRequest) {
   }
 
   if (action === "set_current_status") {
-    // Set the user-facing Excel/MIS status (currentStatus) in bulk. ADMIN/MANAGER
-    // only. Team-strict: only applies to leads whose TEAM master includes the
-    // status (never forces a Dubai status onto a Gurgaon lead). "Needs Review" is
-    // allowed for any team. Mirrors /api/master-data/bulk set_status, but scoped
-    // through leadScopeWhere so a manager only touches their own team. Writes
-    // LeadFieldHistory (currentStatus old→new) per changed lead.
-    if (me.role !== "ADMIN" && me.role !== "MANAGER") {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    // Set the user-facing Excel/MIS status (currentStatus) in bulk. Bulk Status Update =
+    // Admin / Super-Admin ONLY (Lalit 2026-07-10) — managers + agents are blocked (super-
+    // admins carry role ADMIN). Team-strict: only applies to leads whose TEAM master
+    // includes the status (never forces a Dubai status onto a Gurgaon lead); "Needs Review"
+    // is allowed for any team. Mirrors /api/master-data/bulk set_status. Writes
+    // LeadFieldHistory (currentStatus old→new) per changed lead AND one reversible
+    // "lead.status" OperationLog for the whole batch.
+    if (me.role !== "ADMIN") {
+      return NextResponse.json({ error: "Only an admin can bulk-update lead status." }, { status: 403 });
     }
     const status = String(body.status ?? "").trim();
     if (!status) return NextResponse.json({ error: "status required" }, { status: 400 });
@@ -419,6 +422,9 @@ export async function POST(req: NextRequest) {
     const eligible = before.filter((b) => status === NEEDS_REVIEW || (statusesForTeam(b.forwardedTeam) as readonly string[]).includes(status));
     const skipped = before.length - eligible.length;
     const changed = eligible.filter((b) => b.currentStatus !== status);
+    // Snapshot the to-be-changed rows BEFORE mutating — the revert source for the
+    // reversible "lead.status" OperationLog logged after the batch below.
+    const beforeSnap = changed.length ? await snapshotLeads(prisma, changed.map((c) => c.id)) : [];
     if (changed.length) {
       const now = new Date();
       // SHARED terminal-status side-effects (src/lib/lostRejected.ts): a LOST status
@@ -444,6 +450,20 @@ export async function POST(req: NextRequest) {
         }
       }
       prisma.leadFieldHistory.createMany({ data: hist }).catch(() => {});
+      // OperationLog — reversible bulk status change (undo from Admin → Operations).
+      // beforeState = the snapshots captured above; the revert restores currentStatus +
+      // follow-up + ownership together (a LOST status stripped owner/assignedAt/follow-up).
+      await logOperation(prisma, {
+        operation: "lead.status",
+        entityType: "Lead",
+        module: "Leads",
+        field: "currentStatus",
+        summary: `Status → ${status}`,
+        affectedIds: changed.map((c) => c.id),
+        beforeState: beforeSnap,
+        afterState: { currentStatus: status },
+        createdById: me.id,
+      }).catch(() => {});
     }
     await audit({ userId: me.id, action: "lead.bulk.current_status", entity: "Lead",
       meta: { status, updated: changed.length, skipped, leadIds: changed.map((c) => c.id).slice(0, 50) }, request: reqMeta(req) });

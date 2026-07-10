@@ -214,6 +214,9 @@ export async function POST(req: NextRequest) {
     const eligible = before.filter((b) => status === NEEDS_REVIEW || (statusesForTeam(b.forwardedTeam) as readonly string[]).includes(status));
     const skipped = before.length - eligible.length;
     const changed = eligible.filter((b) => b.currentStatus !== status);
+    // Snapshot the to-be-changed rows BEFORE mutating — the revert source for the
+    // reversible "lead.status" OperationLog logged after the batch below.
+    const beforeSnap = changed.length ? await snapshotLeads(prisma, changed.map((c) => c.id)) : [];
     if (changed.length) {
       const now = new Date();
       // SHARED terminal-status side-effects (src/lib/lostRejected.ts): a LOST status
@@ -239,6 +242,20 @@ export async function POST(req: NextRequest) {
         }
       }
       writeHistory(hist);
+      // OperationLog — reversible bulk status change (undo from Admin → Operations).
+      // beforeState = the snapshots captured above; the revert restores currentStatus +
+      // follow-up + ownership together (a LOST status stripped owner/assignedAt/follow-up).
+      await logOperation(prisma, {
+        operation: "lead.status",
+        entityType: "Lead",
+        module: "Master Data",
+        field: "currentStatus",
+        summary: `Status → ${status}`,
+        affectedIds: changed.map((c) => c.id),
+        beforeState: beforeSnap,
+        afterState: { currentStatus: status },
+        createdById: me.id,
+      }).catch(() => {});
     }
     await audit({ userId: me.id, action: "masterdata.bulk.status", entity: "Lead", meta: { status, updated: changed.length, skipped, leadIds: ids.slice(0, 50) }, request: reqMeta(req) });
     return NextResponse.json({ ok: true, updated: changed.length, skipped });

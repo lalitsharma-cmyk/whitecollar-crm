@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import Papa from "papaparse";
-import { ingestLead } from "@/lib/leadIngest";
+import { ingestLead, terminalIntakeFields } from "@/lib/leadIngest";
 import { LeadSource, Potential, FundReadiness, MoodStatus, InvestTimeline } from "@prisma/client";
 import { requireRole } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
@@ -8,7 +8,7 @@ import { resolveTeam, routingFieldsFor } from "@/lib/teamRouting";
 import { teamToMarket } from "@/lib/market";
 import { interpretBudget, resolveBudgetCurrency } from "@/lib/budgetCurrency";
 import { inferCountryFromCity } from "@/lib/cityCountry";
-import { canonicalStatus, isStatusValidForTeam, NEEDS_REVIEW } from "@/lib/lead-statuses";
+import { canonicalStatus, isStatusValidForTeam, isTerminalStatus, NEEDS_REVIEW } from "@/lib/lead-statuses";
 import { mergeRawRemark } from "@/lib/rawRemarks";
 import { applyRevivalMerge } from "@/lib/revivalImport";
 import { detectConversationKeyFromRows } from "@/lib/conversationColumn";
@@ -416,6 +416,14 @@ export async function POST(req: NextRequest) {
       }
 
       const sourceAndMedium = parseSourceAndMedium(field("source", "source"));
+      // Detect an incoming TERMINAL status (Lost/Rejected or Won/Closed) up-front — the
+      // SAME parse the post-create update uses below — so ingestLead SKIPS auto-assign
+      // for it (a terminal import must never be round-robined to an agent, nor notify
+      // one). Only a terminal status is passed through; a workable status is still
+      // stamped post-create as before, so the normal import flow is unchanged.
+      const csForIngest = field("status", "status");
+      const incomingStatus = csForIngest && looksLikeStatus(csForIngest) ? (canonicalStatus(csForIngest) ?? undefined) : undefined;
+      const incomingIsTerminal = isTerminalStatus(incomingStatus);
       const r = await ingestLead({
         name: name ?? phone ?? email ?? "Unknown",
         phone, email,
@@ -428,6 +436,9 @@ export async function POST(req: NextRequest) {
         source: sourceAndMedium.source,
         sourceDetail: campaign,
         createdAt: leadDate,
+        // Terminal-on-arrival: hand ingestLead the terminal status so it skips
+        // auto-assign + nulls the default follow-up at creation. Workable → undefined.
+        currentStatus: incomingIsTerminal ? incomingStatus : undefined,
         // "Create new anyway" bypasses the duplicate merge for this row.
         skipDedup: dupMode === "create",
       });
@@ -565,6 +576,24 @@ export async function POST(req: NextRequest) {
         } else {
           update.rawImport = rawRow;
         }
+      }
+      // ── TERMINAL-STATUS INTAKE RULE (Lalit 2026-07-10) ─────────────────────────────
+      // If this row's resolved status is terminal, the lead must not sit in an agent's
+      // active queue. Apply the ONE shared side-effect helper, keyed off the owner this
+      // import WOULD otherwise land the lead with — the auto-assigned owner, or (on a
+      // dedupe) the existing owner — read BEFORE the write:
+      //   • LOST/Rejected → unassign (ownerId+assignedAt null) + stash previousOwnerId
+      //     (current owner wins, stored value is the idempotent fallback) + clear follow-up.
+      //   • Won/Closed    → KEEP the owner (booking attribution) + clear follow-up only.
+      // Spread LAST so it overrides any ownerId / followupDate set in `update` above. It
+      // is inert ({}) for a workable status, so non-terminal imports are unchanged. Covers
+      // both NEW rows and dedupe UPDATES that carry a terminal status.
+      if (typeof update.currentStatus === "string" && update.currentStatus) {
+        const intendedOwnerId = ("ownerId" in update ? (update.ownerId as string | null) : r.lead.ownerId) ?? null;
+        Object.assign(update, terminalIntakeFields(update.currentStatus, {
+          ownerId: intendedOwnerId,
+          previousOwnerId: r.lead.previousOwnerId ?? null,
+        }));
       }
       if (Object.keys(update).length) {
         await prisma.lead.update({ where: { id: r.lead.id }, data: update });

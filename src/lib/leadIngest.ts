@@ -14,7 +14,8 @@ import { findMatchingLeads, summariseHistory, projectsFromInterestedUnits } from
 import { audit } from "@/lib/audit";
 import { websiteMessageRemark } from "@/lib/websiteRemark";
 import { sourceEnumLabel } from "@/lib/sourceLabel";
-import { BOOKED_STATUSES } from "@/lib/lead-statuses";
+import { BOOKED_STATUSES, isTerminalStatus } from "@/lib/lead-statuses";
+import { terminalStatusSideEffects } from "@/lib/lostRejected";
 import { resolveTeam, routingFieldsFor, automationGate } from "@/lib/teamRouting";
 import { resolveActiveAssignee } from "@/lib/leave";
 import { resolveMarket } from "@/lib/market";
@@ -80,6 +81,34 @@ export interface RawLeadInput {
 }
 
 const FIRST_CALL_SLA_MIN = 15;
+
+/**
+ * TERMINAL-STATUS INTAKE RULE (Lalit 2026-07-10) — "workable leads belong to agents,
+ * terminal leads belong to the system." The ONE helper every intake path funnels
+ * ownership + follow-up through when a lead ARRIVES already carrying a terminal status,
+ * so a lost/rejected or won/closed lead never lands in an agent's active queue:
+ *
+ *   • LOST / Rejected → unassign (ownerId + assignedAt → null) and stash the owner in
+ *     previousOwnerId (current owner wins, stored value is the idempotent fallback so a
+ *     re-save never wipes the name to null), and clear the follow-up (+ reminder).
+ *   • Won / CLOSED    → KEEP the owner (that ownership IS the booking attribution);
+ *     only clear the follow-up. NEVER unassigned.
+ *   • non-terminal    → {} — the caller's ownership/follow-up is left exactly as-is.
+ *
+ * `cur` is the ownership the write WOULD otherwise land the lead with (the resolved /
+ * auto-assigned / sheet-specified / pre-assigned owner, read BEFORE the write). Spread
+ * the result LAST into the create/update `data` so it overrides any owner/follow-up set
+ * above it. The field logic is NOT re-derived here — it delegates to the single source
+ * of truth, terminalStatusSideEffects() in lostRejected.ts, so intake, the inline
+ * status write and the bulk paths can never drift apart. (Auto-assignment is skipped
+ * separately at the choke point in ingestLead() below, keyed off isTerminalStatus.)
+ */
+export function terminalIntakeFields(
+  status: string | null | undefined,
+  cur: { ownerId: string | null; previousOwnerId: string | null },
+): ReturnType<typeof terminalStatusSideEffects> {
+  return terminalStatusSideEffects(status, cur);
+}
 
 /**
  * Idempotent lead creation:
@@ -256,6 +285,15 @@ export async function ingestLead(input: RawLeadInput) {
   const propertyType = input.propertyType
     ?? inferPropertyType({ projectCategory, configuration: input.configuration, projectName: projName, notes: input.notesShort });
 
+  // TERMINAL-ON-ARRIVAL (Lalit 2026-07-10): a lead created already carrying a terminal
+  // status must not enter an agent's active queue. On the create path the lead has no
+  // owner yet (an owner can only come from the auto-assign block below, which is ALSO
+  // skipped for terminal — see the choke point), so the only meaningful create-time
+  // effect is to NOT set the default follow-up. The owner-unassign for a pre-assigned
+  // import owner happens on the importer update paths via terminalIntakeFields. Real-
+  // time routes pass a non-terminal "Fresh Lead", so this is inert for them.
+  const arrivedTerminalOnCreate = isTerminalStatus(input.currentStatus);
+
   const lead = await prisma.lead.create({
     data: {
       name: input.name?.trim() || "Unknown",
@@ -312,7 +350,9 @@ export async function ingestLead(input: RawLeadInput) {
       // future imports of the same contact. phone/email are still stored.
       fingerprint: input.skipDedup ? null : fp,
       lastTouchedAt: new Date(),
-      followupDate: followupDefault,
+      // Terminal-on-arrival gets NO default follow-up (a done lead must never sit on
+      // the Action-List follow-up board); a workable lead keeps the +10-min default.
+      followupDate: arrivedTerminalOnCreate ? null : followupDefault,
       ...(input.createdAt ? { createdAt: input.createdAt } : {}),
     },
   });
@@ -513,7 +553,18 @@ export async function ingestLead(input: RawLeadInput) {
   // websiteLeadAssignees map. The websiteAutoAssignEnabled toggle still gates it.
   const wantsAutoAssign = isWebLead || input.autoAssign === true;
   let autoAssigned = false;
-  if (wantsAutoAssign && lead.forwardedTeam) {
+  // ── TERMINAL-STATUS AUTO-ASSIGN SKIP (Lalit 2026-07-10) ────────────────────────────
+  // A lead that ARRIVES already carrying a terminal status — LOST/Rejected (e.g. a
+  // "Not Interested" import) OR Won/Closed (a "Booked With Us" import) — must NEVER be
+  // handed to an agent by the auto-assign rule. It is not new active work: LOST is dead,
+  // Won/Closed is already booked. This is the ONE intake auto-assign choke point, so
+  // EVERY current and future intake route that opts into autoAssign inherits the skip
+  // for free — none of them has to remember the rule. (The matching follow-up clear is
+  // applied on the create data just above; the owner-unassign for a pre-assigned import
+  // owner is applied via terminalIntakeFields in the CSV/Sheet importer update paths,
+  // where the terminal status is stamped post-create.)
+  const arrivedTerminal = isTerminalStatus(lead.currentStatus);
+  if (wantsAutoAssign && lead.forwardedTeam && !arrivedTerminal) {
     try {
       const cfg = await getWebsiteAutoAssign();          // keep ONLY for the enable toggle
       // Leave-cover (#16): resolveActiveAssignee = the fixed team rule, but if the

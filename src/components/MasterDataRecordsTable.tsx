@@ -92,7 +92,10 @@ const COLS: { key: ColKey; label: string; frozen?: boolean; w?: number; minW?: n
   { key: "createdDate", label: "Created Date", frozen: true, w: 96 },
   { key: "createdTime", label: "Created Time", frozen: true, w: 78 },
   { key: "name", label: "Client Name", frozen: true, w: 150 },
-  { key: "agent", label: "Agent", minW: 104 },
+  // Label reads "Current Owner" (not "Agent") so it pairs unambiguously with the
+  // Previous Owner column beside it. The ColKey stays "agent" — it is the sort/filter
+  // key and the inline-edit target; renaming it would touch every call site.
+  { key: "agent", label: "Current Owner", minW: 104 },
   { key: "previousOwner", label: "Previous Owner", minW: 120 },
   { key: "team", label: "Team", minW: 60 },
   { key: "project", label: "Property Enquired", minW: 150 },

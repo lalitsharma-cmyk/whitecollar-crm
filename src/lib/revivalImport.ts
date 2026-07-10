@@ -40,6 +40,7 @@ import { ActivityType, ActivityStatus, type Prisma } from "@prisma/client";
 import { mergeRawRemark } from "@/lib/rawRemarks";
 import { recordFieldChanges } from "@/lib/fieldHistory";
 import { resolveMarket } from "@/lib/market";
+import { terminalStatusSideEffects } from "@/lib/lostRejected";
 
 // Minimal DB shape satisfied by BOTH `prisma` and an interactive-transaction `tx`
 // — so the routes pass `prisma` and the rolled-back test harness passes `tx`.
@@ -95,7 +96,9 @@ const FILL_IF_EMPTY_FIELDS = [
 // decisions, plus the audit/append sources (rawRemarks, remarks, tags,
 // sourceDetail, leadOrigin, isColdCall, coldCallReason, customFields, ownerId).
 const SNAPSHOT_SELECT: Prisma.LeadSelect = {
-  id: true, ownerId: true, market: true,
+  // previousOwnerId is read (not written by the merge) so the terminal-status rule
+  // below can preserve an already-recorded Previous Owner instead of wiping it.
+  id: true, ownerId: true, previousOwnerId: true, market: true,
   rawRemarks: true, remarks: true, tags: true, sourceDetail: true,
   leadOrigin: true, isColdCall: true, coldCallReason: true, customFields: true,
   ...Object.fromEntries(FILL_IF_EMPTY_FIELDS.map((f) => [f, true])),
@@ -253,6 +256,22 @@ export async function applyRevivalMerge(args: RevivalMergeArgs): Promise<Revival
 
   // lastTouchedAt — reflect the re-engagement (sorts the lead up in Revival).
   data.lastTouchedAt = new Date();
+
+  // TERMINAL-STATUS INTAKE RULE (Lalit 2026-07-10) — "workable leads belong to agents,
+  // terminal leads belong to the system." A Revival sheet can fill a BLANK currentStatus
+  // with a terminal one (fill-if-empty). If it does, that lead must not keep an owner or
+  // a follow-up. Delegates to the single source of truth so this import can't drift from
+  // the inline / bulk / CSV paths. Spread LAST so it overrides anything set above:
+  //   LOST → unassign + stash Previous Owner + clear follow-up
+  //   Won/Closed → keep the owner (booking attribution), clear only the follow-up
+  //   non-terminal → {} (inert; the merge's own values stand)
+  // `existing` is typed off a non-const Prisma.LeadSelect, so its fields widen to unknown.
+  const effectiveStatus = (data.currentStatus as string | null | undefined)
+    ?? (existing.currentStatus as string | null | undefined);
+  Object.assign(data, terminalStatusSideEffects(effectiveStatus, {
+    ownerId: (existing.ownerId as string | null) ?? null,
+    previousOwnerId: (existing.previousOwnerId as string | null) ?? null,
+  }));
 
   // ── Persist the Lead enrichment ──
   await db.lead.update({ where: { id: existingId }, data });
