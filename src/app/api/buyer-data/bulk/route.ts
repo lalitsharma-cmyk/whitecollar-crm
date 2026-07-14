@@ -3,7 +3,7 @@ import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { notify } from "@/lib/notify";
 import { audit, reqMeta } from "@/lib/audit";
-import { canTouchBuyer, visibleBuyerOwnerIds, isBuyerAdmin, isBuyerAssignableForMarket, marketOfBuyer, type BuyerMarket } from "@/lib/buyerScope";
+import { canTouchBuyer, isBuyerAdmin, isBuyerAssignableForMarket, marketOfBuyer, type BuyerMarket } from "@/lib/buyerScope";
 import { assignBuyerInTx, BUYER_POOL_STATUS } from "@/lib/buyerLifecycle";
 import { normalizeNameList } from "@/lib/nameFormat";
 import { snapshotBuyers, logOperation } from "@/lib/operationLog";
@@ -59,13 +59,8 @@ export async function POST(req: NextRequest) {
     if (!agentId) return NextResponse.json({ error: "agentId required" }, { status: 400 });
     const agent = await prisma.user.findUnique({ where: { id: agentId }, select: { id: true, name: true, active: true, role: true, team: true } });
     if (!agent || !agent.active) return NextResponse.json({ error: "Target agent not found or inactive" }, { status: 400 });
-    // MANAGER may only transfer to / within their subtree.
-    if (me.role === "MANAGER") {
-      const allowed = await visibleBuyerOwnerIds({ id: me.id, role: me.role, team: me.team });
-      if (allowed !== null && !allowed.includes(agentId)) {
-        return NextResponse.json({ error: "You can only transfer buyers to agents on your team." }, { status: 403 });
-      }
-    }
+    // (No MANAGER subtree check here — isBuyerAdmin() above already restricts this action to
+    // ADMIN, so a manager can never reach this point. Bulk transfer is Admin-only.)
     // Live, non-converted buyers the caller may touch. Load the market so we can gate the
     // transfer target to it — an India buyer only to an India agent/admin, and vice-versa.
     const buyers = await prisma.buyerRecord.findMany({

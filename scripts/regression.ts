@@ -1949,6 +1949,16 @@ const checks: Check[] = [
       const branch = opLog.slice(opLog.indexOf('op.operation === "lead.status"'));
       assert(/currentStatus:/.test(branch.slice(0, 400)) && /followupDate:/.test(branch.slice(0, 400)) && /previousOwnerId:/.test(branch.slice(0, 400)),
         "reverting a bulk status change must restore currentStatus + followupDate + ownership together");
+      // (f) Bulk Edit Field (set_fields) is reversible too: source/budget restored, and the
+      //     project links this op created are removed on revert — but ONLY those (a
+      //     pre-existing enquiry link must survive an undo).
+      assert(/operation: "lead\.fields"/.test(leadsBulk), "leads/bulk set_fields must write a revertable lead.fields OperationLog");
+      assert(/linkedLeadIds/.test(leadsBulk) && /linkedLeadIds/.test(opLog),
+        "set_fields must record which project links it created, and the revert must delete only those");
+      const fieldsBranch = opLog.slice(opLog.indexOf('op.operation === "lead.fields"'));
+      assert(/source:/.test(fieldsBranch.slice(0, 300)) && /budgetMin:/.test(fieldsBranch.slice(0, 300)),
+        "reverting a bulk field edit must restore source + budget");
+      assert(/leadProject\.deleteMany/.test(opLog), "reverting set_fields must delete the project links it created");
     },
   },
   {

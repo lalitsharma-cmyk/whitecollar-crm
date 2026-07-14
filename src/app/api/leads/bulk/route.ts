@@ -371,31 +371,63 @@ export async function POST(req: NextRequest) {
     // Resolve the visible (scoped) lead ids once.
     const visible = await prisma.lead.findMany({ where: { id: { in: ids }, ...scope }, select: { id: true } });
     const visibleIds = visible.map(v => v.id);
+    // Snapshot BEFORE any mutation — the revert source for the reversible "lead.fields"
+    // OperationLog logged below (restores source/budget; the created project links are
+    // removed on revert via afterState.linkedLeadIds).
+    const beforeSnap = visibleIds.length ? await snapshotLeads(prisma, visibleIds) : [];
+    const changedFields = Object.keys(data);
     let updated = 0;
-    if (Object.keys(data).length) {
+    if (changedFields.length) {
       data.lastTouchedAt = new Date();
       const r = await prisma.lead.updateMany({ where: { id: { in: visibleIds } }, data });
       updated = r.count;
     }
     // Project — link the leads to a Project (matched by name) via LeadProject.
     let projectLinked = 0;
+    let linkedProjectId: string | null = null;
+    let newlyLinkedIds: string[] = [];
     if (typeof body.project === "string" && body.project.trim()) {
       const proj = await prisma.project.findFirst({
         where: { name: { equals: body.project.trim(), mode: "insensitive" } },
         select: { id: true },
       });
       if (!proj) return NextResponse.json({ error: `Project "${body.project}" not found.` }, { status: 400 });
+      // Which visible leads do NOT already have this project? Those are the ONLY links
+      // this op creates (createMany skipDuplicates), so those are the only ones a revert
+      // may delete — a pre-existing enquiry link must survive an undo.
+      const already = await prisma.leadProject.findMany({
+        where: { leadId: { in: visibleIds }, projectId: proj.id },
+        select: { leadId: true },
+      });
+      const alreadySet = new Set(already.map((a) => a.leadId));
+      newlyLinkedIds = visibleIds.filter((id) => !alreadySet.has(id));
       const res = await prisma.leadProject.createMany({
-        data: visibleIds.map((leadId) => ({ leadId, projectId: proj.id, sourceType: "MANUAL" })),
+        data: newlyLinkedIds.map((leadId) => ({ leadId, projectId: proj.id, sourceType: "MANUAL" })),
         skipDuplicates: true,
       });
       projectLinked = res.count;
+      linkedProjectId = proj.id;
     }
     if (!updated && !projectLinked) {
       return NextResponse.json({ error: "Nothing to update — pick at least one field." }, { status: 400 });
     }
+    // Reversible OperationLog — undo from Admin → Operations. beforeState restores the
+    // scalar fields; afterState carries the exact project links to remove.
+    if (beforeSnap.length) {
+      await logOperation(prisma, {
+        operation: "lead.fields",
+        entityType: "Lead",
+        module: "Leads",
+        field: changedFields.join(", ") || (linkedProjectId ? "project" : null),
+        summary: `Bulk edit ${[...changedFields, linkedProjectId ? "project" : null].filter(Boolean).join(" + ")} · ${visibleIds.length} lead(s)`,
+        affectedIds: visibleIds,
+        beforeState: beforeSnap,
+        afterState: { fields: changedFields, projectId: linkedProjectId, linkedLeadIds: newlyLinkedIds },
+        createdById: me.id,
+      }).catch(() => {});
+    }
     await audit({ userId: me.id, action: "lead.bulk.fields", entity: "Lead",
-      meta: { count: visibleIds.length, fields: Object.keys(data), projectLinked, leadIds: visibleIds.slice(0, 50) }, request: reqMeta(req) });
+      meta: { count: visibleIds.length, fields: changedFields, projectLinked, leadIds: visibleIds.slice(0, 50) }, request: reqMeta(req) });
     return NextResponse.json({ ok: true, updated: Math.max(updated, projectLinked, visibleIds.length) });
   }
 

@@ -1,5 +1,5 @@
 import "server-only";
-import { Prisma, LeadStatus } from "@prisma/client";
+import { Prisma, LeadStatus, LeadSource } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { BUYER_POOL_STATUS } from "@/lib/buyerLifecycle";
 
@@ -31,7 +31,11 @@ export type OperationType =
   // (master-data/bulk) mutate currentStatus and — for a terminal status, via
   // terminalStatusSideEffects — also ownerId / previousOwnerId / assignedAt / followupDate.
   // Reversible via the dedicated leadRestoreData() branch below.
-  | "lead.status";
+  | "lead.status"
+  // Bulk Edit Field (Lalit 2026-07-10): leads/bulk set_fields writes source / budget and/or
+  // links a LeadProject. Revert restores the scalar fields AND deletes ONLY the project
+  // links this op created (afterState.linkedLeadIds) — never a pre-existing link.
+  | "lead.fields";
 
 type DB = typeof prisma | Prisma.TransactionClient;
 
@@ -58,6 +62,9 @@ export const LEAD_SNAPSHOT_SELECT = {
   // existing transfer/edit reverts never read these keys, so their behaviour is unchanged.
   previousStatus: true, rejectedAt: true, rejectionReason: true,
   rejectionNote: true, rejectedById: true, status: true,
+  // Bulk Edit Field (lead.fields) revert reads these to put source/budget back. Additive:
+  // no other revert branch touches them, so their behaviour is unchanged.
+  source: true, budgetMin: true, budgetMax: true,
 } satisfies Prisma.LeadSelect;
 
 /** Snapshot the current state of the given buyer ids (call BEFORE the mutation). */
@@ -175,6 +182,19 @@ function leadRestoreData(op: { operation: string; field: string | null }, snap: 
       assignedAt: asDate(snap.assignedAt),
     };
   }
+  // Bulk Edit Field (lead.fields) — restore the scalar fields set_fields can change:
+  // source + budget. The captured snapshot pre-dates the op, so re-writing an unchanged
+  // field is a no-op; a field the op DID change is reverted. The LeadProject links the op
+  // created are removed separately in revertOperation() (a cross-table delete this
+  // per-lead update-data cannot express). `source` is a required enum, so it always has a
+  // captured value; budgetMin/budgetMax are nullable.
+  if (op.operation === "lead.fields") {
+    return {
+      source: snap.source as LeadSource,
+      budgetMin: (snap.budgetMin as number | null) ?? null,
+      budgetMax: (snap.budgetMax as number | null) ?? null,
+    };
+  }
   // transfer — restore ownership + routing + SLA.
   return {
     owner: snap.ownerId ? { connect: { id: String(snap.ownerId) } } : { disconnect: true },
@@ -241,6 +261,16 @@ export async function revertOperation(
         if (!live) continue;
         await tx.lead.update({ where: { id }, data: leadRestoreData(op, snap) });
         restored++;
+      }
+      // Bulk Edit Field revert: delete ONLY the LeadProject links this op created
+      // (afterState.linkedLeadIds — the leads that did NOT already have the link, computed
+      // before the createMany). A pre-existing link is never in that list, so an undo can't
+      // remove a project the lead was genuinely enquiring about.
+      if (op.operation === "lead.fields") {
+        const after = (op.afterState as { projectId?: string; linkedLeadIds?: string[] } | null) ?? {};
+        if (after.projectId && after.linkedLeadIds?.length) {
+          await tx.leadProject.deleteMany({ where: { leadId: { in: after.linkedLeadIds }, projectId: after.projectId, sourceType: "MANUAL" } });
+        }
       }
       await tx.operationLog.update({ where: { id: opId }, data: { status: "UNDONE", undoneAt: new Date(), undoneById: meId } });
     });
