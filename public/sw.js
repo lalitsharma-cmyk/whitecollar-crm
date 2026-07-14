@@ -479,7 +479,10 @@
 // The Lost/Rejected rule now fires on EVERY source — manual, bulk, CSV, Google Sheet, API,
 // and any future intake — including skipping auto-assign. Ten bulk actions are Admin-only.
 // Bulk status changes are revertable. Master Data's Agent column reads "Current Owner".
-const CACHE = "wcr-shell-v146";
+// v147 (2026-07-15): P0 stabilization batch — text-selection no longer closes the admin
+// user Invite/Edit modals; Bulk Assign on cold/revival is Admin-only; Admin can now edit
+// Nationality on the Leads detail (completes admin edit-rights).
+const CACHE = "wcr-shell-v147";
 const SHELL = ["/login", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", (event) => {

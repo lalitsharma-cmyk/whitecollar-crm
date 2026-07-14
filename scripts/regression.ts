@@ -1902,6 +1902,31 @@ const checks: Check[] = [
     },
   },
   {
+    // P0-STABILIZATION BATCH (Lalit 2026-07-15): the cold-data bulk-assign gate (V1), the
+    // completed admin edit-rights (Nationality), and the text-selection modal propagation.
+    name: "p0-stabilization-batch — cold-data bulk-assign admin-only + admin nationality edit + modal dismiss propagated",
+    run: async () => {
+      const fs = await import("fs");
+      // (a) V1 — cold-data/bulk-assign is Admin/Super-Admin ONLY (was ADMIN|MANAGER).
+      const coldAssign = fs.readFileSync("src/app/api/cold-data/bulk-assign/route.ts", "utf8");
+      assert(/requireRole\("ADMIN"\)/.test(coldAssign) && !/requireRole\("ADMIN",\s*"MANAGER"\)/.test(coldAssign),
+        "cold-data/bulk-assign must be Admin-only — a manager must not bulk-assign cold/revival rows");
+      // (b) Admin edit-rights complete: Nationality is now editable on the Leads detail,
+      //     admin-only, through the already-allowed + audited update field.
+      const detail = fs.readFileSync("src/app/(app)/leads/[id]/page.tsx", "utf8");
+      assert(/canEditNationality/.test(detail) && /field="nationality"/.test(detail),
+        "Leads detail must expose an admin-only Nationality inline edit");
+      const upd = fs.readFileSync("src/app/api/leads/[id]/update/route.ts", "utf8");
+      assert(/nationality/.test(upd), "the update route must accept nationality (already in ALLOWED + TRACKED)");
+      // (c) The text-selection fix reaches the admin user modals: both the Invite and Edit
+      //     modals dismiss via the shared backdropProps (drag-select never closes them).
+      const adminUsers = fs.readFileSync("src/components/AdminUsersClient.tsx", "utf8");
+      assert(/backdropProps\(/.test(adminUsers), "AdminUsersClient modals must use the shared backdropProps dismiss helper");
+      assert((adminUsers.match(/\{\.\.\.backdropProps\(/g) || []).length >= 2,
+        "both the Invite and Edit user modals must use backdropProps");
+    },
+  },
+  {
     // BULK ACTIONS ARE ADMIN-ONLY (Lalit 2026-07-10): Bulk Assign · Reassign · Transfer ·
     // Edit Field · Set Follow-up · Convert · Status Update · Delete · Revert · Import Revert.
     // Managers and agents keep only their own single-lead work.

@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useBodyScrollLock } from "@/hooks/useBodyScrollLock";
+import { backdropProps } from "@/lib/useDismiss";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -48,7 +49,7 @@ function InviteModal({ onClose, onCreated }: { onClose: () => void; onCreated: (
   return (
     <div
       className="fixed inset-0 z-50 bg-black/40 flex items-end sm:items-center justify-center sm:p-4"
-      onClick={onClose}
+      {...backdropProps(onClose)}
       role="dialog"
       aria-modal="true"
       aria-labelledby="invite-modal-title"
@@ -210,7 +211,7 @@ function EditUserModal({
   return (
     <div
       className="fixed inset-0 z-50 bg-black/40 flex items-end sm:items-center justify-center sm:p-4"
-      onClick={onClose}
+      {...backdropProps(onClose)}
       role="dialog"
       aria-modal="true"
       aria-labelledby="edit-user-modal-title"

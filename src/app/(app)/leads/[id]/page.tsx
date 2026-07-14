@@ -707,6 +707,13 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
   // "ADMIN" covers super-admins via isSuperAdmin). Managers + agents see it
   // read-only. The server enforces the same rule in /api/leads/[id]/update.
   const canEditSource = me.role === "ADMIN";
+  // Nationality (client citizenship) is COMPLETED here by Admin / Super Admin so an
+  // admin has full edit-rights on the Leads detail (parity with the Revival/Cold
+  // "Client information" card, which already exposes this field). Kept admin-only on
+  // this surface so agent/manager rights are not broadened. nationality is in the
+  // update route's ALLOWED list + TRACKED_FIELDS, so the admin edit is accepted and
+  // written to Change History — no server change needed.
+  const canEditNationality = me.role === "ADMIN";
 
   const qualificationCard = (
     <div data-lead-section="overview" className="card p-4">
@@ -840,6 +847,17 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
               type any value. */}
           <InlineEdit leadId={lead.id} field="profession" type="text" value={lead.profession ?? ""}
             placeholder="Add profession" />
+        </div>
+        {/* Nationality — client citizenship. Admin / Super Admin edit inline; managers
+            + agents see it read-only (mirrors the Source cell above). Parity with the
+            Revival/Cold "Client information" card, which exposes the same field. */}
+        <div>
+          <div className="text-xs text-gray-500 dark:text-slate-400">🌍 Nationality</div>
+          {canEditNationality ? (
+            <InlineEdit leadId={lead.id} field="nationality" value={lead.nationality ?? ""} placeholder="Add value" />
+          ) : (
+            <span className="text-gray-800 dark:text-slate-200">{lead.nationality || "—"}</span>
+          )}
         </div>
         {/* §7 Configuration — Dubai uses BR types, India uses BHK types. Never mix. */}
         <div>

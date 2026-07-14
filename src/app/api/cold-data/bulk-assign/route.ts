@@ -7,7 +7,10 @@ import { audit, reqMeta } from "@/lib/audit";
 import { crossTeamWarning } from "@/lib/teamRouting";
 
 export async function POST(req: NextRequest) {
-  const me = await requireRole("ADMIN", "MANAGER");
+  // Bulk Assign is ADMIN / Super-Admin ONLY (Lalit): a MANAGER must NOT be able to
+  // bulk-assign cold/revival rows. Super-admins carry role === "ADMIN", so
+  // requireRole("ADMIN") includes them. Mirrors master-data/bulk's admin-only gate.
+  const me = await requireRole("ADMIN");
   const body = await req.json().catch(() => ({}));
   const userId = String(body.userId ?? "").trim();
   const team = body.team ? String(body.team) : undefined;
