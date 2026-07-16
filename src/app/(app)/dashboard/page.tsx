@@ -323,6 +323,15 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     closeable: Number(r.closeable), needs: Number(r.needs), clients: Number(r.clients),
   }));
 
+  // Drill statuses for the scoreboard "Closeable" column — MUST mirror the SQL
+  // in-list above ('Meeting','Site Visit Schedule',…) EXACTLY, so the /leads
+  // ?cstatus= drill opens the same rows the count counted (count == records).
+  // The SQL scopes leadOrigin NOT IN (COLD,REVIVAL); /leads' default envelope is
+  // isColdCall:false + leadOrigin notIn COLD_ORIGINS — equivalent (verified: 0
+  // non-cold-origin leads carry isColdCall=true). ?cstatus= bypasses the
+  // workable-only envelope, so the terminal-status exclusion can't hide rows.
+  const SP_CLOSEABLE_STATUSES = ["Meeting", "Site Visit Schedule", "Visit Dubai", "Want Office Visit", "Zoom Meeting", "Expo Only"];
+
   const testingModeOn = await getTestingModeEnabled();
 
   // Daily targets — read from Setting table, fall back to defaults
@@ -855,13 +864,29 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
                       <td className="text-center">{s.connected}</td>
                       <td className="text-center">{s.dueToday}</td>
                       <td className={`text-center ${s.overdue > 0 ? "text-red-600 font-semibold" : ""}`}>{s.overdue}</td>
-                      <td className="text-center font-semibold">{s.closeable}</td>
-                      <td className={`text-center ${s.needs > 0 ? "text-amber-600 font-bold" : ""}`}>
-                        {s.needs > 0
-                          ? <Link href={leadsDrill({ owner: s.id, needs: "1" })} className="underline decoration-dotted underline-offset-2 hover:text-amber-800">{s.needs}</Link>
+                      <td className="text-center font-semibold">
+                        {/* Drill: same statuses as the SQL closeable count, scoped to this
+                            agent. seg=all because the count is team-agnostic (an India-view
+                            admin clicking must still see the agent's WHOLE closeable book). */}
+                        {s.closeable > 0
+                          ? <Link href={leadsDrill({ owner: s.id, cstatus: SP_CLOSEABLE_STATUSES.join(","), seg: "all" })} title="Open this agent's meeting / visit-stage leads — the exact rows behind this count." className="underline decoration-dotted underline-offset-2 hover:text-blue-700 dark:hover:text-blue-300">{s.closeable}</Link>
                           : 0}
                       </td>
-                      <td className="text-center">{s.clients}</td>
+                      <td className={`text-center ${s.needs > 0 ? "text-amber-600 font-bold" : ""}`}>
+                        {/* seg=all — the needs count is team-agnostic, so the drill must not
+                            inherit the dashboard's India/Dubai view toggle (count == records). */}
+                        {s.needs > 0
+                          ? <Link href={leadsDrill({ owner: s.id, needs: "1", seg: "all" })} className="underline decoration-dotted underline-offset-2 hover:text-amber-800">{s.needs}</Link>
+                          : 0}
+                      </td>
+                      <td className="text-center">
+                        {/* Clients = the agent's FULL book (all statuses incl. closed/lost), which
+                            only Master Data can list (the Leads view is workable-only). Master Data
+                            is ADMIN-only, so managers see a plain number. cat defaults to "all". */}
+                        {isAdmin && s.clients > 0
+                          ? <Link href={`/master-data?owner=${s.id}`} title="Open this agent's full client book (all statuses) in Master Data." className="underline decoration-dotted underline-offset-2 hover:text-blue-700 dark:hover:text-blue-300">{s.clients}</Link>
+                          : s.clients}
+                      </td>
                     </tr>
                   ))}
                 </tbody>

@@ -488,7 +488,13 @@
 // v149 (2026-07-16): Revival pagination — /cold-calls now pages exactly like /leads
 // (50/page, Prev/Next, Showing X–Y of N, filters/tabs/sort persist across pages). The
 // old take:200 cap hid 2,888 of 3,088 records after the big import.
-const CACHE = "wcr-shell-v149";
+// v150 (2026-07-16): Lead Source Intake report (/reports/lead-intake — daily/weekly/
+// monthly/yearly/custom × Team × Module × Source, every number drills to the exact
+// records, CSV/xlsx export, Unclassified buckets shown honestly) + drill params
+// (?bucket= on Master/Revival; ?dateFrom/?dateTo/?source on both Buyer lists) + 5 report
+// drills wired, 2 wrong drills fixed + IST date alignment everywhere + fresh-chip
+// pipeline gate + follow-up-compliance NULL-status undercount fix (counts rise honestly).
+const CACHE = "wcr-shell-v150";
 const SHELL = ["/login", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", (event) => {

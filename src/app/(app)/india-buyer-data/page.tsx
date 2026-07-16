@@ -2,9 +2,11 @@ import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import Link from "next/link";
+import type { Prisma } from "@prisma/client";
 import BuyerListClient, { type BuyerRow, type BuyerAgent } from "@/components/BuyerListClient";
 import HelpDot from "@/components/HelpDot";
 import { buyerScopeWhereForMarket, canAccessBuyerMarket, INDIA_MARKET } from "@/lib/buyerScope";
+import { istDayRange, isValidDateKey } from "@/lib/datetime";
 import { canExportData } from "@/lib/exportPerms";
 import {
   groupByBuyerKey,
@@ -29,19 +31,39 @@ const POOL_LABEL: Record<string, string> = {
   ADMIN_POOL: "Admin Pool", ASSIGNED: "Assigned", CONVERTED: "Converted", REJECTED: "Rejected",
 };
 
-export default async function IndiaBuyerDataPage() {
+export default async function IndiaBuyerDataPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const me = await requireUser();
   // India Buyer Data is visible only to Admin/super-admin + India-team users.
   if (!canAccessBuyerMarket(me, INDIA_MARKET)) redirect("/dashboard");
   const isAdmin = me.role === "ADMIN";
   const isAdminOrMgr = me.role === "ADMIN" || me.role === "MANAGER";
+  const sp = await searchParams;
   const scope = await buyerScopeWhereForMarket(me, INDIA_MARKET);
+
+  // ── Report drill-down params (additive, opt-in — Lead Source Intake drills) ──
+  // ?dateFrom=YYYY-MM-DD&dateTo=YYYY-MM-DD narrow to records IMPORTED (createdAt)
+  // within those IST calendar days — istDayRange gives the exact UTC instants, so
+  // a report's per-day bucket and this list agree with no off-by-one. ?source= is
+  // a verbatim `source` field match. Absent params → `where` stays exactly `scope`
+  // (byte-identical query to before). BuyerListClient shows the active drill as a
+  // clearable chip (URL-driven, like ?tab / ?repeat). Same math as /buyer-data.
+  const drillAnd: Prisma.BuyerRecordWhereInput[] = [];
+  const dateFrom = isValidDateKey(sp.dateFrom) ? sp.dateFrom : null;
+  const dateTo = isValidDateKey(sp.dateTo) ? sp.dateTo : null;
+  if (dateFrom || dateTo) {
+    const r: { gte?: Date; lt?: Date } = {};
+    if (dateFrom) r.gte = istDayRange(dateFrom).start;
+    if (dateTo) r.lt = istDayRange(dateTo).end; // end-exclusive → covers the whole dateTo IST day
+    drillAnd.push({ createdAt: r });
+  }
+  if (sp.source) drillAnd.push({ source: sp.source });
+  const where: Prisma.BuyerRecordWhereInput = drillAnd.length ? { AND: [scope, ...drillAnd] } : scope;
 
   // Explicit select — ONLY the columns the summary + BuyerRow mapping below read
   // (plus owner id/name). Drops large text columns (remarks/extraFields/rawImport/
   // emails/coBuyerNames) the list never uses, keeping this 5000-row fetch lean.
   const records = await prisma.buyerRecord.findMany({
-    where: scope,
+    where,
     orderBy: [{ poolStatus: "asc" }, { transactionDate: "desc" }],
     take: 5000,
     select: {

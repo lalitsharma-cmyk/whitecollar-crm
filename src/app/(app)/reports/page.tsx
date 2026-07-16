@@ -775,6 +775,13 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
           <div className="font-bold text-sm mt-1">Lead Sources</div>
           <div className="text-[10px] text-gray-500 mt-0.5">Per-source funnel, conversion %, first-call latency</div>
         </Link>
+        {/* Lead Source Intake — how many leads came in, from which source, over
+            time (daily/weekly/monthly/yearly) — every number drills to the exact records. */}
+        <Link href="/reports/lead-intake" className="card p-4 border-l-4 border-cyan-600 hover:shadow-md transition">
+          <div className="text-2xl">📥</div>
+          <div className="font-bold text-sm mt-1">Lead Intake</div>
+          <div className="text-[10px] text-gray-500 mt-0.5">Leads received by source over time · every number opens the exact records</div>
+        </Link>
         {/* Cooling Leads — HOT leads that just downgraded to WARM/COLD. Save-the-deal list. */}
         <Link href="/reports/cooling" className="card p-4 border-l-4 border-rose-500 hover:shadow-md transition">
           <div className="text-2xl">🌡</div>

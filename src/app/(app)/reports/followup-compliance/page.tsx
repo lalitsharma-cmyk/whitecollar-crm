@@ -48,8 +48,14 @@ export default async function FollowupCompliancePage({
     orderBy: { name: "asc" },
   });
   const agentIds = agents.map((a) => a.id);
+  // "Live" = workable. NOTE the OR: Postgres `NOT IN` drops NULL rows, so a bare
+  // `notIn TERMINAL` silently EXCLUDED owned leads with no status yet (752 such rows
+  // with follow-ups existed when this was found, 2026-07-16) while the /leads drill
+  // showed them — count < records. Null/blank status is workable, same as the
+  // WORKABLE_STATUS_OR envelope everywhere else.
   const liveWhere = {
-    deletedAt: null, currentStatus: { notIn: TERMINAL_STATUSES },
+    deletedAt: null,
+    OR: [{ currentStatus: null }, { currentStatus: "" }, { currentStatus: { notIn: TERMINAL_STATUSES } }],
     ownerId: { in: agentIds }, ...teamWhere,
   };
 
@@ -75,7 +81,8 @@ export default async function FollowupCompliancePage({
   const chronicLeads = chronicLeadIds.length
     ? await prisma.lead.findMany({
         where: { id: { in: chronicLeadIds }, ownerId: { in: agentIds }, deletedAt: null,
-          currentStatus: { notIn: TERMINAL_STATUSES } },
+          // Same NULL-safe workable envelope as liveWhere above.
+          OR: [{ currentStatus: null }, { currentStatus: "" }, { currentStatus: { notIn: TERMINAL_STATUSES } }] },
         select: { ownerId: true, leadOrigin: true, isColdCall: true },
       })
     : [];
@@ -191,7 +198,17 @@ export default async function FollowupCompliancePage({
                   <td className="text-center px-2">{r.today > 0 ? <span className="font-semibold text-amber-700">{r.today}</span> : <span className="text-gray-300">0</span>}</td>
                   <td className="text-center px-2">{r.chronic > 0 ? <span className="font-semibold text-violet-700">⟳ {r.chronic}</span> : <span className="text-gray-300">0</span>}</td>
                   <td className="text-right px-3">
-                    <Link href={`/leads?owner=${r.id}&when=overdue`} className="text-[11px] text-blue-600 hover:underline">View →</Link>
+                    {/* followup=overdue = followupDate < start-of-today IST — the SAME
+                        boundary this report's Overdue column uses (the old when=overdue
+                        meant lastTouchedAt < 5 days: a different metric entirely).
+                        showCold=1 because the report spans Revival too; team threads the
+                        admin's team filter. Null-status leads are now INCLUDED in the
+                        report's counts (NULL-safe workable OR above), so count == the
+                        rows this link opens. */}
+                    <Link
+                      href={`/leads?owner=${r.id}&followup=overdue&showCold=1${resolvedTeam !== "all" ? `&team=${resolvedTeam}` : ""}`}
+                      className="text-[11px] text-blue-600 hover:underline"
+                    >View →</Link>
                   </td>
                 </tr>
                 <tr className="bg-gray-50/60">

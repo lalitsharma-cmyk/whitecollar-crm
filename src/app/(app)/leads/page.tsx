@@ -15,7 +15,8 @@ import { contactActivityByLeadToday } from "@/lib/followupGate";
 import { CONTACT_ACTIVITY_TYPES } from "@/lib/dashboardWidgets";
 import {
   freshTodayWhere, freshUntouchedWhere, assignedTodayWhere, firstContactPendingWhere,
-  assignedTodayOr, FIRST_CONTACT_PENDING_WHERE, FRESH_STATUS_OR, isAssignedToday, isActivePipelineRow,
+  assignedTodayOr, FIRST_CONTACT_PENDING_WHERE, FRESH_STATUS_OR, ACTIVE_PIPELINE_WHERE,
+  isAssignedToday, isActivePipelineRow,
 } from "@/lib/freshLeads";
 import { projectWhereForUser } from "@/lib/propertyScope";
 import { PROPERTY_TYPES } from "@/lib/propertyType";
@@ -152,19 +153,23 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
   // the row == the escalation cron. Composed via AND so they layer on top of the
   // scope + workable envelope without clobbering the search OR. Each is treated
   // as an "other filter" below, so it turns OFF the default follow-up narrowing.
+  // DRIFT FIX (Lalit 2026-07-16): every branch also gates on ACTIVE_PIPELINE_WHERE —
+  // the chip COUNTS (freshTodayWhere etc. below) always had it, but this inline copy
+  // didn't, so opening a chip could show MORE rows than the chip said (imported /
+  // non-pipeline rows leaked in). Same gate as leadFilterWhere's fresh branches.
   const freshAnd: Prisma.LeadWhereInput[] = [];
   if (sp.fresh === "today") {
     // Fresh Today — assigned today (IST) AND still a fresh/uncontacted status.
-    freshAnd.push(assignedTodayOr(), { OR: FRESH_STATUS_OR });
+    freshAnd.push(assignedTodayOr(), { OR: FRESH_STATUS_OR }, ACTIVE_PIPELINE_WHERE);
   } else if (sp.fresh === "assigned") {
     // Assigned Today — landed in this agent's queue today, any status.
-    freshAnd.push(assignedTodayOr());
+    freshAnd.push(assignedTodayOr(), ACTIVE_PIPELINE_WHERE);
   } else if (sp.fresh === "untouched") {
     // Fresh Untouched — assigned today AND no first contact logged yet.
-    freshAnd.push(assignedTodayOr(), FIRST_CONTACT_PENDING_WHERE);
+    freshAnd.push(assignedTodayOr(), FIRST_CONTACT_PENDING_WHERE, ACTIVE_PIPELINE_WHERE);
   } else if (sp.fresh === "pending") {
     // First Contact Pending — any assigned workable lead never contacted (any day).
-    freshAnd.push({ ownerId: { not: null } }, FIRST_CONTACT_PENDING_WHERE);
+    freshAnd.push({ ownerId: { not: null } }, FIRST_CONTACT_PENDING_WHERE, ACTIVE_PIPELINE_WHERE);
   }
   if (freshAnd.length > 0) {
     where.AND = [

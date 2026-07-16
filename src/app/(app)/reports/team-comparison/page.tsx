@@ -475,7 +475,31 @@ export default async function TeamComparisonReportPage({
     dubaiValue: string;
     indiaValue: string;
     delta: { dubai: { label: string; cls: string }; india: { label: string; cls: string } };
+    /** Optional drill-down hrefs — set ONLY when a /leads URL reproduces the
+     *  metric's exact where-clause (count == records). Rendered as a Link. */
+    dubaiHref?: string;
+    indiaHref?: string;
   }
+
+  // Drill for "Active leads" — the one metric here whose where-clause is exactly
+  // URL-expressible: forwardedTeam + deletedAt:null + currentStatus IN
+  // ACTIVE_PURSUIT_STATUSES, any origin, no date window (snapshot).
+  //   • showCold=1  → drops /leads' cold exclusion (the count includes revival-origin actives)
+  //   • seg=all     → admin's /leads defaults to "My Leads"; the count is team-wide
+  //   • cstatus=…   → the EXACT ACTIVE_STAGES in-list; bypasses the workable envelope
+  //   • followup=all→ no follow-up narrowing (explicit, immune to default changes)
+  // Every other row is window-bound / cross-ledger / an aggregate — see the
+  // drill-audit notes; those stay unlinked rather than pointing at a wrong list.
+  const activeLeadsDrill = (team: Team): string => {
+    const p = new URLSearchParams({
+      showCold: "1",
+      seg: "all",
+      team,
+      cstatus: ACTIVE_STAGES.join(","),
+      followup: "all",
+    });
+    return `/leads?${p.toString()}`;
+  };
 
   const noVal = { label: "—", cls: "text-gray-400" };
 
@@ -497,6 +521,8 @@ export default async function TeamComparisonReportPage({
       dubaiValue: dubai ? dubai.activeLeads.toLocaleString() : "—",
       indiaValue: india ? india.activeLeads.toLocaleString() : "—",
       delta: numericDelta(dubai ? dubai.activeLeads : null, india ? india.activeLeads : null, "higher_is_better"),
+      dubaiHref: dubai ? activeLeadsDrill("Dubai") : undefined,
+      indiaHref: india ? activeLeadsDrill("India") : undefined,
     },
     {
       label: "Calls made",
@@ -661,13 +687,21 @@ export default async function TeamComparisonReportPage({
                 )}
               </div>
               <div className="px-3 py-2.5 text-right">
-                <div className="font-semibold tabular-nums">{r.dubaiValue}</div>
+                {r.dubaiHref ? (
+                  <Link href={r.dubaiHref} title="Open the exact leads behind this number" className="font-semibold tabular-nums underline decoration-dotted underline-offset-2 hover:text-blue-700 dark:hover:text-blue-300 inline-block">{r.dubaiValue}</Link>
+                ) : (
+                  <div className="font-semibold tabular-nums">{r.dubaiValue}</div>
+                )}
                 <div className={`text-[10px] tabular-nums ${r.delta.dubai.cls}`}>
                   {r.delta.dubai.label}
                 </div>
               </div>
               <div className="px-3 py-2.5 text-right">
-                <div className="font-semibold tabular-nums">{r.indiaValue}</div>
+                {r.indiaHref ? (
+                  <Link href={r.indiaHref} title="Open the exact leads behind this number" className="font-semibold tabular-nums underline decoration-dotted underline-offset-2 hover:text-blue-700 dark:hover:text-blue-300 inline-block">{r.indiaValue}</Link>
+                ) : (
+                  <div className="font-semibold tabular-nums">{r.indiaValue}</div>
+                )}
                 <div className={`text-[10px] tabular-nums ${r.delta.india.cls}`}>
                   {r.delta.india.label}
                 </div>

@@ -205,6 +205,31 @@ export default function BuyerListClient(props: Props) {
     setPage(0);
   };
   useEffect(() => { setRepeatOnly(repeatFromUrl()); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [searchParams]);
+  // ── Report-drill context (?dateFrom / ?dateTo / ?source) — SERVER-side filters ──
+  // A report number links here with these params and the SERVER page narrows its
+  // BuyerRecord query to match (IST day boundaries on createdAt + verbatim source).
+  // The client's only job is to SHOW the active drill as a clearable chip — URL-
+  // driven exactly like ?tab / ?repeat above (device-independent, refresh-safe).
+  // Clearing drops the params via router.replace, which re-runs the server query.
+  const drillDateFrom = searchParams.get("dateFrom") ?? "";
+  const drillDateTo = searchParams.get("dateTo") ?? "";
+  const drillSource = searchParams.get("source") ?? "";
+  const drillActive = !!(drillDateFrom || drillDateTo || drillSource);
+  const clearDrillParams = (...keys: string[]) => {
+    const sp = new URLSearchParams(Array.from(searchParams.entries()));
+    keys.forEach((k) => sp.delete(k));
+    const qs = sp.toString();
+    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+  };
+  // "2026-07-10" → "10 Jul" (IST calendar day — matches the server's istDayRange).
+  const fmtDrillDay = (s: string) => {
+    const t = Date.parse(`${s}T00:00:00+05:30`);
+    return isNaN(t) ? s : new Date(t).toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "Asia/Kolkata" });
+  };
+  const drillDateLabel = drillDateFrom && drillDateTo
+    ? `Imported ${fmtDrillDay(drillDateFrom)} – ${fmtDrillDay(drillDateTo)}`
+    : drillDateFrom ? `Imported from ${fmtDrillDay(drillDateFrom)}`
+    : drillDateTo ? `Imported until ${fmtDrillDay(drillDateTo)}` : "";
   const [classFilter, setClassFilter] = useState<"" | "First-Time" | "Investor" | "Whale">("");
   const [sortKey, setSortKey] = useState<SortKey>("txnDate");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
@@ -315,7 +340,10 @@ export default function BuyerListClient(props: Props) {
   const resetAll = () => {
     setTab("active"); setQ(""); setProject(""); setPtype(""); setNat(""); setRegion(""); setOwnerId("");
     setRepeatOnly(""); setClassFilter(""); setSortKey("txnDate"); setSortDir("desc"); setColFilters({}); setPage(0);
-    router.replace(pathname, { scroll: false }); // clear ?tab & ?repeat in ONE replace (no double-setter race)
+    // Clear ?tab, ?repeat AND the report-drill params (?dateFrom/?dateTo/?source)
+    // in ONE replace (no double-setter race) — the bare pathname drops them all,
+    // which also re-runs the server query without the drill narrowing.
+    router.replace(pathname, { scroll: false });
   };
 
   // Serialize / deserialize the per-column filters (Set → array) for saved views.
@@ -519,7 +547,10 @@ export default function BuyerListClient(props: Props) {
   };
 
   const sel = "border border-gray-200 dark:border-slate-600 rounded-lg px-2.5 py-2 text-base sm:text-sm dark:bg-slate-800 dark:text-slate-100";
-  const anyFilter = q || project || ptype || nat || region || ownerId || repeatOnly || classFilter || tab !== "active" || activeColCount > 0;
+  // drillActive counts as a filter: the Filters button lights up, "Clear all
+  // filters" appears (resetAll drops the drill params), and Export posts the
+  // exact visible id set instead of the export-everything GET.
+  const anyFilter = q || project || ptype || nat || region || ownerId || repeatOnly || classFilter || tab !== "active" || activeColCount > 0 || drillActive;
 
   // ── bulk runner ──────────────────────────────────────────────────────────
   async function runBulk(action: string, extra?: Record<string, unknown>, confirmMsg?: string) {
@@ -623,6 +654,28 @@ export default function BuyerListClient(props: Props) {
         {card("Repeat Buyers", summary.repeatBuyers, { onClick: () => selectRepeat(repeatOnly === "yes" ? "" : "yes"), pressed: repeatOnly === "yes", tone: summary.repeatBuyers ? "text-amber-600 dark:text-amber-400" : undefined })}
         {card("Investment", summary.investmentLabel)}
       </div>
+
+      {/* ── Report-drill context chips (?dateFrom/?dateTo/?source) ──────────────
+          These params filter the SERVER query (the rows + summary cards above are
+          already narrowed), so the user must SEE the context and be able to clear
+          it — same pill styling as the saved-view chips, ✕ drops just that param
+          set; "Clear all filters" / resetAll drops them too. */}
+      {drillActive && (
+        <div className="flex flex-wrap items-center gap-1.5">
+          {(drillDateFrom || drillDateTo) && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 pl-2.5 pr-1 py-0.5 text-xs">
+              <span className="text-amber-800 dark:text-amber-300 font-medium">{drillDateLabel}</span>
+              <button type="button" onClick={() => clearDrillParams("dateFrom", "dateTo")} className="text-amber-400 hover:text-red-500" aria-label="Clear imported-date filter">✕</button>
+            </span>
+          )}
+          {drillSource && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 pl-2.5 pr-1 py-0.5 text-xs">
+              <span className="text-amber-800 dark:text-amber-300 font-medium">Source: {drillSource}</span>
+              <button type="button" onClick={() => clearDrillParams("source")} className="text-amber-400 hover:text-red-500" aria-label="Clear source filter">✕</button>
+            </span>
+          )}
+        </div>
+      )}
 
       {/* ── Views (tabs) + Saved views + filters toggle ─────────────────────── */}
       <div className="flex flex-wrap items-center gap-2">

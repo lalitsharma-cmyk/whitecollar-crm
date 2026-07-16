@@ -1902,6 +1902,55 @@ const checks: Check[] = [
     },
   },
   {
+    // LEAD SOURCE INTAKE REPORT + DRILL-DOWN BATCH (Lalit 2026-07-16, urgent): every
+    // report number must answer "which exact leads?" — numbers computed through the SAME
+    // envelopes the drill-target lists parse (count == records by construction), with
+    // unclassified rows shown as their own visible buckets, never force-bucketed.
+    name: "lead-intake-drilldown — intake report wired to the shared envelopes; drill params + IST alignment + report-consistency fixes",
+    run: async () => {
+      const fs = await import("fs");
+      // (a) The report exists and composes from the SHARED pieces (the guarantee).
+      const intake = fs.readFileSync("src/app/(app)/reports/lead-intake/intake.ts", "utf8");
+      assert(/leadFilterWhere\(/.test(intake) && /leadScopeWhere\(/.test(intake),
+        "intake report must compose its counts from leadFilterWhere + leadScopeWhere — never a hand-rolled parallel where");
+      assert(/istDayRange\(/.test(intake), "intake buckets must use IST day boundaries");
+      assert(/Unclassified/.test(intake) || /Unclassified/.test(fs.readFileSync("src/app/(app)/reports/lead-intake/page.tsx", "utf8")),
+        "blank source/team rows must surface as visible Unclassified buckets (Lalit: never silently force-bucket)");
+      // (b) /leads drill hygiene: its inline parser ignores ?bucket=, and its defaults
+      //     (Today+Overdue follow-up, admin My-Leads seg) must be defeated in drill links.
+      assert(!/\/leads\?[^"'`]*bucket=/.test(intake), "never emit ?bucket= at /leads — its inline parser ignores it (silent mismatch)");
+      // (links are built via a qs() object, so match the property form, not the literal URL)
+      assert(/followup:\s*"all"/.test(intake) && /seg:\s*"all"/.test(intake) && /dateField:\s*"createdAt"/.test(intake),
+        "/leads drill links must pin dateField=createdAt + followup=all + seg=all so the list shows exactly the counted set");
+      // (c) Export is gated like every other export.
+      const exp = fs.readFileSync("src/app/api/reports/lead-intake/export/route.ts", "utf8");
+      assert(/requireRole\("ADMIN"\)/.test(exp) && /canExportData/.test(exp), "intake export must be ADMIN + canExportData gated");
+      assert(/href="\/reports\/lead-intake"/.test(fs.readFileSync("src/app/(app)/reports/page.tsx", "utf8")),
+        "the reports index must link the Lead Intake report");
+      // (d) The drill-param plumbing this batch added.
+      const engine = fs.readFileSync("src/lib/leadFilterWhere.ts", "utf8");
+      assert(/bucket === "lost"|sp\.bucket/.test(engine) && /rejectedAt: \{ not: null \}/.test(engine),
+        "the engine must support ?bucket=lost as LOST statuses OR rejectedAt");
+      // (e) IST ALIGNMENT — the engine's ?dateFrom/?dateTo must parse as IST days (the old
+      //     UTC parse made the same URL mean a different window on /master-data vs /leads).
+      assert(/istDayRange\(/.test(engine) && !/new Date\(s\)/.test(engine),
+        "engine date params must resolve via istDayRange (IST calendar days), not UTC new Date()");
+      // (f) /leads fresh chips: the inline copy must carry the ACTIVE_PIPELINE gate the
+      //     counts always had (chip count == rows that open).
+      const leadsPg = fs.readFileSync("src/app/(app)/leads/page.tsx", "utf8");
+      const freshBlock = leadsPg.slice(leadsPg.indexOf('sp.fresh === "today"'), leadsPg.indexOf('if (freshAnd.length'));
+      assert((freshBlock.match(/ACTIVE_PIPELINE_WHERE/g) || []).length >= 4,
+        "every /leads inline fresh branch must gate on ACTIVE_PIPELINE_WHERE");
+      // (g) Follow-up compliance counts null-status workable leads (NOT-IN drops NULLs).
+      const fuc = fs.readFileSync("src/app/(app)/reports/followup-compliance/page.tsx", "utf8");
+      assert(/currentStatus: null/.test(fuc), "followup-compliance must use the NULL-safe workable envelope (752-lead undercount)");
+      // (h) Buyer lists take the drill params.
+      for (const f of ["src/app/(app)/buyer-data/page.tsx", "src/app/(app)/india-buyer-data/page.tsx"]) {
+        assert(/dateFrom/.test(fs.readFileSync(f, "utf8")), `${f} must accept the ?dateFrom/?dateTo drill params`);
+      }
+    },
+  },
+  {
     // REVIVAL PAGINATION (Lalit 2026-07-16, critical): /cold-calls was a pagination-less
     // `take: 200` — every record past #200 was silently unreachable once the pool grew.
     // It must paginate EXACTLY like /leads: ?page= → skip server-side, Prev/Next links
@@ -6286,7 +6335,11 @@ const checks: Check[] = [
       const dash = fs.readFileSync("src/app/(app)/dashboard/page.tsx", "utf8");
       assert(/>Needs Lalit</.test(dash), "dashboard salesperson table must show the fixed 'Needs Lalit' column");
       assert(!/Needs \{me\.name\.split/.test(dash), "dashboard must NOT render the viewer-name 'Needs <firstname>' label anymore");
-      assert(/leadsDrill\(\{ owner: s\.id, needs: "1" \}\)/.test(dash), "the Needs-Lalit count must be a clickable drill to that agent's escalations");
+      // seg: "all" is REQUIRED (2026-07-16 drill fix): the needs count is team-agnostic
+      // SQL, so the drill must not inherit the India/Dubai view toggle — without it the
+      // opened list could show fewer rows than the count on a segmented dashboard view.
+      assert(/leadsDrill\(\{ owner: s\.id, needs: "1", seg: "all" \}\)/.test(dash),
+        "the Needs-Lalit count must drill to that agent's escalations WITH seg=all (team-agnostic count)");
       // (c) /leads honors the ?needs=1 escalation filter (the drill target).
       const leadsPage = fs.readFileSync("src/app/(app)/leads/page.tsx", "utf8");
       assert(/sp\.needs === "1"\) where\.needsManagerReview = true/.test(leadsPage), "/leads must filter on ?needs=1 → needsManagerReview");

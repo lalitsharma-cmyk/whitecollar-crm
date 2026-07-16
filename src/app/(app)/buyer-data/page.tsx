@@ -2,9 +2,11 @@ import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import Link from "next/link";
+import type { Prisma } from "@prisma/client";
 import BuyerListClient, { type BuyerRow, type BuyerAgent } from "@/components/BuyerListClient";
 import HelpDot from "@/components/HelpDot";
 import { buyerScopeWhere, canAccessDubaiBuyers, isDubaiAssignable } from "@/lib/buyerScope";
+import { istDayRange, isValidDateKey } from "@/lib/datetime";
 import { canExportData } from "@/lib/exportPerms";
 import {
   groupByBuyerKey,
@@ -38,7 +40,7 @@ const POOL_LABEL: Record<string, string> = {
   REJECTED: "Rejected",
 };
 
-export default async function BuyerDataPage() {
+export default async function BuyerDataPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const me = await requireUser();
   // Dubai Buyer Data is visible only to Admin/super-admin + Dubai-team users.
   // A non-Dubai (India/Gurgaon) agent/manager is redirected away (the nav item is
@@ -46,9 +48,29 @@ export default async function BuyerDataPage() {
   if (!canAccessDubaiBuyers(me)) redirect("/dashboard");
   const isAdmin = me.role === "ADMIN";
   const isAdminOrMgr = me.role === "ADMIN" || me.role === "MANAGER";
+  const sp = await searchParams;
   // Scope to what this user may see — buyerScopeWhere pins market="Dubai"
   // (admin = all Dubai + pool; Dubai agent = own ASSIGNED Dubai buyers).
   const scope = await buyerScopeWhere(me);
+
+  // ── Report drill-down params (additive, opt-in — Lead Source Intake drills) ──
+  // ?dateFrom=YYYY-MM-DD&dateTo=YYYY-MM-DD narrow to records IMPORTED (createdAt)
+  // within those IST calendar days — istDayRange gives the exact UTC instants, so
+  // a report's per-day bucket and this list agree with no off-by-one. ?source= is
+  // a verbatim `source` field match. Absent params → `where` stays exactly `scope`
+  // (byte-identical query to before). BuyerListClient shows the active drill as a
+  // clearable chip (URL-driven, like ?tab / ?repeat).
+  const drillAnd: Prisma.BuyerRecordWhereInput[] = [];
+  const dateFrom = isValidDateKey(sp.dateFrom) ? sp.dateFrom : null;
+  const dateTo = isValidDateKey(sp.dateTo) ? sp.dateTo : null;
+  if (dateFrom || dateTo) {
+    const r: { gte?: Date; lt?: Date } = {};
+    if (dateFrom) r.gte = istDayRange(dateFrom).start;
+    if (dateTo) r.lt = istDayRange(dateTo).end; // end-exclusive → covers the whole dateTo IST day
+    drillAnd.push({ createdAt: r });
+  }
+  if (sp.source) drillAnd.push({ source: sp.source });
+  const where: Prisma.BuyerRecordWhereInput = drillAnd.length ? { AND: [scope, ...drillAnd] } : scope;
 
   // Load the scoped set (server-capped) — the client filters / sorts / paginates.
   // Explicit select of ONLY the columns the summary + BuyerRow mapping below read
@@ -56,7 +78,7 @@ export default async function BuyerDataPage() {
   // coBuyerNames) are never used by the list, so dropping them keeps this 5000-row
   // fetch lean.
   const records = await prisma.buyerRecord.findMany({
-    where: scope,
+    where,
     orderBy: [{ poolStatus: "asc" }, { transactionDate: "desc" }],
     take: 5000,
     select: {

@@ -8,19 +8,25 @@
 // calling; /master-data is ADMIN-only so it passes everything straight through.
 import type { Prisma, FundReadiness, InvestTimeline } from "@prisma/client";
 import { assignedTodayOr, FIRST_CONTACT_PENDING_WHERE, FRESH_STATUS_OR, ACTIVE_PIPELINE_WHERE } from "@/lib/freshLeads";
+import { LOST_STATUSES, CLOSED_OUTCOME_STATUSES } from "@/lib/lead-statuses";
+import { istDayRange, isValidDateKey } from "@/lib/datetime";
 
 type SP = Record<string, string | undefined>;
 
 const split = (s?: string): string[] => (s ?? "").split(",").map((v) => v.trim()).filter(Boolean);
+// IST calendar-day boundaries (Lalit 2026-07-16). `new Date("YYYY-MM-DD")` is UTC
+// midnight — 5:30h EARLIER than the IST day the user means, so boundary-hour rows
+// diverged between /leads (which parses these params as IST days inline) and the
+// engine-driven lists (/master-data, /cold-calls). One business day = one IST day
+// everywhere: same math as the buyer lists' drill params and the intake report.
 function parseDay(s?: string): Date | null {
-  if (!s) return null;
-  const d = new Date(s);
-  return isNaN(d.getTime()) ? null : d;
+  if (!s || !isValidDateKey(s)) return null;
+  return istDayRange(s).start;
 }
-function endOfDay(d: Date): Date {
-  const e = new Date(d);
-  e.setUTCHours(23, 59, 59, 999);
-  return e;
+/** EXCLUSIVE end-instant of the IST day named by s (start of the NEXT IST day). */
+function parseDayEnd(s?: string): Date | null {
+  if (!s || !isValidDateKey(s)) return null;
+  return istDayRange(s).end;
 }
 
 /**
@@ -78,6 +84,28 @@ export function leadFilterWhere(sp: SP): Prisma.LeadWhereInput[] {
     const m = sp.market.trim().toLowerCase();
     if (m === "india") and.push({ OR: [{ market: "India" }, { forwardedTeam: "India" }] });
     else if (m === "uae" || m === "dubai") and.push({ OR: [{ market: "UAE" }, { forwardedTeam: "Dubai" }] });
+  }
+
+  // Lifecycle bucket (?bucket=lost|converted|assigned|unassigned) — report
+  // drill-down primitive so every report number (Lead Source Intake, dashboards)
+  // can be URL-expressed as the exact list it counted. Additive + opt-in: absent
+  // param → zero behaviour change on every module (/leads, /master-data, /cold-calls).
+  //   lost        → LOST status OR explicitly rejected. rejectedAt is the reject
+  //                 flow's source of truth — a rejected lead can still carry a
+  //                 workable status, so status alone would undercount.
+  //   converted   → a CLOSED outcome (booked/sold/leased — the Won/Closed boundary).
+  //   assigned    → has an owner.
+  //   unassigned  → RAW no-owner (includes rejected) so it reconciles with report
+  //                 totals; the ?owner=unassigned filter above stays the stricter
+  //                 "ready to assign" view that excludes rejected.
+  if (sp.bucket === "lost") {
+    and.push({ OR: [{ currentStatus: { in: LOST_STATUSES } }, { rejectedAt: { not: null } }] });
+  } else if (sp.bucket === "converted") {
+    and.push({ currentStatus: { in: CLOSED_OUTCOME_STATUSES } });
+  } else if (sp.bucket === "assigned") {
+    and.push({ ownerId: { not: null } });
+  } else if (sp.bucket === "unassigned") {
+    and.push({ ownerId: null });
   }
 
   // Source — verbatim sourceRaw, multi.
@@ -179,22 +207,24 @@ export function leadFilterWhere(sp: SP): Prisma.LeadWhereInput[] {
 
   // Follow-up date range.
   const fuFrom = parseDay(sp.followupFrom);
-  const fuTo = parseDay(sp.followupTo);
+  const fuTo = parseDayEnd(sp.followupTo);
   if (fuFrom || fuTo) {
-    const r: { gte?: Date; lte?: Date } = {};
+    const r: { gte?: Date; lt?: Date } = {};
     if (fuFrom) r.gte = fuFrom;
-    if (fuTo) r.lte = endOfDay(fuTo);
+    if (fuTo) r.lt = fuTo; // exclusive end of the named IST day
     and.push({ followupDate: r });
   }
 
   // Generic date range on a chosen field (created / last activity / follow-up).
+  // IST day boundaries — reconciles with /leads' inline parsing, the buyer lists'
+  // drill params, and the Lead Source Intake report's buckets (count == records).
   const dFrom = parseDay(sp.dateFrom);
-  const dTo = parseDay(sp.dateTo);
+  const dTo = parseDayEnd(sp.dateTo);
   if (dFrom || dTo) {
     const field = sp.dateField === "createdAt" || sp.dateField === "lastTouchedAt" ? sp.dateField : "followupDate";
-    const r: { gte?: Date; lte?: Date } = {};
+    const r: { gte?: Date; lt?: Date } = {};
     if (dFrom) r.gte = dFrom;
-    if (dTo) r.lte = endOfDay(dTo);
+    if (dTo) r.lt = dTo;
     and.push({ [field]: r } as Prisma.LeadWhereInput);
   }
 
