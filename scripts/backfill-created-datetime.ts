@@ -117,6 +117,28 @@ async function main() {
     if (p) plans.push(p);
   }
 
+  // MANUAL-CORRECTION GUARD (Lalit §4A: "do not overwrite manually corrected records
+  // without detecting them"). Any lead with a recorded createdAt correction in
+  // LeadFieldHistory (date-correction / genuine-misdate-fix / inline-edit — ANY source)
+  // was deliberately fixed by a human or an approved heal: its DAY is trusted and must
+  // not be re-derived from rawImport. Downgrade those plans to time-blank-only (never a
+  // createdAt write) and report them. Time-blanking stays safe: the manual edit path
+  // itself stamps createdTimeKnown=false.
+  const corrected = await prisma.leadFieldHistory.findMany({
+    where: { field: "createdAt", leadId: { in: plans.filter((p) => p.dateChanged).map((p) => p.row.id) } },
+    select: { leadId: true },
+  });
+  const correctedIds = new Set(corrected.map((c) => c.leadId));
+  let preserved = 0;
+  for (const p of plans) {
+    if (p.dateChanged && correctedIds.has(p.row.id)) {
+      p.dateChanged = false;
+      p.newCreatedAt = null;
+      preserved++;
+    }
+  }
+  if (preserved) console.log(`Manually-corrected createdAt detected → DAY preserved on ${preserved} lead(s) (time-blank only).`);
+
   const dateChanges = plans.filter((p) => p.dateChanged);
   const timeBlanks = plans.filter((p) => p.timeKnownChanged && p.newTimeKnown === false);
   const timeReveals = plans.filter((p) => p.timeKnownChanged && p.newTimeKnown === true);
