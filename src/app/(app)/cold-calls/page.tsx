@@ -399,7 +399,8 @@ export default async function ColdDataPage({ searchParams }: { searchParams: Pro
       followupDate: l.followupDate ? new Date(l.followupDate).toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short" }) : null,
       followupRaw: l.followupDate ? new Date(l.followupDate).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" }) : null,
       enquiryDate: l.createdAt ? new Date(l.createdAt).toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short", year: "2-digit" }) : null,
-      enquiryTime: l.createdAt ? new Date(l.createdAt).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hour12: true }) : null,
+      // Created Time blanks when unknown (imported row with no Time column → createdTimeKnown=false).
+      enquiryTime: l.createdTimeKnown === false ? null : (l.createdAt ? new Date(l.createdAt).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hour12: true }) : null),
       enquiryRaw: l.createdAt ? new Date(l.createdAt).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" }) : null,
       city: l.city ?? null,
       whenCanInvest: l.whenCanInvest ?? null,

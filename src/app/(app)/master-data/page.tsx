@@ -204,7 +204,9 @@ export default async function MasterDataPage({ searchParams }: { searchParams: P
       name: l.name,
       href: `/master-data/${l.id}?back=${encodeURIComponent(backToHere)}`,
       createdDate: fmtDate(l.createdAt),
-      createdTime: fmtTime(l.createdAt),
+      // Created Time blanks when the time is unknown (imported row whose sheet had no
+      // Time column → createdTimeKnown=false); null/true still render the time.
+      createdTime: l.createdTimeKnown === false ? "" : fmtTime(l.createdAt),
       createdAtMs: l.createdAt ? new Date(l.createdAt).getTime() : 0,
       budget: displayBudget(l),
       statusLabel: l.currentStatus ?? null,

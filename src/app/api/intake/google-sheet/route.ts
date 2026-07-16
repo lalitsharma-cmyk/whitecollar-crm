@@ -18,7 +18,7 @@ import { parseImportDate, detectDateColumn, detectTimeColumn, applyTimeToDate } 
 // Keep date-formatted values OUT of non-date fields (name/company/city/address/
 // configuration) — they belong only in date columns. Returns undefined for a date.
 const notDate = (v?: string): string | undefined => (v && looksLikeDate(v) ? undefined : v);
-import { normalizePhone, toE164 } from "@/lib/phone";
+import { normalizePhone } from "@/lib/phone";
 // runIntelligenceCheck is called inside ingestLead() for every new (non-deduped)
 // lead. No explicit call needed here — the check fires sequentially before any
 // assignment or automation runs, satisfying the bulk-import constraint.
@@ -43,7 +43,7 @@ import {
   pick as pickShared,
   makeMappedPick as makeMappedPickShared,
 } from "@/lib/importMapping";
-import { fingerprintFor } from "@/lib/assignment";
+import { leadDedupOR } from "@/lib/assignment";
 
 // Tracks which sheet headers were mapped to a known CRM field for the current
 // row, so every OTHER column is preserved verbatim in customFields. Reset per row.
@@ -217,6 +217,10 @@ export async function POST(req: NextRequest) {
   // accessor below) instead of guessing — parity with the CSV route, which always
   // honours field("date", …). Auto-detect remains the fallback.
   const dateMappingConfirmed = !!explicitMapping && Object.values(explicitMapping).includes("date");
+  // Item #3: did the admin confirm a column → "time" mapping? When so, the Created
+  // Time is read from THAT exact column (field("time", …)); else the auto-detected
+  // Time column. Absent either → createdTimeKnown stays false → Created Time blank.
+  const timeMappingConfirmed = !!explicitMapping && Object.values(explicitMapping).includes("time");
 
   // ── PREVIEW / DRY-RUN ───────────────────────────────────────────────────
   // preview=true: scan rows for dup/missing counts + propose a column mapping,
@@ -237,10 +241,12 @@ export async function POST(req: NextRequest) {
       if (!pick(row, ...PROJECT_PICK)) pMissingProject++;
       const cs = pick(row, "status", "callstatus");
       if (cs) unknownStatuses.add(cs);
-      const fpPhone = ph ? (toE164(normalizePhone(ph, "IN") ?? ph) ?? ph) : ph;
-      const fp = fingerprintFor(fpPhone, em);
-      const existing = fp
-        ? await prisma.lead.findFirst({ where: { fingerprint: { startsWith: fp }, deletedAt: null }, select: { name: true, phone: true, currentStatus: true } })
+      // D2 fix: preview dedup by canonical-phone-tail OR email (independent signals),
+      // the SAME rule the real ingest uses — replaces the old fingerprint startsWith
+      // check, which missed an email-only (or phone-only) re-import.
+      const dupOR = leadDedupOR(ph, em);
+      const existing = dupOR.length > 0
+        ? await prisma.lead.findFirst({ where: { deletedAt: null, OR: dupOR }, select: { name: true, phone: true, currentStatus: true } })
         : null;
       if (existing) {
         pDup++;
@@ -311,10 +317,11 @@ export async function POST(req: NextRequest) {
     try {
       // ── Duplicate-handling mode (wizard choice) ──────────────────────────
       if (dupMode !== "merge" && dupMode !== "update") {
-        const fpPhone = phone ? (toE164(phone) ?? phone) : phone;
-        const fp = fingerprintFor(fpPhone, email);
-        const existingDup = fp
-          ? await prisma.lead.findFirst({ where: { fingerprint: fp, deletedAt: null }, select: { id: true, rawRemarks: true } })
+        // D2 fix: match by canonical-phone-tail OR email (independent signals), the
+        // SAME rule ingestLead uses — not the old combined "phone|email" fingerprint.
+        const dupOR = leadDedupOR(phone, email);
+        const existingDup = dupOR.length > 0
+          ? await prisma.lead.findFirst({ where: { deletedAt: null, OR: dupOR }, select: { id: true, rawRemarks: true } })
           : null;
         if (existingDup) {
           if (dupMode === "skip") { skippedDup++; deduped++; continue; }
@@ -402,9 +409,18 @@ export async function POST(req: NextRequest) {
         rawDateForReport = dateRaw ?? "";
         leadDate = parseImportDate(dateRaw);
       }
-      if (leadDate && timeColumn) {
-        const timeRaw = row[timeColumn];
-        leadDate = applyTimeToDate(leadDate, timeRaw);
+      // Created TIME: admin-confirmed "time" mapping first, else the auto-detected
+      // Time column. Combine into the lead date only when it parses; track whether a
+      // real time was applied so Created Time can render blank when the sheet had none.
+      let createdTimeKnown = false;
+      if (leadDate) {
+        const timeRaw = timeMappingConfirmed
+          ? field("time", "time", "createdtime", "leadtime", "calltime", "entrytime", "inquirytime", "enteredtime")
+          : (timeColumn ? row[timeColumn] : undefined);
+        if (timeRaw && /\d{1,2}[:.]\d{2}/.test(String(timeRaw))) {
+          leadDate = applyTimeToDate(leadDate, String(timeRaw));
+          createdTimeKnown = true;
+        }
       }
 
       // Guard: reject future-dated leads (data-entry typos, follow-up dates misplaced)
@@ -413,6 +429,7 @@ export async function POST(req: NextRequest) {
       if (dateIsFuture) {
         futureDateRows.push({ name: name ?? phone ?? email ?? "—", rawDate: rawDateForReport });
         leadDate = undefined; // fallback to import time
+        createdTimeKnown = false; // no trusted time when we discard the future date
       }
 
       const sourceAndMedium = parseSourceAndMedium(field("source", "source"));
@@ -436,6 +453,9 @@ export async function POST(req: NextRequest) {
         source: sourceAndMedium.source,
         sourceDetail: campaign,
         createdAt: leadDate,
+        // Import-fidelity: a Created Time is known only when a Time column parsed;
+        // else false → Created Time renders blank (imports never fabricate a time).
+        createdTimeKnown: leadDate ? createdTimeKnown : false,
         // Terminal-on-arrival: hand ingestLead the terminal status so it skips
         // auto-assign + nulls the default follow-up at creation. Workable → undefined.
         currentStatus: incomingIsTerminal ? incomingStatus : undefined,

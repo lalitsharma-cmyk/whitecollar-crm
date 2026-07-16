@@ -1086,7 +1086,9 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
             // Enquiry date — when the client came in. Imports set createdAt from the
             // sheet's Date column; manually-created leads get the creation date.
             enquiryDate:   l.createdAt ? new Date(l.createdAt).toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short", year: "2-digit" }) : null,
-            enquiryTime:   l.createdAt ? new Date(l.createdAt).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hour12: true }) : null,
+            // Created Time blanks when the time is unknown (imported row whose sheet
+            // had no Time column, createdTimeKnown=false); null/true still show it.
+            enquiryTime:   l.createdTimeKnown === false ? null : (l.createdAt ? new Date(l.createdAt).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hour12: true }) : null),
             enquiryRaw:    l.createdAt ? new Date(l.createdAt).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" }) : null,
             city:          l.city ?? null,
             whenCanInvest: l.whenCanInvest ?? null,

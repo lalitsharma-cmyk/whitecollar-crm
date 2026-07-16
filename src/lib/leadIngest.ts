@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { LeadSource, LeadStatus, ActivityType, ActivityStatus, AIScore, ClientType } from "@prisma/client";
-import { pickRoundRobinAgent, fingerprintFor } from "@/lib/assignment";
+import { pickRoundRobinAgent, fingerprintFor, leadDedupOR } from "@/lib/assignment";
+import { phoneCanonicalDigits } from "@/lib/phoneCountry";
 import { defaultCurrencyForLocation } from "@/lib/money";
 import { notify, notifyRoles } from "@/lib/notify";
 import { toE164 } from "@/lib/phone";
@@ -61,6 +62,12 @@ export interface RawLeadInput {
   /** When the lead was actually generated (from import Date column). If provided,
    *  used as the lead's createdAt instead of the current timestamp. */
   createdAt?: Date;
+  /** Import-fidelity (Lalit created-date rule): was the TIME portion of createdAt
+   *  actually known? Importers pass `true` only when a Time column was mapped +
+   *  parsed, else `false` (the sheet had no time → "Created Time" displays BLANK).
+   *  Omitted by live intake (website/manual/Meta) → stored NULL → display unchanged
+   *  (the createdAt IS the real moment). Written verbatim to Lead.createdTimeKnown. */
+  createdTimeKnown?: boolean;
   /** Manual New-Lead form ONLY: the id of the admin/manager creating the lead.
    *  When present, the LEAD_CREATED Activity is attributed to them so the initial
    *  remark renders in Smart Timeline with date + time + USER (not an anonymous
@@ -155,15 +162,18 @@ export async function ingestLead(input: RawLeadInput) {
     if (st) input.state = st;
   }
 
-  // ── Duplicate path ──
-  // ONLY active leads dedupe. A soft-deleted lead (admin delete / rolled-back
-  // import) must NOT be treated as a duplicate — re-importing the same file
-  // after a delete has to recreate the records. findFirst + deletedAt:null
-  // (not findUnique) because fingerprint is now unique only among active rows
-  // (partial index Lead_fingerprint_active_key).
-  if (fp && !input.skipDedup) {
+  // ── Duplicate path (D2 fix, Lalit 2026-07-15) ──
+  // Match on canonical-phone-tail OR email as INDEPENDENT signals (leadDedupOR) —
+  // NOT the old single "phone|email" fingerprint string, which never matched a
+  // phone-only re-import of a lead first stored with phone+email. ONLY active leads
+  // dedupe (deletedAt:null): a soft-deleted lead (admin delete / rolled-back import)
+  // must NOT swallow a re-import — re-importing the same file after a delete has to
+  // recreate the records. (`fp` is still computed above; it's written to the
+  // fingerprint column on create + guarded by the partial-unique active index.)
+  const dedupOR = input.skipDedup ? [] : leadDedupOR(input.phone, input.email);
+  if (dedupOR.length > 0) {
     const existing = await prisma.lead.findFirst({
-      where: { fingerprint: fp, deletedAt: null },
+      where: { deletedAt: null, OR: dedupOR },
       include: { owner: true },
     });
     if (existing) {
@@ -349,11 +359,19 @@ export async function ingestLead(input: RawLeadInput) {
       // Lead_fingerprint_active_key (active rows) and does not silently swallow
       // future imports of the same contact. phone/email are still stored.
       fingerprint: input.skipDedup ? null : fp,
+      // Canonical phone (digits-only CC+national) — computed from the E.164 phone
+      // normalized above, so dedup + storage share the ONE canonical rule. Stored
+      // on EVERY intake (website/manual/Meta/CSV/Sheet) whenever a phone is present.
+      ...(input.phone ? { phoneCanonical: phoneCanonicalDigits(input.phone) || null } : {}),
       lastTouchedAt: new Date(),
       // Terminal-on-arrival gets NO default follow-up (a done lead must never sit on
       // the Action-List follow-up board); a workable lead keeps the +10-min default.
       followupDate: arrivedTerminalOnCreate ? null : followupDefault,
       ...(input.createdAt ? { createdAt: input.createdAt } : {}),
+      // Import-fidelity: honor an explicit createdTimeKnown from importers (true =
+      // Time column parsed; false = no Time column → display blank). Omitted by live
+      // intake → left NULL (display unchanged). Only written when explicitly provided.
+      ...(input.createdTimeKnown != null ? { createdTimeKnown: input.createdTimeKnown } : {}),
     },
   });
   await prisma.activity.create({
