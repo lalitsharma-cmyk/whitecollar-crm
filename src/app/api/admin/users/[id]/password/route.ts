@@ -1,7 +1,7 @@
 // ADMIN-only: set a new password for any user without requiring the old password.
 import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireRole } from "@/lib/auth";
+import { requireRole, userManagementDenial } from "@/lib/auth";
 import bcrypt from "bcryptjs";
 import { audit, reqMeta } from "@/lib/audit";
 
@@ -18,8 +18,12 @@ export async function POST(
     return NextResponse.json({ error: "Password must be at least 8 characters" }, { status: 400 });
   }
 
-  const target = await prisma.user.findUnique({ where: { id: targetId }, select: { id: true } });
+  const target = await prisma.user.findUnique({ where: { id: targetId }, select: { id: true, isSuperAdmin: true, role: true } });
   if (!target) return NextResponse.json({ error: "User not found" }, { status: 404 });
+  // Privilege-escalation guard — a non-super admin must not reset a super-admin's
+  // (or another admin's) password and take over the account.
+  const denied = userManagementDenial(me, target);
+  if (denied) return NextResponse.json({ error: denied.message }, { status: denied.code });
 
   const hash = await bcrypt.hash(newPassword, 10);
   const now = new Date();

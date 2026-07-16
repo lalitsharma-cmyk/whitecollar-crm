@@ -90,7 +90,12 @@ export async function clickToCall(p: ClickToCallParams): Promise<ClickToCallResu
 /** Verifies the inbound webhook token query param against ACEFONE_WEBHOOK_TOKEN. */
 export function verifyWebhookToken(provided: string | null): boolean {
   const expected = process.env.ACEFONE_WEBHOOK_TOKEN;
-  if (!expected) return true; // allow during initial setup; warn elsewhere
+  if (!expected) {
+    // Fail CLOSED in production (W5 security audit L2): an unset token must not
+    // make the CallLog-writing webhook anonymously spoofable. Permissive only in
+    // dev/local setup. Mirrors the intake/email + intake/meta hardening.
+    return process.env.NODE_ENV !== "production";
+  }
   if (!provided) return false;
   if (provided.length !== expected.length) return false;
   // constant-time compare

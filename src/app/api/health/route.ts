@@ -35,6 +35,9 @@ export async function GET() {
     }
     return NextResponse.json(base);
   } catch (e) {
-    return NextResponse.json({ ok: false, commit, error: String(e) }, { status: 500 });
+    // Log the internal error server-side only — never leak the DB/stack string to
+    // an anonymous caller (W5 security audit L3). The body stays minimal.
+    console.error("[health] probe failed", e);
+    return NextResponse.json({ ok: false, commit }, { status: 500 });
   }
 }

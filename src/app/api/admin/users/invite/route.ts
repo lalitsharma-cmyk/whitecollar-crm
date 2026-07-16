@@ -10,6 +10,9 @@ const VALID_TEAMS = new Set(["Dubai", "India"]);
 
 export async function POST(req: NextRequest) {
   const me = await requireRole("ADMIN");
+  if ((me as { hrOnly?: boolean }).hrOnly) {
+    return NextResponse.json({ error: "HR-only admins cannot create CRM users." }, { status: 403 });
+  }
   const body = await req.json().catch(() => ({}));
 
   const name = String(body.name ?? "").trim();
@@ -21,6 +24,10 @@ export async function POST(req: NextRequest) {
   if (!name) return NextResponse.json({ error: "Name is required" }, { status: 400 });
   if (!email || !email.includes("@")) return NextResponse.json({ error: "Valid email is required" }, { status: 400 });
   if (!VALID_ROLES.has(role)) return NextResponse.json({ error: "Role must be ADMIN, MANAGER, or AGENT" }, { status: 400 });
+  // Only a super-admin may mint another ADMIN (privilege-escalation guard, 2026-07-17).
+  if (role === "ADMIN" && !me.isSuperAdmin) {
+    return NextResponse.json({ error: "Only a super-admin can create an ADMIN account." }, { status: 403 });
+  }
   if (team !== null && !VALID_TEAMS.has(team)) return NextResponse.json({ error: "Team must be Dubai or India" }, { status: 400 });
   if (!tempPassword || tempPassword.length < 8) return NextResponse.json({ error: "Temporary password must be at least 8 characters" }, { status: 400 });
 

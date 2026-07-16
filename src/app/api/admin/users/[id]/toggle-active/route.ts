@@ -2,7 +2,7 @@
 // Admin cannot deactivate themselves.
 import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireRole } from "@/lib/auth";
+import { requireRole, userManagementDenial } from "@/lib/auth";
 import { audit, reqMeta } from "@/lib/audit";
 
 export async function PATCH(
@@ -16,8 +16,12 @@ export async function PATCH(
     return NextResponse.json({ error: "You cannot deactivate your own account" }, { status: 400 });
   }
 
-  const target = await prisma.user.findUnique({ where: { id }, select: { id: true, active: true } });
+  const target = await prisma.user.findUnique({ where: { id }, select: { id: true, active: true, isSuperAdmin: true, role: true } });
   if (!target) return NextResponse.json({ error: "User not found" }, { status: 404 });
+  // Privilege-escalation guard — a non-super admin must not disable a super-admin
+  // (or another admin) and lock the owner out.
+  const denied = userManagementDenial(me, target);
+  if (denied) return NextResponse.json({ error: denied.message }, { status: denied.code });
 
   const updated = await prisma.user.update({
     where: { id },

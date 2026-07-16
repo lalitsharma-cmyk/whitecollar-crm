@@ -4,6 +4,7 @@ import { ingestLead, terminalIntakeFields, assignLeadTo } from "@/lib/leadIngest
 import { applyRouting } from "@/lib/leadRouting";
 import { LeadSource, Potential, FundReadiness, MoodStatus, InvestTimeline } from "@prisma/client";
 import { requireRole } from "@/lib/auth";
+import { canImportData, EXPORT_DENIED } from "@/lib/exportPerms";
 import { prisma } from "@/lib/prisma";
 import { resolveTeam, routingFieldsFor } from "@/lib/teamRouting";
 import { teamToMarket } from "@/lib/market";
@@ -145,6 +146,10 @@ export async function POST(req: NextRequest) {
   // only, matching the CSV importer and the ADMIN-only import UI. (Was
   // requireUser() — any agent could POST directly.)
   const meUser = await requireRole("ADMIN");
+  // Owner-only (Super Admin) — parity with the CSV importer (W5 audit found this
+  // route stopped at requireRole and skipped canImportData, so a regular ADMIN
+  // like Sameer could bulk-import via Sheet, bypassing Lalit's owner-only rule).
+  if (!canImportData(meUser)) return NextResponse.json({ error: EXPORT_DENIED }, { status: 403 });
   const body = await req.json().catch(() => ({}));
   const url = String(body.url ?? "").trim();
   const campaign = body.campaign ? String(body.campaign).trim() : undefined;

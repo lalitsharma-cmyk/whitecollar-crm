@@ -6366,6 +6366,51 @@ const checks: Check[] = [
   },
 
   // ───────────────────────────────────────────────────────────────────────────
+  // 51f. USER-MANAGEMENT PRIVILEGE-ESCALATION GUARD (2026-07-17 security audit —
+  //      found identically by two independent agents). Before this, EVERY
+  //      admin/users/[id]/* mutation was gated only by requireRole("ADMIN"), so a
+  //      non-super admin (Sameer, leadOpsOnly) could reset the SUPER-ADMIN's
+  //      password and take over the owner account — defeating the isSuperAdmin
+  //      export/import/wipe/force-logout boundary. Now a shared guard
+  //      (userManagementDenial) blocks a non-super from acting on a super-admin or
+  //      admin target, and ADMIN creation/promotion is super-admin-only. Also:
+  //      the Google-Sheet importer now enforces the same owner-only rule as CSV.
+  // ───────────────────────────────────────────────────────────────────────────
+  {
+    name: "user-mgmt-privilege-guard — non-super admin cannot reset/demote/disable a super-admin; ADMIN mint is super-only; sheet import owner-only",
+    run: async () => {
+      const fs = await import("fs");
+      // auth.ts is server-only (can't import here) — assert the guard's LOGIC by
+      // content: hr-only denied; a privileged (super OR admin-role) target requires
+      // the actor be super. This is the exact predicate the routes call.
+      const authSrc = fs.readFileSync("src/lib/auth.ts", "utf8");
+      assert(/export function userManagementDenial/.test(authSrc), "userManagementDenial guard must exist in auth.ts");
+      assert(/if \(me\.hrOnly\) return \{ code: 403/.test(authSrc), "guard must deny hr-only admins");
+      assert(/const targetIsPrivileged = !!target\.isSuperAdmin \|\| target\.role === "ADMIN"/.test(authSrc)
+        && /if \(targetIsPrivileged && !me\.isSuperAdmin\)/.test(authSrc),
+        "guard must block a non-super actor from a super-admin/admin target");
+      // Every user-mutation route funnels through the guard (or the invite super-check).
+      const pw = fs.readFileSync("src/app/api/admin/users/[id]/password/route.ts", "utf8");
+      assert(/userManagementDenial\(me, target\)/.test(pw), "password reset must call the privilege guard");
+      const upd = fs.readFileSync("src/app/api/admin/users/[id]/update/route.ts", "utf8");
+      assert(/userManagementDenial\(me, target\)/.test(upd) && /grant the ADMIN role/.test(upd), "role update must guard target + block non-super ADMIN promotion");
+      const tog = fs.readFileSync("src/app/api/admin/users/[id]/toggle-active/route.ts", "utf8");
+      assert(/userManagementDenial\(me, target\)/.test(tog), "deactivate must call the privilege guard");
+      const inv = fs.readFileSync("src/app/api/admin/users/invite/route.ts", "utf8");
+      assert(/role === "ADMIN" && !me\.isSuperAdmin/.test(inv), "invite must restrict ADMIN creation to super-admin");
+      // Google-Sheet importer now enforces owner-only import (parity with CSV).
+      const sheet = fs.readFileSync("src/app/api/intake/google-sheet/route.ts", "utf8");
+      assert(/canImportData\(meUser\)/.test(sheet), "google-sheet import must enforce canImportData (owner-only), like CSV");
+      // Fail-closed hardening: health 500 no longer leaks the error string; acefone
+      // webhook rejects in production when its token is unset.
+      const health = fs.readFileSync("src/app/api/health/route.ts", "utf8");
+      assert(!/error: String\(e\)/.test(health), "health 500 must not leak the internal error string to anon");
+      const ace = fs.readFileSync("src/lib/acefone.ts", "utf8");
+      assert(/NODE_ENV !== "production"/.test(ace), "acefone webhook must fail closed in production when the token is unset");
+    },
+  },
+
+  // ───────────────────────────────────────────────────────────────────────────
   // 51c. ADMIN-ONLY PRESENCE & LAST-SEEN (2026-07-17, Lalit URGENT spec). Real-time
   //      Online (≤90s heartbeat) / Idle (>5min no interaction) / Offline /
   //      Never-Active-Today (IST day), per-device sessions, visible ONLY to

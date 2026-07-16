@@ -1,7 +1,7 @@
 // ADMIN-only: update a user's role and/or team.
 import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireRole } from "@/lib/auth";
+import { requireRole, userManagementDenial } from "@/lib/auth";
 import { audit, reqMeta } from "@/lib/audit";
 
 const VALID_ROLES = new Set(["ADMIN", "MANAGER", "AGENT"]);
@@ -37,8 +37,14 @@ export async function PATCH(
     return NextResponse.json({ error: "No valid fields provided" }, { status: 400 });
   }
 
-  const target = await prisma.user.findUnique({ where: { id }, select: { id: true } });
+  const target = await prisma.user.findUnique({ where: { id }, select: { id: true, isSuperAdmin: true, role: true } });
   if (!target) return NextResponse.json({ error: "User not found" }, { status: 404 });
+  // Privilege-escalation guard — a non-super admin must not demote/reteam a super-
+  // admin or another admin. Promoting anyone TO admin is also super-admin-only:
+  // guard the resulting role too, so a non-super can't mint a new admin here.
+  const denied = userManagementDenial(me, target) ?? (data.role === "ADMIN" && !me.isSuperAdmin
+    ? { code: 403 as const, message: "Only a super-admin can grant the ADMIN role." } : null);
+  if (denied) return NextResponse.json({ error: denied.message }, { status: denied.code });
 
   const updated = await prisma.user.update({
     where: { id },

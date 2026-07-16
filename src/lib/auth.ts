@@ -93,6 +93,35 @@ export async function requireRole(...roles: Role[]) {
   return u;
 }
 
+/**
+ * User-management authorization guard (Lalit security audit, 2026-07-17).
+ *
+ * A privilege-escalation hole existed: EVERY `admin/users/[id]/*` mutation
+ * (password reset, role change, deactivate, invite) was gated only by
+ * `requireRole("ADMIN")` — so ANY non-super admin (e.g. Sameer, leadOpsOnly)
+ * could reset the SUPER-ADMIN's password and take over the owner account,
+ * defeating the whole export/wipe/force-logout boundary that keys on
+ * `isSuperAdmin`. Two independent audit agents found this identically.
+ *
+ * Rule (matches the sessions route's existing guard):
+ *   • hr-only admins may never manage CRM users.
+ *   • Only a super-admin may act on a super-admin (or an ADMIN-role) target.
+ *   • Creating/promoting an ADMIN is a super-admin-only act.
+ * Returns null when allowed, or a 403 `{code,message}` the caller returns as JSON.
+ */
+export type ManageUserTarget = { isSuperAdmin?: boolean | null; role?: string | null };
+export function userManagementDenial(
+  me: { isSuperAdmin?: boolean | null; hrOnly?: boolean | null },
+  target: ManageUserTarget,
+): { code: 403; message: string } | null {
+  if (me.hrOnly) return { code: 403, message: "HR-only admins cannot manage CRM users." };
+  const targetIsPrivileged = !!target.isSuperAdmin || target.role === "ADMIN";
+  if (targetIsPrivileged && !me.isSuperAdmin) {
+    return { code: 403, message: "Only a super-admin can manage another admin or super-admin account." };
+  }
+  return null;
+}
+
 export async function loginWithCredentials(
   email: string,
   password: string,
