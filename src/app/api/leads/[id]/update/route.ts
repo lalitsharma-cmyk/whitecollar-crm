@@ -16,6 +16,7 @@ import { notify } from "@/lib/notify";
 import { assignLeadTo } from "@/lib/leadIngest";
 import { hasContactActivityToday } from "@/lib/followupGate";
 import { teamToMarket } from "@/lib/market";
+import { phoneCanonicalDigits } from "@/lib/phoneCountry";
 import { NotifKind, type Prisma } from "@prisma/client";
 
 // Inline-edit endpoint — accepts one or more field updates and logs an Activity
@@ -382,6 +383,17 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   }
 
   updates.lastTouchedAt = new Date();
+  // Keep phoneCanonical in lockstep with a manual phone edit (the ONE canonical
+  // rule feeds dedup): recompute on a set, clear on a clear. Admin-only field, so
+  // this only runs on an authorized phone change.
+  if ("phone" in updates) {
+    updates.phoneCanonical = typeof updates.phone === "string" && updates.phone
+      ? (phoneCanonicalDigits(updates.phone) || null)
+      : null;
+  }
+  // Editing the enquiry DATE (admin-only inline edit) sets a date without a time —
+  // so the Created Time must display blank. Mark the time unknown on that edit.
+  if ("createdAt" in updates) updates.createdTimeKnown = false;
   // If followupDate moved, re-arm the 10-min-before reminder so the new time gets pushed.
   if ("followupDate" in updates) updates.followupReminderSentAt = null;
   // Capture the BEFORE-status so a status change to NEGOTIATION/BOOKING_DONE/WON

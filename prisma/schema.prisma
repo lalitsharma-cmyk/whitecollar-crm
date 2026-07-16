@@ -520,6 +520,16 @@ model Lead {
   // and does NOT count as a duplicate. The full @unique was intentionally
   // dropped — do NOT re-add it (it would resurrect the deleted-lead dedupe bug).
   fingerprint         String? // phone||email hash; unique among active leads only
+  // Canonical phone (Lalit canonical-phone rule 2026-07-15): DIGITS-ONLY
+  // country_code+national_number, no "+", no separators — "9999999999",
+  // "+919999999999", "919999999999" all normalize to "919999999999". Computed by
+  // phoneCanonicalDigits() (src/lib/phoneCountry.ts) — the ONE normalization rule —
+  // on every write where phone is set. Dedup keys off its trailing tail so a lead
+  // first stored with BOTH phone+email now matches a re-import carrying ONLY the
+  // phone (the D2 fingerprint-string bug). Additive + nullable; backfilled by
+  // scripts/backfill-phone-canonical.ts. NOT unique (a suffix/endsWith match is
+  // used, which a btree unique wouldn't serve).
+  phoneCanonical      String?
   duplicateCount      Int             @default(0) // times this client has re-contacted us
   lastDuplicateAt     DateTime?
 
@@ -612,6 +622,15 @@ model Lead {
   // timestamps
   lastTouchedAt DateTime?
   createdAt     DateTime  @default(now())
+  // Import-fidelity: was the TIME portion of createdAt actually KNOWN? (Lalit
+  // created-date rule 2026-07-15) An import maps a Date column → createdAt and a
+  // separate Time column → the time. When the sheet has NO Time column the row's
+  // "Created Time" must display BLANK, not a fabricated noon/midnight. This tri-state
+  // flag drives that: false = time unknown → show blank; true = real time (Time
+  // column parsed, or live intake moment); null = legacy/real-time → display
+  // unchanged (shows time) until the created-datetime backfill sets it. Additive +
+  // nullable; backfilled by scripts/backfill-created-datetime.ts.
+  createdTimeKnown Boolean?
   updatedAt     DateTime  @updatedAt
 
   // Imported sheet columns with no matching CRM field (original header → value,

@@ -92,6 +92,13 @@ export const FIELD_CANDIDATES: Record<string, string[]> = {
   meeting:         ["meeting", "meetingdate"],
   siteVisit:       ["sitevisit", "sitevisitdate"],
   date:            ["date", "leaddate", "createdon", "createddate", "entrydate"],
+  // Separate Created-TIME column (Lalit created-date rule 2026-07-15). Combined with
+  // the Date column into createdAt; when a sheet has NO time column the row's Created
+  // Time displays BLANK. Canonical "time" is EXACT so buildMapping proposes Time→time
+  // (high) over whenCanInvest's "timeline" (medium prefix). The fuzzy importer path
+  // reads it via the dedicated detectTimeColumn() (NOT pick), so it never symmetric-
+  // prefix-collides with a "Timeline" column; explicit mapping reads field("time").
+  time:            ["time", "createdtime", "leadtime", "calltime", "entrytime", "inquirytime", "enteredtime"],
   lastContact:     ["lastcontact", "lastcontactdate", "lastcalldate", "lastcall", "calleddate", "lastcontacted"],
   detailShared:    ["detailshared", "shared"],
   todoNext:        ["todo", "todonext", "nextaction"],
@@ -111,7 +118,7 @@ export const FIELD_LABELS: Record<string, string> = {
   message: "Message / Requirement", remarks: "Remarks", stage: "Stage", status: "Status / Call status",
   potential: "Potential", fundReadiness: "Fund readiness", moodStatus: "Mood",
   whenCanInvest: "When can invest", followupDate: "Follow-up date", meeting: "Meeting date",
-  siteVisit: "Site-visit date", date: "Lead date (historic)", lastContact: "Last contact date",
+  siteVisit: "Site-visit date", date: "Lead date (historic)", time: "Created time (historic)", lastContact: "Last contact date",
   detailShared: "Detail shared", todoNext: "To-do / Next action", team: "Team",
   alreadyBought: "Already bought", alreadyBoughtBy: "Already bought via",
 };

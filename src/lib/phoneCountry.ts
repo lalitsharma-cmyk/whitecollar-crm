@@ -12,6 +12,8 @@
 // already collapse to one record — this adds clean +CC storage + blank-nationality fill.
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { normalizePhone } from "./phone";
+
 // Country calling code → nationality label. Longest-prefix wins (see below), so the
 // 3-digit codes are checked before the 2- and 1-digit ones. Focused on the Dubai
 // market's common origins; extend as needed.
@@ -74,4 +76,61 @@ export function canonicalizePhone(raw: string | null | undefined, nationalityHin
   if (cc) return "+" + cc + s.replace(/^0+/, "");
   // Unknown — return the original (never guess a country code we can't justify).
   return original;
+}
+
+/**
+ * THE canonical phone (Lalit canonical-phone rule 2026-07-15): DIGITS-ONLY
+ * country_code + national_number — no "+", no spaces/dashes. This is the ONE
+ * normalization every module stores + dedups on, so a number written five
+ * different ways collapses to one string:
+ *
+ *   phoneCanonicalDigits("9999999999")            → "919999999999"  (bare Indian mobile → +91)
+ *   phoneCanonicalDigits("+919999999999")         → "919999999999"
+ *   phoneCanonicalDigits("919999999999")          → "919999999999"
+ *   phoneCanonicalDigits("9999999999", "India")   → "919999999999"  (nationality hint)
+ *   phoneCanonicalDigits("+447912345678")         → "447912345678"  (UK)
+ *   phoneCanonicalDigits("+65 9123 4567")         → "6591234567"    (Singapore)
+ *
+ * Reconciles the two existing normalizers into one digits-only form:
+ *   1) canonicalizePhone() — the "+CC…" rule (embedded CC, or bare-local + a
+ *      nationality hint) — we just drop the leading "+".
+ *   2) When that can't justify a country code, fall back to normalizePhone()'s
+ *      digit-shape inference (India 10-digit [6-9] → +91, UAE 9-digit [5] → +971),
+ *      which is what makes a bare "9999999999" resolve to "919999999999".
+ * Returns "" when the input isn't usable. NEVER invents a CC it can't justify —
+ * a truly unknown shape returns its bare digits (dedup still matches by tail).
+ */
+export function phoneCanonicalDigits(raw: string | null | undefined, nationalityHint?: string | null): string {
+  const bare = normalizeDigits(raw);
+  if (!bare) return "";
+  // 1) The +CC rule (own country code, or bare-local + resolvable hint).
+  const c = canonicalizePhone(raw, nationalityHint);
+  let digits = String(c).replace(/\D/g, "");
+  if (nationalityFromPhone(digits)) return digits; // already carries a real CC → done
+  // 2) No justified CC yet → digit-shape inference (mirrors toE164/normalizePhone).
+  const e164 = normalizePhone(String(raw ?? ""));
+  if (e164) {
+    const eDigits = e164.replace(/\D/g, "");
+    if (nationalityFromPhone(eDigits)) return eDigits;
+    if (eDigits) digits = eDigits;
+  }
+  // 3) Best-effort digits — may still lack a CC when the shape is unknown; that's
+  //    fine, the trailing-tail dedup below still collapses it against a stored copy.
+  return digits || bare;
+}
+
+/**
+ * Stable trailing tail of the canonical phone, used as the cross-module dedup key.
+ * Last-10 digits (matches the existing Lead preview key dupKeysForRow — Indian
+ * mobiles ARE 10 digits, so this is the full national number). Empty string when
+ * there aren't enough digits to be a real number (< 7, the ITU-T E.164 floor), so
+ * a stray dial-prefix never produces a matching key.
+ *
+ *   phoneCanonicalTail("+919876543210") → "9876543210"
+ *   phoneCanonicalTail("9876543210")    → "9876543210"   (same person, different form)
+ *   phoneCanonicalTail("+971501234567") → "1501234567"
+ */
+export function phoneCanonicalTail(raw: string | null | undefined, nationalityHint?: string | null): string {
+  const d = phoneCanonicalDigits(raw, nationalityHint);
+  return d.length >= 7 ? d.slice(-10) : "";
 }

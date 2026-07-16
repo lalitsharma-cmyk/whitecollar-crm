@@ -10,14 +10,14 @@ import { extractFromRemarks, mergeSuggestions } from "@/lib/remarkAutofill";
 import { mergeRawRemark } from "@/lib/rawRemarks";
 import { applyRevivalMerge } from "@/lib/revivalImport";
 import { validEmail, validPhone, validBudgetRaw, looksLikeStatus, looksLikeDate } from "@/lib/importValidate";
-import { parseImportDate, applyTimeToDate } from "@/lib/parseImportDate";
+import { parseImportDate, applyTimeToDate, detectTimeColumn } from "@/lib/parseImportDate";
 
 // Keep date-formatted values OUT of non-date fields (name/company/city/address/
 // configuration/BANT) — they belong only in date/follow-up columns. Returns
 // undefined for a date so the importer leaves the field blank.
 const notDate = (v?: string): string | undefined => (v && looksLikeDate(v) ? undefined : v);
-import { splitPhones, normalizePhone, toE164 } from "@/lib/phone";
-import { fingerprintFor } from "@/lib/assignment";
+import { splitPhones, normalizePhone } from "@/lib/phone";
+import { leadDedupOR } from "@/lib/assignment";
 import { resolveTeam, routingFieldsFor } from "@/lib/teamRouting";
 import { teamToMarket } from "@/lib/market";
 import { interpretBudget, resolveBudgetCurrency } from "@/lib/budgetCurrency";
@@ -524,6 +524,16 @@ export async function POST(req: NextRequest) {
   // The raw remark text is kept on Lead.remarks and surfaced as read-only
   // Historical Notes. assignToUserId still assigns the imported LEAD below.
 
+  // ── Created TIME column (Lalit created-date rule 2026-07-15) ──────────────────
+  // "Created Date" = the Date column; "Created Time" = a SEPARATE Time column. When
+  // the sheet has NO Time column, Created Time must display BLANK (never a fabricated
+  // noon). Auto-detect the Time column once (dedicated detectTimeColumn — NOT pick(),
+  // so a "Time" header can't symmetric-prefix-collide with a "Timeline"/whenCanInvest
+  // column); an admin-confirmed column→"time" mapping (timeMappingConfirmed) takes
+  // precedence per-row via field("time", …). createdTimeKnown is stamped below.
+  const csvTimeColumn = detectTimeColumn(detectedColumns);
+  const timeMappingConfirmed = !!explicitMapping && Object.values(explicitMapping).includes("time");
+
   for (const [i, row] of rows.entries()) {
     _consumedKeys = new Set();   // reset mapped-header tracking for this row
     // ── Field accessor: honors an admin-confirmed mapping when present ────────
@@ -585,10 +595,13 @@ export async function POST(req: NextRequest) {
       // can act without touching ingestLead's internals, and "create" can force
       // a brand-new record. "merge"/"update" fall through to the normal path.
       if (dupMode !== "merge" && dupMode !== "update") {
-        const fpPhone = phone ? (toE164(phone) ?? phone) : phone;
-        const fp = fingerprintFor(fpPhone, email);
-        const existingDup = fp
-          ? await prisma.lead.findFirst({ where: { fingerprint: fp, deletedAt: null }, select: { id: true, rawRemarks: true } })
+        // D2 fix: match by canonical-phone-tail OR email (independent signals), the
+        // SAME rule ingestLead now uses — NOT the old combined "phone|email"
+        // fingerprint string, which missed a phone-only re-import of a lead first
+        // stored with phone+email. Uses all four contact points this row carries.
+        const dupOR = leadDedupOR(phone, email, altPhone, altEmail);
+        const existingDup = dupOR.length > 0
+          ? await prisma.lead.findFirst({ where: { deletedAt: null, OR: dupOR }, select: { id: true, rawRemarks: true } })
           : null;
         if (existingDup) {
           if (dupMode === "skip") {
@@ -852,12 +865,27 @@ export async function POST(req: NextRequest) {
       // Keep the real import time and leave the raw value in rawImport for review.
       // (24h tolerance so a lead dated "today" in another timezone isn't rejected.)
       const dateIsFuture = !!historicDate && historicDate.getTime() > Date.now() + 24 * 3600 * 1000;
+      // Created TIME — admin-confirmed "time" mapping first, else the auto-detected
+      // Time column. Combine into createdAt (IST) only when it actually parses; if
+      // the sheet had no Time column the time stays unknown → Created Time shows blank.
+      const timeRawCsv = timeMappingConfirmed
+        ? field("time", "time", "createdtime", "leadtime", "calltime", "entrytime", "inquirytime", "enteredtime")
+        : (csvTimeColumn ? row[csvTimeColumn] : undefined);
+      const hasImportedTime = !!timeRawCsv && /\d{1,2}[:.]\d{2}/.test(String(timeRawCsv));
       if (historicDate && !r.deduped && !dateIsFuture) {
-        update.createdAt = historicDate;
+        const createdVal = hasImportedTime ? applyTimeToDate(historicDate, String(timeRawCsv)) : historicDate;
+        update.createdAt = createdVal;
         // also backdate lastTouchedAt so "idle 24h" flags don't fire on import day
-        update.lastTouchedAt = historicDate;
+        update.lastTouchedAt = createdVal;
       } else if (dateIsFuture) {
         futureDateRows.push({ name: String(field("name", "customer", "name", "fullname") ?? "—"), rawDate: field("date", "date", "leaddate", "createdon", "createddate", "entrydate") ?? "" });
+      }
+      // Import-fidelity: a NEW imported row shows a Created Time ONLY when a Time
+      // column was present AND parsed (and a valid historic Date anchored it). Else
+      // createdTimeKnown=false → the list/detail render Created Time as blank. Never
+      // touched on a dedupe (the existing lead keeps its own createdAt + flag).
+      if (!r.deduped) {
+        update.createdTimeKnown = hasImportedTime && !!historicDate && !dateIsFuture;
       }
       // Item 6 — "worked today" follow-up suppression (import-time decision only).
       // If the sheet shows the lead was contacted TODAY (a last-contact column =
