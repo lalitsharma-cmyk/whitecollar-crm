@@ -18,6 +18,7 @@ import { sourceEnumLabel } from "@/lib/sourceLabel";
 import { BOOKED_STATUSES, isTerminalStatus } from "@/lib/lead-statuses";
 import { terminalStatusSideEffects } from "@/lib/lostRejected";
 import { resolveTeam, routingFieldsFor, automationGate } from "@/lib/teamRouting";
+import { resetAttemptCycleData } from "@/lib/callAttempts";
 import { resolveMarket } from "@/lib/market";
 import type { Classification } from "@/lib/leadClassifier";
 import { cleanNeedSnapshot } from "@/lib/needSnapshot";
@@ -725,7 +726,12 @@ export async function assignLeadTo(leadId: string, userId: string, reason: strin
 
   await prisma.lead.update({
     where: { id: leadId },
-    data: { ownerId: userId, assignedAt: now, slaFirstCallBy, slaEscalated: false },
+    // resetAttemptCycleData: ownership change = fresh owner-specific attempt cycle
+    // (Lalit 2026-07-17) — attempt/connect counters to 0, last-attempt cleared,
+    // 👻 ghosting cleared. The OLD owner's calls stay in CallLog/audit forever;
+    // this is the ONE assignment choke point, so every path (manual, bulk, master
+    // assign, routing rules, buyer convert, revival reassign) resets identically.
+    data: { ownerId: userId, assignedAt: now, slaFirstCallBy, slaEscalated: false, ...resetAttemptCycleData() },
   });
   await prisma.assignment.create({ data: { leadId, userId, reason } });
   await notify({

@@ -206,6 +206,9 @@ export default function LeadFilters({
   const [draftHasMeeting,   setDraftHasMeeting]   = useState("");
   const [draftHasSiteVisit, setDraftHasSiteVisit] = useState("");
   const [draftCategory,     setDraftCategory]     = useState("");
+  // 👻 Ghosting select — "" (All) / "1" (Ghosting only) / "0" (Non-Ghosting).
+  // Writes ?ghost=1 / ?ghost=0 / (absent), parsed by the /leads page.
+  const [draftGhost,        setDraftGhost]        = useState("");
   const [draftTag,          setDraftTag]          = useState("");
   const [draftSort,         setDraftSort]         = useState("");
   const [draftDateFrom,     setDraftDateFrom]     = useState("");
@@ -233,6 +236,7 @@ export default function LeadFilters({
     setDraftHasMeeting(sp.get("hasMeeting") ?? "");
     setDraftHasSiteVisit(sp.get("hasSiteVisit") ?? "");
     setDraftCategory(sp.get("category") ?? "");
+    setDraftGhost(sp.get("ghost") ?? "");
     setDraftTag(sp.get("tag") ?? "");
     setDraftSort(sp.get("sort") ?? "");
     setDraftDateFrom(sp.get("dateFrom") ?? "");
@@ -273,6 +277,7 @@ export default function LeadFilters({
     set("hasMeeting",    draftHasMeeting);
     set("hasSiteVisit",  draftHasSiteVisit);
     set("category",      draftCategory);
+    set("ghost",         draftGhost);
     set("tag",           draftTag);
     set("sort",          draftSort);
     set("dateFrom",      draftDateFrom);
@@ -288,7 +293,7 @@ export default function LeadFilters({
     ["project","cstatus","source","medium","propertyType","owner","whenInvest","clientType",
      "budgetFrom","budgetTo","budgetPreset","team","followup","followupFrom","followupTo","city",
      "fundReady","potential","notPicked","hasMeeting","hasSiteVisit",
-     "category","tag","sort","dateFrom","dateTo","dateField",
+     "category","ghost","tag","sort","dateFrom","dateTo","dateField",
      "status","ai","smart","filter","when","eoi",
     ].forEach(k => p.delete(k));
     p.delete("page");
@@ -356,6 +361,8 @@ export default function LeadFilters({
   if (sp.get("hasMeeting"))   chips.push({ key:"mtg",  label: "Has Meeting",                                       remove: () => removeParam("hasMeeting") });
   if (sp.get("hasSiteVisit")) chips.push({ key:"sv",   label: "Has Site Visit",                                    remove: () => removeParam("hasSiteVisit") });
   if (sp.get("category")) chips.push({ key:"cat",      label: `Category: ${sp.get("category")}`,                   remove: () => removeParam("category") });
+  if (sp.get("ghost") === "1") chips.push({ key:"ghost", label: "👻 Ghosting only",                                remove: () => removeParam("ghost") });
+  else if (sp.get("ghost") === "0") chips.push({ key:"ghost", label: "Non-Ghosting",                               remove: () => removeParam("ghost") });
   if (sp.get("tag"))      chips.push({ key:"tag",      label: `Tag: ${sp.get("tag")}`,                             remove: () => removeParam("tag") });
   if (sp.get("q"))        chips.push({ key:"q",        label: `"${sp.get("q")}"`,                                  remove: () => removeParam("q") });
   if (sp.get("dateFrom") || sp.get("dateTo")) {
@@ -368,7 +375,7 @@ export default function LeadFilters({
   const moreCount = [
     sp.get("fundReady"), sp.get("potential"), sp.get("notPicked"),
     sp.get("hasMeeting"), sp.get("hasSiteVisit"), sp.get("category"),
-    sp.get("tag"), sp.get("dateFrom") || sp.get("dateTo"),
+    sp.get("ghost"), sp.get("tag"), sp.get("dateFrom") || sp.get("dateTo"),
   ].filter(Boolean).length;
 
   const selCls = "w-full border border-gray-200 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400";
@@ -618,6 +625,17 @@ export default function LeadFilters({
                     <option value="HNI">HNI</option>
                     <option value="Highly Responsive">Highly Responsive</option>
                     <option value="Non-Responsive">Non-Responsive</option>
+                  </select>
+                </div>
+                {/* 👻 Ghosting — All / Ghosting only / Non-Ghosting. Writes
+                    ?ghost=1 / ?ghost=0 / (absent); combinable with every other
+                    filter. Server (/leads) re-checks display-eligibility. */}
+                <div>
+                  <div className="text-[11px] font-bold uppercase tracking-wide text-gray-500 dark:text-slate-400 mb-1">👻 Ghosting</div>
+                  <select value={draftGhost} onChange={e=>setDraftGhost(e.target.value)} className={selCls}>
+                    <option value="">All</option>
+                    <option value="1">👻 Ghosting only</option>
+                    <option value="0">Non-Ghosting</option>
                   </select>
                 </div>
                 {distinctTags.length > 0 && (

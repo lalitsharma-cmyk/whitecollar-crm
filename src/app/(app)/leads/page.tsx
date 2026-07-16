@@ -9,6 +9,7 @@ import MotivationBanner from "@/components/MotivationBanner";
 import HelpDot from "@/components/HelpDot";
 import { runReconciler } from "@/lib/reconciler";
 import { leadScopeWhere, COLD_ORIGINS, workableWhere, activeBoardWhere, MASTER_DATA_BOARD_OR } from "@/lib/leadScope";
+import { GHOSTING_DISPLAY_WHERE } from "@/lib/ghosting";
 import { canExportData, canImportData } from "@/lib/exportPerms";
 import { overdueFollowupBoundary } from "@/lib/datetime";
 import { contactActivityByLeadToday } from "@/lib/followupGate";
@@ -209,6 +210,19 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
     if (pts.length === 1) where.propertyType = pts[0];
     else if (pts.length > 1) where.propertyType = { in: pts };
   }
+  // 👻 Ghosting filter (?ghost=1|0, Lalit 2026-07-17) — the SAME display-
+  // eligibility every 👻 surface uses (GHOSTING_DISPLAY_WHERE in lib/ghosting.ts:
+  // stamped + still owned + status neither terminal nor engaged), so the report/
+  // dashboard drill numbers equal the rows this page opens (count==records).
+  if (sp.ghost === "1") {
+    where.AND = where.AND
+      ? [...(Array.isArray(where.AND) ? where.AND : [where.AND]), { ...GHOSTING_DISPLAY_WHERE }]
+      : [{ ...GHOSTING_DISPLAY_WHERE }];
+  } else if (sp.ghost === "0") {
+    where.AND = where.AND
+      ? [...(Array.isArray(where.AND) ? where.AND : [where.AND]), { NOT: { ...GHOSTING_DISPLAY_WHERE } }]
+      : [{ NOT: { ...GHOSTING_DISPLAY_WHERE } }];
+  }
   // Source filter — multi-select, comma-separated. Filters on the verbatim
   // sourceRaw field (human values like "WhatsApp", "Google Ads"), not the
   // legacy `source` enum. Dropdown options are the DISTINCT sourceRaw values.
@@ -351,7 +365,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
   // search and show all matching, not just today's.
   // nofollowup filter already sets followupDate: null, so the followup chip
   // default (today) must not compose with it — include it as an "other filter".
-  const hasOtherFilter = !!(sp.q || sp.source || sp.status || sp.cstatus || sp.owner || sp.team || sp.score || sp.ai || sp.untouched || sp.fresh || sp.when || sp.notPicked || sp.eoi || sp.smart || sp.potential || sp.fundReady || sp.clientType || sp.whenInvest || sp.project || sp.propertyType || sp.budgetPreset || sp.budgetFrom || sp.budgetTo || sp.city || sp.category || sp.hasMeeting || sp.hasSiteVisit || sp.needs || sp.followupFrom || sp.followupTo || filterTab === "nofollowup");
+  const hasOtherFilter = !!(sp.q || sp.source || sp.status || sp.cstatus || sp.owner || sp.team || sp.score || sp.ai || sp.untouched || sp.fresh || sp.when || sp.notPicked || sp.eoi || sp.smart || sp.potential || sp.fundReady || sp.clientType || sp.whenInvest || sp.project || sp.propertyType || sp.budgetPreset || sp.budgetFrom || sp.budgetTo || sp.city || sp.category || sp.hasMeeting || sp.hasSiteVisit || sp.needs || sp.ghost || sp.followupFrom || sp.followupTo || filterTab === "nofollowup");
   // ── DEFAULT working view = ALL workable leads (6-tier smart sorted) ─────
   // Updated rule (Lalit, 2026-06-21): show EVERY workable lead by default,
   // ordered by the 6-tier smart sort so today's fresh leads + today's follow-ups
@@ -988,7 +1002,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
           sp.tag || sp.filter || (sp.followup && sp.followup !== "all") ||
           sp.potential || sp.fundReady || sp.clientType || sp.whenInvest ||
           sp.project || sp.propertyType || sp.budgetPreset || sp.city || sp.category ||
-          sp.hasMeeting || sp.hasSiteVisit
+          sp.hasMeeting || sp.hasSiteVisit || sp.ghost
         );
         if (!hasActiveFilters) return null;
         return (
@@ -1135,6 +1149,10 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
             // NEVER fall back to configuration ("2 BHK") — that is its own column.
             sourceDetail: l.sourceDetail ?? null,
             projectHint: l.notesShort ?? null,
+            // 👻 Ghosting: forward the raw signals so LeadsListClient can render
+            // the secondary tag (it re-applies the display guard client-side).
+            ghostingAt: l.ghostingAt ? l.ghostingAt.toISOString() : null,
+            attemptCount: l.attemptCount,
           };
         })}
       />

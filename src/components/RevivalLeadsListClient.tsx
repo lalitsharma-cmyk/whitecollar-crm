@@ -26,6 +26,57 @@ export interface RevivalPromoteMeta {
   isOriginCold: boolean;
 }
 
+/** Attempt-cycle chip data (Revival auto-return engine — lib/callAttempts.ts).
+ *  Serializable, computed server-side on /cold-calls the same way promoteMeta is. */
+export interface RevivalAttemptMeta {
+  /** Row has a current owner (attempts are owner-specific). */
+  owned: boolean;
+  /** Unsuccessful call attempts by the CURRENT owner (resets on reassignment). */
+  attemptCount: number;
+  /** revivalMaxAttempts Setting — the SAME threshold the auto-return fires on. */
+  threshold: number;
+  /** returnedToPoolAt != null — the record was auto-returned to the Admin queue. */
+  returned: boolean;
+  /** revivalCycle (1 = first ownership; +1 on every auto-return). */
+  cycle: number;
+}
+
+/** 📞 n/T attempts chip (owned rows) / ↩︎ Returned badge (unowned, auto-returned).
+ *  Mirrors the Dubai Buyer Data attempts presentation (BuyerListClient table cell +
+ *  BuyerAdminPanel tones): hidden at 0 attempts, gray below T-1, amber at T-1
+ *  ("nearing" — one unsuccessful call from auto-return), red at ≥T. */
+function RevivalAttemptChip({ meta }: { meta: RevivalAttemptMeta }) {
+  const t = meta.threshold;
+  if (meta.owned) {
+    if (meta.attemptCount <= 0) return null; // same as the Buyer table's "—" at 0
+    const tone = meta.attemptCount >= t
+      ? "border-red-300 bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-300 dark:border-red-700"
+      : meta.attemptCount >= t - 1
+        ? "border-amber-300 bg-amber-50 text-amber-700 dark:bg-amber-900/20 dark:text-amber-300 dark:border-amber-700"
+        : "border-gray-200 bg-gray-50 text-gray-600 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700";
+    const title = meta.attemptCount >= t
+      ? `${meta.attemptCount}/${t} call attempts by the current owner — at the auto-return threshold`
+      : meta.attemptCount === t - 1
+        ? `${meta.attemptCount}/${t} call attempts — one unanswered call from auto-return to the Admin Revival queue`
+        : `${meta.attemptCount}/${t} call attempts by the current owner — auto-returns to Admin at ${t} with no connect`;
+    return (
+      <span title={title}
+        className={`inline-flex items-center rounded-full border px-1.5 py-0.5 text-[10px] font-semibold tabular-nums whitespace-nowrap ${tone}`}>
+        📞 {meta.attemptCount}/{t}
+      </span>
+    );
+  }
+  if (meta.returned) {
+    return (
+      <span title={`Auto-returned to the Admin Revival queue (${t} unanswered attempts, no connect) — revival cycle ${meta.cycle}. Reassigning starts a fresh cycle.`}
+        className="inline-flex items-center rounded-full border border-blue-200 bg-blue-50 text-blue-700 px-1.5 py-0.5 text-[10px] font-semibold whitespace-nowrap dark:bg-blue-900/20 dark:text-blue-300 dark:border-blue-700">
+        ↩︎ Returned (cycle {meta.cycle})
+      </span>
+    );
+  }
+  return null;
+}
+
 interface Props {
   leads: Row[];
   canBulk: boolean;
@@ -41,11 +92,13 @@ interface Props {
   agents: { id: string; name: string; team: string | null }[];
   /** id → promote eligibility + origin. Drives the extra Promote row action. */
   promoteMeta: Record<string, RevivalPromoteMeta>;
+  /** id → attempt-cycle chip data (📞 n/T · ↩︎ Returned). Optional/additive. */
+  attemptMeta?: Record<string, RevivalAttemptMeta>;
 }
 
 export default function RevivalLeadsListClient({
   leads, canBulk, canReassign, canSetStatus, canDelete, projectOptions, statusOptions,
-  sourceOptions, meRole, showSource, searchParamsStr, agents, promoteMeta,
+  sourceOptions, meRole, showSource, searchParamsStr, agents, promoteMeta, attemptMeta,
 }: Props) {
   return (
     <LeadsListClient
@@ -66,8 +119,13 @@ export default function RevivalLeadsListClient({
       leads={leads}
       extraRowAction={(row) => {
         const m = promoteMeta[row.id];
-        if (!m || !m.canPromote) return null;
-        return <RevivalRowPromote leadId={row.id} leadName={row.name} isOriginCold={m.isOriginCold} />;
+        const a = attemptMeta?.[row.id];
+        const chip = a ? <RevivalAttemptChip meta={a} /> : null;
+        const promote = m && m.canPromote
+          ? <RevivalRowPromote leadId={row.id} leadName={row.name} isOriginCold={m.isOriginCold} />
+          : null;
+        if (!chip && !promote) return null;
+        return <>{chip}{promote}</>;
       }}
     />
   );

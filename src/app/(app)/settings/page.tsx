@@ -3,7 +3,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { getTravelRatePerKmInr, getSpeedToLeadEnabled, getRoundRobinEnabled, getTestingModeEnabled, getMotivationPilotEnabled, getMotivationPilotTeam, getBantGateMode, getAiEnabled, getAiTrialModeEnabled, getAiMonthlyCostCapUsd, getAutomationFlags } from "@/lib/settings";
+import { getSetting, getTravelRatePerKmInr, getSpeedToLeadEnabled, getRoundRobinEnabled, getTestingModeEnabled, getMotivationPilotEnabled, getMotivationPilotTeam, getBantGateMode, getAiEnabled, getAiTrialModeEnabled, getAiMonthlyCostCapUsd, getAutomationFlags } from "@/lib/settings";
 import TravelRateEditor from "@/components/TravelRateEditor";
 import SpeedToLeadToggle from "@/components/SpeedToLeadToggle";
 import RoundRobinToggle from "@/components/RoundRobinToggle";
@@ -15,8 +15,17 @@ import FestivalAdminPanel from "@/components/FestivalAdminPanel";
 import TestPushButton from "@/components/TestPushButton";
 import NotifPrefsEditor from "@/components/NotifPrefsEditor";
 import AiEnabledToggle from "@/components/AiEnabledToggle";
+import CallAttemptThresholdsEditor from "@/components/CallAttemptThresholdsEditor";
 import DailyTargetsForm from "@/components/DailyTargetsForm";
 import { getDailyTargets } from "@/lib/targets";
+
+// Call Attempt Tracking thresholds — stored as string Settings (like every other
+// numeric setting). Parsed + clamped here; unset/garbage falls back to the default
+// so the engine and this page always agree on the effective value.
+function parseIntSetting(raw: string, def: number, min: number, max: number): number {
+  const n = Number(raw);
+  return Number.isInteger(n) && n >= min && n <= max ? n : def;
+}
 
 // Parse User.notifPrefs (JSON-stringified `{ kind: boolean }` map). Bad JSON or
 // non-object payloads fall back to {} so the editor seeds every toggle ON.
@@ -52,7 +61,7 @@ export default async function SettingsPage() {
   const me = await requireUser();
   // ADMIN-ONLY — Settings exposes admin tools + system config; managers/agents must not see it.
   if (me.role !== "ADMIN") redirect("/leads");
-  const [travelRate, speedToLeadOn, roundRobinOn, testingModeOn, motivationPilotOn, motivationPilotTeam, bantGateMode, pushSubCount, aiEnabledOn, aiTrialModeOn, aiMonthlyCostCapUsd, automationFlags] = await Promise.all([
+  const [travelRate, speedToLeadOn, roundRobinOn, testingModeOn, motivationPilotOn, motivationPilotTeam, bantGateMode, pushSubCount, aiEnabledOn, aiTrialModeOn, aiMonthlyCostCapUsd, automationFlags, ghostingThresholdRaw, revivalMaxAttemptsRaw] = await Promise.all([
     getTravelRatePerKmInr(),
     getSpeedToLeadEnabled(),
     getRoundRobinEnabled(),
@@ -65,7 +74,12 @@ export default async function SettingsPage() {
     getAiTrialModeEnabled(),
     getAiMonthlyCostCapUsd(),
     getAutomationFlags(),
+    getSetting("ghostingThreshold"),
+    getSetting("revivalMaxAttempts"),
   ]);
+  // Call Attempt Tracking thresholds (defaults 10 / 5; ranges 3–30 / 2–15).
+  const ghostingThreshold = parseIntSetting(ghostingThresholdRaw, 10, 3, 30);
+  const revivalMaxAttempts = parseIntSetting(revivalMaxAttemptsRaw, 5, 2, 15);
   const isAdmin = me.role === "ADMIN";
   const currentTargets = isAdmin ? await getDailyTargets() : null;
   const icsUrl = buildIcsUrl(me.id);
@@ -171,6 +185,25 @@ export default async function SettingsPage() {
             <b> Strict</b> &mdash; blocks the move until BANT is complete.
           </p>
           <BantGateToggle initial={bantGateMode} canEdit={isAdmin} />
+        </div>
+      )}
+
+      {/* Call Attempt Tracking thresholds (admin-only) — the two numbers behind
+          the 👻 Ghosting tag (Normal Leads) and the Revival auto-return rule. */}
+      {isAdmin && (
+        <div className="card p-5 max-w-2xl">
+          <div className="font-semibold flex items-center gap-2">📞 Call-attempt thresholds</div>
+          <p className="text-xs text-gray-500 mt-1">
+            Both count <b>call attempts with no response</b> by the lead&apos;s current agent —
+            the counter restarts whenever a lead changes hands, and one meaningful
+            conversation resets the clock. Ghosting only tags the lead;
+            auto-return moves a Revival record back to the Admin queue.
+          </p>
+          <CallAttemptThresholdsEditor
+            initialGhosting={ghostingThreshold}
+            initialRevivalMax={revivalMaxAttempts}
+            canEdit={isAdmin}
+          />
         </div>
       )}
 

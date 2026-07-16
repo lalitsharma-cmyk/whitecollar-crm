@@ -18,7 +18,7 @@ import CRMDatePicker from "@/components/CRMDatePicker";
 import { toISTLocalInput, isPastISTLocalInput } from "@/lib/datetime";
 import { ACTION_TOKENS } from "@/lib/actionDesign";
 import { showXpToast } from "@/components/XPToast";
-import { statusColor, selectableStatuses } from "@/lib/lead-statuses";
+import { statusColor, selectableStatuses, TERMINAL_STATUSES, CLOSING_STATUSES } from "@/lib/lead-statuses";
 import { resolveEnquiredProperty, prettyProjectName } from "@/lib/projectName";
 // Shared source allow-list — same one the New-Lead form uses, so the Master-Data
 // bulk Source edit can't re-offer the deprecated WhatsApp/Inbound-Call/Event/Email
@@ -180,6 +180,14 @@ export interface Row {
   assignedToday?: boolean;
   untouched?: boolean;
   freshUntouchedToday?: boolean;
+  /** 👻 Ghosting stamp (ISO string) — set by the call-attempt engine when the
+   *  CURRENT owner logged ≥ghostingThreshold call attempts with zero connects.
+   *  OPTIONAL: the chip renders only when the parent page's row mapping passes
+   *  it AND the read-time guard passes (see isGhostingRow). Secondary tag —
+   *  never replaces the status chip. */
+  ghostingAt?: string | null;
+  /** Current-owner call attempts (Lead.attemptCount) — optional row context. */
+  attemptCount?: number | null;
 }
 
 /** Fresh-lead badges — the loud, instantly-visible "don't miss this" markers.
@@ -197,6 +205,31 @@ function FreshBadges({ row, className = "" }: { row: Row; className?: string }) 
         <span className="inline-flex items-center rounded-full bg-red-100 text-red-700 border border-red-300 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide dark:bg-red-950/40 dark:text-red-200 dark:border-red-700"
           title="No call, WhatsApp, or note logged yet — first contact pending">⚡ Untouched</span>
       )}
+    </span>
+  );
+}
+
+// ── 👻 Ghosting chip (Lalit 2026-07-17) — SECONDARY tag, never replaces the
+// status chip. Renders ONLY when the row data carries ghostingAt (pages that
+// don't select it — Revival, etc. — never show it) AND the display-eligibility
+// guard passes AT READ TIME (statuses can change after the stamp):
+//   ghostingAt set · still owned · currentStatus neither TERMINAL nor CLOSING.
+// Mirrors the server guard in app/(app)/reports/ghosting/ghosting.ts
+// (ghostingDisplayWhere) — keep the two in sync.
+const GHOSTING_BLOCKED = new Set<string>([...TERMINAL_STATUSES, ...CLOSING_STATUSES]);
+function isGhostingRow(row: Row): boolean {
+  if (!row.ghostingAt || !row.owner) return false;
+  const st = (row.currentStatus ?? "").trim();
+  return st === "" || !GHOSTING_BLOCKED.has(st);
+}
+function GhostingChip({ row, className = "" }: { row: Row; className?: string }) {
+  if (!isGhostingRow(row)) return null;
+  return (
+    <span
+      className={`inline-flex items-center rounded-full bg-violet-100 text-violet-700 border border-violet-300 px-1.5 py-0.5 text-[9px] font-bold dark:bg-violet-950/40 dark:text-violet-300 dark:border-violet-700 ${className}`}
+      title="10+ call attempts, no response (current owner)"
+    >
+      👻 Ghosting
     </span>
   );
 }
@@ -929,6 +962,8 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
                               </div>
                             )}
                           </div>
+                          {/* 👻 secondary tag — sits under the status chip, never replaces it */}
+                          <GhostingChip row={l} className="mt-0.5" />
                         </td>
 
                         {/* 6. Budget */}
@@ -1072,8 +1107,12 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
                   <Link href={`${detailBasePath}/${l.id}`} className="font-bold text-sm text-[#0b1a33] dark:text-white truncate">
                     {l.name}
                   </Link>
-                  <span className={`${statusColor(l.currentStatus)} text-[10px] px-2 py-0.5 rounded-full border font-medium shrink-0`}>
-                    {l.currentStatus ?? "—"}
+                  <span className="flex items-center gap-1 shrink-0">
+                    {/* 👻 secondary tag — beside the status chip, never replaces it */}
+                    <GhostingChip row={l} />
+                    <span className={`${statusColor(l.currentStatus)} text-[10px] px-2 py-0.5 rounded-full border font-medium shrink-0`}>
+                      {l.currentStatus ?? "—"}
+                    </span>
                   </span>
                 </div>
                 {(l.assignedToday || l.untouched) && (
@@ -1187,6 +1226,8 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
                       {maskedPhone && <span className="text-[10px] text-gray-400 dark:text-slate-500 font-mono flex-none">{maskedPhone}</span>}
                     </div>
                     <div className="flex items-center gap-1 flex-none relative" data-status-popover>
+                      {/* 👻 secondary tag — beside the status chip, never replaces it */}
+                      <GhostingChip row={l} />
                       <button
                         type="button"
                         onClick={(e) => { e.stopPropagation(); setStatusOpenFor(statusOpenFor === l.id ? null : l.id); }}
@@ -1422,6 +1463,8 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
                         className={`${statusColor(l.currentStatus)} text-[10px] px-2 py-0.5 rounded-full border font-medium inline-flex items-center gap-0.5 whitespace-nowrap`}>
                         {l.currentStatus ?? "Set status"}<span aria-hidden>▾</span>
                       </button>
+                      {/* 👻 secondary tag — under the status chip, never replaces it */}
+                      <GhostingChip row={l} className="mt-0.5 ml-0.5" />
                       {statusOpenFor === l.id && (
                         <div className="absolute left-0 top-full mt-1 z-50 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-600 rounded-lg shadow-xl w-52 max-h-64 overflow-y-auto py-1"
                           onClick={e => e.stopPropagation()}>

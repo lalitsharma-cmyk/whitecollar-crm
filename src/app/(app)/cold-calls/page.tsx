@@ -18,7 +18,8 @@ import Link from "next/link";
 import ColdDataAdminControls from "@/components/ColdDataAdminControls";
 import HiddenGemsBanner, { type HiddenGem } from "@/components/HiddenGemsBanner";
 import RevivalLeaderboard, { type LeaderboardRow } from "@/components/RevivalLeaderboard";
-import RevivalLeadsListClient, { type RevivalPromoteMeta } from "@/components/RevivalLeadsListClient";
+import RevivalLeadsListClient, { type RevivalPromoteMeta, type RevivalAttemptMeta } from "@/components/RevivalLeadsListClient";
+import { getRevivalMaxAttempts } from "@/lib/callAttempts";
 import LeadFilters from "@/components/LeadFilters";
 import SavedFiltersBar from "@/components/SavedFiltersBar";
 import HelpDot from "@/components/HelpDot";
@@ -98,6 +99,7 @@ export default async function ColdDataPage({ searchParams }: { searchParams: Pro
   const weekStart = startOfWeek(new Date(), { weekStartsOn: 1 });
 
   const isAdminOrMgr = me.role === "ADMIN" || me.role === "MANAGER";
+  const isAdmin = me.role === "ADMIN";
   const isAgent = me.role === "AGENT";
 
   // Agents only see cold data assigned to them. Admin/manager see everything.
@@ -154,9 +156,34 @@ export default async function ColdDataPage({ searchParams }: { searchParams: Pro
           ? { currentStatus: statusFilter }
           : {};
 
+  // ── Attempt-cycle filters (Revival auto-return engine — lib/callAttempts.ts) ──
+  // Threshold = the SAME Setting-backed value the engine fires on
+  // (revivalMaxAttempts, default 5, clamped) so these surfaces can never drift
+  // from the actual auto-return behaviour.
+  //   ?attempts=nearing → owned rows exactly ONE unsuccessful call from
+  //                       auto-return (attemptCount = T-1).
+  //   ?attempts=maxed   → owned rows at/over the threshold (still owned because a
+  //                       connect or terminal status blocked the auto-return, or
+  //                       the threshold was lowered after the calls).
+  //   ?returned=1       → auto-returned records sitting in the Admin Revival
+  //                       queue (ownerId null + returnedToPoolAt stamped).
+  // Parsed HERE (this page's own query layer, like ?status=) — leadFilterWhere
+  // does not know these params, so there is no double application.
+  const maxAttempts = await getRevivalMaxAttempts();
+  const nearingWhere: Prisma.LeadWhereInput = { ownerId: { not: null }, attemptCount: maxAttempts - 1 };
+  const maxedWhere: Prisma.LeadWhereInput = { ownerId: { not: null }, attemptCount: { gte: maxAttempts } };
+  const returnedWhere: Prisma.LeadWhereInput = { ownerId: null, returnedToPoolAt: { not: null } };
+  const attemptsFilter = sp.attempts === "nearing" || sp.attempts === "maxed" ? sp.attempts : null;
+  const returnedFilter = sp.returned === "1";
+  const attemptAnd: Prisma.LeadWhereInput[] = [
+    ...(attemptsFilter === "nearing" ? [nearingWhere] : []),
+    ...(attemptsFilter === "maxed" ? [maxedWhere] : []),
+    ...(returnedFilter ? [returnedWhere] : []),
+  ];
+
   // allCold = everything in scope (for the "All" tab + total). where = the active view.
   const allCold: Prisma.LeadWhereInput = { AND: [baseScope, originCold, ...marketOnlyAnd] };
-  const where: Prisma.LeadWhereInput = { AND: [baseScope, originCold, statusWhere, ...sharedAnd] };
+  const where: Prisma.LeadWhereInput = { AND: [baseScope, originCold, statusWhere, ...sharedAnd, ...attemptAnd] };
 
   // Hidden-gem filter: high-value dormant leads (Revival-specific — preserved).
   // deletedAt/rejectedAt:null mirror the main list's originCold clause so a
@@ -214,6 +241,9 @@ export default async function ColdDataPage({ searchParams }: { searchParams: Pro
     hiddenGemsRaw,
     weeklyRevivals,
     statusCountRows,
+    nearingCount,
+    maxedCount,
+    returnedCount,
   ] = await Promise.all([
     prisma.lead.findMany({
       where,
@@ -271,6 +301,13 @@ export default async function ColdDataPage({ searchParams }: { searchParams: Pro
       where: { AND: [baseScope, originCold, { deletedAt: null }, ...sharedAnd] },
       _count: { _all: true },
     }),
+    // ── Attempt-cycle summary counts (admin chips) — each is the EXACT where its
+    // chip's click produces: the current view (base + status tab + shared filters,
+    // WITHOUT any active attempts/returned param, which the click replaces) + the
+    // chip's own condition. Chip number == rows shown after clicking (count==records).
+    isAdmin ? prisma.lead.count({ where: { AND: [baseScope, originCold, statusWhere, ...sharedAnd, nearingWhere] } }) : Promise.resolve(0),
+    isAdmin ? prisma.lead.count({ where: { AND: [baseScope, originCold, statusWhere, ...sharedAnd, maxedWhere] } }) : Promise.resolve(0),
+    isAdmin ? prisma.lead.count({ where: { AND: [baseScope, originCold, statusWhere, ...sharedAnd, returnedWhere] } }) : Promise.resolve(0),
   ]);
 
   // Build statusCounts map: { "Fresh Lead": 5, "Follow Up": 12, … } from the
@@ -447,6 +484,23 @@ export default async function ColdDataPage({ searchParams }: { searchParams: Pro
     };
   }
 
+  // Attempt-cycle chip per row (Revival auto-return engine) — serializable map,
+  // same server→client pattern as promoteMeta. Owned rows render 📞 n/T (gray /
+  // amber at T-1 / red at ≥T — the Dubai Buyer Data presentation); unowned rows
+  // that were auto-returned render ↩︎ Returned (cycle N). The scalar fields
+  // (attemptCount, revivalCycle, returnedToPoolAt, ownerId) ride the page's
+  // existing findMany — `include` fetches every Lead scalar, so no select change.
+  const attemptMeta: Record<string, RevivalAttemptMeta> = {};
+  for (const l of leads) {
+    attemptMeta[l.id] = {
+      owned: l.ownerId != null,
+      attemptCount: l.attemptCount,
+      threshold: maxAttempts,
+      returned: l.returnedToPoolAt != null,
+      cycle: l.revivalCycle,
+    };
+  }
+
   return (
     <>
       {/* ───────── COLD DATA NOTICE ───────── */}
@@ -560,6 +614,56 @@ export default async function ColdDataPage({ searchParams }: { searchParams: Pro
             </div>
           )}
 
+          {/* Attempt-cycle summary chips (ADMIN) — auto-return engine visibility.
+              Each count is computed with the SAME where its click applies (current
+              status tab + shared filters + the chip condition), so number == rows
+              (count==records). Clicking toggles ?attempts= / ?returned=1 while
+              preserving every other filter; the two params are mutually exclusive. */}
+          {isAdmin && (
+            <div className="flex gap-2 overflow-x-auto pb-1 -mx-3 px-3 sm:mx-0 sm:px-0" style={{ scrollbarWidth: "thin" }}>
+              {(() => {
+                const base = "px-3 py-1.5 rounded-full text-xs font-semibold border min-h-9 inline-flex items-center gap-1 flex-none whitespace-nowrap";
+                const spToParams = () => {
+                  const p = new URLSearchParams();
+                  for (const [k, v] of Object.entries(sp)) if (v != null && v !== "" && k !== "page") p.set(k, String(v));
+                  return p;
+                };
+                const chipHref = (patch: Record<string, string | null>) => {
+                  const p = spToParams();
+                  for (const [k, v] of Object.entries(patch)) { if (v == null || v === "") p.delete(k); else p.set(k, v); }
+                  const qs = p.toString();
+                  return qs ? `/cold-calls?${qs}` : "/cold-calls";
+                };
+                const nearingOn = attemptsFilter === "nearing";
+                const maxedOn = attemptsFilter === "maxed";
+                const returnedOn = returnedFilter;
+                const cnt = (on: boolean) => `px-1 rounded text-[10px] ${on ? "bg-white/25" : "bg-black/10 dark:bg-white/10"}`;
+                return (
+                  <>
+                    <Link
+                      href={chipHref({ attempts: nearingOn ? null : "nearing", returned: null })}
+                      title={`Owned records at ${maxAttempts - 1}/${maxAttempts} attempts — one unanswered call from auto-return`}
+                      className={`${base} ${nearingOn ? "bg-amber-600 text-white border-amber-600" : "bg-amber-50 border-amber-300 text-amber-800 dark:bg-amber-950/30 dark:border-amber-700 dark:text-amber-200"}`}>
+                      📞 Nearing threshold ({maxAttempts - 1}/{maxAttempts}) <span className={cnt(nearingOn)}>{nearingCount}</span>
+                    </Link>
+                    <Link
+                      href={chipHref({ attempts: maxedOn ? null : "maxed", returned: null })}
+                      title={`Owned records at/over ${maxAttempts} attempts (a connect or terminal status blocked the auto-return)`}
+                      className={`${base} ${maxedOn ? "bg-red-600 text-white border-red-600" : "bg-red-50 border-red-300 text-red-800 dark:bg-red-950/30 dark:border-red-700 dark:text-red-200"}`}>
+                      🔴 At threshold <span className={cnt(maxedOn)}>{maxedCount}</span>
+                    </Link>
+                    <Link
+                      href={chipHref({ returned: returnedOn ? null : "1", attempts: null })}
+                      title="Auto-returned records waiting in the Admin Revival queue (unassigned, returnedToPoolAt stamped)"
+                      className={`${base} ${returnedOn ? "bg-blue-700 text-white border-blue-700" : "bg-blue-50 border-blue-300 text-blue-800 dark:bg-blue-950/30 dark:border-blue-700 dark:text-blue-200"}`}>
+                      ↩︎ Returned to Admin <span className={cnt(returnedOn)}>{returnedCount}</span>
+                    </Link>
+                  </>
+                );
+              })()}
+            </div>
+          )}
+
           {/* Status-based filter tabs (Excel/MIS values) — chip count == records applied */}
           <div className="flex gap-2 overflow-x-auto pb-1 -mx-3 px-3 sm:mx-0 sm:px-0" style={{ scrollbarWidth: "thin" }}>
             {(() => {
@@ -632,6 +736,7 @@ export default async function ColdDataPage({ searchParams }: { searchParams: Pro
             agents={agents.map((a) => ({ id: a.id, name: a.name, team: a.team }))}
             leads={listRows}
             promoteMeta={promoteMeta}
+            attemptMeta={attemptMeta}
           />
 
           {/* Pagination — EXACTLY the /leads block (Lalit 2026-07-16): Showing X–Y of

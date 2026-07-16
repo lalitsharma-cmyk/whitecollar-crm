@@ -9,6 +9,7 @@
 import type { Prisma, FundReadiness, InvestTimeline } from "@prisma/client";
 import { assignedTodayOr, FIRST_CONTACT_PENDING_WHERE, FRESH_STATUS_OR, ACTIVE_PIPELINE_WHERE } from "@/lib/freshLeads";
 import { LOST_STATUSES, CLOSED_OUTCOME_STATUSES } from "@/lib/lead-statuses";
+import { GHOSTING_DISPLAY_WHERE } from "@/lib/ghosting";
 import { istDayRange, isValidDateKey } from "@/lib/datetime";
 
 type SP = Record<string, string | undefined>;
@@ -106,6 +107,17 @@ export function leadFilterWhere(sp: SP): Prisma.LeadWhereInput[] {
     and.push({ ownerId: { not: null } });
   } else if (sp.bucket === "unassigned") {
     and.push({ ownerId: null });
+  }
+
+  // 👻 Ghosting (?ghost=1|0, Lalit 2026-07-17) — the SAME display-eligibility the
+  // tag/report/dashboard use (GHOSTING_DISPLAY_WHERE in lib/callAttempts.ts):
+  // stamped + still owned + status neither terminal nor engaged. ghost=0 is the
+  // complement so "Non-Ghosting" + "Ghosting" always partition the same list.
+  // Additive + opt-in: absent param → zero behaviour change on every module.
+  if (sp.ghost === "1") {
+    and.push({ ...GHOSTING_DISPLAY_WHERE });
+  } else if (sp.ghost === "0") {
+    and.push({ NOT: { ...GHOSTING_DISPLAY_WHERE } });
   }
 
   // Source — verbatim sourceRaw, multi.

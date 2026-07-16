@@ -2,6 +2,9 @@
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+// ATTEMPT_TYPES = the single source of truth for which BuyerActivity types count
+// as a contact attempt (buyerLifecycle is a pure module — client-safe import).
+import { ATTEMPT_TYPES } from "@/lib/buyerLifecycle";
 
 // ── Buyer admin panel (right rail) ───────────────────────────────────────────
 // The buyer equivalent of the Lead view's "🛠 Lead admin" card: a vertical,
@@ -53,6 +56,9 @@ export default function BuyerAdminPanel({ buyerId, poolStatus, ownerName, conver
   // Live lifecycle state (attemptCount + stints) — read from the history endpoint.
   const [attemptCount, setAttemptCount] = useState<number>(0);
   const [stints, setStints] = useState<Assignment[]>([]);
+  // Last contact attempt (date + who) — derived from the most recent BuyerActivity
+  // of an attempt type. Spec: Attempt Count · Last Attempt Date · Last Attempt Agent.
+  const [lastAttempt, setLastAttempt] = useState<{ at: string; by: string | null } | null>(null);
 
   const isConverted = poolStatus === "CONVERTED";
   const isAssigned = poolStatus === "ASSIGNED";
@@ -65,6 +71,11 @@ export default function BuyerAdminPanel({ buyerId, poolStatus, ownerName, conver
         const j = await r.json();
         setAttemptCount(j.record?.attemptCount ?? 0);
         setStints(j.assignments ?? []);
+        // The endpoint returns activities newest-first, so the first attempt-type
+        // row IS the latest attempt (no BuyerRecord.lastAttemptAt column needed).
+        const acts = (j.activities ?? []) as { type: string; by: string | null; createdAt: string }[];
+        const last = acts.find((a) => ATTEMPT_TYPES.has(a.type)) ?? null;
+        setLastAttempt(last ? { at: last.createdAt, by: last.by } : null);
       }
     } catch { /* ignore */ }
   }, [buyerId]);
@@ -172,10 +183,25 @@ export default function BuyerAdminPanel({ buyerId, poolStatus, ownerName, conver
           : isPool ? <span className="text-blue-600 dark:text-blue-400">in Admin Pool</span> : null}
       </div>
 
-      {/* Attempt count + auto-return warning (assigned only). */}
+      {/* Attempt count + auto-return warning (assigned only) + last-attempt
+          attribution (Attempt Count · Last Attempt Date · Last Attempt Agent). */}
       {isAssigned && (
         <div className={`text-xs rounded-lg px-2.5 py-2 border ${attemptCount >= 4 ? "border-red-300 bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-300 dark:border-red-700" : attemptCount >= 3 ? "border-amber-300 bg-amber-50 text-amber-700 dark:bg-amber-900/20 dark:text-amber-300 dark:border-amber-700" : "border-gray-200 bg-gray-50 text-gray-600 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700"}`}>
           <b>{attemptCount}/5</b> contact attempts{attemptCount >= 3 && attemptCount < 5 ? ` · ${5 - attemptCount} left before auto-return to pool` : ""}{attemptCount >= 5 ? " · auto-returned" : ""}
+          {lastAttempt && (
+            <div className="mt-1 text-[11px] opacity-80">
+              Last attempt: {fmt(lastAttempt.at)}{lastAttempt.by ? <> · by <b>{lastAttempt.by}</b></> : null}
+            </div>
+          )}
+        </div>
+      )}
+      {/* Not currently assigned (pool / converted / rejected) — the attempt history
+          still matters when deciding a reassignment. attemptCount survives a
+          return-to-pool as the audit trail ("this buyer has been hard to reach"). */}
+      {!isAssigned && lastAttempt && (
+        <div className="text-xs rounded-lg px-2.5 py-2 border border-gray-200 bg-gray-50 text-gray-600 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700">
+          {attemptCount > 0 ? <><b>{attemptCount}</b> contact attempt{attemptCount === 1 ? "" : "s"} on record · </> : null}
+          Last attempt: {fmt(lastAttempt.at)}{lastAttempt.by ? <> · by <b>{lastAttempt.by}</b></> : null}
         </div>
       )}
 

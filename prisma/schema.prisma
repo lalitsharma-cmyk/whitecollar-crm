@@ -168,6 +168,7 @@ model User {
   operationLogs OperationLog[] @relation("OperationLogBy")
   presenceSessions    PresenceSession[] @relation("PresenceSessions")
   routingRulesCreated RoutingRule[]     @relation("RoutingRulesCreated")
+  lastAttemptLeads    Lead[]            @relation("LeadLastAttemptBy")
 
   agentStatusEvents AgentStatusEvent[]
 
@@ -574,6 +575,29 @@ model Lead {
   // assigned agent, who only ever sees the current working status.
   previousStatus  String?
 
+  // ── Owner-specific call-attempt cycle (Lalit 2026-07-17) ────────────────────
+  // ALL FOUR reset when ownership changes (assignLeadTo, the single assignment
+  // choke point) — the new owner gets a fresh cycle; the old owner's calls stay
+  // in CallLog/audit forever. attemptCount = calls TRIED by the current owner;
+  // connectedCount = the meaningful ones (CONNECTED/CALLBACK/INTERESTED/
+  // NOT_INTERESTED via MEANINGFUL_CALL_OUTCOMES in lib/callAttempts.ts).
+  //   • GHOSTING (Normal Leads only, Setting ghostingThreshold=10): attemptCount
+  //     ≥ T with zero connects and a non-terminal, non-engaged status → ghostingAt
+  //     stamped. 👻 is a SECONDARY tag — never replaces currentStatus. Cleared by
+  //     transfer or a meaningful connect; display/filter re-checks eligibility.
+  //   • REVIVAL AUTO-RETURN (cold leads only, Setting revivalMaxAttempts=5):
+  //     attemptCount ≥ T with zero connects → unassign back to the Admin Revival
+  //     queue, stamp previousOwnerId + returnedToPoolAt, revivalCycle++ (cycle 1 =
+  //     first ownership). History/remarks/calls/WhatsApp all preserved.
+  attemptCount     Int       @default(0)
+  connectedCount   Int       @default(0)
+  lastAttemptAt    DateTime?
+  lastAttemptById  String?
+  lastAttemptBy    User?     @relation("LeadLastAttemptBy", fields: [lastAttemptById], references: [id], onDelete: SetNull)
+  ghostingAt       DateTime?
+  revivalCycle     Int       @default(1)
+  returnedToPoolAt DateTime?
+
   // Future Re-engage on Reject (Lalit 2026-07-02): when rejecting, the agent may
   // opt to re-engage the client on a future date. On that date a cron reassigns the
   // lead back to reEngageOwnerId (its owner at reject time; falls back to Lalit if
@@ -674,6 +698,9 @@ model Lead {
   @@index([currentStatus])
   @@index([lastTouchedAt])
   @@index([leadOrigin])
+  // Ghosting filter + revival returned-queue + attempt dashboards (2026-07-17).
+  @@index([ghostingAt])
+  @@index([returnedToPoolAt])
   @@index([ownerId, deletedAt])
   @@index([forwardedTeam, deletedAt])
   @@index([customerId]) // Customer layer — group an enquiry's siblings by canonical Customer

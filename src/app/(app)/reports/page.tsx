@@ -782,6 +782,20 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
           <div className="font-bold text-sm mt-1">Lead Intake</div>
           <div className="text-[10px] text-gray-500 mt-0.5">Leads received by source over time · every number opens the exact records</div>
         </Link>
+        {/* Ghosting — leads whose current owner hit 10+ unanswered call attempts.
+            Secondary 👻 tag; every count drills to the exact /leads?ghost=1 records. */}
+        <Link href="/reports/ghosting" className="card p-4 border-l-4 border-violet-500 hover:shadow-md transition">
+          <div className="text-2xl">👻</div>
+          <div className="font-bold text-sm mt-1">Ghosting Report</div>
+          <div className="text-[10px] text-gray-500 mt-0.5">10+ call attempts, no response · by agent / team / source · conversion rate</div>
+        </Link>
+        {/* Revival Attempt Cycles — owner-specific call attempts vs the auto-return
+            threshold; the returned-to-Admin queue + cycle distribution. Admin/Manager. */}
+        <Link href="/reports/revival-cycles" className="card p-4 border-l-4 border-blue-500 hover:shadow-md transition">
+          <div className="text-2xl">💎</div>
+          <div className="font-bold text-sm mt-1">Revival Attempt Cycles</div>
+          <div className="text-[10px] text-gray-500 mt-0.5">Attempts vs auto-return threshold · nearing · returned-to-Admin · by cycle</div>
+        </Link>
         {/* Cooling Leads — HOT leads that just downgraded to WARM/COLD. Save-the-deal list. */}
         <Link href="/reports/cooling" className="card p-4 border-l-4 border-rose-500 hover:shadow-md transition">
           <div className="text-2xl">🌡</div>

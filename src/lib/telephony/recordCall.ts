@@ -13,6 +13,7 @@ import "server-only";
 import { prisma } from "@/lib/prisma";
 import { CallDirection, CallOutcome, ActivityType, ActivityStatus } from "@prisma/client";
 import { callOutcomeLabel } from "@/lib/callOutcome";
+import { recordLeadCallAttempt } from "@/lib/callAttempts";
 import type { NormalizedCallEvent } from "./types";
 import { resolveCallLink } from "./linkResolver";
 
@@ -116,6 +117,12 @@ export async function recordCallEvent(ev: NormalizedCallEvent): Promise<RecordRe
         data: { leadId: link.leadId, userId, type: ActivityType.CALL, status: ActivityStatus.DONE, title, description: desc, outcome: callOutcomeLabel(outcome), completedAt: endedAt ?? new Date() },
       });
       await prisma.lead.update({ where: { id: link.leadId }, data: { lastTouchedAt: endedAt ?? new Date(), slaEscalated: false } });
+      // Owner-specific attempt cycle (👻 ghosting / revival auto-return) — exactly
+      // once per call (first terminal event), with the FINAL outcome. Never breaks
+      // call recording.
+      await recordLeadCallAttempt({
+        leadId: link.leadId, actorId: userId, outcome, direction, at: startedAt,
+      }).catch((e) => console.error("[recordCall] attempt cycle failed", link.leadId, e));
       timelineWritten = true;
     } else if (link.buyerId) {
       // BuyerActivity powers the buyer conversation timeline (5b). type=CALL so it

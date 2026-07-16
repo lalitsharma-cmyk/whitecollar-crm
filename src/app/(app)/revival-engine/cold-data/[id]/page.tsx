@@ -45,7 +45,8 @@ import VoiceNoteRecorder from "@/components/VoiceNoteRecorder";
 import LeadResourceShare from "@/components/LeadResourceShare";
 import LeadProjectsClient from "@/components/LeadProjectsClient";
 import LeadInterestedClient from "@/components/LeadInterestedClient";
-import { toISTLocalInput } from "@/lib/datetime";
+import { toISTLocalInput, fmtIST } from "@/lib/datetime";
+import { getRevivalMaxAttempts } from "@/lib/callAttempts";
 import { hasContactActivityToday } from "@/lib/followupGate";
 import { projectWhereForUser, teamToCountry } from "@/lib/propertyScope";
 // Mask a cold-data phone to its last 4 digits (PII protection on the data-bank).
@@ -77,6 +78,8 @@ export default async function ColdDataDetailPage({ params, searchParams }: { par
     where: { id, OR: [{ isColdCall: true }, { leadOrigin: { in: COLD_ORIGINS } }], ...scope },
     include: {
       owner: { select: { id: true, name: true, avatarColor: true } },
+      // Attempt Tracking card — who logged the current owner's last call attempt.
+      lastAttemptBy: { select: { name: true } },
       callLogs: { orderBy: { startedAt: "desc" }, take: 50, include: { user: { select: { name: true } } } },
       waMessages: { orderBy: { receivedAt: "desc" }, take: 30, include: { actor: { select: { name: true } } } },
       notes: { orderBy: { createdAt: "desc" }, include: { user: { select: { name: true } } } },
@@ -137,6 +140,23 @@ export default async function ColdDataDetailPage({ params, searchParams }: { par
   const lastTouched = lead.lastTouchedAt
     ? formatDistanceToNow(lead.lastTouchedAt, { addSuffix: true })
     : "never touched";
+
+  // ── Attempt Tracking data (Revival auto-return engine — lib/callAttempts.ts).
+  // Threshold = the SAME Setting-backed value the engine fires on
+  // (revivalMaxAttempts, default 5). previousOwnerId is a plain column (no
+  // relation), so resolve the name with one lookup. Mirrors the Dubai Buyer
+  // Data attempt counter (BuyerAdminPanel).
+  const [revivalMaxAttempts, previousOwner] = await Promise.all([
+    getRevivalMaxAttempts(),
+    lead.previousOwnerId
+      ? prisma.user.findUnique({ where: { id: lead.previousOwnerId }, select: { name: true } })
+      : Promise.resolve(null),
+  ]);
+  const attemptTone = lead.attemptCount >= revivalMaxAttempts
+    ? "border-red-300 bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-300 dark:border-red-700"
+    : lead.attemptCount >= revivalMaxAttempts - 1
+      ? "border-amber-300 bg-amber-50 text-amber-700 dark:bg-amber-900/20 dark:text-amber-300 dark:border-amber-700"
+      : "border-gray-200 bg-gray-50 text-gray-600 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700";
 
   // ════════════════════════════════════════════════════════════════════════
   // Full Normal-Lead parity — server-side data the shared workflow surfaces
@@ -314,6 +334,68 @@ export default async function ColdDataDetailPage({ params, searchParams }: { par
             </div>
           </div>
         </div>
+      </div>
+
+      {/* ── 📞 Attempt Tracking (Revival auto-return engine) — owner-specific call
+          attempts vs the revivalMaxAttempts Setting (the SAME threshold the engine
+          fires on). Counts reset on every ownership change; at T unanswered attempts
+          with zero connects the record auto-returns to the Admin Revival queue
+          (ownerId → null, previousOwnerId + returnedToPoolAt stamped, revivalCycle++).
+          Mirrors the Dubai Buyer Data attempt counter. History always preserved. ── */}
+      <div className="card p-4">
+        <div className="text-[10px] uppercase tracking-widest text-gray-500 dark:text-slate-400 font-semibold mb-3">📞 Attempt Tracking</div>
+        <div className="flex flex-wrap items-start gap-4">
+          {/* Large n / T counter — buyer-detail presentation (gray / amber at T-1 / red at ≥T) */}
+          <div className={`rounded-lg border px-4 py-2.5 text-center shrink-0 ${attemptTone}`}>
+            <div className="text-2xl font-extrabold tabular-nums leading-tight">
+              {lead.attemptCount} / {revivalMaxAttempts}
+            </div>
+            <div className="text-[10px] font-semibold uppercase tracking-wide mt-0.5">call attempts</div>
+          </div>
+          <div className="flex-1 min-w-[220px] grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1.5 text-xs">
+            <div className="text-gray-500 dark:text-slate-400">
+              Connected calls:{" "}
+              <span className="font-medium text-gray-800 dark:text-slate-200">{lead.connectedCount}</span>
+            </div>
+            <div className="text-gray-500 dark:text-slate-400">
+              Revival cycle:{" "}
+              <span className="font-medium text-gray-800 dark:text-slate-200">#{lead.revivalCycle}</span>
+            </div>
+            <div className="text-gray-500 dark:text-slate-400">
+              Last attempt:{" "}
+              <span className="font-medium text-gray-800 dark:text-slate-200">
+                {lead.lastAttemptAt ? `${fmtIST(lead.lastAttemptAt)} IST` : "—"}
+              </span>
+            </div>
+            <div className="text-gray-500 dark:text-slate-400">
+              Last attempt by:{" "}
+              <span className="font-medium text-gray-800 dark:text-slate-200">{lead.lastAttemptBy?.name ?? "—"}</span>
+            </div>
+            <div className="text-gray-500 dark:text-slate-400">
+              Previous owner:{" "}
+              <span className="font-medium text-gray-800 dark:text-slate-200">
+                {previousOwner?.name ?? (lead.previousOwnerId ? "Unknown agent" : "—")}
+              </span>
+            </div>
+            {lead.returnedToPoolAt && (
+              <div className="text-gray-500 dark:text-slate-400">
+                Returned to Admin:{" "}
+                <span className="font-medium text-gray-800 dark:text-slate-200">{fmtIST(lead.returnedToPoolAt)} IST</span>
+              </div>
+            )}
+          </div>
+        </div>
+        {/* State line — nearing warning (owned) / returned notice (back in the queue) */}
+        {lead.ownerId != null && lead.attemptCount === revivalMaxAttempts - 1 && lead.connectedCount === 0 && (
+          <div className="mt-3 text-xs rounded-lg px-2.5 py-2 border border-amber-300 bg-amber-50 text-amber-700 dark:bg-amber-900/20 dark:text-amber-300 dark:border-amber-700">
+            ⚠ One more unanswered attempt auto-returns this record to the Admin Revival queue.
+          </div>
+        )}
+        {lead.ownerId == null && lead.returnedToPoolAt != null && (
+          <div className="mt-3 text-xs rounded-lg px-2.5 py-2 border border-blue-200 bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:text-blue-300 dark:border-blue-700">
+            ↩︎ Auto-returned to the Admin Revival queue — reassigning gives the next agent a fresh attempt cycle. All history is preserved.
+          </div>
+        )}
       </div>
 
       {/* ── Client Information (inline-editable · Cold Data Bank) — data fields only,

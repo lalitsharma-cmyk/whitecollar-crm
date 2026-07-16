@@ -7,6 +7,7 @@ import { rescoreLead } from "@/lib/leadRescorer";
 import { awardXp, bumpStreak, type AwardResult } from "@/lib/gamification.server";
 import { aiLive } from "@/lib/ai";
 import { runAIExtraction } from "@/lib/aiExtractor";
+import { recordLeadCallAttempt } from "@/lib/callAttempts";
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -94,6 +95,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     });
   }
 
+  // Owner-specific attempt cycle (👻 ghosting / revival auto-return). Awaited so
+  // an auto-return is visible the moment the agent's list refreshes; any engine
+  // failure is swallowed — a broken counter must never block logging a call.
+  const attemptResult = await recordLeadCallAttempt({
+    leadId: id, actorId: me.id, outcome, direction, at: now,
+  }).catch((e) => { console.error("[log-call] attempt cycle failed", id, e); return null; });
+
   // Fire-and-forget behavioural re-score — rule-based, doesn't need AI.
   rescoreLead(id).catch(() => {});
 
@@ -129,6 +137,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   return NextResponse.json({
     ok: true,
+    // Surfaced so the Revival UI can toast "record returned to Admin" and the
+    // Leads UI can flip the 👻 tag on without a refetch.
+    attemptCycle: attemptResult
+      ? { ghosted: !!attemptResult.ghosted, autoReturned: !!attemptResult.autoReturned }
+      : null,
     awardedXp: awarded
       ? {
           amount: awarded.awarded,

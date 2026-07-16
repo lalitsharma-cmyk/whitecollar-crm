@@ -107,3 +107,10 @@ of code.
    endpoint commit matches `git rev-parse --short HEAD`.
 
 **Never** rely on the Vercel build to run a migration — it will not, and it never has.
+
+## 20260717060000_call_attempt_cycle — applied 2026-07-17 (~02:00 IST)
+Additive Lead columns for the owner-specific call-attempt cycle (Lalit spec):
+attemptCount, connectedCount, lastAttemptAt, lastAttemptById(+FK SetNull),
+ghostingAt, revivalCycle, returnedToPoolAt + indexes (ghostingAt, returnedToPoolAt).
+Backup: backups/pre-deploy-2026-07-16T20-28-13-896Z. Applied via prisma db execute
+(idempotent IF NOT EXISTS) + migrate resolve. Verified via information_schema (7/7).

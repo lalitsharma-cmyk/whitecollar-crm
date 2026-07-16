@@ -20,6 +20,7 @@ import { prisma } from "@/lib/prisma";
 import { verifyWebhookToken, normalizePhone } from "@/lib/acefone";
 import { CallDirection, CallOutcome, ActivityType, ActivityStatus, LeadSource } from "@prisma/client";
 import { callOutcomeLabel } from "@/lib/callOutcome";
+import { recordLeadCallAttempt } from "@/lib/callAttempts";
 import { ingestLead } from "@/lib/leadIngest";
 import { fingerprintFor } from "@/lib/assignment";
 
@@ -163,6 +164,11 @@ async function handle(req: NextRequest) {
       where: { id: leadId },
       data: { lastTouchedAt: endedAt ?? new Date(), slaEscalated: false },
     });
+    // Owner-specific attempt cycle (👻 ghosting / revival auto-return) — same
+    // once-per-call-end condition as the timeline write above.
+    await recordLeadCallAttempt({
+      leadId, actorId: userId, outcome, direction, at: startedAt,
+    }).catch((e) => console.error("[acefone] attempt cycle failed", leadId, e));
   }
 
   return NextResponse.json({ ok: true, uuid, leadId, userId, outcome });

@@ -6494,6 +6494,97 @@ const checks: Check[] = [
   },
 
   // ───────────────────────────────────────────────────────────────────────────
+  // 51e. OWNER-SPECIFIC CALL-ATTEMPT CYCLE (2026-07-17, Lalit spec) — 👻 Ghosting
+  //      (Normal Leads, Setting ghostingThreshold=10) + Revival auto-return
+  //      (Setting revivalMaxAttempts=5). Attempts are OWNER-specific: assignLeadTo
+  //      (the single assignment choke point) resets the cycle, so a transfer gives
+  //      the new owner a fresh count and clears the tag. Meaningful outcomes
+  //      (CONNECTED/CALLBACK/INTERESTED/NOT_INTERESTED) block/clear ghosting.
+  //      👻 is a SECONDARY tag — read surfaces re-check eligibility so a status
+  //      change (terminal/engaged) hides it without a write. Lalit's acceptance
+  //      scenarios 1–4 run here as pure functional tests on lib/ghosting.ts.
+  // ───────────────────────────────────────────────────────────────────────────
+  {
+    name: "call-attempt-cycle — 👻 ghosting + revival auto-return; owner-specific reset; acceptance scenarios 1-4",
+    run: async () => {
+      const fs = await import("fs");
+      const g = await import("../src/lib/ghosting");
+      const { isRevivalOrigin } = await import("../src/lib/moduleSource");
+
+      // Outcome classification — "ringing/switched off/not reachable" count as
+      // attempts; any answered conversation (even "not interested") is a connect.
+      assert(g.isMeaningfulOutcome("CONNECTED") && g.isMeaningfulOutcome("CALLBACK") && g.isMeaningfulOutcome("NOT_INTERESTED"),
+        "answered outcomes must classify as meaningful");
+      assert(!g.isMeaningfulOutcome("NOT_PICKED") && !g.isMeaningfulOutcome("SWITCHED_OFF") && !g.isMeaningfulOutcome("BUSY"),
+        "no-answer outcomes must classify as unsuccessful attempts");
+
+      const T = g.GHOSTING_DEFAULT_THRESHOLD;
+      const base = { ownerId: "tanuj", leadOrigin: "ACTIVE_LEAD", connectedCount: 0, currentStatus: "Follow Up" };
+      // Scenario 1 — Tanuj: 10 unsuccessful attempts → Ghosting TRUE.
+      assert(g.isGhostingEligible({ ...base, attemptCount: 10 }, T) === true, "Scenario 1: 10 attempts, no connect → ghosting");
+      assert(g.isGhostingEligible({ ...base, attemptCount: 9 }, T) === false, "9 attempts must NOT ghost (threshold is 10)");
+      // Scenario 2 — attempts 11, 12, 13… ghosting remains active.
+      assert(g.isGhostingEligible({ ...base, attemptCount: 13 }, T) === true, "Scenario 2: ghosting persists past the threshold");
+      // Scenario 3 — transfer resets: fresh cycle, tag cleared.
+      const reset = g.resetAttemptCycleData();
+      assert(reset.attemptCount === 0 && reset.connectedCount === 0 && reset.ghostingAt === null && reset.lastAttemptAt === null,
+        "Scenario 3: ownership change must zero the cycle and clear 👻");
+      // Scenario 4 — a successful connect prevents ghosting entirely.
+      assert(g.isGhostingEligible({ ...base, attemptCount: 12, connectedCount: 1 }, T) === false,
+        "Scenario 4: any meaningful connect → ghosting never activates");
+      // Status gates: Follow Up eligible (Lalit's visual example); engaged + terminal blocked.
+      assert(!g.ghostingBlockedStatus("Follow Up"), "'Follow Up' must remain ghosting-eligible");
+      assert(g.ghostingBlockedStatus("Meeting") && g.ghostingBlockedStatus("Site Visit Schedule"),
+        "engaged statuses (meeting/visit) must block ghosting");
+      assert(g.ghostingBlockedStatus("Not Interested"), "terminal statuses must block ghosting");
+      // Module scope: Revival/cold leads NEVER ghost (they auto-return instead);
+      // buyers have their own engine (buyerLifecycle).
+      assert(isRevivalOrigin("COLD") && isRevivalOrigin("REVIVAL") && !isRevivalOrigin("ACTIVE_LEAD"),
+        "cold-origin detection must match leadScope.COLD_ORIGINS");
+      assert(g.isGhostingEligible({ ...base, leadOrigin: "COLD", attemptCount: 15 }, T) === false,
+        "Revival records must never receive the 👻 tag");
+      // Display guard partitions ghost=1 / ghost=0 identically to the SQL twin.
+      assert(g.isGhostingDisplay({ ghostingAt: new Date(), ownerId: "x", currentStatus: "Follow Up" }) === true
+        && g.isGhostingDisplay({ ghostingAt: new Date(), ownerId: null, currentStatus: "Follow Up" }) === false
+        && g.isGhostingDisplay({ ghostingAt: new Date(), ownerId: "x", currentStatus: "Meeting" }) === false,
+        "display guard must hide the tag for unowned/engaged leads without a DB write");
+
+      // Wiring: every CallLog write path advances the cycle; assignment resets it.
+      const engine = fs.readFileSync("src/lib/callAttempts.ts", "utf8");
+      assert(/lead\.ownerId !== actorId/.test(engine), "only the CURRENT owner's calls may move the cycle (owner-specific attempts)");
+      assert(/direction === "INBOUND"\) return \{ counted: false \}/.test(engine), "a missed inbound call is not an attempt by the owner");
+      assert(/previousOwnerId,[\s\S]{0,120}returnedToPoolAt: at,[\s\S]{0,120}revivalCycle: \{ increment: 1 \}/.test(engine)
+        && /ownerId: null,/.test(engine) && /followupDate: null/.test(engine),
+        "revival auto-return must unassign + stamp Previous Owner + returnedToPoolAt + bump the cycle + clear the follow-up");
+      for (const f of [
+        "src/app/api/leads/[id]/log-call/route.ts",
+        "src/lib/telephony/recordCall.ts",
+        "src/app/api/acefone/webhook/route.ts",
+      ]) {
+        assert(/recordLeadCallAttempt\(/.test(fs.readFileSync(f, "utf8")), `${f} must advance the owner attempt cycle`);
+      }
+      const ingest = fs.readFileSync("src/lib/leadIngest.ts", "utf8");
+      assert(/resetAttemptCycleData\(\)/.test(ingest), "assignLeadTo must reset the attempt cycle (fresh owner, fresh count)");
+      // Filters: shared engine + /leads inline parser both honor ?ghost= via the ONE where-twin.
+      assert(/GHOSTING_DISPLAY_WHERE/.test(fs.readFileSync("src/lib/leadFilterWhere.ts", "utf8")),
+        "leadFilterWhere must implement ?ghost= via GHOSTING_DISPLAY_WHERE");
+      assert(/GHOSTING_DISPLAY_WHERE/.test(fs.readFileSync("src/app/(app)/leads/page.tsx", "utf8")),
+        "/leads inline parser must implement ?ghost= via the same GHOSTING_DISPLAY_WHERE (no drift)");
+
+      // DATA arms — cycle coherence on live rows.
+      const ghostWithConnect = await prisma.lead.count({ where: { ghostingAt: { not: null }, connectedCount: { gt: 0 } } });
+      assert(ghostWithConnect === 0, `${ghostWithConnect} ghosting leads have a connect — a meaningful call must clear 👻`);
+      const ghostUnderMin = await prisma.lead.count({ where: { ghostingAt: { not: null }, attemptCount: { lt: 3 } } });
+      assert(ghostUnderMin === 0, `${ghostUnderMin} ghosting leads sit under the minimum threshold (3) — stamp logic broken`);
+      const [ghosting, returned] = await Promise.all([
+        prisma.lead.count({ where: { ghostingAt: { not: null } } }),
+        prisma.lead.count({ where: { returnedToPoolAt: { not: null } } }),
+      ]);
+      results.push({ name: "  ↳ note", ok: true, detail: `ghosting-stamped=${ghosting} · revival-returned=${returned} (pre-backfill both may be 0)` });
+    },
+  },
+
+  // ───────────────────────────────────────────────────────────────────────────
   // 52. CONVERSATION CALL-REMARK EDIT (2026-06-30, Lalit — "requested multiple times,
   //     still not visible"). The edit feature existed for NOTE + meeting activities
   //     but NOT for CALL remarks — the dominant conversation entry (~97%) — so it read
