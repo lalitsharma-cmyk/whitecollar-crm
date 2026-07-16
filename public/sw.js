@@ -494,7 +494,11 @@
 // (?bucket= on Master/Revival; ?dateFrom/?dateTo/?source on both Buyer lists) + 5 report
 // drills wired, 2 wrong drills fixed + IST date alignment everywhere + fresh-chip
 // pipeline gate + follow-up-compliance NULL-status undercount fix (counts rise honestly).
-const CACHE = "wcr-shell-v150";
+// v151 (2026-07-16): import fidelity live — canonical phone (CC+number) stored on every
+// lead, dedup = same phone OR same email (imports, manual create, sheet re-imports),
+// original sheet Date+Time honored on import with Created Time blank when the sheet has
+// no Time column. Historical backfills follow separately (backup-first).
+const CACHE = "wcr-shell-v151";
 const SHELL = ["/login", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", (event) => {
