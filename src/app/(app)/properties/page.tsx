@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { UnitStatus, ProjectStatus, Prisma } from "@prisma/client";
 import { requireUser } from "@/lib/auth";
-import { bestLeadsForProject, type SuggestedLead } from "@/lib/leadsForProject";
+import { bestLeadsForProjects } from "@/lib/leadsForProject";
 import { projectWhereForUser } from "@/lib/propertyScope";
 import { leadScopeWhere } from "@/lib/leadScope";
 import Link from "next/link";
@@ -130,18 +130,16 @@ export default async function PropertiesPage({ searchParams }: { searchParams: P
   const available = sortedProjects.reduce((s, p) => s + p.units.filter(u => u.status === UnitStatus.AVAILABLE).length, 0);
 
   // §9.8 — for each project, find pipeline leads worth pitching this to.
-  // Done in parallel so we don't add round-trip latency per card.
   // Scope to the viewer (audit P2-1): an AGENT only matches their OWN leads, so
   // the expander never names a peer's client/budget. ADMIN → all, MANAGER → reports.
+  //
+  // PERF CONTRACT: bounded queries, not per-project. bestLeadsForProjects()
+  // resolves ALL cards from ≤3 queries total (one LeadProperty scan + one
+  // candidate-pool fetch per team present), replacing the old per-card
+  // bestLeadsForProject() fan-out (3 queries × N projects → ~60 at 20 cards).
+  // Ranking output is identical — both paths share the same scorer.
   const leadScope = await leadScopeWhere(me);
-  const matchesByProject = new Map<string, SuggestedLead[]>(
-    await Promise.all(
-      sortedProjects.map(async (p): Promise<[string, SuggestedLead[]]> => [
-        p.id,
-        await bestLeadsForProject(p.id, 5, leadScope),
-      ]),
-    ),
-  );
+  const matchesByProject = await bestLeadsForProjects(sortedProjects, 5, leadScope);
 
   // Canonical formatter (Dubai "2M AED" / India "21 Cr", empty→"—") — no bespoke divisors.
   const fmtBudget = (amount: number, currency: string, indiaTeam: boolean): string =>

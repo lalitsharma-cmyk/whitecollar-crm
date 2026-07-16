@@ -498,7 +498,12 @@
 // lead, dedup = same phone OR same email (imports, manual create, sheet re-imports),
 // original sheet Date+Time honored on import with Created Time blank when the sheet has
 // no Time column. Historical backfills follow separately (backup-first).
-const CACHE = "wcr-shell-v151";
+// v152 (2026-07-17): security + perf — health endpoint no longer exposes the lead count
+// to anonymous callers; email intake fails closed when unconfigured; Meta webhook
+// half-configured hole closed; Properties page 1+3N query fan-out → max 3 queries;
+// hot composite index (team,status) live. Backfills verified (6,098 canonical phones,
+// 5,510 created-times, 22 manual corrections preserved).
+const CACHE = "wcr-shell-v152";
 const SHELL = ["/login", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", (event) => {

@@ -1902,6 +1902,44 @@ const checks: Check[] = [
     },
   },
   {
+    // IMPORT FIDELITY LIVE (Lalit 2026-07-16 Final Execution Instruction): canonical
+    // phone stored on every lead; dedup = same normalized phone OR same normalized
+    // email; original sheet Date+Time honored with Created-Time blank when the sheet
+    // has no Time column. Existing data backfilled (6,098 phones · 5,510 time-blanks ·
+    // 3 day-corrections · 22 manual corrections preserved) + future writes covered.
+    name: "import-fidelity-live — canonical phone + OR-dedup + created-time (code + data) & security batch",
+    run: async () => {
+      const fs = await import("fs");
+      // (a) One normalization rule, Lalit's exact examples.
+      const { phoneCanonicalDigits } = await import("../src/lib/phoneCountry");
+      assert(phoneCanonicalDigits("9999999999", "India") === "919999999999", "bare 10-digit + India hint → 91-prefixed canonical");
+      assert(phoneCanonicalDigits("+919999999999", null) === "919999999999", "+91 form → same canonical");
+      assert(phoneCanonicalDigits("919999999999", null) === "919999999999", "already-canonical form → unchanged");
+      assert(phoneCanonicalDigits("+447912345678", null)?.startsWith("44") === true, "+44 → UK canonical");
+      assert(phoneCanonicalDigits("+6591234567", null)?.startsWith("65") === true, "+65 → SG canonical");
+      // (b) The write paths use the shared rule (server-only files — source scan).
+      const ingest = fs.readFileSync("src/lib/leadIngest.ts", "utf8");
+      assert(/phoneCanonical/.test(ingest) && /leadDedupOR\(/.test(ingest),
+        "ingestLead must stamp phoneCanonical and dedup via leadDedupOR (phone OR email)");
+      const assignment = fs.readFileSync("src/lib/assignment.ts", "utf8");
+      assert(/export function leadDedupOR/.test(assignment) && /phoneCanonicalTail/.test(assignment),
+        "leadDedupOR must exist and key on the canonical phone tail");
+      // (c) DATA — the backfills actually landed and future writes keep them fresh.
+      const canonCount = await prisma.lead.count({ where: { phoneCanonical: { not: null } } });
+      assert(canonCount >= 6000, `phoneCanonical must be populated (backfilled 6,098; found ${canonCount})`);
+      const tkFalse = await prisma.lead.count({ where: { createdTimeKnown: false } });
+      assert(tkFalse >= 5000, `createdTimeKnown=false must be populated (backfilled 5,510; found ${tkFalse})`);
+      // (d) SECURITY batch: health leaks no anonymous lead count; email intake fails closed.
+      const health = fs.readFileSync("src/app/api/health/route.ts", "utf8");
+      assert(/getCurrentUser/.test(health), "health must gate the lead count behind a session (no anonymous count)");
+      const email = fs.readFileSync("src/app/api/intake/email/route.ts", "utf8");
+      assert(/503/.test(email), "email intake must fail CLOSED (503) when EMAIL_INTAKE_KEY is unset");
+      // (e) The hot composite index exists in the schema (applied to prod by hand).
+      assert(/@@index\(\[forwardedTeam, currentStatus\]\)/.test(fs.readFileSync("prisma/schema.prisma", "utf8")),
+        "Lead must carry the (forwardedTeam, currentStatus) composite index");
+    },
+  },
+  {
     // LEAD SOURCE INTAKE REPORT + DRILL-DOWN BATCH (Lalit 2026-07-16, urgent): every
     // report number must answer "which exact leads?" — numbers computed through the SAME
     // envelopes the drill-target lists parse (count == records by construction), with

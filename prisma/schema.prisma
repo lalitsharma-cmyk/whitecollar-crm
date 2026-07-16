@@ -675,6 +675,14 @@ model Lead {
   @@index([ownerId, deletedAt])
   @@index([forwardedTeam, deletedAt])
   @@index([customerId]) // Customer layer — group an enquiry's siblings by canonical Customer
+  // Perf (2026-07-16): team+status composite — the hot combined filter (per-team
+  // status boards, reverse-inventory matching, per-team status counts) currently
+  // planned off the single-column indexes. followupDate + lastTouchedAt singles
+  // requested in the same batch already exist above (2026-06-22 block). DDL in
+  // migrations/20260716200000_lead_hot_indexes (idempotent CREATE INDEX IF NOT
+  // EXISTS) — authored ahead, applied by the deploy owner after in-flight
+  // backfills finish.
+  @@index([forwardedTeam, currentStatus])
 }
 
 // =====================================================

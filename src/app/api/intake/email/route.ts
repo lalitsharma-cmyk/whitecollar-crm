@@ -65,9 +65,17 @@ function stripHtml(html: string): string {
 }
 
 export async function POST(req: NextRequest) {
-  // Optional API key gate (recommended for production)
+  // API-key gate — FAIL CLOSED (audit P3/G2, fixed 2026-07-16). This used to be
+  // `if (process.env.EMAIL_INTAKE_KEY && apiKey !== …)`, i.e. when the env var
+  // was UNSET the check was skipped entirely and ANY anonymous caller could
+  // inject leads into the CRM. Now: key not configured → endpoint disabled
+  // (503) until EMAIL_INTAKE_KEY is set in the environment; wrong key → 401.
+  const configuredKey = process.env.EMAIL_INTAKE_KEY;
+  if (!configuredKey) {
+    return NextResponse.json({ error: "email intake not configured" }, { status: 503 });
+  }
   const apiKey = req.headers.get("x-wcr-key") ?? new URL(req.url).searchParams.get("key");
-  if (process.env.EMAIL_INTAKE_KEY && apiKey !== process.env.EMAIL_INTAKE_KEY) {
+  if (apiKey !== configuredKey) {
     return NextResponse.json({ error: "Invalid key" }, { status: 401 });
   }
 

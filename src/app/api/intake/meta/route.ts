@@ -31,7 +31,20 @@ export async function GET(req: NextRequest) {
 
 function verifySignature(raw: string, header: string | null): boolean {
   const secret = process.env.META_APP_SECRET;
-  if (!secret) return true; // not configured — the token gate below still blocks creation
+  if (!secret) {
+    // No APP_SECRET → FAIL CLOSED whenever creation is actually possible
+    // (2026-07-16, same audit as intake/email G2). The GET verify-token
+    // handshake does NOT protect this POST handler — an attacker can POST
+    // directly without ever completing a handshake. What blocks creation in
+    // the fully-dormant state is the META_PAGE_TOKEN gate in POST (no token →
+    // {skipped}, and fetchLead() can't read Graph anyway), so ACKing there is
+    // harmless and keeps Meta from retry-storming while the webhook is half
+    // set up. But with a PAGE_TOKEN configured and no APP_SECRET, an unsigned
+    // POST would reach the ingest loop (content still comes from the Graph API
+    // via OUR token, so arbitrary injection isn't possible — but ingestion
+    // must not be attacker-triggerable) → reject.
+    return !process.env.META_PAGE_TOKEN;
+  }
   if (!header?.startsWith("sha256=")) return false;
   const expected = "sha256=" + crypto.createHmac("sha256", secret).update(raw).digest("hex");
   try {
