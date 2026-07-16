@@ -57,7 +57,10 @@ const COLD_DAYS = REVIVAL_MISSION.dormantDays;
 // including it here gives those leads a real chip + count + filter (never chip-less).
 const ALL_POSSIBLE_STATUSES = new Set([...INDIA_STATUSES, ...DUBAI_STATUSES, NEEDS_REVIEW]);
 
-const PAGE_SIZE = 200;
+// 50/page — the SAME page size as /leads (Lalit 2026-07-16: Revival pagination must
+// behave exactly like Leads). Was a pagination-less `take: 200` cap, which silently
+// hid every record past #200 once the Revival pool outgrew it.
+const PAGE_SIZE = 50;
 
 // Source enum → chip class + human label (same maps the /leads page uses, so the
 // LeadsListClient Source column reads identically here). Kept local (small, static).
@@ -75,6 +78,12 @@ const srcChip: Record<LeadSource, string> = {
 export default async function ColdDataPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const me = await requireUser();
   const sp = await searchParams;
+
+  // Server-side pagination — identical mechanics to /leads (?page= param → skip).
+  // Prev/Next links spread the CURRENT searchParams, so search/filters/tabs/sort
+  // persist across pages; changing a filter drops ?page= and restarts at page 1.
+  const page = Math.max(1, parseInt(sp.page ?? "1") || 1);
+  const skip = (page - 1) * PAGE_SIZE;
 
   // Active status filter — "all" means no status restriction. Kept as a top-level
   // param (?status=) for the chip-tab UX, AND-composed with the shared filters.
@@ -217,6 +226,7 @@ export default async function ColdDataPage({ searchParams }: { searchParams: Pro
       },
       orderBy,
       take: PAGE_SIZE,
+      skip,
     }),
     prisma.lead.count({ where: allCold }),
     prisma.lead.count({ where }),
@@ -622,6 +632,27 @@ export default async function ColdDataPage({ searchParams }: { searchParams: Pro
             leads={listRows}
             promoteMeta={promoteMeta}
           />
+
+          {/* Pagination — EXACTLY the /leads block (Lalit 2026-07-16): Showing X–Y of
+              total, Prev / Page N of M / Next. filteredCount is the count of the ACTIVE
+              view (same `where` as the grid), so the total tracks search/filters/tabs.
+              Spreading `sp` into the links preserves every filter/sort/tab across pages;
+              Select-All + bulk actions stay page-scoped because the server only ever
+              hands the client this page's 50 rows. */}
+          <div className="flex items-center justify-between text-sm">
+            <div className="text-gray-500 dark:text-slate-400">
+              Showing {filteredCount === 0 ? 0 : skip + 1}–{Math.min(skip + PAGE_SIZE, filteredCount)} of {filteredCount}
+            </div>
+            <div className="flex gap-2">
+              {page > 1 && (
+                <Link href={`?${new URLSearchParams({ ...sp as Record<string, string>, page: String(page - 1) }).toString()}`} className="btn btn-ghost">‹ Prev</Link>
+              )}
+              <span className="px-3 py-2 text-xs text-gray-500 dark:text-slate-400">Page {page} of {Math.max(1, Math.ceil(filteredCount / PAGE_SIZE))}</span>
+              {page < Math.ceil(filteredCount / PAGE_SIZE) && (
+                <Link href={`?${new URLSearchParams({ ...sp as Record<string, string>, page: String(page + 1) }).toString()}`} className="btn btn-ghost">Next ›</Link>
+              )}
+            </div>
+          </div>
         </div>
     </>
   );

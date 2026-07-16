@@ -1902,6 +1902,33 @@ const checks: Check[] = [
     },
   },
   {
+    // REVIVAL PAGINATION (Lalit 2026-07-16, critical): /cold-calls was a pagination-less
+    // `take: 200` — every record past #200 was silently unreachable once the pool grew.
+    // It must paginate EXACTLY like /leads: ?page= → skip server-side, Prev/Next links
+    // that spread the current searchParams (filters/search/tabs/sort persist), the same
+    // 50/page size, and a total drawn from the ACTIVE view's count. Select-All stays
+    // page-scoped structurally: the server only hands the client one page of rows.
+    name: "revival-pagination — /cold-calls paginates like /leads (?page → skip, 50/page, filters persist)",
+    run: async () => {
+      const fs = await import("fs");
+      const cold = fs.readFileSync("src/app/(app)/cold-calls/page.tsx", "utf8");
+      const leadsPg = fs.readFileSync("src/app/(app)/leads/page.tsx", "utf8");
+      // (a) Server-side paging: page param parsed, skip applied to the grid query.
+      assert(/parseInt\(sp\.page/.test(cold), "cold-calls must read the ?page= param");
+      assert(/take: PAGE_SIZE,\s*\n\s*skip,/.test(cold), "cold-calls grid query must apply skip (server-side pagination)");
+      // (b) Same page size as /leads — parse both consts and compare.
+      const size = (src: string) => Number(/const PAGE_SIZE = (\d+);/.exec(src)?.[1] ?? NaN);
+      assert(size(cold) === size(leadsPg) && size(cold) === 50,
+        `Revival page size must equal /leads (both 50) — got cold=${size(cold)} leads=${size(leadsPg)}`);
+      // (c) The pagination UI: Prev / Page N of M / Next, with the current searchParams
+      //     SPREAD into the links so every filter/tab/sort survives page navigation.
+      assert(/Page \{page\} of/.test(cold), "cold-calls must render the Page N of M indicator");
+      assert(/\.\.\.sp as Record<string, string>, page: String\(page [-+] 1\)/.test(cold),
+        "Prev/Next must spread the current searchParams so filters persist across pages");
+      assert(/Showing \{/.test(cold), "cold-calls must show the X–Y of total range");
+    },
+  },
+  {
     // REVIVAL IS CALLING-ONLY (Lalit 2026-07-16, narrows the 07-06 full-parity rule):
     // meetings / site visits / expos / home visits do NOT exist in Revival Engine — not in
     // the detail UI, not in the activity logger, not via ANY api route, not in Revival-

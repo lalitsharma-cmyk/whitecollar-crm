@@ -485,7 +485,10 @@
 // v148 (2026-07-16): Revival Engine is calling-only — Meeting, Site Visit ("Start a
 // Visit"), Expo and Home-Visit logging removed from Revival (UI + server-403 + Revival
 // report bands + list filters). Convert to Lead unlocks those workflows. History preserved.
-const CACHE = "wcr-shell-v148";
+// v149 (2026-07-16): Revival pagination — /cold-calls now pages exactly like /leads
+// (50/page, Prev/Next, Showing X–Y of N, filters/tabs/sort persist across pages). The
+// old take:200 cap hid 2,888 of 3,088 records after the big import.
+const CACHE = "wcr-shell-v149";
 const SHELL = ["/login", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", (event) => {
