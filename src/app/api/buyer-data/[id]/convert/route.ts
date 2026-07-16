@@ -8,6 +8,7 @@ import { assignLeadTo } from "@/lib/leadIngest";
 import { canTouchBuyer, isBuyerAssignableForMarket, marketOfBuyer } from "@/lib/buyerScope";
 import { audit, reqMeta } from "@/lib/audit";
 import { toE164 } from "@/lib/phone";
+import { leadDedupOR } from "@/lib/assignment";
 import { normalizeNameList } from "@/lib/nameFormat";
 import { normalizeTeam } from "@/lib/teamRouting";
 import { resolveMarket } from "@/lib/market";
@@ -90,6 +91,25 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const emails = parseJsonArray(buyer.emails);
   const email = emails[0] ?? null;
   const altEmail = emails[1] ?? null;
+
+  // DUPLICATE GUARD (Lalit 2026-07-16: "same normalized phone OR same normalized email
+  // = same customer — apply to imports, manual creation, linking, AND CONVERSION").
+  // Converting a buyer whose contact already exists as a live Lead must not mint a
+  // second lead for the same person. Same leadDedupOR the intake paths use; 409 points
+  // the agent at the existing record instead of silently merging or duplicating.
+  const dupOr = leadDedupOR(phone, email, altPhone, altEmail);
+  if (dupOr.length) {
+    const existingLead = await prisma.lead.findFirst({
+      where: { deletedAt: null, OR: dupOr },
+      select: { id: true, name: true, ownerId: true, owner: { select: { name: true } } },
+    });
+    if (existingLead) {
+      return NextResponse.json({
+        error: `This customer already exists as lead "${existingLead.name}"${existingLead.owner?.name ? ` (owned by ${existingLead.owner.name})` : ""}. Open that lead instead of converting — one customer, one lead.`,
+        existingLeadId: existingLead.id,
+      }, { status: 409 });
+    }
+  }
 
   // Team / currency: the owning agent's team wins; else the buyer's MARKET is the
   // authoritative signal (this is the Dubai module — market is "Dubai"), NOT the

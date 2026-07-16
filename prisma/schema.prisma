@@ -166,6 +166,8 @@ model User {
 
   assistantRuns AssistantRun[] @relation("AssistantRunBy")
   operationLogs OperationLog[] @relation("OperationLogBy")
+  presenceSessions    PresenceSession[] @relation("PresenceSessions")
+  routingRulesCreated RoutingRule[]     @relation("RoutingRulesCreated")
 
   agentStatusEvents AgentStatusEvent[]
 
@@ -3017,4 +3019,76 @@ model CustomerLinkAudit {
   @@index([leadId])
   @@index([performedById])
   @@index([performedAt])
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// ADMIN PRESENCE / LAST-SEEN (Lalit 2026-07-17). Admin-ONLY visibility — agents
+// never see their own or others' presence anywhere. One row per browser/device
+// session; status (Online/Idle/Offline/Never-Active-Today) is DERIVED AT READ TIME
+// from the timestamps below — no cron involved (crons are intentionally paused).
+// Privacy: route PATH + module label + device metadata only; never query strings,
+// message content, note text, phone numbers, or GPS.
+// ═════════════════════════════════════════════════════════════════════════════
+model PresenceSession {
+  id              String    @id @default(cuid())
+  userId          String
+  user            User      @relation("PresenceSessions", fields: [userId], references: [id], onDelete: Cascade)
+  sessionKey      String    @unique // random id minted per browser profile+tab-group
+  startedAt       DateTime  @default(now())
+  lastHeartbeatAt DateTime  @default(now()) // CRM open (60s beat, visibility-aware)
+  lastActivityAt  DateTime  @default(now()) // last MEANINGFUL interaction → Idle calc
+  endedAt         DateTime? // explicit logout/pagehide beacon; stale sessions derive Offline
+  device          String?   // Windows | Mac | iPhone | Android | iPad | …
+  browser         String?   // Chrome | Safari | Edge | …
+  os              String?
+  isPwa           Boolean   @default(false)
+  lastRoute       String?   // pathname ONLY (no query string — may contain search text)
+  lastModule      String?   // Leads | Master Data | Dubai Buyer Data | …
+  activityCount   Int       @default(0)
+
+  @@index([userId, lastHeartbeatAt])
+  @@index([lastHeartbeatAt])
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// ADMIN LEAD-ROUTING SCHEDULER (Lalit 2026-07-17). Admin-ONLY. Date-windowed
+// routing rules override the default auto-assignment WITHOUT changing ownership
+// logic: they fire only where auto-assign fires (never on manual assignment,
+// which always wins). Expiry is intrinsic — the window is checked at assignment
+// time, so no cron is needed. Every applied decision stamps the lead's existing
+// routingMethod="rule" / routingReason audit fields.
+// ═════════════════════════════════════════════════════════════════════════════
+model RoutingRule {
+  id            String    @id @default(cuid())
+  name          String
+  active        Boolean   @default(true)
+  priority      Int       @default(100) // lower wins among simultaneous matches
+  startsAt      DateTime  // window start (IST-derived instants stored UTC)
+  endsAt        DateTime? // null = permanent until disabled
+  scope         Json      // { modules?, sources?, projects?, countries?, teams? } — empty = all leads
+  recipients    Json      // [{ userId, weight }] — weight 1 each = round-robin/equal split
+  strategy      String    @default("round_robin") // single | round_robin | weighted
+  rrCursor      Int       @default(0) // round-robin pointer (atomic increment)
+  assignedCount Int       @default(0) // leads affected (audit requirement)
+  disabledAt    DateTime?
+  createdById   String
+  createdBy     User      @relation("RoutingRulesCreated", fields: [createdById], references: [id])
+  updatedById   String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  versions      RoutingRuleVersion[]
+
+  @@index([active, startsAt])
+}
+
+model RoutingRuleVersion {
+  id          String      @id @default(cuid())
+  ruleId      String
+  rule        RoutingRule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+  action      String      // created | updated | enabled | disabled
+  snapshot    Json        // full rule state AFTER the action (version history + revert source)
+  changedById String
+  changedAt   DateTime    @default(now())
+
+  @@index([ruleId, changedAt])
 }

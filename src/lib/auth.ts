@@ -62,6 +62,15 @@ export const getCurrentUser = cache(async () => {
     if (now.getTime() - s.lastActiveAt.getTime() > 60_000) {
       prisma.userSession.update({ where: { id: payload.sid }, data: { lastActiveAt: now } }).catch(() => {});
     }
+  } else if (user.passwordChangedAt && !user.isSuperAdmin) {
+    // ── Password epoch for LEGACY cookies ── no-sid cookies carry no issue-time, so
+    // they can't be compared against passwordChangedAt like DB sessions are. But every
+    // login since the UserSession rollout issues a sid — a surviving no-sid cookie
+    // necessarily predates it. Rule: once a user's password epoch is set (admin reset
+    // or hard force-logout), legacy cookies are dead → fresh, device-bound login.
+    // Without this, an admin password reset did NOT log out pre-rollout devices
+    // (found during the Yasir Khan hard session reset, 2026-07-17).
+    return null;
   } else if (enforcementOn() && !user.isSuperAdmin) {
     // Under enforcement a session MUST be device-bound (carry a sid). Legacy no-sid
     // cookies (pre-device-security) are no longer trusted — force a fresh, device-

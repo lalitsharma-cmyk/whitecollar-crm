@@ -6274,6 +6274,10 @@ const checks: Check[] = [
       const auth = fs.readFileSync("src/lib/auth.ts", "utf8");
       // Password epoch
       assert(/s\.createdAt < user\.passwordChangedAt/.test(auth), "getCurrentUser must kill sessions created before the last password change");
+      // Password epoch for LEGACY no-sid cookies — they carry no issue-time, so an
+      // epoch-stamped user may never ride one (found in Yasir hard reset, 2026-07-17).
+      assert(/user\.passwordChangedAt && !user\.isSuperAdmin/.test(auth),
+        "legacy no-sid cookies must be rejected for any user with a password epoch set (else admin reset/force-logout misses pre-rollout devices)");
       // Per-request device binding (super-admin exempt)
       assert(/!user\.isSuperAdmin && s\.deviceRef/.test(auth) && /s\.device\.status !== "APPROVED"/.test(auth),
         "getCurrentUser must reject a session whose device is no longer APPROVED (super-admin exempt)");
