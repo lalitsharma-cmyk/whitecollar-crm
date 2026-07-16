@@ -3,6 +3,8 @@ import { prisma } from "@/lib/prisma";
 import { Role, Prisma, type LeadSource } from "@prisma/client";
 import { SUPPRESSED_STATUSES } from "@/lib/lead-statuses";
 import { phoneCanonicalTail } from "@/lib/phoneCountry";
+import { applyRouting, type RoutingContext } from "@/lib/leadRouting";
+import { resolveActiveAssignee } from "@/lib/leave";
 
 /**
  * Round-robin assignment: pick the active AGENT (or MANAGER) with the
@@ -88,4 +90,64 @@ export function leadDedupOR(
     );
   }
   return or;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ADMIN LEAD-ROUTING SCHEDULER choke point (Lalit 2026-07-17).
+//
+// resolveAutoAssignOwner() is THE routing-aware auto-assign resolver every
+// AUTO-assignment path funnels through (real-time intake, reconciler orphan
+// sweep, awaiting-team tagging, and — when a rule scopes them — converts and
+// imports). Manual assignment paths must NEVER call this: a human picking an
+// owner always wins over any rule.
+//
+// Resolution order:
+//   1. PAUSED  — global "routingPause" Setting is on → { kind: "paused" }.
+//                The caller must leave the record UNASSIGNED (do NOT fall back
+//                to the default rule) — Lalit's emergency override: "all leads
+//                remain unassigned until manually distributed".
+//   2. RULE    — an admin-defined RoutingRule matched (date-window + scope,
+//                priority-ordered) and yielded an eligible recipient →
+//                { kind: "rule" }. Caller assigns to userId and stamps the
+//                lead's routingMethod="rule" + routingReason=reason.
+//   3. DEFAULT — no rule matched → { kind: "default" } carrying the EXISTING
+//                business rule via resolveActiveAssignee (Dubai→Lalit ·
+//                Tue-IST India→Yasir · else Tanuj, honoring leave-cover) —
+//                byte-identical to today's behavior when zero rules exist.
+//
+// This function only DECIDES the target; the caller keeps its own gating
+// (websiteAutoAssignEnabled, terminal-status skip, ownerId==null check) and its
+// own assignLeadTo()/update writes, so nothing about HOW leads are assigned
+// changes — only WHO, and only when an admin created a rule or hit pause.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type AutoAssignResolution =
+  | { kind: "paused"; userId: null; reason: string }
+  | { kind: "rule"; userId: string; ruleId: string; ruleName: string; reason: string }
+  | { kind: "default"; userId: string | null };
+
+export async function resolveAutoAssignOwner(
+  ctx: RoutingContext,
+  now: Date = new Date(),
+): Promise<AutoAssignResolution> {
+  const routed = await applyRouting(ctx, now); // fail-open: errors → null inside
+  if (routed) {
+    if (routed.paused) {
+      return {
+        kind: "paused",
+        userId: null,
+        reason: "Automatic assignment is paused by admin — lead left unassigned for manual distribution",
+      };
+    }
+    return {
+      kind: "rule",
+      userId: routed.ownerId,
+      ruleId: routed.ruleId,
+      ruleName: routed.ruleName,
+      reason: routed.reason,
+    };
+  }
+  // No rule → the EXISTING fixed team rule + leave-cover, unchanged.
+  const fallback = await resolveActiveAssignee(ctx.team ?? null, now);
+  return { kind: "default", userId: fallback };
 }

@@ -118,3 +118,13 @@ Status legend: ✅ Fixed & deployed · 🔜 Batched (Medium, prepared) · ⏸️
 
 ### Monitoring (each cycle)
 Re-run `scripts/regression.ts` (129 invariants) + market-gap check + `scripts/export-duplicate-review.ts`. Baseline held green through both deploy batches. Watch for: new team-without-market drift, new duplicates, any invariant regression.
+
+## Monitoring log
+
+### 2026-07-16 — daily stabilization monitor
+✅ STABLE
+- **Regression suite:** 146 passed, 0 failed (suite grew from 129 baseline — new invariants added, all green).
+- **Market gap (team-without-market):** 0 — no heal needed.
+- **Duplicate groups:** 10 groups / 22 leads (phone=2, email=8) — ⚠️ grew from Jul-3 baseline of 1 group. Mostly 2-record email matches from new intake (incl. one `qa***@example.com` test-looking pair); largest group 4 records on one gmail. Read-only export at `docs/reviews/duplicate-review-2026-07-16.md` — needs human review/link via Identity Center, NOT auto-merged.
+- **Prod health:** `{"ok":true,"commit":"b77246e","leads":5885}` — healthy.
+- **Verdict:** No regressions. Only follow-up is reviewing the 10 duplicate groups (data growth, not a code issue).

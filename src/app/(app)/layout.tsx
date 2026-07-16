@@ -1,4 +1,5 @@
 import AttendancePing from "@/components/AttendancePing";
+import PresenceBeacon from "@/components/PresenceBeacon";
 import MobileShell from "@/components/MobileShell";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
@@ -56,6 +57,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         </div>
       )}
       <AttendancePing />
+      <PresenceBeacon />
       <MobileShell
         user={{ id: user.id, name: user.name, role: user.role, avatarColor: user.avatarColor ?? "bg-slate-500", photoUrl: user.photoUrl, team: user.team, leadOpsOnly: (user as { leadOpsOnly?: boolean }).leadOpsOnly }}
         awaitingTeamCount={awaitingTeamCount}

@@ -6326,6 +6326,174 @@ const checks: Check[] = [
   },
 
   // ───────────────────────────────────────────────────────────────────────────
+  // 51b. FORCE-LOGOUT ADMIN FEATURE (2026-07-17, Lalit — after the Yasir Khan hard
+  //      session reset had to be done by hand). Admin → User Management → Sessions:
+  //      list a user's active sessions, revoke one, or Force Logout ALL devices.
+  //      The all-devices kill = revoke every UserSession row + stamp passwordChangedAt
+  //      + bump sessionEpoch WITHOUT touching passwordHash (user keeps their password;
+  //      legacy pre-rollout no-sid cookies die via the auth.ts epoch rule). Guards:
+  //      only a super-admin may force-logout a super-admin; single-revoke must be
+  //      row-ownership-checked and must NEVER bump the epoch (that would kill all
+  //      the user's devices when the admin asked for one).
+  // ───────────────────────────────────────────────────────────────────────────
+  {
+    name: "force-logout-admin — per-user sessions panel; all-devices kill stamps epoch (hash untouched); single revoke never does",
+    run: async () => {
+      const fs = await import("fs");
+      const route = fs.readFileSync("src/app/api/admin/users/[id]/sessions/route.ts", "utf8");
+      // Total kill: epoch stamp + sessionEpoch bump, and the route never writes a password hash.
+      assert(/passwordChangedAt: now/.test(route) && /sessionEpoch: \{ increment: 1 \}/.test(route),
+        "force-logout-all must stamp passwordChangedAt + bump sessionEpoch (kills legacy no-sid cookies too)");
+      assert(!/passwordHash/.test(route), "force-logout must NEVER touch the password hash — the user keeps their password");
+      // Single-session revoke: ownership-checked, epoch-free. Isolate the DELETE body
+      // up to the FORCE LOGOUT ALL section — that prefix is the single-revoke branch.
+      const delBody = route.split("export async function DELETE")[1] ?? "";
+      const singleBranch = delBody.split("FORCE LOGOUT ALL")[0] ?? "";
+      assert(singleBranch.length > 0 && /session\.userId !== targetId/.test(singleBranch),
+        "single-session revoke must verify the row belongs to the target user");
+      assert(!/passwordChangedAt/.test(singleBranch),
+        "single-session revoke must not bump the password epoch (would log out ALL devices)");
+      // Super-admin protection + strict caller gating + audit.
+      assert(/target\.isSuperAdmin && !me\.isSuperAdmin/.test(route), "only a super-admin may force-logout a super-admin");
+      assert(/hrOnly/.test(route), "hr-only admins must be excluded from the sessions panel API");
+      assert(/"user\.force-logout"/.test(route), "every force-logout must be audit-logged (user.force-logout)");
+      assert(/presenceSession\.updateMany/.test(route), "force-logout-all must end the user's presence sessions");
+      // UI: modal exists, dismiss-safe (backdropProps already asserted file-wide), exact kill wording.
+      const ui = fs.readFileSync("src/components/AdminUsersClient.tsx", "utf8");
+      assert(/SessionsModal/.test(ui) && /Force Logout — All Devices/.test(ui),
+        "User Management must expose the Sessions panel with Force Logout — All Devices");
+    },
+  },
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // 51c. ADMIN-ONLY PRESENCE & LAST-SEEN (2026-07-17, Lalit URGENT spec). Real-time
+  //      Online (≤90s heartbeat) / Idle (>5min no interaction) / Offline /
+  //      Never-Active-Today (IST day), per-device sessions, visible ONLY to
+  //      non-HR admins — agents/managers/HR get 403 at the API and a redirect at
+  //      the page, never presence data in any payload. Privacy: pathname-only
+  //      routes, no message content / phone numbers / GPS / precise IP. No cron
+  //      dependency (crons are intentionally disabled) — stale cleanup happens
+  //      opportunistically inside the admin read path.
+  // ───────────────────────────────────────────────────────────────────────────
+  {
+    name: "presence-admin-only — status derivation boundaries; strict RBAC (hrOnly excluded); pathname-only privacy; beacon mounted in both shells",
+    run: async () => {
+      const fs = await import("fs");
+      // Functional checks on the pure service helpers.
+      const p = await import("../src/lib/presence");
+      assert(p.canViewPresence({ role: "ADMIN", hrOnly: false }) === true, "ADMIN (non-HR) must view presence");
+      assert(p.canViewPresence({ role: "ADMIN", hrOnly: true }) === false, "hrOnly admin (Nisha pattern) must NOT view presence");
+      assert(p.canViewPresence({ role: "MANAGER", hrOnly: false }) === false && p.canViewPresence({ role: "AGENT", hrOnly: false }) === false,
+        "managers and agents must NOT view presence");
+      assert(p.stripToPathname("/leads?q=9811098110&x=1") === "/leads", "presence must persist pathname ONLY — query strings (phones, searches) never stored");
+      const now = new Date("2026-07-17T10:00:00Z");
+      const mk = (beatSecAgo: number, actSecAgo: number, ended?: boolean) => ({
+        lastHeartbeatAt: new Date(now.getTime() - beatSecAgo * 1000),
+        lastActivityAt: new Date(now.getTime() - actSecAgo * 1000),
+        endedAt: ended ? new Date(now.getTime() - 1000) : null,
+      });
+      assert(String(p.derivePresenceStatus(mk(30, 30), now)).toUpperCase().includes("ONLINE"), "≤90s heartbeat + fresh activity = Online");
+      assert(String(p.derivePresenceStatus(mk(30, 6 * 60), now)).toUpperCase().includes("IDLE"), "alive heartbeat but >5min since interaction = Idle");
+      assert(String(p.derivePresenceStatus(mk(10 * 60, 10 * 60), now)).toUpperCase().includes("OFFLINE"), "stale heartbeat = Offline");
+      assert(String(p.derivePresenceStatus(mk(30, 30, true), now)).toUpperCase().includes("OFFLINE"), "endedAt set wins over a fresh heartbeat (pagehide beacon)");
+      // Route guards + privacy, as file assertions.
+      const hb = fs.readFileSync("src/app/api/presence/heartbeat/route.ts", "utf8");
+      assert(/getCurrentUser/.test(hb) && /204/.test(hb), "heartbeat must 401-JSON unauthenticated (getCurrentUser, no redirect) and return bodyless 204");
+      const adminApi = fs.readFileSync("src/app/api/admin/presence/route.ts", "utf8");
+      assert(/canViewPresence/.test(adminApi) && /403/.test(adminApi), "admin presence API must 403 non-authorized viewers (never empty-200)");
+      assert(/presence\.view/.test(adminApi), "admin access to presence must be audit-logged");
+      const page = fs.readFileSync("src/app/(app)/admin/presence/page.tsx", "utf8");
+      assert(/canViewPresence/.test(page) && /redirect\(/.test(page), "presence PAGE must guard server-side — no shell renders for agents");
+      // Beacon: visibility-aware, pathname-only, mounted in BOTH shells (else HR users read Never-Active forever).
+      const beacon = fs.readFileSync("src/components/PresenceBeacon.tsx", "utf8");
+      assert(/visibilityState/.test(beacon) && /sendBeacon/.test(beacon) && /window\.location\.pathname/.test(beacon) && !/window\.location\.search/.test(beacon),
+        "beacon must be visibility-aware, flush via sendBeacon, and never read the query string");
+      const appLayout = fs.readFileSync("src/app/(app)/layout.tsx", "utf8");
+      const hrLayout = fs.readFileSync("src/app/(hr)/layout.tsx", "utf8");
+      assert(/<PresenceBeacon \/>/.test(appLayout) && /<PresenceBeacon \/>/.test(hrLayout),
+        "PresenceBeacon must be mounted in the app shell AND the HR shell");
+      const nav = fs.readFileSync("src/components/MobileShell.tsx", "utf8");
+      assert(/\/admin\/presence/.test(nav), "Team Presence nav link must exist in the ADMIN section");
+      // DATA arm — prod table is queryable (schema drift guard).
+      const cnt = await prisma.presenceSession.count();
+      results.push({ name: "  ↳ note", ok: true, detail: `PresenceSession table live, rows=${cnt}` });
+    },
+  },
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // 51d. ADMIN LEAD ROUTING SCHEDULER (2026-07-17, Lalit URGENT spec). Admin →
+  //      Lead Routing: time-windowed rules (Today…Permanent), recipients
+  //      single/round-robin/weighted, scopes (module/team/source/project/country),
+  //      priority Manual > Date > Source > Team > Default, "Pause Automatic
+  //      Assignment" emergency override (leads stay UNASSIGNED), full version
+  //      audit trail. Wired at FIVE choke points; with zero rules every path is
+  //      byte-identical to the pre-existing default (proven on live data at
+  //      build time). No cron: windows + expiry evaluated at assign/read time.
+  // ───────────────────────────────────────────────────────────────────────────
+  {
+    name: "routing-scheduler — engine + 5 choke points + admin-only panel + version audit; zero-rules = pre-existing behavior",
+    run: async () => {
+      const fs = await import("fs");
+      // Engine essentials (server-only module — assert by file content, not import).
+      const eng = fs.readFileSync("src/lib/leadRouting.ts", "utf8");
+      assert(/^import "server-only";/.test(eng), "leadRouting must be server-only (rules must never reach a client bundle)");
+      assert(/isRoutingPaused/.test(eng) && /routingPause/.test(eng), "engine must honor the routingPause emergency override");
+      assert(/getOnLeaveAgentIds/.test(eng), "rule recipients on leave must be skipped (leave-cover integration)");
+      assert(/round_robin/.test(eng) && /weighted/.test(eng) && /FOR UPDATE/.test(eng),
+        "round-robin/weighted picks must be race-safe (FOR UPDATE transaction)");
+      // Resolver: rules first, identical default after.
+      const asg = fs.readFileSync("src/lib/assignment.ts", "utf8");
+      assert(/export async function resolveAutoAssignOwner/.test(asg) && /applyRouting/.test(asg) && /resolveActiveAssignee/.test(asg),
+        "resolveAutoAssignOwner must consult rules first and fall back to the EXACT pre-existing default (resolveActiveAssignee)");
+      assert(/kind: "paused"; userId: null/.test(asg), "pause must resolve to unassigned (never a silent default owner)");
+      // The five choke points.
+      const ingest = fs.readFileSync("src/lib/leadIngest.ts", "utf8");
+      assert(/resolveAutoAssignOwner\(\{\s*module: "lead-intake"/.test(ingest) && /routingSource: `routing_rule:\$\{resolution\.ruleId\}`/.test(ingest),
+        "ingestLead must route via resolveAutoAssignOwner and stamp rule provenance");
+      assert(/auto-assign \(\$\{lead\.forwardedTeam\} team\)/.test(ingest),
+        "zero-rules intake must keep the byte-identical legacy assignment reason");
+      const recon = fs.readFileSync("src/lib/reconciler.ts", "utf8");
+      assert(/resolveAutoAssignOwner/.test(recon) && /kind === "paused"/.test(recon), "reconciler orphan sweep must respect rules + pause");
+      const awaitTeam = fs.readFileSync("src/app/api/admin/awaiting-team/assign/route.ts", "utf8");
+      assert(/resolveAutoAssignOwner/.test(awaitTeam) && /routing paused by admin/.test(awaitTeam), "awaiting-team tagging must respect rules + pause");
+      const conv = fs.readFileSync("src/app/api/buyer-data/[id]/convert/route.ts", "utf8");
+      assert(/applyRouting\(\{ module: "buyer-convert"/.test(conv) && /routed && !routed\.paused/.test(conv),
+        "buyer convert may auto-route ONLY the previously-400 pool branch; manual ownerId always wins");
+      for (const f of ["src/app/api/intake/csv/route.ts", "src/app/api/intake/google-sheet/route.ts"]) {
+        const src = fs.readFileSync(f, "utf8");
+        assert(/module: "import"/.test(src) && /!r\.deduped/.test(src) && /!finalOwner && !isTerminalStatus\(finalStatus\)/.test(src),
+          `${f} must route ONLY brand-new unowned workable rows (dedupe/owned/terminal untouched)`);
+      }
+      // Admin-only surface + audit trail.
+      const shared = fs.readFileSync("src/app/api/admin/routing-rules/shared.ts", "utf8");
+      assert(/hrOnly/.test(shared) && /403/.test(shared), "routing-rules API must be ADMIN-only (hrOnly excluded, 403 otherwise)");
+      assert(/writeRuleVersion/.test(shared) && /snapshot/.test(shared), "every rule mutation must write a full-snapshot version row");
+      const page = fs.readFileSync("src/app/(app)/admin/routing-rules/page.tsx", "utf8");
+      assert(/redirect\(/.test(page), "routing-rules PAGE must redirect non-admins server-side");
+      const nav = fs.readFileSync("src/components/MobileShell.tsx", "utf8");
+      assert(/\/admin\/routing-rules/.test(nav), "Lead Routing nav link must exist in the ADMIN section");
+      const widget = fs.readFileSync("src/components/RoutingRulesWidget.tsx", "utf8");
+      assert(/viewerRole/.test(widget) && /PAUSED/i.test(widget), "dashboard widget must self-guard by role and surface the paused state");
+
+      // DATA arms (live DB) — audit-trail + weighted integrity + provenance coherence.
+      const rules = await prisma.routingRule.findMany({ include: { versions: { orderBy: { changedAt: "asc" } } } }).catch(() => [] as never[]);
+      for (const r of rules as Array<{ id: string; name: string; strategy: string; recipients: unknown; versions: Array<{ action: string }> }>) {
+        assert(r.versions.length >= 1 && r.versions[0].action === "created", `rule "${r.name}" must carry a full version trail starting with "created"`);
+        if (r.strategy === "weighted") {
+          const rec = (Array.isArray(r.recipients) ? r.recipients : []) as Array<{ weight?: number }>;
+          const sum = rec.reduce((s, x) => s + (Number(x.weight) || 0), 0);
+          assert(Math.abs(sum - 100) < 0.01, `weighted rule "${r.name}" weights must sum to 100 (got ${sum})`);
+        }
+      }
+      const badProvenance = await prisma.lead.count({
+        where: { routingSource: { startsWith: "routing_rule:" }, NOT: { routingMethod: "rule" } },
+      });
+      assert(badProvenance === 0, `${badProvenance} leads carry routing_rule provenance without routingMethod="rule"`);
+      results.push({ name: "  ↳ note", ok: true, detail: `RoutingRule rows=${(rules as never[]).length}; provenance coherent; zero-rules path proven identical at build (Dubai→Lalit, non-Tue India→Tanuj)` });
+    },
+  },
+
+  // ───────────────────────────────────────────────────────────────────────────
   // 52. CONVERSATION CALL-REMARK EDIT (2026-06-30, Lalit — "requested multiple times,
   //     still not visible"). The edit feature existed for NOTE + meeting activities
   //     but NOT for CALL remarks — the dominant conversation entry (~97%) — so it read
@@ -6442,8 +6610,13 @@ const checks: Check[] = [
       // resolveTeamAutoAssignee, so the Dubai/Tuesday/Tanuj rule still governs.
       const fs = await import("fs");
       const ingest = fs.readFileSync("src/lib/leadIngest.ts", "utf8");
-      assert(/resolveActiveAssignee\(lead\.forwardedTeam\)/.test(ingest) && /wantsAutoAssign/.test(ingest),
-        "leadIngest must resolve the target via resolveActiveAssignee under the autoAssign/WEBSITE gate");
+      // 2026-07-17 Routing Scheduler: leadIngest now resolves via resolveAutoAssignOwner
+      // (assignment.ts), which consults admin rules FIRST and falls back to the same
+      // resolveActiveAssignee — fixed team rule + leave-cover unchanged when no rule.
+      assert(/resolveAutoAssignOwner\(\{/.test(ingest) && /wantsAutoAssign/.test(ingest),
+        "leadIngest must resolve the target via resolveAutoAssignOwner under the autoAssign/WEBSITE gate");
+      assert(/resolveActiveAssignee/.test(fs.readFileSync("src/lib/assignment.ts", "utf8")),
+        "resolveAutoAssignOwner's no-rule fallback must remain resolveActiveAssignee (fixed rule + leave-cover)");
       const leaveSrc = fs.readFileSync("src/lib/leave.ts", "utf8");
       assert(/resolveTeamAutoAssignee\(team, now\)/.test(leaveSrc),
         "resolveActiveAssignee must delegate to resolveTeamAutoAssignee (fixed team rule stays the source of truth)");
@@ -6486,11 +6659,18 @@ const checks: Check[] = [
       assert(entriesInEffect(parseLeaveEntries(raw), "2026-07-02").length === 1, "expired entry (until<today) dropped, today kept");
       assert(entriesInEffect(parseLeaveEntries(raw), "2026-07-03").length === 0, "all expired the next day");
       // Both auto-assign call sites route through the leave-aware resolver.
+      // 2026-07-17 Routing Scheduler: the call is now indirect — leadIngest/reconciler
+      // → resolveAutoAssignOwner (assignment.ts) → resolveActiveAssignee. Leave-cover
+      // is preserved on the default path AND rule recipients on leave are skipped by
+      // the engine itself (getOnLeaveAgentIds in leadRouting.ts).
       const fsl = await import("fs");
-      assert(/resolveActiveAssignee\(/.test(fsl.readFileSync("src/lib/leadIngest.ts", "utf8")),
-        "leadIngest must call resolveActiveAssignee (leave-aware)");
-      assert(/resolveActiveAssignee\(/.test(fsl.readFileSync("src/lib/reconciler.ts", "utf8")),
-        "reconciler must call resolveActiveAssignee (leave-aware)");
+      assert(/resolveAutoAssignOwner\(/.test(fsl.readFileSync("src/lib/leadIngest.ts", "utf8")),
+        "leadIngest must call resolveAutoAssignOwner (leave-aware via resolveActiveAssignee fallback)");
+      assert(/resolveAutoAssignOwner\(/.test(fsl.readFileSync("src/lib/reconciler.ts", "utf8")),
+        "reconciler must call resolveAutoAssignOwner (leave-aware via resolveActiveAssignee fallback)");
+      const asgSrc = fsl.readFileSync("src/lib/assignment.ts", "utf8");
+      assert(/resolveActiveAssignee\(/.test(asgSrc),
+        "resolveAutoAssignOwner's default path must remain resolveActiveAssignee (leave-aware)");
     },
   },
 

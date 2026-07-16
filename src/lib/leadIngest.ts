@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { LeadSource, LeadStatus, ActivityType, ActivityStatus, AIScore, ClientType } from "@prisma/client";
-import { pickRoundRobinAgent, fingerprintFor, leadDedupOR } from "@/lib/assignment";
+import { pickRoundRobinAgent, fingerprintFor, leadDedupOR, resolveAutoAssignOwner } from "@/lib/assignment";
 import { phoneCanonicalDigits } from "@/lib/phoneCountry";
 import { defaultCurrencyForLocation } from "@/lib/money";
 import { notify, notifyRoles } from "@/lib/notify";
@@ -18,7 +18,6 @@ import { sourceEnumLabel } from "@/lib/sourceLabel";
 import { BOOKED_STATUSES, isTerminalStatus } from "@/lib/lead-statuses";
 import { terminalStatusSideEffects } from "@/lib/lostRejected";
 import { resolveTeam, routingFieldsFor, automationGate } from "@/lib/teamRouting";
-import { resolveActiveAssignee } from "@/lib/leave";
 import { resolveMarket } from "@/lib/market";
 import type { Classification } from "@/lib/leadClassifier";
 import { cleanNeedSnapshot } from "@/lib/needSnapshot";
@@ -585,10 +584,21 @@ export async function ingestLead(input: RawLeadInput) {
   if (wantsAutoAssign && lead.forwardedTeam && !arrivedTerminal) {
     try {
       const cfg = await getWebsiteAutoAssign();          // keep ONLY for the enable toggle
-      // Leave-cover (#16): resolveActiveAssignee = the fixed team rule, but if the
-      // resolved agent is on leave today it redirects to a cover (teammate → Lalit →
-      // park). Passthrough when nobody's on leave, so common-path behavior is unchanged.
-      const targetUserId = await resolveActiveAssignee(lead.forwardedTeam);
+      // Routing Scheduler → leave-cover default. resolveAutoAssignOwner consults the
+      // admin Routing Rules first (Admin → Lead Routing): a live matching rule picks
+      // the owner (single / round-robin / weighted); "Pause Automatic Assignment"
+      // leaves the lead UNASSIGNED for manual distribution; no rule → the exact
+      // pre-existing default, resolveActiveAssignee (fixed team rule + leave-cover
+      // #16: on-leave agent redirects to cover teammate → Lalit → park).
+      const resolution = await resolveAutoAssignOwner({
+        module: "lead-intake",
+        team: lead.forwardedTeam,
+        market: lead.market,
+        source: input.source,
+        project: lead.sourceDetail,
+        country: lead.country,
+      });
+      const targetUserId = resolution.kind === "paused" ? null : resolution.userId;
       if (cfg.enabled && targetUserId && !lead.ownerId) {
         // Validate the resolved user is real, active and not HR-only before assigning.
         const assignee = await prisma.user.findFirst({
@@ -596,7 +606,14 @@ export async function ingestLead(input: RawLeadInput) {
           select: { id: true },
         });
         if (assignee) {
-          await assignLeadTo(lead.id, assignee.id, `auto-assign (${lead.forwardedTeam} team)`);
+          const reason = resolution.kind === "rule" ? resolution.reason : `auto-assign (${lead.forwardedTeam} team)`;
+          await assignLeadTo(lead.id, assignee.id, reason);
+          if (resolution.kind === "rule") {
+            await prisma.lead.update({
+              where: { id: lead.id },
+              data: { routingMethod: "rule", routingSource: `routing_rule:${resolution.ruleId}`, routingReason: resolution.reason },
+            });
+          }
           lead.ownerId = assignee.id; // reflect locally so the alert block below adapts
           autoAssigned = true;
         }

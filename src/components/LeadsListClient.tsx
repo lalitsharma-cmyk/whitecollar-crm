@@ -227,9 +227,12 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const selectedIds = Array.from(selected);
   // Agents see a leaner table (no Assigned/Last-Activity columns — they only ever
-  // see their own leads) but CAN still select rows to bulk-set follow-up dates.
+  // see their own leads). Row checkboxes are admin/manager-only (canBulk): every
+  // bulk action an agent could reach is 403'd server-side (10 bulk ops are
+  // Admin/Super-Admin per Lalit 2026-07-10), so offering agents a selection UI
+  // only led to a guaranteed "Forbidden" on the lone visible button (Follow-up).
   const isAgent = meRole === "AGENT";
-  const canSel = canBulk || isAgent;          // who may tick row checkboxes
+  const canSel = canBulk;                      // who may tick row checkboxes
   const isAdmin = meRole === "ADMIN";          // admin-only bulk field edits
 
   // Bulk action UI state. The action bar is a single sticky element at the
@@ -615,7 +618,7 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
     } finally { setBulkBusy(false); }
   }
 
-  // Bulk set follow-up date — agent-safe (API scopes to the caller's own leads).
+  // Bulk set follow-up date — ADMIN-only (server 403s everyone else; UI gates match).
   async function applyBulkFollowup() {
     if (bulkBusy) return;
     setBulkBusy(true); setBulkErr(null);
@@ -1569,13 +1572,17 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
                 Clear
               </button>
               <div className="w-px h-5 bg-gray-200 dark:bg-slate-600 mx-0.5 flex-none" />
-              {/* Follow-up — everyone (agents + admin), API scopes to own leads */}
-              <button
-                onClick={() => { setShowFollowupPop(v => !v); setShowTagPopover(false); setShowWaPopover(false); setShowReassignPopover(false); setShowEditPop(false); }}
-                className="inline-flex items-center gap-1 text-xs font-semibold bg-blue-50 text-blue-800 border border-blue-300 px-2.5 py-1.5 rounded-lg whitespace-nowrap flex-none"
-              >
-                <Calendar className="w-3.5 h-3.5" /> Follow-up
-              </button>
+              {/* Follow-up — ADMIN only, matching the /api/leads/bulk set_followup
+                  gate (reversible admin op per Lalit 2026-07-10). Was shown to
+                  everyone, so agents/managers always hit a 403 on Apply. */}
+              {isAdmin && (
+                <button
+                  onClick={() => { setShowFollowupPop(v => !v); setShowTagPopover(false); setShowWaPopover(false); setShowReassignPopover(false); setShowEditPop(false); }}
+                  className="inline-flex items-center gap-1 text-xs font-semibold bg-blue-50 text-blue-800 border border-blue-300 px-2.5 py-1.5 rounded-lg whitespace-nowrap flex-none"
+                >
+                  <Calendar className="w-3.5 h-3.5" /> Follow-up
+                </button>
+              )}
               {canBulk && (
                 <button
                   onClick={() => { setShowTagPopover(v => !v); setShowReassignPopover(false); setShowWaPopover(false); setShowFollowupPop(false); setShowEditPop(false); }}
@@ -1610,7 +1617,10 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
                   ₹/AED Recalc currency
                 </button>
               )}
-              {canReassign && (
+              {/* BULK Reassign — ADMIN only, matching the /api/leads/bulk reassign
+                  gate. The per-row inline owner picker stays canReassign (managers)
+                  — single-lead assign is manager-friendly via /api/leads/[id]/assign. */}
+              {canReassign && isAdmin && (
                 <button
                   onClick={() => { setShowReassignPopover(v => !v); setShowTagPopover(false); setShowWaPopover(false); setShowFollowupPop(false); setShowEditPop(false); }}
                   className="inline-flex items-center gap-1 text-xs font-semibold bg-blue-50 text-blue-800 border border-blue-300 px-2.5 py-1.5 rounded-lg whitespace-nowrap flex-none"
@@ -1658,8 +1668,8 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
               </div>
             )}
 
-            {/* Follow-up popover — bulk set/clear the follow-up date. */}
-            {showFollowupPop && (
+            {/* Follow-up popover — bulk set/clear the follow-up date (ADMIN, see button gate). */}
+            {showFollowupPop && isAdmin && (
               <div className="pointer-events-auto absolute left-3 right-3 sm:left-1/2 sm:-translate-x-1/2 sm:max-w-sm bottom-full mb-2 bg-white dark:bg-slate-800 border border-[#e5e7eb] dark:border-slate-700 rounded-xl shadow-2xl p-3">
                 <div className="flex items-center justify-between mb-2">
                   <div className="text-xs font-semibold text-[#0b1a33] dark:text-white">Set follow-up for {selectedIds.length} lead{selectedIds.length === 1 ? "" : "s"}</div>
@@ -1738,7 +1748,7 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
             )}
 
             {/* Reassign popover — single-select agent dropdown. */}
-            {showReassignPopover && canReassign && (
+            {showReassignPopover && canReassign && isAdmin && (
               <div className="pointer-events-auto absolute left-3 right-3 sm:left-1/2 sm:-translate-x-1/2 sm:max-w-md bottom-full mb-2 bg-white dark:bg-slate-800 border border-[#e5e7eb] dark:border-slate-700 rounded-xl shadow-2xl p-3">
                 <div className="flex items-center justify-between mb-2">
                   <div className="text-xs font-semibold text-[#0b1a33] dark:text-white">Reassign {selectedIds.length} lead{selectedIds.length === 1 ? "" : "s"}</div>

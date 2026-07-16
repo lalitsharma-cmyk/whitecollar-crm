@@ -28,6 +28,7 @@ import DashboardBroadcastInbox from "@/components/DashboardBroadcastInbox";
 import DashboardVoiceBroadcast from "@/components/DashboardVoiceBroadcast";
 import { canSendBroadcast, broadcastRecipientWhere, broadcastAudienceLabel } from "@/lib/voiceBroadcast";
 import HelpDot from "@/components/HelpDot";
+import RoutingRulesWidget from "@/components/RoutingRulesWidget";
 
 export const dynamic = "force-dynamic";
 
@@ -651,6 +652,9 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
               </div>
             </>
           )}
+
+          {/* Lead Routing rules at a glance — admin-only (widget self-guards too). */}
+          {isAdmin && <RoutingRulesWidget viewerRole={me.role} />}
 
           {/* Compact Assignment Queue — for Lalit/admins (NOT lead-ops Sameer, who
               gets the full management view above). Persistent entry point into the

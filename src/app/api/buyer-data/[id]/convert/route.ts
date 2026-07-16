@@ -9,6 +9,7 @@ import { canTouchBuyer, isBuyerAssignableForMarket, marketOfBuyer } from "@/lib/
 import { audit, reqMeta } from "@/lib/audit";
 import { toE164 } from "@/lib/phone";
 import { leadDedupOR } from "@/lib/assignment";
+import { applyRouting } from "@/lib/leadRouting";
 import { normalizeNameList } from "@/lib/nameFormat";
 import { normalizeTeam } from "@/lib/teamRouting";
 import { resolveMarket } from "@/lib/market";
@@ -70,17 +71,28 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   // returned) has no owner to convert under → the admin must name the agent, else
   // the lead would silently land on the admin with no team.
   const requestedOwner = String(body.ownerId ?? "").trim();
+  // Routing Scheduler (module "buyer-convert"): fires ONLY in the branch that used
+  // to hard-400 — an admin converting a pool/returned buyer without naming an agent.
+  // A live buyer-convert rule picks the owner instead; no rule (or paused) keeps the
+  // 400 exactly as before. Manual ownerId / the buyer's own agent ALWAYS win — the
+  // default team rule must never start silently auto-assigning buyer converts.
+  let routed: Awaited<ReturnType<typeof applyRouting>> = null;
   if (buyer.poolStatus !== BUYER_POOL_STATUS.ASSIGNED && !requestedOwner) {
-    return NextResponse.json({ error: "Assign this buyer to an agent before converting, or pass an ownerId." }, { status: 400 });
+    const mkTeam = buyer.market === "Dubai" ? "Dubai" : buyer.market === "India" ? "India" : null;
+    routed = await applyRouting({ module: "buyer-convert", team: mkTeam, market: buyer.market, project: buyer.projectName });
+    if (!routed || routed.paused) {
+      return NextResponse.json({ error: "Assign this buyer to an agent before converting, or pass an ownerId." }, { status: 400 });
+    }
   }
-  const ownerId = requestedOwner || buyer.ownerId || me.id;
+  const ownerId = requestedOwner || buyer.ownerId || (routed && !routed.paused ? routed.ownerId : "") || me.id;
   const owner = await prisma.user.findUnique({ where: { id: ownerId }, select: { id: true, name: true, team: true, active: true, role: true } });
   if (!owner || !owner.active) return NextResponse.json({ error: "Resolved lead owner not found or inactive" }, { status: 400 });
-  // When an admin converts ON BEHALF of a specific agent, that agent must belong to the
-  // BUYER'S market team (or be an admin) — an India buyer can't be converted onto a Dubai
-  // agent, or vice-versa. The buyer's own current owner already passed this at assignment.
+  // When an admin converts ON BEHALF of a specific agent (or a routing rule picked
+  // one), that agent must belong to the BUYER'S market team (or be an admin) — an
+  // India buyer can't be converted onto a Dubai agent, or vice-versa. The buyer's
+  // own current owner already passed this at assignment.
   const bMarket = marketOfBuyer(buyer);
-  if (requestedOwner && !isBuyerAssignableForMarket(owner, bMarket)) {
+  if ((requestedOwner || routed) && !isBuyerAssignableForMarket(owner, bMarket)) {
     return NextResponse.json({ error: `${bMarket} buyers can only be converted on behalf of ${bMarket}-team users or admins.` }, { status: 403 });
   }
 
@@ -160,9 +172,18 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         // lead-market-segregation invariant can never drift — this create
         // bypasses ingestLead, which is the only other path that sets it.
         market: resolveMarket({ forwardedTeam: team, budgetCurrency }),
-        routingMethod: "manual",
-        routingSource: "buyer_data_conversion",
-        routingReason: `Converted from Buyer Data by ${me.name}`,
+        ...(routed && !routed.paused
+          ? {
+              // A routing rule picked the owner (pool buyer, no ownerId given).
+              routingMethod: "rule",
+              routingSource: `routing_rule:${routed.ruleId}`,
+              routingReason: routed.reason,
+            }
+          : {
+              routingMethod: "manual",
+              routingSource: "buyer_data_conversion",
+              routingReason: `Converted from Buyer Data by ${me.name}`,
+            }),
         leadOrigin: "ACTIVE_LEAD",
         currentStatus: "Fresh Lead",
         tags: CONVERT_TAG,

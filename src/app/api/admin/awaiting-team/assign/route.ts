@@ -18,7 +18,7 @@ import { audit, reqMeta } from "@/lib/audit";
 import { resolveTeam, routingFieldsFor } from "@/lib/teamRouting";
 import { teamToMarket } from "@/lib/market";
 import { getRoundRobinEnabled, getAutoAssignmentEnabled, getWebsiteAutoAssign } from "@/lib/settings";
-import { resolveTeamAutoAssignee } from "@/lib/teamAutoAssign";
+import { resolveAutoAssignOwner } from "@/lib/assignment";
 
 const TEAMS = ["Dubai", "India"] as const;
 type Team = (typeof TEAMS)[number];
@@ -62,14 +62,26 @@ export async function POST(req: NextRequest) {
   // (Dubai→Lalit · Tue-IST India→Yasir · else Tanuj), gated by the same enable
   // toggle as website intake. Falls back to the legacy round-robin only if the
   // rule returns null (unknown team) AND round-robin is on.
-  const fixedTarget = resolveTeamAutoAssignee(team);
+  // 2026-07-17: Routing Scheduler consulted first (admin rules win; the Pause
+  // override leaves the lead unowned for manual distribution; no rule → the fixed
+  // team rule, now WITH leave-cover — previously this path skipped leave checks).
+  const resolution = await resolveAutoAssignOwner({
+    module: "lead-intake",
+    team,
+    market: teamToMarket(team),
+    source: lead.source,
+    project: lead.sourceDetail,
+    country: lead.country,
+  });
   const featureOn = (await getWebsiteAutoAssign()).enabled;
   const rrOn = (await getAutoAssignmentEnabled()) && (await getRoundRobinEnabled());
-  const choice = (fixedTarget && featureOn)
-    ? { userId: fixedTarget as string | null, window: currentWindow(), fallbackReason: "fixed team rule (Lalit 2026-06-30)" }
-    : rrOn
-      ? await chooseOwnerForNewLead(team)
-      : { userId: null as string | null, window: currentWindow(), fallbackReason: "auto-assign disabled (round-robin off)" };
+  const choice = resolution.kind === "paused"
+    ? { userId: null as string | null, window: currentWindow(), fallbackReason: "routing paused by admin — assign manually" }
+    : (resolution.userId && featureOn)
+      ? { userId: resolution.userId as string | null, window: currentWindow(), fallbackReason: resolution.kind === "rule" ? resolution.reason : "fixed team rule (Lalit 2026-06-30)" }
+      : rrOn
+        ? await chooseOwnerForNewLead(team)
+        : { userId: null as string | null, window: currentWindow(), fallbackReason: "auto-assign disabled (round-robin off)" };
 
   // REACTIVATE-BEFORE-REASSIGN — never auto-assign a rejected lead (assignLeadTo
   // would refuse and 500 this route). Near-impossible here (rejected leads already
@@ -79,7 +91,17 @@ export async function POST(req: NextRequest) {
 
   let agentName: string | null = null;
   if (choice.userId) {
-    await assignLeadTo(leadId, choice.userId, "auto round-robin after team tagging");
+    await assignLeadTo(
+      leadId,
+      choice.userId,
+      resolution.kind === "rule" ? resolution.reason : "auto round-robin after team tagging",
+    );
+    if (resolution.kind === "rule" && choice.userId === resolution.userId) {
+      await prisma.lead.update({
+        where: { id: leadId },
+        data: { routingMethod: "rule", routingSource: `routing_rule:${resolution.ruleId}`, routingReason: resolution.reason },
+      });
+    }
     const agent = await prisma.user.findUnique({ where: { id: choice.userId }, select: { name: true } });
     agentName = agent?.name ?? null;
   }

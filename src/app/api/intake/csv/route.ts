@@ -1,7 +1,8 @@
 import { NextResponse, type NextRequest } from "next/server";
 import Papa from "papaparse";
 import * as XLSX from "xlsx";
-import { ingestLead, terminalIntakeFields } from "@/lib/leadIngest";
+import { ingestLead, terminalIntakeFields, assignLeadTo } from "@/lib/leadIngest";
+import { applyRouting } from "@/lib/leadRouting";
 import { LeadSource, Potential, FundReadiness, MoodStatus, InvestTimeline, LeadStatus, AIScore, Prisma } from "@prisma/client";
 import { requireRole } from "@/lib/auth";
 import { canImportData, EXPORT_DENIED } from "@/lib/exportPerms";
@@ -1059,6 +1060,34 @@ export async function POST(req: NextRequest) {
         if (Object.keys(toApply).length > 0) {
           await prisma.lead.update({ where: { id: r.lead.id }, data: toApply as never });
           autofilled++;
+        }
+      }
+
+      // Routing Scheduler (module "import"): an explicit Imports-scoped admin rule
+      // may auto-assign brand-new imported rows. No rule / paused / terminal /
+      // already owned (Assigned-User column etc. = manual, wins) → parked exactly
+      // as today. Dedupe-updates never re-route an existing lead.
+      if (!r.deduped) {
+        const finalOwner = ("ownerId" in update ? (update.ownerId as string | null) : r.lead.ownerId) ?? null;
+        const finalStatus = typeof update.currentStatus === "string" ? update.currentStatus : r.lead.currentStatus;
+        if (!finalOwner && !isTerminalStatus(finalStatus)) {
+          const d = await applyRouting({
+            module: "import",
+            team: (update.forwardedTeam as string | undefined) ?? r.lead.forwardedTeam,
+            market: (update.market as string | undefined) ?? r.lead.market,
+            source: sourceAndMedium.source,
+            project: (update.sourceDetail as string | undefined) ?? r.lead.sourceDetail,
+            country: r.lead.country,
+          });
+          if (d && !d.paused) {
+            try {
+              await assignLeadTo(r.lead.id, d.ownerId, d.reason);
+              await prisma.lead.update({
+                where: { id: r.lead.id },
+                data: { routingMethod: "rule", routingSource: `routing_rule:${d.ruleId}`, routingReason: d.reason },
+              });
+            } catch (e) { console.error("[csv-import] routing-rule assign failed", r.lead.id, e); }
+          }
         }
       }
 

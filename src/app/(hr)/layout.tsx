@@ -2,6 +2,7 @@ import { requireUser } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import HRShell from "@/components/HRShell";
+import PresenceBeacon from "@/components/PresenceBeacon";
 import { hrRoleOf, permissionsFor } from "@/lib/hrPermissions";
 import { hrScopeWhere } from "@/lib/hrAccess";
 
@@ -36,6 +37,10 @@ export default async function HRLayout({ children }: { children: React.ReactNode
   ]);
 
   return (
+    <>
+    {/* Presence heartbeat — without this, HR-only users (Nisha) would read
+        "Never Active Today" on the admin presence board forever. */}
+    <PresenceBeacon />
     <HRShell
       user={{ name: user.name, role: user.role, avatarColor: user.avatarColor ?? "bg-indigo-500" }}
       hrRole={hrRole}
@@ -46,5 +51,6 @@ export default async function HRLayout({ children }: { children: React.ReactNode
     >
       {children}
     </HRShell>
+    </>
   );
 }

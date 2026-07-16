@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { notify, notifyRoles } from "@/lib/notify";
 import { chooseOwnerForNewLead, currentWindow } from "@/lib/assignmentWindow";
-import { resolveActiveAssignee } from "@/lib/leave";
+import { resolveAutoAssignOwner } from "@/lib/assignment";
 import { getRoundRobinEnabled, getAutoAssignmentEnabled, getAutoEscalationEnabled, getSlaBreachEnabled, getFreshUntouchedEscalationEnabled } from "@/lib/settings";
 import { isTeamClassified } from "@/lib/teamRouting";
 import { SUPPRESSED_STATUSES, CLOSING_STATUSES } from "@/lib/lead-statuses";
@@ -75,9 +75,20 @@ export async function runReconciler(): Promise<ReconcileResult> {
     // Lalit 2026-06-30: prefer the fixed team rule (Dubai→Lalit / Tue-IST India→
     // Yasir); fall back to legacy round-robin only for an unknown team. (This sweep
     // only runs when round-robin is ON — OFF by default → dormant.)
-    const fixed = await resolveActiveAssignee(team); // fixed team rule + leave-cover (#16)
+    // 2026-07-17: Routing Scheduler consulted first — a live admin rule wins; the
+    // pause override leaves orphans unassigned; no rule → identical fixed team rule.
+    const resolution = await resolveAutoAssignOwner({
+      module: "lead-intake",
+      team,
+      market: lead.market,
+      source: lead.source,
+      project: lead.sourceDetail,
+      country: lead.country,
+    });
+    if (resolution.kind === "paused") continue; // lead stays unassigned under the emergency override
+    const fixed = resolution.userId;
     const choice = fixed
-      ? { userId: fixed as string | null, window: currentWindow(), fallbackReason: "fixed team rule (Lalit 2026-06-30)" }
+      ? { userId: fixed as string | null, window: currentWindow(), fallbackReason: resolution.kind === "rule" ? resolution.reason : "fixed team rule (Lalit 2026-06-30)" }
       : await chooseOwnerForNewLead(team);
     if (!choice.userId) continue;
 
@@ -91,6 +102,9 @@ export async function runReconciler(): Promise<ReconcileResult> {
         assignedAt: now,
         slaFirstCallBy: new Date(now.getTime() + FIRST_CALL_SLA_MIN * 60 * 1000),
         slaEscalated: false,
+        ...(resolution.kind === "rule"
+          ? { routingMethod: "rule", routingSource: `routing_rule:${resolution.ruleId}`, routingReason: resolution.reason }
+          : {}),
       },
     });
     const reason = choice.window.kind === "EVENING_LALIT"
