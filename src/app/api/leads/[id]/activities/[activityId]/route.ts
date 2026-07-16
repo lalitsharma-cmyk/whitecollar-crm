@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { loadOwnedLead } from "@/lib/leadScope";
+import { isRevivalOrigin, REVIVAL_BLOCKED_ACTIVITY_TYPES, REVIVAL_CALLING_ONLY_ERROR } from "@/lib/moduleSource";
 import { audit, reqMeta } from "@/lib/audit";
 import { canEditActivity, AGENT_EDITABLE_ACTIVITY_TYPES } from "@/lib/remarkPerms";
 import { ActivityType } from "@prisma/client";
@@ -76,7 +77,7 @@ export async function PATCH(
   const { id, activityId } = await params;
   const scoped = await loadOwnedLead(id);
   if (scoped.error) return scoped.error;
-  const { me } = scoped;
+  const { me, lead } = scoped;
 
   const activity = await prisma.activity.findUnique({
     where: { id: activityId },
@@ -127,6 +128,18 @@ export async function PATCH(
       return NextResponse.json({ error: "You can't change this entry to that type." }, { status: 403 });
     }
     if (t !== activity.type) {
+      // Revival Engine is calling-only (Lalit 2026-07-16): re-typing a
+      // non-meeting entry INTO a meeting/visit/expo kind would CREATE pipeline
+      // activity on a cold/revival lead through the edit modal — block it.
+      // An entry that is ALREADY a meeting kind (historical) may still be
+      // corrected between kinds; history is edited in place, never deleted.
+      if (
+        isRevivalOrigin(lead.leadOrigin) &&
+        REVIVAL_BLOCKED_ACTIVITY_TYPES.includes(t) &&
+        !REVIVAL_BLOCKED_ACTIVITY_TYPES.includes(activity.type)
+      ) {
+        return NextResponse.json({ error: REVIVAL_CALLING_ONLY_ERROR }, { status: 403 });
+      }
       data.type = t;
       edits.push({ field: "type", oldValue: activity.type, newValue: t });
     }

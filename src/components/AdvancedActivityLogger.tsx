@@ -13,6 +13,11 @@ interface Props {
   team: "Dubai" | "India" | null;
   /** Admin-set INR per kilometre rate, used to live-preview the reimbursement. */
   travelRatePerKm: number;
+  /** Where the logger is mounted. Revival Engine is calling-only (Lalit
+   *  2026-07-16): every type this logger offers (expo / home visit / site
+   *  visit) is a blocked active-pipeline kind there, so `context="revival"`
+   *  renders nothing — the server 403s those types on revival leads anyway. */
+  context?: "lead" | "revival";
 }
 
 /**
@@ -27,7 +32,7 @@ interface Props {
  *
  * Posts to /api/leads/[id]/advanced-activity.
  */
-export default function AdvancedActivityLogger({ leadId, team, travelRatePerKm }: Props) {
+export default function AdvancedActivityLogger({ leadId, team, travelRatePerKm, context = "lead" }: Props) {
   const router = useRouter();
   const [show, setShow] = useState(false);
   const [type, setType] = useState<AdvancedType>(team === "India" ? "HOME_VISIT" : "EXPO_MEETING");
@@ -49,6 +54,11 @@ export default function AdvancedActivityLogger({ leadId, team, travelRatePerKm }
   function update<K extends keyof typeof form>(k: K, v: (typeof form)[K]) {
     setForm((f) => ({ ...f, [k]: v }));
   }
+
+  // Revival Engine is calling-only: this logger's whole type list (expo / home
+  // visit / site visit) is blocked there, so there is nothing it may offer.
+  // (After the hooks above — hook order stays stable across renders.)
+  if (context === "revival") return null;
 
   const km = Number(form.distanceKm) || 0;
   const reimbursementPreview = km > 0 ? km * travelRatePerKm : 0;

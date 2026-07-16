@@ -17,6 +17,12 @@ import { LEAD_SOURCE_MODULES, type SourceModule } from "@/lib/moduleSource";
 //   • module=<one>  → the bifurcated columns show THAT module's number only
 //     (non-bifurcated columns — Website/Event/Conn./meetings-done etc. — are
 //     origin-agnostic and always show their full value).
+//   • module="Revival Engine" → the Meetings + Site Visits bands are NOT
+//     rendered at all (Lalit 2026-07-16: Revival is calling-only — meetings/
+//     site visits/expos/home visits are not Revival activities, so the Revival
+//     slice must not present them). Historical meeting activities still render
+//     on lead timelines, and the "all" view + module breakdown keep showing
+//     them as genuine historical data. Leads/Master Data slices unchanged.
 // ─────────────────────────────────────────────────────────────────────────
 
 function num(n: number): string {
@@ -127,15 +133,24 @@ export default function AgentPerformanceTable({
 
   // Bifurcated column header suffix so it's obvious a filter is applied.
   const modTag = module === "all" ? "" : ` · ${module}`;
-  // colSpan of the full row (for the breakdown row) — keep in sync with the <th> count.
+  // Revival is calling-only (Lalit 2026-07-16): under the Revival module filter
+  // the Meetings + Site Visits bands (7 columns) are hidden entirely — the
+  // Revival slice must not present meeting/SV metrics. All other module views
+  // (all / Leads / Master Data) are byte-for-byte unchanged.
+  const hideMeetingBands = module === "Revival Engine";
+  // colSpan of the full row (for the breakdown row) — keep in sync with the <th>
+  // count. Only used when module="all" (breakdown rows), where all 30 columns render.
   const COLSPAN = 30;
 
   return (
     <div className="card overflow-x-auto">
       {module !== "all" && (
         <div className="px-3 pt-3 text-[11px] text-gray-600">
-          Showing the <strong>{module}</strong> module slice for lead-derived columns (Assigned · Fresh · Active · Closed/Won · Lost · Rejected · Calls · WhatsApp · Notes · Meet/SV Sched).
-          Website / Event / Revival-origin / connect / completed columns are origin-agnostic and show full values.
+          Showing the <strong>{module}</strong> module slice for lead-derived columns (Assigned · Fresh · Active · Closed/Won · Lost · Rejected · Calls · WhatsApp · Notes{hideMeetingBands ? "" : " · Meet/SV Sched"}).
+          Website / Event / Revival-origin / connect{hideMeetingBands ? "" : " / completed"} columns are origin-agnostic and show full values.
+          {hideMeetingBands && (
+            <> Meeting &amp; site-visit columns are not shown — Revival Engine is calling-only; historical meeting/visit activities remain visible on each lead&apos;s timeline.</>
+          )}
         </div>
       )}
       <table className="tbl min-w-[1400px] text-sm">
@@ -164,15 +179,21 @@ export default function AgentPerformanceTable({
             <th className="text-center bg-violet-50/60">WhatsApp</th>
             <th className="text-center bg-violet-50/60">Notes</th>
             <th className="text-center bg-violet-50/60">Voice</th>
-            {/* Meetings band */}
-            <th className="text-center bg-teal-50/60">Meet Sched</th>
-            <th className="text-center bg-teal-50/60">Meet Done</th>
-            <th className="text-center bg-teal-50/60">Office</th>
-            <th className="text-center bg-teal-50/60">Virtual</th>
-            {/* Site visits band */}
-            <th className="text-center bg-cyan-50/60">SV Sched</th>
-            <th className="text-center bg-cyan-50/60">SV Done</th>
-            <th className="text-center bg-cyan-50/60">SV Canc.</th>
+            {/* Meetings + Site visits bands — hidden under the Revival module
+                filter (calling-only; see hideMeetingBands above). */}
+            {!hideMeetingBands && (
+              <>
+                {/* Meetings band */}
+                <th className="text-center bg-teal-50/60">Meet Sched</th>
+                <th className="text-center bg-teal-50/60">Meet Done</th>
+                <th className="text-center bg-teal-50/60">Office</th>
+                <th className="text-center bg-teal-50/60">Virtual</th>
+                {/* Site visits band */}
+                <th className="text-center bg-cyan-50/60">SV Sched</th>
+                <th className="text-center bg-cyan-50/60">SV Done</th>
+                <th className="text-center bg-cyan-50/60">SV Canc.</th>
+              </>
+            )}
             {/* Derived */}
             <th className="text-center bg-gray-50">Conn %</th>
             <th className="text-center bg-gray-50">Conv %</th>
@@ -217,15 +238,21 @@ export default function AgentPerformanceTable({
                   <td className="text-center">{num(mv(m, "whatsappConversations", module))}</td>
                   <td className="text-center">{num(mv(m, "notesAdded", module))}</td>
                   <td className="text-center text-gray-500">{num(m.voiceNotesAdded)}</td>
-                  {/* Meetings (Meet Sched bifurcated) */}
-                  <td className="text-center">{num(mv(m, "meetingsScheduled", module))}</td>
-                  <td className="text-center text-emerald-700">{num(m.meetingsCompleted)}</td>
-                  <td className="text-center">{num(m.officeMeetings)}</td>
-                  <td className="text-center">{num(m.virtualMeetings)}</td>
-                  {/* Site visits (SV Sched bifurcated) */}
-                  <td className="text-center">{num(mv(m, "siteVisitsScheduled", module))}</td>
-                  <td className="text-center text-emerald-700">{num(m.siteVisitsCompleted)}</td>
-                  <td className="text-center text-gray-500">{num(m.siteVisitsCancelled)}</td>
+                  {/* Meetings + Site visits — hidden under the Revival module
+                      filter (calling-only; matches the hidden header band). */}
+                  {!hideMeetingBands && (
+                    <>
+                      {/* Meetings (Meet Sched bifurcated) */}
+                      <td className="text-center">{num(mv(m, "meetingsScheduled", module))}</td>
+                      <td className="text-center text-emerald-700">{num(m.meetingsCompleted)}</td>
+                      <td className="text-center">{num(m.officeMeetings)}</td>
+                      <td className="text-center">{num(m.virtualMeetings)}</td>
+                      {/* Site visits (SV Sched bifurcated) */}
+                      <td className="text-center">{num(mv(m, "siteVisitsScheduled", module))}</td>
+                      <td className="text-center text-emerald-700">{num(m.siteVisitsCompleted)}</td>
+                      <td className="text-center text-gray-500">{num(m.siteVisitsCancelled)}</td>
+                    </>
+                  )}
                   {/* Derived */}
                   <td className={`text-center font-semibold ${cr >= 40 ? "text-emerald-700" : cr >= 20 ? "text-amber-700" : "text-gray-500"}`}>
                     {cr.toFixed(0)}%
@@ -245,7 +272,7 @@ export default function AgentPerformanceTable({
       </table>
       <div className="text-[10px] text-gray-500 p-3 leading-relaxed">
         <strong>Assigned</strong> bands count by the lead&apos;s <strong>current owner</strong> — a reassigned lead immediately follows its new owner (so it matches global search, the Leads list, and export).
-        <strong> Outcomes / Funnel</strong> reflect the agent&apos;s current book. <strong>Engagement / Meetings / Site visits</strong> count actions in the period.
+        <strong> Outcomes / Funnel</strong> reflect the agent&apos;s current book. <strong>{hideMeetingBands ? "Engagement" : "Engagement / Meetings / Site visits"}</strong> count{hideMeetingBands ? "s" : ""} actions in the period.
         Lead-derived metrics split into <strong>Leads · Master Data · Revival Engine</strong> (expand any agent row, or use the Module filter). Every total = Leads + Master Data + Revival.
         Deleted &amp; recycle-bin leads are excluded everywhere. Click an agent for the full drill-down. Buyer = 0 (see the Buyer Data section for buyer metrics).
       </div>

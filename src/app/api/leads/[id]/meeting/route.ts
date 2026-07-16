@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { ActivityType, ActivityStatus } from "@prisma/client";
 import { loadOwnedLead } from "@/lib/leadScope";
+import { isRevivalOrigin, REVIVAL_CALLING_ONLY_ERROR } from "@/lib/moduleSource";
 import { awardXp, bumpStreak, type AwardResult, type XpReason } from "@/lib/gamification.server";
 
 type MeetingType = "OFFICE_MEETING" | "VIRTUAL_MEETING" | "SITE_VISIT";
@@ -10,7 +11,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const { id } = await params;
   const scoped = await loadOwnedLead(id);
   if (scoped.error) return scoped.error;
-  const { me } = scoped;
+  const { me, lead } = scoped;
+  // Revival Engine is calling-only (Lalit 2026-07-16): every type this route
+  // creates (office/virtual meeting, site visit) is an active-pipeline kind —
+  // blocked on cold/revival-origin leads. Convert to Lead first.
+  if (isRevivalOrigin(lead.leadOrigin)) {
+    return NextResponse.json({ error: REVIVAL_CALLING_ONLY_ERROR }, { status: 403 });
+  }
   const body = await req.json().catch(() => ({}));
 
   const type = String(body.type ?? "") as MeetingType;

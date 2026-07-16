@@ -502,7 +502,11 @@ export default async function ColdDataPage({ searchParams }: { searchParams: Pro
           {/* Saved Views — same Smart Lists mechanism as Leads/Master Data */}
           <SavedFiltersBar isAdmin={me.role === "ADMIN"} />
 
-          {/* Shared filter panel (search + team/owner/status/source/medium/tags/date) */}
+          {/* Shared filter panel (search + team/owner/status/source/medium/tags/date).
+              showMeetingVisit={false}: Revival Engine is calling-only (Lalit
+              2026-07-16) — meetings/site visits are not Revival activities, so the
+              "Has meeting"/"Has site visit" filter options are not presented here.
+              Historical meeting activities still render on lead timelines. */}
           <LeadFilters
             agents={agents.map((a) => ({ id: a.id, name: a.name }))}
             sources={sourceOptions}
@@ -512,6 +516,7 @@ export default async function ColdDataPage({ searchParams }: { searchParams: Pro
             projects={allProjects}
             mediums={mediumOptions}
             propertyTypes={PROPERTY_TYPES}
+            showMeetingVisit={false}
           />
 
           {/* India / Dubai Revival split — market tabs (admin/manager). Preserves the

@@ -68,6 +68,27 @@ export function isBuyerModule(m: SourceModule): boolean {
   return m === "Dubai Buyer Data" || m === "India Buyer Data";
 }
 
+// ── Revival Engine = calling-only (Lalit, 2026-07-16) ─────────────────────────
+// Active-pipeline activity kinds may NOT be CREATED on a cold/revival-origin
+// lead — via UI, API, or any hidden route. Convert the record to a Lead first.
+// Existing historical rows are never deleted and stay readable; server guards
+// 403 the WRITE paths only. Typed readonly string[] so `.includes()` accepts a
+// Prisma ActivityType without importing @prisma/client (this module stays PURE).
+
+/** The 6 activity types blocked from creation on Revival-Engine leads. */
+export const REVIVAL_BLOCKED_ACTIVITY_TYPES: readonly string[] = [
+  "OFFICE_MEETING", "VIRTUAL_MEETING", "SITE_VISIT", "HOME_VISIT", "EXPO_MEETING", "MEETING",
+];
+
+/** The one 403 body every guarded creator returns for a revival-origin lead. */
+export const REVIVAL_CALLING_ONLY_ERROR =
+  "Meetings, site visits, expos and home visits aren't available in Revival Engine — convert this record to a Lead first.";
+
+/** True when a lead lives in the Revival Engine (leadOrigin COLD or REVIVAL). */
+export function isRevivalOrigin(leadOrigin: string | null | undefined): boolean {
+  return !!leadOrigin && COLD_ORIGINS.includes(leadOrigin);
+}
+
 /** The detail-page href for a record, by module + id. Leads/Master/Revival share the
  *  lead detail; buyers open their market's buyer detail. */
 export function moduleHref(module: SourceModule, id: string): string {

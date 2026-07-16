@@ -482,7 +482,10 @@
 // v147 (2026-07-15): P0 stabilization batch — text-selection no longer closes the admin
 // user Invite/Edit modals; Bulk Assign on cold/revival is Admin-only; Admin can now edit
 // Nationality on the Leads detail (completes admin edit-rights).
-const CACHE = "wcr-shell-v147";
+// v148 (2026-07-16): Revival Engine is calling-only — Meeting, Site Visit ("Start a
+// Visit"), Expo and Home-Visit logging removed from Revival (UI + server-403 + Revival
+// report bands + list filters). Convert to Lead unlocks those workflows. History preserved.
+const CACHE = "wcr-shell-v148";
 const SHELL = ["/login", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", (event) => {

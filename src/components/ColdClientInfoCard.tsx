@@ -82,7 +82,7 @@ export default function ColdClientInfoCard({ lead, isAdmin }: { lead: ColdClient
         <span className="text-[10px] text-gray-400 dark:text-slate-500 font-normal">(click any value to edit · saved to the Cold Data Bank)</span>
       </div>
       <p className="text-[10px] text-amber-700 dark:text-amber-300/80 mb-3">
-        🗄 Master-database record — client info only. Lead workflow (BANT, follow-up, meetings, pipeline) unlocks on Convert to Lead.
+        🗄 Master-database record — client info only. Revival is calling-only: meetings, site visits and pipeline unlock on Convert to Lead.
       </p>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm [&>div]:min-w-0 [&>div]:overflow-hidden">
         {/* Name — ADMIN-only edit (ADMIN_ONLY_FIELDS) */}

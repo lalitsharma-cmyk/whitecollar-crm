@@ -103,13 +103,13 @@ export async function canTouchLead(
  * to be returned by the route on failure.
  */
 export async function loadOwnedLead(leadId: string): Promise<
-  | { me: Awaited<ReturnType<typeof requireUser>>; lead: { id: string; ownerId: string | null; phone: string | null; name: string; forwardedTeam: string | null }; error?: undefined }
+  | { me: Awaited<ReturnType<typeof requireUser>>; lead: { id: string; ownerId: string | null; phone: string | null; name: string; forwardedTeam: string | null; leadOrigin: string | null }; error?: undefined }
   | { error: NextResponse; me?: undefined; lead?: undefined }
 > {
   const me = await requireUser();
   const lead = await prisma.lead.findUnique({
     where: { id: leadId },
-    select: { id: true, ownerId: true, phone: true, name: true, forwardedTeam: true },
+    select: { id: true, ownerId: true, phone: true, name: true, forwardedTeam: true, leadOrigin: true },
   });
   if (!lead) return { error: NextResponse.json({ error: "Lead not found" }, { status: 404 }) };
   if (!(await canTouchLead(me, lead))) {

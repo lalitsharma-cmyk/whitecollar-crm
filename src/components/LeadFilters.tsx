@@ -46,6 +46,13 @@ interface Props {
   // translation lives in leadFilterWhere (?propertyType=) + the /leads inline where,
   // shared by /leads + /master-data.
   propertyTypes?: string[];
+  // "Has meeting" / "Has site visit" checkboxes in More Filters. Default true
+  // (Leads + Master Data unchanged). The Revival list (/cold-calls) passes false —
+  // Revival Engine is calling-only (Lalit 2026-07-16), so meeting/site-visit filter
+  // options are not presented there. An ACTIVE ?hasMeeting/?hasSiteVisit param
+  // (e.g. an old saved view URL) still renders its removal chip so it can be
+  // cleared — only the filter affordance is hidden, never the escape hatch.
+  showMeetingVisit?: boolean;
 }
 
 // ── Shared helpers ────────────────────────────────────────────────────────────
@@ -152,7 +159,7 @@ function SectionHead({ label, open, toggle, count }: { label: string; open: bool
 
 // ── Main component ────────────────────────────────────────────────────────────
 export default function LeadFilters({
-  agents, sources, statuses, showSource = true, distinctTags = [], projects = [], mediums = [], propertyTypes = [],
+  agents, sources, statuses, showSource = true, distinctTags = [], projects = [], mediums = [], propertyTypes = [], showMeetingVisit = true,
 }: Props) {
   const router   = useRouter();
   const pathname = usePathname();
@@ -581,21 +588,25 @@ export default function LeadFilters({
                     <option value="7">7+ days</option>
                   </select>
                 </div>
-                <div>
-                  <div className="text-[11px] font-bold uppercase tracking-wide text-gray-500 dark:text-slate-400 mb-1">🤝 Meeting / Visit</div>
-                  <div className="space-y-1">
-                    <label className="flex items-center gap-1.5 cursor-pointer">
-                      <input type="checkbox" checked={draftHasMeeting==="1"} onChange={e=>setDraftHasMeeting(e.target.checked?"1":"")}
-                        className="h-3.5 w-3.5 rounded text-[#0b1a33]" />
-                      <span className="text-xs text-gray-700 dark:text-slate-200">Has meeting</span>
-                    </label>
-                    <label className="flex items-center gap-1.5 cursor-pointer">
-                      <input type="checkbox" checked={draftHasSiteVisit==="1"} onChange={e=>setDraftHasSiteVisit(e.target.checked?"1":"")}
-                        className="h-3.5 w-3.5 rounded text-[#0b1a33]" />
-                      <span className="text-xs text-gray-700 dark:text-slate-200">Has site visit</span>
-                    </label>
+                {/* Hidden on the Revival list (showMeetingVisit=false) — meetings/
+                    site visits are not Revival activities (calling-only module). */}
+                {showMeetingVisit && (
+                  <div>
+                    <div className="text-[11px] font-bold uppercase tracking-wide text-gray-500 dark:text-slate-400 mb-1">🤝 Meeting / Visit</div>
+                    <div className="space-y-1">
+                      <label className="flex items-center gap-1.5 cursor-pointer">
+                        <input type="checkbox" checked={draftHasMeeting==="1"} onChange={e=>setDraftHasMeeting(e.target.checked?"1":"")}
+                          className="h-3.5 w-3.5 rounded text-[#0b1a33]" />
+                        <span className="text-xs text-gray-700 dark:text-slate-200">Has meeting</span>
+                      </label>
+                      <label className="flex items-center gap-1.5 cursor-pointer">
+                        <input type="checkbox" checked={draftHasSiteVisit==="1"} onChange={e=>setDraftHasSiteVisit(e.target.checked?"1":"")}
+                          className="h-3.5 w-3.5 rounded text-[#0b1a33]" />
+                        <span className="text-xs text-gray-700 dark:text-slate-200">Has site visit</span>
+                      </label>
+                    </div>
                   </div>
-                </div>
+                )}
                 <div>
                   <div className="text-[11px] font-bold uppercase tracking-wide text-gray-500 dark:text-slate-400 mb-1">🏷 Categorization</div>
                   <select value={draftCategory} onChange={e=>setDraftCategory(e.target.value)} className={selCls}>

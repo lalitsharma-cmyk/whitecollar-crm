@@ -40,8 +40,6 @@ import ChangeHistoryCard from "@/components/ChangeHistoryCard";
 import LeadFollowupActions from "@/components/LeadFollowupActions";
 import LeadReassignClient from "@/components/LeadReassignClient";
 import SchedulingField from "@/components/SchedulingField";
-import LeadMeetingClient from "@/components/LeadMeetingClient";
-import SiteVisitTracker from "@/components/SiteVisitTracker";
 import AdvancedActivityLogger from "@/components/AdvancedActivityLogger";
 import VoiceNoteRecorder from "@/components/VoiceNoteRecorder";
 import LeadResourceShare from "@/components/LeadResourceShare";
@@ -49,9 +47,7 @@ import LeadProjectsClient from "@/components/LeadProjectsClient";
 import LeadInterestedClient from "@/components/LeadInterestedClient";
 import { toISTLocalInput } from "@/lib/datetime";
 import { hasContactActivityToday } from "@/lib/followupGate";
-import { parseRemarksTimeline, mergeSameMoment } from "@/lib/remarkParser";
 import { projectWhereForUser, teamToCountry } from "@/lib/propertyScope";
-import { getTravelRatePerKmInr } from "@/lib/settings";
 // Mask a cold-data phone to its last 4 digits (PII protection on the data-bank).
 // reveal=true → return the full number: admins / super-admins / Lalit need the real
 // contact to work the pipeline; agents & managers still see the masked (last-4) form.
@@ -86,8 +82,8 @@ export default async function ColdDataDetailPage({ params, searchParams }: { par
       notes: { orderBy: { createdAt: "desc" }, include: { user: { select: { name: true } } } },
       activities: { orderBy: { createdAt: "desc" }, take: 20, include: { user: { select: { name: true } } } },
       fieldHistory: { orderBy: { changedAt: "desc" }, take: 60, include: { changedBy: { select: { name: true } } } },
-      // Full-parity relations (mirror leads/[id]) — drive Properties Discussed,
-      // Interested Properties, and the meeting/site-visit surfaces below.
+      // Full-parity relations (mirror leads/[id]) — drive Properties Discussed
+      // and Interested Properties below.
       discussed:          { include: { project: true }, orderBy: { discussedAt: "desc" } },
       interestedProjects: { include: { project: true }, orderBy: { interestedAt: "desc" } },
       interestedUnits:    { include: { unit: { include: { project: true } } } },
@@ -156,18 +152,6 @@ export default async function ColdDataDetailPage({ params, searchParams }: { par
     orderBy: { name: "asc" },
   });
 
-  // Active-user roster — agent-attribution for imported remarks (meeting parse).
-  const allActiveUsers = await prisma.user.findMany({ where: { active: true }, select: { name: true } });
-
-  // Structured meeting activities (Office / Virtual / Site Visit) — same query
-  // + normalization + remark-detection merge as leads/[id], so the meeting
-  // count tiles + history match the Lead detail exactly.
-  const meetingActs = await prisma.activity.findMany({
-    where: { leadId: id, type: { in: ["OFFICE_MEETING", "VIRTUAL_MEETING", "SITE_VISIT"] } },
-    orderBy: { completedAt: "desc" },
-    include: { user: { select: { name: true } } },
-  });
-
   // Auto-detection reads — projects/interest notes + admin-only unmatched mentions.
   const [interestNotes, unmatchedMentions] = await Promise.all([
     prisma.leadInterestNote.findMany({ where: { leadId: id }, orderBy: { createdAt: "asc" } }),
@@ -180,77 +164,11 @@ export default async function ColdDataDetailPage({ params, searchParams }: { par
   // email) logged today (IST)? Drives the Complete button in LeadFollowupActions.
   const leadHasContactToday = await hasContactActivityToday(lead.id);
 
-  // Travel rate — used by AdvancedActivityLogger (Expo / site-visit km reimbursement).
-  const travelRatePerKmInr = await getTravelRatePerKmInr();
-
   // Imported MIS remarks were stored as synthetic CallLog rows (attributedAgentName
   // set, NO ivrProvider) — Historical Notes, not real calls. Keep any row that is a
   // live telephony call (ivrProvider set) OR a UI-logged call (attributedAgentName
   // null); drop the synthetic import rows. Mirrors leads/[id].
   const realCallLogs = lead.callLogs.filter((c) => c.ivrProvider != null || c.attributedAgentName == null);
-
-  // ── Meeting intelligence — parse imported remarks for Office/Virtual/Site-Visit
-  // mentions AND merge with structured Activity rows (mirrors leads/[id]).
-  const remarkMeetingType: Record<string, "OFFICE_MEETING" | "VIRTUAL_MEETING" | "SITE_VISIT"> = {
-    MEETING: "OFFICE_MEETING",
-    VIRTUAL_MEETING: "VIRTUAL_MEETING",
-    SITE_VISIT: "SITE_VISIT",
-  };
-  const detectedMeetings = (lead.remarks
-    ? mergeSameMoment(parseRemarksTimeline(lead.remarks, allActiveUsers.map(u => u.name), lead.createdAt))
-    : []
-  )
-    .filter(e => e.eventType === "MEETING" || e.eventType === "VIRTUAL_MEETING" || e.eventType === "SITE_VISIT")
-    .map((e, i) => ({
-      id: `remark-${i}`,
-      type: remarkMeetingType[e.eventType],
-      completedAt: e.date ? e.date.toISOString() : null,
-      startedAt: null as string | null,
-      endedAt: null as string | null,
-      description: e.text,
-      isNoShow: false,
-      loggedBy: e.agentName,
-      source: "remark" as const,
-    }));
-
-  const loggedMeetings = meetingActs.map(a => ({
-    id: a.id,
-    type: a.type as "OFFICE_MEETING" | "VIRTUAL_MEETING" | "SITE_VISIT",
-    completedAt: a.completedAt ? a.completedAt.toISOString() : null,
-    startedAt: a.startedAt ? a.startedAt.toISOString() : null,
-    endedAt: a.endedAt ? a.endedAt.toISOString() : null,
-    description: a.description ?? null,
-    isNoShow: a.isNoShow,
-    loggedBy: a.user?.name ?? null,
-    userId: a.userId ?? null,
-    createdAt: a.createdAt ? a.createdAt.toISOString() : null,
-    source: "logged" as const,
-  }));
-
-  const allMeetings = [...loggedMeetings, ...detectedMeetings].sort((a, b) => {
-    const ta = a.completedAt ? new Date(a.completedAt).getTime() : a.startedAt ? new Date(a.startedAt).getTime() : 0;
-    const tb = b.completedAt ? new Date(b.completedAt).getTime() : b.startedAt ? new Date(b.startedAt).getTime() : 0;
-    return tb - ta;
-  });
-
-  const meetingsOfType = (t: string) => allMeetings.filter(m => m.type === t);
-  const lastAtOf = (t: string): string | null => {
-    const dates = meetingsOfType(t)
-      .map(m => m.completedAt ?? m.startedAt)
-      .filter((d): d is string => !!d)
-      .sort();
-    return dates.length ? dates[dates.length - 1] : null;
-  };
-  const meetingCounts = {
-    officeMeetings:  { count: meetingsOfType("OFFICE_MEETING").length,  lastAt: lastAtOf("OFFICE_MEETING") },
-    virtualMeetings: { count: meetingsOfType("VIRTUAL_MEETING").length, lastAt: lastAtOf("VIRTUAL_MEETING") },
-    siteVisits:      { count: meetingsOfType("SITE_VISIT").length,      lastAt: lastAtOf("SITE_VISIT") },
-  };
-
-  // In-progress visit (started, not ended) attended by me — so the tracker resumes.
-  const activeVisit = meetingActs.find(
-    (a) => a.attendedByUserId === me.id && a.startedAt && !a.endedAt && a.status !== "DONE"
-  );
 
   return (
     <>
@@ -409,10 +327,15 @@ export default async function ColdDataDetailPage({ params, searchParams }: { par
           route (Revival rows ARE Leads) — no forks, no new routes, no schema.
           ════════════════════════════════════════════════════════════════════ */}
 
-      {/* 📅 Scheduling & next action — Follow-up / Meeting / Site Visit dates
-          (SchedulingField → /api/leads/[id]/update). Same three fields, same
-          field names + placement as leads/[id]. Site Visit renders for all
-          teams exactly as the Lead detail does (no Dubai-team hiding there). */}
+      {/* Revival is calling-only (Lalit 2026-07-16); meetings/site-visits/expos/
+          home-visits live in Leads after Convert. Removed from this page: the
+          Meetings & Site Visits section (LeadMeetingClient), the Start-a-Visit
+          tracker (SiteVisitTracker), and the Meeting/Site-Visit scheduling fields.
+          Historical meeting/visit entries remain visible in the Conversation
+          history below — never deleted or hidden. */}
+
+      {/* 📅 Scheduling & next action — Follow-up date only (SchedulingField →
+          /api/leads/[id]/update; same field name + endpoint as leads/[id]). */}
       <div className="card p-4">
         <div className="font-semibold mb-3 dark:text-slate-100">📅 Scheduling &amp; next action</div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
@@ -425,61 +348,19 @@ export default async function ColdDataDetailPage({ params, searchParams }: { par
             placeholder="Not scheduled"
             variant="primary"
           />
-          <SchedulingField
-            leadId={lead.id}
-            field="meetingDate"
-            title="Set Meeting"
-            label="📅 Meeting"
-            value={toISTLocalInput(lead.meetingDate)}
-            placeholder="Not scheduled"
-          />
-          <SchedulingField
-            leadId={lead.id}
-            field="siteVisitDate"
-            title="Set Site Visit"
-            label="🏢 Site Visit"
-            value={toISTLocalInput(lead.siteVisitDate)}
-            placeholder="Not scheduled"
-          />
         </div>
       </div>
 
-      {/* Start a Visit — the live Site/Home/Expo/Meeting tracker (resumes an
-          in-progress visit). Same component + activeVisit gate as leads/[id]. */}
-      <SiteVisitTracker
+      {/* Specialised activity logger — context="revival" makes the component hide
+          Meeting/Site-Visit/Expo/Home-Visit logging on Revival, so it stays inert
+          here (travel rate not needed: km reimbursement only applies to the hidden
+          visit forms). */}
+      <AdvancedActivityLogger
         leadId={lead.id}
-        leadName={lead.name}
-        activeVisit={activeVisit && activeVisit.startedAt && (activeVisit.type === "OFFICE_MEETING" || activeVisit.type === "SITE_VISIT") ? {
-          activityId: activeVisit.id,
-          type: activeVisit.type,
-          startedAt: activeVisit.startedAt.toISOString(),
-        } : null}
+        team={(lead.forwardedTeam === "Dubai" || lead.forwardedTeam === "India") ? lead.forwardedTeam : null}
+        travelRatePerKm={0}
+        context="revival"
       />
-
-      {/* Meetings & Site Visits — office / site / virtual counts + full history
-          (LeadMeetingClient → /api/leads/[id]/meeting). Same counts + activities
-          (structured Activity rows merged with remark-detected meetings). */}
-      <div className="card p-4">
-        <LeadMeetingClient
-          leadId={lead.id}
-          counts={meetingCounts}
-          leadName={lead.name}
-          viewerRole={me.role}
-          viewerId={me.id}
-          activities={allMeetings}
-        />
-      </div>
-
-      {/* Log Expo / Site visit / Home visit — km-reimbursement logger. Team-aware
-          label exactly as leads/[id] (Dubai → Expo/Dubai site visit; India → Home). */}
-      <div className="card p-4">
-        <div className="text-xs font-semibold text-gray-600 dark:text-slate-300 mb-2">Log Expo / Site visit / Home visit</div>
-        <AdvancedActivityLogger
-          leadId={lead.id}
-          team={(lead.forwardedTeam === "Dubai" || lead.forwardedTeam === "India") ? lead.forwardedTeam : null}
-          travelRatePerKm={travelRatePerKmInr}
-        />
-      </div>
 
       {/* Reassign — admin/manager only (mirrors leads/[id] gating). Was BROKEN on
           Revival before (LeadActionsClient called with hideReassign + no standalone

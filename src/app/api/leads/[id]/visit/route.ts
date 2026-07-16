@@ -11,6 +11,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { ActivityType, ActivityStatus } from "@prisma/client";
 import { loadOwnedLead } from "@/lib/leadScope";
+import { isRevivalOrigin, REVIVAL_CALLING_ONLY_ERROR } from "@/lib/moduleSource";
 import { rescoreLead } from "@/lib/leadRescorer";
 import { awardXp, type AwardResult, type XpReason } from "@/lib/gamification.server";
 
@@ -20,7 +21,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const { id } = await params;
   const scoped = await loadOwnedLead(id);
   if (scoped.error) return scoped.error;
-  const { me } = scoped;
+  const { me, lead } = scoped;
+  // Revival Engine is calling-only (Lalit 2026-07-16): starting a meeting/visit
+  // is blocked on cold/revival-origin leads — convert to Lead first. PATCH/PUT
+  // below stay open: they only track/close an ALREADY-existing visit row.
+  if (isRevivalOrigin(lead.leadOrigin)) {
+    return NextResponse.json({ error: REVIVAL_CALLING_ONLY_ERROR }, { status: 403 });
+  }
   const body = await req.json().catch(() => ({}));
 
   const type = String(body.type ?? "") as VisitType;

@@ -1902,6 +1902,57 @@ const checks: Check[] = [
     },
   },
   {
+    // REVIVAL IS CALLING-ONLY (Lalit 2026-07-16, narrows the 07-06 full-parity rule):
+    // meetings / site visits / expos / home visits do NOT exist in Revival Engine — not in
+    // the detail UI, not in the activity logger, not via ANY api route, not in Revival-
+    // scoped reports. A record hot enough for those is CONVERTED to a Lead first. History
+    // is preserved: pre-existing meeting/visit activities stay visible; only creation is
+    // blocked (so there is deliberately NO data arm asserting zero such activities).
+    name: "revival-calling-only — meeting/site-visit/expo/home-visit removed from Revival (UI + server-403 + reports)",
+    run: async () => {
+      const fs = await import("fs");
+      // (a) The shared rule constants — one source of truth.
+      const { REVIVAL_BLOCKED_ACTIVITY_TYPES, isRevivalOrigin } = await import("../src/lib/moduleSource");
+      for (const t of ["OFFICE_MEETING", "VIRTUAL_MEETING", "SITE_VISIT", "HOME_VISIT", "EXPO_MEETING", "MEETING"]) {
+        assert(REVIVAL_BLOCKED_ACTIVITY_TYPES.includes(t), `${t} must be a Revival-blocked activity type`);
+      }
+      assert(isRevivalOrigin("COLD") && isRevivalOrigin("REVIVAL") && !isRevivalOrigin("ACTIVE_LEAD") && !isRevivalOrigin("MASTER_DATA"),
+        "isRevivalOrigin must classify COLD/REVIVAL only");
+      // (b) SERVER enforcement — every route that can create (or re-type INTO) a blocked
+      //     activity must 403 revival-origin leads. UI hiding alone is not enforcement.
+      for (const f of [
+        "src/app/api/leads/[id]/meeting/route.ts",
+        "src/app/api/leads/[id]/visit/route.ts",
+        "src/app/api/leads/[id]/advanced-activity/route.ts",
+        "src/app/api/leads/[id]/activities/[activityId]/route.ts",
+      ]) {
+        const src = fs.readFileSync(f, "utf8");
+        assert(/isRevivalOrigin\(/.test(src) && /REVIVAL_CALLING_ONLY_ERROR/.test(src),
+          `${f} must 403 blocked activity creation on revival-origin leads`);
+      }
+      // (c) The Revival DETAIL renders none of the removed surfaces. Strip BOTH comment
+      //     styles first — the page carries a documentation comment that NAMES the removed
+      //     components, which must not trip a scan aimed at real imports/renders.
+      const detailRaw = fs.readFileSync("src/app/(app)/revival-engine/cold-data/[id]/page.tsx", "utf8");
+      const detail = detailRaw.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
+      assert(!/LeadMeetingClient/.test(detail), "Revival detail must not render the Meeting section");
+      assert(!/SiteVisitTracker/.test(detail), "Revival detail must not render Start-a-Visit");
+      assert(!/field="meetingDate"|field="siteVisitDate"/.test(detail), "Revival scheduling must not offer Meeting/Site-Visit dates");
+      assert(/context="revival"/.test(detail), "Revival must pass context=\"revival\" to the activity logger");
+      // (d) The activity logger honors the revival context (all its types are blocked ones).
+      const logger = fs.readFileSync("src/components/AdvancedActivityLogger.tsx", "utf8");
+      assert(/context\s*\?\s*:\s*"lead"\s*\|\s*"revival"|context\s*===\s*"revival"/.test(logger),
+        "AdvancedActivityLogger must support the revival context and render none of the blocked log types there");
+      // (e) Revival-scoped reporting drops the meeting/visit bands; Leads view untouched.
+      const perf = fs.readFileSync("src/components/AgentPerformanceTable.tsx", "utf8");
+      assert(/hideMeetingBands/.test(perf), "Agent Performance must hide Meetings/Site-Visits bands in the Revival module view");
+      const filters = fs.readFileSync("src/components/LeadFilters.tsx", "utf8");
+      assert(/showMeetingVisit/.test(filters), "LeadFilters must support hiding the meeting/visit filter affordances");
+      const coldList = fs.readFileSync("src/app/(app)/cold-calls/page.tsx", "utf8");
+      assert(/showMeetingVisit=\{false\}/.test(coldList), "the Revival list must hide the Has-Meeting/Has-Site-Visit filters");
+    },
+  },
+  {
     // P0-STABILIZATION BATCH (Lalit 2026-07-15): the cold-data bulk-assign gate (V1), the
     // completed admin edit-rights (Nationality), and the text-selection modal propagation.
     name: "p0-stabilization-batch — cold-data bulk-assign admin-only + admin nationality edit + modal dismiss propagated",
