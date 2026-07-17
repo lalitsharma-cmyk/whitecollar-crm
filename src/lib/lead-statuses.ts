@@ -17,6 +17,7 @@ export const INDIA_STATUSES = [
   // Active pursuit
   "Fresh Lead",
   "Follow Up",
+  "Mail Sent", // manual status (Lalit 2026-07-17) — parity with Dubai; no business logic
   "Not Contacted",
   "Never Contacted",
   "Details Shared",
@@ -233,7 +234,7 @@ export function isBookedStatus(currentStatus: string | null | undefined): boolea
 
 // ─── Active-pursuit statuses ──────────────────────────────────────────────
 export const INDIA_ACTIVE_STATUSES: string[] = [
-  "Fresh Lead", "Follow Up", "Not Contacted", "Never Contacted",
+  "Fresh Lead", "Follow Up", "Mail Sent", "Not Contacted", "Never Contacted",
   "Details Shared", "Site Visit Schedule", "Meeting",
   "Never Responding", "Postponed",
   // "Funds Issue" is deliberately NOT here — Lalit 2026-07-06: Funds Issue = LOST
@@ -616,7 +617,7 @@ export const DUBAI_AGENT_STATUSES: string[] = [
   "Wants Office Visit", "Zoom Meeting", "Meeting", "Visit Dubai", "Expo Only", "Not Interested",
 ];
 export const INDIA_AGENT_STATUSES: string[] = [
-  "Not Contacted", "Follow Up", "Details Shared", "Site Visit Schedule", "Meeting", "Postponed", "Not Interested",
+  "Not Contacted", "Follow Up", "Mail Sent", "Details Shared", "Site Visit Schedule", "Meeting", "Postponed", "Not Interested",
 ];
 
 export function agentStatusesForTeam(team: string | null | undefined): string[] {

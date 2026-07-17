@@ -341,16 +341,20 @@ const checks: Check[] = [
       const { REJECT_REASONS, rejectionStatusFor, rejectReasonLabel, rejectReasonsForTeam, REJECT_REASON_VALUES } = await import("../src/lib/reject-reasons");
       const { inferPropertyType, isPropertyType, PROPERTY_TYPES } = await import("../src/lib/propertyType");
 
-      // Team isolation — a Dubai status is invalid for India and vice-versa.
-      assert(isStatusValidForTeam("Mail Sent", "Dubai") === true, "'Mail Sent' is a Dubai status");
-      assert(isStatusValidForTeam("Mail Sent", "India") === false, "'Mail Sent' (Dubai) must be INVALID for India");
+      // Team isolation — a team-specific status is invalid for the other team.
+      // ("Mail Sent" is NO LONGER a Dubai-only example — Lalit 2026-07-17 made it a
+      // SHARED manual status on both teams; the shared-status invariant covers it.
+      // "Long Term Follow Up" is the genuinely Dubai-only active-pursuit status now.)
+      assert(isStatusValidForTeam("Long Term Follow Up", "Dubai") === true, "'Long Term Follow Up' is a Dubai status");
+      assert(isStatusValidForTeam("Long Term Follow Up", "India") === false, "'Long Term Follow Up' (Dubai) must be INVALID for India");
       assert(isStatusValidForTeam("Details Shared", "India") === true, "'Details Shared' is an India status");
       assert(isStatusValidForTeam("Details Shared", "Dubai") === false, "'Details Shared' (India) must be INVALID for Dubai");
       assert(isStatusValidForTeam("Follow Up", "India") && isStatusValidForTeam("Follow Up", "Dubai"), "shared status valid for both teams");
+      assert(isStatusValidForTeam("Mail Sent", "India") && isStatusValidForTeam("Mail Sent", "Dubai"), "'Mail Sent' is now a SHARED status (valid for both teams)");
       assert(isStatusValidForTeam("Booked With Us", "India") === true, "terminal outcomes are team-agnostic (booked lead not re-flagged on team move)");
       assert(isStatusValidForTeam(NEEDS_REVIEW, "India") && isStatusValidForTeam(NEEDS_REVIEW, "Dubai"), "'Needs Review' is valid for any team");
-      // The two masters must NOT bleed into each other.
-      assert(!(statusesForTeam("India") as readonly string[]).includes("Mail Sent"), "India master must not contain Dubai-only 'Mail Sent'");
+      // The two masters must NOT bleed into each other (using genuinely team-only statuses).
+      assert(!(statusesForTeam("India") as readonly string[]).includes("Long Term Follow Up"), "India master must not contain Dubai-only 'Long Term Follow Up'");
       assert(!(statusesForTeam("Dubai") as readonly string[]).includes("Details Shared"), "Dubai master must not contain India-only 'Details Shared'");
 
       // Reject reasons — "Booked With Us" removed from the dropdown; 2 new reasons in.
@@ -7271,6 +7275,32 @@ const checks: Check[] = [
       assert(
         leadSortTier({ currentStatus: "Follow Up", createdAt: OLD }, today, { activePipeline: false, untouched: true }) === 4,
         "untouched applies regardless of pipeline origin = tier 4");
+
+      // ── "Mail Sent" shared manual status (Lalit 2026-07-17) ──────────────────
+      // A plain, selectable, WORKABLE status on BOTH teams (all modules that use the
+      // shared status system). ZERO business logic — it must never be terminal/lost/
+      // closed/suppressed (no auto-unassign, no follow-up clear, no reminder-skip).
+      const S = await import("../src/lib/lead-statuses");
+      // Selectable on both teams, all roles.
+      assert((S.INDIA_STATUSES as readonly string[]).includes("Mail Sent") && S.DUBAI_STATUSES.includes("Mail Sent"),
+        "'Mail Sent' must be in BOTH team status masters (manager/admin dropdown)");
+      assert(S.INDIA_AGENT_STATUSES.includes("Mail Sent") && S.DUBAI_AGENT_STATUSES.includes("Mail Sent"),
+        "'Mail Sent' must be agent-selectable on both teams");
+      assert(S.selectableStatuses("India", "AGENT").includes("Mail Sent") && S.selectableStatuses("Dubai", "AGENT").includes("Mail Sent")
+        && S.selectableStatuses("India", "ADMIN").includes("Mail Sent"),
+        "'Mail Sent' must surface in the role-scoped selectable dropdown for both teams");
+      // Valid to save on either team.
+      assert(S.isStatusValidForTeam("Mail Sent", "India") && S.isStatusValidForTeam("Mail Sent", "Dubai"),
+        "'Mail Sent' must be a valid status for both teams");
+      // Workable — and provably NOT a side-effecting terminal/lost/closed/suppressed value.
+      assert(S.ACTIVE_PURSUIT_STATUSES.includes("Mail Sent"), "'Mail Sent' must classify as active-pursuit (workable)");
+      assert(!S.isTerminalStatus("Mail Sent") && !S.TERMINAL_STATUSES.includes("Mail Sent")
+        && !S.LOST_STATUSES.includes("Mail Sent") && !S.CLOSED_OUTCOME_STATUSES.includes("Mail Sent")
+        && !S.CLOSING_STATUSES.includes("Mail Sent") && !S.SUPPRESSED_STATUSES.includes("Mail Sent"),
+        "'Mail Sent' must NEVER be terminal/lost/closed/closing/suppressed (no auto-unassign / follow-up clear / reminder skip)");
+      // Renders with a real chip (not the fallback) so it shows in lists/history/exports.
+      assert(S.statusColor("Mail Sent") !== S.statusColor("some-unknown-status-xyz"),
+        "'Mail Sent' must have its own status chip colour");
 
       // First-match wins: a lead that is BOTH created-today-fresh AND untouched still
       // takes tier 0, not 4.
