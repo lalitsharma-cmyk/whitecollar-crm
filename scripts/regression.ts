@@ -6540,6 +6540,71 @@ const checks: Check[] = [
           assert(Math.abs(sum - 100) < 0.01, `weighted rule "${r.name}" weights must sum to 100 (got ${sum})`);
         }
       }
+      // ── Budget-based routing conditions (Lalit 2026-07-17) ───────────────────
+      // Pure engine checks — scope.budget {op,min,max}, currency-by-team, boundary
+      // values, blank/invalid, and INR/AED isolation. budgetRouting.ts is prisma-free.
+      const B = await import("../src/lib/budgetRouting");
+      const avail = (v: number) => ({ value: v, state: "available" as const });
+      const CR = 10_000_000, L = 100_000, M = 1_000_000;
+      // currency by team
+      assert(B.currencyForTeam("India") === "INR" && B.currencyForTeam("Dubai") === "AED" && B.currencyForTeam(null) === null,
+        "budget currency is implied by team (India→INR, Dubai→AED)");
+      // normalization — the spec's exact inputs
+      assert(B.normalizeBudgetInput("1 Cr") === CR && B.normalizeBudgetInput("100 lakh") === CR
+        && B.normalizeBudgetInput("10000000") === CR && B.normalizeBudgetInput("2M") === 2 * M
+        && B.normalizeBudgetInput("AED 1 million") === M, "budget inputs normalize to one numeric base");
+      // boundary cases — exactly ₹1Cr, ₹99.99 lakh, exactly AED 1M, AED 999,999
+      assert(B.budgetMatches({ op: "lt", min: CR }, avail(CR)) === false, "exactly ₹1Cr is NOT < ₹1Cr");
+      assert(B.budgetMatches({ op: "lte", min: CR }, avail(CR)) === true, "exactly ₹1Cr IS ≤ ₹1Cr");
+      assert(B.budgetMatches({ op: "lt", min: CR }, avail(99.99 * L)) === true, "₹99.99 lakh IS < ₹1Cr");
+      assert(B.budgetMatches({ op: "gte", min: M }, avail(M)) === true && B.budgetMatches({ op: "gt", min: M }, avail(M)) === false,
+        "exactly AED 1M: ≥1M true, >1M false");
+      assert(B.budgetMatches({ op: "lt", min: M }, avail(999_999)) === true, "AED 999,999 IS < AED 1M");
+      assert(B.budgetMatches({ op: "eq", min: 2 * CR }, avail(2 * CR)) === true && B.budgetMatches({ op: "eq", min: 2 * CR }, avail(2 * CR + 1)) === false,
+        "eq matches the exact value only");
+      // between — inclusive both ends
+      assert(B.budgetMatches({ op: "between", min: 5 * CR, max: 10 * CR }, avail(5 * CR)) === true
+        && B.budgetMatches({ op: "between", min: 5 * CR, max: 10 * CR }, avail(10 * CR)) === true
+        && B.budgetMatches({ op: "between", min: 5 * CR, max: 10 * CR }, avail(10 * CR + 1)) === false,
+        "between is inclusive on both bounds");
+      // blank / invalid / available presence ops
+      assert(B.budgetMatches({ op: "blank" }, { value: null, state: "blank" }) === true
+        && B.budgetMatches({ op: "blank" }, avail(CR)) === false, "blank op matches only a blank budget");
+      assert(B.budgetMatches({ op: "available" }, avail(CR)) === true
+        && B.budgetMatches({ op: "invalid" }, { value: null, state: "invalid" }) === true, "available/invalid presence ops");
+      // human summary labels (the rules-table summary + UI use these)
+      assert(B.budgetConditionLabel({ op: "between", min: 5 * CR, max: 10 * CR }, (n) => "₹" + Math.round(n / CR) + "Cr") === "₹5Cr–₹10Cr",
+        "budgetConditionLabel renders a between range");
+      assert(B.budgetConditionLabel({ op: "blank" }, () => "") === "No budget" && B.budgetConditionLabel(null, () => "") === null,
+        "budgetConditionLabel: blank → 'No budget'; no condition → null");
+      // apply-to-existing route: reuses the specific rule's picker + revertable op, keeps the cap.
+      const ax = fs.readFileSync("src/app/api/admin/routing-rules/[id]/apply-existing/route.ts", "utf8");
+      assert(/pickRecipient\(/.test(ax) && /assignLeadTo\(/.test(ax) && /"lead\.transfer"/.test(ax),
+        "apply-existing must reuse pickRecipient + assignLeadTo + a revertable lead.transfer OperationLog");
+      assert(/budgetWhereFragment/.test(ax) && /2000/.test(ax),
+        "apply-existing must build the budget where-fragment and keep the runaway-reassign cap (2000)");
+      // a numeric op NEVER matches a blank/invalid budget (spec §7 — never force it into a range)
+      assert(B.budgetMatches({ op: "lt", min: CR }, { value: null, state: "blank" }) === false
+        && B.budgetMatches({ op: "between", min: L, max: CR }, { value: null, state: "invalid" }) === false,
+        "numeric budget ops never match a blank/invalid budget");
+      // currency isolation — an AED lead never satisfies an INR rule's numeric compare
+      const dubaiLeadInInr = B.leadRoutingBudget({ budgetMin: 50 * L, budgetCurrency: "INR" }, "AED");
+      assert(dubaiLeadInInr.state === "invalid", "a lead whose currency ≠ the rule's currency is 'invalid' (never cross-compared)");
+      const indiaLead = B.leadRoutingBudget({ budgetMin: 3 * CR, budgetCurrency: "INR" }, "INR");
+      assert(indiaLead.state === "available" && indiaLead.value === 3 * CR, "same-currency lead resolves available at budgetMin");
+      const blankLead = B.leadRoutingBudget({ budgetMin: null, budgetMax: null, budgetRaw: null }, "INR");
+      assert(blankLead.state === "blank", "no numeric + no raw = blank");
+      // no condition → unconstrained (existing rules unaffected)
+      assert(B.budgetMatches(null, avail(CR)) === true && B.budgetMatches(undefined, { value: null, state: "blank" }) === true,
+        "a rule with no budget condition matches any budget (back-compat)");
+      // engine wiring: scope.budget parsed + enforced; ingest passes the lead budget.
+      // (reuse `eng`/`shared` already read above in this invariant)
+      assert(/scope\.budget && !budgetMatches/.test(eng), "scopeMatches must enforce scope.budget");
+      assert(/scopeSpecificity/.test(eng), "matcher must tiebreak by specificity (most-specific rule first)");
+      assert(/leadRoutingBudget\(lead, currencyForTeam/.test(fs.readFileSync("src/lib/leadIngest.ts", "utf8")),
+        "ingestLead must pass the lead's routing budget into the context");
+      assert(/exactly one team/.test(shared), "a budget-amount rule must require exactly one team (currency unambiguous)");
+
       const badProvenance = await prisma.lead.count({
         where: { routingSource: { startsWith: "routing_rule:" }, NOT: { routingMethod: "rule" } },
       });

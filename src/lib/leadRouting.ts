@@ -31,6 +31,7 @@ import "server-only";
 import { prisma } from "@/lib/prisma";
 import { getSetting, setSetting } from "@/lib/settings";
 import { getOnLeaveAgentIds } from "@/lib/leave";
+import { budgetMatches, parseBudgetCondition, type BudgetCondition, type BudgetState } from "@/lib/budgetRouting";
 import type { Prisma } from "@prisma/client";
 
 // ── Canonical vocabulary ─────────────────────────────────────────────────────
@@ -82,6 +83,7 @@ export interface RoutingScope {
   sources?: string[];   // LeadSource enum keys (WEBSITE, FACEBOOK_ADS, …)
   projects?: string[];  // Project Master names (case-insensitive)
   countries?: string[]; // client country strings (case-insensitive)
+  budget?: BudgetCondition; // { op, min?, max? } — currency implied by the single team
 }
 
 /** recipients Json: ordered array. `weight` only meaningful for "weighted"
@@ -102,6 +104,8 @@ export interface RoutingContext {
   source?: string | null;  // LeadSource enum key
   project?: string | null; // matched/inquired project name
   country?: string | null; // client country
+  budget?: number | null;      // lead routing budget in its currency (budgetMin ?? budgetMax)
+  budgetState?: BudgetState;   // available | blank | invalid (from leadRoutingBudget)
 }
 
 /** Minimal rule shape the pure matcher needs (matches the Prisma row). */
@@ -143,6 +147,7 @@ function strArray(v: unknown): string[] {
 export function parseScope(json: Prisma.JsonValue | null | undefined): RoutingScope {
   if (!json || typeof json !== "object" || Array.isArray(json)) return {};
   const o = json as Record<string, unknown>;
+  const budget = parseBudgetCondition(o.budget) ?? undefined;
   return {
     all: o.all === true,
     modules: strArray(o.modules),
@@ -151,6 +156,7 @@ export function parseScope(json: Prisma.JsonValue | null | undefined): RoutingSc
     sources: strArray(o.sources),
     projects: strArray(o.projects),
     countries: strArray(o.countries),
+    ...(budget ? { budget } : {}),
   };
 }
 
@@ -188,8 +194,16 @@ export function ruleIsLive(rule: Pick<RoutingRuleLike, "active" | "disabledAt" |
   return true;
 }
 
-/** Every NON-EMPTY scope constraint must match. `{ all: true }` / `{}` match all. */
+/** Every NON-EMPTY scope constraint must match. `{ all: true }` / `{}` match all.
+ *  NOTE: a budget condition is ALWAYS enforced even under `all:true` — "all leads
+ *  with budget below ₹1Cr" is a valid rule; `all` only skips the categorical
+ *  constraints. */
 export function scopeMatches(scope: RoutingScope, ctx: RoutingContext): boolean {
+  // Budget is checked first (it's the only constraint that survives `all:true`).
+  if (scope.budget && !budgetMatches(scope.budget, {
+    value: ctx.budget ?? null,
+    state: ctx.budgetState ?? (ctx.budget != null ? "available" : "blank"),
+  })) return false;
   if (scope.all === true) return true;
   if (!inList(scope.modules, ctx.module)) return false;
   if (!inList(scope.teams, ctx.team)) return false;
@@ -198,6 +212,23 @@ export function scopeMatches(scope: RoutingScope, ctx: RoutingContext): boolean 
   if (!inList(scope.projects, ctx.project)) return false;
   if (!inList(scope.countries, ctx.country)) return false;
   return true;
+}
+
+/** Rule specificity = how many scope dimensions it constrains. Used as a tiebreak
+ *  so, at EQUAL admin priority, a "budget + source + date" rule beats a bare
+ *  "budget" rule (spec §6 "most specific rule first"). Date-window presence is
+ *  supplied by the caller since it's not on the scope Json. */
+export function scopeSpecificity(scope: RoutingScope, hasDateWindow = false): number {
+  let n = 0;
+  if (scope.budget) n++;
+  if (scope.sources && scope.sources.length) n++;
+  if (scope.projects && scope.projects.length) n++;
+  if (scope.countries && scope.countries.length) n++;
+  if (scope.modules && scope.modules.length) n++;
+  if (scope.markets && scope.markets.length) n++;
+  if (scope.teams && scope.teams.length) n++;
+  if (hasDateWindow) n++;
+  return n;
 }
 
 /**
@@ -215,7 +246,12 @@ export function matchRoutingRule<T extends RoutingRuleLike>(
 ): T | null {
   const live = rules.filter((r) => ruleIsLive(r, now) && scopeMatches(parseScope(r.scope), ctx));
   if (live.length === 0) return null;
-  live.sort((a, b) => (a.priority - b.priority) || (b.createdAt.getTime() - a.createdAt.getTime()));
+  // priority ASC → then MORE-SPECIFIC first (a budget+source+date rule beats a
+  // bare budget rule at the same priority) → then newest.
+  live.sort((a, b) =>
+    (a.priority - b.priority) ||
+    (scopeSpecificity(parseScope(b.scope), !!b.endsAt) - scopeSpecificity(parseScope(a.scope), !!a.endsAt)) ||
+    (b.createdAt.getTime() - a.createdAt.getTime()));
   return live[0];
 }
 

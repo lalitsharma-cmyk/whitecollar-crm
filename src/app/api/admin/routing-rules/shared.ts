@@ -15,6 +15,7 @@ import {
   computeRuleStatus,
 } from "@/lib/leadRouting";
 import { normalizeTeam } from "@/lib/teamRouting";
+import { parseBudgetCondition, NUMERIC_BUDGET_OPS, type BudgetCondition } from "@/lib/budgetRouting";
 
 // ── Admin-only guard (403 for any authenticated non-admin, incl. HR-only) ────
 export async function requireRoutingAdmin(): Promise<
@@ -129,6 +130,21 @@ export async function parseRuleBody(
       if (!n) return { error: `Unknown team "${t}" — use India or Dubai.` };
       if (!teams.includes(n)) teams.push(n);
     }
+    // Budget condition (optional). Currency is implied by the team, so a budget
+    // rule MUST target exactly ONE team — INR and AED are never compared.
+    let budget: BudgetCondition | undefined;
+    if (o.budget != null && !(typeof o.budget === "object" && Object.keys(o.budget as object).length === 0)) {
+      const parsed = parseBudgetCondition(o.budget);
+      if (!parsed) return { error: "Invalid budget condition (check the operator and amounts)." };
+      if (NUMERIC_BUDGET_OPS.includes(parsed.op)) {
+        if (teams.length !== 1) return { error: "A budget-amount rule must target exactly one team (India or Dubai) so the currency is unambiguous." };
+        if (parsed.min == null || parsed.min < 0) return { error: "Budget amount must be a non-negative number." };
+        if (parsed.op === "between" && (parsed.max == null || parsed.max < parsed.min)) {
+          return { error: "For a Between rule, Maximum must be ≥ Minimum." };
+        }
+      }
+      budget = parsed;
+    }
     scope = {
       ...(o.all === true ? { all: true } : {}),
       ...(modules.length ? { modules } : {}),
@@ -137,6 +153,7 @@ export async function parseRuleBody(
       ...(cleanStrList(o.sources, true).length ? { sources: cleanStrList(o.sources, true) } : {}),
       ...(cleanStrList(o.projects).length ? { projects: cleanStrList(o.projects) } : {}),
       ...(cleanStrList(o.countries).length ? { countries: cleanStrList(o.countries) } : {}),
+      ...(budget ? { budget } : {}),
     };
   } else if (ex) {
     scope = (ex.scope ?? {}) as unknown as RoutingScope;

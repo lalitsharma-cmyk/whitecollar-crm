@@ -19,6 +19,7 @@ import { BOOKED_STATUSES, isTerminalStatus } from "@/lib/lead-statuses";
 import { terminalStatusSideEffects } from "@/lib/lostRejected";
 import { resolveTeam, routingFieldsFor, automationGate } from "@/lib/teamRouting";
 import { resetAttemptCycleData } from "@/lib/callAttempts";
+import { leadRoutingBudget, currencyForTeam } from "@/lib/budgetRouting";
 import { resolveMarket } from "@/lib/market";
 import type { Classification } from "@/lib/leadClassifier";
 import { cleanNeedSnapshot } from "@/lib/needSnapshot";
@@ -599,6 +600,7 @@ export async function ingestLead(input: RawLeadInput) {
       // leaves the lead UNASSIGNED for manual distribution; no rule → the exact
       // pre-existing default, resolveActiveAssignee (fixed team rule + leave-cover
       // #16: on-leave agent redirects to cover teammate → Lalit → park).
+      const rb = leadRoutingBudget(lead, currencyForTeam(lead.forwardedTeam));
       const resolution = await resolveAutoAssignOwner({
         module: "lead-intake",
         team: lead.forwardedTeam,
@@ -606,6 +608,8 @@ export async function ingestLead(input: RawLeadInput) {
         source: input.source,
         project: lead.sourceDetail,
         country: lead.country,
+        budget: rb.value,
+        budgetState: rb.state,
       });
       const targetUserId = resolution.kind === "paused" ? null : resolution.userId;
       // A RULE match may assign regardless of team; the DEFAULT path keeps the

@@ -16,6 +16,16 @@ import {
 } from "@/lib/datetime";
 import { allowedSourceOptions, sourceLabel } from "@/lib/lead-sources";
 import { ActionButton } from "@/components/actions/ActionButton";
+import {
+  BUDGET_OPS,
+  BUDGET_OP_LABELS,
+  NUMERIC_BUDGET_OPS,
+  currencyForTeam,
+  budgetConditionLabel,
+  type BudgetOp,
+  type BudgetCondition,
+} from "@/lib/budgetRouting";
+import { formatBudget } from "@/lib/budgetParse";
 
 // ── Keep in sync with src/lib/leadRouting.ts (server-only, not importable here) ──
 const MODULE_OPTIONS = [
@@ -39,6 +49,7 @@ type Scope = {
   sources?: string[];
   projects?: string[];
   countries?: string[];
+  budget?: BudgetCondition; // { op, min?, max? } — currency implied by the single team
 };
 type Recipient = { userId: string; weight?: number; assigned?: number };
 export type RuleRow = {
@@ -130,16 +141,93 @@ function windowLabel(startsAt: string, endsAt: string | null): string {
   return `${fmtIST12(s)} → ${fmtIST12(e)}`;
 }
 
+// ── Budget-condition UI helpers (spec §10) ───────────────────────────────────
+// Amount unit selector — the admin types a natural number + picks a unit; the
+// value POSTED in scope.budget.min/max is always the NORMALIZED absolute number.
+type BudgetUnit = "abs" | "lakh" | "cr" | "k" | "m";
+const UNIT_MULT: Record<BudgetUnit, number> = {
+  abs: 1,
+  lakh: 100_000,
+  cr: 10_000_000,
+  k: 1_000,
+  m: 1_000_000,
+};
+const INR_UNITS: { value: BudgetUnit; label: string }[] = [
+  { value: "abs", label: "₹ (absolute)" },
+  { value: "lakh", label: "Lakh" },
+  { value: "cr", label: "Cr (crore)" },
+];
+const AED_UNITS: { value: BudgetUnit; label: string }[] = [
+  { value: "abs", label: "AED (absolute)" },
+  { value: "k", label: "Thousand (K)" },
+  { value: "m", label: "Million (M)" },
+];
+function unitsFor(ccy: "INR" | "AED" | null) {
+  return ccy === "AED" ? AED_UNITS : INR_UNITS;
+}
+function defaultUnit(ccy: "INR" | "AED" | null): BudgetUnit {
+  return ccy === "AED" ? "m" : "cr";
+}
+/** A budget-amount condition needs an unambiguous currency, so it is only allowed
+ *  when EXACTLY one team is selected (India → INR, Dubai → AED). */
+function budgetCcyOf(teams: string[] | undefined): "INR" | "AED" | null {
+  return teams && teams.length === 1 ? currencyForTeam(teams[0]) : null;
+}
+function isNumericOp(op: BudgetOp | "none"): boolean {
+  return op !== "none" && (NUMERIC_BUDGET_OPS as string[]).includes(op);
+}
+/** Trim float noise: 1.5000001 → "1.5", 5 → "5". */
+function trimNum(n: number): string {
+  if (!isFinite(n)) return "";
+  return String(Number(n.toFixed(4)));
+}
+/** Absolute number → the friendliest {amount, unit} for the currency — the inverse
+ *  of normalizeAmt, used to hydrate the edit modal from a stored value. */
+function friendlyUnit(n: number, ccy: "INR" | "AED" | null): { amt: string; unit: BudgetUnit } {
+  if (ccy === "AED") {
+    if (n >= 1_000_000) return { amt: trimNum(n / 1_000_000), unit: "m" };
+    if (n >= 1_000) return { amt: trimNum(n / 1_000), unit: "k" };
+    return { amt: trimNum(n), unit: "abs" };
+  }
+  if (n >= 10_000_000) return { amt: trimNum(n / 10_000_000), unit: "cr" };
+  if (n >= 100_000) return { amt: trimNum(n / 100_000), unit: "lakh" };
+  return { amt: trimNum(n), unit: "abs" };
+}
+/** {amount string, unit} → the normalized absolute number to POST, or null if blank/invalid. */
+function normalizeAmt(amt: string, unit: BudgetUnit): number | null {
+  const raw = amt.trim();
+  if (!raw) return null;
+  const n = Number(raw);
+  if (!isFinite(n) || n < 0) return null;
+  return Math.round(n * UNIT_MULT[unit]);
+}
+/** Currency-marked money for previews / summaries: ₹5 Cr (India) / 2M AED (Dubai,
+ *  already self-marked by formatBudget). */
+function fmtMoney(n: number, ccy: "INR" | "AED" | null): string {
+  const c: "INR" | "AED" = ccy ?? "INR";
+  const s = formatBudget(n, c);
+  return c === "INR" ? `₹${s}` : s;
+}
+
 function scopeSummary(scope: Scope): string {
   const bits: string[] = [];
-  if (scope.all) return "All leads";
-  if (scope.modules?.length) {
-    bits.push(scope.modules.map((m) => MODULE_OPTIONS.find((o) => o.value === m)?.label ?? m).join(" + "));
+  if (scope.all) {
+    bits.push("All leads");
+  } else {
+    if (scope.modules?.length) {
+      bits.push(scope.modules.map((m) => MODULE_OPTIONS.find((o) => o.value === m)?.label ?? m).join(" + "));
+    }
+    if (scope.teams?.length) bits.push(scope.teams.join(" + "));
+    if (scope.sources?.length) bits.push(`Sources: ${scope.sources.map(sourceLabel).join(", ")}`);
+    if (scope.projects?.length) bits.push(scope.projects.length <= 2 ? `Projects: ${scope.projects.join(", ")}` : `${scope.projects.length} projects`);
+    if (scope.countries?.length) bits.push(`Countries: ${scope.countries.join(", ")}`);
   }
-  if (scope.teams?.length) bits.push(scope.teams.join(" + "));
-  if (scope.sources?.length) bits.push(`Sources: ${scope.sources.map(sourceLabel).join(", ")}`);
-  if (scope.projects?.length) bits.push(scope.projects.length <= 2 ? `Projects: ${scope.projects.join(", ")}` : `${scope.projects.length} projects`);
-  if (scope.countries?.length) bits.push(`Countries: ${scope.countries.join(", ")}`);
+  // Budget is enforced even under all:true — always show it when present.
+  if (scope.budget) {
+    const ccy = budgetCcyOf(scope.teams);
+    const lbl = budgetConditionLabel(scope.budget, (n) => fmtMoney(n, ccy));
+    if (lbl) bits.push(lbl);
+  }
   return bits.length ? bits.join(" · ") : "All leads";
 }
 
@@ -169,6 +257,13 @@ type Draft = {
   sources: string[];
   projects: string[];
   countries: string;
+  // Budget condition (spec §10). "none" = no condition. Amounts are raw values in
+  // the chosen unit; saveDraft normalizes them to absolute numbers before POSTing.
+  budgetOp: BudgetOp | "none";
+  budgetMinAmt: string;
+  budgetMinUnit: BudgetUnit;
+  budgetMaxAmt: string;
+  budgetMaxUnit: BudgetUnit;
 };
 
 function emptyDraft(): Draft {
@@ -178,10 +273,18 @@ function emptyDraft(): Draft {
     preset: "today", startsLocal: w.starts, endsLocal: w.ends, permanent: false,
     mode: "round_robin", recipients: [],
     modules: ["lead-intake"], teams: [], sources: [], projects: [], countries: "",
+    budgetOp: "none", budgetMinAmt: "", budgetMinUnit: "cr", budgetMaxAmt: "", budgetMaxUnit: "cr",
   };
 }
 
 function draftFromRule(r: RuleRow): Draft {
+  // Hydrate the budget section from scope.budget, converting the stored absolute
+  // number back to a friendly unit in the rule's (single-team) currency.
+  const teams = r.scope.teams ?? [];
+  const ccy = budgetCcyOf(teams);
+  const b = r.scope.budget;
+  const minF = b?.min != null ? friendlyUnit(b.min, ccy) : null;
+  const maxF = b?.max != null ? friendlyUnit(b.max, ccy) : null;
   return {
     id: r.id,
     name: r.name,
@@ -194,11 +297,30 @@ function draftFromRule(r: RuleRow): Draft {
     mode: (r.strategy === "single" || r.strategy === "weighted" ? r.strategy : "round_robin") as Draft["mode"],
     recipients: r.recipients.map((x) => ({ userId: x.userId, weight: x.weight != null ? String(x.weight) : "" })),
     modules: r.scope.modules ?? [],
-    teams: r.scope.teams ?? [],
+    teams,
     sources: r.scope.sources ?? [],
     projects: r.scope.projects ?? [],
     countries: (r.scope.countries ?? []).join(", "),
+    budgetOp: b?.op ?? "none",
+    budgetMinAmt: minF?.amt ?? "",
+    budgetMinUnit: minF?.unit ?? defaultUnit(ccy),
+    budgetMaxAmt: maxF?.amt ?? "",
+    budgetMaxUnit: maxF?.unit ?? defaultUnit(ccy),
   };
+}
+
+/** Keep the amount units valid for the currently-selected team's currency. When
+ *  the team (hence currency) changes, a unit that no longer belongs to that
+ *  currency (e.g. "cr" after switching to Dubai) is reset to the currency default.
+ *  The operator itself is never auto-cleared — saveDraft validates numeric-op ↔
+ *  single-team, and the operator dropdown disables numeric ops without a team. */
+function reconcileBudget(d: Draft): Draft {
+  const ccy = budgetCcyOf(d.teams);
+  const valid = new Set(unitsFor(ccy).map((u) => u.value));
+  const budgetMinUnit = valid.has(d.budgetMinUnit) ? d.budgetMinUnit : defaultUnit(ccy);
+  const budgetMaxUnit = valid.has(d.budgetMaxUnit) ? d.budgetMaxUnit : defaultUnit(ccy);
+  if (budgetMinUnit === d.budgetMinUnit && budgetMaxUnit === d.budgetMaxUnit) return d;
+  return { ...d, budgetMinUnit, budgetMaxUnit };
 }
 
 /** Suggested priority encoding Lalit's Date > Source > Team > Default ladder. */
@@ -231,6 +353,22 @@ export default function RoutingRulesClient({
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [historyId, setHistoryId] = useState<string | null>(null);
   const [history, setHistory] = useState<{ ruleName: string; versions: VersionRow[] } | null>(null);
+  // ── "Apply rule to existing matching leads" (spec §9) ──
+  type ApplyPreview = {
+    count: number;
+    distribution: { ownerId: string | null; ownerName: string; count: number }[];
+    recipientName: string;
+    ruleName: string;
+    live: boolean;
+    exceedsLimit: boolean;
+    maxApply: number;
+  };
+  const [applyId, setApplyId] = useState<string | null>(null);
+  const [applyState, setApplyState] = useState<"loading" | "ready" | "unavailable" | "error" | "done">("loading");
+  const [applyPreview, setApplyPreview] = useState<ApplyPreview | null>(null);
+  const [applyAck, setApplyAck] = useState(false);
+  const [applyErr, setApplyErr] = useState<string | null>(null);
+  const [applyResult, setApplyResult] = useState<{ reassigned: number; skipped: number } | null>(null);
 
   const nameOf = useMemo(() => new Map(users.map((u) => [u.id, u.name] as const)), [users]);
   const visible = rules.filter((r) => showDeleted || !r.deleted);
@@ -288,6 +426,29 @@ export default function RoutingRulesClient({
     } else {
       recipients = draft.recipients.map((r) => ({ userId: r.userId }));
     }
+    // Budget condition (spec §10). Omit entirely when op is "none". Numeric ops
+    // need exactly one team (currency must be unambiguous) — mirrors the server
+    // validator so we fail here with a friendly message instead of a 400.
+    let budget: { op: BudgetOp; min?: number; max?: number } | undefined;
+    if (draft.budgetOp !== "none") {
+      const op = draft.budgetOp;
+      if (isNumericOp(op)) {
+        const ccy = budgetCcyOf(draft.teams);
+        if (!ccy) { setMsg("Select exactly one team (India or Dubai) to route by a budget amount, or pick a presence check."); return; }
+        const min = normalizeAmt(draft.budgetMinAmt, draft.budgetMinUnit);
+        if (min == null) { setMsg("Enter a valid budget amount for the budget condition."); return; }
+        if (op === "between") {
+          const max = normalizeAmt(draft.budgetMaxAmt, draft.budgetMaxUnit);
+          if (max == null) { setMsg("Enter both a Minimum and a Maximum for a Between budget rule."); return; }
+          if (max < min) { setMsg("Budget Maximum must be greater than or equal to Minimum."); return; }
+          budget = { op, min, max };
+        } else {
+          budget = { op, min };
+        }
+      } else {
+        budget = { op }; // presence op (blank / invalid / available) — no currency, no amount
+      }
+    }
     const payload = {
       name: draft.name.trim(),
       priority: Number(draft.priority) || suggestedPriority(draft),
@@ -303,6 +464,7 @@ export default function RoutingRulesClient({
         ...(draft.countries.trim()
           ? { countries: draft.countries.split(",").map((s) => s.trim()).filter(Boolean) }
           : {}),
+        ...(budget ? { budget } : {}),
       },
     };
     const j = draft.id
@@ -318,6 +480,58 @@ export default function RoutingRulesClient({
     else setHistoryId(null);
   }
 
+  const closeApply = () => {
+    setApplyId(null); setApplyState("loading"); setApplyPreview(null);
+    setApplyAck(false); setApplyErr(null); setApplyResult(null);
+  };
+
+  // GET the preview (read-only). A 404 (or any network failure) means the service
+  // isn't deployed yet — fail gracefully, never crash the panel.
+  async function openApply(id: string) {
+    setApplyId(id); setApplyState("loading"); setApplyPreview(null);
+    setApplyAck(false); setApplyErr(null); setApplyResult(null);
+    try {
+      const r = await fetch(`/api/admin/routing-rules/${id}/apply-existing`, { method: "GET" });
+      if (r.status === 404) { setApplyState("unavailable"); return; }
+      const j = (await r.json().catch(() => ({}))) as Record<string, unknown>;
+      if (!r.ok) { setApplyErr(String(j.error ?? `Failed (${r.status})`)); setApplyState("error"); return; }
+      setApplyPreview({
+        count: Number(j.count ?? 0),
+        distribution: Array.isArray(j.distribution)
+          ? (j.distribution as { ownerId: string | null; ownerName: string; count: number }[])
+          : [],
+        recipientName: String(j.recipientName ?? ""),
+        ruleName: String(j.ruleName ?? ""),
+        live: j.live !== false,
+        exceedsLimit: j.exceedsLimit === true,
+        maxApply: Number(j.maxApply ?? 2000),
+      });
+      setApplyState("ready");
+    } catch {
+      setApplyState("unavailable");
+    }
+  }
+
+  async function confirmApply() {
+    if (!applyId) return;
+    setApplyState("loading"); setApplyErr(null);
+    try {
+      const r = await fetch(`/api/admin/routing-rules/${applyId}/apply-existing`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ confirm: true }),
+      });
+      if (r.status === 404) { setApplyState("unavailable"); return; }
+      const j = (await r.json().catch(() => ({}))) as Record<string, unknown>;
+      if (!r.ok) { setApplyErr(String(j.error ?? `Failed (${r.status})`)); setApplyState("error"); return; }
+      setApplyResult({ reassigned: Number(j.reassigned ?? 0), skipped: Number(j.skipped ?? 0) });
+      setApplyState("done");
+      router.refresh();
+    } catch {
+      setApplyErr("Network error while applying the rule."); setApplyState("error");
+    }
+  }
+
   const input = "px-2 py-1.5 text-sm border border-gray-200 dark:border-slate-600 rounded-lg dark:bg-slate-700 w-full";
   const label = "text-xs font-semibold text-gray-600 dark:text-slate-300";
 
@@ -325,8 +539,9 @@ export default function RoutingRulesClient({
   const upd = (patch: Partial<Draft>) =>
     setDraft((d) => {
       if (!d) return d;
-      const next = { ...d, ...patch };
+      let next = { ...d, ...patch };
       if (!next.prioTouched) next.priority = String(suggestedPriority(next));
+      next = reconcileBudget(next);
       return next;
     });
   const toggleIn = (list: string[], v: string) => (list.includes(v) ? list.filter((x) => x !== v) : [...list, v]);
@@ -348,6 +563,36 @@ export default function RoutingRulesClient({
   const weightSum = draft?.mode === "weighted"
     ? draft.recipients.reduce((s, r) => s + (Number(r.weight) || 0), 0)
     : null;
+
+  // Currency for the budget section is driven by the (single) selected team.
+  const budgetCcy = budgetCcyOf(draft?.teams);
+
+  // One number-input + unit-select + live normalized preview.
+  function amountField(
+    labelText: string,
+    amt: string,
+    unit: BudgetUnit,
+    onAmt: (v: string) => void,
+    onUnit: (u: BudgetUnit) => void,
+    ccy: "INR" | "AED",
+  ) {
+    const norm = normalizeAmt(amt, unit);
+    return (
+      <div>
+        <div className={label}>{labelText}</div>
+        <div className="flex items-center gap-2 flex-wrap">
+          <input type="number" min={0} step="any" value={amt} onChange={(e) => onAmt(e.target.value)}
+            placeholder="0" className={`${input} max-w-[7rem]`} />
+          <select value={unit} onChange={(e) => onUnit(e.target.value as BudgetUnit)} className={`${input} max-w-[11rem]`}>
+            {unitsFor(ccy).map((u) => <option key={u.value} value={u.value}>{u.label}</option>)}
+          </select>
+          <span className="text-xs font-semibold text-gray-500 dark:text-slate-400 whitespace-nowrap">
+            = {norm != null ? fmtMoney(norm, ccy) : "—"}
+          </span>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-3">
@@ -430,6 +675,7 @@ export default function RoutingRulesClient({
                           <button disabled={busy} onClick={async () => { if (await api(`/api/admin/routing-rules/${r.id}/disable`, "POST")) router.refresh(); }} className="text-xs text-amber-700 dark:text-amber-400 font-semibold px-1.5" title="Disable without deleting">Disable</button>
                         )}
                         <button disabled={busy} onClick={() => { setMsg(null); setDraft(draftFromRule(r)); }} className="text-xs text-gray-500 hover:text-[#0b1a33] dark:hover:text-blue-300 px-1.5" title="Edit rule">✎ Edit</button>
+                        <button onClick={() => openApply(r.id)} className="text-xs text-blue-600 dark:text-blue-400 font-semibold px-1.5" title="Apply this rule to existing matching leads">📥 Apply</button>
                       </>
                     )}
                     <button disabled={busy} onClick={() => openHistory(r.id)} className="text-xs text-gray-500 hover:text-[#0b1a33] dark:hover:text-blue-300 px-1.5" title="Change history">🕘 History</button>
@@ -553,6 +799,50 @@ export default function RoutingRulesClient({
               </label>
             </div>
 
+            {/* Budget condition (spec §10) */}
+            <div className="space-y-2">
+              <div className={label}>Budget condition <span className="font-normal text-gray-400">(optional)</span></div>
+              <div className="text-[11px] text-gray-400">
+                {budgetCcy
+                  ? `Route by the lead's budget. Amounts are in ${budgetCcy === "INR" ? "₹ INR (India team)" : "AED (Dubai team)"}.`
+                  : "Select a single team above (India or Dubai) to route by a budget amount. Presence checks (blank / invalid / available) work without a team."}
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <label className={label}>Operator
+                  <select value={draft.budgetOp} onChange={(e) => upd({ budgetOp: e.target.value as BudgetOp | "none" })} className={input}>
+                    <option value="none">No budget condition</option>
+                    {BUDGET_OPS.map((op) => (
+                      <option key={op} value={op} disabled={isNumericOp(op) && !budgetCcy}>
+                        {BUDGET_OP_LABELS[op]}{isNumericOp(op) && !budgetCcy ? " — needs one team" : ""}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+              {/* Single-threshold amount (lt/lte/gt/gte/eq) */}
+              {draft.budgetOp !== "none" && draft.budgetOp !== "between" && isNumericOp(draft.budgetOp) && budgetCcy &&
+                amountField("Amount", draft.budgetMinAmt, draft.budgetMinUnit, (v) => upd({ budgetMinAmt: v }), (u) => upd({ budgetMinUnit: u }), budgetCcy)}
+              {/* Between → Minimum + Maximum */}
+              {draft.budgetOp === "between" && budgetCcy && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {amountField("Minimum", draft.budgetMinAmt, draft.budgetMinUnit, (v) => upd({ budgetMinAmt: v }), (u) => upd({ budgetMinUnit: u }), budgetCcy)}
+                  {amountField("Maximum", draft.budgetMaxAmt, draft.budgetMaxUnit, (v) => upd({ budgetMaxAmt: v }), (u) => upd({ budgetMaxUnit: u }), budgetCcy)}
+                </div>
+              )}
+              {/* Numeric op chosen but no single team → blocked with a hint */}
+              {isNumericOp(draft.budgetOp) && !budgetCcy && (
+                <div className="text-[11px] font-semibold text-amber-600 dark:text-amber-400">
+                  Pick exactly one team above to enter a budget amount — or choose a presence check instead.
+                </div>
+              )}
+              {/* Presence ops carry no amount */}
+              {draft.budgetOp !== "none" && !isNumericOp(draft.budgetOp) && (
+                <div className="text-[11px] text-gray-400">
+                  Matches on budget presence only — no amount needed ({BUDGET_OP_LABELS[draft.budgetOp]}).
+                </div>
+              )}
+            </div>
+
             {/* Recipients */}
             <div className="space-y-2">
               <div className={label}>Who receives these leads?</div>
@@ -634,6 +924,102 @@ export default function RoutingRulesClient({
               <button onClick={() => setDeleteId(null)} className="btn btn-ghost text-sm">Cancel</button>
               <ActionButton action="reject" label="Delete rule" title="Soft-delete this rule" loading={busy}
                 onClick={async () => { const id = deleteId; if (await api(`/api/admin/routing-rules/${id}`, "DELETE")) { setDeleteId(null); router.refresh(); } }} />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Apply rule to existing leads (spec §9) ── */}
+      {applyId && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" {...backdropProps(closeApply)}>
+          <div className="card w-full max-w-md p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="font-bold">Apply rule to existing leads{applyPreview?.ruleName ? ` — ${applyPreview.ruleName}` : ""}</div>
+              <button onClick={closeApply} className="btn btn-ghost text-sm">✕</button>
+            </div>
+
+            {applyState === "loading" && <div className="text-sm text-gray-400 py-6 text-center">Loading…</div>}
+
+            {applyState === "unavailable" && (
+              <div className="text-sm text-amber-700 dark:text-amber-400 py-3">
+                Preview unavailable — the &ldquo;apply to existing leads&rdquo; service isn&apos;t reachable yet.
+                This rule still routes every <b>new</b> matching lead automatically; only the one-time backfill of
+                existing leads is offline. Try again shortly.
+              </div>
+            )}
+
+            {applyState === "error" && (
+              <div className="text-sm text-rose-600 dark:text-rose-400 py-3">{applyErr ?? "Something went wrong."}</div>
+            )}
+
+            {applyState === "done" && applyResult && (
+              <div className="space-y-2 py-2">
+                <div className="text-sm font-semibold text-emerald-700 dark:text-emerald-400">
+                  Reassigned {applyResult.reassigned} lead{applyResult.reassigned === 1 ? "" : "s"}.
+                </div>
+                {applyResult.skipped > 0 && (
+                  <div className="text-xs text-gray-500 dark:text-slate-400">
+                    {applyResult.skipped} skipped (already on target, or no eligible recipient right now).
+                  </div>
+                )}
+                <div className="text-xs text-gray-500 dark:text-slate-400">
+                  This bulk reassignment is revertable in <b>Admin → Operations</b>.
+                </div>
+              </div>
+            )}
+
+            {applyState === "ready" && applyPreview && (
+              <div className="space-y-3">
+                {applyPreview.count === 0 ? (
+                  <div className="text-sm text-gray-500 dark:text-slate-400">
+                    No existing leads currently match this rule&apos;s scope. Nothing to reassign.
+                  </div>
+                ) : (
+                  <>
+                    <div className="text-sm">
+                      <b>{applyPreview.count}</b> existing lead{applyPreview.count === 1 ? "" : "s"} match this rule
+                      {applyPreview.recipientName ? <> and will be reassigned to <b>{applyPreview.recipientName}</b></> : null}.
+                    </div>
+                    {applyPreview.distribution.length > 0 && (
+                      <div className="text-xs text-gray-500 dark:text-slate-400">
+                        <div className="font-semibold mb-0.5">Current owners:</div>
+                        <ul className="space-y-0.5 max-h-32 overflow-y-auto">
+                          {applyPreview.distribution.map((d) => (
+                            <li key={d.ownerId ?? "unassigned"}>{d.ownerName || "Unassigned"} — {d.count}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                    {!applyPreview.live && (
+                      <div className="text-xs font-semibold text-amber-600 dark:text-amber-400">
+                        This rule isn&apos;t currently active (scheduled, expired, or disabled). Activate it before applying to existing leads.
+                      </div>
+                    )}
+                    {applyPreview.exceedsLimit && (
+                      <div className="text-xs font-semibold text-rose-600 dark:text-rose-400">
+                        Matches more than {applyPreview.maxApply} leads — narrow the rule&apos;s scope (team, source, budget, dates) before applying.
+                      </div>
+                    )}
+                    {applyPreview.live && !applyPreview.exceedsLimit && (
+                      <label className="flex items-start gap-2 text-xs font-semibold text-gray-700 dark:text-slate-200">
+                        <input type="checkbox" checked={applyAck} onChange={(e) => setApplyAck(e.target.checked)} className="mt-0.5" />
+                        Reassign these {applyPreview.count} existing lead{applyPreview.count === 1 ? "" : "s"} now. I understand this changes ownership (revertable in Admin → Operations).
+                      </label>
+                    )}
+                    {applyErr && <div className="text-xs text-rose-600">{applyErr}</div>}
+                  </>
+                )}
+              </div>
+            )}
+
+            <div className="flex justify-end gap-2 pt-1 border-t border-gray-100 dark:border-slate-700">
+              <button onClick={closeApply} className="btn btn-ghost text-sm">{applyState === "done" ? "Close" : "Cancel"}</button>
+              {applyState === "ready" && applyPreview && applyPreview.count > 0 && applyPreview.live && !applyPreview.exceedsLimit && (
+                <ActionButton action="assign"
+                  label={`Reassign ${applyPreview.count} lead${applyPreview.count === 1 ? "" : "s"}`}
+                  title="Reassign matching leads to this rule's recipients"
+                  disabled={!applyAck} onClick={confirmApply} />
+              )}
             </div>
           </div>
         </div>
