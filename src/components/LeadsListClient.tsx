@@ -234,7 +234,7 @@ function GhostingChip({ row, className = "" }: { row: Row; className?: string })
   );
 }
 
-export default function LeadsListClient({ leads, canBulk, canReassign = false, canSetStatus = false, canDelete = false, agents, projectOptions = [], statusOptions = [], sourceOptions = [], meRole = "AGENT", showSource = true, view = "cards", searchParamsStr = "", detailBasePath = "/leads", listBasePath = "/leads", extraRowAction }: { leads: Row[]; canBulk: boolean; canReassign?: boolean; canSetStatus?: boolean; canDelete?: boolean; agents: { id: string; name: string; team: string | null }[]; projectOptions?: string[]; statusOptions?: string[]; sourceOptions?: string[]; meRole?: string; showSource?: boolean; view?: "cards" | "table"; searchParamsStr?: string;
+export default function LeadsListClient({ leads, canBulk, canReassign = false, canSetStatus = false, canDelete = false, agents, projectOptions = [], statusOptions = [], sourceOptions = [], meRole = "AGENT", showSource = true, view = "cards", searchParamsStr = "", detailBasePath = "/leads", listBasePath = "/leads", extraRowAction, statusCellExtra }: { leads: Row[]; canBulk: boolean; canReassign?: boolean; canSetStatus?: boolean; canDelete?: boolean; agents: { id: string; name: string; team: string | null }[]; projectOptions?: string[]; statusOptions?: string[]; sourceOptions?: string[]; meRole?: string; showSource?: boolean; view?: "cards" | "table"; searchParamsStr?: string;
   /** Base path for a row's detail link. "/leads" (default) → /leads/:id. The
    *  Revival list passes "/revival-engine/cold-data" so cold rows open the cold
    *  detail page. Additive — /leads behaviour is unchanged. */
@@ -247,6 +247,11 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
    *  alongside the standard row actions in every surface (table + cards) when
    *  provided. Default undefined → /leads renders nothing extra. */
   extraRowAction?: (row: Row) => React.ReactNode;
+  /** Optional inline node rendered right next to the Status chip in every row
+   *  surface (table + both card layouts). Used by Revival for the 📞 n/T attempt
+   *  chip so it sits beside Status (always visible) instead of in the far-right
+   *  Actions column. Default undefined → /leads renders nothing extra. */
+  statusCellExtra?: (row: Row) => React.ReactNode;
 }) {
   // showSource = false → hide the source column + chip from agents.
   // Lalit's policy: agents shouldn't see where each lead came from (avoids them
@@ -964,6 +969,8 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
                           </div>
                           {/* 👻 secondary tag — sits under the status chip, never replaces it */}
                           <GhostingChip row={l} className="mt-0.5" />
+                          {/* 📞 Revival attempt chip (or ↩︎ Returned) — beside Status, always visible */}
+                          {statusCellExtra && <div className="mt-0.5">{statusCellExtra(l)}</div>}
                         </td>
 
                         {/* 6. Budget */}
@@ -1110,6 +1117,7 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
                   <span className="flex items-center gap-1 shrink-0">
                     {/* 👻 secondary tag — beside the status chip, never replaces it */}
                     <GhostingChip row={l} />
+                    {statusCellExtra?.(l)}
                     <span className={`${statusColor(l.currentStatus)} text-[10px] px-2 py-0.5 rounded-full border font-medium shrink-0`}>
                       {l.currentStatus ?? "—"}
                     </span>
@@ -1228,6 +1236,7 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
                     <div className="flex items-center gap-1 flex-none relative" data-status-popover>
                       {/* 👻 secondary tag — beside the status chip, never replaces it */}
                       <GhostingChip row={l} />
+                      {statusCellExtra?.(l)}
                       <button
                         type="button"
                         onClick={(e) => { e.stopPropagation(); setStatusOpenFor(statusOpenFor === l.id ? null : l.id); }}

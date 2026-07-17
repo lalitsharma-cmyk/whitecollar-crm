@@ -48,7 +48,8 @@ export interface RevivalAttemptMeta {
 function RevivalAttemptChip({ meta }: { meta: RevivalAttemptMeta }) {
   const t = meta.threshold;
   if (meta.owned) {
-    if (meta.attemptCount <= 0) return null; // same as the Buyer table's "—" at 0
+    // Show the counter on EVERY owned row — including 0/T (Lalit 2026-07-17: the
+    // attempt count must always be visible on Revival, not hidden at zero).
     const tone = meta.attemptCount >= t
       ? "border-red-300 bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-300 dark:border-red-700"
       : meta.attemptCount >= t - 1
@@ -117,15 +118,18 @@ export default function RevivalLeadsListClient({
       listBasePath="/cold-calls"
       agents={agents}
       leads={leads}
+      // 📞 attempt chip now rides the Status cell (always visible) instead of the
+      // far-right Actions column, where it was easy to miss (Lalit 2026-07-17).
+      statusCellExtra={(row) => {
+        const a = attemptMeta?.[row.id];
+        return a ? <RevivalAttemptChip meta={a} /> : null;
+      }}
       extraRowAction={(row) => {
         const m = promoteMeta[row.id];
-        const a = attemptMeta?.[row.id];
-        const chip = a ? <RevivalAttemptChip meta={a} /> : null;
         const promote = m && m.canPromote
           ? <RevivalRowPromote leadId={row.id} leadName={row.name} isOriginCold={m.isOriginCold} />
           : null;
-        if (!chip && !promote) return null;
-        return <>{chip}{promote}</>;
+        return promote;
       }}
     />
   );
