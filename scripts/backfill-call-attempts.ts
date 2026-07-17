@@ -469,7 +469,7 @@ async function main() {
                 ownerId: null,
                 previousOwnerId: pl.lead.ownerId,
                 returnedToPoolAt: now,
-                revivalCycle: 2, // cycle 1 = the first ownership this backfill just closed
+                revivalCycle: { increment: 1 }, // close the current ownership cycle (matches the live engine's increment)
                 followupDate: null,
                 followupReminderSentAt: null, // paired with followupDate (house rule on every clear)
               },
