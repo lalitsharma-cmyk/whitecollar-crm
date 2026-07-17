@@ -58,6 +58,13 @@ import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { PrismaClient } from "@prisma/client";
 
 const APPLY = process.argv.includes("--apply");
+// --all-owner-calls: HISTORICAL mode (Lalit 2026-07-17, "existing historical call
+// data must contribute"). Counts EVERY call the CURRENT owner logged on a lead they
+// still own, dropping the `startedAt >= assignedAt` cycle window. The userId=ownerId
+// join still excludes previous owners' calls (their userId differs), so this only
+// recovers the current owner's own pre-assignedAt historical calls — never another
+// agent's. Live increments + reset-on-assign keep future cycles clean.
+const ALL_OWNER_CALLS = process.argv.includes("--all-owner-calls");
 const APPLY_RETURNS = process.argv.includes("--apply-returns");
 const env = readFileSync("C:/Users/Lenovo/whitecollar-crm/.env", "utf8");
 const dbUrl = /^DATABASE_URL="?([^"\n]+)"?/m.exec(env)?.[1];
@@ -230,7 +237,7 @@ async function main() {
      JOIN "CallLog" c
        ON c."leadId" = l.id
       AND c."userId" = l."ownerId"
-      AND c."startedAt" >= l."assignedAt"
+      ${ALL_OWNER_CALLS ? "" : `AND c."startedAt" >= l."assignedAt"`}
      WHERE l."deletedAt" IS NULL AND l."ownerId" IS NOT NULL AND l."assignedAt" IS NOT NULL
      GROUP BY l.id`,
   );
