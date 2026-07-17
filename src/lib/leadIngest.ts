@@ -552,9 +552,12 @@ export async function ingestLead(input: RawLeadInput) {
     console.log("[ingestLead] after-hours welcome suppressed:", gate.reason);
   }
 
-  // ── Website lead auto-assignment (TEMPORARY — Lalit 2026-06-24) ───────────
-  // NEW website-form leads auto-assign by team: Dubai → Mehak, India → Tanuj,
-  // "until manually disabled" (toggle websiteAutoAssignEnabled in /settings).
+  // ── Website lead auto-assignment ──────────────────────────────────────────
+  // Default (no routing rule): by fixed team rule — Dubai → Lalit, India →
+  // Tanuj (Yasir on Tue-IST). 2026-07-17: an admin Routing Rule "Website Leads →
+  // Lalit Sharma" now overrides this, sending ALL website leads to Lalit
+  // (replaced the earlier temporary Dubai→Mehak default; Mehak long retired).
+  // Toggle websiteAutoAssignEnabled in /settings still gates the whole path.
   // GUARDS (all must hold): source is WEBSITE · toggle ON · a team was resolved ·
   // the lead is still unassigned · a valid, active, non-HR assignee is mapped for
   // that team. Uses the canonical assignLeadTo() so the Assignment-history row +
@@ -582,7 +585,12 @@ export async function ingestLead(input: RawLeadInput) {
   // owner is applied via terminalIntakeFields in the CSV/Sheet importer update paths,
   // where the terminal status is stamped post-create.)
   const arrivedTerminal = isTerminalStatus(lead.currentStatus);
-  if (wantsAutoAssign && lead.forwardedTeam && !arrivedTerminal) {
+  // NOTE: no `lead.forwardedTeam` in this outer gate. The DEFAULT team-rule still
+  // requires a team (see gateOk below — Lalit's mandatory-team policy: never GUESS a
+  // team), but an explicit admin ROUTING RULE (e.g. "all website leads → Lalit") is a
+  // deliberate directive that may assign a team-less lead. Assigning to a specific
+  // named owner isn't "guessing a market", so it honors the policy's spirit.
+  if (wantsAutoAssign && !arrivedTerminal) {
     try {
       const cfg = await getWebsiteAutoAssign();          // keep ONLY for the enable toggle
       // Routing Scheduler → leave-cover default. resolveAutoAssignOwner consults the
@@ -600,7 +608,11 @@ export async function ingestLead(input: RawLeadInput) {
         country: lead.country,
       });
       const targetUserId = resolution.kind === "paused" ? null : resolution.userId;
-      if (cfg.enabled && targetUserId && !lead.ownerId) {
+      // A RULE match may assign regardless of team; the DEFAULT path keeps the
+      // mandatory-team gate (team-less non-rule leads still park in awaiting-team,
+      // byte-identical to before).
+      const gateOk = resolution.kind === "rule" ? true : !!lead.forwardedTeam;
+      if (cfg.enabled && gateOk && targetUserId && !lead.ownerId) {
         // Validate the resolved user is real, active and not HR-only before assigning.
         const assignee = await prisma.user.findFirst({
           where: { id: targetUserId, active: true, hrOnly: false },
@@ -632,7 +644,7 @@ export async function ingestLead(input: RawLeadInput) {
   // Website leads get a dedicated "please assign" alert to Admin/Super-Admin.
   // notify() already fans out web push + the in-app bell sound; WARNING also emails.
   const webLeadBody = autoAssigned
-    ? `New website lead auto-assigned to the ${lead.forwardedTeam} team.${lead.name && lead.name !== "Unknown" ? ` — ${lead.name}` : ""}${lead.sourceDetail ? ` (${lead.sourceDetail})` : ""}`
+    ? `New website lead auto-assigned${lead.forwardedTeam ? ` to the ${lead.forwardedTeam} team` : ""}.${lead.name && lead.name !== "Unknown" ? ` — ${lead.name}` : ""}${lead.sourceDetail ? ` (${lead.sourceDetail})` : ""}`
     : `New website lead received. Please assign.${lead.name && lead.name !== "Unknown" ? ` — ${lead.name}` : ""}${lead.sourceDetail ? ` (${lead.sourceDetail})` : ""}`;
 
   if (lead.forwardedTeam === null) {

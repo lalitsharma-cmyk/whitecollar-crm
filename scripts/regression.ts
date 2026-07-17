@@ -6497,6 +6497,12 @@ const checks: Check[] = [
         "ingestLead must route via resolveAutoAssignOwner and stamp rule provenance");
       assert(/auto-assign \(\$\{lead\.forwardedTeam\} team\)/.test(ingest),
         "zero-rules intake must keep the byte-identical legacy assignment reason");
+      // A matched RULE may assign regardless of team; the DEFAULT path keeps the
+      // mandatory-team gate (Lalit 2026-07-17, "all website leads → Lalit" incl. the
+      // team-less ones). The outer gate must NOT require forwardedTeam.
+      assert(/if \(wantsAutoAssign && !arrivedTerminal\)/.test(ingest)
+        && /const gateOk = resolution\.kind === "rule" \? true : !!lead\.forwardedTeam/.test(ingest),
+        "ingest auto-assign: a rule match assigns regardless of team; default path still requires a team");
       const recon = fs.readFileSync("src/lib/reconciler.ts", "utf8");
       assert(/resolveAutoAssignOwner/.test(recon) && /kind === "paused"/.test(recon), "reconciler orphan sweep must respect rules + pause");
       const awaitTeam = fs.readFileSync("src/app/api/admin/awaiting-team/assign/route.ts", "utf8");
