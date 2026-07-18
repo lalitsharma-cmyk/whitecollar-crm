@@ -782,6 +782,14 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
           <div className="font-bold text-sm mt-1">Lead Intake</div>
           <div className="text-[10px] text-gray-500 mt-0.5">Leads received by source over time · every number opens the exact records</div>
         </Link>
+        {/* Call Report — the ONE central calling report over CallLog (lead-linked
+            AND buyer-linked). By agent / team / module / source / project / date /
+            outcome; every number opens the exact calls on /call-logs. */}
+        <Link href="/reports/calls" className="card p-4 border-l-4 border-sky-600 hover:shadow-md transition">
+          <div className="text-2xl">☎️</div>
+          <div className="font-bold text-sm mt-1">Call Report</div>
+          <div className="text-[10px] text-gray-500 mt-0.5">All calls by agent · team · module · source · project · date · connected vs missed</div>
+        </Link>
         {/* Ghosting — leads whose current owner hit 10+ unanswered call attempts.
             Secondary 👻 tag; every count drills to the exact /leads?ghost=1 records. */}
         <Link href="/reports/ghosting" className="card p-4 border-l-4 border-violet-500 hover:shadow-md transition">

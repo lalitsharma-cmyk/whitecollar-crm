@@ -503,7 +503,7 @@
 // half-configured hole closed; Properties page 1+3N query fan-out → max 3 queries;
 // hot composite index (team,status) live. Backfills verified (6,098 canonical phones,
 // 5,510 created-times, 22 manual corrections preserved).
-const CACHE = "wcr-shell-v159";
+const CACHE = "wcr-shell-v160";
 const SHELL = ["/login", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", (event) => {

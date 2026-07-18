@@ -6653,17 +6653,35 @@ const checks: Check[] = [
       const both = await prisma.callLog.count({ where: { leadId: { not: null }, buyerId: { not: null } } });
       assert(both === 0, `${both} CallLogs link BOTH a lead and a buyer — a call must belong to exactly one record`);
       const buyerCalls = await prisma.callLog.count({ where: { buyerId: { not: null } } });
-      // Post-backfill equality: once historical buyer calls are in CallLog, the
-      // central table must hold exactly as many buyer calls as the BuyerActivity
-      // ledger recorded (minus the WA-no-response rows, which are not phone calls).
-      const ledger = await prisma.buyerActivity.count({
-        where: { type: { in: ["CALL", "ATTEMPT_NOT_PICKED", "ATTEMPT_NO_ANSWER"] }, buyer: { deletedAt: null } },
+      // Post-backfill equality — against the REAL-CALL cohort only.
+      // The BuyerActivity ledger mixes two very different things:
+      //   • REAL agent-logged calls  → userId set, no "(imported)" tag → belong in CallLog
+      //   • import-synthesized notes → userId null + "(imported)" tag, parsed out of remark
+      //     text by buyerRemarkTimeline. NO agent ever placed these. Backfilling them
+      //     would manufacture ~2,000 fake CONNECTED calls and inflate every call metric —
+      //     the same mistake the lead importer already refuses to make
+      //     (intake/csv: "imported remark cells are intentionally NOT turned into CallLog rows").
+      // So the invariant compares CallLog against the REAL cohort, never the raw ledger.
+      const realLedger = await prisma.buyerActivity.count({
+        where: {
+          type: { in: ["CALL", "ATTEMPT_NOT_PICKED", "ATTEMPT_NO_ANSWER"] },
+          buyer: { deletedAt: null },
+          userId: { not: null },
+          NOT: { description: { contains: "(imported)" } },
+        },
+      });
+      const syntheticLedger = await prisma.buyerActivity.count({
+        where: { type: { in: ["CALL", "ATTEMPT_NOT_PICKED", "ATTEMPT_NO_ANSWER"] }, buyer: { deletedAt: null }, userId: null },
       });
       if (buyerCalls > 0) {
-        assert(buyerCalls >= Math.floor(ledger * 0.9),
-          `CallLog buyer calls (${buyerCalls}) far below the BuyerActivity ledger (${ledger}) — backfill incomplete or drifted`);
+        assert(buyerCalls >= Math.floor(realLedger * 0.9),
+          `CallLog buyer calls (${buyerCalls}) far below the REAL agent-logged buyer-call cohort (${realLedger}) — backfill incomplete or drifted`);
+        // And the synthesized rows must NEVER have been imported as calls.
+        const fabricated = await prisma.callLog.count({ where: { buyerId: { not: null }, userId: null } });
+        assert(fabricated === 0,
+          `${fabricated} buyer CallLogs have no actor — import-synthesized "(imported)" activity must never become a call`);
       }
-      results.push({ name: "  ↳ note", ok: true, detail: `CallLog buyer-linked=${buyerCalls} · BuyerActivity call-ledger(live buyers)=${ledger}${buyerCalls === 0 ? " (backfill pending)" : ""}` });
+      results.push({ name: "  ↳ note", ok: true, detail: `CallLog buyer-linked=${buyerCalls} · real agent-logged ledger=${realLedger} · import-synthesized (correctly excluded)=${syntheticLedger}` });
     },
   },
 
