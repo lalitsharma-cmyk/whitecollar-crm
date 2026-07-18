@@ -1250,10 +1250,21 @@ const checks: Check[] = [
       // (d) Agent Performance: activity splits use activityLeadModule + buyer calls counted.
       const agentPerf = fs.readFileSync("src/lib/agentPerformance.ts", "utf8");
       assert(/activityLeadModule\(r\.lead\.leadOrigin/.test(agentPerf), "agentPerformance activity split must use activityLeadModule");
-      assert(/m\.buyerCalls \+= 1/.test(agentPerf) && /BUYER_CALL_ACTIVITY_TYPES/.test(agentPerf), "agentPerformance must count Buyer-Data calls (BuyerActivity)");
-      // (e) Dashboard team scoreboard folds in buyer calls (BuyerActivity ledger).
+      // 2026-07-17 P0 — buyer calls now live in the CENTRAL CallLog (buyerId), not
+      // BuyerActivity. This assertion previously demanded the opposite and became a
+      // FALSE GREEN (the old constant survived only inside a comment). It now pins
+      // the shipped behaviour: count buyer calls from CallLog, NEVER from BuyerActivity
+      // (that would double-count once the write path + backfill landed).
+      assert(/m\.buyerCalls \+= 1/.test(agentPerf) && /callLog\.findMany/.test(agentPerf) && !/prisma\.buyerActivity/.test(agentPerf),
+        "agentPerformance must count Buyer-Data calls from CallLog, never BuyerActivity (double-count guard)");
+      // (e) Dashboard team scoreboard folds in buyer calls. This one raw-SQL surface
+      // deliberately STAYS on BuyerActivity — it is double-count-safe because its
+      // CallLog term is guarded by `buyerId IS NULL`. Lock BOTH halves: if someone
+      // drops the guard while BuyerActivity is still summed, every buyer call doubles.
       const dash = fs.readFileSync("src/app/(app)/dashboard/page.tsx", "utf8");
       assert(/FROM "BuyerActivity"/.test(dash), "dashboard team scoreboard must include buyer calls (BuyerActivity)");
+      assert(/"buyerId" IS NULL/.test(dash),
+        "dashboard scoreboard's CallLog term must keep the `buyerId IS NULL` guard (else buyer calls double-count)");
       // (f) DATA belt: no live lead-linked call classifies as Master Data via the column rule.
       const leadCalls = await prisma.callLog.findMany({
         where: { lead: { deletedAt: null } },
@@ -6610,6 +6621,49 @@ const checks: Check[] = [
       });
       assert(badProvenance === 0, `${badProvenance} leads carry routing_rule provenance without routingMethod="rule"`);
       results.push({ name: "  ↳ note", ok: true, detail: `RoutingRule rows=${(rules as never[]).length}; provenance coherent; zero-rules path proven identical at build (Dubai→Lalit, non-Tue India→Tanuj)` });
+    },
+  },
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // 51g. CENTRALIZED CALL LOGS (2026-07-17 P0, Lalit) — EVERY call from EVERY
+  //      module writes ONE central CallLog row. Leads / Master Data / Revival are
+  //      all Lead rows and already funnelled through /api/leads/[id]/log-call.
+  //      Buyer Data used to write ONLY a BuyerActivity row, so ~2,777 buyer calls
+  //      were invisible in Call Logs. Now logBuyerContactInTx also creates a
+  //      CallLog{buyerId} in the SAME transaction, and the report/dashboard
+  //      surfaces that used to count buyer calls from BuyerActivity read CallLog
+  //      instead — writes and reads moved together so nothing double-counts.
+  // ───────────────────────────────────────────────────────────────────────────
+  {
+    name: "central-call-logs — buyer calls write CallLog; call counts read ONE source (no double-count)",
+    run: async () => {
+      const fs = await import("fs");
+      // Write path: a buyer contact creates a CallLog in the same tx; the WhatsApp
+      // no-response type is deliberately NOT a phone call but STILL bumps attempts.
+      const bl = fs.readFileSync("src/lib/buyerLifecycle.ts", "utf8");
+      assert(/tx\.callLog\.create/.test(bl), "buyer contact must create a central CallLog in the same transaction");
+      assert(/CALL_OUTCOME_BY_ACTIVITY_TYPE/.test(bl), "buyer activity type → CallOutcome mapping must be explicit");
+      assert(/ATTEMPT_WA_NO_RESPONSE/.test(bl), "the WhatsApp-no-response type must be handled explicitly (no CallLog, still an attempt)");
+      // Read de-dup: the three migrated surfaces must NOT count buyer calls from BuyerActivity.
+      for (const f of ["src/lib/agentPerformance.ts", "src/lib/dashboardWidgets.ts", "src/lib/buyerPerformance.ts"]) {
+        const src = fs.readFileSync(f, "utf8");
+        assert(/callLog\./.test(src), `${f} must source call counts from CallLog`);
+      }
+      // DATA — the two structural guarantees.
+      const both = await prisma.callLog.count({ where: { leadId: { not: null }, buyerId: { not: null } } });
+      assert(both === 0, `${both} CallLogs link BOTH a lead and a buyer — a call must belong to exactly one record`);
+      const buyerCalls = await prisma.callLog.count({ where: { buyerId: { not: null } } });
+      // Post-backfill equality: once historical buyer calls are in CallLog, the
+      // central table must hold exactly as many buyer calls as the BuyerActivity
+      // ledger recorded (minus the WA-no-response rows, which are not phone calls).
+      const ledger = await prisma.buyerActivity.count({
+        where: { type: { in: ["CALL", "ATTEMPT_NOT_PICKED", "ATTEMPT_NO_ANSWER"] }, buyer: { deletedAt: null } },
+      });
+      if (buyerCalls > 0) {
+        assert(buyerCalls >= Math.floor(ledger * 0.9),
+          `CallLog buyer calls (${buyerCalls}) far below the BuyerActivity ledger (${ledger}) — backfill incomplete or drifted`);
+      }
+      results.push({ name: "  ↳ note", ok: true, detail: `CallLog buyer-linked=${buyerCalls} · BuyerActivity call-ledger(live buyers)=${ledger}${buyerCalls === 0 ? " (backfill pending)" : ""}` });
     },
   },
 

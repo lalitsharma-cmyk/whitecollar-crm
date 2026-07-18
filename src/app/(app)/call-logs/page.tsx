@@ -313,10 +313,14 @@ export default async function CallLogsPage({
   const hasFilters = !!(sp.user || sp.team || sp.module || sp.outcome || sp.from || sp.to || sp.q);
 
   // CSV export params (export route is Super-Admin only; button hidden otherwise).
+  // Forward EVERY active filter under the page's own param names so the download
+  // is exactly the slice on screen. (It used to send only user/from/to, so an
+  // export taken while filtered by Module / Call Status / Search silently returned
+  // a wider set than the operator was looking at.)
   const exportParams = new URLSearchParams();
-  if (sp.user) exportParams.set("userId", sp.user);
-  if (sp.from) exportParams.set("from", sp.from);
-  if (sp.to) exportParams.set("to", sp.to);
+  for (const k of ["user", "team", "module", "outcome", "from", "to", "q"] as const) {
+    if (sp[k]) exportParams.set(k, sp[k]!);
+  }
   const canExport = canExportData(me);
 
   const outcomeOpts = (Object.keys(CallOutcome) as CallOutcome[]).map((o) => ({

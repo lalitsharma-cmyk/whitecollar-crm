@@ -25,6 +25,7 @@
 
 import "server-only";
 import type { Prisma } from "@prisma/client";
+import { CallOutcome } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import {
   BUYER_ACTIVITY_TYPE,
@@ -180,6 +181,29 @@ const CONTACT_TYPE_LIST: string[] = [
 // "Engaged" = a two-way-capable channel: a call placed or a WhatsApp message.
 const ENGAGED_TYPE_LIST: string[] = [BUYER_ACTIVITY_TYPE.CALL, BUYER_ACTIVITY_TYPE.WHATSAPP];
 
+// ── CALLS: single source = CallLog (2026-07-18) ──────────────────────────────
+// The buyer contact flow writes a CallLog row (buyerId set) for every real phone
+// call, in the same transaction as the BuyerActivity timeline row — see
+// src/lib/buyerLifecycle.ts. `callsLogged` is therefore counted from CallLog and
+// NEVER from BuyerActivity: the same call now lives in both tables, so counting
+// both would DOUBLE-COUNT it.
+//
+// What deliberately STAYS on BuyerActivity in this file (none of these are call
+// counts, so none can double-count):
+//   • totalAttempts — the ATTEMPT_* cycle that drives attemptCount and the
+//     auto-return-at-5 rule. It INCLUDES ATTEMPT_WA_NO_RESPONSE, which is a
+//     WhatsApp non-response and writes NO CallLog; sourcing it from CallLog would
+//     silently drop those attempts and de-sync the metric from attemptCount.
+//   • notesAdded / whatsappInteractions / voiceNotesAdded / converted / rejected.
+//   • the funnel stages — they count DISTINCT BUYERS that have >=1 activity of a
+//     kind, not events, so they are set memberships and cannot be double-counted.
+//
+// A buyer call CONNECTED = the shared outcome set (parity with the lead report's
+// connectedCalls), since buyerLifecycle maps a manual CALL → CONNECTED.
+const CONNECTED_BUYER_CALL_OUTCOMES: CallOutcome[] = [
+  CallOutcome.CONNECTED, CallOutcome.INTERESTED, CallOutcome.NOT_INTERESTED,
+];
+
 // ── Core builder ─────────────────────────────────────────────────────────────
 
 /**
@@ -274,9 +298,14 @@ export async function buildBuyerReport(
       where: { userId: { in: agentIds }, type: BUYER_ACTIVITY_TYPE.REJECTED, createdAt: win, buyer: { deletedAt: null, market } },
       _count: { _all: true },
     }),
-    prisma.buyerActivity.groupBy({
+    // CALLS — from CallLog (buyer-linked), NOT BuyerActivity. See the single-source
+    // note above: counting buyer calls from BuyerActivity too would double them.
+    // `buyer:{deletedAt:null, market}` requires the buyer relation to exist, so this
+    // matches exactly the buyer-linked rows for this market, and `startedAt` is the
+    // same instant as the activity's createdAt (written in one tx).
+    prisma.callLog.groupBy({
       by: ["userId"],
-      where: { userId: { in: agentIds }, type: BUYER_ACTIVITY_TYPE.CALL, createdAt: win, buyer: { deletedAt: null, market } },
+      where: { userId: { in: agentIds }, startedAt: win, outcome: { in: CONNECTED_BUYER_CALL_OUTCOMES }, buyer: { deletedAt: null, market } },
       _count: { _all: true },
     }),
     prisma.buyerActivity.groupBy({
@@ -524,7 +553,14 @@ export function buyerDrilldownWhere(
         assignments: { some: { userId: agentId, returnedAt: win, returnReason: BUYER_RETURN_REASON.MANUAL_REJECT } },
       };
     case "callsLogged":
-      return hasActivity(BUYER_ACTIVITY_TYPE.CALL);
+      // Calls come from CallLog (buyer-linked), so the drill-down must too —
+      // otherwise the list would not reconcile with the count. Single-source rule:
+      // never resolve buyer calls through BuyerActivity (that would double-count).
+      return {
+        deletedAt: null,
+        market: MARKET,
+        callLogs: { some: { userId: agentId, startedAt: win, outcome: { in: CONNECTED_BUYER_CALL_OUTCOMES } } },
+      };
     case "whatsappInteractions":
       return hasActivity(BUYER_ACTIVITY_TYPE.WHATSAPP);
     case "notesAdded":
@@ -586,7 +622,9 @@ export async function buyerEventCount(
     case "rejected":
       return prisma.buyerActivity.count({ where: { userId: agentId, type: BUYER_ACTIVITY_TYPE.REJECTED, createdAt: win, buyer: { deletedAt: null, market } } });
     case "callsLogged":
-      return prisma.buyerActivity.count({ where: { userId: agentId, type: BUYER_ACTIVITY_TYPE.CALL, createdAt: win, buyer: { deletedAt: null, market } } });
+      // CallLog is the single source for calls — must mirror buildBuyerReport's
+      // query exactly so "N calls" on the report == N events on the drill page.
+      return prisma.callLog.count({ where: { userId: agentId, startedAt: win, outcome: { in: CONNECTED_BUYER_CALL_OUTCOMES }, buyer: { deletedAt: null, market } } });
     case "whatsappInteractions":
       return prisma.buyerActivity.count({ where: { userId: agentId, type: BUYER_ACTIVITY_TYPE.WHATSAPP, createdAt: win, buyer: { deletedAt: null, market } } });
     case "notesAdded":

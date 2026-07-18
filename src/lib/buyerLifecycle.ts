@@ -16,6 +16,13 @@
 // ────────────────────────────────────────────────────────────────────────────
 
 import type { Prisma } from "@prisma/client";
+// Both are PURE modules (no "server-only", no prisma runtime import) — safe here
+// because a client component (BuyerAdminPanel) imports this file for its constants.
+// NEVER add a VALUE import of @prisma/client to this module for the same reason;
+// enum columns are written as string literals (Prisma generates them as string
+// unions, so "CONNECTED" / "OUTBOUND" typecheck against CallOutcome/CallDirection).
+import { parseJsonArray } from "@/lib/buyerIntelligence";
+import { toE164 } from "@/lib/phone";
 
 /** poolStatus values. Kept as plain strings (column is TEXT) so adding a state
  *  never needs a migration. */
@@ -68,6 +75,54 @@ export const ATTEMPT_TYPES: ReadonlySet<string> = new Set([
   BUYER_ACTIVITY_TYPE.ATTEMPT_NOT_PICKED,
   BUYER_ACTIVITY_TYPE.ATTEMPT_WA_NO_RESPONSE,
 ]);
+
+// ── CENTRAL CALL LOG — the single source of truth for CALLS ──────────────────
+// SINGLE-SOURCE RULE (2026-07-18): a buyer phone call now ALSO writes a row into
+// the central `CallLog` table (buyerId set, leadId null) — exactly like a Lead
+// call does via /api/leads/[id]/log-call. CallLog is therefore the ONE place every
+// call in the CRM lives (Leads · Master Data · Revival · Buyer Data).
+//
+// ⚠️ NEVER COUNT BUYER CALLS FROM BuyerActivity AGAIN — that would DOUBLE-COUNT
+// them, because the same call is now a CallLog row too. The BuyerActivity row is
+// retained ONLY to render the buyer conversation timeline. Every call-count read
+// (agentPerformance / dashboardWidgets / buyerPerformance) sources buyer calls
+// from CallLog where buyerId is not null.
+
+/** Buyer activity types that represent a REAL PHONE CALL and so also write a
+ *  CallLog row. = ATTEMPT_TYPES + plain CALL, MINUS ATTEMPT_WA_NO_RESPONSE:
+ *  a WhatsApp non-response is a messaging event, not a phone call, so it stays an
+ *  attempt on BuyerActivity only (it still increments attemptCount as before). */
+export const CALL_LOGGED_TYPES: ReadonlySet<string> = new Set([
+  BUYER_ACTIVITY_TYPE.CALL,
+  BUYER_ACTIVITY_TYPE.ATTEMPT_NO_ANSWER,
+  BUYER_ACTIVITY_TYPE.ATTEMPT_NOT_PICKED,
+]);
+
+/** BuyerActivity.type → CallLog.outcome. A manually-logged CALL means the agent
+ *  reached the buyer (the UI logs the ATTEMPT_* types when they did not), so
+ *  CALL → CONNECTED and both attempt types → NOT_PICKED. Kept as string literals:
+ *  Prisma generates CallOutcome as a string union, so these typecheck without a
+ *  runtime @prisma/client import. The historical backfill MUST use this same map
+ *  or the post-backfill totals will not reconcile. */
+export const CALL_OUTCOME_BY_ACTIVITY_TYPE: Record<string, "CONNECTED" | "NOT_PICKED"> = {
+  [BUYER_ACTIVITY_TYPE.CALL]: "CONNECTED",
+  [BUYER_ACTIVITY_TYPE.ATTEMPT_NO_ANSWER]: "NOT_PICKED",
+  [BUYER_ACTIVITY_TYPE.ATTEMPT_NOT_PICKED]: "NOT_PICKED",
+};
+
+/** Best-effort primary phone for a buyer's CallLog row. phones is a JSON array
+ *  string; take the first entry, normalised to E.164 when possible. NEVER throws
+ *  and NEVER returns empty — CallLog.phoneNumber is NOT NULL, and an unresolvable
+ *  number must not break the contact flow, so it falls back to a placeholder. */
+export function buyerPrimaryPhone(phones: unknown): string {
+  try {
+    const first = parseJsonArray(phones)[0];
+    if (!first) return "(no number)";
+    return toE164(first) ?? first;
+  } catch {
+    return "(no number)";
+  }
+}
 
 /** The activity types an agent may log via the /activity endpoint (lifecycle
  *  transitions ASSIGNED/RETURNED/CONVERTED/REJECTED are written by the engine,
@@ -310,12 +365,35 @@ export async function logBuyerContactInTx(
 ): Promise<{ attemptCount: number; autoReturned: boolean }> {
   const buyer = await tx.buyerRecord.findUniqueOrThrow({
     where: { id: buyerId },
-    select: { attemptCount: true },
+    // phones: needed for the CallLog row below — read in the SAME tx so the whole
+    // contact write (activity + call log + counter) is one atomic unit.
+    select: { attemptCount: true, phones: true },
   });
+  const now = new Date();
 
   const isAttempt = ATTEMPT_TYPES.has(type);
   // Always write the activity row first (the timeline records every interaction).
   await logBuyerActivity(tx, buyerId, actorId, type, description);
+
+  // ── CENTRAL CallLog row for real phone calls ───────────────────────────────
+  // Buyer calls now live in CallLog (see CALL_LOGGED_TYPES above) so they surface
+  // in the central Call Logs alongside Leads/Master Data/Revival calls. Same `tx`
+  // ⇒ atomic with the activity + attemptCount. NEVER count these from
+  // BuyerActivity as well — that would double-count every buyer call.
+  if (CALL_LOGGED_TYPES.has(type)) {
+    await tx.callLog.create({
+      data: {
+        buyerId,
+        leadId: null,
+        userId: actorId,
+        direction: "OUTBOUND",
+        phoneNumber: buyerPrimaryPhone(buyer.phones),
+        outcome: CALL_OUTCOME_BY_ACTIVITY_TYPE[type] ?? "CONNECTED",
+        notes: description ?? undefined,
+        startedAt: now,
+      },
+    });
+  }
 
   if (!isAttempt) {
     return { attemptCount: buyer.attemptCount, autoReturned: false };

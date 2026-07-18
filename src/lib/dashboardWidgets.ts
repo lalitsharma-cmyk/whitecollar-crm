@@ -112,27 +112,38 @@ export const HOT_UNTOUCHED_PARAMS: Record<string, string> = {
 //       logged buyer "Call connected" has no outcome column, so it maps to a
 //       BuyerActivity{type:"CALL"} — counted as a connected buyer call.
 //
-// ANTI-DOUBLE-COUNT (critical)
-//   A telephony buyer call writes BOTH a CallLog{buyerId} AND a BuyerActivity CALL
-//   for the SAME event. Counting both would double it. So the buyer CALL count is
-//   sourced from the BuyerActivity ledger ONLY, and the CallLog side EXCLUDES
-//   buyer-linked rows (buyerId:null). Net: every buyer call is counted once (from
-//   BuyerActivity, whether it was manual or telephony), every lead / unlinked call
-//   once (from CallLog). Lead-based counts are untouched.
+// ANTI-DOUBLE-COUNT (critical) — UPDATED 2026-07-18, SINGLE-SOURCE RULE
+//   CallLog is now the ONE table every call in the CRM lives in. The buyer contact
+//   flow writes a CallLog{buyerId} for every real phone call (src/lib/buyerLifecycle.ts)
+//   in the same transaction as the BuyerActivity timeline row. So the SAME buyer call
+//   now exists in BOTH tables, and counting both would DOUBLE it.
+//   ⇒ Buyer calls are counted from CallLog (buyer-linked rows) ONLY.
+//   ⇒ NEVER count buyer calls from BuyerActivity again.
+//   The two sides stay disjoint by construction: lead-side call queries filter
+//   `lead:{deletedAt:null}` (⇒ leadId not null) or `buyerId:null`, buyer-side queries
+//   filter `buyer:{deletedAt:null}` (⇒ buyerId not null). Every call counted once.
 //
 // SCOPE MATCHING
 //   All buyer counts carry the SAME envelope the lead counts use:
 //     • userId = the acting agent   (attribute the work to who performed it)
 //     • buyer.deletedAt = null      (recycle-bin buyers never counted)
-//     • createdAt within the window (same IST day / date-range the tiles use)
-//   Imported-remark BuyerActivity rows are userId:null with historical dates, so a
-//   userId + window filter naturally excludes them — they never inflate "today".
+//     • startedAt within the window (same IST day / date-range the tiles use;
+//       the buyer CallLog row is stamped with the activity's own instant)
+//   Imported-remark BuyerActivity rows are userId:null with historical dates and
+//   write no CallLog at all, so they never inflate "today".
 // ────────────────────────────────────────────────────────────────────────────
 
 /** BuyerActivity.type strings that represent a CALL the agent placed (manual
- *  "Call connected" + every attempt outcome). Mirrors buyerLifecycle's CALL +
- *  ATTEMPT_* vocabulary — kept as a literal list so this module stays free of the
- *  server-only buyerLifecycle import and can be exercised by read-only scripts. */
+ *  "Call connected" + every attempt outcome).
+ *
+ *  ⚠️ DEPRECATED as a CALL-COUNT source (2026-07-18). Buyer calls are counted from
+ *  CallLog now — see the single-source rule above. These constants remain ONLY for
+ *  the three report pages not yet migrated (/reports/ytd, /reports/team-comparison,
+ *  /reports/leaderboard). Those pages are still safe because they add this
+ *  BuyerActivity figure to a strictly LEAD-scoped CallLog figure, so nothing is
+ *  double-counted — but they should be moved to CallLog for consistency, and until
+ *  they are they will keep counting ATTEMPT_WA_NO_RESPONSE (which writes no CallLog)
+ *  as a call. Do NOT use these in any NEW call count. */
 export const BUYER_CALL_ACTIVITY_TYPES: string[] = [
   "CALL",
   "ATTEMPT_NO_ANSWER",
@@ -145,16 +156,26 @@ export const BUYER_CALL_ACTIVITY_TYPES: string[] = [
  *  NOT connected. Parity with CallLog outcome = CONNECTED. */
 export const BUYER_CONNECTED_ACTIVITY_TYPES: string[] = ["CALL"];
 
-/** Minimal prisma surface this aggregation needs (buyerActivity.count). Accepts the
+/** CallLog.outcome values that count as a CONNECTED call. Mirrors
+ *  CONNECTED_CALL_OUTCOMES in agentPerformance.ts and CONNECTED_OUTCOMES in
+ *  callOutcome.ts, kept as literals so this module needs no @prisma/client import.
+ *  The buyer contact flow maps a manual CALL → CONNECTED (see buyerLifecycle.ts). */
+// NOT `as const`: Prisma's `outcome: { in: ... }` expects a MUTABLE CallOutcome[],
+// and a readonly tuple would not be assignable to it.
+export const BUYER_CONNECTED_CALL_OUTCOMES: Array<"CONNECTED" | "INTERESTED" | "NOT_INTERESTED"> = [
+  "CONNECTED", "INTERESTED", "NOT_INTERESTED",
+];
+
+/** Minimal prisma surface these aggregations need (callLog.count). Accepts the
  *  real PrismaClient or a transaction client without dragging in a type dependency. */
-type CountableBuyerActivity = {
-  buyerActivity: {
+type CountableCallLog = {
+  callLog: {
     count: (args: {
       where: {
         userId?: string;
-        type?: { in: string[] };
-        createdAt?: { gte: Date; lt: Date };
+        startedAt?: { gte: Date; lt: Date };
         buyer?: { deletedAt: null };
+        outcome?: { in: Array<"CONNECTED" | "INTERESTED" | "NOT_INTERESTED"> };
       };
     }) => Promise<number>;
   };
@@ -162,21 +183,30 @@ type CountableBuyerActivity = {
 
 /**
  * Count buyer-module CALLS performed by a user in a window (for the "Total Calls"
- * KPI). Sourced from the BuyerActivity ledger ONLY — see the anti-double-count note
- * above (the CallLog side must exclude buyer-linked rows). Includes attempts, since
- * a "no answer" / "not picked" attempt is still a call the agent placed.
+ * KPI).
+ *
+ * SINGLE-SOURCE RULE (2026-07-18): sourced from CallLog (buyer-linked rows) — the
+ * buyer contact flow now writes a CallLog row for every real phone call (see
+ * src/lib/buyerLifecycle.ts). NEVER count buyer calls from BuyerActivity as well:
+ * the same call exists in both tables now, so summing them would DOUBLE-COUNT.
+ *
+ * `buyer: { deletedAt: null }` requires the buyer relation to exist, so this counts
+ * exactly the buyer-linked rows and excludes soft-deleted buyers — the mirror of the
+ * lead-side `lead: { deletedAt: null }`. The two sets are disjoint, so a lead call
+ * and a buyer call are each counted once. Includes attempts (a "not picked" attempt
+ * is still a call the agent placed); ATTEMPT_WA_NO_RESPONSE is NOT a phone call and
+ * writes no CallLog, so it is no longer counted here.
  */
 export function buyerCallsCount(
-  db: CountableBuyerActivity,
+  db: CountableCallLog,
   userId: string,
   from: Date,
   to: Date,
 ): Promise<number> {
-  return db.buyerActivity.count({
+  return db.callLog.count({
     where: {
       userId,
-      type: { in: BUYER_CALL_ACTIVITY_TYPES },
-      createdAt: { gte: from, lt: to },
+      startedAt: { gte: from, lt: to },
       buyer: { deletedAt: null },
     },
   });
@@ -184,20 +214,22 @@ export function buyerCallsCount(
 
 /**
  * Count buyer-module CONNECTED calls performed by a user in a window (for the
- * "Connected Calls" KPI). Only explicit CALL rows — attempts are not connected.
+ * "Connected Calls" KPI). Same single-source rule as buyerCallsCount — CallLog
+ * only. Connected is decided by the call OUTCOME (the shared outcome set), not by
+ * the activity type, so "connected" means the same thing for leads and buyers.
  */
 export function buyerConnectedCallsCount(
-  db: CountableBuyerActivity,
+  db: CountableCallLog,
   userId: string,
   from: Date,
   to: Date,
 ): Promise<number> {
-  return db.buyerActivity.count({
+  return db.callLog.count({
     where: {
       userId,
-      type: { in: BUYER_CONNECTED_ACTIVITY_TYPES },
-      createdAt: { gte: from, lt: to },
+      startedAt: { gte: from, lt: to },
       buyer: { deletedAt: null },
+      outcome: { in: BUYER_CONNECTED_CALL_OUTCOMES },
     },
   });
 }
