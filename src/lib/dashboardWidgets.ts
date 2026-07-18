@@ -29,6 +29,9 @@
 import type { Prisma } from "@prisma/client";
 import { AIScore, ActivityType } from "@prisma/client";
 import { TERMINAL_STATUSES } from "@/lib/lead-statuses";
+// Pure import chain (ghosting → lead-statuses → lead-sources, moduleSource) — no
+// prisma / server-only, so this module stays usable from a transaction client.
+import { PENDING_CALL_OUTCOMES, excludePendingCallsWhere } from "@/lib/ghosting";
 
 // Workable status OR — a lead is workable when its status is null/blank or NOT a
 // terminal (closed/lost) status. Defined locally (mirrors leadScope.WORKABLE_STATUS_OR)
@@ -57,7 +60,12 @@ export const CONTACT_ACTIVITY_TYPES: ActivityType[] = [
 /** Prisma fragment: the lead has NO meaningful contact logged (truly untouched).
  *  No CallLog at all, and no contact-type Activity. Composable into any where. */
 export const UNTOUCHED_WHERE: Prisma.LeadWhereInput = {
-  callLogs: { none: {} },
+  // "none" must mean no RESOLVED call — an unresolved dial (INITIATED/RINGING) is
+  // a tap, not contact. With a bare `none: {}` a single abandoned tap would make an
+  // untouched lead look touched and DROP IT off this tile (and its drill-down), so
+  // a lead nobody has actually spoken to would silently stop being chased. This is
+  // the deflating twin of the inflation guard used on the call counters.
+  callLogs: { none: { ...excludePendingCallsWhere() } },
   activities: { none: { type: { in: CONTACT_ACTIVITY_TYPES } } },
 };
 
@@ -175,7 +183,9 @@ type CountableCallLog = {
         userId?: string;
         startedAt?: { gte: Date; lt: Date };
         buyer?: { deletedAt: null };
-        outcome?: { in: Array<"CONNECTED" | "INTERESTED" | "NOT_INTERESTED"> };
+        outcome?:
+          | { in: Array<"CONNECTED" | "INTERESTED" | "NOT_INTERESTED"> }
+          | { notIn: Array<"INITIATED" | "RINGING"> };
       };
     }) => Promise<number>;
   };
@@ -196,6 +206,11 @@ type CountableCallLog = {
  * and a buyer call are each counted once. Includes attempts (a "not picked" attempt
  * is still a call the agent placed); ATTEMPT_WA_NO_RESPONSE is NOT a phone call and
  * writes no CallLog, so it is no longer counted here.
+ *
+ * EXCLUDES UNRESOLVED DIALS (Lalit P0, 2026-07-18). The Call button writes a
+ * CallLog on TAP, at INITIATED, before any result. A "not picked" attempt IS a
+ * call the agent placed and still counts; a dial that has not come back with any
+ * result is not — counting it would make the Total Calls KPI grow on taps alone.
  */
 export function buyerCallsCount(
   db: CountableCallLog,
@@ -208,6 +223,7 @@ export function buyerCallsCount(
       userId,
       startedAt: { gte: from, lt: to },
       buyer: { deletedAt: null },
+      outcome: { notIn: [...PENDING_CALL_OUTCOMES] },
     },
   });
 }

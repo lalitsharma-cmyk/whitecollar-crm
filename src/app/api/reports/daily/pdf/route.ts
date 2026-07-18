@@ -13,6 +13,7 @@ import { ActivityType, CallOutcome } from "@prisma/client";
 import { BOOKED_STATUSES } from "@/lib/lead-statuses";
 import { audit, reqMeta } from "@/lib/audit";
 import { fmtMoney } from "@/lib/money";
+import { excludePendingCallsWhere } from "@/lib/ghosting";
 
 export const dynamic = "force-dynamic";
 
@@ -105,9 +106,13 @@ export async function GET(req: NextRequest) {
   ] = await Promise.all([
     // Leads created today, owned by an in-scope agent
     prisma.lead.count({ where: { ownerId: userIdFilter, createdAt: { gte: dayStart, lte: dayEnd } } }),
-    // Calls made today by in-scope agent
-    prisma.callLog.count({ where: { userId: userIdFilter, startedAt: { gte: dayStart, lte: dayEnd } } }),
-    // Connected calls
+    // Calls made today by in-scope agent. excludePendingCallsWhere() drops
+    // unresolved dials (INITIATED / RINGING) — a CallLog row is written the
+    // INSTANT "Call" is tapped. Must stay in lockstep with the per-agent
+    // groupBy below, or the "Calls made" tile stops equalling the sum of the
+    // per-agent table (count == records).
+    prisma.callLog.count({ where: { ...excludePendingCallsWhere(), userId: userIdFilter, startedAt: { gte: dayStart, lte: dayEnd } } }),
+    // Connected calls — allow-list, immune to pending dials by construction
     prisma.callLog.count({ where: { userId: userIdFilter, startedAt: { gte: dayStart, lte: dayEnd }, outcome: CallOutcome.CONNECTED } }),
     // Follow-ups completed = any non-meeting activity completed today
     prisma.activity.count({ where: {
@@ -138,10 +143,11 @@ export async function GET(req: NextRequest) {
       where: { ownerId: userIdFilter, currentStatus: { in: BOOKED_STATUSES }, updatedAt: { gte: dayStart, lte: dayEnd } },
       select: { budgetMin: true, budgetCurrency: true },
     }),
-    // Per-agent breakdowns
+    // Per-agent breakdowns — SAME pending guard as the callsMade total above so
+    // the per-agent "Calls" column still sums to the "Calls made" KPI tile.
     prisma.callLog.groupBy({
       by: ["userId"],
-      where: { userId: userIdFilter, startedAt: { gte: dayStart, lte: dayEnd } },
+      where: { ...excludePendingCallsWhere(), userId: userIdFilter, startedAt: { gte: dayStart, lte: dayEnd } },
       _count: { _all: true },
     }),
     prisma.callLog.groupBy({

@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { ActivityType, ActivityStatus, CallOutcome } from "@prisma/client";
 import { BOOKED_STATUSES } from "@/lib/lead-statuses";
+import { excludePendingCallsWhere } from "@/lib/ghosting";
 import { startOfDay } from "date-fns";
 import MissionCompleteBeacon from "@/components/MissionCompleteBeacon";
 
@@ -40,9 +41,11 @@ export default async function DailyMissionBoard({ userId }: { userId: string }) 
     coldConvCount,
     dealsCount,
   ] = await Promise.all([
-    // Total calls dialled today
+    // Total calls dialled today — RESOLVED dials only. Unresolved rows
+    // (INITIATED / RINGING) are excluded so the mission can't be completed,
+    // and its XP claimed, by tapping "Call" without ever placing one.
     prisma.callLog.count({
-      where: { userId, startedAt: { gte: todayStart } },
+      where: { ...excludePendingCallsWhere(), userId, startedAt: { gte: todayStart } },
     }),
     // Calls that connected (CONNECTED or INTERESTED outcome)
     prisma.callLog.count({

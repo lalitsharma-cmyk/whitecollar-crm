@@ -26,6 +26,22 @@
 // attempts; an INBOUND answered call counts as a connect (the client responded),
 // an INBOUND missed call counts as nothing.
 //
+// NOT counted at all (2026-07-18): PENDING = INITIATED / RINGING — a dial that
+// has not resolved. See the guard at the top of recordLeadCallAttempt. The row is
+// re-submitted here when it transitions to its terminal outcome, and THAT is what
+// moves the cycle. One dial = one CallLog row = at most one attempt.
+//
+// FALL-THROUGH (unchanged, flagged for review): the "unsuccessful try" branch is
+// a fall-through, not an allow-list, so the new terminal states FAILED / CANCELLED
+// / MISSED each count as one attempt on an OUTBOUND row (an INBOUND MISSED already
+// counts as nothing via the INBOUND guard below). FAILED/MISSED match the existing
+// SWITCHED_OFF/NOT_PICKED semantics. CANCELLED — the agent aborted the dial before
+// it resolved — is the debatable one: it is a real inflation vector for mis-taps,
+// but excluding it is a business-rule change for Lalit to make, not a silent one.
+// If it should stop counting, add it to the guard above; do NOT widen the PENDING
+// set to include it (pending vs cancelled differ everywhere else: a CANCELLED row
+// IS resolved and must still appear in call totals).
+//
 // Only calls by the CURRENT OWNER move the cycle — an admin dialing someone
 // else's lead never pushes it toward ghosting/return (Lalit: "attempts are
 // owner-specific").
@@ -37,6 +53,7 @@ import { isRevivalOrigin } from "@/lib/moduleSource";
 import {
   isMeaningfulOutcome,
   isGhostingEligible,
+  isPendingCall,
   GHOSTING_DEFAULT_THRESHOLD,
   REVIVAL_DEFAULT_MAX_ATTEMPTS,
 } from "@/lib/ghosting";
@@ -66,6 +83,10 @@ export type RecordAttemptResult = {
   connected?: boolean;
   ghosted?: boolean;
   autoReturned?: boolean;
+  /** Ignored because the call has not resolved yet (INITIATED / RINGING).
+   *  Distinct from `counted:false` for a non-owner: this one WILL count later,
+   *  when the same row transitions to a terminal outcome. */
+  pending?: boolean;
 };
 
 /**
@@ -85,6 +106,23 @@ export async function recordLeadCallAttempt(input: {
   const at = input.at ?? new Date();
   const direction = input.direction ?? "OUTBOUND";
   if (!actorId) return { counted: false };
+
+  // ⛔ UNRESOLVED DIAL — hard stop BEFORE any read or write (Lalit P0, 2026-07-18).
+  // Every "Call" button now writes a CallLog the instant it is tapped, at
+  // INITIATED, and the SAME row is transitioned to a terminal outcome later. The
+  // tap itself carries NO information about whether the client was reached, so it
+  // must move NOTHING: no attemptCount, no connectedCount, no lastAttemptAt/By
+  // stamp, no 👻 ghosting stamp, no ↩︎ revival auto-return. Without this guard an
+  // agent tapping Call 10 times on a number that never rings would false-tag the
+  // lead 👻 Ghosting, and 5 taps would rip a Revival record out of their queue and
+  // back to the Admin pool — from taps alone, with no call ever having happened.
+  //
+  // The cycle advances when the row RESOLVES: the transition to the terminal
+  // outcome must call this function again with that outcome (see the note in
+  // lib/ghosting.ts). Returning early here — rather than counting the dial and
+  // trying to un-count it later — keeps the counters monotonic and means a dial
+  // that never resolves (app killed, browser closed) simply never counts.
+  if (isPendingCall(outcome)) return { counted: false, pending: true };
 
   const lead = await prisma.lead.findUnique({
     where: { id: leadId },

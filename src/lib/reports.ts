@@ -5,6 +5,7 @@ import { AIScore, CallOutcome } from "@prisma/client";
 import { BOOKED_STATUSES, LOST_STATUSES } from "@/lib/lead-statuses";
 import { activeLeadWhere } from "@/lib/leadScope";
 import { effectiveSource } from "@/lib/sourceLabel";
+import { excludePendingCallsWhere } from "@/lib/ghosting";
 
 interface Window { since: Date; until: Date; label: string; }
 
@@ -19,7 +20,12 @@ export async function buildReport(win: Window) {
     // emailed these numbers, so both key off the real MIS currentStatus vocabulary.
     prisma.lead.count({ where: { currentStatus: { in: BOOKED_STATUSES }, deletedAt: null, updatedAt: { gte: win.since, lte: win.until } } }),
     prisma.lead.count({ where: { deletedAt: null, currentStatus: { in: LOST_STATUSES }, updatedAt: { gte: win.since, lte: win.until } } }),
-    prisma.callLog.count({ where: { startedAt: { gte: win.since, lte: win.until } } }),
+    // excludePendingCallsWhere() drops unresolved dials (INITIATED / RINGING) — a
+    // CallLog row is written the INSTANT "Call" is tapped. `calls` is the connectRate
+    // DENOMINATOR below, so leaving it open would both inflate "Calls:" and silently
+    // depress the connect rate managers are emailed. The `connected` line is an
+    // allow-list (outcome: CONNECTED) and is immune to pending rows by construction.
+    prisma.callLog.count({ where: { ...excludePendingCallsWhere(), startedAt: { gte: win.since, lte: win.until } } }),
     prisma.callLog.count({ where: { startedAt: { gte: win.since, lte: win.until }, outcome: CallOutcome.CONNECTED } }),
     prisma.user.findMany({
       where: { active: true, hrOnly: false, role: { in: ["AGENT", "MANAGER"] } },
@@ -27,7 +33,10 @@ export async function buildReport(win: Window) {
       // else — the canonical active set (non-terminal, ACTIVE origin, not deleted).
       // A raw ownedLeads count would over-count (booked/lost/cold) and mismatch the
       // leaderboard/team/agent-performance numbers (audit 2026-06-27).
-      include: { _count: { select: { callLogs: { where: { startedAt: { gte: win.since, lte: win.until } } }, ownedLeads: { where: activeLeadWhere() } } } },
+      // Leaderboard call counts carry the SAME pending guard as the `calls` total
+      // above — otherwise the per-agent "N calls" rows would out-sum the "Calls:"
+      // headline in the very same email as unresolved dials accumulate.
+      include: { _count: { select: { callLogs: { where: { ...excludePendingCallsWhere(), startedAt: { gte: win.since, lte: win.until } } }, ownedLeads: { where: activeLeadWhere() } } } },
     }),
     // Source breakdown reads VERBATIM sourceRaw (enum label only as legacy fallback)
     // so analytics show the real channel ("Townscript"), never corrupted "CSV_IMPORT".

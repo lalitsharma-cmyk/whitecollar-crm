@@ -20,6 +20,7 @@ import HiddenGemsBanner, { type HiddenGem } from "@/components/HiddenGemsBanner"
 import RevivalLeaderboard, { type LeaderboardRow } from "@/components/RevivalLeaderboard";
 import RevivalLeadsListClient, { type RevivalPromoteMeta, type RevivalAttemptMeta } from "@/components/RevivalLeadsListClient";
 import { getRevivalMaxAttempts } from "@/lib/callAttempts";
+import { isPendingCall, excludePendingCallsWhere } from "@/lib/ghosting";
 import LeadFilters from "@/components/LeadFilters";
 import SavedFiltersBar from "@/components/SavedFiltersBar";
 import HelpDot from "@/components/HelpDot";
@@ -251,7 +252,11 @@ export default async function ColdDataPage({ searchParams }: { searchParams: Pro
         owner: { select: { name: true, avatarColor: true } },
         interestedUnits: { take: 1, select: { unit: { select: { configuration: true, project: { select: { name: true } } } } } },
         discussed: { take: 3, select: { project: { select: { name: true } } } },
-        callLogs: { orderBy: { startedAt: "desc" }, take: 20, select: { outcome: true, startedAt: true } },
+        // Excluded at the DB level, not just in memory: with `take: 20` an
+        // unresolved dial would consume a slot in the window and push a real call
+        // out of it, under-reporting the connect counts on a heavily-worked record.
+        // These rows feed metrics only (counts + last-activity), never a timeline.
+        callLogs: { where: { ...excludePendingCallsWhere() }, orderBy: { startedAt: "desc" }, take: 20, select: { outcome: true, startedAt: true } },
         activities: { orderBy: { createdAt: "desc" }, take: 1, select: { type: true, createdAt: true } },
       },
       orderBy,
@@ -415,6 +420,12 @@ export default async function ColdDataPage({ searchParams }: { searchParams: Pro
       l.whenCanInvest != null && l.whenCanInvest !== "UNKNOWN",
     ].filter(Boolean).length;
 
+    // Newest RESOLVED call. callLogs is ordered startedAt desc, so find() returns
+    // the most recent one that is not a PENDING dial (INITIATED / RINGING — written
+    // the instant the agent taps Call, before any result exists). "Last Activity" is
+    // a last-contacted metric: a tap that never resolved must not read as contact.
+    const lastRealCall = l.callLogs.find((c) => !isPendingCall(c.outcome));
+
     return {
       id: l.id,
       name: formatLeadName(l.name),
@@ -452,10 +463,10 @@ export default async function ColdDataPage({ searchParams }: { searchParams: Pro
       city: l.city ?? null,
       whenCanInvest: l.whenCanInvest ?? null,
       remarks: l.remarks ? l.remarks.slice(0, 120) : null,
-      lastActivityType: l.callLogs.length > 0 ? "CALL"
+      lastActivityType: lastRealCall ? "CALL"
         : l.activities.length > 0 ? l.activities[0].type
         : null,
-      lastActivityAt: l.callLogs[0]?.startedAt?.toISOString()
+      lastActivityAt: lastRealCall?.startedAt?.toISOString()
         ?? l.activities[0]?.createdAt?.toISOString()
         ?? null,
       connectedCount: l.callLogs.filter(c => ["CONNECTED", "INTERESTED"].includes(c.outcome)).length,

@@ -6,6 +6,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { notify, notifyRoles } from "@/lib/notify";
 import { ActivityStatus, AIScore } from "@prisma/client";
+import { excludePendingCallsWhere } from "@/lib/ghosting";
 import { SUPPRESSED_STATUSES } from "@/lib/lead-statuses";
 import { startCronRun, finishCronRun } from "@/lib/cronRun";
 
@@ -47,7 +48,10 @@ export async function GET(req: NextRequest) {
     // Hot leads owned by this agent with no call logged today at all
     const hotOwnedLeads = await prisma.lead.findMany({
       where: { ownerId: u.id, aiScore: AIScore.HOT, currentStatus: { notIn: SUPPRESSED_STATUSES }, deletedAt: null },
-      include: { callLogs: { where: { startedAt: { gte: startUTC } }, take: 1 } },
+      // Only RESOLVED calls count as "called today" — the filter below treats any
+      // call log as contact, so an unresolved dial would drop a lead out of the
+      // uncalled tally and hide it from the evening nudge.
+      include: { callLogs: { where: { ...excludePendingCallsWhere(), startedAt: { gte: startUTC } }, take: 1 } },
     });
     const uncalled = hotOwnedLeads.filter((l) => l.callLogs.length === 0).length;
 

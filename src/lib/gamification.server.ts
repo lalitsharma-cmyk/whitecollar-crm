@@ -13,6 +13,7 @@
 
 import "server-only";
 import { prisma } from "@/lib/prisma";
+import { excludePendingCallsWhere } from "@/lib/ghosting";
 import {
   XP_VALUES,
   XP_LABELS,
@@ -183,7 +184,7 @@ export async function checkAndAwardBadges(userId: string): Promise<BadgeId[]> {
     // the activity log (COLD_TO_LEAD) + raw cold-call CallLogs as a proxy.
     if (need("cold_hunter")) {
       const cold = await prisma.callLog.count({
-        where: { userId, lead: { isColdCall: true, deletedAt: null } },
+        where: { ...excludePendingCallsWhere(), userId, lead: { isColdCall: true, deletedAt: null } },
       });
       if (cold >= 50) newly.push("cold_hunter");
     }
@@ -201,7 +202,7 @@ export async function checkAndAwardBadges(userId: string): Promise<BadgeId[]> {
     if (need("calling_machine")) {
       const since = new Date(Date.now() - 8 * 86_400_000);
       const rows = await prisma.callLog.findMany({
-        where: { userId, startedAt: { gte: since } },
+        where: { ...excludePendingCallsWhere(), userId, startedAt: { gte: since } },
         select: { startedAt: true },
       });
       const perDay = new Map<string, number>();

@@ -4,6 +4,9 @@ import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { Phone, AlertCircle, Mic } from "lucide-react";
 import { whatsappLink, telLink, hasDialableNumber } from "@/lib/phone";
+// The ALT-number Call uses the dial beacon. The PRIMARY Call keeps its existing
+// /call-initiated post (which now writes the CallLog too) — see logCallClick.
+import { useDialBeacon } from "@/components/useDialBeacon";
 import TemplatePickerButton from "./TemplatePickerButton";
 import { ActionButton } from "@/components/actions/ActionButton";
 import { backdropProps } from "@/lib/useDismiss";
@@ -95,6 +98,12 @@ export default function LeadActionsClient({ leadId, phone, altPhone, email, curr
       body: JSON.stringify({ leadId, kind, message }),
     }).catch(() => {});
   }
+  // PRIMARY Call button. Deliberately NOT the dial beacon: this endpoint now
+  // delegates to startCall() (so the tap writes a CallLog at INITIATED, exactly
+  // like the beacon does) AND keeps writing its "📞 Call initiated" timeline
+  // Activity, which only this button has ever produced. Pointing it at
+  // /api/calls/dial instead would create a SECOND CallLog row for one dial and
+  // silently drop that timeline entry. One dial = one row.
   function logCallClick() {
     fetch(`/api/leads/${leadId}/call-initiated`, {
       method: "POST",
@@ -102,6 +111,8 @@ export default function LeadActionsClient({ leadId, phone, altPhone, email, curr
     }).catch(() => {});
   }
   const router = useRouter();
+  // Used by the ALT-number Call (the primary Call uses logCallClick above).
+  const dial = useDialBeacon();
   const [showCall, setShowCall] = useState(false);
   // Post-log "What next?" prompt — opens after a successful Log Call so the agent
   // closes the follow-up (Complete / Snooze / Escalate) instead of leaving it open.
@@ -398,7 +409,7 @@ export default function LeadActionsClient({ leadId, phone, altPhone, email, curr
           <div className="grid grid-cols-2 gap-1.5 [&>*]:w-full">
             {/* Same Call / WhatsApp actions, on the 2nd number — rendered from the
                 shared tokens (compact size) so they match the primary ones. */}
-            <ActionButton action="call" size="sm" href={telUrl(altPhone)} label="Call alt" />
+            <ActionButton action="call" size="sm" href={telUrl(altPhone)} label="Call alt" onClick={dial({ leadId, phone: altPhone })} />
             <ActionButton
               action="whatsapp"
               size="sm"

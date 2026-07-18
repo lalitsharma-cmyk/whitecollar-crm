@@ -33,6 +33,7 @@ import {
   Mood,
 } from "@prisma/client";
 import { BOOKED_STATUSES, ACTIVE_PURSUIT_STATUSES } from "@/lib/lead-statuses";
+import { excludePendingCallsWhere } from "@/lib/ghosting";
 
 // ────────────────────────────────────────────────────────────────────
 // PUBLIC TYPES
@@ -152,7 +153,13 @@ async function computeActivity(
   const now = new Date();
 
   const [totalCalls, connectedCalls, followupGroups] = await Promise.all([
-    prisma.callLog.count({ where: { userId, startedAt: { gte: start } } }),
+    // excludePendingCallsWhere() drops unresolved dials (INITIATED / RINGING) — a
+    // CallLog row is written the INSTANT "Call" is tapped. totalCalls feeds BOTH
+    // sub-metrics below, and unguarded it moves them in OPPOSITE directions:
+    // callsVsTarget rises (taps count toward the daily target) while connectRate
+    // falls (taps land in the denominator but never in the allow-listed
+    // numerator). connectedCalls is an allow-list and is immune by construction.
+    prisma.callLog.count({ where: { ...excludePendingCallsWhere(), userId, startedAt: { gte: start } } }),
     prisma.callLog.count({
       where: {
         userId,
@@ -323,7 +330,10 @@ async function computeBehavioural(userId: string, start: Date): Promise<number> 
     const leadIds = hotLeads.map((l) => l.id);
     const firstCalls = await prisma.callLog.groupBy({
       by: ["leadId"],
-      where: { leadId: { in: leadIds }, userId },
+      // Unresolved dials excluded: the 30-min SLA must be met by a call that
+      // actually happened, not by tapping Call and abandoning it. Without this a
+      // stuck-pending row would permanently credit an SLA hit that never occurred.
+      where: { ...excludePendingCallsWhere(), leadId: { in: leadIds }, userId },
       _min: { startedAt: true },
     });
     const firstCallByLead = new Map(firstCalls.map((r) => [r.leadId, r._min.startedAt] as const));

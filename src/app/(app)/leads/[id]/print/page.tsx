@@ -8,6 +8,14 @@ import PrintButton from "./PrintButton";
 
 export const dynamic = "force-dynamic";
 
+// Human labels for CallLog.outcome. Wording is copied verbatim from the
+// `outcomeLabel` map in src/app/(app)/call-logs/page.tsx so the SAME row never
+// reads differently on the printed sheet than it does in Call Logs (the same
+// one-vocabulary rule that keeps NOT_PICKED as "Not Picked" rather than
+// "No Answer"). Keyed `string` (not Record<CallOutcome, …> like the Call Logs
+// map) so this stays a plain lookup with the `?? log.outcome` fallback below —
+// that fallback is what printed the raw enum name for the 5 outcomes added with
+// the dial-on-tap change, which this map now covers.
 const outcomeLabel: Record<string, string> = {
   CONNECTED: "Connected",
   NOT_PICKED: "Not Picked",
@@ -17,6 +25,12 @@ const outcomeLabel: Record<string, string> = {
   SWITCHED_OFF: "Switched Off",
   INTERESTED: "Interested",
   NOT_INTERESTED: "Not Interested",
+  FAILED: "Failed",
+  CANCELLED: "Cancelled",
+  MISSED: "Missed",
+  // UNRESOLVED — a dial with no result yet.
+  INITIATED: "Initiated",
+  RINGING: "Ringing",
 };
 
 const statusLabel: Record<string, string> = {

@@ -1,4 +1,5 @@
 import type { CallLog } from "@prisma/client";
+import { isPendingCall } from "@/lib/ghosting";
 
 export interface CallStats {
   total: number;
@@ -18,7 +19,18 @@ export function aggregateCalls(calls: CallLog[]): CallStats {
   // were historically stored as synthetic CallLog rows (attributedAgentName set);
   // they are Historical Notes, never dialled calls, and must never move the
   // connected / no-answer / last-outcome / today counters.
-  calls = calls.filter((c) => c.attributedAgentName == null);
+  //
+  // PENDING dials are dropped for the same reason (Lalit P0, 2026-07-18): a
+  // CallLog row is written the INSTANT the agent taps Call, carrying INITIATED /
+  // RINGING before any result exists, and the SAME row is later transitioned to a
+  // terminal outcome (one dial = one row). Counting the tap would inflate `total`
+  // ("Dialed"), `todayDialed`, `other` (pending falls through to the else-branch
+  // below) and would let an abandoned tap set `lastCallAt` — a tap is not a call.
+  // Filtering ONCE here guards every field this function returns; the connected /
+  // notPicked / callback counters match outcomes explicitly and were already
+  // immune, and notPickedStreak is unaffected (a pending row hit the else-branch,
+  // which neither counts nor breaks the streak).
+  calls = calls.filter((c) => c.attributedAgentName == null && !isPendingCall(c.outcome));
 
   const stats: CallStats = {
     total: calls.length, connected: 0, notPicked: 0, callback: 0, other: 0,

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { telLink } from "@/lib/phone";
+import { useDialBeacon } from "@/components/useDialBeacon";
 import { showXpToast } from "@/components/XPToast";
 import { lastMeaningfulRemark } from "@/lib/needSnapshot";
 import { formatLeadName } from "@/lib/leadName";
@@ -66,6 +67,7 @@ function formatBudget(min: number | null, max: number | null, ccy: string): stri
 }
 
 export default function ColdCallSession({ leads }: { leads: SessionLead[] }) {
+  const dial = useDialBeacon();
   const [idx, setIdx] = useState(0);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -273,6 +275,7 @@ export default function ColdCallSession({ leads }: { leads: SessionLead[] }) {
         {lead.phone ? (
           <a
             href={tel}
+            onClick={dial({ leadId: lead.id })}
             className="flex items-center justify-center gap-2 w-full py-4 rounded-xl bg-emerald-600 text-white text-lg font-bold hover:bg-emerald-700 shadow"
           >
             📞 Tap to call {lead.phone}

@@ -14,6 +14,7 @@ import {
   ACTIVITY_SOURCE_MODULES,
   type SourceModule,
 } from "@/lib/moduleSource";
+import { PENDING_CALL_OUTCOMES } from "@/lib/ghosting";
 import CallLogFilters from "./CallLogFilters";
 
 export const dynamic = "force-dynamic";
@@ -57,27 +58,53 @@ function firstBuyerPhone(phones: string | null): string | null {
   return t || null;
 }
 
-// Outcome chip colour mapping
+// ── Call STATE chips ─────────────────────────────────────────────────────────
+// EVERY CallOutcome renders, including the two UNRESOLVED dial states added with
+// the dial-on-tap change (Lalit P0, 2026-07-18). Both maps are exhaustive
+// Record<CallOutcome, …>, so adding an enum value is a COMPILE error here rather
+// than a silently blank chip in the list (which is exactly what the INITIATED /
+// RINGING / FAILED / CANCELLED / MISSED additions produced before this fix:
+// `outcomeChip[r.outcome]` was undefined → `class="chip undefined"`, empty label).
+//
+// Unresolved states are deliberately styled apart (violet + dashed border): a
+// dial that has not resolved is NOT a call result, and must never read like one.
 const outcomeChip: Record<CallOutcome, string> = {
+  // Resolved — a human answered
   CONNECTED:      "bg-emerald-100 text-emerald-800",
-  NOT_PICKED:     "bg-red-100 text-red-800",
-  CALLBACK:       "bg-blue-100 text-blue-800",
-  WRONG_NUMBER:   "bg-gray-100 text-gray-700",
-  BUSY:           "bg-amber-100 text-amber-800",
-  SWITCHED_OFF:   "bg-orange-100 text-orange-800",
   INTERESTED:     "bg-teal-100 text-teal-800",
   NOT_INTERESTED: "bg-slate-100 text-slate-700",
+  CALLBACK:       "bg-blue-100 text-blue-800",
+  // Resolved — no contact
+  NOT_PICKED:     "bg-red-100 text-red-800",
+  BUSY:           "bg-amber-100 text-amber-800",
+  SWITCHED_OFF:   "bg-orange-100 text-orange-800",
+  WRONG_NUMBER:   "bg-gray-100 text-gray-700",
+  FAILED:         "bg-rose-100 text-rose-800",
+  CANCELLED:      "bg-zinc-100 text-zinc-700",
+  MISSED:         "bg-fuchsia-100 text-fuchsia-800",
+  // UNRESOLVED — a dial with no result yet
+  INITIATED:      "bg-violet-100 text-violet-800 border border-dashed border-violet-400",
+  RINGING:        "bg-violet-100 text-violet-800 border border-dashed border-violet-400",
 };
 
 const outcomeLabel: Record<CallOutcome, string> = {
   CONNECTED:      "Connected",
-  NOT_PICKED:     "Not Picked",
-  CALLBACK:       "Callback",
-  WRONG_NUMBER:   "Wrong Number",
-  BUSY:           "Busy",
-  SWITCHED_OFF:   "Switched Off",
   INTERESTED:     "Interested",
   NOT_INTERESTED: "Not Interested",
+  CALLBACK:       "Callback",
+  // NOT_PICKED also serves "No Answer" — the stored label stays "Not Picked" so
+  // this list, /reports/calls (OUTCOME_LABELS) and the CSV export keep ONE
+  // vocabulary. Renaming it here only would have made the same rows read
+  // differently on three surfaces.
+  NOT_PICKED:     "Not Picked",
+  BUSY:           "Busy",
+  SWITCHED_OFF:   "Switched Off",
+  WRONG_NUMBER:   "Wrong Number",
+  FAILED:         "Failed",
+  CANCELLED:      "Cancelled",
+  MISSED:         "Missed",
+  INITIATED:      "Initiated",
+  RINGING:        "Ringing",
 };
 
 // Module chip tint (matches the 5 SourceModules).
@@ -148,6 +175,24 @@ export default async function CallLogsPage({
   // Call Status (outcome).
   if (sp.outcome && (Object.keys(CallOutcome) as string[]).includes(sp.outcome)) {
     filterAnd.push({ outcome: sp.outcome as CallOutcome });
+  }
+
+  // ── Call STATE (?state=) — resolved vs unresolved dial (Lalit P0 2026-07-18) ──
+  // PENDING = INITIATED | RINGING: a CallLog written the instant the Call button
+  // was tapped, before any result. "resolved" = every other outcome.
+  //
+  // HONOURED FOR EVERY ROLE — deliberately NOT gated like ?team= (ADMIN-only).
+  // /reports/calls drills carry ?state=resolved on every call number and
+  // ?state=pending on the unresolved-dials figure; if this predicate were
+  // role-gated, an agent or manager clicking their own number would land on a
+  // WIDER set than the number claimed, breaking the report's count==records
+  // contract for exactly the users who check it most. The role SCOPE above still
+  // constrains which rows they can see — this only narrows within that scope.
+  const stateParam = sp.state === "pending" || sp.state === "resolved" ? sp.state : "";
+  if (stateParam === "pending") {
+    filterAnd.push({ outcome: { in: [...PENDING_CALL_OUTCOMES] } });
+  } else if (stateParam === "resolved") {
+    filterAnd.push({ outcome: { notIn: [...PENDING_CALL_OUTCOMES] } });
   }
 
   // Date range (?from / ?to are YYYY-MM-DD in IST).
@@ -303,22 +348,27 @@ export default async function CallLogsPage({
   // Preserve filters when paginating.
   function pageUrl(p: number) {
     const params = new URLSearchParams();
-    for (const k of ["user", "team", "module", "outcome", "from", "to", "q"] as const) {
+    for (const k of ["user", "team", "module", "outcome", "state", "from", "to", "q"] as const) {
       if (sp[k]) params.set(k, sp[k]!);
     }
     params.set("page", String(p));
     return `/call-logs?${params.toString()}`;
   }
 
-  const hasFilters = !!(sp.user || sp.team || sp.module || sp.outcome || sp.from || sp.to || sp.q);
+  const hasFilters = !!(sp.user || sp.team || sp.module || sp.outcome || stateParam || sp.from || sp.to || sp.q);
 
   // CSV export params (export route is Super-Admin only; button hidden otherwise).
   // Forward EVERY active filter under the page's own param names so the download
   // is exactly the slice on screen. (It used to send only user/from/to, so an
   // export taken while filtered by Module / Call Status / Search silently returned
   // a wider set than the operator was looking at.)
+  // ?state= is forwarded here AND parsed by src/app/api/call-logs/export/route.ts
+  // using the identical predicate, so a CSV taken while filtered to Pending /
+  // Resolved matches the screen exactly. (Before that route learned the param it
+  // ignored it and returned the wider set — measured at 5,387 extra rows.) If you
+  // add a filter to this page, add it to that route in the same change.
   const exportParams = new URLSearchParams();
-  for (const k of ["user", "team", "module", "outcome", "from", "to", "q"] as const) {
+  for (const k of ["user", "team", "module", "outcome", "state", "from", "to", "q"] as const) {
     if (sp[k]) exportParams.set(k, sp[k]!);
   }
   const canExport = canExportData(me);
@@ -344,7 +394,11 @@ export default async function CallLogsPage({
         <div>
           <h1 className="text-xl sm:text-2xl font-bold">Call Logs</h1>
           <p className="text-xs sm:text-sm text-gray-500 dark:text-slate-400">
-            Centralized call history across all modules · {total.toLocaleString()} call{total !== 1 ? "s" : ""}
+            Centralized call history across all modules ·{" "}
+            {total.toLocaleString()}{" "}
+            {stateParam === "pending"
+              ? `unresolved dial${total !== 1 ? "s" : ""}`
+              : `${`call${total !== 1 ? "s" : ""}`}${stateParam === "resolved" ? " (resolved)" : ""}`}
             {scopeLabel}
           </p>
         </div>

@@ -9,6 +9,7 @@ import ReportDateRangePicker from "@/components/ReportDateRangePicker";
 import { leadSourceModule, type SourceModule } from "@/lib/moduleSource";
 import { ModuleBreakdownTable, type ModuleBreakdownRow } from "@/components/ModuleBreakdown";
 import { BUYER_CALL_ACTIVITY_TYPES, BUYER_CONNECTED_ACTIVITY_TYPES } from "@/lib/dashboardWidgets";
+import { excludePendingCallsWhere, PENDING_CALL_OUTCOMES } from "@/lib/ghosting";
 
 export const dynamic = "force-dynamic";
 
@@ -146,10 +147,16 @@ async function computeTeamMetrics(team: Team, since: Date, until: Date): Promise
     // window — "active right now" is a snapshot, not a flow metric.
     prisma.lead.count({ where: { ...leadWhere, currentStatus: { in: ACTIVE_STAGES } } }),
 
-    // Calls made in-window.
-    prisma.callLog.count({ where: { ...callWhere, startedAt: { gte: since, lte: until } } }),
+    // Calls made in-window. excludePendingCallsWhere() drops unresolved dials
+    // (INITIATED / RINGING): a CallLog row is written the INSTANT "Call" is
+    // tapped, so an unguarded count inflates by every tap. This is also the
+    // connectRate DENOMINATOR below — leaving it open would silently depress
+    // the connect rate as dials accumulate.
+    prisma.callLog.count({ where: { ...excludePendingCallsWhere(), ...callWhere, startedAt: { gte: since, lte: until } } }),
 
     // Calls connected in-window — used as numerator for connect rate.
+    // outcome: CONNECTED is an ALLOW-LIST, so pending dials are excluded by
+    // construction — no extra guard needed here.
     prisma.callLog.count({
       where: { ...callWhere, startedAt: { gte: since, lte: until }, outcome: CallOutcome.CONNECTED },
     }),
@@ -237,6 +244,10 @@ async function computeTeamMetrics(team: Team, since: Date, until: Date): Promise
                cl."startedAt" AS first_call_at
         FROM "CallLog" cl
         WHERE cl."leadId" IS NOT NULL
+          -- Unresolved dials excluded, so this keeps measuring the first call that
+          -- ACTUALLY happened (its meaning before dial-logging existed). A tap
+          -- abandoned forever would otherwise be recorded as the team's response.
+          AND cl."outcome"::text <> ALL(${PENDING_CALL_OUTCOMES})
         ORDER BY cl."leadId", cl."startedAt" ASC
       )
       SELECT AVG(EXTRACT(EPOCH FROM (fc.first_call_at - l."createdAt")) / 60.0) AS avg_mins

@@ -8,6 +8,7 @@ import { awardXp, bumpStreak, type AwardResult } from "@/lib/gamification.server
 import { aiLive } from "@/lib/ai";
 import { runAIExtraction } from "@/lib/aiExtractor";
 import { recordLeadCallAttempt } from "@/lib/callAttempts";
+import { resolveOrCreateCall } from "@/lib/callLogService";
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -45,17 +46,23 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   const now = new Date();
 
-  await prisma.callLog.create({
-    data: {
-      leadId: id,
-      userId: me.id,
-      direction,
-      phoneNumber: lead.phone ?? "(no number)",
-      durationSec: durationSec > 0 ? durationSec : undefined,
-      outcome,
-      notes: remarks || undefined,  // empty remarks → null in DB (cleaner than empty string)
-      startedAt: now,
-    },
+  // ── ONE DIAL = ONE CallLog ROW ──────────────────────────────────────────────
+  // The agent almost always taps "Call" before logging it, and that tap already
+  // wrote a PENDING (INITIATED) CallLog via the dial beacon / call-initiated.
+  // resolveOrCreateCall CLAIMS that row and transitions it to the real outcome
+  // — it does NOT create a second one. (Before this, a tap + a log produced two
+  // rows and double-counted the call.) When there is no pending row — the agent
+  // rang from their own handset, or is back-filling — a terminal row is created
+  // directly, exactly as this route always did.
+  await resolveOrCreateCall({
+    leadId: id,
+    userId: me.id,
+    outcome,
+    direction,
+    phoneNumber: lead.phone,
+    durationSec: durationSec > 0 ? durationSec : null,
+    notes: remarks || null,  // empty remarks → null in DB (cleaner than empty string)
+    at: now,
   });
   await prisma.activity.create({
     data: {

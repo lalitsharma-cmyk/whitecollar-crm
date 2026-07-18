@@ -10,6 +10,7 @@
 
 import { fmtIST12Paren, fmtISTDate } from "@/lib/datetime";
 import { aggregateCalls } from "@/lib/callStats";
+import { isPendingCall } from "@/lib/ghosting";
 import CallRecordingPlayer from "@/components/CallRecordingPlayer";
 import type { CallLog } from "@prisma/client";
 
@@ -125,10 +126,15 @@ export default function CallHistoryCard({ callLogs }: Props) {
   // that are going stale despite repeated attempts, without screaming about
   // brand-new cold leads that have only had one attempt.
   const notPickedDays = computeNotPickedDays(callLogs);
+  // PENDING dials (INITIATED / RINGING) are written the instant the agent taps
+  // Call, before any result exists. They stay in the rendered log below (a placed
+  // dial is real history), but every DATE derived from the log is a metric — an
+  // abandoned tap must not read as "Last call: today". Resolved calls only here.
+  const resolvedCalls = callLogs.filter((c) => !isPendingCall(c.outcome));
   // First & Last call dates — Lalit's ask. callLogs comes in newest-first
   // (orderBy: { startedAt: "desc" }), so head = most recent, tail = oldest.
-  const lastCallAt = callLogs[0]?.startedAt ?? null;
-  const firstCallAt = callLogs[callLogs.length - 1]?.startedAt ?? null;
+  const lastCallAt = resolvedCalls[0]?.startedAt ?? null;
+  const firstCallAt = resolvedCalls[resolvedCalls.length - 1]?.startedAt ?? null;
   const spanDays = firstCallAt && lastCallAt
     ? Math.max(0, Math.floor((lastCallAt.getTime() - firstCallAt.getTime()) / 86_400_000))
     : 0;

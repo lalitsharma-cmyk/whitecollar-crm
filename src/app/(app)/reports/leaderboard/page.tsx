@@ -11,6 +11,7 @@ import { redirect } from "next/navigation";
 import { leadSourceModule, type SourceModule } from "@/lib/moduleSource";
 import { ModuleBreakdownDetails, type ModuleBreakdownRow } from "@/components/ModuleBreakdown";
 import { BUYER_CALL_ACTIVITY_TYPES } from "@/lib/dashboardWidgets";
+import { excludePendingCallsWhere } from "@/lib/ghosting";
 
 const AGENT_ROLES: Role[] = [Role.AGENT, Role.MANAGER];
 
@@ -70,9 +71,13 @@ export default async function LeaderboardPage() {
     // EXCLUDES buyer-telephony CallLog rows so buyer calls are counted ONCE — from
     // the BuyerActivity ledger below (buyerCallCounts), never from CallLog. This
     // CallLog query has no lead filter, so the buyerId:null guard is required.
+    // excludePendingCallsWhere() drops unresolved dials (INITIATED / RINGING):
+    // the row is written the instant "Call" is tapped, so without it the ranking
+    // (rows sort by callsMade) would reward taps instead of resolved calls.
     prisma.callLog.groupBy({
       by: ["userId"],
       where: {
+        ...excludePendingCallsWhere(),
         userId: { in: agentIds },
         buyerId: null,
         startedAt: { gte: rangeStart, lte: rangeEnd },

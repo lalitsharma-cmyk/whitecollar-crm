@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/auth";
 import { SUPPRESSED_STATUSES } from "@/lib/lead-statuses";
+import { excludePendingCallsWhere } from "@/lib/ghosting";
 import { format, subDays, startOfDay } from "date-fns";
 
 export const dynamic = "force-dynamic";
@@ -183,9 +184,13 @@ export default async function TeamMoodPage() {
     if (arr.length < 5 && r.mood) { arr.push(r.mood); last5ByUser.set(r.userId, arr); }
   }
   // Today's call count per agent (for the "low daily activity" heuristic).
+  // excludePendingCallsWhere() drops unresolved dials (INITIATED / RINGING) — a
+  // CallLog row is written the instant Call is tapped. Unguarded, tap-inflated
+  // counts would push agents back over the `calls < target * 0.5` line and
+  // SUPPRESS the support callout for exactly the people who need it.
   const callsToday = await prisma.callLog.groupBy({
     by: ["userId"],
-    where: { createdAt: { gte: today } },
+    where: { ...excludePendingCallsWhere(), createdAt: { gte: today } },
     _count: { _all: true },
   });
   const callsByUser = new Map(callsToday.map((c) => [c.userId, c._count._all]));

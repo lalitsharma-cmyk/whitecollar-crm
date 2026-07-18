@@ -8,6 +8,7 @@ import { SUPPRESSED_STATUSES, CLOSING_STATUSES } from "@/lib/lead-statuses";
 import { COLD_ORIGINS } from "@/lib/leadScope";
 import { FIRST_CONTACT_PENDING_WHERE } from "@/lib/freshLeads";
 import { istDayRange } from "@/lib/datetime";
+import { excludePendingCallsWhere } from "@/lib/ghosting";
 
 // The reconciler runs on every dashboard/leads page load (cheap, deduped).
 // It enforces two SLAs without needing a separate cron service:
@@ -144,7 +145,11 @@ export async function runReconciler(): Promise<ReconcileResult> {
       deletedAt: null,
       currentStatus: { notIn: SUPPRESSED_STATUSES },
     },
-    include: { owner: true, callLogs: { take: 1 } },
+    // Only RESOLVED calls clear an SLA breach. The check below treats "has a call
+    // log" as "the agent handled it" and marks slaEscalated WITHOUT notifying — so
+    // an unresolved dial would silently suppress the CRITICAL escalation for a lead
+    // nobody actually called.
+    include: { owner: true, callLogs: { where: { ...excludePendingCallsWhere() }, take: 1 } },
     take: 50,
   }) : [];
 
@@ -190,7 +195,10 @@ export async function runReconciler(): Promise<ReconcileResult> {
         { lastTouchedAt: { lt: new Date(Date.now() - 24 * 3600 * 1000) } },
       ],
     },
-    include: { callLogs: { orderBy: { startedAt: "desc" }, take: 10 } },
+    // Resolved calls only. The not-picked streak below walks this list newest-first
+    // and BREAKS at the first non-matching outcome, so a single unresolved dial
+    // sitting at the head would zero out a genuine streak and suppress the flag.
+    include: { callLogs: { where: { ...excludePendingCallsWhere() }, orderBy: { startedAt: "desc" }, take: 10 } },
     take: 100,
   }) : [];
   let flagged = 0;

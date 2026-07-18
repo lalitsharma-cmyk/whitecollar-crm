@@ -4,6 +4,7 @@ import { acefoneEnabled } from "@/lib/acefone";
 import { fmtMoneyDual } from "@/lib/money";
 import { TERMINAL_STATUSES } from "@/lib/lead-statuses";
 import { activeLeadWhere, ACTIVE_ORIGINS } from "@/lib/leadScope";
+import { excludePendingCallsWhere, PENDING_CALL_OUTCOMES } from "@/lib/ghosting";
 import AcefoneAgentIdEdit from "@/components/AcefoneAgentIdEdit";
 import WhatsAppNumberEdit from "@/components/WhatsAppNumberEdit";
 import ManagerPicker from "@/components/ManagerPicker";
@@ -41,7 +42,9 @@ export default async function TeamPage() {
       // "Active leads" column — CANONICAL active envelope (ACTIVE_LEAD origin,
       // non-deleted, non-terminal status). Identical to the Workload column and
       // every reporting surface for the same agent.
-      include: { _count: { select: { ownedLeads: { where: { deletedAt: null, leadOrigin: { in: ACTIVE_ORIGINS }, OR: [{ currentStatus: null }, { currentStatus: "" }, { currentStatus: { notIn: TERMINAL_STATUSES } }] } }, callLogs: true } } },
+      // "Total calls" column — unresolved dials (INITIATED / RINGING) excluded, so
+      // the scoreboard counts calls placed, not times the Call button was tapped.
+      include: { _count: { select: { ownedLeads: { where: { deletedAt: null, leadOrigin: { in: ACTIVE_ORIGINS }, OR: [{ currentStatus: null }, { currentStatus: "" }, { currentStatus: { notIn: TERMINAL_STATUSES } }] } }, callLogs: { where: { ...excludePendingCallsWhere() } } } } },
       orderBy: [{ team: "asc" }, { name: "asc" }],
     }),
     prisma.lead.groupBy({
@@ -60,10 +63,16 @@ export default async function TeamPage() {
         AND "updatedAt" >= ${ninetyDaysAgo}
       GROUP BY "ownerId", COALESCE("budgetCurrency", 'AED')
     `,
+    // "Avg response" — DISTINCT ON ... ORDER BY startedAt ASC takes the EARLIEST
+    // call per lead. An abandoned dial stuck at INITIATED would be that earliest
+    // row, reporting a near-zero response time for a lead nobody actually reached
+    // and burying the agent's real first call. Pending rows excluded so the column
+    // keeps meaning "time to the first call that actually happened".
     prisma.$queryRaw<ResponseRow[]>`
       WITH first_calls AS (
         SELECT DISTINCT ON (cl."leadId") cl."leadId", cl."startedAt"
         FROM "CallLog" cl
+        WHERE cl."outcome"::text <> ALL(${PENDING_CALL_OUTCOMES})
         ORDER BY cl."leadId", cl."startedAt" ASC
       )
       SELECT l."ownerId" AS "ownerId",

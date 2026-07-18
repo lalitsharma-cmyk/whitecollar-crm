@@ -19,6 +19,9 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { telLink, whatsappLink } from "@/lib/phone";
+// This is a SERVER component, so the alt-contact Call uses the DialLink client
+// island to fire the dial beacon (a server component cannot attach an onClick).
+import DialLink from "@/components/DialLink";
 
 interface Props {
   leadId: string;
@@ -115,12 +118,14 @@ export default async function LinkedContactsCard({
             <span className="text-gray-500"> · {altPhone}</span>
           </div>
           <div className="flex items-center gap-2 mt-2 flex-wrap">
-            <a
+            <DialLink
               href={telLink(altPhone)}
+              leadId={leadId}
+              phone={altPhone}
               className="btn btn-sm border border-gray-300 text-xs px-2 py-1 rounded"
             >
               📞 Call
-            </a>
+            </DialLink>
             <a
               href={whatsappLink(altPhone, waGreetingAlt)}
               target="_blank"

@@ -3,6 +3,8 @@ import { requireUser } from "@/lib/auth";
 import { fmtIST12 } from "@/lib/datetime";
 import CallsClient, { type CallRowData } from "@/components/CallsClient";
 import { formatLeadName } from "@/lib/leadName";
+import { excludePendingCallsWhere, PENDING_CALL_OUTCOMES } from "@/lib/ghosting";
+import { Prisma } from "@prisma/client";
 
 export const dynamic = "force-dynamic";
 
@@ -29,6 +31,17 @@ export default async function CallsPage() {
   // -------- 1) Connect-rate-by-hour heatmap (last 14 days, IST) --------
   // Extract hour-of-day in IST from startedAt, group + count, sum CONNECTED.
   // Role scoping: AGENT sees only their own calls; ADMIN/MANAGER see all.
+  //
+  // `COUNT(*)` here is the connect-rate DENOMINATOR (rate = connected / total).
+  // A CallLog row is now written the instant the agent taps Call, so unresolved
+  // dials (INITIATED / RINGING) must be excluded: the numerator is pinned to
+  // CONNECTED and is immune by construction, so an unguarded denominator would
+  // silently DEPRESS every hour cell — and the headline "% connected overall" —
+  // as dial taps accumulate. The `::text` cast is required because Postgres has
+  // no operator comparing the CallOutcome enum to a bound text parameter (a bare
+  // `NOT IN (${Prisma.join(...)})` fails with 42883); casting keeps ONE source of
+  // truth (PENDING_CALL_OUTCOMES) instead of hardcoding the values in SQL.
+  const notPending = Prisma.sql`"outcome"::text NOT IN (${Prisma.join([...PENDING_CALL_OUTCOMES])})`;
   const hourRowsRaw = isAgent
     ? await prisma.$queryRaw<Array<{ hour: number; total: bigint; connected: bigint }>>`
         SELECT EXTRACT(HOUR FROM "startedAt" AT TIME ZONE 'Asia/Kolkata')::int AS hour,
@@ -36,6 +49,7 @@ export default async function CallsPage() {
                SUM(CASE WHEN "outcome" = 'CONNECTED' THEN 1 ELSE 0 END)::bigint AS connected
         FROM "CallLog"
         WHERE "startedAt" >= NOW() - INTERVAL '14 days'
+          AND ${notPending}
           AND "userId" = ${me.id}
         GROUP BY 1
         ORDER BY 1
@@ -46,6 +60,7 @@ export default async function CallsPage() {
                SUM(CASE WHEN "outcome" = 'CONNECTED' THEN 1 ELSE 0 END)::bigint AS connected
         FROM "CallLog"
         WHERE "startedAt" >= NOW() - INTERVAL '14 days'
+          AND ${notPending}
         GROUP BY 1
         ORDER BY 1
       `;
@@ -70,8 +85,16 @@ export default async function CallsPage() {
   // tapping a row exposed peers' lead name/phone/email/budget/BANT/notes via
   // CallsClient (plus the QualityList below, which maps over the same array).
   // Mirror the heatmap scope above: AGENT → own (userId), ADMIN/MANAGER → all.
+  // excludePendingCallsWhere() drops unresolved dials (INITIATED / RINGING) so
+  // this list shows the same population as the heatmap above it. Two reasons it
+  // matters beyond consistency: an unresolved dial would consume a slot in the
+  // top-50 window (pushing out a real call), and QualityList below would score it
+  // — an INITIATED row scores 0/100 and renders a red "bad call" pill for a call
+  // that has not happened yet.
   const calls = await prisma.callLog.findMany({
-    where: isAgent ? { userId: me.id } : {},
+    where: isAgent
+      ? { ...excludePendingCallsWhere(), userId: me.id }
+      : { ...excludePendingCallsWhere() },
     orderBy: { startedAt: "desc" },
     take: 50,
     // B-15: select only the fields the QualityList + CallsClient rows actually

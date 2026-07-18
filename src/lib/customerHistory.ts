@@ -1,6 +1,7 @@
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { TERMINAL_STATUSES } from "@/lib/lead-statuses";
+import { excludePendingCallsWhere } from "@/lib/ghosting";
 
 // "Previous History Found" — aggregate every prior enquiry from the SAME customer
 // across ALL sections: Leads, Revival, Master Data, and Closed/Archived. A record
@@ -98,7 +99,10 @@ export async function getCustomerHistory(
       interestedUnits: { select: { unit: { select: { project: { select: { name: true } } } } } },
       discussed: { select: { project: { select: { name: true } } } },
       notes: { select: { body: true, createdAt: true, user: { select: { name: true } } }, orderBy: { createdAt: "desc" }, take: 4 },
-      _count: { select: { notes: true, callLogs: true, activities: true } },
+      // `calls` on each prior-enquiry card = calls that actually happened. An
+      // unresolved dial (INITIATED / RINGING) would overstate how much contact a
+      // previous owner really had with this customer.
+      _count: { select: { notes: true, callLogs: { where: { ...excludePendingCallsWhere() } }, activities: true } },
     },
     orderBy: { createdAt: "desc" },
     take: 50,

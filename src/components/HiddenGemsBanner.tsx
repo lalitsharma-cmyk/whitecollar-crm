@@ -4,6 +4,7 @@ import { formatDistanceToNowStrict } from "date-fns";
 import type { AIScore } from "@prisma/client";
 import { formatBudget } from "@/lib/budgetParse";
 import { telLink, whatsappLink } from "@/lib/phone";
+import { useDialBeacon } from "@/components/useDialBeacon";
 import { ActionIconButton } from "@/components/actions/ActionIconButton";
 
 // Revival Engine — "Hidden Gems" surfacing banner.
@@ -42,6 +43,8 @@ function whySurfaced(g: HiddenGem, daysDormant: number | null): string {
 }
 
 export default function HiddenGemsBanner({ gems }: Props) {
+  // MUST stay above the early return below — hooks cannot run conditionally.
+  const dial = useDialBeacon();
   if (!gems.length) return null;
 
   // First-name personalisation for the WhatsApp opener — same tone as the
@@ -120,7 +123,7 @@ export default function HiddenGemsBanner({ gems }: Props) {
                 <div className="flex gap-1.5 mt-auto">
                   {/* Call / WhatsApp — central Action Design System (was a divergent
                       blue Call + inline WA SVG). Hrefs + stopPropagation unchanged. */}
-                  <ActionIconButton action="call" variant="solid" href={tel} title={`Call ${g.name}`} onClick={(e: React.MouseEvent) => e.stopPropagation()} />
+                  <ActionIconButton action="call" variant="solid" href={tel} title={`Call ${g.name}`} onClick={dial({ leadId: g.id }, { stopPropagation: true })} />
                   <ActionIconButton action="whatsapp" variant="solid" href={wa} title={`WhatsApp ${g.name}`} external onClick={(e: React.MouseEvent) => e.stopPropagation()} />
                 </div>
               )}

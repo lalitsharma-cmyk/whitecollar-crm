@@ -11,6 +11,10 @@ import LeadHeaderFilter from "@/components/LeadHeaderFilter";
 // The old inline WhatsApp <WaIcon> SVG + ad-hoc per-action colours were removed;
 // the brand WhatsApp glyph now lives in components/actions/WhatsAppGlyph.tsx.
 import { telLink, whatsappLink } from "@/lib/phone";
+// Every Call affordance below fires the dial beacon so the tap writes a CallLog
+// (outcome=INITIATED) instead of vanishing into the phone's dialer. See
+// src/components/useDialBeacon.ts + src/lib/callLogService.ts.
+import { useDialBeacon } from "@/components/useDialBeacon";
 import CopyPhoneButton from "./CopyPhoneButton";
 import { ActionButton } from "@/components/actions/ActionButton";
 import { ActionIconButton } from "@/components/actions/ActionIconButton";
@@ -262,6 +266,9 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
   // last missing piece — returning to the exact row the user had scrolled to.
   // Keyed by pathname, so /leads and /cold-calls each remember independently.
   useScrollRestore();
+  // Dial beacon — attached to every Call button in this list (table row, mobile
+  // card, compact card, solid chip) so a tap records a CallLog immediately.
+  const dial = useDialBeacon();
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const selectedIds = Array.from(selected);
   // Agents see a leaner table (no Assigned/Last-Activity columns — they only ever
@@ -1048,7 +1055,7 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
                               hrefs/permissions are unchanged. */}
                           <div className="flex items-center gap-0.5">
                             {l.phone && (
-                              <ActionIconButton action="call" href={`tel:${l.phone}`} />
+                              <ActionIconButton action="call" href={`tel:${l.phone}`} onClick={dial({ leadId: l.id })} />
                             )}
                             {l.phone && (
                               <ActionIconButton action="whatsapp" href={whatsappLink(l.phone, "")} external />
@@ -1154,7 +1161,7 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
                     hrefs unchanged. */}
                 <div className="flex items-center gap-1 pt-2 border-t border-gray-50 dark:border-slate-700 [&>*]:flex-1">
                   {l.phone && (
-                    <ActionButton action="call" size="sm" href={`tel:${l.phone}`} label="Call" onClick={(e: React.MouseEvent) => e.stopPropagation()} />
+                    <ActionButton action="call" size="sm" href={`tel:${l.phone}`} label="Call" onClick={dial({ leadId: l.id }, { stopPropagation: true })} />
                   )}
                   {l.phone && (
                     <ActionButton action="whatsapp" size="sm" href={whatsappLink(l.phone, "")} label="WA" external onClick={(e: React.MouseEvent) => e.stopPropagation()} />
@@ -1331,6 +1338,7 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
                   <div className="flex flex-col gap-1.5 flex-none items-center">
                     <a
                       href={telLink(l.phone) || "#"}
+                      onClick={dial({ leadId: l.id }, { stopPropagation: true })}
                       aria-label={`Call ${l.name}`}
                       className="w-10 h-10 rounded-full bg-emerald-600 text-white flex items-center justify-center shadow-sm active:bg-emerald-700"
                     >
@@ -1552,7 +1560,7 @@ export default function LeadsListClient({ leads, canBulk, canReassign = false, c
 
                       {/* 1. Call */}
                       {l.phone && (
-                        <ActionIconButton action="call" variant="solid" href={telLink(l.phone) || "#"} title={`Call ${l.name}`} />
+                        <ActionIconButton action="call" variant="solid" href={telLink(l.phone) || "#"} title={`Call ${l.name}`} onClick={dial({ leadId: l.id })} />
                       )}
 
                       {/* 2. WhatsApp — brand glyph */}

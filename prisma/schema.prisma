@@ -1209,14 +1209,27 @@ enum CallDirection {
 }
 
 enum CallOutcome {
-  CONNECTED
-  NOT_PICKED
+  // ── TERMINAL business outcomes (the attempt actually resolved) ──
+  CONNECTED // also serves "Completed" — the call happened and ended
+  NOT_PICKED // also serves "No Answer"
   CALLBACK
   WRONG_NUMBER
   BUSY
   SWITCHED_OFF
   INTERESTED
   NOT_INTERESTED
+  // ── Call state machine (Lalit P0, 2026-07-18) ──
+  // A dial click writes a CallLog IMMEDIATELY at INITIATED; the SAME row is then
+  // transitioned to a terminal state (one dial = one row, never two — that is how
+  // "no duplicate logging" is guaranteed).
+  // PENDING = INITIATED | RINGING. A pending row is NOT an attempt: the ghosting
+  // engine and the revival auto-return MUST ignore it, or a dial that never
+  // connects would trigger a false 👻 tag / a false return to the Admin queue.
+  INITIATED
+  RINGING
+  FAILED
+  CANCELLED
+  MISSED
 }
 
 model CallLog {

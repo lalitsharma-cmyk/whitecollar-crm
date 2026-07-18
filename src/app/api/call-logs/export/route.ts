@@ -7,6 +7,7 @@ import { visibleOwnerIds } from "@/lib/leadScope";
 import { formatLeadName } from "@/lib/leadName";
 import { audit, reqMeta } from "@/lib/audit";
 import { CallOutcome, Prisma } from "@prisma/client";
+import { PENDING_CALL_OUTCOMES } from "@/lib/ghosting";
 import {
   activityLeadModule,
   buyerSourceModule,
@@ -106,6 +107,13 @@ export async function GET(req: NextRequest) {
   const teamParam = sp.get("team") ?? undefined;
   const moduleParam = (sp.get("module") ?? "") as SourceModule | "";
   const outcomeParam = sp.get("outcome") ?? undefined;
+  // ?state= — byte-mirror of call-logs/page.tsx. Anything that is not exactly
+  // "pending" or "resolved" (including an ABSENT param) normalises to "" = NO
+  // predicate, i.e. all dials. Do not "default to resolved": the page's Call
+  // State dropdown defaults to "All dials" (value=""), and the export must match
+  // the screen, not a tidier idea of what the screen ought to show.
+  const stateRaw = sp.get("state");
+  const stateParam = stateRaw === "pending" || stateRaw === "resolved" ? stateRaw : "";
   const rawQ = (sp.get("q") ?? "").trim();
 
   const managerTeam = me.role === "MANAGER" ? normalizeTeam(me.team ?? undefined) : null;
@@ -140,6 +148,26 @@ export async function GET(req: NextRequest) {
 
   if (outcomeParam && (Object.keys(CallOutcome) as string[]).includes(outcomeParam)) {
     filterAnd.push({ outcome: outcomeParam as CallOutcome });
+  }
+
+  // ── Call STATE (?state=) — resolved vs unresolved dial ────────────────────
+  // PENDING = INITIATED | RINGING: a CallLog written the instant the Call button
+  // was tapped, before any result. "resolved" = every other outcome.
+  //
+  // The page FORWARDS ?state= on the Export CSV link; this route used to ignore
+  // it, so a CSV taken while filtered to Pending/Resolved silently returned the
+  // WIDER set the operator was NOT looking at. Applied for every role, exactly as
+  // the page applies it (deliberately NOT gated like ?team=, which is ADMIN-only).
+  //
+  // Independent of ?outcome= above — pinning a status does NOT clear the state,
+  // in this route or on the page. `?outcome=CONNECTED&state=pending` therefore
+  // ANDs to zero rows on BOTH surfaces. That is the honest mirror: an empty CSV
+  // for an on-screen empty list. Special-casing it here would REINTRODUCE the very
+  // divergence this block exists to remove.
+  if (stateParam === "pending") {
+    filterAnd.push({ outcome: { in: [...PENDING_CALL_OUTCOMES] } });
+  } else if (stateParam === "resolved") {
+    filterAnd.push({ outcome: { notIn: [...PENDING_CALL_OUTCOMES] } });
   }
 
   // Date range — ?from / ?to are YYYY-MM-DD in IST, matching the page's filter
@@ -270,6 +298,7 @@ export async function GET(req: NextRequest) {
       teamFilter: teamParam ?? null,
       moduleFilter: moduleParam || null,
       outcomeFilter: outcomeParam ?? null,
+      stateFilter: stateParam || null,
       search: rawQ || null,
     },
     request: reqMeta(req),

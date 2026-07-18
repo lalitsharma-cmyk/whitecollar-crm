@@ -18,6 +18,9 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Pencil, Copy, Check } from "lucide-react";
+// Dialling the primary/alt number from this cell records a CallLog. Email
+// (mailto:) links are untouched — only `kind === "phone"` fires the beacon.
+import { useDialBeacon } from "@/components/useDialBeacon";
 
 type Kind = "email" | "phone";
 
@@ -42,6 +45,7 @@ export default function ContactField({
   leadId, field, value, kind, editable = false, readOnlyText, placeholder = "Add value",
 }: Props) {
   const router = useRouter();
+  const dial = useDialBeacon();
   const [editing, setEditing] = useState(false);
   const [v, setV] = useState(value ?? "");
   const [busy, setBusy] = useState(false);
@@ -144,6 +148,7 @@ export default function ContactField({
   return (
     <div className="flex items-center gap-1.5 mt-0.5 min-w-0">
       <a href={href}
+        onClick={kind === "phone" ? dial({ leadId, phone: value }) : undefined}
         className="text-sm text-blue-600 hover:underline dark:text-blue-400 truncate min-w-0"
         title={value}>
         {value}

@@ -20,6 +20,7 @@ import { useState, useRef, useEffect } from "react";
 import { showXpToast } from "@/components/XPToast";
 import { ActionButton } from "@/components/actions/ActionButton";
 import { ActionIconButton } from "@/components/actions/ActionIconButton";
+import { useDialBeacon } from "@/components/useDialBeacon";
 import { ACTION_TOKENS } from "@/lib/actionDesign";
 
 interface Props {
@@ -52,6 +53,7 @@ const SNOOZE_OPTIONS: Array<{ label: string; hours: number }> = [
 
 export default function ActionCardClient({ leadId, leadName, phone, waLink, flagKind, hasContactToday = false }: Props) {
   const router = useRouter();
+  const dial = useDialBeacon();
   const [busy, setBusy] = useState<null | "complete" | "snooze" | "escalate">(null);
   const [showSnooze, setShowSnooze] = useState(false);
   const [showEscalate, setShowEscalate] = useState(false);
@@ -246,7 +248,7 @@ export default function ActionCardClient({ leadId, leadName, phone, waLink, flag
         <ActionIconButton action="whatsapp" href={waLink} variant="solid" external />
       )}
       {phone && (
-        <ActionIconButton action="call" href={`tel:${phone.replace(/[^\d+]/g, "")}`} variant="solid" />
+        <ActionIconButton action="call" href={`tel:${phone.replace(/[^\d+]/g, "")}`} variant="solid" onClick={dial({ leadId })} />
       )}
     </div>
   );

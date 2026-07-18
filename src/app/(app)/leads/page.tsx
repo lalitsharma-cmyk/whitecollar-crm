@@ -9,7 +9,7 @@ import MotivationBanner from "@/components/MotivationBanner";
 import HelpDot from "@/components/HelpDot";
 import { runReconciler } from "@/lib/reconciler";
 import { leadScopeWhere, COLD_ORIGINS, workableWhere, activeBoardWhere, MASTER_DATA_BOARD_OR } from "@/lib/leadScope";
-import { GHOSTING_DISPLAY_WHERE } from "@/lib/ghosting";
+import { GHOSTING_DISPLAY_WHERE, isPendingCall, excludePendingCallsWhere } from "@/lib/ghosting";
 import { canExportData, canImportData } from "@/lib/exportPerms";
 import { overdueFollowupBoundary } from "@/lib/datetime";
 import { contactActivityByLeadToday } from "@/lib/followupGate";
@@ -603,7 +603,11 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
             owner: { select: { name: true, avatarColor: true } },
             interestedUnits: { take: 1, select: { unit: { select: { configuration: true, project: { select: { name: true } } } } } },
             discussed: { take: 3, select: { project: { select: { name: true } } } },
-            callLogs: { orderBy: { startedAt: "desc" }, take: 20, select: { outcome: true, startedAt: true } },
+            // Excluded at the DB level, not just in memory: with `take: 20` an
+            // unresolved dial would consume a slot and push a real call out of the
+            // window, under-reporting connect counts on a heavily-worked lead.
+            // Metrics only (counts + last-activity) — never a displayed timeline.
+            callLogs: { where: { ...excludePendingCallsWhere() }, orderBy: { startedAt: "desc" }, take: 20, select: { outcome: true, startedAt: true } },
             activities: { orderBy: { createdAt: "desc" }, take: 1, select: { type: true, createdAt: true } },
           },
         })
@@ -613,7 +617,11 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
             owner: { select: { name: true, avatarColor: true } },
             interestedUnits: { take: 1, select: { unit: { select: { configuration: true, project: { select: { name: true } } } } } },
             discussed: { take: 3, select: { project: { select: { name: true } } } },
-            callLogs: { orderBy: { startedAt: "desc" }, take: 20, select: { outcome: true, startedAt: true } },
+            // Excluded at the DB level, not just in memory: with `take: 20` an
+            // unresolved dial would consume a slot and push a real call out of the
+            // window, under-reporting connect counts on a heavily-worked lead.
+            // Metrics only (counts + last-activity) — never a displayed timeline.
+            callLogs: { where: { ...excludePendingCallsWhere() }, orderBy: { startedAt: "desc" }, take: 20, select: { outcome: true, startedAt: true } },
             activities: { orderBy: { createdAt: "desc" }, take: 1, select: { type: true, createdAt: true } },
           },
         }),
@@ -1064,6 +1072,13 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
             l.whenCanInvest != null && l.whenCanInvest !== "UNKNOWN",
           ].filter(Boolean).length;
 
+          // Newest RESOLVED call. callLogs is ordered startedAt desc, so find()
+          // returns the most recent one that is not a PENDING dial (INITIATED /
+          // RINGING — written the instant the agent taps Call, before any result
+          // exists). "Last Activity" is a last-contacted metric: a tap that never
+          // resolved must not read as contact.
+          const lastRealCall = l.callLogs.find((c) => !isPendingCall(c.outcome));
+
           return {
             id: l.id,
             name: formatLeadName(l.name),
@@ -1113,10 +1128,10 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
             whenCanInvest: l.whenCanInvest ?? null,
             remarks:       l.remarks ? l.remarks.slice(0, 120) : null,
             // Last activity for table "Last Activity" column
-            lastActivityType: l.callLogs.length > 0 ? "CALL"
+            lastActivityType: lastRealCall ? "CALL"
               : l.activities.length > 0 ? l.activities[0].type
               : null,
-            lastActivityAt: l.callLogs[0]?.startedAt?.toISOString()
+            lastActivityAt: lastRealCall?.startedAt?.toISOString()
               ?? l.activities[0]?.createdAt?.toISOString()
               ?? null,
             // Connected history for "5C / 2NC" column

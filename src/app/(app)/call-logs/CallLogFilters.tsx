@@ -6,7 +6,8 @@ import { ACTIVITY_SOURCE_MODULES } from "@/lib/moduleSource";
 // Call-Logs filter bar — URL-param driven (mirrors the LeadFilters pattern so the
 // page stays a cache-friendly RSC and every filter is a shareable link).
 //
-// Filters: Date Range · Team · User · Module · Call Status + a debounced Search box.
+// Filters: Date Range · Team · User · Module · Call Status · Call State + a
+// debounced Search box.
 //
 // TEAM → USER CASCADE (the key requirement): the full active-user roster is passed
 // in from the server WITH each user's team. When a Team is picked, the User dropdown
@@ -63,6 +64,7 @@ export default function CallLogFilters({ users, outcomes, showScopePickers, show
   const user = sp.get("user") ?? "";
   const moduleParam = sp.get("module") ?? "";
   const outcome = sp.get("outcome") ?? "";
+  const state = sp.get("state") ?? "";
   const from = sp.get("from") ?? "";
   const to = sp.get("to") ?? "";
 
@@ -91,7 +93,7 @@ export default function CallLogFilters({ users, outcomes, showScopePickers, show
     router.replace(`${pathname}?${p.toString()}`);
   }
 
-  const hasFilters = !!(team || user || moduleParam || outcome || from || to || sp.get("q"));
+  const hasFilters = !!(team || user || moduleParam || outcome || state || from || to || sp.get("q"));
 
   const selCls =
     "border border-[#e5e7eb] dark:border-slate-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-slate-700 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-blue-400";
@@ -175,6 +177,21 @@ export default function CallLogFilters({ users, outcomes, showScopePickers, show
             {outcomes.map((o) => (
               <option key={o.value} value={o.value}>{o.label}</option>
             ))}
+          </select>
+        </div>
+
+        {/* Call State — resolved vs unresolved dial (Lalit P0 2026-07-18).
+            Separate from Call Status on purpose: Status pins ONE outcome,
+            State splits the whole list into "a result was recorded" vs "the
+            agent tapped Call and nothing came back yet". The Pending option is
+            the operational queue — dials stuck unresolved (app closed mid-call,
+            telephony webhook never landed) that would otherwise be invisible. */}
+        <div className="flex flex-col gap-1 min-w-[190px]">
+          <label className={lblCls}>Call State</label>
+          <select value={state} onChange={(e) => setParam("state", e.target.value)} className={selCls}>
+            <option value="">All dials</option>
+            <option value="resolved">✅ Resolved (real calls)</option>
+            <option value="pending">⏳ Pending / unresolved</option>
           </select>
         </div>
 

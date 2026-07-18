@@ -145,23 +145,28 @@ export default async function CallReportPage({
   const params = await resolveCallParams(sp, me);
   const r = await buildCallReport(me, params);
 
-  const { grain, bucketGrain, fromKey, toKey, user, team, module, outcome, canSeeSource, showScopePickers, showTeamPicker } = params;
+  const { grain, bucketGrain, fromKey, toKey, user, team, module, outcome, state, canSeeSource, showScopePickers, showTeamPicker } = params;
   const isAgent = me.role === "AGENT";
 
+  // `state` rides every self-link so an explicitly-requested inspection mode
+  // (?state=pending — the unresolved-dial view) survives a grain/filter change
+  // instead of silently snapping back to the resolved default and showing
+  // different numbers under the same heading.
   const grainHref = (g: Grain) =>
     // Grain tabs reset the range so the tab's own default window applies —
     // except Custom, which keeps the dates you're looking at.
     g === "custom"
-      ? reportHref({ grain: "custom", from: fromKey, to: toKey, user, team, module, outcome })
-      : reportHref({ grain: g, user, team, module, outcome });
+      ? reportHref({ grain: "custom", from: fromKey, to: toKey, user, team, module, outcome, state })
+      : reportHref({ grain: g, user, team, module, outcome, state });
 
-  const clearHref = (drop: "user" | "team" | "module" | "outcome") =>
+  const clearHref = (drop: "user" | "team" | "module" | "outcome" | "state") =>
     reportHref({
       grain, from: fromKey, to: toKey,
       user: drop === "user" ? "" : user,
       team: drop === "team" ? "" : team,
       module: drop === "module" ? "" : module,
       outcome: drop === "outcome" ? "" : outcome,
+      state: drop === "state" ? "" : state,
     });
 
   const agentName = r.userRoster.find((u) => u.id === user)?.name ?? user;
@@ -277,7 +282,7 @@ export default async function CallReportPage({
       </form>
 
       {/* ── Active-filter chips ────────────────────────────────────────────── */}
-      {(user || (team && showTeamPicker) || module || outcome) && (
+      {(user || (team && showTeamPicker) || module || outcome || state === "pending") && (
         <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
           <span className="text-gray-400 dark:text-slate-500">Active filters:</span>
           {user && (
@@ -304,14 +309,38 @@ export default async function CallReportPage({
               <Link href={clearHref("outcome")} className="hover:text-amber-900">✕</Link>
             </span>
           )}
+          {/* Only the non-default stance is chipped — "resolved" is what the
+              report always means, so chipping it would be permanent noise. */}
+          {state === "pending" && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-violet-50 dark:bg-violet-950/40 border border-dashed border-violet-300 dark:border-violet-700 text-violet-700 dark:text-violet-300 px-2 py-0.5">
+              Unresolved dials only
+              <Link href={clearHref("state")} className="hover:text-violet-900">✕</Link>
+            </span>
+          )}
         </div>
       )}
 
       {/* ── Summary cards ──────────────────────────────────────────────────── */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-        <SummaryCard title="Total calls" cell={r.total} tone="border-sky-500" sub={r.rangeLabel} />
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+        <SummaryCard
+          title={state === "pending" ? "Total unresolved dials" : "Total calls"}
+          cell={r.total}
+          tone="border-sky-500"
+          sub={`${r.rangeLabel}${state === "resolved" ? " · resolved calls only" : state === "pending" ? " · unresolved dials only" : ""}`}
+        />
         <SummaryCard title="Connected" cell={r.connected} tone="border-emerald-500" sub="a human answered" />
         <SummaryCard title="Unsuccessful" cell={r.unsuccessful} tone="border-rose-500" sub="not picked · busy · switched off · wrong number" />
+        {/* UNRESOLVED DIALS — deliberately its own card, OUTSIDE Total calls and
+            outside connected/unsuccessful. A dial written on tap that never came
+            back with a result is not a call and must not move any call metric —
+            but it must not vanish either, so it is reported here and drills to
+            /call-logs?state=pending. 0 until dial-on-tap ships. */}
+        <SummaryCard
+          title="Dial attempts (unresolved)"
+          cell={r.pendingDials}
+          tone="border-violet-500"
+          sub="tapped Call, no result yet · not counted as calls"
+        />
         <div className="card p-4 border-l-4 border-indigo-500">
           <div className="text-[11px] uppercase tracking-wide text-gray-500 dark:text-slate-400">Connect rate</div>
           <div className="text-2xl font-bold tabular-nums mt-1 text-gray-900 dark:text-slate-100">
@@ -404,9 +433,13 @@ export default async function CallReportPage({
                     <span className={`chip ${
                       o.group === "connected" ? "bg-emerald-100 text-emerald-800"
                         : o.group === "unsuccessful" ? "bg-rose-100 text-rose-800"
+                        : o.group === "pending" ? "bg-violet-100 text-violet-800 border border-dashed border-violet-400"
                         : "bg-slate-100 text-slate-700"
                     }`}>
-                      {o.group === "connected" ? "Connected" : o.group === "unsuccessful" ? "Unsuccessful" : "Unclassified"}
+                      {o.group === "connected" ? "Connected"
+                        : o.group === "unsuccessful" ? "Unsuccessful"
+                        : o.group === "pending" ? "Unresolved dial"
+                        : "Unclassified"}
                     </span>
                   </td>
                   <td className="py-2 pr-3"><Num cell={o.count} strong /></td>
@@ -545,8 +578,15 @@ export default async function CallReportPage({
           dimension yet, so the link never pretends to narrow further than it can. Hover any number to see which it is.
         </div>
         <div>
-          Every drill carries the filters you are looking at (date range, agent, team, module, call status), so a click always
-          lands inside the same slice.
+          Every drill carries the filters you are looking at (date range, agent, team, module, call status, call state), so a
+          click always lands inside the same slice.
+        </div>
+        <div>
+          <b>Calls vs dials.</b> Tapping the Call button writes the call record immediately, before there is any result. Those
+          unresolved dials (<em>Initiated</em> / <em>Ringing</em>) are <b>not</b> counted as calls anywhere on this page — not in
+          Total calls, not in Connected or Unsuccessful, and not in the connect rate — because a tap is not a conversation. They
+          are reported on their own in <b>Dial attempts (unresolved)</b>, which opens the same slice filtered to those dials. A
+          dial joins the call numbers only when it resolves to a real outcome.
         </div>
       </div>
 

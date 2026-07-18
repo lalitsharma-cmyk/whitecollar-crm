@@ -23,6 +23,10 @@ import type { Prisma } from "@prisma/client";
 // unions, so "CONNECTED" / "OUTBOUND" typecheck against CallOutcome/CallDirection).
 import { parseJsonArray } from "@/lib/buyerIntelligence";
 import { toE164 } from "@/lib/phone";
+// Also PURE (prisma-free) — safe under the client-import constraint above.
+// Shared with the lead path so buyer and lead dials claim pending rows by the
+// SAME rules; see the one-dial-one-row block in logBuyerContactInTx.
+import { PENDING_CALL_OUTCOMES, PENDING_RESOLVE_WINDOW_MIN } from "@/lib/ghosting";
 
 /** poolStatus values. Kept as plain strings (column is TEXT) so adding a state
  *  never needs a migration. */
@@ -381,18 +385,50 @@ export async function logBuyerContactInTx(
   // ⇒ atomic with the activity + attemptCount. NEVER count these from
   // BuyerActivity as well — that would double-count every buyer call.
   if (CALL_LOGGED_TYPES.has(type)) {
-    await tx.callLog.create({
-      data: {
+    const outcome = CALL_OUTCOME_BY_ACTIVITY_TYPE[type] ?? "CONNECTED";
+    // ONE DIAL = ONE ROW (Lalit P0, 2026-07-18). Tapping Call on a buyer writes a
+    // PENDING (INITIATED) CallLog via the dial beacon; logging the contact here
+    // must CLAIM that row, not add a second one. Same (buyer, agent) inside the
+    // shared 30-min window, newest first — the identical scoping
+    // callLogService.findClaimablePending uses for leads, so buyer and lead calls
+    // behave the same way. Deliberately expressed with `tx` rather than by calling
+    // resolveOrCreateCall: that service imports buyerPrimaryPhone from THIS file
+    // (importing it back would be a cycle), and running it on the global `prisma`
+    // client would take the write outside this transaction, breaking atomicity
+    // with the activity row and attemptCount.
+    const pending = await tx.callLog.findFirst({
+      where: {
         buyerId,
-        leadId: null,
-        userId: actorId,
-        direction: "OUTBOUND",
-        phoneNumber: buyerPrimaryPhone(buyer.phones),
-        outcome: CALL_OUTCOME_BY_ACTIVITY_TYPE[type] ?? "CONNECTED",
-        notes: description ?? undefined,
-        startedAt: now,
+        ...(actorId ? { userId: actorId } : {}),
+        outcome: { in: PENDING_CALL_OUTCOMES },
+        startedAt: { gte: new Date(now.getTime() - PENDING_RESOLVE_WINDOW_MIN * 60_000) },
       },
+      orderBy: { startedAt: "desc" },
+      select: { id: true },
     });
+    if (pending) {
+      await tx.callLog.update({
+        where: { id: pending.id },
+        data: {
+          outcome,
+          notes: description ?? undefined,
+          endedAt: now,
+        },
+      });
+    } else {
+      await tx.callLog.create({
+        data: {
+          buyerId,
+          leadId: null,
+          userId: actorId,
+          direction: "OUTBOUND",
+          phoneNumber: buyerPrimaryPhone(buyer.phones),
+          outcome,
+          notes: description ?? undefined,
+          startedAt: now,
+        },
+      });
+    }
   }
 
   if (!isAttempt) {

@@ -13,6 +13,7 @@ import { requireUser } from "@/lib/auth";
 import { canAccessBuyerMarket } from "@/lib/buyerScope";
 import { projectWhereForUser } from "@/lib/propertyScope";
 import { ACTIVE_ORIGIN_WHERE } from "@/lib/leadScope";
+import { PENDING_CALL_OUTCOMES } from "@/lib/ghosting";
 import { fmtMoneyDual } from "@/lib/money";
 import Link from "next/link";
 import { normalizeTeam } from "@/lib/teamRouting";
@@ -138,11 +139,17 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
   ] = await Promise.all([
     prisma.lead.findMany({ where: { ...teamScope, deletedAt: null, createdAt: { gte: today } }, select: { source: true, sourceRaw: true } }),
 
+    // Connect-rate trend. `total` is the DENOMINATOR of connected/total, so an
+    // unresolved dial (INITIATED / RINGING) would silently depress the rate
+    // without ever being able to land in `connected`. Exclude pending rows so
+    // the ratio stays "connects per call that actually happened".
     prisma.$queryRaw<Array<{ d: string; total: number; connected: number }>>`
       SELECT to_char("startedAt"::date, 'YYYY-MM-DD') as d,
              COUNT(*)::int as total,
              SUM(CASE WHEN outcome::text = ${CallOutcome.CONNECTED} THEN 1 ELSE 0 END)::int as connected
-      FROM "CallLog" WHERE "startedAt" >= (CURRENT_DATE - INTERVAL '13 days') GROUP BY "startedAt"::date ORDER BY "startedAt"::date ASC`,
+      FROM "CallLog" WHERE "startedAt" >= (CURRENT_DATE - INTERVAL '13 days')
+        AND "outcome"::text <> ALL(${PENDING_CALL_OUTCOMES})
+      GROUP BY "startedAt"::date ORDER BY "startedAt"::date ASC`,
 
     // Status-based funnel — status-only, no stages. ACTIVE pipeline base only
     // (ACTIVE_ORIGIN_WHERE excludes cold/revival AND master-data — the same
@@ -236,6 +243,10 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
       FROM "CallLog"
       WHERE "startedAt" >= NOW() - INTERVAL '30 days'
         AND (${scopedUserId}::text IS NULL OR "userId" = ${scopedUserId})
+        -- Unresolved dials (INITIATED / RINGING) are not calls: they inflate the
+        -- per-cell DENOMINATOR, dilute every connect %, and can push a slot past
+        -- MIN_CALLS_FOR_BEST on taps alone — making a dead hour the "best slot".
+        AND "outcome"::text <> ALL(${PENDING_CALL_OUTCOMES})
       GROUP BY dow, hour
     `,
 

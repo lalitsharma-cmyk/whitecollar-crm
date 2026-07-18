@@ -26,6 +26,8 @@ import ColdDataPromoteButton from "./ColdDataPromoteButton";
 import OriginColdPromoteButton from "./OriginColdPromoteButton";
 import { ActionIconButton } from "@/components/actions/ActionIconButton";
 import { whatsappLink, telLink } from "@/lib/phone";
+// Revival records ARE Lead rows — the dial beacon logs the tap as a CallLog.
+import { useDialBeacon } from "@/components/useDialBeacon";
 import { formatLeadName } from "@/lib/leadName";
 import { statusesForTeam, compareStatusDisplay } from "@/lib/lead-statuses";
 
@@ -97,6 +99,7 @@ export default function RevivalEngineListClient({
   leads, myId, isAdminOrMgr, canExport, agents, cutoffMs, coldDays, exportParams, showSource,
 }: Props) {
   const router = useRouter();
+  const dial = useDialBeacon();
   const cutoff = new Date(cutoffMs);
 
   // ── Bulk select state ──────────────────────────────────────────────────────
@@ -346,7 +349,7 @@ export default function RevivalEngineListClient({
                 <div className="flex gap-1.5 mt-2">
                   {/* Call / WhatsApp from the central Action Design System (was a
                       divergent blue Call + inline WA SVG). Hrefs unchanged. */}
-                  <ActionIconButton action="call" variant="solid" href={tel} title={`Call ${l.name}`} />
+                  <ActionIconButton action="call" variant="solid" href={tel} title={`Call ${l.name}`} onClick={dial({ leadId: l.id })} />
                   <ActionIconButton action="whatsapp" variant="solid" href={wa} title={`WhatsApp ${l.name}`} external />
                 </div>
               )}
@@ -479,7 +482,7 @@ export default function RevivalEngineListClient({
                   <td className="px-3 py-3 align-top" onClick={(e) => e.stopPropagation()}>
                     <div className="flex items-center gap-1.5 flex-nowrap">
                       {l.phone && (
-                        <ActionIconButton action="call" variant="solid" href={tel} title={`Call ${l.name}`} />
+                        <ActionIconButton action="call" variant="solid" href={tel} title={`Call ${l.name}`} onClick={dial({ leadId: l.id })} />
                       )}
                       {l.phone && (
                         <ActionIconButton action="whatsapp" variant="solid" href={wa} title={`WhatsApp ${l.name}`} external />

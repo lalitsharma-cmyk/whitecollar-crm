@@ -14,6 +14,7 @@ import { BOOKED_STATUSES } from "@/lib/lead-statuses";
 import { startCronRun, finishCronRun } from "@/lib/cronRun";
 import { buildWeeklyDigestHtml, type DigestBoard, type DigestStats } from "@/lib/digestEmail";
 import { ACTIVE_PURSUIT_STATUSES } from "@/lib/lead-statuses";
+import { excludePendingCallsWhere } from "@/lib/ghosting";
 import {
   ActivityType,
   ActivityStatus,
@@ -51,11 +52,14 @@ export async function GET(req: NextRequest) {
     // ── Boards (re-uses the /leaderboards page query shapes) ──
     const [callsAgg, followupsAgg, totalsAgg, connectedAgg, coldAgg, siteVisitAgg] =
       await Promise.all([
-        // Most calls
+        // Most calls. excludePendingCallsWhere() drops unresolved dials (INITIATED /
+        // RINGING) — a CallLog row is written the INSTANT "Call" is tapped, so an
+        // unguarded board would rank agents by taps. Matches the guard already
+        // applied on /leaderboards, whose query shapes this route mirrors.
         prisma.callLog.groupBy({
           by: ["userId"],
           _count: { _all: true },
-          where: { startedAt: { gte: weekStart }, userId: { in: eligibleIds } },
+          where: { ...excludePendingCallsWhere(), startedAt: { gte: weekStart }, userId: { in: eligibleIds } },
           orderBy: { _count: { userId: "desc" } },
           take: 5,
         }),
@@ -72,13 +76,17 @@ export async function GET(req: NextRequest) {
           orderBy: { _count: { userId: "desc" } },
           take: 5,
         }),
-        // Connect-rate denominator
+        // Connect-rate DENOMINATOR — guarded against unresolved dials (INITIATED /
+        // RINGING). The numerator below is an allow-list that can never see them, so
+        // an open denominator would drag every agent's connect % down as dials
+        // accumulate. It also drives the "≥5 calls" eligibility gate, so taps must
+        // not be what qualifies an agent for the board.
         prisma.callLog.groupBy({
           by: ["userId"],
           _count: { _all: true },
-          where: { startedAt: { gte: weekStart }, userId: { in: eligibleIds } },
+          where: { ...excludePendingCallsWhere(), startedAt: { gte: weekStart }, userId: { in: eligibleIds } },
         }),
-        // Connect-rate numerator
+        // Connect-rate numerator — allow-list, immune by construction
         prisma.callLog.groupBy({
           by: ["userId"],
           _count: { _all: true },
@@ -189,7 +197,9 @@ export async function GET(req: NextRequest) {
       openLeadsForPipeline,
     ] = await Promise.all([
       prisma.lead.count({ where: { createdAt: { gte: weekStart }, deletedAt: null } }),
-      prisma.callLog.count({ where: { startedAt: { gte: weekStart } } }),
+      // Team-total calls — same pending guard as the boards above, so the digest's
+      // headline "calls made" stays consistent with the "Most calls" leaderboard.
+      prisma.callLog.count({ where: { ...excludePendingCallsWhere(), startedAt: { gte: weekStart } } }),
       prisma.activity.count({
         where: {
           type: {

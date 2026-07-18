@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { ActivityType, ActivityStatus, CallOutcome } from "@prisma/client";
 import { BOOKED_STATUSES } from "@/lib/lead-statuses";
+import { excludePendingCallsWhere } from "@/lib/ghosting";
 import { startOfWeek } from "date-fns";
 import {
   levelForXp,
@@ -66,10 +67,12 @@ export default async function PersonalScoreboard({ userId }: { userId: string })
   const eligibleIds = eligibleUsers.map((u) => u.id);
 
   // ── 1. Most calls (this week) ──────────────────────────────────────
+  // Unresolved dials (INITIATED / RINGING) excluded — the CallLog row is written
+  // the instant "Call" is tapped, so an unguarded count ranks taps, not calls.
   const callsAgg = await prisma.callLog.groupBy({
     by: ["userId"],
     _count: { _all: true },
-    where: { startedAt: { gte: weekStart }, userId: { in: eligibleIds }, lead: { deletedAt: null } },
+    where: { ...excludePendingCallsWhere(), startedAt: { gte: weekStart }, userId: { in: eligibleIds }, lead: { deletedAt: null } },
     orderBy: { _count: { userId: "desc" } },
     take: SAMPLE_SIZE,
   });
@@ -98,10 +101,13 @@ export default async function PersonalScoreboard({ userId }: { userId: string })
 
   // ── 3. Highest connect rate (this week, min 5 calls — same gate as
   //      /leaderboards) ────────────────────────────────────────────────
+  // DENOMINATOR — pending dials must not count here. The numerator below is an
+  // allow-list (outcome=CONNECTED) that can never hold a pending row, so leaving
+  // this unguarded would depress the agent's connect rate as dials accumulate.
   const totalsAgg = await prisma.callLog.groupBy({
     by: ["userId"],
     _count: { _all: true },
-    where: { startedAt: { gte: weekStart }, userId: { in: eligibleIds }, lead: { deletedAt: null } },
+    where: { ...excludePendingCallsWhere(), startedAt: { gte: weekStart }, userId: { in: eligibleIds }, lead: { deletedAt: null } },
   });
   const connectedAgg = await prisma.callLog.groupBy({
     by: ["userId"],

@@ -4442,6 +4442,7 @@ const checks: Check[] = [
       const fs = await import("node:fs");
       const { hotUntouchedWhere, CONTACT_ACTIVITY_TYPES, UNTOUCHED_WHERE } = await import("../src/lib/dashboardWidgets");
       const { CLOSING_STATUSES, TERMINAL_STATUSES } = await import("../src/lib/lead-statuses");
+      const { PENDING_CALL_OUTCOMES } = await import("../src/lib/ghosting");
 
       const COLD = ["COLD", "REVIVAL"];
       const WORKABLE_OR = [
@@ -4453,8 +4454,16 @@ const checks: Check[] = [
 
       // (a) DEFINITION — UNTOUCHED_WHERE is no-CallLog + no contact-Activity, and the
       //     contact set covers calls/WA/email/meetings/site-visits (not NOTE/TASK/etc).
-      assert(JSON.stringify((UNTOUCHED_WHERE as { callLogs?: unknown }).callLogs) === JSON.stringify({ none: {} }),
-        "UNTOUCHED_WHERE must require callLogs none {}");
+      // "none" must be scoped to RESOLVED calls (2026-07-18). A bare `none: {}` was
+      // right until dial-logging existed; now one abandoned tap would satisfy it and
+      // DROP an uncontacted lead off this tile + its drill-down, so a lead nobody has
+      // spoken to would silently stop being chased. Pinned to the exact guarded shape
+      // so it can neither regress to `{}` nor drift to some other outcome set.
+      assert(
+        JSON.stringify((UNTOUCHED_WHERE as { callLogs?: unknown }).callLogs) ===
+          JSON.stringify({ none: { outcome: { notIn: PENDING_CALL_OUTCOMES } } }),
+        `UNTOUCHED_WHERE must require callLogs none {outcome notIn PENDING}, got ${JSON.stringify((UNTOUCHED_WHERE as { callLogs?: unknown }).callLogs)}`,
+      );
       for (const t of ["CALL", "WHATSAPP", "EMAIL", "SITE_VISIT", "OFFICE_MEETING", "VIRTUAL_MEETING"]) {
         assert((CONTACT_ACTIVITY_TYPES as string[]).includes(t), `CONTACT_ACTIVITY_TYPES must include ${t}`);
       }
@@ -6682,6 +6691,158 @@ const checks: Check[] = [
           `${fabricated} buyer CallLogs have no actor — import-synthesized "(imported)" activity must never become a call`);
       }
       results.push({ name: "  ↳ note", ok: true, detail: `CallLog buyer-linked=${buyerCalls} · real agent-logged ledger=${realLedger} · import-synthesized (correctly excluded)=${syntheticLedger}` });
+    },
+  },
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // 51d-bis. CALL STATE MACHINE (2026-07-18, Lalit P0) — every dial writes a
+  //      CallLog IMMEDIATELY at INITIATED, and the SAME row is transitioned to a
+  //      terminal outcome. ONE DIAL = ONE ROW.
+  //
+  //      The load-bearing invariant is that a PENDING row counts as NOTHING.
+  //      Break it and every dial tap becomes an "attempt": 👻 ghosting fires at
+  //      10 TAPS, Revival auto-return rips records out of an agent's queue at 5
+  //      TAPS, and every call total / connect-rate inflates. Break it the OTHER
+  //      way (a resolution that never re-submits the attempt) and ghosting +
+  //      auto-return silently stop working — the far quieter failure.
+  // ───────────────────────────────────────────────────────────────────────────
+  {
+    name: "call-state-machine — one dial = one row; PENDING is never an attempt; ONE pending definition",
+    run: async () => {
+      const fs = await import("fs");
+      const { CallOutcome } = await import("@prisma/client");
+      const g = await import("../src/lib/ghosting");
+      const svc = await import("../src/lib/callLogService");
+
+      // ── 1. ONE definition of "pending". Two drifting copies is exactly how the
+      //       ghosting engine would start counting taps again, so the service must
+      //       RE-EXPORT ghosting's set, never declare its own.
+      assert(
+        JSON.stringify([...svc.PENDING_CALL_OUTCOMES].sort()) === JSON.stringify([...g.PENDING_CALL_OUTCOMES].sort()),
+        `callLogService and ghosting disagree on PENDING: ${JSON.stringify(svc.PENDING_CALL_OUTCOMES)} vs ${JSON.stringify(g.PENDING_CALL_OUTCOMES)}`,
+      );
+      const svcSrc = fs.readFileSync("src/lib/callLogService.ts", "utf8");
+      assert(
+        /export\s*\{[^}]*PENDING_CALL_OUTCOMES[^}]*\}\s*from\s*["']@\/lib\/ghosting["']/.test(svcSrc),
+        "callLogService must RE-EXPORT PENDING_CALL_OUTCOMES from lib/ghosting, not redeclare it",
+      );
+
+      // ── 2. Enum-drift guard. A future CallOutcome added without classification
+      //       would land in the wrong bucket silently — caught here, not in prod.
+      const all = Object.values(CallOutcome) as string[];
+      const pending = all.filter((o) => g.isPendingCall(o));
+      assert(pending.length === 2, `expected exactly 2 PENDING outcomes, found ${pending.length}: ${pending.join(",")}`);
+      assert(
+        pending.includes("INITIATED") && pending.includes("RINGING"),
+        `PENDING set drifted: ${pending.join(",")}`,
+      );
+      for (const o of all) {
+        assert(g.isPendingCall(o) !== svc.isTerminalCall(o), `outcome ${o} is neither cleanly pending nor terminal`);
+      }
+
+      // ── 3. THE GUARD, exercised for real. recordLeadCallAttempt must return
+      //       before touching the DB for a pending outcome — so a bogus leadId is
+      //       safe here and proves the early return really is early.
+      const { recordLeadCallAttempt } = await import("../src/lib/callAttempts");
+      for (const o of ["INITIATED", "RINGING"]) {
+        const r = await recordLeadCallAttempt({
+          leadId: "__regression_nonexistent__", actorId: "__regression_actor__", outcome: o,
+        });
+        assert(r.counted === false && r.pending === true,
+          `recordLeadCallAttempt must ignore pending outcome ${o} (got ${JSON.stringify(r)})`);
+      }
+
+      // ── 4. No duplicate logging. Both "log the call" paths must CLAIM the dial's
+      //       pending row rather than create a second one.
+      const logCall = fs.readFileSync("src/app/api/leads/[id]/log-call/route.ts", "utf8");
+      assert(/resolveOrCreateCall/.test(logCall), "log-call must go through resolveOrCreateCall (anti-duplicate)");
+      assert(!/prisma\.callLog\.create/.test(logCall), "log-call must NOT create a CallLog directly — that reintroduces the duplicate row");
+      const bl = fs.readFileSync("src/lib/buyerLifecycle.ts", "utf8");
+      assert(/outcome:\s*\{\s*in:\s*PENDING_CALL_OUTCOMES\s*\}/.test(bl),
+        "buyer contact must look for a claimable PENDING row before creating a CallLog");
+
+      // ── 5. The QUIET failure: a resolution that never advances the cycle. The
+      //       resolve route is the only place that can fire it for calls resolved
+      //       there, and it must fire ONLY on a real PENDING → TERMINAL move.
+      const resolveSrc = fs.readFileSync("src/app/api/calls/[id]/resolve/route.ts", "utf8");
+      assert(/recordLeadCallAttempt/.test(resolveSrc),
+        "calls/[id]/resolve must advance the attempt cycle — otherwise ghosting + revival auto-return silently die");
+      assert(/isPendingCall\(result\.from\)/.test(resolveSrc),
+        "resolve must only count the attempt when moving OUT of a pending state (a TERMINAL→TERMINAL correction must not count twice)");
+
+      // ── 6. Exhaustive UI maps. The enum grew by 5; a missing entry renders a
+      //       blank label and `chip undefined` on the Call Logs screen.
+      const clPage = fs.readFileSync("src/app/(app)/call-logs/page.tsx", "utf8");
+      for (const o of all) {
+        assert(new RegExp(`\\b${o}\\b`).test(clPage), `Call Logs page has no chip/label entry for outcome ${o}`);
+      }
+
+      // ── 6b. THE READER SWEEP. Every surface that counts CallLog rows without an
+      //       outcome allow-list must exclude PENDING, or dials inflate it. These
+      //       were found by auditing all ~25 CallLog readers; the assertion exists
+      //       so a future edit can't quietly drop the guard and re-inflate a
+      //       number nobody is watching.
+      const guardedReaders = [
+        "src/app/(app)/leaderboards/page.tsx",
+        "src/app/(app)/reports/leaderboard/page.tsx",
+        "src/lib/gamification.server.ts",
+        "src/components/PersonalScoreboard.tsx",
+        "src/components/DailyMissionBoard.tsx",
+        "src/components/TeamDailyTargetTile.tsx",
+        "src/app/(app)/reports/team-comparison/page.tsx",
+        "src/app/(app)/reports/ytd/page.tsx",
+        "src/app/(app)/reports/daily/page.tsx",
+        "src/app/api/reports/daily/pdf/route.ts",
+        "src/app/(app)/reports/activity/page.tsx",
+        "src/lib/reports.ts",
+        "src/lib/qualityScore.ts",
+        "src/app/api/cron/weekly-digest/route.ts",
+        "src/lib/agentPerformance.ts",
+        "src/lib/dashboardWidgets.ts",
+      ];
+      for (const f of guardedReaders) {
+        const src = fs.readFileSync(f, "utf8");
+        assert(
+          /excludePendingCallsWhere|PENDING_CALL_OUTCOMES/.test(src),
+          `${f} counts CallLog rows but no longer excludes unresolved dials — every dial tap will inflate it`,
+        );
+      }
+      // The three FIRST-CALL aggregates decide response-time/SLA metrics and, in
+      // the leaderboard's case, WHICH agent is credited. An abandoned tap is the
+      // earliest row for its lead, so leaving these open would let it both score as
+      // an instant response and steal the credit from whoever actually called.
+      for (const f of [
+        "src/app/(app)/leaderboards/page.tsx",
+        "src/app/(app)/reports/team-comparison/page.tsx",
+      ]) {
+        const src = fs.readFileSync(f, "utf8");
+        assert(
+          /<>\s*ALL\(\$\{PENDING_CALL_OUTCOMES\}\)/.test(src),
+          `${f}: the DISTINCT-ON first-call CTE must exclude pending dials`,
+        );
+      }
+      const qs = fs.readFileSync("src/lib/qualityScore.ts", "utf8");
+      assert(
+        /excludePendingCallsWhere\(\),\s*leadId:\s*\{\s*in:\s*leadIds\s*\}/.test(qs),
+        "qualityScore first-call SLA groupBy must exclude pending dials",
+      );
+
+      // ── 7. DATA. Pending rows must not accumulate: one that never resolved is a
+      //       dial the agent abandoned. Harmless to counts (excluded everywhere),
+      //       but a rising count means the resolve path is broken — surfaced as a
+      //       note, not a failure, since a few stale dials are normal.
+      const pendingRows = await prisma.callLog.count({ where: { outcome: { in: [...g.PENDING_CALL_OUTCOMES] } } });
+      const stale = await prisma.callLog.count({
+        where: {
+          outcome: { in: [...g.PENDING_CALL_OUTCOMES] },
+          startedAt: { lt: new Date(Date.now() - 24 * 60 * 60 * 1000) },
+        },
+      });
+      results.push({
+        name: "  ↳ note",
+        ok: true,
+        detail: `unresolved dials: ${pendingRows} total, ${stale} older than 24h (excluded from every call metric by design)`,
+      });
     },
   },
 

@@ -11,6 +11,7 @@ import { fmtMoneyDual } from "@/lib/money";
 import { fmtIST12 } from "@/lib/datetime";
 import { ownerActiveWhere, ownerTotalWhere } from "@/lib/leadScope";
 import { BOOKED_STATUSES } from "@/lib/lead-statuses";
+import { excludePendingCallsWhere, PENDING_CALL_OUTCOMES } from "@/lib/ghosting";
 import {
   BADGES,
   levelForXp,
@@ -92,8 +93,11 @@ export default async function AgentDeepDivePage({
     followupsDoneToday,
     coldToWarmToday,
   ] = await Promise.all([
+    // Calls today. excludePendingCallsWhere() drops unresolved dials
+    // (INITIATED / RINGING) — a CallLog row is now written the instant the agent
+    // taps Call, so without this the tile counts TAPS, not calls.
     prisma.callLog.count({
-      where: { userId: id, startedAt: { gte: todayStart } },
+      where: { ...excludePendingCallsWhere(), userId: id, startedAt: { gte: todayStart } },
     }),
     prisma.callLog.count({
       where: {
@@ -126,8 +130,9 @@ export default async function AgentDeepDivePage({
     meetingsBookedWeek,
     siteVisitsDoneWeek,
   ] = await Promise.all([
+    // Calls this week — same unresolved-dial guard as the Today tile above.
     prisma.callLog.count({
-      where: { userId: id, startedAt: { gte: weekStart } },
+      where: { ...excludePendingCallsWhere(), userId: id, startedAt: { gte: weekStart } },
     }),
     prisma.callLog.count({
       where: {
@@ -200,11 +205,13 @@ export default async function AgentDeepDivePage({
   const totalEligible = eligibleIds.length;
   const isEligible = eligibleIds.includes(id);
 
-  // 1. Most calls
+  // 1. Most calls — NUMERATOR of the "Most calls" rank. Unresolved dials excluded
+  // so the rank measures calls made, not Call-button taps. Mirrors the same guard
+  // in leaderboards/page.tsx, which this rank must agree with.
   const callsAgg = await prisma.callLog.groupBy({
     by: ["userId"],
     _count: { _all: true },
-    where: { startedAt: { gte: weekStart }, userId: { in: eligibleIds } },
+    where: { ...excludePendingCallsWhere(), startedAt: { gte: weekStart }, userId: { in: eligibleIds } },
   });
   const callsSorted = [...callsAgg].sort(
     (a, b) => b._count._all - a._count._all
@@ -226,6 +233,13 @@ export default async function AgentDeepDivePage({
       JOIN "Lead" l ON l.id = cl."leadId"
       WHERE cl."leadId" IS NOT NULL
         AND cl."startedAt" >= ${weekStart}
+        -- Unresolved dials excluded. DISTINCT ON picks the EARLIEST row per lead,
+        -- and this query selects that row's userId — so the earliest row decides
+        -- both the response time AND who is credited. An abandoned tap would score
+        -- as a near-instant response on a lower-is-better board and STEAL the
+        -- credit from whoever actually called later. Same guard as the identical
+        -- CTE in /leaderboards and /reports/team-comparison.
+        AND cl."outcome"::text <> ALL(${PENDING_CALL_OUTCOMES})
       ORDER BY cl."leadId", cl."startedAt" ASC
     )
     SELECT
@@ -259,10 +273,14 @@ export default async function AgentDeepDivePage({
     followupsSorted.find((r) => r.userId === id)?._count._all ?? 0;
 
   // 4. Highest connect rate (min 5 sample)
+  // DENOMINATOR of connected/total. This one matters most: the numerator below is
+  // pinned to CONNECTED (immune to unresolved dials by construction), so leaving
+  // the denominator unguarded would silently DEPRESS every agent's connect rate as
+  // dial taps accumulate — and drag the min-5 sample gate along with it.
   const totalsAgg = await prisma.callLog.groupBy({
     by: ["userId"],
     _count: { _all: true },
-    where: { startedAt: { gte: weekStart }, userId: { in: eligibleIds } },
+    where: { ...excludePendingCallsWhere(), startedAt: { gte: weekStart }, userId: { in: eligibleIds } },
   });
   const connectedAgg = await prisma.callLog.groupBy({
     by: ["userId"],

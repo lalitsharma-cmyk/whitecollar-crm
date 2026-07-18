@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { AIScore, LeadStatus, ActivityType } from "@prisma/client";
+import { excludePendingCallsWhere } from "@/lib/ghosting";
 
 // "Smart suggestions" — rule-based daily nudges for an agent / manager / admin.
 //
@@ -117,7 +118,9 @@ export default async function SmartSuggestionsCard({ userId, role, team }: Props
         ...ownerScope,
         aiScore: AIScore.HOT,
         ...liveStatus,
-        callLogs: { none: {} },
+        // No RESOLVED call — an unresolved dial must not make a lead look contacted
+        // and drop it out of the suggestions (see UNTOUCHED_WHERE in dashboardWidgets).
+        callLogs: { none: { ...excludePendingCallsWhere() } },
       },
     }),
     // 8) Recently became hot — HOT-scored leads whose lastTouchedAt landed

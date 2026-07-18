@@ -3,6 +3,8 @@ import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { Phone, AlertCircle, Mic } from "lucide-react";
 import { whatsappLink, telLink, hasDialableNumber } from "@/lib/phone";
+// Buyer dials land in the SAME central CallLog as lead dials (buyerId-linked).
+import { useDialBeacon } from "@/components/useDialBeacon";
 import { ActionButton } from "@/components/actions/ActionButton";
 import { backdropProps } from "@/lib/useDismiss";
 import { ACTION_ROW } from "@/lib/detailLayout";
@@ -43,6 +45,7 @@ const LOG_OUTCOMES: { key: string; type: string; label: string }[] = [
 
 export default function BuyerActionsClient({ buyerId, phone, altPhone, email, clientName, agentName, canLog }: Props) {
   const router = useRouter();
+  const dial = useDialBeacon();
   const waGreeting = `Hi ${clientName}, this is ${agentName} from White Collar Realty regarding your property. May I know a convenient time to connect?`;
 
   const [showLog, setShowLog] = useState(false);
@@ -149,7 +152,7 @@ export default function BuyerActionsClient({ buyerId, phone, altPhone, email, cl
           dictation action. All hrefs/handlers/permissions (canLog) unchanged. */}
       <div className={ACTION_ROW}>
         {phone && (
-          <ActionButton action="call" href={telLink(phone)} />
+          <ActionButton action="call" href={telLink(phone)} onClick={dial({ buyerId, phone })} />
         )}
         {phone && (
           <ActionButton action="whatsapp" href={whatsappLink(phone, waGreeting)} external />
@@ -179,7 +182,7 @@ export default function BuyerActionsClient({ buyerId, phone, altPhone, email, cl
         <div className="mt-2">
           <div className="text-[10px] uppercase tracking-widest text-gray-500 font-semibold mb-1.5">📱 Alternate number</div>
           <div className="grid grid-cols-2 gap-1.5 [&>*]:w-full">
-            <ActionButton action="call" size="sm" href={telLink(altPhone)} label="Call alt" />
+            <ActionButton action="call" size="sm" href={telLink(altPhone)} label="Call alt" onClick={dial({ buyerId, phone: altPhone })} />
             <ActionButton action="whatsapp" size="sm" href={whatsappLink(altPhone, waGreeting)} label="WA alt" external />
           </div>
         </div>

@@ -8,6 +8,7 @@ import { subDays, startOfYear, startOfMonth, startOfQuarter } from "date-fns";
 import Link from "next/link";
 import ReportDateRangePicker from "@/components/ReportDateRangePicker";
 import { leadSourceModule, type SourceModule } from "@/lib/moduleSource";
+import { PENDING_CALL_OUTCOMES } from "@/lib/ghosting";
 import { ModuleBreakdownTable, type ModuleBreakdownRow } from "@/components/ModuleBreakdown";
 
 export const dynamic = "force-dynamic";
@@ -223,6 +224,12 @@ export default async function SourcesReportPage({
     // Type guard: rows without a CallLog don't appear here, which is what
     // we want — we measure "speed when we DID respond", not "speed
     // including unresponded leads".
+    //
+    // PENDING GUARD (2026-07-18): DISTINCT ON ... ORDER BY startedAt ASC picks the
+    // EARLIEST row per lead, so an abandoned dial that never left INITIATED would
+    // BE the first call — scoring as a near-instant response and hiding the real
+    // call that followed. "First call" has always meant the first call that
+    // actually happened; excluding unresolved dials keeps that definition intact.
     managerTeam
       ? prisma.$queryRaw<Array<{ source: string; avg_mins: number | null }>>`
           WITH first_call AS (
@@ -231,6 +238,7 @@ export default async function SourcesReportPage({
                    cl."startedAt" AS first_call_at
             FROM "CallLog" cl
             WHERE cl."leadId" IS NOT NULL
+              AND cl."outcome"::text <> ALL(${PENDING_CALL_OUTCOMES})
             ORDER BY cl."leadId", cl."startedAt" ASC
           )
           SELECT l."source"::text AS source,
@@ -251,6 +259,7 @@ export default async function SourcesReportPage({
                    cl."startedAt" AS first_call_at
             FROM "CallLog" cl
             WHERE cl."leadId" IS NOT NULL
+              AND cl."outcome"::text <> ALL(${PENDING_CALL_OUTCOMES})
             ORDER BY cl."leadId", cl."startedAt" ASC
           )
           SELECT l."source"::text AS source,

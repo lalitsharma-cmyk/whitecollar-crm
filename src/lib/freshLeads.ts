@@ -27,6 +27,7 @@ import type { Prisma } from "@prisma/client";
 import { ActivityType } from "@prisma/client";
 import { istDayRange } from "@/lib/datetime";
 import { CONTACT_ACTIVITY_TYPES } from "@/lib/dashboardWidgets";
+import { excludePendingCallsWhere } from "@/lib/ghosting";
 import { isFreshStatus, FRESH_STATUS_IN_VALUES, TERMINAL_STATUSES } from "@/lib/lead-statuses";
 
 // Workable-status OR — status is null/blank or NOT a terminal (closed/lost) value.
@@ -83,7 +84,10 @@ export const FIRST_CONTACT_ACTIVITY_TYPES: ActivityType[] = [
  *  No CallLog at all, and no first-contact-type Activity. Composable — spread it
  *  as an AND element so its callLogs/activities keys never clobber a caller's. */
 export const FIRST_CONTACT_PENDING_WHERE: Prisma.LeadWhereInput = {
-  callLogs: { none: {} },
+  // No RESOLVED call — a bare `none: {}` would let one abandoned dial mark a fresh
+  // lead as contacted, removing it from the first-contact-pending chips and the
+  // SLA sweep even though nobody ever reached the client.
+  callLogs: { none: { ...excludePendingCallsWhere() } },
   activities: { none: { type: { in: FIRST_CONTACT_ACTIVITY_TYPES } } },
 };
 

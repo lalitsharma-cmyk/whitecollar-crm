@@ -43,6 +43,7 @@ import {
 } from "@/lib/lead-statuses";
 import { ACTIVE_ORIGIN_WHERE } from "@/lib/leadScope";
 import { isActivePipelineRow } from "@/lib/freshLeads";
+import { PENDING_CALL_OUTCOMES } from "@/lib/ghosting";
 import { leadSourceModule, activityLeadModule, LEAD_SOURCE_MODULES } from "@/lib/moduleSource";
 import type { SourceModule } from "@/lib/moduleSource";
 // NOTE: BUYER_CALL_ACTIVITY_TYPES / BUYER_CONNECTED_ACTIVITY_TYPES are no longer
@@ -58,6 +59,15 @@ const CONNECTED_CALL_OUTCOMES: CallOutcome[] = [
 const NOT_PICKED_CALL_OUTCOMES: CallOutcome[] = [
   CallOutcome.NOT_PICKED, CallOutcome.BUSY, CallOutcome.SWITCHED_OFF, CallOutcome.WRONG_NUMBER, CallOutcome.CALLBACK,
 ];
+// UNRESOLVED DIALS (Lalit P0, 2026-07-18) — the Call button writes a CallLog on
+// TAP, at INITIATED, before any result. Those rows are dials, not calls, and are
+// excluded from every count here. The connected / not-picked queries below are
+// already immune (a pending outcome is in neither allow-list); the exposure is
+// the two UNFILTERED totals — callsLogged and buyerCalls — which count rows, so
+// without this every tap would inflate an agent's call volume and silently
+// depress their connect rate. Imported from lib/ghosting so this file, the call
+// report and /call-logs cannot drift about what "pending" means.
+const PENDING_OUTCOME_FILTER = { notIn: [...PENDING_CALL_OUTCOMES] as CallOutcome[] };
 // Meeting activity types — OFFICE/VIRTUAL/EXPO/HOME + legacy MEETING. Nothing dropped.
 const MEETING_ACTIVITY_TYPES: ActivityType[] = [
   ActivityType.OFFICE_MEETING, ActivityType.VIRTUAL_MEETING, ActivityType.EXPO_MEETING,
@@ -633,7 +643,8 @@ export async function buildAgentReport(range: DateRange, scope: ReportScope): Pr
   // Connected / not-picked / voice stay as groupBy counts (not split).
   const [callActRows, connRows, notPickRows, waActRows, noteActRows, voiceRows] = await Promise.all([
     prisma.callLog.findMany({
-      where: { userId: { in: agentIds }, startedAt: win, lead: { deletedAt: null } },
+      // outcome notIn PENDING — an unresolved dial is not a logged call.
+      where: { userId: { in: agentIds }, startedAt: win, lead: { deletedAt: null }, outcome: PENDING_OUTCOME_FILTER },
       select: { userId: true, lead: { select: { leadOrigin: true, isColdCall: true } } },
     }),
     prisma.callLog.groupBy({
@@ -677,7 +688,9 @@ export async function buildAgentReport(range: DateRange, scope: ReportScope): Pr
   // filters lead:{deletedAt:null} (⇒ leadId not null), this one filters
   // buyer:{deletedAt:null} (⇒ buyerId not null). Each call is counted exactly once.
   const buyerCallRows = await prisma.callLog.findMany({
-    where: { userId: { in: agentIds }, startedAt: win, buyer: { deletedAt: null } },
+    // outcome notIn PENDING — same rule as the lead side: a tapped-but-unresolved
+    // dial is not a buyer call and must not enter buyerCalls / the market split.
+    where: { userId: { in: agentIds }, startedAt: win, buyer: { deletedAt: null }, outcome: PENDING_OUTCOME_FILTER },
     select: { userId: true, outcome: true, buyer: { select: { market: true } } },
   });
   for (const r of buyerCallRows) {

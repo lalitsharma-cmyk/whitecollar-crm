@@ -7,6 +7,7 @@ import { canExportData, EXPORT_DENIED } from "@/lib/exportPerms";
 import { TERMINAL_STATUSES, CLOSED_OUTCOME_STATUSES, LOST_STATUSES } from "@/lib/lead-statuses";
 import { effectiveSource } from "@/lib/sourceLabel";
 import { overdueFollowupBoundary } from "@/lib/datetime";
+import { excludePendingCallsWhere } from "@/lib/ghosting";
 import { LeadSource, LeadStatus, AIScore, Prisma } from "@prisma/client";
 import * as XLSX from "xlsx";
 
@@ -417,7 +418,12 @@ export async function GET(req: NextRequest) {
     // "Agents" / agent-name column — exports were getting forwarded to
     // brokers and partners, and agent attribution was leaking. We still
     // pull `user` for any future auditing, but omit it from the rendered row.
-    const calls = await prisma.callLog.findMany({ include: { lead: true, user: true } });
+    // Unresolved dials (INITIATED / RINGING) are excluded: this CSV is the
+    // record-level twin of the call totals on the reports pages, so a row here
+    // must mean the same thing a +1 there does (count == records). A tap that
+    // never resolved would also export as a call with a blank duration and a
+    // non-outcome in the `outcome` column.
+    const calls = await prisma.callLog.findMany({ where: { ...excludePendingCallsWhere() }, include: { lead: true, user: true } });
     rows = calls.map(c => ({
       id: c.id, startedAt: c.startedAt.toISOString(), lead: c.lead?.name ?? c.phoneNumber,
       direction: c.direction, outcome: c.outcome, durationSec: c.durationSec,

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { formatLeadName } from "@/lib/leadName";
 import { leadSourceModule, type SourceModule } from "@/lib/moduleSource";
 import { ModuleBreakdownTable, type ModuleBreakdownRow } from "@/components/ModuleBreakdown";
+import { excludePendingCallsWhere } from "@/lib/ghosting";
 
 export const dynamic = "force-dynamic";
 
@@ -82,8 +83,14 @@ export default async function ActivityFeedPage({
   const selectedDayEnd = new Date(selectedDayStart.getTime() + 24 * 60 * 60 * 1000);
 
   const [callLogs, auditLogs, callModuleRows] = await Promise.all([
+    // excludePendingCallsWhere() drops unresolved dials (INITIATED / RINGING) —
+    // a CallLog row is written the INSTANT "Call" is tapped, so without it the
+    // feed would render in-flight taps as "called X — INITIATED" and push real
+    // resolved calls out of the 100-row cap. SAME guard as the module-split
+    // query below so the feed and the "Calls by module" total share one scope.
     prisma.callLog.findMany({
       where: {
+        ...excludePendingCallsWhere(),
         startedAt: { gte: selectedDayStart, lt: selectedDayEnd },
         lead: { deletedAt: null },
         ...(managerTeam ? { user: { team: managerTeam } } : {}),
@@ -112,6 +119,7 @@ export default async function ActivityFeedPage({
     // Read-only + additive: it never changes the feed below, only summarises it.
     prisma.callLog.findMany({
       where: {
+        ...excludePendingCallsWhere(),
         startedAt: { gte: selectedDayStart, lt: selectedDayEnd },
         lead: { deletedAt: null },
         ...(managerTeam ? { user: { team: managerTeam } } : {}),

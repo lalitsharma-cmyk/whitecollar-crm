@@ -8,6 +8,7 @@ import { fmtMoneyDual } from "@/lib/money";
 import Link from "next/link";
 import ReportDateRangePicker from "@/components/ReportDateRangePicker";
 import { BUYER_CALL_ACTIVITY_TYPES, BUYER_CONNECTED_ACTIVITY_TYPES } from "@/lib/dashboardWidgets";
+import { excludePendingCallsWhere } from "@/lib/ghosting";
 
 export const dynamic = "force-dynamic";
 
@@ -131,9 +132,13 @@ async function computeTeamYtd(team: "Dubai" | "India", since: Date, until: Date)
     prisma.callLog.count({
       where: { ...callWhere, startedAt: { gte: since, lte: until }, outcome: { in: CONNECTED_OUTCOMES } },
     }),
-    // 7. Calls total (denominator for connect rate)
+    // 7. Calls total (denominator for connect rate). excludePendingCallsWhere()
+    //    drops unresolved dials (INITIATED / RINGING) — a CallLog row is written
+    //    the INSTANT "Call" is tapped. This is the connect-rate DENOMINATOR, so
+    //    leaving it unguarded would silently depress the rate as dials pile up
+    //    (the numerator at #6 is an allow-list and can never see them).
     prisma.callLog.count({
-      where: { ...callWhere, startedAt: { gte: since, lte: until } },
+      where: { ...excludePendingCallsWhere(), ...callWhere, startedAt: { gte: since, lte: until } },
     }),
     // 8. Top 5 sources (by lead count in-window) — read verbatim sourceRaw via
     //    sourceBreakdown (top 5 sliced after the await).

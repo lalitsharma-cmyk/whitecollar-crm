@@ -76,6 +76,20 @@ const prisma = new PrismaClient({ datasources: { db: { url: dbUrl } } });
 // A call with one of these outcomes = a real two-way interaction → connectedCount.
 const MEANINGFUL_OUTCOMES = ["CONNECTED", "CALLBACK", "INTERESTED", "NOT_INTERESTED"];
 
+// Source: src/lib/ghosting.ts PENDING_CALL_OUTCOMES. A dial that has not resolved.
+// CRITICAL for THIS script specifically: the attempts bucket below is a
+// FALL-THROUGH (`NOT IN (MEANINGFUL)`), so without listing these explicitly every
+// unresolved dial would be counted as a failed attempt — and this script WRITES
+// Lead.attemptCount. A re-run would therefore inflate attempt counts straight into
+// false 👻 Ghosting stamps and false Revival auto-returns, which is the exact
+// failure the pending/terminal split exists to prevent. Not imported from
+// lib/ghosting because this script talks to a raw PrismaClient and deliberately
+// keeps its constants copied-with-a-source-comment, like the two above.
+const PENDING_OUTCOMES = ["INITIATED", "RINGING"];
+
+/** SQL string list for an IN/NOT IN clause: 'A','B'. */
+const sqlList = (vals: string[]) => vals.map((o) => `'${o}'`).join(",");
+
 // Source: src/lib/lead-statuses.ts CLOSED_OUTCOME_STATUSES (copied verbatim).
 const CLOSED_OUTCOME_STATUSES: string[] = [
   "Booked With Us", "Booked with Us",
@@ -230,9 +244,9 @@ async function main() {
     { id: string; attempts: bigint; connected: bigint; last_at: Date | null }[]
   >(
     `SELECT l.id,
-            COUNT(*) FILTER (WHERE c."outcome"::text NOT IN (${MEANINGFUL_OUTCOMES.map((o) => `'${o}'`).join(",")})) AS attempts,
-            COUNT(*) FILTER (WHERE c."outcome"::text IN (${MEANINGFUL_OUTCOMES.map((o) => `'${o}'`).join(",")})) AS connected,
-            MAX(c."startedAt") AS last_at
+            COUNT(*) FILTER (WHERE c."outcome"::text NOT IN (${sqlList([...MEANINGFUL_OUTCOMES, ...PENDING_OUTCOMES])})) AS attempts,
+            COUNT(*) FILTER (WHERE c."outcome"::text IN (${sqlList(MEANINGFUL_OUTCOMES)})) AS connected,
+            MAX(c."startedAt") FILTER (WHERE c."outcome"::text NOT IN (${sqlList(PENDING_OUTCOMES)})) AS last_at
      FROM "Lead" l
      JOIN "CallLog" c
        ON c."leadId" = l.id

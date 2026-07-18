@@ -1,10 +1,12 @@
 import { prisma } from "@/lib/prisma";
+import { excludePendingCallsWhere } from "@/lib/ghosting";
 
 // "Team daily target" tile — rolling team-level call target progress.
 //
 // Team target = SUM of dailyCallTarget across all active AGENT/MANAGER users on
-// the team (default 30 each). Done = count of CallLog rows started today whose
-// user is on the same team.
+// the team (default 30 each). Done = count of RESOLVED CallLog rows started
+// today whose user is on the same team — unresolved dials (INITIATED / RINGING)
+// are excluded so the tile can't be driven to 100% by tapping "Call".
 //
 // Server component — keeps the dashboard's "scoped via team filter" pattern.
 // Hidden when team === "all" because the dashboard doesn't have a meaningful
@@ -34,6 +36,7 @@ export default async function TeamDailyTargetTile({
 
   const teamCallsToday = await prisma.callLog.count({
     where: {
+      ...excludePendingCallsWhere(),
       startedAt: { gte: todayStart },
       user: { team },
     },

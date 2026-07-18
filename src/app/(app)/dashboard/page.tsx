@@ -20,6 +20,7 @@ import TargetCelebration from "@/components/TargetCelebration";
 import RemindersCard, { type ReminderEvent } from "@/components/RemindersCard";
 import { countUnassignedLeads, countAwaitingTeamLeads } from "@/lib/leadCounts";
 import { hotUntouchedWhere, buyerCallsCount, buyerConnectedCallsCount } from "@/lib/dashboardWidgets";
+import { excludePendingCallsWhere, PENDING_CALL_OUTCOMES } from "@/lib/ghosting";
 import { freshUntouchedWhere } from "@/lib/freshLeads";
 import DashboardAssignmentWidget from "@/components/DashboardAssignmentWidget";
 import DashboardGreeting from "@/components/DashboardGreeting";
@@ -159,8 +160,14 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     // the BuyerActivity ledger below (a telephony buyer call writes BOTH a
     // CallLog{buyerId} and a BuyerActivity CALL, so sourcing buyers from one place
     // avoids double-counting). unlinked = leadId null AND buyerId null.
+    // excludePendingCallsWhere() drops unresolved dials (INITIATED / RINGING): a
+    // CallLog row is written the instant Call is tapped, so without it the "Total
+    // Calls" KPI inflates by every tap. The buyer half (buyerCallsCount, from
+    // lib/dashboardWidgets) already applies the same PENDING exclusion, so both
+    // halves of this KPI now count the same thing.
     prisma.callLog.count({
       where: {
+        ...excludePendingCallsWhere(),
         userId: me.id,
         startedAt: { gte: sqlFrom, lt: sqlTo },
         buyerId: null,
@@ -304,7 +311,19 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
       -- telephony buyer call — which writes BOTH a CallLog{buyerId} and a BuyerActivity
       -- CALL — is counted ONCE. Mirrors the personal KPI card's anti-double-count so the
       -- team scoreboard captures Dubai/India Buyer-Data calls too (Lalit 2026-07-08).
-      COALESCE((SELECT COUNT(*) FROM "CallLog" c WHERE c."userId" = u.id AND c."startedAt" >= ${sqlFrom} AND c."startedAt" < ${sqlTo} AND c."buyerId" IS NULL), 0)
+      -- The outcome NOT IN (...) guard drops unresolved dials (INITIATED /
+      -- RINGING): a CallLog row is written the instant Call is tapped. This is the
+      -- TEAM-WIDE twin of the personal "Total Calls" KPI above — without the same
+      -- guard, one agent's call count would read differently in the two tables on
+      -- THIS page. The connected sub-select below is pinned to CONNECTED and is
+      -- immune by construction, so an unguarded calls column would also depress the
+      -- connected-vs-calls comparison a manager reads across the two columns.
+      -- NOTE: never use backticks in these SQL comments — this whole query is a
+      -- template literal, so a backtick here TERMINATES it and the remaining SQL
+      -- gets parsed as TypeScript.
+      -- ::text cast matches the existing c.outcome::text = 'CONNECTED' pattern —
+      -- Postgres has no operator comparing the CallOutcome enum to a bound param.
+      COALESCE((SELECT COUNT(*) FROM "CallLog" c WHERE c."userId" = u.id AND c."startedAt" >= ${sqlFrom} AND c."startedAt" < ${sqlTo} AND c."buyerId" IS NULL AND c.outcome::text NOT IN (${Prisma.join([...PENDING_CALL_OUTCOMES])})), 0)
         + COALESCE((SELECT COUNT(*) FROM "BuyerActivity" ba JOIN "BuyerRecord" b ON b.id = ba."buyerId" WHERE ba."userId" = u.id AND ba."createdAt" >= ${sqlFrom} AND ba."createdAt" < ${sqlTo} AND b."deletedAt" IS NULL AND ba.type IN ('CALL','ATTEMPT_NO_ANSWER','ATTEMPT_NOT_PICKED','ATTEMPT_WA_NO_RESPONSE')), 0) as calls,
       COALESCE((SELECT COUNT(*) FROM "CallLog" c WHERE c."userId" = u.id AND c."startedAt" >= ${sqlFrom} AND c."startedAt" < ${sqlTo} AND c."buyerId" IS NULL AND c.outcome::text = 'CONNECTED'), 0)
         + COALESCE((SELECT COUNT(*) FROM "BuyerActivity" ba JOIN "BuyerRecord" b ON b.id = ba."buyerId" WHERE ba."userId" = u.id AND ba."createdAt" >= ${sqlFrom} AND ba."createdAt" < ${sqlTo} AND b."deletedAt" IS NULL AND ba.type = 'CALL'), 0) as connected,

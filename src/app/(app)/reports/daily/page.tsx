@@ -6,6 +6,7 @@ import { startOfDay, endOfDay, format, parseISO, isValid } from "date-fns";
 import Link from "next/link";
 import { ActivityType, CallOutcome, TargetMetric } from "@prisma/client";
 import { followupWorkflowStats } from "@/lib/followupGate";
+import { excludePendingCallsWhere } from "@/lib/ghosting";
 
 export const dynamic = "force-dynamic";
 
@@ -63,7 +64,11 @@ export default async function DailyReportPage({ searchParams }: { searchParams: 
 
   // ── Pull actuals for the chosen day, scoped to the chosen agent ─────
   const [calls, connected, virtualDone, f2fDone, freshClients, dealsWonToday] = await Promise.all([
-    prisma.callLog.count({ where: { userId: targetUserId, lead: { deletedAt: null }, startedAt: { gte: dayStart, lte: dayEnd } } }),
+    // "Total number of calls" — excludePendingCallsWhere() drops unresolved dials
+    // (INITIATED / RINGING). A CallLog row is written the INSTANT "Call" is tapped,
+    // so an unguarded count would credit the agent against their CALLS target for
+    // every tap. The connected row below is an allow-list (immune by construction).
+    prisma.callLog.count({ where: { ...excludePendingCallsWhere(), userId: targetUserId, lead: { deletedAt: null }, startedAt: { gte: dayStart, lte: dayEnd } } }),
     prisma.callLog.count({ where: { userId: targetUserId, lead: { deletedAt: null }, startedAt: { gte: dayStart, lte: dayEnd }, outcome: CallOutcome.CONNECTED } }),
     prisma.activity.count({ where: { userId: targetUserId, lead: { deletedAt: null }, type: ActivityType.VIRTUAL_MEETING, completedAt: { gte: dayStart, lte: dayEnd } } }),
     prisma.activity.count({ where: {

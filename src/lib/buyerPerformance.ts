@@ -200,6 +200,16 @@ const ENGAGED_TYPE_LIST: string[] = [BUYER_ACTIVITY_TYPE.CALL, BUYER_ACTIVITY_TY
 //
 // A buyer call CONNECTED = the shared outcome set (parity with the lead report's
 // connectedCalls), since buyerLifecycle maps a manual CALL → CONNECTED.
+//
+// UNRESOLVED DIALS (Lalit P0, 2026-07-18): every CallLog read in this file is an
+// ALLOW-LIST on this set, so the dial-on-tap states (INITIATED / RINGING) are
+// already excluded — no notIn guard was added here, deliberately, rather than
+// bolting on a redundant filter. ⚠️ That safety is a PROPERTY OF THE ALLOW-LIST:
+// if a future change counts buyer calls WITHOUT `outcome: { in: … }` (e.g. a
+// "total dials" or "attempted" metric), it must add
+// `outcome: { notIn: [...PENDING_CALL_OUTCOMES] }` from lib/ghosting — otherwise
+// taps start inflating buyer call volume. See lib/agentPerformance.ts, where the
+// two unfiltered totals needed exactly that guard.
 const CONNECTED_BUYER_CALL_OUTCOMES: CallOutcome[] = [
   CallOutcome.CONNECTED, CallOutcome.INTERESTED, CallOutcome.NOT_INTERESTED,
 ];

@@ -2,6 +2,7 @@ import { requireRole } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import Link from "next/link";
 import AdminUsersClient from "@/components/AdminUsersClient";
+import { excludePendingCallsWhere } from "@/lib/ghosting";
 
 export const dynamic = "force-dynamic";
 
@@ -18,7 +19,10 @@ export default async function AdminUsersPage() {
       team: true,
       active: true,
       createdAt: true,
-      _count: { select: { ownedLeads: true, callLogs: true } },
+      // "Calls" column — unresolved dials (INITIATED / RINGING) excluded so the
+      // per-user total counts calls placed, not Call-button taps. Matches the
+      // "Total calls" column on /team for the same user.
+      _count: { select: { ownedLeads: true, callLogs: { where: { ...excludePendingCallsWhere() } } } },
     },
   });
 

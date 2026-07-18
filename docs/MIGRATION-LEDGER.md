@@ -114,3 +114,10 @@ attemptCount, connectedCount, lastAttemptAt, lastAttemptById(+FK SetNull),
 ghostingAt, revivalCycle, returnedToPoolAt + indexes (ghostingAt, returnedToPoolAt).
 Backup: backups/pre-deploy-2026-07-16T20-28-13-896Z. Applied via prisma db execute
 (idempotent IF NOT EXISTS) + migrate resolve. Verified via information_schema (7/7).
+
+## 20260718080000_call_state_machine — applied 2026-07-18 (~13:40 IST)
+Additive CallOutcome enum values for the dial-click state machine (Lalit P0):
+INITIATED, RINGING, FAILED, CANCELLED, MISSED (ADD VALUE IF NOT EXISTS — no data
+rewrite, existing rows untouched). PENDING = INITIATED|RINGING must never count as
+an attempt (ghosting / revival auto-return ignore them). Backup:
+backups/pre-deploy-2026-07-18T08-11-47-488Z. Verified via pg_enum (13 values).

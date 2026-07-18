@@ -6,6 +6,8 @@ import { useRouter } from "next/navigation";
 import { formatLeadName } from "@/lib/leadName";
 import { Calendar, Pencil, Trash2 } from "lucide-react";
 import { telLink, whatsappLink } from "@/lib/phone";
+// Tapping Call fires the dial beacon → a CallLog at outcome=INITIATED.
+import { useDialBeacon } from "@/components/useDialBeacon";
 import { ActionIconButton } from "@/components/actions/ActionIconButton";
 // Per-contact Call / WhatsApp / Email render from the central Action Design
 // System (was a divergent blue Call, sky Email + inline WA SVG). The brand
@@ -53,6 +55,7 @@ const REJECT_REASONS = [
 
 export default function InboxClient({ rows, canDelete }: Props) {
   const router = useRouter();
+  const dial = useDialBeacon();
 
   // ── Single-lead actions
   const [pickerOpenFor, setPickerOpenFor] = useState<string | null>(null);
@@ -198,7 +201,7 @@ export default function InboxClient({ rows, canDelete }: Props) {
             {/* Action buttons — mobile (central Action Design System) */}
             <div className="flex items-center gap-1.5 flex-wrap">
               {lead.phone && (
-                <ActionIconButton action="call" variant="solid" href={telLink(lead.phone) || "#"} title={`Call ${lead.name}`} />
+                <ActionIconButton action="call" variant="solid" href={telLink(lead.phone) || "#"} title={`Call ${lead.name}`} onClick={dial({ leadId: lead.id })} />
               )}
               {lead.phone && (
                 <ActionIconButton action="whatsapp" variant="solid" href={whatsappLink(lead.phone) || "#"} title={`WhatsApp ${lead.name}`} external />
@@ -302,7 +305,7 @@ export default function InboxClient({ rows, canDelete }: Props) {
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-1.5 flex-wrap [&>a]:flex-none">
                     {lead.phone && (
-                      <ActionIconButton action="call" variant="solid" href={telLink(lead.phone) || "#"} title={`Call ${lead.name}`} />
+                      <ActionIconButton action="call" variant="solid" href={telLink(lead.phone) || "#"} title={`Call ${lead.name}`} onClick={dial({ leadId: lead.id })} />
                     )}
                     {lead.phone && (
                       <ActionIconButton action="whatsapp" variant="solid" href={whatsappLink(lead.phone) || "#"} title={`WhatsApp ${lead.name}`} external />

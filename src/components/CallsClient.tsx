@@ -6,6 +6,7 @@ import { formatLeadName } from "@/lib/leadName";
 import { formatBudgetAmount } from "@/lib/budgetParse";
 import { X, ChevronRight } from "lucide-react";
 import { telLink, whatsappLink } from "@/lib/phone";
+import { useDialBeacon } from "@/components/useDialBeacon";
 import { ActionButton } from "@/components/actions/ActionButton";
 import { useBodyScrollLock } from "@/hooks/useBodyScrollLock";
 
@@ -168,6 +169,7 @@ function CallCard({ c, onTap }: { c: CallRowData; onTap: () => void }) {
 }
 
 function SummaryPanel({ lead, call }: { lead: LeadSummary; call: CallRowData }) {
+  const dial = useDialBeacon();
   const aiChip = lead.aiScore === "HOT" ? "chip-hot" : lead.aiScore === "WARM" ? "chip-warm" : lead.aiScore === "COLD" ? "chip-cold" : "chip-lost";
   const bantChip = lead.bantStatus === "QUALIFIES" ? "chip-won" : lead.bantStatus === "NOT_QUALIFIED" ? "chip-lost" : "chip-warm";
   return (
@@ -190,7 +192,7 @@ function SummaryPanel({ lead, call }: { lead: LeadSummary; call: CallRowData }) 
       {/* Tap-to-call / WA shortcuts — central Action Design System (compact). */}
       {lead.phone && (
         <div className="grid grid-cols-2 gap-1.5 [&>*]:w-full">
-          <ActionButton action="call" size="sm" href={telLink(lead.phone) ?? "#"} label="Call" />
+          <ActionButton action="call" size="sm" href={telLink(lead.phone) ?? "#"} label="Call" onClick={dial({ leadId: lead.id })} />
           <ActionButton action="whatsapp" size="sm" href={whatsappLink(lead.phone) ?? "#"} label="WA" external />
         </div>
       )}

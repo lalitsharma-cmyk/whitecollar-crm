@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { PENDING_CALL_OUTCOMES } from "@/lib/ghosting";
 
 /**
  * 💡 Best time to call — small gold-tinted chip rendered in the lead header.
@@ -58,7 +59,13 @@ export default async function BestCallTimeChip({ leadId }: { leadId: string }) {
     FROM "CallLog"
     -- Only real, agent-logged calls — imported MIS remarks (attributedAgentName
     -- set) are Historical Notes, not dialled calls, so they must not skew best-time.
+    -- Same reasoning for unresolved dials (INITIATED / RINGING): they can never be
+    -- CONNECTED, so they only pad the total and drag the connect rate of whatever
+    -- hour they landed in — which is exactly the hour ranking this chip reports.
+    -- (No backticks in these comments: this is a template literal, so one would
+    -- terminate the query and the rest of the SQL would parse as TypeScript.)
     WHERE "leadId" = ${leadId} AND "attributedAgentName" IS NULL
+      AND "outcome"::text <> ALL(${PENDING_CALL_OUTCOMES})
     GROUP BY hour
   `;
 

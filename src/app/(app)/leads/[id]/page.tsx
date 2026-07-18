@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { notFound, redirect } from "next/navigation";
 import { format, formatDistanceToNow } from "date-fns";
 import { fmtIST12, toISTLocalInput } from "@/lib/datetime";
+import { isPendingCall } from "@/lib/ghosting";
 import Link from "next/link";
 import { fmtMoney } from "@/lib/money";
 import { requireUser } from "@/lib/auth";
@@ -490,8 +491,21 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
   // row that is a live telephony call OR a UI-logged call (attributedAgentName null).
   const realCallLogs = lead.callLogs.filter((c) => c.ivrProvider != null || c.attributedAgentName == null);
 
-  // SLA countdown — show timer if assigned recently and no call yet
-  const callsCount = realCallLogs.length;
+  // PENDING dials (INITIATED / RINGING) — written the instant the agent taps Call,
+  // before any result exists; the SAME row is later transitioned to a terminal
+  // outcome (one dial = one row). They must count as NOTHING in a metric, but they
+  // are still a real dial the agent placed, so the Conversation stream below keeps
+  // SHOWING them (hiding a placed call would read as data loss). Hence the split:
+  //   realCallLogs      → the DISPLAY timeline (ConversationStreamCard), all dials.
+  //   completedCallLogs → every METRIC on this page (SLA gate, last-discussion
+  //                       date, CallStatsBar), resolved calls only.
+  // Both stay newest-first (the findMany orders startedAt desc), so [0] is still
+  // the most recent entry of whichever set.
+  const completedCallLogs = realCallLogs.filter((c) => !isPendingCall(c.outcome));
+
+  // SLA countdown — show timer if assigned recently and no call yet. A tap that
+  // never resolved is not "a call yet", so the timer keeps running on it.
+  const callsCount = completedCallLogs.length;
   const slaMs = lead.slaFirstCallBy ? lead.slaFirstCallBy.getTime() - Date.now() : null;
   const slaActive = lead.ownerId && callsCount === 0 && slaMs !== null && slaMs > -3600_000;
 
@@ -562,7 +576,9 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
 
   // Client Summary — auto-assembled from structured fields, all inline-editable.
   // Replaces the removed "WHO IS THE CLIENT" free-text card.
-  const lastDiscussionDate = realCallLogs[0]?.startedAt ?? lead.lastTouchedAt ?? null;
+  // METRIC, not a display row — an abandoned tap must never read as a discussion
+  // having happened, so this uses the resolved-calls set.
+  const lastDiscussionDate = completedCallLogs[0]?.startedAt ?? lead.lastTouchedAt ?? null;
   const lastDiscussionLabel = lastDiscussionDate
     ? new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short", year: "2-digit" }).format(new Date(lastDiscussionDate))
     : null;
@@ -1177,7 +1193,10 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
         {/* CONVERSATION STREAM — primary source of truth (spec §10).
             Comes before Quick Note (voice-first: voice note > conversation > quick note). */}
         <div data-lead-section="timeline">
-          <CallStatsBar callLogs={realCallLogs.map((c) => ({ durationSec: c.durationSec, outcome: c.outcome, notes: c.notes, startedAt: c.startedAt }))} waMessages={lead.waMessages.map((m) => ({ direction: m.direction }))} />
+          {/* Pure metric bar (connected / unsuccessful / talk time / last outcome /
+              best time) → resolved calls only. Feeding it a pending dial would show
+              "Last outcome: initiated" and let taps skew the best-time-to-call hour. */}
+          <CallStatsBar callLogs={completedCallLogs.map((c) => ({ durationSec: c.durationSec, outcome: c.outcome, notes: c.notes, startedAt: c.startedAt }))} waMessages={lead.waMessages.map((m) => ({ direction: m.direction }))} />
           <ConversationStreamCard
             callLogs={realCallLogs}
             waMessages={lead.waMessages}

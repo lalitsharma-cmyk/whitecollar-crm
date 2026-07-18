@@ -35,6 +35,19 @@
 //   • istDayRange / istDateKey / istWeekday / isValidDateKey — lib/datetime.ts.
 //   • normalizeTeam — lib/teamRouting.ts.  visibleOwnerIds — lib/leadScope.ts.
 //
+// RESOLVED vs UNRESOLVED (Lalit P0, 2026-07-18): every "Call" button now writes
+// a CallLog the instant it is TAPPED (outcome INITIATED), and the same row is
+// transitioned to a terminal outcome when the call resolves. A row still sitting
+// at INITIATED / RINGING is a DIAL, not a call — counting it would inflate Total
+// calls, the connect-rate denominator, every per-agent/team/module number and
+// the leaderboards, by every tap that never produced a conversation. So:
+//   • the report body counts RESOLVED calls only (CallParams.state defaults to
+//     "resolved", carried into every drill href as ?state=resolved), and
+//   • unresolved dials get their OWN headline figure (`pendingDials`, drilling
+//     to ?state=pending) — excluded from the metrics, never silently dropped.
+// Both stay count==records because /call-logs honours the identical ?state=
+// predicate, from the same PENDING_CALL_OUTCOMES set, for every role.
+//
 // UNCLASSIFIED DATA (Lalit directive 2026-07-16): a call whose actor has no
 // team, or whose record has no source/project, is NEVER force-bucketed. It gets
 // its own visible bucket ("Unclassified (no team)" etc.), and where /call-logs
@@ -62,7 +75,12 @@ import {
   ACTIVITY_SOURCE_MODULES,
   type SourceModule,
 } from "@/lib/moduleSource";
-import { MEANINGFUL_CALL_OUTCOMES, isMeaningfulOutcome } from "@/lib/ghosting";
+import {
+  MEANINGFUL_CALL_OUTCOMES,
+  isMeaningfulOutcome,
+  isPendingCall,
+  PENDING_CALL_OUTCOMES,
+} from "@/lib/ghosting";
 import { effectiveSource } from "@/lib/sourceLabel";
 import { istDateKey, istDayRange, istWeekday, isValidDateKey } from "@/lib/datetime";
 import { normalizeTeam } from "@/lib/teamRouting";
@@ -85,12 +103,36 @@ export const OUTCOME_LABELS: Record<string, string> = {
   CONNECTED: "Connected", NOT_PICKED: "Not Picked", CALLBACK: "Callback",
   WRONG_NUMBER: "Wrong Number", BUSY: "Busy", SWITCHED_OFF: "Switched Off",
   INTERESTED: "Interested", NOT_INTERESTED: "Not Interested",
+  // Terminal states added with the dial-on-tap change. Unclassified by design:
+  // they resolve, so they belong in Total, but they are neither "a human
+  // answered" nor one of the 4 explicit no-contact outcomes — the report shows
+  // them in their own bucket rather than quietly inflating "missed".
+  FAILED: "Failed", CANCELLED: "Cancelled", MISSED: "Missed",
+  // UNRESOLVED dials — never part of Total (see PENDING_OUTCOMES below).
+  INITIATED: "Initiated", RINGING: "Ringing",
 };
 
 /** Every CallOutcome enum value, in display order (connected set first). */
 const ALL_OUTCOMES: string[] = Object.keys(CallOutcome);
+
+// ── UNRESOLVED DIALS (Lalit P0, 2026-07-18) ──────────────────────────────────
+// Every "Call" button now writes a CallLog the instant it is tapped, at
+// INITIATED, and that same row is later transitioned to a terminal outcome. An
+// unresolved row is a DIAL, not a call: counting it would inflate Total calls,
+// the connect rate (its denominator), every per-agent/team/module number and
+// the leaderboards — by every tap that never produced a conversation.
+//
+// So the report body counts RESOLVED calls only (see CallParams.state, defaulted
+// to "resolved"), and unresolved dials get their OWN visible headline figure —
+// `pendingDials` — so a pending dial is never silently dropped either. Both
+// numbers drill exactly: ?state=resolved and ?state=pending on /call-logs.
+//
+// PENDING is NOT part of RESIDUAL_OUTCOMES: residual means "a resolved outcome
+// this report has not classified yet" and raises a loud flag telling the
+// operator to classify it. Pending is already classified — as not-a-call.
+const PENDING_OUTCOMES: string[] = ALL_OUTCOMES.filter((o) => isPendingCall(o));
 const RESIDUAL_OUTCOMES: string[] = ALL_OUTCOMES.filter(
-  (o) => !isMeaningfulOutcome(o) && !isUnsuccessfulOutcome(o),
+  (o) => !isMeaningfulOutcome(o) && !isUnsuccessfulOutcome(o) && !isPendingCall(o),
 );
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -119,6 +161,11 @@ export interface CallParams {
   team: string;    // "" = all — "Dubai" | "India" (→ /call-logs?team=, ADMIN-only)
   module: string;  // "" = all — a SourceModule (→ /call-logs?module=)
   outcome: string; // "" = all — a CallOutcome (→ /call-logs?outcome=)
+  /** Resolved-vs-unresolved dial split (→ /call-logs?state=).
+   *  "resolved" (the DEFAULT — the report counts real calls only) · "pending"
+   *  (unresolved dials only) · "" (both; only when ?outcome= already pins a
+   *  pending value, which is narrower and exact on its own). */
+  state: "" | "resolved" | "pending";
   /** Mirrors /leads + lead-intake: AGENTs may not see the source breakdown. */
   canSeeSource: boolean;
   /** Mirrors call-logs `showScopePickers` — AGENTs get no agent/team pickers. */
@@ -140,11 +187,17 @@ export interface DimRow {
 export interface CallReport {
   params: CallParams;
   rangeLabel: string;
-  /** Exact total from a COUNT (never the capped row fetch). */
+  /** Exact total from a COUNT (never the capped row fetch). RESOLVED calls only
+   *  — unresolved dials are in `pendingDials`, not here. */
   total: Cell;
   connected: Cell;
   unsuccessful: Cell;
   unclassifiedOutcome: Cell | null;
+  /** Dial attempts with no result yet (INITIATED / RINGING) in the same slice.
+   *  Deliberately OUTSIDE `total` and outside connected/unsuccessful: a dial is
+   *  not a call. Surfaced so it is never silently dropped either — 0 today,
+   *  non-zero the moment dial-on-tap ships. */
+  pendingDials: Cell;
   connectRate: number | null;
   /** Distinct records (leads + buyers) touched by the counted calls. */
   recordsTouched: number;
@@ -153,7 +206,7 @@ export interface CallReport {
   byModule: DimRow[];
   bySource: DimRow[];
   byProject: DimRow[];
-  byOutcome: { key: string; label: string; group: "connected" | "unsuccessful" | "other"; count: Cell; pct: number }[];
+  byOutcome: { key: string; label: string; group: "connected" | "unsuccessful" | "other" | "pending"; count: Cell; pct: number }[];
   /** EVERY CallOutcome, for the filter dropdown — byOutcome collapses to the
    *  pinned row when ?outcome= is active, so it cannot drive the picker. */
   outcomeOptions: { key: string; label: string }[];
@@ -236,13 +289,14 @@ function buildBuckets(grain: BucketGrain, fromKey: string, toKey: string): Bucke
 // Every drill opens /call-logs carrying the report's ACTIVE filters, with the
 // drilled dimension overriding its own key. `null` in `override` REMOVES a key
 // (used for the honest supersets). Param names are the list's own:
-//   user · team · module · outcome · from · to
+//   user · team · module · outcome · state · from · to
 // Note: /call-logs honours ?team= for ADMIN only — a MANAGER is already
 // team-locked server-side to that exact team, so the opened set is identical
-// either way (still count==records for them).
+// either way (still count==records for them). ?state= by contrast is honoured
+// for EVERY role precisely so these drills stay exact for agents and managers.
 
-type DrillKey = "user" | "team" | "module" | "outcome" | "from" | "to";
-const DRILL_KEYS: DrillKey[] = ["user", "team", "module", "outcome", "from", "to"];
+type DrillKey = "user" | "team" | "module" | "outcome" | "state" | "from" | "to";
+const DRILL_KEYS: DrillKey[] = ["user", "team", "module", "outcome", "state", "from", "to"];
 
 /** Param names /call-logs would need for exact Source / Project drills. When
  *  the list gains them, set these + flip `exact` in the two builders below. */
@@ -252,6 +306,9 @@ export const PROJECT_PARAM: string | null = null;
 function drillHref(p: CallParams, override: Partial<Record<DrillKey, string | null>> = {}): string {
   const base: Record<DrillKey, string> = {
     user: p.user, team: p.team, module: p.module, outcome: p.outcome,
+    // Every drill inherits the report's resolved/pending stance, so a number
+    // computed over resolved calls opens exactly the resolved calls.
+    state: p.state,
     from: p.fromKey, to: p.toKey,
   };
   const u = new URLSearchParams();
@@ -297,6 +354,16 @@ export async function resolveCallParams(
   const module = ACTIVITY_SOURCE_MODULES.includes(sp.module as SourceModule) ? sp.module! : "";
   const outcome = ALL_OUTCOMES.includes(sp.outcome ?? "") ? sp.outcome! : "";
 
+  // Call STATE — the report counts RESOLVED calls by default, so an unresolved
+  // dial can never inflate a call number. Two explicit escapes:
+  //   ?state=pending  → the unresolved-dials slice (what the headline figure links to)
+  //   ?outcome=INITIATED|RINGING → the user pinned a pending outcome, which is
+  //     narrower AND exact on its own; forcing "resolved" on top would AND the
+  //     two into the empty set and show a confusing 0. Clearing state here (and
+  //     therefore in every drill href) keeps the report and /call-logs agreeing.
+  const state: CallParams["state"] =
+    isPendingCall(outcome) ? "" : sp.state === "pending" ? "pending" : "resolved";
+
   const grain: Grain = (["daily", "weekly", "monthly", "yearly", "custom"] as const)
     .includes(sp.grain as Grain) ? (sp.grain as Grain) : "daily";
 
@@ -331,7 +398,7 @@ export async function resolveCallParams(
   if (bucketGrain === "weekly" && days > 730) bucketGrain = "monthly";
   if (bucketGrain === "monthly" && days > 3800) bucketGrain = "yearly";
 
-  return { grain, bucketGrain, fromKey, toKey, user, team, module, outcome, canSeeSource, showScopePickers, showTeamPicker };
+  return { grain, bucketGrain, fromKey, toKey, user, team, module, outcome, state, canSeeSource, showScopePickers, showTeamPicker };
 }
 
 // ── Where-clause construction (byte-mirrors /call-logs) ──────────────────────
@@ -373,6 +440,15 @@ export async function callWhere(me: ScopedUser, p: CallParams): Promise<Prisma.C
   // above, so replicating the ADMIN-only gate keeps the two sets identical.
   if (p.team && me.role === "ADMIN") filterAnd.push({ user: { team: p.team } });
   if (p.outcome) filterAnd.push({ outcome: p.outcome as CallOutcome });
+  // ?state= — byte-mirrors the /call-logs predicate (same param, same two arms,
+  // same PENDING set imported from lib/ghosting), and like the list it applies
+  // to EVERY role. This is what keeps "Total calls" == the rows its link opens
+  // once dial-on-tap starts writing unresolved rows.
+  if (p.state === "pending") {
+    filterAnd.push({ outcome: { in: [...PENDING_CALL_OUTCOMES] } });
+  } else if (p.state === "resolved") {
+    filterAnd.push({ outcome: { notIn: [...PENDING_CALL_OUTCOMES] } });
+  }
   filterAnd.push({ startedAt: istWindow(p.fromKey, p.toKey) });
   const mod = moduleWhere(p.module);
   if (mod) filterAnd.push(mod);
@@ -404,10 +480,17 @@ const MAX_ROWS = 60_000;
 
 export async function buildCallReport(me: ScopedUser, p: CallParams): Promise<CallReport> {
   const where = await callWhere(me, p);
+  // UNRESOLVED DIALS — the same slice (scope · team · user · module · date) with
+  // the outcome pin dropped and state forced to pending. Counted SEPARATELY and
+  // shown as its own headline figure: excluded from every call number above, but
+  // never silently discarded. Its drill drops ?outcome= too, so the link opens
+  // exactly the rows this number counts (count==records holds for it as well).
+  const pendingWhere = await callWhere(me, { ...p, state: "pending", outcome: "" });
   const flags: string[] = [];
 
-  const [total, rows, userRoster] = await Promise.all([
+  const [total, pendingN, rows, userRoster] = await Promise.all([
     prisma.callLog.count({ where }),
+    prisma.callLog.count({ where: pendingWhere }),
     // ONE bounded fetch feeds EVERY table — agent/team/module/source/project/
     // outcome/date/attempt all partition the SAME rows, so they reconcile by
     // construction (no per-table query can drift from the headline).
@@ -641,17 +724,25 @@ export async function buildCallReport(me: ScopedUser, p: CallParams): Promise<Ca
   // ── By OUTCOME (each one exact) ────────────────────────────────────────────
   const orderedOutcomes = ([
     ...MEANINGFUL_CALL_OUTCOMES, ...UNSUCCESSFUL_CALL_OUTCOMES, ...RESIDUAL_OUTCOMES,
+    ...PENDING_OUTCOMES,
   ] as string[])
     // Same rule as byModule: a pinned ?outcome= collapses this table to its own
     // row, so a synthetic 0 can never link to a non-empty set.
-    .filter((o) => !p.outcome || o === p.outcome);
+    .filter((o) => !p.outcome || o === p.outcome)
+    // Pending states are excluded from the report body, so they would otherwise
+    // sit here as permanent 0-rows implying "no dials ever". They appear only
+    // when they actually carry counts — i.e. when ?outcome= pinned one of them.
+    // The headline `pendingDials` figure is where unresolved dials are reported.
+    .filter((o) => !isPendingCall(o) || (outcomeAgg.get(o) ?? 0) > 0);
   const byOutcome = orderedOutcomes.map((o) => {
     const n = outcomeAgg.get(o) ?? 0;
     return {
       key: o,
       label: OUTCOME_LABELS[o] ?? o,
-      group: (isMeaningfulOutcome(o) ? "connected" : isUnsuccessfulOutcome(o) ? "unsuccessful" : "other") as
-        "connected" | "unsuccessful" | "other",
+      group: (isPendingCall(o) ? "pending"
+        : isMeaningfulOutcome(o) ? "connected"
+        : isUnsuccessfulOutcome(o) ? "unsuccessful" : "other") as
+        "connected" | "unsuccessful" | "other" | "pending",
       count: exactCell(n, { outcome: o }),
       pct: rows.length ? (n / rows.length) * 100 : 0,
     };
@@ -707,6 +798,15 @@ export async function buildCallReport(me: ScopedUser, p: CallParams): Promise<Ca
   if (total !== rows.length && rows.length < MAX_ROWS) {
     flags.push(`Internal check: headline count (${total}) and aggregated rows (${rows.length}) disagree — report this.`);
   }
+  // Unresolved dials are expected to be a thin sliver: a row sits at INITIATED /
+  // RINGING only between the tap and the result. A large share means dials are
+  // NOT being transitioned — a telephony/webhook fault — and those calls are
+  // missing from every call metric until it is fixed. Loud, with the fix target.
+  if (pendingN > 0 && pendingN > (total + pendingN) * 0.05) {
+    flags.push(
+      `${pendingN.toLocaleString()} dial(s) in this range never resolved (${((pendingN / (total + pendingN)) * 100).toFixed(1)}% of all dials) — they are counted in "Dial attempts (unresolved)" and in NO call metric. A share this high usually means the call-state transition is not firing; check the telephony webhook / call-state update path.`,
+    );
+  }
 
   const rangeLabel = p.fromKey === p.toKey
     ? `${fmtDay(p.fromKey)} ${p.fromKey.slice(0, 4)} (IST)`
@@ -721,10 +821,14 @@ export async function buildCallReport(me: ScopedUser, p: CallParams): Promise<Ca
     unclassifiedOutcome: residualN > 0
       ? groupCell(residualN, RESIDUAL_OUTCOMES, "unclassified")
       : null,
+    pendingDials: { n: pendingN, href: drillHref(p, { state: "pending", outcome: null }), exact: true },
     connectRate: connectedN + unsuccessfulN > 0 ? (connectedN / (connectedN + unsuccessfulN)) * 100 : null,
     recordsTouched: perRecord.size,
     byAgent, byTeam, byModule, bySource, byProject, byOutcome, byBucket, chartMax,
-    outcomeOptions: ([...MEANINGFUL_CALL_OUTCOMES, ...UNSUCCESSFUL_CALL_OUTCOMES, ...RESIDUAL_OUTCOMES] as string[])
+    outcomeOptions: ([
+      ...MEANINGFUL_CALL_OUTCOMES, ...UNSUCCESSFUL_CALL_OUTCOMES, ...RESIDUAL_OUTCOMES,
+      ...PENDING_OUTCOMES,
+    ] as string[])
       .map((o) => ({ key: o, label: OUTCOME_LABELS[o] ?? o })),
     attemptRows, userRoster, flags,
   };

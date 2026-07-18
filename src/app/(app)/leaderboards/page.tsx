@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
 import { ActivityType, ActivityStatus, CallOutcome } from "@prisma/client";
+import { excludePendingCallsWhere, PENDING_CALL_OUTCOMES } from "@/lib/ghosting";
 import { startOfDay, startOfWeek, startOfMonth } from "date-fns";
 import Link from "next/link";
 
@@ -100,10 +101,13 @@ export default async function LeaderboardsPage({
   const nameById = new Map(eligibleUsers.map((u) => [u.id, u.name]));
 
   // ── 1. Most calls ────────────────────────────────────────────────────
+  // excludePendingCallsWhere() drops unresolved dials (INITIATED / RINGING) —
+  // a tap on "Call" writes its CallLog row instantly, so without this guard the
+  // board would rank agents by taps rather than by calls that actually resolved.
   const callsAgg = await prisma.callLog.groupBy({
     by: ["userId"],
     _count: { _all: true },
-    where: { startedAt: { gte: start }, userId: { in: eligibleIds } },
+    where: { ...excludePendingCallsWhere(), startedAt: { gte: start }, userId: { in: eligibleIds } },
     orderBy: { _count: { userId: "desc" } },
     take: 5,
   });
@@ -133,6 +137,16 @@ export default async function LeaderboardsPage({
       JOIN "Lead" l ON l.id = cl."leadId"
       WHERE cl."leadId" IS NOT NULL
         AND cl."startedAt" >= ${start}
+        -- Unresolved dials excluded. This board is LOWER-IS-BETTER and DISTINCT ON
+        -- picks the EARLIEST row per lead, which decides both the response time and
+        -- WHICH AGENT is credited. An abandoned tap (INITIATED forever) would
+        -- therefore (a) score as a near-instant response and (b) STEAL the credit
+        -- from the agent who actually called later — their real call disappears
+        -- from the metric entirely. Guarding also keeps this board's meaning
+        -- unchanged ("first call that actually happened"), which is what it has
+        -- always measured; redefining it as "first tap" is a business decision,
+        -- not a side effect of adding dial logging.
+        AND cl."outcome"::text <> ALL(${PENDING_CALL_OUTCOMES})
       ORDER BY cl."leadId", cl."startedAt" ASC
     )
     SELECT
@@ -181,10 +195,14 @@ export default async function LeaderboardsPage({
   };
 
   // ── 4. Highest connect rate (connected / total, min 5 sample) ────────
+  // DENOMINATOR — must exclude unresolved dials. The numerator below is an
+  // allow-list (outcome=CONNECTED) and can never contain a pending row, so an
+  // unguarded denominator would grow with every dial tap while the numerator
+  // stood still, silently depressing every agent's connect rate over time.
   const totalsAgg = await prisma.callLog.groupBy({
     by: ["userId"],
     _count: { _all: true },
-    where: { startedAt: { gte: start }, userId: { in: eligibleIds } },
+    where: { ...excludePendingCallsWhere(), startedAt: { gte: start }, userId: { in: eligibleIds } },
   });
   const connectedAgg = await prisma.callLog.groupBy({
     by: ["userId"],
