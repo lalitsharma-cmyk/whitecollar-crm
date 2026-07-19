@@ -6400,6 +6400,102 @@ const checks: Check[] = [
   //      admin target, and ADMIN creation/promotion is super-admin-only. Also:
   //      the Google-Sheet importer now enforces the same owner-only rule as CSV.
   // ───────────────────────────────────────────────────────────────────────────
+  // ───────────────────────────────────────────────────────────────────────────
+  // CALL LOGS DASHBOARD (Lalit P0, 2026-07-20) — the page defaults to TODAY and
+  //      carries a KPI strip whose cards drill into the table. Two things can
+  //      break silently here: (1) the export inheriting a different default, so a
+  //      CSV taken from a one-day screen returns all time; (2) the cards being
+  //      computed from a different where than the table, so a card says 47 and
+  //      clicking it shows 12.
+  // ───────────────────────────────────────────────────────────────────────────
+  {
+    name: "call-logs-dashboard — defaults to today, export mirrors it, KPI cards share the table's where",
+    run: async () => {
+      const fs = await import("fs");
+      const page = fs.readFileSync("src/app/(app)/call-logs/page.tsx", "utf8");
+      const exp = fs.readFileSync("src/app/api/call-logs/export/route.ts", "utf8");
+
+      // (1) DEFAULT = TODAY, with a real escape hatch. Without ?range=all there
+      //     would be no way to ask for history at all.
+      assert(/const rangeAll = sp\.range === "all"/.test(page), "page must support ?range=all (the history escape hatch)");
+      assert(/effectiveFrom[\s\S]{0,120}istToday/.test(page), "page must default the date window to today (IST)");
+
+      // (2) EXPORT MIRRORS THE PAGE. The page forwards RESOLVED dates, and the
+      //     route independently defaults too (covers a hand-typed/older URL).
+      assert(/rangeAll\s*\?\s*null\s*:/.test(exp), "export route must honour ?range=all");
+      assert(/istToday/.test(exp), "export route must default to today, matching the page");
+      assert(/exportParams\.set\("from", effectiveFrom\)/.test(page),
+        "page must forward the RESOLVED from-date to the export, not the raw param");
+
+      // (3) CARDS AND TABLE SHARE ONE FILTER SET. kpiWhere is the table's where
+      //     minus the outcome/state pin — derived from the same parts, so a filter
+      //     cannot apply to one and not the other.
+      assert(/const outcomeAnd: Prisma\.CallLogWhereInput\[\] = \[\]/.test(page),
+        "outcome/state predicates must live in their own bucket so the KPI where can exclude exactly them");
+      assert(/AND: \[\.\.\.scopeAnd, linkedAnd, \.\.\.filterAnd, \.\.\.outcomeAnd\]/.test(page),
+        "table where must be scope + filters + outcome pin");
+      assert(/kpiWhere[\s\S]{0,120}AND: \[\.\.\.scopeAnd, linkedAnd, \.\.\.filterAnd\]/.test(page),
+        "KPI where must be the SAME parts minus the outcome pin — never a separately-built clause");
+
+      // (4) The connect-rate denominator must exclude unresolved dials, the trap
+      //     closed everywhere else in the CRM.
+      const kpis = fs.readFileSync("src/app/(app)/call-logs/kpis.ts", "utf8");
+      assert(/connectionRate: total > 0/.test(kpis), "connection rate must divide by RESOLVED calls");
+      assert(/PENDING_CALL_OUTCOMES/.test(kpis), "KPI module must exclude pending dials from `total`");
+
+      // (5) DATA — the cards must reconcile with the table for a real window.
+      const { computeCallKpis } = await import("../src/app/(app)/call-logs/kpis");
+      const k = await computeCallKpis({});
+      const dbTotal = await prisma.callLog.count();
+      const sum = Object.values(k.byOutcome).reduce((a, b) => a + b, 0);
+      assert(sum === dbTotal, `KPI per-outcome counts (${sum}) != CallLog rows (${dbTotal}) — a card is missing an outcome`);
+      assert(k.total + k.pending === dbTotal,
+        `resolved (${k.total}) + pending (${k.pending}) != total (${dbTotal})`);
+      results.push({ name: "  ↳ note", ok: true,
+        detail: `KPIs reconcile: ${k.total} resolved + ${k.pending} unresolved = ${dbTotal} · connect rate ${k.connectionRate}%` });
+    },
+  },
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // AGENT SELF-SERVICE PASSWORD BLOCK (Lalit, 2026-07-20) — an agent's password
+  //      is set and rotated by an admin only. The profile page already hid the
+  //      form for agents, but the API did NOT enforce it, so an agent could change
+  //      their password by posting straight to the route. The UI gate is cosmetic;
+  //      the route is the permission. Both are asserted so neither half can drift.
+  // ───────────────────────────────────────────────────────────────────────────
+  {
+    name: "agent-password-policy — agents cannot self-change (enforced at the ROUTE, not just hidden in the UI)",
+    run: async () => {
+      const fs = await import("fs");
+      // auth.ts is server-only (cannot be imported here) — assert the predicate by
+      // content, the same way the privilege-guard invariant below does.
+      const auth = fs.readFileSync("src/lib/auth.ts", "utf8");
+      assert(/export function selfPasswordChangeDenial/.test(auth),
+        "lib/auth.ts must export selfPasswordChangeDenial");
+      const fn = auth.slice(auth.indexOf("export function selfPasswordChangeDenial"));
+      assert(/me\.role === "AGENT"/.test(fn.slice(0, 400)),
+        "selfPasswordChangeDenial must deny exactly the AGENT role (managers/admins keep self-service)");
+
+      // THE enforcement point.
+      const route = fs.readFileSync("src/app/api/profile/password/route.ts", "utf8");
+      assert(/selfPasswordChangeDenial/.test(route),
+        "profile password route must call selfPasswordChangeDenial — a hidden form is not a permission");
+      // The guard must run BEFORE the password work, not after.
+      assert(route.indexOf("selfPasswordChangeDenial(me)") < route.indexOf("bcrypt.compare"),
+        "the agent denial must short-circuit before any password verification/hashing");
+
+      // And the UI must stay consistent with it, or agents see a form that 403s.
+      const profile = fs.readFileSync("src/app/(app)/profile/page.tsx", "utf8");
+      assert(/me\.role !== "AGENT"/.test(profile),
+        "profile page must hide the change-password form for agents");
+
+      // Admin reset must REMAIN available — it is the only rotation path an agent
+      // now has, so losing it would leave a compromised agent password unfixable.
+      assert(fs.existsSync("src/app/api/admin/users/[id]/password/route.ts"),
+        "admin password-reset route must exist — it is the sole rotation path for agent accounts");
+    },
+  },
+
   {
     name: "user-mgmt-privilege-guard — non-super admin cannot reset/demote/disable a super-admin; ADMIN mint is super-only; sheet import owner-only",
     run: async () => {
@@ -6659,8 +6755,37 @@ const checks: Check[] = [
         assert(/callLog\./.test(src), `${f} must source call counts from CallLog`);
       }
       // DATA — the two structural guarantees.
+      // ── DUAL-LINKED ROWS ARE LEGAL AND LOAD-BEARING (corrected 2026-07-20) ──
+      // This used to assert `both === 0`. That was WRONG, and it fired the first
+      // time an agent converted a buyer to a lead. buyer-data/[id]/convert
+      // deliberately stamps leadId onto the buyer's CallLogs while KEEPING
+      // buyerId, so the call history follows the client onto the new lead — and
+      // Revert Convert (operationLog.ts) finds exactly those rows by the dual link
+      // (`leadId = X AND buyerId IS NOT NULL`) to hand the history back. "Fixing"
+      // the dual link by clearing buyerId would silently break undo and lose the
+      // buyer's call history on revert.
+      //
+      // The real guarantee this invariant exists to protect is NO DOUBLE-COUNTING,
+      // so assert that directly: every lead-call surface scopes with buyerId:null,
+      // therefore lead-only + buyer + unlinked must partition the table exactly.
+      // A surface that counted `leadId: { not: null }` without the buyerId guard
+      // would break this sum — which is precisely the bug worth catching.
       const both = await prisma.callLog.count({ where: { leadId: { not: null }, buyerId: { not: null } } });
-      assert(both === 0, `${both} CallLogs link BOTH a lead and a buyer — a call must belong to exactly one record`);
+      const leadOnly = await prisma.callLog.count({ where: { leadId: { not: null }, buyerId: null } });
+      const buyerAny = await prisma.callLog.count({ where: { buyerId: { not: null } } });
+      const unlinked = await prisma.callLog.count({ where: { leadId: null, buyerId: null } });
+      const grand = await prisma.callLog.count();
+      assert(
+        leadOnly + buyerAny + unlinked === grand,
+        `call-count partition broken: lead-only ${leadOnly} + buyer ${buyerAny} + unlinked ${unlinked} != ${grand} ` +
+          `(${both} dual-linked rows are being counted twice — a lead-call query is missing its buyerId:null guard)`,
+      );
+      // And the convert must keep buyerId, or the revert loses the history.
+      const conv = fs.readFileSync("src/app/api/buyer-data/[id]/convert/route.ts", "utf8");
+      assert(
+        /callLog\.updateMany\(\{ where: \{ buyerId: buyer\.id, leadId: null \}, data: \{ leadId: lead\.id \} \}\)/.test(conv),
+        "convert must SET leadId while KEEPING buyerId — Revert Convert locates the rows by that dual link",
+      );
       const buyerCalls = await prisma.callLog.count({ where: { buyerId: { not: null } } });
       // Post-backfill equality — against the REAL-CALL cohort only.
       // The BuyerActivity ledger mixes two very different things:

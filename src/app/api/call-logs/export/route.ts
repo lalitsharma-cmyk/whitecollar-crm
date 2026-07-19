@@ -100,8 +100,19 @@ export async function GET(req: NextRequest) {
 
   const url = new URL(req.url);
   const sp = url.searchParams;
-  const fromParam = sp.get("from");
-  const toParam = sp.get("to");
+  // ── DATE WINDOW — byte-mirror of call-logs/page.tsx (Lalit P0, 2026-07-18) ──
+  // That page now DEFAULTS TO TODAY when no range is given, and forwards the
+  // RESOLVED dates here. This fallback covers a hand-typed or older saved URL
+  // that carries neither: without it such a request would export all time from a
+  // screen that shows one day — the same export-vs-screen divergence that was
+  // just closed for ?state= (measured at 5,387 leaked rows). ?range=all is the
+  // explicit unbounded view and must stay unbounded on both sides.
+  const rangeAll = sp.get("range") === "all";
+  const istToday = new Date(Date.now() + IST_OFFSET_MS).toISOString().slice(0, 10);
+  const rawFrom = sp.get("from");
+  const rawTo = sp.get("to");
+  const fromParam = rangeAll ? null : rawFrom || (rawTo ? null : istToday);
+  const toParam = rangeAll ? null : rawTo || (rawFrom ? null : istToday);
   // `user` is the page's own param name; `userId` is kept for older saved links.
   const userParam = sp.get("user") ?? sp.get("userId") ?? undefined;
   const teamParam = sp.get("team") ?? undefined;

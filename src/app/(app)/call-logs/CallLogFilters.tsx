@@ -25,6 +25,22 @@ interface Props {
   showScopePickers: boolean;
   /** Whether to show the Team picker specifically (hidden for a team-locked MANAGER). */
   showTeamPicker: boolean;
+  /** The date window the SERVER actually applied. The page defaults to today when
+   *  no range is in the URL, so the inputs must show the resolved dates — not the
+   *  empty params — or the bar would read "no dates" while the table shows one day. */
+  effectiveFrom: string;
+  effectiveTo: string;
+  /** True when ?range=all is pinned (the explicit unbounded/history view). */
+  rangeAll: boolean;
+  /** Today in IST (YYYY-MM-DD) — for the quick-range buttons and the Today check. */
+  istToday: string;
+}
+
+/** Shift an IST YYYY-MM-DD by N days. */
+function addDays(iso: string, days: number): string {
+  const d = new Date(`${iso}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
 }
 
 const TEAMS = [
@@ -42,7 +58,10 @@ function bucketTeam(t: string | null): "India" | "Dubai" | null {
   return null;
 }
 
-export default function CallLogFilters({ users, outcomes, showScopePickers, showTeamPicker }: Props) {
+export default function CallLogFilters({
+  users, outcomes, showScopePickers, showTeamPicker,
+  effectiveFrom, effectiveTo, rangeAll, istToday,
+}: Props) {
   const router = useRouter();
   const pathname = usePathname();
   const sp = useSearchParams();
@@ -76,9 +95,53 @@ export default function CallLogFilters({ users, outcomes, showScopePickers, show
   function setParam(key: string, value: string) {
     const p = new URLSearchParams(sp.toString());
     if (value) p.set(key, value); else p.delete(key);
+    // Touching a date leaves the explicit all-time view — otherwise range=all
+    // would keep overriding the date the operator just typed and the input would
+    // appear to do nothing.
+    if (key === "from" || key === "to") p.delete("range");
     p.delete("page");
     router.replace(`${pathname}?${p.toString()}`);
   }
+
+  /** Quick ranges. Writes BOTH ends so the window is unambiguous, and drops the
+   *  outcome/state pin? No — the pin is deliberately kept: an operator narrowing
+   *  "Not Picked" from today to last-7-days expects to still be looking at Not
+   *  Picked. Only the page resets. */
+  function setRange(from: string, to: string, all = false) {
+    const p = new URLSearchParams(sp.toString());
+    if (all) {
+      p.set("range", "all");
+      p.delete("from");
+      p.delete("to");
+    } else {
+      p.delete("range");
+      p.set("from", from);
+      p.set("to", to);
+    }
+    p.delete("page");
+    router.replace(`${pathname}?${p.toString()}`);
+  }
+
+  const isToday = !rangeAll && effectiveFrom === istToday && effectiveTo === istToday;
+  const quick: { label: string; on: boolean; go: () => void }[] = [
+    { label: "Today", on: isToday, go: () => setRange(istToday, istToday) },
+    {
+      label: "Yesterday",
+      on: !rangeAll && effectiveFrom === addDays(istToday, -1) && effectiveTo === addDays(istToday, -1),
+      go: () => setRange(addDays(istToday, -1), addDays(istToday, -1)),
+    },
+    {
+      label: "Last 7 days",
+      on: !rangeAll && effectiveFrom === addDays(istToday, -6) && effectiveTo === istToday,
+      go: () => setRange(addDays(istToday, -6), istToday),
+    },
+    {
+      label: "Last 30 days",
+      on: !rangeAll && effectiveFrom === addDays(istToday, -29) && effectiveTo === istToday,
+      go: () => setRange(addDays(istToday, -29), istToday),
+    },
+    { label: "All time", on: rangeAll, go: () => setRange("", "", true) },
+  ];
 
   function onTeamChange(value: string) {
     const p = new URLSearchParams(sp.toString());
@@ -111,14 +174,34 @@ export default function CallLogFilters({ users, outcomes, showScopePickers, show
         className="w-full border border-[#e5e7eb] dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#0b1a33]/20"
       />
 
+      {/* Quick ranges — the default is Today, so the common windows are one click
+          and From/To is reserved for a deliberate historical report. */}
+      <div className="flex flex-wrap gap-1.5">
+        {quick.map((r) => (
+          <button
+            key={r.label}
+            type="button"
+            onClick={r.go}
+            className={`px-2.5 py-1 rounded-full text-xs font-medium border transition ${
+              r.on
+                ? "bg-blue-600 border-blue-600 text-white"
+                : "bg-white dark:bg-slate-800 border-gray-200 dark:border-slate-600 text-gray-600 dark:text-slate-300 hover:border-gray-400 dark:hover:border-slate-500"
+            }`}
+          >
+            {r.label}
+          </button>
+        ))}
+      </div>
+
       {/* Filter row */}
       <div className="flex flex-wrap gap-3 items-end">
-        {/* Date range */}
+        {/* Date range — bound to the EFFECTIVE dates so the inputs show the window
+            the server applied (today, when nothing is in the URL). */}
         <div className="flex flex-col gap-1">
           <label className={lblCls}>From</label>
           <input
             type="date"
-            value={from}
+            value={effectiveFrom}
             onChange={(e) => setParam("from", e.target.value)}
             className={selCls}
           />
@@ -127,7 +210,7 @@ export default function CallLogFilters({ users, outcomes, showScopePickers, show
           <label className={lblCls}>To</label>
           <input
             type="date"
-            value={to}
+            value={effectiveTo}
             onChange={(e) => setParam("to", e.target.value)}
             className={selCls}
           />

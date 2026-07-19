@@ -16,6 +16,8 @@ import {
 } from "@/lib/moduleSource";
 import { PENDING_CALL_OUTCOMES } from "@/lib/ghosting";
 import CallLogFilters from "./CallLogFilters";
+import CallLogKpiCards from "./CallLogKpiCards";
+import { computeCallKpis } from "./kpis";
 
 export const dynamic = "force-dynamic";
 
@@ -172,9 +174,17 @@ export default async function CallLogsPage({
     filterAnd.push({ user: { team: teamFilter } });
   }
 
+  // ── Outcome / state predicates live in their OWN bucket ───────────────────
+  // The table honours them; the KPI cards deliberately do NOT (they show the full
+  // breakdown for the other filters, with the pinned one highlighted — otherwise
+  // clicking "Connected" would zero every other card and the strip would stop
+  // being usable the moment you used it). Keeping them separate is what lets one
+  // where-clause serve both without a second definition of the filter set.
+  const outcomeAnd: Prisma.CallLogWhereInput[] = [];
+
   // Call Status (outcome).
   if (sp.outcome && (Object.keys(CallOutcome) as string[]).includes(sp.outcome)) {
-    filterAnd.push({ outcome: sp.outcome as CallOutcome });
+    outcomeAnd.push({ outcome: sp.outcome as CallOutcome });
   }
 
   // ── Call STATE (?state=) — resolved vs unresolved dial (Lalit P0 2026-07-18) ──
@@ -190,20 +200,37 @@ export default async function CallLogsPage({
   // constrains which rows they can see — this only narrows within that scope.
   const stateParam = sp.state === "pending" || sp.state === "resolved" ? sp.state : "";
   if (stateParam === "pending") {
-    filterAnd.push({ outcome: { in: [...PENDING_CALL_OUTCOMES] } });
+    outcomeAnd.push({ outcome: { in: [...PENDING_CALL_OUTCOMES] } });
   } else if (stateParam === "resolved") {
-    filterAnd.push({ outcome: { notIn: [...PENDING_CALL_OUTCOMES] } });
+    outcomeAnd.push({ outcome: { notIn: [...PENDING_CALL_OUTCOMES] } });
   }
 
-  // Date range (?from / ?to are YYYY-MM-DD in IST).
-  if (sp.from || sp.to) {
+  // ── DATE RANGE — DEFAULTS TO TODAY (Lalit P0, 2026-07-18) ──────────────────
+  // Call Logs is an operations dashboard first and an archive second: opening it
+  // must show what is happening TODAY with no clicks. So an absent date range no
+  // longer means "everything ever" — it means today (IST).
+  //
+  // Historical reporting stays fully available two ways: set From/To explicitly,
+  // or ?range=all for the old unbounded view. `range=all` is a REAL escape hatch,
+  // not decoration — without it there would be no way to ask "all time" at all,
+  // and every report built on this page would silently become a one-day report.
+  //
+  // effectiveFrom/To are what the UI shows and what the CSV export receives, so
+  // the date the operator sees, the rows on screen, and the download are always
+  // the same window — the export cannot inherit a different default.
+  const rangeAll = sp.range === "all";
+  const istToday = new Date(Date.now() + IST_OFFSET_MS).toISOString().slice(0, 10);
+  const effectiveFrom = rangeAll ? "" : sp.from || (sp.to ? "" : istToday);
+  const effectiveTo = rangeAll ? "" : sp.to || (sp.from ? "" : istToday);
+
+  if (effectiveFrom || effectiveTo) {
     const dateFilter: Prisma.DateTimeFilter<"CallLog"> = {};
-    if (sp.from) {
-      const fromMs = new Date(`${sp.from}T00:00:00Z`).getTime() - IST_OFFSET_MS;
+    if (effectiveFrom) {
+      const fromMs = new Date(`${effectiveFrom}T00:00:00Z`).getTime() - IST_OFFSET_MS;
       dateFilter.gte = new Date(fromMs);
     }
-    if (sp.to) {
-      const toMs = new Date(`${sp.to}T00:00:00Z`).getTime() - IST_OFFSET_MS + 24 * 3600 * 1000;
+    if (effectiveTo) {
+      const toMs = new Date(`${effectiveTo}T00:00:00Z`).getTime() - IST_OFFSET_MS + 24 * 3600 * 1000;
       dateFilter.lt = new Date(toMs);
     }
     filterAnd.push({ startedAt: dateFilter });
@@ -259,7 +286,13 @@ export default async function CallLogsPage({
     });
   }
 
+  // The TABLE's where — role scope + every filter, outcome/state included.
   const where: Prisma.CallLogWhereInput = {
+    AND: [...scopeAnd, linkedAnd, ...filterAnd, ...outcomeAnd],
+  };
+  // The KPI CARDS' where — identical, minus the outcome/state pin. Derived from
+  // the same parts, so a filter can never apply to the table but not the cards.
+  const kpiWhere: Prisma.CallLogWhereInput = {
     AND: [...scopeAnd, linkedAnd, ...filterAnd],
   };
 
@@ -289,7 +322,9 @@ export default async function CallLogsPage({
     });
   }
 
-  const [logs, total] = await Promise.all([
+  // KPIs run in the SAME Promise.all as the table, so the dashboard costs one
+  // round-trip, not three sequential ones — the "load today immediately" bar.
+  const [logs, total, kpis] = await Promise.all([
     prisma.callLog.findMany({
       where,
       orderBy: { startedAt: "desc" },
@@ -302,6 +337,7 @@ export default async function CallLogsPage({
       },
     }),
     prisma.callLog.count({ where }),
+    computeCallKpis(kpiWhere),
   ]);
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
@@ -368,8 +404,18 @@ export default async function CallLogsPage({
   // ignored it and returned the wider set — measured at 5,387 extra rows.) If you
   // add a filter to this page, add it to that route in the same change.
   const exportParams = new URLSearchParams();
-  for (const k of ["user", "team", "module", "outcome", "state", "from", "to", "q"] as const) {
+  for (const k of ["user", "team", "module", "outcome", "state", "q"] as const) {
     if (sp[k]) exportParams.set(k, sp[k]!);
+  }
+  // Dates are sent RESOLVED, not raw. The page now defaults to today when no
+  // range is given, so forwarding the raw (absent) params would hand the export
+  // no date filter at all and produce an all-time CSV from a screen showing one
+  // day. Sending effectiveFrom/To makes the download exactly the window on
+  // screen; ?range=all forwards as range=all and both stay unbounded together.
+  if (rangeAll) exportParams.set("range", "all");
+  else {
+    if (effectiveFrom) exportParams.set("from", effectiveFrom);
+    if (effectiveTo) exportParams.set("to", effectiveTo);
   }
   const canExport = canExportData(me);
 
@@ -394,7 +440,19 @@ export default async function CallLogsPage({
         <div>
           <h1 className="text-xl sm:text-2xl font-bold">Call Logs</h1>
           <p className="text-xs sm:text-sm text-gray-500 dark:text-slate-400">
-            Centralized call history across all modules ·{" "}
+            {/* The active window is stated explicitly. The page now defaults to
+                today, so a silent header would leave an operator reading a
+                one-day number as if it were all-time. */}
+            <span className="font-medium text-gray-700 dark:text-slate-300">
+              {rangeAll
+                ? "All time"
+                : effectiveFrom && effectiveTo && effectiveFrom === effectiveTo
+                ? effectiveFrom === istToday
+                  ? "Today"
+                  : effectiveFrom
+                : `${effectiveFrom || "start"} → ${effectiveTo || "now"}`}
+            </span>
+            {" · "}
             {total.toLocaleString()}{" "}
             {stateParam === "pending"
               ? `unresolved dial${total !== 1 ? "s" : ""}`
@@ -418,7 +476,17 @@ export default async function CallLogsPage({
         outcomes={outcomeOpts}
         showScopePickers={me.role !== "AGENT"}
         showTeamPicker={me.role === "ADMIN"}
+        effectiveFrom={effectiveFrom}
+        effectiveTo={effectiveTo}
+        rangeAll={rangeAll}
+        istToday={istToday}
       />
+
+      {/* ── KPI strip ──────────────────────────────────────────────────────
+          Sits between the filters and the table because it IS the filter
+          summary: it reports what the filters above selected, and clicking a
+          card narrows the table below. */}
+      <CallLogKpiCards kpis={kpis} sp={sp} />
 
       {/* ── Table ──────────────────────────────────────────────────────── */}
       <div className="card overflow-x-auto">

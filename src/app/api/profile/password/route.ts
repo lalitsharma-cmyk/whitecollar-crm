@@ -1,12 +1,26 @@
 // Logged-in user changes their own password. Verifies current password first.
 import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireUser } from "@/lib/auth";
+import { requireUser, selfPasswordChangeDenial } from "@/lib/auth";
 import bcrypt from "bcryptjs";
 import { audit, reqMeta } from "@/lib/audit";
 
 export async function POST(req: NextRequest) {
   const me = await requireUser();
+
+  // AGENTS CANNOT CHANGE THEIR OWN PASSWORD (Lalit, 2026-07-20). Enforced HERE,
+  // before the body is even read — the profile page hides the form for agents, but
+  // hiding a form stops nobody who can send a POST. Audited as a denied attempt so
+  // repeated tries are visible rather than silent.
+  const denial = selfPasswordChangeDenial(me);
+  if (denial) {
+    await audit({
+      userId: me.id, action: "auth.password.self-change-denied",
+      entity: "User", entityId: me.id, request: reqMeta(req),
+    });
+    return NextResponse.json({ error: denial.message }, { status: denial.code });
+  }
+
   const body = await req.json().catch(() => ({}));
   const current = String(body.currentPassword ?? "");
   const next = String(body.newPassword ?? "");

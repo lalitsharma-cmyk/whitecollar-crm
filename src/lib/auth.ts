@@ -109,6 +109,38 @@ export async function requireRole(...roles: Role[]) {
  *   • Creating/promoting an ADMIN is a super-admin-only act.
  * Returns null when allowed, or a 403 `{code,message}` the caller returns as JSON.
  */
+/**
+ * SELF-SERVICE PASSWORD CHANGE — blocked for AGENTs (Lalit, 2026-07-20).
+ *
+ * Policy decision, not a security control in itself: an agent's password is set
+ * and rotated by an admin only. Managers, admins and super-admins keep
+ * self-service.
+ *
+ * ⚠️ CONSEQUENCE, recorded here deliberately so it is not rediscovered the hard
+ * way: an agent CANNOT rotate a compromised password. Whatever password the
+ * admin set — and however it was delivered to them — stands until an admin
+ * changes it. If an agent's phone or chat history is exposed, the only remedy is
+ * Admin → User Management → reset password (which stamps passwordChangedAt,
+ * bumps sessionEpoch and revokes every session, so the reset is a true lockout).
+ * Lalit was shown this trade-off and chose it knowingly; do not "fix" it by
+ * re-enabling self-service without asking him.
+ *
+ * The UI hides the form for agents, but THIS is the enforcement point — a hidden
+ * form is not a permission.
+ */
+export function selfPasswordChangeDenial(me: { role?: string | null }):
+  | { code: 403; message: string }
+  | null {
+  if (me.role === "AGENT") {
+    return {
+      code: 403,
+      message:
+        "Password changes for agent accounts are handled by an admin. Please ask your administrator to reset it for you.",
+    };
+  }
+  return null;
+}
+
 export type ManageUserTarget = { isSuperAdmin?: boolean | null; role?: string | null };
 export function userManagementDenial(
   me: { isSuperAdmin?: boolean | null; hrOnly?: boolean | null },
