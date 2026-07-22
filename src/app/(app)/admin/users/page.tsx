@@ -18,6 +18,9 @@ export default async function AdminUsersPage() {
       role: true,
       team: true,
       active: true,
+      employmentStatus: true,
+      lastWorkingDate: true,
+      offboardReason: true,
       createdAt: true,
       // "Calls" column — unresolved dials (INITIATED / RINGING) excluded so the
       // per-user total counts calls placed, not Call-button taps. Matches the

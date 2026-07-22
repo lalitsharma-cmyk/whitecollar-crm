@@ -1983,6 +1983,55 @@ const checks: Check[] = [
     },
   },
   {
+    // ── REUSABLE OFFBOARDING SYSTEM (Lalit #98, 2026-07-23) ─────────────────────
+    // employmentStatus model + Admin "Mark as Left Organization" flow. `active` stays
+    // the enforcement flag; employmentStatus records WHY + gives LEFT_ORGANIZATION
+    // its terminal semantics. A lockout status must ALSO set active=false so the whole
+    // access/routing stack enforces it.
+    name: "offboarding-system — employmentStatus model + Mark-as-Left engine/API + reactivate; lockout sets active=false",
+    run: async () => {
+      const fs = await import("fs");
+      // enum present with all five states.
+      const schema = fs.readFileSync("prisma/schema.prisma", "utf8");
+      assert(/enum EmploymentStatus \{[\s\S]*?ACTIVE[\s\S]*?ON_LEAVE[\s\S]*?TEMPORARILY_DISABLED[\s\S]*?SUSPENDED[\s\S]*?LEFT_ORGANIZATION[\s\S]*?\}/.test(schema),
+        "EmploymentStatus enum must define all 5 states");
+      assert(/employmentStatus EmploymentStatus @default\(ACTIVE\)/.test(schema), "User.employmentStatus must default ACTIVE");
+
+      // Engine: a lockout status locks the account; ON_LEAVE does not.
+      const eng = fs.readFileSync("src/lib/offboarding.ts", "utf8");
+      assert(/export async function offboardUser/.test(eng) && /export async function reactivateUser/.test(eng),
+        "offboarding engine must export offboardUser + reactivateUser");
+      assert(/active: false, sessionEpoch: \{ increment: 1 \}, passwordChangedAt/.test(eng),
+        "a lockout offboard must set active=false + bump sessionEpoch + passwordChangedAt");
+      assert(/previousOwnerId: l\.ownerId \?\? l\.previousOwnerId/.test(eng),
+        "Admin-Queue reassign must preserve Previous Owner = the offboarded user");
+      // Preview-before-confirm is a required capability.
+      assert(/export async function offboardingWorkloadPreview/.test(eng), "must expose a pre-confirm workload preview");
+
+      // API: admin-gated + privilege guard; reactivate route exists.
+      const off = fs.readFileSync("src/app/api/admin/users/[id]/offboard/route.ts", "utf8");
+      assert(/requireRole\("ADMIN"\)/.test(off) && /userManagementDenial/.test(off),
+        "offboard route must be ADMIN-gated + carry the privilege-escalation guard");
+      assert(fs.existsSync("src/app/api/admin/users/[id]/reactivate/route.ts"), "reactivate route must exist");
+
+      // UI offers the action + a status badge.
+      const ui = fs.readFileSync("src/components/AdminUsersClient.tsx", "utf8");
+      assert(/Mark as Left/.test(ui) && /EMP_STATUS_META/.test(ui), "User Management UI must offer Mark-as-Left + a status badge");
+
+      // DATA — enum is live and Yasir reads LEFT_ORGANIZATION + active=false.
+      const { EmploymentStatus } = await import("@prisma/client");
+      assert(Object.keys(EmploymentStatus).length === 5, "generated client must know all 5 EmploymentStatus values");
+      const y = await prisma.user.findFirst({ where: { name: { contains: "Yasir" } }, select: { active: true, employmentStatus: true } });
+      assert(!!y && y.employmentStatus === "LEFT_ORGANIZATION" && y.active === false,
+        "Yasir must read LEFT_ORGANIZATION + active=false");
+      // INVARIANT: no user is in a lockout employmentStatus while still active=true.
+      const contradiction = await prisma.user.count({
+        where: { active: true, employmentStatus: { in: ["SUSPENDED", "LEFT_ORGANIZATION", "TEMPORARILY_DISABLED"] } },
+      });
+      assert(contradiction === 0, `${contradiction} user(s) are in a lockout status but still active=true — offboarding didn't lock the account`);
+    },
+  },
+  {
     // TERMINAL LEADS BELONG TO THE SYSTEM (Lalit 2026-07-10). A lead that ARRIVES from any
     // import/intake source already carrying a terminal status must never land in an agent's
     // active queue: no auto-assign, no owner, no follow-up. Won/Closed is exempt from the

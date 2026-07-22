@@ -13,7 +13,17 @@ interface UserRow {
   role: string;
   team: string | null;
   active: boolean;
+  employmentStatus?: string;
 }
+
+// Employment-status display metadata (label + chip tone). ACTIVE has no chip.
+const EMP_STATUS_META: Record<string, { label: string; tone: string }> = {
+  ACTIVE: { label: "Active", tone: "" },
+  ON_LEAVE: { label: "On Leave", tone: "bg-amber-100 text-amber-800 border-amber-200 dark:bg-amber-900/30 dark:text-amber-300 dark:border-amber-700" },
+  TEMPORARILY_DISABLED: { label: "Temporarily Disabled", tone: "bg-orange-100 text-orange-800 border-orange-200 dark:bg-orange-900/30 dark:text-orange-300 dark:border-orange-700" },
+  SUSPENDED: { label: "Suspended", tone: "bg-red-100 text-red-800 border-red-200 dark:bg-red-900/30 dark:text-red-300 dark:border-red-700" },
+  LEFT_ORGANIZATION: { label: "Left Organization", tone: "bg-slate-200 text-slate-700 border-slate-300 dark:bg-slate-700 dark:text-slate-300 dark:border-slate-600" },
+};
 
 // ─── Invite Modal ─────────────────────────────────────────────────────────────
 
@@ -605,6 +615,143 @@ function SessionsModal({
   );
 }
 
+// ─── Offboarding modal — "Mark as Left Organization" ──────────────────────────
+// Loads the workload preview (exact counts) BEFORE the admin confirms, then posts
+// the offboarding: locks the account, reassigns active work (Admin Queue or a
+// chosen user), preserves all history. Reversible via OperationLog.
+function OffboardModal({
+  user, users, onClose, onDone,
+}: {
+  user: UserRow;
+  users: UserRow[];
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const [preview, setPreview] = useState<{ activeLeads: number; revivalLeads: number; leadsWithFollowup: number; assignedBuyers: number; plannedActivities: number; liveSessions: number; total: number } | null>(null);
+  const [status, setStatus] = useState("LEFT_ORGANIZATION");
+  const [lastWorkingDate, setLastWorkingDate] = useState("");
+  const [reason, setReason] = useState("");
+  const [note, setNote] = useState("");
+  const [reassignMode, setReassignMode] = useState<"admin_queue" | "reassign_user">("admin_queue");
+  const [reassignToUserId, setReassignToUserId] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [confirmed, setConfirmed] = useState(false);
+
+  useEffect(() => {
+    fetch(`/api/admin/users/${user.id}/offboard`)
+      .then((r) => r.json())
+      .then((j) => { if (j.ok) setPreview(j.preview); else setErr(j.error ?? "Could not load workload."); })
+      .catch(() => setErr("Could not load workload."));
+  }, [user.id]);
+
+  const activeTargets = users.filter((u) => u.id !== user.id && u.active && (u.employmentStatus ?? "ACTIVE") === "ACTIVE");
+
+  async function submit() {
+    if (busy) return;
+    if (reassignMode === "reassign_user" && !reassignToUserId) { setErr("Pick a user to reassign to."); return; }
+    setBusy(true); setErr(null);
+    try {
+      const r = await fetch(`/api/admin/users/${user.id}/offboard`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status, lastWorkingDate: lastWorkingDate || null, reason, note, reassignMode, reassignToUserId: reassignToUserId || null }),
+      });
+      const j = await r.json();
+      if (!r.ok) { setErr(j.error ?? `Failed (${r.status})`); setBusy(false); return; }
+      onDone();
+    } catch (e) { setErr(`Network error: ${String(e).slice(0, 80)}`); setBusy(false); }
+  }
+
+  const locks = status !== "ON_LEAVE";
+  const fieldCls = "w-full border border-gray-300 dark:border-slate-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-slate-700 dark:text-slate-100";
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+      <div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto p-5" role="dialog" onClick={(e) => e.stopPropagation()}>
+        <div className="font-bold text-lg mb-1">Offboard {user.name}</div>
+        <div className="text-xs text-gray-500 dark:text-slate-400 mb-4">{user.email} · {user.role}{user.team ? ` · ${user.team}` : ""}</div>
+
+        {/* Workload preview — the exact counts that will move, BEFORE confirming. */}
+        <div className="rounded-lg border border-gray-200 dark:border-slate-700 p-3 mb-4 text-sm">
+          <div className="font-semibold mb-2 text-gray-700 dark:text-slate-200">Current workload</div>
+          {!preview ? (
+            <div className="text-gray-400 text-xs">Loading…</div>
+          ) : (
+            <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+              <div className="flex justify-between"><span className="text-gray-500 dark:text-slate-400">Active leads</span><span className="font-semibold tabular-nums">{preview.activeLeads}</span></div>
+              <div className="flex justify-between"><span className="text-gray-500 dark:text-slate-400">…in Revival</span><span className="font-semibold tabular-nums">{preview.revivalLeads}</span></div>
+              <div className="flex justify-between"><span className="text-gray-500 dark:text-slate-400">With follow-up</span><span className="font-semibold tabular-nums">{preview.leadsWithFollowup}</span></div>
+              <div className="flex justify-between"><span className="text-gray-500 dark:text-slate-400">Assigned buyers</span><span className="font-semibold tabular-nums">{preview.assignedBuyers}</span></div>
+              <div className="flex justify-between"><span className="text-gray-500 dark:text-slate-400">Live sessions</span><span className="font-semibold tabular-nums">{preview.liveSessions}</span></div>
+              <div className="flex justify-between col-span-2 border-t border-gray-100 dark:border-slate-700 pt-1 mt-1"><span className="text-gray-600 dark:text-slate-300 font-medium">Records to reassign</span><span className="font-bold tabular-nums">{preview.total}</span></div>
+            </div>
+          )}
+        </div>
+
+        <div className="space-y-3">
+          <div>
+            <label className="text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase">Status</label>
+            <select value={status} onChange={(e) => { setStatus(e.target.value); setConfirmed(false); }} className={fieldCls}>
+              <option value="LEFT_ORGANIZATION">Left Organization</option>
+              <option value="SUSPENDED">Suspended</option>
+              <option value="TEMPORARILY_DISABLED">Temporarily Disabled</option>
+              <option value="ON_LEAVE">On Leave (keeps access)</option>
+            </select>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase">Last working date</label>
+              <input type="date" value={lastWorkingDate} onChange={(e) => setLastWorkingDate(e.target.value)} className={fieldCls} />
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase">Reason</label>
+              <input type="text" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. resigned" className={fieldCls} />
+            </div>
+          </div>
+          {locks && (
+            <div>
+              <label className="text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase">Reassign active work to</label>
+              <div className="flex gap-2 items-center">
+                <select value={reassignMode} onChange={(e) => setReassignMode(e.target.value as "admin_queue" | "reassign_user")} className={fieldCls}>
+                  <option value="admin_queue">Admin Queue (unassigned)</option>
+                  <option value="reassign_user">A specific user…</option>
+                </select>
+                {reassignMode === "reassign_user" && (
+                  <select value={reassignToUserId} onChange={(e) => setReassignToUserId(e.target.value)} className={fieldCls}>
+                    <option value="">— pick —</option>
+                    {activeTargets.map((u) => <option key={u.id} value={u.id}>{u.name}{u.team ? ` (${u.team})` : ""}</option>)}
+                  </select>
+                )}
+              </div>
+              <p className="text-[11px] text-gray-400 dark:text-slate-500 mt-1">Previous Owner stays {user.name}; all call logs, notes and history are preserved. Reversible from Admin → Operations.</p>
+            </div>
+          )}
+          <div>
+            <label className="text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase">Note (optional)</label>
+            <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} className={fieldCls} />
+          </div>
+        </div>
+
+        {locks && (
+          <label className="flex items-start gap-2 mt-4 text-xs text-gray-600 dark:text-slate-300">
+            <input type="checkbox" checked={confirmed} onChange={(e) => setConfirmed(e.target.checked)} className="mt-0.5" />
+            <span>I understand this revokes {user.name}&rsquo;s access on every device and reassigns {preview?.total ?? 0} record(s){reassignMode === "reassign_user" ? "" : " to the Admin Queue"}.</span>
+          </label>
+        )}
+        {err && <div className="text-xs text-red-600 mt-3" role="alert">{err}</div>}
+        <div className="flex justify-end gap-2 mt-4">
+          <button type="button" onClick={onClose} disabled={busy} className="btn btn-ghost">Cancel</button>
+          <button type="button" onClick={submit} disabled={busy || (locks && !confirmed) || !preview}
+            className="btn btn-primary disabled:opacity-60">
+            {busy ? "Working…" : locks ? "Offboard + reassign" : "Set status"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Main client component ────────────────────────────────────────────────────
 
 interface Props {
@@ -617,10 +764,24 @@ export default function AdminUsersClient({ initialUsers, currentUserId }: Props)
   const [showInvite, setShowInvite] = useState(false);
   const [editTarget, setEditTarget] = useState<UserRow | null>(null);
   const [sessionsTarget, setSessionsTarget] = useState<UserRow | null>(null);
+  const [offboardTarget, setOffboardTarget] = useState<UserRow | null>(null);
   const [togglingId, setTogglingId] = useState<string | null>(null);
 
   function refresh() {
     router.refresh();
+  }
+
+  // Reactivate a former/suspended user — resets employmentStatus + access.
+  async function reactivate(user: UserRow) {
+    if (togglingId) return;
+    if (!window.confirm(`Reactivate ${user.name}? This restores their login and CRM access.`)) return;
+    setTogglingId(user.id);
+    try {
+      const r = await fetch(`/api/admin/users/${user.id}/reactivate`, { method: "POST" });
+      const j = await r.json();
+      if (!r.ok) { window.alert(j.error ?? "Failed to reactivate"); return; }
+      refresh();
+    } finally { setTogglingId(null); }
   }
 
   async function toggleActive(user: UserRow) {
@@ -746,17 +907,24 @@ export default function AdminUsersClient({ initialUsers, currentUserId }: Props)
                     {new Date(user.createdAt).toLocaleDateString("en-GB", { month: "short", year: "numeric" })}
                   </td>
 
-                  {/* Active status badge */}
+                  {/* Active status + employment-lifecycle badge */}
                   <td className="px-4 py-3">
-                    <span
-                      className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
-                        user.active
-                          ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
-                          : "bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400"
-                      }`}
-                    >
-                      {user.active ? "Active" : "Inactive"}
-                    </span>
+                    <div className="flex flex-col gap-1 items-start">
+                      <span
+                        className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+                          user.active
+                            ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
+                            : "bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400"
+                        }`}
+                      >
+                        {user.active ? "Active" : "Inactive"}
+                      </span>
+                      {(user.employmentStatus ?? "ACTIVE") !== "ACTIVE" && (
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium border ${EMP_STATUS_META[user.employmentStatus ?? "ACTIVE"]?.tone ?? ""}`}>
+                          {EMP_STATUS_META[user.employmentStatus ?? "ACTIVE"]?.label ?? user.employmentStatus}
+                        </span>
+                      )}
+                    </div>
                   </td>
 
                   {/* Actions */}
@@ -799,21 +967,42 @@ export default function AdminUsersClient({ initialUsers, currentUserId }: Props)
                         Sessions
                       </button>
 
-                      {/* Deactivate / Reactivate — hidden for self */}
-                      {!isSelf && (
+                      {/* Employment lifecycle — hidden for self */}
+                      {!isSelf && ((user.employmentStatus ?? "ACTIVE") === "ACTIVE" ? (
+                        <>
+                          {/* Quick active-flag toggle (temporary disable) */}
+                          <button
+                            type="button"
+                            disabled={isToggling}
+                            onClick={() => toggleActive(user)}
+                            className={`text-xs px-2 py-1 rounded border transition-colors disabled:opacity-50 ${
+                              user.active
+                                ? "border-red-300 text-red-600 hover:bg-red-50 dark:border-red-700 dark:text-red-400 dark:hover:bg-red-900/20"
+                                : "border-emerald-300 text-emerald-600 hover:bg-emerald-50 dark:border-emerald-700 dark:text-emerald-400 dark:hover:bg-emerald-900/20"
+                            }`}
+                          >
+                            {isToggling ? "…" : user.active ? "Deactivate" : "Reactivate"}
+                          </button>
+                          {/* Formal offboarding — preview + reassign + lock */}
+                          <button
+                            type="button"
+                            onClick={() => setOffboardTarget(user)}
+                            title="Mark as Left Organization — reassign workload, revoke access, keep history"
+                            className="text-xs px-2 py-1 rounded border border-slate-300 text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700 transition-colors"
+                          >
+                            Mark as Left
+                          </button>
+                        </>
+                      ) : (
                         <button
                           type="button"
                           disabled={isToggling}
-                          onClick={() => toggleActive(user)}
-                          className={`text-xs px-2 py-1 rounded border transition-colors disabled:opacity-50 ${
-                            user.active
-                              ? "border-red-300 text-red-600 hover:bg-red-50 dark:border-red-700 dark:text-red-400 dark:hover:bg-red-900/20"
-                              : "border-emerald-300 text-emerald-600 hover:bg-emerald-50 dark:border-emerald-700 dark:text-emerald-400 dark:hover:bg-emerald-900/20"
-                          }`}
+                          onClick={() => reactivate(user)}
+                          className="text-xs px-2 py-1 rounded border border-emerald-300 text-emerald-600 hover:bg-emerald-50 dark:border-emerald-700 dark:text-emerald-400 dark:hover:bg-emerald-900/20 transition-colors disabled:opacity-50"
                         >
-                          {isToggling ? "…" : user.active ? "Deactivate" : "Reactivate"}
+                          {isToggling ? "…" : "Reactivate"}
                         </button>
-                      )}
+                      ))}
                     </div>
                   </td>
                 </tr>
@@ -852,6 +1041,16 @@ export default function AdminUsersClient({ initialUsers, currentUserId }: Props)
           user={sessionsTarget}
           isSelf={sessionsTarget.id === currentUserId}
           onClose={() => setSessionsTarget(null)}
+        />
+      )}
+
+      {/* Offboarding modal — "Mark as Left Organization" */}
+      {offboardTarget && (
+        <OffboardModal
+          user={offboardTarget}
+          users={initialUsers}
+          onClose={() => setOffboardTarget(null)}
+          onDone={() => { setOffboardTarget(null); refresh(); }}
         />
       )}
     </>

@@ -20,6 +20,18 @@ enum Role {
   AGENT
 }
 
+// Employee lifecycle state (Lalit 2026-07-23). ACTIVE is the default; the other
+// four are non-working. LEFT_ORGANIZATION is terminal (admin must explicitly
+// reactivate). Offboarding to any non-ACTIVE, non-ON_LEAVE state also sets
+// User.active=false — the flag every access/routing check already enforces.
+enum EmploymentStatus {
+  ACTIVE
+  ON_LEAVE
+  TEMPORARILY_DISABLED
+  SUSPENDED
+  LEFT_ORGANIZATION
+}
+
 model User {
   id                    String   @id @default(cuid())
   email                 String   @unique
@@ -48,6 +60,19 @@ model User {
   weeklyOff             Int?
   avatarColor           String? // tailwind class e.g. "bg-indigo-500"
   active                Boolean  @default(true)
+  // ── Employee lifecycle / offboarding (Lalit 2026-07-23) ──
+  // employmentStatus = the HR state; `active` above stays the operational access
+  // flag (login + every routing/roster filter + the InactiveUserError assign guard
+  // already key off `active`). Marking someone LEFT_ORGANIZATION / SUSPENDED /
+  // TEMPORARILY_DISABLED ALSO sets active=false, so the whole enforcement stack
+  // works unchanged; this enum records WHY + drives the terminal-state semantics.
+  // ON_LEAVE keeps active=true (covered by the leave-cover mechanism, not locked).
+  employmentStatus EmploymentStatus @default(ACTIVE)
+  lastWorkingDate  DateTime?
+  offboardedAt     DateTime?
+  offboardReason   String?
+  offboardNote     String?
+  offboardedById   String?
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
 
