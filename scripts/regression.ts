@@ -1943,6 +1943,46 @@ const checks: Check[] = [
     },
   },
   {
+    // ── INACTIVE / FORMER-USER ASSIGNMENT GUARD (Lalit offboarding, 2026-07-23) ──
+    // A lead can never be assigned to a deactivated user. Enforced at the SINGLE
+    // choke point (assignLeadTo throws InactiveUserError) so every backend path —
+    // manual, bulk, master-data, routing apply-existing, revival — rejects an
+    // inactive target, not just the frontend hiding them. Routes also pre-check for
+    // a clean 409.
+    name: "inactive-user-assignment-guard — assignLeadTo + assign routes reject a deactivated target",
+    run: async () => {
+      const fs = await import("fs");
+      const ingest = fs.readFileSync("src/lib/leadIngest.ts", "utf8");
+      assert(/export class InactiveUserError/.test(ingest), "InactiveUserError must exist");
+      assert(/if \(!agent\.active\) throw new InactiveUserError/.test(ingest),
+        "assignLeadTo MUST throw on an inactive target — the backend choke-point guard");
+      // The guard must sit at the choke point (before the assignment write), i.e.
+      // before the ownerId update.
+      assert(ingest.indexOf("if (!agent.active) throw new InactiveUserError") < ingest.indexOf("ownerId: userId, assignedAt: now"),
+        "the inactive guard must run BEFORE the assignment write");
+      // Routes give a clean 409 instead of a 500.
+      for (const f of ["src/app/api/leads/[id]/assign/route.ts", "src/app/api/leads/bulk/route.ts"]) {
+        assert(/!target(User)?\.active/.test(fs.readFileSync(f, "utf8")), `${f} must pre-check the target user's active flag`);
+      }
+      // The routing PICKER must keep filtering active:true (never SELECT an inactive
+      // user for auto-assignment).
+      assert(/active:\s*true/.test(fs.readFileSync("src/lib/assignment.ts", "utf8")),
+        "round-robin picker must only choose active users");
+
+      // DATA — no ACTIVE lead is owned by a deactivated user anywhere (the offboarding
+      // guarantee: former employees hold only historical/terminal records).
+      const { TERMINAL_STATUSES } = await import("../src/lib/lead-statuses");
+      const ownedByInactive = await prisma.lead.count({
+        where: { deletedAt: null, currentStatus: { notIn: [...TERMINAL_STATUSES] }, owner: { is: { active: false } } },
+      });
+      assert(ownedByInactive === 0, `${ownedByInactive} ACTIVE lead(s) are owned by a DEACTIVATED user — offboarding reassignment incomplete`);
+      const buyersByInactive = await prisma.buyerRecord.count({
+        where: { deletedAt: null, poolStatus: "ASSIGNED", owner: { is: { active: false } } },
+      }).catch(() => 0);
+      assert(buyersByInactive === 0, `${buyersByInactive} ASSIGNED buyer(s) are owned by a DEACTIVATED user`);
+    },
+  },
+  {
     // TERMINAL LEADS BELONG TO THE SYSTEM (Lalit 2026-07-10). A lead that ARRIVES from any
     // import/intake source already carrying a terminal status must never land in an agent's
     // active queue: no auto-assign, no owner, no follow-up. Won/Closed is exempt from the
@@ -7256,7 +7296,7 @@ const checks: Check[] = [
   //   we import + exercise it directly (a real test, not just code-presence).
   // ───────────────────────────────────────────────────────────────────────────
   {
-    name: "lead-autoassign-rule — Dubai→Lalit · Tuesday-IST India→Yasir · else Tanuj + every real-time intake opts in",
+    name: "lead-autoassign-rule — Dubai→Lalit · India→Tanuj (Yasir offboarded, no Tuesday case) + every real-time intake opts in",
     run: async () => {
       const { resolveTeamAutoAssignee, ASSIGN_AGENTS } = await import("../src/lib/teamAutoAssign");
       const { istWeekday } = await import("../src/lib/datetime");
@@ -7264,32 +7304,30 @@ const checks: Check[] = [
       // Sweep a full IST week so a Tuesday is guaranteed present without hard-coding
       // which calendar date is a Tuesday. For each day: Dubai→Lalit always; India→
       // Yasir iff that IST day is Tuesday(2), else Tanuj — checked against istWeekday.
+      // Dubai → Lalit always; India → Tanuj EVERY day (Yasir left the org 2026-07-23;
+      // his Tuesday-IST slot collapsed to Tanuj so no auto-assign can hit a
+      // deactivated user). Sweep a full week to prove there is no day-of-week
+      // special-case left that could route to a former employee.
       const week = ["2026-06-29", "2026-06-30", "2026-07-01", "2026-07-02", "2026-07-03", "2026-07-04", "2026-07-05"];
       const seen = new Set<number>();
-      let tuesdays = 0;
       for (const ds of week) {
         const d = new Date(`${ds}T06:00:00Z`); // 11:30am IST that day
-        const wd = istWeekday(d);
-        seen.add(wd);
-        if (wd === 2) tuesdays++;
+        seen.add(istWeekday(d));
         assert(resolveTeamAutoAssignee("Dubai", d) === ASSIGN_AGENTS.LALIT, `Dubai must → Lalit on ${ds}`);
-        const expectIndia = wd === 2 ? ASSIGN_AGENTS.YASIR : ASSIGN_AGENTS.TANUJ;
-        assert(resolveTeamAutoAssignee("India", d) === expectIndia, `India ${ds} (IST weekday ${wd}) must → ${wd === 2 ? "Yasir" : "Tanuj"}`);
+        assert(resolveTeamAutoAssignee("India", d) === ASSIGN_AGENTS.TANUJ, `India ${ds} must → Tanuj (Yasir offboarded — no Tuesday special-case)`);
       }
       assert(seen.size === 7, `istWeekday must yield all 7 distinct IST weekdays across a week (got ${seen.size})`);
-      assert(tuesdays === 1, `a 7-day window must contain exactly one IST Tuesday (got ${tuesdays})`);
       // Unknown / non-canonical team → null (caller normalizes UAE→Dubai before this).
       assert(resolveTeamAutoAssignee(null) === null && resolveTeamAutoAssignee("UAE") === null,
         "unknown/non-canonical team must resolve to null");
 
-      // The 3 target ids must be active + non-HR, else the ingest validation silently skips.
-      const [lalit, yasir, tanuj] = await Promise.all([
+      // Every LIVE auto-assign target must be an active, non-HR user — a former
+      // employee (Yasir) must never be a routing target again.
+      const [lalit, tanuj] = await Promise.all([
         prisma.user.findUnique({ where: { id: ASSIGN_AGENTS.LALIT }, select: { name: true, active: true, hrOnly: true } }),
-        prisma.user.findUnique({ where: { id: ASSIGN_AGENTS.YASIR }, select: { name: true, active: true, hrOnly: true } }),
         prisma.user.findUnique({ where: { id: ASSIGN_AGENTS.TANUJ }, select: { name: true, active: true, hrOnly: true } }),
       ]);
       assert(!!lalit && lalit.active && !lalit.hrOnly, "LALIT target id must be an active, non-HR user");
-      assert(!!yasir && yasir.active && !yasir.hrOnly, "YASIR target id must be an active, non-HR user");
       assert(!!tanuj && tanuj.active && !tanuj.hrOnly, "TANUJ target id must be an active, non-HR user");
 
       // Wiring: leadIngest routes via resolveActiveAssignee (= the fixed rule +

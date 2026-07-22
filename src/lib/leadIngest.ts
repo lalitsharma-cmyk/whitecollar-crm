@@ -717,6 +717,17 @@ export class LeadRejectedError extends Error {
   }
 }
 
+/** Thrown when an assignment names a deactivated user (left the org / suspended /
+ *  disabled). Assignment routes translate it to a 409/400 with a clear message.
+ *  Enforced at the assignLeadTo choke point so NO backend path can assign to a
+ *  former employee, regardless of what the frontend shows. */
+export class InactiveUserError extends Error {
+  constructor(public userId: string, public userName?: string | null) {
+    super("USER_INACTIVE");
+    this.name = "InactiveUserError";
+  }
+}
+
 /**
  * Reassign a lead to a specific user (manual or system-triggered).
  * Sets SLA clock and notifies the new owner.
@@ -734,6 +745,16 @@ export async function assignLeadTo(leadId: string, userId: string, reason: strin
     prisma.user.findUnique({ where: { id: userId } }),
   ]);
   if (!lead || !agent) throw new Error("Lead or user not found");
+  // ── FORMER / INACTIVE USER GUARD (Lalit offboarding, 2026-07-23) ───────────
+  // A lead can never be assigned to a deactivated user (left the org / suspended /
+  // disabled). This is THE single assignment choke point — manual assign, bulk
+  // reassign, master-data assign, routing "apply to existing", revival reassign
+  // all funnel through here — so this one guard makes every backend assignment API
+  // reject an inactive target, exactly as required: "do not rely only on the
+  // frontend hiding the user." The routing PICKER already filters active:true, so
+  // auto-assignment never SELECTS an inactive user; this closes the direct/manual
+  // paths that name a userId explicitly.
+  if (!agent.active) throw new InactiveUserError(userId, agent.name);
   // A rejected lead must be reactivated before it can be (re)assigned. This is the
   // SINGLE choke point every assignment path funnels through, so this one line closes
   // all of them — and any future caller — against re-owning a rejected lead (the

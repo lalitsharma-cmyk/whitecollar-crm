@@ -51,7 +51,14 @@ export async function POST(req: NextRequest) {
     if (!userId) return NextResponse.json({ error: "assignToUserId required" }, { status: 400 });
     // Look up the target user's display name for the operation-log summary
     // ("Transfer → <name>"). Admin-only path, so no per-team validation needed.
-    const targetUser = await prisma.user.findUnique({ where: { id: userId }, select: { name: true, email: true } });
+    const targetUser = await prisma.user.findUnique({ where: { id: userId }, select: { name: true, email: true, active: true } });
+    if (!targetUser) return NextResponse.json({ error: "Target user not found" }, { status: 404 });
+    // FORMER/INACTIVE USER GUARD (offboarding) — refuse a bulk reassign to a
+    // deactivated user up front, rather than silently skipping every lead in the
+    // assignLeadTo backstop and reporting 0 assigned.
+    if (!targetUser.active) {
+      return NextResponse.json({ error: `${targetUser.name ?? "That user"} is deactivated (left the organization) and can't be assigned leads.`, inactiveUser: true }, { status: 409 });
+    }
     const targetUserName = targetUser?.name || targetUser?.email || "user";
     // Restrict to leads the caller is allowed to touch (scope applies even
     // for ADMIN — scope is {} for admin so they get the full set).

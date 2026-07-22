@@ -15,6 +15,15 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const userId = String(body.userId ?? "").trim();
   if (!userId) return NextResponse.json({ error: "userId required" }, { status: 400 });
 
+  // FORMER/INACTIVE USER GUARD (offboarding) — clean 409 before any write. The
+  // assignLeadTo choke point also throws InactiveUserError as a hard backstop, but
+  // this gives the admin a clear message instead of a 500.
+  const target = await prisma.user.findUnique({ where: { id: userId }, select: { active: true, name: true } });
+  if (!target) return NextResponse.json({ error: "User not found" }, { status: 404 });
+  if (!target.active) {
+    return NextResponse.json({ error: `${target.name ?? "That user"} is deactivated (left the organization) and can't be assigned leads.`, inactiveUser: true }, { status: 409 });
+  }
+
   // Fetch current lead to get its team marker before assignment.
   const lead = await prisma.lead.findUnique({ where: { id }, select: { ownerId: true, forwardedTeam: true, rejectedAt: true } });
   if (!lead) return NextResponse.json({ error: "Lead not found" }, { status: 404 });

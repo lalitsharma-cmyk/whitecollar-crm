@@ -6,7 +6,8 @@ import { istWeekday } from "./datetime";
 // for which agent a NEW lead is auto-assigned to, by team. Pure + unit-testable.
 //
 //   • Dubai → Lalit Sharma          (always; replaced Mehak Mukhija)
-//   • India → Yasir Khan on TUESDAY (IST); Tanuj Chopra every other day
+//   • India → Tanuj Chopra          (every day; Yasir Khan's Tuesday-IST slot was
+//                                    removed when he left the org, 2026-07-23)
 //   • unknown / null team → null    (lead parks awaiting-team)
 //
 // This decides WHO. It does NOT decide WHETHER auto-assign runs — that stays
@@ -17,8 +18,8 @@ import { istWeekday } from "./datetime";
 
 export const ASSIGN_AGENTS = {
   LALIT: "cmplo0t6v0000vpxslasvbwuq", // Lalit Sharma (ADMIN/HQ) — Dubai target
-  YASIR: "cmpidrrw00004vphgvyjw6vpf", // Yasir Khan (India)      — Tuesday-India target
-  TANUJ: "cmpidrs1n0005vphgg1tj84pj", // Tanuj Chopra (India)    — India default
+  YASIR: "cmpidrrw00004vphgvyjw6vpf", // Yasir Khan (India)      — LEGACY: left org 2026-07-23, no longer a target
+  TANUJ: "cmpidrs1n0005vphgg1tj84pj", // Tanuj Chopra (India)    — India target (all days)
   MEHAK: "cmpidrrjp0002vphgqb432xq7", // Mehak Mukhija (Dubai)   — legacy, no longer a target
 } as const;
 
@@ -36,7 +37,12 @@ export function resolveTeamAutoAssignee(
 ): string | null {
   if (team === "Dubai") return ASSIGN_AGENTS.LALIT;
   if (team === "India") {
-    return istWeekday(now) === IST_TUESDAY ? ASSIGN_AGENTS.YASIR : ASSIGN_AGENTS.TANUJ;
+    // Yasir Khan left the organization (offboarded 2026-07-23) — the Tuesday-IST
+    // India slot was his. Collapsed to Tanuj (the existing India default) so no
+    // auto-assigned lead can ever route to a deactivated user. Rebalance Tuesdays
+    // to another India agent via Admin → Lead Routing if desired; that engine
+    // overrides this static fallback.
+    return ASSIGN_AGENTS.TANUJ;
   }
   return null;
 }
