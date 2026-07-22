@@ -79,32 +79,129 @@ export async function computeCallKpis(baseWhere: Prisma.CallLogWhereInput): Prom
     }),
   ]);
 
+  return assembleKpis(
+    grouped.map((g) => ({ outcome: g.outcome, count: g._count._all })),
+    { sum: durAgg._sum.durationSec ?? 0, avg: durAgg._avg.durationSec ?? 0, withDuration: durAgg._count._all },
+    connDurCount,
+  );
+}
+
+/** Pure assembly of a CallKpis from per-outcome counts + duration aggregates.
+ *  SHARED by the overall KPIs and the per-agent breakdown so the two can NEVER
+ *  use different math — an agent card's numbers are the same computation as the
+ *  overall strip, just scoped to one userId. */
+function assembleKpis(
+  perOutcome: { outcome: string; count: number }[],
+  dur: { sum: number; avg: number; withDuration: number },
+  connectedWithDuration: number,
+): CallKpis {
   const byOutcome = Object.fromEntries(
     (Object.keys(CallOutcome) as CallOutcome[]).map((o) => [o, 0]),
   ) as Record<CallOutcome, number>;
-  for (const g of grouped) byOutcome[g.outcome] = g._count._all;
+  for (const g of perOutcome) byOutcome[g.outcome as CallOutcome] = g.count;
 
   const pendingSet = new Set<string>(PENDING_CALL_OUTCOMES);
-  const pending = grouped.filter((g) => pendingSet.has(g.outcome)).reduce((s, g) => s + g._count._all, 0);
-  const total = grouped.filter((g) => !pendingSet.has(g.outcome)).reduce((s, g) => s + g._count._all, 0);
+  const pending = perOutcome.filter((g) => pendingSet.has(g.outcome)).reduce((s, g) => s + g.count, 0);
+  const total = perOutcome.filter((g) => !pendingSet.has(g.outcome)).reduce((s, g) => s + g.count, 0);
   const connected = byOutcome[CallOutcome.CONNECTED];
 
   return {
     total,
     byOutcome,
     pending,
-    talkTimeSec: durAgg._sum.durationSec ?? 0,
-    avgDurationSec: Math.round(durAgg._avg.durationSec ?? 0),
-    durationCoverage: {
-      withDuration: durAgg._count._all,
-      connected,
-      connectedWithDuration: connDurCount,
-    },
-    // Denominator is RESOLVED calls. Including unresolved dials would silently
-    // depress the rate as dials accumulate — the same trap that had to be closed
-    // across every other connect-rate surface in the CRM.
+    talkTimeSec: dur.sum,
+    avgDurationSec: Math.round(dur.avg),
+    durationCoverage: { withDuration: dur.withDuration, connected, connectedWithDuration },
     connectionRate: total > 0 ? Math.round((connected / total) * 1000) / 10 : 0,
   };
+}
+
+// ── PER-AGENT BREAKDOWN (Lalit, 2026-07-22) ─────────────────────────────────
+// The compact agent-performance strip. Each agent's numbers come from the SAME
+// baseWhere (kpiWhere) as the overall strip + table — role scope, date, module,
+// search, everything — so cards, KPIs and table can never disagree. Never from a
+// per-module counter: it's the one centralized CallLog, grouped by userId.
+export interface AgentKpi {
+  userId: string;
+  name: string;
+  team: string | null;
+  kpis: CallKpis;
+}
+
+/**
+ * Per-agent CallKpis for the given roster, scoped by baseWhere. Three grouped
+ * queries total (not N×per-agent), so it stays fast with the whole team.
+ * `roster` fixes WHICH agents get a card (order preserved) — resolved to live
+ * user records by the caller, so a renamed/removed user is handled by simply not
+ * being in the roster.
+ */
+export async function computeAgentBreakdown(
+  baseWhere: Prisma.CallLogWhereInput,
+  roster: { id: string; name: string; team: string | null }[],
+): Promise<AgentKpi[]> {
+  const ids = roster.map((r) => r.id);
+  if (ids.length === 0) return [];
+  const scoped = { AND: [baseWhere, { userId: { in: ids } }] } as Prisma.CallLogWhereInput;
+
+  const [grouped, durRows, connDurRows] = await Promise.all([
+    prisma.callLog.groupBy({ by: ["userId", "outcome"], where: scoped, _count: { _all: true } }),
+    prisma.callLog.groupBy({
+      by: ["userId"],
+      where: { AND: [baseWhere, { userId: { in: ids }, durationSec: { gt: 0 }, outcome: { notIn: [...PENDING_CALL_OUTCOMES] } }] },
+      _sum: { durationSec: true }, _avg: { durationSec: true }, _count: { _all: true },
+    }),
+    prisma.callLog.groupBy({
+      by: ["userId"],
+      where: { AND: [baseWhere, { userId: { in: ids }, outcome: { in: CONNECTED_SET }, durationSec: { gt: 0 } }] },
+      _count: { _all: true },
+    }),
+  ]);
+
+  const perOutcomeByUser = new Map<string, { outcome: string; count: number }[]>();
+  for (const g of grouped) {
+    if (!g.userId) continue;
+    const list = perOutcomeByUser.get(g.userId) ?? [];
+    list.push({ outcome: g.outcome, count: g._count._all });
+    perOutcomeByUser.set(g.userId, list);
+  }
+  const durByUser = new Map(durRows.filter((d) => d.userId).map((d) => [d.userId as string, d]));
+  const connDurByUser = new Map(connDurRows.filter((d) => d.userId).map((d) => [d.userId as string, d._count._all]));
+
+  // Preserve roster order — the caller decides ordering (e.g. by call volume).
+  return roster.map((r) => {
+    const d = durByUser.get(r.id);
+    return {
+      userId: r.id,
+      name: r.name,
+      team: r.team,
+      kpis: assembleKpis(
+        perOutcomeByUser.get(r.id) ?? [],
+        { sum: d?._sum.durationSec ?? 0, avg: d?._avg.durationSec ?? 0, withDuration: d?._count._all ?? 0 },
+        connDurByUser.get(r.id) ?? 0,
+      ),
+    };
+  });
+}
+
+// ── Per-user colour identity ────────────────────────────────────────────────
+// Deterministic: the SAME agent keeps the SAME colour across sessions/devices
+// (hash of the stable userId, never a random or index-by-render assignment).
+// Each entry carries light + dark classes so cards read well in both themes.
+const AGENT_PALETTE = [
+  { bar: "bg-blue-500", tint: "bg-blue-50 dark:bg-blue-950/40", text: "text-blue-700 dark:text-blue-300", ring: "ring-blue-500" },
+  { bar: "bg-emerald-500", tint: "bg-emerald-50 dark:bg-emerald-950/40", text: "text-emerald-700 dark:text-emerald-300", ring: "ring-emerald-500" },
+  { bar: "bg-violet-500", tint: "bg-violet-50 dark:bg-violet-950/40", text: "text-violet-700 dark:text-violet-300", ring: "ring-violet-500" },
+  { bar: "bg-amber-500", tint: "bg-amber-50 dark:bg-amber-950/40", text: "text-amber-700 dark:text-amber-300", ring: "ring-amber-500" },
+  { bar: "bg-rose-500", tint: "bg-rose-50 dark:bg-rose-950/40", text: "text-rose-700 dark:text-rose-300", ring: "ring-rose-500" },
+  { bar: "bg-cyan-500", tint: "bg-cyan-50 dark:bg-cyan-950/40", text: "text-cyan-700 dark:text-cyan-300", ring: "ring-cyan-500" },
+  { bar: "bg-indigo-500", tint: "bg-indigo-50 dark:bg-indigo-950/40", text: "text-indigo-700 dark:text-indigo-300", ring: "ring-indigo-500" },
+  { bar: "bg-teal-500", tint: "bg-teal-50 dark:bg-teal-950/40", text: "text-teal-700 dark:text-teal-300", ring: "ring-teal-500" },
+];
+export type AgentColor = (typeof AGENT_PALETTE)[number];
+export function agentColor(userId: string): AgentColor {
+  let h = 0;
+  for (let i = 0; i < userId.length; i++) h = (h * 31 + userId.charCodeAt(i)) >>> 0;
+  return AGENT_PALETTE[h % AGENT_PALETTE.length];
 }
 
 /** mm:ss / h m — compact, for a KPI tile. */

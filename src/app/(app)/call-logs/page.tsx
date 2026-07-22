@@ -17,7 +17,8 @@ import {
 import { PENDING_CALL_OUTCOMES } from "@/lib/ghosting";
 import CallLogFilters from "./CallLogFilters";
 import CallLogKpiCards from "./CallLogKpiCards";
-import { computeCallKpis } from "./kpis";
+import CallLogAgentCards from "./CallLogAgentCards";
+import { computeCallKpis, computeAgentBreakdown } from "./kpis";
 
 export const dynamic = "force-dynamic";
 
@@ -322,9 +323,32 @@ export default async function CallLogsPage({
     });
   }
 
-  // KPIs run in the SAME Promise.all as the table, so the dashboard costs one
-  // round-trip, not three sequential ones — the "load today immediately" bar.
-  const [logs, total, kpis] = await Promise.all([
+  // ── Agent-card roster (Lalit 2026-07-22) ─────────────────────────────────
+  // The calling team — AGENT/MANAGER only (admins/HR aren't "agents"). SCOPED to
+  // what the viewer may see, so the strip never leaks cross-team performance:
+  // ADMIN → all; MANAGER → their team (or visible subtree); AGENT → only self.
+  // Resolved to LIVE user records here, so a renamed/removed user is handled by
+  // simply not being in the roster (graceful, no name-matching).
+  let agentRoster: { id: string; name: string; team: string | null }[] = [];
+  if (me.role === "AGENT") {
+    agentRoster = [{ id: me.id, name: me.name, team: me.team ?? null }];
+  } else {
+    const arWhere: Prisma.UserWhereInput = { active: true, hrOnly: false, role: { in: ["AGENT", "MANAGER"] } };
+    if (me.role === "MANAGER") {
+      if (managerTeam) arWhere.team = managerTeam;
+      else {
+        const ids = await visibleOwnerIds(me);
+        if (ids) arWhere.id = { in: ids };
+      }
+    }
+    agentRoster = await prisma.user.findMany({
+      where: arWhere, orderBy: { name: "asc" }, select: { id: true, name: true, team: true },
+    });
+  }
+
+  // KPIs + agent breakdown run in the SAME Promise.all as the table, so the
+  // dashboard costs one round-trip — the "load today immediately" bar.
+  const [logs, total, kpis, agentKpisRaw] = await Promise.all([
     prisma.callLog.findMany({
       where,
       orderBy: { startedAt: "desc" },
@@ -338,7 +362,11 @@ export default async function CallLogsPage({
     }),
     prisma.callLog.count({ where }),
     computeCallKpis(kpiWhere),
+    computeAgentBreakdown(kpiWhere, agentRoster),
   ]);
+  // Busiest first (most total calls in the current window), so the strip leads
+  // with whoever is most active. A selected agent is highlighted, not reordered.
+  const agentKpis = [...agentKpisRaw].sort((a, b) => b.kpis.total - a.kpis.total);
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
@@ -487,6 +515,10 @@ export default async function CallLogsPage({
           summary: it reports what the filters above selected, and clicking a
           card narrows the table below. */}
       <CallLogKpiCards kpis={kpis} sp={sp} />
+
+      {/* Compact per-agent performance strip — same kpiWhere as the KPIs + table,
+          so cards, totals and rows are always in lock-step. */}
+      <CallLogAgentCards agents={agentKpis} sp={sp} />
 
       {/* ── Table ──────────────────────────────────────────────────────── */}
       <div className="card overflow-x-auto">

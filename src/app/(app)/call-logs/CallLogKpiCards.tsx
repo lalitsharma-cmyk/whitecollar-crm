@@ -102,66 +102,59 @@ export default function CallLogKpiCards({
   const cov = kpis.durationCoverage;
   const covPct = kpis.total > 0 ? Math.round((cov.withDuration / kpis.total) * 100) : 0;
 
+  // COMPACT (Lalit 2026-07-22): headline outcomes always visible; the rest fold
+  // into a "more" expander so the top of the page stays small. Primary = the set
+  // in the spec's headline list; everything else is secondary.
+  const PRIMARY_KEYS = new Set(["__total", CallOutcome.CONNECTED, CallOutcome.NOT_PICKED, CallOutcome.BUSY, CallOutcome.FAILED]);
+  const primary = cards.filter((c) => PRIMARY_KEYS.has(c.key));
+  const secondary = cards.filter((c) => !PRIMARY_KEYS.has(c.key));
+
+  const tile = (c: CardDef) => (
+    <Link
+      key={c.key}
+      href={c.href}
+      title={c.hint}
+      className={`rounded-md border px-2.5 py-1.5 transition hover:shadow-sm ${
+        c.active
+          ? "border-blue-500 bg-blue-50 dark:bg-blue-950/40 ring-1 ring-blue-500"
+          : "border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:border-gray-300 dark:hover:border-slate-600"
+      }`}
+    >
+      <div className={`text-base font-bold tabular-nums leading-tight ${c.tone}`}>{c.value.toLocaleString()}</div>
+      <div className="text-[10px] leading-tight text-gray-500 dark:text-slate-400">{c.label}</div>
+    </Link>
+  );
+
+  // A compact derived tile (Talk / Avg / Rate) — not a drill-down.
+  const derived = (value: string, label: string, tone: string, sub?: string) => (
+    <div className="rounded-md border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2.5 py-1.5" title={sub}>
+      <div className={`text-base font-bold tabular-nums leading-tight ${tone}`}>{value}</div>
+      <div className="text-[10px] leading-tight text-gray-500 dark:text-slate-400">{label}</div>
+    </div>
+  );
+
   return (
-    <div className="space-y-3">
-      {/* ── Outcome breakdown — clickable drill-downs ───────────────────── */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
-        {cards.map((c) => (
-          <Link
-            key={c.key}
-            href={c.href}
-            title={c.hint}
-            className={`rounded-lg border px-3 py-2 transition hover:shadow-sm ${
-              c.active
-                ? "border-blue-500 bg-blue-50 dark:bg-blue-950/40 ring-1 ring-blue-500"
-                : "border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:border-gray-300 dark:hover:border-slate-600"
-            }`}
-          >
-            <div className={`text-xl font-bold tabular-nums ${c.tone}`}>{c.value.toLocaleString()}</div>
-            <div className="text-[11px] leading-tight text-gray-500 dark:text-slate-400">{c.label}</div>
-          </Link>
-        ))}
+    <div className="space-y-2">
+      {/* Headline row — primary outcomes + the 3 derived stats, all compact. */}
+      <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-8 gap-1.5">
+        {primary.map(tile)}
+        {derived(formatDuration(kpis.talkTimeSec), `Talk (${covPct}% logged)`, "text-slate-900 dark:text-slate-100",
+          `Total talk time from ${cov.withDuration} of ${kpis.total} calls with a logged duration — a floor, not a true total`)}
+        {derived(formatDuration(kpis.avgDurationSec), "Avg Duration", "text-slate-900 dark:text-slate-100",
+          "Average across calls that have a duration — not all calls")}
+        {derived(`${kpis.connectionRate}%`, "Connect Rate", "text-emerald-600 dark:text-emerald-400", "connected ÷ resolved calls")}
       </div>
 
-      {/* ── Derived stats — not drill-downs, so rendered as plain tiles ─── */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-        <div className="rounded-lg border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2">
-          <div className="text-xl font-bold tabular-nums text-slate-900 dark:text-slate-100">
-            {formatDuration(kpis.talkTimeSec)}
-          </div>
-          <div className="text-[11px] leading-tight text-gray-500 dark:text-slate-400">
-            Total Talk Time
-            {/* Duration is typed in by the agent today, so this is a FLOOR, not a
-                true total. Saying so on the tile stops it being read as complete
-                and quietly compared against a telephony-era number later. */}
-            <span className="block text-[10px] text-gray-400 dark:text-slate-500">
-              from {cov.withDuration.toLocaleString()} of {kpis.total.toLocaleString()} calls ({covPct}%) with a logged duration
-            </span>
-          </div>
+      {/* Secondary outcomes — folded away, still drillable when opened. */}
+      <details className="group">
+        <summary className="cursor-pointer text-[11px] text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-200 list-none inline-flex items-center gap-1">
+          <span className="group-open:hidden">▸ More statuses ({secondary.length})</span>
+          <span className="hidden group-open:inline">▾ Fewer</span>
+        </summary>
+        <div className="mt-1.5 grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-8 gap-1.5">
+          {secondary.map(tile)}
         </div>
-        <div className="rounded-lg border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2">
-          <div className="text-xl font-bold tabular-nums text-slate-900 dark:text-slate-100">
-            {formatDuration(kpis.avgDurationSec)}
-          </div>
-          <div className="text-[11px] leading-tight text-gray-500 dark:text-slate-400">
-            Average Call Duration
-            <span className="block text-[10px] text-gray-400 dark:text-slate-500">
-              across calls that have a duration — not all calls
-            </span>
-          </div>
-        </div>
-        <div className="rounded-lg border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2">
-          <div className="text-xl font-bold tabular-nums text-emerald-600 dark:text-emerald-400">
-            {kpis.connectionRate}%
-          </div>
-          <div className="text-[11px] leading-tight text-gray-500 dark:text-slate-400">
-            Connection Rate
-            <span className="block text-[10px] text-gray-400 dark:text-slate-500">
-              connected ÷ resolved calls
-            </span>
-          </div>
-        </div>
-      </div>
+      </details>
     </div>
   );
 }

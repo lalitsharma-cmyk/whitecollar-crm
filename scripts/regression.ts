@@ -6538,6 +6538,39 @@ const checks: Check[] = [
         `resolved (${k.total}) + pending (${k.pending}) != total (${dbTotal})`);
       results.push({ name: "  ↳ note", ok: true,
         detail: `KPIs reconcile: ${k.total} resolved + ${k.pending} unresolved = ${dbTotal} · connect rate ${k.connectionRate}%` });
+
+      // ── AGENT-CARD BREAKDOWN (Lalit 2026-07-22) — each agent card's numbers must
+      //    equal the exact table its drill-down opens (count==records), and must be
+      //    the SAME math as the overall strip (shared assembleKpis), just scoped to
+      //    one userId. Data-verify against a real roster.
+      const { computeAgentBreakdown } = await import("../src/app/(app)/call-logs/kpis");
+      const { PENDING_CALL_OUTCOMES: PENDING } = await import("../src/lib/ghosting");
+      const roster = await prisma.user.findMany({
+        where: { active: true, hrOnly: false, role: { in: ["AGENT", "MANAGER"] } },
+        select: { id: true, name: true, team: true },
+      });
+      const agents = await computeAgentBreakdown({}, roster);
+      assert(agents.length === roster.length, "agent breakdown must return one entry per roster user (renamed/removed handled by roster, not here)");
+      let drillBad = 0;
+      for (const a of agents.slice(0, 8)) { // sample the busiest few — full sweep is O(agents×outcomes)
+        const dbTotal = await prisma.callLog.count({ where: { userId: a.userId, outcome: { notIn: [...PENDING] } } });
+        if (dbTotal !== a.kpis.total) { drillBad++; continue; }
+        // one outcome drill must match its table count exactly
+        const conn = await prisma.callLog.count({ where: { userId: a.userId, outcome: "CONNECTED" } });
+        if (conn !== a.kpis.byOutcome.CONNECTED) drillBad++;
+      }
+      assert(drillBad === 0, `${drillBad} agent card(s) disagree with their drill-down table count (count==records broken)`);
+
+      // Cards + KPIs come from the SAME kpiWhere (the page assembles it once, minus
+      // the outcome pin) — asserted structurally so the two can't be fed different
+      // scopes. Agent roster is AGENT/MANAGER only + scope-gated (no cross-team leak).
+      const cl = fs.readFileSync("src/app/(app)/call-logs/page.tsx", "utf8");
+      assert(/computeAgentBreakdown\(kpiWhere, agentRoster\)/.test(cl),
+        "agent breakdown must be fed kpiWhere (same scope+filters as the KPIs/table)");
+      assert(/role: \{ in: \["AGENT", "MANAGER"\] \}/.test(cl),
+        "agent-card roster must be AGENT/MANAGER only");
+      assert(/me\.role === "AGENT"[\s\S]{0,200}id: me\.id/.test(cl),
+        "an AGENT viewer's roster must be only themselves (no cross-agent leak)");
     },
   },
 
