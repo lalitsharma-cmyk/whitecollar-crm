@@ -16,7 +16,7 @@ import { audit } from "@/lib/audit";
 import { websiteMessageRemark } from "@/lib/websiteRemark";
 import { sourceEnumLabel } from "@/lib/sourceLabel";
 import { BOOKED_STATUSES, isTerminalStatus } from "@/lib/lead-statuses";
-import { terminalStatusSideEffects } from "@/lib/lostRejected";
+import { terminalStatusSideEffects, isLostStatus } from "@/lib/lostRejected";
 import { resolveTeam, routingFieldsFor, automationGate } from "@/lib/teamRouting";
 import { resetAttemptCycleData } from "@/lib/callAttempts";
 import { leadRoutingBudget, currencyForTeam } from "@/lib/budgetRouting";
@@ -740,6 +740,27 @@ export async function assignLeadTo(leadId: string, userId: string, reason: strin
   // hard-unassign invariant). Never touches the reject record; only refuses the write.
   if (lead.rejectedAt != null) throw new LeadRejectedError(leadId, lead.name);
 
+  // ── LOST-status reactivation (Lalit RCA, 2026-07-21) ──────────────────────
+  // The reject guard above only catches leads unassigned via the REJECT route
+  // (rejectedAt set). A lead made terminal by a LOST *status change* ("Not
+  // Interested", "Funds Issue", …) is unassigned by terminalStatusSideEffects but
+  // keeps rejectedAt = null, so it sails past that guard. Assigning an owner turns
+  // it back into active work — it MUST leave the LOST state in the SAME write, or
+  // it ends up owned AND lost (the exact drift this RCA fixed: Ahlam / Gagan).
+  //
+  // Reset to "Fresh Lead" — the status the dedicated /reactivate route already
+  // uses, valid in BOTH India and Dubai masters (unlike "Not Contacted", which is
+  // India-only). previousStatus stashes what it was, for the timeline. Gated on
+  // isLostStatus ONLY: a booked/sold (CLOSED) lead legitimately keeps its owner
+  // AND status when transferred, so it is deliberately untouched here — the same
+  // asymmetry terminalStatusSideEffects enforces. Paths that already reactivate
+  // before calling this (Master-Data assign → "Not Contacted") arrive non-lost, so
+  // this is a no-op for them; it only heals the paths that DON'T pre-reactivate.
+  const wasLost = isLostStatus(lead.currentStatus);
+  const reactivate = wasLost
+    ? { currentStatus: "Fresh Lead", previousStatus: lead.currentStatus }
+    : {};
+
   await prisma.lead.update({
     where: { id: leadId },
     // resetAttemptCycleData: ownership change = fresh owner-specific attempt cycle
@@ -747,8 +768,16 @@ export async function assignLeadTo(leadId: string, userId: string, reason: strin
     // 👻 ghosting cleared. The OLD owner's calls stay in CallLog/audit forever;
     // this is the ONE assignment choke point, so every path (manual, bulk, master
     // assign, routing rules, buyer convert, revival reassign) resets identically.
-    data: { ownerId: userId, assignedAt: now, slaFirstCallBy, slaEscalated: false, ...resetAttemptCycleData() },
+    data: { ownerId: userId, assignedAt: now, slaFirstCallBy, slaEscalated: false, ...reactivate, ...resetAttemptCycleData() },
   });
+  // Record the reactivation on the timeline so the status change is auditable
+  // (the caller logs the ownerId change; this captures the status side-effect).
+  if (wasLost) {
+    await prisma.leadFieldHistory.create({
+      data: { leadId, field: "currentStatus", oldValue: lead.currentStatus, newValue: "Fresh Lead",
+              changedById: null, source: "assign-reactivate" },
+    }).catch(() => {});
+  }
   await prisma.assignment.create({ data: { leadId, userId, reason } });
   await notify({
     userId,

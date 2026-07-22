@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { ActivityType, ActivityStatus } from "@prisma/client";
 import { loadOwnedLead } from "@/lib/leadScope";
 import { contactActivityTodayInfo } from "@/lib/followupGate";
+import { followupAllowedForStatus } from "@/lib/lostRejected";
 
 /**
  * POST /api/leads/[id]/action-snooze
@@ -32,6 +33,19 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const scoped = await loadOwnedLead(id);
   if (scoped.error) return scoped.error;
   const { me, lead } = scoped;
+
+  // ── A terminal lead can't be snoozed (Lalit RCA, 2026-07-21) ──────────────
+  // Snooze writes a future followupDate. A lost/closed lead must never carry one
+  // (it's out of the pipeline), so refuse rather than silently re-schedule a dead
+  // lead into the follow-up queue. loadOwnedLead doesn't select currentStatus, so
+  // read it directly. Reactivate the lead first if it should be worked again.
+  const statusRow = await prisma.lead.findUnique({ where: { id }, select: { currentStatus: true } });
+  if (!followupAllowedForStatus(statusRow?.currentStatus)) {
+    return NextResponse.json(
+      { error: `This lead is "${statusRow?.currentStatus}" — reactivate it before scheduling a follow-up.` },
+      { status: 400 },
+    );
+  }
 
   const body = await req.json().catch(() => ({}));
   const reason = String(body.reason ?? "").trim();

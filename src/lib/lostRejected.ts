@@ -25,6 +25,25 @@ export function isClosedStatus(status: string | null | undefined): boolean {
   return !!status && CLOSED_OUTCOME_STATUSES.includes(status);
 }
 
+/**
+ * A terminal lead — LOST/Rejected OR booked/sold/leased (CLOSED) — must never
+ * carry an active follow-up. `terminalStatusSideEffects` already clears the
+ * follow-up when a status TRANSITIONS to terminal; this predicate is the guard
+ * for the OTHER direction — a follow-up being WRITTEN onto an already-terminal
+ * lead (the confirmed leak: an agent inline-edited a 24-Jul follow-up onto a lead
+ * that was already "Funds Issue"). Every followupDate write path must consult it,
+ * because follow-up writes are scattered across many routes with no single choke
+ * point (unlike ownership, which funnels through assignLeadTo).
+ *
+ * Functionally `= !isTerminalStatus(status)`; named for how it reads at the call
+ * site and kept beside the rule it enforces. LEADS ONLY — the buyer data-bank
+ * deliberately decouples businessStatus (historical/imported sales label) from a
+ * buyer's working follow-up, so this must NOT be applied to BuyerRecord.
+ */
+export function followupAllowedForStatus(status: string | null | undefined): boolean {
+  return !isLostStatus(status) && !isClosedStatus(status);
+}
+
 /** The fields a status write must ALSO set when the new status is terminal.
  *  Returns `{}` for a non-terminal status (caller merges it into its update data).
  *  `cur` is the lead's CURRENT ownership state (read before the update). */

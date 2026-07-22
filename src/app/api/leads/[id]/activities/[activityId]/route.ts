@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { loadOwnedLead } from "@/lib/leadScope";
+import { followupAllowedForStatus } from "@/lib/lostRejected";
 import { isRevivalOrigin, REVIVAL_BLOCKED_ACTIVITY_TYPES, REVIVAL_CALLING_ONLY_ERROR } from "@/lib/moduleSource";
 import { audit, reqMeta } from "@/lib/audit";
 import { canEditActivity, AGENT_EDITABLE_ACTIVITY_TYPES } from "@/lib/remarkPerms";
@@ -244,11 +245,22 @@ export async function PATCH(
     });
 
     // Mirror an explicit follow-up edit onto the lead so /scheduling + Action List stay in sync.
+    // RC-1 guard (Lalit RCA 2026-07-21): never mirror a NON-null follow-up onto a
+    // terminal (lost/closed) lead — that's the same "follow-up on a dead lead" leak
+    // as the inline editor. Clearing to null is always allowed. Read the live status
+    // inside the tx (loadOwnedLead's select is slim).
     if (followupChange.provided) {
-      await tx.lead.update({
-        where: { id },
-        data: { followupDate: followupChange.value },
-      });
+      let allowed = true;
+      if (followupChange.value != null) {
+        const s = await tx.lead.findUnique({ where: { id }, select: { currentStatus: true } });
+        allowed = followupAllowedForStatus(s?.currentStatus);
+      }
+      if (allowed) {
+        await tx.lead.update({
+          where: { id },
+          data: { followupDate: followupChange.value },
+        });
+      }
     }
   });
 

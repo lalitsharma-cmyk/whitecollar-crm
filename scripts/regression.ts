@@ -1547,6 +1547,31 @@ const checks: Check[] = [
         assert(new RegExp(`${f}:\\s*"(string|number|date)"`).test(upd), `buyer update whitelist MUST allow editing "${f}"`);
       }
 
+      // ── FULL-FIELD EDIT PARITY WITH LEADS (Lalit 2026-07-20) ─────────────────
+      // The last read-only data fields — contact lists (phones/emails), co-buyers,
+      // and source — are now admin-editable on the buyer detail. Assert the whole
+      // contract so no half of it can regress silently:
+      for (const f of ["phones", "emails", "coBuyerNames", "source"]) {
+        assert(new RegExp(`${f}:\\s*"(string|jsonlist)"`).test(upd), `buyer update whitelist MUST allow editing "${f}"`);
+      }
+      // (1) phones/emails are CONTACT PII → admin/manager only, mirroring the Lead
+      //     route's ADMIN_ONLY_FIELDS. A non-admin/manager editing them must 403.
+      assert(/CONTACT_PII\s*=\s*new Set\(\["phones",\s*"emails"\]\)/.test(upd),
+        "buyer update must gate phones/emails as contact PII (admin/manager only)");
+      assert(/adminOnly:\s*true/.test(upd), "the PII gate must return the adminOnly 403 shape (parity with Lead route)");
+      // (2) buyerKey (repeat-buyer rollup key = name + phone tail) MUST recompute
+      //     when the PHONE changes, not only the name — else the rollup splits/merges.
+      assert(/"clientName" in data \|\| "phones" in data/.test(upd),
+        "buyerKey must be recomputed on a phones edit, not only a clientName edit");
+      // (3) The detail page offers the editors under the right gate: phones/emails
+      //     behind canEditContact, co-buyers behind the general canEditFields.
+      const bdetail = read("src/app/(app)/buyer-data/[id]/page.tsx");
+      assert(/const canEditContact = isAdmin \|\| isManager/.test(bdetail),
+        "buyer detail must gate contact-PII editors to admin/manager (canEditContact)");
+      for (const f of ["phones", "emails", "coBuyerNames"]) {
+        assert(new RegExp(`field="${f}"`).test(bdetail), `buyer detail must wire an inline editor for "${f}"`);
+      }
+
       // (g) SHARED LAYOUT TOKENS (3rd alignment pass, 2026-06-25) — both the Lead
       //     detail and the Buyer detail MUST source their card/grid/action-row
       //     shells from src/lib/detailLayout.ts so the two views CANNOT drift apart
@@ -1858,6 +1883,63 @@ const checks: Check[] = [
       assert(assignedButRejected === 0, `${assignedButRejected} assigned+scheduled lead(s) still carry a rejection stamp (invisible on the Action List)`);
       const withPrevStatus = await prisma.lead.count({ where: { deletedAt: null, previousStatus: { not: null } } });
       results.push({ name: "  ↳ note", ok: true, detail: `${withPrevStatus} lead(s) carry a Previous Status; 0 assigned leads still rejected` });
+    },
+  },
+  {
+    // ── TERMINAL INVARIANT ENFORCED AT EVERY WRITE PATH (Lalit RCA, 2026-07-21) ──
+    // The "terminal ⇒ no owner + no follow-up" rule used to fire ONLY on a status
+    // TRANSITION. Two gaps drifted 2 leads: (RC-1) a follow-up ADDED to an already-
+    // terminal lead, and (RC-2) a terminal-LOST lead RE-ASSIGNED an owner (assignLeadTo
+    // guarded rejectedAt but not a LOST status). This asserts the guards now live at
+    // EVERY owner-write and follow-up-write path, so neither gap can reopen. Content
+    // assertions (routes are server-only, can't be imported here).
+    name: "terminal-write-guards — followup + owner writes all enforce the terminal rule (RC fix)",
+    run: async () => {
+      const fs = await import("fs");
+      const { followupAllowedForStatus, isLostStatus } = await import("../src/lib/lostRejected");
+      // Predicate: terminal ⇒ follow-up NOT allowed; workable ⇒ allowed; null = workable.
+      assert(!followupAllowedForStatus("Funds Issue") && !followupAllowedForStatus("Booked With Us"),
+        "followupAllowedForStatus must reject BOTH lost and closed terminal statuses");
+      assert(followupAllowedForStatus("Follow Up") && followupAllowedForStatus(null),
+        "followupAllowedForStatus must allow workable + null statuses");
+
+      // RC-2: assignLeadTo reactivates a LOST lead in the SAME write (→ Fresh Lead),
+      // gated on isLostStatus only (booked/closed keeps its owner + status).
+      const ingest = fs.readFileSync("src/lib/leadIngest.ts", "utf8");
+      assert(/isLostStatus\(lead\.currentStatus\)/.test(ingest) && /currentStatus: "Fresh Lead"/.test(ingest),
+        "assignLeadTo must reactivate a LOST lead to 'Fresh Lead' on assignment");
+      assert(isLostStatus("Not Interested") && !isLostStatus("Booked With Us"),
+        "isLostStatus gate must exclude CLOSED/booked (they keep owner + status)");
+
+      // RC-2 bypasses: the two DIRECT ownerId writers that skip assignLeadTo must
+      // reactivate / exclude the LOST subset themselves.
+      const cold = fs.readFileSync("src/app/api/cold-data/bulk-assign/route.ts", "utf8");
+      assert(/currentStatus: \{ in: LOST_STATUSES \}[\s\S]{0,120}Fresh Lead/.test(cold),
+        "cold-data bulk-assign must reactivate the LOST subset before setting ownerId");
+      const recon = fs.readFileSync("src/lib/reconciler.ts", "utf8");
+      assert(/notIn: \[\.\.\.SUPPRESSED_STATUSES, \.\.\.LOST_STATUSES, \.\.\.CLOSED_OUTCOME_STATUSES\]/.test(recon),
+        "reconciler orphan-sweep must exclude all terminal statuses, not just SUPPRESSED");
+
+      // RC-1: every follow-up writer consults the guard.
+      for (const [f, needle] of [
+        ["src/app/api/leads/[id]/update/route.ts", /followupAllowedForStatus\(effectiveStatus\)/],
+        ["src/app/api/leads/[id]/action-snooze/route.ts", /followupAllowedForStatus/],
+        ["src/app/api/leads/[id]/activities/[activityId]/route.ts", /followupAllowedForStatus/],
+        ["src/app/api/leads/bulk/route.ts", /followupAllowedForStatus\(b\.currentStatus\)/],
+        ["src/lib/adminAssistant/engine.ts", /followupAllowedForStatus\(l\.currentStatus\)/],
+      ] as const) {
+        assert(needle.test(fs.readFileSync(f, "utf8")), `${f} must guard followupDate writes with followupAllowedForStatus`);
+      }
+
+      // DATA: after the heal, zero LEADS may be terminal+owned(lost) or terminal+followup.
+      // (BuyerRecord is intentionally EXCLUDED — its businessStatus is historical import
+      // metadata and owned+terminal is the normal data-bank state; healing buyers would
+      // strip real working assignments.)
+      const { LOST_STATUSES, TERMINAL_STATUSES } = await import("../src/lib/lead-statuses");
+      const ownedLost = await prisma.lead.count({ where: { deletedAt: null, currentStatus: { in: [...LOST_STATUSES] }, ownerId: { not: null } } });
+      const termFu = await prisma.lead.count({ where: { deletedAt: null, currentStatus: { in: [...TERMINAL_STATUSES] }, followupDate: { not: null } } });
+      assert(ownedLost === 0, `${ownedLost} LEAD(s) are LOST + still owned — RC-2 heal incomplete`);
+      assert(termFu === 0, `${termFu} LEAD(s) are terminal + carry a follow-up — RC-1 heal incomplete`);
     },
   },
   {
@@ -6139,16 +6221,19 @@ const checks: Check[] = [
         "src/app/api/leads/[id]/log-call/route.ts",
         "src/app/api/whatsapp/log/route.ts",
         "src/app/api/leads/[id]/log-note/route.ts",
-        "src/app/api/leads/[id]/action-snooze/route.ts",
         "src/app/api/leads/[id]/action-escalate/route.ts",
       ];
       for (const f of PURE_ACTIVITY_ROUTES) {
         const src = fs.readFileSync(f, "utf8");
         assert(!/currentStatus/.test(src), `${f} must NOT touch currentStatus — logging this activity cannot change the lead's status`);
       }
-      // action-complete may READ currentStatus (terminal guard) but must never ASSIGN a literal status.
-      const ac = fs.readFileSync("src/app/api/leads/[id]/action-complete/route.ts", "utf8");
-      assert(!/currentStatus:\s*["'`]/.test(ac), "action-complete must never ASSIGN a currentStatus literal (Complete is not a deal outcome)");
+      // action-complete AND action-snooze may READ currentStatus (the terminal-follow-up
+      // guard — a dead lead can't be completed-into-a-follow-up or snoozed) but must
+      // never ASSIGN a status literal. Both READ it in a `select`, which is not a write.
+      for (const f of ["action-complete", "action-snooze"]) {
+        const src = fs.readFileSync(`src/app/api/leads/[id]/${f}/route.ts`, "utf8");
+        assert(!/currentStatus:\s*["'`]/.test(src), `${f} must never ASSIGN a currentStatus literal (it is not a deal outcome)`);
+      }
       // The ONLY win-write lives in the EOI funnel, gated on BOOKING_DONE.
       const eoi = fs.readFileSync("src/app/api/leads/[id]/eoi/route.ts", "utf8");
       assert(/BOOKING_DONE/.test(eoi) && /currentStatus = "Booked with Us"/.test(eoi),

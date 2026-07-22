@@ -93,6 +93,10 @@ export default async function BuyerDetail({ params }: { params: Promise<{ id: st
   // re-checks canTouchBuyer server-side, so this only governs what the UI offers.
   const canLog = isAdmin || isManager || (rec.ownerId === me.id && rec.poolStatus === "ASSIGNED");
   const canEditFields = canLog;
+  // Contact PII (phone / email) is admin/manager-only — parity with the Lead view's
+  // ADMIN_ONLY_FIELDS. The update route enforces the same gate server-side; this
+  // only decides whether the UI offers an editor or a plain read-only value.
+  const canEditContact = isAdmin || isManager;
 
   // Roster market — derived synchronously (no query) so the batched roster fetch
   // below can use it. MARKET-AWARE: this SHARED buyer detail serves both Dubai and
@@ -477,15 +481,28 @@ export default async function BuyerDetail({ params }: { params: Promise<{ id: st
               </div>
               <div>
                 <div className={FIELD_LABEL}>📞 Phone</div>
-                <span className="text-gray-800 dark:text-slate-200 break-words">{phones.length ? phones.join(", ") : "—"}</span>
+                {/* Phone/email are CONTACT PII — editable by admin/manager only
+                    (parity with the Lead view, where name/phone/email are
+                    admin-only). Multiple numbers are comma-separated; the update
+                    route splits them back into the stored JSON array and
+                    recomputes buyerKey so the repeat-buyer rollup stays correct. */}
+                {canEditContact
+                  ? <BuyerInlineEdit recordId={rec.id} field="phones" value={phones.join(", ")} placeholder="e.g. 98765 43210, 91234 56789" />
+                  : <span className="text-gray-800 dark:text-slate-200 break-words">{phones.length ? phones.join(", ") : "—"}</span>}
               </div>
               <div>
                 <div className={FIELD_LABEL}>✉️ Email</div>
-                <span className="text-gray-800 dark:text-slate-200 break-words">{emails.length ? emails.join(", ") : "—"}</span>
+                {canEditContact
+                  ? <BuyerInlineEdit recordId={rec.id} field="emails" value={emails.join(", ")} placeholder="comma-separated" />
+                  : <span className="text-gray-800 dark:text-slate-200 break-words">{emails.length ? emails.join(", ") : "—"}</span>}
               </div>
               <div>
                 <div className={FIELD_LABEL}>👥 Co-Buyers</div>
-                <span className="text-gray-800 dark:text-slate-200 break-words">{coBuyers.length ? coBuyers.join(", ") : "—"}</span>
+                {/* Co-buyers are a name list, not contact PII — same edit gate as
+                    the other data fields (admin / manager / assigned agent). */}
+                {canEditFields
+                  ? <BuyerInlineEdit recordId={rec.id} field="coBuyerNames" value={coBuyers.join(", ")} placeholder="comma-separated names" />
+                  : <span className="text-gray-800 dark:text-slate-200 break-words">{coBuyers.length ? coBuyers.join(", ") : "—"}</span>}
               </div>
               <div>
                 <div className={FIELD_LABEL}>🌍 Nationality</div>
@@ -591,7 +608,10 @@ export default async function BuyerDetail({ params }: { params: Promise<{ id: st
               <div className={`${ADMIN_EYEBROW} mb-2`}>📥 Source</div>
               <dl className="grid grid-cols-[110px_1fr] gap-x-3 gap-y-1.5 text-xs">
                 <dt className="text-gray-400 dark:text-slate-500">Source</dt>
-                <dd className="text-gray-700 dark:text-slate-200 break-words">{rec.source || "—"}</dd>
+                {/* Source is correctable in-app now (part of full-field parity).
+                    sourceFile just below stays read-only — it's the literal import
+                    filename, a provenance fact, not a business field. */}
+                <dd className="text-gray-700 dark:text-slate-200 break-words">{editable("source", rec.source)}</dd>
                 {rec.sourceFile && (<><dt className="text-gray-400 dark:text-slate-500">File</dt><dd className="text-gray-700 dark:text-slate-200 break-words">{rec.sourceFile}</dd></>)}
                 <dt className="text-gray-400 dark:text-slate-500">Imported</dt>
                 <dd className="text-gray-700 dark:text-slate-200">{fmtDate(rec.createdAt)}</dd>

@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/auth";
 import { audit, reqMeta } from "@/lib/audit";
 import { crossTeamWarning } from "@/lib/teamRouting";
+import { LOST_STATUSES } from "@/lib/lead-statuses";
 
 export async function POST(req: NextRequest) {
   // Bulk Assign is ADMIN / Super-Admin ONLY (Lalit): a MANAGER must NOT be able to
@@ -49,6 +50,17 @@ export async function POST(req: NextRequest) {
     if (w) crossTeamCount++;
   }
 
+  // RC-2 fix (Lalit RCA 2026-07-21): this DIRECT updateMany bypasses the
+  // assignLeadTo choke point (and therefore its LOST-reactivation), so a cold lead
+  // that went terminal via a LOST status (rejectedAt still null, so it passed the
+  // rejectedAt filter above) would end up owned AND lost. Assigning a cold row for
+  // calling IS a reactivation, so reset the LOST subset to "Fresh Lead" first — the
+  // same status the /reactivate route and assignLeadTo use. CLOSED/booked cold rows
+  // (rare) keep their status.
+  await prisma.lead.updateMany({
+    where: { id: { in: ids }, currentStatus: { in: LOST_STATUSES } },
+    data: { currentStatus: "Fresh Lead" },
+  });
   await prisma.lead.updateMany({
     where: { id: { in: ids } },
     data: { ownerId: userId, assignedAt: new Date(), routingMethod: "manual" },

@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
-import { normalizeBuyerKey, primaryPhone } from "@/lib/buyerIntelligence";
+import { normalizeBuyerKey, primaryPhone, toJsonArray } from "@/lib/buyerIntelligence";
 import { normalizeNameList } from "@/lib/nameFormat";
 import { canTouchBuyer } from "@/lib/buyerScope";
 import { selectableStatuses } from "@/lib/lead-statuses";
@@ -14,8 +14,19 @@ import { audit, reqMeta } from "@/lib/audit";
 // dedicated assign/convert/reject endpoints, never this generic editor). `remarks`
 // is the agent's free-text working notes (retained across reassignments).
 
-const ALLOWED: Record<string, "string" | "number" | "date"> = {
+// "jsonlist" = a contact/name LIST stored as a JSON array string (phones, emails,
+// co-buyers). The client sends a comma/newline-separated string (or an array); we
+// normalize it to the same JSON-array form the importer writes, via toJsonArray.
+const ALLOWED: Record<string, "string" | "number" | "date" | "jsonlist"> = {
   clientName: "string",
+  // Contact + identity lists — the last read-only data fields on the buyer
+  // detail, now admin-editable for full parity with Leads (Lalit 2026-07-20).
+  // phones/emails are CONTACT PII → admin/manager-only (mirrors the Lead route's
+  // ADMIN_ONLY_FIELDS); the gate is enforced below, not here.
+  phones: "jsonlist",
+  emails: "jsonlist",
+  coBuyerNames: "jsonlist",
+  source: "string",
   passport: "string",
   passportExpiry: "string",
   nationality: "string",
@@ -55,6 +66,25 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   }
 
   const body = await req.json().catch(() => ({}));
+
+  // ── Contact-PII gate (SECURITY — parity with the Lead route) ──────────────────
+  // Leads make name/phone/email ADMIN-only (ADMIN_ONLY_FIELDS). The buyer parallel
+  // is phones/emails: a customer's contact details are corrected by an admin/manager,
+  // not an assigned agent — so an agent editing their own buyer can touch project /
+  // passport / status etc., but NOT the phone or email. Blocks only when the field
+  // is actually present in the payload; the inline editor sends only what changed.
+  const CONTACT_PII = new Set(["phones", "emails"]);
+  const isAdminOrManager = me.role === "ADMIN" || me.role === "MANAGER";
+  if (!isAdminOrManager) {
+    for (const key of Object.keys(body)) {
+      if (CONTACT_PII.has(key)) {
+        return NextResponse.json(
+          { error: "Only an admin or manager can change a buyer's phone or email. Ask your admin to update it.", adminOnly: true },
+          { status: 403 },
+        );
+      }
+    }
+  }
 
   // ── Status governance (SECURITY — parity with the Lead route) ─────────────────
   // `businessStatus` is the buyer's REAL sales status. Like the Lead route's
@@ -103,6 +133,12 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       value = /^\d{4}-\d{2}-\d{2}$/.test(String(raw))
         ? new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 6, 30))
         : d;
+    } else if (t === "jsonlist") {
+      // Accept an array or a comma/semicolon/newline-separated string; store as the
+      // SAME JSON-array form the importer writes (toJsonArray dedupes + drops blanks
+      // + returns null when empty, so the column stays NULL rather than "[]").
+      const parts = Array.isArray(raw) ? raw.map((x) => String(x)) : String(raw).split(/[,;\n]+/);
+      value = toJsonArray(parts);
     } else {
       value = String(raw).trim();
     }
@@ -123,11 +159,16 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     return NextResponse.json({ error: "No editable fields in payload" }, { status: 400 });
   }
 
-  // If the client name changed, recompute buyerKey so the repeat-buyer rollup
-  // stays correct (key = normalized name + phone tail).
-  if ("clientName" in data) {
-    const phone = primaryPhone(existing.phones, null);
-    data.buyerKey = normalizeBuyerKey(String(data.clientName), phone);
+  // Recompute buyerKey when EITHER half of it changes (key = normalized name +
+  // phone tail). Previously only clientName triggered this; now phones is editable
+  // too, and a phone edit that didn't refresh the key would silently split or merge
+  // the repeat-buyer rollup. Uses the NEW value for whichever side changed and the
+  // stored value for the other. data.phones (when present) is already the JSON-array
+  // string, which primaryPhone parses.
+  if ("clientName" in data || "phones" in data) {
+    const name = "clientName" in data ? String(data.clientName) : existing.clientName;
+    const phone = "phones" in data ? primaryPhone(data.phones, null) : primaryPhone(existing.phones, null);
+    data.buyerKey = normalizeBuyerKey(name, phone);
   }
 
   // Field-level change history (parity with LeadFieldHistory) — record each REAL

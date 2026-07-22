@@ -4,7 +4,7 @@ import { chooseOwnerForNewLead, currentWindow } from "@/lib/assignmentWindow";
 import { resolveAutoAssignOwner } from "@/lib/assignment";
 import { getRoundRobinEnabled, getAutoAssignmentEnabled, getAutoEscalationEnabled, getSlaBreachEnabled, getFreshUntouchedEscalationEnabled } from "@/lib/settings";
 import { isTeamClassified } from "@/lib/teamRouting";
-import { SUPPRESSED_STATUSES, CLOSING_STATUSES } from "@/lib/lead-statuses";
+import { SUPPRESSED_STATUSES, CLOSING_STATUSES, LOST_STATUSES, CLOSED_OUTCOME_STATUSES } from "@/lib/lead-statuses";
 import { COLD_ORIGINS } from "@/lib/leadScope";
 import { FIRST_CONTACT_PENDING_WHERE } from "@/lib/freshLeads";
 import { istDayRange } from "@/lib/datetime";
@@ -62,7 +62,12 @@ export async function runReconciler(): Promise<ReconcileResult> {
       rejectedAt: null,        // never auto-assign a rejected (hard-unassigned) lead
       deletedAt: null,
       createdAt: { lte: cutoffAssign },
-      currentStatus: { notIn: SUPPRESSED_STATUSES },
+      // RC-2 fix (Lalit RCA 2026-07-21): this direct auto-assign bypasses
+      // assignLeadTo, so it must exclude terminal statuses itself. SUPPRESSED_STATUSES
+      // is only a SUBSET of LOST — "Not Interested" / "Funds Issue" etc. are not
+      // suppressed, so an unowned LOST lead was being swept up and re-owned as if a
+      // fresh orphan. Exclude all LOST + CLOSED terminal statuses.
+      currentStatus: { notIn: [...SUPPRESSED_STATUSES, ...LOST_STATUSES, ...CLOSED_OUTCOME_STATUSES] },
       isColdCall: false,
       forwardedTeam: { not: null },
     },

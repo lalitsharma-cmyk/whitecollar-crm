@@ -8,7 +8,7 @@ import { getScheduledActionsEnabled, getBantGateMode } from "@/lib/settings";
 import { evaluateBantGate, type BantFields } from "@/lib/bantGate";
 import { awardXp, type AwardResult, type XpReason } from "@/lib/gamification.server";
 import { canSetStatus, isStatusValidForTeam, isBookedStatus, NEEDS_REVIEW } from "@/lib/lead-statuses";
-import { terminalStatusSideEffects } from "@/lib/lostRejected";
+import { terminalStatusSideEffects, followupAllowedForStatus } from "@/lib/lostRejected";
 import { isPropertyType } from "@/lib/propertyType";
 import { recordFieldChanges, TRACKED_FIELDS } from "@/lib/fieldHistory";
 import { normalizeNameList } from "@/lib/nameFormat";
@@ -324,11 +324,34 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   // (previousOwnerId isn't on the slim loadOwnedLead select, so fetch it here). The
   // ownerId + followupDate old→new transitions are captured by the existing
   // recordFieldChanges below (both are TRACKED_FIELDS) — no separate history write.
+  // Fetch current ownership + status once (loadOwnedLead's select is slim). Needed
+  // both for the terminal side-effects and the follow-up guard just below.
+  const curOwn = await prisma.lead.findUnique({
+    where: { id },
+    select: { ownerId: true, previousOwnerId: true, currentStatus: true },
+  });
+  // The status this update RESULTS in — the one being set, or the stored one when
+  // the payload doesn't touch status.
+  const effectiveStatus =
+    typeof updates.currentStatus === "string" && updates.currentStatus
+      ? updates.currentStatus
+      : (curOwn?.currentStatus ?? null);
+
+  // ── RC-1 GUARD (Lalit RCA, 2026-07-21) ────────────────────────────────────
+  // A follow-up must never be written onto a terminal (lost/closed) lead. The
+  // block below clears the follow-up when a status TRANSITIONS to terminal, but an
+  // inline edit of ONLY followupDate on an ALREADY-terminal lead skipped it — the
+  // confirmed leak (a 24-Jul follow-up landed on a "Funds Issue" lead). Refuse it,
+  // so the agent reactivates the lead first rather than silently scheduling a dead
+  // one back into the follow-up queue. (Clearing a follow-up to null is always OK.)
+  if ("followupDate" in updates && updates.followupDate != null && !followupAllowedForStatus(effectiveStatus)) {
+    return NextResponse.json(
+      { error: `This lead is "${effectiveStatus}" — reactivate it before scheduling a follow-up.` },
+      { status: 400 },
+    );
+  }
+
   if (typeof updates.currentStatus === "string" && updates.currentStatus) {
-    const curOwn = await prisma.lead.findUnique({
-      where: { id },
-      select: { ownerId: true, previousOwnerId: true },
-    });
     Object.assign(
       updates,
       terminalStatusSideEffects(updates.currentStatus, {

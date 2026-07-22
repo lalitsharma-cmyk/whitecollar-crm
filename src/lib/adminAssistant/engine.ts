@@ -14,6 +14,7 @@
 import { prisma } from "@/lib/prisma";
 import type { Prisma } from "@prisma/client";
 import { teamToMarket } from "@/lib/market";
+import { followupAllowedForStatus } from "@/lib/lostRejected";
 import type { ParsedCommand, LeadFilter } from "./parse";
 
 export type AgentLite = { id: string; name: string; role: string; team: string | null };
@@ -148,7 +149,7 @@ export async function executeRun(runId: string, meId: string): Promise<{ ok: boo
   // Re-fetch in scope (deletedAt:null re-enforced) + current value for undo.
   const leads = await prisma.lead.findMany({
     where: { id: { in: ids }, deletedAt: null },
-    select: { id: true, ownerId: true, tags: true, forwardedTeam: true, followupDate: true },
+    select: { id: true, ownerId: true, tags: true, forwardedTeam: true, followupDate: true, currentStatus: true },
   });
   if (leads.length === 0) return { ok: false, affected: 0, error: "No leads still in scope (they may have changed since preview)." };
 
@@ -170,8 +171,11 @@ export async function executeRun(runId: string, meId: string): Promise<{ ok: boo
         // updateMany so lead-market-segregation can't drift (value is a validated team).
         await tx.lead.updateMany({ where: { id: { in: leads.map((l) => l.id) } }, data: { forwardedTeam: value, market: teamToMarket(value) } });
       } else if (field === "followupDate") {
-        for (const l of leads) before.push({ id: l.id, old: l.followupDate ? l.followupDate.toISOString() : null });
-        await tx.lead.updateMany({ where: { id: { in: leads.map((l) => l.id) } }, data: { followupDate: new Date(value) } });
+        // RC-1 fix (Lalit RCA 2026-07-21): never write a follow-up onto a terminal
+        // (lost/closed) lead — skip those ids, capturing only the eligible ones.
+        const eligible = leads.filter((l) => followupAllowedForStatus(l.currentStatus));
+        for (const l of eligible) before.push({ id: l.id, old: l.followupDate ? l.followupDate.toISOString() : null });
+        await tx.lead.updateMany({ where: { id: { in: eligible.map((l) => l.id) } }, data: { followupDate: new Date(value) } });
       }
       // Per-lead audit trail (source = "assistant").
       await tx.leadFieldHistory.createMany({

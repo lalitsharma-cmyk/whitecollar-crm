@@ -16,7 +16,7 @@ import { inferCountryFromCity } from "@/lib/cityCountry";
 // divergent allow-list that didn't include the new reasons).
 import { REJECT_REASON_VALUES, rejectionStatusFor } from "@/lib/reject-reasons";
 import { snapshotLeads, logOperation } from "@/lib/operationLog";
-import { terminalStatusSideEffects, groupTerminalUpdates } from "@/lib/lostRejected";
+import { terminalStatusSideEffects, groupTerminalUpdates, followupAllowedForStatus } from "@/lib/lostRejected";
 
 export async function POST(req: NextRequest) {
   // Most actions are agent-safe (scoped to leads they own). Reassign and
@@ -266,12 +266,24 @@ export async function POST(req: NextRequest) {
     if (dateStr && isNaN(followupDate!.getTime())) {
       return NextResponse.json({ error: "Invalid followupDate" }, { status: 400 });
     }
-    const beforeFu = await prisma.lead.findMany({ where: { id: { in: ids }, ...scope }, select: { id: true, followupDate: true } });
+    let beforeFu = await prisma.lead.findMany({ where: { id: { in: ids }, ...scope }, select: { id: true, followupDate: true, currentStatus: true } });
+    // RC-1 fix (Lalit RCA 2026-07-21): a terminal (lost/closed) lead must never be
+    // GIVEN a follow-up. When SETTING a non-null date, silently skip terminal rows
+    // (they're out of the pipeline) and report the skip; clearing to null applies to
+    // all. Filtered in memory so the null-status trap (Postgres notIn drops NULLs —
+    // a null status is workable and must NOT be skipped) can't bite.
+    let skippedTerminal = 0;
+    if (followupDate != null) {
+      const eligible = beforeFu.filter((b) => followupAllowedForStatus(b.currentStatus));
+      skippedTerminal = beforeFu.length - eligible.length;
+      beforeFu = eligible;
+    }
+    const eligibleIds = beforeFu.map((b) => b.id);
     // Snapshot the touched ids BEFORE the update — revert source for the
     // OperationLog "lead.edit" entry (restores the followupDate field only).
-    const before = await snapshotLeads(prisma, beforeFu.map((b) => b.id));
+    const before = await snapshotLeads(prisma, eligibleIds);
     const r = await prisma.lead.updateMany({
-      where: { id: { in: ids }, ...scope },
+      where: { id: { in: eligibleIds }, ...scope },
       data: {
         followupDate: followupDate,
         lastTouchedAt: new Date(),
@@ -308,7 +320,7 @@ export async function POST(req: NextRequest) {
       meta: { count: r.count, followupDate: dateStr, leadIds: ids.slice(0, 50) },
       request: reqMeta(req),
     });
-    return NextResponse.json({ ok: true, updated: r.count });
+    return NextResponse.json({ ok: true, updated: r.count, skippedTerminal });
   }
 
   if (action === "recalc_currency") {
