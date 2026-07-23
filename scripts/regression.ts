@@ -2124,6 +2124,11 @@ const checks: Check[] = [
       assert(phoneCanonicalDigits("919999999999", null) === "919999999999", "already-canonical form → unchanged");
       assert(phoneCanonicalDigits("+447912345678", null)?.startsWith("44") === true, "+44 → UK canonical");
       assert(phoneCanonicalDigits("+6591234567", null)?.startsWith("65") === true, "+65 → SG canonical");
+      // A bare country-code / dial-prefix with NO subscriber digits must NEVER become a
+      // canonical — it was a junk dedup key ("+91" → "91"). Guarded 2026-07-23.
+      assert(phoneCanonicalDigits("+91", null) === "", "bare country code '+91' → no canonical (empty)");
+      assert(phoneCanonicalDigits("91", null) === "", "bare '91' → no canonical (empty)");
+      assert(phoneCanonicalDigits("+971", null) === "", "bare '+971' → no canonical (empty)");
       // (b) The write paths use the shared rule (server-only files — source scan).
       const ingest = fs.readFileSync("src/lib/leadIngest.ts", "utf8");
       assert(/phoneCanonical/.test(ingest) && /leadDedupOR\(/.test(ingest),

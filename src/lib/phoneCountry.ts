@@ -106,7 +106,7 @@ export function phoneCanonicalDigits(raw: string | null | undefined, nationality
   // 1) The +CC rule (own country code, or bare-local + resolvable hint).
   const c = canonicalizePhone(raw, nationalityHint);
   let digits = String(c).replace(/\D/g, "");
-  if (nationalityFromPhone(digits)) return digits; // already carries a real CC → done
+  if (nationalityFromPhone(digits) && digits.length >= 7) return digits; // real CC + subscriber digits → done
   // 2) No justified CC yet → digit-shape inference (mirrors toE164/normalizePhone).
   const e164 = normalizePhone(String(raw ?? ""));
   if (e164) {
@@ -116,7 +116,11 @@ export function phoneCanonicalDigits(raw: string | null | undefined, nationality
   }
   // 3) Best-effort digits — may still lack a CC when the shape is unknown; that's
   //    fine, the trailing-tail dedup below still collapses it against a stored copy.
-  return digits || bare;
+  //    BUT a bare country-code / dial-prefix with NO subscriber digits (e.g. "+91"
+  //    → "91") is not a real number — never emit it as a canonical, it would be a
+  //    junk dedup key. Any real number's canonical is ≥ 7 digits (E.164 floor).
+  const best = digits || bare;
+  return best.length >= 7 ? best : "";
 }
 
 /**
