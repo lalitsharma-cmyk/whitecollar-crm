@@ -1971,11 +1971,15 @@ const checks: Check[] = [
 
       // DATA — no ACTIVE lead is owned by a deactivated user anywhere (the offboarding
       // guarantee: former employees hold only historical/terminal records).
+      // NOTE: the status envelope MUST include null/blank — a bare `notIn
+      // TERMINAL_STATUSES` is NULL for a null status in Postgres, so it silently
+      // skipped 147 null-status REVIVAL leads owned by the offboarded Yasir and this
+      // very check passed while they sat stranded (RCA 2026-07-23). Null-inclusive now.
       const { TERMINAL_STATUSES } = await import("../src/lib/lead-statuses");
       const ownedByInactive = await prisma.lead.count({
-        where: { deletedAt: null, currentStatus: { notIn: [...TERMINAL_STATUSES] }, owner: { is: { active: false } } },
+        where: { deletedAt: null, OR: [{ currentStatus: null }, { currentStatus: "" }, { currentStatus: { notIn: [...TERMINAL_STATUSES] } }], owner: { is: { active: false } } },
       });
-      assert(ownedByInactive === 0, `${ownedByInactive} ACTIVE lead(s) are owned by a DEACTIVATED user — offboarding reassignment incomplete`);
+      assert(ownedByInactive === 0, `${ownedByInactive} non-terminal lead(s) are owned by a DEACTIVATED user — offboarding reassignment incomplete (incl. null/blank-status leads)`);
       const buyersByInactive = await prisma.buyerRecord.count({
         where: { deletedAt: null, poolStatus: "ASSIGNED", owner: { is: { active: false } } },
       }).catch(() => 0);
@@ -2005,6 +2009,19 @@ const checks: Check[] = [
         "a lockout offboard must set active=false + bump sessionEpoch + passwordChangedAt");
       assert(/previousOwnerId: l\.ownerId \?\? l\.previousOwnerId/.test(eng),
         "Admin-Queue reassign must preserve Previous Owner = the offboarded user");
+      // The workload predicate MUST include null/blank statuses. A bare
+      // `currentStatus: { notIn: TERMINAL_STATUSES }` drops NULL-status rows in
+      // Postgres and silently stranded 147 FRESH/REVIVAL leads with a locked-out user
+      // (RCA 2026-07-23). Selection must go through the null-inclusive envelope.
+      assert(/const NON_TERMINAL_STATUS_OR[\s\S]*?currentStatus: null[\s\S]*?currentStatus: ""/.test(eng),
+        "offboarding must define NON_TERMINAL_STATUS_OR with null + blank legs");
+      assert(/where: \{ ownerId: targetUserId, deletedAt: null, OR: NON_TERMINAL_STATUS_OR \}/.test(eng),
+        "offboardUser must select its reassignable workload via NON_TERMINAL_STATUS_OR (null-inclusive), never a bare notIn");
+      // Reassignment gated on the lockout flag — ON_LEAVE keeps the agent's book
+      // (leave-cover redirects only NEW work); an unconditional reassign would silently
+      // strip an on-leave agent's whole book despite the UI saying "keeps access".
+      assert(/if \(locks\) \{[\s\S]*?assignLeadTo[\s\S]*?buyerRecord\.updateMany/.test(eng),
+        "offboardUser must gate lead+buyer reassignment on `locks` (ON_LEAVE must not strip the book)");
       // Preview-before-confirm is a required capability.
       assert(/export async function offboardingWorkloadPreview/.test(eng), "must expose a pre-confirm workload preview");
 

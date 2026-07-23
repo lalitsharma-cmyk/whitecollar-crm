@@ -31,6 +31,20 @@ export function statusLocksAccount(s: EmploymentStatus): boolean {
 /** LEFT_ORGANIZATION is terminal — reactivation must be an explicit admin act. */
 export const TERMINAL_EMPLOYMENT: EmploymentStatus = "LEFT_ORGANIZATION";
 
+// Non-terminal status envelope for "leads this user still owns that must be
+// reassigned". A bare `currentStatus: { notIn: TERMINAL_STATUSES }` silently DROPS
+// null/blank-status leads in Postgres (a NULL is neither IN nor NOT IN a set) — which
+// stranded 147 null-status REVIVAL leads with an offboarded user on 2026-07-23 (the
+// engine's own preview + verify shared the buggy predicate, so it read "0" and failed
+// silently). These legs keep FRESH/REVIVAL (null/blank) leads eligible. Mirrors
+// leadScope.WORKABLE_STATUS_OR; kept local to avoid widening this server module's
+// import surface (same pattern as freshLeads.ts / dashboardWidgets.ts).
+const NON_TERMINAL_STATUS_OR: Prisma.LeadWhereInput[] = [
+  { currentStatus: null },
+  { currentStatus: "" },
+  { currentStatus: { notIn: [...TERMINAL_STATUSES] } },
+];
+
 export interface WorkloadPreview {
   activeLeads: number;       // owned, non-terminal, not deleted (Leads + Master)
   revivalLeads: number;      // of the above, cold/revival origin
@@ -45,14 +59,17 @@ export interface WorkloadPreview {
  *  BEFORE anything is written (spec: "require a confirmation preview with exact
  *  affected counts"). */
 export async function offboardingWorkloadPreview(userId: string): Promise<WorkloadPreview> {
-  const activeLeadWhere: Prisma.LeadWhereInput = {
-    ownerId: userId, deletedAt: null, currentStatus: { notIn: [...TERMINAL_STATUSES] },
-  };
+  // Non-terminal, non-deleted leads this user still owns — ALL origins (Leads,
+  // Revival, Cold, Master-Data) get reassigned on offboarding. The status predicate
+  // is NON_TERMINAL_STATUS_OR (null/blank INCLUDED); it lives under `OR`, so callers
+  // that need their own OR must nest it under AND to avoid clobbering it (below).
+  const ownerScope = { ownerId: userId, deletedAt: null } as const;
   const [activeLeads, revivalLeads, leadsWithFollowup, assignedBuyers, plannedActivities, liveSessions] =
     await Promise.all([
-      prisma.lead.count({ where: activeLeadWhere }),
-      prisma.lead.count({ where: { ...activeLeadWhere, OR: [{ leadOrigin: { in: ["COLD", "REVIVAL"] } }, { isColdCall: true }] } }),
-      prisma.lead.count({ where: { ...activeLeadWhere, followupDate: { not: null } } }),
+      prisma.lead.count({ where: { ...ownerScope, OR: NON_TERMINAL_STATUS_OR } }),
+      // revival subset — TWO ORs (status + origin) combined under AND so neither clobbers the other.
+      prisma.lead.count({ where: { ...ownerScope, AND: [{ OR: NON_TERMINAL_STATUS_OR }, { OR: [{ leadOrigin: { in: ["COLD", "REVIVAL"] } }, { isColdCall: true }] }] } }),
+      prisma.lead.count({ where: { ...ownerScope, followupDate: { not: null }, OR: NON_TERMINAL_STATUS_OR } }),
       prisma.buyerRecord.count({ where: { ownerId: userId, deletedAt: null, poolStatus: "ASSIGNED" } }).catch(() => 0),
       prisma.activity.count({ where: { userId, status: "PLANNED" } }).catch(() => 0),
       prisma.userSession.count({ where: { userId, revokedAt: null } }).catch(() => 0),
@@ -112,13 +129,6 @@ export async function offboardUser(input: OffboardInput): Promise<OffboardResult
 
   const locks = statusLocksAccount(status);
 
-  // ── Snapshot the active leads BEFORE mutation (reversal source). ──
-  const activeLeads = await prisma.lead.findMany({
-    where: { ownerId: targetUserId, deletedAt: null, currentStatus: { notIn: [...TERMINAL_STATUSES] } },
-    select: { id: true, ownerId: true, previousOwnerId: true, assignedAt: true, followupDate: true },
-  });
-  const beforeState = activeLeads.map((l) => ({ id: l.id, ownerId: l.ownerId, previousOwnerId: l.previousOwnerId, assignedAt: l.assignedAt, followupDate: l.followupDate }));
-
   // ── 1. ACCOUNT STATE ──
   await prisma.user.update({
     where: { id: targetUserId },
@@ -140,48 +150,64 @@ export async function offboardUser(input: OffboardInput): Promise<OffboardResult
     await prisma.presenceSession.deleteMany({ where: { userId: targetUserId } }).catch(() => {});
   }
 
-  // ── 2. REASSIGN ACTIVE LEADS ──
+  // ── 2 + 3. REASSIGN WORKLOAD — LOCKOUT statuses ONLY. ON_LEAVE keeps the person's
+  //   book: they still hold their leads/buyers (leave-cover redirects only NEW
+  //   assignments). Moving anything here would silently strip an on-leave agent — the
+  //   UI hides the reassign controls for ON_LEAVE and says "keeps access", so the
+  //   backend must not move anything either. Only a lockout (LEFT/SUSPENDED/DISABLED)
+  //   hands the active book to the Admin Queue + returns buyers to the Admin Pool. ──
   let leadsMoved = 0;
-  for (const l of activeLeads) {
-    try {
-      if (reassignMode === "reassign_user" && reassignTo) {
-        // assignLeadTo resets the SLA/attempt cycle, reactivates a LOST lead, and
-        // refuses an inactive target — the same choke point every assign uses.
-        await assignLeadTo(l.id, reassignTo.id, `offboarding reassign from ${target.name}`);
-      } else {
-        // Admin Queue — unassign, keep Previous Owner = the offboarded user.
-        await prisma.lead.update({
-          where: { id: l.id },
-          data: { ownerId: null, previousOwnerId: l.ownerId ?? l.previousOwnerId, assignedAt: null, returnedToPoolAt: now, followupDate: null, followupReminderSentAt: null },
-        });
-      }
-      leadsMoved++;
-    } catch { /* skip a single failure, keep going — reported in the count */ }
-  }
-
-  // ── 3. REASSIGN / RETURN BUYERS to the Admin Pool (buyers keep their own pool
-  //      lifecycle; a former owner's records go back to ADMIN_POOL). ──
-  const buyerRes = await prisma.buyerRecord.updateMany({
-    where: { ownerId: targetUserId, deletedAt: null, poolStatus: "ASSIGNED" },
-    data: { ownerId: null, poolStatus: "ADMIN_POOL", assignedAt: null, returnedToPoolAt: now },
-  }).catch(() => ({ count: 0 }));
-  const buyersMoved = buyerRes.count;
-
-  // ── 4. OperationLog (reversible) + audit ──
+  let buyersMoved = 0;
   let operationLogId: string | null = null;
-  try {
-    const op = await prisma.operationLog.create({
-      data: {
-        operation: "lead.transfer", entityType: "Lead", module: "Offboarding",
-        field: "ownerId",
-        summary: `Offboard ${target.name} (${status}) — ${leadsMoved} leads → ${reassignTo ? reassignTo.name : "Admin Queue"}${buyersMoved ? `, ${buyersMoved} buyers → Admin Pool` : ""}`,
-        status: "EXECUTED", affectedCount: leadsMoved, affectedIds: activeLeads.map((l) => l.id),
-        beforeState, afterState: { reassignMode, reassignToUserId: reassignTo?.id ?? null }, createdById: actorId,
-      },
-      select: { id: true },
+  if (locks) {
+    // Snapshot BEFORE mutation (reversal source). NON_TERMINAL_STATUS_OR keeps
+    // null/blank-status (FRESH/REVIVAL) leads in scope — a bare `notIn` dropped them
+    // once and stranded 147 leads with a locked-out user (RCA 2026-07-23).
+    const activeLeads = await prisma.lead.findMany({
+      where: { ownerId: targetUserId, deletedAt: null, OR: NON_TERMINAL_STATUS_OR },
+      select: { id: true, ownerId: true, previousOwnerId: true, assignedAt: true, followupDate: true },
     });
-    operationLogId = op.id;
-  } catch { /* OperationLog is best-effort; the audit below is the durable record */ }
+    const beforeState = activeLeads.map((l) => ({ id: l.id, ownerId: l.ownerId, previousOwnerId: l.previousOwnerId, assignedAt: l.assignedAt, followupDate: l.followupDate }));
+
+    for (const l of activeLeads) {
+      try {
+        if (reassignMode === "reassign_user" && reassignTo) {
+          // assignLeadTo resets the SLA/attempt cycle, reactivates a LOST lead, and
+          // refuses an inactive target — the same choke point every assign uses.
+          await assignLeadTo(l.id, reassignTo.id, `offboarding reassign from ${target.name}`);
+        } else {
+          // Admin Queue — unassign, keep Previous Owner = the offboarded user.
+          await prisma.lead.update({
+            where: { id: l.id },
+            data: { ownerId: null, previousOwnerId: l.ownerId ?? l.previousOwnerId, assignedAt: null, returnedToPoolAt: now, followupDate: null, followupReminderSentAt: null },
+          });
+        }
+        leadsMoved++;
+      } catch { /* skip a single failure, keep going — reported in the count */ }
+    }
+
+    // Buyers keep their own pool lifecycle; a former owner's records go back to ADMIN_POOL.
+    const buyerRes = await prisma.buyerRecord.updateMany({
+      where: { ownerId: targetUserId, deletedAt: null, poolStatus: "ASSIGNED" },
+      data: { ownerId: null, poolStatus: "ADMIN_POOL", assignedAt: null, returnedToPoolAt: now },
+    }).catch(() => ({ count: 0 }));
+    buyersMoved = buyerRes.count;
+
+    // ── 4. OperationLog (reversible) ──
+    try {
+      const op = await prisma.operationLog.create({
+        data: {
+          operation: "lead.transfer", entityType: "Lead", module: "Offboarding",
+          field: "ownerId",
+          summary: `Offboard ${target.name} (${status}) — ${leadsMoved} leads → ${reassignTo ? reassignTo.name : "Admin Queue"}${buyersMoved ? `, ${buyersMoved} buyers → Admin Pool` : ""}`,
+          status: "EXECUTED", affectedCount: leadsMoved, affectedIds: activeLeads.map((l) => l.id),
+          beforeState, afterState: { reassignMode, reassignToUserId: reassignTo?.id ?? null }, createdById: actorId,
+        },
+        select: { id: true },
+      });
+      operationLogId = op.id;
+    } catch { /* OperationLog is best-effort; the audit below is the durable record */ }
+  }
 
   await audit({
     userId: actorId, action: "user.offboard", entity: "User", entityId: targetUserId,
