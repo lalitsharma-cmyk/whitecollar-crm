@@ -19,7 +19,10 @@ export default async function ColdCallSessionPage() {
       deletedAt: null,
       ownerId: me.id,
       isColdCall: true,
-      currentStatus: { notIn: SUPPRESSED_STATUSES },
+      // Null/blank-status cold leads are the FRESHEST — a bare `notIn` drops them in
+      // Postgres (NULL is neither in nor not-in a set), hiding the very leads the main
+      // list's "Fresh" chip keeps. Nested under AND so it composes with the OR below.
+      AND: [{ OR: [{ currentStatus: null }, { currentStatus: "" }, { currentStatus: { notIn: SUPPRESSED_STATUSES } }] }],
       OR: [
         { lastTouchedAt: null },
         { lastTouchedAt: { lt: cutoff } },

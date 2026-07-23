@@ -203,7 +203,8 @@ export default async function ColdDataPage({ searchParams }: { searchParams: Pro
         ],
       },
       { lastTouchedAt: { lt: cutoff } },
-      { currentStatus: { notIn: SUPPRESSED_STATUSES } },
+      // null/blank-status cold leads are the freshest — keep them (a bare notIn drops NULL).
+      { OR: [{ currentStatus: null }, { currentStatus: "" }, { currentStatus: { notIn: SUPPRESSED_STATUSES } }] },
     ],
   };
 
