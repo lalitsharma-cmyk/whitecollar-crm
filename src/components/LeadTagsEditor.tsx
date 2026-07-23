@@ -1,6 +1,7 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { useDismiss } from "@/lib/useDismiss";
 
 // LeadTagsEditor — chips + popover for editing Lead.tags (comma-separated string).
 // PATCHes the existing /api/leads/[id]/update endpoint, which accepts
@@ -61,20 +62,10 @@ export default function LeadTagsEditor({ leadId, initialTags }: Props) {
   const [custom, setCustom] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const popoverRef = useRef<HTMLDivElement | null>(null);
-
-  // Close the popover on outside-click — otherwise it sits open after the
-  // agent clicks back into the lead body, swallowing scroll/touch events.
-  useEffect(() => {
-    if (!open) return;
-    function onDown(e: MouseEvent) {
-      if (popoverRef.current && !popoverRef.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
-    }
-    document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
-  }, [open]);
+  // Close the popover ONLY on a genuine outside interaction — never when a text
+  // selection that began inside (e.g. the custom-tag input) ends outside. Was a raw
+  // mousedown listener that dropped the box mid-selection; now the shared useDismiss.
+  const popoverRef = useDismiss<HTMLDivElement>(open, () => setOpen(false));
 
   async function persist(next: string[]) {
     setBusy(true);

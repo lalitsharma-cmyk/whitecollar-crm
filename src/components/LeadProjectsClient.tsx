@@ -1,7 +1,8 @@
 "use client";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { X, Plus, Check } from "lucide-react";
+import { useDismiss } from "@/lib/useDismiss";
 
 interface Project { id: string; name: string; city: string; country?: string; }
 interface Discussion {
@@ -75,28 +76,13 @@ export default function LeadProjectsClient({
   const [err, setErr] = useState<string | null>(null);
   const [scanning, setScanning] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
-  const pickerRef = useRef<HTMLDivElement>(null);
-
-  // Close picker on outside click or Escape
-  useEffect(() => {
-    if (!picking) return;
-    function handleOutside(e: MouseEvent) {
-      if (pickerRef.current && !pickerRef.current.contains(e.target as Node)) {
-        setPicking(false); setPicked(null); setQuery(""); setHighlight(0);
-      }
-    }
-    function handleEscape(e: KeyboardEvent) {
-      if (e.key === "Escape") {
-        setPicking(false); setPicked(null); setQuery(""); setHighlight(0);
-      }
-    }
-    document.addEventListener("mousedown", handleOutside);
-    document.addEventListener("keydown", handleEscape);
-    return () => {
-      document.removeEventListener("mousedown", handleOutside);
-      document.removeEventListener("keydown", handleEscape);
-    };
-  }, [picking]);
+  // Close the picker ONLY on a genuine outside interaction or Escape — never when a
+  // text selection that began inside the search box happens to end outside. The shared
+  // useDismiss helper also handles Escape (its default), running the same reset. (Was a
+  // raw mousedown listener that dropped the box mid-selection.)
+  const pickerRef = useDismiss<HTMLDivElement>(picking, () => {
+    setPicking(false); setPicked(null); setQuery(""); setHighlight(0);
+  });
 
   // Split into confirmed (user accepted or manually added) vs suggested (auto-detected pending)
   const confirmed = items.filter(it => !it.suggestion);

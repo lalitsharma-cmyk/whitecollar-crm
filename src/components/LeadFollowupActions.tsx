@@ -16,7 +16,8 @@
 // so the timeline + follow-up banner update in place.
 
 import { useRouter } from "next/navigation";
-import { useState, useRef, useEffect } from "react";
+import { useState } from "react";
+import { useDismiss } from "@/lib/useDismiss";
 import { showXpToast } from "@/components/XPToast";
 import CRMDatePicker from "@/components/CRMDatePicker";
 import { toISTLocalInput, isPastISTLocalInput } from "@/lib/datetime";
@@ -53,21 +54,14 @@ export default function LeadFollowupActions({ leadId, leadName, followupDate, ha
   const [busy, setBusy] = useState<null | "complete" | "snooze" | "escalate">(null);
   const [showEscalate, setShowEscalate] = useState(false);
   const [escalateReason, setEscalateReason] = useState("");
-  const escalateRef = useRef<HTMLDivElement>(null);
 
   // Seed the snooze picker: existing follow-up if any, else blank (picker
   // defaults to today). CRMDatePicker takes a "YYYY-MM-DDTHH:mm" IST string.
   const snoozeSeed = followupDate ? toISTLocalInput(followupDate) : "";
 
-  useEffect(() => {
-    if (!showEscalate) return;
-    function handle(e: MouseEvent) {
-      const t = e.target as Node;
-      if (escalateRef.current && !escalateRef.current.contains(t)) setShowEscalate(false);
-    }
-    document.addEventListener("mousedown", handle);
-    return () => document.removeEventListener("mousedown", handle);
-  }, [showEscalate]);
+  // Dismiss the escalate popover ONLY on a genuine outside interaction — never when a
+  // text selection that began inside the reason box happens to end outside (useDismiss).
+  const escalateRef = useDismiss<HTMLDivElement>(showEscalate, () => setShowEscalate(false));
 
   async function doComplete() {
     if (busy) return;

@@ -16,7 +16,8 @@
 //      hook. Doing it once per card keeps server traffic minimal.
 
 import { useRouter } from "next/navigation";
-import { useState, useRef, useEffect } from "react";
+import { useState } from "react";
+import { useDismiss } from "@/lib/useDismiss";
 import { showXpToast } from "@/components/XPToast";
 import { ActionButton } from "@/components/actions/ActionButton";
 import { ActionIconButton } from "@/components/actions/ActionIconButton";
@@ -60,26 +61,11 @@ export default function ActionCardClient({ leadId, leadName, phone, waLink, flag
   const [escalateReason, setEscalateReason] = useState(
     flagKind === "overdue" ? "Multiple attempts, can't reach the client" : ""
   );
-  const snoozeRef = useRef<HTMLDivElement>(null);
-  const escalateRef = useRef<HTMLDivElement>(null);
-
-  // Click-outside dismiss for popovers. Done in one effect so we share the
-  // listener instead of registering two — micro-optimisation but keeps the
-  // event hot list shorter on pages with 30+ cards.
-  useEffect(() => {
-    if (!showSnooze && !showEscalate) return;
-    function handle(e: MouseEvent) {
-      const t = e.target as Node;
-      if (showSnooze && snoozeRef.current && !snoozeRef.current.contains(t)) {
-        setShowSnooze(false);
-      }
-      if (showEscalate && escalateRef.current && !escalateRef.current.contains(t)) {
-        setShowEscalate(false);
-      }
-    }
-    document.addEventListener("mousedown", handle);
-    return () => document.removeEventListener("mousedown", handle);
-  }, [showSnooze, showEscalate]);
+  // Click-outside dismiss for the two popovers — via the shared useDismiss helper so a
+  // text selection that began inside (e.g. the escalate note) never drops the box
+  // mid-drag. One ref per popover; each closes only on a genuine outside interaction.
+  const snoozeRef = useDismiss<HTMLDivElement>(showSnooze, () => setShowSnooze(false));
+  const escalateRef = useDismiss<HTMLDivElement>(showEscalate, () => setShowEscalate(false));
 
   async function doComplete() {
     if (busy) return;

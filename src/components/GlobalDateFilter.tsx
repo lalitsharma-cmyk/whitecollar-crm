@@ -12,8 +12,9 @@
 // Apply → router.replace() sets ?from=YYYY-MM-DD&to=YYYY-MM-DD.
 // MUST be wrapped in <Suspense> at point of use (uses useSearchParams).
 
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useMemo, useState } from "react";
 import { Calendar, ChevronLeft, ChevronRight, X } from "lucide-react";
+import { useDismiss } from "@/lib/useDismiss";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 // Today in IST (UTC+5:30)
@@ -178,7 +179,6 @@ export default function GlobalDateFilter() {
   const [open,      setOpen]      = useState(false);
   const [localFrom, setLocalFrom] = useState(today);
   const [localTo,   setLocalTo]   = useState(today);
-  const panelRef = useRef<HTMLDivElement>(null);
 
   const from = searchParams.get("from");
   const to   = searchParams.get("to");
@@ -208,15 +208,9 @@ export default function GlobalDateFilter() {
     setOpen(false);
   }
 
-  // Close on outside click
-  useEffect(() => {
-    if (!open) return;
-    function h(e: MouseEvent) {
-      if (panelRef.current && !panelRef.current.contains(e.target as Node)) setOpen(false);
-    }
-    document.addEventListener("mousedown", h);
-    return () => document.removeEventListener("mousedown", h);
-  }, [open]);
+  // Close ONLY on a genuine outside interaction — never when a text selection that
+  // began inside the panel (e.g. a date input) happens to end outside (useDismiss).
+  const panelRef = useDismiss<HTMLDivElement>(open, () => setOpen(false));
 
   // ── Header label ──
   const headerLabel = useMemo(() => {

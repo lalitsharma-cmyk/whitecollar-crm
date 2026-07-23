@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useDismiss } from "@/lib/useDismiss";
 
 interface U { id: string; name: string; team: string | null; role: string; isSuperAdmin: boolean; }
 
@@ -21,7 +22,6 @@ export default function AssignToSelect({ users, initialTeam, team: teamProp }: {
   const [picked, setPicked] = useState<U | null>(null);
   const [open, setOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
-  const boxRef = useRef<HTMLDivElement>(null);
 
   // Controlled mode: track the prop. Changing team also resets the current pick
   // (a teammate from the old team shouldn't stay selected).
@@ -44,12 +44,9 @@ export default function AssignToSelect({ users, initialTeam, team: teamProp }: {
     return () => sel.removeEventListener("change", onChange);
   }, [controlled]);
 
-  // Close the dropdown on an outside click.
-  useEffect(() => {
-    function onDoc(e: MouseEvent) { if (boxRef.current && !boxRef.current.contains(e.target as Node)) setOpen(false); }
-    document.addEventListener("mousedown", onDoc);
-    return () => document.removeEventListener("mousedown", onDoc);
-  }, []);
+  // Close the dropdown ONLY on a genuine outside interaction — never when a text
+  // selection that began inside the input happens to end outside (shared useDismiss).
+  const boxRef = useDismiss<HTMLDivElement>(open, () => setOpen(false));
 
   const eligible = useMemo(
     () => users

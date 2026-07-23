@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useDismiss } from "@/lib/useDismiss";
 
 interface ProjOption { id: string; name: string; }
 
@@ -30,14 +31,9 @@ export default function ProjectSelect({
   const [open, setOpen] = useState(false);
   const [activeIdx, setActiveIdx] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
-  const boxRef = useRef<HTMLDivElement>(null);
-
-  // Close the dropdown on an outside click (same UX as AssignToSelect).
-  useEffect(() => {
-    function onDoc(e: MouseEvent) { if (boxRef.current && !boxRef.current.contains(e.target as Node)) setOpen(false); }
-    document.addEventListener("mousedown", onDoc);
-    return () => document.removeEventListener("mousedown", onDoc);
-  }, []);
+  // Close the dropdown ONLY on a genuine outside interaction — never when a text
+  // selection that began inside the input happens to end outside (shared useDismiss).
+  const boxRef = useDismiss<HTMLDivElement>(open, () => setOpen(false));
 
   // Filter the team's projects by the typed text (case-insensitive substring).
   const matches = useMemo(() => {

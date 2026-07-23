@@ -42,6 +42,13 @@ import LeadReassignClient from "@/components/LeadReassignClient";
 import SchedulingField from "@/components/SchedulingField";
 import AdvancedActivityLogger from "@/components/AdvancedActivityLogger";
 import VoiceNoteRecorder from "@/components/VoiceNoteRecorder";
+// Channel ① Manager Voice Guidance + Channel ② Escalation Thread — the SAME shared
+// components leads/[id] mounts. Revival rows ARE Leads, so the default
+// apiBase="/api/leads" (voice-message + escalation routes) applies unchanged. These
+// are plain recorded-audio / manual-thread surfaces (NOT AI, NOT meetings) — they
+// belong on the calling-only Revival view for full Lead-detail workflow parity.
+import LeadVoiceGuidance from "@/components/LeadVoiceGuidance";
+import LeadEscalationThread from "@/components/LeadEscalationThread";
 import LeadResourceShare from "@/components/LeadResourceShare";
 import LeadProjectsClient from "@/components/LeadProjectsClient";
 import LeadInterestedClient from "@/components/LeadInterestedClient";
@@ -189,6 +196,69 @@ export default async function ColdDataDetailPage({ params, searchParams }: { par
   // live telephony call (ivrProvider set) OR a UI-logged call (attributedAgentName
   // null); drop the synthetic import rows. Mirrors leads/[id].
   const realCallLogs = lead.callLogs.filter((c) => c.ivrProvider != null || c.attributedAgentName == null);
+
+  // ── Channel ① Manager Voice Guidance — this record's guidance messages (audio
+  // bytes are NOT selected here; the play endpoint streams them). `understood` is
+  // per-viewer. MIRRORS leads/[id] exactly — Revival rows ARE Leads, so the same
+  // /api/leads/[id]/voice-message routes apply (default apiBase). ──
+  const voiceGuidanceRaw = await prisma.leadVoiceMessage.findMany({
+    where: { leadId: id, kind: "GUIDANCE" },
+    orderBy: { createdAt: "desc" },
+    select: {
+      id: true, createdAt: true, transcript: true, title: true, durationSec: true, createdById: true,
+      createdBy: { select: { name: true } },
+      reads: { where: { userId: me.id }, select: { id: true } },
+    },
+  });
+  const voiceGuidance = voiceGuidanceRaw.map((v) => ({
+    id: v.id,
+    by: v.createdBy?.name ?? "Admin",
+    at: v.createdAt.toISOString(),
+    transcript: v.transcript,
+    title: v.title,
+    durationSec: v.durationSec,
+    understood: v.reads.length > 0,
+    mine: v.createdById === me.id,
+  }));
+
+  // ── Channel ② Escalation Thread — this record's escalation threads + their
+  // messages (audio bytes streamed by the play endpoint, not selected here).
+  // MIRRORS leads/[id]. ──
+  const escalationsRaw = await prisma.leadEscalation.findMany({
+    where: { leadId: id },
+    orderBy: { createdAt: "desc" },
+    select: {
+      id: true, reason: true, status: true,
+      raisedBy: { select: { name: true } },
+      messages: {
+        orderBy: { createdAt: "asc" },
+        select: {
+          id: true, kind: true, createdAt: true, transcript: true, textNote: true,
+          durationSec: true, createdById: true, createdBy: { select: { name: true } },
+        },
+      },
+    },
+  });
+  const escalations = escalationsRaw.map((e) => ({
+    id: e.id,
+    reason: e.reason,
+    status: e.status as "PENDING" | "MANAGER_REPLIED" | "RESOLVED",
+    raisedBy: e.raisedBy?.name ?? "Agent",
+    messages: e.messages
+      .filter((m) => m.kind === "ESCALATION" || m.kind === "ESCALATION_REPLY")
+      .map((m) => ({
+        id: m.id,
+        kind: m.kind as "ESCALATION" | "ESCALATION_REPLY",
+        by: m.createdBy?.name ?? "—",
+        at: m.createdAt.toISOString(),
+        transcript: m.transcript,
+        textNote: m.textNote,
+        durationSec: m.durationSec,
+        mine: m.createdById === me.id,
+      })),
+  }));
+  // The assigned agent (record owner) opens/continues a thread; managers reply.
+  const canEscalate = !!lead.ownerId && me.id === lead.ownerId;
 
   return (
     <>
@@ -591,6 +661,31 @@ export default async function ColdDataDetailPage({ params, searchParams }: { par
         meId={me.id}
         leadOwnerName={lead.owner?.name ?? null}
       />
+
+      {/* Channel ① Manager Voice Guidance — admin records voice notes; the assigned
+          agent plays them back + marks understood. SAME shared component + default
+          /api/leads/[id]/voice-message routes as leads/[id]. Recorded-audio feature
+          (NOT AI); in scope for calling-only Revival. Separate from the Escalation. */}
+      <div id="lead-voice-guidance" data-lead-section="timeline" className="scroll-mt-24 rounded-xl">
+        <LeadVoiceGuidance leadId={lead.id} isAdmin={me.role === "ADMIN"} messages={voiceGuidance} />
+      </div>
+
+      {/* Channel ② Escalation Thread — the assigned agent raises a VOICE escalation to
+          the manager; the manager replies; either side resolves. This is the two-way
+          voice THREAD, distinct from the one-way "Escalate / Needs Lalit" review button
+          in the follow-up bar above (action-escalate). SAME shared component +
+          /api/leads/[id]/escalation routes as leads/[id]. Shown when a thread exists or
+          this viewer (the owner agent) can raise one. */}
+      {(escalations.length > 0 || canEscalate) && (
+        <div id="lead-escalation" data-lead-section="timeline" className="scroll-mt-24 rounded-xl">
+          <LeadEscalationThread
+            leadId={lead.id}
+            isManager={me.role === "ADMIN" || me.role === "MANAGER"}
+            canRaise={canEscalate}
+            threads={escalations}
+          />
+        </div>
+      )}
 
       {/* ── Quick note ── */}
       <QuickNoteCard leadId={lead.id} isAdmin={me.role === "ADMIN"} />
