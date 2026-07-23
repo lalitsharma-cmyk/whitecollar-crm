@@ -202,7 +202,13 @@ export default async function CallLogsPage({
   const stateParam = sp.state === "pending" || sp.state === "resolved" ? sp.state : "";
   if (stateParam === "pending") {
     outcomeAnd.push({ outcome: { in: [...PENDING_CALL_OUTCOMES] } });
-  } else if (stateParam === "resolved") {
+  } else {
+    // DEFAULT + "resolved": exclude unresolved dials. A PENDING dial (INITIATED/
+    // RINGING) counts as NOTHING in any statistic, so it must not appear in — or be
+    // counted by — the operational table/header either. Previously the default (no
+    // ?state) showed the resolved+pending union, so the "Total Calls" card (a
+    // resolved-only value) drilled to a bigger table (count != records). Pending
+    // dials stay one click away via the "Unresolved Dials" card (?state=pending).
     outcomeAnd.push({ outcome: { notIn: [...PENDING_CALL_OUTCOMES] } });
   }
 

@@ -118,11 +118,11 @@ export async function GET(req: NextRequest) {
   const teamParam = sp.get("team") ?? undefined;
   const moduleParam = (sp.get("module") ?? "") as SourceModule | "";
   const outcomeParam = sp.get("outcome") ?? undefined;
-  // ?state= — byte-mirror of call-logs/page.tsx. Anything that is not exactly
-  // "pending" or "resolved" (including an ABSENT param) normalises to "" = NO
-  // predicate, i.e. all dials. Do not "default to resolved": the page's Call
-  // State dropdown defaults to "All dials" (value=""), and the export must match
-  // the screen, not a tidier idea of what the screen ought to show.
+  // ?state= — byte-mirror of call-logs/page.tsx. "pending" and "resolved" pin those
+  // sets; ANY other value (including an ABSENT param) is the DEFAULT which — exactly
+  // like the page — EXCLUDES unresolved dials (a PENDING dial counts as nothing, so it
+  // is never in the default table/CSV). Only the "Unresolved Dials" view
+  // (?state=pending) surfaces them. The export must match the screen.
   const stateRaw = sp.get("state");
   const stateParam = stateRaw === "pending" || stateRaw === "resolved" ? stateRaw : "";
   const rawQ = (sp.get("q") ?? "").trim();
@@ -177,7 +177,9 @@ export async function GET(req: NextRequest) {
   // divergence this block exists to remove.
   if (stateParam === "pending") {
     filterAnd.push({ outcome: { in: [...PENDING_CALL_OUTCOMES] } });
-  } else if (stateParam === "resolved") {
+  } else {
+    // DEFAULT + "resolved" → exclude unresolved dials (mirrors the page: a pending
+    // dial counts as nothing, so it is never in the default CSV; ?state=pending shows it).
     filterAnd.push({ outcome: { notIn: [...PENDING_CALL_OUTCOMES] } });
   }
 
