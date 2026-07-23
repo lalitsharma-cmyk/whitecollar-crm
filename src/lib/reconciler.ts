@@ -99,7 +99,10 @@ export async function runReconciler(): Promise<ReconcileResult> {
     if (!choice.userId) continue;
 
     const agent = await prisma.user.findUnique({ where: { id: choice.userId } });
-    if (!agent) continue;
+    // Defense-in-depth: never write ownerId to a deactivated user (mirrors the
+    // assignLeadTo InactiveUserError choke-point; the picker already filters
+    // active:true, this is the last-line guard on the direct write).
+    if (!agent || !agent.active) continue;
     const now = new Date();
     await prisma.lead.update({
       where: { id: lead.id },

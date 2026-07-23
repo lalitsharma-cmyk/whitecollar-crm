@@ -3,7 +3,7 @@
 // Both fields are optional in the body; only provided keys are updated.
 import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireRole } from "@/lib/auth";
+import { requireRole, userManagementDenial } from "@/lib/auth";
 import { audit, reqMeta } from "@/lib/audit";
 
 const ALLOWED_SPECIALIZATIONS = new Set([
@@ -19,6 +19,12 @@ const ALLOWED_SPECIALIZATIONS = new Set([
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const me = await requireRole("ADMIN", "MANAGER");
   const { id } = await params;
+  // Privilege guard: a manager / non-super admin cannot edit an admin/super-admin's
+  // profile fields (specialization tags, daily-call-target).
+  const target = await prisma.user.findUnique({ where: { id }, select: { id: true, isSuperAdmin: true, role: true } });
+  if (!target) return NextResponse.json({ error: "User not found" }, { status: 404 });
+  const denied = userManagementDenial(me, target);
+  if (denied) return NextResponse.json({ error: denied.message }, { status: denied.code });
   const body = await req.json().catch(() => ({}));
 
   const data: { specializations?: string | null; dailyCallTarget?: number } = {};

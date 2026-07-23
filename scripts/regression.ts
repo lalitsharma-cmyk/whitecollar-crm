@@ -1968,6 +1968,10 @@ const checks: Check[] = [
       // user for auto-assignment).
       assert(/active:\s*true/.test(fs.readFileSync("src/lib/assignment.ts", "utf8")),
         "round-robin picker must only choose active users");
+      // The reconciler's DIRECT ownerId write (orphan sweep) must ALSO re-check active
+      // before writing — defense-in-depth beyond the picker (2026-07-23).
+      assert(/if \(!agent \|\| !agent\.active\) continue;/.test(fs.readFileSync("src/lib/reconciler.ts", "utf8")),
+        "reconciler must skip an inactive agent before its direct ownerId write");
 
       // DATA — no ACTIVE lead is owned by a deactivated user anywhere (the offboarding
       // guarantee: former employees hold only historical/terminal records).
@@ -6782,6 +6786,17 @@ const checks: Check[] = [
       assert(/userManagementDenial\(me, target\)/.test(tog), "deactivate must call the privilege guard");
       const inv = fs.readFileSync("src/app/api/admin/users/invite/route.ts", "utf8");
       assert(/role === "ADMIN" && !me\.isSuperAdmin/.test(inv), "invite must restrict ADMIN creation to super-admin");
+      // Low-sensitivity user-field routes ALSO carry the guard (a non-super admin — or,
+      // for profile, a manager — cannot mutate an admin/super-admin's reporting manager,
+      // WhatsApp number, Acefone id, or specialization/daily-call-target). Added 2026-07-23.
+      for (const f of [
+        "src/app/api/admin/users/[id]/manager/route.ts",
+        "src/app/api/admin/users/[id]/whatsapp-number/route.ts",
+        "src/app/api/admin/users/[id]/acefone/route.ts",
+        "src/app/api/admin/users/[id]/profile/route.ts",
+      ]) {
+        assert(/userManagementDenial\(me, target\)/.test(fs.readFileSync(f, "utf8")), `${f} must call the privilege guard`);
+      }
       // Google-Sheet importer now enforces owner-only import (parity with CSV).
       const sheet = fs.readFileSync("src/app/api/intake/google-sheet/route.ts", "utf8");
       assert(/canImportData\(meUser\)/.test(sheet), "google-sheet import must enforce canImportData (owner-only), like CSV");
