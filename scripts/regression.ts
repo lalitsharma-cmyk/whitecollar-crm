@@ -6682,6 +6682,12 @@ const checks: Check[] = [
       const kpis = fs.readFileSync("src/app/(app)/call-logs/kpis.ts", "utf8");
       assert(/connectionRate: total > 0/.test(kpis), "connection rate must divide by RESOLVED calls");
       assert(/PENDING_CALL_OUTCOMES/.test(kpis), "KPI module must exclude pending dials from `total`");
+      // The outcome and state drills are MUTUALLY EXCLUSIVE — pinning one clears the
+      // other. Otherwise Connected→Unresolved-Dials ANDs to an empty table while the
+      // card still shows a positive count (the count!=records bug).
+      const cardsSrc = fs.readFileSync("src/app/(app)/call-logs/CallLogKpiCards.tsx", "utf8");
+      assert(/if \(key !== "state"\) q\.delete\("state"\);\s*\n\s*else q\.delete\("outcome"\);/.test(cardsSrc),
+        "CallLogKpiCards.withParam must clear `outcome` when pinning `state` (and vice versa)");
 
       // (5) DATA — the cards must reconcile with the table for a real window.
       const { computeCallKpis } = await import("../src/app/(app)/call-logs/kpis");
@@ -6895,6 +6901,13 @@ const checks: Check[] = [
       assert(/export async function resolveAutoAssignOwner/.test(asg) && /applyRouting/.test(asg) && /resolveActiveAssignee/.test(asg),
         "resolveAutoAssignOwner must consult rules first and fall back to the EXACT pre-existing default (resolveActiveAssignee)");
       assert(/kind: "paused"; userId: null/.test(asg), "pause must resolve to unassigned (never a silent default owner)");
+      // apply-existing sweep must survive a mid-loop platform timeout REVERTABLY: a
+      // maxDuration above the 10s default + the OperationLog written BEFORE the loop
+      // (so a partial reassign stays undoable from Admin → Operations).
+      const applyEx = fs.readFileSync("src/app/api/admin/routing-rules/[id]/apply-existing/route.ts", "utf8");
+      assert(/export const maxDuration = \d+/.test(applyEx), "apply-existing must set maxDuration (a sequential per-lead sweep would clip at the 10s default)");
+      assert(applyEx.indexOf("const preOp = await logOperation") !== -1 && applyEx.indexOf("const preOp = await logOperation") < applyEx.indexOf("for (const lead of matching)"),
+        "apply-existing must write the reversible OperationLog BEFORE the reassignment loop (timeout-safe revert)");
       // The five choke points.
       const ingest = fs.readFileSync("src/lib/leadIngest.ts", "utf8");
       assert(/resolveAutoAssignOwner\(\{\s*module: "lead-intake"/.test(ingest) && /routingSource: `routing_rule:\$\{resolution\.ruleId\}`/.test(ingest),

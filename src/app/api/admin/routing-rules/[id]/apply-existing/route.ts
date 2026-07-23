@@ -51,6 +51,9 @@ import { ACTIVE_ORIGINS, WORKABLE_STATUS_OR } from "@/lib/leadScope";
 import { snapshotLeads, logOperation } from "@/lib/operationLog";
 import { assignLeadTo } from "@/lib/leadIngest";
 
+// Sequential per-lead reassignment can take many seconds on a large sweep; the Vercel
+// route default (10s) would clip it mid-loop and strand a partial, un-logged reassign.
+export const maxDuration = 60;
 // Hard ceiling on a single apply — above this we refuse and ask the admin to narrow
 // the rule, so one click can never silently churn the whole database.
 const MAX_APPLY = 2000;
@@ -305,6 +308,20 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   // We filter it down to the actually-reassigned ids when writing the OperationLog.
   const beforeSnaps = await snapshotLeads(prisma, matching.map((m) => m.id));
 
+  // Write the reversible OperationLog BEFORE the loop, over the FULL candidate set.
+  // This route reassigns leads one-by-one; if the platform kills it mid-loop, the
+  // already-committed mutations must STILL be undoable. Reverting the full snapshot
+  // restores every candidate to its prior owner — moved leads get reverted, unreached
+  // leads are already at that owner (a no-op). We trim it to the moved leads after.
+  const preOp = await logOperation(prisma, {
+    operation: "lead.transfer", entityType: "Lead", module: "Routing",
+    summary: `Routing rule "${rule.name}" applying to up to ${matching.length} existing lead(s)…`,
+    affectedIds: matching.map((m) => m.id),
+    beforeState: beforeSnaps,
+    afterState: { ruleId: rule.id, ruleName: rule.name, appliedToExisting: true },
+    createdById: me.id,
+  });
+
   const reason = `${ROUTING_REASON_PREFIX}${rule.name} (apply to existing)`;
   const reassignedIds: string[] = [];
   let skipped = 0;
@@ -341,23 +358,24 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     }
   }
 
-  // ONE reversible OperationLog for the whole sweep — reuses the generic "lead.transfer"
-  // op type, whose revert restores ownership (owner + previousOwnerId + assignedAt + SLA)
-  // from beforeState. Fully undoable from Admin → Operations, exactly like a bulk reassign.
-  let operationLogId: string | null = null;
-  if (reassignedIds.length) {
+  // Trim the pre-written OperationLog to the leads ACTUALLY reassigned. If this update
+  // is itself what got cut off, the full-candidate log written above stays correctly
+  // revertable (unchanged leads revert to a no-op). If nothing moved, drop the log.
+  let operationLogId: string | null = preOp.id;
+  if (reassignedIds.length === 0) {
+    await prisma.operationLog.delete({ where: { id: preOp.id } }).catch(() => {});
+    operationLogId = null;
+  } else {
     const reassignedSet = new Set(reassignedIds);
-    const op = await logOperation(prisma, {
-      operation: "lead.transfer",
-      entityType: "Lead",
-      module: "Routing",
-      summary: `Routing rule "${rule.name}" applied to ${reassignedIds.length} existing lead(s)`,
-      affectedIds: reassignedIds,
-      beforeState: beforeSnaps.filter((s) => reassignedSet.has(String(s.id))),
-      afterState: { ruleId: rule.id, ruleName: rule.name, appliedToExisting: true },
-      createdById: me.id,
-    });
-    operationLogId = op.id;
+    await prisma.operationLog.update({
+      where: { id: preOp.id },
+      data: {
+        summary: `Routing rule "${rule.name}" applied to ${reassignedIds.length} existing lead(s)`,
+        affectedCount: reassignedIds.length,
+        affectedIds: reassignedIds,
+        beforeState: beforeSnaps.filter((s) => reassignedSet.has(String(s.id))) as Prisma.InputJsonValue,
+      },
+    }).catch(() => {});
   }
 
   await audit({

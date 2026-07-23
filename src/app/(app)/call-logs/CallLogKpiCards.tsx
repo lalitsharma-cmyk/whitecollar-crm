@@ -24,7 +24,11 @@ function withParam(sp: Record<string, string | undefined>, key: string, value: s
   for (const [k, v] of Object.entries(sp)) if (v && k !== "page") q.set(k, v);
   if (value) q.set(key, value);
   else q.delete(key);
+  // outcome and state are mutually exclusive drills — pinning one clears the other,
+  // else they AND to an impossible/empty set (e.g. outcome=CONNECTED + state=pending →
+  // 0 rows) while the card still shows a positive count (count != records).
   if (key !== "state") q.delete("state");
+  else q.delete("outcome");
   const s = q.toString();
   return `/call-logs${s ? `?${s}` : ""}`;
 }

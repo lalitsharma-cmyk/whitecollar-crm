@@ -496,7 +496,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
     const leadIds = new Set<string>();
     for (const u of p.units) for (const l of u.interestedBy) leadIds.add(l.leadId);
     const leads = leadIds.size;
-    return { name: p.name, leads, bookings: Math.floor(leads / 12) };
+    return { name: p.name, leads };
   }).sort((a, b) => b.leads - a.leads);
 
   return (
@@ -918,10 +918,10 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
           <div className="text-xs text-gray-500 tracking-widest">ALL TIME</div>
           <div className="font-semibold mt-1">Top performing projects</div>
           <table className="w-full text-sm mt-2">
-            <thead><tr className="text-xs text-gray-500"><th className="text-left py-1">Project</th><th>Leads</th><th>Bookings</th></tr></thead>
+            <thead><tr className="text-xs text-gray-500"><th className="text-left py-1">Project</th><th>Interested leads</th></tr></thead>
             <tbody className="divide-y divide-[#e5e7eb]">
               {projectStats.map(p => (
-                <tr key={p.name}><td className="py-2">{p.name}</td><td className="text-center">{p.leads}</td><td className="text-center font-semibold">{p.bookings}</td></tr>
+                <tr key={p.name}><td className="py-2">{p.name}</td><td className="text-center font-semibold">{p.leads}</td></tr>
               ))}
             </tbody>
           </table>

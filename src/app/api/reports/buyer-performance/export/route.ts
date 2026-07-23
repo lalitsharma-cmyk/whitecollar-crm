@@ -62,9 +62,9 @@ export async function GET(req: NextRequest) {
   if (format === "xlsx") {
     const ws = XLSX.utils.aoa_to_sheet([headers, ...matrix]);
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Dubai Buyer Performance");
+    XLSX.utils.book_append_sheet(wb, ws, `${team} Buyer Performance`);
     const buf: Buffer = XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
-    const filename = `wcr-dubai-buyer-performance-${scopeTag}-${dateTag}.xlsx`;
+    const filename = `wcr-${team.toLowerCase()}-buyer-performance-${scopeTag}-${dateTag}.xlsx`;
     return new Response(new Uint8Array(buf), {
       status: 200,
       headers: {
@@ -79,14 +79,14 @@ export async function GET(req: NextRequest) {
   for (const r of matrix) lines.push(r.map(csvEscape).join(","));
   const body = lines.join("\r\n");
   const watermark = [
-    `# Confidential Dubai Buyer Data performance export from White Collar Realty CRM`,
+    `# Confidential ${team} Buyer Data performance export from White Collar Realty CRM`,
     `# Downloaded by: ${me.email} (${me.name}) at ${stamp}`,
-    `# Period: ${range.label}  ·  Market: Dubai  ·  Agents: ${rows.length}`,
+    `# Period: ${range.label}  ·  Market: ${team}  ·  Agents: ${rows.length}`,
     `# Sharing this file outside the company breaches the Data Handling policy.`,
     "",
   ].join("\r\n");
   const footer = `\r\n# Exported by ${me.name} at ${stamp} — confidential\r\n`;
-  const filename = `wcr-dubai-buyer-performance-${scopeTag}-${dateTag}.csv`;
+  const filename = `wcr-${team.toLowerCase()}-buyer-performance-${scopeTag}-${dateTag}.csv`;
 
   return new Response(watermark + body + footer, {
     status: 200,
