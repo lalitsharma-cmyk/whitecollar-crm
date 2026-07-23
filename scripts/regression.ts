@@ -369,23 +369,23 @@ const checks: Check[] = [
       assert(rejectReasonLabel("BOOKED_WITH_US") === "Booked With Us", "legacy value still resolves a human label for historical records");
       assert(rejectionStatusFor("JUNK") === "Junk", "Junk Lead → canonical 'Junk' status");
 
-      // "Expo Only" — Dubai-team-conditional reject reason (2026-06-24).
-      // (a) It is a VALID API reason and resolves a label + its own outcome status.
-      assert(REJECT_REASON_VALUES.has("EXPO_ONLY"), "EXPO_ONLY must be an accepted API reject reason");
-      assert(rejectReasonLabel("EXPO_ONLY") === "Expo Only", "EXPO_ONLY → label 'Expo Only'");
-      assert(rejectionStatusFor("EXPO_ONLY") === "Expo Only", "EXPO_ONLY → its own 'Expo Only' outcome status");
-      assert(rejectionStatusFor("EXPO_ONLY") !== "Booked With Us", "Expo Only must never resolve to a winning status");
-      // (b) It is NOT in the GLOBAL base list (never shown to non-Dubai teams)…
+      // "Expo Only" is NO LONGER a reject reason (Lalit 2026-07-23: it is a WORKABLE
+      // status — client interested in an expo, still actively pursued — not a rejection).
+      // It must be BLOCKED from every reject path, but its label must still resolve for
+      // the one historical record that carried it. (Positive workability assertions live
+      // in the dedicated `expo-only-workable` invariant.)
+      assert(!REJECT_REASON_VALUES.has("EXPO_ONLY"), "EXPO_ONLY must NOT be an accepted API reject reason (reject route 400s on it)");
+      assert(rejectReasonLabel("EXPO_ONLY") === "Expo Only", "EXPO_ONLY must still resolve its label 'Expo Only' for historical records");
       assert(!REJECT_REASONS.some((r) => r.value === "EXPO_ONLY"), "EXPO_ONLY must NOT be in the global base reason list");
-      // …and the team helper offers it ONLY for Dubai.
+      // The team helper must NOT offer it for ANY team now (it was Dubai-only before).
       const dubaiReasons = rejectReasonsForTeam("Dubai").map((r) => r.value);
       const indiaReasons = rejectReasonsForTeam("India").map((r) => r.value);
       const noTeamReasons = rejectReasonsForTeam(null).map((r) => r.value);
-      assert(dubaiReasons.includes("EXPO_ONLY"), "Dubai-team reject dropdown MUST offer 'Expo Only'");
+      assert(!dubaiReasons.includes("EXPO_ONLY"), "Dubai-team reject dropdown must NOT offer 'Expo Only' (no longer a rejection)");
       assert(!indiaReasons.includes("EXPO_ONLY"), "India-team reject dropdown must NOT offer 'Expo Only'");
       assert(!noTeamReasons.includes("EXPO_ONLY"), "no-team reject dropdown must NOT offer 'Expo Only'");
-      // The Dubai list is the base list + exactly the one extra reason.
-      assert(dubaiReasons.length === REJECT_REASONS.length + 1, "Dubai list = base reasons + Expo Only (no drops/dupes)");
+      // With no team-conditional reasons left, every team's reject list is the base list.
+      assert(dubaiReasons.length === REJECT_REASONS.length, "Dubai reject list = base reasons (Expo Only removed; no team-conditional reasons)");
 
       // Property Type — Mixed Use is allowed; Source values are not.
       assert(PROPERTY_TYPES.length === 3 && isPropertyType("Mixed Use"), "Mixed Use is an allowed property type");
@@ -4333,6 +4333,46 @@ const checks: Check[] = [
           OR: [{ currentStatus: null }, { currentStatus: "" }, { currentStatus: { notIn: TERM } }] },
       });
       assert(leak === 0, `${leak} rejected+unassigned lead(s) carry a non-terminal status — could leak into assign queues`);
+    },
+  },
+
+  // ───────────────────────────────────────────────────────────────────────────
+  {
+    // ── EXPO ONLY IS A WORKABLE STATUS, NOT A REJECTION (Lalit 2026-07-23) ───────
+    // "Expo Only" = the client is interested in attending an expo and is STILL being
+    // actively pursued (can be owned, carry a follow-up, sit in workable views, move to
+    // any other status by explicit action, and is counted as its own reporting
+    // category). It must NEVER be a reject reason — rejecting with it stamped rejectedAt
+    // + unassigned the lead + cleared the follow-up while leaving a workable status,
+    // producing a "rejected but workable" contradiction (the Dilip Lakdwala lead).
+    name: "expo-only-workable — Expo Only is an active/workable status, never a rejection (owner+follow-up allowed; reject can't apply it)",
+    run: async () => {
+      const S = await import("../src/lib/lead-statuses");
+      const R = await import("../src/lib/reject-reasons");
+      // Workable + selectable: Dubai status master + agent-selectable + ACTIVE set.
+      assert((S.DUBAI_STATUSES as readonly string[]).includes("Expo Only"), "Expo Only must be a selectable Dubai status");
+      assert(S.DUBAI_AGENT_STATUSES.includes("Expo Only"), "Expo Only must be agent-selectable (DUBAI_AGENT_STATUSES)");
+      assert(S.DUBAI_ACTIVE_STATUSES.includes("Expo Only"), "Expo Only must be an ACTIVE Dubai status");
+      // NOT terminal / lost / suppressed / closed — a workable status, full stop.
+      assert(!S.TERMINAL_STATUSES.includes("Expo Only"), "Expo Only must NOT be terminal");
+      assert(!S.LOST_STATUSES.includes("Expo Only"), "Expo Only must NOT be a lost status");
+      assert(!S.SUPPRESSED_STATUSES.includes("Expo Only"), "Expo Only must NOT be suppressed");
+      assert(!S.CLOSED_OUTCOME_STATUSES.includes("Expo Only"), "Expo Only must NOT be a closed outcome");
+      // NOT a reject reason: not offered, and not API-accepted (the reject route 400s).
+      const offered = [...R.REJECT_REASONS, ...R.DUBAI_ONLY_REJECT_REASONS].map((r) => r.value);
+      assert(!offered.includes("EXPO_ONLY"), "EXPO_ONLY must NOT be an offered reject reason");
+      assert(!R.REJECT_REASON_VALUES.has("EXPO_ONLY"), "EXPO_ONLY must NOT be API-accepted (reject route must 400 on it)");
+      // Its label still resolves for the pre-2026-07-23 timeline row that carried it.
+      assert(R.rejectReasonLabel("EXPO_ONLY") === "Expo Only", "EXPO_ONLY must still resolve its human label on historical records");
+      // GENERAL GUARD: no OFFERED reject reason may map to a NON-terminal status — that
+      // is exactly the defect that let Expo Only leave a workable status on a rejected
+      // lead. A rejection must always land on a terminal status.
+      const term = new Set(S.TERMINAL_STATUSES as string[]);
+      const badReasons = offered.filter((v) => !term.has(R.rejectionStatusFor(v)));
+      assert(badReasons.length === 0, `reject reason(s) mapping to a NON-terminal status: ${badReasons.join(", ")} — a rejection must land on a terminal status`);
+      // DATA: no lead is BOTH "Expo Only" AND rejected — the contradiction cannot exist.
+      const contradiction = await prisma.lead.count({ where: { currentStatus: "Expo Only", rejectedAt: { not: null }, deletedAt: null } });
+      assert(contradiction === 0, `${contradiction} lead(s) are BOTH "Expo Only" and rejected — Expo Only is workable, not a rejection`);
     },
   },
 

@@ -35,15 +35,14 @@ export const REJECT_REASONS: Array<{ value: string; label: string }> = [
   { value: "OTHER",                     label: "Other" },
 ];
 
-// Team-conditional reasons — offered ONLY for leads on the named team. "Expo Only"
-// is a Dubai-team outcome (the client engaged purely at an expo/exhibition and has
-// no real ongoing intent), so it is NOT shown in the global list above; the reject
-// modal merges it in only when the lead's forwardedTeam === "Dubai". It is still a
-// fully valid API reason (added to REJECT_REASON_VALUES below) and resolves a label
-// + status like any other reason.
-export const DUBAI_ONLY_REJECT_REASONS: Array<{ value: string; label: string }> = [
-  { value: "EXPO_ONLY", label: "Expo Only" },
-];
+// Team-conditional reasons — offered ONLY for leads on the named team. Currently NONE.
+// ("Expo Only" used to live here. Lalit clarified 2026-07-23 that Expo Only is a
+// WORKABLE status — the client is interested in attending an expo and is STILL actively
+// pursued — not a rejection. It is a normal Dubai status (see DUBAI_STATUSES), set via
+// the ordinary status dropdown, and must NEVER auto-unassign / clear the follow-up /
+// stamp rejectedAt. So it is no longer a reject reason; EXPO_ONLY lives in
+// HISTORICAL_LABEL_ONLY below purely so old audit/timeline rows still resolve its label.)
+export const DUBAI_ONLY_REJECT_REASONS: Array<{ value: string; label: string }> = [];
 
 /** Reasons offered in the reject dropdown for a given lead team. The base list
  *  always applies; Dubai-team leads additionally get the Dubai-only reasons.
@@ -90,16 +89,27 @@ const LEGACY_REASONS: Record<string, string> = {
   TRANSFER_TO_DUBAI_TEAM: "Transfer to Dubai Team",
 };
 
+// Label-only history: reasons that must still resolve a human label on OLD records
+// but are NO LONGER valid to submit — deliberately EXCLUDED from REJECT_REASON_VALUES
+// so the reject API 400s on them. "Expo Only" is here: it is a workable STATUS now,
+// never a rejection (Lalit 2026-07-23). A pre-2026-07-23 lead may still carry a
+// rejectionReason of EXPO_ONLY in its timeline; this keeps that label readable.
+const HISTORICAL_LABEL_ONLY: Record<string, string> = {
+  EXPO_ONLY: "Expo Only",
+};
+
 // Accepted on the API (current canonical + team-conditional + legacy).
+// NOTE: HISTORICAL_LABEL_ONLY is intentionally NOT included — those reasons resolve a
+// label but can never be newly submitted (the reject route rejects them).
 export const REJECT_REASON_VALUES = new Set<string>([
   ...REJECT_REASONS.map(r => r.value),
   ...DUBAI_ONLY_REJECT_REASONS.map(r => r.value),
   ...Object.keys(LEGACY_REASONS),
 ]);
 
-/** Human label for any reason value (canonical or legacy). */
+/** Human label for any reason value (canonical, legacy, or history-only). */
 export function rejectReasonLabel(value: string): string {
-  return REJECT_REASON_LABEL[value] ?? LEGACY_REASONS[value] ?? value.replace(/_/g, " ");
+  return REJECT_REASON_LABEL[value] ?? LEGACY_REASONS[value] ?? HISTORICAL_LABEL_ONLY[value] ?? value.replace(/_/g, " ");
 }
 
 // Reasons whose human label is NOT itself a CRM status (or where the status must
@@ -113,8 +123,6 @@ const REASON_STATUS: Record<string, string> = {
   FAKE_INQUIRY:         "Junk",
   PURCHASED_ELSEWHERE:  "Purchased Elsewhere",
   BOOKED_OTHER_CHANNEL: "Booked Through Another Channel",
-  // Dubai-only outcome: client engaged only at an expo, no ongoing intent.
-  EXPO_ONLY:            "Expo Only",
   // Legacy reject → closed-elsewhere outcome (NEVER the winning "Booked With Us").
   BOOKED_WITH_US:       "Purchased Elsewhere",
 };
