@@ -610,8 +610,12 @@ export async function ingestLead(input: RawLeadInput) {
         country: lead.country,
         budget: rb.value,
         budgetState: rb.state,
+        // An existing eligible owner wins (re-ingest / dedup-update of an owned lead).
+        // Passing it here also stops the round-robin pointer burning on a pick that
+        // the `!lead.ownerId` gate below would have discarded anyway.
+        currentOwnerId: lead.ownerId,
       });
-      const targetUserId = resolution.kind === "paused" ? null : resolution.userId;
+      const targetUserId = (resolution.kind === "paused" || resolution.kind === "preserved") ? null : resolution.userId;
       // A RULE match may assign regardless of team; the DEFAULT path keeps the
       // mandatory-team gate (team-less non-rule leads still park in awaiting-team,
       // byte-identical to before).

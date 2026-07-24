@@ -5,6 +5,7 @@ import { SUPPRESSED_STATUSES } from "@/lib/lead-statuses";
 import { phoneCanonicalTail } from "@/lib/phoneCountry";
 import { applyRouting, type RoutingContext } from "@/lib/leadRouting";
 import { resolveActiveAssignee } from "@/lib/leave";
+import { normalizeTeam } from "@/lib/teamRouting";
 
 /**
  * Round-robin assignment: pick the active AGENT (or MANAGER) with the
@@ -123,13 +124,64 @@ export function leadDedupOR(
 
 export type AutoAssignResolution =
   | { kind: "paused"; userId: null; reason: string }
+  | { kind: "preserved"; userId: null; ownerId: string; reason: string }
   | { kind: "rule"; userId: string; ruleId: string; ruleName: string; reason: string }
   | { kind: "default"; userId: string | null };
+
+/**
+ * PERMANENT ROUTING PRINCIPLE (Lalit P0, 2026-07-23):
+ *   "Routing fills an ownership GAP; it does not override a valid existing owner
+ *    merely because team metadata was added or corrected later."
+ *
+ * Answers the question nothing in this codebase could answer before: is this
+ * record's CURRENT owner a valid holder for this team? Eligible when the owner is
+ * active, not HR-only, and either on that team OR an ADMIN/HQ user (Lalit
+ * legitimately owns both Dubai and India leads — sweeping an admin's book on a team
+ * tag would be the same bug wearing a different hat).
+ *
+ * Team is compared through normalizeTeam on BOTH sides: User.team is a free-text
+ * String? column, so "india" / " India" / "UAE" must never read as a different team
+ * (the stale-name-comparison trap that made an owner invisible to their own team).
+ */
+export async function ownerIsEligibleForTeam(
+  ownerId: string | null | undefined,
+  team: string | null | undefined,
+): Promise<{ eligible: boolean; reason: string }> {
+  if (!ownerId) return { eligible: false, reason: "no current owner — routing fills the gap" };
+  const owner = await prisma.user.findUnique({
+    where: { id: ownerId },
+    select: { id: true, name: true, team: true, active: true, hrOnly: true, role: true },
+  });
+  if (!owner) return { eligible: false, reason: "owner record not found" };
+  if (!owner.active) return { eligible: false, reason: `${owner.name} is deactivated/offboarded` };
+  if (owner.hrOnly) return { eligible: false, reason: `${owner.name} is HR-only` };
+  if (owner.role === Role.ADMIN || (owner.team ?? "").trim().toUpperCase() === "HQ") {
+    return { eligible: true, reason: `${owner.name} is an admin/HQ owner — assignment preserved` };
+  }
+  const ownerTeam = normalizeTeam(owner.team ?? undefined);
+  const wantTeam = normalizeTeam(team ?? undefined);
+  if (wantTeam && ownerTeam && ownerTeam === wantTeam) {
+    return { eligible: true, reason: `${owner.name} is already on the ${wantTeam} team — assignment preserved` };
+  }
+  return { eligible: false, reason: `${owner.name} (${owner.team ?? "no team"}) is not on ${wantTeam ?? "the selected team"}` };
+}
 
 export async function resolveAutoAssignOwner(
   ctx: RoutingContext,
   now: Date = new Date(),
 ): Promise<AutoAssignResolution> {
+  // ── 0. AN EXISTING VALID OWNER WINS (Lalit P0, 2026-07-23) ──────────────────
+  // Deliberately BEFORE applyRouting: pickRecipient() commits the round-robin
+  // cursor + per-recipient counters inside its OWN transaction and only then
+  // returns, so a caller that discards the pick afterwards has still burned a
+  // slot. Deciding here is the only place a preserved assignment costs nothing —
+  // no pointer advance, no Assignment row, no notification.
+  if (ctx.currentOwnerId) {
+    const check = await ownerIsEligibleForTeam(ctx.currentOwnerId, ctx.team ?? null);
+    if (check.eligible) {
+      return { kind: "preserved", userId: null, ownerId: ctx.currentOwnerId, reason: check.reason };
+    }
+  }
   const routed = await applyRouting(ctx, now); // fail-open: errors → null inside
   if (routed) {
     if (routed.paused) {

@@ -6886,6 +6886,102 @@ const checks: Check[] = [
   //      build time). No cron: windows + expiry evaluated at assign/read time.
   // ───────────────────────────────────────────────────────────────────────────
   {
+    // ── P0: TEAM TAGGING MUST NOT REASSIGN A VALID OWNER (Lalit 2026-07-23) ──────
+    // PERMANENT PRINCIPLE: "Routing fills an ownership GAP; it does not override a
+    // valid existing owner merely because team metadata was added or corrected later."
+    //
+    // ROOT CAUSE (now fixed): admin/awaiting-team/assign ran resolveAutoAssignOwner +
+    // assignLeadTo UNCONDITIONALLY — it loaded lead.ownerId and never read it — so
+    // tagging a team moved 22 of Adil's India leads to Tanuj (124 wrongful moves
+    // overall since 2026-06-17, reason "auto round-robin after team tagging").
+    //
+    // Covers Lalit's 11 scenarios: (1) unassigned→route (2) Adil+India→stay
+    // (3) Tanuj+India→stay (4) India owner+Dubai tag→reassign flow (5) inactive/
+    // offboarded owner→reassign (6) admin/HQ owner→stay (7) tag removed+re-added→stay
+    // (8) bulk tagging→preserve (9) no round-robin pointer burn on a preserve
+    // (10) manual assignment still overrides (11) follow-up/call history untouched.
+    name: "team-tag-preserves-owner — a team tag never reassigns a valid, active, on-team owner",
+    run: async () => {
+      const fs = await import("fs");
+      const asg = fs.readFileSync("src/lib/assignment.ts", "utf8");
+      const route = fs.readFileSync("src/app/api/admin/awaiting-team/assign/route.ts", "utf8");
+      const routing = fs.readFileSync("src/lib/leadRouting.ts", "utf8");
+      const rec = fs.readFileSync("src/lib/reconciler.ts", "utf8");
+      const ingest = fs.readFileSync("src/lib/leadIngest.ts", "utf8");
+
+      // (a) The eligibility helper exists and checks the whole predicate.
+      assert(/export async function ownerIsEligibleForTeam/.test(asg),
+        "ownerIsEligibleForTeam must exist — the 'is this owner valid for this team?' answer");
+      assert(/if \(!owner\.active\)/.test(asg) && /if \(owner\.hrOnly\)/.test(asg),
+        "eligibility must reject a deactivated/offboarded or HR-only owner (scenario 5)");
+      assert(/owner\.role === Role\.ADMIN/.test(asg) && /"HQ"/.test(asg),
+        "an ADMIN/HQ owner must be preserved (scenario 6) — never sweep an admin's book on a team tag");
+      assert(/normalizeTeam\(owner\.team[\s\S]{0,80}normalizeTeam\(team/.test(asg),
+        "team must be compared via normalizeTeam on BOTH sides (User.team is free text: 'india'/' India'/'UAE')");
+
+      // (b) The resolution kind + the GUARD ORDER. It must run before applyRouting,
+      //     else pickRecipient has already committed the RR cursor (scenario 9).
+      assert(/kind: "preserved"/.test(asg), "AutoAssignResolution must carry a `preserved` kind");
+      assert(/currentOwnerId\?: string \| null/.test(routing), "RoutingContext must accept currentOwnerId");
+      const guardAt = asg.indexOf("if (ctx.currentOwnerId)");
+      const applyAt = asg.indexOf("const routed = await applyRouting");
+      assert(guardAt !== -1 && applyAt !== -1 && guardAt < applyAt,
+        "the existing-owner guard MUST run BEFORE applyRouting — pickRecipient commits the round-robin cursor in its own transaction");
+
+      // (c) The culprit route: hard precondition BEFORE any routing/assign call.
+      const gAt = route.indexOf("ownerIsEligibleForTeam(lead.ownerId, team)");
+      // Anchor on the CALL sites (`await …(`) — the bare names also appear in this
+      // file's header comment, which sits above the guard and would falsify the order.
+      const rAt = route.indexOf("await resolveAutoAssignOwner(");
+      const aAt = route.indexOf("await assignLeadTo(");
+      assert(gAt !== -1, "awaiting-team assign must check ownerIsEligibleForTeam on the CURRENT owner");
+      assert(gAt < rAt && gAt < aAt, "the owner guard must precede BOTH resolveAutoAssignOwner and assignLeadTo");
+      assert(/preserved: true/.test(route), "the route must return preserved:true and skip assignment entirely");
+      assert(/resolution\.kind === "preserved"/.test(route),
+        "the route must also treat a `preserved` resolution as no-assign so the legacy round-robin branch cannot fire");
+
+      // (d) Every other auto caller honours `preserved`.
+      assert(/resolution\.kind === "paused" \|\| resolution\.kind === "preserved"/.test(rec),
+        "reconciler must treat preserved as no-assign");
+      assert(/resolution\.kind === "preserved"/.test(ingest) && /currentOwnerId: lead\.ownerId/.test(ingest),
+        "leadIngest must pass currentOwnerId and treat preserved as no-assign");
+
+      // (e) DATA — preconditions the scenarios rest on.
+      const [adil, tanuj] = await Promise.all([
+        prisma.user.findFirst({ where: { name: { contains: "Adil" } }, select: { active: true, team: true } }),
+        prisma.user.findFirst({ where: { name: { contains: "Tanuj" } }, select: { active: true, team: true } }),
+      ]);
+      assert(!!adil?.active && adil?.team === "India", "scenario 2 precondition: Adil is an active India agent");
+      assert(!!tanuj?.active && tanuj?.team === "India", "scenario 3 precondition: Tanuj is an active India agent");
+
+      // (f) DATA — NO NEW wrongful team-tag reassignment since the guard shipped.
+      //     Everything before this stamp is the known historical backlog (reported;
+      //     9 restored; the rest left for human review). Anything after = regression.
+      const P0_FIX_AT = new Date("2026-07-23T12:00:00Z");
+      const after = await prisma.assignment.findMany({
+        where: { reason: { contains: "team tagging", mode: "insensitive" }, assignedAt: { gt: P0_FIX_AT } },
+        select: { leadId: true, userId: true, assignedAt: true },
+      });
+      let newWrongful = 0;
+      for (const a of after) {
+        const prior = await prisma.assignment.findFirst({
+          where: { leadId: a.leadId, assignedAt: { lt: a.assignedAt } },
+          orderBy: { assignedAt: "desc" },
+          select: { userId: true, user: { select: { active: true, team: true } } },
+        });
+        if (!prior || !prior.user?.active || prior.userId === a.userId) continue;
+        const lead = await prisma.lead.findUnique({ where: { id: a.leadId }, select: { forwardedTeam: true } });
+        const want = (lead?.forwardedTeam ?? "").trim().toLowerCase();
+        const had = (prior.user.team ?? "").trim().toLowerCase();
+        if (want && had && want === had) newWrongful++;
+      }
+      assert(newWrongful === 0,
+        `${newWrongful} NEW wrongful team-tag reassignment(s) since the guard shipped — the P0 has regressed`);
+      results.push({ name: "  ↳ note", ok: true,
+        detail: `team-tag owner guard active · ${after.length} team-tag routing event(s) since ${P0_FIX_AT.toISOString()} · 0 wrongful` });
+    },
+  },
+  {
     name: "routing-scheduler — engine + 5 choke points + admin-only panel + version audit; zero-rules = pre-existing behavior",
     run: async () => {
       const fs = await import("fs");

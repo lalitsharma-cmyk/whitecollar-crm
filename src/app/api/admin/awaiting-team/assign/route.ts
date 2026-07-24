@@ -18,7 +18,7 @@ import { audit, reqMeta } from "@/lib/audit";
 import { resolveTeam, routingFieldsFor } from "@/lib/teamRouting";
 import { teamToMarket } from "@/lib/market";
 import { getRoundRobinEnabled, getAutoAssignmentEnabled, getWebsiteAutoAssign } from "@/lib/settings";
-import { resolveAutoAssignOwner } from "@/lib/assignment";
+import { resolveAutoAssignOwner, ownerIsEligibleForTeam } from "@/lib/assignment";
 
 const TEAMS = ["Dubai", "India"] as const;
 type Team = (typeof TEAMS)[number];
@@ -52,6 +52,31 @@ export async function POST(req: NextRequest) {
     },
   });
 
+  // ── P0 GUARD (Lalit 2026-07-23): a team tag must NEVER reassign a working lead ──
+  // "Routing fills an ownership GAP; it does not override a valid existing owner
+  //  merely because team metadata was added or corrected later."
+  // This route previously ran round-robin UNCONDITIONALLY — `lead.ownerId` was
+  // loaded above and never read — which moved 22 of Adil's India leads to Tanuj
+  // (124 wrongful moves overall since 2026-06-17). Returning here means: no routing
+  // call, no round-robin pointer burn, no Assignment-history row, no notification.
+  // The same check also lives centrally in resolveAutoAssignOwner; this one is the
+  // hard precondition so the legacy round-robin branch below can't bypass it either.
+  const ownerGuard = await ownerIsEligibleForTeam(lead.ownerId, team);
+  if (ownerGuard.eligible) {
+    const keep = await prisma.user.findUnique({ where: { id: lead.ownerId! }, select: { name: true } });
+    await audit({
+      userId: me.id, action: "lead.team.assign", entity: "Lead", entityId: leadId,
+      meta: { team, autoAssignedTo: null, preservedOwnerId: lead.ownerId, preservedOwner: keep?.name ?? null, reason: ownerGuard.reason },
+      request: reqMeta(req),
+    });
+    return NextResponse.json({
+      ok: true,
+      assignedTo: keep?.name ?? null,
+      preserved: true,
+      note: `Team tagged. ${ownerGuard.reason}.`,
+    });
+  }
+
   // RESPECT THE AUTO-ASSIGN KILL-SWITCH (Lalit, 2026-06-20 audit). This action
   // used to ALWAYS auto-pick an owner via the time-window round-robin — the one
   // path that auto-assigned (e.g. to Lalit in the evening window) even while
@@ -68,6 +93,7 @@ export async function POST(req: NextRequest) {
   const resolution = await resolveAutoAssignOwner({
     module: "lead-intake",
     team,
+    currentOwnerId: lead.ownerId,
     market: teamToMarket(team),
     source: lead.source,
     project: lead.sourceDetail,
@@ -75,8 +101,9 @@ export async function POST(req: NextRequest) {
   });
   const featureOn = (await getWebsiteAutoAssign()).enabled;
   const rrOn = (await getAutoAssignmentEnabled()) && (await getRoundRobinEnabled());
-  const choice = resolution.kind === "paused"
-    ? { userId: null as string | null, window: currentWindow(), fallbackReason: "routing paused by admin — assign manually" }
+  const choice = (resolution.kind === "paused" || resolution.kind === "preserved")
+    ? { userId: null as string | null, window: currentWindow(),
+        fallbackReason: resolution.kind === "preserved" ? resolution.reason : "routing paused by admin — assign manually" }
     : (resolution.userId && featureOn)
       ? { userId: resolution.userId as string | null, window: currentWindow(), fallbackReason: resolution.kind === "rule" ? resolution.reason : "fixed team rule (Lalit 2026-06-30)" }
       : rrOn

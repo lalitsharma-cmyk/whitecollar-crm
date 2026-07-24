@@ -91,7 +91,11 @@ export async function runReconciler(): Promise<ReconcileResult> {
       project: lead.sourceDetail,
       country: lead.country,
     });
-    if (resolution.kind === "paused") continue; // lead stays unassigned under the emergency override
+    // paused = emergency override (lead stays unassigned); preserved = the lead already
+    // has a valid eligible owner, so routing must not touch it. `preserved` is defensive
+    // here — this sweep's candidate query is ownerId:null scoped — but it keeps every
+    // resolveAutoAssignOwner caller honest about the "existing owner wins" contract.
+    if (resolution.kind === "paused" || resolution.kind === "preserved") continue;
     const fixed = resolution.userId;
     const choice = fixed
       ? { userId: fixed as string | null, window: currentWindow(), fallbackReason: resolution.kind === "rule" ? resolution.reason : "fixed team rule (Lalit 2026-06-30)" }

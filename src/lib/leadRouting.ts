@@ -100,6 +100,11 @@ export interface RoutingRecipient {
 export interface RoutingContext {
   module: RoutingModule;
   team?: string | null;    // forwardedTeam ("India" | "Dubai")
+  /** The record's CURRENT owner, if any. When this resolves to an owner who is
+   *  eligible for `team`, resolveAutoAssignOwner returns { kind: "preserved" } and
+   *  routing never runs — a metadata correction must not steal a working owner
+   *  (Lalit P0, 2026-07-23). */
+  currentOwnerId?: string | null;
   market?: string | null;  // Lead.market ("India" | "UAE")
   source?: string | null;  // LeadSource enum key
   project?: string | null; // matched/inquired project name
